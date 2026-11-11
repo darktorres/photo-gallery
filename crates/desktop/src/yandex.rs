@@ -15,8 +15,6 @@ use crate::yandex_bridge::qobject;
 
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
@@ -119,29 +117,20 @@ impl qobject::YandexSearch {
         }
         self.as_mut().rust_mut().pump = true;
         let changes = search().subscribe();
-        let thread = self.qt_thread();
-        // Set while a poll is queued. A poll reads the whole state, so a change that comes in while one is queued is
-        // read by it: the pump queues no more until it has run (at most one per event-loop turn).
-        let queued = Arc::new(AtomicBool::new(false));
-        let pump = std::thread::Builder::new().name("yandex changes".into()).spawn(move || {
-            while changes.recv().is_some() {
+        // A poll reads the whole state, so the changes carry nothing: a change that comes in while a poll is queued is
+        // read by it (the pump queues no more until it has run).
+        let pump = crate::pump::start(
+            "yandex changes",
+            self.qt_thread(),
+            move || changes.recv().map(|()| {
                 changes.take();
-                if queued.swap(true, Ordering::AcqRel) {
-                    continue;
-                }
-                let flag = Arc::clone(&queued);
-                // Fails only when the window is gone: the pump ends with it.
-                if thread
-                    .queue(move |search| {
-                        flag.store(false, Ordering::Release);
-                        search.poll()
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
+            }),
+            |_, ()| {},
+            |search, pending| {
+                crate::pump::Pending::take(&pending);
+                search.poll();
+            },
+        );
         // Without its thread the panel isn't told the search's changes: the log says why, and the next search tries
         // again.
         if let Err(e) = pump {

@@ -7,7 +7,7 @@ use crate::error::Result;
 use rusqlite::params_from_iter;
 use rusqlite::types::Value;
 
-use strum::IntoEnumIterator;
+use strum::{EnumCount, IntoEnumIterator};
 
 use super::grid::FILE_JOINS;
 use super::scope::scope;
@@ -65,7 +65,7 @@ impl Catalog {
 
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), |r| {
-            let mut sums = [0_i64; 3 + 5];
+            let mut sums = [0_i64; 3 + BorderFacet::COUNT];
             for (i, sum) in sums.iter_mut().enumerate() {
                 *sum = r.get(3 + i)?;
             }
@@ -75,7 +75,7 @@ impl Catalog {
         let (mut total, mut matching) = (0, 0);
         let mut by_type: BTreeMap<String, i64> = BTreeMap::new();
         let mut by_ext: BTreeMap<String, i64> = BTreeMap::new();
-        let mut by_border = [0_i64; 5];
+        let mut by_border = [0_i64; BorderFacet::COUNT];
         for row in rows {
             let (media, ext, n, sums) = row?;
             let [all_n, types_n, exts_n] = [sums[0], sums[1], sums[2]];

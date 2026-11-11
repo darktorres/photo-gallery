@@ -85,6 +85,11 @@ pub(crate) fn yandex_source() -> pg_app::yandex::YandexSource {
     }
 }
 
+/// The value of `--name` as a number: `fallback` without one, or when it isn't one.
+pub(crate) fn number(name: &str, fallback: f64) -> f64 {
+    number_of(value(name), fallback)
+}
+
 /// The value as a number: `fallback` without one, or when it isn't one.
 fn number_of(value: Option<&str>, fallback: f64) -> f64 {
     value.and_then(|v| v.trim().parse().ok()).unwrap_or(fallback)

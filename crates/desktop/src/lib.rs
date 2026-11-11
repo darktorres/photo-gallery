@@ -61,6 +61,7 @@ mod picker;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod picker_bridge;
 mod providers;
+mod pump;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod providers_bridge;
 #[cfg(test)]

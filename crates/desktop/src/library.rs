@@ -10,7 +10,7 @@ pub(crate) mod state;
 use crate::library_bridge::qobject;
 
 use core::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::Mutex;
 
 use std::path::Path;
 
@@ -22,20 +22,13 @@ use pg_model::notice::{FilePass, Notice};
 use pg_model::progress::Phase;
 
 use crate::app;
+use crate::pump::Pending;
 use crate::picker;
 use crate::picker::state::Purpose;
 
 /// The library, once `start` has started it: what the change pump and the folder operations read.
 fn running() -> Option<&'static pg_app::Library> {
     app::get().library().running()
-}
-
-/// The changes the pump has taken off the bus and the Qt thread hasn't handled, and whether a pass is queued for them.
-/// At most one pass is queued at a time, so the Qt thread runs one per event-loop turn at most.
-#[derive(Default)]
-struct Pending {
-    changes: Changes,
-    queued: bool,
 }
 
 /// What the pending changes come to: each kind is handled once per pass, however many came in. The rounds are counted.
@@ -60,11 +53,6 @@ impl Changes {
             Change::Round => self.rounds += 1,
         }
     }
-}
-
-fn lock(shared: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
-    // A panic on the other side leaves the changes as they were: the next pass handles them.
-    shared.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Why a job failed on a file: the error's text, or the words for a panic the job caught on it.
@@ -129,26 +117,14 @@ impl qobject::Library {
         };
         // Subscribed before the pump starts, so no change is missed between the start and the first one it handles.
         let changes = library.changes().subscribe();
-        let shared: Arc<Mutex<Pending>> = Arc::default();
-        let thread = self.qt_thread();
         // Without its thread the window isn't told the library's changes; the log says why.
-        let pump = std::thread::Builder::new().name("library changes".into()).spawn(move || {
-            while let Some(change) = changes.recv() {
-                // Queued only when no pass is: a pass that is queued reads what this change is added to.
-                let queue = {
-                    let mut pending = lock(&shared);
-                    pending.changes.add(change);
-                    !std::mem::replace(&mut pending.queued, true)
-                };
-                if queue {
-                    let pass = Arc::clone(&shared);
-                    // Fails only when the window is gone: the pump ends with it.
-                    if thread.queue(move |library| library.on_pass(pass)).is_err() {
-                        break;
-                    }
-                }
-            }
-        });
+        let pump = crate::pump::start(
+            "library changes",
+            self.qt_thread(),
+            move || changes.recv(),
+            Changes::add,
+            |library, pending| library.on_pass(&pending),
+        );
         if let Err(e) = pump {
             pg_log::warn("library", &format!("the change pump didn't start: {e}"));
         }
@@ -158,12 +134,8 @@ impl qobject::Library {
     }
 
     /// One pass on the Qt thread: the changes that came in since the last one, each kind handled once, in this order.
-    fn on_pass(mut self: Pin<&mut Self>, shared: Arc<Mutex<Pending>>) {
-        let taken = {
-            let mut pending = lock(&shared);
-            pending.queued = false;
-            std::mem::take(&mut pending.changes)
-        };
+    fn on_pass(mut self: Pin<&mut Self>, pending: &Mutex<Pending<Changes>>) {
+        let taken = Pending::take(pending);
         if taken.progress {
             self.as_mut().refresh_progress();
         }

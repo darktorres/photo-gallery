@@ -64,7 +64,7 @@ impl Status {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter, strum::EnumCount)]
 #[strum(serialize_all = "snake_case")]
 pub enum BorderFacet {
     None,

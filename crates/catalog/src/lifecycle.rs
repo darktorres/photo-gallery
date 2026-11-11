@@ -14,20 +14,27 @@ use crate::core::write_transaction;
 use crate::error::{Error, Result};
 use crate::types::{TAKEN_ZONE_QUERY, rules_name};
 
-/// Refuse a catalog whose paths were stored under other rules than these (`meta.path_rules`): its bytes don't read as
+/// Why the paths of the catalog on `conn` don't read as paths under `rules` (`meta.path_rules`): they were stored under
+/// other rules, or before the rules were recorded. `None` when they were stored under these. Opening refuses such a
+/// catalog ([`check_rules`]); a rebuild carries none of its rows (`rebuild::rebuild`).
+pub(crate) fn rules_mismatch(conn: &Connection, rules: PathRules) -> rusqlite::Result<Option<String>> {
+    let found: Option<String> =
+        conn.query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0)).optional()?;
+    Ok(match found.as_deref() {
+        Some(name) if name == rules_name(rules) => None,
+        Some(name) => Some(format!("made with the {name} path rules")),
+        None => Some("made before its path rules were recorded".to_string()),
+    })
+}
+
+/// Refuse a catalog whose paths were stored under other rules than these ([`rules_mismatch`]): its bytes don't read as
 /// paths under these. `Catalog::prepare` has already made sure the schema is this build's,
 /// which includes the rules row, so a missing row can only be refused here, as a file this build can't read.
 pub(crate) fn check_rules(conn: &Connection, path: &Path, rules: PathRules) -> Result<()> {
-    let found: Option<String> =
-        conn.query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0)).optional()?;
-    if found.as_deref() == Some(rules_name(rules)) {
-        return Ok(());
+    match rules_mismatch(conn, rules)? {
+        None => Ok(()),
+        Some(detail) => Err(Error::PathRules { path: path.display().to_string(), detail, wanted: rules_name(rules) }),
     }
-    let detail = match &found {
-        Some(f) => format!("made with the {f} path rules"),
-        None => "made before its path rules were recorded".to_string(),
-    };
-    Err(Error::PathRules { path: path.display().to_string(), detail, wanted: rules_name(rules) })
 }
 
 /// The lock `Catalog::prepare` holds on the catalog (`pg_dbfile::Lock`): two processes
@@ -65,16 +72,8 @@ pub(crate) fn take_shared(path: &Path) -> Result<pg_dbfile::Live> {
 /// moves on, so the thumbnail pass looks at all of them once. Checked and set in one write transaction, so two
 /// processes opening the catalog at once do it once.
 pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<()> {
-    let version = |c: &Connection| -> Result<i64> {
-        Ok(c.query_row("SELECT value FROM meta WHERE key = 'import_version'", [], |r| r.get(0))?)
-    };
-    if version(conn)? == current {
-        return Ok(());
-    }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if version(&tx)? != current {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'import_version'", [current])?;
-        tx.execute_batch(concat!(
+    set_mark(conn, "import_version", &current, |tx| {
+        Ok(tx.execute_batch(concat!(
             "UPDATE files SET pending = ",
             stale!(),
             "; ",
@@ -82,7 +81,26 @@ pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<()> 
             "; UPDATE files SET seq = ",
             seq!(),
             ";"
-        ))?;
+        ))?)
+    })
+}
+
+/// Set the mark `key` of `meta` to `current`, and when it was another, make the rows follow it (`recompute`): checked
+/// before and again inside one immediate write transaction, so two processes opening the catalog at once do it once.
+fn set_mark<T>(conn: &Connection, key: &str, current: &T, recompute: impl FnOnce(&Transaction) -> Result<()>) -> Result<()>
+where
+    T: rusqlite::types::FromSql + rusqlite::ToSql + PartialEq,
+{
+    let stored = |c: &Connection| -> Result<T> {
+        Ok(c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))?)
+    };
+    if stored(conn)? == *current {
+        return Ok(());
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    if stored(&tx)? != *current {
+        tx.execute("UPDATE meta SET value = ?1 WHERE key = ?2", rusqlite::params![current, key])?;
+        recompute(&tx)?;
     }
     Ok(tx.commit()?)
 }
@@ -110,66 +128,41 @@ pub(crate) fn mark_unheld_missing(conn: &Connection) -> Result<usize> {
 }
 
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
-/// every analysis that can have borders is due. Like [`set_import_version`], in one write transaction.
+/// every analysis that can have borders is due. Like [`set_import_version`], one [`set_mark`].
 pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<()> {
-    let version = |c: &Connection| -> Result<i64> {
-        Ok(c.query_row("SELECT value FROM meta WHERE key = 'borders_version'", [], |r| r.get(0))?)
-    };
-    if version(conn)? == current {
-        return Ok(());
-    }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if version(&tx)? != current {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [current])?;
+    set_mark(conn, "borders_version", &current, |tx| {
         tx.execute_batch(concat!("UPDATE analysis SET borders_due = coalesce(", has_borders!(), ", 0)"))?;
         // Every file is looked at again by the new detector: what the old one failed on is not known to fail.
         tx.execute("DELETE FROM file_failures WHERE pass = 'borders'", [])?;
-    }
-    Ok(tx.commit()?)
+        Ok(())
+    })
 }
 
 /// Make the thumbnails' failure ledger this build's: when the catalog's `meta.thumbs_version` is another
 /// (`pg_render::THUMBS_VERSION`, a decoder that may take what the old one failed on), the files whose thumbnail panicked
 /// are listed again for the pass (the others are, by the pass's own rule), and the rows go: the next pass records what
 /// still fails. The cache's checkpoint holds the panicked files back too, and keeps a mark of its own
-/// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], in one write transaction.
+/// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`].
 pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<()> {
-    let version = |c: &Connection| -> Result<i64> {
-        Ok(c.query_row("SELECT value FROM meta WHERE key = 'thumbs_version'", [], |r| r.get(0))?)
-    };
-    if version(conn)? == current {
-        return Ok(());
-    }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if version(&tx)? != current {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'thumbs_version'", [current])?;
+    set_mark(conn, "thumbs_version", &current, |tx| {
         tx.execute_batch(next_seq!())?;
         tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?;
         tx.execute("DELETE FROM file_failures WHERE pass = 'thumbs'", [])?;
-    }
-    Ok(tx.commit()?)
+        Ok(())
+    })
 }
 
 /// Make `analysis.taken` follow this system's zone: when `meta.taken_zone` is another fingerprint (the zone changed,
 /// or the catalog was made under another), every UTC-sourced `taken` is computed again from its `taken_utc` instant.
-/// Like [`set_import_version`], in one write transaction. The stored instants are what make this possible: the wall
+/// Like [`set_import_version`], one [`set_mark`]. The stored instants are what make this possible: the wall
 /// clock alone would lose the instant of a repeated hour.
 pub(crate) fn set_taken_zone(conn: &Connection) -> Result<()> {
-    let stored = |c: &Connection| -> Result<String> {
-        Ok(c.query_row("SELECT value FROM meta WHERE key = 'taken_zone'", [], |r| r.get(0))?)
-    };
     let current: String = conn.query_row(TAKEN_ZONE_QUERY, [], |r| r.get(0))?;
-    if stored(conn)? == current {
-        return Ok(());
-    }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if stored(&tx)? != current {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [&current])?;
-        tx.execute_batch(
+    set_mark(conn, "taken_zone", &current, |tx| {
+        Ok(tx.execute_batch(
             "UPDATE analysis SET taken = unixepoch(taken_utc, 'unixepoch', 'localtime') WHERE taken_utc IS NOT NULL",
-        )?;
-    }
-    Ok(tx.commit()?)
+        )?)
+    })
 }
 
 #[cfg(test)]
@@ -320,9 +313,9 @@ mod tests {
         let dir = test_folder(SCRATCH, &format!("keeps-rows-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
-        raw::add_scan(&c, 1, &spelled(rules, r"D:\p"));
-        raw::add_folder(&c, 1, &spelled(rules, r"D:\p"));
-        raw::add_folder(&c, 2, &spelled(rules, r"D:\p\Sub"));
+        crate::fixture::state::add_scan(&c, 1, &spelled(rules, r"D:\p")).unwrap();
+        crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\p")).unwrap();
+        crate::fixture::state::add_folder(&c, 2, &spelled(rules, r"D:\p\Sub")).unwrap();
         fixture::insert(
             &c,
             &[
@@ -375,8 +368,8 @@ mod tests {
         let path = dir.join("catalog.sqlite");
         let rules = PathRules::Posix;
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
-        raw::add_scan(&c, 1, "/p");
-        raw::add_folder(&c, 1, "/p");
+        crate::fixture::state::add_scan(&c, 1, "/p").unwrap();
+        crate::fixture::state::add_folder(&c, 1, "/p").unwrap();
         fixture::insert(&c, &[fixture::File::new(FileId::new(11), FolderId::new(1), "B.jpg", 100, 5)]).unwrap();
         assert!(c.add_root(&p(rules, "/p")).unwrap());
         drop(c);
@@ -432,8 +425,8 @@ mod tests {
         let dir = test_folder(SCRATCH, "text-temps").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
-        raw::add_scan(&c, 1, r"D:\p");
-        raw::add_folder(&c, 1, r"D:\p");
+        crate::fixture::state::add_scan(&c, 1, r"D:\p").unwrap();
+        crate::fixture::state::add_folder(&c, 1, r"D:\p").unwrap();
         fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5)]).unwrap();
         drop(c);
         let old = Connection::open(&path).unwrap();
@@ -666,10 +659,10 @@ mod tests {
     fn posix_paths_are_bytes_under_case_sensitive_rules() {
         let c = Catalog::prepare(Path::new(":memory:"), versions(), PathRules::Posix).unwrap();
         let rules = c.rules();
-        raw::add_scan(&c, 1, "/photos");
-        raw::add_folder(&c, 1, "/photos");
-        raw::add_folder(&c, 2, "/photos/Pics");
-        raw::add_folder(&c, 3, "/photos/pics");
+        crate::fixture::state::add_scan(&c, 1, "/photos").unwrap();
+        crate::fixture::state::add_folder(&c, 1, "/photos").unwrap();
+        crate::fixture::state::add_folder(&c, 2, "/photos/Pics").unwrap();
+        crate::fixture::state::add_folder(&c, 3, "/photos/pics").unwrap();
         fixture::insert(
             &c,
             &[

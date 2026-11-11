@@ -187,7 +187,7 @@ under_both_rules!(
 fn folders_in_the_trees_order(rules: PathRules) {
     let c = library(rules);
     // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
-    raw::add_folder(&c, 4, &spelled(rules, r"D:\p-x"));
+    crate::fixture::state::add_folder(&c, 4, &spelled(rules, r"D:\p-x")).unwrap();
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(4), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
     let tree = c.folder_tree().unwrap();
@@ -201,7 +201,7 @@ under_both_rules!(folders_in_the_trees_order, folders_in_the_trees_order_windows
 /// files are what the empty folder lists without subfolders (the "Drive roots" row).
 fn the_tree_counts_what_the_grid_lists(rules: PathRules) {
     let c = library(rules);
-    raw::add_folder(&c, 5, &spelled(rules, r"D:\"));
+    crate::fixture::state::add_folder(&c, 5, &spelled(rules, r"D:\")).unwrap();
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(5), "root.jpg", 1, 1)]).unwrap();
     let tree = c.folder_tree().unwrap();
     let all = ids(&c, "", true, &Query::default(), Sort::default());
@@ -863,7 +863,7 @@ under_both_rules!(
 /// that same key. (Before S-17.8 the scope lower-cased the name whole, to ς, and listed nothing.)
 fn a_folder_ending_in_sigma_lists_its_files(rules: PathRules) {
     let c = library(rules);
-    raw::add_folder(&c, 9, &spelled(rules, r"D:\ΑΣ"));
+    crate::fixture::state::add_folder(&c, 9, &spelled(rules, r"D:\ΑΣ")).unwrap();
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(9), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "ΑΣ", false, &Query::default(), Sort::default()), [9]);
     assert_eq!(ids(&c, "ΑΣ", true, &Query::default(), Sort::default()), [9]);
@@ -891,9 +891,9 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
         PathRules::Posix,
     )
     .unwrap();
-    raw::add_scan(&c, 1, "/");
-    raw::add_folder(&c, 1, "/photos/Pics");
-    raw::add_folder(&c, 2, "/photos/pics");
+    crate::fixture::state::add_scan(&c, 1, "/").unwrap();
+    crate::fixture::state::add_folder(&c, 1, "/photos/Pics").unwrap();
+    crate::fixture::state::add_folder(&c, 2, "/photos/pics").unwrap();
     fixture::insert(
         &c,
         &[

@@ -238,6 +238,10 @@ pub struct Status {
 }
 
 pub(crate) const DELETE_SIDES: &str = "DELETE FROM border_sides WHERE file_id = ?1";
+/// The user's rating of a file (`ratings`), set (`?1` the file, `?2` the rating) and cleared.
+pub(crate) const SET_RATING: &str = "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
+     ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated";
+pub(crate) const DELETE_RATING: &str = "DELETE FROM ratings WHERE file_id = ?1";
 pub(crate) const SET_FILE_RATING: &str = "INSERT INTO file_ratings(file_id, value) VALUES (?1, ?2)
      ON CONFLICT(file_id) DO UPDATE SET value = excluded.value";
 pub(crate) const DELETE_FILE_RATING: &str = "DELETE FROM file_ratings WHERE file_id = ?1";

@@ -20,8 +20,14 @@ macro_rules! shrink_step_pages {
 
 const SHRINK_STEPS: usize = 16;
 
-/// The totals as they were and as the entries have them, when `heal` had to fix them: (bytes, count) each.
-pub type Drift = ((i64, i64), (i64, i64));
+/// The totals as they were and as the entries have them, when `heal` had to fix them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Drift {
+    /// The kept totals: bytes and entries.
+    pub kept: (i64, i64),
+    /// The entries' own sums: bytes and entries.
+    pub actual: (i64, i64),
+}
 
 pub(crate) fn unix_now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
@@ -50,7 +56,7 @@ pub(crate) fn heal(conn: &mut Connection) -> Result<Option<Drift>> {
     }
     tx.execute("UPDATE totals SET bytes = ?1, count = ?2", params![actual.0, actual.1])?;
     tx.commit()?;
-    Ok(Some((kept, actual)))
+    Ok(Some(Drift { kept, actual }))
 }
 
 pub(crate) fn shrink(conn: &Connection) -> Result<()> {

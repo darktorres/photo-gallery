@@ -19,6 +19,47 @@ macro_rules! next_seq {
         "UPDATE meta SET value = value + 1 WHERE key = 'seq'"
     };
 }
+/// A trigger that stamps a file's `changed` (`files.changed`, the next `seq`) when a row of `table` that names it
+/// (by `file_id`, of the `new` or `old` row) changes: `name`, after `event`, optionally only `when` the condition holds.
+/// The text is the one the triggers were written with, piece by piece.
+macro_rules! stamp {
+    ($name:literal, $event:literal, $table:literal, $row:ident) => {
+        concat!(
+            "CREATE TRIGGER ",
+            $name,
+            " AFTER ",
+            $event,
+            " ON ",
+            $table,
+            " BEGIN\n    ",
+            next_seq!(),
+            ";\n    UPDATE files SET changed = ",
+            seq!(),
+            " WHERE id = ",
+            stringify!($row),
+            ".file_id;\nEND;\n"
+        )
+    };
+    ($name:literal, $event:literal, $table:literal, $row:ident, when $when:literal) => {
+        concat!(
+            "CREATE TRIGGER ",
+            $name,
+            " AFTER ",
+            $event,
+            " ON ",
+            $table,
+            "\nWHEN ",
+            $when,
+            "\nBEGIN\n    ",
+            next_seq!(),
+            ";\n    UPDATE files SET changed = ",
+            seq!(),
+            " WHERE id = ",
+            stringify!($row),
+            ".file_id;\nEND;\n"
+        )
+    };
+}
 macro_rules! seq {
     () => {
         "(SELECT value FROM meta WHERE key = 'seq')"

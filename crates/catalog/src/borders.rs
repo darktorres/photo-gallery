@@ -48,10 +48,7 @@ pub(crate) fn border_sides_on(conn: &Connection, file_id: FileId) -> Result<dete
             edge: detection::Edge::from_key(edge).ok_or_else(|| unknown(1, edge))?,
             kind: detection::Kind::from_key(kind).ok_or_else(|| unknown(2, kind))?,
             depth: r.get(3)?,
-            color: color.map(|c| {
-                let [.., r, g, b] = c.to_be_bytes();
-                [r, g, b]
-            }),
+            color: color.map(detection::Side::unpacked_color),
             straight: r.get(5)?,
             dev: r.get(6)?,
             drift: r.get(7)?,

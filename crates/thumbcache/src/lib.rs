@@ -98,7 +98,7 @@ impl ThumbCache {
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
-        if let Some((kept, actual)) = drift {
+        if let Some(Drift { kept, actual }) = drift {
             events.publish(Event::TotalsFixed { kept, actual });
         }
         let inbox = Arc::new(Inbox::new());
@@ -121,6 +121,13 @@ impl ThumbCache {
         }
         store.writer.wake();
         Ok(())
+    }
+
+    /// Hands the writer the op `op` makes around its reply channel, and waits for the answer.
+    fn call<T>(&self, op: impl FnOnce(mpsc::Sender<T>) -> Op) -> Result<T> {
+        let (reply, answer) = mpsc::channel();
+        self.send(op(reply))?;
+        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))
     }
 
     /// The cached thumbnail closest to `height` that was made from the file as it is now (`source`): the smallest
@@ -182,9 +189,7 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(false);
         }
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::Put { thumbs: std::mem::take(thumbs), keep_height, reply })?;
-        let (stored, back) = answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?;
+        let (stored, back) = self.call(|reply| Op::Put { thumbs: std::mem::take(thumbs), keep_height, reply })?;
         *thumbs = back;
         stored
     }
@@ -195,9 +200,7 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(());
         }
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::Retag { file_id, old_mtime, new_mtime, reply })?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.call(|reply| Op::Retag { file_id, old_mtime, new_mtime, reply })?
     }
 
     /// Drop the thumbnails of a file whose content was replaced under its id (the catalog's pairing says which). Waits.
@@ -205,9 +208,7 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(());
         }
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::Forget { file_id, reply })?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.call(|reply| Op::Forget { file_id, reply })?
     }
 
     /// Drop the thumbnail of `file_id` at `height`, for one that doesn't decode, and forget how far that height was
@@ -217,9 +218,7 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(());
         }
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::ForgetHeight { file_id, height, reply })?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.call(|reply| Op::ForgetHeight { file_id, height, reply })?
     }
 
     /// What the cache file at `path` holds and may hold, read without opening it for writing (nothing created, nothing
@@ -273,9 +272,7 @@ impl ThumbCache {
             return Ok(());
         }
         let through = first_failed.map_or(snapshot.seq, |seq| snapshot.seq.min(seq - 1));
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::Checked { snapshot: *snapshot, through, reply })?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.call(|reply| Op::Checked { snapshot: *snapshot, through, reply })?
     }
 
     /// Check the totals against the entries, and fix them if they differ (only a writer that bypassed the
@@ -284,9 +281,7 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(None);
         }
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::Heal(reply))?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.call(Op::Heal)?
     }
 
     /// Give back free pages to the file system, a bounded amount (the task does this at idle).
@@ -294,9 +289,7 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(());
         }
-        let (reply, answer) = mpsc::channel();
-        self.send(Op::Shrink(reply))?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.call(Op::Shrink)?
     }
 
     /// Wait until everything handed to the writer so far is written (touches included).
@@ -888,7 +881,7 @@ mod tests {
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
-        assert_eq!(cache.heal().unwrap(), Some(((999, 7), (30, 2))));
+        assert_eq!(cache.heal().unwrap(), Some(Drift { kept: (999, 7), actual: (30, 2) }));
         assert_eq!(cache.totals().unwrap(), (30, 2));
         assert_eq!(cache.heal().unwrap(), None);
     }

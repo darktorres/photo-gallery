@@ -350,6 +350,11 @@ fn total_and_cap(conn: &Connection) -> Result<(i64, i64)> {
     Ok(conn.query_row("SELECT t.bytes, l.cap FROM totals t, limits l", [], |r| Ok((r.get(0)?, r.get(1)?)))?)
 }
 
+/// A height (`?1`) forgets how far it was checked (`checked.seq`), and counts an eviction, so a pass that read its work
+/// before doesn't store its watermark: what an eviction does to each height it took from, and a forgotten thumbnail.
+const FORGET_WATERMARK: &str = "INSERT INTO checked(height, seq, evictions) VALUES (?1, NULL, 1)
+     ON CONFLICT(height) DO UPDATE SET seq = NULL, evictions = evictions + 1";
+
 /// Delete the least recently used entries, sparing `keep_height`, until `target` bytes are freed or none is left;
 /// returns the bytes freed. The heights evicted from forget how far they were checked (`checked`), and count the
 /// eviction, so a pass that read its work before it doesn't store its watermark.
@@ -372,10 +377,7 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<u32>) -> Result<i64>
     for id in victims {
         delete.execute([id])?;
     }
-    let mut forget = tx.prepare_cached(
-        "INSERT INTO checked(height, seq, evictions) VALUES (?1, NULL, 1)
-         ON CONFLICT(height) DO UPDATE SET seq = NULL, evictions = evictions + 1",
-    )?;
+    let mut forget = tx.prepare_cached(FORGET_WATERMARK)?;
     for height in heights {
         forget.execute([height])?;
     }
@@ -387,11 +389,7 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<u32>) -> Result<i64>
 fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: u32) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height])?;
-    tx.execute(
-        "INSERT INTO checked(height, seq, evictions) VALUES (?1, NULL, 1)
-         ON CONFLICT(height) DO UPDATE SET seq = NULL, evictions = evictions + 1",
-        [height],
-    )?;
+    tx.execute(FORGET_WATERMARK, [height])?;
     tx.commit()?;
     Ok(())
 }

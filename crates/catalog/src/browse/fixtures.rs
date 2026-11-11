@@ -59,12 +59,12 @@ pub(crate) fn library(rules: PathRules) -> crate::Catalog {
     )
     .unwrap();
     let second: i64 = if rules == PathRules::Windows { 2 } else { 1 };
-    raw::add_scan(&c, 1, &spelled(rules, "D:"));
-    raw::add_folder(&c, 1, &spelled(rules, r"D:\p"));
+    crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
+    crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\p")).unwrap();
     if rules == PathRules::Windows {
-        raw::add_folder(&c, 2, r"E:\p");
+        crate::fixture::state::add_folder(&c, 2, r"E:\p").unwrap();
     }
-    raw::add_folder(&c, 3, &spelled(rules, r"D:\p\sub"));
+    crate::fixture::state::add_folder(&c, 3, &spelled(rules, r"D:\p\sub")).unwrap();
     for (id, folder, name, size, mtime, format, rating) in [
         (1, 1, "b.jpg", 30, 3, "jpeg", 4),
         (2, second, "a.png", 10, 9, "png", 0),

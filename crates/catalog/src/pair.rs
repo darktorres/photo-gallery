@@ -283,10 +283,34 @@ fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3], scan: i64) -> Result<Vec<F
 /// id, ratings, rotation, analysis and content.
 fn rebind(tx: &Transaction, id: i64, from: &Fresh, scan: i64) -> Result<()> {
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
+    take_identity(tx, REBIND, id, from, scan)
+}
+
+/// The row `?1` takes the identity and the place of a new file: its volume, reference, creation time (`created`: kept
+/// when the new file has none, or the new file's), folder, name, kind, size, time and scan, present and paired. `reset`
+/// is what else the take resets (a replacement's rotation).
+macro_rules! take_identity {
+    ($created:literal, $reset:literal) => {
+        concat!(
+            "UPDATE files SET volume = ?2, file_ref = ?3, created = ",
+            $created,
+            ", folder_id = ?5, name = ?6, ext = ?7, kind = ?8, size = ?9, mtime = ?10, last_scan = ?11, missing = 0,
+            unpaired = 0",
+            $reset,
+            ", order_key = ?12 WHERE id = ?1"
+        )
+    };
+}
+
+/// [`rebind`]'s take: the old row keeps its creation time when the fresh one has none, and its rotation.
+const REBIND: &str = take_identity!("coalesce(?4, created)", "");
+/// [`replace`]'s take: the new file's creation time, and no rotation (the old file's turns are not the new one's).
+const REPLACE: &str = take_identity!("?4", ", rotation = 0");
+
+/// Runs `sql` (a take of [`take_identity!`]) for the row `id` and the fresh row `from`, in the scan `scan`.
+fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh, scan: i64) -> Result<()> {
     tx.execute(
-        "UPDATE files SET volume = ?2, file_ref = ?3, created = coalesce(?4, created), folder_id = ?5, name = ?6,
-            ext = ?7, kind = ?8, size = ?9, mtime = ?10, last_scan = ?11, missing = 0, unpaired = 0, order_key = ?12
-         WHERE id = ?1",
+        sql,
         params![
             id,
             from.volume,
@@ -345,26 +369,7 @@ fn replace(
     // replacement with the same size, time and turn).
     tx.execute("DELETE FROM file_failures WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
-    tx.execute(
-        "UPDATE files SET volume = ?2, file_ref = ?3, created = ?4, folder_id = ?5, name = ?6, ext = ?7, kind = ?8,
-            size = ?9, mtime = ?10, last_scan = ?11, missing = 0, unpaired = 0, rotation = 0, order_key = ?12
-         WHERE id = ?1",
-        params![
-            id,
-            from.volume,
-            from.file_ref,
-            from.created,
-            from.folder_id,
-            from.name,
-            from.ext.name(),
-            from.kind.key(),
-            from.size,
-            from.mtime,
-            scan,
-            from.order_key
-        ],
-    )?;
-    Ok(())
+    take_identity(tx, REPLACE, id, from, scan)
 }
 
 #[cfg(test)]

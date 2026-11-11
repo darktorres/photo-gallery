@@ -12,22 +12,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::error::{Error, Result};
 use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, bring_to, current_version};
-use crate::types::{Rebuilt, rules_name};
-
-/// Whether the rows of the catalog `old` may be carried into a catalog under `rules`: they were stored under those rules
-/// (`meta.path_rules`). Paths stored under other rules don't read as paths under these, so none of them is carried; the
-/// reason says why, for the note.
-fn stored_under(old: &Connection, rules: PathRules) -> std::result::Result<(), String> {
-    let recorded: Option<String> = old
-        .query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0))
-        .optional()
-        .map_err(|e| format!("its path rules can't be read: {e}"))?;
-    match recorded.as_deref() {
-        Some(name) if name == rules_name(rules) => Ok(()),
-        Some(name) => Err(format!("made with the {name} path rules")),
-        None => Err("made before its path rules were recorded".to_string()),
-    }
-}
+use crate::types::Rebuilt;
 
 /// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
 fn count(rows: i64) -> u64 {
@@ -67,7 +52,13 @@ pub(crate) fn rebuild(old: Connection, path: &Path, rules: PathRules, why: Strin
     let source = if readable {
         // The changes still in the old file's `-wal` are checkpointed into it, so the copy reads all of them.
         old.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
-        stored_under(&old, rules)
+        // Paths stored under other rules don't read as paths under these, so none of them is carried; the reason
+        // says why, for the note.
+        match crate::lifecycle::rules_mismatch(&old, rules) {
+            Ok(None) => Ok(()),
+            Ok(Some(reason)) => Err(reason),
+            Err(e) => Err(format!("its path rules can't be read: {e}")),
+        }
     } else {
         Err("the old file holds no catalog".to_string())
     };

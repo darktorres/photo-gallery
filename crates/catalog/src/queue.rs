@@ -21,7 +21,7 @@ use pg_model::turns::Turns;
 use pg_model::write::{Write, WriteKind};
 use pg_model::{write_rating, write_rotation};
 
-use crate::types::{DELETE_FILE_RATING, SET_FILE_RATING};
+use crate::types::{DELETE_FILE_RATING, DELETE_RATING, SET_FILE_RATING, SET_RATING};
 
 /// Failed writes are retried at most this many times (offline drives retry without counting).
 pub const MAX_ATTEMPTS: i64 = 5;
@@ -80,12 +80,8 @@ impl Catalog {
         let tx = crate::core::write_transaction(conn)?;
         let file_id = file_id.get();
         match rating {
-            Some(rating) => tx.execute(
-                "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
-                 ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated",
-                params![file_id, rating.get()],
-            )?,
-            None => tx.execute("DELETE FROM ratings WHERE file_id = ?1", [file_id])?,
+            Some(rating) => tx.execute(SET_RATING, params![file_id, rating.get()])?,
+            None => tx.execute(DELETE_RATING, [file_id])?,
         };
         // The file's kind, its analyzed format, and whether its analysis failed (a file the import couldn't read isn't
         // written into).

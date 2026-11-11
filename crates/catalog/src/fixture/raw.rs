@@ -56,15 +56,6 @@ pub(crate) fn slow_count(c: &Catalog) -> rusqlite::Result<i64> {
     c.conn.query_row(long, [], |r| r.get(0))
 }
 
-pub(crate) fn add_scan(c: &Catalog, id: i64, root: &str) {
-    c.conn.execute("INSERT INTO scans(id, root, started) VALUES (?1, ?2, 0)", params![id, root]).unwrap();
-}
-
-pub(crate) fn add_folder(c: &Catalog, id: i64, path: &str) {
-    let (bytes, key) = super::folder_row(c, path).unwrap();
-    c.conn.execute("INSERT INTO folders(id, path, key) VALUES (?1, ?2, ?3)", params![id, bytes, key]).unwrap();
-}
-
 pub(crate) fn set_missing(c: &Catalog, id: FileId) {
     c.conn.execute("UPDATE files SET missing = 1 WHERE id = ?1", [id.get()]).unwrap();
 }

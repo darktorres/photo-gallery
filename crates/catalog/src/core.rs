@@ -386,11 +386,11 @@ mod tests {
 
     fn files_marked_are_imported_again_once(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        raw::add_scan(&c, 1, &spelled(rules, "D:"));
-        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
-        raw::add_folder(&c, 2, &spelled(rules, r"D:\x\y"));
-        raw::add_folder(&c, 3, &spelled(rules, r"D:\xy"));
-        raw::add_folder(&c, 4, &spelled(rules, r"D:\x\y\z"));
+        crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
+        crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\x")).unwrap();
+        crate::fixture::state::add_folder(&c, 2, &spelled(rules, r"D:\x\y")).unwrap();
+        crate::fixture::state::add_folder(&c, 3, &spelled(rules, r"D:\xy")).unwrap();
+        crate::fixture::state::add_folder(&c, 4, &spelled(rules, r"D:\x\y\z")).unwrap();
         let files = [(1, 1, "a.jpg"), (2, 2, "b.jpg"), (3, 3, "c.jpg"), (4, 4, "d.jpg"), (5, 4, "e.jpg")];
         let files =
             files.map(|(id, folder, name)| fixture::File::new(FileId::new(id), FolderId::new(folder), name, 10, 100));

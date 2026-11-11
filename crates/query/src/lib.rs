@@ -19,10 +19,17 @@ use pg_model::media::MediaType;
 
 // SQL used in more than one place is a macro, so every piece is a constant (`concat!`).
 
+/// A file with borders found: its analysis cuts something off.
+macro_rules! cut {
+    () => {
+        "a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0"
+    };
+}
+
 /// A file with borders found that the user didn't mark as not a border.
 macro_rules! bordered {
     () => {
-        "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NULL)"
+        concat!("(", cut!(), " AND m.file_id IS NULL)")
     };
 }
 
@@ -159,7 +166,7 @@ pub fn local_start_sql() -> String {
 }
 
 /// One the user marked.
-const MARKED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NOT NULL)";
+const MARKED: &str = concat!("(", cut!(), " AND m.file_id IS NOT NULL)");
 
 /// A facet whose own values are left out when counting it (`Catalog::facets`): each value's count is what choosing it
 /// would show, given the other facets.

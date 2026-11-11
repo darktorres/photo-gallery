@@ -787,6 +787,10 @@ Each fix gets a test that fails before it.
   - The change pump is written twice: `desktop/src/library.rs` and `desktop/src/yandex.rs` (`ensure_pump`).
   - `screenshot::schedule` parses `--wait` the way `command_line::number_of` does.
 - Gate: `just test`.
+- **Done in step 9.**
+  - The catalog: `lifecycle::rules_mismatch` is the one reading of `meta.path_rules` (`check_rules` refuses on it, the rebuild carries nothing on it); `set_mark(key, current, recompute)` holds the check, the immediate transaction and the check again, and the four marks (`set_thumbs_version` too) are its callers; `stamp!(name, event, table, new|old[, when ...])` writes the 15 stamp triggers (the migration that rebuilds `file_writes` repeats three) with the same text; `types::SET_RATING` and `DELETE_RATING`; `pair`'s `take_identity!` makes `REBIND` and `REPLACE` (which differ in `created` and the rotation), bound by one `take_identity` function; `detection::Side::packed_color` and `unpacked_color`; `fixture::raw`'s copies are gone; `BorderFacet::COUNT` (`strum::EnumCount`); `pg_query`'s `cut!` is the sum `bordered!` and `MARKED` share.
+  - The thumbnail cache: `ThumbCache::call` for the seven waiting calls; `writer::FORGET_WATERMARK`; `Drift { kept, actual }`.
+  - The desktop: `pump::start` and `pump::Pending` are the change pump, which the library's model and the Yandex panel start; `command_line::number` reads `--wait`.
 
 ### M-47: the large files the read found
 

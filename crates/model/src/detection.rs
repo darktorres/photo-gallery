@@ -146,6 +146,17 @@ impl Side {
     pub fn class(&self) -> Class {
         Class::of(self.kind, self.color.unwrap_or([128; 3]))
     }
+
+    /// The line colour as one number, `0xRRGGBB` (as the catalog stores it).
+    pub fn packed_color(&self) -> Option<i64> {
+        self.color.map(|[r, g, b]| (i64::from(r) << 16) | (i64::from(g) << 8) | i64::from(b))
+    }
+
+    /// A line colour from its `0xRRGGBB` number ([`Side::packed_color`]); the bytes above the three are ignored.
+    pub fn unpacked_color(packed: i64) -> [u8; 3] {
+        let [.., r, g, b] = packed.to_be_bytes();
+        [r, g, b]
+    }
 }
 
 /// What `borders::detect` (pg-analysis) found in an image of `width` × `height` (stored pixels).

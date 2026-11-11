@@ -13,7 +13,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::Result;
 use crate::types::{
-    DELETE_FILE_RATING, DELETE_SIDES, Folder, Hit, Recorded, SET_FILE_RATING, ScannedFile, WorkItem, under_params,
+    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, Folder, Hit, Recorded, SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, under_params,
 };
 
 // The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
@@ -213,11 +213,8 @@ impl<'tx> AnalysisWriter<'tx> {
                 pg_model::write_rating!(),
                 "')"
             ))?,
-            set_rating: tx.prepare(
-                "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
-                 ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated",
-            )?,
-            delete_rating: tx.prepare("DELETE FROM ratings WHERE file_id = ?1")?,
+            set_rating: tx.prepare(SET_RATING)?,
+            delete_rating: tx.prepare(DELETE_RATING)?,
             set_file_rating: tx.prepare(SET_FILE_RATING)?,
             delete_file_rating: tx.prepare(DELETE_FILE_RATING)?,
             pair: tx.prepare(
@@ -369,7 +366,7 @@ impl<'tx> BordersWriter<'tx> {
         ])?;
         self.delete_sides.execute([item.id.get()])?;
         for s in borders.map_or(&[][..], |b| &b.sides) {
-            let color = s.color.map(|[r, g, b]| (i64::from(r) << 16) | (i64::from(g) << 8) | i64::from(b));
+            let color = s.packed_color();
             self.side.execute(params![
                 item.id.get(),
                 s.pass,
@@ -558,8 +555,8 @@ mod tests {
         // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
         use fixture::{File, insert};
         let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        raw::add_scan(&c, 1, &spelled(rules, r"D:\x"));
-        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
+        crate::fixture::state::add_scan(&c, 1, &spelled(rules, r"D:\x")).unwrap();
+        crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\x")).unwrap();
         insert(&c, &[File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]).unwrap();
         raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
         let before = raw::thumb_source_seq(&c, FileId::new(1));
@@ -576,9 +573,9 @@ mod tests {
     fn thumb_sources_is_the_analysed_files_with_their_folders(rules: PathRules) {
         use fixture::{File, insert};
         let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        raw::add_scan(&c, 1, &spelled(rules, r"D:\x"));
-        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
-        raw::add_folder(&c, 2, &spelled(rules, r"D:\x\sub"));
+        crate::fixture::state::add_scan(&c, 1, &spelled(rules, r"D:\x")).unwrap();
+        crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\x")).unwrap();
+        crate::fixture::state::add_folder(&c, 2, &spelled(rules, r"D:\x\sub")).unwrap();
         insert(
             &c,
             &[

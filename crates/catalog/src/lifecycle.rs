@@ -176,7 +176,7 @@ mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
     use crate::rebuild::backup_path;
-    use crate::schema::{BASELINE, MIGRATIONS, bring_to, current_expected, current_version, mismatch};
+    use crate::schema::{BASELINE, BEFORE_NOTIFY, MIGRATIONS, bring_to, current_expected, current_version, mismatch};
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
     use crate::types::rules_name;
@@ -1053,7 +1053,8 @@ mod tests {
         a_round_with_nothing_to_import_reads_one_index_posix
     );
 
-    /// A catalog at `path` at the version before the inbox's conversion (`TO_8_NOTIFY`), as that build left one. Files
+    /// A catalog at `path` at the version before the inbox's conversion (`TO_8_NOTIFY`, [`BEFORE_NOTIFY`]), as that
+    /// build left one. Files
     /// 1 to 4 (`files.seq` 10, 20, 12 and 30), the first three with failed analyses and the third missing; a thumbnail
     /// failure of file 1 at serial 50; the acknowledgements by time (`dismissed`): the import's mark `import_mark` (a
     /// `files.seq`, as it was then), read and then dismissed, the thumbnails' dismissed after they were read, the
@@ -1061,7 +1062,7 @@ mod tests {
     /// notices.
     fn before_the_inbox_conversion(rules: PathRules, path: &Path, import_mark: i64) {
         let conn = Connection::open(path).unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap() - 1).unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, BEFORE_NOTIFY).unwrap();
         let folder = p(rules, r"D:\p");
         let v = versions();
         conn.execute_batch(&format!(
@@ -1187,10 +1188,10 @@ mod tests {
             assert!(c.rebuilt().is_none(), "migrated, not rebuilt");
             the_inbox_rows_are_converted(&c, mark);
             drop(c);
-            let backup = backup_path(&path, current_version().unwrap() - 1);
+            let backup = backup_path(&path, BEFORE_NOTIFY);
             let kept = std::fs::read(&backup).unwrap();
             let old = Connection::open(&backup).unwrap();
-            assert_eq!(pg_dbfile::user_version(&old).unwrap(), current_version().unwrap() - 1);
+            assert_eq!(pg_dbfile::user_version(&old).unwrap(), BEFORE_NOTIFY);
             drop(old);
             drop(Catalog::prepare(&path, versions(), rules).unwrap());
             assert_eq!(std::fs::read(&backup).unwrap(), kept, "the copy is made once");

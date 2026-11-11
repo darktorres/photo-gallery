@@ -218,9 +218,10 @@ holding the file as the pass read it (mtime, size, rotation), the error, whether
   each time. A new error updates the row and keeps the serial. A file whose mtime, size or rotation changes leaves these
   ledgers (`files_failures_stale`), as does a file made since (the pass's flush, a thumbnail the window made on demand)
   and a replaced file (`pair.rs`). A deleted file's rows go with it.
-- **The import's rows mirror its failed analyses**, kept by triggers on `analysis` (`analysis_import_failed`,
-  `analysis_import_fixed`, `analysis_import_rewritten`, `analysis_import_removed`), with the state of the bytes the
-  analysis read. A re-analysis that fails on the same bytes (an `IMPORT_VERSION` bump, `gallery import --retry`) keeps
+- **The import's rows mirror its failed analyses**, kept by triggers on `analysis` (`analysis_import`,
+  `analysis_import_rewritten`, `analysis_import_removed`), with the state of the bytes the analysis read.
+  `analysis_import` (version 9, in place of version 8's two) fires its body only for a failure or for a file that has
+  a row, so the common analysis, a success with nothing recorded, costs the import one index probe. A re-analysis that fails on the same bytes (an `IMPORT_VERSION` bump, `gallery import --retry`) keeps
   the row and its serial; a changed file that fails again is a new row with a new serial (a dismissed entry comes back);
   a fixed file's row goes, and so does a deleted analysis's. An in-place update of the analysis by a write-back (the
   app rewrote the file: `file_rewritten`, `analysis_turned_back`) copies the new state into the row and keeps the

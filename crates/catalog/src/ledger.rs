@@ -298,17 +298,29 @@ const FILE_LEDGER_OLDEST: &str = file_ledger_end!("ASC");
 const FOLDER_LEDGER_NEWEST: &str = folder_ledger_end!("DESC");
 const FOLDER_LEDGER_OLDEST: &str = folder_ledger_end!("ASC");
 
-/// A file pass's counts over its live rows (`?1` the pass, `?2` seen to, `?3` dismissed to, or NULL).
+/// A count of a file pass's live rows (`?1` the pass) on its index, with `$and` more of its condition.
+macro_rules! file_ledger_count {
+    ($and:literal) => {
+        concat!("(SELECT count(*) FROM file_failures WHERE pass = ?1 AND ", live_failures!(), $and, ")")
+    };
+}
+
+/// A file pass's counts over its live rows (`?1` the pass, `?2` seen to, `?3` dismissed to, or NULL). Each is a count
+/// of its own on the index: the total reads every live row, but the new and the since-dismissed are ranges of serials
+/// above a mark, seeks, so a ledger seen to its end reads nothing more (one pass with filters tested every row).
 pub(crate) const FILE_LEDGER_COUNTS: &str = concat!(
-    "SELECT count(*), count(*) FILTER (WHERE serial > ?2), count(*) FILTER (WHERE ?3 IS NOT NULL AND serial > ?3)
-     FROM file_failures WHERE pass = ?1 AND ",
-    live_failures!()
+    "SELECT ",
+    file_ledger_count!(""),
+    ", ",
+    file_ledger_count!(" AND serial > ?2"),
+    ", ",
+    file_ledger_count!(" AND ?3 IS NOT NULL AND serial > ?3")
 );
 
-/// The scans' ledger's counts (`?2` seen to, `?3` dismissed to, or NULL).
-const FOLDER_LEDGER_COUNTS: &str =
-    "SELECT count(*), count(*) FILTER (WHERE serial > ?2), count(*) FILTER (WHERE ?3 IS NOT NULL AND serial > ?3)
-     FROM folder_failures WHERE ?1 IS NOT NULL";
+/// The scans' ledger's counts (`?2` seen to, `?3` dismissed to, or NULL; `?1` unused), as [`FILE_LEDGER_COUNTS`]'s.
+const FOLDER_LEDGER_COUNTS: &str = "SELECT (SELECT count(*) FROM folder_failures WHERE ?1 IS NOT NULL),
+     (SELECT count(*) FROM folder_failures WHERE serial > ?2),
+     (SELECT count(*) FROM folder_failures WHERE ?3 IS NOT NULL AND serial > ?3)";
 
 /// The end row `sql` reads of `kind`'s ledger (`?1` its pass, for a file pass's).
 fn ledger_end(conn: &Connection, kind: LedgerKind, sql: &str) -> Result<Option<LedgerRow>> {
@@ -774,6 +786,7 @@ mod tests {
         assert!(plan.contains("file_failures_live") && !plan.contains("TEMP B-TREE"), "{plan}");
         let plan = raw::query_plan(&c, FILE_LEDGER_COUNTS, params!["thumbs", 0, Option::<i64>::None]);
         assert!(plan.contains("file_failures_live"), "{plan}");
+        assert_eq!(plan.matches("serial>?").count(), 2, "the marks' counts are ranges: {plan}");
         let plan = raw::query_plan(&c, FOLDER_LEDGER_NEWEST, []);
         assert!(plan.contains("folder_failures_serial") && !plan.contains("TEMP B-TREE"), "{plan}");
     }

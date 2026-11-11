@@ -41,6 +41,20 @@ LARGE_LEDGER_ROWS = 100_000
 # The seeded rows' fixed fields: the same data on every run.
 SEED_ERROR = "bench data: seeded failure"
 SEED_FIRST_SEEN = 1_767_225_600  # 2026-01-01 UTC
+# A pass's seeded rows (pass, error, first seen, pass, how many), for the files by id that have none of that pass: after
+# the notifications' migration a row's `hidden` is its file's `missing`; before it there is no `hidden`.
+SEED_AFTER = (
+    "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)\n"
+    "SELECT f.id, ?, f.mtime, f.size, f.rotation, ?, 1, ?, f.missing FROM files f\n"
+    "WHERE NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = ?)\n"
+    "ORDER BY f.id LIMIT ?"
+)
+SEED_BEFORE = (
+    "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)\n"
+    "SELECT f.id, ?, f.mtime, f.size, f.rotation, ?, 1, ? FROM files f\n"
+    "WHERE NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = ?)\n"
+    "ORDER BY f.id LIMIT ?"
+)
 
 
 def read_only(path: Path) -> sqlite3.Connection:
@@ -94,25 +108,16 @@ def seed_ledger(catalog: Path, rows: int) -> None:
     conn = sqlite3.connect(catalog)
     ledger = columns(conn, "file_failures")
     after = "hidden" in ledger
-    if after:
-        have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0]
-    else:
-        have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0] + conn.execute(
-            "SELECT count(*) FROM analysis WHERE error IS NOT NULL"
-        ).fetchone()[0]
+    have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0]
+    if not after:
+        have += conn.execute("SELECT count(*) FROM analysis WHERE error IS NOT NULL").fetchone()[0]
     files = conn.execute("SELECT count(*) FROM files").fetchone()[0]
+    seed = SEED_AFTER if after else SEED_BEFORE
     for pass_ in ("thumbs", "borders"):
         wanted = rows - have
         if wanted <= 0:
             break
-        hidden_column, hidden_value = (", hidden", ", f.missing") if after else ("", "")
-        conn.execute(
-            f"INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen{hidden_column})\n"
-            f"SELECT f.id, ?, f.mtime, f.size, f.rotation, ?, 1, ?{hidden_value} FROM files f\n"
-            "WHERE NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = ?)\n"
-            "ORDER BY f.id LIMIT ?",
-            (pass_, SEED_ERROR, SEED_FIRST_SEEN, pass_, wanted),
-        )
+        conn.execute(seed, (pass_, SEED_ERROR, SEED_FIRST_SEEN, pass_, wanted))
         have += conn.execute("SELECT changes()").fetchone()[0]
     conn.commit()
     by_pass = conn.execute("SELECT pass, count(*) FROM file_failures GROUP BY pass ORDER BY pass").fetchall()

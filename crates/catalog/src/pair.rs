@@ -17,10 +17,12 @@
 //! A candidate counts when it matches exactly one row, every row counted (missing or not); several bind nothing and
 //! are counted as ambiguous. A fresh row with children is never paired: pairing deletes it, and its children with it.
 //!
-//! Each tier runs over the fresh rows in batches of at most `WRITE_BATCH`, each in a short write transaction of its
-//! own, which reads its batch and runs the tier's queries inside it, so a decision sees the rows as they are (an edit
-//! committed between two batches is part of that state), and no other writer waits behind the whole pass. The walk's
-//! lease keeps any other walk of the root out meanwhile.
+//! Each tier, and the clearing of the rows nothing paired, runs over the fresh rows in batches of at most `WRITE_BATCH`
+//! by id, each in a short write transaction of its own, which reads its batch and runs the tier's queries inside it, so
+//! a decision sees the rows as they are (an edit committed between two batches is part of that state), and no other
+//! writer waits behind the whole pass. A batch is a seek on the `files_fresh` index, so the passes read each fresh row
+//! once each, and a scan with nothing fresh reads nothing. The walk's lease keeps any other walk of the root out
+//! meanwhile.
 
 use std::collections::BTreeSet;
 
@@ -32,7 +34,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use crate::core::Catalog;
 use crate::error::Result;
 use crate::transaction::write_transaction;
-use crate::types::{WRITE_BATCH, folders_under, skipped_folders, under_params};
+use crate::types::{WRITE_BATCH, skipped_folders, under_params};
 
 mod coverage;
 pub use coverage::Coverage;
@@ -228,38 +230,18 @@ impl Catalog {
         }
         if coverage.complete {
             // The fresh rows nothing paired, which have no children, are genuinely new files: cleared, outside the
-            // skipped folders, by folder, in batches. Only the rows this scan saw are cleared: an unpaired row it did
-            // not see is a file that is gone for now, and stays unpaired, so the file coming back under its identity is
-            // paired with its row (and its data) rather than taken for a new file. Displaced rows (no identity) stay as
-            // they are, as tombstones a later file can replace.
-            let folders: Vec<i64> = {
-                let snapshot = conn.unchecked_transaction()?;
-                let folders =
-                    folders_under(&snapshot, rules, root)?.into_iter().filter(|f| !skipped.contains(f)).collect();
-                snapshot.commit()?;
-                folders
-            };
-            let mut pending = folders.as_slice();
-            while !pending.is_empty() {
-                let tx = write_transaction(conn)?;
-                let (mut done, mut rows) = (0, 0);
-                {
-                    let mut clear = tx.prepare_cached(concat!(
-                        "UPDATE files SET unpaired = 0 WHERE folder_id = ?1 AND last_scan = ?2 AND unpaired = 1 \
-                         AND volume IS NOT NULL AND NOT ",
-                        has_children!()
-                    ))?;
-                    for folder in pending {
-                        rows += clear.execute(params![folder, scan])?;
-                        done += 1;
-                        if done >= WRITE_BATCH || rows >= WRITE_BATCH {
-                            break;
-                        }
-                    }
+            // skipped folders, in the same batches by id as the tiers (each batch's rows read, with every condition, in
+            // the transaction that clears them). Only the rows this scan saw are cleared: an unpaired row it did not see
+            // is a file that is gone for now, and stays unpaired, so the file coming back under its identity is paired
+            // with its row (and its data) rather than taken for a new file. Displaced rows (no identity) stay as they
+            // are, as tombstones a later file can replace.
+            in_batches(conn, &under, scan, &skipped, |tx, fresh| {
+                let mut clear = tx.prepare_cached("UPDATE files SET unpaired = 0 WHERE id = ?1")?;
+                for f in fresh {
+                    clear.execute([f.id])?;
                 }
-                tx.commit()?;
-                pending = pending.get(done..).unwrap_or_default();
-            }
+                Ok(())
+            })?;
         }
 
         out.unpaired_with_data = conn.query_row(
@@ -321,9 +303,14 @@ fn seen_volumes(tx: &Transaction, scan: i64) -> Result<std::collections::BTreeSe
 /// next batch of them, at most [`WRITE_BATCH`] with an id after `after`, by id. A row with children is counted by
 /// [`Catalog::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list, so
 /// it is not paired until a scan sees it.
+///
+/// Read through `files_fresh` (`INDEXED BY`: the plan is the point, and a schema without the index fails here rather
+/// than reading another way): the scan's fresh rows in id order, so a batch is a seek from `after` that stops at
+/// [`WRITE_BATCH`] rows, and a scan's batches read each fresh row once. The root's folders filter what it finds.
 fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3], scan: i64, after: i64) -> Result<Vec<Fresh>> {
     let mut stmt = tx.prepare_cached(concat!(
         "SELECT id, volume, file_ref, created, folder_id, name, ext, kind, size, mtime, order_key FROM files
+         INDEXED BY files_fresh
          WHERE volume IS NOT NULL AND unpaired = 1 AND last_scan = ?4 AND id > ?5 AND folder_id IN (",
         under_root!(),
         ") AND NOT ",

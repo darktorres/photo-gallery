@@ -7,11 +7,19 @@
     },
     "import-flush": {
       "max": 0.15,
-      "why": "the analysis triggers that keep the import ledger"
+      "why": "the analysis trigger that keeps the import ledger (the bench fails one file in five, each a ledger row written)"
     },
-    "inbox-refresh": {
+    "inbox-refresh.closed": {
       "max": -0.90,
       "why": "must fall by 90% or more: the ledger's cheap state on the partial index instead of the counts"
+    },
+    "inbox-refresh.open": {
+      "max": -0.70,
+      "why": "the counts read while the inbox is shown are linear in the live rows (a count is a scan of the partial index; the bench's ledgers are all new, so both the total and the new are full ranges): only the closed refresh is the cheap state"
+    },
+    "pending-thumbs": {
+      "max": 0.18,
+      "why": "the pass's ATTACH parses the catalog's schema, which versions 8 and 9 grew by their tables, indexes and triggers: a fixed cost per pass, not per file"
     }
   }
 }

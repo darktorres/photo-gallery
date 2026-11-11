@@ -190,8 +190,10 @@ bench matches fails the gate (a renamed bench isn't passed unseen), a bench that
 | Bench | Budget | Why |
 |---|---|---|
 | `scan-walk` | ≤ +10% | batching and the scan lease |
-| `import-flush` | ≤ +15% | the analysis triggers that keep the import ledger |
-| `inbox-refresh` | ≤ −90% | the ledger's cheap state on the partial index instead of the counts |
+| `import-flush` | ≤ +15% | the analysis trigger that keeps the import ledger (the bench fails one file in five) |
+| `inbox-refresh.closed` | ≤ −90% | the ledger's cheap state on the partial index instead of the counts |
+| `inbox-refresh.open` | ≤ −70% | the counts read while the inbox is shown are linear in the live rows |
+| `pending-thumbs` | ≤ +18% | the pass's ATTACH parses the catalog's larger schema: a fixed cost per pass |
 
 What callgrind can't see (how long a write lock is held, an I/O wait) is measured by the scan crate's wall-clock tests
 (each write transaction of a 200k-file synthetic walk under a stated bound), not by a bench.

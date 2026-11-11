@@ -41,7 +41,12 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_6_THUMB_VIEWS)],
     &[Step::Sql(TO_7_WRITE_CHECKS)],
     TO_8_NOTIFY,
+    &[Step::Sql(TO_9_CHEAPER_WRITES)],
 ];
+
+/// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
+#[cfg(test)]
+pub(crate) const BEFORE_NOTIFY: i64 = 7;
 
 /// Version 2: `files.changed` (what a client that kept its list fetches again by) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -332,6 +337,32 @@ CREATE TABLE scan_leases(
 
 /// [`TO_8_NOTIFY`]'s last step: the acknowledgement's old dismissal time, converted.
 const TO_8_NOTIFY_DROP: &str = "ALTER TABLE ledger_ack DROP COLUMN dismissed;\n";
+
+/// Version 9: what version 8 made a write cost, measured (`just perf --budgets`), brought back to what the work needs.
+/// - **`files_fresh`**: the pairing's fresh rows (`pair::fresh_rows`, unpaired with an identity, by the scan that saw
+///   them), in id order, so each batch of them is a seek from the last one's id. Read through the root's folders, every
+///   batch scanned all of the root's rows again: quadratic in a first scan's rows.
+/// - **`analysis_import`**: the import ledger's one trigger on a new analysis, in place of `analysis_import_failed` and
+///   `analysis_import_fixed`. Its `WHEN` is cheap for the common case, a file analysed without an error that has no
+///   ledger row, which then writes nothing; a delete run for every analysis that succeeded cost the import a fifth of
+///   its batch. A failure still writes its row, as before: the row is removed when the bytes changed, and kept (with
+///   the new error) when they didn't.
+const TO_9_CHEAPER_WRITES: &str =
+    "CREATE INDEX files_fresh ON files(last_scan) WHERE unpaired = 1 AND volume IS NOT NULL;
+DROP TRIGGER analysis_import_failed;
+DROP TRIGGER analysis_import_fixed;
+CREATE TRIGGER analysis_import AFTER INSERT ON analysis
+WHEN new.error IS NOT NULL OR EXISTS (SELECT 1 FROM file_failures WHERE file_id = new.file_id AND pass = 'import')
+BEGIN
+    DELETE FROM file_failures WHERE file_id = new.file_id AND pass = 'import'
+        AND (new.error IS NULL OR mtime IS NOT new.mtime OR size IS NOT new.size OR rotation IS NOT new.rotation);
+    INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)
+        SELECT new.file_id, 'import', new.mtime, new.size, new.rotation, new.error, 0, new.analyzed, f.missing
+        FROM files f WHERE new.error IS NOT NULL AND f.id = new.file_id
+        ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error
+        WHERE file_failures.error IS NOT excluded.error;
+END;
+";
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
 /// schema, so a SQLite file that merely has the same tables is not taken for a catalog.
@@ -944,6 +975,13 @@ mod tests {
         the_baseline_and_the_migration_make_the_current_schema_windows,
         the_baseline_and_the_migration_make_the_current_schema_posix
     );
+
+    /// The tests' version before the inbox's conversion is the one `TO_8_NOTIFY` takes a catalog from.
+    #[test]
+    fn before_notify_is_the_inbox_conversions_source() {
+        let at = usize::try_from(BEFORE_NOTIFY - BASELINE_VERSION).unwrap();
+        assert!(std::ptr::eq(MIGRATIONS[at], TO_8_NOTIFY));
+    }
 
     /// Every user-visible change stamps its file (`files.changed`), in the same statement as the change: the file
     /// itself, its analysis, its rating, its border mark and its queued write. A view is not a file's change.

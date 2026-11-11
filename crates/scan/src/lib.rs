@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 
 use anyhow::{Context, Result};
-use pg_catalog::pair::{self, Coverage, Pairing};
+use pg_catalog::pair::{Coverage, Pairing};
 use pg_catalog::{Catalog, Recorded, ScannedFile};
 use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
@@ -630,7 +630,10 @@ mod tests {
         let tree = [("", vec![file("a.jpg", 7, 1), folder("sub", 20)]), ("sub", vec![file("b.jpg", 8, 2)])];
         scan_fake(&mut c, &tree, 1);
         let stats = scan_fake(&mut c, &tree, 2);
-        assert_eq!((stats.pairing.rebound, stats.pairing.ambiguous, stats.pairing.unpaired_with_data, stats.missing), (2, 0, 0, 0));
+        assert_eq!(
+            (stats.pairing.rebound, stats.pairing.ambiguous, stats.pairing.unpaired_with_data, stats.missing),
+            (2, 0, 0, 0)
+        );
         assert_eq!(c.status().unwrap().files, 2);
     }
 

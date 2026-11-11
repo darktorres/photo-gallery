@@ -114,7 +114,7 @@ pub(crate) fn format_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Option<Format
         .ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("format {name}"), Type::Text))
 }
 
-/// What a queued write needs of its file ([`crate::Catalog::write_target`]): its path, its analyzed format (`None`
+/// What a queued write needs of its file ([`crate::core::Catalog::write_target`]): its path, its analyzed format (`None`
 /// before the import, or when it failed), and its kind.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WriteTarget {
@@ -195,7 +195,7 @@ pub struct WorkItem {
 impl WorkItem {
     /// The file as it was listed, to check against before what was read from it is kept ([`Catalog::is_current`]).
     ///
-    /// [`Catalog::is_current`]: crate::Catalog::is_current
+    /// [`Catalog::is_current`]: crate::core::Catalog::is_current
     pub fn listed(&self) -> Listed {
         Listed { size: self.size, mtime: self.mtime, rotation: self.rotation }
     }

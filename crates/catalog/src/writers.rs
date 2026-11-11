@@ -13,7 +13,8 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::Result;
 use crate::types::{
-    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, Folder, Hit, Recorded, SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, under_params,
+    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, Folder, Hit, Recorded, SET_FILE_RATING, SET_RATING, ScannedFile,
+    WorkItem, under_params,
 };
 
 // The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
@@ -60,7 +61,12 @@ pub struct ScanWriter<'tx> {
 }
 
 impl<'tx> ScanWriter<'tx> {
-    pub(crate) fn new(tx: &'tx Transaction, scan: ScanId, rules: PathRules, root: &RulePath) -> Result<ScanWriter<'tx>> {
+    pub(crate) fn new(
+        tx: &'tx Transaction,
+        scan: ScanId,
+        rules: PathRules,
+        root: &RulePath,
+    ) -> Result<ScanWriter<'tx>> {
         Ok(ScanWriter {
             scan: scan.get(),
             rules,
@@ -186,7 +192,7 @@ impl<'tx> AnalysisWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction, import: i64) -> Result<AnalysisWriter<'tx>> {
         Ok(AnalysisWriter {
             import,
-            current: tx.prepare(crate::lookup::IS_CURRENT)?,
+            current: tx.prepare(crate::current::IS_CURRENT)?,
             delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
@@ -229,7 +235,7 @@ impl<'tx> AnalysisWriter<'tx> {
     /// then is what was read from it stored. Otherwise it is left as it is, due again (a changed file is stale; a
     /// file whose metadata was rewritten keeps the analysis made before, which the writer carried over).
     fn current(&mut self, item: &WorkItem) -> Result<bool> {
-        crate::lookup::query_current(&mut self.current, item.id, &item.listed())
+        crate::current::query_current(&mut self.current, item.id, &item.listed())
     }
 
     /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
@@ -335,7 +341,7 @@ pub struct BordersWriter<'tx> {
 impl<'tx> BordersWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
         Ok(BordersWriter {
-            current: tx.prepare(crate::lookup::IS_CURRENT)?,
+            current: tx.prepare(crate::current::IS_CURRENT)?,
             cut: tx.prepare(
                 "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
                  WHERE file_id = ?1",
@@ -353,7 +359,7 @@ impl<'tx> BordersWriter<'tx> {
     /// for), replacing what was there, unless the file changed meanwhile (the import then analyzes it again, and the
     /// borders are due again) or a write of the app's into it is in progress (they stay due).
     pub fn store_borders(&mut self, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
-        if !crate::lookup::query_current(&mut self.current, item.id, &item.listed())? {
+        if !crate::current::query_current(&mut self.current, item.id, &item.listed())? {
             return Ok(());
         }
         let cut = borders.map(Detection::cut);
@@ -526,7 +532,7 @@ mod tests {
         c.queue_rotation(item.id, Turns::new(3)).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
         let temp = rules.parse(&spelled(rules, r"D:\x\a.jpg.tmp")).unwrap();
-        c.record_write_temp(&job, &temp, 3).unwrap();
+        c.record_write_temp(&job, &temp, pg_model::write::Write::Turns(Turns::new(3))).unwrap();
         assert!(!stored(&mut c, &item));
         assert!(due(&c, item.id), "still due");
         c.write_done(&job, queue::WriteEffect::Nothing).unwrap();
@@ -610,7 +616,6 @@ mod tests {
     );
 
     fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector(rules: PathRules) {
-        use crate::browse;
         use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
         use pg_model::query::{BorderFacet, Query, Sort};
 
@@ -683,8 +688,7 @@ mod tests {
         let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
         assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
         assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
-        let counts =
-            c.facets(&pg_model::rules::Merged::default(), true, &Query::default()).unwrap().borders;
+        let counts = c.facets(&pg_model::rules::Merged::default(), true, &Query::default()).unwrap().borders;
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
 
@@ -799,7 +803,6 @@ mod tests {
     );
 
     fn border_depth_sorts_by_the_largest_share_of_a_side_cut(rules: PathRules) {
-        use crate::browse;
         use pg_model::query::{Query, Sort, SortKey};
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
@@ -851,12 +854,8 @@ mod tests {
         }
         let names = |descending: bool| -> Vec<String> {
             let sort = Sort { key: SortKey::Borders, descending };
-            let entries =
-                c.list_grid(&pg_model::rules::Merged::default(), true, &Query::default(), sort)
-                    .unwrap();
-            let name = |id| {
-                c.details(id).unwrap().unwrap().path.parts.last().map(|n| n.display().into_owned())
-            };
+            let entries = c.list_grid(&pg_model::rules::Merged::default(), true, &Query::default(), sort).unwrap();
+            let name = |id| c.details(id).unwrap().unwrap().path.parts.last().map(|n| n.display().into_owned());
             entries.iter().map(|e| name(e.id).unwrap_or_default()).collect()
         };
         // Without a border (none found, or marked) last, by name, either way.

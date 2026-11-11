@@ -1,5 +1,5 @@
 //! What a queued write changes in a file: the kinds the write queue (`file_writes`) holds. The queue stores them as
-//! their keys (`rating`, `rotation`: [`write_rating!`], [`write_rotation!`]), and a notice
+//! their keys (`rating`, `rotation`: [`write_rating!`](crate::write_rating!), [`write_rotation!`](crate::write_rotation!)), and a notice
 //! (`notice::Notice::WriteDropped`) by the same keys. A write's value is [`Write`].
 
 use crate::rating::Rating;
@@ -14,7 +14,7 @@ macro_rules! write_rating {
     };
 }
 
-/// The write queue's key of quarter turns (see [`write_rating!`]).
+/// The write queue's key of quarter turns (see [`write_rating!`](crate::write_rating!)).
 #[macro_export]
 macro_rules! write_rotation {
     () => {
@@ -107,7 +107,11 @@ mod tests {
 
     #[test]
     fn a_write_reads_back_from_its_columns_and_a_value_out_of_range_does_not() {
-        for write in [Write::Rating(Rating::new(0).unwrap()), Write::Rating(Rating::new(5).unwrap()), Write::Turns(Turns::new(3))] {
+        for write in [
+            Write::Rating(Rating::new(0).unwrap()),
+            Write::Rating(Rating::new(5).unwrap()),
+            Write::Turns(Turns::new(3)),
+        ] {
             assert_eq!(Write::from_stored(write.kind(), write.stored()), Some(write));
         }
         assert_eq!(Write::from_stored(WriteKind::Rating, 6), None);

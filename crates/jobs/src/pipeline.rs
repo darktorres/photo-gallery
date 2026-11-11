@@ -233,7 +233,10 @@ pub struct Batch {
 /// counted on `ctl` (its bytes, and whether it failed) and kept, and `flush` gets the kept ones (`(index, result)`, in
 /// completion order) to write and empty, when the batch is due ([`Batch`]) and once more when the pass ends. `flush`
 /// returns false to stop the pass, with no last flush. An error (of the pass, or of `flush`) loses the batch kept.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the pass's parts: its items, how each is read, the options, the control, and the worker's state, work, batch and flush"
+)]
 pub fn batched<T, S, R>(
     items: &[T],
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,

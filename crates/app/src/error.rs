@@ -36,6 +36,28 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Why a catalog read gave no result (`crate::reader`): the catalog's error, or one of the reader's own two cases.
+#[derive(Debug, thiserror::Error)]
+pub enum ReadError {
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The read panicked (the panic hook logged it); the reader goes on serving the others.
+    #[error("the catalog read failed (an internal error)")]
+    Panicked,
+    /// The reader's connection couldn't be opened: why.
+    #[error("the catalog can't be opened: {0}")]
+    Unopened(String),
+}
+
+impl From<ReadError> for Error {
+    fn from(e: ReadError) -> Error {
+        match e {
+            ReadError::Catalog(e) => Error::Catalog(e),
+            e => failed(e),
+        }
+    }
+}
+
 /// The error of a lower layer, as its text (`{:#}`: the causes included).
 pub fn failed(e: impl Display) -> Error {
     Error::Failed(format!("{e:#}"))

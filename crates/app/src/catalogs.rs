@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 use pg_catalog::Catalog;
-use pg_catalog::ledger::{self, FailedFile};
+use pg_catalog::ledger::FailedFile;
 use pg_model::ids::FileId;
 use pg_model::notice::FilePass;
 use pg_model::rules::Path as RulePath;

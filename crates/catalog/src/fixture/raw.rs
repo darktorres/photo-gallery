@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::lifecycle::{set_borders_version, set_import_version};
 use crate::queue;
 use pg_analysis::analyze::IMPORT_VERSION;
@@ -123,8 +123,6 @@ pub(crate) fn thumb_clock(c: &Catalog) -> i64 {
 pub(crate) fn meta_seq(c: &Catalog) -> i64 {
     c.conn.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0)).unwrap()
 }
-
-/// The stub of the thumbnail cache's `entries` the pass's statement reads, as a temporary table.
 
 /// The borders the analysis holds: the content's left, top, right and bottom cut, for the only analysis.
 pub(crate) fn cut_sides(c: &Catalog) -> [Option<i64>; 4] {

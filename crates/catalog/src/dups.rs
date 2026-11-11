@@ -1,9 +1,12 @@
 //! The duplicates' reads (tiers 0–1): identical files (`file_hash`), identical pixels (`pixel_hash`), and the PDQ pairs.
 //! The counts for a report, and the edges that group files: the grouping itself (union-find) is `pg-dedup`'s.
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use pg_model::ids::FileId;
+
+mod identity;
+pub use identity::Identity;
 
 /// The present files' current analyses.
 macro_rules! current {
@@ -52,15 +55,6 @@ macro_rules! grouped {
             $column
         )
     };
-}
-
-/// What makes two files identical: their bytes, or their decoded pixels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Identity {
-    /// The same file bytes (tier 0a).
-    File,
-    /// The same decoded pixels (tier 0b).
-    Pixels,
 }
 
 impl Catalog {

@@ -23,8 +23,8 @@ pub enum Record {
 pub fn init(controller: &Controller) -> Record {
     Record::Init {
         listing: controller.listing().clone(),
-        row_height: controller.prefs().row_height(),
-        scale: controller.prefs().scale(),
+        row_height: controller.grid_size().row_height(),
+        scale: controller.grid_size().scale(),
     }
 }
 

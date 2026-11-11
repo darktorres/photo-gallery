@@ -98,7 +98,7 @@ pub(crate) fn next_work(c: &Catalog) -> WorkItem {
 pub(crate) fn store_taken(c: &mut Catalog, item: &WorkItem, taken: Option<Taken>) {
     let analysis = Analysis {
         version: IMPORT_VERSION,
-        file_hash: [1; 32],
+        file_hash: pg_model::analysis::FileHash([1; 32]),
         orientation: Orientation::UPRIGHT,
         width: 400,
         height: 300,

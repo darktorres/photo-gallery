@@ -134,7 +134,9 @@ pub fn judge_conn(conn: &Connection, seeds: &[(&str, &str)], want: &Schema, owne
     Ok(match found.difference(want) {
         Some(difference) => Found::Differs(difference),
         // The layout, unmarked: an earlier build's that set no id. Not this build's file until it is marked.
-        None if id != owner => Found::Differs(Difference::Changed { kind: "header".into(), name: "application_id".into() }),
+        None if id != owner => {
+            Found::Differs(Difference::Changed { kind: "header".into(), name: "application_id".into() })
+        }
         None => Found::Usable,
     })
 }
@@ -164,7 +166,10 @@ mod tests {
         assert_eq!(found(&format!("CREATE TABLE t(a INTEGER); PRAGMA application_id = {ID};")), Found::Usable);
         assert!(matches!(found(&format!("CREATE TABLE t(b TEXT); PRAGMA application_id = {ID};")), Found::Differs(_)));
         assert!(matches!(found("CREATE TABLE t(a INTEGER);"), Found::Differs(_)), "unmarked");
-        assert_eq!(found("CREATE TABLE t(a INTEGER); PRAGMA application_id = 7;"), Found::Foreign { application_id: 7 });
+        assert_eq!(
+            found("CREATE TABLE t(a INTEGER); PRAGMA application_id = 7;"),
+            Found::Foreign { application_id: 7 }
+        );
     }
 
     #[test]

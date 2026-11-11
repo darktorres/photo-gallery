@@ -8,8 +8,8 @@ use pg_client::grid::Grid;
 use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
-use pg_model::notice::Notice;
 use pg_model::media::MediaType;
+use pg_model::notice::Notice;
 
 /// The model's properties, the list and the details read last.
 #[expect(

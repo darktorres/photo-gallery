@@ -37,9 +37,9 @@ pub fn attach_bytes(path: &Path) -> io::Result<Vec<u8>> {
     }
     #[cfg(windows)]
     {
-        path.to_str()
-            .map(|text| text.as_bytes().to_vec())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "a path with no UTF-8 form, which SQLite can't take"))
+        path.to_str().map(|text| text.as_bytes().to_vec()).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "a path with no UTF-8 form, which SQLite can't take")
+        })
     }
 }
 

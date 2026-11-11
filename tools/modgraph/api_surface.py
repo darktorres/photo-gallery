@@ -29,7 +29,7 @@ for manifest in sorted(ROOT.glob("crates/*/Cargo.toml")):
         for dep in data.get(table, {}):
             if dep.startswith("pg-"):
                 deps.add(dep)
-    dev = set(d for d in data.get("dev-dependencies", {}) if d.startswith("pg-"))
+    dev = {d for d in data.get("dev-dependencies", {}) if d.startswith("pg-")}
     crates[name] = {"dir": manifest.parent, "deps": deps, "dev": dev}
 
 
@@ -39,14 +39,14 @@ def rs_files(d: Path, sub: str):
 
 
 def strip_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     return "\n".join(line.split("//")[0] for line in text.splitlines())
 
 
 def prod_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
     # Production code: up to the first line-start #[cfg(test)].
-    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.M)
+    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.MULTILINE)
     if m:
         text = text[: m.start()]
     return strip_comments(text)
@@ -54,8 +54,8 @@ def prod_text(path: Path) -> str:
 
 def test_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
-    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.M)
-    return strip_comments(text[m.start():]) if m else ""
+    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.MULTILINE)
+    return strip_comments(text[m.start() :]) if m else ""
 
 
 texts = {}
@@ -64,8 +64,11 @@ for name, c in crates.items():
     texts[name] = {
         "prod": "\n".join(prod_text(p) for p in rs_files(d, "src")),
         "unit": "\n".join(test_text(p) for p in rs_files(d, "src")),
-        "itest": "\n".join(strip_comments(p.read_text(encoding="utf-8", errors="replace"))
-                           for sub in ("tests", "benches", "examples") for p in rs_files(d, sub)),
+        "itest": "\n".join(
+            strip_comments(p.read_text(encoding="utf-8", errors="replace"))
+            for sub in ("tests", "benches", "examples")
+            for p in rs_files(d, sub)
+        ),
     }
 
 users = {n: [m for m, c in crates.items() if n in c["deps"]] for n in crates}
@@ -75,8 +78,14 @@ result = {}
 for name, c in crates.items():
     if not (c["dir"] / "src" / "lib.rs").exists():
         continue
-    proc = subprocess.run(["cargo", "modules", "structure", "-p", name, "--lib"], cwd=ROOT,
-                          capture_output=True, text=True, encoding="utf-8")
+    proc = subprocess.run(
+        ["cargo", "modules", "structure", "-p", name, "--lib"],
+        check=True,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     items = []
     stack = []
     for raw in ANSI.sub("", proc.stdout).splitlines():
@@ -88,7 +97,7 @@ for name, c in crates.items():
         if kind == "crate":
             stack = []
             continue
-        stack = stack[: depth - 1] + [iname]
+        stack = [*stack[: depth - 1], iname]
         if vis == "pub":
             items.append({"kind": kind, "path": "::".join(stack), "name": iname})
     for it in items:
@@ -96,9 +105,12 @@ for name, c in crates.items():
             continue
         word = re.compile(r"\b" + re.escape(it["name"]) + r"\b")
         prod_users = [u for u in users[name] if word.search(texts[u]["prod"])]
-        test_users = sorted(set(
-            [u for u in users[name] + dev_users[name] if word.search(texts[u]["unit"]) or word.search(texts[u]["itest"])]
-            + ([name] if word.search(texts[name]["itest"]) else [])))
+        test_users = sorted(
+            set(
+                [u for u in users[name] + dev_users[name] if word.search(texts[u]["unit"]) or word.search(texts[u]["itest"])]
+                + ([name] if word.search(texts[name]["itest"]) else [])
+            )
+        )
         own_prod = len(word.findall(texts[name]["prod"])) - 1
         it.update(prod_users=prod_users, test_users=test_users, own_prod_refs=own_prod)
     result[name] = items
@@ -110,7 +122,8 @@ for name, items in result.items():
     lone = [i for i in items if i["kind"] != "mod" and not i["prod_users"]]
     if not lone:
         continue
-    print(f"\n{name}: {len(lone)} of {len([i for i in items if i['kind'] != 'mod'])} pub items no other crate's production code names")
+    named = len([i for i in items if i["kind"] != "mod"])
+    print(f"\n{name}: {len(lone)} of {named} pub items no other crate's production code names")
     for i in lone:
         where = ("tests: " + ",".join(i["test_users"])) if i["test_users"] else "NO USE OUTSIDE"
         print(f"  {i['kind']:8} {i['path']:60} own={i['own_prod_refs']:<3} {where}")

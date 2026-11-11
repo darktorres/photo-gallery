@@ -16,8 +16,8 @@ pub mod deadlines;
 pub mod input;
 pub mod listing;
 pub mod panels;
-pub mod size;
 pub mod replay;
+pub mod size;
 pub mod start;
 
 use deadlines::{Deadlines, Timer};

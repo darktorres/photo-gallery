@@ -165,13 +165,13 @@ mod native {
     }
 
     /// The system's folder dialog, made with folders-only options (as Qt's native dialog sets them).
-    pub struct Dialog {
+    pub(super) struct Dialog {
         dialog: IFileOpenDialog,
         chosen: Option<IShellItem>,
     }
 
     impl Dialog {
-        pub fn new() -> io::Result<Dialog> {
+        pub(super) fn new() -> io::Result<Dialog> {
             // SAFETY: COM is initialized on this thread by Qt (see the module's note). The dialog is released when the
             // smart pointer is dropped.
             let dialog: IFileOpenDialog = unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) }
@@ -353,7 +353,10 @@ mod tests {
         for asked in [verbatim(&dotted), verbatim(&dotted.join("inner"))] {
             assert_eq!(super::start_folder(Some(asked.clone()), |_| None), Some(real.clone()), "{}", asked.display());
         }
-        assert_eq!(super::start_folder(Some(sibling.clone()), |_| None), Some(std::fs::canonicalize(&sibling).unwrap()));
+        assert_eq!(
+            super::start_folder(Some(sibling.clone()), |_| None),
+            Some(std::fs::canonicalize(&sibling).unwrap())
+        );
     }
 }
 

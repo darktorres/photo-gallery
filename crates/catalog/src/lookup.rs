@@ -3,7 +3,7 @@
 
 use anyhow::anyhow;
 use rusqlite::types::Type;
-use rusqlite::{OptionalExtension, Statement, params};
+use rusqlite::{OptionalExtension, params};
 
 use pg_model::format::Format;
 use pg_model::ids::FileId;
@@ -14,27 +14,17 @@ use pg_model::path::PathArena;
 use pg_model::rules::Path as RulePath;
 
 use crate::core::Catalog;
+use crate::current::{IS_CURRENT, query_current};
 use crate::error::Result;
 use crate::types::{CropSource, Listed, Status, WriteTarget, under_params};
-
-/// Whether file `?1` is still as listed (`?2` its size, `?3` its mtime, `?4` its rotation), with no write of the app's
-/// into it in progress: the one rule for keeping what a pass read from a file (`is_current`).
-pub(crate) const IS_CURRENT: &str = concat!(
-    "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND size = ?2 AND mtime = ?3 AND rotation = ?4) AND ",
-    not_being_written!()
-);
-
-/// [`IS_CURRENT`], prepared as `stmt`, for file `id` as `listed`.
-pub(crate) fn query_current(stmt: &mut Statement<'_>, id: FileId, listed: &Listed) -> Result<bool> {
-    Ok(stmt.query_row(params![id.get(), listed.size, listed.mtime, listed.rotation.get()], |r| r.get(0))?)
-}
 
 impl Catalog {
     /// Whether the file is still as it was listed, with no write of the app's into it in progress: only then is what
     /// a pass read from it kept. Otherwise it is left as it is, due again (a changed file is stale; a file whose
     /// metadata the app is rewriting may be read part-written).
     pub fn is_current(&self, id: FileId, listed: &Listed) -> Result<bool> {
-        query_current(&mut self.conn.prepare_cached(IS_CURRENT)?, id, listed)
+        let mut stmt = self.conn.prepare_cached(IS_CURRENT)?;
+        query_current(&mut stmt, id, listed)
     }
 
     /// Whether the file can't be written: it is missing from the catalog, or no longer listed.

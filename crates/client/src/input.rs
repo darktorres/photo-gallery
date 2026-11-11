@@ -5,8 +5,10 @@
 //! is `pg_model::query`; nothing here reads the catalog.
 
 use pg_model::date::Day;
-use pg_model::query::{BorderFacet, Choice, DateFacet, DayEnd, End, ListFacet, RangeFacet, RatingFilter, Shape, Status};
 use pg_model::media::MediaType;
+use pg_model::query::{
+    BorderFacet, Choice, DateFacet, DayEnd, End, ListFacet, RangeFacet, RatingFilter, Shape, Status,
+};
 
 /// A number as typed, with a comma or a point before the decimals; `None` when it doesn't parse or isn't finite.
 pub fn parse_number(text: &str) -> Option<f64> {
@@ -181,7 +183,14 @@ mod tests {
             Choice::Rating(RatingFilter::Unrated),
             Choice::Ext("jpg".to_string()),
         ];
-        let facets = [ListFacet::Types, ListFacet::Shapes, ListFacet::Status, ListFacet::Borders, ListFacet::Ratings, ListFacet::Exts];
+        let facets = [
+            ListFacet::Types,
+            ListFacet::Shapes,
+            ListFacet::Status,
+            ListFacet::Borders,
+            ListFacet::Ratings,
+            ListFacet::Exts,
+        ];
         for (value, facet) in values.into_iter().zip(facets) {
             assert_eq!(choice(facet, &key_of(&value)), Some(value));
         }

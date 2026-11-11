@@ -77,21 +77,21 @@ impl Replay {
 
 impl Source for Replay {
     fn upload(&mut self, _image: &[u8]) -> Result<Upload, SourceError> {
-        parse_upload(&self.recording.upload)
+        Ok(parse_upload(&self.recording.upload)?)
     }
 
     fn other_sizes(&mut self, _up: &Upload) -> Result<Vec<OtherSize>, SourceError> {
-        parse_other_sizes(&self.recording.other_sizes)
+        Ok(parse_other_sizes(&self.recording.other_sizes)?)
     }
 
     fn similar(&mut self, _up: &Upload, max_pages: u32) -> Result<Similar, SourceError> {
         let recording = &self.recording;
-        read_similar_pages(max_pages, |page| match recording.similar.get(pg_model::num::index(page)) {
+        Ok(read_similar_pages(max_pages, |page| match recording.similar.get(pg_model::num::index(page)) {
             // Past the recorded pages the list is over, as an empty page is for the client.
             None => Ok(SimilarPage { items: Vec::new(), has_next: false }),
-            Some(body) if is_captcha_page(body) => Err(YandexError::Captcha.into()),
+            Some(body) if is_captcha_page(body) => Err(YandexError::Captcha),
             Some(body) => parse_similar_page(body),
-        })
+        })?)
     }
 }
 
@@ -112,8 +112,8 @@ mod tests {
     use super::*;
     use crate::yandex::images::Images;
     use crate::yandex::{Hit, find_similar, number, save_all};
-    use pg_model::yandex::{RequestError, Saved, SimilarNote};
     use pg_jobs::events::Bus;
+    use pg_model::yandex::{RequestError, Saved, SimilarNote};
     use std::sync::Mutex;
 
     fn accept(_: &[u8]) -> Result<Vec<u8>, &'static str> {

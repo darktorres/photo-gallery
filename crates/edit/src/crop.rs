@@ -113,7 +113,7 @@ mod tests {
             assert_eq!((cw, ch), (w - 10, h - 7), "{format:?}");
             assert_eq!(pixels, cut_out(&rgb, w, cut.map(num::index), h), "{format:?}");
             if format == Format::Webp {
-                assert!(webp_chunks(&out.bytes).any(|c| &c.kind == b"EXIF"));
+                assert!(pg_container::webp_chunks(&out.bytes).any(|c| &c.kind == b"EXIF"));
             }
         }
     }

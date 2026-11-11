@@ -53,5 +53,3 @@ impl std::fmt::Display for Cause {
         }
     }
 }
-
-

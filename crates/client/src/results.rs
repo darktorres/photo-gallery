@@ -49,12 +49,17 @@ impl<T> Results<T> {
 
     /// The first group's results.
     pub fn first(&self) -> &[T] {
-        &self.items[..self.first]
+        self.groups().0
     }
 
     /// The second group's results.
     pub fn second(&self) -> &[T] {
-        &self.items[self.first..]
+        self.groups().1
+    }
+
+    /// The two groups: `first` is never past the end (`new` and `retain` keep it so), so the second is the rest.
+    fn groups(&self) -> (&[T], &[T]) {
+        self.items.split_at_checked(self.first).unwrap_or((&self.items, &[]))
     }
 
     /// The picks.

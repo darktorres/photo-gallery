@@ -1,7 +1,7 @@
 //! The folder tree's rows, read from the catalog: the tree itself is `pg_model::tree`'s (its nodes in key order,
 //! built by its `TreeBuilder` from the folders' rows).
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use pg_model::tree::{FolderTree, TreeBuilder};
 
@@ -31,7 +31,8 @@ impl Catalog {
         let mut builder = TreeBuilder::with_capacity(rules, folders, bytes, components);
         while let Some(r) = rows.next()? {
             if let Some(stored) = r.get::<_, Option<Vec<u8>>>(1)? {
-                let path = rules.parse_bytes(&stored).ok_or_else(|| anyhow::anyhow!("a stored folder path has a NUL"))?;
+                let path =
+                    rules.parse_bytes(&stored).ok_or_else(|| anyhow::anyhow!("a stored folder path has a NUL"))?;
                 builder.add(r.get(0)?, &path, r.get(2)?);
             }
         }

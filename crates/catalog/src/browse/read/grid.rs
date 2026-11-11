@@ -3,7 +3,7 @@
 
 use std::cmp::Ordering;
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params_from_iter};
@@ -154,7 +154,7 @@ impl Catalog {
 }
 
 /// `list_grid`'s query: the entries in name order, then the sort key if it isn't the name.
-pub(super) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
+pub(crate) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
     let key = key_sql(sort);
     // Name order backwards for "by name, descending"; the other keys take their ties in name order.
     let dir = if key.is_none() && sort.descending { "DESC" } else { "ASC" };

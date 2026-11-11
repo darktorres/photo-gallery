@@ -1,6 +1,6 @@
 //! What the viewer's details panel and the border overlay show of one file.
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::OptionalExtension;
 
@@ -48,4 +48,3 @@ impl Catalog {
         }
     }
 }
-

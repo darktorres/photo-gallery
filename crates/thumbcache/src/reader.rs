@@ -62,10 +62,12 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
 
 /// `pending_in`'s query, with the catalog attached as `cat`: ?1 the height, and with `since_checked` ?2 the
 /// change number checked up to. Which files can have a thumbnail is the catalog's view's to say (`thumb_sources`):
-/// this only compares its rows with the cache's entries.
+/// this only compares its rows with the cache's entries. A pass since a change number reads the few changed files by
+/// `files_seq` and sorts them: its volume is an expression (`+f.volume`), so the files' `(volume, file_ref)` index,
+/// which gives a whole pass its order, doesn't look cheaper to the planner than the change index.
 pub(crate) fn pending_sql(since_checked: bool) -> &'static str {
     macro_rules! pending {
-        ($changed:literal) => {
+        ($changed:literal, $volume:literal) => {
             concat!(
                 "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, f.poster_ms, f.seq, f.folder, f.size
                  FROM cat.thumb_sources f
@@ -73,11 +75,13 @@ pub(crate) fn pending_sql(since_checked: bool) -> &'static str {
                  WHERE ",
                 $changed,
                 "(t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
-                 ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+                 ORDER BY ",
+                $volume,
+                ", f.file_ref & 0xFFFFFFFFFFFF"
             )
         };
     }
-    if since_checked { pending!("f.seq > ?2 AND ") } else { pending!("") }
+    if since_checked { pending!("f.seq > ?2 AND ", "+f.volume") } else { pending!("", "f.volume") }
 }
 
 thread_local! {

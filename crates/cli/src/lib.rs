@@ -13,8 +13,8 @@ mod borders;
 mod dups;
 mod report;
 
-use pg_client::text::{self, Message};
 use pg_client::text::cli::{Line, line};
+use pg_client::text::{self, Message};
 use pg_library::folders::AddError;
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Notice};
@@ -438,7 +438,14 @@ mod tests {
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
         let (events, quiet) = pg_jobs_testkit::Quiet::bus();
         let thumbs: &'static ThumbCache = Box::leak(Box::new(
-            ThumbCache::open(&dir.join("thumbs.sqlite"), &catalog.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap(),
+            ThumbCache::open(
+                &dir.join("thumbs.sqlite"),
+                &catalog.catalog_id().unwrap(),
+                pg_thumbcache::Cap::from_bytes(1 << 30),
+                1,
+                events,
+            )
+            .unwrap(),
         ));
         drop(catalog);
         let writer =

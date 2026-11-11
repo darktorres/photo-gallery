@@ -88,8 +88,13 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
 /// The thumbnail cache a writer retags, leaked as the app's is, and the check that it reported nothing.
 fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(&'static ThumbCache, Quiet<pg_thumbcache::Event>)> {
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id()?, pg_thumbcache::Cap::from_bytes(1 << 30), 1, events)?));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::open(
+        &dir.join("thumbs.sqlite"),
+        &c.catalog_id()?,
+        pg_thumbcache::Cap::from_bytes(1 << 30),
+        1,
+        events,
+    )?));
     Ok((thumbs, quiet))
 }
 
@@ -138,8 +143,16 @@ fn ratings_and_turns_reach_the_files() {
     assert_eq!(before.len(), files.len());
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap()));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap(),
+    ));
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
@@ -193,10 +206,7 @@ fn ratings_and_turns_reach_the_files() {
     // the turn is in the file, or kept in the catalog.
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "sizes right after the turn: {:?}", dims(&c));
     let placeholder_turns = |c: &Catalog| -> Vec<u8> {
-        before
-            .iter()
-            .map(|(id, _)| c.placeholder(FileId::new(*id)).unwrap().unwrap().turns.get())
-            .collect()
+        before.iter().map(|(id, _)| c.placeholder(FileId::new(*id)).unwrap().unwrap().turns.get()).collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -261,8 +271,16 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap()));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap(),
+    ));
     // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
     let made = pg_thumbs::run(thumbs, &catalog_path, 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
@@ -271,7 +289,10 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
-    assert_eq!(Meta::read(&std::fs::read(&jpeg).unwrap(), Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(4));
+    assert_eq!(
+        Meta::read(&std::fs::read(&jpeg).unwrap(), Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get),
+        Some(4)
+    );
     // Written in place: the same identities, and no other file beside them.
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
@@ -389,7 +410,11 @@ fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
     let bytes = std::fs::read(&files[1].0).unwrap();
-    assert_eq!(Meta::read(&bytes, Format::Png, &mut MetaScratch::default()).rating.map(Rating::get), Some(5), "the later rating");
+    assert_eq!(
+        Meta::read(&bytes, Format::Png, &mut MetaScratch::default()).rating.map(Rating::get),
+        Some(5),
+        "the later rating"
+    );
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(5));
 
     drop(writer);
@@ -504,7 +529,11 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
     let written = std::fs::read(verbatim(&dotted.join("a.jpg"))).unwrap();
-    assert_eq!(Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(4), "the dotted file");
+    assert_eq!(
+        Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get),
+        Some(4),
+        "the dotted file"
+    );
     assert_eq!(std::fs::read(sibling.join("a.jpg")).unwrap(), jpeg, "the other folder's file changed");
     for folder in [verbatim(&dotted), sibling.clone()] {
         assert!(!folder.join(".a.jpg.rating.pg-write").exists(), "a temp in {}", folder.display());
@@ -816,8 +845,16 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap()));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap(),
+    ));
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     writer.wake();
 
@@ -856,8 +893,16 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     }
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap()));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap(),
+    ));
     let writer =
         Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInProcess(poisoned))
             .unwrap();
@@ -898,8 +943,16 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     c.queue_rotation(state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap()));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap(),
+    ));
     let writer =
         Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain).unwrap();
     let start = Instant::now();
@@ -943,8 +996,16 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     assert!(c.rebuilt().is_some(), "the text layout is moved aside");
     assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()));
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir.join("thumbs.sqlite"), &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap()));
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap(),
+    ));
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();

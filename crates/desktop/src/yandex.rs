@@ -83,7 +83,8 @@ impl qobject::YandexSearch {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
                 pg_log::warn("yandex", &format!("file {file_id}: {err:#}"));
-                self.as_mut().set_status(QString::from(&render(&Message::YandexUnreadablePhoto { error: format!("{err:#}") })));
+                self.as_mut()
+                    .set_status(QString::from(&render(&Message::YandexUnreadablePhoto { error: format!("{err:#}") })));
             }
         }
     }
@@ -122,10 +123,12 @@ impl qobject::YandexSearch {
         let pump = crate::pump::start(
             "yandex changes",
             self.qt_thread(),
-            move || changes.recv().map(|()| {
-                changes.take();
-            }),
-            |_, ()| {},
+            move || {
+                changes.recv().map(|()| {
+                    changes.take();
+                })
+            },
+            |_: &mut (), ()| {},
             |search, pending| {
                 crate::pump::Pending::take(&pending);
                 search.poll();
@@ -242,9 +245,12 @@ impl qobject::YandexSearch {
     fn refresh_preview(mut self: Pin<&mut Self>) {
         let shown = crate::rows::row_of(self.preview_item).and_then(|i| self.results.get(i).map(|hit| (i, hit)));
         let (url, width, height, picked) = match shown {
-            Some((i, hit)) => {
-                (QString::from(&original_url(hit.id)), qt_side(hit.width), qt_side(hit.height), self.results.picks().is_picked(i))
-            }
+            Some((i, hit)) => (
+                QString::from(&original_url(hit.id)),
+                qt_side(hit.width),
+                qt_side(hit.height),
+                self.results.picks().is_picked(i),
+            ),
             None => (QString::default(), 0, 0, false),
         };
         self.as_mut().set_preview_url(url);
@@ -365,4 +371,3 @@ impl qobject::YandexSearch {
         self.as_mut().set_status(QString::from(&render(&Message::YandexNotStarted { error: e.to_string() })));
     }
 }
-

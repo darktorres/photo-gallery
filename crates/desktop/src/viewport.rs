@@ -11,8 +11,8 @@ use core::pin::Pin;
 use cxx_qt::CxxQtType;
 
 use cxx_qt_lib::QString;
-use pg_client::viewport::View;
 use pg_client::image::ImageRequest;
+use pg_client::viewport::View;
 use pg_model::image::{self, ImageKey};
 use pg_model::turns::Turns;
 

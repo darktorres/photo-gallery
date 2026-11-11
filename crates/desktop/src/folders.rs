@@ -114,7 +114,9 @@ pub(crate) fn spelling_of(folder: &Merged, recursive: bool) -> Option<Merged> {
 impl qobject::FolderModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         with(|tree| {
-            let Some(v) = crate::rows::row_of(index.row()).and_then(|row| tree.row(row)) else { return QVariant::default() };
+            let Some(v) = crate::rows::row_of(index.row()).and_then(|row| tree.row(row)) else {
+                return QVariant::default();
+            };
             let (kind, total) = match v {
                 Visible::All => (KIND_ALL, tree.folders().total()),
                 Visible::DriveRoots => (KIND_DRIVE_ROOTS, tree.folders().root_files()),

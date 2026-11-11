@@ -5,7 +5,7 @@
 pub(crate) mod raw;
 pub mod state;
 
-use crate::Catalog;
+use crate::core::Catalog;
 use anyhow::{Context, anyhow};
 use pg_model::ids::{FileId, FolderId};
 use pg_model::turns::Turns;

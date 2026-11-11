@@ -165,7 +165,6 @@ pub fn poster_ms(duration_ms: i64) -> i64 {
     pg_model::num::f64_to_i64(pg_model::num::signed(duration_ms) * POSTER_FRACTION).clamp(0, POSTER_MAX_MS)
 }
 
-
 /// The frame shown at `at_ms` (the first at or after it; the last one if the video is shorter), upright and
 /// turned `turns` quarter turns clockwise further (the catalog rotation), as RGB at its display size, in a new
 /// buffer: for a one-off frame (the viewer).

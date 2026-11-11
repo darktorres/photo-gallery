@@ -77,8 +77,12 @@ impl qobject::Notices {
         let rules = pg_platform::native::PATH_RULES;
         let notice = &entry.notice;
         match role {
-            ROLE_TITLE => QVariant::from(&QString::from(&render(&Message::NoticeTitle { notice: notice.clone(), rules }))),
-            ROLE_BODY => QVariant::from(&QString::from(&render(&Message::NoticeBody { notice: notice.clone(), rules }))),
+            ROLE_TITLE => {
+                QVariant::from(&QString::from(&render(&Message::NoticeTitle { notice: notice.clone(), rules })))
+            }
+            ROLE_BODY => {
+                QVariant::from(&QString::from(&render(&Message::NoticeBody { notice: notice.clone(), rules })))
+            }
             ROLE_SOURCE => QVariant::from(&QString::from(&render(&Message::SourceLabel { source: notice.source() }))),
             ROLE_LEVEL => QVariant::from(&level_code(notice.level())),
             // Unix seconds, as a number QML makes a `Date` of.
@@ -162,7 +166,8 @@ impl qobject::Notices {
             self.as_mut().show(&listing);
         }
         if let Some(notice) = toasts.last() {
-            let words = render(&Message::NoticeTitle { notice: notice.clone(), rules: pg_platform::native::PATH_RULES });
+            let words =
+                render(&Message::NoticeTitle { notice: notice.clone(), rules: pg_platform::native::PATH_RULES });
             self.as_mut().set_toast_shown(QString::from(&words), level_code(notice.level()));
         }
     }

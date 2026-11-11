@@ -54,7 +54,7 @@ deny = [
     # The image decoders and encoders are pg-codec's, and the test fixtures' (pg-testkit). `image` is the door to the
     # rest, so its parents are these crates. pg-library's tests write image fixtures (a dev-dependency).
     { crate = "image", wrappers = ["pg-codec", "pg-testkit", "pg-library", "pdqhash"] },
-    { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit", "pg-render"] },
+    { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit"] },
     { crate = "png", wrappers = ["pg-codec", "pg-testkit", "pg-edit", "image"] },
     { crate = "gif", wrappers = ["pg-codec", "image"] },
     { crate = "image-webp", wrappers = ["pg-codec", "pg-edit", "image"] },

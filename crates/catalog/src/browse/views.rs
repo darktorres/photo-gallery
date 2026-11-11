@@ -1,47 +1,15 @@
 //! The saved views and the session, read and written. Both are listings, stored in the same columns (`folder`,
-//! `recursive`, `query`, `sort`): `listing_at` reads them and `listing_values` writes them. The ratings and turns the
-//! user makes are the file queue's (`crate::queue`).
+//! `recursive`, `query`, `sort`: `crate::listing`). The ratings and turns the user makes are the file queue's
+//! (`crate::queue`).
 
-use rusqlite::types::Type;
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{OptionalExtension, params};
 
 use pg_model::name::Name;
-use pg_model::rules::PathRules;
 use pg_model::view::{Listing, SavedView};
-use pg_query::{from_json, to_json};
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
-
-/// The listing in the four columns from `first` on (`folder`, `recursive`, `query`, `sort`), the folder stored under
-/// `rules`. A query or a sort that doesn't read is the default.
-pub(crate) fn listing_at(r: &Row<'_>, first: usize, rules: PathRules) -> rusqlite::Result<Listing> {
-    let stored: Vec<u8> = r.get(first)?;
-    let folder = rules
-        .parse_merged(&stored)
-        .ok_or_else(|| rusqlite::Error::InvalidColumnType(first, "folder".into(), Type::Blob))?;
-    Ok(Listing {
-        folder,
-        recursive: r.get(first + 1)?,
-        query: from_json(&r.get::<_, String>(first + 2)?),
-        sort: from_json(&r.get::<_, String>(first + 3)?),
-    })
-}
-
-/// A listing's column values, `folder` (stored under `rules`), `recursive`, `query` and `sort`, in that order.
-pub(crate) fn listing_values(rules: PathRules, listing: &Listing) -> (Vec<u8>, bool, String, String) {
-    (rules.join_merged(&listing.folder), listing.recursive, to_json(&listing.query), to_json(&listing.sort))
-}
-
-/// The session's row on `conn` (the rebuild's copy writes it too).
-pub(crate) fn put_session(conn: &Connection, rules: PathRules, listing: &Listing) -> Result<()> {
-    let (folder, recursive, query, sort) = listing_values(rules, listing);
-    conn.execute(
-        "INSERT OR REPLACE INTO session(id, folder, recursive, query, sort) VALUES (1, ?1, ?2, ?3, ?4)",
-        params![folder, recursive, query, sort],
-    )?;
-    Ok(())
-}
+use crate::listing::{listing_at, listing_values, put_session};
 
 impl Catalog {
     /// The saved views, by name as the grid orders file names (the name's key).
@@ -88,9 +56,9 @@ impl Catalog {
 mod tests {
     use super::*;
     use crate::browse::fixtures::{by, library, under_both_rules};
-    use pg_model::query::{Query, RatingFilter, SortKey};
     use pg_model::media::MediaType;
-    use pg_model::rules::Merged;
+    use pg_model::query::{Query, RatingFilter, SortKey};
+    use pg_model::rules::{Merged, PathRules};
 
     fn views_keep_their_query(rules: PathRules) {
         let c = library(rules);
@@ -99,7 +67,11 @@ mod tests {
             listing: Listing {
                 folder: Merged::from(vec![Name::from("p")]),
                 recursive: true,
-                query: Query { types: vec![MediaType::Video], ratings: vec![RatingFilter::Unrated], ..Query::default() },
+                query: Query {
+                    types: vec![MediaType::Video],
+                    ratings: vec![RatingFilter::Unrated],
+                    ..Query::default()
+                },
                 sort: by(SortKey::Size, true),
             },
         };

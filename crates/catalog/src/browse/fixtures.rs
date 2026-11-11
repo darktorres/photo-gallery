@@ -47,8 +47,8 @@ pub(crate) fn spelled(rules: PathRules, windows: &str) -> String {
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating). POSIX rules have one root, so there the second drive's file is in the first drive's folder (the
 /// merged folder is the same either way, and every merged result reads alike); the two drives are a Windows fixture.
-pub(crate) fn library(rules: PathRules) -> crate::Catalog {
-    let c = crate::Catalog::prepare(
+pub(crate) fn library(rules: PathRules) -> crate::core::Catalog {
+    let c = crate::core::Catalog::prepare(
         std::path::Path::new(":memory:"),
         crate::Versions {
             import: pg_analysis::analyze::IMPORT_VERSION,
@@ -86,13 +86,13 @@ pub(crate) fn library(rules: PathRules) -> crate::Catalog {
 
 /// The ids of a folder's list, the folder given as its path text under the catalog's rules. The empty folder is all
 /// folders with `recursive`, else the drive roots' own files.
-pub(crate) fn ids(c: &crate::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
+pub(crate) fn ids(c: &crate::core::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
     let folder = folder_of(c, folder);
-    list_grid(c, &folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
+    c.list_grid(&folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
 }
 
 /// A folder given as its path text (`""` for all folders), merged under the catalog's rules.
-pub(crate) fn folder_of(c: &crate::Catalog, text: &str) -> pg_model::rules::Merged {
+pub(crate) fn folder_of(c: &crate::core::Catalog, text: &str) -> pg_model::rules::Merged {
     let rules = c.rules();
     rules.merge(&rules.parse(text).unwrap())
 }
@@ -103,7 +103,7 @@ pub(crate) fn by(key: SortKey, descending: bool) -> Sort {
 
 /// `library(rules)` plus a video, an animated GIF, a file the import couldn't read and one not imported yet, with
 /// duplicates: 1 and 3 are the same bytes, 2–4 a close tier-1 pair, 2–6 a distant one.
-pub(crate) fn mixed_library(rules: PathRules) -> crate::Catalog {
+pub(crate) fn mixed_library(rules: PathRules) -> crate::core::Catalog {
     let c = library(rules);
     use fixture::File;
     let second = FolderId::new(if rules == PathRules::Windows { 2 } else { 1 });
@@ -144,7 +144,7 @@ pub(crate) fn mixed_library(rules: PathRules) -> crate::Catalog {
 
 /// The order SQLite gave when it sorted (before the sort moved here): the key, files without it last, then
 /// name order ascending.
-pub(crate) fn sorted_by_sqlite(c: &crate::Catalog, sort: Sort) -> Vec<i64> {
+pub(crate) fn sorted_by_sqlite(c: &crate::core::Catalog, sort: Sort) -> Vec<i64> {
     let order = match key_sql(sort) {
         None if sort.descending => "f.order_key DESC, f.id DESC".to_string(),
         None => "f.order_key, f.id".to_string(),

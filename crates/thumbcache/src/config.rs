@@ -2,7 +2,7 @@
 //! the timing constants of the writer and of the daily check, and the cache's layout version. A leaf: the schema
 //! and the writer read these.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 /// The cache's layout version (`PRAGMA user_version`). Before the first release, layout changes edit `SCHEMA` in place
@@ -59,8 +59,6 @@ impl Cap {
         self.0
     }
 }
-
-/// The cache file in the catalog folder.
 
 /// A hit not touched for this long is touched again: least recently used to the hour, which is what eviction
 /// needs, without a write for every thumbnail shown.

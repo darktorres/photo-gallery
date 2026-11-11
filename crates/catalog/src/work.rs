@@ -8,8 +8,9 @@ use pg_model::path::WorkList;
 use pg_model::turns::Turns;
 use rusqlite::Connection;
 
-use crate::core::{Catalog, write_transaction};
+use crate::core::Catalog;
 use crate::error::{Error, Result};
+use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, WorkItem, folder_path};
 
 /// `Catalog::pending_import`'s query.

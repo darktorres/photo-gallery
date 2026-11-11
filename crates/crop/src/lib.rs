@@ -15,8 +15,8 @@ use pg_model::rules::Path as RulePath;
 use pg_exiftool::ExifTool;
 use pg_jobs::control::Control;
 use pg_jobs::failure::file_failure;
-use pg_model::notice::FileFailure;
 use pg_jobs::pipeline::{self, Options, Read};
+use pg_model::notice::FileFailure;
 use pg_model::progress::Phase;
 use pg_platform::file::TempFile;
 use pg_platform::names::disk_path_of;
@@ -152,9 +152,9 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    stats.error.get_or_insert_with(|| {
-                        file_failure(rules.display_stored(paths.get(job.source.path)), &e)
-                    });
+                    stats
+                        .error
+                        .get_or_insert_with(|| file_failure(rules.display_stored(paths.get(job.source.path)), &e));
                 }
             }
             Ok(true)

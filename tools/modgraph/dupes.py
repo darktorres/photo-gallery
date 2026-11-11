@@ -15,7 +15,7 @@ W = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 
 
 def norm(line: str) -> str:
-    line = line.split("//")[0].strip()
+    line = line.split("//", maxsplit=1)[0].strip()
     return re.sub(r"\s+", " ", line)
 
 
@@ -28,15 +28,15 @@ for path in sorted(ROOT.glob("crates/*/src/**/*.rs")) + sorted(ROOT.glob("crates
     code = [(n, l) for n, l in code if l and not TRIVIAL.match(l)]
     rel = path.relative_to(ROOT).as_posix()
     for k in range(len(code) - W + 1):
-        block = "\n".join(l for _, l in code[k:k + W])
+        block = "\n".join(l for _, l in code[k : k + W])
         if len(block) < 40 * W * 0.6:
             continue
-        h = hashlib.sha1(block.encode()).hexdigest()
+        h = hashlib.blake2b(block.encode(), digest_size=16).hexdigest()
         windows[h].append((rel, code[k][0], code[k][0] - 1 >= test_start, block))
 
 # Merge overlapping windows per pair of places into ranges.
 pairs = defaultdict(list)
-for h, places in windows.items():
+for places in windows.values():
     files = {(p[0]) for p in places}
     if len(places) < 2:
         continue

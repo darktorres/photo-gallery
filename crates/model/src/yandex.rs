@@ -27,9 +27,14 @@ pub enum Phase {
     OtherSizes,
     Similar,
     /// A save is about to write `files` files.
-    Saving { files: usize },
+    Saving {
+        files: usize,
+    },
     /// The `n`th of `of` files (counted from 1) is being downloaded.
-    SavingFile { n: usize, of: usize },
+    SavingFile {
+        n: usize,
+        of: usize,
+    },
 }
 
 /// A search that ended with a note: the similar images stopped early or failed. The other sizes are still found.

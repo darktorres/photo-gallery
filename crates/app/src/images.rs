@@ -11,7 +11,6 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use pg_catalog::browse;
 use pg_catalog::ledger::Failure;
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version, View};
@@ -266,10 +265,7 @@ impl Images {
 
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now.
     pub fn placeholder(&self, file_id: FileId) -> Result<Rgba> {
-        let p = self
-            .catalogs
-            .with_catalog(|c| c.placeholder(file_id))?
-            .ok_or(Error::UnknownFile(file_id))?;
+        let p = self.catalogs.with_catalog(|c| c.placeholder(file_id))?.ok_or(Error::UnknownFile(file_id))?;
         let hash = p.hash.ok_or(Error::NotImported)?;
         display::placeholder(hash.as_slice(), p.turns).map_err(failed)
     }

@@ -22,9 +22,9 @@ use pg_model::notice::{FilePass, Notice};
 use pg_model::progress::Phase;
 
 use crate::app;
-use crate::pump::Pending;
 use crate::picker;
 use crate::picker::state::Purpose;
+use crate::pump::Pending;
 
 /// The library, once `start` has started it: what the change pump and the folder operations read.
 fn running() -> Option<&'static pg_app::Library> {

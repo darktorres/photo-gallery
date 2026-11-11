@@ -7,7 +7,7 @@
 //! recorded, and `retry_copies` lets each start of the writer try it again. Each call is one transaction or one
 //! statement, so no reader sees a write both done and still queued.
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -23,52 +23,11 @@ use pg_model::{write_rating, write_rotation};
 
 use crate::types::{DELETE_FILE_RATING, DELETE_RATING, SET_FILE_RATING, SET_RATING};
 
+mod job;
+pub use job::{Job, Rewrite, WriteEffect};
+
 /// Failed writes are retried at most this many times (offline drives retry without counting).
 pub const MAX_ATTEMPTS: i64 = 5;
-
-/// A queued write, as the writer takes it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Job {
-    pub file_id: FileId,
-    /// The rating, or the quarter turns still to write.
-    pub write: Write,
-    /// Set once the copy of the new content into the original may have started (the temp is complete, and the
-    /// original is open for it): the temp's path, and the write it carries (of the job's kind).
-    pub temp: Option<(RulePath, Write)>,
-    /// Failed attempts so far.
-    pub attempts: i64,
-}
-
-impl Job {
-    /// What the job writes: a rating, or turns.
-    pub fn kind(&self) -> WriteKind {
-        self.write.kind()
-    }
-}
-
-/// A file a write rewrote: its (size, mtime) on disk before (`None` when it isn't known) and after, and the BLAKE3 of
-/// the new bytes when only metadata changed (the analysis stays valid, and follows the file). `None` when the pixels
-/// did, so the analysis is redone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Rewrite {
-    pub before: Option<(i64, i64)>,
-    pub after: (i64, i64),
-    pub metadata_only: Option<pg_model::analysis::FileHash>,
-}
-
-/// What a finished write changed in the catalog. Applied in the transaction that takes the job off the queue
-/// (`done`), so the catalog and the queue never disagree. The effect's value is the job's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WriteEffect {
-    /// The rating is in the file, which was rewritten to hold it (0 stars: it holds none).
-    FileRating { rewrite: Rewrite, rating: Rating },
-    /// The turns are in the file, which was rewritten to show them: the analysis is turned back to match.
-    TurnedBack { rewrite: Rewrite, turns: Turns },
-    /// The file can't hold the turns: the catalog keeps them (`files.rotation`).
-    KeptInCatalog(Turns),
-    /// Nothing to record: the write is done, and the catalog already says so.
-    Nothing,
-}
 
 impl Catalog {
     /// Rate a file: 1–5, or `None` to clear. The catalog changes at once. With `write_back`, the rating is also queued
@@ -77,7 +36,7 @@ impl Catalog {
     /// clearing writes 0 only into a file that holds a rating.
     pub fn set_rating(&self, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
         let conn = &self.conn;
-        let tx = crate::core::write_transaction(conn)?;
+        let tx = crate::transaction::write_transaction(conn)?;
         let file_id = file_id.get();
         match rating {
             Some(rating) => tx.execute(SET_RATING, params![file_id, rating.get()])?,
@@ -93,7 +52,8 @@ impl Catalog {
                 |r| Ok((crate::types::kind_at(r, 0)?, crate::types::format_at(r, 1)?, r.get(2)?)),
             )
             .optional()?;
-        let can_hold = target.is_some_and(|(kind, format, failed)| !failed && pg_model::format::rating_in_file_possible(kind, format));
+        let can_hold = target
+            .is_some_and(|(kind, format, failed)| !failed && pg_model::format::rating_in_file_possible(kind, format));
         let in_file: Option<u8> =
             tx.query_row("SELECT value FROM file_ratings WHERE file_id = ?1", [file_id], |r| r.get(0)).optional()?;
         // What the file should hold: the rating, or none (0) if it holds one and the rating is cleared.
@@ -118,11 +78,19 @@ impl Catalog {
             // copied in finishes, and then this value follows it; its attempts start again, so a copy that had failed
             // up to the cap is tried again for the change.
             tx.execute(
-                concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", write_rating!(), "' AND temp IS NULL"),
+                concat!(
+                    "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
+                    write_rating!(),
+                    "' AND temp IS NULL"
+                ),
                 [file_id],
             )?;
             tx.execute(
-                concat!("UPDATE file_writes SET value = ?2, attempts = 0 WHERE file_id = ?1 AND kind = '", write_rating!(), "'"),
+                concat!(
+                    "UPDATE file_writes SET value = ?2, attempts = 0 WHERE file_id = ?1 AND kind = '",
+                    write_rating!(),
+                    "'"
+                ),
                 params![file_id, wanted.unwrap_or(0)],
             )?;
         }
@@ -134,7 +102,7 @@ impl Catalog {
     /// it can and keeps the turn in the catalog otherwise. Turns add up until written.
     pub fn queue_rotation(&self, file_id: FileId, turns: Turns) -> Result<()> {
         let conn = &self.conn;
-        let tx = crate::core::write_transaction(conn)?;
+        let tx = crate::transaction::write_transaction(conn)?;
         let (file_id, turns) = (file_id.get(), turns.get());
         tx.execute(
             concat!(
@@ -165,21 +133,21 @@ impl Catalog {
         let job = conn
             .query_row(NEXT_READY, params![MAX_ATTEMPTS, settle_secs], |r| {
                 let kind: String = r.get(1)?;
-                let kind = WriteKind::from_key(&kind).ok_or_else(|| rusqlite::Error::InvalidColumnType(1, kind, Type::Text))?;
+                let kind = WriteKind::from_key(&kind)
+                    .ok_or_else(|| rusqlite::Error::InvalidColumnType(1, kind, Type::Text))?;
                 // The value read with its kind: one out of the kind's range is a damaged row (the schema's CHECK).
                 let write_at = |i: usize| -> rusqlite::Result<Option<Write>> {
                     let Some(value) = r.get::<_, Option<i64>>(i)? else { return Ok(None) };
-                    Write::from_stored(kind, value)
-                        .map(Some)
-                        .ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("{} {value}", kind.key()), Type::Integer))
+                    Write::from_stored(kind, value).map(Some).ok_or_else(|| {
+                        rusqlite::Error::InvalidColumnType(i, format!("{} {value}", kind.key()), Type::Integer)
+                    })
                 };
                 let temp: Option<Vec<u8>> = r.get(3)?;
                 let temp_value = write_at(4)?;
                 // The temp's path is the rules' bytes (`record_temp`); one that doesn't parse is a damaged row.
                 let temp = match temp {
                     Some(bytes) => Some(
-                        self
-                            .rules()
+                        self.rules()
                             .parse_bytes(&bytes)
                             .ok_or_else(|| rusqlite::Error::InvalidColumnType(3, "temp".into(), Type::Blob))?,
                     ),
@@ -187,7 +155,8 @@ impl Catalog {
                 };
                 Ok(Job {
                     file_id: FileId::new(r.get(0)?),
-                    write: write_at(2)?.ok_or_else(|| rusqlite::Error::InvalidColumnType(2, "value".into(), Type::Null))?,
+                    write: write_at(2)?
+                        .ok_or_else(|| rusqlite::Error::InvalidColumnType(2, "value".into(), Type::Null))?,
                     temp: temp.zip(temp_value),
                     attempts: r.get(5)?,
                 })
@@ -199,7 +168,8 @@ impl Catalog {
     /// Whether a job is left that may still be tried (the writer waits for it to settle, rather than stopping).
     pub fn writes_attemptable(&self) -> Result<bool> {
         let conn = &self.conn;
-        Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM file_writes WHERE attempts < ?1)", [MAX_ATTEMPTS], |r| r.get(0))?)
+        Ok(conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM file_writes WHERE attempts < ?1)", [MAX_ATTEMPTS], |r| r.get(0))?)
     }
 
     /// Every queued write, failing or not.
@@ -256,7 +226,7 @@ impl Catalog {
         let (file_id, kind) = (job.file_id.get(), job.kind().key());
         // What the queue records as written: the job's rating, or its turns.
         let written = job.write.stored();
-        let tx = crate::core::write_transaction(conn)?;
+        let tx = crate::transaction::write_transaction(conn)?;
         match effect {
             WriteEffect::FileRating { rewrite, rating } => {
                 file_rewritten(&tx, job.file_id, rewrite)?;
@@ -280,7 +250,11 @@ impl Catalog {
                     params![file_id, written],
                 )?;
                 tx.execute(
-                    concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", write_rotation!(), "' AND value = 0"),
+                    concat!(
+                        "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
+                        write_rotation!(),
+                        "' AND value = 0"
+                    ),
                     [file_id],
                 )?;
                 // The upright size at once: the grid lays the file out turned before its analysis is redone.
@@ -426,7 +400,8 @@ mod tests {
         assert_eq!((first.file_id, first.write), (FileId::new(1), Write::Rating(Rating::new(3).unwrap())));
         // The rating is in the file: the catalog records it, and the job leaves the queue.
         let after = (11, 101);
-        let rewrite = Rewrite { before: Some((10, 1)), after, metadata_only: Some(pg_model::analysis::FileHash([7; 32])) };
+        let rewrite =
+            Rewrite { before: Some((10, 1)), after, metadata_only: Some(pg_model::analysis::FileHash([7; 32])) };
         c.write_done(&first, WriteEffect::FileRating { rewrite, rating: Rating::new(3).unwrap() }).unwrap();
         assert_eq!(raw::queued(&c, 1, "rating"), None);
         assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
@@ -533,8 +508,11 @@ mod tests {
             (FileId::new(2), Write::Rating(five), Some(Write::Rating(three)))
         );
         let rewrite = Rewrite { before: None, after: (11, 9), metadata_only: None };
-        c.write_done(&Job { write: Write::Rating(three), ..job.clone() }, WriteEffect::FileRating { rewrite, rating: three })
-            .unwrap();
+        c.write_done(
+            &Job { write: Write::Rating(three), ..job.clone() },
+            WriteEffect::FileRating { rewrite, rating: three },
+        )
+        .unwrap();
         assert_eq!(raw::queued(&c, 2, "rating"), Some(5));
         let in_file: u8 =
             c.conn.query_row("SELECT value FROM file_ratings WHERE file_id = 2", [], |r| r.get(0)).unwrap();

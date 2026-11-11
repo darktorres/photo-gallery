@@ -4,12 +4,12 @@
 use std::io::Write;
 
 use cxx_qt_lib::{QRectF, QString, QStringList};
+use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::text::{self, FoundBorders};
 use pg_model::detection::{Class, Edge};
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_client::image::ImageRequest;
 use pg_model::image::{ImageKey, Version};
 use pg_model::media::MediaType;
 

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
-use pg_catalog::browse::{self, read::facets::Facets};
+use pg_catalog::browse::read::facets::Facets;
 use pg_catalog::{Catalog, Versions, WorkItem};
 use pg_model::grid::Entry;
 use pg_model::path::WorkList;

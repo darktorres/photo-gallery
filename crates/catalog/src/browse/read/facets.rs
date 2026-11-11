@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::params_from_iter;
 use rusqlite::types::Value;
@@ -11,8 +11,8 @@ use strum::{EnumCount, IntoEnumIterator};
 
 use super::grid::FILE_JOINS;
 use super::scope::scope;
-use pg_model::query::{BorderFacet, Query};
 use pg_model::media::MediaType;
+use pg_model::query::{BorderFacet, Query};
 use pg_model::rules::Merged;
 use pg_query::{Counted, MEDIA_CASE, border_counts, condition_without};
 
@@ -89,8 +89,11 @@ impl Catalog {
         }
 
         // Only the values some file has, as the grouped statements listed them.
-        let mut types: Vec<(MediaType, i64)> =
-            by_type.into_iter().filter(|(_, n)| *n > 0).filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n))).collect();
+        let mut types: Vec<(MediaType, i64)> = by_type
+            .into_iter()
+            .filter(|(_, n)| *n > 0)
+            .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
+            .collect();
         types.sort();
         let mut exts: Vec<(String, i64)> = by_ext.into_iter().filter(|(_, n)| *n > 0).collect();
         exts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));

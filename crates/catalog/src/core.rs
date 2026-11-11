@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, anyhow};
-use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
+use rusqlite::{Connection, OpenFlags, Transaction};
 
 use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
@@ -22,15 +22,9 @@ use crate::rebuild::{back_up, db_file, rebuild};
 use crate::schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
 };
+use crate::transaction::write_transaction;
 use crate::types::{Rebuilt, Versions};
 use crate::writers::{AnalysisWriter, BordersWriter, ScanWriter};
-
-/// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited
-/// for (`busy_timeout`) before anything is read. A deferred one that reads first and then writes can instead fail at
-/// once when another connection has committed in between (SQLITE_BUSY_SNAPSHOT), which no wait fixes.
-pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transaction<'_>> {
-    Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
-}
 
 pub struct Catalog {
     pub(crate) conn: Connection,
@@ -315,7 +309,7 @@ mod tests {
             let rewrite = queue::Rewrite { before: Some(before), after, metadata_only };
             c.write_done(&job, queue::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
         };
-        rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
+        rewritten(&c, (11, 101), (12, 102), Some(pg_model::analysis::FileHash([0; 32])));
         assert!(!due(&c, id));
         rewritten(&c, (12, 102), (13, 103), None);
         assert!(due(&c, id));
@@ -345,7 +339,7 @@ mod tests {
 
     fn a_folder_the_scan_could_not_list_keeps_its_files(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
+        let put = |c: &mut Catalog, scan: pg_model::ids::ScanId, folder: &str, name: &str, file_ref: u64| {
             let tx = c.tx().unwrap();
             let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
             let folder = writer.folder(&p(rules, folder)).unwrap();

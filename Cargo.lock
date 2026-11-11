@@ -1601,7 +1601,6 @@ name = "pg-analysis"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "blake3",
  "pdqhash",
  "pg-codec",
  "pg-metadata",
@@ -1670,11 +1669,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "pg-analysis",
+ "pg-dbfile",
  "pg-model",
  "pg-platform",
  "pg-query",
  "pg-render",
- "pg-schema",
  "pg-testkit",
  "rusqlite",
  "serde_json",
@@ -1726,12 +1725,12 @@ name = "pg-codec"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crc32fast",
  "fast_image_resize",
  "gif 0.14.2",
  "image 0.25.10",
  "image-webp",
  "miniz_oxide 0.9.1",
+ "pg-container",
  "pg-model",
  "pg-testkit",
  "png 0.18.1",
@@ -1745,6 +1744,7 @@ dependencies = [
 name = "pg-container"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "proptest",
 ]
 
@@ -1760,6 +1760,14 @@ dependencies = [
  "pg-model",
  "pg-platform",
  "pg-testkit",
+]
+
+[[package]]
+name = "pg-dbfile"
+version = "0.1.0"
+dependencies = [
+ "pg-platform",
+ "rusqlite",
 ]
 
 [[package]]
@@ -1794,7 +1802,6 @@ name = "pg-edit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crc32fast",
  "image-webp",
  "pg-codec",
  "pg-container",
@@ -1902,7 +1909,6 @@ dependencies = [
 name = "pg-metadata"
 version = "0.1.0"
 dependencies = [
- "crc32fast",
  "miniz_oxide 0.9.1",
  "pg-container",
  "pg-model",
@@ -1915,6 +1921,7 @@ name = "pg-model"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "blake3",
  "proptest",
  "serde",
  "serde_json",
@@ -1972,14 +1979,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pg-schema"
-version = "0.1.0"
-dependencies = [
- "pg-platform",
- "rusqlite",
-]
-
-[[package]]
 name = "pg-testkit"
 version = "0.1.0"
 dependencies = [
@@ -1995,11 +1994,11 @@ dependencies = [
  "anyhow",
  "pg-analysis",
  "pg-catalog",
+ "pg-dbfile",
  "pg-jobs",
  "pg-jobs-testkit",
  "pg-model",
  "pg-platform",
- "pg-schema",
  "pg-testkit",
  "rusqlite",
 ]
@@ -2046,7 +2045,6 @@ name = "pg-writeback"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "pg-analysis",
  "pg-catalog",
  "pg-edit",
  "pg-exiftool",

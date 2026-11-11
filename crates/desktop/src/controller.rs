@@ -12,8 +12,8 @@
 use std::cell::RefCell;
 use std::io::Write;
 
-use pg_client::controller::size::GridSize;
 use pg_client::controller::replay::{self, Record};
+use pg_client::controller::size::GridSize;
 use pg_client::controller::{Command, Controller, Event};
 use pg_client::facets::Counts;
 use pg_model::view::Listing;

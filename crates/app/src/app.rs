@@ -66,8 +66,8 @@ impl App {
         }
         let thumb_events = Arc::new(Bus::new(64));
         let forwarder = forward_thumb_events(thumb_events.clone(), inbox.clone())?;
-        let thumbs = pg_library::open_thumbs(&layout, &catalog_id, config.thumb_cap, thumb_events)
-            .unwrap_or_else(|e| {
+        let thumbs =
+            pg_library::open_thumbs(&layout, &catalog_id, config.thumb_cap, thumb_events).unwrap_or_else(|e| {
                 inbox.post(Notice::CacheDisabled { error: tidy(&format!("{e:#}"), ERROR_CAP) });
                 ThumbCache::disabled()
             });
@@ -224,7 +224,9 @@ mod tests {
             .unwrap();
         let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
         assert_eq!(app.catalogs().file_path(FileId::new(1)).unwrap(), pg_platform::names::disk_path_of(text));
-        assert!(matches!(app.catalogs().file_path(FileId::new(2)), Err(Error::UnknownFile(id)) if id == FileId::new(2)));
+        assert!(
+            matches!(app.catalogs().file_path(FileId::new(2)), Err(Error::UnknownFile(id)) if id == FileId::new(2))
+        );
         app.shutdown();
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

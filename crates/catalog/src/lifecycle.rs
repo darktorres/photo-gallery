@@ -10,8 +10,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use pg_model::media::Ext;
 use pg_model::rules::PathRules;
 
-use crate::core::write_transaction;
 use crate::error::{Error, Result};
+use crate::transaction::write_transaction;
 use crate::types::{TAKEN_ZONE_QUERY, rules_name};
 
 /// Why the paths of the catalog on `conn` don't read as paths under `rules` (`meta.path_rules`): they were stored under
@@ -87,7 +87,12 @@ pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<()> 
 
 /// Set the mark `key` of `meta` to `current`, and when it was another, make the rows follow it (`recompute`): checked
 /// before and again inside one immediate write transaction, so two processes opening the catalog at once do it once.
-fn set_mark<T>(conn: &Connection, key: &str, current: &T, recompute: impl FnOnce(&Transaction) -> Result<()>) -> Result<()>
+fn set_mark<T>(
+    conn: &Connection,
+    key: &str,
+    current: &T,
+    recompute: impl FnOnce(&Transaction) -> Result<()>,
+) -> Result<()>
 where
     T: rusqlite::types::FromSql + rusqlite::ToSql + PartialEq,
 {
@@ -168,14 +173,14 @@ pub(crate) fn set_taken_zone(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::set_taken_zone;
-    use crate::rebuild::backup_path;
-    use crate::work::pending_import_sql;
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
+    use crate::rebuild::backup_path;
     use crate::schema::{BASELINE, MIGRATIONS, bring_to, current_expected, current_version, mismatch};
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
     use crate::types::rules_name;
+    use crate::work::pending_import_sql;
     use pg_model::notice::Carried;
 
     use crate::{Catalog, Error, Result, ScannedFile};
@@ -451,20 +456,22 @@ mod tests {
         assert!(c.rebuilt().is_some(), "moved aside");
         let job = c.next_write(0).unwrap().expect("the queued copy");
         let temp = PathRules::Windows.parse(r"D:\p\.a.jpg.pg-write").unwrap();
-        assert_eq!(job.temp, Some((temp, 3)));
+        assert_eq!(job.temp, Some((temp, pg_model::write::Write::Rating(pg_model::rating::Rating::new(3).unwrap()))));
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// On Windows, a catalog in a folder whose name has no UTF-8 form is opened, and rebuilt with its rows carried (the
-    /// carry attaches the old file by name): every SQLite call goes through the folder's alias (`pg_platform::sqlite`).
+    /// carry attaches the old file by name), through the alias its caller opens it by (`pg_platform::sqlite::openable_folder`).
     #[cfg(windows)]
     #[test]
     fn a_catalog_in_a_folder_without_a_utf8_name_is_opened_and_carried_through_an_alias() {
         let dir = test_folder(SCRATCH, "odd-folder").unwrap();
         let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cat\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
-        let path = folder.join("catalog.sqlite");
+        let alias = pg_platform::sqlite::openable_folder(&folder, &dir.join("aliases")).unwrap();
+        assert_ne!(alias, folder, "SQLite can't name the folder: it is opened through an alias");
+        let path = alias.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
         drop(Catalog::open(&path, pg_platform::native::PATH_RULES).unwrap());
         // The layout of before the queued temps were bytes: the rebuild carries the old file's rows, attached by name.

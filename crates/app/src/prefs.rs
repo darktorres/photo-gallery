@@ -166,7 +166,13 @@ mod tests {
 
     #[test]
     fn a_changed_value_is_written_as_its_own_text() {
-        let prefs = Prefs { real_size: true, row_height: 333.5, last_file: Some(FileId::new(42)), dev_mode: true, ..Prefs::default() };
+        let prefs = Prefs {
+            real_size: true,
+            row_height: 333.5,
+            last_file: Some(FileId::new(42)),
+            dev_mode: true,
+            ..Prefs::default()
+        };
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,

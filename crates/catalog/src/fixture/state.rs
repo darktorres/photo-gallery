@@ -3,7 +3,7 @@
 //! or checks. Production code reads through the catalog's functions. Each returns the statement's error, so a test
 //! fails with it.
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::queue::MAX_ATTEMPTS;
 use anyhow::Result;
 use pg_model::ids::FileId;

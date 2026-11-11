@@ -16,9 +16,13 @@ impl Turns {
 
     /// `n` quarter turns clockwise, or anticlockwise when negative: any count, either way, modulo four.
     pub const fn of(n: i64) -> Turns {
-        // `rem_euclid(4)` is 0 to 3, so the cast keeps it.
-        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "0 to 3 fits a u8")]
-        Turns(n.rem_euclid(4) as u8)
+        // `rem_euclid(4)` is 0 to 3 (`try_from` isn't const).
+        Turns(match n.rem_euclid(4) {
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            _ => 0,
+        })
     }
 
     /// The number of quarter turns, 0 to 3.

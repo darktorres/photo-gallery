@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow};
 use pg_catalog::Catalog;
-use pg_catalog::dups::{self, Identity};
+use pg_catalog::dups::Identity;
 use pg_client::text::cli::{Line, Tier, line};
 use pg_dedup::UnionFind;
 use pg_model::ids::FileId;

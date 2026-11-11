@@ -50,7 +50,7 @@ fn start_for(purpose: Purpose) -> Option<PathBuf> {
         Purpose::YandexSave => crate::app::get().yandex().start_folder(),
         Purpose::AddFolder | Purpose::SaveCrops => None,
     };
-    pg_platform::picker::start_folder(requested, std::env::var_os)
+    pg_platform::picker::start_folder(requested, |name| std::env::var_os(name))
 }
 
 /// The display names of the listing's folders (the names as text: a dialog shows them, and the path is kept apart).
@@ -194,4 +194,3 @@ impl qobject::FolderPicker {
         self.done(purpose.code());
     }
 }
-

@@ -19,7 +19,6 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
-use pg_catalog::browse;
 use pg_catalog::browse::read::facets::Facets;
 use pg_model::details::Details;
 use pg_model::grid::Entry;
@@ -29,29 +28,7 @@ use pg_model::rules::Merged;
 use pg_model::tree::FolderTree;
 
 use crate::catalogs::Catalogs;
-use crate::error::{Error, Result, failed};
-
-/// Why a read gave no result: the catalog's error, or one of the reader's own two cases.
-#[derive(Debug, thiserror::Error)]
-pub enum ReadError {
-    #[error(transparent)]
-    Catalog(#[from] pg_catalog::Error),
-    /// The read panicked (the panic hook logged it); the reader goes on serving the others.
-    #[error("the catalog read failed (an internal error)")]
-    Panicked,
-    /// The reader's connection couldn't be opened: why.
-    #[error("the catalog can't be opened: {0}")]
-    Unopened(String),
-}
-
-impl From<ReadError> for Error {
-    fn from(e: ReadError) -> Error {
-        match e {
-            ReadError::Catalog(e) => Error::Catalog(e),
-            e => crate::error::failed(e),
-        }
-    }
-}
+use crate::error::{Error, ReadError, Result, failed};
 
 /// What a request is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

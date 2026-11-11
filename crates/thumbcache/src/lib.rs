@@ -94,7 +94,8 @@ impl ThumbCache {
         thumbs_version: i64,
         events: Arc<Bus<Event>>,
     ) -> Result<ThumbCache> {
-        let Writing { conn, started_over, drift, live } = open_writer(path, catalog_id, cap.map(Cap::bytes), thumbs_version)?;
+        let Writing { conn, started_over, drift, live } =
+            open_writer(path, catalog_id, cap.map(Cap::bytes), thumbs_version)?;
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
@@ -105,7 +106,7 @@ impl ThumbCache {
         let body = inbox.clone();
         let writer = Service::start("thumbnail cache", move |waker| write_loop(conn, &body, &events, waker))
             .context("start the thumbnail cache writer")?;
-        Ok(ThumbCache { store: Some(Store { path, inbox, writer, _live: live }) })
+        Ok(ThumbCache { store: Some(Store { path: path.to_path_buf(), inbox, writer, _live: live }) })
     }
 
     /// A cache that keeps nothing, for when the file can't be opened: a cache must never keep the app from
@@ -228,10 +229,10 @@ impl ThumbCache {
             return Ok(None);
         }
         // Held shared for the read: a start over elsewhere waits for it, as it waits for the cache's own connections.
-        let _live = hold_shared(&path)?;
+        let _live = hold_shared(path)?;
         // Read-write, as the other connections are: a read-only one can't merge the WAL when it closes last, and
         // would leave the WAL and its index behind.
-        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         Ok(Some(conn.query_row("SELECT t.bytes, t.count, l.cap FROM totals t, limits l", [], |r| {
             Ok(Usage { bytes: r.get(0)?, count: r.get(1)?, cap: r.get(2)? })
@@ -1028,17 +1029,19 @@ mod tests {
         assert_eq!(ids(&behind), vec![2, 1]);
     }
 
-    /// On Windows, a cache in a folder whose name has no UTF-8 form is made, and opened again through the folder's alias
-    /// (`pg_platform::sqlite`): the file is in the folder itself.
+    /// On Windows, a cache in a folder whose name has no UTF-8 form is made, and opened again, through the alias its
+    /// caller opens it by (`pg_platform::sqlite::openable_folder`): the file is in the folder itself.
     #[cfg(windows)]
     #[test]
     fn a_cache_in_a_folder_without_a_utf8_name_is_opened_through_an_alias() {
         let dir = test_folder(SCRATCH, "odd-folder").unwrap();
         let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cache\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
-        drop(open(&folder, 1 << 30));
+        let alias = pg_platform::sqlite::openable_folder(&folder, &dir.join("aliases")).unwrap();
+        assert_ne!(alias, folder, "SQLite can't name the folder: it is opened through an alias");
+        drop(open(&alias, 1 << 30));
         assert!(cache_path(&folder).exists(), "the cache file is in the folder");
-        drop(open(&folder, 1 << 30));
+        drop(open(&alias, 1 << 30));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1090,7 +1093,10 @@ mod tests {
         drop(cache);
         let reopen = |version: i64| {
             let (events, watch) = Quiet::bus();
-            Opened { cache: ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, version, events).unwrap(), _events: watch }
+            Opened {
+                cache: ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, version, events).unwrap(),
+                _events: watch,
+            }
         };
         assert!(reopen(1).pending(&catalog, 100).unwrap().snapshot.since_checked);
         let newer = reopen(2);

@@ -334,10 +334,12 @@ fn number(found: &mut Found, generation: u64) {
 /// Writes a result's file (kept by the search, or fetched now) into `folder`, named `<stem> (<suffix>)` so it sorts
 /// next to the photo ([`write_new`]).
 fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
-    let kept = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error: error.into() })?;
-    write_new(folder, &saved_stem(stem, &hit.suffix), kept.format.extension(), &kept.file.bytes)
-        .map(drop)
-        .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path: shown(&path), error: error.to_string() })
+    let kept = images
+        .get(hit.id, &hit.url)
+        .map_err(|error| SaveFailure::Download { url: hit.url.clone(), error: error.into() })?;
+    write_new(folder, &saved_stem(stem, &hit.suffix), kept.format.extension(), &kept.file.bytes).map(drop).map_err(
+        |(path, error)| SaveFailure::Write { url: hit.url.clone(), path: shown(&path), error: error.to_string() },
+    )
 }
 
 /// What a search found, its note, and the fetcher of its results' files.

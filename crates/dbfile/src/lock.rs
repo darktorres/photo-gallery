@@ -81,4 +81,3 @@ impl Live {
 fn open_live(path: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, ".live"))
 }
-

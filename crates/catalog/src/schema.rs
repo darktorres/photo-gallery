@@ -7,8 +7,8 @@ use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
 use rusqlite::Connection;
 
-use crate::core::write_transaction;
 use crate::error::Result;
+use crate::transaction::write_transaction;
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -16,18 +16,12 @@ use crate::error::Result;
 /// The baseline is frozen: since the first migration (version 2), every schema change is a migration, which converts
 /// the rows whose meaning changed instead of copying them as they are, and the baseline takes comment edits only (a
 /// catalog at version 1 is compared with it). A catalog whose schema differs from this build's at its version is
-/// rebuilt when it is prepared ([`crate::Catalog::prepare`]): a new catalog is made from the baseline and the
-/// migrations and takes the old rows with their ids ([`crate::rebuild::carry_rows`]), and the old file is moved aside. A catalog of
+/// rebuilt when it is prepared (`Catalog::prepare`): a new catalog is made from the baseline and the
+/// migrations and takes the old rows with their ids (the rebuild's `carry_rows`), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[
-    TO_2_CHANGE_STAMPS,
-    TO_3_NOTICES,
-    TO_4_FAILURES,
-    TO_5_SESSION,
-    TO_6_THUMB_VIEWS,
-    TO_7_WRITE_CHECKS,
-];
+pub(crate) const MIGRATIONS: &[&str] =
+    &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES, TO_5_SESSION, TO_6_THUMB_VIEWS, TO_7_WRITE_CHECKS];
 
 /// Version 2: `files.changed` (what a client that kept its list fetches again by) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -122,7 +116,7 @@ const TO_4_FAILURES: &str = concat!(
 );
 
 /// Version 5: the session is a listing (`pg_model::view::Listing`) in one row, with the saved views' columns, which the
-/// views' row code reads and writes (`browse::views::listing_at`, `listing_values`). It was a store of
+/// views' row code reads and writes (`listing::listing_at`, `listing_values`). It was a store of
 /// text keys (`folder` as the JSON of the folder's parts, `recursive` as `true` or `false`, `query`, `sort`); the row is
 /// made from them once, here. A part of the folder is a JSON string, or `{"b": "<hex>"}` for one that is not UTF-8
 /// (`Name`'s JSON), and the parts are joined by the separator of the catalog's rules, as a view's folder is stored. A
@@ -526,7 +520,7 @@ CREATE TABLE file_writes(
     temp_value INTEGER,
     PRIMARY KEY(file_id, kind)
 );
--- The writer's next job (crate::Catalog::next_write orders by these): the interrupted copies first, then the oldest, read off
+-- The writer's next job (Catalog::next_write orders by these): the interrupted copies first, then the oldest, read off
 -- the index in order, without sorting the whole queue for each job.
 CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
 
@@ -640,13 +634,13 @@ END;
 mod tests {
     use super::*;
     use crate::browse::fixtures::library;
+    use crate::browse::fixtures::under_both_rules;
     use crate::test_support::changed_since;
+    use pg_dbfile::Difference;
     use pg_model::ids::FileId;
     use pg_model::rating::Rating;
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
-    use crate::browse::fixtures::under_both_rules;
-    use pg_dbfile::Difference;
 
     fn version(conn: &Connection) -> i64 {
         pg_dbfile::user_version(conn).unwrap()
@@ -838,15 +832,13 @@ mod tests {
         assert_eq!(changed_since(&c, after), (vec![], after));
 
         // A view is not a file's change.
-        c.save_view(
-            &pg_model::view::SavedView {
-                name: "v".into(),
-                listing: pg_model::view::Listing {
-                    folder: pg_model::rules::Merged::from(vec![pg_model::name::Name::from("p")]),
-                    ..Default::default()
-                },
+        c.save_view(&pg_model::view::SavedView {
+            name: "v".into(),
+            listing: pg_model::view::Listing {
+                folder: pg_model::rules::Merged::from(vec![pg_model::name::Name::from("p")]),
+                ..Default::default()
             },
-        )
+        })
         .unwrap();
         assert_eq!(changed_since(&c, after), (vec![], after));
     }

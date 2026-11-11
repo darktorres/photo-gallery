@@ -7,8 +7,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use pg_model::ids::{RootId, ScanId};
 use pg_model::rules::Path as RulePath;
 
-use crate::core::{Catalog, write_transaction};
+use crate::core::Catalog;
 use crate::error::Result;
+use crate::transaction::write_transaction;
 use crate::types::{Root, folders_under, skipped_folders, under_params};
 
 impl Catalog {

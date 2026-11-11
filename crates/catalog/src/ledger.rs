@@ -16,28 +16,16 @@ use rusqlite::{Connection, OptionalExtension, params};
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, LedgerCounts, Notice};
 use pg_model::rules::Path as RulePath;
-use pg_model::turns::Turns;
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
-use crate::core::write_transaction;
+use crate::transaction::write_transaction;
+
+mod failure;
+pub use failure::Failure;
 
 /// The longest error text kept (bytes; cut on a character's boundary).
 pub const ERROR_BYTES: usize = 1024;
-
-/// A file a pass couldn't make its result of, as the pass read it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Failure {
-    pub file_id: FileId,
-    /// The file's state when the pass read it: the row is kept only while the catalog still has the file so.
-    pub mtime: i64,
-    pub size: i64,
-    pub rotation: Turns,
-    pub error: String,
-    /// Whether the pass tries the file again by itself (a decode error, which a pass tries until the file changes), or
-    /// not until it changes or the user retries it (a panic).
-    pub retry: bool,
-}
 
 /// A pass's ledger as the inbox shows it: one entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +70,21 @@ pub struct FailedFile {
     pub new: bool,
 }
 
+/// The import's failed files: the files the grid lists as failed (an analysis that failed and is current, of a file that
+/// is there). From the failed analyses' index: the files are looked up by id (`CROSS JOIN`: the planner would otherwise
+/// walk every present file).
+macro_rules! import_failures {
+    ($columns:literal, $more:literal) => {
+        concat!(
+            "SELECT ",
+            $columns,
+            " FROM analysis a CROSS JOIN files f ON f.id = a.file_id
+             WHERE a.error IS NOT NULL AND f.pending = 0 AND f.missing = 0",
+            $more
+        )
+    };
+}
+
 impl Catalog {
     /// Record `failures` of `pass`, found at `now`: one row per file, kept only while the catalog has the file as the pass
     /// read it (one changed or gone since is not recorded). A failure recorded already is updated only if its error or its
@@ -93,7 +96,14 @@ impl Catalog {
         let rows: Vec<serde_json::Value> = failures
             .iter()
             .map(|f| {
-                serde_json::json!([f.file_id.get(), f.mtime, f.size, f.rotation.get(), tidy(&f.error), i64::from(f.retry)])
+                serde_json::json!([
+                    f.file_id.get(),
+                    f.mtime,
+                    f.size,
+                    f.rotation.get(),
+                    tidy(&f.error),
+                    i64::from(f.retry)
+                ])
             })
             .collect();
         let rows = serde_json::to_string(&rows).map_err(anyhow::Error::from)?;
@@ -131,7 +141,8 @@ impl Catalog {
         if files.is_empty() {
             return Ok(());
         }
-        let ids = serde_json::to_string(&files.iter().map(|f| f.get()).collect::<Vec<_>>()).map_err(anyhow::Error::from)?;
+        let ids =
+            serde_json::to_string(&files.iter().map(|f| f.get()).collect::<Vec<_>>()).map_err(anyhow::Error::from)?;
         let held: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM file_failures WHERE pass = ?1 AND file_id IN (SELECT value FROM json_each(?2)))",
             params![pass.code(), ids],
@@ -247,21 +258,6 @@ fn ack(conn: &Connection, pass: FilePass) -> Result<Option<Ack>> {
         .optional()?)
 }
 
-/// The import's failed files: the files the grid lists as failed (an analysis that failed and is current, of a file that
-/// is there). From the failed analyses' index: the files are looked up by id (`CROSS JOIN`: the planner would otherwise
-/// walk every present file).
-macro_rules! import_failures {
-    ($columns:literal, $more:literal) => {
-        concat!(
-            "SELECT ",
-            $columns,
-            " FROM analysis a CROSS JOIN files f ON f.id = a.file_id
-             WHERE a.error IS NOT NULL AND f.pending = 0 AND f.missing = 0",
-            $more
-        )
-    };
-}
-
 fn summary(conn: &Connection, pass: FilePass) -> Result<Option<Summary>> {
     let ack = ack(conn, pass)?;
     let seen_to = ack.as_ref().map_or(0, |a| a.seen_to);
@@ -319,6 +315,7 @@ mod tests {
     use crate::test_support::versions;
     use pg_model::ids::FolderId;
     use pg_model::rules::PathRules;
+    use pg_model::turns::Turns;
 
     fn catalog(rules: PathRules) -> Catalog {
         let c = Catalog::prepare(std::path::Path::new(":memory:"), versions(), rules).unwrap();
@@ -461,7 +458,8 @@ mod tests {
     #[test]
     fn a_new_version_starts_its_ledger_anew() {
         let c = catalog(PathRules::Posix);
-        c.record_failures(FilePass::Thumbs, &[failure(1, "panicked"), Failure { retry: true, ..failure(2, "b") }], 1).unwrap();
+        c.record_failures(FilePass::Thumbs, &[failure(1, "panicked"), Failure { retry: true, ..failure(2, "b") }], 1)
+            .unwrap();
         c.record_failures(FilePass::Borders, &[failure(3, "c")], 1).unwrap();
         let seq =
             |id: i64| -> i64 { c.conn.query_row("SELECT seq FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap() };

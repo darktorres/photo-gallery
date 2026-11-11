@@ -3,18 +3,12 @@
 //! (Qt's int at the bridge, where the bar names each one by a constant); the order is pinned by a test. Each choice is
 //! sent to the bar as a key (`input::key_of`; `input::choice` reads it back) and named by `text::choice_label`.
 
-use pg_model::query::{BorderFacet, Choice, ListFacet, Query, RatingFilter, Shape, Status};
 use pg_model::media::MediaType;
+use pg_model::query::{BorderFacet, Choice, ListFacet, Query, RatingFilter, Shape, Status};
 
 /// Every list facet, in the filter bar's index order.
-pub const ALL: [ListFacet; 6] = [
-    ListFacet::Types,
-    ListFacet::Shapes,
-    ListFacet::Status,
-    ListFacet::Borders,
-    ListFacet::Ratings,
-    ListFacet::Exts,
-];
+pub const ALL: [ListFacet; 6] =
+    [ListFacet::Types, ListFacet::Shapes, ListFacet::Status, ListFacet::Borders, ListFacet::Ratings, ListFacet::Exts];
 
 /// The facet at `index` (its position in [`ALL`]); `None` out of range.
 pub fn from_index(index: usize) -> Option<ListFacet> {
@@ -50,9 +44,9 @@ pub fn choices(facet: ListFacet, counts: &Counts) -> Vec<(Choice, Option<i64>)> 
     let media = |t: MediaType| counts.types.iter().find(|(x, _)| *x == t).map_or(0, |(_, n)| *n);
     let border = |b: BorderFacet| counts.borders.iter().find(|(x, _)| *x == b).map_or(0, |(_, n)| *n);
     match facet {
-        ListFacet::Types => {
-            [MediaType::Image, MediaType::Animated, MediaType::Video].map(|t| (Choice::Type(t), Some(media(t)))).to_vec()
-        }
+        ListFacet::Types => [MediaType::Image, MediaType::Animated, MediaType::Video]
+            .map(|t| (Choice::Type(t), Some(media(t))))
+            .to_vec(),
         ListFacet::Shapes => {
             [Shape::Landscape, Shape::Portrait, Shape::Square].map(|s| (Choice::Shape(s), None)).to_vec()
         }

@@ -25,8 +25,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pg_catalog::Catalog;
-use pg_catalog::inbox::{self, Entry, EntryId, Mark};
-use pg_catalog::ledger::{self, Failure};
+use pg_catalog::inbox::{Entry, EntryId, Mark};
+use pg_catalog::ledger::Failure;
 use pg_jobs::events::{Bus, Subscription};
 use pg_library::runner::NoticeSink;
 use pg_model::ids::FileId;
@@ -497,7 +497,9 @@ mod tests {
         let (inbox, dir) = inbox("inbox-poke");
         let sub = inbox.subscribe();
         next(&sub);
-        let other = Catalog::open(&pg_library::layout::Layout::in_home(&dir).catalog_path(), pg_platform::native::PATH_RULES).unwrap();
+        let other =
+            Catalog::open(&pg_library::layout::Layout::in_home(&dir).catalog_path(), pg_platform::native::PATH_RULES)
+                .unwrap();
         other.post_notice(&failed("elsewhere"), now()).unwrap();
         inbox.poke();
         let (toasts, listing) = next(&sub);

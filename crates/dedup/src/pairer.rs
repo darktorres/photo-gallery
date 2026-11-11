@@ -16,7 +16,7 @@ pub struct Pairer {
 }
 
 impl Pairer {
-    /// The index of the stored hashes: `ids` and their hash words, as [`PdqIndex::build`] takes them.
+    /// The index of the stored hashes: `ids` and their hash words, as the crate's index takes them (`PdqIndex::build`).
     pub fn build(ids: Vec<FileId>, hashes: Vec<[u64; 4]>) -> Pairer {
         Pairer { index: PdqIndex::build(ids, hashes), found: Vec::new(), best: Vec::new() }
     }

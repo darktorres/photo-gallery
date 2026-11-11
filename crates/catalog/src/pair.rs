@@ -25,8 +25,11 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::core::Catalog;
 use crate::error::Result;
-use crate::core::write_transaction;
+use crate::transaction::write_transaction;
 use crate::types::{folders_under, skipped_folders, under_params};
+
+mod coverage;
+pub use coverage::Coverage;
 
 /// What the pairing did, for the scan's report.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -43,16 +46,6 @@ pub struct Pairing {
     pub replaced_ids: Vec<FileId>,
     /// The temp files of queued writes that were dropped with a replacement: deleted by the caller, after the commit.
     pub temps: Vec<RulePath>,
-}
-
-/// What a scan of a root saw, for its pairing.
-#[derive(Clone, Copy, Debug)]
-pub struct Coverage<'a> {
-    /// The walk finished: it was not stopped. Tier 2, the replacements and the clearing need it.
-    pub complete: bool,
-    /// The folders the walk did not list: those it couldn't read, and the reparse folders it does not follow. Their
-    /// subtrees were not seen, so their rows are left out of every tier.
-    pub skipped: &'a [RulePath],
 }
 
 /// A fresh row, as the pairing reads it.
@@ -134,7 +127,16 @@ impl Catalog {
                 let candidates: Vec<(i64, i64, i64)> = moved
                     .query_map(
                         params![
-                            under[0], under[1], under[2], f.volume, f.file_ref, f.size, f.mtime, f.ext.name(), f.created, scan,
+                            under[0],
+                            under[1],
+                            under[2],
+                            f.volume,
+                            f.file_ref,
+                            f.size,
+                            f.mtime,
+                            f.ext.name(),
+                            f.created,
+                            scan,
                             f.id
                         ],
                         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -351,7 +353,10 @@ fn replace(
             temps.push(temp);
         }
     }
-    tx.execute(concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_rotation!(), "'"), [id])?;
+    tx.execute(
+        concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_rotation!(), "'"),
+        [id],
+    )?;
     tx.execute(
         concat!(
             "UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = '",
@@ -440,13 +445,13 @@ mod tests {
     }
 
     /// The pairing of a scan of D:\x that skipped no folder, `complete` or stopped.
-    fn pair(c: &mut Catalog, scan: i64, complete: bool) -> Pairing {
+    fn pair(c: &mut Catalog, scan: ScanId, complete: bool) -> Pairing {
         let rules = c.rules();
         c.pair_after_scan(&p(rules, r"D:\x"), scan, Coverage { complete, skipped: &[] }).unwrap()
     }
 
     /// The pairing of a complete scan of D:\x that did not list `skipped` (the folders' texts).
-    fn pair_skipping(c: &mut Catalog, scan: i64, skipped: &[&str]) -> Pairing {
+    fn pair_skipping(c: &mut Catalog, scan: ScanId, skipped: &[&str]) -> Pairing {
         let rules = c.rules();
         let skipped: Vec<RulePath> = skipped.iter().map(|text| p(rules, text)).collect();
         c.pair_after_scan(&p(rules, r"D:\x"), scan, Coverage { complete: true, skipped: &skipped }).unwrap()

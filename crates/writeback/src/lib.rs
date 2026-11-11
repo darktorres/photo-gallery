@@ -25,9 +25,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use pg_model::analysis::FileHash;
+use pg_catalog::queue::{Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_catalog::{Catalog, WriteTarget};
-use pg_catalog::queue::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_jobs::events::{Bus, Watch};
@@ -35,6 +34,7 @@ use pg_jobs::failure::Cause;
 use pg_jobs::panics;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
+use pg_model::analysis::FileHash;
 use pg_model::format::Format;
 use pg_model::media::Kind;
 use pg_model::rules::Path as RulePath;

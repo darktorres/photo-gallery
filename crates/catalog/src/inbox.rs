@@ -10,40 +10,21 @@
 
 use rusqlite::{Connection, params};
 
-use pg_model::notice::{FilePass, Key, Level, Lifecycle, Notice, Part};
+use pg_model::notice::{Key, Level, Lifecycle, Notice, Part};
 use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
-use crate::ledger;
-use crate::core::write_transaction;
+use crate::transaction::write_transaction;
+
+mod id;
+pub use id::EntryId;
 
 /// The most rows the inbox keeps that aren't dismissed ([`Catalog::prune_inbox`]): past it, the oldest go, read ones first.
 pub const KEPT_ROWS: i64 = 1000;
 
 /// How long a dismissed row is kept (seconds), so a mark sent for it still finds it.
 pub const DISMISSED_FOR: i64 = 30 * 24 * 60 * 60;
-
-/// An entry of the inbox, as a listing names it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum EntryId {
-    /// A kept notice: its row's id and `uid` (`meta.seq` when it was made). Ids are reused, so the pair is what names
-    /// it: a mark or a dismissal for a row since gone finds none.
-    Row { id: i64, uid: i64 },
-    /// A pass's failure ledger, as listed: up to its newest failure (`ledger::Summary::newest`). A mark or a dismissal
-    /// covers the failures listed, and leaves the later ones new.
-    Ledger { pass: FilePass, seen: i64 },
-}
-
-impl EntryId {
-    /// The entry it names, whatever a ledger was listed up to: what tells whether two listings list the same entry.
-    pub fn entry(self) -> EntryId {
-        match self {
-            EntryId::Ledger { pass, .. } => EntryId::Ledger { pass, seen: 0 },
-            row @ EntryId::Row { .. } => row,
-        }
-    }
-}
 
 /// A row as the inbox lists it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -201,7 +182,8 @@ impl Catalog {
     pub fn mark_read(&self, ids: &[EntryId], now: i64) -> Result<()> {
         let tx = write_transaction(&self.conn)?;
         {
-            let mut stmt = tx.prepare_cached("UPDATE notices SET read = ?3 WHERE id = ?1 AND uid = ?2 AND read IS NULL")?;
+            let mut stmt =
+                tx.prepare_cached("UPDATE notices SET read = ?3 WHERE id = ?1 AND uid = ?2 AND read IS NULL")?;
             for id in ids {
                 match *id {
                     EntryId::Row { id, uid } => {
@@ -360,8 +342,9 @@ fn count(n: i64) -> u64 {
 mod tests {
     use super::*;
     use crate::browse::fixtures::under_both_rules;
+    use crate::ledger;
     use crate::test_support::{p, versions};
-    use pg_model::notice::{EditOp, ScanNote};
+    use pg_model::notice::{EditOp, FilePass, ScanNote};
     use pg_model::refusal::RefusedReason;
 
     fn catalog(rules: PathRules) -> Catalog {

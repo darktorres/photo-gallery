@@ -14,10 +14,10 @@ mod test_support;
 mod words;
 
 use pg_model::detection::Class;
+use pg_model::media::MediaType;
 use pg_model::notice::Notice;
 use pg_model::progress::{Phase, Progress};
 use pg_model::query::{BorderFacet, Choice, DateRange, ListFacet, Query, Range, RatingFilter, Shape, Status};
-use pg_model::media::MediaType;
 use pg_model::rules::PathRules;
 use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status};
 
@@ -417,8 +417,8 @@ pub fn internal_error(message: &str, log: &str, log_error: Option<&str>) -> Stri
 mod tests {
     use super::*;
     use pg_model::notice::Source;
-    use pg_model::refusal::RefusedReason;
     use pg_model::notice::{ScanNote, StartOverReason};
+    use pg_model::refusal::RefusedReason;
     use pg_model::write::WriteKind;
 
     #[test]
@@ -469,7 +469,10 @@ mod tests {
     /// A rendered notice's title and body, under the Windows rules.
     fn worded(notice: &Notice) -> (String, String) {
         let rules = PathRules::Windows;
-        (render(&Message::NoticeTitle { notice: notice.clone(), rules }), render(&Message::NoticeBody { notice: notice.clone(), rules }))
+        (
+            render(&Message::NoticeTitle { notice: notice.clone(), rules }),
+            render(&Message::NoticeBody { notice: notice.clone(), rules }),
+        )
     }
 
     fn d(rules: PathRules, path: &str) -> pg_model::rules::Path {
@@ -634,7 +637,12 @@ mod tests {
         };
         assert_eq!(
             yandex_status(&Status::Saved(failed)),
-            yandex_saved(2, "D:/out", 1, Some(&yandex_failure(&SaveFailure::Download { url: "u".into(), error: RequestError::Captcha })))
+            yandex_saved(
+                2,
+                "D:/out",
+                1,
+                Some(&yandex_failure(&SaveFailure::Download { url: "u".into(), error: RequestError::Captcha }))
+            )
         );
         assert_eq!(yandex_status(&Status::Searched(None)), "", "a search with no note shows nothing");
         assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
@@ -642,8 +650,11 @@ mod tests {
         assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");
         let download = SaveFailure::Download { url: "https://a/b.jpg".into(), error: RequestError::Status(404) };
         assert_eq!(yandex_failure(&download), "https://a/b.jpg couldn't be downloaded: Yandex answered HTTP 404");
-        let write =
-            SaveFailure::Write { url: "https://a/b.jpg".into(), path: "D:/out/b.jpg".into(), error: "disk full".into() };
+        let write = SaveFailure::Write {
+            url: "https://a/b.jpg".into(),
+            path: "D:/out/b.jpg".into(),
+            error: "disk full".into(),
+        };
         assert_eq!(yandex_failure(&write), "https://a/b.jpg couldn't be written to D:/out/b.jpg: disk full");
         assert_eq!(render(&Message::YandexStopped), "Stopped by an internal error; the details are in gallery.log.");
         assert_eq!(yandex_request(&RequestError::Status(503)), "Yandex answered HTTP 503");

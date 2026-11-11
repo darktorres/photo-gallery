@@ -298,7 +298,10 @@ mod tests {
             assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating.map(Rating::get), Some(5));
             let percent = (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, short(&[50]));
             assert_eq!(read(std::slice::from_ref(&percent), &[]).rating.map(Rating::get), Some(3));
-            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating.map(Rating::get), Some(1));
+            assert_eq!(
+                read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating.map(Rating::get),
+                Some(1)
+            );
 
             // A value pointing outside the block reads as absent; the rest is still read.
             let mut block = tiff_block_as(
@@ -354,7 +357,10 @@ mod tests {
             let big = meta_of(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff);
             assert_eq!(big, classic);
             // XMP's rating first (3), then the date.
-            assert_eq!((big.orientation.get(), big.rating.map(Rating::get), big.taken), (6, Some(3), Some(1_689_445_805)));
+            assert_eq!(
+                (big.orientation.get(), big.rating.map(Rating::get), big.taken),
+                (6, Some(3), Some(1_689_445_805))
+            );
             // The orientation is patched in place, as in a classic file.
             let patched =
                 patch_orientation(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff, Orientation::new(3).unwrap())

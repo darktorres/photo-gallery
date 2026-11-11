@@ -1,7 +1,7 @@
 //! The readers of a file's state (`pg_model::state`): the state now (`file_state`), what the image providers need
 //! (`file_source`), and the ThumbHash placeholder (`placeholder`).
 
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::OptionalExtension;
 use rusqlite::types::ValueRef;

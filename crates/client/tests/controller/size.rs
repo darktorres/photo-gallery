@@ -1,6 +1,6 @@
 //! Traces of the grid's size (S-12.20): the clamp, the steps, and the thumbnail height.
 
-use pg_client::controller::size::{Change, Event, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT, GridSize};
+use pg_client::controller::size::{Change, Event, GridSize, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT};
 
 #[test]
 fn steps_grow_and_shrink_by_the_ctrl_factor_and_clamp() {

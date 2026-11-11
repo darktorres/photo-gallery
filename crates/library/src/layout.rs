@@ -181,13 +181,11 @@ mod tests {
     #[test]
     fn a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home() {
         let home = pg_testkit::test_folder("scratch_aliases", "pg-layout").unwrap();
-        // "cat" with an unpaired surrogate (WTF-8 `ED A0 80`).
-        let odd = pg_platform::names::path_buf(b"cat\xED\xA0\x80");
-        let layout = Layout::resolve(
-            |name| (name == "PG_HOME").then(|| home.clone().into_os_string()),
-            Some(home.join(&odd)),
-        )
-        .unwrap();
+        // "cat" with an unpaired surrogate.
+        let odd = pg_testkit::odd_name("cat");
+        let layout =
+            Layout::resolve(|name| (name == "PG_HOME").then(|| home.clone().into_os_string()), Some(home.join(&odd)))
+                .unwrap();
         std::fs::create_dir_all(layout.catalog_dir()).unwrap();
         let sqlite = layout.for_sqlite().unwrap();
         assert!(sqlite.catalog_dir().starts_with(layout.sqlite_aliases()), "{}", sqlite.catalog_dir().display());

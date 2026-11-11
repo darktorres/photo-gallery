@@ -14,8 +14,8 @@ use serde::de::DeserializeOwned;
 use strum::IntoEnumIterator;
 
 use pg_model::group_distance;
-use pg_model::query::{BorderFacet, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
 use pg_model::media::MediaType;
+use pg_model::query::{BorderFacet, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
 
 // SQL used in more than one place is a macro, so every piece is a constant (`concat!`).
 
@@ -269,8 +269,9 @@ pub fn condition_without(query: &Query, skip: Option<Counted>) -> Condition {
     }
     // Taken is wall-clock time (`analysis.taken`, already in this computer's zone): compared as is. Modified is a UTC
     // FILETIME: the local day's bounds are converted, to the instant the local clock first reads them (`local_start_sql`).
-    let modified =
-        |cmp: &str| format!("f.mtime {cmp} ((({}) + {}) * 10000000)", local_start_sql(), pg_model::filetime_unix_seconds!());
+    let modified = |cmp: &str| {
+        format!("f.mtime {cmp} ((({}) + {}) * 10000000)", local_start_sql(), pg_model::filetime_unix_seconds!())
+    };
     let bounds = [
         (query.taken.from, "a.taken >= ?".to_string(), 0),
         (query.taken.to, "a.taken < ?".to_string(), 86_400),

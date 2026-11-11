@@ -66,7 +66,6 @@ mod tests {
             }],
             duplicates: 3,
             volume_fallbacks: 1,
-            replaced: 0,
             ..ScanStats::default()
         };
         let notices = scan_notices(&root, &stats);

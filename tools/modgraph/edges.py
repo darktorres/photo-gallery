@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def split(text):
-    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.M)
-    return (text[: m.start()], text[m.start():]) if m else (text, "")
+    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.MULTILINE)
+    return (text[: m.start()], text[m.start() :]) if m else (text, "")
 
 
 def strip(text):
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     return "\n".join(l.split("//")[0] for l in text.splitlines())
 
 
@@ -29,7 +29,7 @@ def names(text, ident):
     for m in re.finditer(r"\b" + ident + r"::([A-Za-z0-9_:]+(?:::\{)?)", text):
         found.add(m.group(1).rstrip(":{"))
     # use trees: use pg_x::{a, b::{c, d}};
-    for m in re.finditer(r"\buse\s+" + ident + r"::\{(.*?)\};", text, flags=re.S):
+    for m in re.finditer(r"\buse\s+" + ident + r"::\{(.*?)\};", text, flags=re.DOTALL):
         for part in re.split(r"[,\s]+", re.sub(r"[{}]", " ", m.group(1))):
             if part:
                 found.add(part)

@@ -234,7 +234,14 @@ fn videos() {
     assert_eq!(taken, Some(local));
 
     let (events, _quiet) = Quiet::bus();
-    let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &catalog.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap();
+    let cache = ThumbCache::open(
+        &dir.join("thumbs.sqlite"),
+        &catalog.catalog_id().unwrap(),
+        pg_thumbcache::Cap::from_bytes(1 << 30),
+        1,
+        events,
+    )
+    .unwrap();
     let made = pg_thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }

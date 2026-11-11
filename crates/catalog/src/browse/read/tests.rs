@@ -1,5 +1,6 @@
+use super::facets::Facets;
+use super::grid::{FILE_JOINS, grid_sql};
 use super::tree::FOLDER_COUNTS;
-use super::*;
 use crate::browse::fixtures::{
     by, folder_of, ids, library, mixed_library, sorted_by_sqlite, spelled, under_both_rules,
 };
@@ -10,7 +11,7 @@ use pg_query::condition;
 use rusqlite::types::Value;
 
 use super::scope::scope;
-use crate::Catalog;
+use crate::core::Catalog;
 use crate::error::Result;
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::date::Day;
@@ -18,9 +19,9 @@ use pg_model::detection;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::{FileId, FolderId};
 use pg_model::media::Ext;
+use pg_model::media::MediaType;
 use pg_model::name::Name;
 use pg_model::query::{BorderFacet, DateRange, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
-use pg_model::media::MediaType;
 use pg_model::rules::{Merged, PathRules};
 use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
@@ -401,7 +402,7 @@ fn the_tree_is_built_as_before() {
 fn real_tree_is_built_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
     let rules = raw::recorded_rules(std::path::Path::new(&path));
-    let c = crate::Catalog::open(std::path::Path::new(&path), rules).unwrap();
+    let c = crate::core::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let rows: Vec<(i64, String, i64)> =
         raw::rows_of(&c, &FOLDER_COUNTS.replace("(SELECT path FROM", "(SELECT CAST(path AS TEXT) FROM"), [], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -553,7 +554,7 @@ fn real_names_sort_and_scope_as_before() {
     // The reference order and scopes below are Windows': per-character case folding, drives merged. A POSIX catalog
     // is checked by the rule-generic tests instead.
     assert_eq!(rules, PathRules::Windows, "the reference order and scopes are Windows'");
-    let c = crate::Catalog::open(std::path::Path::new(&path), rules).unwrap();
+    let c = crate::core::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let files: Vec<(String, String)> = raw::rows_of(
         &c,
         "SELECT CAST(fo.path AS TEXT), CAST(f.name AS TEXT) FROM files f JOIN folders fo ON fo.id = f.folder_id",
@@ -631,13 +632,14 @@ fn lists_are_made_at_their_size(rules: PathRules) {
     assert_eq!(all.capacity(), all.len());
     let sorted = c.list_grid(&folder_of(&c, ""), true, &Query::default(), by(SortKey::Size, true)).unwrap();
     assert_eq!(sorted.capacity(), sorted.len());
-    let one = c.list_grid(
-        &folder_of(&c, ""),
-        true,
-        &Query { ratings: vec![RatingFilter::try_from(5).unwrap()], ..Query::default() },
-        Sort::default(),
-    )
-    .unwrap();
+    let one = c
+        .list_grid(
+            &folder_of(&c, ""),
+            true,
+            &Query { ratings: vec![RatingFilter::try_from(5).unwrap()], ..Query::default() },
+            Sort::default(),
+        )
+        .unwrap();
     assert!(one.capacity() < all.len() * 3 / 4 || one.capacity() == one.len());
 }
 
@@ -916,19 +918,16 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
 #[test]
 fn a_saved_scope_matches_its_folder_whatever_the_case() {
     let c = library(PathRules::Windows);
-    let view = SavedView { name: "upper".into(), listing: Listing { folder: folder_of(&c, "P"), ..Listing::default() } };
+    let view =
+        SavedView { name: "upper".into(), listing: Listing { folder: folder_of(&c, "P"), ..Listing::default() } };
     c.save_view(&view).unwrap();
     let saved = c.views().unwrap().remove(0);
     assert_eq!(saved.listing.folder, folder_of(&c, "P"), "kept as it was saved");
     let listed = |folder: &Merged, recursive: bool| -> Vec<i64> {
-        c.list_grid(folder, recursive, &Query::default(), Sort::default())
-            .unwrap()
-            .iter()
-            .map(|e| e.id.get())
-            .collect()
+        c.list_grid(folder, recursive, &Query::default(), Sort::default()).unwrap().iter().map(|e| e.id.get()).collect()
     };
-    assert_eq!(listed(&saved.folder, false), [2, 1, 3], "D:\\p and E:\\p, as p");
-    assert_eq!(listed(&saved.folder, true), [2, 1, 3, 4], "and D:\\p\\sub");
+    assert_eq!(listed(&saved.listing.folder, false), [2, 1, 3], "D:\\p and E:\\p, as p");
+    assert_eq!(listed(&saved.listing.folder, true), [2, 1, 3, 4], "and D:\\p\\sub");
 }
 
 fn a_file_keeps_its_exact_name(rules: PathRules) {

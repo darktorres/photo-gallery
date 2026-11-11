@@ -13,11 +13,11 @@ use std::sync::OnceLock;
 use cxx_qt_lib::{QString, QStringList};
 use pg_model::query::{Query, Sort};
 
-/// One `--name=value` argument: its name, its value as text (lossy: what the text options read), and the value exactly
-/// as the system gave it (what a path option reads).
+/// One `--name=value` argument: its name, its value as text (what the text options read; `None` when the value is not
+/// valid Unicode, never a lossy copy), and the value exactly as the system gave it (what a path option reads).
 struct Arg {
     name: String,
-    value: String,
+    text: Option<String>,
     exact: OsString,
 }
 
@@ -35,12 +35,12 @@ fn parse(args: &[OsString]) -> Vec<Arg> {
     args.iter().skip(1).filter_map(arg_of).collect()
 }
 
-/// `--name=value` as an [`Arg`], or `None` for an argument of another shape. The name is text (names are ASCII); the
-/// value is the argument's own units or bytes after the first `=`.
+/// `--name=value` as an [`Arg`], or `None` for an argument of another shape (a name that is not valid Unicode is not an
+/// option's: the names are ASCII). Both parts are read from the argument's own units or bytes, split at the first `=`.
 fn arg_of(arg: &OsString) -> Option<Arg> {
-    let text = arg.to_string_lossy();
-    let (name, value) = text.strip_prefix("--")?.split_once('=')?;
-    Some(Arg { name: name.to_string(), value: value.to_string(), exact: pg_platform::args::after_first_equals(arg)? })
+    let (name, exact) = pg_platform::args::split_at_first_equals(arg)?;
+    let name = name.to_str()?.strip_prefix("--")?.to_string();
+    Some(Arg { name, text: exact.to_str().map(str::to_owned), exact })
 }
 
 /// The program's `--name=value` arguments, as `init` read them (none before it).
@@ -48,9 +48,16 @@ fn args() -> &'static [Arg] {
     ARGS.get().map_or(&[], Vec::as_slice)
 }
 
-/// The value of `--name=…` (the first, if given twice).
+/// The value of `--name=…` as text (the first, if given twice). `None` without one, or when its value is not valid
+/// Unicode ([`not_text`] names those).
 pub(crate) fn value(name: &str) -> Option<&'static str> {
-    args().iter().find(|a| a.name == name).map(|a| a.value.as_str())
+    args().iter().find(|a| a.name == name).and_then(|a| a.text.as_deref())
+}
+
+/// The names of the `--name=value` arguments whose value is not valid Unicode: a text option reads none from them (a
+/// path option still does). The start logs them once the log is open.
+pub(crate) fn not_text() -> impl Iterator<Item = &'static str> {
+    args().iter().filter(|a| a.text.is_none()).map(|a| a.name.as_str())
 }
 
 /// The value of `--name=…` as a path, exactly as given (the first, if given twice). `None` without one.
@@ -84,7 +91,7 @@ fn dev_seed(args: &[Arg], env: Option<&OsStr>) -> Option<bool> {
     };
     args.iter()
         .find(|a| a.name == "dev")
-        .and_then(|a| flag(&a.value))
+        .and_then(|a| a.text.as_deref().and_then(flag))
         .or_else(|| env.and_then(OsStr::to_str).and_then(flag))
 }
 
@@ -137,7 +144,7 @@ fn split_keys(keys: &str) -> Vec<String> {
 /// The value of `--name=…`, the name as QML gives it (compared as UTF-16, not converted).
 fn named(name: &QString) -> Option<&'static str> {
     let name = name.as_slice();
-    args().iter().find(|a| a.name.encode_utf16().eq(name.iter().copied())).map(|a| a.value.as_str())
+    args().iter().find(|a| a.name.encode_utf16().eq(name.iter().copied())).and_then(|a| a.text.as_deref())
 }
 
 impl qobject::CommandLine {
@@ -163,8 +170,8 @@ mod tests {
     use super::*;
 
     /// The parsed arguments as (name, value) text, for the comparisons.
-    fn pairs(args: &[Arg]) -> Vec<(&str, &str)> {
-        args.iter().map(|a| (a.name.as_str(), a.value.as_str())).collect()
+    fn pairs(args: &[Arg]) -> Vec<(&str, Option<&str>)> {
+        args.iter().map(|a| (a.name.as_str(), a.text.as_deref())).collect()
     }
 
     #[test]
@@ -173,7 +180,35 @@ mod tests {
             ["--not-first=1", "--view=3", "--zoom=0.5", "scan", "-x", "--a=b=c", "--flag", "--empty="]
                 .map(OsString::from)
                 .into();
-        assert_eq!(pairs(&parse(&args)), [("view", "3"), ("zoom", "0.5"), ("a", "b=c"), ("empty", "")]);
+        assert_eq!(
+            pairs(&parse(&args)),
+            [("view", Some("3")), ("zoom", Some("0.5")), ("a", Some("b=c")), ("empty", Some(""))]
+        );
+    }
+
+    // A value that is not valid Unicode is no text (not a lossy copy, U+FFFD in place of the odd unit), and stays exact
+    // for a path option; the argument is still the option's.
+    #[test]
+    fn a_value_that_is_not_unicode_has_no_text() {
+        let mut raw = OsString::from("--query=");
+        raw.push(pg_testkit::odd_name("a"));
+        let parsed = parse(&[OsString::from("program"), raw, OsString::from("--sort=name")]);
+        assert_eq!(pairs(&parsed), [("query", None), ("sort", Some("name"))]);
+        assert_eq!(parsed[0].exact, pg_testkit::odd_name("a"));
+        let mut dev = OsString::from("--dev=");
+        dev.push(pg_testkit::odd_name("1"));
+        let dev = parse(&[OsString::from("program"), dev]);
+        assert_eq!(dev_seed(&dev, Some(OsStr::new("0"))), Some(false), "no flag: the environment decides");
+    }
+
+    // The name is read from the argument's own units: one that is not valid Unicode names no option, rather than
+    // reading as a lossy name that could match one.
+    #[test]
+    fn a_name_that_is_not_unicode_is_no_option() {
+        let mut raw = OsString::from("--");
+        raw.push(pg_testkit::odd_name("view"));
+        raw.push("=3");
+        assert!(parse(&[OsString::from("program"), raw]).is_empty());
     }
 
     // A path option keeps its exact units: a lone surrogate on Windows, a raw byte on Unix.

@@ -686,6 +686,26 @@ mod tests {
         assert_eq!(sink.take(), [Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), Vec::new())]);
     }
 
+    /// A library folder the scan refuses (here, gone since it was added: its facts can't be read) is the folder
+    /// ledger's, not a failed scan: nothing is posted, and the refusal is a row of the ledger.
+    #[test]
+    fn a_refused_folder_is_in_the_folder_ledger_not_a_failed_scan() {
+        let (dir, catalog_path, root) = library("runner-refused", &["a.png"]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        std::fs::remove_dir_all(dir.join("images")).unwrap();
+        inner.queue().scans.push_back(root.clone());
+        assert_eq!(run(&mut Scans, &inner), Step::Done);
+        assert!(sink.posted().is_empty(), "{:?}", sink.calls());
+        let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        let failed = c.failed_folders(10).unwrap();
+        assert_eq!(
+            failed.iter().map(|f| (&f.path, f.failure)).collect::<Vec<_>>(),
+            [(&root, pg_catalog::FolderFailure::Refused)]
+        );
+    }
+
     /// The thumbnail pass's ledger outcome: a failure is said, a write clears what was said, and nothing written says
     /// nothing.
     #[test]

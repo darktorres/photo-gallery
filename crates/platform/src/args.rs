@@ -1,5 +1,5 @@
 //! The program's arguments as the system holds them: one argument's bytes for the list Qt is given ([`arg_bytes`]),
-//! and the value of a `--name=value` argument, exact ([`after_first_equals`]).
+//! and a `--name=value` argument split at its first `=`, exact ([`split_at_first_equals`]).
 
 use std::ffi::{OsStr, OsString};
 
@@ -18,20 +18,22 @@ pub fn arg_bytes(arg: &OsStr) -> Vec<u8> {
     arg.to_string_lossy().as_bytes().to_vec()
 }
 
-/// The part of `arg` after its first `=`, as the system holds it (none without a `=`).
+/// `arg`'s parts before and after its first `=`, as the system holds them (none without a `=`).
 #[cfg(unix)]
-pub fn after_first_equals(arg: &OsStr) -> Option<OsString> {
+pub fn split_at_first_equals(arg: &OsStr) -> Option<(OsString, OsString)> {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
     let bytes = arg.as_bytes();
     let at = bytes.iter().position(|&b| b == b'=')?;
-    Some(OsString::from_vec(bytes.get(at + 1..)?.to_vec()))
+    let (before, after) = (bytes.get(..at)?, bytes.get(at + 1..)?);
+    Some((OsString::from_vec(before.to_vec()), OsString::from_vec(after.to_vec())))
 }
 
-/// The part of `arg` after its first `=`, as the system holds it (none without a `=`).
+/// `arg`'s parts before and after its first `=`, as the system holds them (none without a `=`).
 #[cfg(windows)]
-pub fn after_first_equals(arg: &OsStr) -> Option<OsString> {
+pub fn split_at_first_equals(arg: &OsStr) -> Option<(OsString, OsString)> {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     let units: Vec<u16> = arg.encode_wide().collect();
     let at = units.iter().position(|&u| u == u16::from(b'='))?;
-    Some(OsString::from_wide(units.get(at + 1..)?))
+    let (before, after) = (units.get(..at)?, units.get(at + 1..)?);
+    Some((OsString::from_wide(before), OsString::from_wide(after)))
 }

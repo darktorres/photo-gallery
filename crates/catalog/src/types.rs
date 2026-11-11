@@ -353,7 +353,7 @@ pub enum Recorded {
     Same,
     /// A new file, moved, renamed, rewritten, back from missing, or the file that now has an identity another row had.
     Changed,
-    /// The identity is a row of another root, which this scan doesn't write (S-17.7 decision 5).
+    /// The identity is a present row of another root, which this scan doesn't write (S-17.7 decision 5).
     Foreign,
 }
 
@@ -364,4 +364,6 @@ pub(crate) struct Hit {
     /// The same folder, name, kind, size, mtime, order key, and not missing: nothing to write but the scan's mark.
     pub(crate) same: bool,
     pub(crate) created: Option<i64>,
+    /// The row is missing: its file was not found where it was.
+    pub(crate) missing: bool,
 }

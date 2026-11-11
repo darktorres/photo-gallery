@@ -457,6 +457,43 @@ mod tests {
         assert_eq!(lines[1..], [note(ScanNote::Duplicates, 2), note(ScanNote::Rebound, 1)]);
     }
 
+    /// `gallery scan` over three library folders, the middle one refused (here, gone since it was added): it is said
+    /// and recorded in the folder ledger, and the folders after it are still scanned.
+    #[test]
+    fn a_refused_folder_between_two_others_does_not_stop_the_scan() {
+        let dir = pg_testkit::run_folder_with("scratch_cli", "cli-refused", &["a", "b", "c", "catalog"]).unwrap();
+        let png = |folder: &str, name: &str| {
+            std::fs::write(dir.join(folder).join(name), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+        };
+        for folder in ["a", "b", "c"] {
+            png(folder, "1.png");
+        }
+        let catalog_dir = dir.join("catalog").to_string_lossy().into_owned();
+        let gallery = |more: &[String]| {
+            let mut args = vec!["gallery".to_string(), "--catalog-dir".to_string(), catalog_dir.clone(), "scan".into()];
+            args.extend_from_slice(more);
+            Cli::try_parse_from(args).unwrap()
+        };
+        let folders: Vec<String> = ["a", "b", "c"].iter().map(|f| dir.join(f).to_string_lossy().into_owned()).collect();
+        run_command(gallery(&folders), &Control::new()).unwrap();
+
+        let b = pg_platform::names::normalize_path(&dir.join("b")).unwrap();
+        std::fs::remove_dir_all(dir.join("b")).unwrap();
+        png("a", "2.png");
+        png("c", "2.png");
+        run_command(gallery(&[]), &Control::new()).unwrap();
+
+        let layout = gallery(&[]).layout().unwrap();
+        let catalog = Catalog::open(&layout.catalog_path(), pg_platform::native::PATH_RULES).unwrap();
+        // a and c with their new files, and b's file kept as it was (a refused folder is not walked).
+        assert_eq!(catalog.status().unwrap().files, 5);
+        let refused = catalog.failed_folders(10).unwrap();
+        assert_eq!(
+            refused.iter().map(|f| (&f.path, f.failure)).collect::<Vec<_>>(),
+            [(&b, pg_catalog::FolderFailure::Refused)]
+        );
+    }
+
     #[test]
     fn the_catalog_flag_is_catalog_dir() {
         let cli = Cli::try_parse_from(["gallery", "--catalog-dir", "X", "status"]).unwrap();

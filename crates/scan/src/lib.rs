@@ -363,6 +363,17 @@ fn walk<L: Listing>(
     ctl: &Control,
     lister: &mut L,
 ) -> Result<ScanStats, ScanError> {
+    walk_in_batches(catalog, root, ctl, lister, BATCH)
+}
+
+/// [`walk`], writing a batch once it holds `batch_size` entries ([`BATCH`]; the tests use small ones, to cross it).
+fn walk_in_batches<L: Listing>(
+    catalog: &mut Catalog,
+    root: &RulePath,
+    ctl: &Control,
+    lister: &mut L,
+    batch_size: usize,
+) -> Result<ScanStats, ScanError> {
     let rules = catalog.rules();
     let root_dir = open_folder(lister, rules, root).with_context(|| format!("can't open {}", rules.display(root)))?;
     let root_volume = lister.volume(&root_dir).with_context(|| format!("the volume of {}", rules.display(root)))?;
@@ -372,7 +383,7 @@ fn walk<L: Listing>(
     })?;
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    Ok(walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume)?)
+    Ok(walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume, batch_size)?)
 }
 
 /// The walk of `root` under its lease: each folder listed outside any transaction into the batch, each full batch
@@ -385,6 +396,7 @@ fn walk_leased<L: Listing>(
     lister: &mut L,
     root_dir: L::Dir,
     root_volume: u64,
+    batch_size: usize,
 ) -> Result<ScanStats> {
     let rules = lease.rules();
     let scan_id = lease.id();
@@ -511,7 +523,7 @@ fn walk_leased<L: Listing>(
             batch.entries += files.len();
             batch.folders.push(ListedFolder { path: frame.path, files });
         }
-        if batch.entries >= BATCH {
+        if batch.entries >= batch_size {
             write_batch(lease, root, &mut batch, &mut stats, ctl)?;
             renewed = Instant::now();
         }
@@ -1234,6 +1246,57 @@ mod tests {
         assert_eq!((first.files, first.changed, c.status().unwrap().files), (25_010, 25_010, 25_010));
         let again = scan_fake(&mut c, &tree, 1);
         assert_eq!((again.files, again.changed, again.missing), (25_010, 0, 0));
+    }
+
+    // The pairing runs after the last batch, over the catalog, so a row and the file it pairs with in different batches
+    // still pair: a volume renumbered, and one file moved to another folder and name while closed (tier 2), its old
+    // row and the file written in different batches. Batches of two entries here.
+    #[test]
+    fn a_pairing_across_the_batch_boundary_still_finds_its_rows() {
+        let mut c = catalog();
+        let folders = |moved_into: &str| -> Vec<(String, Vec<FakeEntry>)> {
+            let mut tree = vec![(String::new(), (0..5u64).map(|f| folder(&format!("f{f}"), 100 + f)).collect())];
+            for f in 0..5u64 {
+                let mut files: Vec<FakeEntry> =
+                    (0..2u64).map(|i| file(&format!("{i}.jpg"), 10 + f * 2 + i, 1)).collect();
+                if format!("f{f}") == moved_into {
+                    files.push(file("moved.jpg", 99, 3));
+                }
+                tree.push((format!("f{f}"), files));
+            }
+            tree
+        };
+        let mut first = FakeListing::new(1, &folders("f0"));
+        let before = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut first, 2).unwrap();
+        assert_eq!((before.files, c.status().unwrap().files), (11, 11));
+        let mut tree = folders("f4");
+        tree[5].1.last_mut().unwrap().name = "renamed.jpg".to_string();
+        let mut second = FakeListing::new(2, &tree);
+        let stats = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut second, 2).unwrap();
+        assert_eq!((stats.pairing.rebound, stats.pairing.ambiguous, stats.missing), (11, 0, 0));
+        assert_eq!((c.status().unwrap().files, c.status().unwrap().missing), (11, 0));
+    }
+
+    // Decision 5, across roots: a present row of another root keeps its identity (the file here is a second path to it,
+    // skipped), and a missing one does not (its file moved here while the app was closed: the row moves with it, and
+    // no second row is made).
+    #[test]
+    fn a_missing_row_in_another_root_does_not_claim_the_identity() {
+        let mut c = catalog();
+        let a = fake_root().child(&Name::from("a"));
+        let b = fake_root().child(&Name::from("b"));
+        let both = [("a", vec![file("p.jpg", 7, 1)]), ("b", vec![file("p.jpg", 7, 1)])];
+        walk(&mut c, &a, &Control::new(), &mut FakeListing::new(1, &both)).unwrap();
+        let linked = walk(&mut c, &b, &Control::new(), &mut FakeListing::new(1, &both)).unwrap();
+        assert_eq!((linked.duplicates, c.status().unwrap().files), (1, 1), "a present row of a is a's");
+
+        let moved = [("a", vec![]), ("b", vec![file("p.jpg", 7, 1)])];
+        let gone = walk(&mut c, &a, &Control::new(), &mut FakeListing::new(1, &moved)).unwrap();
+        assert_eq!((gone.missing, c.status().unwrap().missing), (1, 1));
+        let found = walk(&mut c, &b, &Control::new(), &mut FakeListing::new(1, &moved)).unwrap();
+        assert_eq!((found.duplicates, found.changed), (0, 1));
+        let status = c.status().unwrap();
+        assert_eq!((status.files, status.missing), (1, 0), "the row moved to b; no second row");
     }
 
     /// Every write transaction of a walk of 200 000 files, the pairing and the missing marks included, holds the write

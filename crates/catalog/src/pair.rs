@@ -856,4 +856,223 @@ mod tests {
         a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired_windows,
         a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired_posix
     );
+
+    /// The user's rating of the row `id` (the `ratings` table, which a replacement keeps), if any.
+    fn rating(c: &Catalog, id: i64) -> Option<i64> {
+        c.conn.query_row("SELECT rating FROM ratings WHERE file_id = ?1", [id], |r| r.get(0)).optional().unwrap()
+    }
+
+    fn rate(c: &Catalog, id: i64, stars: i64) {
+        c.conn.execute("INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, 0)", [id, stars]).unwrap();
+    }
+
+    /// The row `id`'s file ID and name.
+    fn identity_of(c: &Catalog, id: i64) -> (Option<i64>, String) {
+        c.conn
+            .query_row("SELECT file_ref, name FROM files WHERE id = ?1", [id], |r| {
+                Ok((r.get(0)?, String::from_utf8(r.get(1)?).unwrap()))
+            })
+            .unwrap()
+    }
+
+    /// Tier 1 binds a fresh row to one candidate only: with none (a near miss, another size) it binds nothing and is not
+    /// ambiguous; with two it binds nothing and is. Both on a stopped scan, where tier 1 is the only tier.
+    fn tier_one_binds_nothing_with_no_candidate_or_two(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 7, "a.jpg", 11, Some(5));
+        let paired = pair(&mut c, second, false);
+        assert_eq!((paired.rebound, paired.ambiguous), (0, 0));
+        assert_eq!(count(&c), 2);
+
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        found(&mut c, first, 3, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 7, "a.jpg", 10, Some(5));
+        let paired = pair(&mut c, second, false);
+        assert_eq!((paired.rebound, paired.ambiguous), (0, 1));
+        assert_eq!(count(&c), 3);
+    }
+
+    under_both_rules!(
+        tier_one_binds_nothing_with_no_candidate_or_two,
+        tier_one_binds_nothing_with_no_candidate_or_two_windows,
+        tier_one_binds_nothing_with_no_candidate_or_two_posix
+    );
+
+    /// Tier 2 asks for the extension too: a file on another volume with the old row's file ID, size, mtime and creation
+    /// time, but another name and extension, is a different file, and does not take the row.
+    fn tier_two_does_not_pair_a_file_of_another_extension(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (id, _, _) = row(&c, "a.jpg");
+
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 7, "b.png", 10, Some(5));
+        let paired = pair(&mut c, second, true);
+        assert_eq!((paired.rebound, paired.replaced, paired.ambiguous), (0, 0, 0));
+        assert_eq!(count(&c), 2);
+        assert_eq!(row(&c, "a.jpg"), (id, Some(1), false), "the old row keeps its identity");
+        assert!(!row(&c, "b.png").2, "the new file is cleared as new");
+    }
+
+    under_both_rules!(
+        tier_two_does_not_pair_a_file_of_another_extension,
+        tier_two_does_not_pair_a_file_of_another_extension_windows,
+        tier_two_does_not_pair_a_file_of_another_extension_posix
+    );
+
+    /// Two files that swapped names while their volume was renumbered: each row follows its file (its file ID), not
+    /// its old name, so neither row is bound to the other's file.
+    fn swapped_names_across_a_volume_change_are_not_cross_bound(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        found(&mut c, first, 1, 8, "b.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (a, _, _) = row(&c, "a.jpg");
+        let (b, _, _) = row(&c, "b.jpg");
+
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 8, "a.jpg", 10, Some(5));
+        found(&mut c, second, 2, 7, "b.jpg", 10, Some(5));
+        let paired = pair(&mut c, second, true);
+        assert_eq!((paired.rebound, paired.replaced, paired.ambiguous), (2, 0, 0));
+        assert_eq!(count(&c), 2);
+        assert_eq!(identity_of(&c, a), (Some(7), "b.jpg".to_string()), "a.jpg's row follows file 7");
+        assert_eq!(identity_of(&c, b), (Some(8), "a.jpg".to_string()), "b.jpg's row follows file 8");
+    }
+
+    under_both_rules!(
+        swapped_names_across_a_volume_change_are_not_cross_bound,
+        swapped_names_across_a_volume_change_are_not_cross_bound_windows,
+        swapped_names_across_a_volume_change_are_not_cross_bound_posix
+    );
+
+    /// A missing row is never a replacement candidate: a rated photo deleted (a complete scan marked it missing), then a
+    /// new file under its name in its folder, leaves the rating on the deleted photo's row.
+    fn a_missing_row_is_never_a_replacement_candidate(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (old, _, _) = row(&c, "a.jpg");
+        rate(&c, old, 4);
+
+        let deleted = begin(&mut c);
+        pair(&mut c, deleted, true);
+        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), deleted, &[]).unwrap(), 1);
+
+        let third = begin(&mut c);
+        found(&mut c, third, 1, 9, "a.jpg", 12, Some(6));
+        let paired = pair(&mut c, third, true);
+        assert_eq!((paired.replaced, paired.ambiguous), (0, 0));
+        assert_eq!(count(&c), 2);
+        assert_eq!(rating(&c, old), Some(4), "the rating stays on the deleted photo's row");
+        let fresh: i64 = c.conn.query_row("SELECT id FROM files WHERE file_ref = 9", [], |r| r.get(0)).unwrap();
+        assert_eq!(rating(&c, fresh), None);
+    }
+
+    under_both_rules!(
+        a_missing_row_is_never_a_replacement_candidate,
+        a_missing_row_is_never_a_replacement_candidate_windows,
+        a_missing_row_is_never_a_replacement_candidate_posix
+    );
+
+    /// Two rows the scan did not see share a name in the new file's folder (a live one, and one a stopped scan left
+    /// unpaired): the new file has two replacement candidates, so nothing binds, and it counts as ambiguous.
+    fn two_unseen_rows_with_one_name_bind_nothing(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (live, _, _) = row_of(&c, 7);
+        rate(&c, live, 4);
+        let stopped = begin(&mut c);
+        found(&mut c, stopped, 1, 8, "a.jpg", 11, Some(6));
+        pair(&mut c, stopped, false);
+
+        let third = begin(&mut c);
+        found(&mut c, third, 1, 9, "a.jpg", 12, Some(7));
+        let paired = pair(&mut c, third, true);
+        assert_eq!((paired.replaced, paired.rebound, paired.ambiguous), (0, 0, 1));
+        assert_eq!(count(&c), 3);
+        assert_eq!(identity_of(&c, live).0, Some(7), "the live row keeps its file");
+        assert_eq!(rating(&c, live), Some(4));
+    }
+
+    under_both_rules!(
+        two_unseen_rows_with_one_name_bind_nothing,
+        two_unseen_rows_with_one_name_bind_nothing_windows,
+        two_unseen_rows_with_one_name_bind_nothing_posix
+    );
+
+    /// The row of the file with this file ID: its id, its volume, and whether it is unpaired.
+    fn row_of(c: &Catalog, file_ref: i64) -> (i64, Option<i64>, bool) {
+        c.conn
+            .query_row("SELECT id, volume, unpaired FROM files WHERE file_ref = ?1", [file_ref], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1))
+            })
+            .unwrap()
+    }
+
+    /// ext4 reuses a deleted file's inode for a new file under another name: the creation times differ, so the old row
+    /// is displaced and stays a tombstone with its rating, and the new file inherits no rating.
+    fn an_inode_reused_under_another_name_leaves_a_tombstone_and_no_rating(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (old, _, _) = row(&c, "a.jpg");
+        rate(&c, old, 4);
+
+        let second = begin(&mut c);
+        assert_eq!(found(&mut c, second, 1, 7, "b.jpg", 12, Some(6)), Recorded::Changed);
+        let paired = pair(&mut c, second, true);
+        assert_eq!((paired.rebound, paired.replaced), (0, 0));
+        assert_eq!(row(&c, "a.jpg"), (old, None, true), "a tombstone: no identity, unpaired");
+        assert_eq!(rating(&c, old), Some(4));
+        let (new, volume, unpaired) = row(&c, "b.jpg");
+        assert_eq!((volume, unpaired), (Some(1), false));
+        assert_eq!(rating(&c, new), None, "the new file inherits no rating");
+    }
+
+    under_both_rules!(
+        an_inode_reused_under_another_name_leaves_a_tombstone_and_no_rating,
+        an_inode_reused_under_another_name_leaves_a_tombstone_and_no_rating_windows,
+        an_inode_reused_under_another_name_leaves_a_tombstone_and_no_rating_posix
+    );
+
+    /// ext4 reuses a deleted file's inode for a new file under the same name: that is a save over (decision 4, an
+    /// accepted case), so the new file takes the row and its rating. The test records that it does.
+    fn an_inode_reused_under_the_same_name_takes_the_rating(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (old, _, _) = row(&c, "a.jpg");
+        rate(&c, old, 4);
+
+        let second = begin(&mut c);
+        assert_eq!(found(&mut c, second, 1, 7, "a.jpg", 12, Some(6)), Recorded::Changed);
+        let paired = pair(&mut c, second, true);
+        assert_eq!((paired.replaced, paired.replaced_ids), (1, vec![FileId::new(old)]));
+        assert_eq!(count(&c), 1);
+        assert_eq!(row(&c, "a.jpg"), (old, Some(1), false));
+        assert_eq!(rating(&c, old), Some(4));
+    }
+
+    under_both_rules!(
+        an_inode_reused_under_the_same_name_takes_the_rating,
+        an_inode_reused_under_the_same_name_takes_the_rating_windows,
+        an_inode_reused_under_the_same_name_takes_the_rating_posix
+    );
 }

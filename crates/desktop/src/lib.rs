@@ -139,6 +139,10 @@ pub fn run(args: &[OsString]) -> i32 {
         &format!("gallery {}, data folder {}", env!("CARGO_PKG_VERSION"), config.layout.home().display()),
     );
     panic_log::install(config.layout.log().to_path_buf());
+    // A text option given a value that is not valid Unicode reads as not given (a path option reads it exactly).
+    for name in command_line::not_text() {
+        pg_log::warn("args", &format!("--{name}: the value is not valid Unicode, so it is ignored as text"));
+    }
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|text| {

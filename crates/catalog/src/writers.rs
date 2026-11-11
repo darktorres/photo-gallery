@@ -152,7 +152,8 @@ impl<'tx> ScanWriter<'tx> {
     }
 
     /// Record a file the scan found, by identity (S-17.7 decision 2). A file moved or renamed keeps its row, and so
-    /// does one whose `created` is unknown on either side. A hit whose `created` differs is a different file: the row
+    /// does one whose `created` is unknown on either side; a missing row of another root counts as moved here
+    /// (decision 5), a present one is [`Recorded::Foreign`]. A hit whose `created` differs is a different file: the row
     /// is displaced (it keeps its id, folder, name, ratings and content, and loses its identity), and a new row is
     /// made for the identity. A new row is `unpaired` until the pairing at the end of the scan. A row that changed
     /// since the folder was listed (`f.prior`), or that the app is writing into, is only marked seen
@@ -174,14 +175,25 @@ impl<'tx> ScanWriter<'tx> {
                     && r.get::<_, i64>(6)? == f.mtime
                     && r.get::<_, i64>(7)? == 0
                     && r.get_ref(8)?.as_blob()? == &key[..];
-                Ok(Hit { id: r.get(0)?, folder_id: r.get(1)?, same, created: r.get(9)? })
+                Ok(Hit {
+                    id: r.get(0)?,
+                    folder_id: r.get(1)?,
+                    same,
+                    created: r.get(9)?,
+                    missing: r.get::<_, i64>(7)? != 0,
+                })
             })
             .optional()?;
         let Some(hit) = hit else {
             write_file(file, f, folder, *scan, &key[..])?;
             return Ok(Recorded::Changed);
         };
-        if !in_root.query_row(params![under[0], under[1], under[2], hit.folder_id], |r| r.get::<_, bool>(0))? {
+        // A present row of another root is that root's (a second path to its file). A missing one does not keep the
+        // identity from this root: its file is here now, so the row is this root's hit, moved here with its data as a
+        // move within the root would be (or displaced, if the creation times say it is another file).
+        if !hit.missing
+            && !in_root.query_row(params![under[0], under[1], under[2], hit.folder_id], |r| r.get::<_, bool>(0))?
+        {
             return Ok(Recorded::Foreign);
         }
         if matches!((hit.created, f.created), (Some(a), Some(b)) if a != b) {

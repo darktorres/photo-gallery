@@ -34,6 +34,7 @@ TestCase {
     SignalSpy { id: ratedSpy; signalName: "rated" }
     SignalSpy { id: turnedSpy; signalName: "turned" }
     SignalSpy { id: closedSpy; signalName: "closed" }
+    SignalSpy { id: similarSpy; signalName: "findSimilar" }
 
     // A viewer showing `index` of `count` items, with its signals spied on.
     function viewer(index, count) {
@@ -113,6 +114,21 @@ TestCase {
         galleryStub.viewedFileId = 42
         const v = viewer(0, 3)
         compare(v.fileId, 42)
+        galleryStub.viewedFileId = 0
+    }
+
+    // The bar's "find similar" asks for the shown file by its id (Main.qml hands it to the Yandex panel), not a path.
+    function test_find_similar_carries_the_shown_file_id() {
+        galleryStub.viewedFileId = 42
+        const v = viewer(-1, 3)
+        v.index = 0
+        const hud = findChild(v, "hud")
+        verify(hud !== null)
+        similarSpy.target = v
+        similarSpy.clear()
+        hud.findSimilarAsked()
+        compare(similarSpy.count, 1)
+        compare(similarSpy.signalArguments[0][0], 42)
         galleryStub.viewedFileId = 0
     }
 

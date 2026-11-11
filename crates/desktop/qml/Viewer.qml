@@ -487,6 +487,7 @@ Rectangle {
                 // Everything over the picture; hidden in zen mode.
                 Hud {
                     id: hud
+                    objectName: "hud"
                     visible: !viewer.zen
                     index: viewer.index
                     count: viewer.count

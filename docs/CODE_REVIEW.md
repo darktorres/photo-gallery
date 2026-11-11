@@ -1,6 +1,6 @@
-# Code review: every file in the code ledger
+# Code review: every code file
 
-A file-by-file review of the code files in `docs/CODE_LEDGER.md`, in ledger order, reading each file in full. Each
+A file-by-file review of the code files, reading each file in full. Each
 finding has a settled fix (see "Fixes") and a status (see "Status").
 
 - **Code reviewed:** the working tree as each file was read, not one commit. The review began at `48f01b0`, and HEAD
@@ -16,10 +16,9 @@ finding has a settled fix (see "Fixes") and a status (see "Status").
 
 ## Coverage
 
-All 334 files in the ledger were read in full, in ledger order.
+All 334 code files in scope were read in full.
 
-- **Not reviewed:** `crates/schema/` and `crates/catalog/src/schema.rs`. They appeared during the review and aren't in
-  the ledger. They were only looked up to recheck rows.
+- **Not reviewed:** `crates/schema/` and `crates/catalog/src/schema.rs`. They appeared during the review and aren't in scope. They were only looked up to recheck rows.
 - **Changed after being read:** `crates/README.md`, `crates/app/src/app.rs`, `crates/bench/benches/ir/catalog.rs`,
   `crates/catalog/src/error.rs`, `crates/catalog/src/lib.rs`, `crates/cli/src/lib.rs`, `crates/desktop/src/app.rs` and
   `crates/thumbcache/src/lib.rs`. Rows citing them were rechecked against the current text: C-3 is fixed, part of C-7
@@ -621,7 +620,7 @@ Everything else depends on this package.
   the bug explains.
 - **C-48.** `read_ppm` is replaced in `debesheedas.py`, `gpu_encoders.py` and `nvimgcodec_bench.py`, which may share one helper module (Decisions, 5). Each replacement is
   `np.ascontiguousarray(np.asarray(Image.open(path)))`; Pillow is a dependency of all three venvs. The contract is the same:
-  uint8, shape `(h, w, 3)`. A shared module would need a ledger row.
+  uint8, shape `(h, w, 3)`.
 - **C-49.** `png_of` writes to a temp and renames it, and saves with `format='PNG'`. PNGs are made in `prepare()`, serially,
   and only for inputs guetzli will get (`w*h/1e6 <= GUETZLI_MAX_MP`, `encoders.py:42`), so 24 MP PNGs aren't written for nothing.
 - **C-50.** `Decoders::new` opens the four FFmpeg MJPEG decoders eagerly (`src/lib.rs:115-120`), and the lazy path
@@ -680,8 +679,6 @@ Everything else depends on this package.
 
 - `docs/CODE_REVIEW.md`: this file.
 - `docs/REVIEW.md` R-77 (C-20).
-- `docs/CODE_LEDGER.md`: a row for `eval/test_viewer.py`, and for `crates/render/src/transcode.rs` if the ledger lists
-  Rust files. No row for `ppm.py` or a shared blocking-sync module, since neither exists.
 - `docs/FINDINGS.md`: the C-44 and C-45 reruns, and the BOX-era figures.
 - `docs/JPEG_DECODERS.md`: C-46, C-47 and C-50 (`:44`, `:46`, `:58`, `:109-150`, `:171-173`, `:179-200`, `:223-226`,
   `:481-486`).
@@ -716,7 +713,7 @@ during the review. No saved output for them is named in the repository, so they 
 
 - **Pending, the list above:** run it once in the pg-dev container, after the last edit and once the uncommitted
   edits in the working tree (see "Status") are committed. Run `just check-linux` (`docker/check.py`, which replaced `docker/check.sh`), and the wasm32 check that CI runs
-  (`.github/workflows/ci.yml:290`; the ledger cites `:286`). Record each command's result here.
+  (`.github/workflows/ci.yml:290`). Record each command's result here.
 - **Pending, C-16 shot references:** the shot references are not recorded again. No commit so far changes
   `tools/shots/reference/` (its last change is in 856ce1b). The recipe is: commit first, `just shots -Expect borders`
   once, then `just shots -Record <fix-commit>`. It needs the built desktop app, so it is not run here, and the new

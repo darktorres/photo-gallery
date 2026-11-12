@@ -62,6 +62,8 @@ Item {
     }
     Image {
         id: thumb
+        // Found by tst_gridcell_fade.qml, which sets the fade.
+        objectName: "thumb"
         anchors.fill: parent
         // Files not imported yet have no size: their cell is square until they are.
         fillMode: Image.PreserveAspectCrop
@@ -71,8 +73,15 @@ Item {
         retainWhileLoading: true
         smooth: true
         mipmap: true
-        opacity: status === Image.Ready ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        // The fade in, from 0 to 1 once the thumbnail is ready.
+        property real fade: status === Image.Ready ? 1 : 0
+        Behavior on fade { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        // The fade's last stretch shows as 1. Qt's software renderer (offscreen runs and the screenshots) ignores an
+        // opacity within 1e-5 of the one it has (qFuzzyCompare in QSGSoftwareRenderableNode::setOpacity, Qt 6.12): a
+        // frame of the fade at 0.999996 kept it there, under QML's final 1, and the thumbnail was drawn at alpha 254
+        // (every channel from 128 one lower) in about one run in ten. From 0.999 the final 1 is far outside that
+        // tolerance, and the step is invisible.
+        opacity: fade < 0.999 ? fade : 1
     }
     // B: the borders over the thumbnail, placed as PreserveAspectCrop paints it.
     Item {

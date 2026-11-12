@@ -84,6 +84,10 @@ pub fn test_folder(scratch: &str, name: &str) -> Result<PathBuf> {
 /// The name of the file each run folder holds, locked by the process that made the folder until the process ends.
 const OWNER: &str = ".owner";
 
+/// The name the owner file is first made under, locked, and renamed to [`OWNER`] once it is. Each run folder is made
+/// exclusively, so this name is its own.
+const OWNER_TMP: &str = ".owner.tmp";
+
 /// How long a run folder without an owner file is left alone. The owner file is made just after its folder, so a folder
 /// this young is being made, not a leftover.
 const GRACE: Duration = Duration::from_secs(60);
@@ -156,8 +160,12 @@ pub fn run_folder(scratch: &str, prefix: &str) -> Result<PathBuf> {
             }
         }
     };
-    let owner = File::create(dir.join(OWNER)).with_context(|| format!("make the owner file of {}", dir.display()))?;
+    // The owner file is locked before it takes its name. A cleanup that runs in the gap (in this process or another) sees
+    // an unlocked OWNER as a leftover and would remove the folder; a folder with no OWNER yet is kept while it is young.
+    let tmp = dir.join(OWNER_TMP);
+    let owner = File::create(&tmp).with_context(|| format!("make the owner file of {}", dir.display()))?;
     owner.lock().with_context(|| format!("lock the owner file of {}", dir.display()))?;
+    std::fs::rename(&tmp, dir.join(OWNER)).with_context(|| format!("name the owner file of {}", dir.display()))?;
     HELD.lock().unwrap_or_else(PoisonError::into_inner).push(owner);
     Ok(dir)
 }

@@ -19,4 +19,6 @@ pub mod picker;
 pub mod priority;
 pub mod process;
 pub mod sqlite;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod volume;

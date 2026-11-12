@@ -9,8 +9,8 @@ workspace = true
 
 # Test helpers over the job layer, a dev-dependency only: `Quiet`, the bus that fails its test when anything published
 # on it was not taken, and `RecordingSink`, a `pg_jobs::NoticeSink` that keeps what it is told (the model, for the
-# notices it keeps: `pg_jobs` re-exports none of the model's types). Apart from `pg-testkit` so that crate stays a leaf
-# with no internal dependencies.
+# notices it keeps: `pg_jobs` re-exports none of the model's types). Its internal dependencies are the job layer and the
+# model alone.
 [dependencies]
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }

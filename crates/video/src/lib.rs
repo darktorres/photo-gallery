@@ -290,12 +290,9 @@ mod tests {
     /// The sample clip (tools/make_test_video.py): 64x48, six frames, H.264.
     const SAMPLE: &[u8] = include_bytes!("../tests/sample.mp4");
 
-    /// A fresh folder for one test (under the system's temp folder), emptied if it is left from an earlier run.
+    /// A fresh folder for one test: a run folder of its own.
     fn scratch_dir(test: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pg-video-{test}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+        pg_testkit::run_folder("scratch_video", &format!("pg-video-{test}")).unwrap()
     }
 
     /// The sample under `name`, a name the system holds exactly (on Windows a lone surrogate, on Unix a raw byte: FFmpeg

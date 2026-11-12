@@ -586,7 +586,7 @@ mod tests {
     /// what it was. The user's own toggles afterwards are saved, so the check can fail.
     #[test]
     fn a_started_window_leaves_the_prefs_file_byte_identical() {
-        let home = pg_testkit::test_folder("scratch_desktop", "seeded-start").unwrap();
+        let home = pg_testkit::run_folder("scratch_desktop", "seeded-start").unwrap();
         let config = pg_app::Config::in_home(&home);
         let prefs_path = config.layout.prefs().to_path_buf();
         let app = pg_app::App::open(config).unwrap();
@@ -629,7 +629,7 @@ mod tests {
     /// start is over. The user's own change after it is saved, so the check can fail.
     #[test]
     fn a_start_with_its_options_saves_nothing() {
-        let home = pg_testkit::test_folder("scratch_desktop", "start-options").unwrap();
+        let home = pg_testkit::run_folder("scratch_desktop", "start-options").unwrap();
         let config = pg_app::Config::in_home(&home);
         let prefs_path = config.layout.prefs().to_path_buf();
         let app = pg_app::App::open(config).unwrap();
@@ -689,7 +689,7 @@ mod tests {
     /// one that is only shown (a start's `--size`) is not: the controller never names it to save.
     #[test]
     fn a_settled_row_height_is_saved_and_a_start_size_is_not() {
-        let home = pg_testkit::test_folder("scratch_desktop", "settled-row").unwrap();
+        let home = pg_testkit::run_folder("scratch_desktop", "settled-row").unwrap();
         let config = pg_app::Config::in_home(&home);
         let app = pg_app::App::open(config).unwrap();
         let saved = RowHeight::new(220).expect("a row height in range");

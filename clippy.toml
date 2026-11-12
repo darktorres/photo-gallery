@@ -15,3 +15,9 @@ disallowed-types = [
     { path = "std::collections::HashSet", reason = "randomly seeded; use BTreeSet (or a fixed-seed hasher)" },
     { path = "std::hash::RandomState", reason = "randomly seeded" },
 ]
+
+# Test scratch goes through pg_testkit::run_folder, which owns its folder (pg-platform's testing module). The one read of
+# the temp folder is there, with its expect; any other use would make a folder no cleanup owns.
+disallowed-methods = [
+    { path = "std::env::temp_dir", reason = "test scratch goes through pg_testkit::run_folder, which owns its folders" },
+]

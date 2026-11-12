@@ -190,7 +190,7 @@ mod tests {
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::rules::PathRules;
-    use pg_testkit::test_folder;
+    use pg_testkit::run_folder;
     use rusqlite::Connection;
     use std::path::Path;
 
@@ -230,7 +230,7 @@ mod tests {
     /// A catalog that isn't there is an error to open, and opening it makes no marker beside where it would be.
     #[test]
     fn opening_a_catalog_that_is_not_there_makes_no_marker() {
-        let dir = test_folder(SCRATCH, "not-there").unwrap();
+        let dir = run_folder(SCRATCH, "not-there").unwrap();
         let path = dir.join("catalog.sqlite");
         assert!(Catalog::open(&path, pg_platform::native::PATH_RULES).is_err());
         assert!(!dir.join("catalog.sqlite.live").exists(), "no marker for a catalog that isn't there");
@@ -240,7 +240,7 @@ mod tests {
     /// is rebuilt once that connection has closed. The edit to the file is made on a raw connection, which holds nothing.
     #[test]
     fn a_catalog_another_connection_has_open_is_not_moved_aside() {
-        let dir = test_folder(SCRATCH, "open-elsewhere").unwrap();
+        let dir = run_folder(SCRATCH, "open-elsewhere").unwrap();
         let path = dir.join("catalog.sqlite");
         let open = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let edited = Connection::open(&path).unwrap();
@@ -260,7 +260,7 @@ mod tests {
     // Windows-only: the earlier layout is a Windows catalog, its rows are `D:\` paths recorded as `windows`.
     #[test]
     fn an_earlier_layout_is_moved_aside_and_a_new_catalog_is_made() {
-        let dir = test_folder(SCRATCH, "move-aside").unwrap();
+        let dir = run_folder(SCRATCH, "move-aside").unwrap();
         let path = dir.join("catalog.sqlite");
         let old = Connection::open(&path).unwrap();
         old.execute_batch(BEFORE_ORDER_KEY).unwrap();
@@ -315,7 +315,7 @@ mod tests {
     /// A catalog that differs from this build's schema only by an index it shouldn't have is rebuilt with its rows: the
     /// same files under the same ids, and the library folders.
     fn a_catalog_that_differs_keeps_its_rows(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("keeps-rows-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("keeps-rows-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         crate::fixture::state::add_scan(&c, 1, &spelled(rules, r"D:\p")).unwrap();
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn a_catalog_in_a_folder_with_a_name_that_is_not_utf8_keeps_its_rows() {
         use std::os::unix::ffi::OsStringExt;
-        let base = test_folder(SCRATCH, "odd-folder-name").unwrap();
+        let base = run_folder(SCRATCH, "odd-folder-name").unwrap();
         let dir = base.join(std::ffi::OsString::from_vec(b"odd-\xFF".to_vec()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("catalog.sqlite");
@@ -394,7 +394,7 @@ mod tests {
     // and that text is what this carries.
     #[test]
     fn text_folders_of_views_and_session_are_carried_typed() {
-        let dir = test_folder(SCRATCH, "text-folders").unwrap();
+        let dir = run_folder(SCRATCH, "text-folders").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         drop(c);
@@ -427,7 +427,7 @@ mod tests {
     /// stopped is still the job it was, with its temp at the same path.
     #[test]
     fn a_queued_temp_from_before_it_was_bytes_is_carried_and_read_back() {
-        let dir = test_folder(SCRATCH, "text-temps").unwrap();
+        let dir = run_folder(SCRATCH, "text-temps").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         crate::fixture::state::add_scan(&c, 1, r"D:\p").unwrap();
@@ -466,7 +466,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_catalog_in_a_folder_without_a_utf8_name_is_opened_and_carried_through_an_alias() {
-        let dir = test_folder(SCRATCH, "odd-folder").unwrap();
+        let dir = run_folder(SCRATCH, "odd-folder").unwrap();
         let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cat\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
         let alias = pg_platform::sqlite::openable_folder(&folder, &dir.join("aliases")).unwrap();
@@ -501,7 +501,7 @@ mod tests {
     /// Rows stored under other rules are not carried into a catalog of these: their paths don't read as its own.
     #[test]
     fn rows_of_other_rules_are_not_carried_over() {
-        let dir = test_folder(SCRATCH, "folders-rules").unwrap();
+        let dir = run_folder(SCRATCH, "folders-rules").unwrap();
         let path = dir.join("catalog.sqlite");
         let old = Connection::open(&path).unwrap();
         old.execute_batch(BEFORE_ORDER_KEY).unwrap();
@@ -516,7 +516,7 @@ mod tests {
     }
 
     fn a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("layout_source-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("layout_source-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), rules).unwrap());
         let fresh = raw::on_disk(&path);
@@ -567,7 +567,7 @@ mod tests {
     );
 
     fn a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("move-aside-twice-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("move-aside-twice-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // Files without the columns the current layout needs.
         let old_layout = |path: &Path| {
@@ -603,7 +603,7 @@ mod tests {
     );
 
     fn an_earlier_layout_with_no_rules_recorded_is_rebuilt_not_refused(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("move-aside-no-rules-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("move-aside-no-rules-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // An older build's catalog: no `path_rules` row, and the files without the current layout's columns.
         {
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn a_catalog_made_under_other_rules_is_refused() {
-        let dir = test_folder(SCRATCH, "path-rules").unwrap();
+        let dir = run_folder(SCRATCH, "path-rules").unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), PathRules::Windows).unwrap());
         // Another build's rules: its paths would read as other paths. The catalog is valid, so it is refused, not moved.
@@ -707,7 +707,7 @@ mod tests {
     }
 
     fn preparing_a_catalog_again_rebuilds_nothing(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("prepare-twice-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("prepare-twice-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), rules).unwrap());
         let again = Catalog::prepare(&path, versions(), rules).unwrap();
@@ -730,7 +730,7 @@ mod tests {
             ("edited-index", "DROP INDEX files_changed; CREATE INDEX files_changed ON files(name);", "files_changed"),
             ("edited-table", "CREATE TABLE extra(x INTEGER);", "extra"),
         ] {
-            let dir = test_folder(SCRATCH, &format!("{name}-{}", rules_name(rules))).unwrap();
+            let dir = run_folder(SCRATCH, &format!("{name}-{}", rules_name(rules))).unwrap();
             let path = dir.join("catalog.sqlite");
             edited(rules, &path, sql);
             let c = Catalog::prepare(&path, versions(), rules).unwrap();
@@ -749,7 +749,7 @@ mod tests {
     );
 
     fn a_comment_in_a_stored_definition_is_not_a_schema_change(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("comment-edit-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("comment-edit-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // A catalog whose `files` table was written with a comment in it: the same schema.
         let commented = BASELINE.replacen("CREATE TABLE files(", "CREATE TABLE files( -- an added comment\n", 1);
@@ -770,7 +770,7 @@ mod tests {
     );
 
     fn a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("migrate-v1-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("migrate-v1-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // A catalog as the build before the first migration made it: the baseline, with a library folder.
         {
@@ -805,7 +805,7 @@ mod tests {
     fn a_file_of_an_extension_not_held_is_missing_after_prepare(rules: PathRules) {
         use pg_model::query::{Query, Sort};
 
-        let dir = test_folder(SCRATCH, &format!("unheld-ext-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("unheld-ext-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         {
             let mut c = Catalog::prepare(&path, versions(), rules).unwrap();
@@ -858,7 +858,7 @@ mod tests {
     );
 
     fn a_database_that_is_not_a_catalog_is_moved_aside_not_built_on(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("foreign-database-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("foreign-database-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         {
             let conn = Connection::open(&path).unwrap();
@@ -881,7 +881,7 @@ mod tests {
     );
 
     fn a_file_that_is_not_a_database_is_moved_aside_unread(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("not-a-database-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("not-a-database-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
@@ -898,7 +898,7 @@ mod tests {
     );
 
     fn the_same_schema_under_another_application_id_is_moved_aside(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("application-id-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("application-id-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), rules).unwrap());
         raw::on_disk(&path).pragma_update(None, "application_id", 7).unwrap();
@@ -915,7 +915,7 @@ mod tests {
     );
 
     fn open_refuses_a_catalog_changed_after_it_was_prepared(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("changed-after-prepare-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("changed-after-prepare-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), rules).unwrap());
         raw::on_disk(&path).execute_batch("CREATE TABLE extra(x INTEGER);").unwrap();
@@ -931,7 +931,7 @@ mod tests {
     );
 
     fn two_preparations_of_one_catalog_move_it_aside_once(rules: PathRules) {
-        let dir = test_folder(SCRATCH, &format!("concurrent-prepare-{}", rules_name(rules))).unwrap();
+        let dir = run_folder(SCRATCH, &format!("concurrent-prepare-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
         let threads: Vec<_> = (0..2)
@@ -1181,7 +1181,7 @@ mod tests {
     fn the_inbox_rows_convert_the_same_on_both_paths(rules: PathRules) {
         for (mark, name) in [(15, "seen"), (5, "unseen")] {
             // The migration.
-            let dir = test_folder(SCRATCH, &format!("notify-migrate-{name}-{}", rules_name(rules))).unwrap();
+            let dir = run_folder(SCRATCH, &format!("notify-migrate-{name}-{}", rules_name(rules))).unwrap();
             let path = dir.join("catalog.sqlite");
             before_the_inbox_conversion(rules, &path, mark);
             let c = Catalog::prepare(&path, versions(), rules).unwrap();
@@ -1205,7 +1205,7 @@ mod tests {
             std::fs::remove_dir_all(&dir).unwrap();
 
             // The rebuild's copy of the same catalog.
-            let dir = test_folder(SCRATCH, &format!("notify-rebuild-{name}-{}", rules_name(rules))).unwrap();
+            let dir = run_folder(SCRATCH, &format!("notify-rebuild-{name}-{}", rules_name(rules))).unwrap();
             let path = dir.join("catalog.sqlite");
             before_the_inbox_conversion(rules, &path, mark);
             raw::on_disk(&path).execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
@@ -1231,7 +1231,7 @@ mod tests {
         let current = current_version().unwrap();
         for version in crate::schema::BASELINE_VERSION..current {
             for rebuilt in [false, true] {
-                let dir = test_folder(SCRATCH, &format!("every-version-{version}-{rebuilt}")).unwrap();
+                let dir = run_folder(SCRATCH, &format!("every-version-{version}-{rebuilt}")).unwrap();
                 let path = dir.join("catalog.sqlite");
                 {
                     let conn = Connection::open(&path).unwrap();

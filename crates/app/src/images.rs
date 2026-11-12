@@ -337,7 +337,7 @@ mod tests {
     // which a caller can branch on, for the viewer's original and for a thumbnail alike; its text says so once.
     #[test]
     fn an_original_that_is_gone_is_error_original() {
-        let dir = pg_testkit::test_folder("scratch_app", "original-gone").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "original-gone").unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();
         let folder = if cfg!(windows) { r"D:\pg-test-no-such-folder" } else { "/pg-test-no-such-folder" };
         app.catalogs()
@@ -390,7 +390,7 @@ mod tests {
     // is recorded in the ledger; once the file decodes, a thumbnail made of it takes it out.
     #[test]
     fn a_thumbnail_that_doesnt_decode_is_recorded_until_one_is_made() {
-        let dir = pg_testkit::test_folder("scratch_app", "thumb-undecodable").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "thumb-undecodable").unwrap();
         let images = dir.join("images");
         std::fs::create_dir_all(&images).unwrap();
         let file = images.join("bad.png");
@@ -425,7 +425,7 @@ mod tests {
 
     /// An app on a test folder whose catalog holds file `id`, `name` in the folder `images` (made), size 10 and mtime 0.
     fn app_with(name: &str, id: i64, file: &'static str) -> (App, std::path::PathBuf, std::path::PathBuf) {
-        let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", name).unwrap();
         let images = dir.join("images");
         std::fs::create_dir_all(&images).unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();

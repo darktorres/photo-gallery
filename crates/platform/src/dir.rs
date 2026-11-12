@@ -650,8 +650,8 @@ mod folders_tests {
 
     #[test]
     fn the_folders_listed_are_the_folders_by_their_exact_names() {
-        let tree = pg_testkit::test_folder("scratch_dir", "pg-folders-listing").unwrap();
-        let odd = tree.join(pg_testkit::odd_name("odd"));
+        let tree = crate::testing::run_folder("scratch_dir", "pg-folders-listing").unwrap();
+        let odd = tree.join(crate::testing::odd_name("odd"));
         std::fs::create_dir(&odd).unwrap();
         std::fs::create_dir(tree.join("Beta")).unwrap();
         std::fs::create_dir(tree.join("alpha")).unwrap();

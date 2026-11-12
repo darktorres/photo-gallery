@@ -57,7 +57,7 @@ fn holder() {
 
 #[test]
 fn a_catalog_open_in_another_process_is_not_rebuilt() {
-    let dir: PathBuf = pg_testkit::test_folder("scratch_catalog", "other-process").unwrap();
+    let dir: PathBuf = pg_testkit::run_folder("scratch_catalog", "other-process").unwrap();
     let path = dir.join("catalog.sqlite");
     drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
@@ -91,7 +91,7 @@ fn posted() -> pg_model::notice::Notice {
 /// the inbox lists it.
 #[test]
 fn a_notice_another_process_posts_is_seen() {
-    let dir: PathBuf = pg_testkit::test_folder("scratch_catalog", "other-process-post").unwrap();
+    let dir: PathBuf = pg_testkit::run_folder("scratch_catalog", "other-process-post").unwrap();
     let path = dir.join("catalog.sqlite");
     let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
     let before = c.data_version().unwrap();
@@ -112,7 +112,7 @@ fn a_notice_another_process_posts_is_seen() {
 /// that process lets go.
 #[test]
 fn open_waits_for_a_rebuild_in_another_process() {
-    let dir: PathBuf = pg_testkit::test_folder("scratch_catalog", "open-waits").unwrap();
+    let dir: PathBuf = pg_testkit::run_folder("scratch_catalog", "open-waits").unwrap();
     let path = dir.join("catalog.sqlite");
     drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));

@@ -172,7 +172,7 @@ mod tests {
     use super::*;
     use pg_analysis::analyze::Analyzer;
     use pg_model::analysis::Analyzed;
-    use pg_testkit::test_folder;
+    use pg_testkit::run_folder;
     use std::path::PathBuf;
 
     fn pattern(w: usize, h: usize, seed: usize) -> Vec<u8> {
@@ -237,7 +237,7 @@ mod tests {
     /// missing, not an image), and a missing file fails as `std::fs::read` does.
     #[test]
     fn files_read_into_the_maker_are_their_bytes() {
-        let dir = test_folder(SCRATCH, "read-file").unwrap();
+        let dir = run_folder(SCRATCH, "read-file").unwrap();
         let files: Vec<(PathBuf, Vec<u8>)> = [(640, 480, 1), (64, 48, 2), (1200, 800, 3), (33, 77, 4)]
             .into_iter()
             .enumerate()
@@ -273,7 +273,7 @@ mod tests {
     /// drive), an image that is cut short doesn't decode, though the codec's own error under it is an I/O one.
     #[test]
     fn a_file_that_cant_be_opened_is_unreadable_and_a_damaged_one_undecodable() {
-        let dir = test_folder(SCRATCH, "make-errors").unwrap();
+        let dir = run_folder(SCRATCH, "make-errors").unwrap();
         let mut maker = Maker::new().unwrap();
         let gone = maker.load_frame(&dir.join("gone.mp4"), 0, Turns::NONE);
         assert!(

@@ -331,7 +331,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_folder_with_a_trailing_dot_is_reached_verbatim() {
-        let dir = std::path::absolute(pg_testkit::test_folder("scratch_native", "trailing-dot").unwrap()).unwrap();
+        let dir = std::path::absolute(crate::testing::run_folder("scratch_native", "trailing-dot").unwrap()).unwrap();
         let dotted = dir.join("Acme Inc.");
         let sibling = dir.join("Acme Inc");
         std::fs::create_dir_all(verbatim(&dotted)).unwrap();

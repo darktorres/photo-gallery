@@ -492,7 +492,7 @@ mod tests {
     // file removes its row; a file gone missing keeps it, hidden, and a deleted one takes it.
     #[test]
     fn a_failure_is_one_row_for_the_file_as_it_failed() {
-        let dir = pg_testkit::test_folder("scratch_catalog", "ledger-one-row").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "ledger-one-row").unwrap();
         let path = dir.join("catalog.sqlite");
         let rules = pg_platform::native::PATH_RULES;
         let c = catalog_at(&path, rules, 4);

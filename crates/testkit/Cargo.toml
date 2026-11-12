@@ -7,10 +7,12 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# Test helpers only (a dev-dependency of the crates that have tests), with no dependency on a crate of this workspace,
-# so no crate's tests depend back on it through their own dependencies. Its dependencies are the encoders the fixtures
-# use (`image`, `png`), and `anyhow` for the errors the helpers return. The job layer's helpers are `pg-jobs-testkit`.
+# Test helpers only (a dev-dependency of the crates that have tests). Its folders and their protocol are pg-platform's
+# `testing` module (the platform code is there, so this crate has none), which it re-exports. Its dependencies are the
+# encoders the fixtures use (`image`, `png`), and `anyhow` for the errors the helpers return. The job layer's helpers are
+# `pg-jobs-testkit`.
 [dependencies]
+pg-platform = { path = "../platform", features = ["testing"] }
 anyhow.workspace = true
 image.workspace = true
 png.workspace = true

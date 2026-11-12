@@ -45,7 +45,7 @@ fn holder() {
 
 #[test]
 fn a_cache_of_another_catalog_is_not_started_over_while_another_process_has_it_open() {
-    let dir = pg_testkit::test_folder("scratch_thumbcache", "other-process").unwrap();
+    let dir = pg_testkit::run_folder("scratch_thumbcache", "other-process").unwrap();
     drop(ThumbCache::open(&dir.join("thumbs.sqlite"), "first", None, 1, Arc::new(Bus::new(1))).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut other = spawn_holder(&dir, "first", &ready, &release).unwrap();

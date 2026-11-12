@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(Cap::from_bytes(0), None);
     }
     use pg_jobs_testkit::Quiet;
-    use pg_testkit::test_folder;
+    use pg_testkit::run_folder;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = "scratch_thumbs";
@@ -356,7 +356,7 @@ mod tests {
     /// the read before) closes with it, so the last connection deletes the files. A reader left open keeps them.
     #[test]
     fn close_merges_the_wal_and_leaves_no_files() {
-        let dir = test_folder(SCRATCH, "close-wal").unwrap();
+        let dir = run_folder(SCRATCH, "close-wal").unwrap();
         let cache = open(&dir, 1 << 20);
         cache.put(thumb(3, 100, 5, 30));
         cache.flush();
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn nearest_height_and_staleness() {
-        let dir = test_folder(SCRATCH, "nearest").unwrap();
+        let dir = run_folder(SCRATCH, "nearest").unwrap();
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 300, 5, 30)], None).unwrap());
         // The smallest at least as high, else the largest below.
@@ -467,7 +467,7 @@ mod tests {
     /// as a batch of one is. A hit is read into the caller's buffer, replacing what it held.
     #[test]
     fn batches_come_back_and_hits_are_read_into_the_callers_buffer() {
-        let dir = test_folder(SCRATCH, "back").unwrap();
+        let dir = run_folder(SCRATCH, "back").unwrap();
         let cache = open(&dir, 1 << 30);
         let mut batch = vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)];
         assert!(cache.put_batch(&mut batch, None).unwrap());
@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn replacing_keeps_each_jpeg_with_its_file() {
-        let dir = test_folder(SCRATCH, "replace").unwrap();
+        let dir = run_folder(SCRATCH, "replace").unwrap();
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         cache.put_batch(&mut vec![thumb(2, 100, 5, 20)], None).unwrap();
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn eviction() {
-        let dir = test_folder(SCRATCH, "evict").unwrap();
+        let dir = run_folder(SCRATCH, "evict").unwrap();
         // Room for 10 thumbnails of 100 bytes (the slack is 1% of the cap: 10 bytes).
         let cache = open(&dir, 1000);
         for i in 0..10 {
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn far_over_a_lowered_cap_comes_down() {
-        let dir = test_folder(SCRATCH, "lowered").unwrap();
+        let dir = run_folder(SCRATCH, "lowered").unwrap();
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut (0..40).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
         drop(cache);
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn one_cap_for_every_writer() {
-        let dir = test_folder(SCRATCH, "cap").unwrap();
+        let dir = run_folder(SCRATCH, "cap").unwrap();
         assert_eq!(ThumbCache::read_usage(&cache_path(&dir)).unwrap(), None);
         let first = open_quiet(&dir, CATALOG_ID, None);
         assert_eq!(first.cap().unwrap(), default_cap_bytes(&dir), "a new cache");
@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn shrink_gives_pages_back() {
-        let dir = test_folder(SCRATCH, "shrink").unwrap();
+        let dir = run_folder(SCRATCH, "shrink").unwrap();
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut (0..200).map(|i| thumb(i, 50, 1, 8000)).collect(), None).unwrap());
         let c = Connection::open(cache_path(&dir)).unwrap();
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn touches_are_written_together() {
-        let dir = test_folder(SCRATCH, "touch").unwrap();
+        let dir = run_folder(SCRATCH, "touch").unwrap();
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         let c = Connection::open(cache_path(&dir)).unwrap();
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn retag_follows_the_file() {
-        let dir = test_folder(SCRATCH, "retag").unwrap();
+        let dir = run_folder(SCRATCH, "retag").unwrap();
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 200, 5, 10), thumb(2, 100, 5, 10)], None).unwrap();
         cache.retag(FileId::new(1), 5, 9).unwrap();
@@ -622,7 +622,7 @@ mod tests {
 
     #[test]
     fn reopened_it_keeps_what_it_held() {
-        let dir = test_folder(SCRATCH, "reopen").unwrap();
+        let dir = run_folder(SCRATCH, "reopen").unwrap();
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
@@ -633,7 +633,7 @@ mod tests {
 
     #[test]
     fn another_layout_version_starts_over() {
-        let dir = test_folder(SCRATCH, "layout").unwrap();
+        let dir = run_folder(SCRATCH, "layout").unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
         let cache = open_quiet(&dir, CATALOG_ID, None);
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), default_cap_bytes(&dir)));
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn a_new_cache_has_its_application_id_and_incremental_auto_vacuum() {
-        let dir = test_folder(SCRATCH, "fresh-file").unwrap();
+        let dir = run_folder(SCRATCH, "fresh-file").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, None));
         let conn = Connection::open(cache_path(&dir)).unwrap();
         assert_eq!(pg_dbfile::application_id(&conn).unwrap(), APPLICATION_ID);
@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn an_edited_table_starts_over_with_its_cap_kept() {
-        let dir = test_folder(SCRATCH, "edited-cache").unwrap();
+        let dir = run_folder(SCRATCH, "edited-cache").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
         Connection::open(cache_path(&dir))
             .unwrap()
@@ -669,7 +669,7 @@ mod tests {
     /// A file with this cache's tables but another application id is not ours to delete: it is refused, as it is.
     #[test]
     fn another_applications_file_is_refused_and_left_alone() {
-        let dir = test_folder(SCRATCH, "app-id-cache").unwrap();
+        let dir = run_folder(SCRATCH, "app-id-cache").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(999)));
         Connection::open(cache_path(&dir)).unwrap().pragma_update(None, "application_id", 9).unwrap();
         let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
@@ -681,7 +681,7 @@ mod tests {
     /// A database that is not a cache (tables of its own, no cache's application id) is refused and left as it was.
     #[test]
     fn a_database_that_is_not_a_cache_is_refused_and_left_as_it_was() {
-        let dir = test_folder(SCRATCH, "foreign-db").unwrap();
+        let dir = run_folder(SCRATCH, "foreign-db").unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute_batch("CREATE TABLE notes(text TEXT);").unwrap();
         let before = std::fs::read(cache_path(&dir)).unwrap();
         let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
@@ -714,7 +714,7 @@ mod tests {
     /// A file that is not a database at all is moved aside and made anew: the cache holds derived data only.
     #[test]
     fn a_file_that_is_not_a_database_is_moved_aside() {
-        let dir = test_folder(SCRATCH, "foreign-cache").unwrap();
+        let dir = run_folder(SCRATCH, "foreign-cache").unwrap();
         std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
         let (reason, why) = opens_over_damage(&dir, &[b'x'; 8192]);
         assert!(why.contains("not a database"), "{why}");
@@ -742,7 +742,7 @@ mod tests {
     /// A real cache whose body is garbage after its header: moved aside and made anew.
     #[test]
     fn a_cache_with_a_garbage_body_is_moved_aside() {
-        let dir = test_folder(SCRATCH, "garbage-body").unwrap();
+        let dir = run_folder(SCRATCH, "garbage-body").unwrap();
         let (mut bytes, _) = closed_cache_due_a_check(&dir);
         for (i, b) in bytes.iter_mut().enumerate().skip(100) {
             *b = u8::try_from(i % 251).unwrap() ^ 0xA5;
@@ -755,7 +755,7 @@ mod tests {
     /// A real cache cut to half its pages (a disk full, a copy cut short): moved aside and made anew.
     #[test]
     fn a_truncated_cache_is_moved_aside() {
-        let dir = test_folder(SCRATCH, "truncated").unwrap();
+        let dir = run_folder(SCRATCH, "truncated").unwrap();
         let (bytes, page) = closed_cache_due_a_check(&dir);
         let cut = &bytes[..bytes.len() / page / 2 * page];
         std::fs::write(cache_path(&dir), cut).unwrap();
@@ -767,7 +767,7 @@ mod tests {
     /// (`meta.healed` put back, or the open doesn't check): that takes the same path, under the same lock.
     #[test]
     fn damage_found_by_the_days_check_is_moved_aside() {
-        let dir = test_folder(SCRATCH, "heal-damage").unwrap();
+        let dir = run_folder(SCRATCH, "heal-damage").unwrap();
         let (mut bytes, page) = closed_cache_due_a_check(&dir);
         // The first pages hold the header, the schema and the tables' roots (the open reads those); the entries' leaves
         // and the JPEGs are past them.
@@ -787,7 +787,7 @@ mod tests {
     /// damaged file is moved aside with the bytes it had.
     #[test]
     fn damage_found_on_an_open_with_a_cap_is_moved_aside_whole() {
-        let dir = test_folder(SCRATCH, "heal-damage-cap").unwrap();
+        let dir = run_folder(SCRATCH, "heal-damage-cap").unwrap();
         let (mut bytes, page) = closed_cache_due_a_check(&dir);
         let keep = 16 * page;
         assert!(bytes.len() > 4 * keep, "the cache is too small to damage past its roots: {} bytes", bytes.len());
@@ -807,7 +807,7 @@ mod tests {
     /// A damaged cache that another program has open is not moved: the open fails, and the file stays as it was.
     #[test]
     fn a_damaged_cache_another_program_holds_is_not_moved() {
-        let dir = test_folder(SCRATCH, "damaged-held").unwrap();
+        let dir = run_folder(SCRATCH, "damaged-held").unwrap();
         std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
         let held = pg_dbfile::Live::shared(&cache_path(&dir)).unwrap().unwrap();
         let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
@@ -820,7 +820,7 @@ mod tests {
 
     #[test]
     fn two_writers_share_one_file() {
-        let dir = test_folder(SCRATCH, "two").unwrap();
+        let dir = run_folder(SCRATCH, "two").unwrap();
         let a = open(&dir, 1 << 30);
         let b = open(&dir, 1 << 30);
         std::thread::scope(|s| {
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn totals_survive_any_sequence() {
-        let dir = test_folder(SCRATCH, "sequence").unwrap();
+        let dir = run_folder(SCRATCH, "sequence").unwrap();
         let cache = open(&dir, 5_000);
         // A fixed pseudo-random walk over puts (new and replacing), on-demand puts, evictions and retags.
         let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -883,7 +883,7 @@ mod tests {
 
     #[test]
     fn heal_fixes_drifted_totals() {
-        let dir = test_folder(SCRATCH, "heal").unwrap();
+        let dir = run_folder(SCRATCH, "heal").unwrap();
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap();
         let mut file = Connection::open(cache_path(&dir)).unwrap();
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn a_closed_cache_takes_no_more_writes_and_still_reads() {
-        let dir = test_folder(SCRATCH, "closed").unwrap();
+        let dir = run_folder(SCRATCH, "closed").unwrap();
         let cache = open(&dir, 1 << 20);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         cache.close();
@@ -906,7 +906,7 @@ mod tests {
 
     #[test]
     fn a_fix_made_at_open_is_published_before_open_returns() {
-        let dir = test_folder(SCRATCH, "fix-event").unwrap();
+        let dir = run_folder(SCRATCH, "fix-event").unwrap();
         drop(open(&dir, 1 << 30));
         // A day on (the last check is put back a day), so this open checks the totals.
         let file = Connection::open(cache_path(&dir)).unwrap();
@@ -921,7 +921,7 @@ mod tests {
 
     #[test]
     fn the_totals_are_checked_at_most_once_a_day() {
-        let dir = test_folder(SCRATCH, "heal-daily").unwrap();
+        let dir = run_folder(SCRATCH, "heal-daily").unwrap();
         drop(open(&dir, 1 << 30));
         Connection::open(cache_path(&dir)).unwrap().execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
         // Within the day of the last check, an open doesn't check: the drift stays until the next day's open.
@@ -985,7 +985,7 @@ mod tests {
 
     #[test]
     fn pending_against_a_catalog() {
-        let dir = test_folder(SCRATCH, "pending").unwrap();
+        let dir = run_folder(SCRATCH, "pending").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         // File 1 is current at 100 px; file 3 was turned since its thumbnail; file 4 is missing.
@@ -1001,7 +1001,7 @@ mod tests {
     /// (`thumb_sources` is one table with lookups by key), so a pass after a few changes reads only those files.
     #[test]
     fn the_pending_query_since_a_change_reads_the_change_index() {
-        let dir = test_folder(SCRATCH, "pending-plan").unwrap();
+        let dir = run_folder(SCRATCH, "pending-plan").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         drop(open(&dir, 1 << 30));
         let conn = Connection::open(cache_path(&dir)).unwrap();
@@ -1018,7 +1018,7 @@ mod tests {
 
     #[test]
     fn a_complete_pass_is_where_the_next_one_starts() {
-        let dir = test_folder(SCRATCH, "watermark").unwrap();
+        let dir = run_folder(SCRATCH, "watermark").unwrap();
         let (catalog, c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         let first = cache.pending(&catalog, h(100)).unwrap();
@@ -1048,7 +1048,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_cache_in_a_folder_without_a_utf8_name_is_opened_through_an_alias() {
-        let dir = test_folder(SCRATCH, "odd-folder").unwrap();
+        let dir = run_folder(SCRATCH, "odd-folder").unwrap();
         let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cache\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
         let alias = pg_platform::sqlite::openable_folder(&folder, &dir.join("aliases")).unwrap();
@@ -1061,7 +1061,7 @@ mod tests {
 
     #[test]
     fn a_pass_after_a_complete_one_reads_the_changed_files() {
-        let dir = test_folder(SCRATCH, "seq-plan").unwrap();
+        let dir = run_folder(SCRATCH, "seq-plan").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         drop(open(&dir, 1 << 30));
         let conn = Connection::open(cache_path(&dir)).unwrap();
@@ -1081,7 +1081,7 @@ mod tests {
     /// with the height looked at whole, and the other files' entries stay.
     #[test]
     fn forgetting_a_height_makes_its_file_pending_again() {
-        let dir = test_folder(SCRATCH, "forget-height").unwrap();
+        let dir = run_folder(SCRATCH, "forget-height").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1_000_000);
         let pass = cache.pending(&catalog, h(100)).unwrap();
@@ -1099,7 +1099,7 @@ mod tests {
     /// behind the checkpoint. The same version again changes nothing.
     #[test]
     fn a_new_thumbnailer_forgets_how_far_each_height_was_checked() {
-        let dir = test_folder(SCRATCH, "thumbs-version").unwrap();
+        let dir = run_folder(SCRATCH, "thumbs-version").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         let pass = cache.pending(&catalog, h(100)).unwrap();
@@ -1123,7 +1123,7 @@ mod tests {
 
     #[test]
     fn eviction_forgets_how_far_a_height_was_checked() {
-        let dir = test_folder(SCRATCH, "forget").unwrap();
+        let dir = run_folder(SCRATCH, "forget").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         // Room for three of these.
         let cache = open(&dir, 300);
@@ -1148,7 +1148,7 @@ mod tests {
     /// up): a read holds the cache shared while it reads, as the cache's own connections do.
     #[test]
     fn read_usage_is_refused_while_a_start_over_holds_the_cache() {
-        let dir = test_folder(SCRATCH, "usage-held").unwrap();
+        let dir = run_folder(SCRATCH, "usage-held").unwrap();
         drop(open(&dir, 1 << 30));
         let held = pg_dbfile::Live::exclusive(&cache_path(&dir)).unwrap().expect("free");
         assert!(ThumbCache::read_usage(&cache_path(&dir)).is_err(), "held for a start over: not read");
@@ -1158,7 +1158,7 @@ mod tests {
 
     #[test]
     fn a_cache_of_another_catalog_starts_over() {
-        let dir = test_folder(SCRATCH, "other-catalog").unwrap();
+        let dir = run_folder(SCRATCH, "other-catalog").unwrap();
         let cache = open(&dir, 12345);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
@@ -1174,7 +1174,7 @@ mod tests {
 
     #[test]
     fn a_cache_of_an_earlier_layout_starts_over() {
-        let dir = test_folder(SCRATCH, "earlier-layout").unwrap();
+        let dir = run_folder(SCRATCH, "earlier-layout").unwrap();
         // Before the catalog id and the watermarks: no `meta`, no `checked`.
         let old = Connection::open(dir.join("thumbs.sqlite")).unwrap();
         old.execute_batch(
@@ -1196,7 +1196,7 @@ mod tests {
     /// keep, and reading the missing one is not an error (that would keep the cache from opening at all).
     #[test]
     fn an_earlier_limits_without_a_cap_starts_over_with_the_default() {
-        let dir = test_folder(SCRATCH, "earlier-limits").unwrap();
+        let dir = run_folder(SCRATCH, "earlier-limits").unwrap();
         let old = Connection::open(dir.join("thumbs.sqlite")).unwrap();
         old.execute_batch(
             "CREATE TABLE entries(file_id INTEGER, height INTEGER);

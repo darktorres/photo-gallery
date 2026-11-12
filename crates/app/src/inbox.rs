@@ -1002,7 +1002,7 @@ mod tests {
 
     /// A prepared catalog in a test folder, and its path.
     fn catalog_in(name: &str) -> (PathBuf, PathBuf) {
-        let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", name).unwrap();
         let layout = pg_library::layout::Layout::in_home(&dir);
         std::fs::create_dir_all(layout.catalog_dir()).unwrap();
         drop(pg_library::open_catalog(&layout).unwrap());

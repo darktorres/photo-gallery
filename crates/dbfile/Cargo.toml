@@ -14,3 +14,6 @@ workspace = true
 [dependencies]
 pg-platform = { path = "../platform" }
 rusqlite.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }

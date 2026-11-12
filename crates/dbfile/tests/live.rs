@@ -8,12 +8,9 @@ use std::time::{Duration, Instant};
 
 use pg_dbfile::Live;
 
-/// A folder for one test, made fresh.
+/// A folder for one test: a run folder of its own.
 fn scratch(name: &str) -> std::io::Result<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("pg-live-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir)
+    pg_testkit::run_folder("scratch_live", &format!("pg-live-{name}")).map_err(std::io::Error::other)
 }
 
 /// Waits until `path` exists, for at most `within`.

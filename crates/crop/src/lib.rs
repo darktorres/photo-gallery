@@ -233,7 +233,7 @@ mod tests {
 
     /// A folder with a source file in it, for `publish`.
     fn folder(name: &str) -> (PathBuf, PathBuf) {
-        let dir = pg_testkit::test_folder("scratch_crop", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_crop", name).unwrap();
         let source = dir.join("source.jpg");
         std::fs::write(&source, b"original").unwrap();
         (dir, source)

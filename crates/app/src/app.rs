@@ -230,7 +230,7 @@ mod tests {
     fn a_file_of_the_catalog_opens_by_its_exact_path() {
         use pg_catalog::fixture::{self, File};
         use pg_model::ids::FolderId;
-        let dir = pg_testkit::test_folder("scratch_app", "file-path").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "file-path").unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();
         let folder = if cfg!(windows) { r"D:\a" } else { "/a" };
         let name: &'static [u8] = b"x\xED\xA0\x80.jpg";
@@ -256,7 +256,7 @@ mod tests {
     // be removed.
     #[test]
     fn the_shutdown_is_idempotent_and_the_drop_calls_it() {
-        let dir = pg_testkit::test_folder("scratch_app", "shutdown-twice").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "shutdown-twice").unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();
         app.inbox().post(Notice::FolderNotAdded { error: "kept at the shutdown".into() });
         app.stop().unwrap();
@@ -266,7 +266,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!dir.exists());
         // Dropped without a shutdown: the drop does it.
-        let dir = pg_testkit::test_folder("scratch_app", "shutdown-by-drop").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "shutdown-by-drop").unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();
         app.stop().unwrap();
         drop(app);

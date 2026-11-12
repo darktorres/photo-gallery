@@ -4,7 +4,7 @@
    `tools/crate-layers.txt` lists, and each of them is on an earlier line. A new internal edge fails until the file
    changes in the same commit, and the file's order is a layering, so the normal graph has no cycle.
 2. Dev edges: the graph of every internal edge (normal, dev and build) has no cycle. A crate's tests may not depend on
-   a crate that depends on it (M-14: test helpers are leaves).
+   a crate that depends on it (M-14: the test helpers sit on the crates they test, below the crates whose tests use them).
 3. Re-exports: a `pub use` in production code names a child module of the module it is in (a crate's public API laid
    over its private layout). One that names another crate is allowed only in a boundary file (`REEXPORT_BOUNDARIES`),
    and one through `crate::` or `super::` (an item kept at an old path) is not allowed.
@@ -13,7 +13,8 @@
    except the glue in `PLATFORM_GLUE`, which must name the platform's own signatures or types.
 
 Production code is a crate's `src/` and its build script, without `#[cfg(test)]` items (an inline module, or a
-`mod name;` whose file is then left out too). The test-only crates (`TEST_CRATES`) are left out of 3 and 4.
+`mod name;` whose file is then left out too). The test helpers are checked like the rest: pg-testkit's folders are pg-platform's
+code, so the rule has no exemption for a test crate.
 
 Usage: python tools/boundaries.py. Needs cargo (`cargo metadata --no-deps`, which reads the manifests and builds
 nothing). Standard library only.
@@ -28,12 +29,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 LAYERS = REPO / "tools" / "crate-layers.txt"
 
-# Dev-only crates: test helpers, and the benches.
-TEST_CRATES = {"testkit", "jobs-testkit", "bench"}
 # The files that re-export other crates' items, each a documented layer boundary.
 REEXPORT_BOUNDARIES = {
     # The front end depends on `pg-app` alone, and names the lower crates' types through it.
     "crates/app/src/reexport.rs",
+    # pg-testkit re-exports pg-platform's test folders under the names the tests use.
+    "crates/testkit/src/lib.rs",
 }
 # Production code outside pg-platform that may name a platform, with the reason (ground rule 6).
 PLATFORM_GLUE: dict[str, str] = {}
@@ -212,8 +213,6 @@ def crate_of(path):
 def check_reexports(files):
     failures = []
     for path, text in files.items():
-        if crate_of(path) in TEST_CRATES:
-            continue
         children = set(CHILD_MOD.findall(text))
         for m in PUB_USE.finditer(text):
             body = re.sub(r"\s+", "", m.group(1))
@@ -245,7 +244,7 @@ def cfg_args(text, start):
 def check_platform(files):
     failures = []
     for path, text in files.items():
-        if crate_of(path) in TEST_CRATES | {"platform"} or rel(path) in PLATFORM_GLUE:
+        if crate_of(path) == "platform" or rel(path) in PLATFORM_GLUE:
             continue
         hits = [m.start() for m in CFG.finditer(text) if PLATFORM_WORD.search(cfg_args(text, m.end()))]
         hits += [m.start() for m in STD_OS.finditer(text)]

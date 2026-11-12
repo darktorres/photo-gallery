@@ -144,8 +144,7 @@ mod tests {
 
     #[test]
     fn loops_the_frames_and_closes_the_sink_once_dropped() {
-        let dir = std::env::temp_dir().join(format!("pg-player-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = pg_testkit::run_folder("scratch_render", "pg-player").unwrap();
         let file = dir.join("loop.gif");
         std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
 
@@ -189,8 +188,7 @@ mod tests {
             use std::os::unix::ffi::OsStringExt;
             OsString::from_vec(b"x\xFF.gif".to_vec())
         };
-        let dir = std::env::temp_dir().join(format!("pg-player-odd-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = pg_testkit::run_folder("scratch_render", "pg-player-odd").unwrap();
         let file = dir.join(name);
         std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
 

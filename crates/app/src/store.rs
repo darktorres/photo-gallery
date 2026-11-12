@@ -87,12 +87,9 @@ mod tests {
         count: u32,
     }
 
-    /// A fresh folder for one test (the process id keeps parallel runs apart); removed at the start of each run.
+    /// A fresh folder for one test, a run folder of its own (`pg_testkit::run_folder`).
     fn scratch(test: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pg-store-{}-{test}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+        pg_testkit::run_folder("scratch_store", &format!("pg-store-{test}")).unwrap()
     }
 
     #[test]

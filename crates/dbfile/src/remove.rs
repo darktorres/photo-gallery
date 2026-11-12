@@ -60,8 +60,7 @@ mod tests {
     /// The main file and its sidecars move together to the first free name, and nothing already there is overwritten.
     #[test]
     fn moving_aside_takes_the_sidecars_and_never_overwrites() {
-        let dir = std::env::temp_dir().join(format!("pg-dbfile-aside-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = pg_testkit::run_folder("scratch_dbfile", "pg-dbfile-aside").unwrap();
         let path = dir.join("db.sqlite");
         std::fs::write(&path, b"first").unwrap();
         std::fs::write(dir.join("db.sqlite-wal"), b"first wal").unwrap();
@@ -78,8 +77,7 @@ mod tests {
 
     #[test]
     fn removing_takes_the_sidecars_and_a_missing_part_is_no_error() {
-        let dir = std::env::temp_dir().join(format!("pg-dbfile-remove-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = pg_testkit::run_folder("scratch_dbfile", "pg-dbfile-remove").unwrap();
         let path = dir.join("db.sqlite");
         std::fs::write(&path, b"main").unwrap();
         std::fs::write(dir.join("db.sqlite-wal"), b"wal").unwrap();

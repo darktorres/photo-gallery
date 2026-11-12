@@ -93,7 +93,8 @@ Decided: printing is for the entry points and the tools. Each place that prints 
 |---|---|---|
 | `pg-cli` | the command line's reports (stdout) and progress and errors (stderr) | `#![expect]` at the crate root |
 | `gallery` `main.rs` | the CLI's error, and the notice of a build without the window (stderr) | `#![expect]` at the crate root |
-| `pg-testkit` | a skipped test's notice (stderr) | `#[expect]` on `missing_tool` |
+| `pg-platform` `testing` (test helpers) | a skipped test's notice (stderr) | `#[expect]` on `missing_tool` and `skip` |
+| `pg-platform` `testing` | the one read of the temp folder, the test base's fallback (`system_temp`) | `#[expect(clippy::disallowed_methods)]`, which `clippy.toml` needs for `std::env::temp_dir` |
 | `bench` (non-Linux stub), `analysis` example | their output | `#[expect]` on the stub's `main`; `#![expect]` on the example |
 | `pg-desktop` `PG_TRACE=1` timings | stderr, on purpose | `#[expect]` on `trace::install` |
 | tests | test output | `allow-print-in-tests` in `clippy.toml` |

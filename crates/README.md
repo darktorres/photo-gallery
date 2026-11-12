@@ -114,8 +114,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
   command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
   the program runs commands only, and builds without Qt.
-- `testkit` (`pg-testkit`): helpers for the crates' tests (scratch folders under `PG_TEST_DIR`, else the temp folder,
-  the file generators, `odd_name`, `held`). It depends on no crate here, so no crate's tests depend back on it.
+- `testkit` (`pg-testkit`): helpers for the crates' tests: the scratch folders (`run_folder`, under `PG_TEST_DIR`, else
+  the temp folder, each owned by a lock from the moment it has its name; the protocol is in `pg-platform`'s `testing`
+  module), the file generators, `odd_name` and `held`. Its one internal dependency is `pg-platform`, with the `testing`
+  feature, so the test folders' platform code stays in `pg-platform`.
 - `jobs-testkit` (`pg-jobs-testkit`): the job layer's test helper, `Quiet` (a bus that fails its test when anything
   published on it was not taken). A dev-dependency only.
 - `bench` (`pg-bench`): the callgrind benches (`benches/ir.rs`), built on Linux only.
@@ -126,7 +128,7 @@ The internal dependencies (normal ones, from `cargo metadata`) only point up the
 it. `tools/crate-layers.txt` lists each crate's internal dependencies exactly, bottom layer first, and
 `tools/boundaries.py` (in `just lint` and CI) fails on an edge the file does not list. It also checks that the
 dependencies including the dev and build ones have no cycle (a crate's tests never depend on a crate that depends on
-it, which is why `testkit` and `jobs-testkit` are leaves), that a `pub use` names a child module except in
+it: `pg-platform`'s own tests use its `testing` module directly, so `testkit` sits above `platform`), that a `pub use` names a child module except in
 `app/src/reexport.rs`, and the platform rule above. Module cycles inside a crate are `just modgraph`'s (the compiler's
 module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI runs it on both targets.
 

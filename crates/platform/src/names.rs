@@ -257,19 +257,11 @@ mod tests {
         // The folder is made with the name (an unpaired surrogate, or a byte no UTF-8 sequence holds), then normalized:
         // its last part is that name, exactly, where a lossy text form would have U+FFFD.
         #[cfg(windows)]
-        let (os, name): (OsString, Vec<crate::native::Unit>) = {
-            use std::os::windows::ffi::OsStringExt;
-            (OsString::from_wide(&[0x61, 0xD800]), vec![0x61, 0xD800])
-        };
+        let name: Vec<crate::native::Unit> = vec![0x61, 0xD800];
         #[cfg(unix)]
-        let (os, name): (OsString, Vec<crate::native::Unit>) = {
-            use std::os::unix::ffi::OsStringExt;
-            (OsString::from_vec(vec![0x61, 0xFF]), vec![0x61, 0xFF])
-        };
-        let base = std::env::var_os("PG_TEST_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join(format!("pg-normalize-{}", std::process::id()));
+        let name: Vec<crate::native::Unit> = vec![0x61, 0xFF];
+        let os = crate::testing::odd_name("a");
+        let base = crate::testing::run_folder("scratch_names", "pg-normalize").unwrap();
         let folder = base.join(&os);
         std::fs::create_dir_all(&folder).unwrap();
         let path = normalize_path(&folder).unwrap();
@@ -312,7 +304,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_stored_path_in_a_dotted_folder_is_reached_by_its_disk_path() {
-        let dir = std::path::absolute(pg_testkit::test_folder("scratch_names", "disk-path").unwrap()).unwrap();
+        let dir = std::path::absolute(crate::testing::run_folder("scratch_names", "disk-path").unwrap()).unwrap();
         let dotted = dir.join("Acme Inc.");
         std::fs::create_dir_all(verbatim(&dotted)).unwrap();
         std::fs::create_dir_all(dir.join("Acme Inc")).unwrap();
@@ -347,16 +339,10 @@ mod tests {
 mod stored_case_tests {
     use super::*;
 
-    /// A fresh folder for one test under the test base (`PG_TEST_DIR`, else the temp folder).
+    /// A fresh folder for one test: a run folder of its own under the test base.
     #[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
     fn fresh(test: &str) -> PathBuf {
-        let base = std::env::var_os("PG_TEST_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join(format!("pg-stored-case-{}-{test}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-        base
+        crate::testing::run_folder("scratch_names", &format!("pg-stored-case-{test}")).unwrap()
     }
 
     #[test]
@@ -376,7 +362,7 @@ mod stored_case_tests {
         // On a case-insensitive file system the second name is the first folder, and the create fails.
         let _ = std::fs::create_dir(base.join("pics"));
         if std::fs::read_dir(&base).unwrap().count() != 2 {
-            pg_testkit::skip("this test folder's file system is case-insensitive: the two names are one folder");
+            crate::testing::skip("this test folder's file system is case-insensitive: the two names are one folder");
             std::fs::remove_dir_all(&base).unwrap();
             return;
         }

@@ -371,7 +371,7 @@ mod tests {
 
     /// A catalog in a test folder holding files 1 and 2, both with a thumbnail failure, and the folder's path.
     fn catalog(name: &str) -> (PathBuf, PathBuf) {
-        let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", name).unwrap();
         let layout = pg_library::layout::Layout::in_home(&dir);
         std::fs::create_dir_all(layout.catalog_dir()).unwrap();
         let c = pg_library::open_catalog(&layout).unwrap();
@@ -497,7 +497,7 @@ mod tests {
     // A read that can't be made is delivered as an error, for every kind.
     #[test]
     fn an_error_is_delivered_as_an_error() {
-        let dir = pg_testkit::test_folder("scratch_app", "reader-error").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "reader-error").unwrap();
         let reader = Reader::start(dir.join("no-such-catalog.sqlite")).unwrap();
         let session = Session::new(1, reader.clone());
         let (failed, failed_got) = channel();

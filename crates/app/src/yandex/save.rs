@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn saved_names_follow_the_photo() {
-        let folder = pg_testkit::test_folder("scratch_app", "yandex-names").unwrap();
+        let folder = pg_testkit::run_folder("scratch_app", "yandex-names").unwrap();
         let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
         let path = write_new(&folder, &stem, "jpg", b"first").unwrap();
         assert_eq!(path, folder.join("IMG_1234 (yandex 1920x1080).jpg"));
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn two_saves_of_one_name_get_two_files() {
-        let folder = pg_testkit::test_folder("scratch_app", "yandex-twice").unwrap();
+        let folder = pg_testkit::run_folder("scratch_app", "yandex-twice").unwrap();
         let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
         let first = write_new(&folder, &stem, "jpg", b"first").unwrap();
         let second = write_new(&folder, &stem, "jpg", b"second").unwrap();
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn a_failed_write_leaves_no_file_at_the_name() {
-        let folder = pg_testkit::test_folder("scratch_app", "yandex-failed").unwrap();
+        let folder = pg_testkit::run_folder("scratch_app", "yandex-failed").unwrap();
         let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
         // A folder where the temporary goes: the write to it fails.
         let temp = temp_path(&folder, &stem, "jpg");
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn a_failed_rename_after_the_claim_leaves_no_file_at_the_name() {
-        let folder = pg_testkit::test_folder("scratch_app", "yandex-renamed").unwrap();
+        let folder = pg_testkit::run_folder("scratch_app", "yandex-renamed").unwrap();
         let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
         // The claim (an empty file at the name) is made, then the rename of the temporary onto it is refused.
         let refused = write_new_with(&folder, &stem, "jpg", b"bytes", |_, _| Err(io::Error::other("rename refused")));

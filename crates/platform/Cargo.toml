@@ -21,5 +21,7 @@ libc.workspace = true
 pg-model = { path = "../model" }
 libloading.workspace = true
 
-[dev-dependencies]
-pg-testkit = { path = "../testkit" }
+# The test folders and their helpers (`testing`), for pg-testkit: a production build does not compile them. Its own tests
+# compile them under `cfg(test)`.
+[features]
+testing = []

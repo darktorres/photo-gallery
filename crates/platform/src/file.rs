@@ -261,7 +261,7 @@ mod tests {
     /// A rename onto an existing name is refused and moves nothing; onto a free one it moves the file.
     #[test]
     fn a_rename_never_replaces() {
-        let dir = pg_testkit::test_folder("scratch_rename", "pg-no-replace").unwrap();
+        let dir = crate::testing::run_folder("scratch_rename", "pg-no-replace").unwrap();
         let (from, taken, free) = (dir.join("a"), dir.join("b"), dir.join("c"));
         std::fs::write(&from, b"a").unwrap();
         std::fs::write(&taken, b"b").unwrap();
@@ -277,7 +277,7 @@ mod tests {
     /// Each file kept aside takes the next free name, so an earlier one kept is never overwritten.
     #[test]
     fn a_file_kept_aside_takes_the_next_free_name() {
-        let dir = pg_testkit::test_folder("scratch_keep_aside", "pg-keep-aside").unwrap();
+        let dir = crate::testing::run_folder("scratch_keep_aside", "pg-keep-aside").unwrap();
         let path = dir.join("gallery.json");
         for (n, want) in [(1, "gallery.json.bad"), (2, "gallery.json.bad.1"), (3, "gallery.json.bad.2")] {
             std::fs::write(&path, format!("{n}")).unwrap();
@@ -293,7 +293,8 @@ mod tests {
     #[test]
     fn the_player_handle_is_the_file_in_a_dotted_folder() {
         use std::os::windows::io::FromRawHandle;
-        let dir = std::path::absolute(pg_testkit::test_folder("scratch_player", "pg-player-handle").unwrap()).unwrap();
+        let dir =
+            std::path::absolute(crate::testing::run_folder("scratch_player", "pg-player-handle").unwrap()).unwrap();
         let (dotted, sibling) = (dir.join("a."), dir.join("a"));
         std::fs::create_dir_all(crate::native::verbatim(&dotted)).unwrap();
         std::fs::create_dir_all(&sibling).unwrap();
@@ -310,7 +311,7 @@ mod tests {
     /// is refused until the handle closes. Its size is read from the handle.
     #[test]
     fn a_copy_open_writes_in_place_and_denies_other_writers() {
-        let dir = pg_testkit::test_folder("scratch_rate", "pg-open-copy").unwrap();
+        let dir = crate::testing::run_folder("scratch_rate", "pg-open-copy").unwrap();
         let path = dir.join("a.bin");
         std::fs::write(&path, b"before").unwrap();
         let mut native = NativePath::default();
@@ -335,7 +336,7 @@ mod tests {
     /// A temporary is removed when its guard drops, unless it was persisted; one never made is no error.
     #[test]
     fn a_temp_file_is_removed_unless_persisted() {
-        let dir = pg_testkit::test_folder("scratch_rate", "pg-temp-file").unwrap();
+        let dir = crate::testing::run_folder("scratch_rate", "pg-temp-file").unwrap();
         let path = dir.join("a.tmp");
         {
             let guard = TempFile::new(&path);

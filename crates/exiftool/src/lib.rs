@@ -402,7 +402,7 @@ mod tests {
     fn a_rating_is_written_into_a_file_of_each_name() {
         let program = OsString::from("exiftool");
         let Some(mut tool) = start_or_skip(&program) else { return };
-        let dir = pg_testkit::test_folder("scratch_exiftool", "names").unwrap();
+        let dir = pg_testkit::run_folder("scratch_exiftool", "names").unwrap();
         let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
         for (i, name) in names().iter().enumerate() {
             let path = dir.join(file_name(name));
@@ -425,7 +425,7 @@ mod tests {
     fn a_name_whose_extension_ends_in_whitespace_is_refused_and_leaves_no_copy() {
         let program = OsString::from("exiftool");
         let Some(mut tool) = start_or_skip(&program) else { return };
-        let dir = pg_testkit::test_folder("scratch_exiftool", "refused").unwrap();
+        let dir = pg_testkit::run_folder("scratch_exiftool", "refused").unwrap();
         let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
         for name in [&b"trail.png "[..], &b"endcr.png\r"[..], &b"trailtab.png\t"[..]] {
             let path = dir.join(file_name(name));
@@ -448,7 +448,7 @@ mod tests {
 
         let program = OsString::from("exiftool");
         let Some(mut tool) = start_or_skip(&program) else { return };
-        let dir = pg_testkit::test_folder("scratch_exiftool", "orientation-tags").unwrap();
+        let dir = pg_testkit::run_folder("scratch_exiftool", "orientation-tags").unwrap();
         let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
         // A plain file with rating 4: the source of the tags.
         let input = dir.join("rated-in.png");

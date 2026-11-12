@@ -502,7 +502,7 @@ mod tests {
     // It is given back when the lease is dropped, by the end of a complete walk, and by `release`; a heartbeat (a batch
     // or `renew`) keeps it, and one missing for `SCAN_LEASE_SECS` is a crashed walk's, taken over.
     fn a_walk_holds_its_folders_until_it_ends(rules: PathRules) {
-        let dir = pg_testkit::test_folder("scratch_catalog", &format!("scan-lease-{}", rules_name(rules))).unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", &format!("scan-lease-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         let mut a = Catalog::prepare(&path, versions(), rules).unwrap();
         let mut b = Catalog::open(&path, rules).unwrap();
@@ -666,7 +666,7 @@ mod tests {
     // A connection waits for a locked catalog only as long as its busy timeout, and the error says it was busy.
     #[test]
     fn a_busy_catalog_fails_after_the_busy_timeout_and_says_so() {
-        let dir = pg_testkit::test_folder("scratch_catalog", "busy-timeout").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "busy-timeout").unwrap();
         let path = dir.join("catalog.sqlite");
         let rules = pg_platform::native::PATH_RULES;
         let c = Catalog::prepare(&path, versions(), rules).unwrap();

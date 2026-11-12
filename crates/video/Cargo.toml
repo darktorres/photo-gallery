@@ -20,3 +20,6 @@ libloading.workspace = true
 [build-dependencies]
 # The same bindgen as ffmpeg-sys-next (its runtime feature: libclang is found at run time, as before).
 bindgen.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }

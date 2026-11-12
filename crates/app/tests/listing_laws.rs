@@ -1,8 +1,6 @@
 //! The saved listing reads back as it was saved (S-18.2): for every folder, recursion, sort and query, what
 //! `save_listing` writes, `listing` returns. The session is where the listing lives between starts.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use pg_app::{App, Config};
 use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
@@ -10,8 +8,6 @@ use pg_model::rules::Merged;
 use pg_model::view::Listing;
 use proptest::prelude::*;
 use strum::IntoEnumIterator;
-
-static NEXT: AtomicU64 = AtomicU64::new(0);
 
 /// A merged folder: any number of parts, text and the names a text can't hold (a lone surrogate, a raw byte).
 fn folder() -> impl Strategy<Value = Merged> {
@@ -23,18 +19,10 @@ fn folder() -> impl Strategy<Value = Merged> {
     prop::collection::vec(part, 0..4).prop_map(Merged::from)
 }
 
-/// A fresh folder for one case, so every case starts with no catalog. The base is the temp folder's `scratch_listing`
-/// (`PG_TEST_DIR` overrides it, as in `pg_testkit`; pg-testkit itself is not a dependency here, it depends on pg-app).
+/// A fresh folder for one case, so every case starts with no catalog: a run folder of its own.
+#[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
 fn fresh_dir() -> std::path::PathBuf {
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let base = std::env::var_os("PG_TEST_DIR")
-        .map_or_else(|| std::env::temp_dir().join("scratch_listing"), std::path::PathBuf::from);
-    // Earlier runs' folders go first (each run has its own process id, so they would pile up); a folder still held
-    // open is left, and the next case uses its own name anyway.
-    let _ = std::fs::remove_dir_all(&base);
-    let dir = base.join(format!("case-{}-{n}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
+    pg_testkit::run_folder("scratch_listing", "case").unwrap()
 }
 
 proptest! {

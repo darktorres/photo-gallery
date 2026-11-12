@@ -575,7 +575,7 @@ mod tests {
     /// processed once, through slots and a channel far smaller than the pass.
     #[test]
     fn a_pass_reads_every_file_within_its_slots() {
-        let dir = pg_testkit::test_folder("scratch_rate", "pg-pipeline").unwrap();
+        let dir = pg_testkit::run_folder("scratch_rate", "pg-pipeline").unwrap();
         let paths: Vec<String> = (0..200)
             .map(|i| {
                 let path = dir.join(format!("{i}.bin"));
@@ -623,7 +623,7 @@ mod tests {
 
     /// `count` small files in a new folder, with their indices.
     fn numbered_files(name: &str, count: usize) -> (std::path::PathBuf, Vec<(usize, String)>) {
-        let dir = pg_testkit::test_folder("scratch_rate", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_rate", name).unwrap();
         let items = (0..count)
             .map(|i| {
                 let path = dir.join(format!("{i}.bin"));
@@ -747,7 +747,7 @@ mod tests {
     /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
     #[test]
     fn files_open_as_std_opens_them() {
-        let root = pg_testkit::test_folder("scratch_rate", "pg-open").unwrap();
+        let root = pg_testkit::run_folder("scratch_rate", "pg-open").unwrap();
         let mut dir = root.clone();
         while dir.as_os_str().len() < 300 {
             dir.push("a-folder-name-of-forty-characters-long--");

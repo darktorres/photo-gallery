@@ -663,7 +663,7 @@ mod tests {
 
     #[test]
     fn a_missing_photo_is_unreadable() {
-        let folder = pg_testkit::test_folder("scratch_app", "yandex-missing").unwrap();
+        let folder = pg_testkit::run_folder("scratch_app", "yandex-missing").unwrap();
         assert!(matches!(read_photo(&folder.join("gone.jpg")), Err(SearchError::Unreadable(_))));
         std::fs::remove_dir_all(&folder).unwrap();
     }

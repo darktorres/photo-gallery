@@ -180,7 +180,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home() {
-        let home = pg_testkit::test_folder("scratch_aliases", "pg-layout").unwrap();
+        let home = pg_testkit::run_folder("scratch_aliases", "pg-layout").unwrap();
         // "cat" with an unpaired surrogate.
         let odd = pg_testkit::odd_name("cat");
         let layout =

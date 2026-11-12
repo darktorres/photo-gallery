@@ -1590,14 +1590,14 @@ mod tests {
         }
     }
 
-    /// The table in `docs/NOTIFICATIONS.md` is the generated one ([`Notice::resolver_markdown`]), so the doc says what
-    /// clears each kept kind as the code does.
+    /// The table in `docs/temp/NOTIFICATIONS.md` is the generated one ([`Notice::resolver_markdown`]), so the doc says
+    /// what clears each kept kind as the code does.
     #[test]
     fn the_documented_resolver_table_is_the_generated_one() {
         // Embedded at build time: the shared model reads no files.
-        let doc = include_str!("../../../docs/NOTIFICATIONS.md").replace("\r\n", "\n");
+        let doc = include_str!("../../../docs/temp/NOTIFICATIONS.md").replace("\r\n", "\n");
         let table = Notice::resolver_markdown();
-        assert!(doc.contains(&table), "docs/NOTIFICATIONS.md's resolver table is not the generated one:\n{table}");
+        assert!(doc.contains(&table), "docs/temp/NOTIFICATIONS.md's resolver table is not the generated one:\n{table}");
     }
 
     /// Every kept kind and part is in the resolver table once, with its resolver and, for one about a library folder,

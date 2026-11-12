@@ -35,8 +35,8 @@ pub mod qobject {
         /// The row height (`Shell.sizeChosen`, `Shell.sizeStepped`, the grid's keys).
         #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
         /// The smallest and largest row heights the grid takes (fixed for the run).
-        #[qproperty(i32, min_row_height, cxx_name = "minRowHeight", READ, FINAL)]
-        #[qproperty(i32, max_row_height, cxx_name = "maxRowHeight", READ, FINAL)]
+        #[qproperty(i32, min_row_height, cxx_name = "minRowHeight", READ, CONSTANT, FINAL)]
+        #[qproperty(i32, max_row_height, cxx_name = "maxRowHeight", READ, CONSTANT, FINAL)]
         /// Dev mode is on: the log view's button shows (the start's `--dev`/`PG_DEV`, then Ctrl+Shift+D).
         #[qproperty(bool, dev_mode, cxx_name = "devMode", READ, NOTIFY, FINAL)]
         type Shell = super::ShellRust;

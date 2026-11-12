@@ -478,9 +478,11 @@ mod tests {
         run_command(gallery(&folders), &Control::new()).unwrap();
 
         let b = pg_platform::names::normalize_path(&dir.join("b")).unwrap();
-        std::fs::remove_dir_all(dir.join("b")).unwrap();
+        // The new files are made before b is removed: on Linux a file made after a removal can take the removed file's
+        // inode, and then it is taken for b's row (the folder is refused, not walked, so that row stays and is present).
         png("a", "2.png");
         png("c", "2.png");
+        std::fs::remove_dir_all(dir.join("b")).unwrap();
         run_command(gallery(&[]), &Control::new()).unwrap();
 
         let layout = gallery(&[]).layout().unwrap();

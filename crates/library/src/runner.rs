@@ -11,8 +11,8 @@
 use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -28,6 +28,7 @@ use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Part, tidy};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
+use pg_model::size::ThumbHeight;
 use pg_platform::priority::Priority;
 use pg_scan::ScanError;
 use pg_thumbcache::ThumbCache;
@@ -39,6 +40,50 @@ use crate::scans;
 /// is tried again, with nothing else to wake the job: a lease ends with its walk, or expires in
 /// `pg_catalog::SCAN_LEASE_SECS`.
 const BUSY_RETRY: Duration = Duration::from_secs(5);
+
+/// The thumbnail height the grid asks for. It is held here, not given to the job at its start, so the height may be set
+/// before the job starts (the window's scale arrives after the library is made). The thumbnail pass makes thumbnails only
+/// once a height is set, and a change stops the pass in progress and wakes the job.
+#[derive(Clone, Default)]
+pub struct HeightCell(Arc<Mutex<HeightState>>);
+
+#[derive(Default)]
+struct HeightState {
+    height: Option<ThumbHeight>,
+    /// Run on a change, once a job listens (`HeightCell::listen`).
+    wake: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+impl HeightCell {
+    /// The height, once one has been set.
+    pub fn get(&self) -> Option<ThumbHeight> {
+        self.state().height
+    }
+
+    /// Set the height. A change to a different height wakes the job, if one listens.
+    pub fn set(&self, height: ThumbHeight) {
+        let wake = {
+            let mut state = self.state();
+            if state.height == Some(height) {
+                return;
+            }
+            state.height = Some(height);
+            state.wake.clone()
+        };
+        if let Some(wake) = wake {
+            wake();
+        }
+    }
+
+    /// Run `wake` on each change from now on (the job's own, installed at its start).
+    fn listen(&self, wake: impl Fn() + Send + Sync + 'static) {
+        self.state().wake = Some(Arc::new(wake));
+    }
+
+    fn state(&self) -> MutexGuard<'_, HeightState> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
 
 #[derive(Default)]
 struct Queue {
@@ -58,7 +103,7 @@ struct Inner {
     /// The scans refused because another walk of an overlapping folder held its lease: back in the queue at the next
     /// round, which comes by [`BUSY_RETRY`] at the latest.
     busy: Mutex<Vec<RulePath>>,
-    thumb_height: AtomicU32,
+    heights: HeightCell,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
     /// Rounds finished, however they ended: the app marks each one as a stage for measuring (docs/PROFILING.md).
@@ -95,18 +140,18 @@ pub struct Generation {
 
 pub struct Runner {
     inner: Arc<Inner>,
-    service: Service,
+    service: Arc<Service>,
 }
 
 impl Runner {
-    /// Start the job thread. It begins by importing whatever is pending and making the thumbnails still missing
-    /// at `thumb_height`. What it changes is published on `changes` (`Change`), and what it tells the user goes to
-    /// `notices`, which is poked whenever a pass changes the failure ledger (`Control::ledger_changed`). An error if
-    /// the thread can't be spawned.
+    /// Start the job thread. It begins by importing whatever is pending, and makes the thumbnails still missing at the
+    /// height `heights` holds (none until one is set). What it changes is published on `changes` (`Change`), and what it
+    /// tells the user goes to `notices`, which is poked whenever a pass changes the failure ledger
+    /// (`Control::ledger_changed`). An error if the thread can't be spawned.
     pub fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
-        thumb_height: u32,
+        heights: HeightCell,
         changes: Arc<Bus<Change>>,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Runner> {
@@ -117,7 +162,7 @@ impl Runner {
             queue: Mutex::new(Queue::default()),
             scanning: Mutex::new(None),
             busy: Mutex::new(Vec::new()),
-            thumb_height: AtomicU32::new(thumb_height),
+            heights: heights.clone(),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
@@ -130,8 +175,21 @@ impl Runner {
         let ledger = inner.notices.clone();
         inner.ctl.on_ledger_change(move || ledger.poke());
         let job = inner.clone();
-        let service =
-            Service::start("background job", move |waker| job.run(waker)).context("start the background job")?;
+        let service = Arc::new(
+            Service::start("background job", move |waker| job.run(waker)).context("start the background job")?,
+        );
+        // A new height stops the thumbnail pass in progress (it makes the rest at the new height) and wakes the job. Weak
+        // references: the cell (held by the library) must not keep the job alive.
+        let (inner_weak, service_weak): (Weak<Inner>, Weak<Service>) =
+            (Arc::downgrade(&inner), Arc::downgrade(&service));
+        heights.listen(move || {
+            if let Some(inner) = inner_weak.upgrade() {
+                inner.ctl.request_stop();
+            }
+            if let Some(service) = service_weak.upgrade() {
+                service.wake();
+            }
+        });
         Ok(Runner { inner, service })
     }
 
@@ -181,13 +239,6 @@ impl Runner {
     /// The catalog has new work outside a scan (a file turned in place needs its analysis redone): start a round.
     pub fn wake(&self) {
         self.wake_up();
-    }
-
-    /// The grid's thumbnail height changed: make the missing ones at the new height instead.
-    pub fn set_thumb_height(&self, height: u32) {
-        if self.inner.thumb_height.swap(height, Ordering::Relaxed) != height {
-            self.wake_up();
-        }
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -503,7 +554,11 @@ struct Thumbs;
 
 impl Pass<Cx<'_>> for Thumbs {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let height = cx.inner.thumb_height.load(Ordering::Relaxed);
+        // No height yet: the grid has not said which thumbnails it wants, so there is nothing to make.
+        let Some(height) = cx.inner.heights.get() else {
+            return Ok(Step::Done);
+        };
+        let height = height.get();
         let opts = Options::new(Priority::Idle);
         let s = pg_thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
         if s.cache_full {
@@ -527,6 +582,32 @@ mod tests {
     use pg_platform::native::PATH_RULES;
 
     use super::*;
+
+    /// A height cell set to 64 pixels, as the grid asks at the start.
+    fn height_64() -> HeightCell {
+        let heights = HeightCell::default();
+        heights.set(ThumbHeight::new(64).expect("a height in range"));
+        heights
+    }
+
+    /// A height is held before anything listens, and each change to a different height wakes the job once; the same height
+    /// again wakes nothing.
+    #[test]
+    fn a_height_is_held_and_each_change_wakes_the_job_once() {
+        let heights = HeightCell::default();
+        assert_eq!(heights.get(), None, "no height until the grid asks");
+        let woke = Arc::new(AtomicU64::new(0));
+        let counter = woke.clone();
+        heights.listen(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+        let at = |px| ThumbHeight::new(px).expect("a height in range");
+        heights.set(at(220));
+        heights.set(at(220));
+        heights.set(at(440));
+        assert_eq!(heights.get(), Some(at(440)));
+        assert_eq!(woke.load(Ordering::Relaxed), 2);
+    }
 
     /// A library folder `images` in a run folder, holding `names` (small PNGs), scanned and imported into the catalog
     /// beside it: the run folder, the catalog's path, and the library folder.
@@ -563,7 +644,7 @@ mod tests {
             queue: Mutex::new(Queue::default()),
             scanning: Mutex::new(None),
             busy: Mutex::new(Vec::new()),
-            thumb_height: AtomicU32::new(64),
+            heights: height_64(),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
@@ -636,7 +717,8 @@ mod tests {
         let aside = dir.join("aside.sqlite");
         std::fs::rename(&catalog_path, &aside).unwrap();
         let sink = RecordingSink::new();
-        let runner = Runner::start(catalog_path.clone(), cache, 64, Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let runner =
+            Runner::start(catalog_path.clone(), cache, height_64(), Arc::new(Bus::new(16)), sink.clone()).unwrap();
         wait_for("the round's failure", || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })));
         std::fs::rename(&aside, &catalog_path).unwrap();
         runner.wake();
@@ -731,7 +813,8 @@ mod tests {
         let (dir, catalog_path, _root) = library("runner-poke", &[]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let runner = Runner::start(catalog_path.clone(), cache, 64, Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let runner =
+            Runner::start(catalog_path.clone(), cache, height_64(), Arc::new(Bus::new(16)), sink.clone()).unwrap();
         let before = sink.pokes();
         runner.inner.ctl.ledger_changed();
         assert_eq!(sink.pokes(), before + 1);

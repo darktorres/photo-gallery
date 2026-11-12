@@ -34,8 +34,9 @@ pub mod qobject {
         #[qproperty(bool, show_borders, cxx_name = "showBorders", READ, NOTIFY, FINAL)]
         /// The row height (`Shell.sizeChosen`, `Shell.sizeStepped`, the grid's keys).
         #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
-        /// The thumbnail height: the row height times the screen's scale, settled after a pause.
-        #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, NOTIFY, FINAL)]
+        /// The smallest and largest row heights the grid takes (fixed for the run).
+        #[qproperty(i32, min_row_height, cxx_name = "minRowHeight", READ, FINAL)]
+        #[qproperty(i32, max_row_height, cxx_name = "maxRowHeight", READ, FINAL)]
         /// Dev mode is on: the log view's button shows (`seedDevMode`, then Ctrl+Shift+D).
         #[qproperty(bool, dev_mode, cxx_name = "devMode", READ, NOTIFY, FINAL)]
         type Shell = super::ShellRust;
@@ -221,11 +222,6 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "relayoutDue"]
         fn relayout_due(self: Pin<&mut Shell>);
-
-        /// Remember this row height for the next start.
-        #[qsignal]
-        #[cxx_name = "saveRowHeight"]
-        fn save_row_height(self: Pin<&mut Shell>, height: i32);
 
         /// A list was asked for (the folder, subfolders, sort, query or saved view changed, or the files were read
         /// again): the facets and the sort box follow it.

@@ -28,6 +28,9 @@ ToolBar {
     required property bool filtersOpen
     // The grid's row height, which the size slider shows.
     required property real rowHeight
+    // The row heights the grid takes (the shell's bounds, the same the controller clamps to).
+    required property int minRowHeight
+    required property int maxRowHeight
 
     // The sort box's names (its keys are pg_client::sort::KEYS, in the same order).
     readonly property list<string> sortNames: [words.text("ui-sort-name"), words.text("ui-sort-file-type"),
@@ -133,8 +136,8 @@ ToolBar {
         }
         Label { text: words.text("ui-size") }
         Slider {
-            from: 60
-            to: 800
+            from: bar.minRowHeight
+            to: bar.maxRowHeight
             value: bar.rowHeight
             onMoved: bar.sizeChosen(value)
             Layout.preferredWidth: 220
@@ -142,8 +145,8 @@ ToolBar {
         // The row height in pixels, typed in directly; the slider and the keys set it too, and this box follows them.
         SpinBox {
             id: sizeBox
-            from: 60
-            to: 800
+            from: bar.minRowHeight
+            to: bar.maxRowHeight
             editable: true
             onValueModified: bar.sizeChosen(value)
             Layout.preferredWidth: 110

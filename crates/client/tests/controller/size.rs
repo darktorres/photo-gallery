@@ -1,31 +1,48 @@
-//! Traces of the grid's size (S-12.20): the clamp, the steps, and the thumbnail height.
+//! Traces of the grid's size (S-12.20) through the public `GridSize`: the clamp, the steps, and the thumbnail height.
 
-use pg_client::controller::size::{Change, Event, GridSize, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT};
+#![expect(
+    clippy::expect_used,
+    reason = "fixtures: the row heights and scales the helpers build are constants inside their ranges"
+)]
+
+use pg_client::controller::size::{Change, Event, GridSize};
+use pg_model::size::{Factor, RowHeight, Scale, ThumbHeight};
+
+fn row(px: u32) -> RowHeight {
+    RowHeight::new(px).expect("a row height in range")
+}
+
+fn scale(v: f64) -> Scale {
+    Scale::new(v).expect("a positive scale")
+}
 
 #[test]
 fn steps_grow_and_shrink_by_the_ctrl_factor_and_clamp() {
-    let mut size = GridSize::default();
-    assert_eq!(size.row_height(), 200);
-    assert_eq!(size.update(Event::Resize { grow: true }), vec![Change::RowHeight(230)]);
-    assert_eq!(size.update(Event::Resize { grow: false }), vec![Change::RowHeight(200)]);
-    assert_eq!(size.update(Event::Chosen(10.0)), vec![Change::RowHeight(MIN_ROW_HEIGHT)]);
+    let mut size = GridSize::new(row(200), row(200));
+    assert_eq!(size.row_height(), row(200));
+    assert_eq!(size.update(Event::Resize { grow: true }), vec![Change::RowHeight(row(230))]);
+    assert_eq!(size.update(Event::Resize { grow: false }), vec![Change::RowHeight(row(200))]);
+    assert_eq!(size.update(Event::Chosen(RowHeight::MIN)), vec![Change::RowHeight(RowHeight::MIN)]);
     assert_eq!(size.update(Event::Resize { grow: false }), vec![]);
-    assert_eq!(size.update(Event::Chosen(5000.0)), vec![Change::RowHeight(MAX_ROW_HEIGHT)]);
-    assert_eq!(size.update(Event::Factor(2.0)), vec![]);
+    assert_eq!(size.update(Event::Chosen(RowHeight::MAX)), vec![Change::RowHeight(RowHeight::MAX)]);
+    assert_eq!(size.update(Event::Factor(Factor::new(2.0).expect("a factor"))), vec![]);
 }
 
 #[test]
 fn factors_multiply_the_row_height() {
-    let mut size = GridSize::default();
-    assert_eq!(size.update(Event::Factor(0.5)), vec![Change::RowHeight(100)]);
-    assert_eq!(size.update(Event::Factor(1.0)), vec![]);
+    let mut size = GridSize::new(row(200), row(200));
+    assert_eq!(size.update(Event::Factor(Factor::new(0.5).expect("a factor"))), vec![Change::RowHeight(row(100))]);
+    assert_eq!(size.update(Event::Factor(Factor::new(1.0).expect("a factor"))), vec![]);
 }
 
 #[test]
 fn the_thumbnail_height_is_the_row_height_times_the_scale() {
-    let mut size = GridSize::default();
-    assert_eq!(size.update(Event::Scale(1.5)), vec![Change::ThumbHeight(300)]);
-    assert_eq!(size.update(Event::Chosen(101.0)), vec![Change::RowHeight(101)]);
-    assert_eq!(size.thumb_height(), 152);
-    assert_eq!(size.settled(), vec![Change::ThumbHeight(152), Change::SaveRowHeight(101)]);
+    let mut size = GridSize::new(row(200), row(200));
+    assert_eq!(size.update(Event::Scale(scale(1.5))), vec![Change::ThumbHeight(ThumbHeight::new(300).unwrap())]);
+    assert_eq!(size.update(Event::Chosen(row(101))), vec![Change::RowHeight(row(101))]);
+    assert_eq!(size.thumb_height(), Some(ThumbHeight::new(152).unwrap()));
+    assert_eq!(
+        size.settled(),
+        vec![Change::ThumbHeight(ThumbHeight::new(152).unwrap()), Change::SaveRowHeight(row(101))]
+    );
 }

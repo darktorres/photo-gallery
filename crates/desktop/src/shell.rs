@@ -28,9 +28,10 @@ use pg_model::ids::FileId;
 use pg_model::notice::{Notice, ViewOp};
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
+use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
 use pg_model::view::SavedView;
 
-use crate::{app, command_line, controller, deadline, folders, gallery, keymap};
+use crate::{app, command_line, controller, deadline, folders, gallery, keymap, library};
 
 impl Default for ShellRust {
     /// The controller's start, mirrored: the listing the window starts with, and the size's defaults (the window sets
@@ -46,8 +47,9 @@ impl Default for ShellRust {
             saved_views: view_names(),
             filters_open: false,
             show_borders: false,
-            row_height: size.row_height(),
-            thumb_height: size.thumb_height(),
+            row_height: px(size.row_height().get()),
+            min_row_height: px(RowHeight::MIN.get()),
+            max_row_height: px(RowHeight::MAX.get()),
             dev_mode: false,
         }
     }
@@ -56,6 +58,16 @@ impl Default for ShellRust {
 /// A list index as QML takes it (-1 for none).
 fn to_i32(index: usize) -> i32 {
     i32::try_from(index).unwrap_or(-1)
+}
+
+/// A pixel size as QML takes it. The sizes are at most 2048, so the conversion never saturates.
+fn px(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
+}
+
+/// A size value the window sent that is not a valid one: logged and dropped, never applied.
+fn refused(what: &str, value: f64) {
+    pg_log::warn("size", &format!("{what} {value} is not a valid value; ignored"));
 }
 
 /// The listing change a click on a tree row makes. Recursion is the listing's one toggle, so the first two rows set it:
@@ -75,10 +87,20 @@ fn dev_mode_at_start(seed: Option<bool>, prefs: &pg_app::PrefStore) -> bool {
     seed.unwrap_or_else(|| prefs.get().dev_mode)
 }
 
-/// Remember dev mode for the next start (the user turned it on or off). A save that fails is the preferences' to report;
-/// dev mode holds for this run either way.
-fn save_dev_mode(prefs: &pg_app::PrefStore, on: bool) {
-    let _ = prefs.update(|p| p.dev_mode = on);
+/// The preferences a command saves, carried out: the one place a save is made, so a test runs the same code the window
+/// does. A save that fails is the preferences' to report, and the value holds for this run either way.
+fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
+    match command {
+        // Dev mode the user turned on or off (a start's seed is not saved).
+        Command::SaveDevMode(on) => {
+            let _ = prefs.update(|p| p.dev_mode = *on);
+        }
+        // The row height, settled after a pause.
+        Command::Size(size::Change::SaveRowHeight(row)) => {
+            let _ = prefs.update(|p| p.row_height = *row);
+        }
+        _ => {}
+    }
 }
 
 /// The inbox says that the change `op` to the saved views failed, for `error`.
@@ -146,8 +168,14 @@ impl qobject::Shell {
         to_i32(controller::with(|c| c.viewer_step(from, d)))
     }
 
+    /// The grid's width. A width of zero or less is a list with no width yet (the grid's margins can make one): no width,
+    /// and not logged. A value that is not a number is refused.
     pub(crate) fn grid_resized(self: Pin<&mut Self>, width: f64) {
-        self.dispatch(Event::GridResized(width));
+        if !width.is_finite() {
+            refused("grid width", width);
+            return;
+        }
+        self.dispatch(Event::GridResized(GridWidth::new(width)));
     }
 
     pub(crate) fn query_edited(self: Pin<&mut Self>) {
@@ -155,15 +183,24 @@ impl qobject::Shell {
     }
 
     pub(crate) fn size_chosen(self: Pin<&mut Self>, height: f64) {
-        self.dispatch(Event::Size(size::Event::Chosen(height)));
+        match RowHeight::from_finite(height) {
+            Some(row) => self.dispatch(Event::Size(size::Event::Chosen(row))),
+            None => refused("row height", height),
+        }
     }
 
     pub(crate) fn size_stepped(self: Pin<&mut Self>, factor: f64) {
-        self.dispatch(Event::Size(size::Event::Factor(factor)));
+        match Factor::new(factor) {
+            Some(factor) => self.dispatch(Event::Size(size::Event::Factor(factor))),
+            None => refused("size factor", factor),
+        }
     }
 
     pub(crate) fn set_scale(self: Pin<&mut Self>, scale: f64) {
-        self.dispatch(Event::Size(size::Event::Scale(scale)));
+        match Scale::new(scale) {
+            Some(scale) => self.dispatch(Event::Size(size::Event::Scale(scale))),
+            None => refused("scale", scale),
+        }
     }
 
     pub(crate) fn toggle_filters(self: Pin<&mut Self>) {
@@ -395,6 +432,7 @@ impl qobject::Shell {
 
     /// Carry out one of the controller's commands.
     fn execute(mut self: Pin<&mut Self>, command: Command) {
+        prefs_effect(&command, app::get().prefs());
         match command {
             // The selection is the model's, set on the model's lane. Select then asks the grid to show the item;
             // RestoreSelection only sets it (the grid is placed on the list when it is shown, `listShown`).
@@ -484,7 +522,8 @@ impl qobject::Shell {
                 let kind = keymap::panel_kind_code(kind);
                 self.as_mut().later(move |shell| shell.panel_close_requested(kind));
             }
-            Command::SaveDevMode(on) => save_dev_mode(app::get().prefs(), on),
+            // Saved by `prefs_effect`, above.
+            Command::SaveDevMode(_) => {}
             Command::Size(change) => self.as_mut().size(change),
         }
     }
@@ -508,18 +547,20 @@ impl qobject::Shell {
         }
     }
 
-    /// A size's change, mirrored; the saved row height is QML's to store (`Shell.saveRowHeight`).
+    /// A size's change: the row height is mirrored for the grid's layout, the thumbnail height goes to the grid model and the
+    /// library (they make the thumbnail URLs and the thumbnails for it), and the saved row height goes to the preferences.
     fn size(mut self: Pin<&mut Self>, change: size::Change) {
         match change {
             size::Change::RowHeight(height) => {
-                self.as_mut().rust_mut().row_height = height;
+                self.as_mut().rust_mut().row_height = px(height.get());
                 self.as_mut().row_height_changed();
             }
             size::Change::ThumbHeight(height) => {
-                self.as_mut().rust_mut().thumb_height = height;
-                self.as_mut().thumb_height_changed();
+                gallery::post(move |model| model.set_thumb_height(height));
+                library::set_thumb_height(height);
             }
-            size::Change::SaveRowHeight(height) => self.as_mut().save_row_height(height),
+            // Saved by `prefs_effect`, above.
+            size::Change::SaveRowHeight(_) => {}
         }
     }
 
@@ -564,15 +605,14 @@ mod tests {
         let app = pg_app::App::open(config).unwrap();
         app.prefs().update(|p| p.dev_mode = false).unwrap();
         let before = std::fs::read(&prefs_path).unwrap();
-        // The commands as the shell carries them out: a `SaveDevMode` is the one that writes the preferences.
+        // The commands as the shell carries them out: `prefs_effect` is what writes the preferences.
         let run = |c: &mut Controller, event: Event| {
             for command in c.update(0, event) {
-                if let Command::SaveDevMode(on) = command {
-                    save_dev_mode(app.prefs(), on);
-                }
+                prefs_effect(&command, app.prefs());
             }
         };
-        let mut c = Controller::new(Listing::default(), 200, 1.0);
+        let row = RowHeight::new(200).expect("a row height in range");
+        let mut c = Controller::new(Listing::default(), row, row);
         for seed in [Some(true), Some(false), None] {
             let on = dev_mode_at_start(seed, app.prefs());
             assert_eq!(on, seed.unwrap_or(false), "{seed:?}");
@@ -581,6 +621,35 @@ mod tests {
         }
         run(&mut c, Event::Global(Global::DevMode));
         assert_ne!(std::fs::read(&prefs_path).unwrap(), before, "the user's switch is saved");
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A row height the user settles on is saved by `prefs_effect` (the controller's `SaveRowHeight`, after its pause), and
+    /// one that is only shown (a start's `--size`) is not: the controller never names it to save.
+    #[test]
+    fn a_settled_row_height_is_saved_and_a_start_size_is_not() {
+        let home = pg_testkit::test_folder("scratch_desktop", "settled-row").unwrap();
+        let config = pg_app::Config::in_home(&home);
+        let app = pg_app::App::open(config).unwrap();
+        let saved = RowHeight::new(220).expect("a row height in range");
+        let size = RowHeight::new(120).expect("a row height in range");
+        let mut c = Controller::new(Listing::default(), size, saved);
+        c.update(0, Event::Size(size::Event::Scale(pg_model::size::Scale::new(1.0).expect("a scale"))));
+        let mut saves = Vec::new();
+        for command in c.update(1, Event::Timeout).into_iter().chain(c.update(2, Event::Flush)) {
+            prefs_effect(&command, app.prefs());
+            saves.push(command);
+        }
+        assert_eq!(app.prefs().get().row_height, saved, "the start size is not saved: {saves:?}");
+        let user = c.update(3, Event::Size(size::Event::Chosen(RowHeight::new(300).expect("a row height in range"))));
+        assert!(
+            user.contains(&Command::Size(size::Change::RowHeight(RowHeight::new(300).expect("a row height in range"))))
+        );
+        for command in c.update(400, Event::Timeout) {
+            prefs_effect(&command, app.prefs());
+        }
+        assert_eq!(app.prefs().get().row_height, RowHeight::new(300).expect("a row height in range"));
         app.shutdown();
         let _ = std::fs::remove_dir_all(&home);
     }

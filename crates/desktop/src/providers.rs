@@ -109,7 +109,7 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         return failed();
     };
     let result = match request {
-        ImageRequest::Thumb { key, height } => thumbnail(key, height),
+        ImageRequest::Thumb { key, height } => thumbnail(key, height.get()),
         ImageRequest::Thumbhash { key } => {
             app::get().images().placeholder(key.file).map_err(anyhow::Error::from).and_then(upload)
         }

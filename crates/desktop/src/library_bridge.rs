@@ -49,7 +49,7 @@ pub mod qobject {
 
         /// Start the background job and the writer; they first finish whatever is pending.
         #[qinvokable]
-        fn start(self: Pin<&mut Library>, thumb_height: i32);
+        fn start(self: Pin<&mut Library>);
 
         /// Add the folder the picker chose for adding a folder (`FolderPicker`, purpose 0). The choice is taken here, not
         /// passed through QML.
@@ -65,11 +65,6 @@ pub mod qobject {
         /// Scan every library folder again (new, changed, moved and deleted files).
         #[qinvokable]
         fn rescan(self: Pin<&mut Library>);
-
-        /// The grid's thumbnail height in device pixels; the job makes thumbnails at this one.
-        #[qinvokable]
-        #[cxx_name = "setThumbHeight"]
-        fn set_thumb_height(self: &Library, height: i32);
 
         #[qinvokable]
         #[cxx_name = "togglePause"]

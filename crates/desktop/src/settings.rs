@@ -32,10 +32,6 @@ impl qobject::Settings {
         app::get().prefs().get().show_borders
     }
 
-    pub(crate) fn read_row_height(&self) -> f64 {
-        app::get().prefs().get().row_height
-    }
-
     /// The last file's id as QML takes it: -1 for none.
     pub(crate) fn read_last_file(&self) -> i64 {
         app::get().prefs().get().last_file.map_or(-1, FileId::get)
@@ -59,13 +55,6 @@ impl qobject::Settings {
         if app::get().prefs().get().show_borders != value {
             change_prefs(|p| p.show_borders = value);
             self.show_borders_changed();
-        }
-    }
-
-    pub(crate) fn set_row_height_saved(self: Pin<&mut Self>, value: f64) {
-        if app::get().prefs().get().row_height != value {
-            change_prefs(|p| p.row_height = value);
-            self.row_height_changed();
         }
     }
 

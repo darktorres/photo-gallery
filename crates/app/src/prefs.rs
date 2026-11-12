@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use pg_model::ids::FileId;
 use pg_model::rules::Path as RulePath;
+use pg_model::size::RowHeight;
 use serde::{Deserialize, Serialize};
 
 use crate::inbox::Inbox;
@@ -29,7 +30,8 @@ pub struct Prefs {
     /// The grid and the viewer show what cropping the borders would cut (B).
     pub show_borders: bool,
     /// The grid's row height in logical pixels.
-    pub row_height: f64,
+    #[serde(with = "row_height")]
+    pub row_height: RowHeight,
     /// The file selected (or open in the viewer) last, if any.
     #[serde(with = "last_file")]
     pub last_file: Option<FileId>,
@@ -62,6 +64,22 @@ mod yandex_folder {
     }
 }
 
+/// `row_height` as the file holds it: a whole number of pixels. A file written before it was whole reads its float, rounded
+/// and clamped into the grid's range, so an old value is kept as the nearest one the grid takes.
+mod row_height {
+    use pg_model::size::RowHeight;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub(crate) fn serialize<S: Serializer>(row: &RowHeight, serializer: S) -> Result<S::Ok, S::Error> {
+        row.get().serialize(serializer)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<RowHeight, D::Error> {
+        let px = f64::deserialize(deserializer)?;
+        RowHeight::from_finite(px).ok_or_else(|| serde::de::Error::custom(format!("row height {px} is not a number")))
+    }
+}
+
 /// `last_file` as the file holds it: the file's id, or `-1` for none. A negative number reads as none.
 mod last_file {
     use pg_model::ids::FileId;
@@ -84,7 +102,7 @@ impl Default for Prefs {
             yandex_folder: None,
             real_size: false,
             show_borders: false,
-            row_height: 220.0,
+            row_height: RowHeight::DEFAULT,
             last_file: None,
             dev_mode: false,
         }
@@ -149,7 +167,7 @@ mod tests {
   "yandex_folder": "",
   "real_size": false,
   "show_borders": false,
-  "row_height": 220.0,
+  "row_height": 220,
   "last_file": -1,
   "dev_mode": false
 }"#;
@@ -165,10 +183,19 @@ mod tests {
     }
 
     #[test]
+    fn a_float_row_height_from_an_old_file_reads_rounded_and_clamped() {
+        let read =
+            |px: &str| serde_json::from_str::<Prefs>(&format!(r#"{{"row_height": {px}}}"#)).unwrap().row_height.get();
+        assert_eq!(read("333.5"), 334);
+        assert_eq!(read("5000.0"), 800);
+        assert_eq!(read("-3.0"), 60);
+    }
+
+    #[test]
     fn a_changed_value_is_written_as_its_own_text() {
         let prefs = Prefs {
             real_size: true,
-            row_height: 333.5,
+            row_height: RowHeight::new(334).expect("a row height in range"),
             last_file: Some(FileId::new(42)),
             dev_mode: true,
             ..Prefs::default()
@@ -176,7 +203,7 @@ mod tests {
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":333.5,"last_file":42,"dev_mode":true}"#
+            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true}"#
         );
     }
 

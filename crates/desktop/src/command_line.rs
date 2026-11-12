@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 
 use cxx_qt_lib::{QString, QStringList};
 use pg_model::query::{Query, Sort};
+use pg_model::size::RowHeight;
 
 /// One `--name=value` argument: its name, its value as text (what the text options read; `None` when the value is not
 /// valid Unicode, never a lossy copy), and the value exactly as the system gave it (what a path option reads).
@@ -71,6 +72,8 @@ pub(crate) struct StartOptions {
     pub query: Option<Query>,
     pub sort: Option<Sort>,
     pub apply_view: Option<String>,
+    /// The row height the window starts at (`--size`). Never saved: the prefs keep their own.
+    pub size: Option<RowHeight>,
 }
 
 pub(crate) fn start_options() -> StartOptions {
@@ -78,7 +81,19 @@ pub(crate) fn start_options() -> StartOptions {
         query: value("query").map(pg_app::views::query_from_json),
         sort: value("sort").map(pg_app::views::sort_from_json),
         apply_view: value("apply-view").map(str::to_owned),
+        size: size_option(),
     }
+}
+
+/// `--size` as a row height. Text that is no number is logged and ignored; a number outside the grid's range is clamped
+/// into it (`RowHeight::from_finite`).
+fn size_option() -> Option<RowHeight> {
+    let text = value("size")?;
+    let size = text.trim().parse::<f64>().ok().and_then(RowHeight::from_finite);
+    if size.is_none() {
+        pg_log::warn("start", &format!("--size={text} is not a row height; ignored"));
+    }
+    size
 }
 
 /// Dev mode as the start sets it for its run, never saved: `--dev=1` on and `--dev=0` off, else `PG_DEV` (`env`: `1`

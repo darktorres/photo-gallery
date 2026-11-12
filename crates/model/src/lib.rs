@@ -35,6 +35,7 @@ pub mod query;
 pub mod rating;
 pub mod refusal;
 pub mod rules;
+pub mod size;
 pub mod state;
 pub mod tree;
 pub mod turns;

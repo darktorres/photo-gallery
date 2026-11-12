@@ -24,6 +24,8 @@ Rectangle {
     property bool actual: false
 
     // The results: the other sizes first, then the similar images.
+    // The window's pixel ratio: the full picture's logical size is its pixels over it.
+    required property real dpr
     required property int otherCount
     required property int similarCount
     // The item shown: its picture's URL (`""` while hidden), its size as text (`""` when unknown), and whether it is picked.
@@ -159,8 +161,8 @@ Rectangle {
         Image {
             id: full
             // Its size in logical pixels at 1:1, and the scale that fits it to the view, up or down.
-            readonly property real naturalWidth: sourceSize.width / Screen.devicePixelRatio
-            readonly property real naturalHeight: sourceSize.height / Screen.devicePixelRatio
+            readonly property real naturalWidth: sourceSize.width / previewView.dpr
+            readonly property real naturalHeight: sourceSize.height / previewView.dpr
             readonly property real fit: naturalWidth > 0
                 ? Math.min(previewView.width / naturalWidth, previewView.height / naturalHeight) : 1
             // 1:1 differs from the fit: it is worth a button and a click.

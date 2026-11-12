@@ -4,26 +4,22 @@
 //! --viewer-keys=r3`: the start, the layout, the filter bar, a rating in the viewer, and the pauses.
 
 use pg_client::controller::Command;
-use pg_client::controller::replay::{Record, replay};
+use pg_client::controller::replay::{Record, parse, replay};
 
-/// The recording's records; a line that is not a record fails the test with its parse error.
-fn recording() -> serde_json::Result<Vec<Record>> {
-    include_str!("replay/session.jsonl")
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(serde_json::from_str)
-        .collect()
+/// The recording's records; a recording that does not parse (or is of another format) fails the test with its reason.
+fn recording() -> Result<Vec<Record>, String> {
+    parse(include_str!("replay/session.jsonl"))
 }
 
 #[test]
-fn the_recorded_session_replays_to_the_recorded_commands() -> serde_json::Result<()> {
+fn the_recorded_session_replays_to_the_recorded_commands() -> Result<(), String> {
     let records = recording()?;
     assert_eq!(replay(&records), Ok(records.len() - 1));
     Ok(())
 }
 
 #[test]
-fn the_recording_contains_the_start_and_a_model_command() -> serde_json::Result<()> {
+fn the_recording_contains_the_start_and_a_model_command() -> Result<(), String> {
     let records = recording()?;
     let gave = |want: fn(&Command) -> bool| {
         records.iter().any(|r| matches!(r, Record::Update { commands, .. } if commands.iter().any(want)))
@@ -34,7 +30,7 @@ fn the_recording_contains_the_start_and_a_model_command() -> serde_json::Result<
 }
 
 #[test]
-fn a_changed_command_is_reported_at_its_record() -> serde_json::Result<()> {
+fn a_changed_command_is_reported_at_its_record() -> Result<(), String> {
     let mut records = recording()?;
     let index = records
         .iter()
@@ -48,4 +44,12 @@ fn a_changed_command_is_reported_at_its_record() -> serde_json::Result<()> {
     let error = replay(&records).expect_err("a changed command must not replay");
     assert!(error.starts_with(&format!("record {}:", index)), "{error}");
     Ok(())
+}
+
+#[test]
+fn a_recording_of_another_format_is_refused_by_its_version() {
+    // A start written before the format was recorded: its Init has no `format`, so it is format 1.
+    let old = r#"{"kind":"Init","listing":{},"row_height":220,"saved_row":220}"#;
+    let error = parse(old).expect_err("a format-1 recording must be refused");
+    assert_eq!(error, format!("recorded by format 1, this build reads {}", pg_client::controller::replay::FORMAT));
 }

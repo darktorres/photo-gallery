@@ -2,15 +2,37 @@
 //! so it holds however the sub-machines are combined: the start gate's order, the one pause per debounce, the size's
 //! clamps and thumbnails, the grid's actions without a current item, and the events' serde round trip (the recordings).
 
+#![expect(
+    clippy::expect_used,
+    reason = "fixtures: the row heights and scales the helpers build are constants inside their ranges"
+)]
+
 use pg_client::controller::listing as listing_event;
-use pg_client::controller::size::{self, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT};
+use pg_client::controller::size;
 use pg_client::controller::{Command, Controller, Event};
 use pg_client::keys::Grid;
 use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
 use pg_model::rules::Merged;
+use pg_model::size::{Factor, RowHeight, Scale};
 use pg_model::view::{Listing, SavedView};
 use proptest::prelude::*;
+
+fn row(px: u32) -> RowHeight {
+    RowHeight::new(px).expect("a row height in range")
+}
+
+/// A controller that shows `row` 200 and has saved 200, with no scale yet.
+fn controller(listing: Listing) -> Controller {
+    Controller::new(listing, row(200), row(200))
+}
+
+/// A controller at scale 1 (the window's scale arrives as the first size event, as the desktop sends it).
+fn scaled(listing: Listing) -> Controller {
+    let mut c = controller(listing);
+    c.update(0, Event::Size(size::Event::Scale(Scale::new(1.0).expect("a positive scale"))));
+    c
+}
 
 /// A folder given as its path text, one part a `\`-separated component (the test's own spelling).
 fn folder(text: &str) -> Merged {
@@ -24,9 +46,9 @@ fn listing(text: &str) -> Listing {
 fn size_event() -> impl Strategy<Value = size::Event> {
     prop_oneof![
         any::<bool>().prop_map(|grow| size::Event::Resize { grow }),
-        (0.1f64..4.0).prop_map(size::Event::Factor),
-        (-100.0f64..2000.0).prop_map(size::Event::Chosen),
-        (0.5f64..3.0).prop_map(size::Event::Scale),
+        (0.1f64..4.0).prop_map(|f| size::Event::Factor(Factor::new(f).expect("a positive factor"))),
+        (-100.0f64..2000.0).prop_map(|h| size::Event::Chosen(RowHeight::from_finite(h).expect("a finite height"))),
+        (0.5f64..3.0).prop_map(|s| size::Event::Scale(Scale::new(s).expect("a positive scale"))),
     ]
 }
 
@@ -41,29 +63,38 @@ fn item_key() -> impl Strategy<Value = Grid> {
 }
 
 proptest! {
-    /// The size stays within its clamps, and after the pause its thumbnail and saved height are the controller's own.
+    /// The size stays within its clamps, and after the pause its thumbnail is the controller's own, and a saved height is
+    /// the row height the pause settled on.
     #[test]
     fn size_stays_clamped_and_settles_to_the_thumbnails(events in prop::collection::vec(size_event(), 1..40)) {
-        let mut c = Controller::new(listing(""), 200, 1.0);
+        let mut c = scaled(listing(""));
         let mut now = 0u64;
         for event in events {
             now += 10;
             c.update(now, Event::Size(event));
-            let row = c.grid_size().row_height();
-            prop_assert!((MIN_ROW_HEIGHT..=MAX_ROW_HEIGHT).contains(&row));
+            let r = c.grid_size().row_height().get();
+            prop_assert!(pg_model::size::ROW_HEIGHT.contains(&r));
         }
         if let Some(at) = c.next_deadline() {
             let settled = c.update(at, Event::Timeout);
-            let row = c.grid_size().row_height();
-            prop_assert!(settled.contains(&Command::Size(size::Change::ThumbHeight(c.grid_size().thumb_height()))));
-            prop_assert!(settled.contains(&Command::Size(size::Change::SaveRowHeight(row))));
+            let thumb = c.grid_size().thumb_height().expect("the scale arrived");
+            let shown = settled.iter().filter(|c| matches!(c, Command::Size(size::Change::ThumbHeight(_)))).count();
+            prop_assert!(shown <= 1, "a thumbnail height is emitted once per pause: {settled:?}");
+            for command in &settled {
+                if let Command::Size(size::Change::ThumbHeight(t)) = command {
+                    prop_assert_eq!(*t, thumb);
+                }
+                if let Command::Size(size::Change::SaveRowHeight(r)) = command {
+                    prop_assert_eq!(*r, c.grid_size().row_height());
+                }
+            }
         }
     }
 
     /// Query edits closer together than the pause leave one list, at the last edit plus the pause.
     #[test]
     fn edits_closer_than_the_pause_leave_one_list_at_the_last(gaps in prop::collection::vec(0u64..300, 1..30)) {
-        let mut c = Controller::new(listing(""), 200, 1.0);
+        let mut c = controller(listing(""));
         let mut now = 0u64;
         for gap in gaps {
             now += gap;
@@ -89,7 +120,7 @@ proptest! {
             1 => [shown, tree, placed],
             _ => [shown, placed, tree],
         };
-        let mut c = Controller::new(listing(""), 200, 1.0);
+        let mut c = controller(listing(""));
         let mut started = Vec::new();
         for (i, event) in events.into_iter().enumerate() {
             let commands = c.update(u64::try_from(i).unwrap_or(u64::MAX), event);
@@ -104,7 +135,7 @@ proptest! {
     /// A folder the tree no longer has lists all folders at once; the start waits for that list.
     #[test]
     fn a_folder_the_tree_lost_lists_all_folders(folder in "[a-z]{1,8}") {
-        let mut c = Controller::new(listing(&folder), 200, 1.0);
+        let mut c = controller(listing(&folder));
         let commands = c.update(0, Event::TreeLoaded { folder_known: false });
         let all = commands.iter().find_map(|c| match c {
             Command::OpenList { listing, .. } => Some((listing.folder.clone(), listing.recursive)),
@@ -118,7 +149,7 @@ proptest! {
     /// Without a current item, the keys that act on one do nothing; with one, they act on that item.
     #[test]
     fn item_keys_act_on_the_current_item_only(key in item_key(), item in 0usize..50) {
-        let mut c = Controller::new(listing(""), 200, 1.0);
+        let mut c = controller(listing(""));
         c.update(0, Event::ListShown { count: 60, last_file: None, generation: 0 });
         prop_assert!(c.update(1, Event::Key(key)).is_empty());
         c.update(2, Event::CurrentChanged(Some(item)));
@@ -179,7 +210,7 @@ fn saves_and_lists(commands: &[Command]) -> (usize, usize, usize) {
 /// A session save waiting at the close is made, with the last file's.
 #[test]
 fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
-    let mut c = Controller::new(listing(""), 200, 1.0);
+    let mut c = controller(listing(""));
     c.update(0, Event::ListShown { count: 10, last_file: None, generation: 0 });
     c.update(1, Event::CurrentChanged(Some(3)));
     let flushed = c.update(2, Event::Flush);
@@ -189,7 +220,7 @@ fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
 /// A query typed within its pause of the close is saved with the session, and no list is shown for a closing window.
 #[test]
 fn a_pending_query_is_saved_at_the_close_without_a_list() {
-    let mut c = Controller::new(listing(""), 200, 1.0);
+    let mut c = controller(listing(""));
     let query = Query { name: "beach".into(), ..Query::default() };
     c.update(0, Event::Listing(listing_event::Event::QueryChanged(query.clone())));
     c.update(0, Event::QueryEdited);
@@ -206,7 +237,7 @@ fn a_pending_query_is_saved_at_the_close_without_a_list() {
 /// A query and a session save both waiting make one session save and one last-file save, not one each.
 #[test]
 fn a_pending_query_and_session_save_make_one_save_at_the_close() {
-    let mut c = Controller::new(listing(""), 200, 1.0);
+    let mut c = controller(listing(""));
     c.update(0, Event::ListShown { count: 10, last_file: None, generation: 0 });
     c.update(1, Event::CurrentChanged(Some(3)));
     c.update(2, Event::Listing(listing_event::Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));

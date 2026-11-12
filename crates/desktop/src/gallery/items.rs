@@ -12,6 +12,7 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version};
 use pg_model::media::MediaType;
+use pg_model::size::ThumbHeight;
 
 use super::qobject;
 
@@ -75,10 +76,11 @@ impl qobject::GalleryModel {
 
     /// The URL of a file's thumbnail at a device-pixel height (`image://thumb/<key>/<height>`), or empty when the key
     /// doesn't read.
-    pub(super) fn thumb_url(&self, key: &QString, height: i32) -> QString {
-        // The height is clamped to the thumbnails there are (`ImageRequest::thumb`).
-        match (ImageKey::parse(&key.to_string()), u32::try_from(height)) {
-            (Some(key), Ok(height)) => QString::from(&ImageRequest::thumb(key, height).url()),
+    /// The URL of a file's thumbnail at `height`, or empty when there is no height yet or the key doesn't read (the row
+    /// then shows its thumbhash).
+    pub(super) fn thumb_url(&self, key: &QString, height: Option<ThumbHeight>) -> QString {
+        match (ImageKey::parse(&key.to_string()), height) {
+            (Some(key), Some(height)) => QString::from(&ImageRequest::thumb(key, height).url()),
             _ => QString::default(),
         }
     }

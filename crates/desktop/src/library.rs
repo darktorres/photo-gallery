@@ -20,6 +20,7 @@ use pg_app::reexport::{Cause, Change, WriteError};
 use pg_client::text::{self, Message};
 use pg_model::notice::{FilePass, LedgerKind, Notice};
 use pg_model::progress::Phase;
+use pg_model::size::ThumbHeight;
 
 use crate::app;
 use crate::picker;
@@ -29,6 +30,12 @@ use crate::pump::Pending;
 /// The library, once `start` has started it: what the change pump and the folder operations read.
 fn running() -> Option<&'static pg_app::Library> {
     app::get().library().running()
+}
+
+/// The grid's thumbnail height, as the shell reports it on each change. The service holds it from before the job starts,
+/// so the job makes the thumbnails at it whenever it runs.
+pub(crate) fn set_thumb_height(height: ThumbHeight) {
+    app::get().library().set_thumb_height(height);
 }
 
 /// What the pending changes come to: each kind is handled once per pass, however many came in. The rounds are counted.
@@ -90,12 +97,12 @@ impl qobject::Library {
         self.set_roots(texts);
     }
 
-    pub(crate) fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
+    pub(crate) fn start(mut self: Pin<&mut Self>) {
         if running().is_some() {
             return;
         }
         self.as_mut().load_roots();
-        let library = match app::get().library().start(u32::try_from(thumb_height.max(1)).unwrap_or(1)) {
+        let library = match app::get().library().start() {
             Ok(library) => library,
             Err(e) => {
                 // Nothing is scanned, imported or written: the inbox says so, not only the log.
@@ -232,12 +239,6 @@ impl qobject::Library {
     pub(crate) fn rescan(self: Pin<&mut Self>) {
         if let Err(e) = app::get().library().rescan() {
             app::post(Notice::RescanFailed { error: app::error_text(&e) });
-        }
-    }
-
-    pub(crate) fn set_thumb_height(&self, height: i32) {
-        if let Some(library) = running() {
-            library.set_thumb_height(u32::try_from(height.max(1)).unwrap_or(1));
         }
     }
 

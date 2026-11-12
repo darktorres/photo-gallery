@@ -1,5 +1,10 @@
 //! The listing's policy by traces: each change, applied to a listing, gives the listing it must and the commands.
 
+#![expect(
+    clippy::expect_used,
+    reason = "fixtures: the row heights and scales the helpers build are constants inside their ranges"
+)]
+
 use pg_client::controller::listing::{Command, Event, update};
 use pg_client::controller::{Command as Do, Controller, Event as Report};
 use pg_model::name::Name;
@@ -8,6 +13,12 @@ use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 
 const OPEN: [Command; 2] = [Command::OpenList, Command::SaveSession];
+
+/// A controller at the start's row height (200) and the prefs' saved one (the same).
+fn controller(listing: Listing) -> Controller {
+    let row = pg_model::size::RowHeight::new(200).expect("a row height in range");
+    Controller::new(listing, row, row)
+}
 
 /// A folder given as its path text, one part per `\`-separated component.
 fn folder(text: &str) -> Merged {
@@ -118,7 +129,7 @@ fn a_reveal_lists_the_files_folder_and_selects_it_once_shown() {
     assert!(listing.folder.is_empty() && listing.recursive);
     assert_eq!(listing.query, Query { status: vec![Status::Failed], ..Query::default() });
 
-    let mut c = Controller::new(start(), 200, 1.0);
+    let mut c = controller(start());
     let out = c.update(0, Report::Reveal { file: 7, folder: folder("beta") });
     let Some(generation) = generation_of(&out) else { panic!("{out:?}") };
     assert!(matches!(&out[..], [Do::OpenList { keep: false, .. }, Do::SaveSession(_)]), "{out:?}");
@@ -144,7 +155,7 @@ fn shown(c: &mut Controller, generation: u64) -> Vec<Do> {
 /// saved view, the query's pause): each is newer than any before.
 #[test]
 fn every_open_list_has_a_newer_generation() {
-    let mut c = Controller::new(start(), 200, 1.0);
+    let mut c = controller(start());
     let mut generations = Vec::new();
     generations.extend(generation_of(&c.update(0, Report::Reload)));
     generations.extend(generation_of(&c.update(0, Report::Listing(Event::OpenFolder(folder("beta"))))));
@@ -164,7 +175,7 @@ fn every_open_list_has_a_newer_generation() {
 /// leaves it waiting.
 #[test]
 fn a_reveal_waits_for_its_own_list() {
-    let mut c = Controller::new(start(), 200, 1.0);
+    let mut c = controller(start());
     let older = generation_of(&c.update(0, Report::Reload)).unwrap();
     let out = c.update(0, Report::Reveal { file: 7, folder: folder("beta") });
     let own = generation_of(&out).unwrap();
@@ -177,7 +188,7 @@ fn a_reveal_waits_for_its_own_list() {
 /// and neither does the reveal's list if it is shown after all.
 #[test]
 fn navigating_away_drops_a_reveal() {
-    let mut c = Controller::new(start(), 200, 1.0);
+    let mut c = controller(start());
     let own = generation_of(&c.update(0, Report::Reveal { file: 7, folder: folder("beta") })).unwrap();
     let away = generation_of(&c.update(0, Report::Listing(Event::OpenFolder(folder("gamma"))))).unwrap();
     assert!(away > own);
@@ -189,7 +200,7 @@ fn navigating_away_drops_a_reveal() {
 /// A second reveal replaces the first: only the second's list selects, and only its file.
 #[test]
 fn a_newer_reveal_replaces_the_waiting_one() {
-    let mut c = Controller::new(start(), 200, 1.0);
+    let mut c = controller(start());
     let first = generation_of(&c.update(0, Report::Reveal { file: 7, folder: folder("beta") })).unwrap();
     let second = generation_of(&c.update(0, Report::Reveal { file: 8, folder: folder("gamma") })).unwrap();
     assert!(!shown(&mut c, first).iter().any(|d| matches!(d, Do::Reveal(_))));

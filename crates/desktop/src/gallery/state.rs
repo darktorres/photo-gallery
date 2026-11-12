@@ -39,7 +39,9 @@ pub struct GalleryRust {
     pub(crate) viewed_player_turns: i32,
     pub(crate) viewed_file_id: i64,
     pub(crate) viewed_full_url: QString,
-    pub(crate) thumb_height: i32,
+    /// The thumbnails' height, once the shell has one: the thumbnail URLs are made for it. None until then, and the rows
+    /// show their thumbhashes.
+    pub(crate) thumb_height: Option<pg_model::size::ThumbHeight>,
     pub(crate) viewed_info: QString,
     pub(crate) viewed_border_box: QRectF,
     pub(crate) viewed_rejected_top: f64,
@@ -76,7 +78,7 @@ impl Default for GalleryRust {
             viewed_player_turns: 0,
             viewed_file_id: 0,
             viewed_full_url: QString::default(),
-            thumb_height: 0,
+            thumb_height: None,
             viewed_info: QString::default(),
             viewed_border_box: QRectF::default(),
             viewed_rejected_top: -1.0,

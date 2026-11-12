@@ -8,6 +8,7 @@
 //! - `image://yandex/<result id>` (its grid picture), or `…/original` (its file as the host gave it)
 
 use pg_model::image::{ImageKey, View};
+use pg_model::size::ThumbHeight;
 
 /// The image providers, each registered under its name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,14 +39,11 @@ impl Provider {
     }
 }
 
-/// The smallest and largest thumbnail height a request may ask for, in px.
-pub const THUMB_HEIGHT: std::ops::RangeInclusive<u32> = 16..=2048;
-
 /// One image a provider serves.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImageRequest {
-    /// The thumbnail `height` px high.
-    Thumb { key: ImageKey, height: u32 },
+    /// The thumbnail `height` px high (within the thumbnail cache's heights, `pg_model::size::ThumbHeight`).
+    Thumb { key: ImageKey, height: ThumbHeight },
     /// The ThumbHash placeholder.
     Thumbhash { key: ImageKey },
     /// The full image, in `view`.
@@ -55,9 +53,9 @@ pub enum ImageRequest {
 }
 
 impl ImageRequest {
-    /// The thumbnail of `key` at `height`, clamped to [`THUMB_HEIGHT`] (the thumbnails there are).
-    pub fn thumb(key: ImageKey, height: u32) -> ImageRequest {
-        ImageRequest::Thumb { key, height: height.clamp(*THUMB_HEIGHT.start(), *THUMB_HEIGHT.end()) }
+    /// The thumbnail of `key` at `height`.
+    pub fn thumb(key: ImageKey, height: ThumbHeight) -> ImageRequest {
+        ImageRequest::Thumb { key, height }
     }
 
     /// The provider the request is served by.
@@ -74,7 +72,7 @@ impl ImageRequest {
     /// `<id>/original`.
     pub fn id(&self) -> String {
         match self {
-            ImageRequest::Thumb { key, height } => format!("{key}/{height}"),
+            ImageRequest::Thumb { key, height } => format!("{key}/{}", height.get()),
             ImageRequest::Thumbhash { key } => key.to_string(),
             ImageRequest::Full { key, view } => format!("{key}/{}", view_path(view)),
             ImageRequest::Yandex { id, original: false } => id.to_string(),
@@ -88,7 +86,7 @@ impl ImageRequest {
     }
 
     /// The request `provider` gets for `id` (the URL's part after the provider's name), or `None` when it doesn't
-    /// read. A thumbnail's height is clamped to [`THUMB_HEIGHT`].
+    /// read. A thumbnail's height is one the cache holds (`ThumbHeight`); another is refused.
     pub fn parse(provider: Provider, id: &str) -> Option<ImageRequest> {
         if provider == Provider::Yandex {
             let (id, original) = id.strip_suffix("/original").map_or((id, false), |id| (id, true));
@@ -97,7 +95,7 @@ impl ImageRequest {
         let (key, rest) = id.split_once('/').unwrap_or((id, ""));
         let key = ImageKey::parse(key)?;
         match provider {
-            Provider::Thumb => Some(ImageRequest::thumb(key, rest.parse().ok()?)),
+            Provider::Thumb => Some(ImageRequest::thumb(key, ThumbHeight::new(rest.parse().ok()?)?)),
             Provider::Thumbhash => Some(ImageRequest::Thumbhash { key }),
             Provider::Full => Some(ImageRequest::Full { key, view: view_of(rest)? }),
             Provider::Yandex => None,
@@ -181,13 +179,13 @@ mod tests {
     }
 
     #[test]
-    fn thumbnail_heights_are_clamped_and_bad_ones_refused() {
-        let small = ImageRequest::parse(Provider::Thumb, "3/5").expect("reads");
-        assert_eq!(small, ImageRequest::Thumb { key: key("3"), height: 16 });
-        let large = ImageRequest::parse(Provider::Thumb, "3/9999").expect("reads");
-        assert_eq!(large, ImageRequest::Thumb { key: key("3"), height: 2048 });
+    fn thumbnail_heights_outside_the_cache_are_refused() {
+        let at = |px| ThumbHeight::new(px).expect("a height in range");
+        let ok = ImageRequest::parse(Provider::Thumb, "3/220").expect("reads");
+        assert_eq!(ok, ImageRequest::Thumb { key: key("3"), height: at(220) });
+        assert_eq!(ImageRequest::parse(Provider::Thumb, "3/5"), None, "below the cache's 16");
+        assert_eq!(ImageRequest::parse(Provider::Thumb, "3/9999"), None, "above the cache's 2048");
         assert_eq!(ImageRequest::parse(Provider::Thumb, "3/tall"), None);
-        assert_eq!(ImageRequest::thumb(key("3"), 0), small);
     }
 
     #[test]

@@ -37,11 +37,7 @@ Item {
     id: hooks
     // The viewer, which the viewer hooks drive.
     required property Viewer viewer
-    // The grid's row height (--size's default).
-    required property real rowHeight
-
     // Done on the window by Main.
-    signal sizeRequested(real height)
     signal selectRequested(int index)
     signal borderMarkToggled(int index)
     signal bordersRequested()
@@ -95,7 +91,6 @@ Item {
 
     // The hooks that run once the first list is shown (Main's startHooks(), before the library job starts).
     function run() {
-        if (commandLine.has("size")) sizeRequested(commandLine.number("size", rowHeight))
         if (commandLine.has("select")) selectRequested(commandLine.number("select", -1))
         for (let k = 0; k < gridKeys.length; k++) {
             const c = gridKeys[k]

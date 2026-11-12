@@ -16,6 +16,8 @@ pub struct ShellRust {
     pub(crate) filters_open: bool,
     pub(crate) show_borders: bool,
     pub(crate) row_height: i32,
-    pub(crate) thumb_height: i32,
+    /// The row heights the grid takes: the size controls' bounds (`pg_model::size::ROW_HEIGHT`).
+    pub(crate) min_row_height: i32,
+    pub(crate) max_row_height: i32,
     pub(crate) dev_mode: bool,
 }

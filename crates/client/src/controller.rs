@@ -7,6 +7,7 @@
 
 use pg_model::rating::Rating;
 use pg_model::rules::Merged;
+use pg_model::size::{GridWidth, RowHeight};
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
 
@@ -57,8 +58,8 @@ pub enum Event {
     CurrentChanged(Option<usize>),
     /// A grid key, already decided by the key map against the current item.
     Key(Grid),
-    /// The grid's width changed, in pixels.
-    GridResized(f64),
+    /// The grid's width changed, in pixels. `None` when the list has no width yet (the shell's width of zero or less).
+    GridResized(Option<GridWidth>),
     /// The filter bar's query was typed: the list is shown once the typing rests.
     QueryEdited,
     /// A panel opened, closed or toggled: the filter bar, the borders shown, the viewer, dev mode as the window starts
@@ -139,8 +140,9 @@ pub enum Command {
     SaveSession(Listing),
     /// Remember the file the session is on (the desktop reads it from the model).
     SaveLastFile,
-    /// Lay the grid out again at this width and row height (presentation: the view keeps its place).
-    Relayout { width: f64, row_height: i32 },
+    /// Lay the grid out again at this width and row height (presentation: the view keeps its place). Only once a width is
+    /// known: a layout with no width is not asked for.
+    Relayout { width: GridWidth, row_height: RowHeight },
     /// A panel changed.
     Panel(panels::Change),
     /// Open this modal panel (a global shortcut).
@@ -165,7 +167,7 @@ pub struct Controller {
     panels: Panels,
     grid_size: GridSize,
     deadlines: Deadlines,
-    grid_width: f64,
+    grid_width: Option<GridWidth>,
     /// The last `OpenList`'s generation: the next one is one more.
     generation: u64,
     /// The file a reveal waits to select, and the generation of the list it waits for: only that list's `ListShown`
@@ -174,16 +176,17 @@ pub struct Controller {
 }
 
 impl Controller {
-    /// A controller for a window that starts at `listing`, with the row height and the screen's scale it starts at.
-    pub fn new(listing: Listing, row_height: i32, scale: f64) -> Controller {
+    /// A controller for a window that starts at `listing`, showing `row` and with the prefs' `saved_row` remembered. The
+    /// screen's scale arrives as an event.
+    pub fn new(listing: Listing, row: RowHeight, saved_row: RowHeight) -> Controller {
         Controller {
             start: StartGate::default(),
             listing,
             input: Input::default(),
             panels: Panels::default(),
-            grid_size: GridSize::with(row_height, scale),
+            grid_size: GridSize::new(row, saved_row),
             deadlines: Deadlines::default(),
-            grid_width: 0.0,
+            grid_width: None,
             generation: 0,
             reveal: None,
         }
@@ -404,12 +407,17 @@ impl Controller {
                 size::Change::RowHeight(height) => {
                     self.deadlines.arm(Timer::Size, now_ms);
                     out.push(Command::Size(change));
-                    out.push(Command::Relayout { width: self.grid_width, row_height: height });
+                    out.extend(self.relayout(height));
                 }
                 other => out.push(Command::Size(other)),
             }
         }
         out
+    }
+
+    /// The relayout at `row_height`, once the grid has a width (none before the list is laid out).
+    fn relayout(&self, row_height: RowHeight) -> Option<Command> {
+        Some(Command::Relayout { width: self.grid_width?, row_height })
     }
 
     /// A listing change: applied, then the listing's commands. A query typed is applied at once and shown after its
@@ -463,9 +471,7 @@ impl Controller {
                     out.push(Command::SaveSession(self.listing.clone()));
                     out.push(Command::SaveLastFile);
                 }
-                Timer::Layout => {
-                    out.push(Command::Relayout { width: self.grid_width, row_height: self.grid_size.row_height() })
-                }
+                Timer::Layout => out.extend(self.relayout(self.grid_size.row_height())),
                 Timer::Size => {
                     for change in self.grid_size.settled() {
                         out.push(Command::Size(change));

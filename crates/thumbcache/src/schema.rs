@@ -18,7 +18,7 @@ const SCHEMA: &str = concat!(
 CREATE TABLE entries(
     id        INTEGER PRIMARY KEY,
     file_id   INTEGER NOT NULL,  -- catalog files.id
-    height    INTEGER NOT NULL,  -- requested grid height (the image may be smaller)
+    height    INTEGER NOT NULL CHECK (height BETWEEN 16 AND 2048),  -- requested grid height (the image may be smaller)
     mtime     INTEGER NOT NULL,  -- Source: stale when either differs from the file's
     rotation  INTEGER NOT NULL,
     format    TEXT NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE meta(
 -- Per height: the catalog's change number (files.seq) up to which every file was checked for a current entry
 -- (NULL: not known), and how many times entries of that height were evicted.
 CREATE TABLE checked(
-    height    INTEGER PRIMARY KEY,
+    height    INTEGER PRIMARY KEY CHECK (height BETWEEN 16 AND 2048),
     seq       INTEGER,
     evictions INTEGER NOT NULL);
 CREATE TRIGGER entries_added AFTER INSERT ON entries BEGIN

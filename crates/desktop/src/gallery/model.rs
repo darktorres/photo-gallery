@@ -11,6 +11,7 @@ use pg_client::grid::{Arrival, Changed, Plan, Shape};
 use pg_client::text;
 use pg_model::detection::Edge;
 use pg_model::grid::Entry;
+use pg_model::size::ThumbHeight;
 
 use super::qobject;
 use super::roles::{
@@ -223,11 +224,11 @@ impl qobject::GalleryModel {
 
     /// The thumbnails' height changed: each row gets a new version and its cells' lists are read again (the URLs are
     /// made for the new height), in the same order as `items_changed`.
-    pub(crate) fn set_thumb_height(mut self: Pin<&mut Self>, height: i32) {
-        if height == self.thumb_height {
+    pub(crate) fn set_thumb_height(mut self: Pin<&mut Self>, height: ThumbHeight) {
+        if Some(height) == self.thumb_height {
             return;
         }
-        self.as_mut().rust_mut().thumb_height = height;
+        self.as_mut().rust_mut().thumb_height = Some(height);
         let rows = self.as_mut().rust_mut().grid.touch_all();
         for row in 0..rows {
             let index = self.index(qt_int(row), 0, &QModelIndex::default());

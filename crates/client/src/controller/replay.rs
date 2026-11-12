@@ -4,17 +4,23 @@
 //! each `Update`'s event at its time, and checks that the commands are the recorded ones. Time is an input, so nothing
 //! here reads a clock.
 
+use pg_model::size::RowHeight;
 use pg_model::view::Listing;
 use serde::{Deserialize, Serialize};
 
 use super::{Command, Controller, Event};
 
+/// The recording's format: bumped whenever a record's shape changes, so a file of another format is refused with its
+/// version (`parse`), not with a parse error. A file with no `format` on its `Init` is format 1.
+pub const FORMAT: u32 = 2;
+
 /// One line of a recording.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Record {
-    /// The controller's start: its listing, row height and scale.
-    Init { listing: Listing, row_height: i32, scale: f64 },
+    /// The controller's start: the format it is written in, its listing, the row height it shows, and the row height the
+    /// prefs saved. The window's scale comes as the first size event, as it does live.
+    Init { format: u32, listing: Listing, row_height: RowHeight, saved_row: RowHeight },
     /// An event, applied at `now_ms`, and the commands it gave.
     Update { now_ms: u64, event: Event, commands: Vec<Command> },
 }
@@ -22,10 +28,35 @@ pub enum Record {
 /// A record for the controller's start, as `Controller::new` takes it.
 pub fn init(controller: &Controller) -> Record {
     Record::Init {
+        format: FORMAT,
         listing: controller.listing().clone(),
         row_height: controller.grid_size().row_height(),
-        scale: controller.grid_size().scale(),
+        saved_row: controller.grid_size().saved_row(),
     }
+}
+
+/// The records of a recording's text, one per line. A recording of another format is refused by its version, before its
+/// records are read as this format's.
+pub fn parse(text: &str) -> Result<Vec<Record>, String> {
+    /// The part of a line that tells its format: an `Init` with no `format` is format 1.
+    #[derive(Deserialize)]
+    struct Head {
+        kind: String,
+        #[serde(default)]
+        format: Option<u32>,
+    }
+    let mut records = Vec::new();
+    for (n, line) in text.lines().enumerate().filter(|(_, line)| !line.trim().is_empty()) {
+        let head: Head = serde_json::from_str(line).map_err(|e| format!("line {}: {e}", n + 1))?;
+        if head.kind == "Init" {
+            let format = head.format.unwrap_or(1);
+            if format != FORMAT {
+                return Err(format!("recorded by format {format}, this build reads {FORMAT}"));
+            }
+        }
+        records.push(serde_json::from_str(line).map_err(|e| format!("line {}: {e}", n + 1))?);
+    }
+    Ok(records)
 }
 
 /// Replay a recording: the number of events checked, or the first record whose commands differ from the recorded ones.
@@ -33,10 +64,13 @@ pub fn replay(records: &[Record]) -> Result<usize, String> {
     let Some((first, rest)) = records.split_first() else {
         return Err("an empty recording".to_string());
     };
-    let Record::Init { listing, row_height, scale } = first else {
+    let Record::Init { format, listing, row_height, saved_row } = first else {
         return Err("a recording starts with its Init record".to_string());
     };
-    let mut controller = Controller::new(listing.clone(), *row_height, *scale);
+    if *format != FORMAT {
+        return Err(format!("recorded by format {format}, this build reads {FORMAT}"));
+    }
+    let mut controller = Controller::new(listing.clone(), *row_height, *saved_row);
     for (n, record) in rest.iter().enumerate() {
         let Record::Update { now_ms, event, commands } = record else {
             return Err(format!("record {}: a second Init", n + 1));

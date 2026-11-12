@@ -21,6 +21,7 @@ TestCase {
         Viewer {
             width: 800
             height: 600
+            dpr: Screen.devicePixelRatio
             gallery: galleryStub
             onStepRequested: (d) => stepTo(shellStub.viewerStep(index, d))
             settings: settingsStub

@@ -24,6 +24,8 @@ Rectangle {
 
     // The gallery's gap: the results are spaced as the grid's cells are.
     required property real gap
+    // The window's pixel ratio, for the preview (YandexPreview).
+    required property real dpr
 
     // The viewer's photo: the catalog's file, by its id.
     function show(fileId: int) {
@@ -257,6 +259,7 @@ Rectangle {
     // One result at full size: see YandexPreview.
     YandexPreview {
         id: preview
+        dpr: panel.dpr
         otherCount: yandex.otherCount
         similarCount: yandex.similarCount
         imageUrl: yandex.previewUrl

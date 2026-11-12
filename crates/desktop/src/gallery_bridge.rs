@@ -70,9 +70,6 @@ pub mod qobject {
         #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i64, viewed_file_id, cxx_name = "viewedFileId", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, viewed_full_url, cxx_name = "viewedFullUrl", READ, WRITE, NOTIFY, FINAL)]
-        /// The thumbnails' height in device pixels (QML's, from the screen's scale): the thumbnail URLs are made for it,
-        /// so a change makes every row read them again (`setThumbHeight`).
-        #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, WRITE = set_thumb_height, FINAL)]
         #[qproperty(QString, viewed_info, cxx_name = "viewedInfo", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QRectF, viewed_border_box, cxx_name = "viewedBorderBox", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(f64, viewed_rejected_top, cxx_name = "viewedRejectedTop", READ, WRITE, NOTIFY, FINAL)]
@@ -149,12 +146,6 @@ pub mod qobject {
         #[inherit]
         fn index(self: &GalleryModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
-        /// Make this model the one the window's controller carries its model commands out on (`post`). Called once,
-        /// when the window is made, before the controller's first list.
-        #[qinvokable]
-        #[cxx_name = "registerModel"]
-        fn register_model(self: Pin<&mut GalleryModel>);
-
         /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
         #[qinvokable]
         fn relayout(self: Pin<&mut GalleryModel>, width: f64, row_height: f64, spacing: f64);
@@ -168,9 +159,6 @@ pub mod qobject {
         #[cxx_name = "indexOf"]
         fn index_of(self: &GalleryModel, file_id: i64) -> i32;
 
-        /// The thumbnails' height changed: every row's thumbnail URLs are read again (`ROLE_THUMB_URLS`).
-        fn set_thumb_height(self: Pin<&mut GalleryModel>, height: i32);
-
         /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder the picker
         /// chose for them (`FolderPicker`, purpose 1), in the background (the library's crop pass). Returns how many it
         /// asked for.
@@ -182,4 +170,8 @@ pub mod qobject {
         #[cxx_name = "rowOf"]
         fn row_of(self: &GalleryModel, item: i32) -> i32;
     }
+
+    // The model's constructor: Qt makes it, and `Initialize` (gallery.rs) registers it as the window's model. Declared
+    // here, as cxx-qt requires for a custom constructor.
+    impl cxx_qt::Constructor<()> for GalleryModel {}
 }

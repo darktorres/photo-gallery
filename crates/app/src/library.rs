@@ -14,11 +14,12 @@ use pg_catalog::Root;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Change};
 use pg_library::folders::AddError;
-use pg_library::runner::{Generation, Runner};
+use pg_library::runner::{Generation, HeightCell, Runner};
 use pg_model::ids::{FileId, RootId};
 use pg_model::notice::{Key, Notice};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
+use pg_model::size::ThumbHeight;
 use pg_thumbcache::ThumbCache;
 use pg_writeback::{WriteStatus, Writer};
 
@@ -90,14 +91,14 @@ impl Library {
     pub(crate) fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
-        thumb_height: u32,
+        heights: HeightCell,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Library> {
         notices.clear(Key::all("write-stopped", None).to_buf());
         notices.clear(Key::all("write-failed", None).to_buf());
         let changes = Arc::new(Bus::new(256));
-        let runner = Runner::start(catalog_path.clone(), thumbs, thumb_height, changes.clone(), notices.clone())
-            .map_err(failed)?;
+        let runner =
+            Runner::start(catalog_path.clone(), thumbs, heights, changes.clone(), notices.clone()).map_err(failed)?;
         let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone(), notices.clone()).map_err(failed)?;
         let slot = WriterSlot {
             writer,
@@ -198,10 +199,6 @@ impl Library {
         self.runner.stop_scans_under(root);
     }
 
-    pub fn set_thumb_height(&self, height: u32) {
-        self.runner.set_thumb_height(height);
-    }
-
     pub fn set_paused(&self, paused: bool) {
         self.runner.set_paused(paused);
     }
@@ -234,6 +231,8 @@ pub struct LibraryService {
     thumbs: &'static ThumbCache,
     /// Where the job's notices go.
     inbox: Arc<Inbox>,
+    /// The thumbnail height the grid asks for. Held from the start, so it may be set before the job starts.
+    heights: HeightCell,
     /// The started job and writer; set once, by the first [`LibraryService::start`].
     cell: OnceLock<Library>,
 }
@@ -245,16 +244,21 @@ impl LibraryService {
         thumbs: &'static ThumbCache,
         inbox: Arc<Inbox>,
     ) -> LibraryService {
-        LibraryService { catalog_path, catalogs, thumbs, inbox, cell: OnceLock::new() }
+        LibraryService { catalog_path, catalogs, thumbs, inbox, heights: HeightCell::default(), cell: OnceLock::new() }
     }
 
-    /// The library, started at `thumb_height` device pixels on first use (later calls ignore the height: set it with
-    /// [`Library::set_thumb_height`]). Fails when a thread can't start; the next call tries again.
-    pub fn start(&self, thumb_height: u32) -> Result<&Library> {
+    /// The grid's thumbnail height: the thumbnails are made at it. Set before or after the job starts; a change stops
+    /// the pass in progress.
+    pub fn set_thumb_height(&self, height: ThumbHeight) {
+        self.heights.set(height);
+    }
+
+    /// The library, started on first use. Fails when a thread can't start; the next call tries again.
+    pub fn start(&self) -> Result<&Library> {
         if let Some(library) = self.cell.get() {
             return Ok(library);
         }
-        let library = Library::start(self.catalog_path.clone(), self.thumbs, thumb_height, self.inbox.clone())?;
+        let library = Library::start(self.catalog_path.clone(), self.thumbs, self.heights.clone(), self.inbox.clone())?;
         Ok(self.cell.get_or_init(|| library))
     }
 
@@ -384,7 +388,9 @@ mod tests {
         drop(pg_library::open_catalog(&layout).unwrap());
         let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::disabled()));
         let sink = Arc::new(Recording::default());
-        let library = Library::start(layout.catalog_path(), thumbs, 100, sink.clone()).unwrap();
+        let heights = HeightCell::default();
+        heights.set(ThumbHeight::new(100).expect("a height in range"));
+        let library = Library::start(layout.catalog_path(), thumbs, heights, sink.clone()).unwrap();
         (library, sink, dir)
     }
 

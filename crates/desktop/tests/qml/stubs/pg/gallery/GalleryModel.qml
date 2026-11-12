@@ -24,5 +24,4 @@ QtObject {
     property bool viewedBorderMarked: false
     // The full-size image's URL (the real one comes from the Rust grammar: pg_client::image).
     property string viewedFullUrl: ""
-    property int thumbHeight: 0
 }

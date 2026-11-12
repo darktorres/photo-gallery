@@ -12,10 +12,10 @@ workspace = true
 [dependencies]
 pg-model = { path = "../model" }
 serde.workspace = true
+serde_json.workspace = true
 fluent-bundle.workspace = true
 unic-langid.workspace = true
 
 # The laws of the layout (tests/laws.rs), generated (S-18.2).
 [dev-dependencies]
 proptest.workspace = true
-serde_json.workspace = true

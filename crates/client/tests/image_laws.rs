@@ -32,7 +32,7 @@ proptest! {
         let version = versioned.then_some(Version { mtime, rotation, turns: pending });
         let key = ImageKey { file: FileId::new(file), version };
         let request = match kind {
-            0 => ImageRequest::Thumb { key, height },
+            0 => ImageRequest::thumb(key, pg_model::size::ThumbHeight::new(height).expect("a height in the cache's range")),
             1 => ImageRequest::Thumbhash { key },
             2 => ImageRequest::Full { key, view: View::Fit(pw, ph) },
             3 => ImageRequest::Yandex { id, original },

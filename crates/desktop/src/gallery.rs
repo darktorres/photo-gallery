@@ -42,17 +42,20 @@ pub(crate) fn applied() -> u64 {
 }
 
 /// Carry out `run` on the grid model, after the events already queued to it: the controller's model commands (rate,
-/// turn, list, border marks) come through here. Nothing runs before `register` (the window is not made yet).
+/// turn, list, border marks) and the thumbnail height come through here. The model registers itself when Qt makes it
+/// (`Initialize`), before the window sends it anything; so a `post` with no model is a bug, and is logged, not dropped.
 pub(crate) fn post(run: impl FnOnce(Pin<&mut qobject::GalleryModel>) + Send + 'static) {
-    MODEL.with(|model| {
-        if let Some(thread) = model.borrow().as_ref() {
+    MODEL.with(|model| match model.borrow().as_ref() {
+        Some(thread) => {
             let _ = thread.queue(run);
         }
+        None => pg_log::error("gallery", "a command reached the grid model before it was made; it was not carried out"),
     });
 }
 
-impl qobject::GalleryModel {
-    pub(crate) fn register_model(self: Pin<&mut Self>) {
+impl cxx_qt::Initialize for qobject::GalleryModel {
+    /// Make this model the one the window's commands are carried out on (`post`). Qt calls this when the model is made.
+    fn initialize(self: Pin<&mut Self>) {
         let thread = self.qt_thread();
         MODEL.with(|model| *model.borrow_mut() = Some(thread));
     }

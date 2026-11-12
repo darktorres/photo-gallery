@@ -40,10 +40,9 @@ ApplicationWindow {
 
     // The grid's row height in logical px: the thumbnail size, adjustable at any time (slider, Ctrl+wheel,
     // Ctrl +/-). The layout follows it at once; the thumbnails re-requested at the new size follow after a short
-    // pause (thumbHeight), and meanwhile the old ones are scaled. Remembered across runs.
+    // pause, and meanwhile the old ones are scaled. Remembered across runs, by the shell.
     // The size, the filter bar's and the borders' flags are Shell's: read here, changed by its invokables.
     readonly property real rowHeight: shell.rowHeight
-    readonly property int thumbHeight: shell.thumbHeight
     // The selected item (-1: none): the gallery's, so it stays with its file when the list is refreshed.
     property alias current: galleryModel.current
     readonly property bool filtersOpen: shell.filtersOpen
@@ -86,8 +85,6 @@ ApplicationWindow {
     }
     GalleryModel {
         id: galleryModel
-        // The thumbnails' height (the screen's scale, from the shell): the model's thumbnail URLs are made for it.
-        thumbHeight: win.thumbHeight
         // Without a selection, a refreshed list keeps the top row's file in view. The rows change (all of them for
         // another list), then gridLoaded moves the view to where it belongs.
         onAboutToLoad: {
@@ -111,7 +108,6 @@ ApplicationWindow {
         }
         onRelayoutDue: win.relayout()
         onSessionDue: if (win.ready) appSettings.lastFile = galleryModel.fileId(viewerItem.visible ? viewerItem.index : win.current)
-        onSaveRowHeight: (height) => appSettings.rowHeight = height
         onSelectRequested: (i) => win.scrollTo(i)
         onViewerRequested: (i) => viewerItem.show(i)
         onPanelOpenRequested: (kind) => win.openPanel(kind)
@@ -136,7 +132,6 @@ ApplicationWindow {
         // Turned files changed in place: no renumbering, so the viewer can stay open (the controller reads them again).
         onFilesChanged: shell.filesChanged()
     }
-    onThumbHeightChanged: library.setThumbHeight(thumbHeight)
     // The tree has been shown once: from then on a new tree (a scan) leaves its folders as the user left them.
     property bool treeShown: false
 
@@ -419,8 +414,6 @@ ApplicationWindow {
     TestHooks {
         id: testHooks
         viewer: viewerItem
-        rowHeight: win.rowHeight
-        onSizeRequested: (h) => shell.sizeChosen(h)
         onGridKeyRequested: (key) => shell.keyPressed(key, 0)
         onSelectRequested: (i) => win.select(i)
         onBorderMarkToggled: (i) => shell.toggleBorderMark(i)
@@ -462,6 +455,8 @@ ApplicationWindow {
             filterTotal: filterBar.total
             filtersOpen: win.filtersOpen
             rowHeight: win.rowHeight
+            minRowHeight: shell.minRowHeight
+            maxRowHeight: shell.maxRowHeight
             onFiltersToggled: shell.toggleFilters()
             onRecursiveToggled: (on) => {
                 shell.setRecursive(on)
@@ -582,6 +577,7 @@ ApplicationWindow {
         Viewer {
             id: viewerItem
             anchors.fill: parent
+            dpr: win.devicePixelRatio
             gallery: galleryModel
             fullUrl: galleryModel.viewedFullUrl
             index: galleryModel.viewing
@@ -643,6 +639,7 @@ ApplicationWindow {
             sourceComponent: Component {
                 YandexPanel {
                     id: yandexPanel
+                    dpr: win.devicePixelRatio
                     gap: win.gap
                     previewWhenFound: testHooks.yandexPreview
                     // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer
@@ -735,15 +732,16 @@ ApplicationWindow {
     // The window is made (it shows right after): ask for where the user was. Nothing here waits for the catalog;
     // the tree and the files arrive later, in either order (treeLoaded, gridLoaded), and the second of them
     // finishes the start (started).
+    // A window moved to a screen with another pixel ratio: the thumbnails are made at the new size (the controller's scale).
+    onDevicePixelRatioChanged: shell.setScale(win.devicePixelRatio)
+
     Component.onCompleted: {
-        // The grid model takes the controller's model commands from here on.
-        galleryModel.registerModel()
         // The folder, subfolders, sort and query are the listing's and the filter bar's as they start (the controller's
         // start: the session's, then the test hooks' --sort, --query and --apply-view).
         // The scale, the size and the borders as the user left them: the controller holds them from here on (the
-        // thumbnails are sized from the scale before the library starts, in startHooks).
-        shell.setScale(Screen.devicePixelRatio)
-        shell.sizeChosen(appSettings.rowHeight)
+        // thumbnails are sized from the scale before the library starts, in startHooks). The size is the saved row height,
+        // which the controller starts with; the scale is the window's, and follows the window to another screen.
+        shell.setScale(win.devicePixelRatio)
         shell.setShowBorders(appSettings.showBorders)
         // Dev mode as the user left it, or on for this run (--dev=1, PG_DEV=1): the shell reads both (not saved here).
         shell.seedDevMode()
@@ -762,7 +760,7 @@ ApplicationWindow {
         stages.ready()
         if (testHooks.hasApplyView) shell.rememberListing()
         testHooks.run()
-        library.start(thumbHeight)
+        library.start()
         testHooks.runAfterLibraryStart()
     }
 }

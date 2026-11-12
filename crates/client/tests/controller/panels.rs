@@ -1,5 +1,10 @@
 //! Traces of the panels' flags (S-12.20), the modal panels' mirror and the global shortcuts' rule.
 
+#![expect(
+    clippy::expect_used,
+    reason = "fixtures: the row heights and scales the helpers build are constants inside their ranges"
+)]
+
 use pg_client::controller::panels::{Change, Event, PanelKind, Panels};
 use pg_client::controller::{Command, Controller, Event as Report};
 use pg_client::keys::Global;
@@ -117,7 +122,8 @@ fn dev_mode_as_the_window_starts_reports_only_a_real_change() {
 fn controller() -> Controller {
     let listing =
         Listing { folder: Merged::default(), recursive: true, sort: Sort::default(), query: Query::default() };
-    Controller::new(listing, 200, 1.0)
+    let row = pg_model::size::RowHeight::new(200).expect("a row height in range");
+    Controller::new(listing, row, row)
 }
 
 fn report(c: &mut Controller, event: Report) -> Vec<Command> {

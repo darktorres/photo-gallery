@@ -20,6 +20,7 @@ use pg_model::grid::Entry;
 use pg_model::path::WorkList;
 use pg_model::query::{Query, RatingFilter, Sort, SortKey};
 use pg_model::rules::Path as RulePath;
+use pg_model::size::ThumbHeight;
 use pg_model::tree::FolderTree;
 use pg_scan::ScanStats;
 use pg_scan::synthetic::SyntheticTree;
@@ -165,8 +166,13 @@ fn pending_import(catalog: Catalog) -> (Catalog, WorkList<WorkItem>) {
 #[library_benchmark]
 #[bench::at_height(setup = copy_data)]
 fn pending_thumbs(run: PathBuf) -> Pending {
+    // The bench's height is a literal: one the thumbnail cache does not hold is a bug in the bench.
+    #[expect(clippy::panic, reason = "a height literal outside the cache's range is a bug in the bench")]
+    let Some(height) = ThumbHeight::new(THUMB_HEIGHT) else {
+        panic!("the bench's height {THUMB_HEIGHT} is out of range")
+    };
     black_box(or_stop(
-        thumbs::pending_in(&run.join("thumbs.sqlite"), &run.join("catalog.sqlite"), THUMB_HEIGHT),
+        thumbs::pending_in(&run.join("thumbs.sqlite"), &run.join("catalog.sqlite"), height),
         "the thumbnail pass's check",
     ))
 }

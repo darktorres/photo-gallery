@@ -1,6 +1,6 @@
 // One thumbnail of a grid row: the ThumbHash placeholder until the thumbnail arrives, the borders (B), the rating, the
-// badge of an animated image, and the selection frame. Its values come from the row (GridRow, from the model's cell
-// roles, by index): it calls no method of the model.
+// badge of an animated image, and the selection frame. Its values come from the row (GridRow, from the model's row, by
+// index): it calls no method of the model.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -9,7 +9,7 @@ import pg.gallery
 
 Item {
     id: cell
-    // The item this cell shows, and its values (see GalleryModel's ROLE_BADGES to ROLE_CONTENT_HEIGHT): the badge, the
+    // The item this cell shows, and its values (the row's value, see GalleryModel's row role): the badge, the
     // rating, whether the borders are marked, the aspect of the image as shown and of the tile, and the borders' box
     // (left as fractions of the image: x, y, width, height).
     required property int item
@@ -26,7 +26,7 @@ Item {
     required property int version
     required property real rowHeight
     // The image URLs, made by the model (the grammar is Rust's: pg_client::image): the thumbnail at the thumbnail height,
-    // and the placeholder (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS). Their image key (GalleryModel's image_key) changes
+    // and the placeholder (the row's thumbUrls and thumbhashUrls). Their image key (GalleryModel's image_key) changes
     // when the file is rewritten or turned, so the cell shows the new image.
     required property string itemThumbUrl
     required property string itemThumbhashUrl

@@ -5,7 +5,8 @@ use core::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QString, QStringList, QVariant,
+    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QMap, QMapPair_QString_QVariant, QModelIndex, QString,
+    QStringList, QVariant,
 };
 use pg_client::grid::{Arrival, Changed, Plan, Shape};
 use pg_client::text;
@@ -14,56 +15,86 @@ use pg_model::grid::Entry;
 use pg_model::size::ThumbHeight;
 
 use super::qobject;
-use super::roles::{
-    CELL_ROLES, ROLE_ASPECTS, ROLE_BADGES, ROLE_BORDERS_MARKED, ROLE_CONTENT_HEIGHT, ROLE_CONTENT_WIDTH,
-    ROLE_CONTENT_X, ROLE_CONTENT_Y, ROLE_HEIGHT, ROLE_IMAGE_ASPECTS, ROLE_RATINGS, ROLE_SPAN, ROLE_THUMB_URLS,
-    ROLE_THUMBHASH_URLS, ROLE_VERSION, cell_roles, qt_int,
-};
+use super::roles::{ROLE_HEIGHT, ROLE_ROW, qt_int};
 use super::state::fresh_entry;
 
 impl qobject::GalleryModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Ok(at) = usize::try_from(index.row()) else { return QVariant::default() };
         let Some(row) = self.grid.rows().get(at) else { return QVariant::default() };
-        // The row's items as Qt's ints, which the item getters take.
-        let (Ok(first), Ok(end)) = (i32::try_from(row.first), i32::try_from(row.first + row.count)) else {
-            return QVariant::default();
-        };
-        let items = first..end;
         match role {
-            ROLE_SPAN => {
-                QVariant::from(&QPointF::new(pg_model::num::count(row.first), pg_model::num::count(row.count)))
-            }
+            ROLE_ROW => QVariant::from(&self.row_value(at)),
             ROLE_HEIGHT => QVariant::from(&row.height),
-            // The version's bits are the tag Qt compares: as the catalog's counter, it wraps where it wraps.
-            ROLE_VERSION => QVariant::from(&(self.grid.version(at).cast_signed())),
-            ROLE_THUMB_URLS => QVariant::from(
-                &items.map(|i| self.thumb_url(&self.image_key(i), self.thumb_height)).collect::<QStringList>(),
-            ),
-            ROLE_THUMBHASH_URLS => {
-                QVariant::from(&items.map(|i| self.thumbhash_url(&self.image_key(i))).collect::<QStringList>())
-            }
-            ROLE_BADGES => QVariant::from(&items.map(|i| self.badge(i)).collect::<QStringList>()),
-            ROLE_RATINGS => QVariant::from(&items.map(|i| self.rating(i)).collect::<QList<i32>>()),
-            ROLE_BORDERS_MARKED => QVariant::from(&items.map(|i| self.border_marked(i)).collect::<QList<bool>>()),
-            ROLE_IMAGE_ASPECTS => QVariant::from(&items.map(|i| self.image_aspect(i)).collect::<QList<f64>>()),
-            ROLE_ASPECTS => QVariant::from(&items.map(|i| self.aspect(i)).collect::<QList<f64>>()),
-            ROLE_CONTENT_X => QVariant::from(&items.map(|i| self.border_box(i).x()).collect::<QList<f64>>()),
-            ROLE_CONTENT_Y => QVariant::from(&items.map(|i| self.border_box(i).y()).collect::<QList<f64>>()),
-            ROLE_CONTENT_WIDTH => QVariant::from(&items.map(|i| self.border_box(i).width()).collect::<QList<f64>>()),
-            ROLE_CONTENT_HEIGHT => QVariant::from(&items.map(|i| self.border_box(i).height()).collect::<QList<f64>>()),
             _ => QVariant::default(),
         }
     }
 
+    /// The row at `at` as one value (`ROLE_ROW`): its items, its version, and the values its cells show, one list per
+    /// field with an entry per item. The items' ints are Qt's, which the item getters take.
+    fn row_value(&self, at: usize) -> QMap<QMapPair_QString_QVariant> {
+        let mut map = QMap::<QMapPair_QString_QVariant>::default();
+        let Some(row) = self.grid.rows().get(at) else { return map };
+        let (Ok(first), Ok(end)) = (i32::try_from(row.first), i32::try_from(row.first + row.count)) else {
+            return map;
+        };
+        let items = first..end;
+        map.insert_clone(&QString::from("first"), &QVariant::from(&first));
+        map.insert_clone(&QString::from("count"), &QVariant::from(&qt_int(row.count)));
+        // The version's bits are the tag Qt compares: as the catalog's counter, it wraps where it wraps.
+        map.insert_clone(&QString::from("version"), &QVariant::from(&(self.grid.version(at).cast_signed())));
+        map.insert_clone(
+            &QString::from("thumbUrls"),
+            &QVariant::from(
+                &items.clone().map(|i| self.thumb_url(&self.image_key(i), self.thumb_height)).collect::<QStringList>(),
+            ),
+        );
+        map.insert_clone(
+            &QString::from("thumbhashUrls"),
+            &QVariant::from(&items.clone().map(|i| self.thumbhash_url(&self.image_key(i))).collect::<QStringList>()),
+        );
+        map.insert_clone(
+            &QString::from("badges"),
+            &QVariant::from(&items.clone().map(|i| self.badge(i)).collect::<QStringList>()),
+        );
+        map.insert_clone(
+            &QString::from("ratings"),
+            &QVariant::from(&items.clone().map(|i| self.rating(i)).collect::<QList<i32>>()),
+        );
+        map.insert_clone(
+            &QString::from("bordersMarked"),
+            &QVariant::from(&items.clone().map(|i| self.border_marked(i)).collect::<QList<bool>>()),
+        );
+        map.insert_clone(
+            &QString::from("imageAspects"),
+            &QVariant::from(&items.clone().map(|i| self.image_aspect(i)).collect::<QList<f64>>()),
+        );
+        map.insert_clone(
+            &QString::from("aspects"),
+            &QVariant::from(&items.clone().map(|i| self.aspect(i)).collect::<QList<f64>>()),
+        );
+        map.insert_clone(
+            &QString::from("contentX"),
+            &QVariant::from(&items.clone().map(|i| self.border_box(i).x()).collect::<QList<f64>>()),
+        );
+        map.insert_clone(
+            &QString::from("contentY"),
+            &QVariant::from(&items.clone().map(|i| self.border_box(i).y()).collect::<QList<f64>>()),
+        );
+        map.insert_clone(
+            &QString::from("contentWidth"),
+            &QVariant::from(&items.clone().map(|i| self.border_box(i).width()).collect::<QList<f64>>()),
+        );
+        map.insert_clone(
+            &QString::from("contentHeight"),
+            &QVariant::from(&items.map(|i| self.border_box(i).height()).collect::<QList<f64>>()),
+        );
+        map
+    }
+
     pub(crate) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        roles.insert(ROLE_SPAN, QByteArray::from("span"));
+        roles.insert(ROLE_ROW, QByteArray::from("row"));
         roles.insert(ROLE_HEIGHT, QByteArray::from("rowHeight"));
-        roles.insert(ROLE_VERSION, QByteArray::from("version"));
-        for (role, name) in CELL_ROLES {
-            roles.insert(role, QByteArray::from(name));
-        }
         roles
     }
 
@@ -199,31 +230,26 @@ impl qobject::GalleryModel {
             }
             Shape::Same => self.as_mut().rust_mut().grid.commit(plan),
         };
-        // A row's new span and its new version can come in one change: the QML reads its items again either way, so
-        // every role that changed is signalled. The cells' lists go first, in a change of their own: the row takes
-        // its values when its span or version arrives, and they must all be in by then.
+        // A row's span, version and height are signalled as they changed: the row (`ROLE_ROW`) carries its items and
+        // version, so a span or version change gives the QML the row whole.
         for update in updates {
             let (top, bottom) =
                 (self.index(qt_int(update.rows.start), 0, &root), self.index(qt_int(update.rows.end) - 1, 0, &root));
+            let mut roles = Vec::with_capacity(2);
             if update.span || update.version {
-                self.as_mut().data_changed(&top, &bottom, &QList::from(cell_roles().as_slice()));
-            }
-            let mut roles = Vec::with_capacity(3);
-            if update.span {
-                roles.push(ROLE_SPAN);
-            }
-            if update.version {
-                roles.push(ROLE_VERSION);
+                roles.push(ROLE_ROW);
             }
             if update.height {
                 roles.push(ROLE_HEIGHT);
             }
-            self.as_mut().data_changed(&top, &bottom, &QList::from(roles.as_slice()));
+            if !roles.is_empty() {
+                self.as_mut().data_changed(&top, &bottom, &QList::from(roles.as_slice()));
+            }
         }
     }
 
-    /// The thumbnails' height changed: each row gets a new version and its cells' lists are read again (the URLs are
-    /// made for the new height), in the same order as `items_changed`.
+    /// The thumbnails' height changed: each row gets a new version, and its row (its cells' URLs are made for the new
+    /// height) is signalled once.
     pub(crate) fn set_thumb_height(mut self: Pin<&mut Self>, height: ThumbHeight) {
         if Some(height) == self.thumb_height {
             return;
@@ -232,19 +258,17 @@ impl qobject::GalleryModel {
         let rows = self.as_mut().rust_mut().grid.touch_all();
         for row in 0..rows {
             let index = self.index(qt_int(row), 0, &QModelIndex::default());
-            self.as_mut().data_changed(&index, &index, &QList::from(cell_roles().as_slice()));
-            self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
+            self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_ROW][..]));
         }
     }
 
-    /// Items changed (rated, turned, marked) without changing shape: the cells of their rows read them again (the
-    /// cells' lists, then `ROLE_VERSION`).
+    /// Items changed (rated, turned, marked) without changing shape: their rows are signalled once, with their new
+    /// version (`ROLE_ROW`).
     pub(super) fn items_changed(mut self: Pin<&mut Self>, items: &[usize]) {
         let rows = self.as_mut().rust_mut().grid.touch(items);
         for row in rows {
             let index = self.index(qt_int(row), 0, &QModelIndex::default());
-            self.as_mut().data_changed(&index, &index, &QList::from(cell_roles().as_slice()));
-            self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
+            self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_ROW][..]));
         }
     }
 

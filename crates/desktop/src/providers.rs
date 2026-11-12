@@ -23,6 +23,7 @@ use ffi::{ImageKind, PixelFormat, Pixels};
 
 use pg_client::image::{ImageRequest, Provider};
 use pg_model::image::ImageKey;
+use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
 use pg_render::display::Rgba;
 
@@ -40,7 +41,7 @@ fn failed() -> Pixels {
 /// A thumbnail `height` px high of the key's file (`App::thumbnail`), decoded, or turned by its turns. One made on a
 /// miss moves to the cache's writer once decoded. A cached one that doesn't decode is dropped from the cache, so that
 /// the next pass at its height makes it anew from the original.
-fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
+fn thumbnail(key: ImageKey, height: ThumbHeight) -> anyhow::Result<Pixels> {
     let app = app::get();
     let file = key.file;
     JPEG.with_borrow_mut(|jpeg| {
@@ -109,7 +110,7 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         return failed();
     };
     let result = match request {
-        ImageRequest::Thumb { key, height } => thumbnail(key, height.get()),
+        ImageRequest::Thumb { key, height } => thumbnail(key, height),
         ImageRequest::Thumbhash { key } => {
             app::get().images().placeholder(key.file).map_err(anyhow::Error::from).and_then(upload)
         }

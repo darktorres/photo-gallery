@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use pg_jobs::pipeline;
+use pg_model::size::ThumbHeight;
 use pg_platform::priority::Priority;
 
 use crate::dups;
@@ -83,9 +84,9 @@ pub(crate) enum Command {
     },
     /// Thumbnails at the given grid height for every imported file (the app does this in the background).
     Thumbs {
-        /// Grid row height in device pixels; any value, chosen at runtime.
-        #[arg(long)]
-        height: u32,
+        /// Grid row height in device pixels: the thumbnail cache's heights, 16 to 2048.
+        #[arg(long, value_parser = thumb_height)]
+        height: ThumbHeight,
         /// Set the cache's size limit in GB, kept in the cache: the app keeps to it too. Without it, the limit
         /// stays as it is (50 GB for a new cache).
         #[arg(long = "cap-gb", value_parser = cap_gb)]
@@ -134,6 +135,11 @@ pub(crate) enum Command {
 }
 
 /// `--cap-gb`: a number of GB above zero, as the thumbnail cache's cap.
+fn thumb_height(text: &str) -> Result<ThumbHeight, String> {
+    let px: u32 = text.trim().parse().map_err(|_| format!("{text} isn't a number of pixels"))?;
+    ThumbHeight::new(px).ok_or_else(|| format!("{text} px isn't a height the thumbnail cache holds (16 to 2048)"))
+}
+
 fn cap_gb(text: &str) -> Result<pg_thumbcache::Cap, String> {
     let gb: f64 = text.trim().parse().map_err(|_| format!("{text} isn't a number of GB"))?;
     pg_thumbcache::Cap::from_gb(gb)

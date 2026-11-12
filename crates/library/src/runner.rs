@@ -558,7 +558,6 @@ impl Pass<Cx<'_>> for Thumbs {
         let Some(height) = cx.inner.heights.get() else {
             return Ok(Step::Done);
         };
-        let height = height.get();
         let opts = Options::new(Priority::Idle);
         let s = pg_thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
         if s.cache_full {
@@ -701,7 +700,10 @@ mod tests {
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
         run(&mut Thumbs, &inner);
-        assert_eq!(sink.posted(), [Notice::CacheFull { height: 64, made: 0 }]);
+        assert_eq!(
+            sink.posted(),
+            [Notice::CacheFull { height: ThumbHeight::new(64).expect("a height in range"), made: 0 }]
+        );
         std::fs::remove_file(dir.join("images").join("a.png")).unwrap();
         pg_scan::scan(&mut Catalog::open(&catalog_path, PATH_RULES).unwrap(), &root, &Control::new()).unwrap();
         sink.take();

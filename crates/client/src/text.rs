@@ -556,7 +556,8 @@ mod tests {
         let p = Progress { phase: Phase::Import, done: 1500, total: 4000, failed: 2, bytes: 0, elapsed };
         assert_eq!(pass_status(&p, rules), "Importing 1,500 of 4,000 · 100/s · 25 s left");
         assert_eq!(pass_failed(&p), "2 failed");
-        let thumbs = Progress { phase: Phase::Thumbs { height: 256 }, failed: 0, ..p.clone() };
+        let height = pg_model::size::ThumbHeight::new(256).expect("a height in range");
+        let thumbs = Progress { phase: Phase::Thumbs { height }, failed: 0, ..p.clone() };
         assert_eq!(pass_status(&thumbs, rules), "Thumbnails at 256 px 1,500 of 4,000 · 100/s · 25 s left");
         assert_eq!(pass_failed(&thumbs), "");
         let root = rules.parse(r"D:\Photos").unwrap();

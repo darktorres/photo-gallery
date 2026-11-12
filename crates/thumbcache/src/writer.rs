@@ -11,6 +11,7 @@ use anyhow::Result;
 use pg_jobs::events::Bus;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
+use pg_model::size::ThumbHeight;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use crate::config::TOUCH_FLUSH;
@@ -86,7 +87,7 @@ pub(crate) enum Op {
     /// A batch, given back with the answer: its buffers are the caller's to reuse.
     Put {
         thumbs: Vec<Thumb>,
-        keep_height: Option<u32>,
+        keep_height: Option<ThumbHeight>,
         reply: Sender<(Result<bool>, Vec<Thumb>)>,
     },
     /// One made on demand, stored in the background.
@@ -107,7 +108,7 @@ pub(crate) enum Op {
     /// One height's thumbnail of the file is dropped, and that height's watermark with it.
     ForgetHeight {
         file_id: FileId,
-        height: u32,
+        height: ThumbHeight,
         reply: Sender<Result<()>>,
     },
     /// A pass read from `snapshot` went through all of its work: every file is checked up to `through`.
@@ -285,7 +286,7 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
                     "INSERT INTO checked(height, seq, evictions) VALUES (?1, ?2, ?3)
                      ON CONFLICT(height) DO UPDATE SET seq = excluded.seq
                      WHERE checked.evictions = excluded.evictions",
-                    params![snapshot.height, through, snapshot.evictions],
+                    params![snapshot.height.get(), through, snapshot.evictions],
                 )
                 .map(drop)
                 .map_err(anyhow::Error::from);
@@ -305,7 +306,12 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
 /// what's needed, then write. Reading and writing in one write transaction is what keeps two writers (the app and
 /// `gallery thumbs`) from both seeing room for their batch, and from failing with SQLITE_BUSY_SNAPSHOT. Dropping
 /// the replaced entries first keeps eviction from counting them twice (replaced, then evicted).
-fn put(conn: &mut Connection, thumbs: &[Thumb], keep_height: Option<u32>, touches: &mut Touches) -> Result<bool> {
+fn put(
+    conn: &mut Connection,
+    thumbs: &[Thumb],
+    keep_height: Option<ThumbHeight>,
+    touches: &mut Touches,
+) -> Result<bool> {
     let incoming: i64 = thumbs.iter().map(|t| i64::try_from(t.data.len()).unwrap_or(i64::MAX)).sum();
     // Far over the cap: down to a slice of it first, a slice per transaction.
     loop {
@@ -326,7 +332,7 @@ fn put(conn: &mut Connection, thumbs: &[Thumb], keep_height: Option<u32>, touche
     {
         let mut replaced = tx.prepare_cached("DELETE FROM entries WHERE file_id = ?1 AND height = ?2")?;
         for t in thumbs {
-            replaced.execute(params![t.file_id.get(), t.height])?;
+            replaced.execute(params![t.file_id.get(), t.height.get()])?;
         }
     }
     let (total, cap_bytes) = total_and_cap(&tx)?;
@@ -361,7 +367,7 @@ fn put(conn: &mut Connection, thumbs: &[Thumb], keep_height: Option<u32>, touche
             let id: i64 = entry.query_row(
                 params![
                     file_id.get(),
-                    height,
+                    height.get(),
                     source.mtime,
                     source.rotation.get(),
                     FORMAT_JPEG,
@@ -391,14 +397,14 @@ const FORGET_WATERMARK: &str = "INSERT INTO checked(height, seq, evictions) VALU
 /// Delete the least recently used entries, sparing `keep_height`, until `target` bytes are freed or none is left;
 /// returns the bytes freed. The heights evicted from forget how far they were checked (`checked`), and count the
 /// eviction, so a pass that read its work before it doesn't store its watermark.
-fn evict(tx: &Transaction, target: i64, keep_height: Option<u32>) -> Result<i64> {
+fn evict(tx: &Transaction, target: i64, keep_height: Option<ThumbHeight>) -> Result<i64> {
     let mut victims = Vec::new();
     let mut heights = BTreeSet::new();
     let mut freed = 0;
     {
         let mut lru =
             tx.prepare_cached("SELECT id, bytes, height FROM entries WHERE height != ?1 ORDER BY last_used")?;
-        let mut rows = lru.query([keep_height.map_or(-1, i64::from)])?;
+        let mut rows = lru.query([keep_height.map_or(-1, |h| i64::from(h.get()))])?;
         while freed < target {
             let Some(r) = rows.next()? else { break };
             victims.push(r.get::<_, i64>(0)?);
@@ -419,10 +425,10 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<u32>) -> Result<i64>
 
 /// Drop the entry of `file_id` at `height`, and that height's watermark (`checked`), as an eviction does
 /// ([`crate::ThumbCache::forget_height`]). The entry's JPEG goes with it (the trigger on `entries`).
-fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: u32) -> Result<()> {
+fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: ThumbHeight) -> Result<()> {
     let tx = conn.transaction()?;
-    tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height])?;
-    tx.execute(FORGET_WATERMARK, [height])?;
+    tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height.get()])?;
+    tx.execute(FORGET_WATERMARK, [height.get()])?;
     tx.commit()?;
     Ok(())
 }

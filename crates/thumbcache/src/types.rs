@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, Key, KeyBuf, Notice, StartOverReason, tidy};
 use pg_model::path::{FilePath, WorkList};
+use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
 
 pub const FORMAT_JPEG: &str = "jpeg";
@@ -21,7 +22,7 @@ pub struct Source {
 pub struct Thumb {
     pub file_id: FileId,
     /// The requested grid height (the image may be smaller).
-    pub height: u32,
+    pub height: ThumbHeight,
     pub source: Source,
     pub data: Vec<u8>,
 }
@@ -49,7 +50,7 @@ pub struct Pending {
 /// Where a pass's work list was read: the catalog's change sequence and the height's evictions at that moment.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Snapshot {
-    pub height: u32,
+    pub height: ThumbHeight,
     pub seq: i64,
     pub evictions: i64,
     /// Only the files changed since the last complete pass were read (`false`: every file).

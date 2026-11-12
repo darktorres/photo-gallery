@@ -47,6 +47,12 @@ impl TryFrom<u32> for RowHeight {
     }
 }
 
+impl std::fmt::Display for RowHeight {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl From<RowHeight> for u32 {
     fn from(row: RowHeight) -> u32 {
         row.0
@@ -59,6 +65,9 @@ impl From<RowHeight> for u32 {
 pub struct ThumbHeight(u32);
 
 impl ThumbHeight {
+    /// The thumbnail height of a fresh window's row: the default row height (220) at scale 1.
+    pub const DEFAULT: ThumbHeight = ThumbHeight(220);
+
     /// The thumbnail height `px`, or `None` if it is outside [`THUMB_HEIGHT`].
     pub fn new(px: u32) -> Option<ThumbHeight> {
         THUMB_HEIGHT.contains(&px).then_some(ThumbHeight(px))
@@ -80,6 +89,12 @@ impl TryFrom<u32> for ThumbHeight {
     type Error = String;
     fn try_from(px: u32) -> Result<ThumbHeight, String> {
         ThumbHeight::new(px).ok_or_else(|| format!("thumbnail height {px} is outside {THUMB_HEIGHT:?}"))
+    }
+}
+
+impl std::fmt::Display for ThumbHeight {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

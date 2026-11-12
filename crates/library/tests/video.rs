@@ -242,7 +242,8 @@ fn videos() {
         events,
     )
     .unwrap();
-    let made = pg_thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
+    let sixty_four = pg_model::size::ThumbHeight::new(64).expect("a height in range");
+    let made = pg_thumbs::run(&cache, &dir.join("catalog.sqlite"), sixty_four, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }
 

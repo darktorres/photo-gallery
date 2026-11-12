@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::num;
 use crate::rules::Path as RulePath;
+use crate::size::ThumbHeight;
 
 /// The phase a pass is in, and what it works on.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,7 +21,7 @@ pub enum Phase {
     Borders,
     /// The thumbnails made at this height.
     Thumbs {
-        height: u32,
+        height: ThumbHeight,
     },
 }
 

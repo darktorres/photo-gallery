@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
+use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
 use pg_platform::sqlite::attach_bytes;
 use rusqlite::{Connection, OptionalExtension};
@@ -19,7 +20,7 @@ use crate::types::{Pending, Snapshot, Source, ThumbWork};
 /// One read transaction over both files: the catalog's change number, the height's `checked` row and the work
 /// list are one moment's. With a `checked` number no later than the catalog's (a catalog restored from a copy
 /// would be behind), only the files changed since are read, through `files_seq`; otherwise every file.
-pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> {
+pub fn pending_in(cache: &Path, catalog: &Path, height: ThumbHeight) -> Result<Pending> {
     let conn = Connection::open(cache)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
@@ -28,13 +29,15 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
     let tx = conn.unchecked_transaction()?;
     let seq: i64 = tx.query_row("SELECT seq FROM cat.thumb_clock", [], |r| r.get(0))?;
     let (checked, evictions): (Option<i64>, i64) = tx
-        .query_row("SELECT seq, evictions FROM checked WHERE height = ?1", [height], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_row("SELECT seq, evictions FROM checked WHERE height = ?1", [height.get()], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .optional()?
         .unwrap_or((None, 0));
     let since = checked.filter(|&c| c <= seq);
     let values = match since {
-        Some(c) => vec![i64::from(height), c],
-        None => vec![i64::from(height)],
+        Some(c) => vec![i64::from(height.get()), c],
+        None => vec![i64::from(height.get())],
     };
     // The folder ids' table is sized up front. The items are not: counting them first would scan the view.
     let folders: i64 = tx.query_row("SELECT max_id FROM cat.thumb_folders", [], |r| r.get(0))?;

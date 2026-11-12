@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::refusal::RefusedReason;
 use crate::rules::Path as RulePath;
+use crate::size::ThumbHeight;
 use crate::write::WriteKind;
 
 /// How much a notice matters.
@@ -376,7 +377,7 @@ pub enum Notice {
     },
     /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
     CacheFull {
-        height: u32,
+        height: ThumbHeight,
         made: u64,
     },
     /// A crop job that ran to the end of its request: the folder its copies went to, and how it went.
@@ -1166,7 +1167,7 @@ impl Notice {
             Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 2 },
             Notice::RoundFailed { error: error() },
             Notice::RoundPanicked { message: "index out of bounds".into() },
-            Notice::CacheFull { height: 220, made: 40 },
+            Notice::CacheFull { height: crate::size::ThumbHeight::DEFAULT, made: 40 },
             Notice::Cropped { folder: r"D:\Crops".into(), saved: 5, skipped: 1, failed: 1, first_error: Some(failure) },
             Notice::CropFailed { error: error() },
             Notice::CatalogRebuilt {

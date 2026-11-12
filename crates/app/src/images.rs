@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use pg_catalog::ledger::Failure;
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version, View};
+use pg_model::size::ThumbHeight;
 use pg_model::state::FileSource;
 use pg_model::turns::Turns;
 use pg_render::display::{self, Rgba, Shown};
@@ -40,12 +41,12 @@ fn source_of(v: Version) -> thumbs::Source {
 /// What a thumbnail request found, as the catalog has the file.
 enum Found {
     /// In the cache at this height: read into the caller's buffer.
-    Kept(u32),
+    Kept(ThumbHeight),
     /// Made from the original.
     Made(Vec<u8>),
     /// The original can't be read (offline), or doesn't decode. The height of the best smaller thumbnail the cache keeps
     /// of the file as it is, if it was read into the caller's buffer.
-    Offline(Error, Option<u32>),
+    Offline(Error, Option<ThumbHeight>),
 }
 
 /// A thumbnail, as [`Images::thumbnail`] finds it.
@@ -56,14 +57,14 @@ pub struct Thumbnail {
     /// cache's, in the buffer [`Images::thumbnail`] was given.
     pub made: Option<(Vec<u8>, Keep)>,
     /// For a cache's: the height it is kept at, to drop it ([`Images::forget_thumb`]) when it doesn't decode.
-    pub kept_at: Option<u32>,
+    pub kept_at: Option<ThumbHeight>,
 }
 
 /// Where the cache keeps a thumbnail made on a miss ([`Images::keep`]).
 #[derive(Clone, Copy, Debug)]
 pub struct Keep {
     pub file_id: FileId,
-    pub height: u32,
+    pub height: ThumbHeight,
     pub source: thumbs::Source,
 }
 
@@ -107,7 +108,7 @@ impl Images {
 
     /// A thumbnail of the file as `src` has it that doesn't decode: recorded in the thumbnails' ledger (once while it is
     /// recent), and what the request found.
-    fn undecodable(&self, file_id: FileId, src: &FileSource, e: MakeError, kept: Option<u32>) -> Found {
+    fn undecodable(&self, file_id: FileId, src: &FileSource, e: MakeError, kept: Option<ThumbHeight>) -> Found {
         let error = made_error(e);
         if let Error::Undecodable(text) = &error {
             let state = &src.state;
@@ -169,7 +170,7 @@ impl Images {
     ///
     /// A kept one is read into `jpeg`, a buffer the caller keeps from one thumbnail to the next, so that showing a cached
     /// thumbnail makes no buffer for its bytes.
-    pub fn thumbnail(&self, key: ImageKey, height: u32, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
+    pub fn thumbnail(&self, key: ImageKey, height: ThumbHeight, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
         let (file_id, named) = (key.file, key.version);
         let kept = |turns, at| Thumbnail { turns, made: None, kept_at: Some(at) };
         // The height of a smaller one of the file as named, read into `jpeg`.
@@ -206,7 +207,7 @@ impl Images {
                 // A video: its poster frame.
                 self.makers.with_maker(|m| {
                     Ok(m.load_frame(&path, at, current.rotation)
-                        .and_then(|()| m.encode_frame(pg_model::num::index(height))))
+                        .and_then(|()| m.encode_frame(pg_model::num::index(height.get()))))
                 })?
             } else {
                 // Read into the maker, which keeps the buffer for the next file.
@@ -214,7 +215,8 @@ impl Images {
                     Ok(()) => {}
                     Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
-                self.makers.with_maker(|m| Ok(m.make_from_file(pg_model::num::index(height), current.rotation)))?
+                self.makers
+                    .with_maker(|m| Ok(m.make_from_file(pg_model::num::index(height.get()), current.rotation)))?
             };
             Ok(match made {
                 Ok(made) => Found::Made(made),
@@ -249,7 +251,7 @@ impl Images {
 
     /// Drop the cache's thumbnail of `file_id` at `height`, one that doesn't decode: the next pass at that height makes
     /// it anew from the original ([`thumbs::ThumbCache::forget_height`]).
-    pub fn forget_thumb(&self, file_id: FileId, height: u32) -> Result<()> {
+    pub fn forget_thumb(&self, file_id: FileId, height: ThumbHeight) -> Result<()> {
         self.thumbs.forget_height(file_id, height).map_err(failed)
     }
 
@@ -321,6 +323,11 @@ impl Images {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The 100-pixel thumbnails the tests ask for.
+    fn hundred() -> ThumbHeight {
+        ThumbHeight::new(100).expect("a height in the cache's range")
+    }
     use crate::app::App;
     use crate::config::Config;
     use pg_catalog::fixture::{self, File};
@@ -351,7 +358,7 @@ mod tests {
             Ok(_) => panic!("an image of a file that isn't there"),
         }
         let key = ImageKey { file: FileId::new(1), version: None };
-        match app.images().thumbnail(key, 100, &mut Vec::new()) {
+        match app.images().thumbnail(key, hundred(), &mut Vec::new()) {
             Err(Error::Original(_)) => {}
             Err(e) => panic!("not Error::Original: {e:?}"),
             Ok(_) => panic!("a thumbnail of a file that isn't there"),
@@ -400,7 +407,7 @@ mod tests {
             .unwrap();
         let key = ImageKey { file: FileId::new(1), version: None };
         for _ in 0..2 {
-            match app.images().thumbnail(key, 100, &mut Vec::new()) {
+            match app.images().thumbnail(key, hundred(), &mut Vec::new()) {
                 Err(Error::Undecodable(_)) => {}
                 Err(e) => panic!("not Error::Undecodable: {e:?}"),
                 Ok(_) => panic!("a thumbnail of a file that doesn't decode"),
@@ -409,7 +416,7 @@ mod tests {
         assert_eq!(ledger_until(&app, 1), [FileId::new(1)]);
         assert_eq!(app.images().recent.lock().unwrap().len(), 1, "asked twice, sent once");
         std::fs::write(&file, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
-        assert!(app.images().thumbnail(key, 100, &mut Vec::new()).unwrap().made.is_some());
+        assert!(app.images().thumbnail(key, hundred(), &mut Vec::new()).unwrap().made.is_some());
         assert!(ledger_until(&app, 0).is_empty());
         app.stop().unwrap();
         app.shutdown();
@@ -451,7 +458,7 @@ mod tests {
         let (app, images, dir) = app_with("thumb-not-recorded", 1, "gone.jpg");
         let thumb = |id| {
             let key = ImageKey { file: FileId::new(id), version: None };
-            app.images().thumbnail(key, 100, &mut Vec::new())
+            app.images().thumbnail(key, hundred(), &mut Vec::new())
         };
         assert!(matches!(thumb(1), Err(Error::Original(_))));
         assert!(matches!(thumb(2), Err(Error::UnknownFile(_))));
@@ -481,17 +488,18 @@ mod tests {
         std::fs::write(images.join("bad.png"), b"not a picture").unwrap();
         let file = FileId::new(ID);
         let source = thumbs::Source { mtime: 0, rotation: Turns::NONE };
-        app.images().keep(Keep { file_id: file, height: 50, source }, b"a smaller thumbnail".to_vec());
+        let fifty = ThumbHeight::new(50).expect("a height in range");
+        app.images().keep(Keep { file_id: file, height: fifty, source }, b"a smaller thumbnail".to_vec());
         let deadline = Instant::now() + Duration::from_secs(10);
-        while app.images().thumbs.get_nearest_into(file, 50, source, &mut Vec::new()).unwrap().is_none() {
+        while app.images().thumbs.get_nearest_into(file, fifty, source, &mut Vec::new()).unwrap().is_none() {
             assert!(Instant::now() < deadline, "the cache keeps the smaller thumbnail");
             std::thread::sleep(Duration::from_millis(20));
         }
         let feed = pg_log::subscribe();
         for _ in 0..3 {
             let mut jpeg = Vec::new();
-            let shown = app.images().thumbnail(ImageKey { file, version: None }, 100, &mut jpeg).unwrap();
-            assert_eq!((shown.kept_at, jpeg.as_slice()), (Some(50), &b"a smaller thumbnail"[..]));
+            let shown = app.images().thumbnail(ImageKey { file, version: None }, hundred(), &mut jpeg).unwrap();
+            assert_eq!((shown.kept_at, jpeg.as_slice()), (Some(fifty), &b"a smaller thumbnail"[..]));
         }
         assert_eq!(ledger_now(&app), [file]);
         let logged =

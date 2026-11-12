@@ -283,7 +283,8 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
         .unwrap(),
     ));
     // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
-    let made = pg_thumbs::run(thumbs, &catalog_path, 64, &opts, &ctl).unwrap();
+    let sixty_four = pg_model::size::ThumbHeight::new(64).expect("a height in range");
+    let made = pg_thumbs::run(thumbs, &catalog_path, sixty_four, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     c.set_rating(FileId::new(jpeg_id), Rating::new(4), true).unwrap();

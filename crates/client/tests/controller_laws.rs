@@ -9,8 +9,9 @@
 
 use pg_client::controller::listing as listing_event;
 use pg_client::controller::size;
-use pg_client::controller::{Command, Controller, Event};
+use pg_client::controller::{Command, Controller, Event, Start};
 use pg_client::keys::Grid;
+use pg_model::ids::FileId;
 use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
 use pg_model::rules::Merged;
@@ -24,7 +25,7 @@ fn row(px: u32) -> RowHeight {
 
 /// A controller that shows `row` 200 and has saved 200, with no scale yet.
 fn controller(listing: Listing) -> Controller {
-    Controller::new(listing, row(200), row(200))
+    Controller::new(Start::new(listing, row(200), row(200)))
 }
 
 /// A controller at scale 1 (the window's scale arrives as the first size event, as the desktop sends it).
@@ -110,9 +111,9 @@ proptest! {
 
     /// The start is over exactly once, on the event that completes it, whichever order the tree and the list come in.
     #[test]
-    fn the_start_finishes_once_whatever_the_order(order in 0usize..3, count in 1usize..12, last in 0usize..12) {
+    fn the_start_finishes_once_whatever_the_order(order in 0usize..3, count in 1usize..12) {
         let tree = Event::TreeLoaded { folder_known: true };
-        let shown = Event::ListShown { count, last_file: (last < count).then_some(last), generation: 0 };
+        let shown = Event::ListShown { count, generation: None };
         let placed = Event::ListPositioned;
         // The list is shown before it is placed; the tree may come before, between or after them.
         let events = match order {
@@ -150,7 +151,7 @@ proptest! {
     #[test]
     fn item_keys_act_on_the_current_item_only(key in item_key(), item in 0usize..50) {
         let mut c = controller(listing(""));
-        c.update(0, Event::ListShown { count: 60, last_file: None, generation: 0 });
+        c.update(0, Event::ListShown { count: 60, generation: None });
         prop_assert!(c.update(1, Event::Key(key)).is_empty());
         c.update(2, Event::CurrentChanged(Some(item)));
         let acted = c.update(3, Event::Key(key));
@@ -207,11 +208,59 @@ fn saves_and_lists(commands: &[Command]) -> (usize, usize, usize) {
     )
 }
 
-/// A session save waiting at the close is made, with the last file's.
+/// A controller whose start is over: the tree and the first list are in and placed.
+fn started(listing: Listing) -> Controller {
+    let mut c = controller(listing);
+    c.update(0, Event::TreeLoaded { folder_known: true });
+    c.update(0, Event::ListShown { count: 10, generation: None });
+    c.update(0, Event::ListPositioned);
+    assert!(c.started());
+    c
+}
+
+/// Nothing is saved before the start is over: a flush then makes no session save and no last-file save, so a start
+/// option never becomes the session's.
+#[test]
+fn nothing_is_saved_before_the_start_is_over() {
+    let mut c = controller(listing(""));
+    c.update(0, Event::CurrentChanged(Some(3)));
+    let flushed = c.update(1, Event::Flush);
+    assert_eq!(saves_and_lists(&flushed), (0, 0, 0), "{flushed:?}");
+}
+
+/// The session's last file is selected in the first list shown: the gate asks, and the model selects it if it is there.
+#[test]
+fn the_last_file_is_restored_in_the_first_list_shown() {
+    let start = Start { last_file: Some(FileId::new(5)), ..Start::new(listing(""), row(200), row(200)) };
+    let mut c = Controller::new(start);
+    let out = c.update(0, Event::ListShown { count: 10, generation: None });
+    assert!(out.contains(&Command::RestoreSelection(FileId::new(5))), "{out:?}");
+}
+
+/// A view applied at the start is remembered once the start is over, and not before: the view is what the session is
+/// from then on. Without an applied view the start saves nothing.
+#[test]
+fn an_applied_view_is_remembered_once_the_start_is_over() {
+    let applied = Start { apply_view: true, ..Start::new(listing(""), row(200), row(200)) };
+    let mut c = Controller::new(applied);
+    let mut out = c.update(0, Event::TreeLoaded { folder_known: true });
+    out.extend(c.update(0, Event::ListShown { count: 10, generation: None }));
+    out.extend(c.update(0, Event::ListPositioned));
+    let saved = out.iter().position(|c| matches!(c, Command::SaveSession(_)));
+    let started = out.iter().position(|c| matches!(c, Command::Started));
+    assert!(saved.is_some() && saved < started, "remembered before Started: {out:?}");
+    let mut plain = controller(listing(""));
+    let mut out = plain.update(0, Event::TreeLoaded { folder_known: true });
+    out.extend(plain.update(0, Event::ListShown { count: 10, generation: None }));
+    out.extend(plain.update(0, Event::ListPositioned));
+    assert!(!out.iter().any(|c| matches!(c, Command::SaveSession(_))), "{out:?}");
+}
+
+/// A session save waiting at the close is made, with the last file's. Only once the start is over: before it, the
+/// listing is the start's, and nothing is saved.
 #[test]
 fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
-    let mut c = controller(listing(""));
-    c.update(0, Event::ListShown { count: 10, last_file: None, generation: 0 });
+    let mut c = started(listing(""));
     c.update(1, Event::CurrentChanged(Some(3)));
     let flushed = c.update(2, Event::Flush);
     assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
@@ -220,7 +269,7 @@ fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
 /// A query typed within its pause of the close is saved with the session, and no list is shown for a closing window.
 #[test]
 fn a_pending_query_is_saved_at_the_close_without_a_list() {
-    let mut c = controller(listing(""));
+    let mut c = started(listing(""));
     let query = Query { name: "beach".into(), ..Query::default() };
     c.update(0, Event::Listing(listing_event::Event::QueryChanged(query.clone())));
     c.update(0, Event::QueryEdited);
@@ -237,8 +286,7 @@ fn a_pending_query_is_saved_at_the_close_without_a_list() {
 /// A query and a session save both waiting make one session save and one last-file save, not one each.
 #[test]
 fn a_pending_query_and_session_save_make_one_save_at_the_close() {
-    let mut c = controller(listing(""));
-    c.update(0, Event::ListShown { count: 10, last_file: None, generation: 0 });
+    let mut c = started(listing(""));
     c.update(1, Event::CurrentChanged(Some(3)));
     c.update(2, Event::Listing(listing_event::Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));
     c.update(2, Event::QueryEdited);

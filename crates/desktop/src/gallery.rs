@@ -26,19 +26,33 @@ use core::pin::Pin;
 use std::cell::{Cell, RefCell};
 
 use cxx_qt::{CxxQtThread, Threading};
+use pg_model::ids::FileId;
 
 thread_local! {
     /// The model's thread handle, kept at `register`. Only the GUI thread touches it.
     static MODEL: RefCell<Option<CxxQtThread<qobject::GalleryModel>>> = const { RefCell::new(None) };
-    /// The generation (`Command::OpenList`'s) of the list the model put in last, 0 before any: written by
+    /// The generation (`Command::OpenList`'s) of the list the model put in last, `None` before any: written by
     /// `GalleryModel::apply` right after it swaps the entries in, and read by `Shell::list_shown` on the same thread,
     /// since the shell reaches the model only through `post`, queued. The one record of what is applied.
-    pub(crate) static APPLIED: Cell<u64> = const { Cell::new(0) };
+    pub(crate) static APPLIED: Cell<Option<u64>> = const { Cell::new(None) };
+    /// The file the window shows (the viewer's, while it is open, else the selection's), as the model last set it:
+    /// written where either changes (`publish_shown`), read where the session's last file is saved (`shown_file`).
+    static SHOWN: Cell<Option<FileId>> = const { Cell::new(None) };
 }
 
-/// The generation of the list the grid shows now ([`APPLIED`]); 0 before any was shown.
-pub(crate) fn applied() -> u64 {
+/// The generation of the list the grid shows now ([`APPLIED`]); `None` before any was shown.
+pub(crate) fn applied() -> Option<u64> {
     APPLIED.with(Cell::get)
+}
+
+/// The file the window shows now, `None` for none ([`SHOWN`]).
+pub(crate) fn shown_file() -> Option<FileId> {
+    SHOWN.with(Cell::get)
+}
+
+/// Record the file the window shows, from the model (`GalleryModel::refresh_derived` and `refresh_viewed`).
+pub(super) fn publish_shown(file: Option<FileId>) {
+    SHOWN.with(|shown| shown.set(file));
 }
 
 /// Carry out `run` on the grid model, after the events already queued to it: the controller's model commands (rate,

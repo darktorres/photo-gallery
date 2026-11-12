@@ -1,38 +1,31 @@
 //! A recorded session, and its replay (S-12.18). The desktop writes one JSON line per record when `PG_RECORD` names a
-//! file: first `Init` (the listing, the row height and the scale the controller started with), then one `Update` per
-//! event, with the time it was applied at and the commands it gave. `replay` starts a controller from `Init`, applies
+//! file: first `Init` (the start the controller was made from), then one `Update` per event, with the time it was
+//! applied at and the commands it gave. `replay` starts a controller from `Init`, applies
 //! each `Update`'s event at its time, and checks that the commands are the recorded ones. Time is an input, so nothing
 //! here reads a clock.
 
-use pg_model::size::RowHeight;
-use pg_model::view::Listing;
 use serde::{Deserialize, Serialize};
 
-use super::{Command, Controller, Event};
+use super::{Command, Controller, Event, Start};
 
 /// The recording's format: bumped whenever a record's shape changes, so a file of another format is refused with its
 /// version (`parse`), not with a parse error. A file with no `format` on its `Init` is format 1.
-pub const FORMAT: u32 = 2;
+pub const FORMAT: u32 = 3;
 
 /// One line of a recording.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Record {
-    /// The controller's start: the format it is written in, its listing, the row height it shows, and the row height the
-    /// prefs saved. The window's scale comes as the first size event, as it does live.
-    Init { format: u32, listing: Listing, row_height: RowHeight, saved_row: RowHeight },
+    /// The controller's start: the format it is written in, and the start it was made from. The window's scale comes as
+    /// the first size event, as it does live.
+    Init { format: u32, start: Start },
     /// An event, applied at `now_ms`, and the commands it gave.
     Update { now_ms: u64, event: Event, commands: Vec<Command> },
 }
 
 /// A record for the controller's start, as `Controller::new` takes it.
 pub fn init(controller: &Controller) -> Record {
-    Record::Init {
-        format: FORMAT,
-        listing: controller.listing().clone(),
-        row_height: controller.grid_size().row_height(),
-        saved_row: controller.grid_size().saved_row(),
-    }
+    Record::Init { format: FORMAT, start: controller.initial().clone() }
 }
 
 /// The records of a recording's text, one per line. A recording of another format is refused by its version, before its
@@ -64,13 +57,13 @@ pub fn replay(records: &[Record]) -> Result<usize, String> {
     let Some((first, rest)) = records.split_first() else {
         return Err("an empty recording".to_string());
     };
-    let Record::Init { format, listing, row_height, saved_row } = first else {
+    let Record::Init { format, start } = first else {
         return Err("a recording starts with its Init record".to_string());
     };
     if *format != FORMAT {
         return Err(format!("recorded by format {format}, this build reads {FORMAT}"));
     }
-    let mut controller = Controller::new(listing.clone(), *row_height, *saved_row);
+    let mut controller = Controller::new(start.clone());
     for (n, record) in rest.iter().enumerate() {
         let Record::Update { now_ms, event, commands } = record else {
             return Err(format!("record {}: a second Init", n + 1));

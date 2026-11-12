@@ -89,7 +89,8 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         | Notice::ReloadFailed { error }
         | Notice::FacetsFailed { error }
         | Notice::TreeFailed { error }
-        | Notice::SessionNotSaved { error } => {
+        | Notice::SessionNotSaved { error }
+        | Notice::SessionNotRead { error } => {
             a.set("error", error.clone());
         }
         Notice::RoundPanicked { message } => {

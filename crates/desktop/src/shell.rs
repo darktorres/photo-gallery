@@ -31,7 +31,7 @@ use pg_model::rules::Path as RulePath;
 use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
 use pg_model::view::SavedView;
 
-use crate::{app, command_line, controller, deadline, folders, gallery, keymap, library};
+use crate::{app, controller, deadline, folders, gallery, keymap, library};
 
 impl Default for ShellRust {
     /// The controller's start, mirrored: the listing the window starts with, and the size's defaults (the window sets
@@ -39,18 +39,19 @@ impl Default for ShellRust {
     fn default() -> ShellRust {
         let listing = controller::listing();
         let size = controller::with(|c| *c.grid_size());
+        let panels = controller::with(|c| c.panels().clone());
         ShellRust {
             folder: QString::from(&pg_platform::native::PATH_RULES.display_merged(&listing.folder)),
             recursive: listing.recursive,
             folder_kind: folders::listing_kind(&listing.folder, listing.recursive),
             descending: listing.sort.descending,
             saved_views: view_names(),
-            filters_open: false,
-            show_borders: false,
+            filters_open: panels.filters_open(),
+            show_borders: panels.show_borders(),
             row_height: px(size.row_height().get()),
             min_row_height: px(RowHeight::MIN.get()),
             max_row_height: px(RowHeight::MAX.get()),
-            dev_mode: false,
+            dev_mode: panels.dev_mode(),
         }
     }
 }
@@ -81,19 +82,23 @@ fn row_event(kind: folders::RowKind) -> ListingEvent {
     }
 }
 
-/// Dev mode as the window starts: the run's `seed` (`command_line::dev_mode_seed`), else the preferences'. The
-/// preferences are read, never written.
-fn dev_mode_at_start(seed: Option<bool>, prefs: &pg_app::PrefStore) -> bool {
-    seed.unwrap_or_else(|| prefs.get().dev_mode)
-}
-
 /// The preferences a command saves, carried out: the one place a save is made, so a test runs the same code the window
 /// does. A save that fails is the preferences' to report, and the value holds for this run either way.
 fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
     match command {
-        // Dev mode the user turned on or off (a start's seed is not saved).
+        // Dev mode the user turned on or off (a start's value is not saved).
         Command::SaveDevMode(on) => {
             let _ = prefs.update(|p| p.dev_mode = *on);
+        }
+        // The borders the user toggled (a start's `--borders` is not saved).
+        Command::SaveShowBorders(on) => {
+            let _ = prefs.update(|p| p.show_borders = *on);
+        }
+        // The file the window shows now (none: none is remembered), once the start is over. Read here, on the window's
+        // thread, so a save at shutdown (`flush`) sees the same file the window does.
+        Command::SaveLastFile => {
+            let file = gallery::shown_file();
+            let _ = prefs.update(|p| p.last_file = file);
         }
         // The row height, settled after a pause.
         Command::Size(size::Change::SaveRowHeight(row)) => {
@@ -136,10 +141,9 @@ impl qobject::Shell {
 
     /// The list shown is the grid model's last applied (`gallery::APPLIED`, on this thread): its generation tells the
     /// controller which `OpenList` it is, so a reveal waits for its own.
-    pub(crate) fn list_shown(self: Pin<&mut Self>, last_file: i32, count: i32) {
+    pub(crate) fn list_shown(self: Pin<&mut Self>, count: i32) {
         let count = usize::try_from(count).unwrap_or(0);
-        let last_file = usize::try_from(last_file).ok();
-        self.dispatch(Event::ListShown { count, last_file, generation: gallery::applied() });
+        self.dispatch(Event::ListShown { count, generation: gallery::applied() });
     }
 
     pub(crate) fn list_positioned(self: Pin<&mut Self>) {
@@ -207,27 +211,12 @@ impl qobject::Shell {
         self.dispatch(Event::Panel(panels::Event::ToggleFilters));
     }
 
-    pub(crate) fn set_filters_open(self: Pin<&mut Self>, on: bool) {
-        self.dispatch(Event::Panel(panels::Event::SetFiltersOpen(on)));
-    }
-
     pub(crate) fn toggle_borders(self: Pin<&mut Self>) {
         self.dispatch(Event::Panel(panels::Event::ToggleBorders));
     }
 
-    pub(crate) fn set_show_borders(self: Pin<&mut Self>, on: bool) {
-        self.dispatch(Event::Panel(panels::Event::SetShowBorders(on)));
-    }
-
     pub(crate) fn set_viewer_open(self: Pin<&mut Self>, on: bool) {
         self.dispatch(Event::Panel(panels::Event::SetViewerOpen(on)));
-    }
-
-    /// Dev mode as the window starts: the run's seed (`--dev`, `PG_DEV`), else the preferences'. Only shown: a start
-    /// saves nothing (the controller's `SetDevMode` gives no `SaveDevMode`).
-    pub(crate) fn seed_dev_mode(self: Pin<&mut Self>) {
-        let on = dev_mode_at_start(command_line::dev_mode_seed(), app::get().prefs());
-        self.dispatch(Event::Panel(panels::Event::SetDevMode(on)));
     }
 
     pub(crate) fn global_action(self: Pin<&mut Self>, code: i32) {
@@ -320,10 +309,6 @@ impl qobject::Shell {
         crate::rows::to_row(Some(choice_index(controller::listing().sort.key)))
     }
 
-    pub(crate) fn remember_listing(self: Pin<&mut Self>) {
-        self.dispatch(Event::RememberListing);
-    }
-
     pub(crate) fn save_view(mut self: Pin<&mut Self>, name: &QString) {
         let name = name.to_string().trim().to_string();
         if name.is_empty() {
@@ -350,16 +335,17 @@ impl qobject::Shell {
     /// selects the file once its list is shown (`Command::Reveal`), and `revealShown` is emitted. A file the library
     /// no longer has is a toast instead; a newer Reveal supersedes this one, whose delivery is dropped.
     pub(crate) fn reveal(self: Pin<&mut Self>, file_id: f64) {
-        let file = pg_model::num::f64_to_i64(file_id);
+        // The bridge's number becomes a file's id here, once: everything after it is typed.
+        let file = FileId::new(pg_model::num::f64_to_i64(file_id));
         let shell = self.qt_thread();
-        app::get().reading().session().reveal_folder(FileId::new(file), move |folder| {
+        app::get().reading().session().reveal_folder(file, move |folder| {
             // Fails only when the window is gone: nothing left to reveal in.
             let _ = shell.queue(move |shell| shell.revealed(file, folder));
         });
     }
 
     /// A Reveal's folder, delivered on the Qt thread: listed, or a toast when the file is no longer in the library.
-    fn revealed(mut self: Pin<&mut Self>, file: i64, folder: pg_app::Result<Option<RulePath>>) {
+    fn revealed(mut self: Pin<&mut Self>, file: FileId, folder: pg_app::Result<Option<RulePath>>) {
         match folder {
             Ok(Some(folder)) => {
                 let folder = pg_platform::native::PATH_RULES.merge(&folder);
@@ -449,7 +435,7 @@ impl qobject::Shell {
             Command::Reveal(file) => {
                 let shell = self.qt_thread();
                 gallery::post(move |mut model| {
-                    let item = model.index_of(file);
+                    let item = model.index_of(file.get());
                     if model.is_item(item) {
                         model.as_mut().set_current_item(item);
                         let _ = shell.queue(move |s| s.select_requested(item));
@@ -458,11 +444,12 @@ impl qobject::Shell {
                     }
                 });
             }
-            Command::RestoreSelection(i) => {
-                let item = to_i32(i);
-                gallery::post(move |model| {
+            // The session's last file, selected in the list just shown if the list has it.
+            Command::RestoreSelection(file) => {
+                gallery::post(move |mut model| {
+                    let item = model.index_of(file.get());
                     if model.is_item(item) {
-                        model.set_current_item(item);
+                        model.as_mut().set_current_item(item);
                     }
                 });
             }
@@ -510,8 +497,8 @@ impl qobject::Shell {
                 Ok(()) => app::resolved("session-not-saved"),
                 Err(e) => app::post(Notice::SessionNotSaved { error: app::error_text(&format!("{e:#}")) }),
             },
-            // Synchronous: the save must run at shutdown too (`flush`), and its handler calls no shell.
-            Command::SaveLastFile => self.as_mut().session_due(),
+            // Saved by `prefs_effect`, above, from the file the window shows now.
+            Command::SaveLastFile => {}
             Command::Relayout { .. } => self.as_mut().later(|shell| shell.relayout_due()),
             Command::Panel(change) => self.as_mut().panel(change),
             Command::OpenPanel(kind) => {
@@ -523,7 +510,7 @@ impl qobject::Shell {
                 self.as_mut().later(move |shell| shell.panel_close_requested(kind));
             }
             // Saved by `prefs_effect`, above.
-            Command::SaveDevMode(_) => {}
+            Command::SaveDevMode(_) | Command::SaveShowBorders(_) => {}
             Command::Size(change) => self.as_mut().size(change),
         }
     }
@@ -592,35 +579,108 @@ mod tests {
 
     use super::*;
     use crate::folders::RowKind;
-    use pg_client::controller::Controller;
+    use pg_client::controller::{Controller, Start};
     use pg_client::keys::Global;
 
-    /// A seeded start shows dev mode and saves nothing: the preferences file is, byte for byte, what it was, whichever
-    /// way the run is seeded. The user's own switch afterwards is saved, so the check can fail.
+    /// A started window shows its panels as the start has them, and saves nothing: the preferences file is, byte for byte,
+    /// what it was. The user's own toggles afterwards are saved, so the check can fail.
     #[test]
-    fn a_seeded_start_leaves_the_prefs_file_byte_identical() {
+    fn a_started_window_leaves_the_prefs_file_byte_identical() {
         let home = pg_testkit::test_folder("scratch_desktop", "seeded-start").unwrap();
         let config = pg_app::Config::in_home(&home);
         let prefs_path = config.layout.prefs().to_path_buf();
         let app = pg_app::App::open(config).unwrap();
-        app.prefs().update(|p| p.dev_mode = false).unwrap();
+        app.prefs()
+            .update(|p| {
+                p.dev_mode = false;
+                p.show_borders = true;
+            })
+            .unwrap();
         let before = std::fs::read(&prefs_path).unwrap();
         // The commands as the shell carries them out: `prefs_effect` is what writes the preferences.
-        let run = |c: &mut Controller, event: Event| {
-            for command in c.update(0, event) {
-                prefs_effect(&command, app.prefs());
+        let run = |c: &mut Controller, event: Event| -> Vec<Command> {
+            let commands = c.update(0, event);
+            for command in &commands {
+                prefs_effect(command, app.prefs());
             }
+            commands
         };
         let row = RowHeight::new(200).expect("a row height in range");
-        let mut c = Controller::new(Listing::default(), row, row);
-        for seed in [Some(true), Some(false), None] {
-            let on = dev_mode_at_start(seed, app.prefs());
-            assert_eq!(on, seed.unwrap_or(false), "{seed:?}");
-            run(&mut c, Event::Panel(panels::Event::SetDevMode(on)));
-            assert_eq!(std::fs::read(&prefs_path).unwrap(), before, "{seed:?}");
+        let start = Start {
+            show_borders: true,
+            dev_mode: true,
+            filters_open: true,
+            ..Start::new(Listing::default(), row, row)
+        };
+        let mut c = Controller::new(start);
+        assert!(c.panels().show_borders() && c.panels().dev_mode() && c.panels().filters_open());
+        run(&mut c, Event::Size(size::Event::Scale(pg_model::size::Scale::new(1.0).expect("a scale"))));
+        assert_eq!(std::fs::read(&prefs_path).unwrap(), before, "a start saves nothing");
+        run(&mut c, Event::Panel(panels::Event::ToggleBorders));
+        assert!(!app.prefs().get().show_borders, "the user's border toggle is saved");
+        assert_ne!(std::fs::read(&prefs_path).unwrap(), before);
+        let dev = run(&mut c, Event::Global(Global::DevMode));
+        assert!(dev.contains(&Command::SaveDevMode(false)), "the user's dev switch is saved: {dev:?}");
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A start with every start option set saves nothing: the preferences file and the session are as they were when the
+    /// start is over. The user's own change after it is saved, so the check can fail.
+    #[test]
+    fn a_start_with_its_options_saves_nothing() {
+        let home = pg_testkit::test_folder("scratch_desktop", "start-options").unwrap();
+        let config = pg_app::Config::in_home(&home);
+        let prefs_path = config.layout.prefs().to_path_buf();
+        let app = pg_app::App::open(config).unwrap();
+        app.prefs()
+            .update(|p| {
+                p.show_borders = false;
+                p.dev_mode = false;
+            })
+            .unwrap();
+        let session = Listing { query: Query { name: "session".into(), ..Query::default() }, ..Listing::default() };
+        app.views().save_listing(&session).unwrap();
+        let prefs_before = std::fs::read(&prefs_path).unwrap();
+        let session_before = app.views().listing().unwrap();
+        let options = crate::command_line::StartOptions {
+            query: Some(Query { name: "option".into(), ..Query::default() }),
+            sort: Some(Sort { key: pg_model::query::SortKey::Size, descending: true }),
+            apply_view: None,
+            size: Some(RowHeight::new(120).expect("a row height in range")),
+            filters_open: Some(true),
+            show_borders: Some(true),
+            dev_mode: Some(true),
+        };
+        let start = crate::controller::start_state(&app.prefs().get(), &options, app.views().listing().unwrap(), None);
+        let mut c = Controller::new(start);
+        // The commands as the shell carries them out: the preferences by `prefs_effect`, the session as `execute` saves it.
+        let mut carried = Vec::new();
+        let carry = |command: &Command| {
+            prefs_effect(command, app.prefs());
+            if let Command::SaveSession(listing) = command {
+                app.views().save_listing(listing).unwrap();
+            }
+        };
+        let start_events = [
+            (0, Event::Size(size::Event::Scale(pg_model::size::Scale::new(1.0).expect("a scale")))),
+            (1, Event::TreeLoaded { folder_known: true }),
+            (2, Event::ListShown { count: 10, generation: None }),
+            (3, Event::ListPositioned),
+        ];
+        for (now, event) in start_events {
+            for command in c.update(now, event) {
+                carry(&command);
+                carried.push(command);
+            }
         }
-        run(&mut c, Event::Global(Global::DevMode));
-        assert_ne!(std::fs::read(&prefs_path).unwrap(), before, "the user's switch is saved");
+        assert!(carried.contains(&Command::Started), "{carried:?}");
+        assert_eq!(std::fs::read(&prefs_path).unwrap(), prefs_before, "the start saves no preference");
+        assert_eq!(app.views().listing().unwrap(), session_before, "the start saves no session");
+        for command in c.update(4, Event::Panel(panels::Event::ToggleBorders)) {
+            carry(&command);
+        }
+        assert!(!app.prefs().get().show_borders, "the user's border toggle is saved");
         app.shutdown();
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -634,7 +694,7 @@ mod tests {
         let app = pg_app::App::open(config).unwrap();
         let saved = RowHeight::new(220).expect("a row height in range");
         let size = RowHeight::new(120).expect("a row height in range");
-        let mut c = Controller::new(Listing::default(), size, saved);
+        let mut c = Controller::new(Start::new(Listing::default(), size, saved));
         c.update(0, Event::Size(size::Event::Scale(pg_model::size::Scale::new(1.0).expect("a scale"))));
         let mut saves = Vec::new();
         for command in c.update(1, Event::Timeout).into_iter().chain(c.update(2, Event::Flush)) {

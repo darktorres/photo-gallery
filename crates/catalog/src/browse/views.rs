@@ -24,7 +24,7 @@ impl Catalog {
 
     /// Save a view, replacing one of the same name.
     pub fn save_view(&self, v: &SavedView) -> Result<()> {
-        let (folder, recursive, query, sort) = listing_values(self.rules(), &v.listing);
+        let (folder, recursive, query, sort) = listing_values(self.rules(), &v.listing)?;
         self.conn.execute(
             "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![v.name, folder, recursive, query, sort],

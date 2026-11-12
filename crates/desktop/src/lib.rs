@@ -97,6 +97,7 @@ mod yandex;
 mod yandex_bridge;
 
 use std::ffi::OsString;
+use std::io::Write;
 
 use cxx_qt::casting::Upcast;
 use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
@@ -121,8 +122,12 @@ pub fn run(args: &[OsString]) -> i32 {
     if let Err(e) = command_line::init(args) {
         fatal(&format!("{e:#}"));
     }
+    // A screenshot run is a test run: an option it can't use fails it here, on the console, before any window is made.
+    if command_line::path("screenshot").is_some() && !command_line::bad_options().is_empty() {
+        return refuse_screenshot(command_line::bad_options());
+    }
     // `--locale=pseudo` shows every line in the pseudo-locale (the screenshot matrix's pseudo-locale scenario, S-19.3).
-    pg_client::text::set_pseudo(command_line::value("locale") == Some("pseudo"));
+    pg_client::text::set_pseudo(command_line::hooks().pseudo);
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
@@ -139,9 +144,9 @@ pub fn run(args: &[OsString]) -> i32 {
         &format!("gallery {}, data folder {}", env!("CARGO_PKG_VERSION"), config.layout.home().display()),
     );
     panic_log::install(config.layout.log().to_path_buf());
-    // A text option given a value that is not valid Unicode reads as not given (a path option reads it exactly).
-    for name in command_line::not_text() {
-        pg_log::warn("args", &format!("--{name}: the value is not valid Unicode, so it is ignored as text"));
+    // Each option or value the window can't use is logged; it is ignored (the start is the same without it).
+    for bad in command_line::bad_options() {
+        pg_log::warn("args", &bad.to_string());
     }
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
@@ -210,9 +215,56 @@ pub fn run(args: &[OsString]) -> i32 {
     status
 }
 
+/// A `--screenshot` run that was given an option it can't use: each is named on stderr, and the run ends with status 2.
+/// Not `fatal`: a test run has a console, and a message box would wait for a person who isn't there.
+fn refuse_screenshot(bad: &[command_line::BadOption]) -> i32 {
+    refusal(bad, &mut std::io::stderr())
+}
+
+/// The refusal's lines, one per bad option, written to `out`, and the status it ends with (2). Apart from the write,
+/// pure: the test reads what it wrote.
+fn refusal(bad: &[command_line::BadOption], out: &mut impl Write) -> i32 {
+    for bad in bad {
+        // A console that can't take the line is no reason to run the window: the status says the run was refused anyway.
+        let _ = writeln!(out, "screenshot: refused: {bad}");
+    }
+    2
+}
+
 /// A GUI program has nowhere to print: show the error, then quit.
 #[expect(clippy::exit, reason = "the process ends here by design, after the message box")]
 fn fatal(message: &str) -> ! {
     alert::error_box(message);
     std::process::exit(1);
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+    use command_line::BadOption;
+
+    /// A refused screenshot run names each bad option on its own line, and ends with status 2, the code a test run
+    /// reads as refused (not the window's 0 or 1).
+    #[test]
+    fn a_refused_screenshot_run_names_each_bad_option_and_exits_2() {
+        let bad = [
+            BadOption { option: "--bogus".into(), reason: "is not an option the window reads".into() },
+            BadOption { option: "--size=tall".into(), reason: "not a size".into() },
+        ];
+        let mut out = Vec::new();
+        assert_eq!(refusal(&bad, &mut out), 2);
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "screenshot: refused: --bogus: is not an option the window reads; ignored\n\
+             screenshot: refused: --size=tall: not a size; ignored\n"
+        );
+    }
+
+    /// With no bad options there is nothing to name, so nothing is written.
+    #[test]
+    fn a_refusal_of_nothing_writes_nothing() {
+        let mut out = Vec::new();
+        refusal(&[], &mut out);
+        assert!(out.is_empty());
+    }
 }

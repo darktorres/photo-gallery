@@ -73,27 +73,44 @@ pub(crate) fn convert_session(tx: &Transaction<'_>, source: Source, rules: PathR
         return Ok(());
     }
     let value = |key: &str| keys.iter().find(|(k, _)| k == key).map(|(_, v)| String::from_utf8_lossy(v).into_owned());
+    let folder_bytes: Vec<u8> = keys.iter().find(|(k, _)| k == "folder").map(|(_, v)| v.clone()).unwrap_or_default();
     let folder = match keys.iter().find(|(k, _)| k == "folder") {
         Some((_, text)) if text_folders => {
-            rules.parse_merged(text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?
+            Some(rules.parse_merged(text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?)
         }
-        _ => pg_query::from_json(&value("folder").unwrap_or_default()),
+        _ => pg_query::from_json::<pg_model::rules::Merged>(&value("folder").unwrap_or_default()).ok(),
     };
-    let listing = pg_model::view::Listing {
-        folder,
-        recursive: value("recursive").is_none_or(|r| r == "true"),
-        sort: pg_query::from_json(&value("sort").unwrap_or_default()),
-        query: pg_query::from_json(&value("query").unwrap_or_default()),
-    };
+    let recursive = value("recursive").is_none_or(|r| r == "true");
+    // A key the old session never wrote is the default, as it always read; text that is there and doesn't read is not.
+    let (query_default, sort_default) = (
+        pg_query::to_json(&pg_model::query::Query::default()).map_err(|e| Error::Other(e.into()))?,
+        pg_query::to_json(&pg_model::query::Sort::default()).map_err(|e| Error::Other(e.into()))?,
+    );
+    let query_text = value("query").unwrap_or(query_default);
+    let sort_text = value("sort").unwrap_or(sort_default);
+    let query = pg_query::from_json::<pg_model::query::Query>(&query_text).ok();
+    let sort = pg_query::from_json::<pg_model::query::Sort>(&sort_text).ok();
     let target = match source {
         Source::Main => "main.session_row",
         Source::Carried => "main.session",
     };
-    let (folder, recursive, query, sort) = listing_values(rules, &listing);
-    tx.execute(
-        &format!("INSERT OR REPLACE INTO {target}(id, folder, recursive, query, sort) VALUES (1, ?1, ?2, ?3, ?4)"),
-        params![folder, recursive, query, sort],
-    )?;
+    let sql = format!("INSERT OR REPLACE INTO {target}(id, folder, recursive, query, sort) VALUES (1, ?1, ?2, ?3, ?4)");
+    match (folder, query, sort) {
+        (Some(folder), Some(query), Some(sort)) => {
+            let listing = pg_model::view::Listing { folder, recursive, sort, query };
+            let (folder, recursive, query, sort) = listing_values(rules, &listing)?;
+            tx.execute(&sql, params![folder, recursive, query, sort])?;
+        }
+        // A row that doesn't read is carried over as it stands: its text is not made the default. The runtime reads it
+        // and reports it, and the text stays for a later version that reads it.
+        _ => {
+            pg_log::warn(
+                "migration",
+                "schema version 5: the session's listing doesn't read; the row is kept as it stands (1 row, not converted)",
+            );
+            tx.execute(&sql, params![folder_bytes, recursive, query_text, sort_text])?;
+        }
+    }
     Ok(())
 }
 
@@ -177,4 +194,41 @@ fn backfill_import(tx: &Transaction<'_>) -> Result<Backfill> {
     let stamped = i64::try_from(stamped).map_err(|e| Error::Other(anyhow!("{e}: too many ledger rows")))?;
     tx.execute("UPDATE main.meta SET value = ?1 WHERE key = 'seq'", [base + stamped])?;
     Ok(Backfill { max_id_before, base })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pg_model::name::Name;
+    use pg_model::rules::Merged;
+
+    /// A session whose query doesn't read is kept as it stands by the migration, and the migration says so in the log:
+    /// the record is in the log's memory, where the window's log view reads it.
+    #[test]
+    fn an_unreadable_session_is_kept_as_it_stands_and_logged() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(key TEXT, value BLOB);
+             CREATE TABLE session_row(id INTEGER PRIMARY KEY, folder BLOB, recursive INTEGER, query TEXT, sort TEXT);",
+        )
+        .unwrap();
+        let folder = pg_query::to_json(&Merged::from(vec![Name::from("p")])).unwrap();
+        let sort = pg_query::to_json(&pg_model::query::Sort::default()).unwrap();
+        for (key, value) in
+            [("folder", folder.as_str()), ("recursive", "true"), ("query", "not json"), ("sort", sort.as_str())]
+        {
+            conn.execute("INSERT INTO session VALUES (?1, ?2)", params![key, value]).unwrap();
+        }
+        let tx = conn.transaction().unwrap();
+        convert_session(&tx, Source::Main, PathRules::Windows).unwrap();
+        tx.commit().unwrap();
+        let query: String = conn.query_row("SELECT query FROM session_row", [], |r| r.get(0)).unwrap();
+        assert_eq!(query, "not json");
+        let feed = pg_log::subscribe();
+        assert!(
+            feed.kept.iter().any(|r| r.target == "migration" && r.message.contains("kept as it stands")),
+            "{:?}",
+            feed.kept
+        );
+    }
 }

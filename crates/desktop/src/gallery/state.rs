@@ -103,6 +103,11 @@ impl GalleryRust {
         self.entry(item).map(|e| e.id)
     }
 
+    /// The file the window shows: the viewer's while it is open, else the selection's (`None` for neither).
+    pub(super) fn shown_file(&self) -> Option<FileId> {
+        self.file_at(if self.viewing >= 0 { self.viewing } else { self.current })
+    }
+
     /// `f` of an item's entry and details; `None` without the item, or when its file is gone from the catalog.
     pub(super) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
         let e = self.entry(item)?;

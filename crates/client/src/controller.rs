@@ -5,6 +5,7 @@
 //! (tests/replay.rs). The desktop keeps the one controller on the GUI thread and carries the commands out (desktop
 //! `controller.rs`, `shell.rs`).
 
+use pg_model::ids::FileId;
 use pg_model::rating::Rating;
 use pg_model::rules::Merged;
 use pg_model::size::{GridWidth, RowHeight};
@@ -30,6 +31,40 @@ use start::StartGate;
 /// The space between the grid's rows and between its cells, in pixels.
 pub const GAP: f64 = 4.0;
 
+/// The state a window starts with: the listing it shows, the row heights (the one it shows, and the one the prefs saved),
+/// and the panels' flags. Nothing here is a save: a start's values (a `--size`, `--borders=1`, `--dev=1`) hold for the
+/// run, and the controller saves only what the user changes afterwards.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Start {
+    pub listing: Listing,
+    pub row: RowHeight,
+    pub saved_row: RowHeight,
+    pub filters_open: bool,
+    pub show_borders: bool,
+    pub dev_mode: bool,
+    /// The session's last file, selected in the first list (the prefs'). `None` when none was remembered.
+    pub last_file: Option<FileId>,
+    /// The listing came from a saved view a start applied (`--apply-view`): the controller remembers it as the session
+    /// once the start is over, since that is what applying a view leaves.
+    pub apply_view: bool,
+}
+
+impl Start {
+    /// A start with the listing and the rows, and every panel off, no last file, and no view applied.
+    pub fn new(listing: Listing, row: RowHeight, saved_row: RowHeight) -> Start {
+        Start {
+            listing,
+            row,
+            saved_row,
+            filters_open: false,
+            show_borders: false,
+            dev_mode: false,
+            last_file: None,
+            apply_view: false,
+        }
+    }
+}
+
 /// What the desktop reports.
 // The listing's events carry a whole saved view, which is larger than the rest; they are rare (a user's choice), so the
 // size of the enum's largest variant costs nothing that matters.
@@ -43,14 +78,12 @@ pub enum Event {
     TreeLoaded {
         folder_known: bool,
     },
-    /// The list was shown with `count` rows; `last_file` is the index of the session's last file in it, if it has it.
-    /// `generation` is the [`Command::OpenList`] whose list it is (the one the model applied last); 0, never given, when
-    /// none was applied yet (and in a recording made before it was reported).
+    /// The list was shown with `count` rows. `generation` is the [`Command::OpenList`] whose list it is (the one the
+    /// model applied last); `None` when no list was applied yet, and in a recording made before it was reported.
     ListShown {
         count: usize,
-        last_file: Option<usize>,
         #[serde(default)]
-        generation: u64,
+        generation: Option<u64>,
     },
     /// The list shown is placed in the view: the start's last part.
     ListPositioned,
@@ -93,11 +126,9 @@ pub enum Event {
     /// Show the file `file` (an inbox entry's Reveal): its folder, `folder`, is listed with nothing filtered, and the file
     /// is selected once the list is shown ([`Command::Reveal`]).
     Reveal {
-        file: i64,
+        file: FileId,
         folder: Merged,
     },
-    /// Remember the listing for the next start (the start's test hooks ask for it).
-    RememberListing,
     /// The list is read again, the selection kept (the files changed on disk).
     Reload,
     /// Files were turned in place on disk: their rows are read again (no renumbering).
@@ -114,7 +145,7 @@ pub enum Command {
     /// Select this item of the list: a key's, or the grid's own (Select for the session's last file at the start).
     Select(usize),
     /// The session's last file is selected, at the start (the list is shown, then this).
-    RestoreSelection(usize),
+    RestoreSelection(FileId),
     /// The start is over: the tree and the first list are in.
     Started,
     /// Move the selection to the neighbour `dx` columns and `dy` rows away (the grid's layout resolves it).
@@ -151,11 +182,13 @@ pub enum Command {
     ClosePanel(PanelKind),
     /// Remember dev mode for the next start: the user turned it on or off (a start's `--dev=1` is not saved).
     SaveDevMode(bool),
+    /// Remember the borders for the next start: the user toggled them (a start's `--borders` is not saved).
+    SaveShowBorders(bool),
     /// The size changed: the thumbnails, or the saved row height.
     Size(size::Change),
     /// Select the file `file` in the list just shown, the one a reveal asked for (the model knows its item), or say it is
     /// no longer in the library.
-    Reveal(i64),
+    Reveal(FileId),
 }
 
 /// The one controller: every sub-machine, and the pauses.
@@ -172,24 +205,31 @@ pub struct Controller {
     generation: u64,
     /// The file a reveal waits to select, and the generation of the list it waits for: only that list's `ListShown`
     /// selects it, and a newer list's drops it (the user went elsewhere).
-    reveal: Option<(i64, u64)>,
+    reveal: Option<(FileId, u64)>,
+    /// The start the controller was made from: the recording's `Init`, which replays it.
+    initial: Start,
 }
 
 impl Controller {
-    /// A controller for a window that starts at `listing`, showing `row` and with the prefs' `saved_row` remembered. The
-    /// screen's scale arrives as an event.
-    pub fn new(listing: Listing, row: RowHeight, saved_row: RowHeight) -> Controller {
+    /// A controller for a window that starts in `start`. The screen's scale arrives as an event.
+    pub fn new(start: Start) -> Controller {
         Controller {
-            start: StartGate::default(),
-            listing,
+            start: StartGate::new(start.last_file),
+            listing: start.listing.clone(),
             input: Input::default(),
-            panels: Panels::default(),
-            grid_size: GridSize::new(row, saved_row),
+            panels: Panels::starting(start.filters_open, start.show_borders, start.dev_mode),
+            grid_size: GridSize::new(start.row, start.saved_row),
             deadlines: Deadlines::default(),
             grid_width: None,
             generation: 0,
             reveal: None,
+            initial: start,
         }
+    }
+
+    /// The start the controller was made from.
+    pub fn initial(&self) -> &Start {
+        &self.initial
     }
 
     /// The listing as it is now.
@@ -241,9 +281,9 @@ impl Controller {
     pub fn update(&mut self, now_ms: u64, event: Event) -> Vec<Command> {
         match event {
             Event::TreeLoaded { folder_known } => self.start(start::Event::TreeLoaded { folder_known }),
-            Event::ListShown { count, last_file, generation } => {
+            Event::ListShown { count, generation } => {
                 let mut out = self.input_update(input::Event::ListShown { count });
-                out.extend(self.start(start::Event::ListShown { last_file }));
+                out.extend(self.start(start::Event::ListShown));
                 out.extend(self.reveal_shown(generation));
                 out
             }
@@ -283,7 +323,6 @@ impl Controller {
                 });
                 out
             }
-            Event::RememberListing => vec![Command::SaveSession(self.listing.clone())],
             Event::Reload => vec![self.open_list(true)],
             Event::FilesChanged => vec![Command::RefreshTurned],
             Event::Timeout => self.run_due(now_ms),
@@ -299,8 +338,10 @@ impl Controller {
 
     /// The reveal's `Command::Reveal` when the list shown is the one it waits for; a newer list drops it, an older one
     /// (still shown before the reveal's arrives) leaves it waiting.
-    fn reveal_shown(&mut self, generation: u64) -> Option<Command> {
+    fn reveal_shown(&mut self, generation: Option<u64>) -> Option<Command> {
         let (file, wanted) = self.reveal?;
+        // A list shown before any was applied is no list of the reveal's: it waits, as an older list does.
+        let generation = generation?;
         if generation < wanted {
             return None;
         }
@@ -314,8 +355,14 @@ impl Controller {
         for command in self.start.update(event) {
             match command {
                 start::Command::OpenAll => out.extend(self.listing_event(listing::Event::OpenAll)),
-                start::Command::Select(i) => out.push(Command::RestoreSelection(i)),
-                start::Command::Started => out.push(Command::Started),
+                start::Command::RestoreSelection(file) => out.push(Command::RestoreSelection(file)),
+                start::Command::Started => {
+                    // A view applied at the start is what the session is from now on: remembered once, here.
+                    if self.initial.apply_view {
+                        out.push(Command::SaveSession(self.listing.clone()));
+                    }
+                    out.push(Command::Started);
+                }
             }
         }
         out
@@ -355,8 +402,21 @@ impl Controller {
         }
     }
 
+    /// A panel's event: its changes, then the saves the user's own toggle asks for (the borders are remembered for the
+    /// next start; the filter bar is not saved).
     fn panel(&mut self, event: panels::Event) -> Vec<Command> {
-        self.panels.update(event).into_iter().map(Command::Panel).collect()
+        let user_borders = event == panels::Event::ToggleBorders;
+        let changes = self.panels.update(event);
+        let saves: Vec<Command> = changes
+            .iter()
+            .filter_map(|change| match change {
+                panels::Change::ShowBorders(on) if user_borders => Some(Command::SaveShowBorders(*on)),
+                _ => None,
+            })
+            .collect();
+        let mut out: Vec<Command> = changes.into_iter().map(Command::Panel).collect();
+        out.extend(saves);
+        out
     }
 
     /// A window shortcut. While a modal panel other than the inbox and the log view is open, it is that panel's (a dialog,
@@ -467,10 +527,13 @@ impl Controller {
         for timer in due {
             match timer {
                 Timer::ApplyQuery => out.extend(self.listing_now()),
-                Timer::SaveSession => {
+                // Saved only once the start is over: until then the listing is the start's (its options, the remembered
+                // file's selection), not the user's, and a save would make a start option the session's.
+                Timer::SaveSession if self.start.is_started() => {
                     out.push(Command::SaveSession(self.listing.clone()));
                     out.push(Command::SaveLastFile);
                 }
+                Timer::SaveSession => {}
                 Timer::Layout => out.extend(self.relayout(self.grid_size.row_height())),
                 Timer::Size => {
                     for change in self.grid_size.settled() {

@@ -62,7 +62,7 @@ proptest! {
                     query: Query { name: name.clone(), exts: exts.clone(), ..Query::default() },
                 };
                 app.views().save_listing(&listing).unwrap();
-                read.push((app.views().listing(), listing));
+                read.push((app.views().listing().unwrap(), listing));
             }
         }
         app.shutdown();

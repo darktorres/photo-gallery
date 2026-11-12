@@ -315,14 +315,16 @@ pub fn condition_without(query: &Query, skip: Option<Counted>) -> Condition {
     Condition { sql, params }
 }
 
-/// `T` as JSON, as a view's query or sort is saved and sessioned.
-pub fn to_json<T: Serialize>(value: &T) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "{}".into())
+/// `T` as JSON, as a view's query or sort is saved and sessioned. A value that can't be written is an error: nothing is
+/// stored in its place.
+pub fn to_json<T: Serialize>(value: &T) -> serde_json::Result<String> {
+    serde_json::to_string(value)
 }
 
-/// `T` from JSON; malformed or empty text is `T::default()` (everything, for a query).
-pub fn from_json<T: DeserializeOwned + Default>(json: &str) -> T {
-    serde_json::from_str(json).unwrap_or_default()
+/// `T` from JSON. Text that doesn't read is an error, which the reader reports (the inbox, the command line's log): it is
+/// never replaced by the default, so a stored listing that is bad is kept as it is, not made everything.
+pub fn from_json<T: DeserializeOwned>(json: &str) -> serde_json::Result<T> {
+    serde_json::from_str(json)
 }
 
 /// A duplicate among the present files: identical bytes (tier 0a), identical pixels (0b) or a tier-1 pair within
@@ -549,22 +551,22 @@ mod tests {
             name: "cat".into(),
             ..Query::default()
         };
-        assert_eq!(from_json::<Query>(&to_json(&q)), q);
-        assert_eq!(to_json(&Query::default()), "{}");
-        assert_eq!(from_json::<Query>("not json"), Query::default());
+        assert_eq!(from_json::<Query>(&to_json(&q).unwrap()).unwrap(), q);
+        assert_eq!(to_json(&Query::default()).unwrap(), "{}");
+        assert!(from_json::<Query>("not json").is_err(), "bad text is an error, not the default");
         let s = Sort { key: SortKey::Taken, descending: true };
-        assert_eq!(from_json::<Sort>(&to_json(&s)), s);
-        assert_eq!(from_json::<Sort>(r#"{"key":"size"}"#), Sort { key: SortKey::Size, descending: false });
+        assert_eq!(from_json::<Sort>(&to_json(&s).unwrap()).unwrap(), s);
+        assert_eq!(from_json::<Sort>(r#"{"key":"size"}"#).unwrap(), Sort { key: SortKey::Size, descending: false });
         assert_eq!(MediaType::from_key("animated"), Some(MediaType::Animated));
     }
 
     #[test]
     fn a_stored_date_that_doesnt_parse_is_no_filter_and_keeps_the_rest() {
         // Hand-edited JSON with a day that doesn't exist: that end is open, and the other facets still filter.
-        let stored: Query = from_json(r#"{"ratings":[0,5],"taken":{"from":"2024-02-30","to":"2024-03-01"}}"#);
+        let stored: Query = from_json(r#"{"ratings":[0,5],"taken":{"from":"2024-02-30","to":"2024-03-01"}}"#).unwrap();
         assert_eq!(stored.ratings, vec![RatingFilter::Unrated, RatingFilter::try_from(5).unwrap()]);
         assert_eq!(stored.taken, DateRange { from: None, to: Day::parse("2024-03-01") });
-        assert!(to_json(&stored).contains(r#""taken":{"from":null,"to":"2024-03-01"}"#));
+        assert!(to_json(&stored).unwrap().contains(r#""taken":{"from":null,"to":"2024-03-01"}"#));
     }
 
     fn json<T: Serialize>(value: &T) -> String {

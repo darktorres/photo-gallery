@@ -4,8 +4,10 @@
 //!
 //! [`get`]: FileId::get
 
-/// A file's row in the catalog (`files.id`).
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+/// A file's row in the catalog (`files.id`). Serialized as the number (the preferences' last file, the controller's
+/// recordings).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct FileId(i64);
 
 impl FileId {

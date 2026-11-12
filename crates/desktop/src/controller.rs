@@ -12,10 +12,10 @@
 use std::cell::RefCell;
 use std::io::Write;
 
+use pg_app::Prefs;
 use pg_client::controller::replay::{self, Record};
-use pg_client::controller::{Command, Controller, Event};
+use pg_client::controller::{Command, Controller, Event, Start};
 use pg_client::facets::Counts;
-use pg_model::size::RowHeight;
 use pg_model::view::{Listing, SavedView};
 
 use crate::{app, command_line, deadline};
@@ -36,10 +36,24 @@ impl Core {
     fn new() -> Core {
         // The reads are here; `start_state` decides from what they give.
         let options = command_line::start_options();
-        let applied = options.apply_view.as_deref().and_then(|name| app::get().views().view(name).ok().flatten());
-        let (listing, row, saved_row) =
-            start_state(app::get().prefs().get().row_height, &options, app::get().views().listing(), applied);
-        let controller = Controller::new(listing, row, saved_row);
+        let applied = options.apply_view.as_deref().and_then(|name| match app::get().views().view(name) {
+            Ok(Some(view)) => Some(view),
+            Ok(None) => {
+                pg_log::warn("start", &format!("--apply-view={name}: no saved view has that name; ignored"));
+                None
+            }
+            Err(e) => {
+                pg_log::warn("start", &format!("--apply-view={name}: {e}; ignored"));
+                None
+            }
+        });
+        // A session that can't be read starts from the default listing, for this start only: the stored text stays.
+        let session = app::get().views().listing().unwrap_or_else(|e| {
+            app::post(pg_model::notice::Notice::SessionNotRead { error: app::error_text(&e) });
+            Listing::default()
+        });
+        let start = start_state(&app::get().prefs().get(), &options, session, applied);
+        let controller = Controller::new(start);
         let recorder = std::env::var_os("PG_RECORD").and_then(|path| match std::fs::File::create(&path) {
             Ok(file) => Some(file),
             Err(e) => {
@@ -68,16 +82,18 @@ impl Core {
     }
 }
 
-/// Where the window starts, as `(listing, shown row, saved row)`, from what it is given (pure: the reads are `Core::new`'s).
-/// The listing is the session's (its folder, subfolders, sort and query), then `--sort` and `--query`, then the saved view
-/// `--apply-view` names, when `applied` has it (its listing wins over the session's). The row shown is `--size` when given,
-/// else the prefs' saved row; the saved row is always the prefs', so a start's size is never saved by the start itself.
-fn start_state(
-    saved_row: RowHeight,
+/// Where the window starts, from what it is given (pure: the reads are `Core::new`'s). The listing is the session's (its
+/// folder, subfolders, sort and query), then `--sort` and `--query`, then the saved view `--apply-view` names, when
+/// `applied` has it (its listing wins over the session's). The row shown is `--size` when given, else the prefs' saved
+/// row; the saved row is always the prefs', so a start's size is never saved by the start itself. The panels are the
+/// prefs' (borders, dev mode), each overridden by its option; the filter bar is closed unless `--filters` opens it.
+/// Nothing here is saved.
+pub(crate) fn start_state(
+    prefs: &Prefs,
     options: &command_line::StartOptions,
     session: Listing,
     applied: Option<SavedView>,
-) -> (Listing, RowHeight, RowHeight) {
+) -> Start {
     let mut listing = session;
     if let Some(query) = options.query.clone() {
         listing.query = query;
@@ -85,10 +101,20 @@ fn start_state(
     if let Some(sort) = options.sort {
         listing.sort = sort;
     }
+    let apply_view = applied.is_some();
     if let Some(view) = applied {
         listing = view.listing;
     }
-    (listing, options.size.unwrap_or(saved_row), saved_row)
+    Start {
+        listing,
+        row: options.size.unwrap_or(prefs.row_height),
+        saved_row: prefs.row_height,
+        filters_open: options.filters_open.unwrap_or(false),
+        show_borders: options.show_borders.unwrap_or(prefs.show_borders),
+        dev_mode: options.dev_mode.unwrap_or(prefs.dev_mode),
+        last_file: prefs.last_file,
+        apply_view,
+    }
 }
 
 /// Report `event` at the current time, and return the commands it gives, in order. The caller carries them out after
@@ -135,14 +161,29 @@ pub(crate) fn query_changed(query: pg_model::query::Query) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::ids::FileId;
     use pg_model::query::{Query, Sort};
+    use pg_model::size::RowHeight;
 
     fn row(px: u32) -> RowHeight {
         RowHeight::new(px).expect("a row height in range")
     }
 
+    /// The prefs with the saved row given and the rest as a fresh install has them.
+    fn prefs(saved: RowHeight) -> Prefs {
+        Prefs { row_height: saved, ..Prefs::default() }
+    }
+
     fn options(size: Option<RowHeight>, query: Option<Query>, sort: Option<Sort>) -> command_line::StartOptions {
-        command_line::StartOptions { query, sort, apply_view: None, size }
+        command_line::StartOptions {
+            query,
+            sort,
+            apply_view: None,
+            size,
+            filters_open: None,
+            show_borders: None,
+            dev_mode: None,
+        }
     }
 
     fn listing(name: &str) -> Listing {
@@ -151,24 +192,54 @@ mod tests {
 
     #[test]
     fn a_size_option_shows_its_row_and_the_saved_row_stays_the_prefs() {
-        let (_, shown, saved) = start_state(row(220), &options(Some(row(120)), None, None), listing(""), None);
-        assert_eq!((shown, saved), (row(120), row(220)));
+        let start = start_state(&prefs(row(220)), &options(Some(row(120)), None, None), listing(""), None);
+        assert_eq!((start.row, start.saved_row), (row(120), row(220)));
     }
 
     #[test]
     fn without_a_size_the_window_shows_the_saved_row() {
-        let (_, shown, saved) = start_state(row(220), &options(None, None, None), listing(""), None);
-        assert_eq!((shown, saved), (row(220), row(220)));
+        let start = start_state(&prefs(row(220)), &options(None, None, None), listing(""), None);
+        assert_eq!((start.row, start.saved_row), (row(220), row(220)));
     }
 
     #[test]
     fn the_options_shape_the_session_listing_and_a_view_wins_over_them() {
         let typed = |name: &str| Query { name: name.into(), ..Query::default() };
         let by_option = options(None, Some(typed("option")), None);
-        let (got, _, _) = start_state(row(220), &by_option, listing("session"), None);
-        assert_eq!(got.query, typed("option"));
+        let start = start_state(&prefs(row(220)), &by_option, listing("session"), None);
+        assert_eq!(start.listing.query, typed("option"));
         let view = SavedView { name: "view".into(), listing: listing("view") };
-        let (got, _, _) = start_state(row(220), &by_option, listing("session"), Some(view));
-        assert_eq!(got.query, typed("view"), "the saved view a start applies wins over --query");
+        let start = start_state(&prefs(row(220)), &by_option, listing("session"), Some(view));
+        assert_eq!(start.listing.query, typed("view"), "the saved view a start applies wins over --query");
+    }
+
+    /// The panels start as the prefs have them, and each option overrides its own: a start's `--borders=0` shows no
+    /// borders whatever the prefs say, and nothing here is saved.
+    #[test]
+    fn the_panels_are_the_prefs_unless_an_option_says_otherwise() {
+        let mut saved = prefs(row(220));
+        saved.show_borders = true;
+        let start = start_state(&saved, &options(None, None, None), listing(""), None);
+        assert!(start.show_borders && !start.dev_mode && !start.filters_open);
+        let mut chosen = options(None, None, None);
+        chosen.show_borders = Some(false);
+        chosen.dev_mode = Some(true);
+        chosen.filters_open = Some(true);
+        let start = start_state(&saved, &chosen, listing(""), None);
+        assert!(!start.show_borders && start.dev_mode && start.filters_open);
+        assert_eq!(start.saved_row, row(220));
+    }
+
+    /// The prefs' last file is the start's, and a view the start applies is remembered once the start is over.
+    #[test]
+    fn the_last_file_is_the_prefs_and_an_applied_view_is_flagged() {
+        let mut saved = prefs(row(220));
+        saved.last_file = Some(FileId::new(42));
+        let start = start_state(&saved, &options(None, None, None), listing(""), None);
+        assert_eq!(start.last_file, Some(FileId::new(42)));
+        assert!(!start.apply_view);
+        let view = SavedView { name: "view".into(), listing: listing("view") };
+        let start = start_state(&saved, &options(None, None, None), listing(""), Some(view));
+        assert!(start.apply_view);
     }
 }

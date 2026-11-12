@@ -6,7 +6,7 @@
 )]
 
 use pg_client::controller::panels::{Change, Event, PanelKind, Panels};
-use pg_client::controller::{Command, Controller, Event as Report};
+use pg_client::controller::{Command, Controller, Event as Report, Start};
 use pg_client::keys::Global;
 use pg_model::query::{Query, Sort};
 use pg_model::rules::Merged;
@@ -16,13 +16,20 @@ use pg_model::view::Listing;
 fn toggles_and_sets_report_only_real_changes() {
     let mut panels = Panels::default();
     assert_eq!(panels.update(Event::ToggleFilters), vec![Change::FiltersOpen(true)]);
-    assert_eq!(panels.update(Event::SetFiltersOpen(true)), vec![]);
     assert_eq!(panels.update(Event::ToggleFilters), vec![Change::FiltersOpen(false)]);
     assert_eq!(panels.update(Event::ToggleBorders), vec![Change::ShowBorders(true)]);
-    assert_eq!(panels.update(Event::SetShowBorders(true)), vec![]);
-    assert_eq!(panels.update(Event::SetShowBorders(false)), vec![Change::ShowBorders(false)]);
+    assert_eq!(panels.update(Event::ToggleBorders), vec![Change::ShowBorders(false)]);
     assert!(!panels.filters_open());
     assert!(!panels.show_borders());
+}
+
+/// A window that starts with a panel open has it open: its toggle is the change, and the start itself reports nothing.
+#[test]
+fn a_start_sets_the_flags_without_reporting_them() {
+    let mut panels = Panels::starting(true, true, true);
+    assert!(panels.filters_open() && panels.show_borders() && panels.dev_mode());
+    assert_eq!(panels.update(Event::ToggleFilters), vec![Change::FiltersOpen(false)]);
+    assert_eq!(panels.update(Event::ToggleBorders), vec![Change::ShowBorders(false)]);
 }
 
 #[test]
@@ -123,7 +130,7 @@ fn controller() -> Controller {
     let listing =
         Listing { folder: Merged::default(), recursive: true, sort: Sort::default(), query: Query::default() };
     let row = pg_model::size::RowHeight::new(200).expect("a row height in range");
-    Controller::new(listing, row, row)
+    Controller::new(Start::new(listing, row, row))
 }
 
 fn report(c: &mut Controller, event: Report) -> Vec<Command> {

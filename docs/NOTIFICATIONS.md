@@ -92,6 +92,7 @@ test `the_documented_resolver_table_is_the_generated_one` fails, printing the ta
 | `ledger-not-written` | `thumbs` | `next-success(ledger-write-thumbs)` |
 | `ledger-not-written` | `borders` | `next-success(ledger-write-borders)` |
 | `ledger-not-written` | `import` | `next-success(ledger-write-import)` |
+| `session-not-read` | — | `next-success(session)` |
 
 The table lists every part the type allows. Which are posted: `unreadable-files` by the thumbnails' and the borders'
 passes (the import doesn't post it), and `ledger-not-written` by the thumbnails' pass only (below).

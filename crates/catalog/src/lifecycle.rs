@@ -400,13 +400,13 @@ mod tests {
         drop(c);
         let old = Connection::open(&path).unwrap();
         old.execute_batch(
-            r"DROP TABLE views;
+            r#"DROP TABLE views;
               CREATE TABLE views(name TEXT PRIMARY KEY, folder TEXT NOT NULL, recursive INTEGER NOT NULL,
                                  query TEXT NOT NULL, sort TEXT NOT NULL);
-              INSERT INTO views VALUES ('old', 'pinterest\a', 1, '{}', '{}');
+              INSERT INTO views VALUES ('old', 'pinterest\a', 1, '{}', '{"key":"name","descending":false}');
               DROP TABLE session;
               CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-              INSERT INTO session VALUES ('folder', 'pinterest\a'), ('recursive', 'false');",
+              INSERT INTO session VALUES ('folder', 'pinterest\a'), ('recursive', 'false');"#,
         )
         .unwrap();
         drop(old);

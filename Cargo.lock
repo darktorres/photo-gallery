@@ -1672,6 +1672,7 @@ dependencies = [
  "anyhow",
  "pg-analysis",
  "pg-dbfile",
+ "pg-log",
  "pg-model",
  "pg-platform",
  "pg-query",

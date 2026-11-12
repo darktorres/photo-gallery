@@ -889,8 +889,8 @@ mod tests {
         ]);
         assert_eq!((row.0, row.1, row.2), (1, rules.join_merged(&folder), false));
         // The query never saved reads as the default; the sort as it was saved.
-        assert_eq!(pg_query::from_json::<pg_model::query::Query>(&row.3), pg_model::query::Query::default());
-        let sort: pg_model::query::Sort = pg_query::from_json(&row.4);
+        assert_eq!(pg_query::from_json::<pg_model::query::Query>(&row.3).unwrap(), pg_model::query::Query::default());
+        let sort: pg_model::query::Sort = pg_query::from_json(&row.4).unwrap();
         assert_eq!(sort, pg_model::query::Sort { key: pg_model::query::SortKey::Size, descending: false });
 
         let empty = Connection::open_in_memory().unwrap();

@@ -46,12 +46,13 @@ impl PanelKind {
 /// A request about a panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
+    /// The user toggled the filter bar. (The start's state is `Start`, never an event.)
     ToggleFilters,
-    SetFiltersOpen(bool),
+    /// The user toggled the borders: the controller saves the choice (`Command::SaveShowBorders`).
     ToggleBorders,
-    SetShowBorders(bool),
     SetViewerOpen(bool),
-    /// Dev mode on or off, as the window starts with it (the preferences, `--dev=1`, `PG_DEV=1`): not saved.
+    /// Dev mode on or off, set by the global shortcut (the start's state is `Start`). The shortcut's own command saves it
+    /// (`Command::SaveDevMode`); this event alone saves nothing.
     SetDevMode(bool),
     /// A modal panel opened. One of a kind already open moves to the top (it is the newest open), never in twice.
     PanelOpened(PanelKind),
@@ -110,13 +111,17 @@ impl Panels {
         self.modals.contains(&kind)
     }
 
+    /// The panels as a window starts with them: the filter bar, the borders and dev mode as the start says (no change is
+    /// reported for the start's own state).
+    pub fn starting(filters_open: bool, show_borders: bool, dev_mode: bool) -> Panels {
+        Panels { filters_open, show_borders, dev_mode, ..Panels::default() }
+    }
+
     /// Apply `event`; the changes it makes, in order (none when a flag already has the value).
     pub fn update(&mut self, event: Event) -> Vec<Change> {
         match event {
             Event::ToggleFilters => self.set_filters(!self.filters_open),
-            Event::SetFiltersOpen(on) => self.set_filters(on),
             Event::ToggleBorders => self.set_borders(!self.show_borders),
-            Event::SetShowBorders(on) => self.set_borders(on),
             Event::SetViewerOpen(on) => self.set_viewer(on),
             Event::SetDevMode(on) => self.set_dev_mode(on),
             Event::PanelOpened(kind) => {

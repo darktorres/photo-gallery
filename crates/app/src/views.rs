@@ -11,13 +11,13 @@ use pg_query::from_json;
 use crate::catalogs::Catalogs;
 use crate::error::Result;
 
-/// A filter query from its JSON (the command line's `--query=`): the default where it doesn't read.
-pub fn query_from_json(json: &str) -> Query {
+/// A filter query from its JSON (the command line's `--query=`). Text that doesn't read is an error, for the caller to report.
+pub fn query_from_json(json: &str) -> serde_json::Result<Query> {
     from_json(json)
 }
 
-/// A sort from its JSON (the command line's `--sort=`): the default where it doesn't read.
-pub fn sort_from_json(json: &str) -> Sort {
+/// A sort from its JSON (the command line's `--sort=`). Text that doesn't read is an error, for the caller to report.
+pub fn sort_from_json(json: &str) -> serde_json::Result<Sort> {
     from_json(json)
 }
 
@@ -31,9 +31,10 @@ impl Views {
         Views { catalogs }
     }
 
-    /// Where the user was at the last save: the default listing where nothing was saved, or it can't be read.
-    pub fn listing(&self) -> Listing {
-        self.catalogs.with_catalog(pg_catalog::Catalog::session_listing).ok().flatten().unwrap_or_default()
+    /// Where the user was at the last save: the default listing where nothing was saved. A saved listing that can't be
+    /// read is an error (the caller says so, and uses the default for that start only; the stored text stays).
+    pub fn listing(&self) -> Result<Listing> {
+        Ok(self.catalogs.with_catalog(pg_catalog::Catalog::session_listing)?.unwrap_or_default())
     }
 
     /// Remember the listing for the next start.

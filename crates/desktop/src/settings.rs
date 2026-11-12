@@ -9,8 +9,6 @@ use crate::settings_bridge::qobject;
 
 use core::pin::Pin;
 
-use pg_model::ids::FileId;
-
 use crate::app;
 
 /// Change the preferences and save them. A save that fails is a note on the app's bus (the window prints it), and the
@@ -28,15 +26,6 @@ impl qobject::Settings {
         app::get().prefs().get().real_size
     }
 
-    pub(crate) fn read_show_borders(&self) -> bool {
-        app::get().prefs().get().show_borders
-    }
-
-    /// The last file's id as QML takes it: -1 for none.
-    pub(crate) fn read_last_file(&self) -> i64 {
-        app::get().prefs().get().last_file.map_or(-1, FileId::get)
-    }
-
     pub(crate) fn set_write_back_saved(self: Pin<&mut Self>, value: bool) {
         if app::get().prefs().get().write_back != value {
             change_prefs(|p| p.write_back = value);
@@ -48,22 +37,6 @@ impl qobject::Settings {
         if app::get().prefs().get().real_size != value {
             change_prefs(|p| p.real_size = value);
             self.real_size_changed();
-        }
-    }
-
-    pub(crate) fn set_show_borders_saved(self: Pin<&mut Self>, value: bool) {
-        if app::get().prefs().get().show_borders != value {
-            change_prefs(|p| p.show_borders = value);
-            self.show_borders_changed();
-        }
-    }
-
-    /// `value` is a file's id, or -1 (any negative) for none.
-    pub(crate) fn set_last_file_saved(self: Pin<&mut Self>, value: i64) {
-        let value = (value >= 0).then(|| FileId::new(value));
-        if app::get().prefs().get().last_file != value {
-            change_prefs(|p| p.last_file = value);
-            self.last_file_changed();
         }
     }
 }

@@ -28,16 +28,16 @@ pub mod qobject {
         #[qproperty(bool, descending, READ, NOTIFY, FINAL)]
         /// Names of the saved views, sorted.
         #[qproperty(QStringList, saved_views, cxx_name = "savedViews", READ, WRITE, NOTIFY, FINAL)]
-        /// The filter bar is open (`Shell.setFiltersOpen`, `Shell.toggleFilters`).
+        /// The filter bar is open (the start's `--filters`, `Shell.toggleFilters`).
         #[qproperty(bool, filters_open, cxx_name = "filtersOpen", READ, NOTIFY, FINAL)]
-        /// The borders are shown (`Shell.setShowBorders`, `Shell.toggleBorders`).
+        /// The borders are shown (the start's prefs or `--borders`, `Shell.toggleBorders`).
         #[qproperty(bool, show_borders, cxx_name = "showBorders", READ, NOTIFY, FINAL)]
         /// The row height (`Shell.sizeChosen`, `Shell.sizeStepped`, the grid's keys).
         #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
         /// The smallest and largest row heights the grid takes (fixed for the run).
         #[qproperty(i32, min_row_height, cxx_name = "minRowHeight", READ, FINAL)]
         #[qproperty(i32, max_row_height, cxx_name = "maxRowHeight", READ, FINAL)]
-        /// Dev mode is on: the log view's button shows (`seedDevMode`, then Ctrl+Shift+D).
+        /// Dev mode is on: the log view's button shows (the start's `--dev`/`PG_DEV`, then Ctrl+Shift+D).
         #[qproperty(bool, dev_mode, cxx_name = "devMode", READ, NOTIFY, FINAL)]
         type Shell = super::ShellRust;
     }
@@ -54,11 +54,11 @@ pub mod qobject {
         #[cxx_name = "treeLoaded"]
         fn tree_loaded(self: Pin<&mut Shell>, folder_known: bool);
 
-        /// A list of `count` items was shown. `lastFile`: the index in it of the file the last session left, -1 when none.
-        /// Which list it is, the shell reads from the grid model (the one it applied last).
+        /// A list of `count` items was shown. Which list it is, the shell reads from the grid model (the one it applied
+        /// last). The session's last file is selected by the controller's start, not reported here.
         #[qinvokable]
         #[cxx_name = "listShown"]
-        fn list_shown(self: Pin<&mut Shell>, last_file: i32, count: i32);
+        fn list_shown(self: Pin<&mut Shell>, count: i32);
 
         /// The list shown was placed in the view (its rows are positioned).
         #[qinvokable]
@@ -115,27 +115,13 @@ pub mod qobject {
         fn toggle_filters(self: Pin<&mut Shell>);
 
         #[qinvokable]
-        #[cxx_name = "setFiltersOpen"]
-        fn set_filters_open(self: Pin<&mut Shell>, on: bool);
-
-        #[qinvokable]
         #[cxx_name = "toggleBorders"]
         fn toggle_borders(self: Pin<&mut Shell>);
-
-        #[qinvokable]
-        #[cxx_name = "setShowBorders"]
-        fn set_show_borders(self: Pin<&mut Shell>, on: bool);
 
         /// The viewer is open or shut: while it is open, the grid does not take the keys (`keyPressed` is false).
         #[qinvokable]
         #[cxx_name = "setViewerOpen"]
         fn set_viewer_open(self: Pin<&mut Shell>, on: bool);
-
-        /// Dev mode as the window starts: the preferences', or for this run `--dev=1`/`--dev=0`, else `PG_DEV=1`/`0` (not
-        /// saved).
-        #[qinvokable]
-        #[cxx_name = "seedDevMode"]
-        fn seed_dev_mode(self: Pin<&mut Shell>);
 
         /// A window shortcut fired (a `GlobalAction` code, GlobalShortcuts.qml): the controller decides what it does
         /// (`panelOpenRequested`, `panelCloseRequested`, `devMode`).
@@ -213,11 +199,6 @@ pub mod qobject {
         #[cxx_name = "viewerRequested"]
         fn viewer_requested(self: Pin<&mut Shell>, index: i32);
 
-        /// The selection rested: remember the file it is on.
-        #[qsignal]
-        #[cxx_name = "sessionDue"]
-        fn session_due(self: Pin<&mut Shell>);
-
         /// The grid's width or row height settled: lay the grid out again.
         #[qsignal]
         #[cxx_name = "relayoutDue"]
@@ -243,11 +224,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "toggleDescending"]
         fn toggle_descending(self: Pin<&mut Shell>);
-
-        /// Remember the listing (folder, subfolders, sort and query) for the next start.
-        #[qinvokable]
-        #[cxx_name = "rememberListing"]
-        fn remember_listing(self: Pin<&mut Shell>);
 
         /// Save (or replace) the listing under a name: its folder, subfolders, sort and query.
         #[qinvokable]

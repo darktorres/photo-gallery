@@ -43,3 +43,4 @@
 {"kind":"notices-lost","count":4}
 {"kind":"file-no-longer-in-library"}
 {"kind":"update-available","version":"1.2.0"}
+{"kind":"session-not-read","error":"access is denied"}

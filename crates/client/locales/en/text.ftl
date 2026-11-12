@@ -289,6 +289,8 @@ notice-views-failed-title = { $op ->
 notice-views-failed-body = { $error }
 notice-session-not-saved-title = Where you were couldn't be saved
 notice-session-not-saved-body = { $error }
+notice-session-not-read-title = Where you were couldn't be read
+notice-session-not-read-body = { $error }
 notice-edit-failed-title = { $op ->
     [rate] A rating couldn't be saved
     [rotate] A turn couldn't be saved

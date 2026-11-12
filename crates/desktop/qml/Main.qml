@@ -46,11 +46,9 @@ ApplicationWindow {
     // The selected item (-1: none): the gallery's, so it stays with its file when the list is refreshed.
     property alias current: galleryModel.current
     readonly property bool filtersOpen: shell.filtersOpen
-    // B: the grid and the viewer show what cropping the borders would cut. Remembered across runs (the test hook
-    // sets it for its run only).
+    // B: the grid and the viewer show what cropping the borders would cut. The window starts with the prefs' (or
+    // --borders), and the controller saves the user's toggles.
     readonly property bool showBorders: shell.showBorders
-    // Remembered across runs whenever it changes, from the keys or the menu alike (test runs use their own prefs file).
-    onShowBordersChanged: appSettings.showBorders = showBorders
     // The library panel is shown; made the first time (libraryLoader).
     property bool libraryOpen: false
     onLibraryOpenChanged: if (libraryOpen) libraryLoader.active = true
@@ -107,7 +105,6 @@ ApplicationWindow {
             win.startHooks()
         }
         onRelayoutDue: win.relayout()
-        onSessionDue: if (win.ready) appSettings.lastFile = galleryModel.fileId(viewerItem.visible ? viewerItem.index : win.current)
         onSelectRequested: (i) => win.scrollTo(i)
         onViewerRequested: (i) => viewerItem.show(i)
         onPanelOpenRequested: (kind) => win.openPanel(kind)
@@ -216,7 +213,7 @@ ApplicationWindow {
             return
         }
         loadedIndex = -2
-        shell.listShown(galleryModel.indexOf(appSettings.lastFile), galleryModel.count)
+        shell.listShown(galleryModel.count)
         if (current >= 0)
             grid.positionAt(galleryModel.rowOf(current), ListView.Contain)
         else if (index >= 0)
@@ -417,7 +414,8 @@ ApplicationWindow {
         onGridKeyRequested: (key) => shell.keyPressed(key, 0)
         onSelectRequested: (i) => win.select(i)
         onBorderMarkToggled: (i) => shell.toggleBorderMark(i)
-        onBordersRequested: shell.setShowBorders(true)
+        // The user's B, as the test hook asks for it: the toggle, so the controller saves it as the user's key does.
+        onBordersRequested: if (!win.showBorders) shell.toggleBorders()
         onViewsMenuRequested: topBar.openViewsMenu()
         onLibraryPanelRequested: {
             win.libraryOpen = true
@@ -597,7 +595,7 @@ ApplicationWindow {
             onTurned: (i, d) => shell.turn(i, d)
             onBordersToggled: shell.toggleBorders()
             onBorderMarkToggled: (i, m) => shell.setBorderMark(i, m)
-            // The file the viewer is on is the one a session remembers (Shell.sessionDue).
+            // The file the viewer is on is the one a session remembers (the shell reads it, `gallery::shown_file`).
             onIndexChanged: if (index >= 0) shell.currentChanged(index)
             onFindSimilar: (fileId) => win.findSimilar(fileId)
             onClosed: (i) => win.select(i)
@@ -738,15 +736,10 @@ ApplicationWindow {
     Component.onCompleted: {
         // The folder, subfolders, sort and query are the listing's and the filter bar's as they start (the controller's
         // start: the session's, then the test hooks' --sort, --query and --apply-view).
-        // The scale, the size and the borders as the user left them: the controller holds them from here on (the
-        // thumbnails are sized from the scale before the library starts, in startHooks). The size is the saved row height,
-        // which the controller starts with; the scale is the window's, and follows the window to another screen.
+        // The start's size, borders, dev mode and filter bar are the controller's, from the prefs and the options. The
+        // scale is the window's, and follows the window to another screen; the thumbnails are sized from it before the
+        // library starts (startHooks).
         shell.setScale(win.devicePixelRatio)
-        shell.setShowBorders(appSettings.showBorders)
-        // Dev mode as the user left it, or on for this run (--dev=1, PG_DEV=1): the shell reads both (not saved here).
-        shell.seedDevMode()
-        if (testHooks.hasFilters) shell.setFiltersOpen(true)
-        if (testHooks.hasBorders) shell.setShowBorders(true)
         topBar.sortIndex = shell.sortIndex()
         relayout()
         folderModel.reload()
@@ -758,7 +751,6 @@ ApplicationWindow {
     // first reads, which it would compete with for the disk).
     function startHooks() {
         stages.ready()
-        if (testHooks.hasApplyView) shell.rememberListing()
         testHooks.run()
         library.start()
         testHooks.runAfterLibraryStart()

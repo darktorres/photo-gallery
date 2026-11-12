@@ -20,7 +20,7 @@ yandex: model
 
 # A database file's lifecycle, the catalog, the codecs' users and the job layer.
 dbfile: platform
-catalog: dbfile model platform query
+catalog: dbfile log model platform query
 edit: codec container metadata model
 exiftool: platform
 jobs: model platform

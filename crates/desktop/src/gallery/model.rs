@@ -143,7 +143,7 @@ impl qobject::GalleryModel {
             this.grid.swap_entries(entries)
         };
         // The list the window shows from now on: what its `ListShown` reports (`Shell::list_shown`).
-        super::APPLIED.with(|applied| applied.set(generation));
+        super::APPLIED.with(|applied| applied.set(Some(generation)));
         self.as_mut().set_count(count);
         // The same folder read again: only the rows that changed change.
         let changed = if keep { Changed::List(&shown) } else { Changed::All };
@@ -283,6 +283,7 @@ impl qobject::GalleryModel {
         self.as_mut().set_selection_info(QString::from(&selection));
         let bordered = self.bordered_count();
         self.as_mut().set_croppable(bordered);
+        super::publish_shown(self.shown_file());
     }
 
     /// Sets what the viewer shows of its item (`viewing`), the viewed properties. Read again wherever what they show
@@ -290,6 +291,7 @@ impl qobject::GalleryModel {
     /// item (`-1`, the viewer closed) each reads as the item-less value (`""`, `0`, an empty rectangle, `-1` for a
     /// border line), which is what the viewer shows nothing with.
     pub(super) fn refresh_viewed(mut self: Pin<&mut Self>) {
+        super::publish_shown(self.shown_file());
         let item = self.viewing;
         let key = self.image_key(item);
         let full = self.full_url(&key);

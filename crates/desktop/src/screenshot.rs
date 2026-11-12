@@ -20,7 +20,7 @@ pub(crate) fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     if command_line::path("screenshot").is_none() {
         return;
     }
-    let wait = command_line::number("wait", 10.0);
+    let wait = command_line::hooks().wait;
     ffi::save_screenshot_later(engine, millis(wait));
 }
 

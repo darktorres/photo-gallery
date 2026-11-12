@@ -530,6 +530,11 @@ pub enum Notice {
     SessionNotSaved {
         error: String,
     },
+    /// The saved session (where the window was) couldn't be read: the window starts from the default listing, and the
+    /// stored text stays as it is until the next save replaces it.
+    SessionNotRead {
+        error: String,
+    },
     /// A rating, a turn or a border mark couldn't be saved.
     EditFailed {
         op: EditOp,
@@ -826,6 +831,7 @@ ids! {
     TreeFailed => "tree-failed",
     ViewsFailed => "views-failed",
     SessionNotSaved => "session-not-saved",
+    SessionNotRead => "session-not-read",
     EditFailed => "edit-failed",
     ThumbsFailed => "thumbs-failed",
     BordersFailed => "borders-failed",
@@ -930,6 +936,7 @@ impl Notice {
             | Notice::TreeFailed { .. }
             | Notice::ViewsFailed { .. }
             | Notice::SessionNotSaved { .. }
+            | Notice::SessionNotRead { .. }
             | Notice::EditFailed { .. } => Level::Error,
         }
     }
@@ -952,7 +959,8 @@ impl Notice {
             | Notice::FacetsFailed { .. }
             | Notice::TreeFailed { .. }
             | Notice::ViewsFailed { .. }
-            | Notice::SessionNotSaved { .. } => Source::Catalog,
+            | Notice::SessionNotSaved { .. }
+            | Notice::SessionNotRead { .. } => Source::Catalog,
             Notice::PrefsUnreadable { .. } | Notice::PrefsNotSaved { .. } => Source::Prefs,
             Notice::CacheTotalsFixed { .. }
             | Notice::CacheTouchesNotWritten { .. }
@@ -1011,7 +1019,10 @@ impl Notice {
             Notice::ReloadFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Reload)),
             Notice::FacetsFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Facets)),
             Notice::TreeFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Tree)),
-            Notice::SessionNotSaved { .. } => self.key(None, None, Resolver::NextSuccess(Op::Session)),
+            // Either is resolved by the next session save that succeeds: it replaces the row that was read or not read.
+            Notice::SessionNotSaved { .. } | Notice::SessionNotRead { .. } => {
+                self.key(None, None, Resolver::NextSuccess(Op::Session))
+            }
             Notice::ThumbsFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Thumbs)),
             Notice::BordersFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Borders)),
             Notice::ImportFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Import)),
@@ -1127,6 +1138,7 @@ impl Notice {
             | Notice::TreeFailed { .. }
             | Notice::ViewsFailed { .. }
             | Notice::SessionNotSaved { .. }
+            | Notice::SessionNotRead { .. }
             | Notice::EditFailed { .. }
             | Notice::ThumbsFailed { .. }
             | Notice::BordersFailed { .. }
@@ -1227,6 +1239,7 @@ impl Notice {
             Notice::FileNoLongerInLibrary,
             Notice::UpdateAvailable { version: "1.2.0".into() },
             Notice::Unknown { code: "from-a-newer-build".into() },
+            Notice::SessionNotRead { error: error() },
         ]
     }
 }
@@ -1317,10 +1330,11 @@ mod tests {
             Notice::FileNoLongerInLibrary => 43,
             Notice::UpdateAvailable { .. } => 44,
             Notice::Unknown { .. } => 45,
+            Notice::SessionNotRead { .. } => 46,
         }
     }
 
-    const KINDS: usize = 46;
+    const KINDS: usize = 47;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {

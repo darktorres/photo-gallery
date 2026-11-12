@@ -1,6 +1,6 @@
 # Web client
 
-How a browser client for the gallery should be built. Claims about other projects were checked against their source at the commits pinned below, and claims that could not be checked were removed. The rest was checked against this repo on 2026-11-12. It covers the client stack, how thumbnails get past the browser's connection limit, how video plays, what the server must send, and whether the desktop QML can run in a browser.
+How a browser client for the gallery should be built. Claims about other projects were checked against their source at the commits pinned below, and claims that could not be checked were removed. The rest was checked against this repo on 2026-11-12. It covers the frontend, how thumbnails get past the browser's connection limit, how video plays, what the server must send, and how state is split between client and server.
 
 | Project | Stars | Server / client | Commit read |
 |---|---|---|---|
@@ -23,24 +23,25 @@ Candidates came from GitHub topic search by stars (`photo-gallery`, `photos`, `p
 
 ## Verdict
 
-- **Client: TypeScript with Svelte 5, `pg-client` compiled to WASM for layout and logic.** Immich (SvelteKit, with its
-  justified layout in Rust→WASM) and Ente (TypeScript, with Rust→WASM for crypto and logic) both use this pattern.
-- **The hard problems are the same in every stack, and none is solved by the framework:**
+- **Frontend: one shared frontend, the QML app, in the browser and on the desktop.** This is the goal. Whether it is
+  reachable is the open gate (see "Reusing the QML"): a spike rendered the real grid in a browser, but video and the
+  phone checks are not done.
+- **Fallback if the gate fails: a separate browser frontend over the same protocol.** Its framework is not chosen. The
+  protocol and the state model don't depend on that choice, so nothing on the server side waits on it.
+- **The hard problems are the same in every frontend, and none is solved by the framework:**
   - the browser's maximum element height;
   - per-item reactive state;
   - thumbnails held up behind the 6-connection limit;
   - video the browser can't play.
-
-  The arguments for Svelte are PhotoSwipe and hls.js, which are JavaScript libraries, and the TS iteration loop.
 - **What we can do differently,** because we already have every aspect ratio and versioned thumbnail keys:
   - exact geometry for the whole listing up front;
   - a scrollbar that is right before anything has loaded;
   - thumbnails sized for devicePixelRatio and cached `immutable`;
   - on-demand remux and HLS for MKV/AVI instead of transcoding ahead.
-- **Reusing the QML: possible for the views, not for the app.** The `.qml` files run in a browser under Qt for
-  WebAssembly (a spike rendered the real grid; see "Reusing the QML"). What does not carry over is the bridge behind
-  them (272 properties, invokables and signals), the native glue, and the build. Each is a rewrite, not a port. Stay on
-  Svelte and TypeScript. Video and the server side are the blockers, and the Svelte path does not wait on either.
+- **Reusing the QML: possible for the views, not yet for the app.** The `.qml` files run in a browser under Qt for
+  WebAssembly (a spike rendered the real grid; see "Reusing the QML"). The bridge has to be reshaped: its data reads move
+  behind the data layer (see State model), and its control state stays local. Video and the phone checks are open. Each
+  piece is a rewrite, not a port.
 
 ## What the surveyed projects send, and what goes wrong
 
@@ -64,7 +65,7 @@ Candidates came from GitHub topic search by stars (`photo-gallery`, `photos`, `p
   attributes the freeze to layout pre-computation in `TimelineManager` and `TimelineMonth`. The code also keeps one
   reactive object per asset (`timeline-day.svelte.ts:172-174`). Immich #32179 (open) reports the timeline freezing
   after repeated small selections on a 313K-asset library. Positions and selection belong in typed arrays and id sets,
-  outside the framework's proxies. That holds for Leptos signals as much as Svelte runes.
+  outside any framework's reactive objects.
 - **Urocissa's `get_prefetch.rs`** is the closest to our `list_grid(folder, recursive, Query, Sort)`. Its prefetch record
   carries a timestamp, a location and a length, so the client can fetch ranges of a fixed list.
 
@@ -136,7 +137,7 @@ position has to be our own coordinate, scaled onto a spacer below the cap, from 
 - **Auth:** an httpOnly SameSite=Lax cookie lets `<img>` and `<video>` load with no token (Immich, LibrePhotos). A token
   in the path makes URLs unique per session and defeats caching (PhotoPrism).
 
-### Rust and TypeScript together
+### Rust→WASM in other projects
 
 - **Ente's Rust→WASM:** crypto and similar logic, built with wasm-bindgen and tsify via `wasm-pack --target bundler`
   (`rust/bindings/wasm/lib/Cargo.toml`). The build constraints are:
@@ -145,9 +146,10 @@ position has to be our own coordinate, scaled onto a spacer below the cap, from 
   - a pinned nightly Rust for the cast binding (`rust/bindings/wasm/cast/rust-toolchain.toml`).
 - **Immich's `justified-layout`:** about 200 lines (207 in `src/lib.rs`), `no_std` on wasm32, inlined as base64, with
   `initSync`. It takes a `Float32Array` of ratios and returns a `Float32Array` of positions.
-- **Spacedrive's type generation** is the one to copy. specta writes `packages/ts-client/src/generated/types.ts`
-  (6,375 lines) with a method map, committed to the repo. Spacedrive's default branch no longer uses rspc; its server
-  runs axum (`apps/server/src/main.rs`).
+- **Spacedrive's type generation** writes `packages/ts-client/src/generated/types.ts` (6,375 lines) with a method map,
+  committed to the repo. That is how a TypeScript client gets its types. We don't need it for a Rust client, since the
+  protocol types are Rust on both ends. Spacedrive's default branch no longer uses rspc; its server runs axum
+  (`apps/server/src/main.rs`).
 
 ### Photofield: the grid as map tiles
 
@@ -158,6 +160,100 @@ Photofield renders the whole layout on the server as 512 px map tiles (`README.m
   for many clients". It panics on huge scenes (#54) and has memory issues (#193).
 
 It's a poor fit for rating and selecting.
+
+## State model
+
+Decided. The controller runs in every client. The server is the only data authority, and the only process that writes the
+catalog. The desktop talks to a per-user background server on loopback, through the same protocol as every other client.
+
+**Ownership**
+
+- Server: catalog facts (items, ratings, marks, rotation, folders, the tree), scan and job status, persisted
+  preferences, thumbnails, listing snapshots, and the event log.
+- Client controller: the current item, selection, panels, viewer, grid size, scroll, filter-bar UI state, and timers
+  (time is an input, `now_ms`).
+- Each preference is marked per-device or per-user in the schema. The list is open (below).
+
+**Identity**
+
+- Items are identified by `FileId` on the wire. An index is local to one snapshot on one client and never crosses the
+  boundary. The client's data layer converts index-carrying commands (`Select(usize)`, `Rate { item }`,
+  `ShowViewer(usize)`) to `FileId` using its own snapshot.
+- Every message that refers to a listing carries `(listing_id, generation)`. The server rejects a mismatch with a typed
+  error, so a stale index can't reach the wrong file.
+
+**Listings**
+
+- A snapshot freezes membership and order when it opens. Attribute changes update items in place.
+- The server publishes the fields each listing's query and sort read. A change to one of those fields is
+  membership-affecting. The client then reopens the listing with the same query and sort, keeps the selected `FileId`,
+  and anchors the scroll to it. If the selected item no longer matches, the selection moves to the next item in the new
+  order, or the previous one if there is none.
+- A snapshot expires after an idle time. Using an expired one returns `SnapshotExpired`, and the client reopens it as above.
+
+**Mutations**
+
+- Every mutation is a set: `set(field, value, expected_version)`. Relative operations (rotate by one turn) are computed by
+  the client into absolute values before they are sent.
+- The server applies the set only when the item's version matches, and returns the new version.
+- A client keeps at most one mutation in flight per item and queues later ones behind the returned version. Key repeat
+  therefore serialises instead of conflicting.
+- A version mismatch means another device changed the item. The client refetches the item, shows a notice, and doesn't
+  retry silently.
+- There is no offline mutation queue in version 1. A mutation with no server fails visibly.
+
+**Sync**
+
+- The server numbers events per session. The client records the last number it applied.
+- On a gap or a reconnect the client calls `resume(seq)`. If the server still holds those events, they replay. Otherwise the
+  client refetches the tree, the listing it shows and the item records it holds, then continues from the new number.
+- The mapping from server changes to controller events lives in one place, the client's data layer. Its tests are part of
+  the design.
+
+**Loading**
+
+- Phases: `Connected` (protocol version checked), `TreeLoaded`, `ListLoading(generation)`, `ListReady(generation)`,
+  `ListShown`.
+- `ListReady` means the ratio blob is complete. Navigation (`Step`) and layout depend only on it. Item records arrive by
+  range, and a grid cell without its record shows a placeholder.
+- Commands that need a ready listing are ignored until `ListReady` for the current generation. No command reads a partly
+  loaded listing silently.
+
+**Protocol and versions**
+
+- The handshake carries a protocol version and a build id. The desktop refuses a server with a different protocol version,
+  and restarts its own background server. A browser checks the build id on connect and reloads if the server has moved on.
+- The server serves the frontend it was built with, so the browser and the server always match.
+
+**Processes and access**
+
+- One binary, `gallery`, with the `serve` subcommand. An always-running per-user background process, started at logon and
+  supervised by the desktop. The desktop attaches to it, or starts it, under a single-instance lock.
+- Scans and sync run in the background at low I/O priority, and yield to the desktop.
+- The loopback listener binds `127.0.0.1` only. Requests carry a per-start token from a user-only file, so other local
+  processes can't use it.
+- The LAN listener is off by default. Once it is on: TLS with a certificate whose name matches the address the phone
+  uses, pairing before any request other than pairing, the `Origin` check on the WebSocket, and paired credentials on every
+  mutation. The enforcement is in the transport, not in the client.
+- The CLI's writing commands (`gallery scan`, `gallery import`) also write the catalog. While the server runs, they go
+  through the server or refuse.
+
+**Testing**
+
+- Controller logic: the existing replay tests.
+- Data layer: a conformance suite against the server, covering versions, sequence numbers and resume, and snapshot
+  generation mismatch.
+- Integration: the desktop over loopback, and one phone session per release.
+- Before the desktop cuts over: benchmark listing open and range fetch against the current in-process path, and accept
+  the numbers first.
+
+**Open**
+
+- Per-device or per-user, field by field.
+- Whether item deletion and moves are in version 1, since they change membership.
+- The controller's view state. A serialisable struct has to be split out first, as a refactor prerequisite.
+- The snapshot idle time, and the benchmark budget.
+- Whether the desktop cuts over before the browser frontend exists.
 
 ## Design for us
 
@@ -175,7 +271,7 @@ It's a poor fit for rating and selecting.
 - **Batching:** a `multipreview`-style stream, with requests in viewport-priority order and cancellation.
   - Carried on the one WebSocket, which also carries events, so plain HTTP on the LAN never runs out of sockets.
   - The client stores each image in Cache Storage under its single URL.
-  - With TLS (mkcert or `tailscale cert`) and HTTP/2, plain `<img>` would also do. The batch path keeps
+  - With TLS and HTTP/2 (the LAN certificate from State model), plain `<img>` would also do. The batch path keeps
     working without it.
 - **Viewer:** a fitted image at screen × DPR, then zoomed regions; JPEG for formats the browser can't decode.
 - **Video:**
@@ -183,36 +279,39 @@ It's a poor fit for rating and selecting.
   - Stream-copied to fMP4 or HLS when only the container is wrong.
   - Real-time HLS transcode otherwise, paced in-process, with NVENC on the 2060.
   - Nothing ahead of time.
-- **Events and auth:** events patch items by id. Auth is an httpOnly cookie set by device pairing.
+- **Events and auth:** see State model. Auth is an httpOnly cookie set by device pairing.
 
-**Client:**
+**Frontend** (the shared QML app, see "Reusing the QML" for the gate):
 
-- **Stack:** Svelte 5 + TypeScript, as a static single-page app served by `gallery.exe`, with types generated by
-  specta and checked in CI. (No generated types exist yet.)
-- **Layout:** `layout::justify_into` (`crates/client/src/layout.rs`; the greedy core is about 20 lines, std plus `pg_model::num::count`)
-  built to WASM with wasm-bindgen and run in a worker over the whole listing. It reruns on resize, so the grid matches the desktop exactly.
-- **Scrolling:** our own scroll coordinate scaled under the element-height cap, rows windowed by binary search
-  images mounted only once scrolling slows (LibrePhotos).
-- **State:** positions in typed arrays, selection as id sets and index ranges, select-all on the server. No
-  per-item reactive objects.
-- **Logic:** `pg-client` is wasm32-clean (`clippy.toml` bans clocks, threads and files; `just lint` runs its wasm32 check, `tools/lint.py:21`). The web
-  client can reuse its pure parts through wasm-bindgen: keys, sort, facets, the Fluent text, and the controller, which
-  takes `now_ms` as an input. Nothing is built yet. The Svelte client should decide per part whether to call the WASM
-  or port it, and the replay format (`PG_RECORD` writes one `Update { now_ms, event, commands }` line per event) lets it test the port against the desktop's traces.
-- **Viewer:** PhotoSwipe or our own, with a preview under the full image and neighbours preloaded. hls.js for
-  video.
+- **Shape:** the existing `pg.gallery` views. The bridge is reshaped to the State model: control members read the local
+  controller, and data members read the data layer. In the browser the data layer is the protocol; on the desktop it is
+  the loopback connection to the same server.
+- **Layout:** `layout::justify_into` (`crates/client/src/layout.rs`; the greedy core is about 20 lines, std plus
+  `pg_model::num::count`), in `pg-client`'s WASM, run in the frontend's process over the whole listing. It reruns on
+  resize, so the grid matches the desktop exactly. Whether it needs a worker is an open check.
+- **Scrolling:** our own scroll coordinate scaled under the element-height cap, rows windowed by binary search and images
+  mounted only once scrolling slows (LibrePhotos).
+- **State:** positions in typed arrays, selection as id sets and index ranges, select-all on the server. No per-item
+  reactive objects.
+- **Logic:** `pg-client` is wasm32-clean (`clippy.toml` bans clocks, threads and files; `just lint` runs its wasm32 check,
+  `tools/lint.py:21`). It runs in every client as WASM, controller included (see State model). Nothing is built yet. The
+  replay format (`PG_RECORD` writes one `Update { now_ms, event, commands }` line per event) tests the controller in each
+  client against the desktop's traces.
+- **Viewer:** the existing `Viewer.qml`, fed fitted-image URLs, with zoomed regions from the view endpoint. Video in the
+  browser is an open check (see Open checks).
 
 ## Server (draft)
 
-The server is what the web client talks to. It owns the catalog, the thumbnail cache, the jobs and the file access.
+The server is what every client talks to. It owns the catalog, the thumbnail cache, the jobs and the file access.
 It has no window and no Qt. This section is a draft: the open decisions are at the end.
 
 **What the repo has to build on:**
 
 - `pg-app` is the typed API over the catalog, thumbnails, jobs, library and Yandex (`crates/app/src`, 114 public
   functions in 16 files; `library.rs` has 21). The desktop window reaches data only through it, so the server can too.
-- `pg-model` has the `Query`, `Sort` and `Listing` types, and `pg-client` has the `Event`/`Command` enums. The shared
-  `pg-model` types derive `specta::Type` behind a feature, but no TypeScript is generated yet.
+- `pg-model` has the `Query`, `Sort` and `Listing` types, and `pg-client` has the `Event`/`Command` enums. Both ends of
+  the protocol are Rust with serde, so the protocol needs no generated types. `specta::Type` is derived behind a feature
+  in `pg-model`, and it is needed only for a non-Rust client (the fallback).
 - `crates/gallery` builds without Qt when its `desktop` feature is off (`crates/gallery/Cargo.toml`). A server can be a
   `serve` subcommand behind a `web` feature, next to the window.
 - The repo has no async runtime and no async code. 24 files spawn threads, and `pg-app` is blocking (rusqlite,
@@ -221,7 +320,7 @@ It has no window and no Qt. This section is a draft: the open decisions are at t
 
 **Crate:** a new `crates/web` (`pg-web`), with no Qt dependency. It depends on `pg-app` and `pg-client`, and holds the
 HTTP and WebSocket server, the routes, the cache headers and the auth. `crates/gallery` gets the `serve` subcommand.
-The built Svelte bundle is served from a directory first, and embedded later.
+The built frontend (the QML WASM bundle, or the fallback's bundle) is served from a directory first, and embedded later.
 
 **Stack (open).** Two options:
 
@@ -231,8 +330,8 @@ The built Svelte bundle is served from a directory first, and embedded later.
   adds no runtime. Byte-range handling for video is written by hand either way, so this costs little.
 
 Lean: sync. The batch stream and the events share one WebSocket, so plain HTTP never runs out of sockets, and a
-handful of browsers need no more threads than that. Both options leave TLS to a reverse proxy, or to `tailscale cert`
-later.
+handful of browsers need no more threads than that. Both options leave TLS to a reverse proxy, or to a certificate the
+server serves itself (see State model).
 
 **Endpoints (sketch):**
 
@@ -243,13 +342,15 @@ later.
   immutable`. A missing height gets the nearest one (`ThumbCache::get_nearest`).
 - `GET /api/files/{id}/view?w=&h=`: a fitted image, or the original bytes with `Range` for video.
 - `POST /api/pair`: device pairing, which sets the httpOnly cookie.
+- `POST /api/items/{file_id}/set`: `field`, `value`, `expected_version`. Returns the new version, or `VersionMismatch`.
+- `POST /api/resume`: `seq`. Replays the missed events, or returns `ResyncRequired`.
+- Listing endpoints carry the generation (see State model).
 - `GET /ws` (WebSocket): events as JSON, and the thumbnail batch as binary frames with request ids, in viewport order,
   with cancellation.
 
 **Behaviour the server must have:**
 
-- **Snapshots expire.** A listing is dropped after a set idle time, and the client gets an error it can recover from by
-  creating a new one.
+- **Snapshots expire.** Expiry and recovery are defined in State model (`SnapshotExpired`, then reopen by query).
 - **The cache is the only source for thumbnails.** A miss is queued, never read from the originals on the request path.
 - **Auth.** The WebSocket checks the `Origin` header, because the cookie is sent with it and cross-site pages can open
   it otherwise. The server binds to the LAN address only when asked.
@@ -257,12 +358,10 @@ later.
 **Open decisions:**
 
 - **Stack:** async or sync. Lean sync, above.
-- **Shared catalog.** The desktop and the server would read and write one SQLite catalog, and the catalog uses WAL
-  (`close()` merges it). Whether two processes can write it safely is not checked. This needs a check before the server
-  runs beside the window.
-- **Snapshot lifetime** and the error the client sees when one has expired.
+- **Catalog writers: resolved** (State model). The server is the only process that writes the catalog. The CLI's writing
+  commands are still open.
 - **Pairing UX:** a code shown in the desktop window, or a login page.
-- **Packaging:** one `gallery` binary with the `serve` subcommand, or a separate binary.
+- **Frontend gate:** see "Reusing the QML". It decides whether the fallback frontend is needed.
 
 ## Reusing the QML
 
@@ -271,18 +370,19 @@ later.
 - **Views:** 34 QML files, 5,115 lines, in the `pg.gallery` module. `Theme` and `Ratings` are singletons.
 - **Bridge:** 19 Rust files each register one type the QML uses, with `#[qml_element]`. They declare 272 members: 112
   properties, 140 invokables and 20 signals. The largest are `shell_bridge.rs` (56 attribute lines), `gallery_bridge.rs`
-  (36), `yandex_bridge.rs` (26) and `viewport_bridge.rs` (23). Each member reads in-process Rust state: the catalog,
-  the thumbnail cache, the job queue. In a browser every one of them is a network call.
+  (36), `yandex_bridge.rs` (26) and `viewport_bridge.rs` (23). Each member reads in-process Rust state: the catalog, the
+  thumbnail cache, the job queue. Under the State model, control members read the local controller and data members
+  read the data layer, so only the data members change where they read from.
 - **Qt modules:** `Quick`, `Controls.Fusion`, `Layouts`, `Window`, `Multimedia` (`MediaView.qml`: `MediaPlayer`,
   `VideoOutput`, and animation frames through the same `VideoOutput`), and `QtQml`. There is no `Dialogs` module; the
   folder pickers are `FolderPickerDialog.qml` and the system's dialog (see Files).
 - **Native glue with no browser equivalent:** `cpp/providers.cpp` (a `QQuickAsyncImageProvider` over the Rust decoders),
   `cpp/frame_sink.cpp` (Rust threads feeding a `QVideoSink`), `cpp/gpu_device.cpp` (the app's D3D11 device, shared
-  with Qt Quick and the player), and the screenshot and live-reload helpers. The web needs replacements for each.
+  with Qt Quick and the player), and the screenshot and live-reload helpers. The browser build needs a replacement for each.
 
 **What is already in place:** `crates/desktop/tests/qml/stubs/pg/gallery/` has stand-ins for 9 of the 19 bridge types
 (160 lines of QML), and `tools/qmltest.py` runs the real views against them. So the views depend on names, not on the
-Rust implementations. That is the seam a web backend would plug into. It covers 9 types, though, and the stubs hold
+Rust implementations. That is the seam a browser backend would plug into. It covers 9 types, though, and the stubs hold
 only what the tests read. A full `pg.gallery` for the browser has to implement all of the surface.
 
 **What blocks it:**
@@ -295,19 +395,20 @@ only what the tests read. A full `pg.gallery` for the browser has to implement a
   install has `wasm_multithread` and `wasm_singlethread` kits.
 - **Threads and secure context.** Qt's threaded build needs `SharedArrayBuffer`, which a browser only enables on a
   cross-origin isolated page. Qt's own WASM test server sends the isolation headers, with the comment "required for
-  WebAssembly threads" (`qtbase/util/wasm/qtwasmserver/qtwasmserver.py:67-68, 213`). Isolation needs a secure context,
-  so on `http://<LAN-IP>` only the single-threaded kit would run, and it has no Multimedia (`wasm_singlethread` has no
-  `Qt6Multimedia` CMake config).
+  WebAssembly threads" (`qtbase/util/wasm/qtwasmserver/qtwasmserver.py:67-68, 213`). Isolation needs a secure context.
+  Over plain `http://<LAN-IP>` only the single-threaded kit would run, and it has no Multimedia (`wasm_singlethread` has
+  no `Qt6Multimedia` CMake config). The plan is HTTPS with a self-signed certificate the phone trusts, issued for the
+  LAN name the phone uses. That makes the page a secure context, so the multithreaded kit can run. Not yet tested.
 - **Video.** Qt Multimedia on WASM plays through an HTML5 `<video>` element that it creates on the page
   (`qtmultimedia/src/plugins/multimedia/wasm/common/qwasmvideooutput.cpp:579`). A clip bundled as a `qrc` resource is
   copied to a `file:///tmp` URL, which the browser rejects, so the source has to come over HTTP. Over HTTP the element
-  was removed during start-up and `play()` was aborted (`AbortError`). The cause is open (see Open checks). Video is
-  the blocker for `MediaPlayer` in a browser. The web video path outside Qt, which this doc already prefers, is the
-  fallback.
+  was removed during start-up and `play()` was aborted (`AbortError`). The spike ran with the isolation headers already
+  set, so isolation is not the cause. The cause is open (see Open checks). Video is the blocker for `MediaPlayer` in a
+  browser.
 - **Files.** The folder pickers are used three times: `Main.qml:158` and `Main.qml:175`, and `YandexPanel.qml:127`. On
   Windows the system's dialog opens; elsewhere `FolderPickerDialog.qml` does (`crates/desktop/src/picker.rs`). Browsers
   pick files their own way, and the library's folders live on the server, so these dialogs become a server-side folder
-  browser whatever the stack. Not tested in a browser.
+  browser. Not tested in a browser.
 - **Size and start-up.** Measured on the spike: 27.7 MB of `.wasm` (9.6 MB gzipped), 294 KB of JS (67 KB gzipped), and a
   13 KB loader. Cold start on a phone is not measured.
 
@@ -324,13 +425,17 @@ short MP4. It ran in desktop Chromium, with the server sending the cross-origin 
 - **Video:** not playing. The status and error log lines were `player media status 6`, then `AbortError: The play()
   request was interrupted because the media was removed from the document`. A `qrc` URL as the source fails with
   `NotSupportedError`.
-- **Not run:** the single-threaded kit (it has no Multimedia), the `http://<LAN-IP>` secure-context check, touch on a
+- **Not run:** the single-threaded kit (it has no Multimedia), the HTTPS check with a trusted LAN certificate, touch on a
   phone, and cold start.
 
+**The gate.** Re-run the spike over HTTPS with the trusted LAN certificate, with the WebSockets module, on the phone's
+browser. It has to show the grid, thumbnails and video. If video works, the frontend is the shared QML app. If video
+can't be fixed, the fallback is a separate browser frontend over the same protocol; the server and the state model don't
+change either way.
+
 What this settles: the QML views run in a browser under Qt for WASM, so the `.qml` files are not the obstacle. What it
-leaves open is video, the server side (images and data come over the wire, not from Rust in-process), and the phone
-checks. The cost of a second `pg.gallery` implementation (about the size of the bridge above) is the next question if
-video cannot be fixed. The Svelte path does not wait on it.
+leaves open is video, the data layer (images and data come over the wire, not from Rust in-process), and the phone
+checks.
 
 ## WebChannel over WebSockets
 
@@ -375,9 +480,9 @@ All signals and enums. Property changes are batched on a timer, 50 ms by default
 - **Licence.** Qt's modules are LGPL. `qwebchannel.js` ships in the web bundle, so the bundle carries Qt's licence
   notice.
 
-**The route:** a Rust WebSocket server speaking JSON built from `pg-client`'s `Event` and `Command` types, which specta
-already generates. It is headless, typed, and fits the design above. The cost is the protocol. The controller already
-maps events to commands, so most of the work is serialisation.
+**The route:** a Rust WebSocket server speaking JSON built from `pg-client`'s `Event` and `Command` types. Both ends are
+Rust with serde, so the protocol needs no generated types. It is headless, typed, and fits the state model. The cost is
+the protocol. The controller already maps events to commands, so most of the work is serialisation.
 
 **Where this leaves it:** WebChannel is out for the web gallery. Build on a Rust server and derive the protocol from
 `pg-client`.
@@ -393,8 +498,9 @@ maps events to commands, so most of the work is serialisation.
   - measure image decode time in WASM;
   - try touch (QML is touch-first; the viewer has a `PinchHandler` at `Viewer.qml:314` and a touch-only `DragHandler`
     at `Viewer.qml:332`).
-  
-  Every bridge object is a network client in either stack. The spike ran without thumbnails.
-- **WASM layout in a worker against plain TS** on a million ratios. It decides whether the worker is needed, not
-  the stack.
-- **Batch stream against HTTP/2** over `tailscale cert`, on a phone, for time to fill a screen of thumbnails.
+- **The gate, over HTTPS.** Re-run the spike with the trusted LAN certificate and WebSockets on the phone's browser (see
+  "Reusing the QML"). Confirm `crossOriginIsolated` is true on the phone before testing threads.
+- **Bridge under the state model.** Under the State model the browser build adds a data-layer transport, not a network
+  call per member. Check this with a stub data layer before any bridge is rewritten.
+- **WASM layout on a million ratios,** on the main thread and in a worker. It decides whether the worker is needed.
+- **Batch stream against HTTP/2** with the trusted LAN certificate, on a phone, for time to fill a screen of thumbnails.

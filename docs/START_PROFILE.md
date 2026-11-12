@@ -160,7 +160,6 @@ parse the schema, which tracked work's triggers and indexes made larger.
 Out of reach: NVIDIA's signature checks (733 M per device), Qt's type registration (106 M). Not costs at normal
 speed: the render thread's and the driver's per-frame work.
 
-
 ## Startup (2026-10-31)
 
 Measured on a copy of the real catalog (189,518 files, 690 folders; session "All folders", recursive, by name) and

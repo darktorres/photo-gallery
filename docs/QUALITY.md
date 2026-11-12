@@ -109,7 +109,6 @@ a calibration problem. **No threshold, normalization or better embedding model f
 needs a stage that aligns the two images and looks at *where* they differ (see
 `PLAN.md` / the verifier decision below).
 
-
 ### Shortcut and grouping (`eval/group.py`, k-NN set, subset, 2026-10-29)
 
 **Shortcut** (PDQ ≤ 22 with both hashes reliable, or SSCD ≥ 0.95): 2,896 of the 8,344 k-NN pairs (35%), and
@@ -192,7 +191,6 @@ d p50 0, within d ≤ 31 99.7%. The other rows don't change.
 | Text overlay | 0.96 | 0.75 | borderline |
 | Letterbox 10% | 0.93 | 0.75 | borderline |
 | Rotate 90° | 0.94 | 0.73 | not handled at the threshold |
-
 
 ## Bug: R@k undercounted groups of 3+
 

@@ -353,7 +353,6 @@ first step of either doubles as the decision test.
 **Decisions before shipping either:** the app's own licence (it has none yet), and for B whether way 1's
 toolchain is acceptable (way 2 means two FFmpeg copies).
 
-
 ## Videos and animations (M2, 2026-10-30)
 
 Our FFmpeg was BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`), shared with Qt 6.12's player.

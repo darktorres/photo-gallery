@@ -597,7 +597,6 @@ Not measured:
     FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`. debesheedas: `debesheedas.py --exe
     DECODER.exe --ref-dir DIR FILE...`.
 
-
 ## Decode benchmark (`eval/bench_decode.py`, subset, 2026-10-29)
 
 1,000 random JPEGs (median 0.96 MP, 120 KB), each turned into SSCD's 320×320 input, files already in

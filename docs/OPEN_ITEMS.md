@@ -2,7 +2,6 @@
 
 Open items moved from the former `FINDINGS.md` log. Some may overlap with the open decisions in [PLAN.md](PLAN.md) §9; check before acting on one.
 
-
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
 - Verifier speed, next levers (DISK is on TensorRT, 6.7 pairs/s): LightGlue on TensorRT or fewer keypoints (768 px
   was tried and dropped, ~9% faster); gate the rotation retries (e.g. by SSCD similarity).

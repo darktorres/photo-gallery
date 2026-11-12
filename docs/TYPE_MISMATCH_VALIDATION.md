@@ -111,6 +111,7 @@ The wire format stays unchanged.
 **Impact:** a catalog of 2^31 − 1 items or more (about 2.1 billion) shows a clamped count, silently, and items past that index cannot be addressed. A single flat Qt model cannot hold more than 2^31 − 1 rows.
 
 **Fix (planned):**
+
 - Counts and positions cross as `i64` in Rust and as `real` in QML. A JS number is exact to 2^53, about 9 × 10^15. The `int` declarations in the QML files become `real`. `qt_int`'s saturation is replaced by a checked conversion that fails loudly.
 - The Qt model exposes a window of rows around the viewport, kept under 2^31. Rust keeps absolute positions as `i64`. A flat model cannot reach billions of items, so the gallery needs the window.
 - Item 3's selection must address a window row with an absolute `i64` position, or the file's identity. Any Qt-side row handle inherits the 32-bit row limit. (The `QPersistentModelIndex` plan in item 3 is withdrawn.)

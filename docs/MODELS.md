@@ -160,7 +160,6 @@ position grid is resized to each image's grid. One model serves every N, and the
   0.9956). Fused attention would need the export to write attention in the optimizer's pattern, or ONNX Runtime's
   `MultiHeadAttention` op directly.
 
-
 ## Bug: SSCD breaks in fp16
 
 - **Meta's SSCD TorchScript breaks in fp16:** `.half()` collapses every image to the same

@@ -40,7 +40,6 @@ run; `files.txt` paths patched in place so embeddings stay row-aligned). Now 679
 partner is not among the loose `dups2` files (best match ≤ 0.40), so it may be in `Photos/`
 or deleted. Finding it needs a full-set run.
 
-
 ## Eval viewer: port collision (bug)
 
 - **Viewer port collision:** Python's `HTTPServer` sets `SO_REUSEADDR`, which on Windows lets

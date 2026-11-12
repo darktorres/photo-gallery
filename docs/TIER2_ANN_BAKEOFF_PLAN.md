@@ -94,7 +94,6 @@ NN-descent) stay as designed.
 - The viewer's k-NN tab shows the verifier samples and misses (`verify_knn_sscd_trt_fp16_trim_draft.csv`).
 - `ruff check .` and `ruff format --check .` pass; `just lint` for the repo.
 
-
 ## Nearest-neighbour search, first attempt: invalid (5M synthetic vectors, 2026-10-31)
 
 The first index bake-off (`eval/bench_ann.py` at 41eaa1c) ran on 5M vectors drawn from **one Gaussian** fitted to

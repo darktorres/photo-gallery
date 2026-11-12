@@ -2,7 +2,6 @@
 
 Dated decisions, in the order they were made. Each one rests on a measurement in the topic files; the links are in the bullets.
 
-
 - **2026-10-28 (revised the same day): no duplicate / variant distinction for now.** Local-edit
   variants (retouch, inpainting, AI regeneration) and duplicates are one relation, "match". The
   verifier decides match vs unrelated; its residual analysis stays as a diagnostic, for when the

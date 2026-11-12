@@ -8,6 +8,7 @@
 /// new list), and a delegate the view reuses for a row takes the row as it is. A cell needs no image key of its own:
 /// its thumbnail URLs carry it, and the viewer reads its item's (`viewedKey`).
 pub(super) const ROLE_ROW: i32 = 256;
+/// A row's height, made from the thumbnail height. Signalled alone when only the height changed.
 pub(super) const ROLE_HEIGHT: i32 = 257;
 
 /// A count or a row as Qt's int, saturating: a Qt model holds no more rows than an int counts.

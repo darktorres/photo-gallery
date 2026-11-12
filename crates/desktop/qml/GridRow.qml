@@ -33,15 +33,17 @@ Item {
     property var shown: null
     property bool pooled: false
     readonly property bool live: !pooled && !rowItem.settling
-    // The number of cells: the shown row's count. When the count changes, the Repeater makes its cells anew (the count
-    // goes through 0 first, below), so no cell is kept across a count change: a kept cell would show the old item's
-    // image until the new one loads. A span change with the same count keeps its cells, as HEAD did.
+    // The number of cells: the shown row's count. When the row's items change place (its count or its first item), the
+    // Repeater makes its cells anew (the count goes through 0 first, below), so no cell is kept for another item: a kept
+    // cell would show the old item's image until the new one loads. A new version of the same items keeps the cells, and
+    // each reads its item's values again.
     property int cellCount: 0
 
     function take() {
         if (!live || !row)
             return
-        if (cellCount !== row.count)
+        const moved = shown !== null && (shown.first !== row.first || shown.count !== row.count)
+        if (moved || cellCount !== row.count)
             cellCount = 0
         shown = row
         cellCount = row.count

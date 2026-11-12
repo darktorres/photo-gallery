@@ -110,7 +110,7 @@ impl qobject::GalleryModel {
         self.entry(item).and_then(|i| i.rating).map_or(0, |r| i32::from(r.get()))
     }
 
-    /// What the grid marks on a thumbnail besides its rating (`ROLE_BADGES`): a video's length (`▶ 1:23`), the
+    /// What the grid marks on a thumbnail besides its rating (the row's `badges`): a video's length (`▶ 1:23`), the
     /// format of an animated image (`GIF`, `APNG`, `WEBP`), or nothing.
     pub(super) fn badge(&self, item: i32) -> QString {
         let Some(e) = self.entry(item) else { return QString::default() };

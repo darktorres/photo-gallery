@@ -120,6 +120,39 @@ TestCase {
         verify(after[1] !== before[1], "the second cell is new")
     }
 
+    // A span that moves the items along (the same count) makes new cells too: the cells would show another item's image.
+    function test_a_span_change_makes_new_cells() {
+        const list = createTemporaryObject(viewC, tc)
+        verify(list !== null)
+        wait(20)
+        const r = rowOf(list)
+        const before = cellsOf(r)
+        list.rowSpan = Qt.point(1, 2)
+        wait(20)
+        const after = cellsOf(r)
+        compare(after.length, 2)
+        verify(after[0] !== before[0], "the first cell is new")
+        verify(after[1] !== before[1], "the second cell is new")
+        compare(after[0].item, 1)
+        compare(after[1].item, 2)
+    }
+
+    // A new version of the same items keeps its cells: each reads its item's values again.
+    function test_a_new_version_keeps_the_cells() {
+        const list = createTemporaryObject(viewC, tc)
+        verify(list !== null)
+        wait(20)
+        const r = rowOf(list)
+        const before = cellsOf(r)
+        list.rowVersion = 7
+        wait(20)
+        const after = cellsOf(r)
+        verify(after[0] === before[0], "the first cell is kept")
+        verify(after[1] === before[1], "the second cell is kept")
+        compare(after[0].version, 7)
+        compare(after[1].version, 7)
+    }
+
     function test_a_settling_view_keeps_its_cells() {
         const list = createTemporaryObject(viewC, tc)
         verify(list !== null)

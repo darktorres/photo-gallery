@@ -22,8 +22,6 @@ Item {
     required property real itemContentY
     required property real itemContentWidth
     required property real itemContentHeight
-    // The row's version: the values are read again when it changes (a version of -1 reads nothing).
-    required property int version
     required property real rowHeight
     // The image URLs, made by the model (the grammar is Rust's: pg_client::image): the thumbnail at the thumbnail height,
     // and the placeholder (the row's thumbUrls and thumbhashUrls). Their image key (GalleryModel's image_key) changes
@@ -36,17 +34,16 @@ Item {
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
 
-    readonly property int rating: cell.version >= 0 ? cell.itemRating : 0
-    readonly property string badge: cell.version >= 0 ? cell.itemBadge : ""
+    readonly property int rating: cell.itemRating
+    readonly property string badge: cell.itemBadge
     // What is left without the borders (an empty rectangle: none found).
-    readonly property rect content: cell.version >= 0
-        ? Qt.rect(cell.itemContentX, cell.itemContentY, cell.itemContentWidth, cell.itemContentHeight)
-        : Qt.rect(0, 0, 0, 0)
-    readonly property bool bordersMarked: cell.version >= 0 && cell.itemBordersMarked
+    readonly property rect content: Qt.rect(cell.itemContentX, cell.itemContentY, cell.itemContentWidth,
+                                            cell.itemContentHeight)
+    readonly property bool bordersMarked: cell.itemBordersMarked
     // The image's aspect as shown; the tile's may be narrower (clamped panoramas), and the thumbnail is then cropped to it.
-    readonly property real imageAspect: cell.version >= 0 ? cell.itemImageAspect : 1
+    readonly property real imageAspect: cell.itemImageAspect
     // A turn changes the item's shape.
-    width: cell.version >= 0 ? cell.itemAspect * cell.rowHeight : 0
+    width: cell.itemAspect * cell.rowHeight
     height: cell.rowHeight
 
     // ThumbHash placeholder (from the import) until the thumbnail is opaque. It stays under the thumbnail while the

@@ -45,10 +45,10 @@ pub struct Update {
     pub rows: Range<usize>,
     /// Its span (its first item and count) changed.
     pub span: bool,
-    /// Its items changed, so it has a new version and its cells read their items again.
-    pub version: bool,
+    /// Its items changed (rated, turned, marked, a new list): its cells read their items again.
+    pub items: bool,
     /// The height role is sent with the others: its height changed, or its span changed, or its items changed and
-    /// its height didn't (a row whose only change is its items is sent its version alone).
+    /// its height didn't (a row whose only change is its items is sent its items alone).
     pub height: bool,
 }
 
@@ -58,8 +58,6 @@ pub struct Plan {
     rows: Vec<Row>,
     change: RowChange,
     updates: Vec<(Range<usize>, RowUpdate)>,
-    /// The version the changed rows get.
-    version: u32,
     reset: bool,
 }
 
@@ -112,10 +110,6 @@ pub struct Grid {
     rows: Vec<Row>,
     /// The last layout's rows, kept for their capacity: a layout is made into it, then swapped in.
     spare_rows: Vec<Row>,
-    /// Per row: a version never given before, whenever the row's items changed without its span changing.
-    versions: Vec<u32>,
-    /// The last version given.
-    last_version: u32,
     spacing: f64,
     width: f64,
     row_height: f64,
@@ -165,11 +159,6 @@ impl Grid {
         &self.rows
     }
 
-    /// A row's version (`Grid::plan`, `Grid::touch`); 0, a version never given, for a row past the rows.
-    pub fn version(&self, row: usize) -> u32 {
-        self.versions.get(row).copied().unwrap_or(0)
-    }
-
     /// The file of an item (`None` outside the list).
     pub fn id_at(&self, item: usize) -> Option<FileId> {
         self.item(item).map(|e| e.id)
@@ -200,11 +189,6 @@ impl Grid {
         (self.width, self.row_height, self.spacing) = (width, row_height, spacing);
     }
 
-    fn new_version(&mut self) -> u32 {
-        self.last_version += 1;
-        self.last_version
-    }
-
     /// The new rows for a change. Nothing is changed: the rows are made against the current ones, and `commit` puts
     /// them in.
     pub fn plan(&mut self, changed: Changed) -> Plan {
@@ -226,42 +210,28 @@ impl Grid {
                 Changed::List(shown) => shown.get(span.clone()) != self.entries.get(span),
             })
         };
-        let version = self.new_version();
-        Plan { rows, change, updates, version, reset }
+        Plan { rows, change, updates, reset }
     }
 
-    /// Puts a plan in: the new rows, and the versions of the rows inserted, removed or changed. Returns the rows that
-    /// changed in place, for the view to be told about; a reset or an insert or remove has none beyond its own.
+    /// Puts a plan in: the new rows. Returns the rows that changed in place, for the view to be told about; a reset or
+    /// an insert or remove has none beyond its own.
     pub fn commit(&mut self, plan: Plan) -> Vec<Update> {
-        let Plan { rows, change, updates, version, reset } = plan;
+        let Plan { rows, change: _, updates, reset } = plan;
         self.spare_rows = std::mem::replace(&mut self.rows, rows);
         if reset {
-            self.versions.clear();
-            self.versions.resize(self.rows.len(), version);
             return Vec::new();
-        }
-        let at = change.changed.end;
-        if change.inserted > 0 {
-            self.versions.splice(at..at, std::iter::repeat_n(version, change.inserted));
-        } else if change.removed > 0 {
-            self.versions.drain(at..at + change.removed);
         }
         updates
             .into_iter()
             .map(|(rows, u)| {
-                if u.items
-                    && let Some(versions) = self.versions.get_mut(rows.clone())
-                {
-                    versions.fill(version);
-                }
                 let height = u.span || !u.items || u.height;
-                Update { rows, span: u.span, version: u.items, height }
+                Update { rows, span: u.span, items: u.items, height }
             })
             .collect()
     }
 
-    /// Items changed (rated, turned, marked) without changing shape: their rows get a new version. Returns those
-    /// rows, for the view to read their items again.
+    /// Items changed (rated, turned, marked) without changing shape: returns their rows, for the view to read their items
+    /// again.
     pub fn touch(&mut self, items: &[usize]) -> Vec<usize> {
         if self.rows.is_empty() {
             return Vec::new();
@@ -270,20 +240,11 @@ impl Grid {
         let mut rows: Vec<usize> = items.iter().map(|&i| self.row_index(i).min(last)).collect();
         rows.sort_unstable();
         rows.dedup();
-        let version = self.new_version();
-        for &row in &rows {
-            if let Some(v) = self.versions.get_mut(row) {
-                *v = version;
-            }
-        }
         rows
     }
 
-    /// Every row gets a new version, for a change that every row's items must be read again for (the thumbnails'
-    /// height): returns the number of rows.
+    /// Every row's items must be read again (the thumbnails' height changed): returns the number of rows.
     pub fn touch_all(&mut self) -> usize {
-        let version = self.new_version();
-        self.versions.fill(version);
         self.rows.len()
     }
 
@@ -482,13 +443,6 @@ mod tests {
     }
 
     #[test]
-    fn a_reset_gives_every_row_one_version() {
-        let g = square_grid((1..=4).map(|i| entry(i, 100, 100)).collect());
-        assert_eq!(g.rows().len(), 2);
-        assert_eq!(g.version(0), g.version(1));
-    }
-
-    #[test]
     fn a_refresh_with_the_same_items_changes_nothing() {
         let mut g = square_grid((1..=4).map(|i| entry(i, 100, 100)).collect());
         let shown = g.entries().to_vec();
@@ -498,34 +452,31 @@ mod tests {
     }
 
     #[test]
-    fn a_list_that_grows_inserts_the_rows_it_adds_and_keeps_the_others_versions() {
+    fn a_list_that_grows_inserts_the_rows_it_adds_and_changes_no_other_row() {
         let mut g = square_grid((1..=3).map(|i| entry(i, 100, 100)).collect());
-        let before = g.version(0);
         let shown = g.swap_entries((1..=4).map(|i| entry(i, 100, 100)).collect());
         let plan = g.plan(Changed::List(&shown));
         assert_eq!(plan.shape(), Shape::Insert(1..2));
         assert!(g.commit(plan).is_empty());
         assert_eq!(g.rows().len(), 2);
-        assert_eq!(g.version(0), before);
     }
 
     #[test]
     fn an_item_turned_into_another_shape_changes_its_row_span_and_height_together() {
         let mut g = square_grid((1..=4).map(|i| entry(i, 100, 100)).collect());
-        // Item 1 becomes wide: its row's span changes, so the row's span and height are sent, not a version alone.
+        // Item 1 becomes wide: its row's span changes, so the row's span and height are sent, not its items alone.
         let mut wide = g.entries().to_vec();
         wide[0] = entry(1, 300, 100);
         let shown = g.swap_entries(wide);
         let plan = g.plan(Changed::List(&shown));
         assert_eq!(plan.shape(), Shape::Same);
         let updates = g.commit(plan);
-        assert!(updates.iter().any(|u| u.span && u.height && !u.version), "{updates:?}");
+        assert!(updates.iter().any(|u| u.span && u.height && !u.items), "{updates:?}");
     }
 
     #[test]
-    fn an_item_changed_in_place_gives_its_row_a_version_alone() {
+    fn an_item_changed_in_place_signals_its_row_items_alone() {
         let mut g = square_grid((1..=4).map(|i| entry(i, 100, 100)).collect());
-        let before = (g.version(0), g.version(1));
         let shown = g.entries().to_vec();
         let mut rated = shown.clone();
         rated[3].rating = Rating::new(4);
@@ -534,20 +485,15 @@ mod tests {
         let updates = g.commit(plan);
         assert_eq!(
             updates,
-            vec![Update { rows: 1..2, span: false, version: true, height: false }],
+            vec![Update { rows: 1..2, span: false, items: true, height: false }],
             "only the row of the changed item"
         );
-        assert_eq!(g.version(0), before.0, "the other row keeps its version");
-        assert_ne!(g.version(1), before.1);
     }
 
     #[test]
-    fn touch_gives_the_rows_of_the_items_a_new_version() {
+    fn touch_returns_the_rows_of_the_items() {
         let mut g = square_grid((1..=4).map(|i| entry(i, 100, 100)).collect());
-        let (v0, v1) = (g.version(0), g.version(1));
         assert_eq!(g.touch(&[3, 0]), vec![0, 1]);
-        assert_ne!(g.version(0), v0);
-        assert_ne!(g.version(1), v1);
         assert!(Grid::default().touch(&[0]).is_empty());
     }
 

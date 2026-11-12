@@ -40,7 +40,6 @@ TestCase {
             itemContentY: 0
             itemContentWidth: 0
             itemContentHeight: 0
-            version: 0
             rowHeight: 100
             itemThumbUrl: tc.thumbUrl
             itemThumbhashUrl: "image://thumbhash/fade"

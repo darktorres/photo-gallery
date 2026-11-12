@@ -21,72 +21,82 @@ use super::state::fresh_entry;
 impl qobject::GalleryModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Ok(at) = usize::try_from(index.row()) else { return QVariant::default() };
-        let Some(row) = self.grid.rows().get(at) else { return QVariant::default() };
         match role {
             ROLE_ROW => QVariant::from(&self.row_value(at)),
-            ROLE_HEIGHT => QVariant::from(&row.height),
+            ROLE_HEIGHT => match self.grid.rows().get(at) {
+                Some(row) => QVariant::from(&row.height),
+                None => QVariant::default(),
+            },
             _ => QVariant::default(),
         }
     }
 
-    /// The row at `at` as one value (`ROLE_ROW`): its items, its version, and the values its cells show, one list per
-    /// field with an entry per item. The items' ints are Qt's, which the item getters take.
+    /// The row at `at` as one value (`ROLE_ROW`): its items (`first`, `count`), the file each item is (`ids`), and the
+    /// values its cells show, one list per field with an entry per item. The items' ints are Qt's, which the item
+    /// getters take.
     fn row_value(&self, at: usize) -> QMap<QMapPair_QString_QVariant> {
         let mut map = QMap::<QMapPair_QString_QVariant>::default();
         let Some(row) = self.grid.rows().get(at) else { return map };
         let (Ok(first), Ok(end)) = (i32::try_from(row.first), i32::try_from(row.first + row.count)) else {
             return map;
         };
-        let items = first..end;
+        let capacity = usize::try_from(end - first).unwrap_or(0);
+        let mut ids = Vec::with_capacity(capacity);
+        let mut thumbs = Vec::with_capacity(capacity);
+        let mut thumbhashes = Vec::with_capacity(capacity);
+        let mut badges = Vec::with_capacity(capacity);
+        let mut ratings = Vec::with_capacity(capacity);
+        let mut borders_marked = Vec::with_capacity(capacity);
+        let mut image_aspects = Vec::with_capacity(capacity);
+        let mut aspects = Vec::with_capacity(capacity);
+        let mut content_x = Vec::with_capacity(capacity);
+        let mut content_y = Vec::with_capacity(capacity);
+        let mut content_width = Vec::with_capacity(capacity);
+        let mut content_height = Vec::with_capacity(capacity);
+        for i in first..end {
+            let key = self.image_key(i);
+            let border = self.border_box(i);
+            ids.push(self.file_id(i));
+            thumbs.push(self.thumb_url(&key, self.thumb_height));
+            thumbhashes.push(self.thumbhash_url(&key));
+            badges.push(self.badge(i));
+            ratings.push(self.rating(i));
+            borders_marked.push(self.border_marked(i));
+            image_aspects.push(self.image_aspect(i));
+            aspects.push(self.aspect(i));
+            content_x.push(border.x());
+            content_y.push(border.y());
+            content_width.push(border.width());
+            content_height.push(border.height());
+        }
         map.insert_clone(&QString::from("first"), &QVariant::from(&first));
         map.insert_clone(&QString::from("count"), &QVariant::from(&qt_int(row.count)));
-        // The version's bits are the tag Qt compares: as the catalog's counter, it wraps where it wraps.
-        map.insert_clone(&QString::from("version"), &QVariant::from(&(self.grid.version(at).cast_signed())));
-        map.insert_clone(
-            &QString::from("thumbUrls"),
-            &QVariant::from(
-                &items.clone().map(|i| self.thumb_url(&self.image_key(i), self.thumb_height)).collect::<QStringList>(),
-            ),
-        );
+        map.insert_clone(&QString::from("ids"), &QVariant::from(&ids.into_iter().collect::<QList<i64>>()));
+        map.insert_clone(&QString::from("thumbUrls"), &QVariant::from(&thumbs.into_iter().collect::<QStringList>()));
         map.insert_clone(
             &QString::from("thumbhashUrls"),
-            &QVariant::from(&items.clone().map(|i| self.thumbhash_url(&self.image_key(i))).collect::<QStringList>()),
+            &QVariant::from(&thumbhashes.into_iter().collect::<QStringList>()),
         );
-        map.insert_clone(
-            &QString::from("badges"),
-            &QVariant::from(&items.clone().map(|i| self.badge(i)).collect::<QStringList>()),
-        );
-        map.insert_clone(
-            &QString::from("ratings"),
-            &QVariant::from(&items.clone().map(|i| self.rating(i)).collect::<QList<i32>>()),
-        );
+        map.insert_clone(&QString::from("badges"), &QVariant::from(&badges.into_iter().collect::<QStringList>()));
+        map.insert_clone(&QString::from("ratings"), &QVariant::from(&ratings.into_iter().collect::<QList<i32>>()));
         map.insert_clone(
             &QString::from("bordersMarked"),
-            &QVariant::from(&items.clone().map(|i| self.border_marked(i)).collect::<QList<bool>>()),
+            &QVariant::from(&borders_marked.into_iter().collect::<QList<bool>>()),
         );
         map.insert_clone(
             &QString::from("imageAspects"),
-            &QVariant::from(&items.clone().map(|i| self.image_aspect(i)).collect::<QList<f64>>()),
+            &QVariant::from(&image_aspects.into_iter().collect::<QList<f64>>()),
         );
-        map.insert_clone(
-            &QString::from("aspects"),
-            &QVariant::from(&items.clone().map(|i| self.aspect(i)).collect::<QList<f64>>()),
-        );
-        map.insert_clone(
-            &QString::from("contentX"),
-            &QVariant::from(&items.clone().map(|i| self.border_box(i).x()).collect::<QList<f64>>()),
-        );
-        map.insert_clone(
-            &QString::from("contentY"),
-            &QVariant::from(&items.clone().map(|i| self.border_box(i).y()).collect::<QList<f64>>()),
-        );
+        map.insert_clone(&QString::from("aspects"), &QVariant::from(&aspects.into_iter().collect::<QList<f64>>()));
+        map.insert_clone(&QString::from("contentX"), &QVariant::from(&content_x.into_iter().collect::<QList<f64>>()));
+        map.insert_clone(&QString::from("contentY"), &QVariant::from(&content_y.into_iter().collect::<QList<f64>>()));
         map.insert_clone(
             &QString::from("contentWidth"),
-            &QVariant::from(&items.clone().map(|i| self.border_box(i).width()).collect::<QList<f64>>()),
+            &QVariant::from(&content_width.into_iter().collect::<QList<f64>>()),
         );
         map.insert_clone(
             &QString::from("contentHeight"),
-            &QVariant::from(&items.map(|i| self.border_box(i).height()).collect::<QList<f64>>()),
+            &QVariant::from(&content_height.into_iter().collect::<QList<f64>>()),
         );
         map
     }
@@ -230,13 +240,13 @@ impl qobject::GalleryModel {
             }
             Shape::Same => self.as_mut().rust_mut().grid.commit(plan),
         };
-        // A row's span, version and height are signalled as they changed: the row (`ROLE_ROW`) carries its items and
-        // version, so a span or version change gives the QML the row whole.
+        // A row's span or items, and its height, are signalled as they changed: a span or items change gives the QML the
+        // row whole (`ROLE_ROW`, with its items and their values).
         for update in updates {
             let (top, bottom) =
                 (self.index(qt_int(update.rows.start), 0, &root), self.index(qt_int(update.rows.end) - 1, 0, &root));
             let mut roles = Vec::with_capacity(2);
-            if update.span || update.version {
+            if update.span || update.items {
                 roles.push(ROLE_ROW);
             }
             if update.height {

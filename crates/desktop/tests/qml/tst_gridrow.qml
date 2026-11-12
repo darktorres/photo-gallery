@@ -1,6 +1,6 @@
 // GridRow (S-14.3): the cells follow the row's items, a settling view keeps the items it has (no cells are made for a
-// view on its way), a new version reads the same items again, and a change of count makes new cells. The row's value
-// (its row role) is made here from the list's properties: the items, the version and the cells' values, as the model
+// view on its way, nor for a row made while settling), and a change of items makes new cells where their places change.
+// The row's value (its row role) is made here from the list's properties: the items and the cells' values, as the model
 // gives them in one change. Run by `just qmltest`.
 import QtQuick
 import QtTest
@@ -25,8 +25,9 @@ TestCase {
             width: 400
             height: 300
             property point rowSpan: Qt.point(0, 2)
-            property int rowVersion: 0
             property bool rowSettling: false
+            // The file each cell shows: changing it swaps the files in place, as a refresh of the list can.
+            property int rowFiles: 100
             // The thumbnails' tag: changing it changes every cell's URL, as a row's new items do.
             property int rowTag: 0
             model: 1
@@ -34,7 +35,7 @@ TestCase {
                 row: ({
                     first: list.rowSpan.x,
                     count: list.rowSpan.y,
-                    version: list.rowVersion,
+                    ids: Array.from({ length: list.rowSpan.y }, (_, i) => list.rowFiles + i),
                     badges: tc.perCell(() => ""),
                     ratings: tc.perCell(() => 0),
                     bordersMarked: tc.perCell(() => false),
@@ -137,22 +138,6 @@ TestCase {
         compare(after[1].item, 2)
     }
 
-    // A new version of the same items keeps its cells: each reads its item's values again.
-    function test_a_new_version_keeps_the_cells() {
-        const list = createTemporaryObject(viewC, tc)
-        verify(list !== null)
-        wait(20)
-        const r = rowOf(list)
-        const before = cellsOf(r)
-        list.rowVersion = 7
-        wait(20)
-        const after = cellsOf(r)
-        verify(after[0] === before[0], "the first cell is kept")
-        verify(after[1] === before[1], "the second cell is kept")
-        compare(after[0].version, 7)
-        compare(after[1].version, 7)
-    }
-
     function test_a_settling_view_keeps_its_cells() {
         const list = createTemporaryObject(viewC, tc)
         verify(list !== null)
@@ -170,15 +155,67 @@ TestCase {
         compare(r.shown.count, 3)
     }
 
-    function test_a_new_version_reads_the_same_items_again() {
+    // A row given again with the same items (the model signals it again, without a change of span) keeps its cells, and
+    // each still shows its item's values.
+    function test_a_row_given_again_keeps_its_cells() {
         const list = createTemporaryObject(viewC, tc)
         verify(list !== null)
         wait(20)
         const r = rowOf(list)
-        list.rowVersion = 7
+        const before = cellsOf(r)
+        r.row = Object.assign({}, r.row)
         wait(20)
-        compare(r.shown.version, 7)
-        compare(r.shown.first, 0)
+        const after = cellsOf(r)
+        compare(after.length, 2)
+        verify(after[0] === before[0], "the first cell is kept")
+        verify(after[1] === before[1], "the second cell is kept")
+        compare(after[1].item, 1)
+        compare(after[1].itemThumbUrl, "image://thumb/t0k1/100")
+    }
+
+    // A refresh that swaps a file for another in the same place (the same count and span) makes new cells: the old
+    // cell would show the old file's image.
+    function test_a_swapped_file_makes_new_cells() {
+        const list = createTemporaryObject(viewC, tc)
+        verify(list !== null)
+        wait(20)
+        const r = rowOf(list)
+        const before = cellsOf(r)
+        list.rowFiles = 200
+        wait(20)
+        const after = cellsOf(r)
+        compare(after.length, 2)
+        verify(after[0] !== before[0], "the first cell is new")
+        verify(after[1] !== before[1], "the second cell is new")
+        compare(after[1].itemThumbUrl, "image://thumb/t0k1/100")
+    }
+
+    // A kept cell takes its item's new values (here a new thumbnail tag), as the row's cells do when they are read again.
+    function test_a_kept_cell_takes_its_new_values() {
+        const list = createTemporaryObject(viewC, tc)
+        verify(list !== null)
+        wait(20)
+        const r = rowOf(list)
+        const before = cellsOf(r)
+        list.rowTag = 5
+        wait(20)
+        const after = cellsOf(r)
+        verify(after[0] === before[0], "the first cell is kept")
+        compare(after[0].itemThumbUrl, "image://thumb/t5k0/100")
+        compare(after[1].itemThumbUrl, "image://thumb/t5k1/100")
+    }
+
+    // A row made while its list is settling takes no cells until the list is settled.
+    function test_a_row_made_while_settling_makes_no_cells() {
+        const list = createTemporaryObject(viewC, tc, { rowSettling: true })
+        verify(list !== null)
+        wait(20)
+        const r = rowOf(list)
+        compare(cellsOf(r).length, 0)
+        compare(r.shown, null)
+        list.rowSettling = false
+        wait(20)
+        compare(cellsOf(r).length, 2)
         compare(r.shown.count, 2)
     }
 

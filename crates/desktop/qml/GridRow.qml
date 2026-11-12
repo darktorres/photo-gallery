@@ -1,5 +1,5 @@
 // A row of the grid: the delegate logic of the list's rows, kept in QML because it is about ListView's delegate pooling.
-// The row's values come from the model as one value (its row role): its items, its version, and the values its cells
+// The row's values come from the model as one value (its row role): its items and the values its cells
 // show. The cells are GridCell. A component with a name, so GalleryGrid.topItem() can read its firstItem typed (and
 // final, so the QML compiler can trust it through the cast).
 pragma ComponentBehavior: Bound
@@ -8,7 +8,7 @@ import QtQuick
 
 Item {
     id: rowItem
-    // The model's row (galleryModel's ROLE_ROW): the row's items (first, count), its version, and the values its cells
+    // The model's row (galleryModel's ROLE_ROW): the row's items (first, count) and the values its cells
     // show, one list per field with an entry per item of the row. The model gives them in one change, so the row takes
     // them in one step: no value is in before another.
     required property var row
@@ -33,17 +33,21 @@ Item {
     property var shown: null
     property bool pooled: false
     readonly property bool live: !pooled && !rowItem.settling
-    // The number of cells: the shown row's count. When the row's items change place (its count or its first item), the
-    // Repeater makes its cells anew (the count goes through 0 first, below), so no cell is kept for another item: a kept
-    // cell would show the old item's image until the new one loads. A new version of the same items keeps the cells, and
-    // each reads its item's values again.
+    // The number of cells: the shown row's count (see take for when the cells are made anew).
     property int cellCount: 0
+
+    // Whether two rows' cells show the same files, in the same places.
+    function sameFiles(a, b) {
+        return a.length === b.length && a.every((id, i) => id === b[i])
+    }
 
     function take() {
         if (!live || !row)
             return
-        const moved = shown !== null && (shown.first !== row.first || shown.count !== row.count)
-        if (moved || cellCount !== row.count)
+        // A cell keeps its place only while it shows the same file in it: a kept cell would show another file's image
+        // until the new one loads. A row whose first item or files change makes new cells; a row given again with the
+        // same files keeps them, and each cell reads its item's values again.
+        if (shown !== null && (shown.first !== row.first || !sameFiles(shown.ids, row.ids)))
             cellCount = 0
         shown = row
         cellCount = row.count
@@ -73,7 +77,6 @@ Item {
                 itemContentY: rowItem.shown.contentY[index] ?? 0
                 itemContentWidth: rowItem.shown.contentWidth[index] ?? 0
                 itemContentHeight: rowItem.shown.contentHeight[index] ?? 0
-                version: rowItem.shown.version
                 rowHeight: rowItem.rowHeight
                 itemThumbUrl: rowItem.shown.thumbUrls[index] ?? ""
                 itemThumbhashUrl: rowItem.shown.thumbhashUrls[index] ?? ""

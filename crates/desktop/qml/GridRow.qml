@@ -1,18 +1,32 @@
 // A row of the grid: the delegate logic of the list's rows, kept in QML because it is about ListView's delegate pooling.
-// The row's values come from the model as one value (its row role): its items and the values its cells
-// show. The cells are GridCell. A component with a name, so GalleryGrid.topItem() can read its firstItem typed (and
-// final, so the QML compiler can trust it through the cast).
+// The row's values come from the model, one role per field: its items (first, count), the file each item is (ids), and
+// the values its cells show, one list per field with an entry per item of the row. The cells are GridCell. A component
+// with a name, so GalleryGrid.topItem() can read its firstItem typed (and final, so the QML compiler can trust it
+// through the cast).
 pragma ComponentBehavior: Bound
 
 import QtQuick
 
 Item {
     id: rowItem
-    // The model's row (galleryModel's ROLE_ROW): the row's items (first, count) and the values its cells
-    // show, one list per field with an entry per item of the row. The model gives them in one change, so the row takes
-    // them in one step: no value is in before another.
-    required property var row
-    // The row's height (galleryModel's ROLE_HEIGHT), made from the thumbnail height.
+    // The row's items: the first one, and their number.
+    required property int first
+    required property int count
+    // The file each item is. A cell keeps its place only while it shows the same file in it (see take).
+    required property list<real> ids
+    // The values the cells show, one list per field (the model's roles), each with an entry per item of the row.
+    required property list<string> thumbUrls
+    required property list<string> thumbhashUrls
+    required property list<string> badges
+    required property list<int> ratings
+    required property list<bool> bordersMarked
+    required property list<real> imageAspects
+    required property list<real> aspects
+    required property list<real> contentX
+    required property list<real> contentY
+    required property list<real> contentWidth
+    required property list<real> contentHeight
+    // The row's height (the model's rowHeight role), made from the thumbnail height.
     required property real rowHeight
     // From the grid: the gap, the borders and selection, and whether the list is settling (see GalleryGrid).
     required property real gap
@@ -20,44 +34,90 @@ Item {
     required property int current
     required property bool settling
 
-    final readonly property int firstItem: row ? row.first : 0
+    final readonly property int firstItem: rowItem.shownFirst
     width: ListView.view.width
     height: rowHeight
 
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
 
-    // What the cells show: the row as it is once it is in use (not in the view's pool) and the list is not settling.
-    // A view on its way makes no cells for a row it is passing, so a settling row keeps the items it has. A cell reads
-    // its item's values by index, and reads them again whenever the row is taken.
-    property var shown: null
+    // What the cells show: the row as it was taken, while it is live (not in the view's pool, and the list not settling).
+    // A view on its way makes no cells for a row it is passing, so a settling row keeps the items it has. The model's
+    // values reach the row one role at a time, each changing a property that takes the row again (`onXChanged` below),
+    // and the last take, on the last of them, reads them all as they now are: no cell shows a mix of two rows.
+    property int shownFirst: 0
+    property int shownCount: 0
+    property list<real> shownIds: []
+    property list<string> shownThumbUrls: []
+    property list<string> shownThumbhashUrls: []
+    property list<string> shownBadges: []
+    property list<int> shownRatings: []
+    property list<bool> shownBordersMarked: []
+    property list<real> shownImageAspects: []
+    property list<real> shownAspects: []
+    property list<real> shownContentX: []
+    property list<real> shownContentY: []
+    property list<real> shownContentWidth: []
+    property list<real> shownContentHeight: []
     property bool pooled: false
-    readonly property bool live: !pooled && !rowItem.settling
-    // The number of cells: the shown row's count (see take for when the cells are made anew).
+    readonly property bool live: !rowItem.pooled && !rowItem.settling
+    // The number of cells: the shown count (see take for when the cells are made anew).
     property int cellCount: 0
 
     // Whether two rows' cells show the same files, in the same places.
-    function sameFiles(a, b) {
-        return a.length === b.length && a.every((id, i) => id === b[i])
+    function sameFiles(a: list<real>, b: list<real>): bool {
+        if (a.length !== b.length)
+            return false
+        for (let i = 0; i < a.length; ++i) {
+            if (a[i] !== b[i])
+                return false
+        }
+        return true
     }
 
     function take() {
-        if (!live || !row)
+        if (!rowItem.live)
             return
         // A cell keeps its place only while it shows the same file in it: a kept cell would show another file's image
         // until the new one loads. A row whose first item or files change makes new cells; a row given again with the
         // same files keeps them, and each cell reads its item's values again.
-        if (shown !== null && (shown.first !== row.first || !sameFiles(shown.ids, row.ids)))
-            cellCount = 0
-        shown = row
-        cellCount = row.count
+        if (rowItem.shownFirst !== rowItem.first || !rowItem.sameFiles(rowItem.shownIds, rowItem.ids))
+            rowItem.cellCount = 0
+        rowItem.shownFirst = rowItem.first
+        rowItem.shownCount = rowItem.count
+        rowItem.shownIds = rowItem.ids
+        rowItem.shownThumbUrls = rowItem.thumbUrls
+        rowItem.shownThumbhashUrls = rowItem.thumbhashUrls
+        rowItem.shownBadges = rowItem.badges
+        rowItem.shownRatings = rowItem.ratings
+        rowItem.shownBordersMarked = rowItem.bordersMarked
+        rowItem.shownImageAspects = rowItem.imageAspects
+        rowItem.shownAspects = rowItem.aspects
+        rowItem.shownContentX = rowItem.contentX
+        rowItem.shownContentY = rowItem.contentY
+        rowItem.shownContentWidth = rowItem.contentWidth
+        rowItem.shownContentHeight = rowItem.contentHeight
+        rowItem.cellCount = rowItem.count
     }
 
     Component.onCompleted: take()
-    onRowChanged: take()
     onLiveChanged: take()
-    ListView.onPooled: pooled = true
-    ListView.onReused: pooled = false
+    onFirstChanged: take()
+    onCountChanged: take()
+    onIdsChanged: take()
+    onThumbUrlsChanged: take()
+    onThumbhashUrlsChanged: take()
+    onBadgesChanged: take()
+    onRatingsChanged: take()
+    onBordersMarkedChanged: take()
+    onImageAspectsChanged: take()
+    onAspectsChanged: take()
+    onContentXChanged: take()
+    onContentYChanged: take()
+    onContentWidthChanged: take()
+    onContentHeightChanged: take()
+    ListView.onPooled: rowItem.pooled = true
+    ListView.onReused: rowItem.pooled = false
 
     Row {
         spacing: rowItem.gap
@@ -65,21 +125,21 @@ Item {
             model: rowItem.cellCount
             delegate: GridCell {
                 required property int index
-                item: rowItem.shown.first + index
+                item: rowItem.shownFirst + index
                 // A cell the Repeater has taken away may outlive its removal for a moment, and then reads the new,
                 // shorter lists past its index: it reads the empty value then, which nothing shows.
-                itemBadge: rowItem.shown.badges[index] ?? ""
-                itemRating: rowItem.shown.ratings[index] ?? 0
-                itemBordersMarked: rowItem.shown.bordersMarked[index] ?? false
-                itemImageAspect: rowItem.shown.imageAspects[index] ?? 1
-                itemAspect: rowItem.shown.aspects[index] ?? 1
-                itemContentX: rowItem.shown.contentX[index] ?? 0
-                itemContentY: rowItem.shown.contentY[index] ?? 0
-                itemContentWidth: rowItem.shown.contentWidth[index] ?? 0
-                itemContentHeight: rowItem.shown.contentHeight[index] ?? 0
+                itemBadge: rowItem.shownBadges[index] ?? ""
+                itemRating: rowItem.shownRatings[index] ?? 0
+                itemBordersMarked: rowItem.shownBordersMarked[index] ?? false
+                itemImageAspect: rowItem.shownImageAspects[index] ?? 1
+                itemAspect: rowItem.shownAspects[index] ?? 1
+                itemContentX: rowItem.shownContentX[index] ?? 0
+                itemContentY: rowItem.shownContentY[index] ?? 0
+                itemContentWidth: rowItem.shownContentWidth[index] ?? 0
+                itemContentHeight: rowItem.shownContentHeight[index] ?? 0
                 rowHeight: rowItem.rowHeight
-                itemThumbUrl: rowItem.shown.thumbUrls[index] ?? ""
-                itemThumbhashUrl: rowItem.shown.thumbhashUrls[index] ?? ""
+                itemThumbUrl: rowItem.shownThumbUrls[index] ?? ""
+                itemThumbhashUrl: rowItem.shownThumbhashUrls[index] ?? ""
                 showBorders: rowItem.showBorders
                 current: rowItem.current
                 onCellClicked: (itemIndex) => rowItem.cellClicked(itemIndex)

@@ -1,7 +1,7 @@
 // GridRow (S-14.3): the cells follow the row's items, a settling view keeps the items it has (no cells are made for a
 // view on its way, nor for a row made while settling), and a change of items makes new cells where their places change.
-// The row's value (its row role) is made here from the list's properties: the items and the cells' values, as the model
-// gives them in one change. Run by `just qmltest`.
+// The row's values are set here as the model's roles set them: one property per field, each a change that takes the row
+// again. Run by `just qmltest`.
 import QtQuick
 import QtTest
 import pg.gallery
@@ -18,6 +18,12 @@ TestCase {
         return Array.from({ length: 16 }, (_, i) => valueOf(i))
     }
 
+    // The files of a row: `count` consecutive files from `first`. `again` is the model's signal for a row given again:
+    // a new array with the same files.
+    function filesOf(count, first, again) {
+        return Array.from({ length: count }, (_, i) => first + i)
+    }
+
     Component {
         id: viewC
         ListView {
@@ -30,24 +36,24 @@ TestCase {
             property int rowFiles: 100
             // The thumbnails' tag: changing it changes every cell's URL, as a row's new items do.
             property int rowTag: 0
+            // Changing it gives the row its files again (new arrays, the same files).
+            property int rowAgain: 0
             model: 1
             delegate: GridRow {
-                row: ({
-                    first: list.rowSpan.x,
-                    count: list.rowSpan.y,
-                    ids: Array.from({ length: list.rowSpan.y }, (_, i) => list.rowFiles + i),
-                    badges: tc.perCell(() => ""),
-                    ratings: tc.perCell(() => 0),
-                    bordersMarked: tc.perCell(() => false),
-                    imageAspects: tc.perCell(() => 1.5),
-                    aspects: tc.perCell(() => 1.5),
-                    contentX: tc.perCell(() => 0),
-                    contentY: tc.perCell(() => 0),
-                    contentWidth: tc.perCell(() => 100),
-                    contentHeight: tc.perCell(() => 100),
-                    thumbUrls: tc.perCell((i) => "image://thumb/t" + list.rowTag + "k" + i + "/100"),
-                    thumbhashUrls: tc.perCell((i) => "image://thumbhash/k" + i),
-                })
+                first: list.rowSpan.x
+                count: list.rowSpan.y
+                ids: tc.filesOf(list.rowSpan.y, list.rowFiles, list.rowAgain)
+                badges: tc.perCell(() => "")
+                ratings: tc.perCell(() => 0)
+                bordersMarked: tc.perCell(() => false)
+                imageAspects: tc.perCell(() => 1.5)
+                aspects: tc.perCell(() => 1.5)
+                contentX: tc.perCell(() => 0)
+                contentY: tc.perCell(() => 0)
+                contentWidth: tc.perCell(() => 100)
+                contentHeight: tc.perCell(() => 100)
+                thumbUrls: tc.perCell((i) => "image://thumb/t" + list.rowTag + "k" + i + "/100")
+                thumbhashUrls: tc.perCell((i) => "image://thumbhash/k" + i)
                 rowHeight: 100
                 gap: 4
                 showBorders: false
@@ -80,13 +86,13 @@ TestCase {
         wait(20)
         const r = rowOf(list)
         compare(r.firstItem, 0)
-        compare(r.shown.first, 0)
-        compare(r.shown.count, 2)
+        compare(r.shownFirst, 0)
+        compare(r.shownCount, 2)
         list.rowSpan = Qt.point(3, 4)
         wait(20)
         compare(r.firstItem, 3)
-        compare(r.shown.first, 3)
-        compare(r.shown.count, 4)
+        compare(r.shownFirst, 3)
+        compare(r.shownCount, 4)
     }
 
     // Each cell shows its own item, with that item's thumbnail.
@@ -147,12 +153,12 @@ TestCase {
         list.rowSpan = Qt.point(5, 3)
         wait(20)
         // Not made for a view on its way: the row keeps the items it has.
-        compare(r.shown.first, 0)
-        compare(r.shown.count, 2)
+        compare(r.shownFirst, 0)
+        compare(r.shownCount, 2)
         list.rowSettling = false
         wait(20)
-        compare(r.shown.first, 5)
-        compare(r.shown.count, 3)
+        compare(r.shownFirst, 5)
+        compare(r.shownCount, 3)
     }
 
     // A row given again with the same items (the model signals it again, without a change of span) keeps its cells, and
@@ -163,7 +169,7 @@ TestCase {
         wait(20)
         const r = rowOf(list)
         const before = cellsOf(r)
-        r.row = Object.assign({}, r.row)
+        list.rowAgain = 1
         wait(20)
         const after = cellsOf(r)
         compare(after.length, 2)
@@ -212,15 +218,15 @@ TestCase {
         wait(20)
         const r = rowOf(list)
         compare(cellsOf(r).length, 0)
-        compare(r.shown, null)
+        compare(r.shownCount, 0)
         list.rowSettling = false
         wait(20)
         compare(cellsOf(r).length, 2)
-        compare(r.shown.count, 2)
+        compare(r.shownCount, 2)
     }
 
-    // A span and new thumbnails are given as two property changes here, and the row's value is rebuilt for each: the
-    // row ends up with its new items and their own thumbnails.
+    // A span and new thumbnails are given as two property changes here: the row ends up with its new items and their
+    // own thumbnails.
     function test_the_row_shows_its_new_items_with_their_thumbnails() {
         const list = createTemporaryObject(viewC, tc)
         verify(list !== null)
@@ -229,10 +235,10 @@ TestCase {
         list.rowSpan = Qt.point(2, 3)
         list.rowTag = 1
         wait(20)
-        compare(r.shown.thumbUrls[0], "image://thumb/t1k0/100")
-        compare(r.shown.thumbUrls[2], "image://thumb/t1k2/100")
-        compare(r.shown.first, 2)
-        compare(r.shown.count, 3)
+        compare(r.shownThumbUrls[0], "image://thumb/t1k0/100")
+        compare(r.shownThumbUrls[2], "image://thumb/t1k2/100")
+        compare(r.shownFirst, 2)
+        compare(r.shownCount, 3)
     }
 
     function test_the_row_is_as_wide_as_the_view() {
@@ -240,5 +246,135 @@ TestCase {
         verify(list !== null)
         wait(20)
         compare(rowOf(list).width, list.width)
+    }
+
+    // Randomized: a view of 40 rows, pooled and reused as it scrolls, each row given random spans, counts, files,
+    // thumbnail tags and settling. After each operation, every visible row (when the list is not settling) shows its
+    // current items: its cell count, each cell's item, and each cell's own thumbnail.
+    Component {
+        id: fuzzC
+        ListView {
+            id: fz
+            width: 400
+            height: 300
+            cacheBuffer: 200
+            reuseItems: true
+            // The rows' state: each row's first item, count, files and thumbnail tag (set before the rows are made, so no
+            // row's binding reads a missing state).
+            property var rows: Array.from({ length: 40 }, (_, i) => ({ first: i * 3, count: 1 + (i % 4), file: 1000 + i * 10, tag: 0 }))
+            property bool rowSettling: false
+            // What each visible row showed at the last check: its delegate, the state's key, and its cells.
+            property var lastRecords: []
+            model: 40
+            delegate: GridRow {
+                required property int index
+                readonly property var st: fz.rows[index]
+                first: st.first
+                count: st.count
+                ids: Array.from({ length: st.count }, (_, i) => st.file + i)
+                badges: Array.from({ length: st.count }, () => "")
+                ratings: Array.from({ length: st.count }, () => 0)
+                bordersMarked: Array.from({ length: st.count }, () => false)
+                imageAspects: Array.from({ length: st.count }, () => 1.5)
+                aspects: Array.from({ length: st.count }, () => 1.5)
+                contentX: Array.from({ length: st.count }, () => 0)
+                contentY: Array.from({ length: st.count }, () => 0)
+                contentWidth: Array.from({ length: st.count }, () => 100)
+                contentHeight: Array.from({ length: st.count }, () => 100)
+                thumbUrls: Array.from({ length: st.count }, (_, i) => "image://thumb/t" + st.tag + "k" + (st.file + i) + "/100")
+                thumbhashUrls: Array.from({ length: st.count }, (_, i) => "image://thumbhash/k" + (st.file + i))
+                rowHeight: 100
+                gap: 4
+                showBorders: false
+                current: -1
+                settling: fz.rowSettling
+            }
+        }
+    }
+
+    // The visible rows of a fuzz view: the rows whose delegates are on screen, with their cells.
+    function visibleRows(list) {
+        const out = []
+        const kids = list.contentItem.children
+        for (let i = 0; i < kids.length; i++) {
+            const d = kids[i]
+            if (d.firstItem === undefined || !d.visible)
+                continue
+            if (d.y + d.height > list.contentY && d.y < list.contentY + list.height)
+                out.push(d)
+        }
+        return out
+    }
+
+    function checkFuzzView(list, label) {
+        const rows = visibleRows(list)
+        verify(rows.length > 0, label + ": some rows are on screen")
+        const records = []
+        for (const d of rows) {
+            const st = list.rows[d.index]
+            compare(d.firstItem, st.first, label + ": row " + d.index + " shows its first item")
+            const cells = cellsOf(d)
+            compare(cells.length, st.count, label + ": row " + d.index + " has its count of cells")
+            for (let i = 0; i < cells.length; i++) {
+                compare(cells[i].item, st.first + i, label + ": row " + d.index + " cell " + i + " shows its item")
+                compare(cells[i].itemThumbUrl, "image://thumb/t" + st.tag + "k" + (st.file + i) + "/100",
+                        label + ": row " + d.index + " cell " + i + " shows its own thumbnail")
+            }
+            records.push({ delegate: d, key: st.first + ":" + st.count + ":" + st.file, cells: cells })
+        }
+        // A cell kept from the last check, for a delegate whose items changed since (another first item, count or
+        // files): its image would be the old file's until the new one loads, so it must have been made anew.
+        for (const now of records) {
+            const before = list.lastRecords.find((p) => p.delegate === now.delegate)
+            if (before === undefined || before.key === now.key)
+                continue
+            for (const cell of now.cells)
+                verify(before.cells.indexOf(cell) < 0, label + ": a cell was kept for another file in row " + now.delegate.index)
+        }
+        list.lastRecords = records
+    }
+
+    function test_random_operations_keep_every_visible_row_right() {
+        for (let seed = 1; seed <= 3; seed++) {
+            const list = createTemporaryObject(fuzzC, tc)
+            verify(list !== null)
+            wait(20)
+            let s = seed
+            const rnd = (n) => {
+                s = (s * 1103515245 + 12345) & 0x7fffffff
+                return s % n
+            }
+            list.rows = Array.from({ length: 40 }, (_, i) => ({ first: i * 3, count: 1 + (i % 4), file: 1000 + i * 10, tag: 0 }))
+            wait(20)
+            for (let op = 0; op < 120; op++) {
+                const label = "seed " + seed + " op " + op
+                const kind = rnd(6)
+                const r = rnd(40)
+                const rows = list.rows.slice()
+                const row = Object.assign({}, rows[r])
+                if (kind === 0) {
+                    row.first = rnd(100)
+                    row.count = 1 + rnd(5)
+                } else if (kind === 1) {
+                    row.file = 1000 + rnd(400)
+                } else if (kind === 2) {
+                    row.tag = rnd(9)
+                } else if (kind === 3) {
+                    list.positionViewAtIndex(rnd(40), ListView.Beginning)
+                } else if (kind === 4) {
+                    list.rowSettling = !list.rowSettling
+                }
+                if (kind < 3) {
+                    rows[r] = row
+                    list.rows = rows
+                }
+                wait(10)
+                if (!list.rowSettling)
+                    checkFuzzView(list, label)
+            }
+            list.rowSettling = false
+            wait(20)
+            checkFuzzView(list, "seed " + seed + " end")
+        }
     }
 }

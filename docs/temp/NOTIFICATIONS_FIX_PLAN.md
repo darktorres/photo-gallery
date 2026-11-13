@@ -6,6 +6,16 @@ was built or run. Items marked *read* were found by reading the code and have no
 checked directly. The reference for the code is [NOTIFICATIONS.md](NOTIFICATIONS.md). [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md)
 keeps the feature-level list; some items here are on it too.
 
+## Done here, tracked elsewhere
+
+- **C2, the inbox's own reads off the GUI thread:** done. The failed-files ledger (`crates/desktop/src/failed_files.rs`),
+  the Copy of failed files (`crates/desktop/src/notices.rs`) and Reveal (`crates/desktop/src/shell.rs`, `reveal`) read
+  through the catalog reader's session, and the inbox's marks, dismissals and retries are queued to its writer. The
+  window's other catalog work on the GUI thread is listed in [GUI_THREAD_PLAN.md](GUI_THREAD_PLAN.md).
+- **The scan's lock:** done. A scan lists outside any transaction and writes each batch in one short write transaction,
+  and a pause writes the batch before it waits (`crates/scan/src/lib.rs`, the module docs and `checkpoint`). What is
+  still open is the test gap under Tests, item 2.
+
 ## Behaviour
 
 1. **`session-not-read` is never cleared.** A successful session save resolves only `session-not-saved`

@@ -1,9 +1,9 @@
 # GUI thread plan: the window's catalog work off the Qt thread
 
-Status (2026-11-11): a plan, not started. Seeded by [NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (C2), which
-moved only the inbox's own reads off the GUI thread and left the rest here as a tracked deliverable. The site list was
-taken from the working tree of that change by grepping `crates/desktop/src` for `app::get()`, the window's one accessor
-of the `pg_app::App` (`desktop/src/app.rs`), and following each call into the service it reaches. Symbols, not line
+Status (2026-11-11; checked against the code 2026-11-13): a plan, not started. Its seed is
+[NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (C2, in its "Done here" section): the inbox's own reads (failed files, copy, reveal) already run on
+the reader, and the rest is listed here as a tracked deliverable. The site list was taken from the working tree by grepping `crates/desktop/src` for `app::get()`, the window's one accessor
+of the `pg_app::App` (`crates/desktop/src/app.rs`), and following each call into the service it reaches. Symbols, not line
 numbers: re-read each site by symbol before acting on it.
 
 ## Why
@@ -15,8 +15,10 @@ thread. Called from a QML slot, a QML-bound getter or a Qt signal handler, that 
 - **Reads** never wait for a writer in WAL mode, but the query's own time is spent on the GUI thread, and the pooled
   connections are shared with everything else the window does.
 - **Writes** take the catalog's write lock and wait up to the connection's `busy_timeout` (5 s, `schema::SETTINGS`) for
-  it. The scan no longer holds that lock across a pause or a listing (the fix plan's W2), but an import's flush, a scan's
-  batch, the job's pairing batches and the command line still hold it for their transaction's length, and the window
+  it. The scan no longer holds that lock across a pause or a listing (its module docs in `crates/scan/src/lib.rs` say so),
+  but a scan's batch and the job's pairing batches still hold it for their transaction's length (the import's flush, one write transaction per 500 files, also holds it while the pairs are matched in memory, which no test
+  measures; the command line's commands use these same paths)
+  and the window
   waits behind them.
 
 The asynchronous paths already exist: the window's `Reader` (`pg_app::reader`, `app::get().reading().session()`), one
@@ -28,15 +30,18 @@ one; and the inbox's writer (`pg_app::Inbox`), whose ops are queued and applied 
 ### Already off the GUI thread
 
 - **The `Reader`** (asynchronous, delivered on the GUI thread): `gallery/model.rs` `open_listing` (`Session::grid`),
-  `filters.rs` the facets (`Session::facets`), `folders.rs` `reload` (`Session::tree`), and since C2 `failed_files.rs` (the
-  expanded ledger entry, `Session::failed_files`), `notices.rs` Copy (`Session::copy_details`) and Reveal
-  (`Session::reveal_folder`, which replaces `Catalogs::present_folder` in `shell.rs` `reveal`).
+  `filters.rs` the facets (`Session::facets`), `folders.rs` `reload` (`Session::tree`), and `failed_files.rs` (the
+  expanded ledger entry, `Session::failed_files`), `notices.rs` Copy (`Session::copy_details`),
+  `shell.rs` `reveal` (`Session::reveal_folder`, which replaced `Catalogs::present_folder`).
 - **Queued to the inbox's writer**, no catalog access on the caller: `app.rs` `post`, `resolved`, `resolved_part`;
   `notices.rs` (marks, `set_viewing`, `dismiss`, `dismiss_all`, `retry`, `poke`); `library.rs`'s pump (`poke` after the
-  job's rounds).
+  job's rounds). `post` also writes the notice's log line on the caller's thread (`Inbox::log`, file I/O, no catalog).
 - **Queued to the job or the writer**: `library().wake_job()` (`notices.rs` Retry), `library().save_crops`
-  (`gallery/edits.rs`), `library().running()` (`library.rs`), and `library().start` (`library.rs` `start`: it starts the
+  (`gallery/edits.rs`), and `library().start` (`library.rs` `start`: it starts the
   job and writer threads and queues two inbox clears; it opens no catalog itself).
+- **In memory, no queueing:** `library().running()` (`library.rs`), `library().set_thumb_height` (`library.rs`),
+  `prefs().get()` in `controller.rs` `Core::new`, `inbox().idle()` in `shell.rs` `pending`, and `inbox().listing()` and
+  `subscribe()` in `notices.rs` `start`.
 - **Not on the Qt thread**: `providers.rs` (`thumbnail`, the placeholder, `full_image`, the Yandex picture) runs on the
   image providers' thread pool (`cpp/providers.cpp`, a `QQuickAsyncImageProvider`).
 
@@ -44,7 +49,7 @@ one; and the inbox's writer (`pg_app::Inbox`), whose ops are queued and applied 
 
 | Site | Call | Reached from |
 | --- | --- | --- |
-| `gallery/state.rs` `with_details` | `reading().details` | `gallery/items.rs` `info` and `border_rejected`, QML-called getters; a one-entry memo in front |
+| `gallery/state.rs` `with_details` | `reading().details` | `gallery/items.rs` `info` and `border_rejected` (QML-called), and `gallery/model.rs` (`border_rejected` from its edge checks); a one-entry memo in front |
 | `gallery/state.rs` `fresh_entry` | `reading().entry` | `Grid::arrive` (`gallery/model.rs`, every listing delivered) and `refresh_turned` (`gallery/edits.rs`, a turn) |
 | `animation.rs` `restart` | `catalogs().file_path` | the viewer starting an animation |
 | `video_source.rs` `play` | `catalogs().file_path` | the viewer starting a video |
@@ -52,7 +57,7 @@ one; and the inbox's writer (`pg_app::Inbox`), whose ops are queued and applied 
 | `library.rs` `load_roots` | `library().roots()` | `start`, `add_path`, `remove_folder` |
 | `shell.rs` `view_names` | `views().all()` | the saved views' list (after each save and delete) |
 | `shell.rs` `apply_view` | `views().view` (reads them all) | the views menu |
-| `controller.rs` `start` | `views().listing()`, `views().view` | the window's start (`--apply-view`) |
+| `controller.rs` `Core::new` (run by the `CORE` initialiser) | `views().listing()`, `views().view` | the window's start (`--apply-view`) |
 
 ### Catalog writes on the GUI thread (each can wait up to 5 s)
 
@@ -63,14 +68,14 @@ one; and the inbox's writer (`pg_app::Inbox`), whose ops are queued and applied 
 | `gallery/edits.rs` `set_border_marked` | `edit().set_border_mark` | `border_marks` |
 | `shell.rs` `save_view`, `delete_view` | `views().save`, `views().delete` | `views` |
 | `shell.rs` `execute` (`SaveSession`) | `views().save_listing` | `session` |
-| `library.rs` `add_path` | `library().add_folder` | `add_root` (then a scan is queued) |
+| `library.rs` `add_path` | `library().add_folder` | `normalize_path` (a `canonicalize` call), then `add_root` (then a scan is queued) |
 | `library.rs` `remove_folder` | `library().remove_folder` | the roots read, then `remove_root` (marks the folder's files missing) |
 | `library.rs` `rescan` | `library().rescan` | none: a roots read, then the scans queued |
 
 ### Not the catalog, but on the GUI thread
 
-- `settings.rs` and `shell.rs` (dev mode): `prefs().get()` is in memory; `prefs().update` writes the preferences file
-  (file I/O on the GUI thread, small). `picker.rs`: `yandex().start_folder()` reads the preferences.
+- `settings.rs` and `shell.rs` `prefs_effect` (dev mode, borders, last file): `prefs().get()` is in memory; `prefs().update` writes the preferences file
+  (file I/O on the GUI thread, small). `picker.rs`: `yandex().start_folder()` reads the preferences and stats the saved folder (`is_dir`).
 - `yandex.rs` `search()`: the Yandex service, whose work runs on its own threads.
 
 ## Design questions
@@ -87,8 +92,9 @@ Making the window do no catalog work at all needs its own design. The questions:
    one snapshot), or `arrive` becomes two steps (apply, then patch when the re-reads are delivered). The first is
    simpler and consistent; the second keeps the listing's query unchanged.
 3. **An edit queue with an optimistic UI.** A rating, a turn or a border mark changes the grid at once and goes to a
-   writer thread in order (the inbox's writer is the pattern: one work log, retried while busy, a failure reverts the
-   optimistic change and posts `edit-failed`). Open: whether it is the inbox's writer, the write-back writer, or a writer
+   writer thread in order (the inbox's writer is the pattern: one queue applied in order, retried while busy. Today a failed edit posts `edit-failed` (`gallery/edits.rs`) and
+   nothing is reverted; the revert is what this design adds).
+   Open: whether it is the inbox's writer, the write-back writer, or a writer
    of its own; and how a revert reaches the grid's entry (a `Change` on the bus, or the writer's delivery).
 4. **A point-lookup lane on the `Reader`.** `file_path` (a video or an animation starting, a Yandex search) is one row by
    key, but behind a running listing on the one reader thread it would wait for the listing. A second lane (a thread
@@ -101,7 +107,7 @@ Making the window do no catalog work at all needs its own design. The questions:
 ## Relation to the scroll-freeze investigation
 
 The scroll hitch (the grid freezing while scrolling, worst during an import or the on-demand thumbnails of a library the
-thumbnail pass hasn't reached) is still open and is tracked here. DECODE_ONCE_PLAN.md's context records the case of tiles made on demand while
+thumbnail pass hasn't reached) is still open and is tracked here. [DECODE_ONCE_PLAN.md](../plans/DECODE_ONCE_PLAN.md)'s context records the case of tiles made on demand while
 scrolling (R-86 in REVIEW.md). This plan bears on it directly:
 
 - Of the sites above, the ones that run during a scroll are `with_details` (the status line's `info`, re-evaluated as the
@@ -112,7 +118,7 @@ scrolling (R-86 in REVIEW.md). This plan bears on it directly:
 - The image providers are already off the GUI thread, so the thumbnails' decode is not a GUI-thread cost; their contention
   for the cores is the starvation half of the investigation, not this plan's.
 
-So the investigation should first measure (a trace stage around each site above, `pg_trace`) whether any GUI-thread
+So the investigation should first measure (a named `pg_trace` stage around each site above, added to the closed stage list in `crates/trace/src/lib.rs`) whether any GUI-thread
 catalog call coincides with the freezes, before this plan's design is chosen: if one does, the details cache and the
 asynchronous `arrive` come first; if none does, the freeze is elsewhere (layout, the scene graph, the providers'
 contention) and this plan is a robustness change, not the fix.

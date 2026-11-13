@@ -1450,7 +1450,7 @@ The journal only says where to look. Listings are the truth, and results replay 
 - QML: `WindowView.qml` (`WheelListView.qml` is deleted), `GalleryGrid.qml`, `GridRow.qml`, `GridCell.qml`, `Main.qml`, `Viewer.qml`, `Hud.qml`, `MediaView.qml`, `TopBar.qml`, `FilterBar.qml`, `TestHooks.qml`, `YandexPanel.qml`, `FolderTree.qml`, `FolderPickerDialog.qml`, and stubs
 - `library/src/crop.rs`
 
-- **7.1 Paged ChangeFeed** over (changed, id) plus `files_log`. `docs/temp/DECODE_ONCE_PLAN.md` Phase 4 builds its first form, and this step extends it rather than replacing it:
+- **7.1 Paged ChangeFeed** over (changed, id) plus `files_log`. `docs/plans/DECODE_ONCE_PLAN.md` Phase 4 builds its first form, and this step extends it rather than replacing it:
   - `files_log` with the `files_removed` and `files_renamed` triggers;
   - the `log_horizon` and `view_epoch` seeds, and `prune_files_log`;
   - the duplicate-status triggers, which stamp on a 1↔2 transition (with `LIMIT 2` probes; D27's `hash_runs` replaces them);

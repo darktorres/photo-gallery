@@ -13,7 +13,13 @@ paper name are from that paper.
 
 - A desktop photo gallery for a library of **~70M images**, with near-duplicate detection aimed at **Pinterest
   saves: many crops and edits of the same picture**, plus the same pin saved at different sizes.
-- **Rust** for everything that runs at scale. **Windows only** for now.
+- **Rust** for everything that runs at scale. **Windows only** for now (decided 2026-10-28). CUDA, nvJPEG, PyTorch,
+  TensorRT and ONNX Runtime all work there. If a Linux-only tool is ever needed, run only that batch step in WSL2, on
+  embeddings and not on images: reading NTFS drives through `/mnt` is slow.
+- **Quality over speed** (user decision, 2026-10-28): days or weeks of processing are acceptable. Heavier models
+  (SSCD-large, fp32), exact rather than approximate k-NN (TIER2_ANN_BAKEOFF_PLAN.md: ~5.5 days of GEMM for 70M), multiple
+  embeddings per image and a learned geometric verifier are all in scope. Resumability and the user's review time
+  (precision) are the real constraints.
 - A **high-performance desktop UI** first. A phone/browser client over the LAN is in scope after it; see `docs/temp/WEB_CLIENT.md`.
 - **Non-destructive:** nothing is ever deleted automatically. Removals go to a quarantine folder or the
   Recycle Bin after review.

@@ -6,7 +6,7 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
 
 `evaluate.py` now also counts **cross-group pairs** (915,279 pairs of images from two different
 `dups2` groups, i.e. different pictures) above each threshold, the false-positive measure that
-replaces `similiar_but_not_dups` (mostly matches now, see Decisions).
+replaces `similiar_but_not_dups` (mostly matches now, see VERIFIER.md, "Superseded the same day").
 
 | Model | R@1 / R@10 | Thr @95% | Loose dups2 with partner | Cross-group flagged @90% | @95% |
 |---|---|---|---|---|---|

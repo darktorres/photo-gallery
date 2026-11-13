@@ -1,4 +1,4 @@
-//! The app's log (docs/NOTIFICATIONS.md): what went wrong that the user needn't act on (diagnostics), and every notice
+//! The app's log (docs/temp/NOTIFICATIONS.md): what went wrong that the user needn't act on (diagnostics), and every notice
 //! the inbox shows, recorded by its code. A record is a JSON line in `gallery.log` in the data folder (`init`), which is
 //! capped and rotated (`file`), and the newest records are also kept in memory from the process's start (`subscribe`),
 //! so the window's log view shows this run's records at once and follows the new ones; `read` adds the older ones from

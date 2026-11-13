@@ -1,4 +1,4 @@
-//! The inbox's rows (docs/NOTIFICATIONS.md): what the app told the user, kept until they dismiss it. A row is a
+//! The inbox's rows (docs/temp/NOTIFICATIONS.md): what the app told the user, kept until they dismiss it. A row is a
 //! [`Notice`], stored as JSON in this build's form and read back typed; one of a kind this build doesn't know reads as
 //! [`Notice::Unknown`]. Uses `core` (the connection), `ledger` (the ledgers' entries, read in the rows' snapshot),
 //! `types` (the library folder a notice is about) and `transaction`.

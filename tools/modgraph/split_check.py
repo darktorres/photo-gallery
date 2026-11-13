@@ -1,4 +1,4 @@
-"""Group-level DAG check for a planned split of one Rust file (docs/MODULARITY_PLAN.md, M-8 to M-11).
+"""Group-level DAG check for a planned split of one Rust file (the modularity plan (git e428ab2), M-8 to M-11).
 
 Before a split is made, the planned groups (the new files) are checked: each item of the file is assigned to a group,
 and every reference from one item to an item of another group is an edge between the groups. A cycle among the groups

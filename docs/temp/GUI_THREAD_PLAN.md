@@ -101,9 +101,8 @@ Making the window do no catalog work at all needs its own design. The questions:
 ## Relation to the scroll-freeze investigation
 
 The scroll hitch (the grid freezing while scrolling, worst during an import or the on-demand thumbnails of a library the
-thumbnail pass hasn't reached) is still open, and no document in `docs/` tracks it yet: NOTIFICATIONS_PLAN.md lists "the
-scroll-hitch and thumbnail-starvation investigation" as out of its scope, and DECODE_ONCE_PLAN.md's context records the
-case of tiles made on demand while scrolling (R-86 in REVIEW.md). This plan bears on it directly:
+thumbnail pass hasn't reached) is still open and is tracked here. DECODE_ONCE_PLAN.md's context records the case of tiles made on demand while
+scrolling (R-86 in REVIEW.md). This plan bears on it directly:
 
 - Of the sites above, the ones that run during a scroll are `with_details` (the status line's `info`, re-evaluated as the
   current item changes) and `fresh_entry` (each listing delivered during an import). A query on the GUI thread there is

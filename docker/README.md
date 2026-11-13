@@ -49,7 +49,7 @@ device, so masked paths under `/proc` are correct, not a failure.
   and `pg-cargo-registry`. The repository's own `target` folder is not touched. The first run compiles everything; later
   runs reuse it. To start from nothing: `docker volume rm pg-cargo-target`.
 - The benches keep their target and their data in `pg-bench`. `just perf` reads the bench data from the folder
-  `PG_BENCH_DATA_SOURCE` names in `.env`, mounted read-only (`docs/PROFILING.md`).
+  `PG_BENCH_DATA_SOURCE` names in `.env`, mounted read-only (`docs/temp/PROFILING.md`).
 - A volume made by another user cannot be written by `pg`. The fix is to hand it to `pg` once:
   `docker run --rm --user root --entrypoint chown -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/home/pg/.cargo/registry pg-dev -R pg:pg /cargo-target /home/pg/.cargo/registry`
 - The eval's sources, builds, inputs and clone are in `pg-eval`, mounted at `/eval`. Two folders from `.env` are mounted

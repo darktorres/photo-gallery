@@ -1,4 +1,4 @@
-//! The failure ledgers (docs/NOTIFICATIONS.md). The files a pass couldn't make its result of, for the state each file was
+//! The failure ledgers (docs/temp/NOTIFICATIONS.md). The files a pass couldn't make its result of, for the state each file was
 //! in (`file_failures`): the thumbnails' and the borders' passes write theirs; the import's rows are kept by triggers
 //! on `analysis` (`TO_8_NOTIFY`), mirroring the failed analyses. And the folders the walks couldn't take
 //! (`folder_failures`), which the scan's writer records and a complete walk sweeps (`Catalog::mark_missing`).

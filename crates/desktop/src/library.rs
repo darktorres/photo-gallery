@@ -150,7 +150,7 @@ impl qobject::Library {
         if taken.imported {
             self.as_mut().imported();
         }
-        // The job's rounds, counted as stages for measuring (docs/PROFILING.md). A round's passes write on their own
+        // The job's rounds, counted as stages for measuring (docs/temp/PROFILING.md). A round's passes write on their own
         // connections: the inbox looks for what they changed.
         for _ in 0..taken.rounds {
             pg_trace::pg_stage_round_done();

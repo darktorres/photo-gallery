@@ -1,6 +1,6 @@
 # The crates: library, import and desktop UI (Rust)
 
-See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/IMPORT.md`. The layering and the steps
+See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/temp/PLAN.md` (§8, M1). The layering and the steps
 that built it are in `docs/REFACTOR_PLAN.md` (its crate table, and the rows for each step).
 
 Every directory under `crates/` is one package, named `pg-<directory>`. From the bottom up:
@@ -25,9 +25,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   and the video player is handed an open file (`file::player_handle`), the same call on every platform.
   `tools/boundaries.py` checks it. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
-- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
+- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/temp/PROFILING.md`).
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
-  memory for the window's log view (`docs/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
+  memory for the window's log view (`docs/temp/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges; and what the edit and the metadata read of them, written once (a
   PNG's or WebP's animation and frames, a lossless WebP, a GIF's image descriptors, a PNG chunk's CRC put right).
@@ -61,7 +61,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
   schema, the file-write queue (`queue`), the reads (`browse`), the filters and sort (their SQL is `query`'s), the
-  duplicate reports, the inbox (`inbox`) and the files the passes failed on (`ledger`; `docs/NOTIFICATIONS.md`). Its API
+  duplicate reports, the inbox (`inbox`) and the files the passes failed on (`ledger`; `docs/temp/NOTIFICATIONS.md`). Its API
   is `Catalog`'s methods, each concern's in an `impl Catalog` of its own module (`roots`, `lookup`, `work`, `borders`,
   `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); `core` is the lifecycle.
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
@@ -121,6 +121,42 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `jobs-testkit` (`pg-jobs-testkit`): the job layer's test helper, `Quiet` (a bus that fails its test when anything
   published on it was not taken). A dev-dependency only.
 - `bench` (`pg-bench`): the callgrind benches (`benches/ir.rs`), built on Linux only.
+
+## Rules for the crates
+
+These are the rules the crate layout is kept to. `tools/boundaries.py` and `just lint` check the mechanical ones; the rest are checked by review.
+
+### Ground rules
+
+1. **Symbols, not line numbers.** Name the function or type when you write about code; line numbers drift.
+2. **Re-exports.** A `pub use` at an old path stays only where the item is part of the crate's documented public API, or a documented layer boundary (`pg_app::reexport`, which the desktop uses because it does not depend on `catalog`, `library`, `jobs`, `thumbcache`, `yandex` or `codec`). Every other transitional re-export is removed in the same change as its callers.
+3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would be a cycle or need private access. Today: `pg-codec` `fixtures`, `pg-catalog` `fixture`, `pg-writeback` `fault`. Everything else (for example `Quiet` in `pg-jobs`) goes in a dev-only crate.
+4. **Large files.** Split when a file holds more than one layer of a dependency graph, not by line count.
+5. **Layer claims are by reading or by script, and neither is proof.** The committed split check is `tools/modgraph/split_check.py`, with its skip set in its docstring. The check that counts is the compiler: the `modgraph` run (`just modgraph`).
+6. **Platform rule.** No `cfg(windows)`, `cfg(unix)` or `std::os::{windows,unix}` in production code outside `pg-platform`, except cxx-qt and FFI glue that must declare per-platform signatures. Each such exception is stated where it is declared.
+7. **Ordering.** A split is done in one sitting on the current HEAD, its measurement re-run first, and committed before anyone else's change to that file lands. The gate runs on a clean tree. No branches.
+
+### Gates
+
+- **Linux:** `docker run --rm --security-opt systempaths=unconfined -v "D:/GitHub/photo-gallery:/work" -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/root/.cargo/registry pg-dev`. It runs `docker/check.py` in CI's order. It covers every crate except the desktop app.
+- **Windows:** `just lint` and `just test`. The desktop app builds only here, with `just build`.
+- **Desktop moves:** also `just shots`. A pure move must show no pixel change against `tools/shots/reference`.
+- **Cargo doc:** `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (`.github/workflows/ci.yml`). Run it on each change that moves or re-exports items.
+- **Perf:** `just perf` runs callgrind in `pg-dev` and gates against `docs/perf/baseline.json`.
+- **Module cycles** (`just modgraph`, the CI step): 115 to 149 seconds on the successful runs of 2026-11-10 and 2026-11-12, on both targets, with `rust-cache` warm.
+
+### Decisions
+
+- **`pg-model` stays one crate.** Its modules are consumed by one to fifteen crates each; its fan-in is expected.
+- **`cargo-modules` is a tool, not a dependency.** It is pinned in `docker/Dockerfile` and the Justfile (`cargo_modules_version`, which `just modgraph` checks and installs at the pin). The Linux graph runs in `pg-dev`; the Windows graph runs on the host through `just modgraph`.
+- **The command line does not depend on `pg-app`.** It opens catalogs and thumbnail caches through `pg-library`'s shared open functions (`open_catalog`, `open_thumbs`).
+
+### Review rules
+
+These two rules came out of the fourth modularity review (its full text is in git at `e428ab2`, `docs/temp/MODULARITY_REVIEW_4.md`).
+
+- **R-1: an outcome a front end words is pg-model data.** `pg-client` depends on `pg-model` alone and cannot name a lower crate's type. So every outcome that is put into words is a plain data type in `pg-model`, built by the crate that has the outcome. `pg_client::text` words it, and both front ends render it.
+- **R-2: a stored path reaches the file system only through `disk_path`.** A catalog path (`RulePath`) becomes a plain `PathBuf` only through `pg_platform::names::disk_path(&PathRules, &RulePath)`, the verbatim form (on Windows, a plain path drops a trailing dot or space from a folder's name). `names::path_buf` is private to `pg-platform`. A shown path is `PathRules::display`, or `names::shown` for a path the system gave.
 
 ## Dependencies
 
@@ -243,7 +279,7 @@ Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows
 (`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and the
 thumbnail cache), `gallery.json`, `gallery.log` and, on Windows, `sqlite-aliases` (where a folder whose name SQLite
 can't open is reached by an alias): nothing of the app's is written outside it. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
-is the session's, with the build and the data folder (the log's format is in `docs/NOTIFICATIONS.md`), and
+is the session's, with the build and the data folder (the log's format is in `docs/temp/NOTIFICATIONS.md`), and
 `gallery status` prints the data folder. The app's preferences (write-back, Real Size, borders, row height, the last
 file selected, dev mode) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and
 where you were (folder, subfolders, filters, sort) are in the catalog. Each of these is resolved in one place,

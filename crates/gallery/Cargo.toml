@@ -19,7 +19,7 @@ pg-cli = { path = "../cli" }
 pg-platform = { path = "../platform" }
 # The app window. Without it `gallery` runs only its commands, and builds without Qt.
 pg-desktop = { path = "../desktop", optional = true }
-# The heap profiler (docs/PROFILING.md "Tool: dhat"): a patched dhat-rs that takes whole backtraces quickly
+# The heap profiler (docs/temp/PROFILING.md "Tool: dhat"): a patched dhat-rs that takes whole backtraces quickly
 # (vendor/README.md).
 dhat = { workspace = true, optional = true }
 

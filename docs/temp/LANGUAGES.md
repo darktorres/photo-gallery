@@ -1,0 +1,606 @@
+# Languages and translation support
+
+How the app should support more than one language: what exists today, what is missing, the design that builds on the Fluent seam already in place, and the decisions that only the owner can make. The investigation read the committed tree at HEAD (898b709) on 2026-11-12, and the line numbers and counts in sections 3 to 5 are HEAD's unless marked as working tree. At the time of that read the working tree also had uncommitted changes that move the key hints and the gallery's selection line into Fluent, remove the failed-file wrappers from `text.rs`, and add 24 entries to `ui.ftl` and 2 to `cli.ftl`. Where those changes alter a fact, sections 3.2, 3.10, 5.2 and 5.3 say so. The working tree was still changing during the check, so its facts are a snapshot. That tree has uncommitted changes to `keys.rs`, `text.rs`, `text/cli.rs`, `text/message.rs`, `gallery/model.rs`, `notices.rs`, `keymap.rs`, `ui.ftl` and `cli.ftl` (git status), and some claims below disagree with it; the corrections in sections 3 to 5 restate them against the working tree. Six dimensions were studied (the Rust text seam, the QML and Qt layer, the locale and runtime behaviour, the stored and external text, the surfaces, and the translator workflow and tooling). No build, test or run was done, so every claim about rendered output is marked as inferred where it is not read from source.
+
+## Status
+
+**Decided** (by the repo's own records):
+
+- Fluent is the engine for the app's own words, with `fluent-bundle` 0.16 and `unic-langid`. The decision is recorded in `docs/temp/REFACTOR_DESIGN.md:37` ("Localisation: Fluent") and the seam's plan is S-19 at `docs/temp/REFACTOR_DESIGN.md:203`. Section 3.9 checks its reasons against the present code.
+- Only English ships. `docs/temp/REFACTOR_DESIGN.md:203` says "S-19.3 only `en` ships; a pseudo-locale runs in the screenshot matrix", and the ledger row is `docs/temp/REFACTOR_PLAN.md:830` (read by the investigators, not re-read here).
+- The seam lives in `pg-client` (`crates/client/src/text.rs`), which compiles for `wasm32-unknown-unknown` in the lint job (`tools/lint.py:21`). `docs/temp/WEB_CLIENT.md:347-348` records that `pg-client` is WASM-clean and runs in every client.
+- Notices are stored as a kind code and values, and are worded when they are read, so a language change re-words stored notices (`docs/temp/NOTIFICATIONS.md:10-12`, `crates/model/src/notice.rs:1-12`).
+- The web client's frontend is the shared QML app, gated on a phone check (`docs/temp/WEB_CLIENT.md:35-36, 44-47`). Its stack is not decided, and no text design exists there.
+
+**Proposed here** (not yet decided by the owner):
+
+- A `Locale` value and a selection chain (flag, saved preference, OS language, English), with a per-message fallback to English (5.1).
+- A `language` field in `gallery.json` (5.1).
+- Restart-only switching for the first translated release, with a live switch left as a later phase (5.4).
+- One number formatter in `pg-client`, and Qt's standard buttons replaced by Words (5.3, 5.7).
+- Locale folders under `crates/client/locales/<tag>/`, registered in one table, and a cargo test that checks every locale against the English file (5.1, 5.9).
+- The stored-text boundary of 5.5: codes and user data are never translated, and stored technical detail stays as recorded inside a translated frame.
+
+**Open** (section 8): which locale ships first, the runtime switch, whether logs and external messages are translated, whether the docs are translated, the translation tool, the product name, the CLI help, the fallback mechanism, the number and date source, the Yandex file-name tokens, the OS error words, the storage of the language, the Qt buttons, fonts, right-to-left in the first release, and the language used before the preferences file can be read.
+
+## Goals and non-goals
+
+The goal is that a user can see the window, the notices, the status and toast lines, the command line's own lines and the frames of the crash and error boxes in a chosen language, with the panic text and the technical detail kept as recorded (5.5, 5.6). English stays the source and the fallback: a translation that is missing or broken shows English text, never a Fluent id or a braced placeholder. The app keeps one engine for Rust and QML text and one set of `.ftl` files, so that the browser client and the desktop read the same words. Identifiers, notice codes, paths, file names and user data keep their exact values in every language.
+
+The non-goals for the first translated release are: translating the developer documentation (8.4), translating log messages, translating clap's help output (8.7), right-to-left layout (5.7), a live switch without restart (5.4), bundling a font, and translating text that the operating system or a third-party tool produces (5.6).
+
+## Current state
+
+### 3.1 The seam
+
+- The English words are three Fluent files compiled in with `include_str!`: `crates/client/locales/en/text.ftl`, `ui.ftl` and `cli.ftl` (`crates/client/src/text/words.rs:10-16`). They hold 209, 155 and 41 entries respectively, counted by line in the working tree (the 41 cli.ftl entries equal the 41 Line variants, which the id test in cli.rs pins).
+- The bundle is one `thread_local!` built from those files on first use per thread (`words.rs:18-21`, `english()` at `words.rs:31-46`). The language tag is the literal `"en"` (`words.rs:33`).
+- `set_use_isolating(false)` is called (`words.rs:36`) so that placeables are not wrapped in bidi isolation marks. The comment says the screen wants plain text.
+- `add_builtins()` registers Fluent's builtins (`words.rs:38`). The comment on that line mentions `NUMBER()` and `DATETIME()`, but only `NUMBER` is registered in fluent-bundle 0.16, and `DATETIME` is a TODO there (per the investigators, `fluent-bundle-0.16.0/src/bundle.rs:599-603`).
+- The parse of each file ignores errors: `FluentResource::try_new(...).unwrap_or_else(|(resource, _)| resource)` (`words.rs:40`), and `add_resource`'s result is discarded (`words.rs:43`). A syntax error therefore drops entries silently, and their lines show as ids.
+- `shown(id, args)` (`words.rs:60-68`) returns the id when there is no entry or no value, and it discards the resolver's error list (`words.rs:64-65`). A missing variable is written as a braced name and the error is not read.
+- The pseudo-locale is a process-wide `AtomicBool` set by `set_pseudo` (`words.rs:23-28`), read in `shown` (`words.rs:67`), and applied to the whole line after formatting (`pseudo()` at `words.rs:72-89`; ASCII letters accented, padded by a third plus one, bracketed in U+27E6 and U+27E7).
+- `ui(id, count, text, other)` (`words.rs:51-57`) is the entry point for the QML words; `count` chooses a plural form and `text` and `other` are shown as given.
+- The Rust `Message` enum has about 101 variants (`crates/client/src/text/message.rs:58-113` macro, `115-255` variants), each mapped to a Fluent id and to named arguments (`message.rs:85-93`). The CLI's `Line` enum has 39 variants at HEAD and 41 in the working tree (`crates/client/src/text/cli.rs:19-22`); `line()` is at `432-438` at HEAD and `447-453` in the working tree.
+- Notice ids come from one `ids!` table in pg-model (`crates/model/src/notice.rs:798-848`; the `title_id` and `body_id` methods it generates start at `:782`) and are looked up as `notice-<code>-title`, `notice-<code>-body` and `source-<code>` (`crates/client/src/text/notice.rs:43-60`).
+- `RefusedReason` codes are kebab-case (`crates/model/src/refusal.rs:58-84`), and their words come from the seam (`crates/client/src/text/message.rs:262-270`).
+- Command-line `--locale` accepts only `pseudo`, and the parser rejects any other value (`crates/desktop/src/command_line.rs:271-273`, tests at `:646-700` treat `--locale=fr` as a bad option). `set_pseudo` is called once at startup (`crates/desktop/src/lib.rs:129-130`).
+- No system locale is read anywhere in `crates/` (no `GetUserDefaultLocaleName`, `QLocale::system`, `LANG` or `LC_ALL` read). The `windows` crate lacks `Win32_Globalization` in the workspace features (`Cargo.toml:49`), and `cxx-qt-lib` 0.10 has no `QLocale` wrapper (per the locale investigation).
+
+### 3.2 The QML
+
+- 34 QML files are in `crates/desktop/qml`; 18 of them hold a `Words` instance (`crates/desktop/src/words.rs:13-29`, `words_bridge.rs:23-39`). The facade exposes `text`, `phrase`, `rating_symbol` and `timecode`.
+- The facade's word calls are literal ids. The desktop test scans the QML source for `words.text("...")` and `words.phrase("...")` and checks that the set equals the entries of `ui.ftl` (`crates/desktop/src/words.rs:39-79`). The count of such calls is 141 in one investigation and 119 in three others (see 3.10).
+- Bindings that call a `Q_INVOKABLE` are evaluated once and are not re-run, because the method object is returned before any property is captured (`qv4qobjectwrapper.cpp:375-398` in the Qt source). `WordsRust` is an empty struct (`crates/desktop/src/words/state.rs:1-9`), so there is no notify path for a language change today.
+- About 12 user-visible sentences are assembled from literal fragments in QML: the HUD info line and its `   ` separators (`Hud.qml:58, 89-96`), the HUD counter `(index+1) / count` (`Hud.qml`), the filter count's literal arrow (`TopBar.qml:101`), a file's error line (`reason + ": " + error`, `InboxPanel.qml:437`), a group title `title + " (" + count + ")"` (`YandexPanel.qml:77`), the inbox count `"×" + row.count`, the log level letters `E`, `W`, `I` (`LogPanel.qml:121`), the toast's `⚠` prefix (`StatusBar.qml:79`), and two spaces between a filter label and its count (`FilterBar.qml:148, 173, 240`). The rule that symbols are exempt does not cover the letters or the colon-and-space and space-and-(n) fragments.
+- About 25 call sites keep symbols literal: `▭` (`GridCell.qml:112`, `RatingBar.qml`), `≈`, `⟲` and `⟳` (`RatingBar.qml:62, 65, 87, 90`), `✓` on the result tile (`ResultTile.qml:60`) and `×` in its size caption (`ResultTile.qml:80`), `✕` (`Hud.qml:75`), `×` (`InboxPanel.qml:314`), `▾` and `▸` (`FolderTree.qml:50`), `↑` and `↓`, the transport glyphs `▶`, `⏸`, `🔇`, `🔊` (`VideoTransport.qml:55, 77`), and `⚠`. Rating symbols are Rust constants (`crates/client/src/text.rs:29`), which are not in Fluent and are not touched by the pseudo-locale.
+- Key hint labels are Fluent entries in the working tree (uncommitted): the `Hint` enum (`crates/client/src/keys.rs:204-230`) names 22 `ui-hint-*` entries of `crates/client/locales/en/ui.ftl`, and `text::hint` (`crates/client/src/text.rs:315-323`, the constants at 315-317 and the function at 320-323) joins the words with the entry `ui-hint-separator` (`ui.ftl:182`). They reach `desktop/src/keymap.rs:152-162`, `keymap_bridge.rs:33-37`, `Hud.qml:68` and `Main.qml:408`. Because they pass through `ui()` and `shown()`, the pseudo-locale reaches them. The key tests' English pins need the re-basing of 5.10 (not re-read here).
+- The `ui-date-format` entry is a parser contract: the filter's date parser accepts only `YYYY-MM-DD`, ten bytes with `-` at positions 4 and 7 (`crates/model/src/date.rs:64-70`, `crates/client/src/input.rs:99-112`), and the placeholder is `FilterBar.qml:90`.
+- The QML text guard (`crates/desktop/src/qml_text.rs:91`) checks that labels set `textFormat`. It does not check fit, direction or pseudo coverage.
+
+### 3.3 Number and date formatting
+
+- Seven QML sites format numbers or dates with the process default locale: seven `Qt.locale()` calls on six lines (`TopBar.qml:85-86`, `GalleryGrid.qml:151-152`, `FolderTree.qml:63`, `FilterBar.qml:62`), and one `Qt.formatDateTime` with the fixed pattern `yyyy-MM-dd hh:mm` (`InboxPanel.qml:326`, which is not a `Qt.locale()` call). No `QLocale` default is set anywhere, so these follow the Windows user locale.
+- Rust groups counts with a fixed comma (`crates/client/src/text.rs:247-251`, `group_digits` around `:264-279`), formats the info line's MB and KB with `{:.1}` and `{:.0}` (`text.rs:220-222`), and uses a fixed point in the CLI (`crates/cli/src/lib.rs:95-96, 411` and `report.rs:107-109`). The pieces of one window can therefore show `1 234` from Qt and `1,234` from Rust.
+- Fluent's `NUMBER()` in fluent-bundle 0.16 does not localise grouping or the decimal mark. `FluentNumber::as_string` is Rust's `f64` to-string with minimum fraction digits, `use_grouping` is parsed and never read, and the locale is used only for plural rules (per the locale investigation, `fluent-bundle-0.16.0/src/types/number.rs`). `message.rs:28` says a locale formats a range's end (`NUMBER()`), which is false for this version; `words.rs:37` names `NUMBER()` and `DATETIME()` without that claim, and `text.rs:95-98` says only that range ends are Fluent numbers.
+- Dates: `DATETIME` is not registered. The filter line's dates use `Day`'s `Display`, which is always `yyyy-mm-dd` (`crates/model/src/date.rs:82-86`, `crates/client/src/input.rs:110-112`, `text.rs:104`).
+- Only the plural selector gets a count. Fluent lines therefore show `1234` ungrouped, because a count is a number and a text value is shown as given, while Rust pass lines show `1,234` (`crates/client/src/text/message.rs:42-53`, `text.ftl:80-82`).
+
+### 3.4 Stored and persisted text
+
+- The catalog's `notices` table has no language column (`crates/catalog/src/schema.rs:76-91`). Its data is the notice as JSON, with a permanent kind code.
+- About 29 non-test `error: String` fields in pg-model's `notice.rs` (`crates/model/src/notice.rs:221-571`; two of the 29, at 221 and 229, lie outside 359-588) and about 30 notice kinds that carry an English error (per the persisted investigation) store the text of a lower layer. The examples are `ScanFailed`, `RoundFailed`, `CropFailed` and `PrefsNotSaved`, plus `CatalogRebuilt.why` (`notice.rs:398-402`, printed on the CLI's stderr by `crates/cli/src/report.rs:59-64` as well as shown in the desktop toast and inbox), and `CacheStartedOver.detail` (`crates/model/src/notice.rs:443-447`, documented as the technical account for the log, and printed on the CLI's stderr at `crates/cli/src/report.rs:36-41`), `Carried::Nothing.reason` (`notice.rs:207-214`), `RoundPanicked.message` (`notice.rs:375-376`) and `FileFailure.error` (`notice.rs:224-229`). The seam words the frame and copies these values unchanged (`crates/client/src/text/notice.rs:93-97, 110-118, 125-127, 133-135`).
+- Ledger tables store the English error text when the failure is recorded: `file_failures.error` (`schema.rs:118`), `folder_failures.error` (`schema.rs:314`), `analysis.error` (`schema.rs:552`), `file_writes.error` (`schema.rs:670`) and `file_writes_checked.error` (`schema.rs:213`). The inbox shows the frame re-worded around the stored text (`crates/client/locales/en/text.ftl:354, 362`).
+- The writers that fill those columns format lower-layer text: `format!("{e:#}")` in import (`crates/import/src/lib.rs:73`), `format!("{error:#}")` for scan folder failures (`crates/scan/src/lib.rs:557-561`), `error.to_string()` in writeback (`crates/writeback/src/lib.rs:441`), and `Undecodable(format!("{e:#}"))` (`crates/app/src/error.rs:76`).
+- User data is stored exactly: `roots.path` as a BLOB (`schema.rs:640-644`), `files.name` as the OS name bytes (`schema.rs:511-512`), and `views.name` as typed text (`schema.rs:680-686`, written with `INSERT OR REPLACE` at `crates/catalog/src/browse/views.rs:26-29`). The catalog has no tag table or tag column.
+- Prefs (`crates/app/src/prefs.rs:18-41`) hold seven fields, none of them a language. The struct is `serde(default)` and ignores unknown fields (`prefs.rs:18-19, 98-110`; lines 1-2 are the module header), so a field can be added without a migration. The file is `gallery.json` under `PG_HOME` (`crates/app/src/config.rs:13-23`).
+- Saved Yandex files are named `<photo stem> (yandex WxH)` or `<photo stem> (yandex similar N)` with English tokens (`crates/app/src/yandex.rs:309, 319, 334-340`).
+- ExifTool writes two numeric tags only: `XMP:Rating` and `EXIF:Orientation` (`crates/exiftool/src/lib.rs:132, 175-176`). The copy path copies every tag the output can carry (`exiftool/src/lib.rs:158-170`), so the user's text metadata passes through unchanged.
+
+### 3.5 The surfaces
+
+- Window: the title is `ui-window-title` (`Photo Gallery — {folder}`) or `ui-app-name` (`ui.ftl:92-93`), used in `Main.qml:21`. The product name appears in four spellings: "Photo Gallery" (the UI), "gallery" (the exe `gallery.exe`, `crates/gallery/Cargo.toml:11`), "pg-gallery" (the package name, `crates/gallery/Cargo.toml:2`, which the winres defaults would use for ProductName and FileDescription per the investigation, not built), and "PhotoGallery" (the data folder `%LOCALAPPDATA%\PhotoGallery`, `crates/README.md:242`, and `crates/platform/src/dirs.rs:1, 32`).
+- Error box: `crates/desktop/src/alert.rs:5-6` titles it with the literal `"Photo Gallery"`, not through the seam. `fatal()` shows its text (`crates/desktop/src/lib.rs:236-239`). Startup failures reach it as English: the `command_line::init` errors (`lib.rs:122-123`), and the data-folder errors from `Config::from_env` (`crates/app/src/config.rs:25-27`, from `crates/platform/src/dirs.rs:33, 41`), which name `PG_HOME`, `LOCALAPPDATA`, `XDG_DATA_HOME` and `HOME`. These run before the log exists and before a preference can be read.
+- Crash box: the panic hook (`crates/desktop/src/panic_log.rs:23-32`) calls `text::internal_error` (`crates/client/src/text.rs:443-449`), so the frame is translatable. The middle line is the English Rust panic text with the thread name.
+- Command-line options: about 20 English refusal reasons in `crates/desktop/src/command_line.rs` (sites at `:94, 232-389`), printed as `{option}: {reason}; ignored` (`:94`) and as `screenshot: refused: ...` on stderr (`crates/desktop/src/lib.rs:226-232`).
+- CLI: the help is clap's derive output. The `about` string is `crates/cli/src/args.rs:13`, and 38 doc-comment lines on `Cli`, `PipelineArgs` and `Command` are at `args.rs:15-125`. Nothing overrides clap's built-in English (no `help_template`, `mut_arg`, `help_heading` or `override_usage` in `crates/`). Clap 4.6.7 supplies "Print help", "Print version", "Commands", "Arguments", "Options" and "For more information, try" (`clap_builder` 4.6.7, `command.rs:4819-4834`, `help_template.rs:408, 424, 434`, `error/format.rs:463`; per the investigation). Parse errors never reach `main`, because `Cli::parse_from` prints clap's error and exits (`crates/cli/src/lib.rs:56-57`).
+- Value parsers: `thumb_height` and `cap_gb` return English messages that clap prints after its own "invalid value" text (`crates/cli/src/args.rs:137-147`). The doc comment at `args.rs:137` names `--cap-gb` above the `thumb_height` parser, which parses `--height` (`args.rs:88`).
+- CLI error chains: `borders.rs` wraps seven errors with English context (`crates/cli/src/borders.rs:35, 92, 136, 160, 166, 182, 184`), `gallery/src/main.rs:31` prints `error: {e:#}` with a literal prefix, and `main.rs:50` prints "gallery was built without its app window ... give it a command". `cli/src/lib.rs:344` prints the scanner's English `Display`, and `cli/src/lib.rs:167` bails with the same text (which `gallery/src/main.rs:31` prints) (`crates/scan/src/lib.rs:267-273`) with a literal suffix `: waiting for it to end`, and `lib.rs:301` prints writer error text unwrapped. The CLI's own lines (`report.rs`, `dups.rs`, the summaries in `lib.rs`) do go through the seam.
+- There is no About dialog, no installer, no Start menu entry, no jump list, no file association, no registry code and no tray icon (`Justfile:57` and a search of `crates/`, `docker`, `tools` and `.github` per the investigation). The app's version appears only in the log header (`crates/desktop/src/lib.rs:142-145`).
+- The in-window toast and the inbox use the seam (`StatusBar.qml:2, 24`, `crates/app/src/inbox.rs:32-35`). There is no OS-level notification.
+- The mascots carry no words; the English alternative texts are `README.md:4` and `site/index.html:20`. `Mascot.qml:30` has no accessible name.
+
+### 3.6 Logs, diagnostics and external tools
+
+- Logs are English and have no word layer: about 51 `pg_log` call lines (2 info, 43 warn, 5 error, 1 panic; per the persisted investigation), the log header (`crates/desktop/src/lib.rs:144`), a warning at `lib.rs:158`, the trace stage at `crates/desktop/src/trace.rs:26`, and the screenshot harness's report (`crates/desktop/src/screenshot.rs:32-52, 96-114`). The `log` crate's documentation says it holds diagnostics and every notice the inbox shows, recorded by its code (`crates/log/src/lib.rs:1-8`).
+- `LogPanel` shows each record's message and target as plain text (`crates/desktop/qml/LogPanel.qml:119-135`), and only its chrome is translated. The panel's button is visible only in dev mode (`StatusBar.qml:139-143`).
+- Some log lines are read as user messages: `crates/desktop/src/controller.rs:42-46` logs `--apply-view=NAME: no saved view has that name` with the typed name.
+- ExifTool: it is started with `-charset filename=utf8` and no `-lang` option, and no environment variable is set for the child (`crates/exiftool/src/lib.rs:107, 202`, `crates/platform/src/process.rs:184` (a test helper's environment variable, not ExifTool's)). Its stderr is inserted into English `bail!` messages (`exiftool/src/lib.rs:153, 170, 181`, which interpolate the stderr; `:83-85, 236, 249` are English context or timeout messages without it). Success is detected by parsing its English stdout: `updated`, `unchanged` and `1 image files created` (`exiftool/src/lib.rs:167, 262-263`). That is a parse contract, and the app must never change ExifTool's language.
+- FFmpeg: decoder errors come from `av_strerror` at run time (`crates/video/src/ffi.rs:40-52`), and the app's own literals are also decoder errors: `no decoder for {codec}` (`ffi.rs:326`), `out of memory` (`ffi.rs:123`), `av_packet_alloc failed` (`crates/video/src/ffi.rs:288`) and `no picture size` (`crates/video/src/lib.rs:122`).
+- Yandex: the transport error text from `ureq` (`crates/yandex/src/http.rs:65, 69`), and 9 English literals in `YandexError::Unexpected` details (`crates/yandex/src/parse.rs:10, 11, 15, 108, 110, 138, 141`, `fetch.rs:44, 53`), which `types.rs:30` maps to `RequestError::Unexpected(detail)`. The ureq text also enters at `fetch.rs:38` and `fetch.rs:51`. No language is sent to Yandex (the requests carry only a User-Agent and fixed query terms, `crates/yandex/src/client.rs`), and no Yandex prose is shown: only result URLs reach the user. `crates/desktop/src/yandex.rs:371` (YandexNotStarted) shows the raw io error text inside a translated frame. The seam renders `unexpected Yandex response: {detail}` (`crates/client/src/text.rs:372-381`), and the test pins `no cbir_id` (`text.rs:715-717`).
+- OS errors: Rust's std formats Windows OS errors with `FormatMessageW` and language id 0, which is the user's default language, not the app's (`std` source, `sys/io/error/windows.rs:98-146`, per the persisted investigation). An `io::Error` displayed in the UI therefore carries the Windows display language. The `(os error N)` suffix was not confirmed.
+- The panic message is English by nature and is the middle line of the crash box (5.6).
+
+### 3.7 Qt's own strings, fonts, mirroring and right-to-left
+
+- Qt's translator is not installed: nothing calls `QTranslator`, `installTranslator`, `QLocale::setDefault`, `retranslate` or `LanguageChange` in `crates/desktop/src`, `cpp`, `qml` or `crates/client`.
+- One dialog uses Qt's standard buttons: `SaveViewDialog.qml:38` (`Dialog.Save | Dialog.Cancel`). Their labels come from Qt's `QPlatformTheme` strings, which are translated only if a translator is loaded (`C:/Qt/6.12.0/Src/qtbase/src/gui/kernel/qplatformtheme.cpp:851-865`). The app uses no `QFileDialog` or `QMessageBox`.
+- The Windows folder picker is the system `IFileOpenDialog` (`crates/platform/src/picker.rs:132, 177-183`, `crates/desktop/src/picker.rs:2-3`), which follows the Windows display language. The non-Windows `FolderPickerDialog.qml:45-103` uses Fluent labels.
+- The Justfile's deploy recipe passes `--no-translations` (`Justfile:51-57`; `:57` per another investigator), which skips windeployqt's translation step (`windeployqt/main.cpp:464-465, 579, 1900-1901`). The Qt 6.12 kit has `qtbase_*.qm` for 33 locales (including `ar`, `he`, `fa`, `ja`, `ko`, `zh_CN`, `zh_TW`, `pt_BR`) and `qtdeclarative_*.qm` for 28 locales (`C:/Qt/6.12.0/msvc2022_64/translations`).
+- Mirroring: no `LayoutMirroring`, `layoutDirection` or `RightToLeft` setting exists in `crates/desktop` (the grep is clean across `qml`, `src` and `cpp`). Anchors are left-based (`Main.qml:515`). Hard-coded x positions: `GalleryGrid.qml:136` (readout at `parent.width - width - 24`), `FolderTree.qml:43, 47` (indent `depth * 14`, right padding 18). Qt mirroring is opt-in and does not change explicit `x` values (`qquickitem.cpp:1429, 1448-1462`, `childrenInherit` defaults to false at `:1535-1537`).
+- Key semantics are not mirrored: the left and right keys mean back and forward (`Panel::Step`, `keymap_bridge.rs:44-46`), and the hint glyphs `← → step` and `↑ 4`, `↓ 1` are Rust constants (`keys.rs:205-226`).
+- Bidi: `set_use_isolating(false)` (`words.rs:36`) is on the deliberate list. Paths in notices are isolated by hand with U+2068 and U+2069 (`crates/client/src/text/notice.rs:1-33, 104-138`). Other path values are not isolated: the info line's path, the scan line's root, the filter's name needle and the failed-file line (`text.rs:150-151, 225, 230-233, 322-325` at HEAD; the working tree removes that wrapper, and the line is now built at `crates/desktop/src/notices.rs:125`).
+- Fonts: the only `font.family` is `monospace` for log times (`LogPanel.qml:119`). There is no font in `Theme.qml` (colours only) and no application font set by the app. Text with no font set takes Qt's application font, which comes from the platform's SystemFont; on this Windows machine that is the message font, Segoe UI 9 pt (`C:/Qt/6.12.0/Src/qtbase/src/plugins/platforms/windows/qwindowstheme.cpp:823-850`). Fusion sets no font, and the repo has no qtquickcontrols2.conf. This was read from this machine's registry and Qt's source; a clean Windows install was not checked. Sizes are `font.pixelSize` from 11 to 22, plus 120 for the rating popup. 20 of the 34 QML files import `QtQuick.Controls.Fusion`. Offscreen test runs take their fonts from `%WINDIR%\Fonts` (`crates/desktop/cpp/gui_app.cpp:17-29`), so the screenshot matrix draws with the same Windows font files. Its font database is FreeType (`QT_QPA_FONTDIR`), not the DirectWrite one the windowed app uses, so its per-character fallback order was not traced. The app ships no font file.
+- Fixed-size containers that a longer translation would clip or overflow (inferred from anchors and layouts; not run): the filter's date and min and max fields (`FilterBar.qml:73-76, 89-90`), the combo boxes and name field (`FilterBar.qml:222, 250, 271`), the top bar's sort combo (160), arrow button (32), slider (220) and spin box (110) (`TopBar.qml:77-78, 91, 112, 121, 143, 152`), the inbox's 120 px source column and 40 px rows (`InboxPanel.qml:292, 322-323, 419`), the log's 22 px rows and 90 px target column (`LogPanel.qml:109, 131`), the folder tree's 26 px rows (`FolderTree.qml:42`), the status bar's 500 px maximum width and 140 px progress bar (`StatusBar.qml:73, 83, 125`), the HUD's hint label, which is anchored right and has no elide (`Hud.qml:50-69, 79-89`), and fixed dialog sizes (`FolderPickerDialog.qml:36-37` 560 by 460, `LibraryPanel.qml:28-29` 680 by 440, `SaveViewDialog.qml:65`, `Loupe.qml:32-33`, `RatingPopup.qml:12`).
+- The window is 1600 by 1000 with no `minimumWidth` (`Main.qml:17-18`). Only the split view has a minimum width of 160 (`Main.qml:529`). No narrow-window scenario exists.
+
+### 3.8 Tests and tooling
+
+- Fluent resources are parsed by tests for each file (`crates/client/src/text/message.rs:308`, `words.rs:107`, `cli.rs:450`). Ids in each file equal the Rust enum names (`message.rs` test `the_messages_and_the_english_entries_name_the_same_ids`, `cli.rs:452-459`). `ui.ftl` ids are unique and start with `ui-` (`words.rs:105-115`). Every message renders non-empty and not as its id (`message.rs` `every_message_is_worded_by_its_entry`, which uses `Notice::samples()`). Every CLI line has no `{` left (`cli.rs` `every_line_is_worded_by_its_entry_with_its_values`). The desktop's QML and `ui.ftl` id sets are equal (`crates/desktop/src/words.rs:70-78`).
+- The pseudo-locale is tested for accents and padding (`words.rs:126-133`) and by `crates/client/tests/describe_pseudo.rs:9-40`.
+- Many value tests pin English output: `text.rs:496-801`, `cli.rs:462-482`, `keys.rs:317-354`, `crates/desktop/src/lib.rs:249-260`, and `command_line.rs:646-700`.
+- No test loads a non-English bundle, and no test checks that an entry's variables match the Rust fields (`message.rs:18-53, 58-112, 298-305`).
+- `just lint` runs `tools/lint.py`, whose steps are cargo fmt, clippy, cargo check for wasm32 (`lint.py:21`), cargo metadata, cargo doc, cargo deny, cargo machete, ruff, markdownlint, `boundaries.py` (`lint.py:56`); `lint_qml` is a separate recipe that runs after `lint` (`Justfile:116`). None reads a `.ftl` file. CI runs `just lint`, `just modgraph`, `just test`, `just qmltest`, `just test-tools` and the shots comparison, and nothing checks `.ftl` files there.
+- The screenshot matrix (`tools/compare_shots.py`, 25 scenarios at `:104-129`) compares pixels against a recorded reference. The two pseudo scenarios run but are not compared (`:131-136`, `:573-576`). Its docstring names `compare-shots.ps1`, which no longer exists (`tools/compare_shots.py:4`).
+- `crates/client/clippy.toml` bans std file reads and writes, directory listing, the clock types and thread spawning (per the investigation). The English words are embedded with `include_str!`, which is allowed.
+
+### 3.9 Does the Fluent decision still hold
+
+`docs/temp/REFACTOR_DESIGN.md:56` records two reasons for Fluent over Qt's `.ts`: the same `.ftl` serves Rust and a JavaScript client, and Qt's tooling would not reach a non-Qt web client. The first reason is conditional on the web stack, which `REFACTOR_DESIGN.md:23` calls undecided and which `WEB_CLIENT.md` does not yet choose (3.10). The second is the same argument in other words. Both reasons rest on the web client, and the web verdict is now the shared QML app, so neither reason decides the desktop question on its own.
+
+The desktop argument stands on other facts. Most of the app's user text is built in Rust (about 101 messages, 39 CLI lines and 47 notice kinds), and `lupdate` extracts strings from C++ and QML sources, not from Rust `format!` calls (an inference from Qt's tool design, not verified in this study). A Qt-only route would therefore need a second extraction path for the seam, which is what Fluent already provides. The seam is also already wasm32-clean (`tools/lint.py:21`), and the `REFACTOR_DESIGN.md:102` pass (S7, "check passes; plurals work; licences allowed") is confirmed for the check and the licences, but not for plurals, because no test runs a plural.
+
+Two measured gaps count against relying on Fluent alone. `NUMBER()` does not localise grouping or the decimal mark in 0.16, and `DATETIME` is not registered (3.3). So number and date formatting is a separate design item (5.3), whatever engine holds the words. Fluent's isolation default is off in this code (`words.rs:36`), which is a right-to-left blocker to be revisited (5.7). Neither gap is a reason to change engine; both are reasons for a formatter and a direction design beside it.
+
+### 3.10 Conflicts and stale claims
+
+The reports disagree in these places, and the disagreement is not resolved here. Each is listed so that a verifier or the owner can settle it.
+
+| Item | What the reports say | Status |
+|---|---|---|
+| QML word calls | 141 calls across 18 files (QQ-05); 119 calls (LR inventory, SF-02, WT-02) | Resolved: a grep -o over crates/desktop/qml gives 141 (125 words.text, 16 words.phrase). The 119 figure is the number of QML lines that contain a call (`git grep -h` over `crates/desktop/qml` at HEAD gives 119 lines and 141 matches). |
+| Notice kinds | 47 kinds in the `ids!` table (RS-17, WT-05); 46 golden lines (PE-14) | Resolved: the 47th is `Notice::Unknown`, which is never written (test `an_unknown_kind_is_not_written`; golden.jsonl has 46 lines). 46 kinds are stored. |
+| WEB_CLIENT Svelte verdict | `REFACTOR_DESIGN.md:23` refers to a Svelte 5 verdict in WEB_CLIENT.md; SF-08 says the current file has none; WT-11 calls it a research recommendation | Checked here: `grep Svelte` in `WEB_CLIENT.md` finds four lines (7, 70, 84, 152): line 7 is the survey table row, and the other three cite Immich's `.svelte.ts` files, so the Svelte verdict that REFACTOR_DESIGN.md:23 cites does not exist in WEB_CLIENT.md. SF-08 is correct, and WT-11's description is not supported. The stale reference is in `REFACTOR_DESIGN.md:23`. |
+| `ui.ftl` size | 103 ids in the plan (`REFACTOR_PLAN.md:829`) | 155 entries and 206 lines in the working tree (the reports gave 131 and 180, which do not match it). Stale plan, not a conflict. 155 is the count of the working tree's file. |
+| Error-string fields | about 29 non-test `error: String` fields (RS-07); about 30 notice kinds with an English error (PE-01) | Approximate; fields and kinds are different units. |
+| `deny.toml` allow list | lines 20-32 (LR-17); 24-37 (WT-08) | Line range differs by the report; the content (Apache-2.0, MIT, Unicode-3.0) agrees. |
+| Fluent builtins | `words.rs:37` comment names `NUMBER()` and `DATETIME()`; only `NUMBER` is registered (LR-05, LR-06) | Code comment is inaccurate. |
+| `set_pseudo` scope | applies to Fluent lines only (LR-21, QQ-15) | Agreed. CLI lines are never pseudo-accented, because only the desktop calls `set_pseudo` (`lib.rs:130`). |
+| Compare script name | `tools/compare-shots.ps1` in REFACTOR_PLAN S-19.3 (`:830`) | Stale; the file is `tools/compare_shots.py` (QQ-17, SF-08). |
+| Product name spellings | four spellings (SF-12) | Agreed. |
+| Notice kinds' test | every kind is covered by `Notice::samples()` (RS-17 and WT-05 infer this by comparing two lists) | Inferred, not checked by running the test. |
+| Web text in WEB_CLIENT | no text section (SF-02) | Agreed. |
+
+Stale documents named by the reports: `docs/temp/NOTIFICATIONS_PLAN.md:149` names a `pg_app::Note` that no longer exists (PE-05); `review 4 (e428ab2):64` says the CLI writes its own English (RS-02, stale at `e428ab2`); `docs/temp/REFACTOR_PLAN.md:829-830` has the 103 count and the `.ps1` name; and `README.md`, `site/index.html` and `docs/temp/PLAN.md` link to documents that do not exist at HEAD (SF-10). The M-26 item in `docs/temp/MODULARITY_REVIEW_4.md:16-22` at HEAD (`review 4 (e428ab2).md` is in neither HEAD nor the working tree, and the working tree deletes MODULARITY_REVIEW_4.md) (the English hint labels) is closed in the working tree: `keys.rs:204-230` names the labels as `ui-hint-*` entries (uncommitted), so WT-11's claim that `keys.rs:205-248` holds English hint constants is stale. The status line's second part is `ui-selection-line` (`ui.ftl:206`), which was not checked against M-26's wording.
+
+## Inventory
+
+Counts are from the reports and are approximate where the report says so.
+
+### 4.1 Fluent entries and ids
+
+| File | Entries | Select blocks | Used by |
+|---|---|---|---|
+| `crates/client/locales/en/text.ftl` | 209 | 27 | `Message` variants through `message.rs` |
+| `crates/client/locales/en/ui.ftl` | 155 | 3 | QML through `words.text` and `words.phrase` |
+| `crates/client/locales/en/cli.ftl` | 41 | 1 | CLI `Line` variants |
+
+The notice ids are `notice-<code>-title` and `notice-<code>-body` for 47 kinds, plus `source-<code>` entries (count per the report, 3.10).
+
+### 4.2 Hard-coded user-visible English outside the seam
+
+| Area | Count (approx.) | Examples |
+|---|---|---|
+| Client (seam joins) | 2 joins, 22 constants | `keys.rs:205-249`, `text.rs:195` |
+| Desktop command line | about 20 reasons | `command_line.rs:94, 232-389` |
+| Desktop fatal and caption | 4 paths | `lib.rs:122-123, 139`, `alert.rs:6` |
+| Config and data folder | 2 messages | `dirs.rs:33, 41` |
+| CLI borders contexts | 7 | `borders.rs:35, 92, 136, 160, 166, 182, 184` |
+| CLI error prints | 5 | `gallery/main.rs:31, 50`, `cli/lib.rs:167, 301, 344` |
+| CLI value parsers | 4 | `args.rs:137-147` |
+| CLI help (clap) | 38 doc lines and clap built-ins | `args.rs:13, 15-125` |
+| QML concatenations | about 12 | `Hud.qml:58, 89-96`, `FilterBar.qml:148, 173, 240` |
+| QML symbols | about 25 | `RatingBar.qml`, `TopBar.qml:101, 115` |
+| Qt standard buttons | 2 (Save, Cancel) | `SaveViewDialog.qml:38` |
+| Error text passed through | about 43 sites (the listed components sum to 43; recount) | `desktop` 23, `video` 7, `library` 6, `thumbcache` 3, `app` 2, `cli` 2 |
+| Yandex unexpected details | 9 literals (non-test) | `yandex/parse.rs`, `fetch.rs`, `types.rs:30` |
+| Codec, edit, exiftool and video bails | about 35 | `codec/animation.rs:36`, `edit/crop.rs:32-54`, `exiftool/lib.rs:83-85` |
+| Catalog reasons | 5 | `catalog/core.rs:73-80`, `schema.rs:473, 477, 482` (477 is the schema difference's Display; recount the 5) |
+
+### 4.3 QML
+
+| Measure | Count |
+|---|---|
+| QML files | 34 |
+| Files with a `Words` instance | 18 |
+| `words.text` and `words.phrase` calls | 141 (125 `words.text`, 16 `words.phrase`) |
+| `Qt.locale()` calls | 7 (on six lines) |
+| `Qt.formatDateTime` calls | 1 |
+| `LayoutMirroring`, `layoutDirection`, `RightToLeft` uses | 0 |
+| `font.family` settings | 1 (`monospace`) |
+| `QTranslator` or `QLocale` calls | 0 |
+| Fixed-size text containers at risk | about 20 |
+
+### 4.4 Stored and persisted text
+
+| Store | Text | Policy (5.5) |
+|---|---|---|
+| `notices.data` (catalog) | JSON notice: codes, values, and error fields | Codes stay. Frame re-words. Technical values stay as recorded. |
+| `file_failures.error`, `folder_failures.error`, `analysis.error`, `file_writes.error`, `file_writes_checked.error` | English error text when recorded | Stored text kept; frame re-words. |
+| `roots.path`, `files.name`, `folders` | BLOB paths and names | Never translated. |
+| `views.name`, `views.query`, `views.sort` | typed names and JSON | Never translated. The name is user data. |
+| `gallery.json` (prefs) | 7 fields, no words | Gains a `language` field. |
+| `gallery.log` | JSON lines, English | Not translated (8.3). |
+| Yandex file names | `yandex WxH`, `yandex similar N` tokens | Fixed tokens, open (8.10). |
+| Image metadata | `XMP:Rating`, `EXIF:Orientation` | Numeric; user text metadata never translated. |
+
+### 4.5 Logs and external tools
+
+| Source | Count or form | Policy (5.6) |
+|---|---|---|
+| `pg_log` calls | about 51 (2 info, 43 warn, 5 error, 1 panic) | English diagnostic class |
+| ExifTool | stderr in `bail!`; stdout parsed for `updated`, `unchanged`, `created` | Passthrough technical detail; the parse contract stays |
+| FFmpeg | `av_strerror` text and about 6 app literals | Passthrough; the app literals become typed messages |
+| OS errors | std `FormatMessageW` in the Windows display language | Passthrough technical detail |
+| Yandex transport | `ureq` text | Passthrough technical detail |
+
+### 4.6 Tests and tooling
+
+| Measure | Count |
+|---|---|
+| Fluent-checking cargo tests | 6 (parse of three files, id sets for Message and Line, ui id uniqueness and prefix, QML and ui id sets, every message worded, CLI no-brace check) |
+| Locales present | 1 (`en`) |
+| Locale-aware tests | 0 |
+| Lint or CI steps that read `.ftl` | 0 |
+| Shipped fonts | 0 |
+| Screenshot scenarios | 25 compared, 2 pseudo not compared |
+| Notice kinds in the `ids!` table | 47 (one count, see 3.10) |
+| Refusal reasons | 19 |
+| Plural coverage in intl_pluralrules 7.0.2 | 212 cardinal and 97 ordinal entries (CLDR 37); all 73 candidate languages checked are present |
+| Licences in the Fluent tree | Apache-2.0 OR MIT, MIT OR Apache-2.0, Unicode-3.0, Apache-2.0 OR GPL-2.0-only; two non-SPDX spellings (`Apache-2.0/MIT`, `MIT/Apache-2.0`) |
+
+## Design
+
+### 5.1 Locale model
+
+The design adds a `Locale` value to `pg_client::text`. It holds a `unic_langid::LanguageIdentifier` and nothing else, and it replaces the process-wide pseudo flag as the thing that selects a bundle. The pseudo-locale stays a separate switch, as it is now, and wraps whichever bundle is chosen, so that pseudo can be combined with a real tag later, which needs its own flag (for example `--pseudo`).
+
+The English bundle is always built, because it is the fallback. A chosen locale adds its own three resources and falls back per message. The resource list is a single table in `words.rs`:
+
+```rust
+// crates/client/src/text/words.rs (proposed shape)
+const LOCALES: &[(&str, [&str; 3])] = &[
+    ("en", [
+        include_str!("../../locales/en/text.ftl"),
+        include_str!("../../locales/en/ui.ftl"),
+        include_str!("../../locales/en/cli.ftl"),
+    ]),
+    // ("de", [include_str!(...), include_str!(...), include_str!(...)]),
+];
+```
+
+Each locale is a compile-time embedding, which needs no file read at run time. That fits the `clippy.toml` ban on std file reads in `pg-client` (per the investigation), works in WASM, and lets one cargo test iterate the table without reading the disk (5.9).
+
+The selection order is the one the investigation recommends (LR-04), with two points that this document adds:
+
+1. An explicit `--locale=<tag>` on the desktop and the CLI. This is a real option, which replaces the pseudo-only parser at `command_line.rs:271-273`. The CLI has no locale option and no `set_pseudo` call today (its flags are in `crates/cli/src/args.rs`). It resolves its folders through `cli.layout()` (`args.rs:25-26`) but never reads `gallery.json`, so the CLI needs its own `--locale` in `args.rs`, its own step 2 read from `cli.layout()`, and its own call of `set_pseudo` for phase 3. An explicit unsupported tag is shown on a named surface (a status-line Message on the desktop, stderr on the CLI). The existing bad-option path only logs it, so this needs a new surface.
+2. The `language` value in `gallery.json`, an optional BCP 47 tag, read through `Prefs` (`crates/app/src/prefs.rs:18-41`). It is `None` for "use the system language". Old files read it as `None`, because the struct is `serde(default)`.
+3. The Windows display language, read once at startup with `GetUserPreferredUILanguages` (the `windows` crate needs `Win32_Globalization` added to the features at `Cargo.toml:49`). `GetUserDefaultLocaleName` is not the call for this, because it returns the regional-format locale, which can differ from the display language. The Qt side has the same distinction: `QLocale::system()` is the format locale, and `QLocale::uiLanguages()` is the display list, which would be the alternative if the Rust side should not read it. The Rust read is proposed.
+4. English.
+
+A tag that is not in `LOCALES` is skipped at steps 2 and 3, and the next step is used. Only an explicit flag at step 1 is an error. Step 1 (the flag) and step 3 (the Windows language) can run where `set_pseudo` is called now (`crates/desktop/src/lib.rs:129-130`). Step 2 cannot: the saved `language` is in `gallery.json` under `config.layout.prefs()`, `Config::from_env` resolves the folders only at `lib.rs:137-140`, and the prefs store is opened inside `app::open` (`crates/app/src/app.rs:78`, called at `lib.rs:164`). The chain is therefore resolved after `Config::from_env` and after `pg_log::init` (`lib.rs:142`, so the once-only fallback log line is kept), and before any line is worded. That step needs a read of `gallery.json` that does not open the whole prefs store. The data-folder error at `lib.rs:139` uses steps 1 and 3 and English, as 8.16 proposes.
+
+There is a start-up circularity to settle. The preferences file lives under `PG_HOME`, which the data-folder layout resolves (`crates/app/src/config.rs:13-23`), and the data-folder errors happen before the file can be read (3.5). Those errors cannot use step 2. The proposal is that they use step 3 when it exists and English otherwise (8.16).
+
+The fallback is per message, and it is implemented in `shown(id, args)`. The chosen bundle is tried first. If it has no entry, no pattern, or formatting raises any resolver error, the English bundle formats the same entry with the same arguments. The fallback is logged once through `pg_log` in English, since logs are English (5.6). Fluent does not provide a bundle-level chain (fluent-bundle 0.16 `bundle.rs:134-137, 374-380, 402-404`), so the app builds it here. A translated entry that names a term or message existing only in English raises a resolver error, so the rule above shows English for it at run time. Check 5 in 5.9 reports it at build time.
+
+The language is stored in `gallery.json` under a new `language` key (8.12 gives the alternatives). It is a per-user choice, not a per-library one, which is why it does not belong in the catalog. The settings bridge (`crates/desktop/src/settings.rs`) already reads and writes prefs through `update`.
+
+### 5.2 Messages
+
+**The Rust side.** Every user-visible Rust string is a `Message` (`crates/client/src/text/message.rs`), a `Line` in the CLI (`cli.rs`), a notice (`pg_model::Notice`, worded by `crates/client/src/text/notice.rs`), or a `RefusedReason` word (`crates/client/src/text/message.rs:263-270`, `refused_reason`). Each has a Fluent id (`Message::id`, the `messages!` macro at `message.rs:58-113`) and named arguments (`Message::args`, `message.rs:85-93`). The id test at `message.rs:285-309` fails when an id is missing or duplicated. Adding a variant needs an entry in `text.ftl` and the compiler's exhaustive match, and that is already enforced.
+
+**The QML side.** A QML label is `words.text("ui-...", ...)` or `words.phrase(...)` with a literal id and entries in `ui.ftl`. The facade is `crates/desktop/src/words.rs:13-35` and its bridge `words_bridge.rs:23-39`. The desktop test (`words.rs:39-79`) fails when a QML id is missing from `ui.ftl` or an entry is unused. The test does not see dynamic ids, and it does not see ids that pass through a variable (none exist today).
+
+**The CLI.** A CLI line is a `Line` (`cli.rs:19-22`) worded from `cli.ftl`. Help text is not in the seam (8.7).
+
+**The rule for any new string.** A new string that a user reads is added in the same change as its id, and it is written as an entry, never as a Rust literal in `format!`, a QML literal, or a concatenation. The rule has five parts.
+
+1. A string a user reads is an entry in one of the three files, reached through a `Message`, a `Line`, a notice kind, or a `words.text` or `words.phrase` call.
+2. A value that is data (a path, a name, a number, a code) is passed as an argument. The English entry places it, and the translation does too.
+3. A log line or a diagnostic is English and is not an entry. A string a user should read is never sent to the log instead of an entry.
+4. A symbol may stay literal in QML only when it is the same in every locale. The rating glyphs are Rust constants (`text.rs:29`) and move to a symbol table if a locale differs.
+5. A new id is added to every locale file in the same change. A locale that lacks it shows English through the fallback, and the checker reports the gap as untranslated, not as an error.
+
+**The moves this design requires.** The following are hard-coded English that the rule would move, in rough order of value. Also needed: the CLI's `Debug` list (`crates/cli/src/dups.rs:56`), the damage display (`crates/dbfile/src/judge.rs:46-53`), the picker messages (`crates/platform/src/picker.rs:86, 107`), the codec and edit bails (`crates/codec/src/animation.rs:36`, `crates/edit/src/crop.rs:32-54`) and `controller.rs:42-46`. None is in a phase. The keys hint is already entries in the working tree: its 22 labels are `ui-hint-*` entries and its separator is `ui-hint-separator` (`keys.rs:204-230`, `text.rs:315-318`, `ui.ftl:182`), so the pseudo-locale reaches it (QQ-01 is closed there). What remains is the `Hint` naming and the English pins of the key tests. The command-line refusals (`command_line.rs`, about 20 sites) become `Message` variants. The caption (`alert.rs:5-6`) uses `ui-app-name` through the seam. The fatal and data-folder messages (`lib.rs:122-123, 139`, `dirs.rs:33, 41`) become typed errors with seam text. The CLI borders contexts (`borders.rs`) become `Line` variants. The CLI's `main.rs:31, 50` and `lib.rs:146, 167, 301, 344` become `Line` variants. The value-parser messages (`args.rs:137-147`) become clap value-parser errors built from words. The QML concatenations (3.2) become entries with values. The `E`, `W`, `I` log letters become entries.
+
+### 5.3 Plurals, numbers, dates and sentences built from parts
+
+**Plurals.** Fluent selects on `$count` with the CLDR rules that `intl_pluralrules` supplies for the bundle's language identifier (LR-09: all 73 candidate languages are present, and an unlisted language falls back to English rules). The English files use only `one` and `other` (`ui.ftl:165-167`, `text.ftl:80-86`). A Polish, Russian or Arabic file needs more variants, and each translated select keeps `*[other]`. The checker (5.9) verifies that every select in a translation has a default, and that the selector values the Rust side sends are covered.
+
+**Numbers.** There is no single formatter. QML uses the OS locale through `Qt.locale()` (seven calls on six lines), Rust uses fixed separators (3.3), and Fluent's `NUMBER()` does not localise in 0.16. The proposal is one formatter in `pg-client`, `Numbers`, with the grouping separator, the decimal mark and the minimum fraction digits for each locale in the `LOCALES` table. A hand-kept table of separators is the smallest option and works in WASM. A number-formatting crate, such as ICU4X's decimal formatter, is the more complete option; it was not checked for licence, size or `wasm32` support in this study, and no ICU or number-formatting crate is in the tree (LR-15). Both sides then use the formatter: `group_digits` (`text.rs:264-279`), the info line (`text.rs:218-223`), the CLI's `{:.2}` (`cli/lib.rs:95-96`), and the QML sites, which take the formatted string from Rust or call `Qt.locale` with the same locale set by `QLocale::setDefault` at start-up (through C++ glue, since `cxx-qt-lib` has no `QLocale`). The choice of source, the app's locale or the system's, is open (8.9).
+
+**Counts as text.** A count shown to the user is formatted by the `Numbers` formatter and passed as a text value, and the `count` argument is used only to pick the plural form. That removes the two forms in LR-08. Range ends that Fluent formats are passed as numbers and formatted by Fluent, which is English-only until the formatter is wired in, so those ends are moved to text as well.
+
+**Dates.** Dates are an open design. The proposal for the first translated release is to keep ISO `YYYY-MM-DD` as a fixed, non-translated format, because the filter's parser accepts only that shape (`crates/model/src/date.rs:64-70`, `crates/client/src/input.rs:99-112`, SF-06). The placeholder `ui-date-format` then stays the fixed shape and is shown as a hint, not as a translated phrase. A localised date display (the inbox's `yyyy-MM-dd hh:mm` pattern at `InboxPanel.qml:326`, and the `Day` display at `date.rs:82-86`) needs a locale-aware parser first, and no phase in section 6 builds it. Phase 2's `QLocale::setDefault` can change the locale Qt uses for `Qt.formatDateTime` (`InboxPanel.qml:326`), so that call must be pinned to a fixed locale in phase 2.
+
+**Sentences from parts.** A sentence is an entry with variables, never a join. The joins to remove are: the info line (`Hud.qml:58, 89-96`), the counter (`Hud.qml`), the group title (`InboxPanel.qml`), the borders join (`text.rs:195`), and the hint and selection lines, which are entries already in the working tree (`text::hint` at `text.rs:315-318` joins `ui-hint-*` entries with `ui-hint-separator`; the selection line is `ui-selection-line` at `ui.ftl:206`, with its three-space gap now inside the entry). The describe() separators at `text.rs:100` and `:153` were not re-checked. Structure (a newline, a fixed indent) may stay in code, as `notices.rs:124-136` already does.
+
+**Paths and isolation.** A path is shown inside an entry with bidi isolation marks, applied in the seam and not per call site. The notice seam already does this by hand (`text/notice.rs:1-33, 104-138`), and the other path values are not isolated today (LR-19). The proposal is that every path-valued placeable goes through one helper in `pg-client`, so the rule is in one place. The isolation default of Fluent stays off (`words.rs:36`) for the first release, because it would wrap every value (LR-18), and the helper is the place where it is switched on per argument for a right-to-left locale later.
+
+### 5.4 Runtime switch versus restart, and the thread-local bundle
+
+**Today.** The bundle is `thread_local!` (`words.rs:18-21`), built lazily per thread from the three English files, and the pseudo flag is a process-wide atomic (`words.rs:23-28`). The QML bindings are evaluated once (QQ-11), and Rust strings are stored once (the gallery's selection text at `crates/desktop/src/gallery/model.rs:305-313`, the toast's words set at `crates/desktop/src/notices.rs:297-300`). Threads that word lines are the Qt main thread, the desktop's main thread before Qt starts (`fatal`), the panic hook on whatever thread panicked, and the CLI's main thread. The inbox's follower thread only queues work to the Qt thread (LR-13).
+
+**Restart-only design (recommended for the first translated release).** The locale is chosen once in `run()` before any line is worded (3.5, 5.1). Each thread builds its own bundle from the chosen tag's sources, which are static strings. The chosen tag is the one piece of shared state: it is set once, in a process-wide cell that the thread-local initializer reads, before any line is worded. A thread that words a line before the set keeps the English bundle it built, so the set must precede the first `shown` call on every thread. Nothing enforces that yet: a line worded earlier pins English for that thread, and a second set is refused. Phase 2 must make `shown` detect a call before the set (a debug assertion and a test). A test should check that a line worded after the set is in the chosen locale on each thread. The bundle is built lazily, as now. The cost of parsing three files per thread is not measured (SF-24), and it is paid only by threads that word lines. The settings control writes `gallery.json` and says the change takes effect at the next start. Restart-only avoids the QML binding changes (QQ-11, items 1 and 2), the re-push of stored Rust strings (LR-14, item 3), and the Qt translator's `LanguageChange` handling. It does not avoid the stored technical text (5.5), which is not switched by any language, and the OS-language text (PE-06), which stays in the Windows display language.
+
+**Live switch (later, optional).** The work the investigators list is these steps, and none exists today. (1) A generation counter in `words.rs` that `shown` checks, so each thread rebuilds its bundle when the generation changes (LR-14, the pseudo flag is the model to copy). (2) A `revision` property with `NOTIFY` on `Words`, read by every binding, so QML re-evaluates (the shell's `qproperty` pattern at `crates/desktop/src/shell_bridge.rs:20-36`, and the change pump in `crates/desktop/src/pump.rs`). (3) Re-push of the Rust strings that are cached: the gallery's selection text, the toast, and any inbox row text. (4) A `QTranslator` and `LanguageChange` handling for Qt's own strings, which needs a translator loaded from the deploy folder (5.7). (5) `QLocale::setDefault` on change, and `Qt.locale` bindings that depend on a locale property. The investigators did not estimate the cost in time. The acceptance test for it would be that a switched screenshot equals the restart screenshot for the same locale.
+
+### 5.5 Stored and persisted text
+
+The policy has five classes, and each one has a rule that a migration, a test or a review can check.
+
+1. Identifiers and codes are never translated. These are notice kind codes (`notice.rs:784-842`, with the golden lines in `crates/model/src/notice/golden.jsonl`), refusal codes (`refusal.rs:58-84`), source codes, enum keys (strum snake_case; `detection.rs`, `format.rs`, `media.rs`, `query.rs`), facet and sort keys (`lifecycle.rs:406` writes `"key":"name"`), QML action codes (`keymap.rs:1-8`), picker purposes (`picker/state.rs:8-27`), log targets (the source code, `inbox.rs:970`), CLI flags, the CLI's CSV header and status values (`borders.rs:96-130`), Fluent ids, environment variable names, and file extensions (PE-14, RS-15).
+2. Notices are worded when they are read (PE-03, SF-20). A stored notice is re-worded in the active language, so a translation needs no migration of the notices table. A notice posted in one language and shown in another is correct by this rule.
+3. Stored technical detail is kept as recorded. These are the `error: String` fields, `CatalogRebuilt.why`, `Carried::Nothing.reason`, `RoundPanicked.message`, `FileFailure.error`, the ledger tables, `CacheStartedOver.detail` (`notice.rs:444-448`) and `CacheDisabled.error` (`notice.rs:450-452`, from `app.rs:74`), which carry `pg_dbfile`'s `Damage` display (`judge.rs:46-53`), and the OS-supplied `file_system` and `Unreadable.error` values in `refusal.rs:14, 28, 38`. Damage is ours, so it is typed (phase 5). The frame is translated and the detail is labelled as detail, for example `{ $frame } (detail: { $error })`. Where the value is ours, it is typed instead of stored as English: the Yandex `Unexpected` details (RS-08), `CatalogRebuilt.why` becomes a code (RS-10, PE-01), and the scanner's `Display` becomes a typed `ScanBusy { root, holder }` (RS-13). OS error text stays in the Windows display language. The app can offer words for the common `io::ErrorKind` values, with the OS text kept as labelled detail (8.11 and the open question in PE-06).
+4. Ledger rows keep the text they were recorded with (PE-02). Re-wording the frame does not change them, and the text is not re-read from the source.
+5. User data is never translated and is shown isolated where it is a path (PE-12). This covers folder paths, file names, saved view names and their query JSON (which holds the user's file-name search text), and crop output names (`crates/crop/src/lib.rs:98-105`). The app's fixed names are identifiers: the crop's temp name `<out>.pg-crop` (`crop/src/lib.rs:212`), the writeback's temp names (`writeback/src/file.rs:40-46`) and the Yandex tokens (`yandex.rs:309, 319`). The Yandex tokens are a proposal to keep (8.10).
+
+Migration. None is needed for notices or prefs, because the language is a new optional key and the notice data is language-neutral (LR-03, PE-03). A new notice kind needs its `notice-<code>-title` and `-body` entries and a `source-<code>` entry in every locale, as `NOTIFICATIONS.md` already says ("Adding a kind", steps 1 to 4, SF-20).
+
+The two docs that say nothing stored is English (`docs/temp/NOTIFICATIONS.md:12-13`, `crates/model/src/notice.rs:3-4`, `refusal.rs:1-3`) need a correction: codes and paths are language-neutral, and technical detail is stored verbatim (PE-04).
+
+### 5.6 Logs, diagnostics and external tool messages
+
+**Logs and diagnostics.** The log is an English diagnostic class. Its records are for maintainers, so a log message is not translated (8.3). The rule that makes this safe is the one in 5.2: anything a user should read is an entry, and the log is never the user's channel. The one exception the investigators found is `controller.rs:42-46`, which logs a refusal the user can cause (`--apply-view=NAME`) and which should become a refusal entry. The crash box's middle line is the English panic text (`panic_log.rs:23-32`, `text.rs:443-449`); it is a developer diagnostic inside a translated frame and stays English, which is the same boundary as the log (PE-11).
+
+**ExifTool.** The app never changes ExifTool's language (no `-lang`, and no environment variable for the child, PE-08). Its stdout is parsed for `updated`, `unchanged` and `created`, and that parse contract is kept as it is. Its stderr is shown as technical detail inside the translated frame (5.5, class 3). The app's own bail messages (`exiftool/lib.rs:83-85, 153, 170, 181, 236, 249`) are English and move into typed errors, so the frame is words and the detail is stderr.
+
+**FFmpeg.** `av_strerror` text is libavutil's string, loaded at run time, and stays as technical detail. The app's own literals (`no decoder for {codec}`, `ffi.rs:326`; `out of memory`, `ffi.rs:123`; `no picture size`, `video/src/lib.rs:122`) become typed decoder errors with entries, because they reach the inbox as failure text (PE-09).
+
+**Yandex.** No request sends a language (the only header is User-Agent, `yandex/src/client.rs:50, 94`, `fetch.rs:36`), and no Yandex prose is shown. The `ureq` text (`yandex/src/http.rs:65, 69`) stays as detail, and the raw io error in `YandexNotStarted` (`crates/desktop/src/yandex.rs:371`) is classed the same way. The `YandexError::Unexpected` literals become typed variants (RS-08 proposes this), so the frame and each detail are words, and the English file gets one entry per variant.
+
+**OS errors.** `io::Error` text in the Windows display language stays as detail (PE-06). The app's own words for the common `ErrorKind` values are an option (8.11), not a requirement.
+
+### 5.7 Qt's own strings, dialogs, fonts, mirroring and right-to-left
+
+**Qt's strings.** The only Qt-owned text is the Save and Cancel buttons of `SaveViewDialog.qml:38`. Two routes exist. The first is a `QTranslator` that loads `qtbase_<tag>.qm` from the deploy folder, which needs windeployqt's translation step (the deploy passes `--no-translations`, `Justfile:57`), and the kit has the catalogues for 33 locales (QQ-07). The second, recommended, is to replace the two buttons with Words entries. The app has no other Qt dialog, so the route adds one entry per button and avoids a translator, a `LanguageChange` path and a deploy change. The licence and size of Qt's catalogues were not checked.
+
+**Dialogs.** The Windows folder picker is the system's `IFileOpenDialog` (`picker.rs:132, 177-183`), and its text follows the Windows display language, not the app's. That is accepted and documented. The non-Windows `FolderPickerDialog.qml` uses Fluent labels and is covered.
+
+**Fonts.** No font is shipped, and no family is set except `monospace` for log times. Fallback for Arabic, Hebrew, Indic and CJK scripts is Qt's font-family fallback over the installed Windows families (`qfontdatabase.cpp`, `qfontengine.cpp`). The Windows per-character order was not traced, and coverage for these scripts was not verified. The plan is to check each candidate locale with a screenshot, and to bundle a font only if a check fails. A bundled font needs a licence entry in the docs, because `cargo-deny` does not see font files, and `deny.toml`'s allow list has no OFL entry (WT-09).
+
+**Mirroring.** A right-to-left locale needs `LayoutMirroring` set on the root with `childrenInherit`, anchors that follow it, and the hard-coded x positions (`GalleryGrid.qml:136`, `FolderTree.qml:43, 47`) made relative. The arrow keys' meaning is a separate decision: `Panel::Step` and the grid's left and right keys mean back and forward, and Qt does not mirror key semantics (QQ-09). Right-to-left is not part of the first release (8.15).
+
+**Sizes.** The fixed containers in 3.7 are the test targets for longer text. The pseudo-locale pads each line by a third (5.10). A minimum window width is not decided (8.15; QQ-20), and no scenario tests a narrow window.
+
+### 5.8 The web client and the shared .ftl files
+
+The browser design says nothing about text (SF-02, `WEB_CLIENT.md:528` is the only mention of the words bridge). The frontend is the shared QML app (`WEB_CLIENT.md:44-62`), so the words facade must work in the browser. The recommendation (SF-03) is to run the same Fluent engine in the browser, by compiling `pg-client` to WASM, as the web design already assumes it runs (`WEB_CLIENT.md:347-348`). The same `.ftl` files then serve both clients, and the Rust-side behaviours (isolation off, `NUMBER`, plural rules, the pseudo-locale, the parity tests) have one implementation. A JavaScript engine (`@fluent/bundle`) would need a twin for each of those, and it is the fallback only if the Fluent part of the WASM proves too large. Its size is not measured. The spike's `.wasm` is 27.7 MB (`WEB_CLIENT.md:474`), a Qt build of the grid spike, so it says nothing about the Fluent part.
+
+Two web-specific points follow. The browser supplies the language preference through `navigator.languages`, which takes the place of the OS language in the chain (5.1), and that is a proposal to check against the browser design. The threaded WASM build (`WEB_CLIENT.md:452-457`) builds a bundle in each worker that words a line, so the first-use parse cost (SF-24) is paid once per worker.
+
+The shared `.ftl` files need no packaging step on the desktop, because they are compiled into the executable (`include_str!`). The browser client gets them the same way, through the WASM build.
+
+The Fluent decision's reason about a JavaScript client (3.9) is conditional. If the browser client is the shared QML app, that reason disappears, and the decision rests on the seam's own needs.
+
+### 5.9 Translator workflow
+
+**File layout.** One folder per locale, with the same three files as the English one: `crates/client/locales/<tag>/text.ftl`, `ui.ftl` and `cli.ftl`, where `<tag>` is a BCP 47 tag that `unic-langid` parses. The English folder is the source. The `LOCALES` table in `words.rs` (5.1) registers each locale. Adding a locale is one table entry and three files.
+
+**The hosted tool.** The investigators checked three hosted tools and a fourth by community report, from search snippets and not from fetched pages, so the claims are unverified. [Pontoon](https://mozilla-pontoon.readthedocs.io) lists `.ftl` among its native formats, has a Fluent editor that falls back to the source editor for nested selectors, and is designed around Fluent. [Weblate](https://docs.weblate.org/en/latest/formats/fluent.html) has a monolingual Fluent format since 4.8 with a file mask, lists no plural support, and warns that its Fluent support is under development. [Crowdin](https://store.crowdin.com/ftl) lists Fluent as built in, but marks pluralisation and source editing as "No". Transifex has a community thread that says it does not support `.ftl` (date unknown, possibly outdated, [thread](https://community.transifex.com/t/project-fluent-support-ftl-files/3512)).
+
+The recommendation is to start without a hosted tool. Translators edit the `.ftl` files through pull requests, and the checks of 5.9 run in `just lint` and `just test` on every change. A hosted tool cannot be relied on to check variables and selects for this project, because the weakest parts of the Fluent support in the tools above are exactly plurals and source editing, and the variable and select checks are what the project needs most (WT-04, WT-05). Pontoon is the tool to revisit if the project wants a translation community, because it is the one designed around Fluent. This is a decision for the owner (8.5).
+
+**Checks in `just lint` and tests.** Three English parse tests already exist (`message.rs:308`, `cli.rs:450`, `words.rs:107`, each `assert!(try_new(..).is_ok())`), and the English id tests cover part of check 2. The checks below extend these to every locale and add the rest (WT-02).
+
+1. Every file in every locale parses. A file with a syntax error is an error, not a silent drop (today's `words.rs:40` drops it).
+2. The ids of a locale are compared with the English ids. An id that the locale lacks is reported as untranslated and falls back to English. An id that the locale has and English lacks is an error, because it is unused.
+3. Variables: every `$name` in a translated entry must be a field the Rust `Message` sets (`message.rs:85-93`), and every field the English entry uses must appear in the translation. Today nothing checks either direction (WT-04, LR-23).
+4. Selects: a translated select without a default is already a parse error (`fluent-syntax-0.12.0/src/parser/core.rs:285`, so check 1 reports it), and this check covers the selector values the Rust side sends (for example the refused-reason codes at `text.ftl:93-112`, and the notice variants) are covered by the translation's variants (WT-05).
+5. Every entry formats with sample values without resolver error, using the same samples as `every_message_is_worded_by_its_entry` and `Notice::samples()` (LR-23).
+6. Glossary terms are checked by a reviewer, not by a tool (below).
+
+Where the checks run matters. The registry in 5.1 embeds every locale with `include_str!`, so a cargo test in `pg-client` can iterate the table with no file reads, which `clippy.toml` forbids in that crate (LR-16). That makes the checks a cargo test, run by `just test`, and `just lint` can run the same test through `cargo test` if it is needed there. A Python checker in `tools/` is the alternative, and `tools/lint.py:20-33` is where a step would go, but a second parser would then need a dependency that the investigation did not check.
+
+A deliberately broken fixture locale, given as a test-only string, proves that the checks fail (this is the proof step for phase 3).
+
+**The glossary.** The repo has no glossary. The proposal is a short `crates/client/locales/GLOSSARY.md` that lists the product's words and the words that must not be translated: "Photo Gallery", "catalog", "notice", "inbox", "library", "folder", "view", "rating", "crop", "borders", "Yandex", "pseudo", the names of the key glyphs, and the environment variables. It is Markdown and the existing markdownlint applies to it.
+
+**Onboarding a locale.** The investigators counted nine steps today (WT-07); the list below has eight, so the count needs rechecking. In order: create the three files with the English ids; add one `LOCALES` entry (5.1); make the chosen locale come from the selection chain rather than a literal `"en"` (`words.rs:33`); decide the fallback (5.1 says per message; the code today has none); accept the tag in the command line (`command_line.rs:271-273`); extend the tests, which read only the English files through `test_support.rs` and the `ENGLISH*` constants; add a screenshot scenario and record its reference with `--record` (`tools/compare_shots.py`); and confirm that the tag is a valid `unic-langid` tag with plural rules in `intl_pluralrules`. The guide for translators does not exist, and it is a proposal (WT-13).
+
+### 5.10 Testing: the pseudo-locale, text expansion, per-locale screenshots and the multi-locale test set
+
+**The pseudo-locale.** The pseudo-locale accents ASCII letters, pads each line by a third plus one, and brackets it (`words.rs:70-89`). It is applied to the whole line after formatting, so user text is accented too. It does not test right-to-left direction or isolation, plural forms, number or date formats, font coverage, the per-entry fallback, or the syntax of a translation (LR-21). It is not applied to CLI lines, because only the desktop calls `set_pseudo` (`lib.rs:130`). It is not applied to the Qt numbers (QQ-15). The key hints are entries in the working tree (5.2), so the pseudo-locale reaches them; applying `set_pseudo` to the CLI closes the second; the `Numbers` formatter (5.3) takes the pseudo-locale into its output.
+
+**Text expansion.** The pseudo-locale is the only text-stress test, and the screenshot matrix runs it without comparing it (`compare_shots.py:131-136`). The proposal is to keep the two pseudo scenarios as they are for a look, and add a check that a pseudo line is not clipped in the fixed containers of 3.7. An automatic overflow check would be new work, and the investigators did not identify an existing one.
+
+**Per-locale screenshots.** The matrix has 25 scenarios compared against a recorded reference, rendered offscreen at 1600 by 1000 with device pixel ratio 1 (`compare_shots.py:104-129`, `Main.qml:17-18`). Each real locale needs its own recorded reference, which `compare_shots.py` cannot hold today. Phase 4 must add per-tag references and per-locale scenarios (keyed by tag, not commit). The English reference stays the same. The matrix does not cover right-to-left (no scenario), narrow windows (no scenario), DPI scaling (no scenario), the Yandex results panel, bordered and animated fixtures (S-14.1's "not covered" list), or the native folder dialogs (QQ-16).
+
+**The multi-locale test set.** Three locales are enough to test the design: English (the reference), pseudo (the stress test), and the first real locale. A fourth, the deliberately broken fixture of 5.9, tests the checks. The English value tests (`text.rs:496-801`, `cli.rs:462-482`, `keys.rs:317-354`, `desktop/lib.rs:249-260`, `command_line.rs:646-700`) keep their English pins by running under a `with_locale("en", ...)` helper. The `--locale=fr` test (`command_line.rs:646-700`) changes, because `fr` becomes a valid tag once it is in the table. The thread-local bundle makes the helper a per-thread override, which must be reset between tests (a proposal to check when it is written).
+
+### 5.11 Licences and packaging
+
+**Crates.** The Fluent tree is `fluent-bundle` 0.16.0 (Apache-2.0 OR MIT), `fluent-langneg` 0.13.1, `fluent-syntax` 0.12.0, `intl-memoizer` 0.5.3, `unic-langid` 0.9.6 and `unic-langid-impl` 0.9.6 (MIT OR Apache-2.0), `intl_pluralrules` 7.0.2 (`Apache-2.0/MIT`, a non-SPDX spelling), `type-map` 0.5.1 (`MIT/Apache-2.0`), `tinystr` 0.8.5 (Unicode-3.0), and `self_cell` 1.3.0 (`Apache-2.0 OR GPL-2.0-only`, allowed through its Apache option). `deny.toml`'s allow list has Apache-2.0, MIT and Unicode-3.0. Whether `cargo-deny` reads the slash spellings was not run, so the claim that the current lock passes is inferred from CI running `just lint` (WT-08). The check is the first thing to run in phase 0. Adding a negotiation crate for tags (`fluent-langneg` is already in the tree) needs a `Cargo.toml` line in `pg-client` (LR-15).
+
+**Fonts.** None is shipped (WT-09). A bundled font needs a licence note in the docs, because `cargo-deny` does not inspect font files.
+
+**Qt's catalogues.** If a `QTranslator` is used (8.13), the deploy must carry the catalogues for the chosen locales. The licence and size of Qt's translation files were not checked.
+
+**Packaging.** The `.ftl` files are compiled into the executable, so there is nothing to package for the words. The deploy recipe keeps `--no-translations` until a translator exists (`Justfile:57`). The product has no installer (SF-15), so there is no installer to localise. The app's exe metadata (ProductName and FileDescription, which the winres defaults would set to `pg-gallery`, SF-12) is a packaging decision that can be made without translation.
+
+## Phases
+
+Each phase has a check that proves it. A phase ends when its check passes, and the checks use the commands the repo already has, except where the phase adds one.
+
+| Phase | Work | Check that proves it |
+|---|---|---|
+| 0. Prerequisites | Record the basis: the commit this design reads, and the uncommitted seam changes in the working tree (`keys.rs`, `text.rs`, `text/cli.rs`, `text/message.rs`, `ui.ftl`, `cli.ftl`, `keymap.rs`, `words.rs`, the notice and failed-file files), which are either committed or re-based, so that phase 1 is not planned against a moving tree. Fix the stale claims in 3.10 (the notice count, the REFACTOR_PLAN counts and script name, the NOTIFICATIONS_PLAN `pg_app::Note` line, the README and site links, the `words.rs:37` comment, the `cli.rs` doc slip at `args.rs:137`). Run `cargo deny check` to confirm the non-SPDX spellings. Decide the open items in section 8 that block phase 1. | `just lint` passes; `markdownlint` passes on the changed docs; `cargo deny check` output is recorded; the 3.10 table has no open conflict that a phase depends on. |
+| 1. Seam completion (English only) | Move every item in 5.2's list into `Message`, `Line`, `Notice` or `words` entries, in English, with the same wording. Replace the QML concatenations and the English key hints. Replace the two Qt buttons with Words entries. Make the CLI's help and error text the decision of 8.7. | `just test` passes with the English pins unchanged; the 25 English screenshots match their references with no re-record (`just shots`); a reviewer checks the pseudo-locale screenshot by eye for English in the key hints (it is not compared); the desktop id test passes with the new ids; no user-visible literal remains in `keys.rs`, `command_line.rs` or `alert.rs` (checked by review and by the id test). |
+| 2. Locale model with English only | Add `Locale`, the `LOCALES` table with only `en`, the selection chain (flag, `language` in `gallery.json`, OS language, English), the per-message fallback in `shown`, the `Numbers` formatter, the `QLocale::setDefault` glue, and the `--locale=<tag>` flag. | New tests: an unknown tag falls through to the next step; `Numbers` output for each locale (no phase tests it today); the explicit flag's refusal; ISO date output unchanged after `QLocale::setDefault`; a missing entry and a broken translated entry both fall back to English (a test-only fixture locale with a deliberately broken entry, defined in this phase rather than phase 3); an old `gallery.json` without `language` loads; the 25 English screenshots still match; `just test` passes. |
+| 3. Checker and test set | The six checks of 5.9, the `with_locale` helper, the pseudo-locale for the CLI, and the broken fixture locale. | The checker test fails on each seeded error in the fixture (one per automated check, five of six; check 6 is the glossary review) and passes on `en`; `just test` and `just lint` pass; the CLI pseudo test shows accented output. |
+| 4. First real locale (restart-only) | Add the locale's three files, the glossary, the recorded screenshot reference for the locale, and the locale's plural forms. Accept the tag in the settings control. | The checker passes on the new locale; a reviewer confirms the glossary terms; the new locale's screenshot is recorded and reviewed by eye; a test that a line worded after the set is in the chosen locale on each thread (5.4 describes it, but it is not written); the settings control (not designed); per-locale scenarios and references (5.10); `just test` and `just shots` pass. |
+| 5. Typed technical detail | Convert the Yandex `Unexpected` literals, `CatalogRebuilt.why` to a code, the scanner's busy message to a typed variant, the decoder literals, and the exiftool bails, the damage display (`CacheStartedOver.detail`, `CacheDisabled.error`), the picker, codec and edit bails, and `dups.rs:56` to typed errors. Decide the OS-error words (8.11). | The golden notice lines change only where intended (`golden.jsonl`); the ledger tests pass; a translated frame shows its typed detail in the fixture locale. |
+| 6. Right-to-left (optional) | Root mirroring, relative x positions, the arrow-key decision, the path helper (5.3) built in phase 2 for every path value, with the right-to-left switch per argument in phase 6, and a right-to-left locale. | A right-to-left screenshot scenario is recorded and reviewed; the checker passes; the isolation helper's tests pass. |
+| 7. Live switch (optional) | The generation counter, the `revision` notify on `Words`, the re-push of cached strings, the translator for Qt's strings if 8.13 chose it, and the settings control without restart. | A switched screenshot equals the restart screenshot for the same locale; a test that the cached strings are re-pushed; `just qmltest` passes. |
+| 8. Web client (gated) | Build `pg-client` for the browser with the chosen locale; measure the Fluent part of the WASM bundle. | The WASM build loads the chosen locale in the browser, as a manual run (the gate is an HTTPS phone run of an out-of-repo spike, `WEB_CLIENT.md:493-499`); the Fluent part's size is recorded in `WEB_CLIENT.md`. |
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| A broken translation drops its entries silently, and their lines show as ids (LR-12, `words.rs:40`) | Parse errors become errors in the checker (5.9, check 1); the runtime fallback shows English, not the id (5.1). |
+| A translated entry drops or renames a variable, and the braced name shows on screen (WT-04) | Check 3 of 5.9 compares variables in both directions; the runtime fallback re-formats in English when a resolver error occurs (5.1). |
+| A plural select has no default, or misses a Rust value (WT-05) | Check 4 of 5.9; the default is enforced by the parser (check 1). |
+| An entry names a term or message that only English has, and resolves wrongly (LR-11) | Check 5 formats every entry; a translation is not merged until it passes. |
+| The English tests pin strings and break when a value changes (RS-19, LR-24) | The `with_locale("en")` helper keeps the pins; new locales get their own fixtures, not the English pins. |
+| Number formats disagree between QML and Rust (LR-02, SF-05) | One `Numbers` formatter (5.3), with the source of the locale decided in 8.9. |
+| Dates do not follow the locale, and a localised date hint would break the filter's parser (SF-06) | ISO dates stay fixed in the first release, and the placeholder is a fixed shape (5.3). |
+| Right-to-left text is reordered around paths and numbers (LR-18, LR-19) | Isolation helper for path arguments (5.3); right-to-left is out of the first release (8.15). |
+| The layout clips longer text (QQ-13, about 20 fixed containers) | An overflow check on pseudo-locale lines in the fixed containers of 3.7 (new work, not yet in any phase), and a per-locale screenshot before merge (phase 4). |
+| The pseudo-locale is not compared, so clipping is found only by eye (QQ-16, S-19.3) | Recorded references for each real locale (phase 4); an overflow check is new work and is not assumed. |
+| Qt's Save and Cancel stay English under a translated app (QQ-06) | Words entries replace them (5.7). |
+| The deploy drops Qt's catalogues and a translator is later needed (QQ-07) | The deploy flag is kept until a translator exists; the change is in phase 7 if 8.13 chooses a translator. |
+| Windows OS error text stays in the Windows display language inside translated frames (PE-06) | Classed as technical detail (5.5); app words for the common error kinds are an option (8.11). |
+| The first run cannot read the preferences file, so the early errors show in the wrong language (3.5, RS-05) | The OS-language fallback and English for the earliest errors (8.16). |
+| The translation tool cannot check variables or plurals (WT-01) | No hosted tool at first (8.5); the checks run in the repository. |
+| `cargo deny` may reject the slash spellings of the licences (WT-08) | Phase 0 runs `cargo deny check` and records the result before any change. |
+| The WASM bundle grows by the Fluent part, and each worker parses the files (SF-24, WEB_CLIENT.md:474) | Measured in phase 8; `@fluent/bundle` is the fallback only if the measure is too large. |
+| The product name is spelled four ways, and a translation may change it (SF-12) | Keep the product name fixed (8.6). |
+| Log lines and the crash box carry English that a user sees (PE-10, PE-11) | Diagnostic class, with the rule in 5.2; the refusal in `controller.rs:42-46` becomes an entry in phase 1 (the item is in no phase today). |
+| A notice in one language is shown in another, with the technical detail in its original language (PE-01, PE-03) | Documented as the rule of 5.5; not a defect. |
+| The language choice silently falls back when a tag is unsupported (LR-04) | The explicit flag shows a refusal in the seam; the saved and system choices fall through and log once. |
+
+## Open decisions for the user
+
+Each decision gives the options with the recommendation first, then the reason. The evidence in the reports is cited where it bears on the choice.
+
+### 8.1 Which locales ship first
+
+Recommendation: one left-to-right locale that the owner can review, with a Latin-script plural set that the existing plural rules cover, and no right-to-left locale in the first release. The reason is that a right-to-left locale needs the mirroring work of 5.7, the isolation decision of 5.3, and a font check, which together are a second project.
+
+Options: (a) one left-to-right locale, chosen by the owner, as in the recommendation; (b) a right-to-left locale first (Arabic, Hebrew or Persian), which the Qt kit's catalogues support (QQ-07) but which needs phase 6 before it can ship; (c) several locales at once, which multiplies the checker and the screenshot references without adding evidence.
+
+What the evidence shows and does not show. The repo does not say who the users are or which language they read. The investigators found no target country, market or language in `docs/temp/PLAN.md:1-30`, `README.md:1-10` or the site (WT-10). The site and every document are English (`site/index.html:8`). The only non-English string in the code is a test argument, `--locale=fr` (`command_line.rs:646-700`). The Yandex features are about a Russian search service (`crates/yandex`), which describes a feature and not an audience. The Qt kit's translations cover 33 locales (QQ-07), which shows what Qt supports and not what the app needs. So the evidence does not select a language, and the choice belongs to the owner.
+
+### 8.2 Runtime switch versus restart
+
+Recommendation: restart-only for the first translated release (5.4), with a live switch as phase 7 if the owner wants it. The reason is that restart-only avoids the four live-switch costs the investigators list (QQ-11, LR-14): the QML binding notify, the re-push of cached Rust strings, the Qt translator's `LanguageChange`, and the thread-local bundle regeneration. It leaves the stored text and the OS text as they are, which a live switch would not change either.
+
+Options: (a) restart-only, as recommended; (b) a live switch from the start, which needs phase 7 before the first translated release; (c) a live switch for the desktop only, with restart for the CLI and the browser, which keeps two behaviours to test.
+
+### 8.3 Whether logs and external messages are translated
+
+Recommendation: no. Logs stay English as a diagnostic class, and the boundary is the rule of 5.2: anything a user reads is an entry. Technical detail from ExifTool, FFmpeg, Yandex transport and the OS stays as recorded, and is shown inside a translated frame (5.5, 5.6). The reason is that the log's readers are maintainers, the log is about 51 call lines (PE-10), and translating it would need a second catalogue that nobody reads. The one case that is a user message in the log (`controller.rs:42-46`) moves to an entry.
+
+Options: (a) logs English, external detail as recorded, as recommended; (b) translate the log's messages, which is about 51 call sites plus the notice JSON, and which does not help a maintainer; (c) translate the external messages by wrapping each known ExifTool or FFmpeg line in an entry, which the tools do not guarantee (their language is inferred, not verified, PE-08, PE-09).
+
+### 8.4 Whether the docs are translated
+
+Recommendation: translate the README and the site later, and keep the developer documentation English. The reason is the audience and the cost: the user-facing documents are `README.md` (36 lines) and `site/` (about 9.6 KB), while the developer documents are about 1.5 MB in `docs/temp` (51 files, 15,866 lines at HEAD) plus `crates/README.md` (447 lines), `eval/README.md`, `tools/README.md` and `docker/README.md` (SF-11). The repo has no user manual, no in-app help text, no CHANGELOG, no CONTRIBUTING and no tracked LICENSE (SF-11).
+
+Options: (a) README and site only, after the first locale, as recommended; (b) no translated docs; (c) all docs, which is about 1.5 MB of text and is not supported by the audience.
+
+### 8.5 Translation tool
+
+Recommendation: start with the files in the repository, reviewed through pull requests, with the checks of 5.9 run by `just test` and `just lint`. Revisit Pontoon if a translation community is wanted. The reason is that the checks for variables and plurals, which this project most needs, are not what the hosted tools check reliably (WT-01), and an in-repo file runs the checks on every change.
+
+Options: (a) in-repo files and a checker, as recommended; (b) Pontoon, the Mozilla-run tool designed around Fluent, which the investigators could not verify live; (c) Weblate or Crowdin, whose Fluent plural support the investigators found weak or unlisted.
+
+### 8.6 The product name
+
+Recommendation: keep "Photo Gallery" fixed in every locale, as a brand constant, and route the caption through the seam as a constant (`alert.rs:5-6`, `ui-app-name`). The reason is that the name appears in four spellings (SF-12) and in the exe metadata, and translating the brand would multiply those spellings without a product reason.
+
+Options: (a) fixed brand, as recommended; (b) translated per locale, which needs a per-locale entry in `ui.ftl` and a decision on the exe metadata and the data folder name; (c) a translated display name with the exe and data folder fixed.
+
+### 8.7 CLI help and clap's text
+
+Recommendation: keep the CLI's help and clap's built-in text in English for the first release, and state that in the docs. The reason is that the CLI is a developer tool (SF-17), that clap 4 has no locale support, and that translating help needs a `Command` builder change for the `about`, the per-argument help and the built-in headings (RS-11).
+
+Options: (a) English help, as recommended; (b) translated help through clap's builder (`mut_arg`, `help_template`, `next_help_heading`), with per-argument help from `cli.ftl` and the clap built-ins overridden; (c) a hand-written help renderer that takes the entries, which avoids the clap builder and costs more code.
+
+### 8.8 The fallback mechanism
+
+Recommendation: a per-message fallback in `shown`, which tries the chosen bundle and then English, and logs once (5.1). The reason is that Fluent has no bundle-level chain (LR-11), and a translation that is incomplete should show English for the missing entries rather than ids.
+
+Options: (a) per-message fallback in `shown`, as recommended; (b) a load-time check that refuses a locale with missing entries, which makes a partial translation impossible; (c) a fallback crate in the workspace, which adds a dependency that the investigators did not find in the tree (WT-07).
+
+### 8.9 The number and date source
+
+Recommendation: the app's chosen locale is the source for numbers, and the system locale is the fallback when the app has none (5.1). Dates stay ISO `YYYY-MM-DD` in the first release (5.3), so this choice does not reach them. The reason is that a window that shows `1 234` and `1,234` side by side (LR-02) is wrong whichever locale wins, and the app's locale is the one the user chose.
+
+Options: (a) the app's locale through one `Numbers` formatter, as recommended; (b) the system locale for numbers and the app's for words, which keeps the current Qt behaviour and the split in LR-02; (c) dates stay ISO and only numbers follow the locale, as the first release's compromise (5.3).
+
+### 8.10 Yandex file-name tokens
+
+Recommendation: keep the tokens `yandex` and `similar` fixed (`crates/app/src/yandex.rs:309, 319`). The reason is that they are identifiers of generated names, which the app sorts and looks up, and PE-13 notes they are a stable contract. The user's stem stays exactly as it is.
+
+Options: (a) fixed tokens, as recommended; (b) translated tokens, which changes the file names by locale and breaks any later lookup by name.
+
+### 8.11 Operating-system error words
+
+Recommendation: keep the OS error text in the Windows display language as labelled technical detail (5.5), and add app words only for the common `io::ErrorKind` values in phase 5 if the owner wants them. The reason is that the text is the system's and changes with the system's language, so the app cannot control it (PE-06), and the common kinds are a small set.
+
+Options: (a) detail as recorded, plus words for common kinds in phase 5, as recommended; (b) detail only, with no kind words; (c) the app's own mapping for every error, which is a large table for a rare case.
+
+### 8.12 Where the language is stored
+
+Recommendation: a `language` key in `gallery.json` (`Prefs`, `crates/app/src/prefs.rs:18-41`), an optional BCP 47 tag. The reason is that it is a per-user choice, the prefs struct is `serde(default)` and reads old files without a migration, and the catalog is per library (LR-03).
+
+Options: (a) `gallery.json`, as recommended; (b) the catalog, which ties the language to a library and needs a schema change; (c) an environment variable only, which has no settings control and is not persisted.
+
+### 8.13 The Qt standard buttons
+
+Recommendation: replace the two buttons of `SaveViewDialog.qml:38` with Words entries (5.7). The reason is that the app has no other Qt dialog, so this adds two entries and avoids a `QTranslator`, a `LanguageChange` path and a deploy change.
+
+Options: (a) Words entries, as recommended; (b) a `QTranslator` that loads Qt's catalogues from the deploy folder, which needs the deploy's translation step (`Justfile:57`) and the licence and size check that was not done.
+
+### 8.14 Fonts
+
+Recommendation: rely on the system fonts for the first release, and check each locale with a recorded screenshot (5.7). Bundle a font only if a check fails. The reason is that no font is shipped today, the screenshot matrix's offscreen runs draw text through FreeType from the Windows font folder, a different font path from the windowed app (`crates/desktop/cpp/gui_app.cpp:17-27`, QQ-14), and a bundled font adds a licence entry that `cargo-deny` cannot check (WT-09). Qt already falls back per character to the installed Windows families (5.7), so the per-locale screenshot is the check that matters.
+
+Options: (a) system fonts with a per-locale screenshot, as recommended; (b) a bundled font for the scripts the system lacks, which needs a licence note and a size decision; (c) a Qt font fallback list set in code. Qt's own per-character fallback already runs on Windows, so this is needed only if a per-locale check finds a glyph that no installed family covers.
+
+### 8.15 Right-to-left in the first release, and a minimum window width
+
+Recommendation: no right-to-left in the first release (phase 6), and a decision on a minimum window width before a translated layout is tested (QQ-20). The reason is that mirroring touches the whole QML layer and the arrow keys' meaning (5.7), and the minimum width decides whether longer text fits in the top bar.
+
+Options: (a) no right-to-left, and a minimum width chosen from the fixed containers in 3.7, as recommended; (b) right-to-left in the first release, with mirroring and an isolation change; (c) no minimum width, with the fixed items allowed to elide.
+
+### 8.16 The language used before the preferences file can be read
+
+Recommendation: the Windows UI language, if phase 2 reads it, and English otherwise, for the errors that happen before `gallery.json` is read (5.1, 3.5). The reason is that the data-folder errors (`dirs.rs:33, 41`) occur before the preferences can be found, so the saved choice cannot apply to them.
+
+Options: (a) the OS language, then English, as recommended; (b) English only, which is simpler and always readable; (c) a separate small file next to the executable for the language, which avoids the circularity and adds a second place where the choice is stored.
+
+## Gaps in this study
+
+These were found by the verifiers and are not yet placed in the design above. Each one is a question for the owner or a check still to run.
+
+- **Working-tree drift.** Still open. The uncommitted seam changes described in section 3 are not in the plan, and phase 1 is partly done in them. The owner needs to decide whether to commit them first; this study does not commit anything. This file is itself untracked (`docs/temp/LANGUAGES.md` is not in HEAD 898b709), so it is in no commit.
+- **The Qt-WASM spike.** Partly settled. The browser verdict in `docs/temp/WEB_CLIENT.md` relies on a spike (WEB_CLIENT.md:477-491, with the HTTPS gate at 493-499). The spike exists, but only outside the repo: two Claude session scratchpads in the local temp folder, built 2026-11-06 and 2026-11-12, with no commit. The plan records S-14 as optional and not run (`docs/temp/REFACTOR_PLAN.md:790`, the S-12.4 row). The 2026-11-12 spike does not render the repo's grid: its `GridRow` and `GridCell` are a copy of about commit 8828a19, not HEAD's. Its video plays over HTTP in the 2026-11-12 runs; the AbortError at WEB_CLIENT.md:602-603 comes from the older 2026-11-07 build. Its 16-check runs gave 13/16 to 16/16 on one binary, and whether that binary matches the saved source is not known. Still open: a committed spike at a recorded commit, a rebuild from it, the HTTPS phone run, and the video result. Section 5.8 and phase 8 depend on these.
+- **Yandex language.** Settled for the design. No request the crate sends carries a language, locale or Accept-Language setting, and the only header is User-Agent (`crates/yandex/src/client.rs:11-19, 48-90`). No Yandex prose is read, stored or shown, only URLs and ids, so no Yandex text reaches the user in any language. Still open, and needed only if the design must state what a Russian-locale user sees on Yandex's own pages: the language Yandex serves for the IP, cookies or User-Agent, which a live request would settle (PE-07). Separately, the English inner details of `YandexError::Unexpected` and the `ureq` text sit inside translated frames (5.6 covers them), and `crates/desktop/src/yandex.rs:371` shows the raw error string, which needs the same treatment.
+- **English sentences with no assigned treatment.** Partly settled. The scanner's `Display` is covered: phase 5 converts its busy message to a typed variant (`crates/scan/src/lib.rs:267-273`). The `dbfile` damage `Display` now traces to two user surfaces (see the damage item below), so it needs a move-list entry in 5.2 and a phase. Still unassigned: the platform picker's messages (`crates/platform/src/picker.rs:86, 107`) and the codec and edit bails (`crates/codec/src/animation.rs:36`, `codecs/jpeg.rs:46`, `tiff.rs:132-262`; `crates/edit/src/crop.rs:32-54`, `rewrite/bmp.rs:14-40`), which are counted in section 4.2 but are not in the move list of 5.2 or in any phase.
+- **The damage display.** Settled. `pg_dbfile`'s `Damage` `Display` (`crates/dbfile/src/judge.rs:46-53`) reaches two user surfaces, both in the thumbnail cache: the CLI's stderr through the started-over detail (`crates/cli/src/report.rs:36-41`), and the desktop's cache-disabled notice when a damaged file cannot be moved aside (`crates/thumbcache/src/schema.rs:239-261, 355-367`, shown by `crates/desktop/src/notices.rs:185`). `CatalogRebuilt.why` becomes a typed code: its English text sits inside an English sentence in the desktop toast and inbox body (`crates/client/locales/en/text.ftl:209-212`) and on the CLI's stderr (`crates/cli/src/report.rs:59-64`), which 5.5 and phase 5 already propose. Still open: whether the CLI's stderr is a user surface for the started-over detail, which the model documents as log detail (`crates/model/src/notice.rs:443-447`), and a live run with a corrupt cache held by another process to see the desktop text.
+- **The screenshot harness.** Still open. Its refusal text (`crates/desktop/src/lib.rs:226-232`), its console report (`screenshot.rs:32-52`), the trace stage line (`trace.rs:26`) and the cache-cap warning (`lib.rs:158`) are not placed in section 5.6. They fall in the log class by inference only, to be confirmed by reading the harness's output.
+- **The largest-groups line.** Still open, and confirmed at HEAD: `crates/cli/src/dups.rs:56` prints a Rust `Debug` list, which is missing from the 5.2 move list. It should become a `Line` variant with a words entry, like the other CLI reports.
+- **The project site.** Still open. `site/index.html` is one hand-written English page (`lang="en"`, inline copy, no build step; 9,593 bytes at HEAD). Section 8.4 chooses to translate the site later, but no per-locale structure is designed.
+- **Which id checks are compile-time.** Still open. Sections 5.2 and 5.9 describe the checks in prose. The compiler enforces the variant-to-id match and field types; the tests enforce the Fluent variable names, the select variants and the id literals (WT-12). A table of the two belongs in 5.9, where the checks are listed.
+- **Fonts and glyphs.** Partly settled, by reading the Qt 6.12 source and this machine's installed fonts for one sample character per script. Qt's default message font is Segoe UI 9pt, and Qt falls back per character through installed families that claim the script. Segoe UI covers the sampled letters of Latin, Vietnamese, Greek, Cyrillic, Arabic and Hebrew; Tahoma and Leelawadee UI cover Thai; Nirmala UI covers Devanagari; the CJK fonts cover Han and Kana; Malgun Gothic covers Hangul; Segoe UI Symbol covers the app's literal symbols. Still open: the full letter repertoire of each target locale, shaping (Arabic joining, Devanagari and Thai clusters), the offscreen screenshot path, which draws through FreeType on a different font path (`crates/desktop/cpp/gui_app.cpp`), and a clean Windows 10 install. A windowed screenshot per locale with `QT_LOGGING_RULES=qt.qpa.fonts.debug=true` shows the family chosen for each run, and section 5.7 says so.
+- **The translator process.** Still open; no check settles it. There is no translator guide, CONTRIBUTING file or review process (WT-13). Section 5.9 proposes a glossary, but not who reviews a translation.
+
+- **Where the saved language lives in the browser.** Section 5.8 is silent on it, and the web client has no `gallery.json`. The design needs a choice for it.
+- **The settings control.** Phase 4 and section 5.4 assume a settings control for the language, but no design for it exists.
+- **Variables for check 3.** Section 5.9 does not name the variable source. `ui.ftl` ids take `count`, `text` and `other` from `words::ui()`, and notice ids take the notice fields. The check needs both named.
+- **Plural coverage.** No check tests that a locale has every CLDR plural category its language uses, such as `few` and `many`. Check 4 covers only the values the Rust side sends.
+- **Dates.** No phase builds a date display, and the doc has no decision on whether the inbox date stays fixed.
+- **The Windows display-language pick.** `GetUserPreferredUILanguages` returns a list, and the rule for choosing one from it is not stated.
+- **The prefs path override.** `PG_PREFS` can override the prefs path (`crates/app/src/config.rs`). Step 2 uses `layout.prefs()`, which is consistent with it, but section 3.4 names only `PG_HOME`.
+- **Working-tree key hints and selection line.** The design reader did not check the working-tree claims about them (sections 5.2 and 5.3).
+
+## Sources
+
+Files read or cited by the six reports, and the files this document read directly.
+
+Read directly for this document: `crates/client/src/text/words.rs` (lines 1-135), `docs/temp/WEB_CLIENT.md` (lines 1-62, and a grep of `Svelte`), `docs/temp/REFACTOR_DESIGN.md` (lines 15-64, and a grep of `Fluent`).
+
+Read for the checks settled in this round (not in the six reports): at HEAD 898b709, `crates/yandex/src/client.rs`, `http.rs`, `fetch.rs`, `lib.rs`, `parse.rs`, `types.rs`; `crates/dbfile/src/judge.rs`; `crates/thumbcache/src/schema.rs`, `types.rs`, `lib.rs`; `crates/catalog/src/core.rs`, `rebuild.rs`, `types.rs`; `crates/app/src/app.rs`, `inbox.rs`; `crates/cli/src/report.rs`; `crates/client/locales/en/text.ftl`. Qt 6.12 sources under `C:/Qt/6.12.0/Src`: `qtbase/src/gui/text/qfontengine.cpp`, `qfontdatabase.cpp`, `qplatformfontdatabase.cpp` and the `windows` folder beside them, `qtbase/src/gui/kernel/qguiapplication.cpp`, `qtbase/src/plugins/platforms/windows/qwindowstheme.cpp` and `qwindowsintegration.cpp`, `qtdeclarative/src/quicktemplates/qquicktheme.cpp`, `qtdeclarative/src/quickcontrols/qquickstyleplugin.cpp`. The installed fonts in `C:/Windows/Fonts`, read by a cmap parser. The Qt-WASM spike, which exists only in two session scratchpads outside the repo. The Yandex Search API page, <https://aistudio.yandex.ru/docs/en/search-api/operations/search-images-by-pic.html>, which is a different product from the consumer images endpoint the crate calls.
+
+Rust seam and words: `crates/client/src/text.rs`, `crates/client/src/text/message.rs`, `crates/client/src/text/cli.rs`, `crates/client/src/text/notice.rs`, `crates/client/src/text/words.rs`, `crates/client/src/text/test_support.rs`, `crates/client/src/keys.rs`, `crates/client/src/input.rs`, `crates/client/locales/en/text.ftl`, `crates/client/locales/en/ui.ftl`, `crates/client/locales/en/cli.ftl`, `crates/client/clippy.toml`, `crates/client/Cargo.toml`, `crates/client/tests/describe_pseudo.rs`.
+
+Desktop and QML: `crates/desktop/src/words.rs`, `crates/desktop/src/words_bridge.rs`, `crates/desktop/src/words/state.rs`, `crates/desktop/src/command_line.rs`, `crates/desktop/src/lib.rs`, `crates/desktop/src/alert.rs`, `crates/desktop/src/panic_log.rs`, `crates/desktop/src/keymap.rs`, `crates/desktop/src/keymap_bridge.rs`, `crates/desktop/src/notices.rs`, `crates/desktop/src/gallery/model.rs`, `crates/desktop/src/shell_bridge.rs`, `crates/desktop/src/pump.rs`, `crates/desktop/src/picker.rs`, `crates/desktop/src/qml_text.rs`, `crates/desktop/src/log_model.rs`, `crates/desktop/src/controller.rs`, `crates/desktop/src/screenshot.rs`, `crates/desktop/src/trace.rs`, `crates/desktop/cpp/gui_app.cpp`, and the 34 files in `crates/desktop/qml` (cited by name in 3.2 and 3.7).
+
+Models, storage and app: `crates/model/src/notice.rs`, `crates/model/src/refusal.rs`, `crates/model/src/date.rs`, `crates/model/src/detection.rs`, `crates/model/src/format.rs`, `crates/model/src/media.rs`, `crates/model/src/query.rs`, `crates/model/src/notice/golden.jsonl`, `crates/catalog/src/schema.rs`, `crates/catalog/src/core.rs`, `crates/catalog/src/browse/views.rs`, `crates/catalog/src/lifecycle.rs`, `crates/app/src/prefs.rs`, `crates/app/src/config.rs`, `crates/app/src/inbox.rs`, `crates/app/src/yandex.rs`, `crates/app/src/error.rs`, `crates/platform/src/dirs.rs`, `crates/platform/src/picker.rs`, `crates/platform/src/process.rs`.
+
+Other crates: `crates/cli/src/args.rs`, `crates/cli/src/lib.rs`, `crates/cli/src/borders.rs`, `crates/cli/src/report.rs`, `crates/cli/src/dups.rs`, `crates/gallery/src/main.rs`, `crates/gallery/build.rs`, `crates/gallery/Cargo.toml`, `crates/exiftool/src/lib.rs`, `crates/video/src/ffi.rs`, `crates/video/src/lib.rs`, `crates/yandex/src/parse.rs`, `crates/yandex/src/fetch.rs`, `crates/yandex/src/types.rs`, `crates/yandex/src/http.rs`, `crates/scan/src/lib.rs`, `crates/codec/src/animation.rs`, `crates/edit/src/crop.rs`, `crates/edit/src/rewrite/bmp.rs`, `crates/log/src/lib.rs`, `crates/log/src/record.rs`, `crates/writeback/src/lib.rs`, `crates/writeback/src/file.rs`, `crates/metadata/src/xmp.rs`, `crates/crop/src/lib.rs`, `crates/dbfile/src/judge.rs`, `crates/import/src/lib.rs`, `crates/library/src/layout.rs`.
+
+Workspace, tooling and CI: `Cargo.toml`, `Cargo.lock`, `deny.toml`, `Justfile`, `tools/lint.py`, `tools/compare_shots.py`, `tools/README.md`, `tools/shots/reference`, `.github/workflows/ci.yml`, `.github/workflows/pages.yml`, `docker/Dockerfile`.
+
+Documents: `docs/temp/REFACTOR_DESIGN.md`, `docs/temp/REFACTOR_PLAN.md` (S-19, S-14.1, S-7.1, S-12.4, S-10.8 rows), `docs/temp/WEB_CLIENT.md`, `docs/temp/NOTIFICATIONS.md`, `docs/temp/NOTIFICATIONS_PLAN.md`, `review 4 (e428ab2)` (read at `e428ab2` through git), `docs/temp/PLAN.md`, `README.md`, `crates/README.md`, `site/index.html`, `site/style.css`, `crates/desktop/resources/mascots`, `crates/desktop/resources/app-icon.png`.
+
+External sources and toolchain (read from local copies or search results):
+
+- Qt 6.12 source under `C:/Qt/6.12.0/Src`: `qtbase/src/gui/kernel/qplatformtheme.cpp`, `qtbase/src/tools/windeployqt/main.cpp`, `qtdeclarative/src/quick/items/qquickitem.cpp`, `qtdeclarative/src/quick/items/qquickanchors.cpp`, `qtdeclarative/src/qml/jsruntime/qv4qobjectwrapper.cpp`, `qtdeclarative/src/qml/qml/qqmllocale.cpp`. The translations folder `C:/Qt/6.12.0/msvc2022_64/translations`.
+- Rust std source for Windows OS errors (`lib/rustlib/src/rust/library/std/src/sys/io/error/windows.rs`) in the stable toolchain.
+- Cargo registry sources: `fluent-bundle-0.16.0` (`src/bundle.rs`, `src/types/number.rs`, `src/types/mod.rs`, `src/types/plural.rs`, `src/resolver/*.rs`, `src/builtins.rs`, `src/concurrent.rs`), `fluent-langneg-0.13.1`, `fluent-syntax-0.12.0`, `intl-memoizer-0.5.3`, `intl_pluralrules-7.0.2`, `unic-langid-0.9.6`, `unic-langid-impl-0.9.6`, `type-map-0.5.1`, `tinystr-0.8.5`, `self_cell-1.3.0`, `clap_builder-4.6.7` (`src/builder/command.rs`, `src/output/help_template.rs`, `src/error/format.rs`), `cxx-qt-lib-0.10.0`, `winres-0.1.12`.
+- Hosted translation tools, from search results and not fetched pages: [Pontoon documentation](https://mozilla-pontoon.readthedocs.io), [Fluent 1.0 article](https://hacks.mozilla.org/2019/04/fluent-1-0-a-localization-system-for-natural-sounding-translations/), [Weblate Fluent format](https://docs.weblate.org/en/latest/formats/fluent.html), [Crowdin Fluent store entry](https://store.crowdin.com/ftl), [Transifex community thread](https://community.transifex.com/t/project-fluent-support-ftl-files/3512).

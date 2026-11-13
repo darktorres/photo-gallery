@@ -114,7 +114,7 @@ pub(crate) fn convert_session(tx: &Transaction<'_>, source: Source, rules: PathR
     Ok(())
 }
 
-/// `TO_8_NOTIFY`'s rows (docs/NOTIFICATIONS.md):
+/// `TO_8_NOTIFY`'s rows (docs/temp/NOTIFICATIONS.md):
 /// - every time, idempotently: the retired scan notices go (they held counts, not paths, so they can't become rows of
 ///   the folder ledger, which the next walk fills); a `write-dropped` notice becomes an Event (no key, no part); every
 ///   failed analysis gets its import ledger row, if it has none (with serials in `(files.seq, file_id)` order, after

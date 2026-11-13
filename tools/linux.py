@@ -309,7 +309,7 @@ def bench_source_mounts():
 
 def perf(args):
     if not bench_source_mounts():
-        fail("PG_BENCH_DATA_SOURCE must name the bench data folder (.env, docs/PROFILING.md)")
+        fail("PG_BENCH_DATA_SOURCE must name the bench data folder (.env, docs/temp/PROFILING.md)")
     code = head_run(
         TOOLS,
         "tools",

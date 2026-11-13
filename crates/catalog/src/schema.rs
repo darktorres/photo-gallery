@@ -65,7 +65,7 @@ const TO_2_CHANGE_STAMPS: &str = concat!(
     stamp!("border_sides_stamp_delete", "DELETE", "border_sides", old),
 );
 
-/// Version 3: the inbox (docs/NOTIFICATIONS.md), what the app told the user, kept until it is dismissed.
+/// Version 3: the inbox (docs/temp/NOTIFICATIONS.md), what the app told the user, kept until it is dismissed.
 ///
 /// A row is a `pg_model::notice::Notice` as JSON (`data`), with what the inbox sorts and filters by beside it. A kept
 /// state (`key`, its kind's code, folder and part) is one row that the next post of its key replaces and counts; an event
@@ -231,7 +231,7 @@ CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
     stamp!("file_writes_stamp_delete", "DELETE", "file_writes", old),
 );
 
-/// Version 8: the inbox's storage as docs/NOTIFICATIONS.md describes it. The layout is added first, the rows are
+/// Version 8: the inbox's storage as docs/temp/NOTIFICATIONS.md describes it. The layout is added first, the rows are
 /// converted (`convert::convert_notify`), and the column they were converted from is dropped.
 const TO_8_NOTIFY: &[Step] = &[Step::Sql(TO_8_NOTIFY_ADD), Step::Rust(convert_notify), Step::Sql(TO_8_NOTIFY_DROP)];
 

@@ -4,13 +4,13 @@ with docs/perf/baseline.json (tools/perf-compare.py). Run in the container, by t
     python3 tools/perf_check.py [--tolerance 0.01] [--update] [--budgets [FILE]]
 PG_BENCH_SKIP_CATALOG=1 (for a machine with no catalog data, such as CI): the catalog benches panic without it. So only the
 per-file benches run (a gungraun filter), and the comparer skips the catalog's baseline entries by name, printed as SKIPPED.
-The catalog is still gated where its data is (docs/PROFILING.md).
+The catalog is still gated where its data is (docs/temp/PROFILING.md).
 
 --budgets (`just perf --budgets`) gates one comparison whose change moves some counts on purpose: the benches named in
 docs/perf/budgets.json (or FILE) are judged by their budget instead of the tolerance; the others keep the tolerance. It
-is for that one run (the notifications' F1 against the F0 baseline: `scan-walk` <= +10%, `import-flush` <= +15%,
-`inbox-refresh` down by 90% or more). A bench that misses its budget fails, and is not re-baselined with --update (the
-two are refused together).
+is for that one run (the notifications' F1 against the F0 baseline; the budgets are restated in docs/perf/budgets.json:
+`scan-walk` again <= +10% and first <= +20%, `import-flush` <= +30%, `inbox-refresh` closed <= -90% and open <= -70%).
+A bench that misses its budget fails, and is not re-baselined with --update (the two are refused together).
 """
 
 import os

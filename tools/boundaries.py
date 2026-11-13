@@ -1,4 +1,4 @@
-"""The workspace's structural rules, checked (docs/MODULARITY_PLAN.md, ground rules 2 and 6, M-14 and M-16).
+"""The workspace's structural rules, checked (crates/README.md, ground rules 2 and 6, M-14 and M-16).
 
 1. Crate layers: each crate's normal dependencies on other workspace crates are exactly the ones its line in
    `tools/crate-layers.txt` lists, and each of them is on an earlier line. A new internal edge fails until the file

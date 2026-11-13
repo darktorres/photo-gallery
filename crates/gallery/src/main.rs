@@ -10,7 +10,7 @@
 use std::ffi::OsString;
 use std::process::ExitCode;
 
-// The heap profiler's build (docs/PROFILING.md "Tool: dhat"). It sees Rust's allocations only: Qt's and FFmpeg's go
+// The heap profiler's build (docs/temp/PROFILING.md "Tool: dhat"). It sees Rust's allocations only: Qt's and FFmpeg's go
 // to the C runtime's heap.
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]

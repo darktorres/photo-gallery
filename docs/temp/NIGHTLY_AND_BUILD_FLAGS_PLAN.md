@@ -16,7 +16,7 @@ What the survey found:
    type-size audits, optimization remarks, layout randomization, compile-time profiling.
 3. **The largest likely wins are stable and untried:** `-C target-cpu=x86-64-v3`, release LTO / `codegen-units = 1`,
    PGO, a bit-exact loop interchange in the PDQ DCT, and the dev profile's debuginfo (`target/` was 48 GiB).
-4. **Every performance number in the repo is stale.** `docs/PROFILING.md` is measured at 41eaa1c; since then commit
+4. **Every performance number in the repo is stale.** `docs/temp/PROFILING.md` is measured at 41eaa1c; since then commit
    81ad925 fixed the strided column pass in PDQ `box_1d` (so the "box_1d is 21% of analyze, cache-miss-bound" lead is
    gone) and further commits changed allocation and copying. Phase 1 re-measures before anything is judged.
 
@@ -57,7 +57,7 @@ the same result.
   otherwise it is closed with the numbers recorded. Robustness findings (crashes, UB) are fixed regardless of size.
 - **Measure at the end of the steps, not per step**, except where a number decides the next step (E8 depends on E0).
 - Commit each verified step separately, with the measured counts in the message; no unrelated changes in a commit; push
-  is a separate step. Results also go in `docs/PROFILING.md` (dated subsection: commit, tool, counts; "Open" list updated).
+  is a separate step. Results also go in `docs/temp/PROFILING.md` (dated subsection: commit, tool, counts; "Open" list updated).
 
 ## 1. Phases (the order of work)
 
@@ -188,7 +188,7 @@ Library: 176 (a-g) and 235 (h-z) entries examined, 133 bulk-excluded. Flags: 177
 ## Critical files
 
 - Edited by adoptions: `Cargo.toml` (profiles), `.cargo/config.toml` (`target-cpu`), `crates/analysis/src/pdq.rs` (E8),
-  `docs/PROFILING.md` (results), and with the pin `rust-toolchain.toml`, `tools/profiling/bench.sh`, section 5 sites.
+  `docs/temp/PROFILING.md` (results), and with the pin `rust-toolchain.toml`, `tools/profiling/bench.sh`, section 5 sites.
 - New: bench inputs in `crates/bench/benches/ir/linux.rs`; `fuzz/` directories under `crates/metadata/` and `crates/codec/` (N5; built as the top-level `fuzz/` crate instead).
 - Reused as is: `tools/profiling/bench.sh`, `cgtab.py`, `bench_data.py`, `crates/bench/benches/ir.rs`, the
   `justfile` recipes (`lint`: fmt, clippy `-D warnings`, `cargo deny`, `cargo machete`, ruff, markdownlint).

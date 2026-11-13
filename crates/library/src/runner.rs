@@ -106,7 +106,7 @@ struct Inner {
     heights: HeightCell,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
-    /// Rounds finished, however they ended: the app marks each one as a stage for measuring (docs/PROFILING.md).
+    /// Rounds finished, however they ended: the app marks each one as a stage for measuring (docs/temp/PROFILING.md).
     rounds: AtomicU64,
     notices: Arc<dyn NoticeSink>,
     /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.

@@ -4,7 +4,7 @@
   unchanged  the same library scanned again, nothing changed;
   renumbered every file renamed to another number in its own folder (its folder and content kept), then scanned again:
              each file is paired with its row, not made new (docs/S17_7_PLAN.md, decision 6).
-Not gated: perf-compare.py reads callgrind outputs only. The numbers go into docs/PROFILING.md, with the commit, the binary,
+Not gated: perf-compare.py reads callgrind outputs only. The numbers go into docs/temp/PROFILING.md, with the commit, the binary,
 the drive the library is on and whether the caches were dropped.
 
     python3 tools/profiling/scan_timing.py GALLERY LIBRARY WORK [--drop-caches]

@@ -13,6 +13,7 @@ use crate::keymap_bridge::qobject;
 use cxx_qt_lib::QString;
 use pg_client::controller::panels::PanelKind;
 use pg_client::keys::{self, Global, Grid, Key, Media, Mods, Panel, Shown, Viewer};
+use pg_client::text;
 
 // Qt's key codes (`Qt::Key`) and modifier flags (`Qt::KeyboardModifier`): the values of Qt's stable ABI.
 const KEY_ESCAPE: i32 = 0x0100_0000;
@@ -150,7 +151,7 @@ impl qobject::KeyMap {
     }
 
     pub(crate) fn grid_hint(&self) -> QString {
-        QString::from(&keys::grid_hint())
+        QString::from(&text::hint(&keys::grid_hint()))
     }
 
     pub(crate) fn panel_action(&self, key: i32) -> i32 {
@@ -158,7 +159,7 @@ impl qobject::KeyMap {
     }
 
     pub(crate) fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
-        QString::from(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)))
+        QString::from(&text::hint(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders))))
     }
 
     pub(crate) fn global_sequence(&self, code: i32) -> QString {

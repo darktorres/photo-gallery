@@ -112,7 +112,7 @@ reference was read from Urocissa's source but not verified against a checkout.
   (`crates/analysis/src/analyze.rs:32-34`, scaling in `crates/codec/src/decode.rs`). Urocissa decodes at full
   resolution.
 - **Near-duplicate detection.** We run PDQ with 16-chunk multi-index lookup at radius ≤ 31
-  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/QUALITY.md`. Urocissa
+  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/temp/VERIFIER.md`. Urocissa
   does exact hashing only. Its perceptual hash is computed but not used.
 - **Layout runs in Rust.** Our justified rows are computed in `crates/client/src/layout.rs`.
   Urocissa does Knuth–Plass wrapping in the client and updates every loaded row's offset each
@@ -120,7 +120,7 @@ reference was read from Urocissa's source but not verified against a checkout.
 - **Durability.** Our SQLite WAL commits each change before the UI acknowledges it. Urocissa
   acknowledges from RAM and can lose about a second of edits on a crash.
 - **Measurement.** We have instruction counts, dhat heap profiles, SDE and Pin call graphs, and
-  stage timings with recorded results (`docs/PROFILING.md`, `docs/HEAP_PROFILE.md`,
+  stage timings with recorded results (`docs/temp/PROFILING.md`, `docs/HEAP_PROFILE.md`,
   `docs/START_PROFILE.md`). Urocissa's performance gates have no committed results
   (not re-checked).
 

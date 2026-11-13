@@ -1,4 +1,4 @@
-//! The inbox (docs/NOTIFICATIONS.md): what the app tells the user, kept in the catalog until they dismiss it. A service:
+//! The inbox (docs/temp/NOTIFICATIONS.md): what the app tells the user, kept in the catalog until they dismiss it. A service:
 //! it holds the catalog's path, and its own connection on its own thread; it never reaches the `App`.
 //!
 //! Every producer posts a [`Notice`] ([`Inbox::post`]), from any thread: the notice is logged there and then (so a
@@ -10,7 +10,7 @@
 //! the inbox.
 //!
 //! **The work log.** What is queued is one `Work`, under one lock with a condvar, shared by the handles and the writer:
-//! a wake is never lost and a close never blocks. Every op takes a sequence number under that lock, and the writer
+//! a wake is never lost, and a close waits at most for the writer's 5 s drain. Every op takes a sequence number under that lock, and the writer
 //! applies what it takes in that order, across every kind of op (a thumbnail's failure reported before the user's Retry
 //! is written before it, so the Retry relists it). What `Work` holds:
 //! - Events: a bounded queue ([`EVENTS`]); one it has no room for is counted, and a [`Notice::NoticesLost`] says how

@@ -27,7 +27,7 @@ pub struct LedgerRow {
 }
 
 /// A ledger's state, from its newest and oldest rows alone (each one index seek: `Catalog::ledger_state`), and the
-/// entry's rules (docs/NOTIFICATIONS.md) applied to it with its acknowledgement.
+/// entry's rules (docs/temp/NOTIFICATIONS.md) applied to it with its acknowledgement.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LedgerState {
     /// The ledger has rows the inbox can show (for the files: of files present, and for the import not pending).

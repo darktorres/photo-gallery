@@ -260,7 +260,7 @@ pub fn render(message: &Message) -> String {
 }
 
 /// Why the scanner refuses a folder, as the refusal lines say it ("its drive is removable").
-pub(super) fn refused_reason(reason: &RefusedReason) -> String {
+pub fn refused_reason(reason: &RefusedReason) -> String {
     let (file_system, error) = match reason {
         RefusedReason::NotNtfs { file_system } | RefusedReason::Pseudo { file_system } => (file_system.clone(), ""),
         RefusedReason::Unreadable { error, .. } => (String::new(), error.as_str()),

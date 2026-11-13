@@ -121,7 +121,8 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
         Some(FailedItems::Files(files)) => {
             for file in files {
                 words.push('\n');
-                words.push_str(&text::failed_file_line(&rules.display(&file.path), &file.error));
+                let path = rules.display(&file.path);
+                words.push_str(&render(&Message::FailedFileLine { path, error: file.error.clone() }));
             }
         }
         Some(FailedItems::Folders(folders)) => {
@@ -130,14 +131,15 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
                 if root != Some(folder.root) {
                     root = Some(folder.root);
                     words.push('\n');
-                    words.push_str(&text::failed_folder_group(&rules.display(&folder.root_path)));
+                    let root = rules.display(&folder.root_path);
+                    words.push_str(&render(&Message::FailedFolderGroup { root }));
                 }
                 words.push_str("\n  ");
-                words.push_str(&text::failed_folder_line(
-                    &rules.display(&folder.path),
-                    folder.failure.code(),
-                    &folder.error,
-                ));
+                words.push_str(&render(&Message::FailedFolderLine {
+                    path: rules.display(&folder.path),
+                    why: render(&Message::FailedFolderReason { reason: folder.failure.code().to_string() }),
+                    error: folder.error.clone(),
+                }));
             }
         }
     }
@@ -200,7 +202,11 @@ impl qobject::Notices {
             // A ledger back after a dismissal: how many came since ("3 since you dismissed it"); empty otherwise.
             ROLE_SINCE_DISMISSED => {
                 let since = match (entry.id, entry.counts) {
-                    (InboxEntryId::Ledger { .. }, Some(counts)) => text::since_dismissed(counts.since_dismissed),
+                    // Nothing says none: a ledger entry with no failure since its dismissal has no line.
+                    (InboxEntryId::Ledger { .. }, Some(counts)) if counts.since_dismissed > 0 => {
+                        let count = usize::try_from(counts.since_dismissed).unwrap_or(usize::MAX);
+                        render(&Message::LedgerSinceDismissed { count })
+                    }
                     _ => String::new(),
                 };
                 QVariant::from(&QString::from(&since))

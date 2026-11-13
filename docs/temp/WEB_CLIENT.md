@@ -35,9 +35,7 @@ Yandex is in version 1; a server-side folder browser can add library folders; th
 **Target, gated:** one shared QML frontend in the browser and on the desktop. The gate is an HTTPS run of the spike on a
 phone (see "Reusing the QML").
 
-**Open:** the video side (work in progress, kept open by decision); the TLS library (`rustls` or `native-tls`); the login
-details; the scope of `real_size`; the snapshot grace length; the budgets, once measured; whether the desktop's writes move in
-the same step as its reads; device identity. The table in "Open points" records each one, with the validation result.
+**Open:** the video side (work in progress, kept open by decision); the listing model (a client-held replica, or OFFSET paging; investigated, not decided); the owner decisions in `WEB_CLIENT_DESIGN.md`; the budgets, once measured. The area designs are in `WEB_CLIENT_DESIGN.md` and are not yet reconciled with each other.
 
 ## Verdict
 
@@ -192,7 +190,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - Client controller: the current item, selection, panels, viewer, grid size, scroll, filter-bar UI state, and timers
   (time is an input, `now_ms`).
 - Preferences: per user, `show_borders`, the last file, the session listing and saved views (they follow you to a phone).
-  Per device, `row_height`, `dev_mode` and `yandex_folder`. `real_size` is open. `write_back` is a server-wide setting, changed
+  Per device, `row_height`, `dev_mode` and `yandex_folder`. `real_size` is removed: photos always open fitted, and the 1:1 button stays for when a user wants real size. `write_back` is a server-wide setting, changed
   from any client by the owner, on by default.
 - *Proposed:* a device record, created at login. The desktop is a device too, with a per-start loopback token. Device
   identity is open (below): the record's key, and the snapshot cap that counts per client, depend on it.
@@ -277,8 +275,8 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - *Proposed safeguards:* a connection cap, a pre-auth idle timeout, and rate limits on the login request. No values are set.
 - **Login (decided, replaces pairing):** the owner sets a password on the desktop at first run. The phone logs in with it and
   receives an httpOnly cookie bound to a device record the desktop can revoke. Login needs no desktop window, so it works while
-  the desktop is closed. *Open:* how the password is stored and hashed, lockout and rate limits, the reset path, and whether
-  the QR convenience is still wanted.
+  the desktop is closed. *Open:* how the password is stored and hashed, lockout and rate limits, the reset path, and no QR code
+  (decided).
 - **CLI writes (decided):** while the server runs, the CLI's writing commands (`gallery scan`, `gallery import`) go through the
   server's API. Otherwise they write the catalog directly. No refusal is needed: ordinary SQLite writes already share the
   catalog. The exclusive hold (`crates/catalog/src/lifecycle.rs:49-52`) is taken only for layout changes.
@@ -298,7 +296,6 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - The video side (work in progress; kept open).
 - The TLS library for the LAN listener: `rustls` or `native-tls` (see Server).
 - The login details (see Processes and access).
-- The scope of `real_size` (the 1:1 zoom): per device, or per user.
 - The snapshot grace length for a sleeping phone. The 10-minute backstop and the cap of four are proposals.
 - Device identity: the record's key, and the client key for the snapshot cap.
 - The controller's view state. A serialisable struct has to be split out first, as a refactor prerequisite.
@@ -558,7 +555,7 @@ did not settle.
 
 | Point | Status | Decision or proposal | Still open |
 |---|---|---|---|
-| P1 Preference scope | Proposed; mostly decided | Per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `dev_mode`, `yandex_folder`. `write_back` server-wide, owner-changeable, on by default. | `real_size` scope. No `desktop.json` exists in code, although `REFACTOR_PLAN.md:785` records the split as done (`crates/desktop/src/settings.rs:1-3`). |
+| P1 Preference scope | Proposed; mostly decided | Per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `dev_mode`, `yandex_folder`. `write_back` server-wide, owner-changeable, on by default. | No `desktop.json` exists in code, although `REFACTOR_PLAN.md:785` records the split as done (`crates/desktop/src/settings.rs:1-3`). |
 | P2 Deletes and moves | Decided | Delete and move are in version 1, once quarantine exists. Library folder removal and rating-driven sort are membership changes in v1. | Quarantine is not built (`REFACTOR_PLAN.md:511`); it is the first piece of work. |
 | P3 View-state split | Proposed (H on blockers) | A plain `ViewState` struct for user-visible state, validated on read. Exclude `initial`, `StartGate` and `Deadlines`; rebuild timers on reconnect; add scroll to client state. | Where the `Listing` spec sits; mid-start snapshots; serde compile not checked. |
 | P4 Snapshot lifetime | Proposed (L–M) | Released after disconnect, with a grace period; 10-minute idle backstop; cap of four per client. | The grace length for a sleeping phone; the client key; every number is unmeasured. |
@@ -571,7 +568,7 @@ did not settle.
 | P11 Phone spike, touch, decode | Decided: Android only | A desktop Chromium pre-screen first, then the phone gate after the trust test. The viewer preloads eight neighbours, so the decode budget counts eight. | Pass budgets, measured first (see Testing). |
 | P12 Server stack | Decided: async | `axum` on `tokio`. | The TLS library: `rustls` or `native-tls`. `native-tls` has no server-side ALPN on Windows. |
 | P13 CLI writers | Decided | While the server runs, the CLI writes through it; otherwise it writes directly. No refusal. | None. |
-| P14 Login | Decided: login, not pairing | The owner sets a password at first run; the phone logs in and gets an httpOnly cookie bound to a revocable device record. Works while the desktop is closed. | Password storage and hashing; lockout and rate limits; the reset path; whether the QR convenience stays. |
+| P14 Login | Decided: login, not pairing | The owner sets a password at first run; the phone logs in and gets an httpOnly cookie bound to a revocable device record. Works while the desktop is closed. | Password storage and hashing; lockout and rate limits; the reset path; no QR code (decided). |
 
 **Decided in the latest review, outside the table:**
 

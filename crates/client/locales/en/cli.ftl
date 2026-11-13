@@ -15,6 +15,9 @@ cli-changed-while-read = , { $count } changed while read, left for the next pass
 
 # gallery scan
 cli-scan-summary = { $root }: { $files } files in { $folders } folders, { $changed } new or changed, { $missing } now missing, { $unreadable } unreadable folders ({ $seconds } s)
+# A mount under a scanned folder that the scan didn't walk into, with why (the folder ledger has it too)
+cli-refused-mount = { $mount } isn't scanned: { $reason }
+cli-refused-mounts-not-listed = { $count } more mounts under the scanned folders aren't scanned and aren't listed here; the folder ledger has them
 cli-thumb-not-forgotten = { $root }: a replaced file's thumbnail wasn't deleted: { $error }
 cli-temp-not-deleted = { $root }: can't delete { $temp }: { $error }
 

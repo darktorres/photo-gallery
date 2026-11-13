@@ -94,7 +94,8 @@ impl qobject::FailedFiles {
             (Shown::File(_), ROLE_ROOT | ROLE_REASON) => QVariant::from(&QString::default()),
             (Shown::Folder(folder), ROLE_ROOT) => QVariant::from(&QString::from(&rules.display(&folder.root_path))),
             (Shown::Folder(folder), ROLE_REASON) => {
-                QVariant::from(&QString::from(&text::failed_folder_reason(folder.failure.code())))
+                let reason = text::Message::FailedFolderReason { reason: folder.failure.code().to_string() };
+                QVariant::from(&QString::from(&text::render(&reason)))
             }
             (row, ROLE_IS_FOLDER) => QVariant::from(&matches!(row, Shown::Folder(_))),
             _ => QVariant::default(),

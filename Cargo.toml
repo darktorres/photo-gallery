@@ -57,7 +57,7 @@ zune-jpeg = "0.5"
 # --workspace --all-targets -- -D warnings` (just lint) holds the tree to them.
 [workspace.lints.rust]
 # A `pub` item is one another crate can name; one only this crate uses is `pub(crate)` or narrower, so the public
-# surface is what the compiler sees (docs/MODULARITY_PLAN.md, M-18).
+# surface is what the compiler sees (the modularity plan (git e428ab2), M-18).
 unreachable_pub = "warn"
 
 [workspace.lints.clippy]
@@ -107,7 +107,7 @@ debug = "line-tables-only"
 [profile.release.build-override]
 opt-level = 3
 
-# The heap profiler's build (`--features dhat-heap`, docs/PROFILING.md "Tool: dhat"): release's optimizations with
+# The heap profiler's build (`--features dhat-heap`, docs/temp/PROFILING.md "Tool: dhat"): release's optimizations with
 # function names and lines for the backtraces, no LTO and incremental, so rebuilds after a change are quick. Its own
 # target directory keeps it from replacing the normal build's artifacts.
 [profile.dhat]

@@ -22,7 +22,8 @@ use pg_model::rules::PathRules;
 use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status as YandexStatus};
 
 use crate::input::day_text;
-pub use message::{Message, render};
+use crate::keys::Hint;
+pub use message::{Message, refused_reason, render};
 pub use words::{set_pseudo, ui};
 
 /// The rating symbols, by rating (0 unrated, 5 best).
@@ -310,39 +311,15 @@ pub fn notice_line(notice: &Notice, rules: PathRules) -> String {
     render(&Message::NoticeLine { title, body })
 }
 
-/// What a ledger entry adds when it came back after the user dismissed it ("3 since you dismissed it", A1); empty for
-/// none.
-pub fn since_dismissed(count: u64) -> String {
-    if count == 0 {
-        return String::new();
-    }
-    render(&Message::LedgerSinceDismissed { count: usize::try_from(count).unwrap_or(usize::MAX) })
-}
+/// The entry that joins the labels of a key hint line.
+pub const HINT_SEPARATOR: &str = "ui-hint-separator";
+/// The entry of the status bar's selection line: the item's info, then its rating symbol.
+pub const SELECTION_LINE: &str = "ui-selection-line";
 
-/// A ledger's failed file as the inbox's Copy puts it, one line: its path, displayed, and its error.
-pub fn failed_file_line(path: &str, error: &str) -> String {
-    render(&Message::FailedFileLine { path: path.to_string(), error: error.to_string() })
-}
-
-/// Why a folder of the scans' ledger failed ("it couldn't be read"), by its reason's code
-/// (`pg_catalog::FolderFailure::code`).
-pub fn failed_folder_reason(code: &str) -> String {
-    render(&Message::FailedFolderReason { reason: code.to_string() })
-}
-
-/// A folder of the scans' ledger as the inbox's Copy puts it, one line: its path, displayed, why (by its reason's code)
-/// and the error.
-pub fn failed_folder_line(path: &str, reason: &str, error: &str) -> String {
-    render(&Message::FailedFolderLine {
-        path: path.to_string(),
-        why: failed_folder_reason(reason),
-        error: error.to_string(),
-    })
-}
-
-/// The line a Copy puts above the failed folders of one library folder, `root` (displayed).
-pub fn failed_folder_group(root: &str) -> String {
-    render(&Message::FailedFolderGroup { root: root.to_string() })
+/// A key hint line: the words of its labels (`locales/en/ui.ftl`), joined by the separator entry.
+pub fn hint(labels: &[Hint]) -> String {
+    let words: Vec<String> = labels.iter().map(|label| ui(label.id(), 0.0, "", "")).collect();
+    words.join(&ui(HINT_SEPARATOR, 0.0, "", ""))
 }
 
 /// The library's status line while the background work is paused: `pass` is the running pass's line, empty when none
@@ -762,22 +739,46 @@ mod tests {
             )
         );
     }
-    /// A ledger entry back after a dismissal says how many failures came since; none says nothing. A ledger's files
-    /// and folders are worded for the Copy, a folder by its reason's code.
+    /// A ledger entry back after a dismissal says how many failures came since. A ledger's files and folders are worded
+    /// for the Copy, a folder by its reason's code.
     #[test]
     fn a_ledgers_counts_and_lines_are_worded() {
-        assert_eq!(since_dismissed(0), "");
-        assert_eq!(since_dismissed(1), "1 since you dismissed it");
-        assert_eq!(since_dismissed(12), "12 since you dismissed it");
-        assert_eq!(failed_file_line(r"D:\a.jpg", "not a JPEG"), r"D:\a.jpg: not a JPEG");
-        assert_eq!(failed_folder_reason("unreadable"), "it couldn't be read");
-        assert_eq!(failed_folder_reason("mount-refused"), "it is a mount the scan refuses");
-        assert_eq!(failed_folder_reason("refused"), "the scan refuses it");
+        let since = |count| render(&Message::LedgerSinceDismissed { count });
+        assert_eq!(since(1), "1 since you dismissed it");
+        assert_eq!(since(12), "12 since you dismissed it");
+        let file = Message::FailedFileLine { path: r"D:\a.jpg".into(), error: "not a JPEG".into() };
+        assert_eq!(render(&file), r"D:\a.jpg: not a JPEG");
+        let reason = |reason: &str| render(&Message::FailedFolderReason { reason: reason.into() });
+        assert_eq!(reason("unreadable"), "it couldn't be read");
+        assert_eq!(reason("mount-refused"), "it is a mount the scan refuses");
+        assert_eq!(reason("refused"), "the scan refuses it");
+        let folder = Message::FailedFolderLine {
+            path: r"D:\p\q".into(),
+            why: reason("unreadable"),
+            error: "Access is denied.".into(),
+        };
+        assert_eq!(render(&folder), r"D:\p\q: it couldn't be read (Access is denied.)");
+        assert_eq!(render(&Message::FailedFolderGroup { root: r"D:\p".into() }), r"In D:\p:");
+    }
+
+    #[test]
+    fn the_key_hints_are_worded() {
+        use crate::keys::{self, Media, Shown};
         assert_eq!(
-            failed_folder_line(r"D:\p\q", "unreadable", "Access is denied."),
-            r"D:\p\q: it couldn't be read (Access is denied.)"
+            hint(&keys::grid_hint()),
+            "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
+             B borders · N not a border · Ctrl+wheel or Ctrl +/− resize"
         );
-        assert_eq!(failed_folder_group(r"D:\p"), r"In D:\p:");
+        let still = Shown { has_borders: false, still: true, video: false };
+        assert_eq!(
+            hint(&keys::viewer_hint(Media::Still, still)),
+            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1 · Z real size · L loupe · \
+             B borders · H hide · Esc close"
+        );
+        assert_eq!(
+            hint(&keys::viewer_hint(Media::Video, still)),
+            "← → step · K play/pause · M mute · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
+        );
     }
 
     #[test]

@@ -13,7 +13,7 @@
 //! paired at the end of the scan (`pg_catalog::Catalog::pair_after_scan`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 //!
-//! The catalog's write lock is never held across the file system or a wait (docs/NOTIFICATIONS.md, W2). A folder is
+//! The catalog's write lock is never held across the file system or a wait (docs/temp/NOTIFICATIONS.md, W2). A folder is
 //! listed outside any transaction, into the batch being built, with the catalog's rows for its files as they were then
 //! (`Catalog::prior_states`); a full batch is written in one short write transaction, which changes only the rows still
 //! as they were read (a write-back between the listing and the write is kept). A pause or a stop writes the batch built
@@ -1043,7 +1043,7 @@ mod tests {
         assert_eq!(stats.missing, 0);
     }
 
-    // The walk's transactions (docs/NOTIFICATIONS.md, W2): nothing holds the catalog's write lock across a listing or a
+    // The walk's transactions (docs/temp/NOTIFICATIONS.md, W2): nothing holds the catalog's write lock across a listing or a
     // pause, overlapping walks are refused while one runs, and a batch changes only the rows still as it read them.
 
     use std::sync::Arc;

@@ -201,52 +201,113 @@ pub enum Media {
     Video,
 }
 
-// The labels the hint lines use (and the map above names).
-const SELECT: &str = "Click to select";
-const VIEW: &str = "double-click or Enter to view";
-const RATE: &str = "0–5 rate";
-const TURN: &str = "R / Shift+R turn";
-const ARROWS: &str = "arrows move";
-const FILTERS: &str = "F filters";
-const BORDERS: &str = "B borders";
-const NOT_BORDER: &str = "N not a border";
-const RESIZE: &str = "Ctrl+wheel or Ctrl +/− resize";
-const STEP: &str = "← → step";
-const PLAY: &str = "K play/pause";
-const MUTE: &str = "M mute";
-const UP_4: &str = "↑ 4";
-const DOWN_1: &str = "↓ 1";
-const TURN_BACK: &str = "R ⟲";
-const TURN_ON: &str = "⇧R ⟳";
-const WHEEL_ZOOM: &str = "wheel zoom";
-const ONE_TO_ONE: &str = "double-click 1:1";
-const REAL_SIZE: &str = "Z real size";
-const LOUPE: &str = "L loupe";
-const HIDE: &str = "H hide";
-const CLOSE: &str = "Esc close";
-
-/// The grid's hint line (shown when nothing is selected).
-pub fn grid_hint() -> String {
-    [SELECT, VIEW, RATE, TURN, ARROWS, FILTERS, BORDERS, NOT_BORDER, RESIZE].join(" · ")
+/// A label of a key hint line. Its words are the entry `id` of `locales/en/ui.ftl`; `text::hint` joins them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hint {
+    Select,
+    View,
+    Rate,
+    Turn,
+    Arrows,
+    Filters,
+    Borders,
+    NotBorder,
+    Resize,
+    Step,
+    Play,
+    Mute,
+    Up4,
+    Down1,
+    TurnBack,
+    TurnOn,
+    WheelZoom,
+    OneToOne,
+    RealSize,
+    Loupe,
+    Hide,
+    Close,
 }
 
-/// The viewer's hint line for what it shows.
-pub fn viewer_hint(media: Media, shown: Shown) -> String {
-    let mut parts = vec![STEP];
-    match media {
-        Media::Video => parts.extend([PLAY, MUTE]),
-        Media::Animated => parts.push(PLAY),
-        Media::Still => {}
-    }
-    parts.extend([RATE, UP_4, DOWN_1, TURN_BACK, TURN_ON]);
-    if media == Media::Still {
-        parts.extend([WHEEL_ZOOM, ONE_TO_ONE, REAL_SIZE, LOUPE, BORDERS]);
-        if shown.has_borders {
-            parts.push(NOT_BORDER);
+impl Hint {
+    /// Every label.
+    pub const ALL: [Hint; 22] = [
+        Hint::Select,
+        Hint::View,
+        Hint::Rate,
+        Hint::Turn,
+        Hint::Arrows,
+        Hint::Filters,
+        Hint::Borders,
+        Hint::NotBorder,
+        Hint::Resize,
+        Hint::Step,
+        Hint::Play,
+        Hint::Mute,
+        Hint::Up4,
+        Hint::Down1,
+        Hint::TurnBack,
+        Hint::TurnOn,
+        Hint::WheelZoom,
+        Hint::OneToOne,
+        Hint::RealSize,
+        Hint::Loupe,
+        Hint::Hide,
+        Hint::Close,
+    ];
+
+    /// The entry of `locales/en/ui.ftl` that words this label.
+    pub fn id(self) -> &'static str {
+        match self {
+            Hint::Select => "ui-hint-select",
+            Hint::View => "ui-hint-view",
+            Hint::Rate => "ui-hint-rate",
+            Hint::Turn => "ui-hint-turn",
+            Hint::Arrows => "ui-hint-arrows",
+            Hint::Filters => "ui-hint-filters",
+            Hint::Borders => "ui-hint-borders",
+            Hint::NotBorder => "ui-hint-not-border",
+            Hint::Resize => "ui-hint-resize",
+            Hint::Step => "ui-hint-step",
+            Hint::Play => "ui-hint-play",
+            Hint::Mute => "ui-hint-mute",
+            Hint::Up4 => "ui-hint-up-4",
+            Hint::Down1 => "ui-hint-down-1",
+            Hint::TurnBack => "ui-hint-turn-back",
+            Hint::TurnOn => "ui-hint-turn-on",
+            Hint::WheelZoom => "ui-hint-wheel-zoom",
+            Hint::OneToOne => "ui-hint-one-to-one",
+            Hint::RealSize => "ui-hint-real-size",
+            Hint::Loupe => "ui-hint-loupe",
+            Hint::Hide => "ui-hint-hide",
+            Hint::Close => "ui-hint-close",
         }
     }
-    parts.extend([HIDE, CLOSE]);
-    parts.join(" · ")
+}
+
+/// The labels of the grid's hint line (shown when nothing is selected).
+pub fn grid_hint() -> Vec<Hint> {
+    use Hint::*;
+    vec![Select, View, Rate, Turn, Arrows, Filters, Borders, NotBorder, Resize]
+}
+
+/// The labels of the viewer's hint line for what it shows.
+pub fn viewer_hint(media: Media, shown: Shown) -> Vec<Hint> {
+    use Hint::*;
+    let mut parts = vec![Step];
+    match media {
+        Media::Video => parts.extend([Play, Mute]),
+        Media::Animated => parts.push(Play),
+        Media::Still => {}
+    }
+    parts.extend([Rate, Up4, Down1, TurnBack, TurnOn]);
+    if media == Media::Still {
+        parts.extend([WheelZoom, OneToOne, RealSize, Loupe, Borders]);
+        if shown.has_borders {
+            parts.push(NotBorder);
+        }
+    }
+    parts.extend([Hide, Close]);
+    parts
 }
 
 #[cfg(test)]
@@ -315,11 +376,8 @@ mod tests {
 
     #[test]
     fn the_grid_hint_names_every_key_it_handles() {
-        assert_eq!(
-            grid_hint(),
-            "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
-             B borders · N not a border · Ctrl+wheel or Ctrl +/− resize"
-        );
+        use Hint::*;
+        assert_eq!(grid_hint(), [Select, View, Rate, Turn, Arrows, Filters, Borders, NotBorder, Resize]);
     }
 
     #[test]
@@ -339,20 +397,17 @@ mod tests {
 
     #[test]
     fn the_viewer_hint_follows_the_media() {
+        use Hint::*;
         assert_eq!(
             viewer_hint(Media::Still, STILL),
-            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1 · Z real size · L loupe · \
-             B borders · H hide · Esc close"
+            [Step, Rate, Up4, Down1, TurnBack, TurnOn, WheelZoom, OneToOne, RealSize, Loupe, Borders, Hide, Close]
         );
         let bordered = Shown { has_borders: true, ..STILL };
-        assert!(viewer_hint(Media::Still, bordered).contains("· N not a border · H hide"));
+        assert!(viewer_hint(Media::Still, bordered).windows(2).any(|w| w == [NotBorder, Hide]));
         assert_eq!(
             viewer_hint(Media::Video, STILL),
-            "← → step · K play/pause · M mute · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
+            [Step, Play, Mute, Rate, Up4, Down1, TurnBack, TurnOn, Hide, Close]
         );
-        assert_eq!(
-            viewer_hint(Media::Animated, STILL),
-            "← → step · K play/pause · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
-        );
+        assert_eq!(viewer_hint(Media::Animated, STILL), [Step, Play, Rate, Up4, Down1, TurnBack, TurnOn, Hide, Close]);
     }
 }

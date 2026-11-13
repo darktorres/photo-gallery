@@ -1,10 +1,8 @@
 # Notifications: the notices and the log
 
-How the app tells the user what happened, and what it records for a developer. The design and its stages are in
-[NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md), and the fixes made after three reviews of stages S1 to S3 in
-[NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (its section letters, A to G and W, are quoted below where a
-rule comes from one). This is the reference for the code as it is: the notice types, the inbox and its writer, the
-failure ledgers, the log, dev mode and the log view.
+How the app tells the user what happened, and what it records for a developer. The open items are in
+[NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md). This is the reference for the code as it is: the notice types, the inbox
+and its writer, the failure ledgers, the log, dev mode and the log view.
 
 ## Notices (`pg_model::notice`)
 
@@ -15,7 +13,7 @@ words change. Each kind is one variant with:
 - its **code**, the stored tag and the root of its words' ids (`notice-<code>-title`, `notice-<code>-body`). Codes are
   permanent: a stored row of a code this build doesn't know reads as `Notice::Unknown`, which is never written back.
   The codes come from one table, the `ids!` macro, which also gives the words' ids; `Notice::RETIRED` lists the codes
-  of kinds that were removed (`scan-unreadable`, `mount-refused`, `root-refused`, now the folder ledger), which no kind
+  of kinds that were removed (`scan-unreadable`, `mount-refused`, `root-refused`, replaced by the folder ledger), which no kind
   may take again and whose rows read as `Unknown`.
 - its **level** (info, warning, error) and its **source**, the inbox's category (`source-<code>`).
 - its **lifecycle** (`Lifecycle`): an *event* is kept each time it is posted; a *transient* is a toast and a log record
@@ -155,7 +153,7 @@ for each entry that is news. What another process changed (the command line, a p
 catalog's `data_version`, every 30 s (`POLL`), when the window is activated, after each of the job's rounds, and
 whenever a pass changes a ledger (`Inbox::poke`). The window never reads the catalog for the inbox's listing.
 
-**One work log (W1).** What is queued is one `Work`, under one lock with a condvar, shared by the handles and the
+**One work log.** What is queued is one `Work`, under one lock with a condvar, shared by the handles and the
 writer: a wake is never lost to a full channel, and a close never blocks. Every op takes a sequence number under that
 lock, in the same critical section as its push, and the writer applies what it takes in that order across every kind
 of op (a thumbnail failure reported before the user's Retry is written before it, so the Retry relists it). The lock is
@@ -173,7 +171,7 @@ held only to push or to swap, never across SQL. `Work` holds:
 Whether a clear has work is decided by SQL on the writer: `replace_notices` reads `notices(kind, root)` first and
 takes no write lock when nothing is stored.
 
-**Failures (W2).** The writer's connection waits `BUSY_TIMEOUT` (100 ms, set by `Catalog::set_busy_timeout`; every other
+**Failures.** The writer's connection waits `BUSY_TIMEOUT` (100 ms, set by `Catalog::set_busy_timeout`; every other
 connection waits 5 s) for a lock another connection holds, so it checks its stop at least that often. A write that is
 still busy (`pg_catalog::Error::is_busy`, which walks the error's chain) is tried again, in order, until it goes
 through: a scan's batch or an import's flush only delays it. Any other failure, `SQLITE_LOCKED` included (a conflict
@@ -221,7 +219,7 @@ holding the file as the pass read it (mtime, size, rotation), the error, whether
   and a replaced file (`pair.rs`). A deleted file's rows go with it.
 - **The import's rows mirror its failed analyses**, kept by triggers on `analysis` (`analysis_import`,
   `analysis_import_rewritten`, `analysis_import_removed`), with the state of the bytes the analysis read.
-  `analysis_import` (version 9, in place of version 8's two) fires its body only for a failure or for a file that has
+  `analysis_import` fires its body only for a failure or for a file that has
   a row, so the common analysis, a success with nothing recorded, costs the import one index probe. A re-analysis that fails on the same bytes (an `IMPORT_VERSION` bump, `gallery import --retry`) keeps
   the row and its serial; a changed file that fails again is a new row with a new serial (a dismissed entry comes back);
   a fixed file's row goes, and so does a deleted analysis's. An in-place update of the analysis by a write-back (the
@@ -254,7 +252,7 @@ holding the file as the pass read it (mtime, size, rotation), the error, whether
   recorded. A thumbnail the window makes takes its file out of the ledger, through the writer too, only while the ledger
   has rows.
 
-### An entry's state: shown, new, unread (A1, A4)
+### An entry's state: shown, new, unread
 
 Each ledger is one entry of the inbox (`EntryId::Ledger { kind, seen }`, where `kind` is a `LedgerKind`: a pass's
 files, or `scan-folders`). `ledger_ack` holds the user's marks by serial: `seen_to` (the newest serial listed when they
@@ -280,7 +278,7 @@ pass, which the job is woken for. The import's rows mirror its analyses and are 
 are retried by `gallery import --retry`, and its entry has "Show the failed files", which lists every file whose analysis
 failed (the `failed` status, in every folder).
 
-### The folder ledger (B2)
+### The folder ledger
 
 The folders a walk couldn't read are the `folder_failures` table: one row per folder, by its exact path (`UNIQUE(path)`,
 as `folders.path`), tied to the library folder that holds it (a foreign key: removing the library folder, or `add_root`
@@ -311,7 +309,7 @@ The scan's other notes are split by what they describe (`ScanNote::lifecycle`): 
 (`duplicates`, `reparse`, `ambiguous`, `unpaired`, `volume-id`) are states keyed `(root, code)` and replaced only by a
 root walk; what one walk did (`replaced`, `rebound`) is an event of that walk, with its count.
 
-## The scan and the write lock (W2)
+## The scan and the write lock
 
 A walk never holds the catalog's write lock across the file system or a wait (`pg_scan`):
 
@@ -333,21 +331,19 @@ A walk never holds the catalog's write lock across the file system or a wait (`p
   dropped (a stop, an error, a panic). A refused walk is `ScanError::Busy`: the job puts it back on its queue and tries
   again after 5 s (`BUSY_RETRY`); `gallery scan` says another process is scanning and fails, or waits with `--wait`.
 
-So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing. The inbox's writer,
-ratings, rotations, border marks, write-back and the command line no longer time out behind a paused scan.
+So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing.
 
 ## The window
 
 `Notices` (`src/notices.rs`): the status bar's Inbox button shows the unread count and opens the inbox; the newest toast
 is in the status bar (an info goes after 6 s, a warning stays until it is replaced or the inbox opens). The inbox
 (`InboxPanel.qml`) lists the entries, newest first. The list is keyed by entry and updated by a diff of each listing
-(`list_diff.rs`), so a new notice keeps the selection and the open details, and it is driven from the keyboard (the keys
-are the fix plan's D1). Opening the inbox marks read the entries it displays, and entries arriving while it is open and
+(`list_diff.rs`), so a new notice keeps the selection and the open details, and it is driven from the keyboard. Opening the inbox marks read the entries it displays, and entries arriving while it is open and
 the window active are marked when they are shown. A row's details have Copy (to the clipboard) and Dismiss; Clear all
 dismisses the entries displayed. **Ctrl+Shift+N** opens and closes it. `--inbox=1` opens it for the screenshots, and
-`--inbox-expand=<kind>` opens a ledger's entry.
+`--inbox-expand=<ledger>` opens a ledger's entry, by the ledger's code.
 
-**The status bar's link (C1).** The job line says "N failed" as a link only while the inbox lists that ledger (a
+**The status bar's link.** The job line says "N failed" as a link only while the inbox lists that ledger (a
 `passes` property with a change signal, a bit per ledger with a listed entry or an `unreadable-files` state); otherwise it
 is plain text. A click opens the inbox expanded at that entry, and an entry that appears later expands when it does. A
 pass that writes or clears ledger rows calls `Control::ledger_changed`, whose hook the runner sets to the inbox's poke
@@ -355,17 +351,14 @@ pass that writes or clears ledger rows calls `Control::ledger_changed`, whose ho
 since its rows move by trigger, and the scan); pokes coalesce in `Work`. The thumbnails' pass flushes at least every
 2 s, so the entry follows a failing file within about 2 s.
 
-**The inbox's own reads leave the GUI thread (C2).** A ledger entry's list (its newest files, or its folders, with the
+**The inbox's own reads leave the GUI thread.** A ledger entry's list (its newest files, or its folders, with the
 counts read together), what Copy adds to an entry's words, and the folder a Reveal opens are read by the window's
 `Reader` (`pg_app::reader`, the kinds `FailedFiles`, `CopyDetails` and `RevealFolder`), which keeps only the newest
 request of each kind per session and cancels a stale one; each kind is its own, so none cancels another. Each caller
 asks, then goes on when its read is delivered: the list shows "loading", Copy copies, Reveal lists the folder or toasts
-`FileNoLongerInLibrary`. These reads are the user's, so waiting behind a listing that is running is acceptable. The
-synchronous `Catalogs::failed_files` and `Catalogs::present_folder` are gone. The rule: what the notifications added or
-use reads nothing on the GUI thread. The rest of the window's catalog work on that thread was not added by this work and
-is its own plan: [GUI_THREAD_PLAN.md](GUI_THREAD_PLAN.md).
+`FileNoLongerInLibrary`. These reads are the user's, so waiting behind a listing that is running is acceptable. The rule: what the notifications added or use reads nothing on the GUI thread. The rest of the window's catalog work on that thread is its own plan: [GUI_THREAD_PLAN.md](GUI_THREAD_PLAN.md).
 
-**Reveal waits for its own listing (C3).** The controller stamps each `Command::OpenList` with a generation from one
+**Reveal waits for its own listing.** The controller stamps each `Command::OpenList` with a generation from one
 counter of its own; the grid carries it (through `GalleryModel::open_listing` and `Grid::arrive`, never through QML),
 and `Shell::list_shown` reports the generation shown. A reveal is consumed only by its own listing's `ListShown`, and
 navigating away drops it.
@@ -448,32 +441,27 @@ A `Label` or `Text` shows a value that looks like markup as rich text (Qt's `Aut
 holding `<b>` would be drawn as HTML. Every one whose text isn't fixed words sets `textFormat: Text.PlainText`; the test
 `qml_text::every_label_that_shows_a_value_is_plain_text` (`crates/desktop/src/qml_text.rs`) fails on one that doesn't.
 
-## Storage, as `TO_8_NOTIFY` leaves it
+## Storage
 
 The inbox's and the ledgers' layout is in `crates/catalog/src/schema.rs` (`TO_3_NOTICES`, `TO_4_FAILURES`,
-`TO_8_NOTIFY`). The last added:
+`TO_8_NOTIFY`). Notable:
 
-- `ledger_ack.dismissed_to` (a serial), replacing the `dismissed` time;
+- `ledger_ack.dismissed_to` (a serial, not a time);
 - `notices.rev`, the index `notices(kind, root)`, and `notices_uid` recreated with the Events' bound;
-- `file_failures.hidden`, the partial index `file_failures_live`, `files_failures_stale` narrowed (no import rows, and
-  no longer on `missing`), and the triggers `files_failures_hidden` and `analysis_import_*`;
+- `file_failures.hidden`, the partial index `file_failures_live`, `files_failures_stale` (not on import rows, and not on `missing`), and the triggers `files_failures_hidden` and `analysis_import_*`;
 - `folder_failures` with its serial stamp, and `scan_leases`, which a rebuild doesn't carry (`rebuild::TRANSIENT`).
 
 A migration is a list of steps (`schema::Step`): SQL that changes the layout, or a Rust conversion of rows
 (`crate::convert`), which finds the old shape by the columns it has, never by the version, and is idempotent. The
 rebuild's copy runs every `Rust` step of every migration on the copied rows, so a catalog rebuilt from any version is
-converted as its migrations would have converted it. `convert_notify` deletes the retired scan notices' rows, makes
-`write-dropped` rows events, backfills an import row for every failed analysis (`ON CONFLICT DO NOTHING`, serials in
-`(files.seq, file_id)` order), computes `hidden`, and, once, from the old shape, turns each dismissal into the serial it
-was made at (none for an entry read after it was dismissed, which came back) and the import entry's old `files.seq`
-marks into the backfilled serials they covered (or the serial before them all: "seen everything before the upgrade").
+converted as its migrations would have converted it.
 
 ## Where the window tells
 
 Every report of the window, and what it is: the notice it posts (the inbox logs it, its target the notice's source),
 or a log record when it stays a diagnostic. A state is cleared by its resolver (the table above).
 
-| Site | Target, level (logged before S2) | What | Now |
+| Site | Target, level | What | Recorded as |
 | --- | --- | --- | --- |
 | `lib.rs` `run` | `session`, info | The run's start: the build and the data folder | log |
 | `lib.rs` `run` | `config`, warning | `PG_THUMB_CAP_GB` didn't parse | log |
@@ -502,5 +490,4 @@ or a log record when it stays a diagnostic. A state is cleared by its resolver (
 | `log_model.rs` `start` | `log`, warning | The log view's reader didn't start | log |
 
 The writer's failures (`write-failed`, `write-stopped`) and a dropped edit (`write-dropped`, an event: a lost edit is a
-fact, not a condition) are posted by `pg_writeback` and `pg_app::Library`, no longer by the window's `refresh_writes`,
-which only shows the writer's status.
+fact, not a condition) are posted by `pg_writeback` and `pg_app::Library`; the window's `refresh_writes` only shows the writer's status.

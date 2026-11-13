@@ -14,7 +14,7 @@ When the number changes, every file gets an identity miss. Ratings, rotation and
 
 ## Verified facts
 
-Probe scripts are in `docs/probes/` and their results in `docs/S17_7_PROBES.md`. The scripts are committed (`8904aac`).
+The facts below are the results of the probe scripts in `docs/probes/` (committed in `8904aac`). The table after the WSL list says which script produced what.
 
 Windows (NTFS on D:):
 
@@ -36,6 +36,23 @@ WSL (ext4 `$HOME`; `/mnt/d` is `9p`):
 - drvfs never reused an inode: 0 of 2000 delete-then-create cycles in an otherwise empty folder. The 95% upper bound is about 0.15% per cycle. This is evidence, not proof.
 - Distinct devices had distinct `st_dev`: `/` 2096, `/proc` 132, `/dev/shm` 137, `/tmp` 166, `/mnt/c` 159, `/mnt/d` 160. On the GitHub runner `/` 66305, `/proc` 25, `/dev/shm` 27, and `/tmp` shares `/`'s device (66305). `/` and `/proc` are separate mounts on any Linux, so they are the two-device test pair (decision 11 and the tests).
 - Restarting `docker-desktop` did not change `/mnt/d`'s device number. The within-boot change is unexplained.
+- Across restarts, `/mnt/d` went 214 → 146 → 74 and `/mnt/c` 145 → 73.
+- Within boot `229876ad`, a later check (after the 74 → 117 → 160 change above) found `/mnt/d` at 195 and `/mnt/c` at 194; `/mnt/e` to `/mnt/g` were mounted at 196 to 198. The kernel log had no 9p event. The trigger is unknown.
+- A temporary second drvfs mount of `D:` got device 180, and `/mnt/d` kept 160 through it. Each drvfs mount has its own device number.
+- Renumbering with the VM kept up (2026-11-11): `wsl --terminate Ubuntu-26.04` and a new shell in it left the boot id as it was (`bd10bdba`) and changed `/mnt/d` from 85 to 52. The distro's start mounts drvfs again, and each mount gets a new device number. `wsl --shutdown` then gave a new boot id and 74.
+- The `statfs` magic numbers (NFS `0x6969`, CIFS `0xFF534D42`, SMB2 `0xFE534D42`, SMB `0x517B`, V9FS `0x01021997`) come from the kernel headers (`/usr/include/linux/magic.h`, kernel 6.18, Ubuntu-26.04) and `statfs(2)`, not from a probe.
+
+| Script | Run where | Produces |
+|---|---|---|
+| `v1_symlink.ps1` | Windows, elevated | Symlink to `\\localhost\D$` (volume checks, final path) |
+| `v1b_junction.ps1` | Windows, no elevation | Junction on D: to `C:\Users\<you>` |
+| `v2_volumes.ps1` | Windows | 32-bit and 64-bit serials of every volume |
+| `win_probe.ps1` | Windows | `GetVolumeInformationByHandleW` and `GetDriveTypeW` on D:, C:, Z:; file ID and creation time through overwrite, save-by-rename, `File.Replace`, delete and recreate, and rename; `FileIdBothDirectoryInfo` listing |
+| `win_probe2.ps1` | Windows | Zero file IDs on local NTFS (sample capped at 400,000 entries); UNC path through `\\localhost\D$` |
+| `v34_wsl.sh` | WSL | Device numbers of `/`, `/proc`, `/dev/shm`, `/tmp`, `/mnt/c`, `/mnt/d`; boot id, mount namespace and drvfs device numbers |
+| `v4_drvfs_superblock.sh` | WSL, as root | A second drvfs mount of `D:` and its device number (temporary mount, removed afterwards) |
+| `wsl_probe.sh` | WSL, from a checkout under `/mnt/<drive>` | ext4 inode reuse (500 and 200 cycles), ext4 and drvfs birth time, drvfs inode reuse on replace and delete, drvfs device number |
+| `wsl_probe2.sh` | WSL, from a checkout under `/mnt/<drive>` | Larger drvfs reuse sample (2000 cycles) and the device numbers of the distinct devices |
 
 ## Decisions
 
@@ -81,7 +98,7 @@ WSL (ext4 `$HOME`; `/mnt/d` is `9p`):
    - Each refusal is a typed `RefusedReason` (`crates/model/src/refusal.rs`) that the scanner decides and the client words (`NetworkPath`, `NetworkDrive`, `RemovableDrive`, `OtherDrive`, `Link`, `RealNotLocal`, `RealOnOtherVolume`, `NotNtfs`, `Unreadable`, and the Linux reasons of decision 13).
    - Unix: decision 13.
    - Adding: `pg_library::folders::add_folder` (`crates/library/src/folders.rs`) checks the folder first. A refused folder is not added; the add fails with `AddError::Refused { folder, reason }`, which the app reports as `Notice::FolderRefused { folder, reason }` (`crates/model/src/notice.rs`) and the CLI prints as that notice's line.
-   - Scanning: `pg_scan::scan` calls `check_folder` before the walk. A refused scan writes no `scans` row and `mark_missing` never runs. The refusal is recorded in the folder ledger (`Catalog::folder_refused`, `FolderFailure::Refused`; `docs/NOTIFICATIONS.md`), which the next complete walk of the folder, or of one above it, sweeps, and the scan returns `ScanError::Refused`. The runner posts nothing for it: it is the ledger's, not a failed scan.
+   - Scanning: `pg_scan::scan` calls `check_folder` before the walk. A refused scan writes no `scans` row and `mark_missing` never runs. The refusal is recorded in the folder ledger (`Catalog::folder_refused`, `FolderFailure::Refused`; `docs/temp/NOTIFICATIONS.md`), which the next complete walk of the folder, or of one above it, sweeps, and the scan returns `ScanError::Refused`. The runner posts nothing for it: it is the ledger's, not a failed scan.
    - A root refused after it was added stays in the library, and each scan records the refusal again. Removal (`remove_folder`, `gallery remove`) is the way out. `Catalog::remove_root` keeps the rows.
    - CLI (`crates/cli/src/lib.rs`): the add loop and the scan loop match on each root's result. A refused root prints its notice line and the other roots continue; any other error stops the command.
 
@@ -143,7 +160,7 @@ Each step was a commit.
 5. **Upsert: hits, backfill, displacement (decision 2).** `ScanWriter::upsert_file`: `created` written and compared in the hit logic, and the `unpaired` marks.
 6. **Pairing, replacement reset, rating rules (decisions 4, 7 and 8).** `Catalog::pair_after_scan`, called by `pg_scan::scan`. `under_root!` and `under_params` scope the pairing to the root. The queued-write rules of decision 7 (the kind column is `rating` or `rotation`).
 7. **Duplicates, stats, notices (decisions 5 and 12).**
-8. **Bench, ledger and docs.** The wall-clock scan timing (`tools/profiling/scan_timing.py`) was written in S-17 Unit G and run on 2026-11-07; the results are in `docs/PROFILING.md` (Measurements). It is not gated, so it needed no `just perf --update` (Verification). `docs/REFACTOR_PLAN.md` S-17.7 and `docs/STORAGE.md` (its Linux section) were updated.
+8. **Bench, ledger and docs.** The wall-clock scan timing (`tools/profiling/scan_timing.py`) was written in S-17 Unit G and run on 2026-11-07; the results are in `docs/temp/PROFILING.md` (Measurements). It is not gated, so it needed no `just perf --update` (Verification). `docs/REFACTOR_PLAN.md` S-17.7 and `docs/STORAGE.md` (its Linux section) were updated.
 
 ## Tests
 
@@ -182,16 +199,16 @@ Each step landed with its tests. The tests named below that did not exist when t
   - A pairing whose rows fall in different batches of the walk still finds its unpaired rows, since they are in the catalog (`a_pairing_across_the_batch_boundary_still_finds_its_rows`, `crates/scan/src/lib.rs`; the batch size is a parameter of `walk_in_batches`, `BATCH` in the real walk).
   - The existing `sync_file_rating` test passes unchanged (`three_way_rating_sync`, `crates/catalog/src/writers.rs`).
 - **Step 7.** A hard-link second path is skipped and counted, and the row does not flip between two scans (`a_second_path_to_a_file_is_skipped_and_counted_and_the_row_does_not_flip`); a missing row in another root does not claim the identity (`a_missing_row_in_another_root_does_not_claim_the_identity`). Both in `crates/scan/src/lib.rs`.
-- **Step 8.** The wall-clock timing is recorded in `docs/PROFILING.md`, not gated.
-- **Manual, WSL.** A tmpfs mounted under a scanned root scans twice with no row flipping. Done, recorded in `docs/PROFILING.md` (Measurements): 40 rows and 0 missing after each scan.
-- **Manual, end to end.** The plan: build the catalog with the old binary (`main`), rate a file, run `wsl --shutdown`, and scan with the new binary; check `stat -c %d` before and after, and repeat the run if the device number did not change; the rows keep their ids, the rating is on a present row, and analysis is kept; stop `docker-desktop` first and restart it afterwards. The run across `wsl --shutdown` is recorded in `docs/PROFILING.md` (Measurements): the device number changed twice (201 to 145, then 74), and every row kept its id, rating and analysis. Both scans used HEAD's binary, and the run predates 94a2530. It was run again after 94a2530 (2026-11-11, `docs/PROFILING.md`): the HEAD binary built in the container, the volume reported as having no UUID, renumbered by a distro restart (85 to 52) and by `wsl --shutdown` (52 to 74); all 40 rows kept their ids, the rating and the analysis. The older-binary step can't be run: the history is squashed at `88e780b`, which already holds S-17.7.
+- **Step 8.** The wall-clock timing is recorded in `docs/temp/PROFILING.md`, not gated.
+- **Manual, WSL.** A tmpfs mounted under a scanned root scans twice with no row flipping. Done, recorded in `docs/temp/PROFILING.md` (Measurements): 40 rows and 0 missing after each scan.
+- **Manual, end to end.** The plan: build the catalog with the old binary (`main`), rate a file, run `wsl --shutdown`, and scan with the new binary; check `stat -c %d` before and after, and repeat the run if the device number did not change; the rows keep their ids, the rating is on a present row, and analysis is kept; stop `docker-desktop` first and restart it afterwards. The run across `wsl --shutdown` is recorded in `docs/temp/PROFILING.md` (Measurements): the device number changed twice (201 to 145, then 74), and every row kept its id, rating and analysis. Both scans used HEAD's binary, and the run predates 94a2530. It was run again after 94a2530 (2026-11-11, `docs/temp/PROFILING.md`): the HEAD binary built in the container, the volume reported as having no UUID, renumbered by a distro restart (85 to 52) and by `wsl --shutdown` (52 to 74); all 40 rows kept their ids, the rating and the analysis. The older-binary step can't be run: the history is squashed at `88e780b`, which already holds S-17.7.
 
 ## Verification
 
 - `just lint` exits 0.
 - `just test` with `$env:PG_TEST_DIR = '<repo>\target\pg-test'` (PowerShell syntax) exits 0.
 - Linux: CI's `linux` job runs clippy and `cargo test` over the whole workspace on each commit, so the catalog, scan and platform tests pass there. Locally the same checks run in the pg-dev container (`tools/linux.py check`, `docker/README.md`). The container has no drvfs mount, so the renumbering checks above use WSL, and only to run binaries.
-- **Perf.** `just perf` is callgrind (`crates/bench/benches/ir/linux.rs`). It counts instructions and does not see drvfs I/O. `tools/perf-compare.py` reads only `callgrind.*.out` files, so a wall-clock bench is not gated and needs no `--update`. The wall-clock scan timing (a 10,000-file library: first scan, unchanged rescan, renumbered rescan) is in `docs/PROFILING.md`. The catalog bench's `LAYOUT` constant (`crates/bench/benches/ir/catalog.rs`) changes with the schema; its dataset is regenerated with `bench_data.py`.
+- **Perf.** `just perf` is callgrind (`crates/bench/benches/ir/linux.rs`). It counts instructions and does not see drvfs I/O. `tools/perf-compare.py` reads only `callgrind.*.out` files, so a wall-clock bench is not gated and needs no `--update`. The wall-clock scan timing (a 10,000-file library: first scan, unchanged rescan, renumbered rescan) is in `docs/temp/PROFILING.md`. The catalog bench's `LAYOUT` constant (`crates/bench/benches/ir/catalog.rs`) changes with the schema; its dataset is regenerated with `bench_data.py`.
 
 ## Rollback
 
@@ -220,4 +237,4 @@ Each step landed with its tests. The tests named below that did not exist when t
 
 - The end-to-end run from a catalog built by an older binary (Tests, Manual, end to end): not possible, since the history is squashed at `88e780b`, which already holds S-17.7.
 
-The trigger that replaces `/mnt/d`'s mount, unknown when this was planned, is a start of the distro (`docs/S17_7_PROBES.md`): `wsl --terminate` and a new shell, within one VM boot, renumbered `/mnt/d` (85 to 52).
+A start of the distro is one trigger that replaces `/mnt/d`'s mount: `wsl --terminate` and a new shell, within one VM boot, renumbered `/mnt/d` (85 to 52). It is not the only one, since the change within boot `229876ad` happened without a distro start. See Verified facts.

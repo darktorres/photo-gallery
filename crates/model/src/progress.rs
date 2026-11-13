@@ -1,5 +1,5 @@
 //! How far a running pass is: its phase and its counts, as data the job layer reports (`pg_jobs::control`) and the front
-//! ends word (`pg_client::text::pass_status`, MODULARITY_REVIEW_4 R-1 and M-45). The time is the elapsed time when the
+//! ends word (`pg_client::text::pass_status`, review 4 (e428ab2) R-1 and M-45). The time is the elapsed time when the
 //! progress was read, so nothing here reads a clock.
 
 use std::time::Duration;

@@ -2,197 +2,1384 @@
 
 ## Context
 
-A new file is read and decoded three times by three passes (`Inner::round` in `crates/library/src/runner.rs`: Crops, Scans, **Import**, **Borders**, **Thumbs**): import decodes DCT-scaled to >= 512x320 (`Analyzer::analyze_image`), borders decode full-size in stored
-orientation (`Analyzer::find_borders`), thumbs decode scaled to >= 4x grid height (`Maker::make_image`). `D:\wallhaven\downloads` (counted read-only on 2026-11-12, recursive): 85,073 files / 328.5 GB decimal (305.9 GiB), 67% JPEG (avg 3.1 MB; wallpapers: 1080p decodes at 1/2, 4K at 1/4 for the import), 33% PNG (avg 5.4 MB);
-Kingston NVMe, 12 logical cores, 64 GB RAM, so the work is **CPU-bound**. The user paused at borders, so the thumbs pass never ran and tiles were made on demand while scrolling (`crates/desktop/cpp/providers.cpp`: 8 threads with no explicit priority, so Qt's default applies). Open item R-86 (`docs/temp/REVIEW.md:43`).
+A new file is read and decoded three times by three passes (`Inner::round` in `crates/library/src/runner.rs`: Crops, Scans, **Import**, **Borders**, **Thumbs**): import decodes DCT-scaled to >= 512x320 (`Analyzer::analyze_image`), borders decode full-size in stored orientation (`Analyzer::find_borders`), thumbs decode scaled to >= 4x grid height (`Maker::make_image`). `D:\wallhaven\downloads` (counted read-only on 2026-11-12, recursive): 85,073 files / 328.5 GB decimal (305.9 GiB), 67% JPEG (avg 3.1 MB; wallpapers: 1080p decodes at 1/2, 4K at 1/4 for the import), 33% PNG (avg 5.4 MB). Kingston NVMe, 12 logical cores, 64 GB RAM, so the work is **CPU-bound**. The user paused at borders, so the thumbs pass never ran and tiles were made on demand while scrolling (`crates/desktop/cpp/providers.cpp`: 8 threads, no explicit priority). Open item R-86 (`docs/temp/REVIEW.md:43`).
+
+The plan makes one full decode per new file (Phase 3 moves the import to the full stored decode; Phase 5 merges the stages into one pass).
 
 ## Decisions (all given by the user)
 
 - Merge the three stages for files whose analysis is due, **and adopt the hash redefinition on the full decode unconditionally** (no measurement gate). Hashes of non-JPEG formats and of JPEGs with denom 1 do not change.
 - Remove the "no version bumps before the first release" rule from the repo; bump versions as needed.
-- Three toggles (border detection, duplicate detection, pre-generated thumbnails), default on. A control that depends on a disabled feature **stays enabled like the others; clicking it shows a popup saying the feature is disabled instead of performing its action** (not hidden, not greyed out; confirmed by the user's clarification).
-- Thumbnails of first-import files run at below-normal priority (was Idle): confirmed. Pass order Thumbs before Borders: confirmed. UI and render threads above normal priority (Windows): confirmed. Tile-pool priority: left out. Mid-decode cancellation: declined.
-- **Incremental grid updates** (no whole-list reloads during an import), because catalogs will grow large.
-- Thumbnail tiers (master thumbnail, derived heights): **still undecided; keep thumbnails as they are**.
+- Three toggles (border detection, duplicate detection, pre-generated thumbnails), default on. A control that depends on a disabled feature **stays enabled like the others; clicking it shows a popup saying the feature is disabled instead of performing its action** (not hidden, not greyed out).
+- Thumbnails of first-import files run at below-normal priority (was Idle). Pass order Thumbs before Borders. UI and render threads above normal priority (Windows). Tile-pool priority: left out. Mid-decode cancellation: declined.
+- **Incremental grid updates** (no whole-list reloads during an import), because catalogs will grow large. **Incremental layout** is in scope too (decided: in scope): a change relays out from the first changed row, not from the top (4.9).
+- Thumbnail tiers (store several heights and derive smaller ones from a cached larger one; `THUMBNAIL_RESAMPLING.md` §4.1, option B1): **still undecided; keep thumbnails as they are.** Out of scope for this plan; the design below does not depend on it. Qt's display mipmap filter is a separate display choice (no storage; `THUMBNAIL_RESAMPLING.md` §3.6, §7), also undecided.
 - A README note is enough for the "older build rebuilds a migrated catalog" case.
-- Process: **wait for the Modularity work to land** (the user will say when; git already has review 4's steps 1 to 9 at `04ff156`, `37b8e9b` and `e6cdf16`, though `MODULARITY_REVIEW_4.md:3` still says "all open"). Then implement **one phase at a time: implement, commit on `main`, next phase. No cargo, tests, benches or other validation between phases; validation happens once, at the end (Phase 6).**
-  Fixes found in validation go in a closing commit. (No new branches; commit only the phase's files, never the user's other work.)
+- Process: **wait for the Modularity work to land** (the user will say when; git already has review 4's steps 1 to 9 at `04ff156`, `37b8e9b` and `e6cdf16`, though `MODULARITY_REVIEW_4.md:3` still says "all open"). Then implement **one phase at a time: implement, commit on `main`, next phase. No cargo, tests, benches or other validation between phases; validation happens once, at the end (Phase 6).** Fixes found in validation go in a closing commit. No new branches; commit only the phase's files, never the user's other work.
 
 ## Ground rules for every phase
 
-- Cite and navigate by **symbol**; line numbers drift. Homes after Modularity (re-checked 2026-11-10 at `d2cbc13`): `Catalog::prepare` in `catalog/src/core.rs`; `pending_borders`/`pdq_hashes` in `catalog/src/work.rs`; `status` in `catalog/src/lookup.rs`; `set_borders_version`/`set_import_version` in `lifecycle.rs`;
-  `store_analysis`/`store_failure`/`store_borders` (and the `delete_pairs` prepared statement) in `writers.rs`; `Versions` in `types.rs`; `has_borders!`/`stale!`/`work_columns!`/`not_being_written!` in `sql.rs`; `MIGRATIONS`/`SEEDS`/`expected` in `schema.rs` (`carry_rows` in `rebuild.rs`); thumbcache `pending_sql` in `reader.rs`, `CACHE_VERSION` doc in `config.rs`.
-  The Borders pass is `pg_borders::find` (`crates/borders`), and its struct `Borders` in `runner.rs` (line 532) implements the `Pass` trait, which is in `jobs/src/schedule.rs`; the detector stays in `pg-analysis` (`analysis/src/borders/*`, `BORDERS_VERSION` in `borders/params.rs`). `schedule::round`/`Pass` in `jobs/src/schedule.rs`.
-- **Crate layers (M-16):** `tools/crate-layers.txt` lists every crate's exact internal dependencies and `tools/boundaries.py` (in `just lint`) checks it; any new internal edge edits that file in the same commit. Also enforced (`tools/boundaries.py`, passing today): a `pub use` may name only a child module of the module it sits in (there is no `app/src/reexport.rs`), no platform `cfg` outside `pg-platform`, `unreachable_pub` on (new items `pub(crate)` unless another crate names them).
-- Docs and strings are updated inside the phase that changes behaviour. Every change to the import path also updates the callgrind baseline at validation (`just perf --update`, `docs/perf/baseline.json`).
-- Tests are written with each phase and run in Phase 6.
-- A phase that changes a manifest or adds a crate edge commits `Cargo.lock` with it: `justfile:70` runs `cargo test --workspace --locked`, and `Cargo.lock` is tracked. Phases 3 and 5 both do.
+- Cite and navigate by **symbol**; line numbers drift. Homes after Modularity (re-checked 2026-11-10 at `d2cbc13`): `Catalog::prepare` in `catalog/src/core.rs`; `pending_borders`/`pdq_hashes` in `catalog/src/work.rs`; `status` in `catalog/src/lookup.rs`; `set_borders_version`/`set_import_version`/`set_mark` in `lifecycle.rs`; `store_analysis`/`store_failure`/`store_borders` and `store_pdq_pair` in `writers.rs`; `Versions` in `types.rs`; `has_borders!`/`stale!`/`work_columns!`/`pending_files!`/`not_being_written!` in `sql.rs`; `MIGRATIONS`/`SEEDS`/`expected` in `schema.rs` (`carry_rows` in `rebuild.rs`); thumbcache `pending_sql` in `reader.rs`, `CACHE_VERSION` in `config.rs`.
+- **Crate layers (M-16):** `tools/crate-layers.txt` lists every crate's exact internal dependencies, and `tools/boundaries.py` (in `just lint`) checks it. A dependency must point to a line *earlier* in the file (`tools/boundaries.py:107`). Any new internal edge edits that file in the same commit. Also enforced: a `pub use` names only a child module of its module; no platform `cfg` outside `pg-platform`; `unreachable_pub` is on (new items are `pub(crate)` unless another crate names them).
+- Docs and strings are updated inside the phase that changes behaviour. The callgrind baseline is refreshed in Phase 6 (see step 2 there).
+- Tests are written with each phase and run in Phase 6. Golden values are captured in Phase 6, never between phases (3.11).
+- A phase that changes a manifest or adds a crate edge commits `Cargo.lock` with it: `justfile:70` runs `cargo test --workspace --locked`, and `Cargo.lock` is tracked. Phase 5 does (the new `import` and `bench` edges). Phase 3 changes no manifest: the Dups pass is a module of `pg-import` (3.7).
+- **Stored values have one definition.** Every value written to `analysis` is computed by one function from one decode of the file, independent of the toggles, the grid height and the path that ran first: the duplicate hashes and ThumbHash come from the full stored decode F (`analysis::hashes`, 3.1), and the borders from the stored pixels. The duplicate hashes are computed in every mode (the toggle gates the pairing, 3.6). Borders are the one stored value a toggle can leave out: their columns are NULL while border detection is off. A test checks that every stored analysis value is identical in all eight toggle combinations, comparing the border columns only where both catalogs ran borders (5.12, 6.6). Thumbnails are display artifacts, never inputs to a stored value, so they may differ by path (Phase 5).
+- **Transactions are short.** The sink commits at most 100 files or 250 ms of work per transaction (Phase 5), because the app's writers wait only 100 ms for the write lock (`crates/app/src/inbox.rs:73`).
 
 ## Phase 1: remove the "no version bumps before release" rule (docs and comments only)
 
-No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERSION == 1` or `CACHE_VERSION == 1`); `.claude/worktrees/` is git-excluded stale copies (exclude from greps). Rewrite to "a change to what a version covers bumps it" (IMPORT_VERSION redoes files in place; BORDERS_VERSION re-looks for
-borders; DUPS_VERSION (new, Phase 3) re-hashes; CACHE_VERSION starts the cache over; catalog schema changes are migrations) in: the `IMPORT_VERSION` doc in `crates/analysis/src/analyze.rs`; the `CACHE_VERSION` doc (`crates/thumbcache/src/config.rs`); `crates/README.md` cache layout paragraph;
-`docs/temp/PLAN.md` "Schema (user decision, 2026-10-30; the check is from 2026-11-05)" paragraph (line 334; "no migrations yet" is inside it, line 341); `docs/temp/REFACTOR_DESIGN.md` policy lines (34, 38, 192), `docs/temp/REFACTOR_PLAN.md:390` ("no schema bumps before release"), `docs/temp/BOUNDED_MEMORY_PLAN.md:2004` ("the cache layout freezes with BASELINE", which rests on the rule); `docs/temp/BOUNDED_MEMORY_PLAN.md:1197` ("CACHE_VERSION stays 1"). Dropped from the first list: `docs/temp/S17_REMAINDERS_PLAN.md:72` (the file has 29 lines, and no rule is there) and `docs/temp/REVIEW.md` R-123 (line 85; it is the catalog split and mentions pre-release machinery, not the version rule). History gets "Superseded" notes (dated the day of the commit); no existing note exists to copy (`docs/temp/S17_7_PLAN.md:58` is an unrelated bullet, and the file has no Superseded note), so the first one written sets the style. Old notes:
-`docs/temp/NTFS_MFT_SCAN_PLAN.md` (190, 258), `docs/temp/REFACTOR_MEASUREMENTS.md` (the S-13.5 section, line 111; its old home `FINDINGS.md:1574` is stale, since that line is blank), `docs/temp/EXIFTOOL_PORT_PLAN.md:54` (its `analyze.rs:29` cite is stale: `IMPORT_VERSION` is at line 27, its doc at 22-26; correct the cite in the same edit). Dropped from the old list: `CODE_REVIEW.md` 136, 688, 691 (no such file in the repo). The old `REFACTOR_PLAN.md` cites 389 and 746 were stale: 390 is the rule (listed above), and 749 is the S-07.5 row. Close ledger items L-24 and L-59 in `docs/temp/REVIEW_LEDGER.md` (both Open; L-24 cites `crates/README.md:249`, which is catalog text: the cache paragraph is at line 316). **Leave** `crates/catalog/src/schema.rs` and `crates/README.md` "baseline is frozen" (line 253; a migration policy). Grep afterwards for
-"first release", "pre-release", "no schema bumps", "stays 1", "still 1", "edited in place", "rebuilt before release", "no migrations", "no bump", "before release", "freeze".
+No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERSION == 1` or `CACHE_VERSION == 1`); `.claude/worktrees/` is git-excluded stale copies (exclude from greps). Rewrite to "a change to what a version covers bumps it" (IMPORT_VERSION redoes files in place; BORDERS_VERSION re-looks for borders; DUPS_VERSION (new, Phase 3) re-hashes; CACHE_VERSION starts the cache over; catalog schema changes are migrations) in:
 
-## Phase 2: reorder, borders + thumbnail toggles, disabled-feature messages, UI/render priority (no schema change)
+- the `IMPORT_VERSION` doc in `crates/analysis/src/analyze.rs` (the constant is at `:27`);
+- the `CACHE_VERSION` doc (`crates/thumbcache/src/config.rs`);
+- `crates/README.md` cache layout paragraph (line 316);
+- `docs/temp/PLAN.md` "Schema (user decision, 2026-10-30 ...)" paragraph (line 334; "no migrations yet", line 341);
+- `docs/temp/REFACTOR_DESIGN.md` policy lines (34, 38, 192);
+- `docs/temp/REFACTOR_PLAN.md:390` ("no schema bumps before release");
+- `docs/temp/BOUNDED_MEMORY_PLAN.md:2004` ("the cache layout freezes with BASELINE", which rests on the rule) and `:1197` ("CACHE_VERSION stays 1").
 
-1. **Round order `Crops, Scans, Import, Thumbs, Borders`** (`Inner::round`). Checked: `schedule::round` returns at once on `Preempted` or a stop request and continues on `Done`, and it checks the stop closure (`ctl.stop_requested()`) after every pass; no runner test depends on pass order (the tests run passes one at a time). **Checked:** borders writes do not bump `files.seq`. `store_borders` updates the `analysis` cut columns and the `side` rows (`writers.rs:403-408`), and no stamp trigger watches those columns (`schema.rs:742-771`). That matters for Phase 4 (see there). Consequences: border results arrive after the
-   Idle Thumbs pass; frequent thumb-height changes restart the round from Import and can starve Borders (`Event::Scale` is not debounced; row-height zooms are, by `settled()`). A Thumbs error ends the round: `pg_thumbs::run(...)?` (`runner.rs:562`) and `schedule.rs:25` pass it up, so a persistent one (a `put_batch` that fails on every batch) means Borders and Dups never run. Phase 2 makes a Thumbs error a notice that the round survives, as line 149 does for the import. A height change restarts the round, and a height with no `checked` row lists the whole catalog (`reader.rs:37`, `pending_sql(false)`), so each zoom step starts a full Thumbs pass that gates Borders (open decision, below). Update the doc comments (`runner.rs` header, pass structs) here, and again in Phases 3 and 5.
-2. **`Features { borders, thumbnails }`** (Phase 3 adds `duplicates`): a `Copy` bitset in one atomic in `Inner` (like `heights: HeightCell` at `runner.rs:106`; there is no `thumb_height` atomic), snapshotted into `Cx` at round start; the setter swaps and `wake_up()`s only on change. Off: the pass returns `Done` before `ctl.begin`, due state is left due, stored results stay and stay shown. Its notices are not run either (`files_read` and `ledger_not_written_gone`, `runner.rs:541-547`), so a notice posted before the switch would stay up: switching off clears the pass's notices (decided here). On: `wake_up`, the pass catches up.
-   A skipped Thumbs pass never reaches `ThumbCache::checked` (its callers are in `pg_thumbs`: `thumbs/src/lib.rs:195` and `:344`), so re-enabling relists everything missed.
-3. **Settings plumbing** (existing patterns): `crates/app/src/prefs.rs` fields `detect_borders`, `pregenerate_thumbnails` (`Prefs` has container-level `#[serde(default)]`: set `true` in `impl Default`; update the order-sensitive golden strings, add an old-file test); pass the features from the `Arc<PrefStore>` that `app/src/app.rs` already holds into `LibraryService::new` (`app/src/library.rs`, `pub(crate)`, no prefs today) and on to `Runner::start`, as one atomic that the setter writes and wakes (not a provider the runner polls each round: a poll never sees a change made while the job waits); `Settings` qproperties with NOTIFY (`desktop/src/settings_bridge.rs:12-14`, the `write_back`/`real_size` pattern; `showBorders` is not in the settings bridge, it lives in `Main.qml` and `Shell`); a `Library` invokable (`library_bridge.rs`; `set_thumb_height` is a method on `LibraryService`, `app/src/library.rs:252`, with no invokable yet); three `CheckBox`es in `LibraryPanel.qml` wired in `Main.qml` (the Pane is a fixed 680x440: make it taller/scrollable, wrap labels); `ui-` strings in `crates/client/locales/en/ui.ftl` (id test in `client/src/text/words.rs`).
-   The start-up argument needs rewriting: no `LIBRARY` static exists. The job starts on first use through `LibraryService::start` (`app/src/library.rs:257`, a `OnceLock` cell), and the `Settings` setters are assumed to only write prefs (not yet traced).
-4. **Counts** of files "not yet checked" beside the borders (Phase 3: duplicates) checkbox: a `Catalog` count joining `files` with `missing = 0`; computed on the job thread at round end and on toggle, published through `Status` (`app/src/library.rs:72`) or a `Change`, never on the Qt thread. There are two `Change` enums (`jobs/src/events.rs:128` and `client/src/controller/panels.rs:65`); name the one meant. No thumbnail count.
-5. **Disabled-feature popup** (user's rule: a control that depends on a disabled feature **stays enabled like the others; clicking it does not perform its action and instead pops up a message saying the feature is disabled**, so no control is ever left disabled with no explanation). Expose `detectBorders` and `pregenerateThumbnails` as `Settings` properties (`detectDuplicates` comes with its pref in Phase 3);
-   `FilterBar` and `TopBar` (the sort combo lives there now) get a `settings` property (Viewer already has one). Mechanism: one shared QML `Popup` (Qt Quick Controls overlay, so it draws above the grid **and** the viewer; no status-line invokable and no viewer-specific variant needed) in `Main.qml` with a `show(text)` function; text is a short sentence naming the feature and saying to turn it on in the Library panel, in
-   `ui-borders-disabled` / `ui-duplicates-disabled` (`ui.ftl`); it closes on click-away (its `closePolicy`, `CloseOnPressOutside`; Qt's Popup has no timeout, so the popup starts its own `Timer`). Per control, when the feature is off the click is intercepted before its action:
-   - Borders facet chips and the **Crop button**: click -> popup, no filter change, no crop. The crop button loses its `enabled: croppable > 0` gate entirely (`FilterBar.qml`): feature off -> the disabled-feature popup; feature on but nothing croppable in the view (`croppable == 0`) -> a popup saying no files with detected borders are in this view (`ui-nothing-to-crop`); otherwise it crops as today.
-   - Sort combo (`TopBar.qml`), border review combo and duplicates combo (Phase 3): open normally, so "Any" and the other entries stay reachable; choosing a disabled entry ("By border depth", a border-review entry, a duplicates entry) -> popup, and the combo is set back explicitly. Qt sets `currentIndex` before it emits `activated` (`qquickcombobox.cpp:378-381, 686-693`), and a rejected pick changes nothing bound, so no binding re-runs. Each combo's `onActivated` assigns `currentIndex` back to its bound value (the sort combo's `sortIndex`, `TopBar.qml:43`, has no binding today).
-   - Saved views (`catalog/src/browse/views.rs:18, 27-30`) and the start options `--apply-view`, `--sort`, `--query` (`desktop/src/controller.rs:39`) can apply a border or duplicate sort or facet with no popup: applying one that uses a disabled feature's key or facet shows the popup and leaves those parts out (decided here).
-   - Grid **B** (`client/src/keys.rs:117` maps it to `Grid::Borders`; the Rust controller turns that into `Change::ShowBorders` at `controller.rs:400`; keys reach Rust through `Main.qml:565`): intercept in the controller before that change: popup, not toggled. Viewer **B** (`Main.qml:596`, `onBordersToggled` -> `shell.toggleBorders()`): intercept in the QML before it. Grid **N** (`keys.rs:118`, `Key::Letter('N') if has_current`, no border check) and the viewer's N button (`RatingBar.qml:50`, `visible: bar.hasBorders`): with the feature off, popup; with it on and no detected border on the file, popup too (`ui-no-border-here`, a new string, decided here), so no "not a border" mark is written for a file without border data. The viewer's N button stays visible rather than hidden, per line 13.
-   - Duplicates combo (Phase 3): the combo rule above (it opens; a disabled entry pops up and reverts, with no filter change).
-   - Inbox **Retry** on a "Thumbnails couldn't be made" row (`Action::Retry`, `model/src/notice.rs:1163`; `InboxPanel.qml:469-473`; `retry_failures` in `catalog/src/ledger.rs:130-140` deletes the pass's failure rows): with pre-generated thumbnails off, popup, no retry.
-   Consequence, accepted: while a feature is off, its stored results cannot be filtered or sorted on until it is switched back on (switching on only catches up what is missing; nothing stored is lost). Switching a feature off also drops its facets and its sort from the active query, so no stale filter sits behind a blocked control (decided here; stored results are untouched).
-   - `show_borders` (overlay display) stays a separate pref.
-   `Settings.qml` test stub (`crates/desktop/tests/qml/stubs/pg/gallery/Settings.qml`) gets the three properties; no Library stub exists today.
-6. **UI and render threads above normal** (Windows): add `Priority::AboveNormal` (`THREAD_PRIORITY_ABOVE_NORMAL`, present in windows-sys 0.59 and 0.60) to the existing `Priority` enum in `pg_platform::priority` (today `Normal`, `BelowNormal`, `Idle`); call `set_current_thread` on the GUI thread just before `app.exec()` (`crates/desktop/src/lib.rs`), and on the render thread from a `sceneGraphInitialized` connection made on every window. The connection that exists today is made only inside the device branch of `crates/desktop/cpp/gpu_device.cpp` (`:150-161`), so with a debug layer, a software device, `QT_D3D_ADAPTER_INDEX` set, or no feature-level-11_0 device, Qt's own threaded render loop stays Normal
-   (Qt's `qsgrenderloop.cpp:190` selects the threaded loop for any non-OpenGLES2 RHI backend, which covers D3D11; the D3D11 case was not read separately; no `QSG_RENDER_LOOP` override exists in the repo). ABOVE_NORMAL only, never HIGHEST/TIME_CRITICAL. Off Windows the call is not a no-op: `priority.rs` maps the variants to Linux nice values (Idle is 19). The new variant needs a Linux mapping decided. Proposal: AboveNormal maps to nice 0 (no change), since a negative nice needs privilege.
-7. CLI: `gallery borders` / `gallery thumbs` are explicit commands and ignore the toggles.
-Tests: popup intercepts (each control in item 5 pops up and performs no action; QML tests in `crates/desktop/tests/qml/` with the Settings stub; grid B and N are tested in the Rust controller, where the intercept is). Toggle off -> pass skipped, due state kept; on -> catches up; `checked` unchanged with thumbnails off; prefs golden/old-file; `ui.ftl` id test; counts exclude missing files. (`Runner` has nine tests, not two: several run single passes through a `run(&mut pass, &inner)` helper (`runner.rs` 683-790), none a whole round. Seam: `Runner::start` with a real cache, the runner tests' `thumbs(...)` helper (`runner.rs` around 629). `ThumbCache::disabled()` makes `checked` a no-op (`thumbcache/src/lib.rs:280-283`), so a "checked unchanged" test on it passes either way. `start` takes a `&'static ThumbCache` (`runner.rs:151`); polls `rounds()` and catalog state.)
+Not in the list: `docs/temp/S17_REMAINDERS_PLAN.md:72` (the file has 29 lines and no rule); `docs/temp/REVIEW.md` R-123 (line 85; the catalog split, not the version rule). History gets "Superseded" notes dated the day of the commit. No existing note exists to copy (`docs/temp/S17_7_PLAN.md:58` is an unrelated bullet), so the first one written sets the style: a one-line blockquote under the old rule, `> Superseded YYYY-MM-DD (commit <sha>): <new rule>.`
+
+Other old notes: `docs/temp/NTFS_MFT_SCAN_PLAN.md` (190, 258); `docs/temp/REFACTOR_MEASUREMENTS.md` (the S-13.5 section, line 111; its home `FINDINGS.md:1574` is blank, so the note goes under the section heading instead); `docs/temp/EXIFTOOL_PORT_PLAN.md:54` (its `analyze.rs:29` cite is stale: `IMPORT_VERSION` is at line 27; correct the cite in the same edit). Close ledger items L-24 and L-59 in `docs/temp/REVIEW_LEDGER.md` (both Open; L-24 cites `crates/README.md:249`, which is catalog text; the cache paragraph is at line 316).
+
+**Leave** `crates/catalog/src/schema.rs` and `crates/README.md` "baseline is frozen" (line 253; a migration policy, not a version rule).
+
+Grep afterwards, and every hit must be a Superseded note or a line that stays true: `"first release"`, `"pre-release"`, `"no schema bumps"`, `"stays 1"`, `"still 1"`, `"edited in place"`, `"rebuilt before release"`, `"no migrations"`, `"no bump"`, `"before release"`, `"freeze"`.
+
+## Phase 2: reorder, the features, disabled-feature messages, UI/render priority (no schema change)
+
+### 2.1 The features values
+
+`pg_model::features` (new `crates/model/src/features.rs`, `pub mod features;` in `crates/model/src/lib.rs`) holds `Features` and `Need`. The model is the bottom layer (`tools/crate-layers.txt:9`), and the library, app and client all name these types, so the types live there. One value, one source of truth: the prefs (`crates/app/src/prefs.rs`), read at start-up and written by the Settings setters.
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Features { pub borders: bool, pub thumbnails: bool }   // Phase 3 adds `pub duplicates: bool`
+
+impl Features {
+    pub const ALL: Features = Features { borders: true, thumbnails: true };
+    pub const fn wants(self, need: Need) -> bool {
+        match need { Need::Borders => self.borders, Need::Thumbnails => self.thumbnails }
+    }
+}
+
+/// A feature a control or a start option depends on. `code` is the value of QML's `Need` enum (`Need.qml`, 2.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Need { Borders, Thumbnails }   // Phase 3 adds Duplicates, code 2
+
+impl Need {
+    pub const ALL: [Need; 2] = [Need::Borders, Need::Thumbnails];
+    pub const fn code(self) -> i32 { match self { Need::Borders => 0, Need::Thumbnails => 1 } }
+    pub fn from_code(code: i32) -> Option<Need> { Need::ALL.into_iter().find(|n| n.code() == code) }
+    pub const fn bit(self) -> u32 { 1 << self.code() }
+}
+```
+
+No `Default` derive: a derived default would be all off, and the prefs default is all on.
+
+### 2.2 Storage and the job
+
+`FeatureCell` lives in `pg_library` (`crates/library/src/runner.rs`), beside `HeightCell` (`:48-80`). The job's `Inner` and `Cx` need it, and `app` depends on `library` (`tools/crate-layers.txt:45-46`), so it cannot live in `app`.
+
+```rust
+#[derive(Clone)]
+pub struct FeatureCell(Arc<Mutex<FeatureState>>);
+struct FeatureState { features: Features, wake: Option<Arc<dyn Fn() + Send + Sync>> }
+impl FeatureCell {
+    pub fn new(features: Features) -> FeatureCell;
+    pub fn get(&self) -> Features;
+    /// Stores the value and wakes the job if one listens. It never stops a round.
+    pub fn set(&self, features: Features);
+    fn listen(&self, wake: impl Fn() + Send + Sync + 'static);
+}
+```
+
+Wiring: `Library::start` (`runner.rs:151`) takes `features: FeatureCell` after the heights (`:154`); `Inner` holds it (after `:106`). `round()` (`:399-410`) takes one snapshot into `Cx` (`:416`, a new field `features: Features`), so a pass never sees two values in one round. `LibraryService::new` gains a `features: Features` parameter (`crates/app/src/library.rs:228-247`) and builds the cell from it. It is called from `app.rs:81`, after `PrefStore::open` at `app.rs:78`, so the cell is seeded from the prefs before the job starts. `LibraryService::set_features(&self, f: Features)` writes the cell; it works before the job starts, as `set_thumb_height` does (`library.rs:252`).
+
+A change **wakes but does not stop** a round: a feature switched off ends its pass as `Done` (2.9), and a switched-on feature is caught up on the next round.
+
+### 2.3 Prefs, the settings bridge, and the Library panel
+
+Prefs (`crates/app/src/prefs.rs`; struct `:21-40`, `Default` impl `:98-108`). The struct-level `#[serde(default)]` (`:21`) reads an old file as on:
+
+```rust
+/// Detect the borders of the files, in the background (on by default). Off: the pass waits; its results stay and stay shown.
+pub detect_borders: bool,
+/// Make thumbnails of first-import files ahead of the grid (on by default).
+pub pregenerate_thumbnails: bool,
+```
+
+`impl Prefs { pub fn features(&self) -> Features { Features { borders: self.detect_borders, thumbnails: self.pregenerate_thumbnails } } }`. Phase 3 adds `detect_duplicates` the same way.
+
+Settings bridge (`crates/desktop/src/settings_bridge.rs:11-14`, `settings.rs:29-41`): two qproperties after `realSize`, each with NOTIFY. Each setter writes the prefs and then tells the library:
+
+```rust
+#[qproperty(bool, detect_borders, cxx_name = "detectBorders", READ = read_detect_borders, WRITE = set_detect_borders_saved, NOTIFY, FINAL)]
+#[qproperty(bool, pregenerate_thumbnails, cxx_name = "pregenerateThumbnails", READ = read_pregenerate_thumbnails, WRITE = set_pregenerate_thumbnails_saved, NOTIFY, FINAL)]
+```
+
+```rust
+pub(crate) fn set_detect_borders_saved(self: Pin<&mut Self>, value: bool) {
+    if app::get().prefs().get().detect_borders != value {
+        change_prefs(|p| p.detect_borders = value);
+        app::get().library().set_features(app::get().prefs().get().features());
+        self.detect_borders_changed();
+    }
+}
+```
+
+The pregenerate setter has the same shape. Today the setters only write prefs (the `set_write_back_saved` pattern, `settings.rs:29-34`), so this is one new call and no new invokable.
+
+LibraryPanel (`crates/desktop/qml/LibraryPanel.qml`): the fixed pane grows from 440 to 560 px high, and the folder list absorbs the extra height. A ScrollView over the whole pane would hide the Close button, so it is not used. Two CheckBoxes go after the write-back CheckBox (`:67-73`), bound to new required properties `detectBorders: bool`, `pregenerateThumbnails: bool`, `bordersUnchecked: int`, and to signals `detectBordersToggled(bool on)` and `pregenerateThumbnailsToggled(bool on)`:
+
+```qml
+CheckBox { text: words.phrase("ui-detect-borders-count", 0, Qt.locale().toString(panel.bordersUnchecked), ""); checked: panel.detectBorders; onToggled: panel.detectBordersToggled(checked) }
+CheckBox { text: words.text("ui-pregenerate-thumbnails"); checked: panel.pregenerateThumbnails; onToggled: panel.pregenerateThumbnailsToggled(checked) }
+```
+
+`Main.qml` LibraryPanel (`:611-620`) binds `detectBorders: appSettings.detectBorders`, `pregenerateThumbnails: appSettings.pregenerateThumbnails`, `bordersUnchecked: library.bordersUnchecked`, and writes back with `onDetectBordersToggled: (on) => appSettings.detectBorders = on` and the pregenerate counterpart.
+
+### 2.4 One gate for feature-dependent actions
+
+`pg_model::features::Need` names the features (2.1). The pure functions live in `crates/client/src/features.rs` (new):
+
+```rust
+pub fn grid_need(grid: Grid) -> Option<Need>                             // Grid::Borders and Grid::MarkBorder -> Borders
+pub fn grid_refusal(grid: Grid, features: Features) -> Option<Need>      // the need, when its feature is off
+pub fn needs_mask(needs: &[Need]) -> i32                                 // the OR of Need::bit
+pub fn disabled_key(need: Need) -> &'static str                          // "ui-borders-disabled", "ui-thumbnails-disabled"
+pub fn gate_listing(listing: Listing, features: Features) -> (Listing, Vec<Need>)   // 2.7
+```
+
+**Where the gate sits: the desktop boundary.** The controller and `keys::grid` / `keys::viewer` stay pure: they take no features (`client/src/keys.rs:103, :124`). The gate runs where the prefs are read:
+
+- Grid keys: `shell.rs` `key_pressed` (`:157-168`), after `keymap::grid_key` returns the grid key and before dispatch: `if let Some(need) = features::grid_refusal(grid, app::get().prefs().get().features()) { self.as_mut().feature_refused(need.bit() as i32); return true; }`.
+- QML asks through a synchronous invokable `featureOn(need: i32) -> bool` (`shell_bridge.rs`, the same kind as `viewerStep`, `:86`): `Need::from_code(need).is_some_and(|n| app::get().prefs().get().features().wants(n))`.
+- Two signals. `featureRefused(needs: i32)` is emitted when a control was used while its feature is off (a mask of `Need::bit`). `optionsRefused(needs: i32)` is emitted when a start option or a saved view left parts out (2.7).
+- There is no `Event::FeaturesChanged` and no features in the client controller. The prefs are read at each key press and each start, so there is one source and no copy to keep in step.
+
+The popup text is looked up by need (`disabled_key`). Phase 3 adds `ui-duplicates-disabled`. There is no second copy of the rule.
+
+### 2.5 The popup
+
+`Main.qml` has no Popup today (the one Popup-like item is `RatingPopup`, `Viewer.qml:514`, a Label). Add one as a child of `win` after `libraryLoader` (`Main.qml:606`). Qt parents a Popup's content to the window overlay, so it draws above the grid, the viewer and the panels whatever its place in the tree (the Overlay documentation, `qquickpopup.cpp`). It is non-modal, so a press outside it reaches the control under it (OPEN k).
+
+```qml
+Popup {
+    id: featurePopup
+    property string message: ""
+    modal: false
+    focus: false
+    padding: 12
+    closePolicy: Popup.CloseOnPressOutside
+    x: Math.round((win.width - width) / 2)
+    y: win.height - height - 64
+    Label { text: featurePopup.message; wrapMode: Text.Wrap; width: Math.min(360, win.width - 48) }
+    Timer { id: featurePopupTimer; interval: 4000; onTriggered: featurePopup.close() }   // Qt's Popup has no timeout
+    function show(text) { message = text; open(); featurePopupTimer.restart() }
+    // A control was used while its feature is off: the disabled text of the one feature (a bit of the mask).
+    function refused(needs) { show(words.text(needs & (1 << Need.Borders) ? "ui-borders-disabled" : "ui-thumbnails-disabled")) }
+    // A start option or a saved view left parts out: ui-start-option-disabled, with the feature names joined by a comma.
+    function optionsRefused(needs) {
+        var names = []
+        if (needs & (1 << Need.Borders)) names.push(words.text("ui-feature-borders"))
+        if (needs & (1 << Need.Thumbnails)) names.push(words.text("ui-feature-thumbnails"))
+        show(words.phrase("ui-start-option-disabled", 0, names.join(", "), ""))
+    }
+}
+Connections {
+    target: shell
+    function onFeatureRefused(needs) { featurePopup.refused(needs) }
+    function onOptionsRefused(needs) { featurePopup.optionsRefused(needs) }
+}
+```
+
+`crates/desktop/qml/Need.qml` (new, like `PanelKind.qml`): `QtObject { enum Kind { Borders, Thumbnails } }`, whose values equal `Need::code`. The popup text names the feature and says to turn it on in the Library panel (2.11).
+
+### 2.6 Intercepts, per control
+
+When the feature is off, each control below pops up and performs no action. When it is on, it behaves as today. A control is never hidden or greyed out (the user's rule).
+
+| Control | Input | Need | Intercept point | Note |
+|---|---|---|---|---|
+| Borders facet chips | click | Borders | `FilterBar.qml:239-242` | no filter change |
+| Crop button | click | Borders | `FilterBar.qml:252-260` | `enabled: bar.croppable > 0` is removed. Feature on and `croppable == 0` shows `ui-nothing-to-crop` (Decision 5) |
+| Review combo, borders entries | choose | Borders | `FilterBar.qml:245-251` | index 0 is "any" (`reviewChoices`, `:49`) |
+| Sort combo, "By border depth" | choose | Borders | `TopBar.qml` sort box (`:107-113`); `Main.qml` `onSortActivated` (`:463-466`) | the last sort choice (`client/src/sort.rs:21`) |
+| Duplicates combo (Phase 3) | choose | Duplicates | `FilterBar.qml:217-223` | gate phase: Decision 6 |
+| Grid **B** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | no `Change::ShowBorders` is produced |
+| Grid **N** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | no-border popup: Decision 5 |
+| Viewer **B** | key | Borders | `Main.qml` `onBordersToggled` (`:596`) and `onBordersRequested` (`:418`) | the QML checks before `shell.toggleBorders()` |
+| Viewer **N** | key | Borders | `client/src/keys.rs:138` (guard: Decision 7); `Main.qml` `onBorderMarkToggled` (`:597`) | the QML decides: disabled popup, no-border popup, or the mark |
+| Viewer N button | visible | Borders | `RatingBar.qml:18` and `:50` | `visible: bar.hasBorders` is removed, so the button is always visible |
+| Inbox **Retry** (thumbnails row) | click | Thumbnails | `InboxPanel.qml:125-128` (`retrySelected`), button `:469-474`, R key `:236-237` | no retry and no row removal |
+| Saved views and start options | apply | the disabled parts | 2.7 | partial application: Decision 4 |
+
+**Why a combo reverts explicitly.** Qt sets `currentIndex` before it emits `activated` (`qquickcombobox.cpp:378-381`), so a rejected pick leaves the combo showing the pick. Each combo's `onActivated` puts `currentIndex` back. For the filter combos that is `currentIndex = Qt.binding(() => filters.borderMarkedIndex)` (and the duplicates index in Phase 3): a JavaScript assignment removes a QML binding, so the binding is restored by hand. The C++ `setCurrentItemAtIndex` (`qquickcombobox.cpp:680-693`) does not remove it. The sort combo reverts to `shell.sortIndex()` (the controller's sort, `shell_bridge.rs:274`, as `Main.qml:271` and `:743` already read it). It must not revert to the `sortIndex` alias of `TopBar.qml:43`: that alias is the box's own index, so assigning it changes nothing. The binding restore is verified by reading the source; the test runs at build (OPEN l).
+
+### 2.7 Start options and saved views
+
+`gate_listing` removes every facet and sort that needs a disabled feature and returns the needs it removed:
+
+```rust
+/// Removes the facets and the sort that need a disabled feature; returns the needs removed (for the popup).
+pub fn gate_listing(mut listing: Listing, features: Features) -> (Listing, Vec<Need>) {
+    let mut gated = Vec::new();
+    if !features.wants(Need::Borders) {
+        let q = &mut listing.query;
+        if !q.borders.is_empty() || q.border_marked.is_some() { q.borders.clear(); q.border_marked = None; gated.push(Need::Borders); }
+        if listing.sort.key == SortKey::Borders { listing.sort = Sort::default(); gated.push(Need::Borders); }
+    }
+    (listing, gated)   // Phase 3 adds the same for `q.duplicates` (Need::Duplicates)
+}
+```
+
+`Listing` is `pg_model::view`; the query fields are `query.rs:219-256`.
+
+- **Starts.** The client `Start` struct (`controller.rs:38-50`) gains `pub gated: Vec<Need>` (`Start::new`, `:54`, sets it empty). In the desktop `start_state` (`crates/desktop/src/controller.rs:91-118`), after `--apply-view` (`:104-107`): `let (listing, gated) = features::gate_listing(listing, prefs.features());`, and the start carries `gated`. The handler that emits `started` (`shell_bridge.rs:69`; its exact name and the accessor for the gated list are OPEN n) emits `optionsRefused(needs_mask(&gated))` when the list is not empty. That is one popup per start.
+- **Menu.** `shell.rs` `apply_view` (`:375-381`): `let (listing, gated) = features::gate_listing(v.listing, prefs.features());`, then `optionsRefused(needs_mask(&gated))` if `gated` is not empty, then `ListingEvent::ViewApplied` with the gated listing. Saved views and start options share this one function.
+
+This is partial application: the disabled parts are dropped and the rest applies. Its alternative, applying nothing and popping up, is Decision 4.
+
+### 2.8 Counts
+
+`FeatureCounts` (new, in `pg-catalog` beside `status()`, `lookup.rs:174`). It is not named `Counts`, which is `ledger::Counts` (`catalog/src/ledger/state.rs:64`, re-exported as `InboxCounts` at `app/src/reexport.rs:11`):
+
+```rust
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FeatureCounts { pub borders_unchecked: i64 }   // Phase 3 adds duplicates_unchecked
+
+impl Catalog {
+    pub fn feature_counts(&self) -> Result<FeatureCounts> {
+        let snapshot = self.conn.unchecked_transaction()?;
+        let borders_unchecked: i64 = snapshot.query_row(
+            "SELECT count(*) FROM analysis a CROSS JOIN files f
+             WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0",
+            [], |r| r.get(0))?;
+        Ok(FeatureCounts { borders_unchecked })
+    }
+}
+```
+
+The predicate is the one `pending_borders` uses (`work.rs:92`), including `f.pending = 0`. The partial index `analysis_borders_due` (`schema.rs:588`) serves the first filter. No thumbnail count.
+
+Carrier: `CountsCell(Arc<Mutex<FeatureCounts>>)` in `pg_library`, beside `HeightCell`, with `get()` and `set()`. `Inner` holds it; `LibraryService` holds a clone and exposes `pub fn feature_counts(&self) -> FeatureCounts` (a Mutex snapshot).
+
+The job computes the counts at each round end, beside `self.changes.publish(Change::Round)` (`runner.rs:381`), on the round's connection: `match catalog.feature_counts() { Ok(c) => counts.set(c), Err(e) => a warning in the log, and the last values are kept }`, then `self.changes.publish(Change::Counts)`. A wake starts a round, so a `FeatureCell::set` is counted at the next round end. A failed count keeps the last values and posts no notice (it is display only). `Change::Counts` is payload-free, like the others (`jobs/src/events.rs:128-141`: the bus drops the oldest events, so payloads would be lossy).
+
+Desktop: `crates/desktop/src/library.rs` `Changes` (`:41-50`) gains `counts: bool`, with an `add()` arm `Change::Counts => self.counts = true`. `on_pass` calls `refresh_counts()` when `taken.counts` is set. `refresh_counts` reads `app::get().library().feature_counts()` (a Mutex snapshot, so no SQL runs on the Qt thread; `desktop/src/library.rs` already reads job state there) and sets the qproperty. `library_bridge.rs` (`:18-33`): `#[qproperty(i32, borders_unchecked, cxx_name = "bordersUnchecked", READ, WRITE, NOTIFY, FINAL)]`. It is a qproperty pushed by the pump, not an invokable, which is how the pump already pushes state (`refresh_progress`, `refresh_writes`).
+
+### 2.9 Round order, height changes, and Thumbs errors
+
+Round order: `Crops, Scans, Import, Thumbs, Borders` (Phase 3 adds `Dups` last). Three changes make this order safe:
+
+- **A height change does not stop the round.** `HeightCell::set` (`runner.rs:64-76`) wakes the job and no longer stops it: the listener at `runner.rs:185-190` drops `request_stop` (`:187`) and keeps `service.wake()`. The wake is sticky (`crates/jobs/src/service.rs:65, :98-100`), so the job runs another round after the current one. Without this, every zoom step restarts the round from Import, and each height's full Thumbs pass gates Borders (`reader.rs:37` lists the whole catalog when no `checked` row exists for the height).
+- **The Thumbs pass returns `Done` on a height change.** `pg_thumbs::run` takes one `&Control` (`crates/thumbs/src/lib.rs:173-179`), so the height is a second stop source, given as a closure: `pg_thumbs::run(..., still_wanted: &dyn Fn() -> bool, ...)`, with `still_wanted = || heights.get() == Some(height)` (the runner reads the height once at the pass's start, `runner.rs:556-571`). The check runs at each flush, before `put_batch` (`thumbs/src/lib.rs`, the flush before the empty check at `:269`). When it fails, the flush's thumbnails go back to the spare buffers, the pass returns incomplete, and the runner's step is `Done`, so Borders and Dups run in the same round. An incomplete pass writes no `checked` row (`thumbs/src/lib.rs:343-345`), so the next round lists the files at the new height. The pass posts no notice of its own; a notice from an earlier flush is posted as today. Thumbs never returns `Preempted`, and this change does not add it.
+- **A Thumbs error does not end the round.** `pg_thumbs::run(...)?` (`runner.rs:562`) and `crates/jobs/src/schedule.rs:25` propagate errors, so a persistent `put_batch` error (`thumbs/src/lib.rs:274`) would end Borders and Dups on every round. The error is recorded in the pass's stats; the runner posts one `Notice::CacheNotStored` for the pass (existing, `notice.rs:422-452`); the pass stops producing thumbnails; and the round goes on:
+
+```rust
+let stored = match cache.put_batch(&mut thumbs, Some(thumb)) {
+    Ok(stored) => stored,
+    Err(e) => { stats.cache_error.get_or_insert_with(|| format!("{e:#}")); return Ok(false); }
+};
+// Then the existing bookkeeping of the flush (thumbs/src/lib.rs:276-292), unchanged, for `stored`.
+```
+
+A skipped Thumbs pass never reaches `ThumbCache::checked` (its callers are `thumbs/src/lib.rs:195` and `:344`), so re-enabling thumbnails relists everything missed.
+
+When a feature is switched off, its pass returns `Done` before `ctl.begin`. The pass's notices are cleared and not run: the `files_read` keys with `Part::Code(pass.code())` (`runner.rs:320`) and the notices at `runner.rs:541-547`. So a notice posted before the switch does not stay up. Due state is left due, and stored results stay and stay shown.
+
+### 2.10 Thread priorities
+
+- `Priority::AboveNormal` is added to `pg_platform::priority::Priority` (`crates/platform/src/priority.rs:6-10`; today `Normal`, `BelowNormal`, `Idle`). Windows: `THREAD_PRIORITY_ABOVE_NORMAL` (value 1 in windows-sys 0.61, which the workspace pins at `Cargo.toml:50`); the match at `:18-22` gains the arm. Linux: `AboveNormal` is a no-op, like `Normal`. Setting nice 0 would reset a thread that an earlier call had lowered, and a negative nice needs privilege. Other platforms: no-op (`:53-54`).
+
+```rust
+let nice = match priority {
+    // Not raised: a negative nice needs CAP_SYS_NICE, and setting 0 would undo an earlier lowering.
+    Priority::AboveNormal | Priority::Normal => return,
+    Priority::BelowNormal => 5,
+    Priority::Idle => 19,
+};
+```
+
+Test, in `mod tests`: `above_normal_keeps_the_nice_value` (the nice value is the same before and after the call).
+
+- The GUI thread: `priority::set_current_thread(Priority::AboveNormal)` in `crates/desktop/src/lib.rs`, immediately before `app.exec()` (`:208`). `pg-platform` is already a desktop dependency (`crate-layers.txt:48`).
+- The render thread. The hook is per window, not inside the device branch. The existing `sceneGraphInitialized` connection (`desktop/cpp/gpu_device.cpp:157-160`) lives inside `if (gpu.device)` (`:150-161`) and is the device-loss handler, so it is not the hook. The new `raise_render_threads(QQmlApplicationEngine&)` (in `gpu_device.cpp`, declared in `gpu_device.h`) connects `QQmlApplicationEngine::objectCreated` (`qqmlapplicationengine.h:39`). For each window it connects `sceneGraphInitialized` with `Qt::DirectConnection`. The signal is emitted from `QSGRenderContext::initialized` (`qquickwindow.cpp:840`) on the render thread (`:1015-1016`). The slot calls the Rust `raise_current_thread()` (in `desktop/src/gpu_device.rs`, exposed through `gpu_device_bridge.rs`, the way `screenshot_bridge.rs` exposes `screenshot.rs`). `desktop/src/lib.rs` calls it before `engine.load` (`:189`).
+
+```cpp
+void raise_render_threads(QQmlApplicationEngine& engine) {
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &engine, [](QObject* root, const QUrl&) {
+        auto* window = qobject_cast<QQuickWindow*>(root);
+        if (!window) return;
+        // DirectConnection: the slot runs where the scene graph initializes. Not single-shot: the signal comes again
+        // after a scene graph is released, on the same thread.
+        QObject::connect(window, &QQuickWindow::sceneGraphInitialized, window,
+                         [] { raise_current_thread(); }, Qt::DirectConnection);
+    });
+}
+```
+
+- Qualified: Qt's threaded render loop (`qsgrenderloop.cpp:189-190`) is used for every non-OpenGLES2 RHI backend. With `QRhi::Null`, with `QML_NO_THREADED_RENDERER`, or with `QSG_RENDER_LOOP=basic`, the basic loop runs instead (`qsgrenderloop.cpp`, about lines 199-201 and 219-233). The slot then runs on the GUI thread, which is already AboveNormal, so the hook is harmless there. The runtime thread identity in each configuration is not measured (OPEN, a Phase 6 manual check).
+
+### 2.11 Strings
+
+New keys in `crates/client/locales/en/ui.ftl`:
+
+```
+ui-borders-disabled = Border detection is off, so this does nothing. Turn it on in the Library panel.
+ui-thumbnails-disabled = Pre-generated thumbnails are off, so this does nothing. Turn them on in the Library panel.
+ui-nothing-to-crop = No borders to crop in this view.
+ui-no-border-here = This file has no detected border.
+ui-start-option-disabled = Left out, because { $text } is off. Turn it on in the Library panel.
+ui-feature-borders = border detection
+ui-feature-thumbnails = pre-generated thumbnails
+ui-detect-borders-count = Detect borders ({ $text } not yet checked)
+ui-pregenerate-thumbnails = Pre-generate thumbnails
+```
+
+Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplicates`, `ui-detect-duplicates-count` and `ui-detect-duplicates`. The parameterized strings are read with `words.phrase(id, 0, text, "")`, as the crop button does (`FilterBar.qml:253`). The id test in `client/src/text/words.rs` covers each id. The English wording needs the user's approval (Decision 9). No Notice variant is added: the disabled-feature messages are popups.
+
+### 2.12 Tests
+
+- Popup intercepts: each row of the table in 2.6 pops up and performs no action. The QML tests live in `crates/desktop/tests/qml/`. The stubs need the members the tests use: `stubs/pg/gallery/Shell.qml` (`:8`, which has `viewerStep`) gets `function featureOn(need) { return true }` and `signal featureRefused(int needs)`, and `stubs/pg/gallery/Settings.qml` (`:4-5`, which has `realSize`) gets `writeBack`, `detectBorders` and `pregenerateThumbnails`, all default true. Each stub value can be set by a test.
+- The Rust intercepts: `grid_refusal` for `Grid::Borders` and `Grid::MarkBorder`, with the feature off and on, in `client/src/features.rs` tests.
+- The combo revert: a rejected pick leaves the combo on its bound value (QML test).
+- `gate_listing` removes the disabled facets and sort; a view with no disabled parts is unchanged.
+- Toggle off: the pass is skipped, its due state is kept, and its notices clear. Toggle on: the next round catches up.
+- A height change during Thumbs returns `Done`, and the round reaches Borders.
+- A `put_batch` error posts `CacheNotStored` once and the round continues. The seam is a real failing store (a read-only cache file, or a `cfg(test)` failing store), because `ThumbCache::disabled()` returns `Ok(false)` (`thumbcache/src/lib.rs:199-201`) and never reaches the `Err` path.
+- `checked` is unchanged with thumbnails off. The seam is a real `ThumbCache` (the runner tests' `thumbs(...)` helper, around `runner.rs:629`). `ThumbCache::disabled()` makes `checked` a no-op (`thumbcache/src/lib.rs:280-283`), so a test built on it cannot fail.
+- `feature_counts` excludes missing and pending files, and is 0 when `borders_due` is 0.
+- The prefs golden: the golden text at `prefs.rs:165-173` gains `"detect_borders": true` and `"pregenerate_thumbnails": true` after `"dev_mode": false` (the field order of the file). The changed-value test (`:195-207`) expects both keys. The old-file test `a_float_row_height_from_an_old_file_reads_rounded_and_clamped` (`:185-193`) and the old-folder test (`:257-261`) still pass.
+- `FeatureCell::set` before start and after start both wake the job, and the next round reads the new value. The listener test sits beside the heights test (`runner.rs:596-607`).
 
 ## Phase 3: duplicate hashes on the full decode, and the duplicate toggle (a migration)
 
-- **New hash definition (adopted):** `pixel_hash` = xxh3 of the upright **full-size** pixels; PDQ fitted from that image; ThumbHash fitted from the decode image as today (`analyze.rs:116`, no 512-px intermediate), so it changes only where the decode changes (JPEG with denom > 1). Implemented once in `Analyzer::hashes(bytes, turns)` (full stored decode -> `orient_into` -> hashes; upright dims via `Info::upright()`, a private fn at `codec/src/decode.rs:34` that becomes `pub`),
-  used by `analyze_image` and by the catch-up pass, with the golden tests in the Tests line. Hashes of PNG/WebP/GIF/BMP/TIFF and JPEGs with denom 1 are unchanged; JPEGs with denom > 1 change. The 512 MiB JPEG cap (Phase 5's spec) lands here, with this first new full decode; the Borders catch-up already decodes full size today.
-- **A migration** (`MIGRATIONS` beside `TO_2_CHANGE_STAMPS`), numbered the next free one when this phase lands. `TO_3` to `TO_9` already exist (`schema.rs:36-44`), so the plan's "3 is free" framing is stale: the next one is `TO_10` (`NOTIFICATIONS_PLAN.md`'s `TO_3` and `TO_4` names are stale too, and M-43 and M-42 take the numbers after this one): `analysis.dups_due INTEGER NOT NULL DEFAULT 0` + a partial index like `analysis_borders_due` (the `CREATE INDEX .. WHERE` scans `analysis` once inside `prepare`: fine at 46k, minutes at 70M), **and the `dups_version` meta seed** (`INSERT INTO meta`; `set_borders_version` errors on a missing key; `carry_rows`/`SEEDS` compare meta keys).
-  `Versions` gains a `dups` field (12 struct-literal sites, found by grep: `bench/benches/ir/catalog.rs:78`, `catalog/src/browse/fixtures.rs:53`, `catalog/src/browse/read/tests.rs:888`, `catalog/src/browse/views.rs:89`, `catalog/src/pair.rs:453`, `catalog/src/test_support.rs:21`, `catalog/tests/other_process.rs:13`, `library/src/lib.rs:36`, `scan/src/lib.rs:816`, `thumbcache/src/lib.rs:942`, `thumbs/src/lib.rs:390` and `:596`; `catalog/src/browse/writes.rs` has none, and `browse/views.rs` was missing from the old list). Fresh and migrated schemas compare equal (`expected()` = baseline + migrations); add the missing migration test.
-  README note: an older build opening a migrated catalog moves it aside as `catalog.sqlite.replaced` and rebuilds, losing pairing state.
-- **`DUPS_VERSION` = 2** via `set_dups_version` (mirror of `set_borders_version`, run from `Catalog::prepare`): one transaction NULLs `pixel_hash`, `pdq`, `pdq_quality`, `pdq_dihedral`, deletes `pdq_pairs`, and sets `dups_due = 1`, **for every JPEG row**, denom-1 ones included (the row does not record its decode scale, so they are re-hashed and come back equal). The `DUPLICATES` and `NOT_DUPLICATES` listings exclude `dups_due = 1` rows, so the window shows them as neither. `view_epoch` is not touched here: Phase 4 seeds it, and then makes this bump advance it, so an open grid reloads once. The bump's own writes are not free of stamps: the triggers at lines 96-97 fire on them too, so a flip of an exact-hash group of two and each within-22 pdq pair are stamped (not every file of a group). The transaction's duration is unmeasured; Phase 6 measures it against `busy_timeout` (5000 ms, `schema.rs:377-378`). No mixed definitions are ever compared. `IMPORT_VERSION` stays 1 (bumping it re-pends every file and wipes stored borders/pairs).
-- **Model/queries:** `ImageFacts.pixels: Option<PixelHashes>`; invariant `pixel_hash`/`pdq`/`pdq_quality`/`pdq_dihedral` NULL together. Nothing checks it today (`Catalog::pdq_hashes` only errors on `pdq_dihedral IS NULL AND pdq_quality >= MIN_QUALITY`), so `store_analysis`/`store_hashes` write the four together, `pdq_hashes()` skips `dups_due = 1`, and a test pins the invariant after a `DUPS_VERSION` bump. `dups_due` = `pixel_hash IS NULL AND kind = 'image' AND error IS NULL`, written explicitly by `store_analysis` (the `INSERT OR REPLACE` column list resets omitted columns).
-  `pg_import::import` takes an `Options` struct today (`import/src/lib.rs:32`); the plan's `ImportOptions { features, .. }` adds `features`. About 23 call-site matches across the crates (runner, cli, `thumbs` test, `library/tests/*`; `writeback.rs` has 9) and, with dups off, skips hashing and does not load `pdq_hashes()`/`Pairer::build`; `Pairer::reserve` sized from the dups-due count.
-- **`Dups` catch-up pass** (last in the round: it runs only in a round where all earlier passes finish, so the Thumbs starvation at line 41 reaches it first): worklist `Catalog::pending_dups()` mirroring `pending_borders` (`work_columns!`, `dups_due = 1 AND missing = 0 AND pending = 0 ORDER BY volume, file_ref & 0xFFFFFFFFFFFF`); round order `Crops, Scans, Import, Thumbs, Borders, Dups`; priority `BelowNormal`; `Phase::Dups` (`model/src/progress.rs`; worded once, by `pg_client::text::pass_name`, which the window and the command line both call),
-  `Message::PassDups` (`client/src/text/message.rs`), `pass-dups` in `text.ftl`. The pass's code goes in a new crate `pg-dups` beside `pg-borders` (M-15 pattern; `import`-level line in `crate-layers.txt`: the existing `analysis catalog dedup jobs model platform`, and `library` gains it). `store_hashes` (a new writer in `writers.rs`) checks size, mtime, **rotation** and `not_being_written!()` and runs the `delete_pairs` statement. Hash and pair writes stamp nothing today. Phase 3 adds no triggers: until Phase 4's duplicate-status triggers land, a grid showing a duplicates facet sees a changed status at its next reload. Phase 4's triggers stamp the files whose status flips, whoever writes, deletes and cascades included. Terminal states: io error stays due; decode error -> `store_failure`.
-- **Wake on another process's bump:** a `DUPS_VERSION` bump run by another process's `prepare` (`catalog/tests/other_process.rs`) sets `dups_due` and wakes no job. The job waits with `waker.wait(None)` (`runner.rs:359-361`), and only the busy retry (`BUSY_RETRY`, 5 s, while a lease is held) times the wait. Phase 3 adds an idle re-check of the due counts on a slow timer (60 s, decided here; the interval is a parameter, so a test can set it low). Its test opens a second `Catalog` connection, as `catalog/tests/other_process.rs` does, bumps `DUPS_VERSION`, and asserts that the job wakes.
-- Duplicates checkbox + pref `detect_duplicates` + count + the disabled-feature popup (Phase 2 pattern) on the duplicates control. Today there is no duplicates checkbox, pref or count: the control is the Duplicates ComboBox (`FilterBar.qml:216-220`), and `NOT_DUPLICATES` exists (`query/src/lib.rs:350`). Because switching a feature off clears its facets (Phase 2), the stale-filter case (`NOT_DUPLICATES` listing near-duplicates under "No duplicates" when tier 0b/1 hashes are NULL) cannot occur from the UI.
-Tests: literal goldens captured from the pre-change build before Phase 3 (pixel_hash, PDQ, quality, dihedral and ThumbHash for PNG, WebP, denom-1 and denom > 1 JPEG fixtures; no literal hash assertions exist today), in place of `Analyzer::hashes` == `analyze`, which compares a function with itself; unchanged hashes for PNG/WebP/denom-1 JPEG against those goldens; off -> hashes NULL and `dups_due = 1`; on -> catch-up fills and pairs; version bump re-arms JPEG rows only; migration test; `pdq_hashes` skips due rows.
+### 3.1 The hash definition (decided by the user)
+
+- `pixel_hash` = xxh3 of the upright full-size pixels (`analyze.rs:177-183`). The PDQ is fitted from that image (`fit_within(img, 512)`, `resize.rs:25-35`), and the dihedral hashes come from `hash_rgb_dihedral`. ThumbHash is fitted from it to `THUMBHASH_SIDE` = 100 (`analyze.rs:36, :187-192`). ThumbHash no longer fits a 512 px intermediate, so it changes only where the decode changes.
+- Every new file gets **one full stored decode F in every mode**: `Analyzer::analyze_image` uses `decode_stored_into(MinSize::Full)` (or `Full`, oriented in place by `orient_into`), not `Sides(512, 320)`. The hash and ThumbHash definitions are then the same whatever the toggles are. This is the reason the decode is F in every mode (Phase 5 relies on it).
+- Hashes of PNG, WebP, GIF, BMP and TIFF are unchanged, and so are JPEGs with denom 1 (the full decode is the same pixels). JPEGs with denom > 1 change.
+- One function computes the hashes from an upright full-size image, and the import and the Dups pass both call it. It lives in `pg-analysis` (`analyze.rs`), with `Info::upright()` (`codec/src/decode.rs:34`) made `pub`:
+
+```rust
+/// The duplicate hashes of an upright full-size image (the import and the Dups pass both call this).
+pub struct Hashes { pub pixel: [u8; 16], pub quality: u8, pub dihedral: [pdq::Hash; 8] }   // pdq == dihedral[0]
+pub fn hashes(upright: &Rgb) -> Hashes;      // PDQ fitted to 512, the pixel hash, the eight dihedral hashes
+pub fn thumbhash(upright: &Rgb) -> Vec<u8>;  // fitted to THUMBHASH_SIDE
+```
+
+- **The hashes are computed in every mode.** The duplicates toggle gates the pairing (3.6, 3.9), not the hashing. This is the consequence that makes the stored hash values identical in all toggle combinations (Decision 11, Chosen).
+
+### 3.2 The 512 MiB JPEG cap lands here
+
+The cap is in `codecs/limits.rs:8` (`max_decode_bytes()`, 512 MiB) and is enforced today only by the PNG and TIFF decoders (`png.rs:20`, `tiff.rs:221`). `decode_jpeg` (`codec/src/decode.rs:141-150`) has no check, so an over-cap JPEG decodes in full today. The check is **new code** in `decode_jpeg`:
+
+- It reads the stored size from the header alone: `Decoder::dimensions(bytes, format) -> Result<(u32, u32)>` (the JPEG header is read at `decode.rs:148`).
+- It compares the scaled allocation with the cap before allocating. The figure is the one the codec reserves: `w * h * 3` for JPEG (the colour-type figure in `codecs/limits.rs:14-17` is for PNG and TIFF).
+- It returns an outcome, not an `Err`: `DecodeOutcome::OverCap { width, height }` (5.2). `decode_stored_into` swallows a decode error (`decode.rs:124`, `.ok()`), and the codecs fallback would then fail the whole file.
+
+PNG and TIFF keep their decoder caps as errors, as today. The over-cap rule applies to JPEG only (Chosen). Phase 3 is where the first full decode lands, so the over-cap rule (5.2) lands here too.
+
+### 3.3 Migration TO_10
+
+`TO_10` is the next free number (`TO_3` to `TO_9` exist, `schema.rs:36-45`; migration N takes the version from N-1 to N, so TO_10 takes 9 to 10). It is one `MIGRATIONS` entry after `&[Step::Sql(TO_9_CHEAPER_WRITES)],` (`schema.rs:44`), with its const after `TO_9_CHEAPER_WRITES` (`schema.rs:365`):
+
+```sql
+ALTER TABLE analysis ADD COLUMN dups_state TEXT NOT NULL DEFAULT 'done'
+    CHECK (dups_state IN ('due', 'done', 'skipped'));
+CREATE INDEX analysis_dups_due ON analysis(file_id) WHERE dups_state = 'due';
+INSERT INTO meta (key, value) VALUES ('dups_version', 1);
+```
+
+- `dups_state` has three values, and its meaning is:
+  - `'due'`: the duplicate status is owed. Either the **pairs** are owed (the hashes are stored, but duplicate detection was off when the file was imported), or the **hashes** are owed too (`pixel_hash` is NULL, after a version bump). The Dups pass handles both (3.7).
+  - `'done'`: the hashes are stored and the pairs are current; or there is nothing to hash (a video, a non-image, or an analysis error).
+  - `'skipped'`: never retried and not checked. Set for an over-cap JPEG (5.2) and for a decode failure in the Dups pass (3.7).
+- Existing rows are `'done'` (the default), so the migration re-hashes nothing by itself. The version bump (3.4) does.
+- `dups_version` is seeded as `1` (the old definition's version), so `set_dups_version` (3.4) sees a key that exists, as `borders_version` does. The `meta` table takes `value ANY`, so the seed is an integer.
+- The partial index is used by a query that repeats `a.dups_state = 'due'` literally, as `live_failures!` does.
+- `expected()` (the baseline plus the migrations) must match a fresh schema. `expected_schemas_follow_the_version` (`schema.rs:851-865`) checks that for every migration, so TO_10 needs no new test code.
+- `Versions` gains a `dups` field (`types.rs:224-228`). The struct-literal sites are counted at the start of Phase 3 (grep `Versions {`: 19 matches in 12 files, some of them declarations).
+- README note: an older build opening a migrated catalog moves it aside as `catalog.sqlite.replaced` and rebuilds, losing the pairing state.
+
+### 3.4 The version bump: `DUPS_VERSION` = 2
+
+`pub const DUPS_VERSION: i64 = 2;` goes beside `IMPORT_VERSION` (`analyze.rs:27`). The catalog already depends on `pg-analysis` (`catalog/Cargo.toml:29`). `set_dups_version(conn, current)` goes in `lifecycle.rs` beside `set_borders_version` (`:137`). It runs from `Catalog::prepare` after `set_borders_version` (`core.rs:117`) through `set_mark`, in one transaction:
+
+```sql
+UPDATE analysis
+   SET pixel_hash = NULL, pdq = NULL, pdq_quality = NULL, pdq_dihedral = NULL, thumbhash = NULL,
+       dups_state = 'due'
+ WHERE kind = 'image' AND format = 'jpeg' AND error IS NULL AND dups_state <> 'skipped';
+DELETE FROM pdq_pairs
+ WHERE a IN (SELECT file_id FROM analysis WHERE dups_state = 'due')
+    OR b IN (SELECT file_id FROM analysis WHERE dups_state = 'due');
+```
+
+- It resets **every** JPEG row, denom-1 ones included, because the row does not record its decode scale. Their hashes come back equal.
+- It also resets **ThumbHash**. ThumbHash comes from the same full decode as the hashes, so after the bump the Dups pass rewrites hash and ThumbHash together (3.7). Without the reset, an existing row keeps the old ThumbHash and the single-definition rule fails. The grid draws the ThumbHash as its placeholder (`GridCell.qml`, `GridRow.qml`), so these rows have no placeholder until the pass runs in the following rounds. That is a transient, and it is stated here.
+- It deletes the pairs of every reset row, **including pairs to non-JPEG partners**, since a partner's pair with a JPEG is derived from the JPEG's hash. The Dups pass pairs the re-hashed JPEGs against the non-JPEG rows again. Non-JPEG rows keep their hashes.
+- It does not touch `file_hash`, so exact-duplicate detection is unaffected.
+- `view_epoch` is not touched in Phase 3. Phase 4 adds `bump_view_epoch` to this function (4.5), so an open grid reloads once instead of stamping every JPEG row.
+- `format = 'jpeg'` is verified: `Format::Jpeg` serialises as `jpeg` (strum snake_case, `model/src/format.rs:4-9, 33-40`), and `analysis.format` is written from `Analysis::format()` (`analysis.rs:114-119`) through `store_analysis` (`writers.rs:320`).
+- Consequence: the first open of an upgraded catalog re-decodes every JPEG once, in the Dups pass, whatever the duplicate toggle says. The hash work always runs; only the pairing waits for the toggle (Decision 12). Phase 6 times it. The bump's own writes fire the Phase 4 triggers, and the bump's duration is measured in Phase 6 against `busy_timeout` (5000 ms, `schema.rs:377-378`).
+
+### 3.5 Writers
+
+`store_analysis` becomes an upsert in Phase 3, because it is the statement that writes `dups_state`. The old `INSERT OR REPLACE` leaves `dups_state` at its default (`'done'`) and would reset `cut_*` only by accident. Phase 4's triggers depend on the upsert (4.4), and in Phase 3 it fires no stamping triggers, so the change is safe there.
+
+```rust
+/// The duplicate state of a row, as the sink knows it (writers.rs).
+pub enum DupsState<'a> {
+    /// Hashes stored and pairs made: 'done'.
+    Done(&'a Hashes),
+    /// Hashes stored, pairs owed: 'due' (duplicate detection was off).
+    Owed(&'a Hashes),
+    /// Over the cap, or a decode failure in the Dups pass: 'skipped'.
+    Skipped,
+    /// Nothing to hash (a video, a non-image, or an analysis error): 'done'.
+    Nothing,
+}
+```
+
+- `store_analysis(item, analyzed, dups: DupsState<'_>)` (`writers.rs:300-340`) is one upsert naming all 29 columns (the 28 of the baseline plus `dups_state`). The old `INSERT OR REPLACE` named 24 (`writers.rs:256-258`), and the four `cut_*` columns were reset only because they were left out. The upsert names them and sets `cut_left..cut_bottom` to NULL explicitly, as the design needs:
+
+```sql
+INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
+    file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
+    taken, taken_utc, duration_ms, poster_ms, borders_due, pdq_dihedral,
+    cut_left, cut_top, cut_right, cut_bottom, dups_state)
+VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL,
+    ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+    CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END,
+    CASE WHEN ?16 THEN ?15 END,
+    ?17, ?18, 0, ?21,
+    NULL, NULL, NULL, NULL, ?22)
+ON CONFLICT(file_id) DO UPDATE SET
+    version = excluded.version, size = excluded.size, mtime = excluded.mtime, rotation = excluded.rotation,
+    kind = excluded.kind, analyzed = excluded.analyzed, error = excluded.error,
+    file_hash = excluded.file_hash, pixel_hash = excluded.pixel_hash, format = excluded.format,
+    orientation = excluded.orientation, width = excluded.width, height = excluded.height,
+    pdq = excluded.pdq, pdq_quality = excluded.pdq_quality, thumbhash = excluded.thumbhash,
+    frames = excluded.frames, taken = excluded.taken, taken_utc = excluded.taken_utc,
+    duration_ms = excluded.duration_ms, poster_ms = excluded.poster_ms, borders_due = excluded.borders_due,
+    pdq_dihedral = excluded.pdq_dihedral,
+    cut_left = NULL, cut_top = NULL, cut_right = NULL, cut_bottom = NULL, dups_state = excluded.dups_state;
+```
+
+The bound values follow the existing `store_analysis` parameters (`writers.rs:256-261`). For `Skipped` and `Nothing`, the hash parameters are NULL. The statement still deletes the file's pairs (`writers.rs:254, :306`).
+
+- `store_failure(item, error)` (`writers.rs:343-359`) becomes an upsert too. An `INSERT OR REPLACE` would skip the delete triggers (4.4). It NULLs every analysis column but the key and the error, as REPLACE left it, sets `borders_due = 0`, and sets `dups_state = 'done'` (`Nothing`). The file leaves `'due'` with its failure. This is what 3.7 needs: a failed analysis is not a duplicate-status question.
+- `store_hashes(item, hashes, thumbhash, owed: bool) -> Result<bool>` (new), used by the Dups pass for a row with no hash. It is guarded like `store_analysis` (`current` first, then `not_being_written!()`) and writes the hashes and the ThumbHash only into a row that is still due and has no hash:
+
+```sql
+UPDATE analysis
+   SET pixel_hash = ?2, pdq = ?3, pdq_quality = ?4, pdq_dihedral = ?5, thumbhash = ?6,
+       dups_state = CASE WHEN ?7 THEN 'due' ELSE 'done' END
+ WHERE file_id = ?1 AND dups_state = 'due' AND pixel_hash IS NULL
+   AND NOT EXISTS (SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL);
+```
+It returns `Ok(rows == 1)`. `owed` is `true` when duplicate detection is off.
+- `store_pairs_done(item) -> Result<bool>` (new): sets `dups_state = 'done'` on a row that is `'due'` and has a hash, after its pairs are inserted (the same guard). It is used by the pairs-only phase (3.7) and by the hash phase when detection is on.
+- `store_skipped(item) -> Result<bool>` (new): `UPDATE analysis SET dups_state = 'skipped' WHERE file_id = ?1 AND dups_state = 'due' AND NOT EXISTS (SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL)` (the same guard).
+- `store_pdq_pair` is unchanged (`writers.rs:361-365`). Its `ON CONFLICT ... WHERE excluded.distance < distance` upsert keeps each pair once, and the Phase 4 triggers handle an UPDATE of a pair's distance (4.4).
+- `store_borders` returns `Result<bool>` instead of `Result<()>` (`writers.rs:419-422`). It returns `false` for a file that changed under it, where it returns silently today; the sink needs to know, and `borders/src/lib.rs:100` counts the change as stored.
+
+### 3.6 The pairing lifecycle
+
+- A `Pairer` (`dedup/src/pairer.rs`) is built once per pass run from `Catalog::pdq_hashes()` (`work.rs:103`), over the rows whose `dups_state = 'done'` and the existing filter (`pdq_dihedral IS NOT NULL AND pdq_quality >= 50`). Files that get their pairs later in the same run are added to the index by `pair_and_insert`, so a pair between two files of one run is found once.
+- **With duplicate detection off, nothing pairs.** Import does not build a Pairer and does not load `pdq_hashes()`. The Dups pass does not pair. The hashes are still computed (3.1), and the rows stay `'due'` (the pairs are owed).
+- Import builds its Pairer per import call (`import/src/lib.rs:41-42`, local to `import()`), as today, when detection is on. The Dups pass builds one per Dups pass run, when detection is on.
+- `Pairer::reserve` is sized from the due count (`items.len() * 8`, `pairer.rs:35-37`).
+- Memory: 8 PDQ orientations of 32 bytes per file, about 256 MB at a million files. That is recorded in the bounded-memory plan's terms, not solved here.
+
+### 3.7 The Dups pass and the decode budget
+
+- **Location (Chosen): a module of `pg-import`**, `crates/import/src/duplicates.rs`, exposed as `pg_import::duplicates`. The Dups pass shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs (`analysis`, `catalog`, `dedup`, `jobs`, `model`, `platform`). So no new crate, no new layer line and no manifest change. The name `pg-duplicates` is dropped.
+- **Names.** The pass is `Dups` (`Phase::Dups` in `model/src/progress.rs`; the words `pass-dups` in `text.ftl`, read through `pg_client::text::pass_name`; `Message::PassDups` in `client/src/text/message.rs`). Its ledger code is `FilePass::Duplicates` (`model/src/notice.rs:281-288`). The grep for the `file_failures` schema found no `CHECK` on `pass` (`schema.rs`), so a new pass value needs only the Rust code; this is confirmed when the code lands.
+- **Round order:** `Crops, Scans, Import, Thumbs, Borders, Dups`. Dups runs last and is reached on every round, because Thumbs no longer stops a round (2.9). Priority `BelowNormal` (5.10).
+
+**Worklists** (`crates/catalog/src/work.rs`, beside `pending_borders`, `:84-99`). Both are over `analysis a JOIN files f` with `a.dups_state = 'due' AND f.missing = 0 AND f.pending = 0`, in the order of the other passes (`ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF`):
+- `pending_pairs()`: the rows with `a.pixel_hash IS NOT NULL`. Their stored `pdq_dihedral` comes with the row.
+- `pending_hashes()`: the rows with `a.pixel_hash IS NULL`.
+
+The literal `a.dups_state = 'due'` lets SQLite use the partial index `analysis_dups_due` (3.3).
+
+**Phase 1, pairs only (detection on).** For each batch of 100 `pending_pairs` rows, one transaction: `pair_and_insert` from the stored hashes, `store_pdq_pair` for each neighbour, then `store_pairs_done`. No file is read. This completes the pairing of the files imported while detection was off.
+
+**Phase 2, hashes (both toggles).** `pending_hashes` runs through `pipeline::batched` (`pipeline.rs:240-270`, as the other per-file passes): the bytes are read whole; the worker reads the header dimensions, checks the cap (3.2), reserves the budget (below), decodes F (stored orientation, `MinSize::Full`), and computes `analysis::hashes` and `analysis::thumbhash` on the upright image. The budget is released at the end of `process`. The sink (5.5) writes each batch in one transaction, with `Batch { size: 100, every: Some(250 ms) }`:
+
+| Outcome | Writes |
+|---|---|
+| Hashed | `store_hashes(item, &hashes, &thumbhash, owed)`, `owed = !detection_on`. If detection is on: `pair_and_insert`, `store_pdq_pair` for each neighbour, then `store_pairs_done`. |
+| Over the cap | `store_skipped`. |
+| Decode error or panic | `store_skipped`, and a ledger row (`FilePass::Duplicates`, `retry = false`, the error text). **Not** `store_failure`: that would erase the analysis of a file that imported fine. |
+| io read error | nothing. The file stays `'due'` and the next round retries it, as the Borders catch-up does (`borders/src/lib.rs:79-83`). This is not the import's policy (Decision 3). |
+| Not run (stopped in the budget wait) | nothing |
+
+`stats.complete = stats.files == items.len()`, as the other passes.
+
+**The decode budget** (`crates/jobs/src/budget.rs`, `pg-jobs`, introduced in Phase 3 because the Dups pass decodes; Phase 5's import uses the same budget, 5.3). One budget per pass run, since passes never overlap. A reservation is `w * h * 3` (3.2) before the decode, and it is released when the file's `process` ends, on every path (Ok, Err, or a panic caught by `panics::guard`). Grants are first come, first served (a ticket queue), so a large file waiting for room is not starved by smaller ones behind it (Chosen).
+
+```rust
+pub struct DecodeBudget { limit: u64, queue: Mutex<Queue>, turn: Condvar }
+#[derive(Default)]
+struct Queue { in_use: u64, next: u64, serving: u64 }
+
+/// Released on drop, so an error or a caught panic releases it too.
+#[must_use]
+pub struct Reservation<'a> { budget: &'a DecodeBudget, bytes: u64 }
+
+impl DecodeBudget {
+    /// 1.5 GiB in use at once.
+    pub const DEFAULT: u64 = 1536 << 20;
+    pub fn new(limit: u64) -> DecodeBudget;
+
+    /// Waits for its turn and for room: `bytes` fit beside what is reserved, or nothing is reserved (a file over the
+    /// limit runs alone, so the budget cannot deadlock). `None` when `ctl` stops first; the caller returns "not run".
+    pub fn reserve(&self, bytes: u64, ctl: &Control) -> Option<Reservation<'_>> {
+        let mut q = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        let ticket = q.next;
+        q.next += 1;
+        loop {
+            if q.serving == ticket && (q.in_use == 0 || q.in_use.saturating_add(bytes) <= self.limit) {
+                q.serving += 1;
+                q.in_use += bytes;
+                self.turn.notify_all();
+                return Some(Reservation { budget: self, bytes });
+            }
+            // A stop ends every waiter, so a ticket that is never served is not a leak.
+            if ctl.stop_requested() { return None; }
+            q = self.turn.wait_timeout(q, Duration::from_millis(200)).unwrap_or_else(PoisonError::into_inner).0;
+        }
+    }
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        let mut q = self.budget.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        q.in_use -= self.bytes;
+        self.budget.turn.notify_all();
+    }
+}
+```
+
+Tests: a second reservation blocks until the first is released; a file over the limit runs alone; a large waiting reservation is granted before a later small one; the budget is released on an error and on a panic.
+
+### 3.8 Listings and the facet
+
+The duplicates facet has four values, because a file that is not checked yet is neither a duplicate nor unique:
+
+- **Any** (no filter).
+- **Duplicates**: `kind = 'image' AND dups_state = 'done' AND error IS NULL AND <a mate exists>` (the existing `duplicates!` macro, `query/src/lib.rs:332-346`, with the same mates).
+- **No duplicates**: `dups_state = 'done' AND error IS NULL AND NOT <a mate exists>` (`NOT_DUPLICATES`, `query/src/lib.rs:350`).
+- **Not checked** (`ui-dupl-not-checked`): `dups_state <> 'done' AND error IS NULL`, which covers `'due'` and `'skipped'`. So a file whose pairs are owed (duplicate detection off) is in Not checked, not in No duplicates.
+
+### 3.9 Controls
+
+- A Duplicates checkbox (`detectDuplicates`, the pref `detect_duplicates` in `prefs.rs`, the setter of 2.3), with its count (`duplicates_unchecked`, 2.8: the rows with `dups_state = 'due'`, `error IS NULL`, on present files), and the gate of 2.4 with `Need::Duplicates` (code 2).
+- The duplicates combo (`FilterBar.qml:217-223`) follows the combo rule of 2.6. Its gate phase is Decision 6.
+- `Features` gains `duplicates` (the pref's `Prefs::features()`, 2.3). `ImportOptions` (`import/src/lib.rs:32`, which takes an options struct today) carries the features and the thumbnail height (5.11). About 23 call sites change (the runner, the CLI, the `thumbs` test, `library/tests/*`, and `writeback.rs` with 9); the count is taken at the start of the phase.
+- With detection off, the import stores the hashes and `'due'`, and builds no Pairer (3.6). Turning detection on makes the next Dups pass pair the owed rows (pairs only, no decode).
+
+### 3.10 Wake on another process's bump
+
+A `DUPS_VERSION` bump run by another process's `prepare` (`catalog/tests/other_process.rs`) sets `'due'` and wakes no job. The job waits with `waker.wait(None)` (`runner.rs:359-361`), and only the busy retry (`BUSY_RETRY`, 5 s, while a lease is held) times the wait. The fix is an idle re-check on a timer: every 60 s while idle, the job runs the `feature_counts` query (2.8, extended with the duplicates count), and a non-zero count starts a round. The interval is a parameter, so a test can set it low.
+
+### 3.11 Tests
+
+- **Goldens.** The literal `pixel_hash`, PDQ, quality, dihedral and ThumbHash values for four fixtures (a PNG, a WebP, a denom-1 JPEG and a denom-2 JPEG, committed and small) are **captured in Phase 6** (Phase 6, step 3) from a worktree at the commit before Phase 3 (the pre-change build), and written into these tests in the closing commit. The rule: PNG, WebP and denom-1 JPEG must equal the old build's values; the denom-2 JPEG must differ (the expected change), and its new literal comes from the new build. No build runs between phases. There are no literal hash assertions in the tree today, so `Analyzer::hashes == analyze` would compare a function with itself, and it is not used.
+- Duplicates off: the import stores `'due'` and the hashes, and no pairs. Duplicates on: the Dups pass pairs. Turning detection on pairs the owed rows from their stored hashes, with **zero decode calls** (a call counter on `Decoder`, `cfg(test)`, per instance).
+- A version bump re-arms JPEG rows only (not PNG), resets the hashes and ThumbHash of the JPEG rows, clears the pairs of every reset row, and leaves `'skipped'` rows alone.
+- The invariant: `pixel_hash`, `pdq`, `pdq_quality` and `pdq_dihedral` are NULL together; every `'done'` row with a hash has all four and a ThumbHash.
+- The three listings partition the image rows: every image row with `error IS NULL` is in exactly one of Duplicates, No duplicates, Not checked.
+- The over-cap JPEG (a synthetic header above the cap, no pixel allocation) is `'skipped'`, listed as Not checked, and makes zero decode calls.
+- A Dups decode error leaves the analysis row intact (no `store_failure`) and sets `'skipped'` with a ledger row.
+- `pdq_hashes()` skips `'due'` rows.
+- The migration test (`expected()` against a fresh schema, `schema.rs:851-865`), and the budget tests (3.7).
 
 ## Phase 4: incremental grid updates
 
-Design (decided 2026-11-10): a **stamp-keyed delta merge** whose catalog side is `BOUNDED_MEMORY_PLAN.md` 7.1's change feed, built here in its complete form: stamps, including those for a duplicate status that another file's change flips; a log of what a stamp cannot carry; stamped results; and a feed paged by cursor. A bare `changed > since` does not suffice; that plan's grid review rejected it for the reasons in "Why not `changed > since` alone" below. 7.1 later extends this catalog side, and does not replace it. The client merge here is interim: 7.7 replaces the whole-list client.
+### 4.1 Why not `changed > since` alone
 
-- **Why not `changed > since` alone** (checked against the code at `f3f9308`):
-  - A deleted row cannot be stamped: the scan's removals delete `files` rows (`catalog/src/pair.rs:345, 434`); `remove_root` deletes the root and sets `files.missing = 1` (`catalog/src/roots.rs:58-70`).
-  - A move or rename is not stamped. `pair::rebind` and `pair::replace` change the file's place and name (`volume`, `file_ref`, `created` at `pair.rs:355`; `folder_id`, `name`, `ext` and `order_key` to be confirmed), and the stamping triggers fire only on `size`, `mtime`, `rotation`, `kind` and `missing` (`files_changed` and `files_source_changed`, `schema.rs:719, 728`; `files_failures_hidden` also watches `pending`). Name, Extension and Created sort on those columns, and the folder scope filters on `folder_id`.
-  - `list_grid` returns no stamp. A consumer that reads the change number apart from the list loses a change committed between the two reads.
-  - A change that rewrites many rows at once (`set_taken_zone`'s recompute, a version bump) stamps nothing, or stamps the whole library.
-  - The changed-id list has no bound after a long lag.
-- **Schema** (one migration, the next free number when this phase lands, beside `TO_2_CHANGE_STAMPS`):
-  - `files_log(seq INTEGER PRIMARY KEY, id INTEGER NOT NULL, what TEXT NOT NULL CHECK (what IN ('removed', 'renamed')))`: what happened to a row that its stamp cannot say. It is a catalog table, so `carried_is_every_table_of_the_current_schema` (`schema.rs:800-820`) requires it in `CARRIED` or `TRANSIENT` (`rebuild.rs:134, 158`), and in only one: `TRANSIENT`, because its rows hold file ids that a rebuild renumbers. A rebuilt catalog sets `log_horizon` to its current change number, so any client cursor is below it and gets `Reload`.
-  - `files_removed` (AFTER DELETE ON files): `next_seq`, then a `removed` row for `old.id`.
-  - `files_renamed` (AFTER UPDATE OF `folder_id`, `name`, `ext`, `created`, `order_key`, with a WHEN on any of them changing): `next_seq`, `changed` stamped, and a `renamed` row. The stamp is enough for this phase's merge, which finds a row's old place by id. The log row is there for 7.1's rank-based runs, which need it, so 7.1 adds no trigger.
-  - **A file's duplicate status depends on other files**, so its own rows' stamps cannot carry it. `duplicates!` (the query crate, `crates/query/src/lib.rs:332`) holds when another present, error-free file has the same `file_hash` or `pixel_hash`, or a present partner is within `group_distance!` in `pdq_pairs`. A file B imported, gone missing, back, removed or re-analyzed flips its mates' status, and stamps nothing of theirs. Triggers stamp the files whose status flips, whoever writes. Every lookup uses an index that exists (`analysis_file_hash`, `analysis_pixel_hash`, `pdq_pairs`' key and `pdq_pairs_b`):
-    - **Hash mates.** Every write to a table with stamping triggers is an upsert, never `INSERT OR REPLACE`: `store_analysis` and `store_failure` (`writers.rs:256-266`) become `INSERT ... ON CONFLICT DO UPDATE` setting every column explicitly. REPLACE deletes the old row without firing a delete trigger, and the insert trigger sees only new values, so a replaced row's old hash was never stamped. A test or `tools/` check fails on any `INSERT OR REPLACE` into such a table. Triggers: on insert, on delete, on `UPDATE OF file_hash, pixel_hash, error` (the update trigger sees `OLD` and `NEW`), and on a change of `files.missing`: for the old and the new value of each hash, a probe with `LIMIT 2` finds whether exactly one other present, error-free file has it. If so, that file goes between "alone" and "duplicated", and is stamped. A mate in a group of three or more does not flip, and is not touched, so a large group costs O(1) per change, not O(group).
-    - **Pairs.** An insert or delete in `pdq_pairs` within `group_distance!` stamps both files. A change of `files.missing` stamps the file's partners within it. That is O(the file's pairs). `BOUNDED_MEMORY_PLAN.md`'s `pdq_near` counters later make it O(1).
-    - **Borders.** `store_borders` changes the `analysis` cut columns and the `side` rows (`writers.rs:403-408`), which no trigger watches (`schema.rs:742-771`). The Borders sort, facet and review combo read the cut columns (`query/src/lib.rs:25, 377`; `grid.rs:28`), so without a stamp the merge misses border results. Add stamps on those columns; the coverage test below catches a gap.
-    - Pair triggers stamp both files of every pair on insert and on delete (the deletes, `delete_pairs` included, and the cascades from a removed file), so Phase 3 needs no stamp in `store_hashes`.
-    - At 1B files, `BOUNDED_MEMORY_PLAN.md` D27's `hash_runs` with `present_xor` replaces the `LIMIT 2` probes, with the same rule: stamp on a 1↔2 transition.
-  - Seeded meta keys:
-    - `log_horizon`, the lowest change number the log still covers;
-    - `view_epoch`, bumped by a change that rewrites many rows at once (`set_taken_zone`, `set_import_version`, `set_borders_version`, Phase 4 makes `set_dups_version` bump it too), **in the rewrite's own transaction**. This phase's migration seeds the key: `set_mark` errors on a missing key (`lifecycle.rs:98-112`), so Phase 3 cannot bump it earlier. A reader then never sees the rewrite with the old epoch. A consumer that holds another epoch reloads. These run in `Catalog::prepare`, and another process may prepare a catalog the app has open (`catalog/tests/other_process.rs`: "another process's open of it is fine"), so the epoch is what an open grid sees of that.
-  - No new index. `files_changed` on `(changed)` already orders by `(changed, id)`, because `id` is the rowid.
-  - `prune_files_log()` runs at the end of each Scans pass and each CLI scan. It keeps the last 1M rows, deleting down to 512k in pages, and advances `log_horizon`.
-  - **The coverage rule, as a schema test, by behaviour and not by a hand list.**
-    - The columns come from SQLite. Each `grid_sql` variant (every sort key, both directions, every filter) is prepared under an authorizer (`sqlite3_set_authorizer`, rusqlite's `authorizer`), which reports every `(table, column)` the statement reads.
-    - For each column, the test changes it on a fixture row and checks that the row's `changed` advanced, a log row was written, or `view_epoch` moved. A column changed only by a bulk rewrite is listed with the rewrite that bumps the epoch.
-    - A trigger missing on a new column, or on an UPDATE where only an INSERT OR REPLACE was covered, then fails the test. The bundled SQLite (3.54.1, the planner the plan uses) must fire `AFTER UPDATE` triggers on an upsert conflict; that is a test in this phase, run in Phase 6. `dups_due` is read by the `DUPLICATES` and `NOT_DUPLICATES` listings (Phase 3), and no trigger watches it, so a fixture UPDATE that changes only `dups_due` advances nothing and the test fails. Add an `UPDATE OF dups_due` stamp trigger so the listing change reaches the grid; exempting the column by name would hide the gap.
-    - It has no predecessor to replace: `changes_since` is not defined anywhere in `crates/` (`MODULARITY_REVIEW_4.md`'s M-48 mentions it, so that M-48 step has nothing to delete).
-    - Relational status is not a column of the row, so it gets its own test (the pitfalls below).
-- **Catalog reads:**
-  - **Every grid result carries its stamp.** `list_grid` returns `(Vec<Entry>, Stamp)`, with `Stamp { seq, epoch }` read in the list's own transaction.
-  - **`ChangeFeed`**, paged from a cursor `(changed, id)`. Each page is one short read transaction, in two steps:
-    1. The page itself, off the index alone: `SELECT id, changed FROM files WHERE (changed, id) > (?, ?) ORDER BY changed, id LIMIT ?`, and the log's rows in the same change-number range.
-    2. The listing, for that page's ids only: `grid_sql`'s WHERE plus `AND f.id IN` the page's ids, bound as one array (rusqlite's `rarray`, which needs the rusqlite `array` feature; the repo's rusqlite features at `Cargo.toml:36` do not enable it, so Phase 4 adds it). The page's ids that it does not return no longer match.
+The rows below are what the existing stamps cannot say. Each has a remedy in 4.2 to 4.6.
 
-    The planner outcomes below were written against SQLite 3.49 and not run. The build bundles 3.54.1 (`libsqlite3-sys` 0.39.1 at rusqlite rev `9d76035`, `Cargo.lock:1330-1332`), so Phase 6 runs `EXPLAIN QUERY PLAN` on that build as a test. Step 1 is `SEARCH files USING COVERING INDEX files_changed`, and step 2 is rowid lookups. The one-query form, the listing's WHERE with the cursor added, planned as `SEARCH f USING INDEX files_folder` then `USE TEMP B-TREE FOR ORDER BY`: the whole folder sorted for every page.
-  - **The watermark is the cursor.** A row changed after its page was read gets a later stamp, and the next page or delta reads it again. A row removed after it was read is logged with a change number above the cursor. So the client's state converges to the catalog's without a snapshot spanning the pages, and paging cannot be outrun by a running import. `BOUNDED_MEMORY_PLAN.md` 7.1 adds the converging read (D31) on top of this feed, for its exact snapshots; this phase does not need one.
-  - **The merge applies a page in change-number order**, log removals interleaved with changed rows. `files.id` is an `INTEGER PRIMARY KEY` without `AUTOINCREMENT`, so SQLite gives a new file the largest id again once that row is deleted. Removing first and then inserting by order leaves the new file; applying removals last would drop it.
-  - **`Reload`** is the answer for a cursor below `log_horizon`, another `view_epoch`, or more changed ids than the bound the client passes (a quarter of its row count). The consumer then does a full list.
-- **Shared ordering:** `compare_keys` is in `catalog/src/browse/read/grid.rs`, but `pg-client` may depend only on `pg-model` (`crate-layers.txt`). So it moves to `pg-model` beside `order_key` (`model/src/rules.rs`), with the sort-value type. The catalog and the client both use that one copy (no re-export; callers updated).
-- **App:** `Session::grid` delivers the list with its `Stamp`. `Session::grid_delta(listing, stamp)` has its own request kind, `Kind::GridDelta`. It must not cancel a full-list request; a full reload in flight supersedes it; a delta computed against an older generation is dropped.
+- **Deletes.** A removed file's row is gone, so no stamp on it can be read. The scan's removals delete `files` rows (`catalog/src/pair.rs:345, 434`); `remove_root` sets `files.missing = 1` instead (`catalog/src/roots.rs:58-70`), which *is* stamped (`files_source_changed`).
+- **Duplicate status.** A file's status depends on other files: a file that becomes a hash mate or a pair partner flips the status of its mates, which stamps nothing of theirs.
+- **Bulk rewrites.** `set_taken_zone`'s recompute, `set_import_version` and the version bumps rewrite many rows at once and stamp only what they touch, so they bump `view_epoch` instead (4.5).
 
-- **Today:** `Session::grid(folder, recursive, query, sort, deliver)` (`app/src/reader.rs`, request `Kind::Grid`) delivers a full `Vec<Entry>` from `browse::read::list_grid` to a callback; rows live in `Grid.entries` on the GUI thread (`client/src/grid.rs`) and `GalleryModel` exposes one Qt row per layout row (`desktop/src/gallery/`, split by M-12: `model.rs`, `items.rs`, `state.rs`, ...); `onImported` (`Main.qml`) -> `refreshGrid()` -> `shell.reloadList()` re-queries everything. During an import the row set is already complete from the scan; imported batches mostly *update* entries (aspect 1.0 -> real, cut, borders),
-  and for the 8 analysis-based sort keys (Taken, Megapixels, Width, Height, AspectRatio, Duration, Frames, Borders) rows also *move* (NULL sorts last).
-- **Client (`Grid`, interim until BOUNDED_MEMORY 7.7 removes `entries`, `position_of` and the full relayout):** keep a parallel `Vec` of sort values plus `order_key`, and an id -> index map (`position_of` is a linear scan today); `merge(delta)` does binary-search insert / remove-and-reinsert / in-place update with exactly `compare_keys` semantics (NULL last in both directions, ties by `order_key`, then id); selection, anchor and current remapped by file id
-  (as `selection_after` already does); while the viewer is open, merges are held like the full list is (`Grid.held`) or `viewing` is remapped by id. Any inconsistency (generation or count mismatch) falls back to the full reload.
-- **Layout/model:** `RowChange::between` (`client/src/layout.rs`) represents one contiguous changed range; a mid-list insert reflows every row after it, so a merge marks everything from the first changed row on as changed and adds/removes tail rows (`dataChanged`, `beginInsertRows`/`beginRemoveRows` are bridged). The justified layout is relaid whole per applied merge (O(n)); merges are coalesced/throttled (about once a second). Incremental layout is out of scope (noted as the 1M-row bottleneck).
-- **Events:** `Change` (`jobs/src/events.rs`) stays a payload-free `Copy` enum (the `Bus` drops the oldest events, so payloads would be lossy). `Imported` becomes a throttled per-flush **tick**; the consumer keeps its own `since` stamp and asks for the delta (lost ticks are harmless: the stamp is a watermark). The tick's source is Phase 5's per-flush callback (line 156). Until Phase 5 lands, the only `Imported` is the one after `pg_import::import` returns (`runner.rs`, Import pass; `import/src/lib.rs:32` has no hook), so tiles fill at pass end, not progressively. The pump already coalesces (`desktop/src/library.rs:41`: each kind is handled once per pass; the code does not say per event-loop turn).
-  `onImported` and `Scanned` both take the incremental path: a scan's new, moved and missing files are stamped, and its removed ones are logged. Today `Scanned` does a full `reloadAll()` (`Main.qml:127`), not only a folder-tree refresh. The full reload is for a `Reload` answer, a change of listing, and an inconsistency. `imports_done` keeps meaning "passes finished" (incremented at `runner.rs:347`, read in the status at `runner.rs:259`; no `Generation` reader was found); the tick gets a separate counter. Facet counts and the folder tree refresh on pass end and at a slower interval, not per merge.
-- Pitfalls to cover with tests:
-  - merge == full reload for **all 14 sort keys, both directions**, with filters that files enter and leave; ties; NULL keys;
-  - a file moved, renamed (Name, Extension and Created sorts) and removed (a root removed, a scan's removal), each seen by the delta with no full reload;
-  - a delta racing a scan, and a feed read with writes between its pages: after the writes stop, the next delta leaves the grid equal to a full list;
-  - the Duplicates and No-duplicates listings equal a full reload after each change of a mate: a hash mate imported, gone missing, back, removed and re-analyzed with another hash; a pair inserted and deleted; a partner gone missing; and in a group of two, three and many;
-  - a removed largest id given to a new file, within one page;
-  - a bulk rewrite run by another process's `prepare` while the grid is open answers `Reload`;
-  - `Reload` on a `since` below `log_horizon`, on another `view_epoch`, and over the size bound;
-  - the coverage test fails when a `grid_sql` column loses its trigger;
-  - selection and anchor stability when rows insert above; the viewer open; memory (+16-32 bytes per row for keys and the map).
+What the existing triggers already cover, verified: `files.changed` is stamped by `TO_2_CHANGE_STAMPS` (`schema.rs:55-66`) for size, mtime, rotation, kind and missing, and by its `analysis_cut_stamp` for the cut columns, so border results are already stamped. `files.seq` is not touched by border writes; it is the thumbnail-source stamp, and a border result does not change the thumbnail.
+
+### 4.2 Stamps and the change number
+
+- `meta.seq` is the global change number. `next_seq!()` is `UPDATE meta SET value = value + 1 WHERE key = 'seq'` and `seq!()` is `(SELECT value FROM meta WHERE key = 'seq')` (`crates/catalog/src/sql.rs:17-21, 63-67`). `files.changed` is `meta.seq` at a row's last user-visible change (`schema.rs:523-524`), indexed by `files_changed` (`schema.rs:543`). The triggers set `files.changed`, not `files.seq`.
+- A stamp is `Stamp { seq: i64, epoch: i64 }` (`Copy`): the change number and `view_epoch`, read in the same transaction as the data.
+
+### 4.3 Migration TO_11 (Phase 4's schema)
+
+`TO_11` is one const after `TO_10`, with one `MIGRATIONS` entry. Its statements, in order:
+
+```sql
+-- one row per removal: what a stamp cannot say. TRANSIENT (4.5): a rebuild does not carry it.
+CREATE TABLE files_log (seq INTEGER PRIMARY KEY, id INTEGER NOT NULL);
+CREATE TRIGGER files_removed AFTER DELETE ON files BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    INSERT INTO files_log (seq, id) VALUES ((SELECT value FROM meta WHERE key = 'seq'), old.id);
+END;
+
+-- renames and moves: the row stays, so a stamp is enough (the client finds the old place by id)
+CREATE TRIGGER files_renamed AFTER UPDATE OF folder_id, name, ext, created, order_key ON files
+WHEN old.folder_id IS NOT new.folder_id OR old.name IS NOT new.name OR old.ext IS NOT new.ext
+  OR old.created IS NOT new.created OR old.order_key IS NOT new.order_key
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = new.id;
+END;
+
+-- the import ledger on the upsert's UPDATE path. TO_9's analysis_import is AFTER INSERT only, so the upsert's
+-- conflict path did not reach it; analysis_import_rewritten (TO_8) would run first and hide the change, so it goes.
+DROP TRIGGER analysis_import_rewritten;
+CREATE TRIGGER analysis_import_changed AFTER UPDATE OF error, size, mtime, rotation ON analysis
+WHEN (new.error IS NOT NULL OR EXISTS (SELECT 1 FROM file_failures WHERE file_id = new.file_id AND pass = 'import'))
+ AND (old.error IS NOT new.error OR old.size IS NOT new.size OR old.mtime IS NOT new.mtime
+      OR old.rotation IS NOT new.rotation)
+BEGIN
+    DELETE FROM file_failures WHERE file_id = new.file_id AND pass = 'import'
+        AND (new.error IS NULL OR mtime IS NOT new.mtime OR size IS NOT new.size OR rotation IS NOT new.rotation);
+    INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)
+        SELECT new.file_id, 'import', new.mtime, new.size, new.rotation, new.error, 0, new.analyzed, f.missing
+        FROM files f WHERE new.error IS NOT NULL AND f.id = new.file_id
+        ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error
+        WHERE file_failures.error IS NOT excluded.error;
+END;
+
+-- a whole-row stamp for any analysis UPDATE. `analyzed` is left out, so a re-analysis that changes nothing stamps
+-- nothing (Decision 8). The columns are those the grid shows or sorts by, or that decide duplicate status.
+CREATE TRIGGER analysis_rewritten AFTER UPDATE ON analysis
+WHEN (old.version, old.size, old.mtime, old.rotation, old.kind, old.error, old.file_hash, old.pixel_hash, old.format,
+      old.orientation, old.width, old.height, old.pdq, old.pdq_quality, old.pdq_dihedral, old.thumbhash, old.frames,
+      old.taken, old.taken_utc, old.duration_ms, old.poster_ms, old.cut_left, old.cut_top, old.cut_right,
+      old.cut_bottom, old.borders_due, old.dups_state)
+    IS NOT (new.version, new.size, new.mtime, new.rotation, new.kind, new.error, new.file_hash, new.pixel_hash,
+      new.format, new.orientation, new.width, new.height, new.pdq, new.pdq_quality, new.pdq_dihedral, new.thumbhash,
+      new.frames, new.taken, new.taken_utc, new.duration_ms, new.poster_ms, new.cut_left, new.cut_top, new.cut_right,
+      new.cut_bottom, new.borders_due, new.dups_state)
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = new.file_id;
+END;
+
+-- the duplicate-status triggers (4.4)
+-- the meta keys: no log yet, so the horizon is the current change number (a client below it reloads)
+INSERT INTO meta (key, value) VALUES
+    ('log_horizon', (SELECT value FROM meta WHERE key = 'seq')), ('view_epoch', 0);
+```
+
+- The two meta keys are added to the expected schema through the migration: `SEEDS` (`schema.rs:373`) compares the keys that `expected()` produces by running the migrations (`schema.rs:439-449`), so no `SEEDS` edit is needed.
+- `files_log` is a catalog table, so `carried_is_every_table_of_the_current_schema` (`schema.rs:803-820`) requires it in `CARRIED` or `TRANSIENT` (`rebuild.rs:134, :158`), and in only one. It goes in `TRANSIENT`: a rebuild sets `log_horizon` to the current change number, so no carried log row could ever be read (4.5). (Rebuilds keep file ids, `rebuild.rs:160-161`, so renumbering is not the reason.)
+- The `analysis_rewritten` trigger's WHEN compares 27 columns on every analysis UPDATE. Its cost is measured in Phase 6 (OPEN c).
+
+### 4.4 Duplicate-status triggers
+
+A file's duplicate status changes when a mate or a partner changes. The triggers stamp the files whose status flips, whoever writes.
+
+- **Writes.** Every write to `analysis` is an upsert or an UPDATE, never `INSERT OR REPLACE`: `store_analysis` and `store_failure` are upserts, and the other writers (`store_hashes`, `store_pairs_done`, `store_skipped`) are UPDATEs. A REPLACE deletes the old row without firing a delete trigger, and the insert trigger sees only new values, so the replaced row's old hash would never be stamped. A test (or a `tools/` check) fails on any `INSERT OR REPLACE` into `analysis` or `pdq_pairs`. On a conflict the upsert fires the `UPDATE` triggers and not the `INSERT` ones; the bundled SQLite does so, and a test pins it (4.12). The `DELETE FROM pdq_pairs` that precedes a re-analysis fires `pdq_pairs_removed` for each pair.
+- **Hash mates.** A mate is another analysis row with the same hash, `error IS NULL`, on a present file (`df.missing = 0`), the same rule as `present_analysis!` (`query/src/lib.rs:65-69`). A file's status flips only when its number of other present mates goes between 0 and 1, so each probe asks "exactly one other present mate?" with `LIMIT 2`, and that one mate is stamped:
+
+```sql
+CREATE TRIGGER analysis_file_hash_added AFTER INSERT ON analysis
+WHEN new.error IS NULL AND new.file_hash IS NOT NULL
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = (
+        SELECT min(m.file_id) FROM (
+            SELECT d.file_id FROM analysis d JOIN files df ON df.id = d.file_id
+            WHERE d.file_hash = new.file_hash AND d.file_id <> new.file_id AND d.error IS NULL AND df.missing = 0
+            LIMIT 2) m
+        HAVING count(*) = 1);
+END;
+CREATE TRIGGER analysis_file_hash_removed AFTER DELETE ON analysis
+WHEN old.error IS NULL AND old.file_hash IS NOT NULL
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = (
+        SELECT min(m.file_id) FROM (
+            SELECT d.file_id FROM analysis d JOIN files df ON df.id = d.file_id
+            WHERE d.file_hash = old.file_hash AND d.file_id <> old.file_id AND d.error IS NULL AND df.missing = 0
+            LIMIT 2) m
+        HAVING count(*) = 1);
+END;
+CREATE TRIGGER analysis_file_hash_moved AFTER UPDATE OF file_hash, error ON analysis
+WHEN old.file_hash IS NOT new.file_hash OR (old.error IS NULL) IS NOT (new.error IS NULL)
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    -- the old group: its one remaining mate, if the row was in one
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE old.error IS NULL AND id = (
+        SELECT min(m.file_id) FROM (
+            SELECT d.file_id FROM analysis d JOIN files df ON df.id = d.file_id
+            WHERE d.file_hash = old.file_hash AND d.file_id <> old.file_id AND d.error IS NULL AND df.missing = 0
+            LIMIT 2) m
+        HAVING count(*) = 1);
+    -- the new group: its one mate, if the row joins one
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE new.error IS NULL AND id = (
+        SELECT min(m.file_id) FROM (
+            SELECT d.file_id FROM analysis d JOIN files df ON df.id = d.file_id
+            WHERE d.file_hash = new.file_hash AND d.file_id <> new.file_id AND d.error IS NULL AND df.missing = 0
+            LIMIT 2) m
+        HAVING count(*) = 1);
+END;
+```
+
+The three `pixel_hash` triggers (`analysis_pixel_hash_added`, `_removed`, `_moved`) are the same text with `pixel_hash` in place of `file_hash` in each probe and each WHEN. Those mates are the pixel group. `HAVING` without `GROUP BY` needs SQLite 3.39 or later; the bundled build is 3.54.1.
+
+- **Files going missing.** `files_source_changed` stamps the file itself (`schema.rs:728`). Its mates and partners also flip, so:
+
+```sql
+CREATE TRIGGER files_missing_dups AFTER UPDATE OF missing ON files
+WHEN old.missing IS NOT new.missing
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    -- the pair partners within GROUP_DISTANCE (over-stamping is harmless)
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id IN (
+        SELECT b FROM pdq_pairs WHERE a = new.id AND distance <= 22
+        UNION SELECT a FROM pdq_pairs WHERE b = new.id AND distance <= 22);
+    -- the file's own hash mates (the exactly-one-other rule, with the file's row as the source)
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = (
+        SELECT min(m.file_id) FROM (
+            SELECT d.file_id FROM analysis s JOIN analysis d ON d.file_hash = s.file_hash
+            JOIN files df ON df.id = d.file_id
+            WHERE s.file_id = new.id AND s.error IS NULL AND d.file_id <> new.id AND d.error IS NULL AND df.missing = 0
+            LIMIT 2) m
+        HAVING count(*) = 1);
+    -- the same probe on s.pixel_hash = d.pixel_hash (the pixel group)
+END;
+```
+
+- **Pairs.** `GROUP_DISTANCE` is 22 (`model/src/pdq.rs:12-16`), the same as `pair!` (`query/src/lib.rs:72-84`). `store_pdq_pair`'s upsert can take an existing pair from distance 23 to 31 (`MATCH_DISTANCE`) to 22 or less by an UPDATE, so the UPDATE needs its own trigger. The three pair triggers stamp both files of a pair within the group:
+
+```sql
+CREATE TRIGGER pdq_pairs_added AFTER INSERT ON pdq_pairs WHEN new.distance <= 22
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id IN (new.a, new.b);
+END;
+CREATE TRIGGER pdq_pairs_removed AFTER DELETE ON pdq_pairs WHEN old.distance <= 22
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id IN (old.a, old.b);
+END;
+CREATE TRIGGER pdq_pairs_moved AFTER UPDATE OF distance ON pdq_pairs
+WHEN (old.distance <= 22) IS NOT (new.distance <= 22)
+BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id IN (new.a, new.b);
+END;
+```
+
+- **Cascades.** Whether SQLite fires the child's DELETE triggers for `ON DELETE CASCADE` rows (the analysis row and the pairs under a removed `files` row) is **not settled** by the source (the foreign-key action trigger, `sqlite3.c:139058`, was not enough). The design does not rely on it. A Phase 4 test settles it: delete a `files` row that has an analysis row and pairs, and check the stamps (OPEN a). If the cascade does not fire the triggers, the removal path stamps the mates explicitly, before the delete.
+- At a billion files, `BOUNDED_MEMORY_PLAN.md` D27's `hash_runs` with `present_xor` replaces the probes, with the same rule: stamp on a 1 to 2 transition.
+
+### 4.5 `view_epoch`, `log_horizon`, rebuilds and pruning
+
+- `view_epoch` is bumped **in the rewrite's own transaction** by `set_taken_zone`, `set_import_version`, `set_borders_version` and `set_dups_version` (the last one gains the call in this phase), through `bump_view_epoch(tx)` (`UPDATE meta SET value = value + 1 WHERE key = 'view_epoch'`). `set_mark` errors on a missing key (`lifecycle.rs:98-112`), which is why TO_11 seeds it. `set_thumbs_version` (`lifecycle.rs:151`) rewrites no analysis rows, so it does not bump.
+- `log_horizon` is the lowest change number the log still covers. A rebuild sets it to the current `meta.seq`, so every client cursor is below it and gets `Reload`. `copy_tables` (`rebuild.rs:181-221`) copies meta's keys from the old file (`rebuild.rs:204-211`), so the two keys are set **after** the copy, in the same transaction, before the commit:
+
+```sql
+UPDATE main.meta SET value = value + 1 WHERE key = 'view_epoch';
+UPDATE main.meta SET value = (SELECT value FROM main.meta WHERE key = 'seq') WHERE key = 'log_horizon';
+```
+
+- **Pruning** runs at the end of each Scans pass and each CLI scan (`crates/catalog/src/log.rs`, new module). The constants: `LOG_PRUNE_ABOVE` = 1,000,000, `LOG_KEEP` = 512,000, `LOG_PRUNE_PAGE` = 10,000 (the hysteresis avoids pruning on every scan). The horizon moves first, so no delta reads a row being deleted:
+
+```sql
+SELECT count(*) FROM files_log;                                                   -- n; stop unless n > LOG_PRUNE_ABOVE
+SELECT seq FROM files_log ORDER BY seq LIMIT 1 OFFSET :n_minus_keep;             -- cut: the oldest seq to keep (n - LOG_KEEP)
+UPDATE meta SET value = :cut WHERE key = 'log_horizon';                           -- one write transaction, first
+DELETE FROM files_log WHERE seq IN (                                              -- one transaction per page, until a page deletes nothing
+    SELECT seq FROM files_log WHERE seq < :cut ORDER BY seq LIMIT :LOG_PRUNE_PAGE);
+```
+
+- Another process may prepare a catalog the app has open (`catalog/tests/other_process.rs`). Its bump is a rewrite, so it moves `view_epoch`, and an open grid's next delta answers `Reload`.
+
+### 4.6 Catalog reads
+
+- **Full list.** `list_grid` (`catalog/src/browse/read/grid.rs:115-153`) returns `(Vec<Placed>, Stamp)` (`Placed` is 4.7). The stamp is read in the list's own read transaction (WAL gives one consistent snapshot per transaction), so the rows and the stamp agree.
+- **Delta.** `Catalog::grid_delta(listing, since: Stamp, bound: usize) -> Result<Delta>`, in **one** read transaction. `DELTA_BOUND` = 8,192 (Chosen). The result is `Delta::Changes { stamp, upserts: Vec<Placed>, removed: Vec<FileId> }` or `Delta::Reload`:
+  1. If `since.epoch != view_epoch`, or `since.seq < log_horizon`: `Reload`. Read both from `meta`.
+  2. The changed ids, through the index `files_changed`: `SELECT id FROM files WHERE changed > :since ORDER BY changed LIMIT :bound + 1`. More than `bound` rows: `Reload`.
+  3. The removed ids: `SELECT id FROM files_log WHERE seq > :since LIMIT :bound + 1`. More than `bound` rows: `Reload`.
+  4. The listing for the changed ids. Their ids go into the temp table `temp.delta_ids` (`temp_store = MEMORY` is already set, `schema.rs:377-378`), and `grid_sql`'s WHERE gains `AND f.id IN (SELECT id FROM temp.delta_ids)`. The rows it returns are the **upserts**. A changed id that the listing no longer returns (a file moved out of the folder, or out of the filters) joins the removed ids. The temp table is emptied at the end of the transaction.
+  5. `Delta::Changes { stamp: Stamp { seq: <meta.seq read at the start>, epoch }, upserts, removed }`.
+
+  This is one transaction, not paged. The bound is the reason: a delta bigger than the bound is a `Reload`, so no page cursor, no convergence argument and no snapshot across pages is needed. The earlier design's paging with `(changed, id)` cursors is withdrawn. A change of listing (a filter, a sort, a folder) is a new list, so it asks for a full list, not a delta.
+- **Temp table, not `rarray`.** A `rarray` needs rusqlite's `array` feature, which `Cargo.toml:36` does not enable. The temp table needs no feature and no dependency.
+- **Planner.** The planned outcomes are: the changed-ids query `SEARCH files USING COVERING INDEX files_changed`, and the listing query on `delta_ids` by rowid. They are written for the bundled build, which is SQLite 3.54.1 (`libsqlite3-sys` 0.39.1, rusqlite 0.41.1 at rev `9d76035`, `Cargo.lock:1330-1332, 2329-2332`, patch at `Cargo.toml:133`). They are not run here; Phase 6 runs `EXPLAIN QUERY PLAN` on that build as a test (OPEN b).
+
+### 4.7 Shared ordering
+
+The grid's order is the SQL's order today, plus one rule the client must reproduce. `compare_keys` (`catalog/src/browse/read/grid.rs:85-96`) takes `rusqlite::types::Value`, and `pg-model` has no rusqlite, so the comparison moves to `pg-model` with its own value type. The key values are what `key_sql` (`crates/query/src/lib.rs:355-390`) computes: Text for Extension (`NULLIF(f.ext, '')`), and integers for the rest (Size, Modified, Taken, Created, Rating, Megapixels, Width, Height, the AspectRatio and Borders values in millionths, Duration, Frames). No key is a real number. The keys are raw, not coalesced, so a missing value is NULL.
+
+**The types** (in `pg-model`, `crates/model/src/rules.rs`, beside `order_key`, `:257`):
+
+```rust
+/// A row's sort key as the catalog computes it (`key_sql`). Null when the file has no value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SortValue { Null, Int(i64), Text(Box<str>) }
+
+/// One row of a sorted list: the entry, its sort key, and its `order_key` (the tie-break after the key).
+pub struct Placed { pub entry: Entry, pub key: SortValue, pub order: i64 }
+
+/// The list's order: the key (reversed when `descending`), then `order`, then the file id, the last two ascending in both
+/// directions. A Null key comes last in both directions. For Name, the key is the `order_key` itself.
+pub fn compare_placed(a: &Placed, b: &Placed, descending: bool) -> Ordering
+```
+
+`compare_placed` is the existing `compare_keys` logic (Null last, `Integer`/`Text` by value, reversed when descending), followed by the two ascending tie-breaks. The Grid compares an upsert with a row in the list by calling the same function on the row's key, `order` and id.
+
+- **The tie rule (one rule, Chosen).** Today keyed sorts tie in `order_key`, id ascending in both directions (`grid.rs:160, :166` ascend the ties of keyed sorts), but Name descending reverses `order_key` and `id` (`dir` at `grid.rs:160`, `ORDER BY f.order_key {dir}, f.id {dir}` at `:166`). The merge cannot reproduce that special case without a special case of its own. The fix is in `grid_sql`: the id is always ascending, so `ORDER BY f.order_key {dir}, f.id ASC` for Name, and `ORDER BY f.order_key ASC, f.id ASC` for keyed sorts (the keyed rows are then sorted in Rust by `compare_placed`, stably). The visible change is the order of files with the same `order_key` in Name descending, which is rare.
+- **Carrying the key.** `list_grid` selects the key (`key_sql`, the column after the entry columns, `SORT_COLUMN` at `grid.rs:35`) and `f.order_key`, and builds a `Placed` per row. For Name the key is `Int(order_key)`. Keyed lists are sorted in Rust with `compare_placed`, as now (`grid.rs:143`).
+- **Option B (Chosen): the sort position is carried beside each entry; `Entry` stays 56 bytes.** `Entry` is the row type the Qt model and every other reader use, and the sort position is needed only by the sorted list the merge maintains, so it is a separate field of the list row. Option A would put the keys into `Entry`, making it 80 bytes (96 with an `Option<i64>` for the order), and every reader would carry them. The bytes per list row are about the same either way: `Placed` is 88 bytes (`Entry` 56, `SortValue` 24, `order` 8). Estimated: 6 MB at 190,000 rows and 32 MB at a million, from the field sizes, unmeasured (Phase 6 records it).
+- **Entry's own fields** (`duration_ms` clamped to `NO_DURATION`, `width` and `height` coalesced to 0, `frames` as `animated`) are display values and are not sort keys. The key is always the SQL value, never the `Entry` field (`grid.rs:26-27, :63-65`).
+- The coverage of the sort values is the authorizer test (4.12): each `key_sql` column is read by the statement, and each is stamped.
+
+### 4.8 The app and the reader
+
+- `Kind::GridDelta` (`crates/app/src/reader.rs:40-50`, cite re-checked in Phase 4). `submit` keys requests by kind, so a delta never cancels the full list (a different kind), and a newer delta replaces a waiting one. That is correct, because the client holds the `since` of its last applied delta, and a replaced request still starts from it.
+- The generation: the client sends its grid generation with each request. The reader does not check generations (today's design); the client does (`client/src/grid.rs:282`). A delta with an old generation is dropped by the client, which then asks for a full list.
+- Delivery: a `Delta` or `Reload`, through the closure pattern of `model.rs:135-149` (cite re-checked in Phase 4).
+
+### 4.9 The client merge
+
+`Grid` (`crates/client/src/grid.rs:108-129`) keeps `entries: Vec<Entry>` (its `entries()` accessor is unchanged) and a parallel `positions: Vec<Position>` with `Position { key: SortValue, order: i64 }`. It gains an id index, `HashMap<FileId, usize>`, and it stores the stamp it last applied. `position_of` (`grid.rs:168`) becomes an index lookup. A `Placed` from the catalog is split into its entry and its position on arrival.
+
+`Grid::merge(delta)`:
+1. Sort the upserts by `compare_placed` (O(k log k)). Drop a removed id that is also upserted: an id removed and then reused (rowid reuse; `files.id` has no `AUTOINCREMENT`) appears in both lists, and the upsert is the live row.
+2. Find `p`, the first changed position: the smallest index of a removed id or an upserted id that is in the list (the id index, O(1) each), and, for each upsert, the position it sorts to (a binary search with `compare_placed` against the rows). Entries before `p` are unchanged and are not touched.
+3. From `p` on, drop the rows whose id is removed or upserted, then merge the rest with the sorted upserts by `compare_placed`, into new vectors, and splice them in place of the old suffix (`Vec::splice`, one memmove of the tail). Cost O(suffix + k).
+4. Rebuild the index from `p` on (O(suffix)).
+5. Relayout from the row that contains `p` (below).
+6. Remap the selection, the anchor and the current item by id (`selection_after`, `grid.rs:384`).
+
+**Incremental layout (decided by the user: in scope).** `justify_into` (`crates/client/src/layout.rs:24-36`) lays out the whole list on every call. The greedy layout (`greedy`, `:38-57`) is determined from a row's first item onward: a row closes when its items fill the width, and nothing before it matters. So a merge relays out only from the row that contains `p`:
+- Find that row by `partition_point` on the row starts (O(log rows)). Keep the rows before it.
+- Re-run the greedy from the row's first item over the new aspects, emitting rows.
+- Stop once the last changed item has been passed and a new row starts at an item where an old row started, shifted by the change in length so far. From there the old rows are the same except for their `first`: copy them with `first` shifted by that change (integer arithmetic only, no aspect reads, no fit arithmetic).
+- Splice the new rows in place of the old ones (`Vec::splice`).
+
+The cost is the changed rows, found in O(log rows), plus an integer pass over the rows below the change. Aspect reads and row fitting happen only for the changed rows. The view still moves every row below a changed row, because the rows stack vertically; that is inherent in the layout.
+
+The layout test in 4.12 checks that the incremental result equals `justify_into` on the new list, row for row. The Phase 6 bench measures a merge that changes one item near the top (the longest suffix) and one near the bottom (the shortest).
+
+**Why one range is enough.** The justified layout is greedy from the first row. A change at position p can change every row from p's row onward, and no row before it. So the changed rows are always a suffix of the row list, plus tail inserts and removals. `RowChange::between` (`layout.rs:174-184`, the `RowChange` at `:155`) already expresses one contiguous changed range, and it is sufficient.
+
+**The Qt side (OPEN).** The model must receive the merge's removals and insertions at their positions (`beginRemoveRows` and `beginInsertRows` for middle edits, not only at the tail), and a `dataChanged` for the rows whose frames changed. The gallery model's whole-list path (`gallery/model.rs:220-259`) is not verified for this. It is designed at Phase 4's first step, against that file (OPEN d).
+
+### 4.10 The viewer hold and the queue
+
+- While the viewer is open, the list is not shown, and a merge would move the viewer's item. Today `arrive` stores the whole list in `held` (`grid.rs:285-288`), overwriting any previous one.
+- Under this design a delta while viewing is **composed** into a `pending` delta, not overwritten: `compose(old, new)` gives upserts = `(old.upserts minus the ids in new.upserts or new.removed) ∪ new.upserts`, removed = `(old.removed minus the ids in new.upserts) ∪ new.removed`, stamp = `new.stamp`. On release, `pending` is applied with `merge`.
+- A full list arriving while viewing replaces `held` and clears `pending`.
+
+### 4.11 Events, coalescing and throttling
+
+- `Change` (`jobs/src/events.rs:128`) stays payload-free and `Copy`. `Imported` and `Scanned` are sent as today, and the desktop pump coalesces them per pass (`desktop/src/library.rs:41`, `pump.rs:33-62`).
+- Today `Main.qml` calls `reloadAll()` on `onScanned` (`:127`) and `refreshGrid()` on `onImported` (`:128`); `reloadAll` (`:255`) calls `refreshGrid` (`:257`). Phase 4 makes both ask for a delta, not a reload. The folder-tree refresh moves to `Change::Round` (Chosen), and `reloadAll` is split so the tree refresh is its own call. Facet counts and the tree refresh at the end of a round and at a slower interval, not per merge.
+- **One delta in flight.** The controller keeps at most one delta request outstanding. A signal that arrives while one is in flight sets `delta_due`; the delta's result sends the next request if `delta_due` is set.
+- **Throttle (Chosen).** Applied deltas are at least 1 s apart. The client's existing timers take it: a new `Timer::Delta` variant (`client/src/controller/deadlines.rs:10-19`, with `delay_ms` 1000) is armed when a delta is applied. A signal while it is armed sets `delta_due`; when the pause fires with `delta_due` set, the request goes out. The host's one timer and `Event::Timeout` (`controller.rs:137`, `:328`) already run the pauses, so there is no `Command::ArmDeltaTimer`, no `Event::DeltaDue` and no QML `Timer`. One method is added: `Deadlines::is_armed(timer)`. The throttle is trailing: the last change is always applied.
+- Phase 5 adds the per-flush tick from the import. Until then, the only `Imported` is the one after `pg_import::import` returns (the Import pass, `runner.rs:520-525`), so tiles fill at pass end, not progressively.
+
+### 4.12 Tests
+
+- **Merge equals reload**, for every sort key (`SortKey` has 14 variants, `model/src/query.rs:124`), in both directions, with random inserts, updates, removals and filter changes that files enter and leave; ties; NULL keys. A property test over random operation sequences.
+- **Composition equals sequential application**: composing two deltas and applying them equals applying each in turn.
+- A file moved, renamed (Name, Extension, Created and folder changes) and removed (a root removed by `remove_root`; a scan's removal), each seen by the delta with no full reload.
+- A delta racing a scan: after the writes stop, the next delta leaves the grid equal to a full list.
+- A removed largest id given to a new file, in one delta: the removal applies first, and the upsert wins.
+- The duplicates listings equal a full reload after each change of a mate: a hash mate imported, gone missing, back, removed, and re-analyzed with another hash; a pair inserted and deleted; a partner gone missing; groups of two, three and many.
+- A bulk rewrite by another process's `prepare` answers `Reload` (the epoch moved).
+- `Reload` for a `since` below `log_horizon`, on another `view_epoch`, and over the bound.
+- **Coverage test** (by behaviour, not by a hand list): each `grid_sql` variant (every sort key, both directions, every filter) is prepared under SQLite's authorizer (`sqlite3_set_authorizer`; rusqlite's `authorizer` is behind the `hooks` feature, which `Cargo.toml:36` enables). It reports every `(table, column)` the statement reads. For each column, the test changes it on a fixture row and checks that the row's `changed` advanced, a `files_log` row was written, or `view_epoch` moved. A column changed only by a bulk rewrite is listed with the rewrite that bumps the epoch. A trigger missing on a new column fails the test. It covers `dups_state` (4.4).
+- **Trigger behaviour pins**: the bundled SQLite fires `AFTER UPDATE` triggers on an upsert conflict (`ON CONFLICT DO UPDATE` is an UPDATE for triggers); a test pins it. A test fails on any `INSERT OR REPLACE` into `analysis` or `pdq_pairs`.
+- **Cascade** (OPEN a): delete a `files` row that has an analysis row and pairs; check the stamps of the mates and partners.
+- **Incremental layout equals full layout**: random inserts, removals and aspect changes, including edits at the first and last items, and runs that resync at once or never. The rows equal `justify_into` of the new list (exact `first`, `count` and `height`).
+- Selection and anchor stability when rows insert above; the viewer open; memory (the id index and the positions, 32 bytes per row for the positions, plus the index's entries, measured in Phase 6).
 
 ## Phase 5: first-import merge (one decode per new file)
 
-For files whose analysis is due, one decode feeds every enabled stage; the catch-up passes (Thumbs, Borders, Dups) stay separate and unchanged. (A unified catch-up worklist was rejected: an OR join scans every file each round, depends on a healthy cache and needs watermark rework.)
+For files whose analysis is due, one decode feeds every enabled stage. The catch-up passes (Thumbs, Borders, Dups) stay separate and unchanged. A unified catch-up worklist was rejected: an OR join scans every file each round, depends on a healthy cache and needs watermark rework.
 
-- **Decode choice** (F = full stored decode; T4 = `MinSize::Upright(0, 4*height)`, the thumbnail path's current decode at `render/src/maker.rs:127`, so not new): any of borders / dups on -> **1 F** (borders run on it as decoded, then `orient_into`, then hashes (Phase 3 `Analyzer::hashes` logic), ThumbHash, thumbnail via `Resizer::to_height` from F). Thumbnails only (borders and dups off) -> **1 T4** feeding ThumbHash and the thumbnail (so ThumbHash then depends on the mode and the grid height: open decision below). All off -> one reduced decode.
-  Accepted: modes that compute hashes now always use F, so dups-only and dups+thumbnails (borders off) cost more than before. Videos: the poster frame decoded for analysis also feeds the thumbnail (`Maker::encode_frame_into`), before `trim()` (`video()` is not reusable as written).
-- **Per-stage results:** the worker returns `analysis: Result<Analyzed>` (Err -> `store_failure`; the merged pass takes only analysis-due items), `borders: Skipped | Done(Option<Detection>) | Failed`, `thumb: Skipped | Done(Vec<u8>) | Failed`. Borders Failed (non-io) -> the catch-up's failure row (`file_failures`, `retry: false`) and `store_borders(None)`, as `borders/src/lib.rs` does; Skipped -> nothing (`store_analysis` leaves `borders_due` armed);
-  thumb Failed -> not stored, the Thumbs catch-up retries (panics are not retried). The detector runs in its own `panics::guard` (+ `AssertUnwindSafe`); after a caught panic reset the `Detector` with `Detector::trim`, which already rebuilds it to default (`analysis/src/borders.rs:63-67`); reuse it, do not add a second reset.
-- **Writes:** one catalog transaction holds `analysis_writer` and `borders_writer` (both borrow `&Tx`; drop before `commit`): `store_analysis` (resets borders/pairs; not yet traced), then `store_borders` only if it reports that it stored (today it returns `Result<()>`, `writers.rs:419`, so this needs a change), then `store_hashes` (Phase 3's new writer) and pair inserts. After the commit, thumbnails of accepted files go to `cache.put_batch(.., Some(height))` in 200-thumb batches; the `Source` comes from the `WorkItem` (mtime, rotation); the cache has no foreign key to the catalog.
-  A failed transaction drops its thumbnails (the Thumbs catch-up makes them); a crash between commit and `put_batch` loses only thumbnails.
-- **Cache failures never fail the import:** a new `ThumbCache::is_enabled()` (`store.is_some()`; no such method today); `put_batch` errors become a notice, not `?`; a `cache_full` flag stops workers producing thumbnails for the rest of the pass; `Notice::CacheFull` published; keep the failure list. The thumb stage runs only when the toggle is on and the cache is enabled. Read the grid height at each flush and drop thumbnails of a stale height.
-- **Encoder split:** `Maker` (fields today: `decoder`, `resizer`, `encoder: JpegEncoder`, `image`, `spare`, `small`, `file`) into an encoder half (`resizer`, `small`, `encoder`) and a decode half, so `encode_image` takes `&Rgb`; the on-demand path (`make_image`, `encode_frame_into`, and `app/src/images.rs` through the `Makers` pool in `app/src/makers.rs`) keeps working with no borrow conflict (the pattern `make_from_file` uses for `file`). The ingest worker holds one `Decoder`, one `Resizer`, one image + `spare`, and two keep limits, as today: the shared image keeps the analyzer's `KEEP_BYTES` (`analysis/src/analyze.rs:64`, 96 MB; it trims at `analyze.rs:155-161`), and the encoder keeps the maker's (`render/src/maker.rs:23`, ~18.9 MB; it trims at `maker.rs:161-167`). Merging them into one constant is a separate decision, since it changes how much is kept between files.
-  Redefine the `kept_buffers_give_what_new_ones_do` parity test (ingest thumbnails are not byte-equal to on-demand ones). The same file's thumbnail also differs by mode: from F (`Resizer::to_height` on the full image) with borders or dups on, from T4 with both off, so the cache can hold different pixels for one file (open decision below).
-- **Bounded decode (the user asked why; the cap lands in Phase 3, see there):** `decode_jpeg` has no size cap (only the non-JPEG `Codecs` path checks `max_decode_bytes`, 512 MiB; the zune-jpeg fallback reaches the same limit through `reserve`, `codecs/jpeg.rs:58`; the gap is the libjpeg-turbo path, `decode.rs:141-188`); a huge or hostile JPEG header makes `out.pixels.resize(scaled.width * scaled.height * 3)` (`codec/src/decode.rs:171`, the size after DCT scaling) fail and Rust **aborts the process** on allocation failure. The check must be made on that scaled allocation, not on the header size. The cap does not return an `Err` from `decode_jpeg`: `decode_stored_into` swallows it (`decode.rs:124`, `.ok()`), and the codecs fallback then fails the whole file. It takes the over-cap outcome below instead. The merge makes every new JPEG take a full decode, widening the exposure. Add the same 512 MiB check before any full JPEG decode; over the cap: the analysis comes from the
-  scaled decode, which stores no pixel hash and no PDQ (a second hash definition, line 65) and sets `dups_due = 0`, so the file is not re-hashed each round; its thumbnail comes from the T4 decode; its borders take the catch-up's failure path (a `file_failures` row with `retry: false` and `store_borders(None)`, `borders/src/lib.rs:70-100`). The Borders catch-up applies the same rule. The "No duplicates" listing must exclude these files (a test). (Default kept unless the user drops it.)
-- **Memory:** share one image buffer; `trim` keeps each buffer up to `KEEP_BYTES` (`analyze.rs:155-160`, `codec/src/pixels.rs:14-18`), so "free big buffers after each file" is not what happens. Steady state is about 72 MB per worker for upright-only libraries (about 0.86 GB at 12 workers), and up to about 144 MB once `spare` has held a rotated image (about 1.7 GB at 12 workers). Those figures assume Phase 3's full decode (today's `Sides` decode is smaller), and `pdq_in` and `small` are not sized; the validation phase reports peak RSS on an adversarial stratum. The line-170 target does not follow from the buffers: a 100 MP RGBA PNG holds about 400 MB in `out.pixels` (`codecs/convert.rs:26`, flattened in place), under the 512 MiB cap, so 12 workers on adjacent such files hold about 4.8 GB, above 4 GiB by arithmetic. Decide before Phase 6 (a per-stratum target, fewer workers on large files, or the lease). A decode lease in `pipeline.rs` is the contingency, not part of this phase.
-- **Priority:** the merged pass is `BelowNormal` including its thumbnail and border work (confirmed); catch-up passes keep theirs (Thumbs `Idle`, Borders/Dups `BelowNormal`). Record the change from Idle in `crates/README.md` and the `pg_thumbs` header; update `docs/temp/PLAN.md` (lines 81 and 191, the two places that say thumbnails are a background task after the import: new files' thumbnails now come from the import).
-  **The sink's priority is not BelowNormal today.** The sink (the catalog transactions, `store_analysis` through the pair inserts, and from Phase 5 `cache.put_batch`) runs on the calling thread of `pipeline::batched` (`pipeline.rs:205-211`), which is the job thread. That thread is spawned with no priority (`crates/jobs/src/service.rs:91`), so it runs at Normal. Only the reader and worker threads call `set_current_thread` (`pipeline.rs:131, 166`). Fix: the pass spawns its own sink thread at its own priority (BelowNormal for the merged pass), fed by a bounded channel, so the priority is set at spawn (Windows threads do not inherit it) and nothing is changed on the job thread. Tests: shutdown order (the sink drains after the readers stop) and back-pressure (a full channel slows the workers, not the reverse). Before it is built, two things are checked: whether the catalog uses WAL, since that decides whether a BelowNormal writer can block Normal readers; and the Import and Scans passes' current priorities, since moving them is a separate decision.
-- **Grid fill:** per-flush tick from `pg_import::import` (a callback), throttled; the incremental merge of Phase 4 consumes it.
-- **CLI:** `gallery import` takes `--no-borders`, `--no-duplicates` and an optional `--thumbs-height` (opens the cache like `gallery thumbs`); the `import` crate Cargo comment ("not on the thumbnails or the writes") is updated and it gains `pg-render`, `pg-thumbcache` (both on earlier lines of `crate-layers.txt`, so allowed: the `import:` line gains them in the same commit). Borders are stored through `tx.borders_writer()` (`pg-catalog`); the detector is `pg-analysis`'s, so no edge to `pg-borders`. `borders paths/--csv/--stdin` keep calling `Analyzer::borders` (`eval/imgload.py` uses `--stdin`).
-- **Costs known:** a stop loses only the in-flight results (tens of files: the channels are bounded by workers × 4 and the pool slots, `jobs/src/pipeline.rs:120-121`), since the kept batch (up to 500 files, `BATCH` in `import/src/lib.rs:18`) is flushed after the stop (`pipeline.rs:262-264`); the next round rebuilds `Pairer`; the one-time JPEG re-hash from Phase 3 is a full-decode Dups pass per existing library.
-Tests: borders from the merged path == `find_borders` on existing fixtures; upright dims per rotation; animated/tiny images get no borders but still analyze; video poster thumbnail; detector panic keeps analysis + thumbnail and resets the detector (the panic needs a `cfg(test)` injection inside `pg-analysis`: the existing one, `crates/borders/src/fault.rs`, is reachable only from pg-borders); catch-up-only io errors never replace a good analysis; **a new file is decoded once** (a call counter on `Decoder`, `cfg(test)`, per instance and not process-global, so the parallel toggle-combination tests do not share it; no counter exists today) and the catch-up passes then find nothing to do;
-cache disabled and full do not fail the import (`ThumbCache::disabled()` and a full cache both return `Ok(false)`, so neither reaches the `Err` path; the test also forces an `Err` from `put_batch`, through a read-only or locked cache file or a `cfg(test)` failing store, and asserts a notice, not an abort); all 8 toggle combinations.
-Benches written here (run in Phase 6): PNG, WebP, 12 MP JPEG inputs; per-file borders and merged-import benches (both new). They go in `pg-bench` (`crates/bench/benches/ir/`, which holds `catalog.rs`, `linux.rs` and `sample.jpg`): `tools/profiling/bench.py:95` runs only `cargo bench -p pg-bench --bench ir` on HEAD, so a bench in `import` would never run under `just perf`. `pg-bench` may depend on `pg-analysis` (`crate-layers.txt` line 37), so the per-file borders bench calls `Analyzer::borders` (`analysis/src/analyze.rs:135`). The merged-import bench calls `import`, so `bench` gains `import` as a dependency, and the two lines of `crate-layers.txt` swap in the same commit (`import` must come before `bench`, `tools/boundaries.py:107`).
+### 5.1 The decode policy and the thumbnail definitions (proposal: Decision 1)
+
+**Proposal, not decided.** Every analysis-due file gets **one full stored decode F**, whatever the toggles. The hashes, ThumbHash, borders and dimensions come from F, so they are the same in every mode. A decode choice that depended on the toggles would make ThumbHash depend on them, which the single-definition rule forbids.
+
+- Thumbnails at ingest come from F (`to_height` on the full upright image). Thumbnails from the Thumbs catch-up and from on-demand decodes still come from T4 (`MinSize::Upright(0, 4*height)`, `maker.rs:127`). This gives **two thumbnail definitions**. Thumbnails are display artifacts, and no stored value depends on them, so the difference is resampling only. The parity test is redefined to say so (5.7). The user keeps thumbnails as they are, so this needs the user's approval.
+- **Cost.** Today's import decodes DCT-scaled to 512x320 (`Analyzer::analyze_image`). The merged import decodes F, which is larger, for every new JPEG and PNG. With both toggles off, the import still decodes F, because ThumbHash needs it (ThumbHash is always stored). So an import with both toggles off is more expensive than today's import, and the saving comes from removing the other decodes. Phase 6 reports this regression and its size.
+
+### 5.2 The over-cap rule (proposal: Decision 2)
+
+**Proposal, not decided.** Lands in Phase 3 (3.2) with the first full decode; Phase 5 keeps it. A JPEG whose F allocation (`w * h * 3` from the header) exceeds `max_decode_bytes()` (512 MiB, `codecs/limits.rs:8`) is **not decoded at all**:
+
+- Metadata only: `Meta::read` gives the dimensions, the taken time, the orientation and so on, as for any file.
+- `analysis` is stored with `file_hash` (the bytes are hashed, from the read buffer), the dimensions and the metadata. `pixel_hash`, the PDQ hashes and ThumbHash are NULL. `dups_state = 'skipped'` (3.3).
+- Borders: a `file_failures` row with `pass = 'borders'`, `retry = 0` and the error text `too large to look at`, and `store_borders(None)`, so the borders state is terminal and the file is not retried.
+- Thumbnails: the Thumbs catch-up makes one from T4, which allocates only the small scaled size.
+- Read: the file is read whole, as the pipeline reads every file today (`pipeline.rs:282-297`). A streaming hash for over-cap files is not designed (OPEN e). The read buffer is held under the pool's lease (5.3).
+- `ImageFacts.pixels` (`crates/model/src/analysis.rs:93`) and `Analysis.thumbhash` (`:41`) become optional, because an over-cap row has no pixels and no ThumbHash. Their readers are not searched yet (OPEN f).
+
+This is a decision, not a fallback: an over-cap file has no stored analysis that depends on pixels, so no second definition exists. The earlier "scaled decode for the analysis" rule is withdrawn.
+
+### 5.3 The decode budget and the retained buffers
+
+The budget is built in Phase 3 (3.7) and used here by the merged pass: a worker reserves `w * h * 3` before its decode and releases it when the file's `process` ends.
+
+- Default **1.5 GiB** in use at once. A single file larger than the budget runs alone (nothing else is reserved), so the budget cannot deadlock. The 512 MiB cap (5.2) bounds that single file.
+- Without a budget, twelve workers on large files exceed the 4 GiB target by arithmetic (`convert.rs:26`: a 100 MP RGBA PNG holds about 400 MB in `out.pixels`). The fix is a budget, not a worker count.
+- **Retained buffers** are the other part of memory. The `image` buffer is kept between files up to `KEEP_BYTES` (96 MB, `analyze.rs:64`), so at most 12 x 96 MB = 1.15 GB is retained at steady state. `spare` is released after each file (it is only needed on rotation), and `pdq_in` (512 px) and `small` (100 px) are bounded by their sizes.
+- The peak working set is the in-use budget, plus the retained buffers, plus the grid and the sink: about 3.2 GB at the worst (an estimate). That meets the 4 GiB target by construction, and Phase 6 measures it.
+- **Read buffers** are not in the budget. They are bounded by the pool's lease (`pipeline.rs:282-297`). Whether the lease admits a file larger than its size alone, as the budget does, is OPEN (g).
+
+Tests: those of 3.7.
+
+### 5.4 The stages on a worker (fixed order)
+
+For each file, on one worker, in this order:
+
+1. **Read** the bytes whole (images) or stream (video), in the pool's lease (`pipeline.rs:282-297`).
+2. **Header and budget.** The header gives the dimensions (`Decoder::dimensions`, 3.2). Over the cap: the over-cap outcome (5.2), with no reservation and no decode. Otherwise reserve `w * h * 3` (3.7; `Stopped` if the reservation is refused, `Ingested::NotRun`).
+3. **Decode F** into `image` (`decode_stored_into`, `MinSize::Full`, the stored orientation). Video: the poster frame into `image` at display size (`analyze_video`, `analyze.rs:194-214`).
+4. **Borders** on the stored, unoriented pixels (`detector.detect`, `analyze.rs:141-152`), inside `panics::guard` with `AssertUnwindSafe`. A caught panic resets the detector with `Detector::trim`, which already rebuilds it to the default (`analysis/src/borders.rs:63-67`). Step 4 must come after this, because the borders are measured on the stored orientation (`analyze.rs:141-145`).
+5. **Orient** in place: `orient_into` (`decode.rs:197-203`), which swaps through `spare`, and `spare` is released.
+6. **Hashes** on the upright image: `analysis::hashes` (3.1: PDQ from `fit_within(img, 512)`, the pixel hash, the eight dihedral hashes), always, in every mode.
+7. **ThumbHash** from the upright image: `analysis::thumbhash` (fitted to 100). Always computed, because it is always stored.
+8. **Thumbnail** if the thumbnail feature is on and the cache is enabled: `to_height` from the upright image into the encoder half (5.7), producing the JPEG bytes.
+
+The outcome for the sink: `Outcome { index, analysis: Result<Analyzed>, borders: Stage<Option<Detection>>, dups: DupsState, thumb: Stage<Vec<u8>> }`, with `Stage<T> = Skipped | Done(T) | Failed(anyhow::Error)`. `Stage` lives in `pg-jobs` (`crates/jobs/src/stage.rs`, generic). `Outcome` and `Ingested` live in `crates/import/src/ingest.rs`, since they name `Analyzed`, `Detection` and the thumbnail bytes. `Ingested` is `Done(Outcome) | NotRun`. Rules:
+- A decode error gives `Skipped` to borders, to the thumbnail and to dups; the analysis error is the file's failure (`store_failure`, 3.5).
+- A video: borders `Skipped`; `dups` = `Nothing` (no pixel hash, `pdq_dihedral: None`, `analyze.rs:213`).
+- An over-cap JPEG: `analysis` is `Ok` with the NULL pixel fields, borders `Failed` (the terminal row), `dups` = `Skipped`, the thumbnail `Skipped`.
+- Dups for an analysed image: `Owed` when detection is off, `Done` when on (3.5), with the hashes from step 6.
+- The io read error: see 5.6 and Decision 3.
+
+### 5.5 The sink (a scoped thread that borrows the catalog)
+
+Today the sink (the catalog transactions and the cache writes) runs on the job thread, which has no priority (`crates/jobs/src/service.rs:91-94`). Only the readers and workers call `set_current_thread` (`pipeline.rs:131, 166`), so the sink runs at Normal. Import already runs at BelowNormal (`runner.rs:522`); the sink does not follow it. `pipeline::run` (`pipeline.rs:123`) uses `std::thread::scope`; the sink loop runs on the calling thread, after the readers and workers are spawned (`sink(...)?` at `:211`, the return at `:212`), and the final flush is at `:266-268`, after `run`.
+
+Design:
+- A trait, run on a scoped thread, with the batch rules inside it:
+
+```rust
+pub trait Sink<R>: Send {
+    /// One result, in completion order. `Ok(false)` stops the pass, with no `end`.
+    fn item(&mut self, index: usize, result: Result<R>, read: usize) -> Result<bool>;
+    /// Called when no result arrives for `tick_every()`: the chance to flush a batch held too long.
+    fn tick(&mut self) -> Result<bool> { Ok(true) }
+    fn tick_every(&self) -> Option<Duration> { None }
+    /// Once, when the results end (drained, or `ctl` stopped). Not after an error.
+    fn end(&mut self) -> Result<()> { Ok(()) }
+}
+```
+
+- `pipeline::run`'s scope spawns the sink thread **inside the existing scope**, with the sink closure and `&mut Catalog` borrowed into it (a scoped thread may borrow). The sink thread calls `priority::set_current_thread(opts.priority)` first, like the readers and workers. It loops on `res_rx` (`pipeline.rs:121`, `bounded(workers * 4)`) with `recv_timeout(tick_every)`: a result goes to `item`; a timeout goes to `tick`; a disconnect breaks the loop and runs `end()`, the final flush, on the sink thread. The job thread waits in the scope (joins the sink thread). Nothing else runs on the job thread during the pass.
+
+```rust
+let sink_thread = s.spawn(move || -> Result<Ended> {
+    priority::set_current_thread(opts.priority);
+    loop {
+        let next = match sink.tick_every() {
+            Some(every) => res_rx.recv_timeout(every),
+            None => res_rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        };
+        match next {
+            Ok(Outcome::Done { index, result, read }) => {
+                if !sink.item(index, result, read)? || ctl.stop_requested() { return Ok(Ended::Stopped); }
+            }
+            Ok(Outcome::SetupFailed(error)) => return Err(error.context("worker setup")),
+            Err(RecvTimeoutError::Timeout) => { if !sink.tick()? { return Ok(Ended::Stopped); } }
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    sink.end()?;
+    Ok(Ended::Drained)
+});
+```
+
+- **Stop.** `StopOnDrop` (`pipeline.rs:126, 301-309`) stops the readers, so the channels close. The sink drains the batch it holds (`end`) and returns. An early return from the sink (`false`, or an error) drops `res_rx`; the workers exit on their failed sends; the join returns; and `_stop` wakes the readers. No deadlock, and `end` runs before the producers are joined, since they never touch the catalog.
+- **Held batches.** `tick_every` closes the gap that `pipeline.rs:260` leaves: today `every` is checked only when a result arrives, so an idle pass never flushes a held batch on time.
+- **Send.** The sink thread needs `Sink: Send`, and therefore `Catalog: Send`. `Catalog` (`crates/catalog/src/core.rs:32-41`) shows no `Rc` or raw pointer, but this is not verified by a build. It is checked at the first build of Phase 5 (not run now). If it fails, the sink needs a second connection, and this section changes.
+- **Batches.** The import and the Dups pass use `Batch { size: 100, every: Some(Duration::from_millis(250)) }`. The import's batch is 500 today (`import/src/lib.rs:18`). The reason is the app's writers' 100 ms busy wait (`crates/app/src/inbox.rs:73`): a sink transaction must be short. Borders and Thumbs keep theirs.
+- **WAL.** The catalog is in WAL mode (`schema.rs:377`), so a BelowNormal writer does not block Normal readers. Writers are still serialised, so a BelowNormal sink holding the write lock can delay a Normal writer (a rating, a scan). The batch size and the busy timeout bound this. Phase 6 records the sink's lock-hold time (6.4).
+
+Tests: the sink drains after the readers stop; a full channel slows the workers, not the reverse; a stop during a batch writes the kept rows and nothing more; a held batch is written within about 250 ms with no further result.
+
+### 5.6 Writes per batch
+
+One transaction per batch, of at most 100 files or 250 ms of work (5.5). For each outcome, in arrival order:
+
+1. **Analysis.** `store_analysis(item, analyzed, dups)` (3.5): the upsert writes the analysis row, the `dups_state` and its hashes (`Done`, `Owed`, `Skipped` or `Nothing`), and NULLs `cut_*` explicitly. A failed analysis is `store_failure` instead (step 4).
+2. **Borders.** `Done(Some(d))` -> `store_borders(Some(d))`; `Done(None)` -> `store_borders(None)`; `Failed` non-io -> the `file_failures` row (`retry = false`) and `store_borders(None)`, as the Borders catch-up does (`borders/src/lib.rs:70-100`); `Skipped` -> nothing. An io read error is not a borders outcome here: it is the file's analysis error (below) under today's policy, or a file left due under the other option (Decision 3).
+3. **Pairs** (only when hashed and detection is on): `pair_and_insert` (the sink owns the Pairer), `store_pdq_pair` for each neighbour, then `store_pairs_done`. The pairs come after step 1, because step 1 deletes the file's pairs (`writers.rs:254, :306`).
+4. **Analysis error:** `store_failure` (the upsert of 3.5) instead of step 1; the file's `dups_state` becomes `'done'` (`Nothing`).
+
+Then the transaction commits. Then the thumbnails of the accepted files go to `cache.put_batch(&mut thumbs, Some(height))`, **once per flush**, with at most 100 entries (the flush's thumbnails). There is no 200-entry constant: `put_batch` takes a `Vec` of any length (`thumbcache/src/lib.rs:198-205`), and the 200 in the Thumbs pass is that pass's own `BATCH` (`thumbs/src/lib.rs:27`). The height is read at this flush (2.9): a thumbnail of a height the grid has left is dropped, not stored.
+
+A failed transaction drops the batch's thumbnails. The Thumbs catch-up makes them, because the analysis rows were not stored. A crash between the commit and `put_batch` loses only thumbnails. A `put_batch` error follows 5.8.
+
+**Decision 3 (io read error on import):** under the default, an io read error on the import is an analysis error row (`import/src/lib.rs:72-78`, today's behaviour), so step 4 applies and the file is not retried until it changes or `--retry-errors` is given. Under the other option, the import leaves the file due, and the next round retries it.
+
+### 5.7 Encoder split
+
+`Maker` (`crates/render/src/maker.rs:50-60`: `decoder`, `resizer`, `encoder: JpegEncoder`, `image`, `spare`, `small`, `file`) splits into:
+- an **encoder** half: `resizer`, `small`, `encoder`. `encode_image` takes the `&Rgb` image (today it takes `height` and `out`, `maker.rs:155`); and
+- a **decode** half: `decoder`, `image`, `spare`, `file`.
+
+The ingest worker holds one `Analyzer` (decoder, `image`, `spare`, hasher, detector, thumbhasher, meta) and one encoder half. The on-demand path (`make_image`, `encode_frame_into`, and `app/src/images.rs` through `Makers` in `makers.rs`) keeps its `Maker`. The two `KEEP_BYTES` stay as they are, one per half: the analyzer's trims `image` at 96 MB (`analyze.rs:64`), and the maker's trims at 18.9 MB (`maker.rs:23, :161-167`). Merging them changes what is kept between files, so it is a separate decision (Not planned).
+
+The test `kept_buffers_give_what_new_ones_do` (`maker.rs:209`) is redefined: ingest thumbnails come from F and on-demand ones from T4, so they are not byte-equal. The test asserts that each path is deterministic and that the stored analysis values are equal.
+
+### 5.8 Cache failures and notices
+
+Most of the cache-failure machinery exists:
+- `Notice::CacheFull { height, made }` (`model/src/notice.rs:379-382`) and the cache group of notices, `CacheNotStored` among them (`notice.rs:422-452`).
+- `ThumbStats.cache_full` (`thumbs/src/lib.rs:47`) is set when `put_batch` returns `Ok(false)` (`:290`), and the runner posts `Notice::CacheFull` (`runner.rs:563-564`).
+
+What is added:
+- `ThumbCache::is_enabled()` (`store.is_some()`, `thumbcache/src/lib.rs:74-76`). It does not exist today.
+- **`put_batch` returns `Err`** (a channel failure, a SQLite error, a writer panic): the rule of 2.9, which is in Phase 2. One `CacheNotStored` for the pass, production stops for the pass, and the round goes on. The merged pass does the same. That is new for the import, which writes no thumbnails today.
+- **`put_batch` returns `Ok(false)`** (full): `Notice::CacheFull` and the stop for the pass, as the Thumbs pass does.
+- **A disabled cache** (`ThumbCache::disabled()`, `lib.rs:115-117`): the thumbnail stage is `Skipped` for the pass, with no notice. Its `put_batch` returns `Ok(false)` (`lib.rs:199-201`), so the `Err` path needs a read-only or locked cache file, or a `cfg(test)` failing store, to be reached in a test.
+- **Height.** The thumbnails of a flush are for the grid height read at that flush (5.6). The merged pass is not stopped by a height change (2.9).
+- The callers of `ThumbCache::put` (`thumbcache/src/lib.rs:188-192`, fire-and-forget) are not searched yet (OPEN f).
+
+### 5.9 Video
+
+The poster frame is decoded once for analysis into `image` (`analyze.rs:197-198`), and it is the thumbnail source too (`Maker::encode_frame_into`, `maker.rs:148`). ThumbHash comes from it. There is no PDQ and no pixel hash for video (`pdq_dihedral: None`, `analyze.rs:213`), so a video's `dups_state` is `'done'` with no hash (`Nothing`). The Thumbs catch-up still decodes the poster again (`thumbs/src/lib.rs:320`, cite re-checked in Phase 5) for files that do not have a thumbnail. That is the catch-up's path, and it stays.
+
+### 5.10 Priority table (after this phase)
+
+| Work | Priority | Thread |
+|---|---|---|
+| Crops | BelowNormal (`runner.rs:430`) | readers and workers, and the sink |
+| Scans | Normal (`runner.rs:464`, no pipeline) | job thread |
+| Import (merged pass) | BelowNormal (`runner.rs:522`, today), and its ingest thumbnails at BelowNormal (the user's decision) | readers and workers, and the sink (the sink is new in this phase) |
+| Borders | BelowNormal (`runner.rs:536`) | readers and workers, and the sink |
+| Thumbs (catch-up) | Idle (`runner.rs:561`) | readers and workers, and the sink |
+| Dups | BelowNormal (Phase 3) | readers and workers, and the sink |
+| UI and render threads | AboveNormal on Windows (Phase 2) | GUI, render |
+
+The earlier open question, "the Import and Scans passes' current priorities", is answered by this table: Import is already BelowNormal, and Scans is Normal. Moving Scans is not part of this plan.
+
+### 5.11 The CLI and the import options
+
+`gallery import` takes `--no-borders` and `--no-duplicates` (they set the features, 2.1 and 3.9) and `--thumbs-height N` (it sets the grid height for the ingest thumbnails and turns that stage on; without it the thumbnail stage is off, since the cache has no height). `gallery borders` and `gallery thumbs` stay explicit commands and ignore the toggles (`cli/src/args.rs:86, :102`).
+
+`Command::Import` (`cli/src/args.rs:74-84`) gains three fields after `again`. Clap derives the long names from the field names:
+
+```rust
+/// Find no borders (the Borders toggle off): none are stored, and none are looked for after the import.
+#[arg(long)]
+no_borders: bool,
+/// Find no duplicates (the Duplicates toggle off): no hash pairing and no PDQ pairs.
+#[arg(long)]
+no_duplicates: bool,
+/// Make the thumbnails at this grid height in the same decode (the cache's heights, 16 to 2048). Without it no
+/// thumbnail is made and the thumbnail stage is skipped, since the cache has no height.
+#[arg(long, value_name = "PX", value_parser = thumb_height)]
+thumbs_height: Option<ThumbHeight>,
+```
+
+The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, duplicates: !no_duplicates, thumbnails: thumbs_height.is_some() };` and the options carry the height: `ImportOptions { features, thumb_height: thumbs_height, .. }`. `Features` stays bool-only (2.1), and the height is a separate value of the import options. The import takes `import(catalog, &opts, retry_errors, ctl)`, with the features and the height inside the options. That resolves the mismatch between the earlier sketch and the features type. `ThumbHeight` is already imported (`args.rs:7`).
+
+- The doc comment of `fn thumb_height` (`args.rs:137`, its body at `:138-141`) names `--cap-gb`; that text belongs to `fn cap_gb` (`:143-146`). It is fixed in the same commit.
+- The `import` crate's `Cargo.toml` comment (`crates/import/Cargo.toml:10`, "not on the thumbnails or the writes") is updated. The crate gains `pg-render`, `pg-thumbcache` and `pg-trace`, which are on earlier lines of `crate-layers.txt` (5.13), so the edges are allowed.
+- The `cli.ftl` help lines for the three flags (Phase 5).
+
+### 5.12 Tests
+
+- Borders from the merged path equal `find_borders` on the existing fixtures.
+- Upright dimensions per rotation (EXIF orientation 1 to 8).
+- Animated and tiny images get no borders but still analyze.
+- The video poster thumbnail and ThumbHash come from one decode.
+- **The stored analysis values are identical in all eight toggle combinations** (the single-definition test). The border columns (`cut_*`, `borders_due`) are compared only where both catalogs ran borders. The thumbnails are not compared (they are display artifacts).
+- **A new file is decoded once.** A call counter on `Decoder`, `cfg(test)`, per instance, not process-global, so parallel tests do not share it (no counter exists today). The catch-up passes then find nothing to do.
+- Over-cap: a synthetic JPEG header above the cap makes zero decode calls, and the row is `'skipped'` with the borders failure row.
+- A detector panic keeps the analysis and the thumbnail, and resets the detector. The panic needs a `cfg(test)` injection point inside `pg-analysis`; the existing one (`crates/borders/src/fault.rs`) is reachable only from `pg-borders`.
+- Catch-up-only io errors never replace a good analysis.
+- The decode budget (3.7).
+- The sink (5.5): the drain order, the back-pressure, the stop, and the held batch.
+- A cache that is disabled, or full, does not fail the import; a `put_batch` `Err` posts `CacheNotStored` and the round continues.
+
+### 5.13 Benches (written here, run in Phase 6)
+
+Inputs: a PNG, a WebP and a 12 MP JPEG. The phase creates them (`make_bench_jpeg.py` gains `--format {jpeg,webp}` and `--size WxH`, seed 20261105); they are not assumed to exist. The `ir` harness folder holds `ir.rs` (the root: `include!("ir/linux.rs")` on Linux), `ir/linux.rs` (the per-file and viewer groups; `main!` at `:107`), `ir/catalog.rs` (`LAYOUT` at `:40`; the groups at `:235` and `:277`) and `ir/sample.jpg`.
+
+The benches go in `pg-bench`, which runs only through `cargo bench -p pg-bench --bench ir` (`tools/profiling/bench.py:95`). A bench in `import` would never run under `just perf`. They are added to the `ir` harness through `include!`, as `catalog.rs` is (`linux.rs:105`):
+- `per_file` gains `borders_jpeg` (the group at `linux.rs:102` becomes `benchmarks = [analyze_jpeg, thumb_jpeg, borders_jpeg]`). It calls `Analyzer::borders` (`analysis/src/analyze.rs:135`) on `ir/sample.jpg`.
+- `ir/decode.rs` (new): group `decode`, with `decode_png` (the input made in setup by `pg_testkit::png_rgb`), `decode_webp` (`ir/sample.webp`, committed) and `decode_jpeg_12mp` (read in setup from the bench data; not committed).
+- `ir/import.rs` (new): group `import`, with `import_merged` (id `small`): runs `pg_import::import` on a 50-file folder from the bench data into a fresh catalog copy made in setup. The budget key is `import-merged` (folder `import_merged.small`, `perf-compare.py:30-35`); it is added only with the bench (Phase 6).
+- `ir/grid.rs` (new, Phase 4): group `grid`, with `grid_merge_1m_top` and `grid_merge_1m_bottom`: a synthetic 1M-row list and a change at the top or the bottom, calling `Grid::merge`.
+- Registration: `main!(library_benchmark_groups = per_file, viewer, catalog, scan, decode, import, grid);` (`linux.rs:107`; `grid` from Phase 4).
+
+**Crate layers.** `pg-bench` gains `pg-import` as a dependency (`crates/bench/Cargo.toml`, `[dependencies]`, after `pg-codec`). A dependency must point to an earlier line of `tools/crate-layers.txt` (`boundaries.py:106-108`), so `bench` moves below `import`, and the lines change in the same commit (5.13 below):
+
+```
+import: analysis catalog dedup jobs model platform render thumbcache trace
+bench: analysis catalog codec import jobs model render scan thumbcache
+```
+
+**Crate layers, all of the Phase 5 edits** (`tools/crate-layers.txt`; `trace` stays at L28 and must sit above every line that gains it):
+
+```
+scan: catalog jobs model platform
+thumbcache: dbfile jobs model platform trace
+borders: analysis catalog jobs model platform
+import: analysis catalog dedup jobs model platform render thumbcache trace
+bench: analysis catalog codec import jobs model render scan thumbcache
+thumbs: catalog jobs model platform render thumbcache
+writeback: catalog edit exiftool jobs metadata model platform thumbcache
+crop: catalog edit exiftool jobs model platform
+cli: analysis borders catalog client codec dedup import jobs library model platform scan thumbcache thumbs trace writeback
+```
+
+`writeback` and `crop` are unchanged, and `thumbcache` gains `trace` (for the metrics of 6.4). Check: no cycle. `render`, `thumbcache`, `trace` and `dedup` do not depend on `import` or `bench`. `pg-duplicates` needs no edge (the Dups pass is a module of `pg-import`, 3.7).
+
+Committed inputs: the WebP is committed (small). The 12 MP JPEG is generated into the bench data and not committed (3 to 4 MB per file in git). That is a proposal (OPEN h).
 
 ## Phase 6: validation (the only validation in the plan)
 
-1. Build natively in PowerShell with `QT_DIR` on PATH (no WSL); then the Linux pass in the `pg-dev` container (the Linux nice mapping in `priority.rs` runs there, so `priority` is not a no-op off Windows). Fix compile errors and test failures in a closing commit. Run all new and existing tests; `just lint` (includes `tools/boundaries.py`: layers, dev-edge cycles, re-exports, platform cfg; and `unreachable_pub`); `just modgraph` (module cycles, now in CI).
-2. Bump the bench data's `LAYOUT` (`crates/bench/benches/ir/catalog.rs:40`, `v7-windows-rules`, while the schema is at version 9; the bench's comment at `catalog.rs:35` and `tools/profiling/bench_data.py:8` say it is bumped on each schema change), build a source catalog with the new build (a gallery `scan`, `import` and `thumbs` on a synthetic library, the steps `bench_data.py:14-23` lists for the `-large` layout), then copy it with `bench_data.py` (`VACUUM INTO`, `bench_data.py:154-159`). Record the planned import-path increase in `docs/perf/budgets.json` (`--budgets`; `--update` refuses to combine with it, `tools/perf_check.py:1-12`), and run `just perf --update` (callgrind baseline) only after the closing commit, since `bench.py` benches HEAD. Then check the new benches.
-3. Pairing parity: **before** any new build opens the `dups2` set (5,937 files, `IMPORT.md` "M1 import"), copy it, and capture the old build's hashes and pairs from the copy with the pre-change build (the commit before Phase 3). The new build's first open NULLs the JPEG hashes (line 72), so no old side exists afterwards. Pass criterion: every difference is a JPEG with denom > 1 (the expected change, line 68); any other difference fails the step. The same copy step applies to the manual "open an existing catalog" check (line 177).
-4. **Synthetic strata** (`tools/profiling/make_bench_jpeg.py` writes one non-progressive JPEG to one path, with no size, EXIF or PNG options, and `bench_data.py` copies an existing catalog and writes no rows; most strata need a new script): PNG; 1080p and 4K JPEG; 24 MP camera JPEG with EXIF rotation; progressive JPEG; small images; 12 adjacent 100+ MP PNGs (peak-RSS stratum); mixed with a >= 5,000-file sample of `D:\wallhaven\downloads` on a copy with a separate `PG_CATALOG_DIR` (never the real catalog).
-   Measure externally (PowerShell `TotalProcessorTime`, `PeakWorkingSet64` polling, sqlite3 polling of `analysis` row counts; throw-away `Instant` instrumentation around the sink flush/`put_batch`, not committed) at 12 workers: per-pass CPU and files/s today (`gallery import / borders / thumbs --workers 12`, `crates/analysis/examples/stage_times.rs`) vs the merged pass, per stratum and per toggle combination.
-   Targets (reported, not gates): merged CPU <= 0.85x the sum of today's passes on PNG and 4K JPEG; time until the grid shows 1000 rows (the client's count, not the sqlite `analysis` count, which can reach 1000 while the grid is still empty before Phase 5's tick) <= 2x today's import; peak RSS <= 4 GiB on the adversarial stratum; sink time share < 10%. Regressing modes are listed with their size.
-5. Manual: add `D:\wallhaven\downloads` to a fresh catalog: tiles fill progressively without whole-list reloads (no scroll jump, selection kept), thumbnails exist afterwards, scrolling stays light with the UI thread raised; toggle each checkbox off/on (counts appear and clear, persist across restart); with a feature off, every dependent control stays enabled and shows the popup on click without acting (border chips, review combo, crop button (also with the feature on and nothing croppable: "nothing to crop" popup), "By border depth" sort entry with the selection reverting, B and N keys in grid and viewer, the duplicates combo, a saved view with a border sort, Inbox Retry on the thumbnails row, which needs a corrupt JPEG in the test library imported with thumbnails on, since only an undecodable file writes that row, `thumbs/src/lib.rs:117-123, 152`), and the popup appears above the viewer too;
-   open an existing catalog: library stays visible, JPEG re-hash runs once, duplicates results are complete afterwards.
+1. **Build and lint.** Build natively in PowerShell with `QT_DIR` on PATH (no WSL). Then the Linux pass in the `pg-dev` container (the Linux nice mapping in `priority.rs` runs there). Fix compile errors and test failures in a closing commit. Run all new and existing tests; `just lint` (`tools/boundaries.py`: layers, dev-edge cycles, re-exports, platform cfg; and `unreachable_pub`); `just modgraph` (module cycles, now in CI). The first build of Phase 5 also checks `Catalog: Send` (5.5).
+
+2. **Benches and the callgrind baseline.**
+   - Bump the bench data's `LAYOUT` (`crates/bench/benches/ir/catalog.rs:40`, `v7-windows-rules`) when the schema changes, as its comment (`:35`) and `tools/profiling/bench_data.py:7-9` require. The schema is at version 9 today (`schema.rs:35-45`: the baseline plus eight migrations); it is at 10 after TO_10 (Phase 3) and 11 after TO_11 (Phase 4). The bump is made at the commit that changes the schema.
+   - Build a source catalog with the new build: a gallery `scan`, `import` and `thumbs` on a synthetic library (`make_strata.py`, 6.1). `bench_data.py` copies an existing catalog (`VACUUM INTO`, `bench_data.py:155`) and seeds `file_failures` rows (the ledger option, `bench_data.py:139-142`, default 0 except for a `-large` layout). It writes no image files, so the new layout needs a source catalog made from real images first.
+   - Record the planned import-path increase in `docs/perf/budgets.json` (`--budgets`). `--update` refuses to combine with `--budgets` (`tools/perf-compare.py:92-93`; `perf_check.py` only documents it, `:12-13`). Run `just perf --update` only after the closing commit, since `bench.py` benches HEAD.
+   - Check the new benches: the per-file borders bench, the merged-import bench, the decode bench, and the grid merge at 1M rows (`crates/bench/benches/ir/grid.rs`).
+   - Time the mate probes and the pair-deletes of the version bump against `busy_timeout` (OPEN c), and `EXPLAIN QUERY PLAN` on the delta's queries (4.6, OPEN b).
+
+3. **Pairing parity and goldens.** Before any new build opens the `dups2` set (5,937 files, `IMPORT.md` "M1 import"), copy it. From a **worktree at the commit before Phase 3** (the pre-change build), capture the old build's hashes, ThumbHash and pairs from the copy, and the four golden fixtures of 3.11. The new build's first open runs the version bump (3.4), so the old side must be captured first. Use `tools/profiling/pairs_dump.py` (6.5) on both sides. Pass criterion: every difference is a JPEG with denom > 1 (the expected change); any other difference fails the step. The golden literals of 3.11 are written into the Phase 3 tests in the closing commit: PNG, WebP and denom-1 JPEG equal the old build; the denom-2 JPEG takes its new value from the new build. The same copy step applies to the manual "open an existing catalog" check (step 5).
+
+4. **Synthetic strata and the measurements.**
+   - **Strata** (6.1): PNG; WebP; 1080p and 4K JPEG; a 24 MP camera JPEG with EXIF orientation 6; a progressive JPEG; small images (100x100 and 16x16); an animated GIF; a corrupt JPEG (the inbox fixture); a JPEG above the 512 MiB cap; 12 adjacent 100+ MP PNGs (the peak-RSS stratum); and a 5,000-file-or-more sample of `D:\wallhaven\downloads` on a copy, with a separate `PG_CATALOG_DIR` (never the real catalog). The disk for the over-cap file and the 12 PNGs is several GB (OPEN i).
+   - **Measurements** (6.4): process CPU and working set at 12 workers (`gallery import / borders / thumbs --workers 12`, `crates/analysis/examples/stage_times.rs`), per stratum and per toggle combination, compared with today's passes. The regression of 5.1 (both toggles off) is measured here.
+   - The first open of an upgraded catalog: the time of the JPEG re-decode (3.4), reported.
+   - Targets are reported, not gates (step 7).
+
+5. **Manual** (on `D:\wallhaven\downloads` in a fresh catalog). Tiles fill progressively without whole-list reloads (no scroll jump, selection kept); thumbnails exist afterwards; scrolling stays light with the UI thread raised. Toggle each checkbox off and on: counts appear and clear, and persist across restart. With a feature off, every control in the table of 2.6 stays enabled and pops up on click without acting, and the popup appears above the viewer too. Open an existing catalog: the library stays visible, the JPEG re-hash runs once, and the duplicates results are complete afterwards. The Inbox Retry check needs a corrupt JPEG in the test library, imported with thumbnails on: only an undecodable file writes that row (`thumbs/src/lib.rs:117-123, 152`).
+
+6. **Tools.** Each of the following is new and committed in the phase that needs it, with a short header comment; none is throw-away. Exit codes: 0 ok; 1 failed (measured or compared); 2 usage or missing argument; 3 input unreadable or wrong shape.
+
+   6.1 **`tools/profiling/make_strata.py`.** Python, with Pillow and numpy pinned in `tools/profiling/requirements.txt` (the file does not exist yet; the pins are OPEN j). Deterministic: a fixed seed, and content of smooth gradients plus seeded noise, so PDQ has something to hash. `python tools/profiling/make_strata.py OUT [--strata NAME,...] [--seed 20261105]`. Writes one directory per stratum and a `manifest.json` per directory with each file's SHA-256, dimensions, format, EXIF orientation, progressive flag and frame count. Strata: `png`, `webp`, `jpeg_1080p`, `jpeg_4k`, `jpeg_24mp_orient6`, `jpeg_progressive`, `small_100`, `small_16`, `gif_animated`, `jpeg_corrupt` (the scan data truncated), `jpeg_over_cap` (an SOI marker then zeros to 512 MiB + 1 byte), `png_100mp_adjacent`. It replaces `make_bench_jpeg.py` for the strata, which writes one non-progressive JPEG with no options (`make_bench_jpeg.py:57`). The >= 5,000-file copy of `D:\wallhaven\downloads` is a copy step, not synthetic.
+
+   6.2 **`tools/profiling/measure_pass.ps1`.** PowerShell, using only `Get-Process`. `pwsh tools/profiling/measure_pass.ps1 -Csv <path> [-IntervalSec 1] -- <exe> <args...>`. It starts the command with `Start-Process -PassThru -NoNewWindow`, then samples `Get-Process -Id <pid>` every interval until the process exits (a sample that fails because the process ended is dropped). CSV columns: `t_s,cpu_s,cpu_pct,working_set_mib,peak_working_set_mib`, where `cpu_s` is `TotalProcessorTime.TotalSeconds`, `cpu_pct` is the delta of `cpu_s` over the delta of `t_s`, divided by `[Environment]::ProcessorCount`, times 100, and `peak_working_set_mib` is `PeakWorkingSet64`. Exit code: the child's, or 2 for a missing `-Csv` or no command.
+
+   6.3 **`tools/profiling/poll_catalog.py`.** Python standard library. `python tools/profiling/poll_catalog.py CATALOG_DIR --csv <path> [--target 1000] [--interval 1.0] [--timeout 3600]`. It opens `file:<dir>/catalog.sqlite?mode=ro` (a URI; WAL allows it). Every interval it runs `SELECT (SELECT count(*) FROM analysis), (SELECT count(*) FROM files)`. CSV columns: `t_s,analysis_rows,files_rows`. It stops at `--target` analysis rows or at `--timeout`, and prints `reached <target> analysis rows at <t> s`. The count is `analysis`, not the grid; the grid time is `grid_1000` (6.4). Exit: 0 target reached; 3 timeout first, or the catalog unreadable.
+
+   6.4 **Env-gated metrics** (`PG_METRICS=<path>`). A new module `crates/trace/src/metrics.rs` (trace depends only on platform, and it already holds the env-gated diagnostics). The app (`desktop/src/lib.rs`, next to the `PG_TRACE` install at `trace.rs:25`) and the CLI call `pg_trace::metrics::open(path)` once. If the file cannot be opened, there is a stderr warning, metrics stay off, and there is no error. Unset: each emit is one branch (`OUT.get()` is `None`). Import and thumbcache get `trace` in 5.13. The grid metrics are emitted from desktop, because `client` is below `trace` in the layers file (`client` at L12, `trace` at L28), so `client` cannot depend on it.
+
+```rust
+static OUT: OnceLock<Mutex<File>> = OnceLock::new();
+
+/// Opens the metrics file for append, once per process. False, and nothing is written, when it cannot be opened.
+pub fn open(path: &Path) -> bool {
+    OpenOptions::new().create(true).append(true).open(path).is_ok_and(|f| OUT.set(Mutex::new(f)).is_ok())
+}
+
+/// One JSON line: the time since process start, the event name, and `fields` (already formatted, no braces).
+pub fn emit(event: &str, fields: std::fmt::Arguments<'_>) {
+    let Some(out) = OUT.get() else { return };
+    let line = format!("{{\"t_ms\":{:.3},\"ev\":\"{event}\",{fields}}}\n", pg_platform::clock::process_age_ms());
+    let mut file = out.lock().unwrap_or_else(PoisonError::into_inner);
+    let _ = file.write_all(line.as_bytes()); // one write per line: File is unbuffered
+}
+```
+
+Event schema (one JSON object per line; field values are numbers or one of the fixed strings listed):
+
+| ev | fields | where emitted |
+|---|---|---|
+| `sink_flush` | `files` (uint, files in the batch), `dur_ms` (float, the whole flush), `lock_ms` (float, BEGIN IMMEDIATE to COMMIT), `result` ("ok" or "err") | the merged pass's sink (5.5, 5.6) |
+| `put_batch` | `n` (uint, entries), `dur_ms` (float), `result` ("ok", "not_stored" or "err") | thumbcache's `put_batch` |
+| `grid_merge` | `rows` (uint, rows after the merge), `changed` (uint, items changed), `dur_ms` (float) | the grid merge's caller (desktop, Phase 4) |
+| `grid_1000` | `rows` (uint, the client's count, always >= 1000) | desktop, once per process, at the first count >= 1000 |
+
+Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"lock_ms":3.210,"result":"ok"}` and `{"t_ms":1240.001,"ev":"grid_1000","rows":1000}`. `result` is on `sink_flush` and `put_batch` so an error shows in the measurements. `grid_1000` is once per process, since the plan's metric is the time to the first 1,000 rows.
+
+   6.5 **`tools/profiling/pairs_dump.py`.** Python standard library. `python tools/profiling/pairs_dump.py CATALOG_DIR [-o OUT]` (stdout by default), opened read-only (`mode=ro`). The file key is `path_hex + "/" + name_hex`, both from the BLOBs (`folders.path`, `files.name`), hex in Python and not SQL `||` on BLOBs, which would mangle non-UTF-8 bytes. It is keyed by path, not `files.id`, so two catalogs of the same library compare. Lines, sorted, tab-separated, for `diff`:
+   - `A <key> <pixel_hash|-> <pdq|-> <pdq_dihedral|-> <thumbhash|->` from `analysis` (hex of the BLOBs, `-` for NULL). Rows with `error IS NOT NULL` are included, with their `error` as the last field.
+   - `P <key_a> <key_b> <distance> <variant>` from `pdq_pairs` (`a < b` by id, re-sorted by key so the order is stable).
+
+   Exit: 0 ok; 3 the catalog is unreadable or has no `analysis` table. It also prints `PRAGMA user_version` to stderr.
+
+   6.6 **`tools/profiling/check_stored.py`.** Python standard library. `python tools/profiling/check_stored.py CATALOG_A CATALOG_B [--max-report 20]`. It compares the stored values of two catalogs built with different toggle combinations (the single-definition test of 5.12, run on the real library as well as the fixtures). Keys as in 6.5; a file present on one side only is a difference. Compared: the analysis columns except `file_id`, `analyzed` (the analysis time, which differs per run) and `dups_state` (a toggle state, not a stored value); the hash columns and ThumbHash in every case; the border columns (`cut_*`, `borders_due`) only where both catalogs ran borders; `pdq_pairs` by (key_a, key_b) only where both catalogs ran duplicates; `border_sides` by (key, pass, edge) with its other columns. Not compared: thumbnails (the cache file), and `files` state columns (`pending`, `seq`, `changed`), which are not stored values of a decode. Output: `DIFF <table> <key> <column> <a> <b>` for the first `--max-report` differences, then `<n> files compared, <m> values differ`. Exit: 0 all equal; 1 any difference; 3 unreadable catalog.
+
+7. **Targets** (reported, not gates; the report records each target's result and the measured value):
+   - Merged CPU <= 0.85x the sum of today's passes on PNG and 4K JPEG.
+   - Time until the grid shows 1,000 rows <= 2x today's import.
+   - Peak working set <= 4 GiB on the adversarial stratum.
+   - Sink time share < 10%.
+   - The sink's transaction lock-hold p95 < 100 ms (the app's busy timeout, 5.5).
+   - Regressing modes are listed with their size: the import with both toggles off (5.1), and the first open of an upgraded catalog (3.4).
+   - The 1M-row grid merge, worst case (a change at the top) and best case (at the bottom): reported against 100 ms, not a gate.
 
 ## Not planned
 
-Thumbnail tiers (undecided). Lowering the tile pool's priority (declined). Mid-decode cancellation, in the merged pass and in tile jobs (declined, line 14). A unified catch-up worklist (rejected). A decode lease in the pipeline (contingency only if Phase 6 shows RSS over target).
+- Thumbnail tiers (undecided, and the user's decision). Lowering the tile pool's priority (declined). Mid-decode cancellation, in the merged pass and in tile jobs (declined). A unified catch-up worklist (rejected). A decode lease in the pipeline (a contingency, if Phase 6 shows the budget of 5.3 is not enough). Merging the two `KEEP_BYTES` (5.7).
+- Over-cap PNG and TIFF keep their decoder cap errors (5.2 applies to JPEG only).
+- **Separate issue, not in this plan:** `crates/app/src/images.rs:213-219` calls `read_file` and `make_from_file` in two separate `Makers::with_maker` calls, so the pool may hand the second call a different `Maker`, whose `file` buffer does not hold the file just read. The viewer path (`images.rs:311-313`) does both in one closure. This is unconfirmed; a test would show it. It is tracked separately, not fixed by this plan.
+
+## Migrations
+
+| Version | Phase | Adds |
+|---|---|---|
+| `TO_10` | 3 | `analysis.dups_state` (three values, 3.3), `analysis_dups_due`, `meta.dups_version = 1` |
+| `TO_11` | 4 | `files_log` (TRANSIENT, 4.3), `files_removed`, `files_renamed`, `analysis_import_changed` (replacing `analysis_import_rewritten`, which is dropped), `analysis_rewritten`, the hash-mate and pair triggers (4.4), `meta.log_horizon`, `meta.view_epoch` |
+
+Each migration's test compares `expected()` with a fresh schema (`schema.rs:851-865`). The two migrations land in the two phases, so an old build reads a catalog one version ahead as a rebuild (the README note, 3.3).
+
+## Strings added, in one place
+
+- `ui.ftl` (Phase 2): `ui-borders-disabled`, `ui-thumbnails-disabled`, `ui-nothing-to-crop`, `ui-no-border-here`, `ui-start-option-disabled`, `ui-feature-borders`, `ui-feature-thumbnails`, `ui-detect-borders-count`, `ui-pregenerate-thumbnails`.
+- `ui.ftl` (Phase 3): `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplicates`, `ui-detect-duplicates-count`, `ui-detect-duplicates`.
+- `text.ftl` (Phase 3): `pass-dups`.
+- `cli.ftl` (Phase 5): the `--no-borders`, `--no-duplicates` and `--thumbs-height` help lines.
+- No `Notice` variant is added. `CacheFull` and `CacheNotStored` exist (5.8).
 
 ## Assumptions to flag
 
-The JPEG size cap and per-phase commits are confirmed. Today the crop button is disabled when nothing is croppable (`FilterBar.qml:254`); Phase 2 removes that gate, so the crop button is never left disabled: with the feature on and nothing croppable it shows a "nothing to crop in this view" popup (confirmed). Estimates (CPU ratios, in-flight loss, sink share) are unmeasured until Phase 6.
+- The 512 MiB JPEG cap was confirmed by the user. The rule's shape (5.2) is a proposal (Decision 2).
+- Per-phase commits are the user's stated process.
+- The crop button is never left disabled: with the borders feature on and nothing croppable, it shows `ui-nothing-to-crop` (2.6, Decision 5).
+- Every estimate (CPU ratios, the sink's share, the lock-hold time, the 1M-row merge, the memory of `Placed`, the hash cost) is unmeasured until Phase 6.
+- The SQLite build is the bundled 3.54.1 (`libsqlite3-sys` 0.39.1; rusqlite rev `9d76035`, `Cargo.lock:1330-1332`). The planner outcomes (4.6) are written for it and are not run.
+- `format = 'jpeg'` is verified (3.4).
+- The grid's key is the SQL value, and the sort position is carried beside each entry (4.7).
+- The first open of an upgraded catalog re-decodes every JPEG once (3.4, Decision 12).
 
-## Open for the user
+## Chosen for review
 
-Decisions the critic findings raise. The plan's text does not settle them, and the code cannot either.
+The choices the code forced, with one line of reason each. Each can be overridden. The previous revision's list of 18 proposals is folded in: 1 and 2 are Decision 1, 3 is Decision 2, 17 is Decision 4, and 18 is decided by the user; the others appear below as numbered choices.
 
-- **ThumbHash input (line 143).** Thumbs-only mode feeds ThumbHash from T4, which depends on the grid height, so the stored value depends on the mode and height. Options: (a) thumbs-only also decodes F for ThumbHash (more cost on JPEGs with denom > 1); (b) ThumbHash comes from a fixed decode that does not depend on height. Line 11's "unchanged" promise holds for denom-1 JPEGs and non-JPEGs either way.
-- **Thumbnail pixels per mode (line 150).** The same file's cached thumbnail depends on borders and dups: F with either on, T4 with both off. Options: one decode for every mode (F), or accept it and redefine the parity test.
-- **Thumbs starvation (line 41).** A height change restarts the round, and each height's full Thumbs pass gates Borders and Dups. Options: run Borders before Thumbs for catch-up files only (this reverses line 14's confirmed order), or let a height change not restart the round.
-- **Peak RSS target (line 170).** 12 workers on 100 MP PNGs exceed 4 GiB by arithmetic (line 154). Options: a per-stratum target, fewer workers on large files, or the decode lease.
-- **Layout cost (line 125).** Each throttled merge relays the whole justified layout (O(n)). At a million rows that is the bottleneck line 15 was written to avoid. Options: accept it until 7.7, or merge less often as the row count grows.
-- **Crate name (line 74).** `pg-dups` sits beside `pg-dedup` (`crates/dedup`, layers line 14), which import already uses. Keep the name or choose another.
+1. **Sort carrier: `Placed` beside `Entry` (Option B); `Entry` stays 56 bytes.** `Entry` is the row type every reader uses, and the sort position is needed only by the sorted list. Option A costs 80 bytes (96 with an `Option<i64>`) on every `Entry`.
+2. **The Dups pass is a module of `pg-import` (`import::duplicates`).** It shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs; no new crate, layer line or lock change.
+3. **Hashes are always computed (in every mode); the duplicates toggle gates the pairing.** It keeps the single-definition rule for the stored hashes and ThumbHash; the saving is the pairing work, not the hashing (Decision 11).
+4. **`dups_state`: `'due'` means the pairs are owed (the hashes may already be stored), and `'skipped'` means not checked, never retried** (over the cap, or a Dups decode error). A boolean cannot say both.
+5. **`analysis_rewritten` compares the whole row, 27 columns, not `analyzed`.** The REPLACE stamped every write; this stamps what the grid shows or sorts by, and a no-change re-analysis stops stamping (Decision 8).
+6. **`DELTA_BOUND` = 8,192 changed rows per delta.** A delta is one transaction and the client merge is O(suffix); above the bound a full list is cheaper and bounds the memory. A value to check in Phase 6 against the delta timing.
+7. **The Thumbs height stop: a `still_wanted` closure, checked at each flush; the pass returns `Done`.** `pg_thumbs::run` takes one `Control`, and a closure adds the second stop source without a new API.
+8. **Goldens are captured in Phase 6 from a worktree at the commit before Phase 3.** The Process rule forbids a build between phases.
+9. **`FeatureCell` lives in `pg_library`, beside `HeightCell`.** The job's `Inner` and `Cx` need it, and `app` depends on `library`.
+10. **The gate sits at the desktop boundary** (`shell.rs` `key_pressed`, `start_state`, `apply_view`, and the viewer keys in QML). `keys::grid` and `keys::viewer` stay pure, and the prefs are the one source; there is no `Event::FeaturesChanged`.
+11. **`Need` lives in `pg-model`, beside `Features`.** The model is the bottom layer, and library, app and client all name the types.
+12. **`FeatureCounts` (not `Counts`) carried by a `CountsCell` and a payload-free `Change::Counts`; the Qt side is a qproperty.** `ledger::Counts` already exists, and the pump already pushes state into qproperties on the Qt thread.
+13. **The LibraryPanel grows to 560 px with no ScrollView.** A ScrollView over the whole pane hides the Close button.
+14. **The sort combo reverts to `shell.sortIndex()`.** The `TopBar` alias is the box's own index, so reverting to it changes nothing.
+15. **Linux `AboveNormal` is a no-op.** Setting nice 0 resets a thread that an earlier call lowered.
+16. **`ON DELETE CASCADE` stamping is a Phase 4 test, not a stated fact.** The source does not settle it.
+17. **One tie rule: ties ascend by `order_key`, then id, in both directions** (the Name-descending reversal of `grid.rs:160, :166` goes). The merge must reproduce the SQL order, and one rule has no special case. A visible change only for files that share an `order_key`.
+18. **NULL keys last in both directions, as `compare_keys` does today.** The keys are raw SQL values, not coalesced; the `Entry` fields are display values and are not sort keys.
+19. **The over-cap check uses the codec's reservation figure (`w * h * 3` for JPEG).** It is the figure the decoder reserves, so the cap means one thing. PNG and TIFF keep their decoder cap errors.
+20. **The over-cap file is read whole, not streamed.** A streaming read mode is not designed; the read is bounded by the pool's lease (OPEN g).
+21. **The budget is released at the end of `process`, first come first served, one per pass run, shared by the import and the Dups pass.** `Outcome` holds no pixels, so holding the budget through the channel only lowers parallelism; FIFO grants keep a large file from starving.
+22. **Batches of 100 files or 250 ms for the import and the Dups pass; `tick_every` flushes a held batch.** The lock hold stays under the app's 100 ms busy wait, and an idle pass flushes on time.
+23. **One `put_batch` per flush, at most 100 entries; no 200 constant.** The constant does not exist; a call per flush keeps the transactions few.
+24. **The Scans folder-tree refresh moves to `Change::Round`.** A tree refresh per round is bounded; a refresh per scan is not.
+25. **A Dups decode failure sets `'skipped'` and writes a ledger row; it does not call `store_failure`.** `store_failure` would erase the analysis of a file that imported fine.
+26. **A Dups io read error leaves the file due.** It is the Borders catch-up's behaviour today; the import's policy is Decision 3.
+27. **`store_borders` returns `Result<bool>`.** The sink must know whether the row changed under it.
+28. **The DUPS bump resets ThumbHash too, and the Dups pass recomputes hash and ThumbHash from the same F decode.** Without it a row keeps the old ThumbHash, and the single-definition rule fails after the bump.
+29. **The pairs-only phase reads no file;** its pairs come from the stored PDQ hashes.
+30. **The CLI carries the thumbnail height in the import options; `Features` stays bool-only.** One type per concern: a toggle is a bool, the height is a size.
+31. **`store_analysis` becomes the upsert in Phase 3, not Phase 4.** It writes `dups_state`, which Phase 3 adds; Phase 3 fires no stamping triggers, so the upsert is safe there.
+32. **The throttle uses the client's existing `Timer` enum: `Timer::Delta` armed on apply, plus `Deadlines::is_armed`.** No `Command`, no `Event`, no QML `Timer` (the host's one timer already runs the pauses).
+33. **The Dups pass runs last in the round (`Crops, Scans, Import, Thumbs, Borders, Dups`).** Thumbs now yields, so Dups is reached every round, and the user's order keeps Thumbs before Borders.
+34. **Over-cap PNG and TIFF are not `'skipped'`.** Their decoder caps already fail the file as an analysis error, as today; widening the rule is OPEN (Not planned).
+35. **The popup is non-modal with `CloseOnPressOutside` and a 4 s timer** (2.5). A blocked control's own handler does the gating, so a press that passes through cannot act on it.
+36. **The combos revert with `currentIndex = Qt.binding(...)`.** A JavaScript assignment removes a QML binding, so the binding must be restored by hand.
 
-Decisions made in this fold, to review: N on a file without border data pops up while the feature is on (line 53); switching a feature off clears its facets and sort (line 55); the idle due-count re-check runs every 60 s (Phase 3); Phase 3 adds no triggers and Phase 4 adds them (line 74); `files_log` is `TRANSIENT` and a rebuild resets `log_horizon` (Phase 4); the Borders columns get stamps in Phase 4 (line 95).
+## OPEN (not settled by this revision)
+
+Each item says where it is settled.
+
+- **a. ON DELETE CASCADE triggers** (4.4): settled by the Phase 4 test (4.12).
+- **b. The planner outcomes** (4.6): `EXPLAIN QUERY PLAN` on the bundled build, in Phase 6.
+- **c. The cost of the `analysis_rewritten` WHEN and the mate probes**, and of the version bump's pair deletes (3.4, 4.3): timed in Phase 6 against `busy_timeout`.
+- **d. The Qt-side edit script for middle inserts** (4.9): the gallery model is not verified here; designed at Phase 4's first step against `gallery/model.rs:220-259`.
+- **e. A streaming hash for over-cap files** (5.2): not designed; the file is read whole.
+- **f. The readers of `ImageFacts.pixels` and `Analysis.thumbhash`**, which become optional for over-cap rows (5.2), and the callers of `ThumbCache::put` (5.8): not searched; done in Phase 5.
+- **g. The pool's read lease** (5.3): whether it admits a file larger than its size alone.
+- **h. The 12 MP JPEG and the committed WebP** (5.13): confirm (a 12 MP JPEG could come from the `jpeg_4k` stratum scaled up).
+- **i. Disk for the over-cap file and the 12 PNGs** (6.1): several GB; whether NTFS keeps the over-cap file sparse is not settled (writing zeros makes it full size).
+- **j. The Pillow and numpy pins** (6.1): `tools/profiling/requirements.txt` does not exist; pin the versions the build runs.
+- **k. The popup press-through** (2.5): the outside press on a non-modal popup; read `qquickpopup.cpp`'s outside-press handling at build.
+- **l. The combo binding restore** (2.6): tested at build; verified by reading only.
+- **m. The Inbox Retry pass code** (2.6): `selectedPass` must be the `FilePass::Thumbs` code (`notice.rs:281`); confirm at `InboxPanel.qml:64-69`.
+- **n. The started handler and the gated list** (2.7): the handler name at `shell_bridge.rs:69` and the accessor for `Start.gated`; confirm when implementing.
+- **o. The grid's border flag** (Decision 5): the grid entries carry no border flag; the grid's no-border check needs data.
+- **p. The `Versions` and call-site counts** (3.3, 3.9): counted at the start of Phase 3.
+- **q. The `thumbs/lib.rs:320` and `maker.rs:155` cites** (5.7, 5.9): re-checked at the start of Phase 5.
+- **r. `reader.rs:40-50` and `model.rs:135-149`** (4.8): re-checked at the start of Phase 4.
+- **s. `Catalog: Send`** (5.5): checked at the first build of Phase 5. If it fails, the sink needs a second connection.
+- **t. The runtime thread of `sceneGraphInitialized`** in each configuration (2.10): a Phase 6 manual check.
+- **u. The `check_stored` REAL comparisons** (6.6): confirm that stored REAL values are bit-identical.
+- **v. The `files.name` and `folders.path` BLOB encoding** (6.5): the dumps use hex, so they are exact either way; a readable form would need `PathRules`.
+- **w. The Dups-pass ledger code**: the `file_failures` `pass` column is not constrained by a `CHECK` that the grep found; confirmed when the code lands (3.7).
+
+## Decisions needed (user)
+
+The user's decisions are in "Decisions (all given by the user)" above. The items below are proposals, each needing the user's answer. Each has the question, the options, and the recommendation. Items 1 to 4 and 6 to 12 change what the user will see or what the stated rules say; 5 is a gap the user's popup rule does not cover.
+
+0. **Still undecided, not part of this plan:** thumbnail tiers (the user's decision; the design does not depend on them).
+
+1. **The decode policy F and the two thumbnail definitions (5.1).** Question: may every new file get one full stored decode, with ingest thumbnails from that decode and the Thumbs catch-up and on-demand tiles from T4?
+   - (a) Accept as written. Recommended: it is the only way to decode once, since the hashes and ThumbHash need F, and the thumbnails differ only by resampling.
+   - (b) Keep T4 for the ingest thumbnails, which decodes twice per import.
+   - (c) Make every thumbnail from F, so on-demand tiles decode at full size and scrolling slows.
+   - Consequence to accept: the import is more expensive than today's scaled decode, in every mode. With both toggles off it still decodes F, because ThumbHash needs it. Phase 6 reports the size.
+
+2. **The over-cap rule (5.2).** Question: should a JPEG whose F allocation exceeds 512 MiB be metadata only, with no hashes, no ThumbHash and no borders, and `'skipped'`?
+   - (a) Accept as written. Recommended: an over-cap file has no pixel-dependent stored value, so no second definition exists.
+   - (b) Decode it at a scaled size for the analysis. The withdrawn rule; it gives those files a second definition.
+
+3. **The io read error policy (3.7, 5.6).** Question: when the import's read fails with an io error, is the file an analysis error row, or left due?
+   - (a) Analysis error row, as the import does today (`import/src/lib.rs:72-78`); the Borders and Dups catch-ups leave the file due, as Borders does today. Recommended: a permanently unreadable file is not retried every round; `--retry-errors` or a change of the file retries it.
+   - (b) Leave it due on the import too. A permanently unreadable file is then retried every round, with no end.
+
+4. **Partial application or popup-and-skip for saved views and start options (2.6, 2.7), and clearing on switch-off.** Question: when a view or a start option needs a disabled feature, does it apply the rest (with one popup), or apply nothing and pop up?
+   - (a) Partial: drop the disabled facets and sort, apply the rest, and show one popup (the plan's current text).
+   - (b) Popup and skip: nothing is applied, and the popup says so. This is the rule's literal reading, "instead of performing its action".
+   - Recommendation: (b) for applying a saved view from the menu, since it is a control's action; (a) for start options, since a start has no click, and a start that dropped its whole query would be worse. Also keep the clearing of a feature's facets and sort when the feature is switched off (2.6): the alternative leaves a filter that the user cannot clear behind a blocked control.
+
+5. **The two extra popups (2.6), which the user's popup rule does not cover.** Question: which of these show a popup?
+   - Grid N on a file with no detected border (feature on). The grid's entries carry no border flag (OPEN o), so the check needs a data change. Options: no popup (N acts as today), or add the flag to the grid entries.
+   - Viewer N on a file with no border (feature on). The viewer has the flag. Options: popup `ui-no-border-here`, or do nothing.
+   - Crop with nothing to crop (feature on). Options: popup `ui-nothing-to-crop`, or do nothing.
+   - Recommendation: keep the viewer popup and the crop popup, since a click that does nothing is otherwise unexplained. For the grid, no popup until the data exists.
+
+6. **The Duplicates combo's gate phase.** Question: gate the Duplicates combo in Phase 2 or in Phase 3?
+   - Phase 2: the facet is live today (`Query.duplicates`, `query.rs:245`), so this blocks a working filter before there is a toggle to turn it back on.
+   - Phase 3, with the Duplicates toggle. Recommended.
+
+7. **The viewer N key's guard.** Question: remove the `if shown.has_borders` guard in `keys.rs:138`?
+   - (a) Keep it: N does nothing on a file without borders, with no popup.
+   - (b) Remove it: N always reaches the QML handler, which decides between the disabled popup, the no-border popup and the mark. Recommended. The `keys.rs` test at `:303-305` changes to expect `MarkBorder` for a still.
+
+8. **A no-change re-analysis no longer stamps the grid (4.3).** Today the REPLACE stamps the file on every re-analysis, so the tile refreshes even when nothing changed. Question: accept that a re-analysis that changes nothing does not refresh the grid's tile?
+   - (a) Accept. Recommended: "changed" then means something the grid shows changed (4.3).
+   - (b) Keep the stamp on every analysis write (a whole-row stamp on every UPDATE), which the trigger design does not do.
+
+9. **The popup and feature strings (2.11).** Question: approve the English strings? In particular `ui-start-option-disabled` ("Left out, because { $text } is off") joins several feature names with a comma.
+   - Recommended: approve as written, or give the wording.
+
+10. **The `--borders` start option (`controller.rs:113`).** Question: is the show-borders start option gated?
+    - (a) Ungated. Recommended: it shows the stored borders, which stay and stay shown when the feature is off. This is the reading of "stored results stay and stay shown".
+    - (b) Gated, with a popup and no action when the feature is off.
+
+11. **The hash policy when duplicate detection is off (3.1, 3.6, Chosen 3).** Question: compute the duplicate hashes at import in every mode, or only when detection is on?
+    - (a) Always compute. Recommended: the stored hashes and ThumbHash are then identical in every toggle combination, which is the single-definition rule as written. The cost is the PDQ fit and the pixel hash per new file (estimated small beside the decode; measured in Phase 6). The toggle then saves the pairing work and its memory.
+    - (b) Gate the hashing with the toggle. It saves that cost with the toggle off, but the stored hashes are then absent in one toggle state, and the check (5.12, 6.6) compares only where both sides hold a value.
+
+12. **Consequence to accept (not a choice):** the first open of an upgraded catalog re-decodes every JPEG once, in the Dups pass, whatever the duplicate toggle says, because the redefinition is unconditional (3.4). Question: accept the one-time cost? Recommended: accept; Phase 6 times it, and the Dups pass can be run in the background at BelowNormal.
+
+Note (not a decision): `Catalog` must be `Send` for the scoped sink thread (5.5). This is checked at the first build of Phase 5 (not run now). If it fails, the sink needs a second connection, and Section 5.5 changes.

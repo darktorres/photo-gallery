@@ -74,7 +74,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
  && cd /opt/pg && rustup show
 
 # The tools the Justfile pins (just, cargo-deny, cargo-machete) and the module-graph tool of the cycle check (tools/modgraph,
-# docs/MODULARITY_PLAN.md M-0). Installed with the default toolchain, as CI's install step does for just.
+# the modularity plan (git e428ab2) M-0). Installed with the default toolchain, as CI's install step does for just.
 RUN cargo install --locked just --version ${JUST_VERSION} \
  && cargo install --locked cargo-deny --version ${CARGO_DENY_VERSION} \
  && cargo install --locked cargo-machete --version ${CARGO_MACHETE_VERSION} \
@@ -86,7 +86,7 @@ ENV PG_CONTAINER=1
 WORKDIR /work
 CMD ["python3", "docker/check.py"]
 
-# The callgrind benches (docs/PROFILING.md) and the fuzzer: their packages, and their tools at the versions the Justfile
+# The callgrind benches (docs/temp/PROFILING.md) and the fuzzer: their packages, and their tools at the versions the Justfile
 # pins (cargo-fuzz) and at the version of the gungraun library in Cargo.lock (gungraun-runner, which the launcher reads).
 FROM base AS tools
 

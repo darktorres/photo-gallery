@@ -310,7 +310,7 @@ impl qobject::GalleryModel {
             } else {
                 String::new()
             };
-            format!("{}   {symbol}", self.info(self.current))
+            text::ui(text::SELECTION_LINE, 0.0, &String::from(&self.info(self.current)), &symbol)
         } else {
             String::new()
         };

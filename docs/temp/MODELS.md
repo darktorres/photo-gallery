@@ -1,6 +1,6 @@
 # Models and accelerators
 
-Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [TEST_SET.md](TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
+Measured results for the models: their speed, their retrieval quality, and the accelerators they run on. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [TEST_SET.md](TEST_SET.md). The PDQ tier and the shortcut and grouping are in [VERIFIER.md](VERIFIER.md).
 
 ## Model speed (RTX 2060, GPU only, synthetic input, batch 64)
 
@@ -14,6 +14,136 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
 | DINOv2-S fp16 224px | 1020 | 0.8 |
 | DINOv2-B fp16 224px | 356 | 2.3 |
 | CLIP B/32 fp16 224px | 1498 | 0.5 |
+
+## Model quality
+
+### True negatives and new candidates (subset, 2026-10-29)
+
+`evaluate.py` now also counts **cross-group pairs** (915,279 pairs of images from two different
+`dups2` groups, i.e. different pictures) above each threshold, the false-positive measure that
+replaces `similiar_but_not_dups` (mostly matches now, see VERIFIER.md, "Superseded the same day").
+
+| Model | R@1 / R@10 | Thr @95% | Loose dups2 with partner | Cross-group flagged @90% | @95% |
+|---|---|---|---|---|---|
+| sscd (fp32) | 0.964 / 1.000 | 0.879 | 92.4% | 0 | 0 |
+| **sscd_fp16** | 0.964 / 1.000 | 0.879 | 92.4% | **0** | **0** |
+| sscd_288_fp16 | 0.964 / 1.000 | 0.874 | 92.5% | 0 | 0 |
+| sscd_large | 0.962 / 1.000 | 0.859 | 91.3% | 0 | 2 |
+| dinov2_s | 0.962 / 1.000 | 0.945 | 92.8% | 4 | 4 |
+| dinov2_b | 0.963 / 1.000 | 0.943 | 93.1% | 0 | 4 |
+| clip_b32 | 0.959 / 1.000 | 0.929 | 89.5% | 7 | 17 |
+| pdq | 0.924 / 0.957 | 0.234 (d ≤ 98) | 97.9% | 1 | 345 |
+
+- **SSCD flags no different-picture pair at any operating point up to 95% recall**; DINOv2 4,
+  CLIP 17. The cross-group set is easy at threshold level (most of it is far apart); the hard
+  cases are the few near pairs that k-NN hands the verifier (see the verifier sections).
+- **SSCD-large (ResNeXt101, 1024-d): no gain.** Same R@10 = 1.000, slightly fewer loose files
+  paired (91.3% vs 92.4%), 2 cross-group false positives at 95%, and 58 img/s end to end here
+  (GPU-only 105 img/s, vs 410 for SSCD fp16). Dropped.
+
+### Model comparison (subset, after label fixes, 2026-10-28)
+
+All six models at the same recall on labeled pairs (higher "loose with partner" is better;
+lower "flagged" and "hard neg" are better):
+
+| Model | Thr @95% | Loose dups2 with partner | Flagged unlabeled | Hard neg flagged (of 68,265) |
+|---|---|---|---|---|
+| sscd (fp32) | 0.879 | 92.4% | 2,653 | 41 |
+| sscd_fp16 | 0.879 | 92.4% | 2,653 | 42 |
+| sscd_288_fp16 | 0.874 | 92.5% | 2,657 | 41 |
+| dinov2_s | 0.945 | 92.8% | 2,742 | 78 |
+| dinov2_b | 0.943 | 93.1% | 2,806 | 74 |
+| clip_b32 | 0.929 | 89.5% | 2,861 | 78 |
+
+The same pattern holds at 80% and 90% recall (e.g. hard negatives at 90%: SSCD 26,
+DINOv2 51–52, CLIP 54).
+
+- **SSCD fp32 = fp16 = 288px in quality.** Precision and size don't matter here, so the
+  faster variants are free.
+- **SSCD has the best precision:** about half the hard-negative false positives of DINOv2 or
+  CLIP at every recall level.
+- **DINOv2-B has slightly better recall** on loose dups2 files, but with roughly 2× the false
+  positives. It is better used as a second signal in the verifier than as the primary
+  descriptor.
+- **CLIP is worst on both counts**, as expected from a semantic model.
+- **Retrieval rank doesn't separate the models at subset size:** R@1 ≈ 0.96 and R@10 = 1.000
+  for all of them. Differences show only in threshold behavior. Expect rank to separate them
+  on the full 190k set.
+
+### SSCD fp16 detail (subset, after label fixes, 2026-10-28)
+
+- **Labeled pairs:** R@1 **0.964**, R@10 **1.000**. Every labeled partner is in the top 10.
+- **Operating points:**
+
+| Target recall | Threshold | Loose dups2 with partner | Flagged unlabeled pairs | Hard negatives flagged |
+|---|---|---|---|---|
+| 0.90 | 0.909 | 88.3% | 2,496 | 26 / 68,265 (0.04%) |
+| 0.95 | 0.879 | 92.4% | 2,653 | 42 / 68,265 (0.06%) |
+
+Flagged unlabeled pairs include real but unlabeled duplicates. Precision is unknown until
+`review_*.csv` is labeled.
+
+- **Score separation (pre-fix run, same subset):** hard negatives p99 ≈ 0.30; positives
+  p10 ≈ 0.89.
+- **What it misses (viewer, scores 0.48–0.78):** strong color grading (e.g. yellow vs
+  orange shirt), slight re-crops/zooms of the same photo, AI-image variants with small
+  differences.
+
+#### Why some duplicates score low and some non-duplicates score high (2026-10-28)
+
+Looked at the extremes of SSCD fp16 on the subset (`misses_*.csv`, `hard_negatives_*.csv`):
+
+- **Highest non-duplicates (0.94–0.99, CLIP up to 0.996):** the *same* picture with a
+  **local content edit**: FaceApp face retouch, AI regenerations or inpainting that change a
+  hand, face or detail. The rest of the image is pixel-identical.
+- **Lowest duplicates (0.48–0.78):** the same photo under a **global edit**: heavy color
+  grading (yellow shirt and grass → orange shirt and dark grass, 0.48), re-crop or zoom plus
+  grading (0.57–0.70).
+
+A global embedding measures *how much of the image changed*. A local edit changes little, so it
+scores high. A strong grade changes every pixel, so it scores low. This library's definition is
+the opposite: global edits = duplicate, local content edits = not a duplicate. Copy-detection
+models like SSCD are trained to *ignore* local edits (overlays, pasted content), so this is not
+a calibration problem. **No threshold, normalization or better embedding model fixes it.** It
+needs a stage that aligns the two images and looks at *where* they differ (see
+`PLAN.md` / the verifier decision below).
+
+### Synthetic edits, all models (subset, 2026-10-29)
+
+300 random images, each edit applied, then the edited copy is searched in the 9.3k-image subset.
+Each cell is **R@10 · share above the model's 95%-recall threshold**. R@1 is lower for every model
+and edit (0.75–0.93, even for JPEG q30) because exact duplicates of a sampled image already exist
+in the index and tie or win rank 1, so R@10 is the retrieval measure here.
+
+| Edit | sscd_fp16 | sscd_large | dinov2_s | dinov2_b | clip_b32 | pdq |
+|---|---|---|---|---|---|---|
+| JPEG q30 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 1.00 |
+| Downscale 25% | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 0.76 | 1.00 · 1.00 |
+| Grayscale | 1.00 · 0.97 | 1.00 · 0.96 | 1.00 · 0.60 | 1.00 · 0.81 | 0.99 · 0.02 | 1.00 · 1.00 |
+| Color shift | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 1.00 |
+| Text overlay | 1.00 · 0.00 | 1.00 · 0.00 | 1.00 · 0.80 | 1.00 · 0.73 | 0.97 · 0.00 | 1.00 · 1.00 |
+| Letterbox 10% | 1.00 · 0.00 | 1.00 · 0.09 | 1.00 · 0.55 | 1.00 · 0.66 | 1.00 · 0.60 | 0.11 · 0.06 |
+| Mirror | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.65 | 1.00 · 0.98 | 1.00 · 0.99 | 0.00 · 0.00 ¹ |
+| Rotate 90° | 1.00 · 0.00 | 1.00 · 0.01 | 0.95 · 0.00 | 0.95 · 0.00 | 0.99 · 0.01 | 0.00 · 0.00 ¹ |
+| Crop 80% | 1.00 · 0.77 | 1.00 · 0.98 | 1.00 · 0.70 | 1.00 · 0.83 | 1.00 · 0.90 | 0.33 · 0.26 |
+| Crop 60% | 1.00 · 0.00 | 1.00 · 0.09 | 1.00 · 0.30 | 0.99 · 0.38 | 0.99 · 0.49 | 0.02 · 0.01 |
+| Crop 40% | 1.00 · 0.00 | 1.00 · 0.00 | 1.00 · 0.00 | 0.95 · 0.04 | 0.97 · 0.08 | 0.00 · 0.00 |
+| Crop 25% | **1.00** · 0.00 | **1.00** · 0.00 | 0.95 · 0.00 | 0.80 · 0.00 | 0.85 · 0.00 | 0.00 · 0.00 |
+| Crop 50% + mirror | 1.00 · 0.00 | 1.00 · 0.00 | 1.00 · 0.00 | 0.99 · 0.10 | 0.99 · 0.20 | 0.00 · 0.00 |
+
+¹ PDQ queried with all 8 rotations/mirrors (`compute_dihedral`): mirror and rotate 90° → R@10 1.00,
+d p50 0, within d ≤ 31 99.7%. The other rows don't change.
+
+- **Only SSCD keeps every edited copy in the top 10, down to a 25% crop.** DINOv2 and CLIP fall
+  to 0.80–0.95 on heavy crops and rotation. Rank is what the pipeline uses (k-NN + verifier), so
+  this is the deciding result: SSCD stays the candidate model.
+- **No global threshold survives heavy crops, overlays or letterboxing** for SSCD: the
+  95%-recall threshold (0.879) is set by labeled pairs, which are mostly light edits. Confirms
+  design conclusion 2 (rank + verifier, not a lower threshold) and 3 (trim borders first).
+- **SSCD-large vs SSCD:** same retrieval; slightly higher similarity on crops (crop 80% above the
+  threshold 0.98 vs 0.77). Not enough to justify 7× the cost (below).
+
+## Accelerators and a second model
 
 ### TensorRT and ONNX Runtime for SSCD (`eval/accel.py`, 2026-10-30)
 
@@ -173,3 +303,9 @@ position grid is resized to each image's grid. One model serves every N, and the
     keeps BatchNorm parameters in fp32, which is why it worked. The export (`accel.SSCDExport`)
     folds BatchNorm into the convolutions in fp32 first and computes GeM rescaled by the per-channel
     max: a pure fp16 graph then matches fp32 at cosine ≥ 0.99995.
+
+## Bug: R@k undercounted groups of 3+
+
+- **R@k metric undercounted groups of 3+:** another member of the same group ranking ahead of
+  the scored partner counted as a miss (R@1 read 0.935 for every model). Fixed so only
+  images outside the group count as ranked ahead.

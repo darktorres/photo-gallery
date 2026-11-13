@@ -1,4 +1,4 @@
-# The crate layers (docs/MODULARITY_PLAN.md, M-16): one line per workspace crate, `crate: dependency dependency ...`,
+# The crate layers (the modularity plan (git e428ab2), M-16): one line per workspace crate, `crate: dependency dependency ...`,
 # listing exactly its normal dependencies on other workspace crates (dev-dependencies are checked apart: their graph
 # must have no cycle). A crate's line comes after the lines of everything it depends on, so the file reads from the
 # bottom layer up. `python tools/boundaries.py` (in `just lint` and CI) checks it against the manifests: a new

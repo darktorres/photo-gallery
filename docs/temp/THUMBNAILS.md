@@ -74,3 +74,10 @@ WebP 1.88 TB, AVIF 1.47 TB.
   infographic is ~120 px wide) lose the most. A re-analysis source would need ≥ 512 px at near-lossless
   quality, i.e. several TB. **So thumbnails are sized for display only** (PLAN §9 decision 1), and any
   model wanted later should run in the ingest pass (decision 2), which reads the originals anyway.
+
+## Background task priority (M1 import, `dups2`, 2026-10-30)
+
+The thumbnail task runs at idle **CPU** priority, with normal I/O priority. Windows' background mode
+(`PROCESS_MODE_BACKGROUND_BEGIN`) also throttles I/O on an idle disk: with it the task ran at 64 files/s, and at
+normal priority 415 files/s. Idle CPU priority alone gives 330 files/s with other load on the machine.
+(`crates/cli/src/lib.rs`, `Command::Thumbs`.)

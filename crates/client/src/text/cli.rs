@@ -61,6 +61,15 @@ pub enum Line {
         unreadable: String,
         seconds: String,
     },
+    /// A mount under a scanned folder that the scan didn't walk into: its path and why.
+    RefusedMount {
+        mount: String,
+        reason: String,
+    },
+    /// The refused mounts past the first few listed.
+    RefusedMountsNotListed {
+        count: String,
+    },
     ThumbNotForgotten {
         root: String,
         error: String,
@@ -212,6 +221,8 @@ impl Line {
             Line::Failed { .. } => "cli-failed",
             Line::ChangedWhileRead { .. } => "cli-changed-while-read",
             Line::ScanSummary { .. } => "cli-scan-summary",
+            Line::RefusedMount { .. } => "cli-refused-mount",
+            Line::RefusedMountsNotListed { .. } => "cli-refused-mounts-not-listed",
             Line::ThumbNotForgotten { .. } => "cli-thumb-not-forgotten",
             Line::TempNotDeleted { .. } => "cli-temp-not-deleted",
             Line::Removed { .. } => "cli-removed",
@@ -279,6 +290,8 @@ impl Line {
                 ("unreadable", unreadable),
                 ("seconds", seconds),
             ],
+            Line::RefusedMount { mount, reason } => vec![("mount", mount), ("reason", reason)],
+            Line::RefusedMountsNotListed { count } => vec![("count", count)],
             Line::ThumbNotForgotten { root, error } => vec![("root", root), ("error", error)],
             Line::TempNotDeleted { root, temp, error } => vec![("root", root), ("temp", temp), ("error", error)],
             Line::Removed { root, hidden } => vec![("root", root), ("hidden", hidden)],
@@ -375,6 +388,8 @@ impl Line {
                 unreadable: s(),
                 seconds: s(),
             },
+            Line::RefusedMount { mount: s(), reason: s() },
+            Line::RefusedMountsNotListed { count: s() },
             Line::ThumbNotForgotten { root: s(), error: s() },
             Line::TempNotDeleted { root: s(), temp: s(), error: s() },
             Line::Removed { root: s(), hidden: s() },

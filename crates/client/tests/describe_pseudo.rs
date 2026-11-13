@@ -1,4 +1,4 @@
-//! The filter line in the pseudo-locale has no English word: every word of it is the bundle's (MODULARITY_REVIEW_4,
+//! The filter line in the pseudo-locale has no English word: every word of it is the bundle's (review 4 (e428ab2),
 //! M-21). A test binary of its own, as the pseudo-locale is a process-wide switch that the other tests' English
 //! would see.
 

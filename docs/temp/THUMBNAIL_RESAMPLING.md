@@ -258,6 +258,64 @@ Open question: which of these you want before any code changes. The brightness s
 levels on average, up to +3.5 on high-contrast images. Whether that is acceptable needs a visual check on the real
 library.
 
+## 7.1 Thumbnail tiers (open, 2026-11-12)
+
+Undecided. Keep thumbnails as they are: one entry per exact height, made from the original. Nothing in the code
+depends on this section yet.
+
+**The question.** Should the cache keep more than one height of the same image, and derive a smaller one from a
+cached larger one, instead of regenerating each height from the original? Two named shapes:
+
+- **Ladder.** A fixed set of stored heights (for example 220 / 400 / 800 px). Each height is stored, and a request
+  uses the nearest stored height at least as tall.
+- **Master with derived heights.** One stored master (for example 800 px). Every other height is derived from it,
+  and may be cached after it is derived.
+
+Mipmaps are a different thing. Qt's `Image.mipmap` filters at display time and stores nothing (§3.6). The tiers
+question is about what the cache stores. The two can be chosen separately.
+
+**Why it is open.**
+
+- The 800 px set is most of the cache: 14.7 GB of 16.7 GB used, against a 50 GB cap (§1). A 220 / 400 / 800 ladder
+  would hold about 21.7 GB (§4.5).
+- Changing the grid height regenerates every thumbnail: about 190k images, 6–8 minutes (§1). A derived height would
+  avoid that, if the derivation is good enough.
+- The derivation from an encoded master has been measured once, for 800 → 220 px (§4.1, option B1): mean score 80.9 at
+  10.7 KB per cell, against 81.3 for regeneration from the original at about the same load time. The 400 px level
+  scaled to 220 px scored best (82.5) but took 27 KB per cell. Derivation from a larger level has not been measured
+  for other sizes, and it has not been measured on the real library beyond this 300-file sample.
+- A derived height is a second encode of the same pixels, so each step down adds encoder loss. Derived from an encoded
+  master, a height may differ visibly from one made from the original. This is not measured.
+
+**What any tiers scheme needs first.** The cache keeps no record of which filter or version made an entry (§2).
+Tiers mix filters and derivations in one cache, so the cache needs a version per entry (or per height) before a
+second kind of entry is written. The version is also what lets the cache tell an old entry from a new one after a
+filter change (§7, option 1). This is needed whichever shape is chosen.
+
+**Options, not yet chosen.**
+
+1. **Keep the current cache.** One entry per exact height, regenerated on a height change. No new cost; a height
+   change still takes 6–8 minutes.
+2. **Ladder of fixed heights.** Store, for example, 220 / 400 / 800 px. Lowest risk for quality, because each stored
+   height is made from the original. Costs about 21.7 GB at the library's current size, so the 50 GB cap leaves little
+   room for other heights.
+3. **Master with derived heights.** Store 800 px (or the largest used) and derive others from it, optionally caching
+   the derived ones. Smallest storage, and a height change becomes a derivation rather than a full regeneration. The
+   quality cost is the derivation (open above), so it needs a visual check on the real library.
+
+**Decisions needed before any code.**
+
+- Which heights the grid uses. The row height is adjustable at runtime (`PLAN.md` §6, §9 item 1), so this may be
+  "any height from the master" rather than a fixed set.
+- Whether derived heights are cached, or derived on each request.
+- The visual check on the real library for the derived heights (the brightness and sharpness results in §4.6 and §6
+  are the reference points).
+- Which option. This section has not recommended one.
+
+**Relation to other work.** `DECODE_ONCE_PLAN.md` treats thumbnails as display artifacts and does not depend on this
+choice. It keeps two thumbnail definitions (ingest from the full decode, catch-up and on-demand from the T4 decode),
+and a tiers scheme would change the second of those. Revisit it when this section is decided.
+
 ## 8. Sources
 
 Read in this research:

@@ -1,11 +1,12 @@
 # Photo Gallery — Plan
 
 Written 2026-10-28 from `photo gallery.txt`, the 25 papers in `Research/`, and lessons from `DuplicateFinder/`
-and `ImageRater/`. Status (2026-10-31): M0's benchmarks are done, its labels and thresholds are not; M1 and M2 are
-built (§8); M3–M5 are not started.
+and `ImageRater/`. Status (checked against the code 2026-11-12): M0's benchmarks are done, its labels and thresholds
+are not; M1 and M2 are built (§8), with video, borders and reverse image search added since 2026-10-31; M3–M5 are not
+started in Rust. The tier-2 prototypes are Python scripts in `eval/`.
 
 Numbers marked **(est.)** are back-of-envelope estimates to be replaced by benchmarks in M0. Numbers with a
-paper name are from that paper.
+paper name are from that paper. Measured figures are as recorded when measured; they were not re-run for this check.
 
 ---
 
@@ -14,8 +15,8 @@ paper name are from that paper.
 - A desktop photo gallery for a library of **~70M images**, with near-duplicate detection aimed at **Pinterest
   saves: many crops and edits of the same picture**, plus the same pin saved at different sizes.
 - **Rust** for everything that runs at scale. **Windows only** for now (decided 2026-10-28). CUDA, nvJPEG, PyTorch,
-  TensorRT and ONNX Runtime all work there. If a Linux-only tool is ever needed, run only that batch step in WSL2, on
-  embeddings and not on images: reading NTFS drives through `/mnt` is slow.
+  TensorRT and ONNX Runtime all work there. Linux runs only in the `pg-dev` container (`tools/linux.py`), for the CI
+  checks, the callgrind benches, the fuzzer and the eval's Linux parts. WSL is not used.
 - **Quality over speed** (user decision, 2026-10-28): days or weeks of processing are acceptable. Heavier models
   (SSCD-large, fp32), exact rather than approximate k-NN (TIER2_ANN_BAKEOFF_PLAN.md: ~5.5 days of GEMM for 70M), multiple
   embeddings per image and a learned geometric verifier are all in scope. Resumability and the user's review time
@@ -32,8 +33,8 @@ paper name are from that paper.
 | RAM | 64 GB | 70M float vectors do **not** fit (72 GB at 512-d fp16), so we need compressed or quantized indexes |
 | GPU | RTX 2060, **6 GB**, Turing sm_75, fp16/int8 tensor cores | Fine for inference with batched fp16/int8 TensorRT; too small to hold the vector index |
 | E: | 22 TB Exos HDD, 21.4 TB used (assumed to be the library) | **The full read is the bottleneck**: about 1–3 days, and only sequential, ordered reads are fast |
-| D: | 2 TB NVMe, 802 GB free | Holds the catalog, vectors, ANN index and thumbnails |
-| C: | 22 GB free | Put **nothing** of ours here; no caches in `%LOCALAPPDATA%` |
+| D: | 2 TB NVMe, **116 GB free** (2026-11-12; 802 GB on 2026-10-28) | Holds the catalog, vectors, ANN index and thumbnails. At 116 GB free, the 72 GB embedding store of §6 would leave little room |
+| C: | **65 GB free** (2026-11-12; 22 GB on 2026-10-28) | Put **nothing** of ours here; no caches in `%LOCALAPPDATA%` |
 
 ---
 
@@ -81,29 +82,29 @@ paper name are from that paper.
 Reading 21.4 TB from one HDD takes **about 27 h at an average 220 MB/s, best case (est.)**. With per-file seek
 overhead across 70M files, it is more like **1–3 days**. A second pass costs the same again. Two rules follow:
 
-- **Every analysis of the original pixels is produced in the same pass:** file hash, pixel hash, PDQ,
-  embeddings, dimensions, ThumbHash placeholder and EXIF.
+- **Every analysis of the original pixels is produced in the same pass:** file hash, pixel hash, PDQ, dimensions,
+  ThumbHash placeholder and EXIF. Embeddings join this pass when M3 is built; the import does not compute them yet.
 - **Thumbnails are not part of the import** (user decision, 2026-10-30): the import stays fast, and a
   background task makes them afterwards (§6).
 - **Neither are borders** (user decision, 2026-11-01): the detector needs full-size pixels and the import's decode
   is DCT-scaled. A background pass after the import decodes each still image at full size, which reads it a
   second time (BORDERS.md "Border detector in the gallery"). This bears on where embeddings run (§9, decision 6).
-- **Read in on-disk order with a single reader thread per HDD.** Parallel random reads on one spindle thrash
-  the head. M0 compared path order, NTFS file-ID (MFT record) order and physical order (first-extent LCN via
-  `FSCTL_GET_RETRIEVAL_POINTERS`): MFT order, or 8 reads in flight, reaches the disk's sequential speed, ~3× path
-  order (IO.md "I/O"). The import reads in MFT order with 8 reads in flight.
+- **Read in on-disk order.** Parallel random reads on one spindle thrash the head. M0 compared path order, NTFS
+  file-ID (MFT record) order and physical order (first-extent LCN via `FSCTL_GET_RETRIEVAL_POINTERS`): MFT order, or
+  8 reads in flight, reaches the disk's sequential speed, ~3× path order (IO.md "I/O"). The import sorts by MFT
+  record and keeps 8 reads in flight (`pg-jobs`, `Options::readers`, default 8).
 
 ```text
 Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-disk location
         │
-  [1 reader per HDD]  sequential reads → raw bytes ─► BLAKE3/xxh3 of file bytes   (tier 0a)
+  [1 reader per HDD]  sequential reads → raw bytes ─► BLAKE3 of file bytes                (tier 0a)
         │ bounded channel
   [CPU decode pool]   libjpeg-turbo with DCT downscale (1/2, 1/4, 1/8) where possible
         │             → EXIF orientation applied → sRGB
-        ├─► hash of decoded pixels                                   (tier 0b: metadata-only differences)
+        ├─► XXH3 of decoded pixels                                   (tier 0b: metadata-only differences)
         ├─► PDQ, 256 bits + 8 dihedral variants (rotations and mirrors) (tier 1)
         ├─► dimensions + ThumbHash placeholder (the grid lays out before any thumbnail exists)
-        └─► model input (frozen, antialiased resize) ─► [GPU batcher] ─► embeddings (tier 2)
+        └─► model input (frozen, antialiased resize) ─► [GPU batcher] ─► embeddings (tier 2, not built)
                                                      │
   [catalog writer]   one SQLite transaction per batch → crash-safe, resumable
 ```
@@ -130,6 +131,10 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 | 1 | PDQ 256-bit (the 8 dihedral variants are stored per file, `analysis.pdq_dihedral`, and each is queried) | Re-sizes (Pinterest 236x/474x/736x/originals), recompressions, mirrors and 90° rotations, light crops | Multi-index hashing: pigeonhole split → exact search within radius r | ~2.2 GB RAM |
 | 2 | Copy-detection embedding (SSCD baseline) | **Crops, edits, overlays, filters** | ANN radius search vs cluster heads + augmentation | see below |
 | 3 | Verifier on uncertain pairs | Rejects false positives; confirms heavy crops | — | — |
+
+**Status (2026-11-12):** tiers 0a, 0b and 1 are built (`pg-dedup`, `pg-catalog`). The `dups` command groups them by
+plain connected components (`pg-dedup`'s `UnionFind`). Tiers 2 and 3 are not in Rust; their prototypes are
+`eval/embed.py`, `eval/ann/`, `eval/verify.py` and `eval/group.py`.
 
 **Tier 2 storage, 70M vectors:**
 
@@ -162,17 +167,17 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
   pair, and treat it like a review label. Expected to be a small fraction of pairs; cost and latency per pair
   decide whether it's worth it over hand review.
 
-**Grouping:**
+**Grouping** (the Rust grouping is still plain union-find over the tier 0–1 pairs; multicut is not built):
 
 - Verified edges, signed (match / aligned-but-different, weighted by the verifier's margin) → correlation
   clustering by greedy additive edge contraction (multicut). Measured in M0 to beat union-find plus a split
-  pass (QUALITY.md: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
+  pass (VERIFIER.md: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
 - Each group gets a canonical **keeper**: the largest pixel area that contains the others, then the highest
   quality. **Folder preferences** override this: an ordered list of patterns (e.g. prefer `originals\` over
   `backup\` or `pinterest\`); newest/oldest as further tie-breakers.
 - "Not a duplicate" decisions are stored per pair and are never re-proposed.
 
-**Removal (quarantine and restore):**
+**Removal (quarantine and restore; not built yet, nothing moves duplicates into quarantine):**
 
 - Removed files are *moved* into a quarantine folder on their own drive, so the move is a rename, not a copy.
   The folder structure is kept: `E:\pinterest\a\b.jpg` → `E:\_quarantine\<date>\pinterest\a\b.jpg`.
@@ -191,7 +196,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 | Embeddings (source of truth) | Flat memory-mapped fp16 file, row = catalog id | ~72 GB |
 | ANN index | USearch or FAISS file | 3–30 GB |
 | PDQ multi-index | Rebuilt in RAM at startup from the catalog | (RAM) |
-| Thumbnail cache | **Packed shard files** (not loose files), keyed by (file, size) | Size-capped, least recently used evicted |
+| Thumbnail cache | **One SQLite file**, `thumbs.sqlite` (WAL): entries and JPEGs in separate tables, keyed by (file, height) | Byte cap, default 50 GB; least recently used evicted |
 | ThumbHash placeholders | Column in the catalog | ~2 GB |
 
 **Thumbnails (user decision, 2026-10-30):** made by a **background task after the import**, never during it,
@@ -204,7 +209,7 @@ at any time. It costs a second read of the originals, in the background and in o
 **Cache layout now (2026-10-31):** one SQLite file, `thumbs.sqlite`, with the entries (file, height, source,
 size, last use) apart from the JPEGs and the totals kept by triggers, so nothing that runs often reads the JPEGs
 (START_PROFILE.md "Startup"). The JPEGs are keyed by entry id, so they can move to packed shard files later without
-touching the entries. Format and cap are still open (§9.1).
+touching the entries. Format: JPEG (libjpeg-turbo q85, 4:2:0). Cap: 50 GB by default, in bytes (§9.1).
 
 ---
 
@@ -223,16 +228,16 @@ Shape:
 - **Virtualized grid:** a GridView/TableView (or custom justified layout) backed by a Rust `QAbstractListModel`
   whose rows are fetched **lazily in pages** from SQLite. The UI never holds 70M items.
 - **Justified layout computed in Rust.** Immich's `justified-layout` is Rust source, so we can use it natively
-  instead of through WASM. QML only positions the delegates.
-- **Thumbnail provider:** a `QQuickAsyncImageProvider` (a thin C++ class if CXX-Qt can't express it directly)
-  that reads the cache at the current grid size, or asks the thumbnail task for it first. ThumbHash
-  placeholders show instantly, and images fade in (Wallhaven-style).
+  instead of through WASM. QML only positions the delegates. Built in `crates/client/src/layout.rs`.
+- **Thumbnail provider:** a `QQuickAsyncImageProvider`, built as a thin C++ class (`crates/desktop/cpp/providers.cpp`)
+  in front of the Rust loaders. It reads the cache at the current grid size, or asks the thumbnail task for it
+  first. ThumbHash placeholders show instantly, and images fade in (Wallhaven-style).
 - **Viewer:**
   - Original via a fast decode path.
   - An antialiased downscale for fit-to-screen.
   - A **1000% loupe** window to check sharpness.
   - An optional bright border or marching ants to reveal black bars.
-- **Duplicate review:**
+- **Duplicate review** (not built: the desktop has a Duplicates facet, but no group, compare or keep view yet; M3):
   - Group view: keeper first, then each candidate showing *why* it matched (PDQ distance, cosine, inliers).
   - Side-by-side compare with a slider and a crop-alignment overlay.
   - Keyboard-first: keep / quarantine / "not a duplicate".
@@ -257,7 +262,7 @@ can be added later against the same crates.
   - Measure crop-size limits, to decide whether reference images need *region embeddings* (partly: a global
     threshold fails on heavy crops but rank holds, so k-NN rank plus a verifier; region embeddings still open,
     §9 decision 4).
-  - Python is used here only for ONNX export and the evaluation notebooks.
+  - Python is used here only for ONNX export and the evaluation scripts in `eval/`.
 - **I/O benchmark** of read orderings on E: (path vs file ID vs LCN) (done: MFT order, or 8 reads in flight, ~3×
   path order; IO.md "I/O").
 - **Throughput benchmarks:**
@@ -271,25 +276,37 @@ can be added later against the same crates.
   edits, with tuned indexes (§9 decision 5).
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
   backed by a number. Met: the model and the read order; the thumbnail size is no longer fixed (§6). Open: the
-  thresholds (they wait on the hand marks, OPEN_ITEMS.md "Pending"), the thumbnail cache's format and cap, and the
-  index type (§9 decision 5).
+  thresholds (they wait on the hand marks, the first item in `docs/temp/OPEN_ITEMS.md`), and the index type
+  (§9 decision 5). The thumbnail cache's format and cap are set in code (§6).
 
 ### M1 — Core and ingest (on the sample)
 
-- Cargo workspace (`core`, `ingest`, `ui`), catalog schema, scanner, the single-pass import pipeline,
-  tiers 0–1, resumability. (Since split into the `crates/*` packages in `crates/README.md`: `pg-catalog`,
-  `pg-analysis`, `pg-jobs`, `pg-library`, `pg-cli`, `pg-desktop` and others; `core`, `ingest` and `ui` no longer
-  exist, see `docs/REFACTOR_PLAN.md`.)
+- Cargo workspace, catalog schema, scanner, the single-pass import pipeline, tiers 0–1, resumability. (Since split
+  into the `crates/*` packages in `crates/README.md`: `pg-catalog`, `pg-analysis`, `pg-jobs`, `pg-library`,
+  `pg-cli`, `pg-desktop` and others; `core`, `ingest` and `ui` no longer exist, see `docs/temp/REFACTOR_PLAN.md`.)
 - Background thumbnail task (after import, size chosen at runtime) and its cache.
-- **Status (2026-10-30):** built and verified on `dups2` (IMPORT.md "M1 import"; usage in `crates/README.md`).
-  The scanner lists directories by handle (NTFS file IDs, no admin) instead of Everything: the installed
-  Everything is 1.4, whose SDK has no file IDs. Not yet run on the full 190k sample.
+- **Status (2026-10-30):** built and verified on `dups2` (5,937 files; usage in `crates/README.md`). Measured with
+  GPU benchmarks running alongside, so the speeds are lower bounds:
+  - **Import:** 341 files/s on 12 workers (14 ms per image on one thread: decode 8.7, PDQ 2.3, Lanczos to 512 px
+    1.7, rest under 0.2). CPU-bound, as M0 predicted.
+  - **PDQ:** the Rust port is bit-exact with the `pdqhash` crate. Against M0's hashes, 74% are identical and 98%
+    within 4 bits (max 14, from the DCT-scaled decode). Labeled-pair recall at d ≤ 0 / 8 / 16 / 22 / 31 is
+    **30.8 / 66.0 / 75.4 / 80.4 / 83.2%** (M0: 32.6 / 65.7 / 74.8 / 80.1 / 82.8%). No cross-group pair at d ≤ 31.
+  - **Tiers 0a/0b:** 0 byte-identical groups and 234 pixel-identical groups (468 files), from the `.mozjpeg.jpg`
+    re-encodes (TEST_SET.md).
+  - **Resumable:** an import killed after 1,500 files and rerun ends with the same 2,784 pairs as an uninterrupted
+    run. Renamed and moved files keep their analysis; a deleted file is marked missing; a touched file is
+    re-analyzed alone.
+  - **Thumbnail task:** its I/O and CPU priority are in THUMBNAILS.md, "Background task priority".
+  - The scanner lists directories by handle (NTFS file IDs, no admin) instead of Everything: the installed
+    Everything is 1.4, whose SDK has no file IDs. Not yet run on the full 190k sample.
 
 ### M2 — Desktop UI
 
 - QML grid with lazy model and thumbnail provider, viewer and loupe, ratings in the catalog, merged-drives
   tree.
-- **Status (2026-10-30):** first version built (`gallery.exe`; the app is `crates/desktop`, the binary `crates/gallery`). Justified rows from Rust in a
+- **Status (2026-10-30):** first version built (`gallery.exe`, from `crates/gallery`; the app is `crates/desktop`).
+  Justified rows from Rust in a
   virtualized ListView. The row height is adjustable at runtime, with thumbnails made on demand at that size
   (newest request first) and ThumbHash placeholders. Viewer with Lanczos fit, 1:1, 10× loupe and a frame to
   reveal black bars. Ratings 0–5 in the catalog (schema v2). The tree merges folders by their path below the
@@ -327,8 +344,8 @@ can be added later against the same crates.
   - Saved files are named after the photo (`IMG_1234 (yandex 1920x1080).jpg`, `IMG_1234 (yandex similar 3).jpg`),
     so they sort next to it; "(2)", "(3)"… are added on a clash.
 - **Borders (user request, 2026-11-01):** the border detector and its review moved from the eval tools into
-  the gallery (`pg_analysis::borders`, a port of `tools/borders.py` that matches it on all 187,806 Pinterest images;
-  the script and the eval viewer's Borders page are gone, and the eval's `--trim` uses the gallery's detector).
+  the gallery (the detector is `pg_analysis::borders`, a port of `tools/borders.py`, which it matches on all 187,806 Pinterest images; the pass that finds and stores them is `pg-borders`;
+  the script is gone, and the eval's `--trim` uses the gallery's detector).
   - **Detection:** a background pass after the import, on full-size decodes (§4). Results are in the catalog
     (cut, every side found with why, "not a border" marks), with its own detector version, so a change looks
     again without a new import.
@@ -337,15 +354,16 @@ can be added later against the same crates.
     yellow lines, peek under the cut on hover), and **N** marks a file as not a border.
   - **Save cropped copies…** writes the listed files cropped into a chosen folder, never over the originals:
     JPEG losslessly, other formats exactly with their metadata.
-- **Schema (user decision, 2026-10-30; the check is from 2026-11-05):** one baseline, at version 1, until the first
-  catalog worth keeping (M4 at the latest). Pre-release changes edit it in place, with no new version. Every start
-  compares a catalog's schema with the one this build creates (`pg-schema`: each object's definition, the seed rows
-  and the application id), not a count of its parts. A catalog that differs is rebuilt: a new one in this build's
-  layout is made, the old rows are copied into it with their ids, and the old file is kept as
-  `catalog.sqlite.replaced`. A copy that can't take the rows leaves the new catalog empty, with the reason noted. The
-  thumbnail cache starts over the same way. Nothing is deleted. The migration loop exists, tested with a synthetic
-  step, with no migrations yet; that first kept catalog starts real ones, and from then on a difference is a refusal,
-  not a rebuild. Superseded (2026-11-09): there is a migration now, number 2 (catalog version 2, the C-8 change-stamp triggers, `TO_2_CHANGE_STAMPS` in `crates/catalog/src/schema.rs:25`), and the loop runs it.
+- **Schema (user decision, 2026-10-30):** one frozen baseline at version 1, then migrations. Every start compares a
+  catalog's schema with the one this build creates (`pg-dbfile` compares each object's definition, the seed rows and
+  the application id; the schema lives in `crates/catalog/src/schema.rs`). A catalog that differs is rebuilt: a new
+  one in this build's layout is made, the old rows are copied into it with their ids, and the old file is kept as
+  `catalog.sqlite.replaced` (then `.replaced.1`, …). A copy that can't take the rows leaves the new catalog empty,
+  with the reason noted. The thumbnail cache starts over the same way. Nothing is deleted.
+  **Status (2026-11-12):** the catalog is at version 9. `MIGRATIONS` holds eight steps after the baseline (versions
+  2 to 9; version 2 is the C-8 change-stamp triggers, `TO_2_CHANGE_STAMPS`), and the migration loop runs them. The
+  plan's "a difference is a refusal, not a rebuild" is not in the code: a schema that differs at its version is still
+  rebuilt, as above.
 - **Taken time frame (decided 2026-11-05, by the code's design, recorded here; not a user decision):** the date
   filters and the date sort compare `analysis.taken` as wall-clock time. A camera's clock is kept as it is. A
   video's UTC creation time is converted to this computer's zone at import and kept as the instant in
@@ -354,8 +372,8 @@ can be added later against the same crates.
   a repeated hour. Modified stays a UTC FILETIME; a local day's bounds are the instants at which the local clock
   first reads that midnight (`local_start_sql`: the earliest instant in a repeated hour, the transition instant
   when midnight is skipped), so the day starts where the local clock does.
-- **SQL audit fixes (2026-11-05, by the code's design; not a user decision):** layout 28, so catalogs of 27 are moved
-  aside and re-imported (the schema policy above). Superseded: there is no layout number now; the schema check described above is in `crates/schema`, and a catalog that differs is moved aside as `catalog.sqlite.replaced`. The filter bar's facets are one grouped scan of the folder
+- **SQL audit fixes (2026-11-05, by the code's design; not a user decision):** the schema check is described above
+  (`crates/catalog/src/schema.rs`); a catalog that differs is moved aside as `catalog.sqlite.replaced`. The filter bar's facets are one grouped scan of the folder
   (`browse/read/facets.rs`; the per-facet statements remain as the test's reference). The writer's next job comes
   off the index `file_writes_next` on `((temp IS NULL), queued)`. Duplicates: a file without a pixel hash is in no
   group, since `GROUP BY` had put every NULL in one; PDQ band counts take one pass over `present_pdq_pairs`. The
@@ -367,9 +385,10 @@ can be added later against the same crates.
   LAYOUT is not regenerated, so the bench copy lacks `file_writes_next`; it changes the bench's speed, not results.
   The schema check (2026-11-05) finds a stored catalog that differs by its definitions, not by its names: the bench's
   stored data (`v2-windows-rules`) predates the current schema, so `prepare` moves it aside and the bench measured an
-  empty catalog. The earlier remark that it only "lacks an index" was wrong. LAYOUT is now `v3-windows-rules`, and the
-  bench asserts that its catalog was not rebuilt. The data must be regenerated on Windows with
-  `tools/profiling/bench_data.py` (it needs the synthetic library); that has not been done.
+  empty catalog. The earlier remark that it only "lacks an index" was wrong. LAYOUT is now `v7-windows-rules` (and
+  `v7-windows-rules-large`), and the bench asserts that its catalog was not rebuilt (`catalog.rebuilt().is_none()`).
+  The bench data is made by `tools/profiling/bench_data.py` (it needs the synthetic library). It is not in the repo,
+  so this check cannot tell whether it has been regenerated for v7.
 - **Open: the video player.** Qt Multimedia plays videos, with hardware decoding off on a GPU without AV1
   decoding (a stopgap). The choice between our own engine on our FFmpeg 9 and libmpv is in `docs/VIDEO_PLAYER.md`.
 - **Open for M4:** the grid loads the whole result list (filtered and sorted in SQL) into memory. That is fine
@@ -378,10 +397,13 @@ can be added later against the same crates.
 ### M3 — Near-duplicates
 
 - Tier 2 (embeddings + ANN, query-then-insert), grouping (multicut), the review UI with feedback buttons.
+- **Status (2026-11-12):** not started in Rust. The Python prototypes in `eval/` (`embed.py`, `ann/`, `verify.py`,
+  `verify_synth.py`, `group.py`) are the evidence behind §5 and §9. The review UI (group view, feedback buttons) is not built.
 
 ### M4 — Full library run
 
 - Background ingestion of all 70M images with progress, pause/resume, and throttling while the UI is in use.
+- **Status:** not started at 70M. The background passes (scan, import, thumbnails, borders) already run in the app (M2).
 
 ### M5 — Precision
 
@@ -408,7 +430,8 @@ can be added later against the same crates.
 ## 9. Open decisions
 
 1. ~~**Thumbnail size**~~ **Decided 2026-10-30:** no fixed size. Thumbnails are a background task after the
-   import, at a size adjustable at runtime, in a size-capped cache (§6). Open: the cache format and its cap.
+   import, at a size adjustable at runtime, in a size-capped cache (§6). Set in code: JPEG q85 with a 50 GB default
+   cap. `pg-render`'s maker still lists the format as open (its comment), so this is worth a decision.
 2. ~~**What runs in the first full pass**~~ **Decided 2026-10-30:** SSCD plus a semantic model, **SigLIP 2
    So400m/16 NaFlex** (native aspect ratio, 256 patches; TensorRT fp16), so keywords and semantic search need no
    second decode of the originals. Cost: ~154 GPU hours for 70M (~6.4 days), so the GPU, not decoding (~1.5 days),
@@ -426,7 +449,8 @@ can be added later against the same crates.
 6. **Embeddings and trimming:** design conclusion 3 trims borders before embedding, but the borders now come from
    a pass after the import (§4), while §4 puts embeddings in the import. Either embeddings move after the borders
    pass (a background GPU task, as decision 2 already allows for SigLIP 2), or the embedding pass runs the
-   detector itself on a full-size decode. Not decided yet.
+   detector itself on a full-size decode. Not decided yet. Embeddings are not in the Rust import yet, so nothing is
+   forced until M3; the eval's `embed.py --trim` runs the gallery's detector.
 
 ## Design conclusions so far
 
@@ -454,7 +478,7 @@ can be added later against the same crates.
    them afterwards at a size adjustable at runtime, into a size-capped cache (PLAN §6). The size/format
    numbers in "Thumbnails" now size that cache rather than a fixed 70M store.
 
-## 10. Key references (in `Research/`)
+## 10. Key references (in `Research/`, which is not in this repo, so they were not checked)
 
 - Evolution of a Web-Scale Near Duplicate Image Detection System (Pinterest): tiers, verifier, grouping,
   incremental updates.

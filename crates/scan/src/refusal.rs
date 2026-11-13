@@ -1,6 +1,6 @@
 //! Which folders the scanner takes: the policy of decisions 6 (Windows) and 13 (Linux) in docs/S17_7_PLAN.md, decided
 //! from the facts the platform reads (`pg_platform::dir`), with the reason as data (`pg_model::refusal`), which the
-//! client words (MODULARITY_REVIEW_4 M-34). A check that can't read a fact refuses: the checks fail closed.
+//! client words (review 4 (e428ab2) M-34). A check that can't read a fact refuses: the checks fail closed.
 
 use std::io;
 

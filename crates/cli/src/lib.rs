@@ -98,8 +98,9 @@ fn gigabytes(bytes: f64) -> String {
 
 /// What `gallery scan` says of a root it scanned in `seconds`: its counts, then the notes its result carries
 /// (`pg_library::scans::scan_notices`: the folder's conditions, then what the walk did), as the window's inbox words
-/// them. The folders it couldn't read are listed apart, as the walk's skipped folders (`print_failures`); they are the
-/// catalog's folder ledger, which the inbox shows.
+/// them. Then each refused mount the walk listed, with why, and one line for the refused mounts it didn't list. The
+/// folders it couldn't read are listed apart, as the walk's skipped folders (`print_failures`); they are the catalog's
+/// folder ledger, which the inbox shows.
 fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -> Vec<String> {
     let summary = line(&Line::ScanSummary {
         root: rules.display(root),
@@ -111,7 +112,20 @@ fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -
         seconds: secs(seconds),
     });
     let notices = pg_library::scans::scan_notices(root, s);
-    std::iter::once(summary).chain(notices.all().map(|n| text::notice_line(n, rules))).collect()
+    let mut lines: Vec<String> =
+        std::iter::once(summary).chain(notices.all().map(|n| text::notice_line(n, rules))).collect();
+    for refused in &s.refused_mount_list {
+        lines.push(line(&Line::RefusedMount {
+            mount: rules.display(&refused.mount),
+            reason: text::refused_reason(&refused.reason),
+        }));
+    }
+    let listed = u64::try_from(s.refused_mount_list.len()).unwrap_or(u64::MAX);
+    let not_listed = s.refused_mounts.saturating_sub(listed);
+    if not_listed > 0 {
+        lines.push(line(&Line::RefusedMountsNotListed { count: not_listed.to_string() }));
+    }
+    lines
 }
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
@@ -433,7 +447,8 @@ mod tests {
     }
 
     /// `gallery scan` says what a scan's result carries, as the window's inbox does: each note a line of its own, after
-    /// the counts, the folder's conditions before what the walk did. A refused mount is the folder ledger's: no line.
+    /// the counts, the folder's conditions before what the walk did. Then each refused mount the walk listed, and one
+    /// line for the refused mounts past the list.
     #[test]
     fn gallery_scan_prints_its_notes() {
         use pg_model::notice::ScanNote;
@@ -452,9 +467,16 @@ mod tests {
         stats.pairing.rebound = 1;
         let lines = scan_report(&root, &stats, rules, 1.25);
         let note = |note, count| text::notice_line(&Notice::ScanNote { root: root.clone(), note, count }, rules);
-        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!(lines.len(), 4, "{lines:?}");
         assert!(lines[0].starts_with("/photos: 3 files in 0 folders"), "{lines:?}");
-        assert_eq!(lines[1..], [note(ScanNote::Duplicates, 2), note(ScanNote::Rebound, 1)]);
+        assert_eq!(lines[1..3], [note(ScanNote::Duplicates, 2), note(ScanNote::Rebound, 1)]);
+        assert!(lines[3].starts_with("/photos/usb isn't scanned: "), "{lines:?}");
+
+        // Two refused mounts the walk didn't list: the count says so, after the listed one.
+        stats.refused_mounts = 3;
+        let more = scan_report(&root, &stats, rules, 1.25);
+        assert_eq!(more.len(), 5, "{more:?}");
+        assert!(more[4].starts_with("2 more mounts under the scanned folders aren't scanned"), "{more:?}");
     }
 
     /// `gallery scan` over three library folders, the middle one refused (here, gone since it was added): it is said

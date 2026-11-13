@@ -219,7 +219,7 @@ When the feature is off, each control below pops up and performs no action. When
 | Saved views | apply | the whole view, if it needs a disabled feature | 2.7 | not applied; one popup (Decision 4) |
 | `--borders` start option | apply at start | Borders | `controller.rs:113` | gated, like Grid B: no action, one popup (Decision 10) |
 
-**The grid's border state.** `Entry.borders` (`crates/model/src/grid.rs`) is read in `entry_from_row` (`crates/catalog/src/browse/read/grid.rs:53-81`). It gains `Borders::Pending`: a row with no cut columns and `a.borders_due = 1`. The query reads `a.borders_due` as column 16, after the marked flag at 15, so `SORT_COLUMN` moves from 16 to 17. The detail query (`grid.rs:103`) uses the same column list. The one exhaustive-looking match, `desktop/src/gallery/items.rs:185`, has a `_` arm, and the other uses compare with `==` or `matches!`, so nothing else changes. `Pending` needs no migration, and the feature-off case is answered first by the disabled popup.
+**The grid's border state.** `Entry.borders` (`crates/model/src/grid.rs`) is read in `entry_from_row` (`crates/catalog/src/browse/read/grid.rs:53-81`). It gains `Borders::Pending`: a row with no cut columns and `a.borders_due = 1`. The query reads `a.borders_due` as column 16, after the marked flag at 15, so `SORT_COLUMN` moves from 16 to 17. The detail query (`grid.rs:103`) uses the same column list. The one exhaustive-looking match, `desktop/src/gallery/items.rs:185`, has a `_` arm, and the other uses compare with `==` or `matches!`, so nothing else changes. `Pending` needs no migration, and the feature-off case is answered first by the disabled popup. The state reads `a.borders_due`, not a second copy of the `has_borders!` predicate in the client, so there is one definition of which files are checked.
 
 **Why a combo reverts explicitly.** Qt sets `currentIndex` before it emits `activated` (`qquickcombobox.cpp:378-381`), so a rejected pick leaves the combo showing the pick. Each combo's `onActivated` puts `currentIndex` back. For the filter combos that is `currentIndex = Qt.binding(() => filters.borderMarkedIndex)` (and the duplicates index in Phase 3): a JavaScript assignment removes a QML binding, so the binding is restored by hand. The C++ `setCurrentItemAtIndex` (`qquickcombobox.cpp:680-693`) does not remove it. The sort combo reverts to `shell.sortIndex()` (the controller's sort, `shell_bridge.rs:274`, as `Main.qml:271` and `:743` already read it). It must not revert to the `sortIndex` alias of `TopBar.qml:43`: that alias is the box's own index, so assigning it changes nothing. The binding restore is settled by reading the source (`hidePopup` sets the index before it emits `activated`, `qquickcombobox.cpp:378-385`); the test runs at build.
 
@@ -391,7 +391,7 @@ The cap is in `codecs/limits.rs:8` (`max_decode_bytes()`, 512 MiB) and is enforc
 - It compares the full allocation with the cap before allocating (every decode is full size, so there is no scaled allocation). The figure is the one the codec reserves: `w * h * 3` for JPEG (the colour-type figure in `codecs/limits.rs:14-17` is for PNG and TIFF).
 - It returns an outcome, not an `Err`: `DecodeOutcome::OverCap { width, height }` (5.2). `decode_stored_into` swallows a decode error (`decode.rs:124`, `.ok()`), and the codecs fallback would then fail the whole file.
 
-PNG and TIFF keep their decoder caps as errors, as today. The over-cap rule applies to JPEG only (Chosen). Phase 3 is where the first full decode lands, so the over-cap rule (5.2) lands here too.
+PNG and TIFF keep their decoder caps as errors, as today. The over-cap rule applies to JPEG only. Phase 3 is where the first full decode lands, so the over-cap rule (5.2) lands here too.
 
 ### 3.3 Migration TO_10
 
@@ -418,7 +418,7 @@ BEGIN
 END;
 ```
 
-- `dups_state` has three values, and its meaning is:
+- `dups_state` has three values, and its meaning is (one column, because a boolean cannot say both the pairs-owed and the not-checked states):
   - `'due'`: the duplicate status is owed. Either the **pairs** are owed (the hashes are stored, but duplicate detection was off when the file was imported), or the **hashes** are owed too (`pixel_hash` is NULL, after a version bump). The Dups pass handles both (3.7).
   - `'done'`: the hashes are stored and the pairs are current; or there is nothing to hash (a video, a non-image, or an analysis error).
   - `'skipped'`: never retried and not checked. Set for an over-cap JPEG (5.2) and for a decode failure in the Dups pass (3.7).
@@ -450,6 +450,7 @@ DELETE FROM pdq_pairs
 - `view_epoch` is not touched in Phase 3. Phase 4 adds `bump_view_epoch` to this function (4.5), so an open grid reloads once instead of stamping every JPEG row.
 - `format = 'jpeg'` is verified: `Format::Jpeg` serialises as `jpeg` (strum snake_case, `model/src/format.rs:4-9, 33-40`), and `analysis.format` is written from `Analysis::format()` (`analysis.rs:114-119`) through `store_analysis` (`writers.rs:320`).
 - Consequence: the first open of an upgraded catalog re-decodes every JPEG once, in the Dups pass, whatever the duplicate toggle says. The hash work always runs; only the pairing waits for the toggle (Decision 12, accepted 2026-11-13). Phase 6 times it. The bump's own writes fire the Phase 4 triggers, and the bump's duration is measured in Phase 6 against `busy_timeout` (5000 ms, `schema.rs:377-378`).
+- The bump also resets `thumbhash`. Without that, a row keeps its old ThumbHash after the bump, and the single-definition rule (3.1) fails. The Dups pass recomputes the hashes and ThumbHash from the same F decode.
 
 ### 3.5 Writers
 
@@ -524,7 +525,7 @@ It returns `Ok(rows == 1)`. `owed` is `true` when duplicate detection is off.
 
 ### 3.7 The Dups pass and the decode budget
 
-- **Location (Chosen): a module of `pg-import`**, `crates/import/src/duplicates.rs`, exposed as `pg_import::duplicates`. The Dups pass shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs (`analysis`, `catalog`, `dedup`, `jobs`, `model`, `platform`). So no new crate, no new layer line and no manifest change. The name `pg-duplicates` is dropped.
+- **Location: a module of `pg-import`**, `crates/import/src/duplicates.rs`, exposed as `pg_import::duplicates`. The Dups pass shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs (`analysis`, `catalog`, `dedup`, `jobs`, `model`, `platform`). So no new crate, no new layer line and no manifest change. The name `pg-duplicates` is dropped.
 - **Names.** The pass is `Dups` (`Phase::Dups` in `model/src/progress.rs`; the words `pass-dups` in `text.ftl`, read through `pg_client::text::pass_name`; `Message::PassDups` in `client/src/text/message.rs`). Its ledger code is `FilePass::Duplicates` (`model/src/notice.rs:281-288`). `file_failures.pass` has no `CHECK` (`schema.rs:114` is only a comment, and it is stale: it lists 'thumbs' and 'borders' alone), so the duplicates pass needs only its Rust code. The old migration's comment is left as it is.
 - **Round order:** `Crops, Scans, Import, Thumbs, Borders, Dups`. Dups runs last and is reached on every round, because Thumbs no longer stops a round (2.9). Priority `BelowNormal` (5.10).
 
@@ -549,7 +550,7 @@ The literal `a.dups_state = 'due'` lets SQLite use the partial index `analysis_d
 
 `stats.complete = stats.files == items.len()`, as the other passes.
 
-**The decode budget** (`crates/jobs/src/budget.rs`, `pg-jobs`, introduced in Phase 3 because the Dups pass decodes; Phase 5's import uses the same budget, 5.3). One budget per pass run, since passes never overlap. A reservation is `w * h * 3` (3.2) before the decode, and it is released when the file's `process` ends, on every path (Ok, Err, or a panic caught by `panics::guard`). Grants are first come, first served (a ticket queue), so a large file waiting for room is not starved by smaller ones behind it (Chosen).
+**The decode budget** (`crates/jobs/src/budget.rs`, `pg-jobs`, introduced in Phase 3 because the Dups pass decodes; Phase 5's import uses the same budget, 5.3). One budget per pass run, since passes never overlap. A reservation is `w * h * 3` (3.2) before the decode, and it is released when the file's `process` ends, on every path (Ok, Err, or a panic caught by `panics::guard`). Grants are first come, first served (a ticket queue), so a large file waiting for room is not starved by smaller ones behind it. The release is at the end of `process`, not when the outcome is sent: `Outcome` holds no pixels, so holding the budget through the channel would only lower parallelism.
 
 ```rust
 pub struct DecodeBudget { limit: u64, queue: Mutex<Queue>, turn: Condvar }
@@ -611,8 +612,8 @@ The duplicates facet has four values, because a file that is not checked yet is 
 
 - A Duplicates checkbox (`detectDuplicates`, the pref `detect_duplicates` in `prefs.rs`, the setter of 2.3), with its count (`duplicates_unchecked`, 2.8: the rows with `dups_state = 'due'`, `error IS NULL`, on present files), and the gate of 2.4 with `Need::Duplicates` (code 2).
 - The duplicates combo (`FilterBar.qml:217-223`) follows the combo rule of 2.6. It is gated in Phase 3, with the toggle (Decision 6).
-- `Features` gains `duplicates` (the pref's `Prefs::features()`, 2.3). `ImportOptions` (`import/src/lib.rs:32`, which takes an options struct today) carries the features and the thumbnail height (5.11). About 23 call sites change (the runner, the CLI, the `thumbs` test, `library/tests/*`, and `writeback.rs` with 9); the count is taken at the start of the phase.
-- With detection off, the import stores the hashes and `'due'`, and builds no Pairer (3.6). Turning detection on makes the next Dups pass pair the owed rows (pairs only, no decode).
+- `Features` gains `duplicates` (the pref's `Prefs::features()`, 2.3). `ImportOptions` (`import/src/lib.rs:32`, which takes an options struct today) carries the features and the thumbnail height (5.11). `Features` stays bool-only: a toggle is a bool and the height is a size, so each keeps its own type. About 23 call sites change (the runner, the CLI, the `thumbs` test, `library/tests/*`, and `writeback.rs` with 9); the count is taken at the start of the phase.
+- With detection off, the import stores the hashes and `'due'`, and builds no Pairer (3.6). Turning detection on makes the next Dups pass pair the owed rows (pairs only: no file is read, and the pairs come from the stored PDQ hashes).
 
 ### 3.10 Wake on another process's bump
 
@@ -836,7 +837,7 @@ DELETE FROM files_log WHERE seq IN (                                            
 ### 4.6 Catalog reads
 
 - **Full list.** `list_grid` (`catalog/src/browse/read/grid.rs:115-153`) returns `(Vec<Placed>, Stamp)` (`Placed` is 4.7). The stamp is read in the list's own read transaction (WAL gives one consistent snapshot per transaction), so the rows and the stamp agree.
-- **Delta.** `Catalog::grid_delta(listing, since: Stamp, bound: usize) -> Result<Delta>`, in **one** read transaction. `DELTA_BOUND` = 8,192 (Chosen). The result is `Delta::Changes { stamp, upserts: Vec<Placed>, removed: Vec<FileId> }` or `Delta::Reload`:
+- **Delta.** `Catalog::grid_delta(listing, since: Stamp, bound: usize) -> Result<Delta>`, in **one** read transaction. `DELTA_BOUND` = 8,192 changed rows. A delta is one transaction and the client merge is O(suffix), so above the bound a full list is cheaper and bounds the memory. The value is checked in Phase 6 against the delta timing. The result is `Delta::Changes { stamp, upserts: Vec<Placed>, removed: Vec<FileId> }` or `Delta::Reload`:
   1. If `since.epoch != view_epoch`, or `since.seq < log_horizon`: `Reload`. Read both from `meta`.
   2. The changed ids, through the index `files_changed`: `SELECT id FROM files WHERE changed > :since ORDER BY changed LIMIT :bound + 1`. More than `bound` rows: `Reload`.
   3. The removed ids: `SELECT id FROM files_log WHERE seq > :since LIMIT :bound + 1`. More than `bound` rows: `Reload`.
@@ -868,9 +869,9 @@ pub fn compare_placed(a: &Placed, b: &Placed, descending: bool) -> Ordering
 
 `compare_placed` is the existing `compare_keys` logic (Null last, `Integer`/`Text` by value, reversed when descending), followed by the two ascending tie-breaks. The Grid compares an upsert with a row in the list by calling the same function on the row's key, `order` and id.
 
-- **The tie rule (one rule, Chosen).** Today keyed sorts tie in `order_key`, id ascending in both directions (`grid.rs:160, :166` ascend the ties of keyed sorts), but Name descending reverses `order_key` and `id` (`dir` at `grid.rs:160`, `ORDER BY f.order_key {dir}, f.id {dir}` at `:166`). The merge cannot reproduce that special case without a special case of its own. The fix is in `grid_sql`: the id is always ascending, so `ORDER BY f.order_key {dir}, f.id ASC` for Name, and `ORDER BY f.order_key ASC, f.id ASC` for keyed sorts (the keyed rows are then sorted in Rust by `compare_placed`, stably). The visible change is the order of files with the same `order_key` in Name descending, which is rare.
+- **The tie rule (one rule).** Today keyed sorts tie in `order_key`, id ascending in both directions (`grid.rs:160, :166` ascend the ties of keyed sorts), but Name descending reverses `order_key` and `id` (`dir` at `grid.rs:160`, `ORDER BY f.order_key {dir}, f.id {dir}` at `:166`). The merge cannot reproduce that special case without a special case of its own. The fix is in `grid_sql`: the id is always ascending, so `ORDER BY f.order_key {dir}, f.id ASC` for Name, and `ORDER BY f.order_key ASC, f.id ASC` for keyed sorts (the keyed rows are then sorted in Rust by `compare_placed`, stably). The visible change is the order of files with the same `order_key` in Name descending, which is rare.
 - **Carrying the key.** `list_grid` selects the key (`key_sql`, the column after the entry columns, `SORT_COLUMN` at `grid.rs:35`) and `f.order_key`, and builds a `Placed` per row. For Name the key is `Int(order_key)`. Keyed lists are sorted in Rust with `compare_placed`, as now (`grid.rs:143`).
-- **Option B (Chosen): the sort position is carried beside each entry; `Entry` stays 56 bytes.** `Entry` is the row type the Qt model and every other reader use, and the sort position is needed only by the sorted list the merge maintains, so it is a separate field of the list row. Option A would put the keys into `Entry`, making it 80 bytes (96 with an `Option<i64>` for the order), and every reader would carry them. The bytes per list row are about the same either way: `Placed` is 88 bytes (`Entry` 56, `SortValue` 24, `order` 8). Estimated: 6 MB at 190,000 rows and 32 MB at a million, from the field sizes, unmeasured (Phase 6 records it).
+- **Option B: the sort position is carried beside each entry; `Entry` stays 56 bytes.** `Entry` is the row type the Qt model and every other reader use, and the sort position is needed only by the sorted list the merge maintains, so it is a separate field of the list row. Option A would put the keys into `Entry`, making it 80 bytes (96 with an `Option<i64>` for the order), and every reader would carry them. The bytes per list row are about the same either way: `Placed` is 88 bytes (`Entry` 56, `SortValue` 24, `order` 8). Estimated: 6 MB at 190,000 rows and 32 MB at a million, from the field sizes, unmeasured (Phase 6 records it).
 - **Entry's own fields** (`duration_ms` clamped to `NO_DURATION`, `width` and `height` coalesced to 0, `frames` as `animated`) are display values and are not sort keys. The key is always the SQL value, never the `Entry` field (`grid.rs:26-27, :63-65`).
 - The coverage of the sort values is the authorizer test (4.12): each `key_sql` column is read by the statement, and each is stamped.
 
@@ -917,9 +918,9 @@ The layout test in 4.12 checks that the incremental result equals `justify_into`
 ### 4.11 Events, coalescing and throttling
 
 - `Change` (`jobs/src/events.rs:128`) stays payload-free and `Copy`. `Imported` and `Scanned` are sent as today, and the desktop pump coalesces them per pass (`desktop/src/library.rs:41`, `pump.rs:33-62`).
-- Today `Main.qml` calls `reloadAll()` on `onScanned` (`:127`) and `refreshGrid()` on `onImported` (`:128`); `reloadAll` (`:255`) calls `refreshGrid` (`:257`). Phase 4 makes both ask for a delta, not a reload. The folder-tree refresh moves to `Change::Round` (Chosen), and `reloadAll` is split so the tree refresh is its own call. Facet counts and the tree refresh at the end of a round and at a slower interval, not per merge.
+- Today `Main.qml` calls `reloadAll()` on `onScanned` (`:127`) and `refreshGrid()` on `onImported` (`:128`); `reloadAll` (`:255`) calls `refreshGrid` (`:257`). Phase 4 makes both ask for a delta, not a reload. The folder-tree refresh moves to `Change::Round`, since a refresh per round is bounded and a refresh per scan is not. `reloadAll` is split so the tree refresh is its own call. Facet counts and the tree refresh at the end of a round and at a slower interval, not per merge.
 - **One delta in flight.** The controller keeps at most one delta request outstanding. A signal that arrives while one is in flight sets `delta_due`; the delta's result sends the next request if `delta_due` is set.
-- **Throttle (Chosen).** Applied deltas are at least 1 s apart. The client's existing timers take it: a new `Timer::Delta` variant (`client/src/controller/deadlines.rs:10-19`, with `delay_ms` 1000) is armed when a delta is applied. A signal while it is armed sets `delta_due`; when the pause fires with `delta_due` set, the request goes out. The host's one timer and `Event::Timeout` (`controller.rs:137`, `:328`) already run the pauses, so there is no `Command::ArmDeltaTimer`, no `Event::DeltaDue` and no QML `Timer`. One method is added: `Deadlines::is_armed(timer)`. The throttle is trailing: the last change is always applied.
+- **Throttle.** Applied deltas are at least 1 s apart. The client's existing timers take it: a new `Timer::Delta` variant (`client/src/controller/deadlines.rs:10-19`, with `delay_ms` 1000) is armed when a delta is applied. A signal while it is armed sets `delta_due`; when the pause fires with `delta_due` set, the request goes out. The host's one timer and `Event::Timeout` (`controller.rs:137`, `:328`) already run the pauses, so there is no `Command::ArmDeltaTimer`, no `Event::DeltaDue` and no QML `Timer`. One method is added: `Deadlines::is_armed(timer)`. The throttle is trailing: the last change is always applied.
 - Phase 5 adds the per-flush tick from the import. Until then, the only `Imported` is the one after `pg_import::import` returns (the Import pass, `runner.rs:520-525`), so tiles fill at pass end, not progressively.
 
 ### 4.12 Tests
@@ -946,7 +947,7 @@ For files whose analysis is due, one decode feeds every enabled stage. The catch
 
 **Decided by the user (2026-11-13).** Every analysis-due file gets **one full stored decode F**, whatever the toggles. The hashes, ThumbHash, borders and dimensions come from F, so they are the same in every mode. A decode choice that depended on the toggles would make ThumbHash depend on them, which the single-definition rule forbids.
 
-- **The DCT-scaled decode is removed everywhere** (decided 2026-11-13, no further check). The codec decodes only at full size, so the scaled variants of `MinSize` (`Sides`, `Upright`, `Fit`), the viewer's `min_size` and its `DECODE_MARGIN` go, and `Shown::covers` and `resized` work from the full image. Measured: the viewer's time with a scaled decode was the same as with a full decode, and it scaled in 5% of files at 1280×720 and 0% at larger windows, so nothing is lost. The viewer holds one full image, as it does in practice already.
+- **The DCT-scaled decode is removed everywhere** (decided 2026-11-13, no further check). The codec decodes only at full size, so the scaled variants of `MinSize` (`Sides`, `Upright`, `Fit`), the viewer's `min_size` and its `DECODE_MARGIN` go, and `Shown::covers` and `resized` work from the full image. Measured: a JPEG decode takes 135.1 ms full against 120.5 ms scaled (122 sampled JPEGs, 9.2 MP mean, release build, one thread), and the viewer's time with a scaled decode was the same as with a full decode, and it scaled in 5% of files at 1280×720 and 0% at larger windows, so nothing is lost. The viewer holds one full image, as it does in practice already.
 - **Every thumbnail comes from F**, whether made at ingest, by the Thumbs catch-up, or on demand. F is the full upright image, downscaled with `to_height`. T4 (`MinSize::Upright(0, 4*height)`, `maker.rs:127`) is no longer a thumbnail source. There is **one thumbnail definition**, so the same file gives the same thumbnail whichever path made it (the test in 5.7). Thumbnails are cached, so each file and height is decoded in full once.
 - **Cost.** Today's import decodes DCT-scaled to 512x320 (`Analyzer::analyze_image`). The merged import decodes F, which is larger, for every new JPEG and PNG. With both toggles off, the import still decodes F, because ThumbHash needs it (ThumbHash is always stored). The Thumbs catch-up now decodes F for every older file it covers, which costs more CPU than the T4 decode it replaces. It runs in the background at below-normal priority, and on-demand misses are rare with pre-generation on. Phase 6 reports the import and catch-up regressions and their size.
 
@@ -1295,46 +1296,3 @@ Each migration's test compares `expected()` with a fresh schema (`schema.rs:851-
 - `format = 'jpeg'` is verified (3.4).
 - The grid's key is the SQL value, and the sort position is carried beside each entry (4.7).
 - The first open of an upgraded catalog re-decodes every JPEG once (3.4, Decision 12).
-
-## Chosen for review
-
-The choices the code forced, with one line of reason each. Each can be overridden. The previous revision's list of 18 proposals is folded in: 1 and 2 are Decision 1, 3 is Decision 2, 17 is Decision 4, and 18 is decided by the user; the others appear below as numbered choices.
-
-1. **Sort carrier: `Placed` beside `Entry` (Option B); `Entry` stays 56 bytes.** `Entry` is the row type every reader uses, and the sort position is needed only by the sorted list. Option A costs 80 bytes (96 with an `Option<i64>`) on every `Entry`.
-2. **The Dups pass is a module of `pg-import` (`import::duplicates`).** It shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs; no new crate, layer line or lock change.
-3. **Hashes are always computed (in every mode); the duplicates toggle gates the pairing.** It keeps the single-definition rule for the stored hashes and ThumbHash; the saving is the pairing work, not the hashing (decided 2026-11-13; see 3.1).
-4. **`dups_state`: `'due'` means the pairs are owed (the hashes may already be stored), and `'skipped'` means not checked, never retried** (over the cap, or a Dups decode error). A boolean cannot say both.
-5. **`analysis_rewritten` compares the whole row, 27 columns, not `analyzed`.** The REPLACE stamped every write; this stamps what the grid shows or sorts by, and a no-change re-analysis stops stamping (Decision 8).
-6. **`DELTA_BOUND` = 8,192 changed rows per delta.** A delta is one transaction and the client merge is O(suffix); above the bound a full list is cheaper and bounds the memory. A value to check in Phase 6 against the delta timing.
-7. **The Thumbs height stop: a `still_wanted` closure, checked at each flush; the pass returns `Done`.** `pg_thumbs::run` takes one `Control`, and a closure adds the second stop source without a new API.
-8. **Goldens are captured in Phase 6 from a worktree at the commit before Phase 3.** The Process rule forbids a build between phases.
-9. **`FeatureCell` lives in `pg_library`, beside `HeightCell`.** The job's `Inner` and `Cx` need it, and `app` depends on `library`.
-10. **The gate sits at the desktop boundary** (`shell.rs` `key_pressed`, `start_state`, `apply_view`, and the viewer keys in QML). `keys::grid` and `keys::viewer` stay pure, and the prefs are the one source; there is no `Event::FeaturesChanged`.
-11. **`Need` lives in `pg-model`, beside `Features`.** The model is the bottom layer, and library, app and client all name the types.
-12. **`FeatureCounts` (not `Counts`) carried by a `CountsCell` and a payload-free `Change::Counts`; the Qt side is a qproperty.** `ledger::Counts` already exists, and the pump already pushes state into qproperties on the Qt thread.
-13. **The LibraryPanel grows to 560 px with no ScrollView.** A ScrollView over the whole pane hides the Close button.
-14. **The sort combo reverts to `shell.sortIndex()`.** The `TopBar` alias is the box's own index, so reverting to it changes nothing.
-15. **Linux `AboveNormal` is a no-op.** Setting nice 0 resets a thread that an earlier call lowered.
-16. **`ON DELETE CASCADE` stamping is a Phase 4 test, not a stated fact.** The source does not settle it.
-17. **One tie rule: ties ascend by `order_key`, then id, in both directions** (the Name-descending reversal of `grid.rs:160, :166` goes). The merge must reproduce the SQL order, and one rule has no special case. A visible change only for files that share an `order_key`.
-18. **NULL keys last in both directions, as `compare_keys` does today.** The keys are raw SQL values, not coalesced; the `Entry` fields are display values and are not sort keys.
-19. **The over-cap check uses the codec's reservation figure (`w * h * 3` for JPEG).** It is the figure the decoder reserves, so the cap means one thing. PNG and TIFF keep their decoder cap errors.
-20. **The over-cap file is read whole, not streamed.** A streaming read mode is not designed; the read is bounded by the pool's lease, which admits the file alone (5.3).
-21. **The budget is released at the end of `process`, first come first served, one per pass run, shared by the import and the Dups pass.** `Outcome` holds no pixels, so holding the budget through the channel only lowers parallelism; FIFO grants keep a large file from starving.
-22. **Batches of 100 files or 250 ms for the import and the Dups pass; `tick_every` flushes a held batch.** The lock hold stays under the app's 100 ms busy wait, and an idle pass flushes on time.
-23. **One `put_batch` per flush, at most 100 entries; no 200 constant.** The constant does not exist; a call per flush keeps the transactions few.
-24. **The Scans folder-tree refresh moves to `Change::Round`.** A tree refresh per round is bounded; a refresh per scan is not.
-25. **A Dups decode failure sets `'skipped'` and writes a ledger row; it does not call `store_failure`.** `store_failure` would erase the analysis of a file that imported fine.
-26. **A Dups io read error counts as an attempt, like every pass (Decision 3).** Three attempts end in an error row.
-27. **`store_borders` returns `Result<bool>`.** The sink must know whether the row changed under it.
-28. **The DUPS bump resets ThumbHash too, and the Dups pass recomputes hash and ThumbHash from the same F decode.** Without it a row keeps the old ThumbHash, and the single-definition rule fails after the bump.
-29. **The pairs-only phase reads no file;** its pairs come from the stored PDQ hashes.
-30. **The CLI carries the thumbnail height in the import options; `Features` stays bool-only.** One type per concern: a toggle is a bool, the height is a size.
-31. **`store_analysis` becomes the upsert in Phase 3, not Phase 4.** It writes `dups_state`, which Phase 3 adds; Phase 3 fires no stamping triggers, so the upsert is safe there.
-32. **The throttle uses the client's existing `Timer` enum: `Timer::Delta` armed on apply, plus `Deadlines::is_armed`.** No `Command`, no `Event`, no QML `Timer` (the host's one timer already runs the pauses).
-33. **The Dups pass runs last in the round (`Crops, Scans, Import, Thumbs, Borders, Dups`).** Thumbs now yields, so Dups is reached every round, and the user's order keeps Thumbs before Borders.
-34. **Over-cap PNG and TIFF are not `'skipped'`.** Their decoder caps already fail the file as an analysis error, as today; widening the rule is OPEN (Not planned).
-35. **The popup is non-modal with `CloseOnPressOutside` and a 4 s timer** (2.5). A blocked control's own handler does the gating, so a press that passes through cannot act on it.
-36. **The combos revert with `currentIndex = Qt.binding(...)`.** A JavaScript assignment removes a QML binding, so the binding must be restored by hand.
-37. **Every decode is full size; the DCT-scaled decode is removed everywhere (5.1).** The scaled path saved about 15 ms on a 9 MP JPEG, scaled in about 5% of viewer files at 1280×720 and none at larger windows, and cost a second definition of the decode's pixels. The memory of a full image is the cost, and the maker's limit follows it (5.7).
-38. **Attempt counts live in `io_attempts`, not in `file_failures`.** The import's failure rows mirror its analysis rows, so a counter there would break that. A separate table with its own reset trigger serves all three passes. The grid's "not checked yet" state comes from `a.borders_due`, not from a second copy of the `has_borders!` predicate in the client, so there is one definition of which files are checked.

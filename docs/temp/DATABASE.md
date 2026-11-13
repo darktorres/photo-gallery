@@ -1,7 +1,7 @@
 # Database
 
 Whether the catalog should move off SQLite before the 70M library, and what should hold text search, vectors and
-the duplicate graph (2026-11-01).
+the duplicate graph (2026-11-01; code and live-catalog figures refreshed 2026-11-13).
 
 How it was found:
 
@@ -20,17 +20,20 @@ How it was found:
 
 From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse/`, `crates/query/src/lib.rs`, `crates/thumbcache/src/lib.rs`):
 
-- **About 57 GB at 70M.** The real catalog (`D:\PhotoGallery\catalog\catalog.sqlite`) is 154 MB for 189,518 files,
-  ~810 B per file, twice PLAN §6's 20–30 GB. The biggest item is `order_key` (134 B on average), stored in `files` and
-  again in `files_order`: ~270 B per file, ~19 GB at 70M.
-- **SQL built at run time** (`crates/query/src/lib.rs`, 621 lines; `crates/catalog/src/lib.rs` re-exports it as `query`): facet counts, folder counts, name order, joins of `files` and
-  `analysis`, keyset paging on a BLOB key.
+- **About 79 GB at 70M, at today's ratio.** The live catalog (`D:\PhotoGallery\catalog\catalog.sqlite`, checked
+  2026-11-13) is 261 MB for 230,812 files, ~1,130 B per file (2026-11-01: 154 MB for 189,518 files, ~810 B), about three
+  times PLAN §6's 20–30 GB. The largest items are `analysis.pdq_dihedral` (256 B per analysed file: the eight dihedral
+  PDQ hashes, PLAN §5) and `order_key` (121 B on average), stored in `files` and again in `files_order`: ~240 B per file,
+  ~17 GB at 70M.
+- **SQL built at run time:** `crates/query/src/lib.rs` (670 lines) compiles the conditions and sort keys, which
+  `crates/catalog/src/browse/read/` runs: facet counts, folder counts, name order, joins of `files` and `analysis`. The
+  grid has no paging yet (§3).
 - **Row triggers and a view:** `files_added`, `files_changed`, `analysis_*` keep `pending`, `seq` and the totals;
   `present_pdq_pairs` is a view. Partial indexes. `auto_vacuum = INCREMENTAL` in the thumbnail cache.
 - **Two processes write the same file** at once: the app and `gallery` (import, thumbs).
 - **Windows, from Rust, in-process.** Batched writes plus point updates (ratings, rotations), reads while writing.
 
-Later: semantic search (SigLIP 2 B/16, 768-d, ~107 GB in fp16 at 70M, MODELS.md "A second model"), text search over
+Later: semantic search (SigLIP 2 So400m/16 NaFlex, 1152-d, ~161 GB in fp16 at 70M, PLAN §9 decision 2; MODELS.md "A second model"), text search over
 names, folders, tags and maybe captions or OCR, the duplicate groups.
 
 ## Verdict
@@ -42,9 +45,9 @@ names, folders, tags and maybe captions or OCR, the duplicate groups.
 - **Facet and folder counts must stop scanning.** SQLite took 0.6–0.9 s for a GROUP BY over 2M rows here, so ~20–30 s
   over 70M. Keep the counts up to date in the transaction (the thumbnail cache already does this with triggers), or
   hold the facet columns in RAM (~11 B per file, ~0.8 GB), or let DuckDB read the catalog for them (§3).
-- **The grid must page.** `browse::list_grid` (`crates/catalog/src/browse/read/grid.rs`) reads the whole scope into a `Vec`: 2.2 s for 189k rows, minutes and
+- **The grid must page.** `browse::list_grid` (`crates/catalog/src/browse/read/grid.rs`) reads the whole scope into a `Vec`: 2.2 s for 189k rows (2026-11-01), minutes and
   tens of GB at 70M. Keyset paging on `order_key`, plus a sparse in-RAM table of every ~1000th key for the scrollbar
-  (PLAN §7).
+  (PLAN §7 has the lazy paging; the sparse table is ours).
 - **Text search: FTS5 with the trigram tokenizer**, contentless, in its own attached file (§5).
 - **Vectors stay beside the catalog**, as PLAN §6 has them. Benchmark **Lance** (IVF_RQ/IVF_PQ), **zvec** (IVF-RaBitQ,
   DiskANN) and **Qdrant Edge** against a **flat 2-bit scan with exact re-ranking** from the fp16 file (§6). My first
@@ -87,13 +90,13 @@ Key-value stores (no SQL: the query layer, indexes, triggers and migrations woul
 Published key-value numbers (canopydb's BENCHMARKS.md, older versions, 5M keys larger than a 4 GB memory limit, Linux):
 fjall did 7.37M writes and 3.95M reads in 3 minutes, sled 5.40M and 0.67M. Random inserts with fsync per commit:
 canopy 186k, redb 170k, fjall 133k, heed 75k in a minute; write amplification fjall ~10×, redb ~48×. The LSM wins on
-random-key inserts, which is the one place the catalog could gain (BLAKE3 hashes, `order_key`).
+random-key inserts, which is the one place the catalog could gain (BLAKE3 hashes; `order_key` follows path order, so it is less random).
 
 ### Hands-on, 2M rows (random 32-byte keys, unique index, 100k-row transactions, default settings)
 
 | Engine | Insert | Size | Lookup by key | GROUP BY | Page of 200 by key | Point UPDATE |
 |---|---|---|---|---|---|---|
-| SQLite 3.49 | 48–55k rows/s | 276 MiB | 11 µs | 610–860 ms | 0.15 ms | 76–101 µs |
+| SQLite 3.49 (Python's build; the app ships 3.54.0) | 48–55k rows/s | 276 MiB | 11 µs | 610–860 ms | 0.15 ms | 76–101 µs |
 | DuckDB 2.0 | 74k rows/s | 391 MiB | 1.3 ms | 4 ms | 16 ms | 5.4 ms |
 | Stoolap 0.4.2 | 48k rows/s | 178 MiB | 14 ms | 42 ms | 592 ms | 32 µs |
 | Turso 0.8.3 (CLI, same SQL as SQLite) | 14k vs SQLite's 29k rows/s | | 20k lookups: 473 vs 216 ms | 242 vs 189 ms | | |
@@ -112,7 +115,7 @@ Cozo/RocksDB 24 s, 1.8 s; seekdb 25 s, 0.05 s; Grafeo 36 s, 0.30 s; Postgres 16 
   2026-10). Our writers are two, batched; the importer's transactions should stay short so the app's writes (ratings)
   don't wait behind them.
 - Random keys hurt once an index outgrows the cache: one report has 1M-row batches slowing from 0.7 s to 12.6 s at
-  100M rows with random keys (setup unknown). That is our BLAKE3 and `order_key` indexes. Fixes: sort each batch by
+  100M rows with random keys (setup unknown). That is our BLAKE3 index (and `order_key`, to a lesser degree). Fixes: sort each batch by
   key, a larger cache plus `mmap_size`, or build those indexes after a bulk import.
 
 ### Turso
@@ -191,15 +194,15 @@ trigram search for substrings, and caches in files of their own.
   later. Three ways out, in order of preference:
   1. Counters kept in the transaction by triggers, per folder and per facet value (as the thumbnail cache's totals).
      Exact for the unfiltered views; filtered views still need a scan.
-  2. The facet columns (folder, type, extension, rating, date, size class) in RAM, ~11 B per file, ~0.8 GB, scanned
+  2. The facet columns (the counted facets: type, extension, border class; plus the rating, date and size filters) in RAM, ~11 B per file (estimate), ~0.8 GB, scanned
      by all cores: tens of milliseconds for any filter. Rebuilt from the catalog at startup, like the PDQ index.
   3. DuckDB attached to the catalog read-only, for ad-hoc analytics.
 - **Random-key index inserts** (above).
-- **The import's batches against the app's writes:** short transactions, `BEGIN IMMEDIATE`, a busy handler.
+- **The import's batches against the app's writes:** already `BEGIN IMMEDIATE` (`transaction.rs`), with a busy timeout (5 s in the catalog's settings, 100 ms in the app's writer). Keep the import's transactions short so the app's ratings don't wait behind them.
 
 ## 4. Size of `order_key`
 
-~19 GB of the 57 GB. Storing it only in the index (a covering index, or `WITHOUT ROWID` keyed by it) or shortening it
+~17 GB of the ~79 GB. Storing it only in the index (a covering index, or `WITHOUT ROWID` keyed by it) or shortening it
 (folder id + name key instead of the full folder key per file) would save most of that. To be measured in §8.
 
 ## 5. Text search
@@ -220,13 +223,13 @@ No published trigram index size for file names exists; measure on the real names
 
 Sizes at 70M:
 
-| Representation | 512-d (SSCD) | 768-d (SigLIP 2 B/16) |
+| Representation | 512-d (SSCD) | 1152-d (SigLIP 2 So400m/16) |
 |---|---|---|
-| fp16 (source of truth, PLAN §6) | 72 GB | 107 GB |
-| int8 | 36 GB | 54 GB |
-| 4-bit (RaBitQ, TurboQuant) | 18 GB | 27 GB |
-| 2-bit | 9 GB | 13 GB |
-| 1-bit | 4.5 GB | 6.7 GB |
+| fp16 (source of truth, PLAN §6) | 72 GB | 161 GB |
+| int8 | 36 GB | 81 GB |
+| 4-bit (RaBitQ, TurboQuant) | 18 GB | 40 GB |
+| 2-bit | 9 GB | 20 GB |
+| 1-bit | 4.5 GB | 10 GB |
 
 The machine has 64 GB of RAM, a 6 GB RTX 2060, and D: is an NVMe SSD (Kingston NV2), so exact re-ranking from the fp16
 file is cheap. The approximate-index comparison (TIER2_ANN_BAKEOFF_PLAN.md "Nearest-neighbour search, first attempt") ran on synthetic data
@@ -272,20 +275,20 @@ At scale, from others:
 | sqlite-vector, sqlite-vec, vectorlite | SQLite extensions | Flat scans; vectorlite HNSW in RAM | | SQL | Too slow or too big at 70M |
 | Not usable here | | | | | VectorChord (Postgres only, no Windows package, AGPL/ELv2), PipeANN, vsag, SatoriDB (Linux only), AlayaLite (AGPL, static), DuckDB `vss`/USearch/hnswlib/Chroma (HNSW in RAM), rust-diskann (~215 GB file) |
 
-Order to benchmark on the real embeddings once they exist: the flat 2-bit scan with re-ranking (13 GB, ~1 s, recall
+Order to benchmark on the real embeddings once they exist: the flat 2-bit scan with re-ranking (about 20 GB at 1152-d, ~1 s, recall
 ~0.98, filters free, nothing to build), Lance IVF_RQ (lean build, prefilter), zvec IVF-RaBitQ, then Qdrant Edge and
 DiskANN3 if the first two miss. Per engine: recall@10 against exact, latency, RAM, build time, cost per 10,000 new
 images, and recall under a folder filter.
 
 ## 7. The duplicate graph
 
-A table of group ids (and the pair decisions already in `pdq_pairs`) in the catalog covers the groups; recursive CTEs
+A table of group ids (and the candidate pairs already in `pdq_pairs`; no group table exists yet) in the catalog covers the groups; recursive CTEs
 cover walks. graphqlite (SQLite extension, Cypher, connected components) could compute groups beside the catalog if
 needed. Graph databases (Grafeo, HelixDB, TriviumDB) keep their main store in RAM or allow one writer.
 
 ## 8. What to measure
 
-A synthetic catalog with 70M rows, the same schema (~57 GB, `D:\PhotoGallery\scratch_scale\`), with our real PRAGMAs:
+A synthetic catalog with 70M rows, the same schema (~79 GB at today's ratio; `D:\PhotoGallery\scratch_scale\` does not exist yet), with our real PRAGMAs:
 
 - Import batches with every index in place at 50M+ rows; then sorted batches, a larger cache, and indexes built after.
 - `order_key` stored once or shortened (§4): size and grid speed.

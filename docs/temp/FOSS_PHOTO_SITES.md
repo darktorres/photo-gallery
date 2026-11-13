@@ -71,7 +71,6 @@ Each entry is what the page shows at the top and how it is organized. Only what 
 - **Piwigo**: hero "Manage, share and organize your photos and videos. Your way."; a choice between Piwigo Cloud and
   self-hosted; "no lock-in" and "data sovereignty" sections; seven numbered feature steps; a "who uses Piwigo"
   section; free trial and demo buttons; 69 images; no og:image; two console errors.
-
 - **Foldergram** (GitHub Pages docs): hero "Foldergram: local-first photo and video gallery"; sections on local-first
   storage, fast feed-style browsing, photos and videos, and optional access control; an "at a glance" block (what ships
   today, how indexing works, formats and storage, access modes); a six-step "how Foldergram works" list; nav of Quick
@@ -82,7 +81,7 @@ Each entry is what the page shows at the top and how it is organized. Only what 
 
 ## Notes from the README-only projects
 
-No homepage was found, so these are the GitHub README sections. Nextcloud Photos is the only one left.
+No homepage was found, so these entries rely on the GitHub README.
 
 - **Nextcloud Photos**: "Why is this so awesome?", "Installation", "Mobile photos", "Maintainers", "Development setup".
   Searches found no product homepage. `nextcloud.com/photos/` redirects to an image file, and `apps.nextcloud.com/apps/photos`
@@ -90,13 +89,6 @@ No homepage was found, so these are the GitHub README sections. Nextcloud Photos
   albums, face and object recognition, photo editing). It is an article, not a landing page, so it is recorded but not
   counted as a homepage.
 - **Snapcrescent**: the site does not resolve, so only the repository description is known.
-
-## Correction to the first pass
-
-The first pass filtered out every link whose URL contained "github", which also hid `github.io` project sites. That is
-how PiGallery2's and Foldergram's Pages sites were missed. The second pass used a filter that excludes only GitHub's own
-domains. Damselfly's site, <https://damselfly.info/>, was not linked in its GitHub About section (the About section links only
-social pages), so it was supplied by the user. Nextcloud Photos has no homepage in its About section and stays README-only.
 
 ## Our site, for comparison
 

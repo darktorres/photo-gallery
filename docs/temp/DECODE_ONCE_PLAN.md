@@ -13,6 +13,8 @@ The plan makes one full decode per new file (Phase 3 moves the import to the ful
 - Three toggles (border detection, duplicate detection, pre-generated thumbnails), default on. A control that depends on a disabled feature **stays enabled like the others; clicking it shows a popup saying the feature is disabled instead of performing its action** (not hidden, not greyed out).
 - Thumbnails of first-import files run at below-normal priority (was Idle). Pass order Thumbs before Borders. UI and render threads above normal priority (Windows). Tile-pool priority: left out. Mid-decode cancellation: declined.
 - **Incremental grid updates** (no whole-list reloads during an import), because catalogs will grow large. **Incremental layout** is in scope too (decided: in scope): a change relays out from the first changed row, not from the top (4.9).
+- Decided 2026-11-13 (each rule is in its section; "Decisions" lists them): 1 (c); 2 (warning glyph, 5.2); 3 (bounded retry, 3 attempts); 4 (b, everywhere); 5 (a popup for every no-op control, grid N by the grid's border state); 6 (Phase 3); 7 (b); 8 (a); 9 (approved, with a locale-aware join); 10 (b, gated); 12 (accept). Resolved: x (`io_attempts`, 3.3) and o (`Borders::Pending`, 2.6). 11 (a, always compute, 3.1). None open.
+- **Every thumbnail comes from the full decode F** (5.1), whether made at ingest, by the Thumbs catch-up, or on demand. Thumbnails are cached, so each file and height is decoded in full once. One thumbnail definition, so the path does not change the pixels.
 - Thumbnail tiers (store several heights and derive smaller ones from a cached larger one; `THUMBNAIL_RESAMPLING.md` §4.1, option B1): **still undecided; keep thumbnails as they are.** Out of scope for this plan; the design below does not depend on it. Qt's display mipmap filter is a separate display choice (no storage; `THUMBNAIL_RESAMPLING.md` §3.6, §7), also undecided.
 - A README note is enough for the "older build rebuilds a migrated catalog" case.
 - Process: **wait for the Modularity work to land** (the user will say when; git already has review 4's steps 1 to 9 at `04ff156`, `37b8e9b` and `e6cdf16`, though `MODULARITY_REVIEW_4.md:3` still says "all open"). Then implement **one phase at a time: implement, commit on `main`, next phase. No cargo, tests, benches or other validation between phases; validation happens once, at the end (Phase 6).** Fixes found in validation go in a closing commit. No new branches; commit only the phase's files, never the user's other work.
@@ -24,7 +26,7 @@ The plan makes one full decode per new file (Phase 3 moves the import to the ful
 - Docs and strings are updated inside the phase that changes behaviour. The callgrind baseline is refreshed in Phase 6 (see step 2 there).
 - Tests are written with each phase and run in Phase 6. Golden values are captured in Phase 6, never between phases (3.11).
 - A phase that changes a manifest or adds a crate edge commits `Cargo.lock` with it: `justfile:70` runs `cargo test --workspace --locked`, and `Cargo.lock` is tracked. Phase 5 does (the new `import` and `bench` edges). Phase 3 changes no manifest: the Dups pass is a module of `pg-import` (3.7).
-- **Stored values have one definition.** Every value written to `analysis` is computed by one function from one decode of the file, independent of the toggles, the grid height and the path that ran first: the duplicate hashes and ThumbHash come from the full stored decode F (`analysis::hashes`, 3.1), and the borders from the stored pixels. The duplicate hashes are computed in every mode (the toggle gates the pairing, 3.6). Borders are the one stored value a toggle can leave out: their columns are NULL while border detection is off. A test checks that every stored analysis value is identical in all eight toggle combinations, comparing the border columns only where both catalogs ran borders (5.12, 6.6). Thumbnails are display artifacts, never inputs to a stored value, so they may differ by path (Phase 5).
+- **Stored values have one definition.** Every value written to `analysis` is computed by one function from one decode of the file, independent of the toggles, the grid height and the path that ran first: the duplicate hashes and ThumbHash come from the full stored decode F (`analysis::hashes`, 3.1), and the borders from the stored pixels. The duplicate hashes are computed in every mode (the toggle gates the pairing, 3.6). Borders are the one stored value a toggle can leave out: their columns are NULL while border detection is off. A test checks that every stored analysis value is identical in all eight toggle combinations, comparing the border columns only where both catalogs ran borders (5.12, 6.6). Thumbnails are display artifacts, never inputs to a stored value, and every thumbnail is downscaled from the same full decode F (5.1), so the path that made it does not change its pixels.
 - **Transactions are short.** The sink commits at most 100 files or 250 ms of work per transaction (Phase 5), because the app's writers wait only 100 ms for the write lock (`crates/app/src/inbox.rs:73`).
 
 ## Phase 1: remove the "no version bumps before release" rule (docs and comments only)
@@ -149,14 +151,14 @@ pub fn grid_need(grid: Grid) -> Option<Need>                             // Grid
 pub fn grid_refusal(grid: Grid, features: Features) -> Option<Need>      // the need, when its feature is off
 pub fn needs_mask(needs: &[Need]) -> i32                                 // the OR of Need::bit
 pub fn disabled_key(need: Need) -> &'static str                          // "ui-borders-disabled", "ui-thumbnails-disabled"
-pub fn gate_listing(listing: Listing, features: Features) -> (Listing, Vec<Need>)   // 2.7
+pub fn view_refusal(listing: &Listing, features: Features) -> Vec<Need>   // 2.7: the disabled needs a view uses; empty when it can apply
 ```
 
 **Where the gate sits: the desktop boundary.** The controller and `keys::grid` / `keys::viewer` stay pure: they take no features (`client/src/keys.rs:103, :124`). The gate runs where the prefs are read:
 
 - Grid keys: `shell.rs` `key_pressed` (`:157-168`), after `keymap::grid_key` returns the grid key and before dispatch: `if let Some(need) = features::grid_refusal(grid, app::get().prefs().get().features()) { self.as_mut().feature_refused(need.bit() as i32); return true; }`.
 - QML asks through a synchronous invokable `featureOn(need: i32) -> bool` (`shell_bridge.rs`, the same kind as `viewerStep`, `:86`): `Need::from_code(need).is_some_and(|n| app::get().prefs().get().features().wants(n))`.
-- Two signals. `featureRefused(needs: i32)` is emitted when a control was used while its feature is off (a mask of `Need::bit`). `optionsRefused(needs: i32)` is emitted when a start option or a saved view left parts out (2.7).
+- Two signals. `featureRefused(needs: i32)` is emitted when a control was used while its feature is off (a mask of `Need::bit`). `optionsRefused(needs: i32)` is emitted when a start option or a saved view is not applied because it needs a disabled feature (2.7).
 - There is no `Event::FeaturesChanged` and no features in the client controller. The prefs are read at each key press and each start, so there is one source and no copy to keep in step.
 
 The popup text is looked up by need (`disabled_key`). Phase 3 adds `ui-duplicates-disabled`. There is no second copy of the rule.
@@ -180,12 +182,12 @@ Popup {
     function show(text) { message = text; open(); featurePopupTimer.restart() }
     // A control was used while its feature is off: the disabled text of the one feature (a bit of the mask).
     function refused(needs) { show(words.text(needs & (1 << Need.Borders) ? "ui-borders-disabled" : "ui-thumbnails-disabled")) }
-    // A start option or a saved view left parts out: ui-start-option-disabled, with the feature names joined by a comma.
+    // A start option or a saved view was not applied: ui-start-option-disabled, with the feature names joined by a locale-aware separator.
     function optionsRefused(needs) {
         var names = []
         if (needs & (1 << Need.Borders)) names.push(words.text("ui-feature-borders"))
         if (needs & (1 << Need.Thumbnails)) names.push(words.text("ui-feature-thumbnails"))
-        show(words.phrase("ui-start-option-disabled", 0, names.join(", "), ""))
+        show(words.phrase("ui-start-option-disabled", 0, Qt.locale().createSeparatedList(names), ""))   // the locale's list separator (QML Locale, Qt 6.10+; no bridge needed)
     }
 }
 Connections {
@@ -199,7 +201,7 @@ Connections {
 
 ### 2.6 Intercepts, per control
 
-When the feature is off, each control below pops up and performs no action. When it is on, it behaves as today. A control is never hidden or greyed out (the user's rule).
+When the feature is off, each control below pops up and performs no action. When it is on, it behaves as today. A control is never hidden or greyed out (the user's rule). A control that does nothing for another reason also pops up with the reason, so no click goes unexplained (decided 2026-11-13): nothing to crop (`ui-nothing-to-crop`), a viewer N on a file with no border (`ui-no-border-here`), and a grid N on a file that is not checked yet (`ui-borders-not-checked`, the Pending state below the table).
 
 | Control | Input | Need | Intercept point | Note |
 |---|---|---|---|---|
@@ -207,40 +209,44 @@ When the feature is off, each control below pops up and performs no action. When
 | Crop button | click | Borders | `FilterBar.qml:252-260` | `enabled: bar.croppable > 0` is removed. Feature on and `croppable == 0` shows `ui-nothing-to-crop` (Decision 5) |
 | Review combo, borders entries | choose | Borders | `FilterBar.qml:245-251` | index 0 is "any" (`reviewChoices`, `:49`) |
 | Sort combo, "By border depth" | choose | Borders | `TopBar.qml` sort box (`:107-113`); `Main.qml` `onSortActivated` (`:463-466`) | the last sort choice (`client/src/sort.rs:21`) |
-| Duplicates combo (Phase 3) | choose | Duplicates | `FilterBar.qml:217-223` | gate phase: Decision 6 |
+| Duplicates combo (Phase 3) | choose | Duplicates | `FilterBar.qml:217-223` | gated in Phase 3, with the Duplicates toggle (Decision 6) |
 | Grid **B** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | no `Change::ShowBorders` is produced |
-| Grid **N** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | no-border popup: Decision 5 |
+| Grid **N** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | feature off: the disabled popup. Feature on: `Borders::Pending` (due, not checked yet) shows `ui-borders-not-checked`; `None` or `Unknown` (never checked: video, animated, tiny) shows `ui-no-border-here`; `Found` or `Marked` marks it (the grid's border state, below the table). Decision 5 |
 | Viewer **B** | key | Borders | `Main.qml` `onBordersToggled` (`:596`) and `onBordersRequested` (`:418`) | the QML checks before `shell.toggleBorders()` |
-| Viewer **N** | key | Borders | `client/src/keys.rs:138` (guard: Decision 7); `Main.qml` `onBorderMarkToggled` (`:597`) | the QML decides: disabled popup, no-border popup, or the mark |
+| Viewer **N** | key | Borders | `client/src/keys.rs:138` (guard removed: Decision 7); `Main.qml` `onBorderMarkToggled` (`:597`) | the QML decides: disabled popup, no-border popup, or the mark |
 | Viewer N button | visible | Borders | `RatingBar.qml:18` and `:50` | `visible: bar.hasBorders` is removed, so the button is always visible |
 | Inbox **Retry** (thumbnails row) | click | Thumbnails | `InboxPanel.qml:125-128` (`retrySelected`), button `:469-474`, R key `:236-237` | no retry and no row removal |
-| Saved views and start options | apply | the disabled parts | 2.7 | partial application: Decision 4 |
+| Saved views | apply | the whole view, if it needs a disabled feature | 2.7 | not applied; one popup (Decision 4) |
+| `--borders` start option | apply at start | Borders | `controller.rs:113` | gated, like Grid B: no action, one popup (Decision 10) |
+
+**The grid's border state.** `Entry.borders` (`crates/model/src/grid.rs`) is read in `entry_from_row` (`crates/catalog/src/browse/read/grid.rs:53-81`). It gains `Borders::Pending`: a row with no cut columns and `a.borders_due = 1`. The query reads `a.borders_due` as column 16, after the marked flag at 15, so `SORT_COLUMN` moves from 16 to 17. The detail query (`grid.rs:103`) uses the same column list. The one exhaustive-looking match, `desktop/src/gallery/items.rs:185`, has a `_` arm, and the other uses compare with `==` or `matches!`, so nothing else changes. `Pending` needs no migration, and the feature-off case is answered first by the disabled popup.
 
 **Why a combo reverts explicitly.** Qt sets `currentIndex` before it emits `activated` (`qquickcombobox.cpp:378-381`), so a rejected pick leaves the combo showing the pick. Each combo's `onActivated` puts `currentIndex` back. For the filter combos that is `currentIndex = Qt.binding(() => filters.borderMarkedIndex)` (and the duplicates index in Phase 3): a JavaScript assignment removes a QML binding, so the binding is restored by hand. The C++ `setCurrentItemAtIndex` (`qquickcombobox.cpp:680-693`) does not remove it. The sort combo reverts to `shell.sortIndex()` (the controller's sort, `shell_bridge.rs:274`, as `Main.qml:271` and `:743` already read it). It must not revert to the `sortIndex` alias of `TopBar.qml:43`: that alias is the box's own index, so assigning it changes nothing. The binding restore is verified by reading the source; the test runs at build (OPEN l).
 
 ### 2.7 Start options and saved views
 
-`gate_listing` removes every facet and sort that needs a disabled feature and returns the needs it removed:
+`view_refusal` returns the disabled needs that a view or a start option uses. A view that needs one is not applied as a whole; a view that needs none is applied as saved:
 
 ```rust
-/// Removes the facets and the sort that need a disabled feature; returns the needs removed (for the popup).
-pub fn gate_listing(mut listing: Listing, features: Features) -> (Listing, Vec<Need>) {
-    let mut gated = Vec::new();
+/// The disabled needs that a view uses (for the popup). Empty: the view applies as saved.
+pub fn view_refusal(listing: &Listing, features: Features) -> Vec<Need> {
+    let mut refused = Vec::new();
     if !features.wants(Need::Borders) {
-        let q = &mut listing.query;
-        if !q.borders.is_empty() || q.border_marked.is_some() { q.borders.clear(); q.border_marked = None; gated.push(Need::Borders); }
-        if listing.sort.key == SortKey::Borders { listing.sort = Sort::default(); gated.push(Need::Borders); }
+        let q = &listing.query;
+        if !q.borders.is_empty() || q.border_marked.is_some() || listing.sort.key == SortKey::Borders { refused.push(Need::Borders); }
     }
-    (listing, gated)   // Phase 3 adds the same for `q.duplicates` (Need::Duplicates)
+    refused   // Phase 3 adds the same for `q.duplicates` (Need::Duplicates)
 }
 ```
 
 `Listing` is `pg_model::view`; the query fields are `query.rs:219-256`.
 
-- **Starts.** The client `Start` struct (`controller.rs:38-50`) gains `pub gated: Vec<Need>` (`Start::new`, `:54`, sets it empty). In the desktop `start_state` (`crates/desktop/src/controller.rs:91-118`), after `--apply-view` (`:104-107`): `let (listing, gated) = features::gate_listing(listing, prefs.features());`, and the start carries `gated`. The handler that emits `started` (`shell_bridge.rs:69`; its exact name and the accessor for the gated list are OPEN n) emits `optionsRefused(needs_mask(&gated))` when the list is not empty. That is one popup per start.
-- **Menu.** `shell.rs` `apply_view` (`:375-381`): `let (listing, gated) = features::gate_listing(v.listing, prefs.features());`, then `optionsRefused(needs_mask(&gated))` if `gated` is not empty, then `ListingEvent::ViewApplied` with the gated listing. Saved views and start options share this one function.
+- **Starts.** The client `Start` struct (`controller.rs:38-50`) gains `pub gated: Vec<Need>` (`Start::new`, `:54`, sets it empty). In the desktop `start_state` (`crates/desktop/src/controller.rs:91-118`), after `--apply-view` (`:104-107`): `let gated = features::view_refusal(&listing, prefs.features());`. A non-empty `gated` means the start shows the default listing instead of the view, and the start carries `gated`. The handler that emits `started` (`shell_bridge.rs:69`; its exact name and the accessor for the gated list are OPEN n) emits `optionsRefused(needs_mask(&gated))` when the list is not empty. That is one popup per start.
+- **Menu.** `shell.rs` `apply_view` (`:375-381`): `let gated = features::view_refusal(&v.listing, prefs.features());`. If `gated` is not empty, it emits `optionsRefused(needs_mask(&gated))` and the view is not applied. Otherwise it emits `ListingEvent::ViewApplied` with `v.listing`. Saved views and start options share this one function.
 
-This is partial application: the disabled parts are dropped and the rest applies. Its alternative, applying nothing and popping up, is Decision 4.
+The view is not applied as a whole (Decision 4). A saved view is a unit the user chose, so partial application would show a state nobody saved.
+
+**Switch-off.** When a feature is switched off, the current listing drops that feature's facets and sort through the same `ListingEvent::ViewApplied` path. A filter the user cannot clear behind a blocked control is therefore never left. Stored results stay and stay shown.
 
 ### 2.8 Counts
 
@@ -332,6 +338,7 @@ ui-borders-disabled = Border detection is off, so this does nothing. Turn it on 
 ui-thumbnails-disabled = Pre-generated thumbnails are off, so this does nothing. Turn them on in the Library panel.
 ui-nothing-to-crop = No borders to crop in this view.
 ui-no-border-here = This file has no detected border.
+ui-borders-not-checked = Borders are not checked yet for this file.
 ui-start-option-disabled = Left out, because { $text } is off. Turn it on in the Library panel.
 ui-feature-borders = border detection
 ui-feature-thumbnails = pre-generated thumbnails
@@ -339,14 +346,14 @@ ui-detect-borders-count = Detect borders ({ $text } not yet checked)
 ui-pregenerate-thumbnails = Pre-generate thumbnails
 ```
 
-Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplicates`, `ui-detect-duplicates-count` and `ui-detect-duplicates`. The parameterized strings are read with `words.phrase(id, 0, text, "")`, as the crop button does (`FilterBar.qml:253`). The id test in `client/src/text/words.rs` covers each id. The English wording needs the user's approval (Decision 9). No Notice variant is added: the disabled-feature messages are popups.
+Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplicates`, `ui-detect-duplicates-count` and `ui-detect-duplicates`. The parameterized strings are read with `words.phrase(id, 0, text, "")`, as the crop button does (`FilterBar.qml:253`). The id test in `client/src/text/words.rs` covers each id. The English wording is approved (Decision 9), and the joined feature list uses a locale-aware separator. No Notice variant is added: the disabled-feature messages are popups.
 
 ### 2.12 Tests
 
 - Popup intercepts: each row of the table in 2.6 pops up and performs no action. The QML tests live in `crates/desktop/tests/qml/`. The stubs need the members the tests use: `stubs/pg/gallery/Shell.qml` (`:8`, which has `viewerStep`) gets `function featureOn(need) { return true }` and `signal featureRefused(int needs)`, and `stubs/pg/gallery/Settings.qml` (`:4-5`, which has `realSize`) gets `writeBack`, `detectBorders` and `pregenerateThumbnails`, all default true. Each stub value can be set by a test.
 - The Rust intercepts: `grid_refusal` for `Grid::Borders` and `Grid::MarkBorder`, with the feature off and on, in `client/src/features.rs` tests.
 - The combo revert: a rejected pick leaves the combo on its bound value (QML test).
-- `gate_listing` removes the disabled facets and sort; a view with no disabled parts is unchanged.
+- `view_refusal` returns the disabled needs. A view that needs one is not applied; a view with none is applied as saved. Switching a feature off clears its facets and sort from the current listing.
 - Toggle off: the pass is skipped, its due state is kept, and its notices clear. Toggle on: the next round catches up.
 - A height change during Thumbs returns `Done`, and the round reaches Borders.
 - A `put_batch` error posts `CacheNotStored` once and the round continues. The seam is a real failing store (a read-only cache file, or a `cfg(test)` failing store), because `ThumbCache::disabled()` returns `Ok(false)` (`thumbcache/src/lib.rs:199-201`) and never reaches the `Err` path.
@@ -354,6 +361,7 @@ Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplic
 - `feature_counts` excludes missing and pending files, and is 0 when `borders_due` is 0.
 - The prefs golden: the golden text at `prefs.rs:165-173` gains `"detect_borders": true` and `"pregenerate_thumbnails": true` after `"dev_mode": false` (the field order of the file). The changed-value test (`:195-207`) expects both keys. The old-file test `a_float_row_height_from_an_old_file_reads_rounded_and_clamped` (`:185-193`) and the old-folder test (`:257-261`) still pass.
 - `FeatureCell::set` before start and after start both wake the job, and the next round reads the new value. The listener test sits beside the heights test (`runner.rs:596-607`).
+- The viewer N guard is removed (`keys.rs:138`, decided 2026-11-13). The `keys.rs` test at `:303-305` changes to expect `MarkBorder` for a still.
 
 ## Phase 3: duplicate hashes on the full decode, and the duplicate toggle (a migration)
 
@@ -371,14 +379,16 @@ pub fn hashes(upright: &Rgb) -> Hashes;      // PDQ fitted to 512, the pixel has
 pub fn thumbhash(upright: &Rgb) -> Vec<u8>;  // fitted to THUMBHASH_SIDE
 ```
 
-- **The hashes are computed in every mode.** The duplicates toggle gates the pairing (3.6, 3.9), not the hashing. This is the consequence that makes the stored hash values identical in all toggle combinations (Decision 11, Chosen).
+- **The hashes are computed in every mode.** The duplicates toggle gates the pairing (3.6, 3.9), not the hashing. This is the consequence that makes the stored hash values identical in all toggle combinations (decided 2026-11-13, option (a); the rejected alternative is below).
+- **Measured 2026-11-13** (one thread, release, 200 sampled files from `D:\wallhaven\downloads`: 122 JPEG at 9.2 MP mean, 78 PNG at 6.8 MP). For a JPEG, the hashes on the full image cost 41 ms against 4 ms on the scaled image: the pixel hash 3 ms, PDQ 16 ms and ThumbHash 22 ms. The pixel hash and PDQ, the part the duplicates toggle could skip, are about 18 ms of a 135 ms full decode. ThumbHash runs either way, because it is always stored. For a PNG the hashes are the same on both paths, since PNG is not scaled on decode. The resizes dominate the cost, not the pixel hash. 
+- **Why always compute (decided 2026-11-13, option (a)).** Gating the hashing with the duplicates toggle (the rejected option) saves about 24 minutes of CPU on the 85,073-file library, for users who never enable duplicates. Those users would pay for it later: enabling duplicates would then need one more full decode pass (about 2.6 hours of CPU for the library, from the 135 ms JPEG and 62 ms PNG decodes measured above), plus a re-read of the library (about 306 GiB). Stored hashes would also be absent in one toggle state, so the 5.12 and 6.6 checks could compare only where both sides hold a value. Always computing keeps the stored values identical in every toggle combination, and enabling duplicates is a pairing job.
 
 ### 3.2 The 512 MiB JPEG cap lands here
 
 The cap is in `codecs/limits.rs:8` (`max_decode_bytes()`, 512 MiB) and is enforced today only by the PNG and TIFF decoders (`png.rs:20`, `tiff.rs:221`). `decode_jpeg` (`codec/src/decode.rs:141-150`) has no check, so an over-cap JPEG decodes in full today. The check is **new code** in `decode_jpeg`:
 
 - It reads the stored size from the header alone: `Decoder::dimensions(bytes, format) -> Result<(u32, u32)>` (the JPEG header is read at `decode.rs:148`).
-- It compares the scaled allocation with the cap before allocating. The figure is the one the codec reserves: `w * h * 3` for JPEG (the colour-type figure in `codecs/limits.rs:14-17` is for PNG and TIFF).
+- It compares the full allocation with the cap before allocating (every decode is full size, so there is no scaled allocation). The figure is the one the codec reserves: `w * h * 3` for JPEG (the colour-type figure in `codecs/limits.rs:14-17` is for PNG and TIFF).
 - It returns an outcome, not an `Err`: `DecodeOutcome::OverCap { width, height }` (5.2). `decode_stored_into` swallows a decode error (`decode.rs:124`, `.ok()`), and the codecs fallback would then fail the whole file.
 
 PNG and TIFF keep their decoder caps as errors, as today. The over-cap rule applies to JPEG only (Chosen). Phase 3 is where the first full decode lands, so the over-cap rule (5.2) lands here too.
@@ -392,6 +402,20 @@ ALTER TABLE analysis ADD COLUMN dups_state TEXT NOT NULL DEFAULT 'done'
     CHECK (dups_state IN ('due', 'done', 'skipped'));
 CREATE INDEX analysis_dups_due ON analysis(file_id) WHERE dups_state = 'due';
 INSERT INTO meta (key, value) VALUES ('dups_version', 1);
+-- The io read attempts of a file in a pass (Decision 3). Cleared by the trigger when the file changes, and by the
+-- pass whenever it stores a result for the file, or writes the terminal failure at the third attempt.
+CREATE TABLE io_attempts(
+    file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    pass     TEXT NOT NULL,
+    attempts INTEGER NOT NULL,
+    PRIMARY KEY(file_id, pass)
+);
+CREATE TRIGGER io_attempts_stale AFTER UPDATE OF mtime, size, rotation, missing ON files
+WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation
+    OR old.missing IS NOT new.missing
+BEGIN
+    DELETE FROM io_attempts WHERE file_id = new.id;
+END;
 ```
 
 - `dups_state` has three values, and its meaning is:
@@ -425,7 +449,7 @@ DELETE FROM pdq_pairs
 - It does not touch `file_hash`, so exact-duplicate detection is unaffected.
 - `view_epoch` is not touched in Phase 3. Phase 4 adds `bump_view_epoch` to this function (4.5), so an open grid reloads once instead of stamping every JPEG row.
 - `format = 'jpeg'` is verified: `Format::Jpeg` serialises as `jpeg` (strum snake_case, `model/src/format.rs:4-9, 33-40`), and `analysis.format` is written from `Analysis::format()` (`analysis.rs:114-119`) through `store_analysis` (`writers.rs:320`).
-- Consequence: the first open of an upgraded catalog re-decodes every JPEG once, in the Dups pass, whatever the duplicate toggle says. The hash work always runs; only the pairing waits for the toggle (Decision 12). Phase 6 times it. The bump's own writes fire the Phase 4 triggers, and the bump's duration is measured in Phase 6 against `busy_timeout` (5000 ms, `schema.rs:377-378`).
+- Consequence: the first open of an upgraded catalog re-decodes every JPEG once, in the Dups pass, whatever the duplicate toggle says. The hash work always runs; only the pairing waits for the toggle (Decision 12, accepted 2026-11-13). Phase 6 times it. The bump's own writes fire the Phase 4 triggers, and the bump's duration is measured in Phase 6 against `busy_timeout` (5000 ms, `schema.rs:377-378`).
 
 ### 3.5 Writers
 
@@ -520,7 +544,7 @@ The literal `a.dups_state = 'due'` lets SQLite use the partial index `analysis_d
 | Hashed | `store_hashes(item, &hashes, &thumbhash, owed)`, `owed = !detection_on`. If detection is on: `pair_and_insert`, `store_pdq_pair` for each neighbour, then `store_pairs_done`. |
 | Over the cap | `store_skipped`. |
 | Decode error or panic | `store_skipped`, and a ledger row (`FilePass::Duplicates`, `retry = false`, the error text). **Not** `store_failure`: that would erase the analysis of a file that imported fine. |
-| io read error | nothing. The file stays `'due'` and the next round retries it, as the Borders catch-up does (`borders/src/lib.rs:79-83`). This is not the import's policy (Decision 3). |
+| io read error | The common rule (Decision 3): the attempt is counted, and the file stays `'due'` for the next round until the third attempt, which writes an error row (`--retry-errors` or a change of the file clears it). Today the Borders catch-up retries without end (`borders/src/lib.rs:79-83`); this changes that. The count is in `io_attempts` (3.3). |
 | Not run (stopped in the budget wait) | nothing |
 
 `stats.complete = stats.files == items.len()`, as the other passes.
@@ -584,7 +608,7 @@ The duplicates facet has four values, because a file that is not checked yet is 
 ### 3.9 Controls
 
 - A Duplicates checkbox (`detectDuplicates`, the pref `detect_duplicates` in `prefs.rs`, the setter of 2.3), with its count (`duplicates_unchecked`, 2.8: the rows with `dups_state = 'due'`, `error IS NULL`, on present files), and the gate of 2.4 with `Need::Duplicates` (code 2).
-- The duplicates combo (`FilterBar.qml:217-223`) follows the combo rule of 2.6. Its gate phase is Decision 6.
+- The duplicates combo (`FilterBar.qml:217-223`) follows the combo rule of 2.6. It is gated in Phase 3, with the toggle (Decision 6).
 - `Features` gains `duplicates` (the pref's `Prefs::features()`, 2.3). `ImportOptions` (`import/src/lib.rs:32`, which takes an options struct today) carries the features and the thumbnail height (5.11). About 23 call sites change (the runner, the CLI, the `thumbs` test, `library/tests/*`, and `writeback.rs` with 9); the count is taken at the start of the phase.
 - With detection off, the import stores the hashes and `'due'`, and builds no Pairer (3.6). Turning detection on makes the next Dups pass pair the owed rows (pairs only, no decode).
 
@@ -916,21 +940,22 @@ The layout test in 4.12 checks that the incremental result equals `justify_into`
 
 For files whose analysis is due, one decode feeds every enabled stage. The catch-up passes (Thumbs, Borders, Dups) stay separate and unchanged. A unified catch-up worklist was rejected: an OR join scans every file each round, depends on a healthy cache and needs watermark rework.
 
-### 5.1 The decode policy and the thumbnail definitions (proposal: Decision 1)
+### 5.1 The decode policy and the thumbnail definitions (decided: Decision 1)
 
-**Proposal, not decided.** Every analysis-due file gets **one full stored decode F**, whatever the toggles. The hashes, ThumbHash, borders and dimensions come from F, so they are the same in every mode. A decode choice that depended on the toggles would make ThumbHash depend on them, which the single-definition rule forbids.
+**Decided by the user (2026-11-13).** Every analysis-due file gets **one full stored decode F**, whatever the toggles. The hashes, ThumbHash, borders and dimensions come from F, so they are the same in every mode. A decode choice that depended on the toggles would make ThumbHash depend on them, which the single-definition rule forbids.
 
-- Thumbnails at ingest come from F (`to_height` on the full upright image). Thumbnails from the Thumbs catch-up and from on-demand decodes still come from T4 (`MinSize::Upright(0, 4*height)`, `maker.rs:127`). This gives **two thumbnail definitions**. Thumbnails are display artifacts, and no stored value depends on them, so the difference is resampling only. The parity test is redefined to say so (5.7). The user keeps thumbnails as they are, so this needs the user's approval.
-- **Cost.** Today's import decodes DCT-scaled to 512x320 (`Analyzer::analyze_image`). The merged import decodes F, which is larger, for every new JPEG and PNG. With both toggles off, the import still decodes F, because ThumbHash needs it (ThumbHash is always stored). So an import with both toggles off is more expensive than today's import, and the saving comes from removing the other decodes. Phase 6 reports this regression and its size.
+- **The DCT-scaled decode is removed everywhere** (decided 2026-11-13, no further check). The codec decodes only at full size, so the scaled variants of `MinSize` (`Sides`, `Upright`, `Fit`), the viewer's `min_size` and its `DECODE_MARGIN` go, and `Shown::covers` and `resized` work from the full image. Measured: the viewer's time with a scaled decode was the same as with a full decode, and it scaled in 5% of files at 1280×720 and 0% at larger windows, so nothing is lost. The viewer holds one full image, as it does in practice already.
+- **Every thumbnail comes from F**, whether made at ingest, by the Thumbs catch-up, or on demand. F is the full upright image, downscaled with `to_height`. T4 (`MinSize::Upright(0, 4*height)`, `maker.rs:127`) is no longer a thumbnail source. There is **one thumbnail definition**, so the same file gives the same thumbnail whichever path made it (the test in 5.7). Thumbnails are cached, so each file and height is decoded in full once.
+- **Cost.** Today's import decodes DCT-scaled to 512x320 (`Analyzer::analyze_image`). The merged import decodes F, which is larger, for every new JPEG and PNG. With both toggles off, the import still decodes F, because ThumbHash needs it (ThumbHash is always stored). The Thumbs catch-up now decodes F for every older file it covers, which costs more CPU than the T4 decode it replaces. It runs in the background at below-normal priority, and on-demand misses are rare with pre-generation on. Phase 6 reports the import and catch-up regressions and their size.
 
-### 5.2 The over-cap rule (proposal: Decision 2)
+### 5.2 The over-cap rule (decided: Decision 2)
 
-**Proposal, not decided.** Lands in Phase 3 (3.2) with the first full decode; Phase 5 keeps it. A JPEG whose F allocation (`w * h * 3` from the header) exceeds `max_decode_bytes()` (512 MiB, `codecs/limits.rs:8`) is **not decoded at all**:
+**Decided (2026-11-13).** Lands in Phase 3 (3.2) with the first full decode; Phase 5 keeps it. A JPEG whose F allocation (`w * h * 3` from the header) exceeds `max_decode_bytes()` (512 MiB, `codecs/limits.rs:8`) is **not decoded at all**:
 
 - Metadata only: `Meta::read` gives the dimensions, the taken time, the orientation and so on, as for any file.
 - `analysis` is stored with `file_hash` (the bytes are hashed, from the read buffer), the dimensions and the metadata. `pixel_hash`, the PDQ hashes and ThumbHash are NULL. `dups_state = 'skipped'` (3.3).
 - Borders: a `file_failures` row with `pass = 'borders'`, `retry = 0` and the error text `too large to look at`, and `store_borders(None)`, so the borders state is terminal and the file is not retried.
-- Thumbnails: the Thumbs catch-up makes one from T4, which allocates only the small scaled size.
+- Thumbnails: none stored. Every thumbnail comes from F (5.1), and an over-cap file has no F, so no thumbnail is cached for it. Its grid tile shows an **app-drawn warning glyph**, not a bitmap from the OS. The image provider (`providers.rs:115`, which already draws the ThumbHash placeholder through `images().placeholder`) returns the glyph when a file has neither a thumbnail nor a ThumbHash. The glyph is drawn at display time, never cached, so it is not a thumbnail source and 5.1's single definition holds. It uses the theme tokens, so it works in light and dark, and it scales cleanly. A tooltip on the tile gives the reason, the same text as the Borders error ("too large to look at"). The glyph and the tooltip wording were approved (2026-11-13).
 - Read: the file is read whole, as the pipeline reads every file today (`pipeline.rs:282-297`). A streaming hash for over-cap files is not designed (OPEN e). The read buffer is held under the pool's lease (5.3).
 - `ImageFacts.pixels` (`crates/model/src/analysis.rs:93`) and `Analysis.thumbhash` (`:41`) become optional, because an over-cap row has no pixels and no ThumbHash. Their readers are not searched yet (OPEN f).
 
@@ -1026,7 +1051,7 @@ Tests: the sink drains after the readers stop; a full channel slows the workers,
 One transaction per batch, of at most 100 files or 250 ms of work (5.5). For each outcome, in arrival order:
 
 1. **Analysis.** `store_analysis(item, analyzed, dups)` (3.5): the upsert writes the analysis row, the `dups_state` and its hashes (`Done`, `Owed`, `Skipped` or `Nothing`), and NULLs `cut_*` explicitly. A failed analysis is `store_failure` instead (step 4).
-2. **Borders.** `Done(Some(d))` -> `store_borders(Some(d))`; `Done(None)` -> `store_borders(None)`; `Failed` non-io -> the `file_failures` row (`retry = false`) and `store_borders(None)`, as the Borders catch-up does (`borders/src/lib.rs:70-100`); `Skipped` -> nothing. An io read error is not a borders outcome here: it is the file's analysis error (below) under today's policy, or a file left due under the other option (Decision 3).
+2. **Borders.** `Done(Some(d))` -> `store_borders(Some(d))`; `Done(None)` -> `store_borders(None)`; `Failed` non-io -> the `file_failures` row (`retry = false`) and `store_borders(None)`, as the Borders catch-up does (`borders/src/lib.rs:70-100`); `Skipped` -> nothing. An io read error is not a borders outcome here: it counts as an attempt, and at the third attempt it is the file's analysis error (below) (Decision 3).
 3. **Pairs** (only when hashed and detection is on): `pair_and_insert` (the sink owns the Pairer), `store_pdq_pair` for each neighbour, then `store_pairs_done`. The pairs come after step 1, because step 1 deletes the file's pairs (`writers.rs:254, :306`).
 4. **Analysis error:** `store_failure` (the upsert of 3.5) instead of step 1; the file's `dups_state` becomes `'done'` (`Nothing`).
 
@@ -1034,7 +1059,7 @@ Then the transaction commits. Then the thumbnails of the accepted files go to `c
 
 A failed transaction drops the batch's thumbnails. The Thumbs catch-up makes them, because the analysis rows were not stored. A crash between the commit and `put_batch` loses only thumbnails. A `put_batch` error follows 5.8.
 
-**Decision 3 (io read error on import):** under the default, an io read error on the import is an analysis error row (`import/src/lib.rs:72-78`, today's behaviour), so step 4 applies and the file is not retried until it changes or `--retry-errors` is given. Under the other option, the import leaves the file due, and the next round retries it.
+**Decision 3 (io read error, decided).** Every pass counts an io read error as an attempt, in `io_attempts` (3.3, TO_10). Below the third attempt nothing else is written: the import leaves the file pending, so the next round lists it again (`pending_import_sql`, `work.rs:17-31`: the file has no analysis row, so `files.pending` stays 1), and Borders and Dups leave it due. At the third attempt the row is cleared with the terminal result. The import writes its analysis error row (`import/src/lib.rs:72-78`), which creates the failure row through `analysis_import`, so step 4 applies and the file is not retried until it changes or `--retry-errors` is given. Borders and Dups write a failure row with `retry = false`, as their other failures do. Any stored result for the file and pass also clears the row, and so does a change to the file (`io_attempts_stale`), so a user Retry starts from zero. The read error is recognised by `downcast_ref::<std::io::Error>()`, as Borders does (`borders/src/lib.rs:79`): `read_error` (`jobs/src/pipeline.rs:273-278`) keeps the io error under its "read" context. Tests: the three resets, and the counter at 1, 2 and 3 attempts for each pass.
 
 ### 5.7 Encoder split
 
@@ -1043,9 +1068,9 @@ A failed transaction drops the batch's thumbnails. The Thumbs catch-up makes the
 - an **encoder** half: `resizer`, `small`, `encoder`. `encode_image` takes the `&Rgb` image (today it takes `height` and `out`, `maker.rs:155`); and
 - a **decode** half: `decoder`, `image`, `spare`, `file`.
 
-The ingest worker holds one `Analyzer` (decoder, `image`, `spare`, hasher, detector, thumbhasher, meta) and one encoder half. The on-demand path (`make_image`, `encode_frame_into`, and `app/src/images.rs` through `Makers` in `makers.rs`) keeps its `Maker`. The two `KEEP_BYTES` stay as they are, one per half: the analyzer's trims `image` at 96 MB (`analyze.rs:64`), and the maker's trims at 18.9 MB (`maker.rs:23, :161-167`). Merging them changes what is kept between files, so it is a separate decision (Not planned).
+The ingest worker holds one `Analyzer` (decoder, `image`, `spare`, hasher, detector, thumbhasher, meta) and one encoder half. The on-demand path (`make_image`, `encode_frame_into`, and `app/src/images.rs` through `Makers` in `makers.rs`) keeps its `Maker`. The two `KEEP_BYTES` stay one per half: the analyzer's trims `image` at 96 MB (`analyze.rs:64`). The maker's limit was 18.9 MB (`maker.rs:23, :161-167`), sized for a scaled thumbnail decode. Every decode is now full size (5.1), so a 9 MP JPEG's 27 MB image would be released after every file. The maker's limit becomes 96 MB too, so both halves keep one full image between files. Merging the two constants changes what is kept between files, so it stays a separate decision (Not planned).
 
-The test `kept_buffers_give_what_new_ones_do` (`maker.rs:209`) is redefined: ingest thumbnails come from F and on-demand ones from T4, so they are not byte-equal. The test asserts that each path is deterministic and that the stored analysis values are equal.
+The test `kept_buffers_give_what_new_ones_do` (`maker.rs:209`) keeps its meaning. Ingest and on-demand thumbnails both come from F (5.1), so a new test asserts that the same file gives byte-equal thumbnails on the ingest path and the on-demand path, and that the stored analysis values are equal.
 
 ### 5.8 Cache failures and notices
 
@@ -1232,7 +1257,7 @@ Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"l
    - Peak working set <= 4 GiB on the adversarial stratum.
    - Sink time share < 10%.
    - The sink's transaction lock-hold p95 < 100 ms (the app's busy timeout, 5.5).
-   - Regressing modes are listed with their size: the import with both toggles off (5.1), and the first open of an upgraded catalog (3.4).
+   - Regressing modes are listed with their size: the import with both toggles off (5.1), the Thumbs catch-up (5.1), and the first open of an upgraded catalog (3.4).
    - The 1M-row grid merge, worst case (a change at the top) and best case (at the bottom): reported against 100 ms, not a gate.
 
 ## Not planned
@@ -1245,14 +1270,14 @@ Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"l
 
 | Version | Phase | Adds |
 |---|---|---|
-| `TO_10` | 3 | `analysis.dups_state` (three values, 3.3), `analysis_dups_due`, `meta.dups_version = 1` |
+| `TO_10` | 3 | `analysis.dups_state` (three values, 3.3), `analysis_dups_due`, `meta.dups_version = 1`, `io_attempts` and its reset trigger (3.3, Decision 3) |
 | `TO_11` | 4 | `files_log` (TRANSIENT, 4.3), `files_removed`, `files_renamed`, `analysis_import_changed` (replacing `analysis_import_rewritten`, which is dropped), `analysis_rewritten`, the hash-mate and pair triggers (4.4), `meta.log_horizon`, `meta.view_epoch` |
 
 Each migration's test compares `expected()` with a fresh schema (`schema.rs:851-865`). The two migrations land in the two phases, so an old build reads a catalog one version ahead as a rebuild (the README note, 3.3).
 
 ## Strings added, in one place
 
-- `ui.ftl` (Phase 2): `ui-borders-disabled`, `ui-thumbnails-disabled`, `ui-nothing-to-crop`, `ui-no-border-here`, `ui-start-option-disabled`, `ui-feature-borders`, `ui-feature-thumbnails`, `ui-detect-borders-count`, `ui-pregenerate-thumbnails`.
+- `ui.ftl` (Phase 2): `ui-borders-disabled`, `ui-thumbnails-disabled`, `ui-nothing-to-crop`, `ui-no-border-here`, `ui-borders-not-checked`, `ui-start-option-disabled`, `ui-feature-borders`, `ui-feature-thumbnails`, `ui-detect-borders-count`, `ui-pregenerate-thumbnails`.
 - `ui.ftl` (Phase 3): `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplicates`, `ui-detect-duplicates-count`, `ui-detect-duplicates`.
 - `text.ftl` (Phase 3): `pass-dups`.
 - `cli.ftl` (Phase 5): the `--no-borders`, `--no-duplicates` and `--thumbs-height` help lines.
@@ -1275,7 +1300,7 @@ The choices the code forced, with one line of reason each. Each can be overridde
 
 1. **Sort carrier: `Placed` beside `Entry` (Option B); `Entry` stays 56 bytes.** `Entry` is the row type every reader uses, and the sort position is needed only by the sorted list. Option A costs 80 bytes (96 with an `Option<i64>`) on every `Entry`.
 2. **The Dups pass is a module of `pg-import` (`import::duplicates`).** It shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs; no new crate, layer line or lock change.
-3. **Hashes are always computed (in every mode); the duplicates toggle gates the pairing.** It keeps the single-definition rule for the stored hashes and ThumbHash; the saving is the pairing work, not the hashing (Decision 11).
+3. **Hashes are always computed (in every mode); the duplicates toggle gates the pairing.** It keeps the single-definition rule for the stored hashes and ThumbHash; the saving is the pairing work, not the hashing (decided 2026-11-13; see 3.1).
 4. **`dups_state`: `'due'` means the pairs are owed (the hashes may already be stored), and `'skipped'` means not checked, never retried** (over the cap, or a Dups decode error). A boolean cannot say both.
 5. **`analysis_rewritten` compares the whole row, 27 columns, not `analyzed`.** The REPLACE stamped every write; this stamps what the grid shows or sorts by, and a no-change re-analysis stops stamping (Decision 8).
 6. **`DELTA_BOUND` = 8,192 changed rows per delta.** A delta is one transaction and the client merge is O(suffix); above the bound a full list is cheaper and bounds the memory. A value to check in Phase 6 against the delta timing.
@@ -1298,7 +1323,7 @@ The choices the code forced, with one line of reason each. Each can be overridde
 23. **One `put_batch` per flush, at most 100 entries; no 200 constant.** The constant does not exist; a call per flush keeps the transactions few.
 24. **The Scans folder-tree refresh moves to `Change::Round`.** A tree refresh per round is bounded; a refresh per scan is not.
 25. **A Dups decode failure sets `'skipped'` and writes a ledger row; it does not call `store_failure`.** `store_failure` would erase the analysis of a file that imported fine.
-26. **A Dups io read error leaves the file due.** It is the Borders catch-up's behaviour today; the import's policy is Decision 3.
+26. **A Dups io read error counts as an attempt, like every pass (Decision 3).** Three attempts end in an error row.
 27. **`store_borders` returns `Result<bool>`.** The sink must know whether the row changed under it.
 28. **The DUPS bump resets ThumbHash too, and the Dups pass recomputes hash and ThumbHash from the same F decode.** Without it a row keeps the old ThumbHash, and the single-definition rule fails after the bump.
 29. **The pairs-only phase reads no file;** its pairs come from the stored PDQ hashes.
@@ -1309,10 +1334,12 @@ The choices the code forced, with one line of reason each. Each can be overridde
 34. **Over-cap PNG and TIFF are not `'skipped'`.** Their decoder caps already fail the file as an analysis error, as today; widening the rule is OPEN (Not planned).
 35. **The popup is non-modal with `CloseOnPressOutside` and a 4 s timer** (2.5). A blocked control's own handler does the gating, so a press that passes through cannot act on it.
 36. **The combos revert with `currentIndex = Qt.binding(...)`.** A JavaScript assignment removes a QML binding, so the binding must be restored by hand.
+37. **Every decode is full size; the DCT-scaled decode is removed everywhere (5.1).** The scaled path saved about 15 ms on a 9 MP JPEG, scaled in about 5% of viewer files at 1280×720 and none at larger windows, and cost a second definition of the decode's pixels. The memory of a full image is the cost, and the maker's limit follows it (5.7).
+38. **Attempt counts live in `io_attempts`, not in `file_failures`.** The import's failure rows mirror its analysis rows, so a counter there would break that. A separate table with its own reset trigger serves all three passes. The grid's "not checked yet" state comes from `a.borders_due`, not from a second copy of the `has_borders!` predicate in the client, so there is one definition of which files are checked.
 
-## OPEN (not settled by this revision)
+## Verification items (not decisions)
 
-Each item says where it is settled.
+These are checks that a test, a build or a measurement settles. None is a choice for the user. Each item says where it is settled. Items o and x are resolved; the rule for each is in the section it names.
 
 - **a. ON DELETE CASCADE triggers** (4.4): settled by the Phase 4 test (4.12).
 - **b. The planner outcomes** (4.6): `EXPLAIN QUERY PLAN` on the bundled build, in Phase 6.
@@ -1328,7 +1355,7 @@ Each item says where it is settled.
 - **l. The combo binding restore** (2.6): tested at build; verified by reading only.
 - **m. The Inbox Retry pass code** (2.6): `selectedPass` must be the `FilePass::Thumbs` code (`notice.rs:281`); confirm at `InboxPanel.qml:64-69`.
 - **n. The started handler and the gated list** (2.7): the handler name at `shell_bridge.rs:69` and the accessor for `Start.gated`; confirm when implementing.
-- **o. The grid's border flag** (Decision 5): the grid entries carry no border flag; the grid's no-border check needs data.
+- **o. Resolved 2026-11-13.** The grid entries already carry the border state (`Entry.borders`, read from the analysis cut columns and `border_marks`). The gap was `Borders::Unknown`, which covers both "due, not checked yet" and "never checked". `Borders::Pending`, read from `a.borders_due`, separates them (2.6, the grid's border state; string `ui-borders-not-checked`, 2.11).
 - **p. The `Versions` and call-site counts** (3.3, 3.9): counted at the start of Phase 3.
 - **q. The `thumbs/lib.rs:320` and `maker.rs:155` cites** (5.7, 5.9): re-checked at the start of Phase 5.
 - **r. `reader.rs:40-50` and `model.rs:135-149`** (4.8): re-checked at the start of Phase 4.
@@ -1337,61 +1364,5 @@ Each item says where it is settled.
 - **u. The `check_stored` REAL comparisons** (6.6): confirm that stored REAL values are bit-identical.
 - **v. The `files.name` and `folders.path` BLOB encoding** (6.5): the dumps use hex, so they are exact either way; a readable form would need `PathRules`.
 - **w. The Dups-pass ledger code**: the `file_failures` `pass` column is not constrained by a `CHECK` that the grep found; confirmed when the code lands (3.7).
+- **x. Resolved 2026-11-13.** The io attempt count lives in its own table, `io_attempts`, added by TO_10 in Phase 3 (3.3, Decision 3). Not a column on `file_failures`, because the import's failure rows mirror its analysis rows (`ledger.rs:127-128`).
 
-## Decisions needed (user)
-
-The user's decisions are in "Decisions (all given by the user)" above. The items below are proposals, each needing the user's answer. Each has the question, the options, and the recommendation. Items 1 to 4 and 6 to 12 change what the user will see or what the stated rules say; 5 is a gap the user's popup rule does not cover.
-
-0. **Still undecided, not part of this plan:** thumbnail tiers (the user's decision; the design does not depend on them).
-
-1. **The decode policy F and the two thumbnail definitions (5.1).** Question: may every new file get one full stored decode, with ingest thumbnails from that decode and the Thumbs catch-up and on-demand tiles from T4?
-   - (a) Accept as written. Recommended: it is the only way to decode once, since the hashes and ThumbHash need F, and the thumbnails differ only by resampling.
-   - (b) Keep T4 for the ingest thumbnails, which decodes twice per import.
-   - (c) Make every thumbnail from F, so on-demand tiles decode at full size and scrolling slows.
-   - Consequence to accept: the import is more expensive than today's scaled decode, in every mode. With both toggles off it still decodes F, because ThumbHash needs it. Phase 6 reports the size.
-
-2. **The over-cap rule (5.2).** Question: should a JPEG whose F allocation exceeds 512 MiB be metadata only, with no hashes, no ThumbHash and no borders, and `'skipped'`?
-   - (a) Accept as written. Recommended: an over-cap file has no pixel-dependent stored value, so no second definition exists.
-   - (b) Decode it at a scaled size for the analysis. The withdrawn rule; it gives those files a second definition.
-
-3. **The io read error policy (3.7, 5.6).** Question: when the import's read fails with an io error, is the file an analysis error row, or left due?
-   - (a) Analysis error row, as the import does today (`import/src/lib.rs:72-78`); the Borders and Dups catch-ups leave the file due, as Borders does today. Recommended: a permanently unreadable file is not retried every round; `--retry-errors` or a change of the file retries it.
-   - (b) Leave it due on the import too. A permanently unreadable file is then retried every round, with no end.
-
-4. **Partial application or popup-and-skip for saved views and start options (2.6, 2.7), and clearing on switch-off.** Question: when a view or a start option needs a disabled feature, does it apply the rest (with one popup), or apply nothing and pop up?
-   - (a) Partial: drop the disabled facets and sort, apply the rest, and show one popup (the plan's current text).
-   - (b) Popup and skip: nothing is applied, and the popup says so. This is the rule's literal reading, "instead of performing its action".
-   - Recommendation: (b) for applying a saved view from the menu, since it is a control's action; (a) for start options, since a start has no click, and a start that dropped its whole query would be worse. Also keep the clearing of a feature's facets and sort when the feature is switched off (2.6): the alternative leaves a filter that the user cannot clear behind a blocked control.
-
-5. **The two extra popups (2.6), which the user's popup rule does not cover.** Question: which of these show a popup?
-   - Grid N on a file with no detected border (feature on). The grid's entries carry no border flag (OPEN o), so the check needs a data change. Options: no popup (N acts as today), or add the flag to the grid entries.
-   - Viewer N on a file with no border (feature on). The viewer has the flag. Options: popup `ui-no-border-here`, or do nothing.
-   - Crop with nothing to crop (feature on). Options: popup `ui-nothing-to-crop`, or do nothing.
-   - Recommendation: keep the viewer popup and the crop popup, since a click that does nothing is otherwise unexplained. For the grid, no popup until the data exists.
-
-6. **The Duplicates combo's gate phase.** Question: gate the Duplicates combo in Phase 2 or in Phase 3?
-   - Phase 2: the facet is live today (`Query.duplicates`, `query.rs:245`), so this blocks a working filter before there is a toggle to turn it back on.
-   - Phase 3, with the Duplicates toggle. Recommended.
-
-7. **The viewer N key's guard.** Question: remove the `if shown.has_borders` guard in `keys.rs:138`?
-   - (a) Keep it: N does nothing on a file without borders, with no popup.
-   - (b) Remove it: N always reaches the QML handler, which decides between the disabled popup, the no-border popup and the mark. Recommended. The `keys.rs` test at `:303-305` changes to expect `MarkBorder` for a still.
-
-8. **A no-change re-analysis no longer stamps the grid (4.3).** Today the REPLACE stamps the file on every re-analysis, so the tile refreshes even when nothing changed. Question: accept that a re-analysis that changes nothing does not refresh the grid's tile?
-   - (a) Accept. Recommended: "changed" then means something the grid shows changed (4.3).
-   - (b) Keep the stamp on every analysis write (a whole-row stamp on every UPDATE), which the trigger design does not do.
-
-9. **The popup and feature strings (2.11).** Question: approve the English strings? In particular `ui-start-option-disabled` ("Left out, because { $text } is off") joins several feature names with a comma.
-   - Recommended: approve as written, or give the wording.
-
-10. **The `--borders` start option (`controller.rs:113`).** Question: is the show-borders start option gated?
-    - (a) Ungated. Recommended: it shows the stored borders, which stay and stay shown when the feature is off. This is the reading of "stored results stay and stay shown".
-    - (b) Gated, with a popup and no action when the feature is off.
-
-11. **The hash policy when duplicate detection is off (3.1, 3.6, Chosen 3).** Question: compute the duplicate hashes at import in every mode, or only when detection is on?
-    - (a) Always compute. Recommended: the stored hashes and ThumbHash are then identical in every toggle combination, which is the single-definition rule as written. The cost is the PDQ fit and the pixel hash per new file (estimated small beside the decode; measured in Phase 6). The toggle then saves the pairing work and its memory.
-    - (b) Gate the hashing with the toggle. It saves that cost with the toggle off, but the stored hashes are then absent in one toggle state, and the check (5.12, 6.6) compares only where both sides hold a value.
-
-12. **Consequence to accept (not a choice):** the first open of an upgraded catalog re-decodes every JPEG once, in the Dups pass, whatever the duplicate toggle says, because the redefinition is unconditional (3.4). Question: accept the one-time cost? Recommended: accept; Phase 6 times it, and the Dups pass can be run in the background at BelowNormal.
-
-Note (not a decision): `Catalog` must be `Send` for the scoped sink thread (5.5). This is checked at the first build of Phase 5 (not run now). If it fails, the sink needs a second connection, and Section 5.5 changes.

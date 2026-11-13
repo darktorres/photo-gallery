@@ -327,7 +327,7 @@ void raise_render_threads(QQmlApplicationEngine& engine) {
 
 New keys in `crates/client/locales/en/ui.ftl`:
 
-```
+```text
 ui-borders-disabled = Border detection is off, so this does nothing. Turn it on in the Library panel.
 ui-thumbnails-disabled = Pre-generated thumbnails are off, so this does nothing. Turn them on in the Library panel.
 ui-nothing-to-crop = No borders to crop in this view.
@@ -482,7 +482,9 @@ UPDATE analysis
  WHERE file_id = ?1 AND dups_state = 'due' AND pixel_hash IS NULL
    AND NOT EXISTS (SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL);
 ```
+
 It returns `Ok(rows == 1)`. `owed` is `true` when duplicate detection is off.
+
 - `store_pairs_done(item) -> Result<bool>` (new): sets `dups_state = 'done'` on a row that is `'due'` and has a hash, after its pairs are inserted (the same guard). It is used by the pairs-only phase (3.7) and by the hash phase when detection is on.
 - `store_skipped(item) -> Result<bool>` (new): `UPDATE analysis SET dups_state = 'skipped' WHERE file_id = ?1 AND dups_state = 'due' AND NOT EXISTS (SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL)` (the same guard).
 - `store_pdq_pair` is unchanged (`writers.rs:361-365`). Its `ON CONFLICT ... WHERE excluded.distance < distance` upsert keeps each pair once, and the Phase 4 triggers handle an UPDATE of a pair's distance (4.4).
@@ -503,6 +505,7 @@ It returns `Ok(rows == 1)`. `owed` is `true` when duplicate detection is off.
 - **Round order:** `Crops, Scans, Import, Thumbs, Borders, Dups`. Dups runs last and is reached on every round, because Thumbs no longer stops a round (2.9). Priority `BelowNormal` (5.10).
 
 **Worklists** (`crates/catalog/src/work.rs`, beside `pending_borders`, `:84-99`). Both are over `analysis a JOIN files f` with `a.dups_state = 'due' AND f.missing = 0 AND f.pending = 0`, in the order of the other passes (`ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF`):
+
 - `pending_pairs()`: the rows with `a.pixel_hash IS NOT NULL`. Their stored `pdq_dihedral` comes with the row.
 - `pending_hashes()`: the rows with `a.pixel_hash IS NULL`.
 
@@ -856,6 +859,7 @@ pub fn compare_placed(a: &Placed, b: &Placed, descending: bool) -> Ordering
 `Grid` (`crates/client/src/grid.rs:108-129`) keeps `entries: Vec<Entry>` (its `entries()` accessor is unchanged) and a parallel `positions: Vec<Position>` with `Position { key: SortValue, order: i64 }`. It gains an id index, `HashMap<FileId, usize>`, and it stores the stamp it last applied. `position_of` (`grid.rs:168`) becomes an index lookup. A `Placed` from the catalog is split into its entry and its position on arrival.
 
 `Grid::merge(delta)`:
+
 1. Sort the upserts by `compare_placed` (O(k log k)). Drop a removed id that is also upserted: an id removed and then reused (rowid reuse; `files.id` has no `AUTOINCREMENT`) appears in both lists, and the upsert is the live row.
 2. Find `p`, the first changed position: the smallest index of a removed id or an upserted id that is in the list (the id index, O(1) each), and, for each upsert, the position it sorts to (a binary search with `compare_placed` against the rows). Entries before `p` are unchanged and are not touched.
 3. From `p` on, drop the rows whose id is removed or upserted, then merge the rest with the sorted upserts by `compare_placed`, into new vectors, and splice them in place of the old suffix (`Vec::splice`, one memmove of the tail). Cost O(suffix + k).
@@ -864,6 +868,7 @@ pub fn compare_placed(a: &Placed, b: &Placed, descending: bool) -> Ordering
 6. Remap the selection, the anchor and the current item by id (`selection_after`, `grid.rs:384`).
 
 **Incremental layout (decided by the user: in scope).** `justify_into` (`crates/client/src/layout.rs:24-36`) lays out the whole list on every call. The greedy layout (`greedy`, `:38-57`) is determined from a row's first item onward: a row closes when its items fill the width, and nothing before it matters. So a merge relays out only from the row that contains `p`:
+
 - Find that row by `partition_point` on the row starts (O(log rows)). Keep the rows before it.
 - Re-run the greedy from the row's first item over the new aspects, emitting rows.
 - Stop once the last changed item has been passed and a new row starts at an item where an old row started, shifted by the change in length so far. From there the old rows are the same except for their `first`: copy them with `first` shifted by that change (integer arithmetic only, no aspect reads, no fit arithmetic).
@@ -957,6 +962,7 @@ For each file, on one worker, in this order:
 8. **Thumbnail** if the thumbnail feature is on and the cache is enabled: `to_height` from the upright image into the encoder half (5.7), producing the JPEG bytes.
 
 The outcome for the sink: `Outcome { index, analysis: Result<Analyzed>, borders: Stage<Option<Detection>>, dups: DupsState, thumb: Stage<Vec<u8>> }`, with `Stage<T> = Skipped | Done(T) | Failed(anyhow::Error)`. `Stage` lives in `pg-jobs` (`crates/jobs/src/stage.rs`, generic). `Outcome` and `Ingested` live in `crates/import/src/ingest.rs`, since they name `Analyzed`, `Detection` and the thumbnail bytes. `Ingested` is `Done(Outcome) | NotRun`. Rules:
+
 - A decode error gives `Skipped` to borders, to the thumbnail and to dups; the analysis error is the file's failure (`store_failure`, 3.5).
 - A video: borders `Skipped`; `dups` = `Nothing` (no pixel hash, `pdq_dihedral: None`, `analyze.rs:213`).
 - An over-cap JPEG: `analysis` is `Ok` with the NULL pixel fields, borders `Failed` (the terminal row), `dups` = `Skipped`, the thumbnail `Skipped`.
@@ -968,6 +974,7 @@ The outcome for the sink: `Outcome { index, analysis: Result<Analyzed>, borders:
 Today the sink (the catalog transactions and the cache writes) runs on the job thread, which has no priority (`crates/jobs/src/service.rs:91-94`). Only the readers and workers call `set_current_thread` (`pipeline.rs:131, 166`), so the sink runs at Normal. Import already runs at BelowNormal (`runner.rs:522`); the sink does not follow it. `pipeline::run` (`pipeline.rs:123`) uses `std::thread::scope`; the sink loop runs on the calling thread, after the readers and workers are spawned (`sink(...)?` at `:211`, the return at `:212`), and the final flush is at `:266-268`, after `run`.
 
 Design:
+
 - A trait, run on a scoped thread, with the batch rules inside it:
 
 ```rust
@@ -1032,6 +1039,7 @@ A failed transaction drops the batch's thumbnails. The Thumbs catch-up makes the
 ### 5.7 Encoder split
 
 `Maker` (`crates/render/src/maker.rs:50-60`: `decoder`, `resizer`, `encoder: JpegEncoder`, `image`, `spare`, `small`, `file`) splits into:
+
 - an **encoder** half: `resizer`, `small`, `encoder`. `encode_image` takes the `&Rgb` image (today it takes `height` and `out`, `maker.rs:155`); and
 - a **decode** half: `decoder`, `image`, `spare`, `file`.
 
@@ -1042,10 +1050,12 @@ The test `kept_buffers_give_what_new_ones_do` (`maker.rs:209`) is redefined: ing
 ### 5.8 Cache failures and notices
 
 Most of the cache-failure machinery exists:
+
 - `Notice::CacheFull { height, made }` (`model/src/notice.rs:379-382`) and the cache group of notices, `CacheNotStored` among them (`notice.rs:422-452`).
 - `ThumbStats.cache_full` (`thumbs/src/lib.rs:47`) is set when `put_batch` returns `Ok(false)` (`:290`), and the runner posts `Notice::CacheFull` (`runner.rs:563-564`).
 
 What is added:
+
 - `ThumbCache::is_enabled()` (`store.is_some()`, `thumbcache/src/lib.rs:74-76`). It does not exist today.
 - **`put_batch` returns `Err`** (a channel failure, a SQLite error, a writer panic): the rule of 2.9, which is in Phase 2. One `CacheNotStored` for the pass, production stops for the pass, and the round goes on. The merged pass does the same. That is new for the import, which writes no thumbnails today.
 - **`put_batch` returns `Ok(false)`** (full): `Notice::CacheFull` and the stop for the pass, as the Thumbs pass does.
@@ -1116,6 +1126,7 @@ The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, du
 Inputs: a PNG, a WebP and a 12 MP JPEG. The phase creates them (`make_bench_jpeg.py` gains `--format {jpeg,webp}` and `--size WxH`, seed 20261105); they are not assumed to exist. The `ir` harness folder holds `ir.rs` (the root: `include!("ir/linux.rs")` on Linux), `ir/linux.rs` (the per-file and viewer groups; `main!` at `:107`), `ir/catalog.rs` (`LAYOUT` at `:40`; the groups at `:235` and `:277`) and `ir/sample.jpg`.
 
 The benches go in `pg-bench`, which runs only through `cargo bench -p pg-bench --bench ir` (`tools/profiling/bench.py:95`). A bench in `import` would never run under `just perf`. They are added to the `ir` harness through `include!`, as `catalog.rs` is (`linux.rs:105`):
+
 - `per_file` gains `borders_jpeg` (the group at `linux.rs:102` becomes `benchmarks = [analyze_jpeg, thumb_jpeg, borders_jpeg]`). It calls `Analyzer::borders` (`analysis/src/analyze.rs:135`) on `ir/sample.jpg`.
 - `ir/decode.rs` (new): group `decode`, with `decode_png` (the input made in setup by `pg_testkit::png_rgb`), `decode_webp` (`ir/sample.webp`, committed) and `decode_jpeg_12mp` (read in setup from the bench data; not committed).
 - `ir/import.rs` (new): group `import`, with `import_merged` (id `small`): runs `pg_import::import` on a 50-file folder from the bench data into a fresh catalog copy made in setup. The budget key is `import-merged` (folder `import_merged.small`, `perf-compare.py:30-35`); it is added only with the bench (Phase 6).
@@ -1124,14 +1135,14 @@ The benches go in `pg-bench`, which runs only through `cargo bench -p pg-bench -
 
 **Crate layers.** `pg-bench` gains `pg-import` as a dependency (`crates/bench/Cargo.toml`, `[dependencies]`, after `pg-codec`). A dependency must point to an earlier line of `tools/crate-layers.txt` (`boundaries.py:106-108`), so `bench` moves below `import`, and the lines change in the same commit (5.13 below):
 
-```
+```text
 import: analysis catalog dedup jobs model platform render thumbcache trace
 bench: analysis catalog codec import jobs model render scan thumbcache
 ```
 
 **Crate layers, all of the Phase 5 edits** (`tools/crate-layers.txt`; `trace` stays at L28 and must sit above every line that gains it):
 
-```
+```text
 scan: catalog jobs model platform
 thumbcache: dbfile jobs model platform trace
 borders: analysis catalog jobs model platform
@@ -1207,14 +1218,15 @@ Event schema (one JSON object per line; field values are numbers or one of the f
 Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"lock_ms":3.210,"result":"ok"}` and `{"t_ms":1240.001,"ev":"grid_1000","rows":1000}`. `result` is on `sink_flush` and `put_batch` so an error shows in the measurements. `grid_1000` is once per process, since the plan's metric is the time to the first 1,000 rows.
 
    6.5 **`tools/profiling/pairs_dump.py`.** Python standard library. `python tools/profiling/pairs_dump.py CATALOG_DIR [-o OUT]` (stdout by default), opened read-only (`mode=ro`). The file key is `path_hex + "/" + name_hex`, both from the BLOBs (`folders.path`, `files.name`), hex in Python and not SQL `||` on BLOBs, which would mangle non-UTF-8 bytes. It is keyed by path, not `files.id`, so two catalogs of the same library compare. Lines, sorted, tab-separated, for `diff`:
-   - `A <key> <pixel_hash|-> <pdq|-> <pdq_dihedral|-> <thumbhash|->` from `analysis` (hex of the BLOBs, `-` for NULL). Rows with `error IS NOT NULL` are included, with their `error` as the last field.
-   - `P <key_a> <key_b> <distance> <variant>` from `pdq_pairs` (`a < b` by id, re-sorted by key so the order is stable).
+
+- `A <key> <pixel_hash|-> <pdq|-> <pdq_dihedral|-> <thumbhash|->` from `analysis` (hex of the BLOBs, `-` for NULL). Rows with `error IS NOT NULL` are included, with their `error` as the last field.
+- `P <key_a> <key_b> <distance> <variant>` from `pdq_pairs` (`a < b` by id, re-sorted by key so the order is stable).
 
    Exit: 0 ok; 3 the catalog is unreadable or has no `analysis` table. It also prints `PRAGMA user_version` to stderr.
 
    6.6 **`tools/profiling/check_stored.py`.** Python standard library. `python tools/profiling/check_stored.py CATALOG_A CATALOG_B [--max-report 20]`. It compares the stored values of two catalogs built with different toggle combinations (the single-definition test of 5.12, run on the real library as well as the fixtures). Keys as in 6.5; a file present on one side only is a difference. Compared: the analysis columns except `file_id`, `analyzed` (the analysis time, which differs per run) and `dups_state` (a toggle state, not a stored value); the hash columns and ThumbHash in every case; the border columns (`cut_*`, `borders_due`) only where both catalogs ran borders; `pdq_pairs` by (key_a, key_b) only where both catalogs ran duplicates; `border_sides` by (key, pass, edge) with its other columns. Not compared: thumbnails (the cache file), and `files` state columns (`pending`, `seq`, `changed`), which are not stored values of a decode. Output: `DIFF <table> <key> <column> <a> <b>` for the first `--max-report` differences, then `<n> files compared, <m> values differ`. Exit: 0 all equal; 1 any difference; 3 unreadable catalog.
 
-7. **Targets** (reported, not gates; the report records each target's result and the measured value):
+1. **Targets** (reported, not gates; the report records each target's result and the measured value):
    - Merged CPU <= 0.85x the sum of today's passes on PNG and 4K JPEG.
    - Time until the grid shows 1,000 rows <= 2x today's import.
    - Peak working set <= 4 GiB on the adversarial stratum.

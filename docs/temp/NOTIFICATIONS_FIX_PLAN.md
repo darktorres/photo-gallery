@@ -54,48 +54,48 @@ keeps the feature-level list; some items here are on it too.
 
 ## Tests
 
-9. **W1, timed:** with a 200k-file walk running and paused, a dismissal and a post land within one batch write's time.
+1. **W1, timed:** with a 200k-file walk running and paused, a dismissal and a post land within one batch write's time.
    Missing.
-10. **W2, write-back:** the test covers a write-back between a listing and its batch. It does not cover a Retry or a
+2. **W2, write-back:** the test covers a write-back between a listing and its batch. It does not cover a Retry or a
     version bump in between (the import is stood in for by `mark_pending`). No test shows a walk that errors out gives its
     lease back.
-11. **W1, coalescing:** nothing pins how a `Post` coalesces past a same-key `Dismiss` or `MarkRead` queued between two
+3. **W1, coalescing:** nothing pins how a `Post` coalesces past a same-key `Dismiss` or `MarkRead` queued between two
     posts. Decide the outcome and test it.
-12. **`a_clear_of_nothing_writes_nothing`** checks only `data_version`, so it passes whether or not the clear takes the
+4. **`a_clear_of_nothing_writes_nothing`** checks only `data_version`, so it passes whether or not the clear takes the
     write lock. Hold `BEGIN IMMEDIATE` on another connection and check the clear still returns.
-13. **A6, import ledger:** missing tests for a rotation write-back followed by `--retry` (`crates/catalog/src/ledger.rs`);
+5. **A6, import ledger:** missing tests for a rotation write-back followed by `--retry` (`crates/catalog/src/ledger.rs`);
     a folder removed and re-added; `set_import_version` firing the hidden trigger only for rows whose flags change; and
     `EXPLAIN` at 200k files with 50k hidden rows.
-14. **A2, pruning:** `states_are_never_pruned_and_an_update_prunes_nothing` (`crates/catalog/src/inbox.rs`) runs its update
+6. **A2, pruning:** `states_are_never_pruned_and_an_update_prunes_nothing` (`crates/catalog/src/inbox.rs`) runs its update
     check at exactly the bound. Insert `KEPT_EVENTS` and then more first, so that pruning on update would fail it.
-15. **Cache writer:** the `Failing` state machine in `crates/thumbcache/src/writer.rs` has no test that `TouchesWritten`
+7. **Cache writer:** the `Failing` state machine in `crates/thumbcache/src/writer.rs` has no test that `TouchesWritten`
     or `Stored` follows a failure.
-16. **Thumbs pass:** no test that the ledger is flushed when the pass errors or is stopped (`crates/thumbs/src/lib.rs`).
-17. **Runner:** no test that a restart in `tend` posts nothing (`crates/app/src/library.rs`).
-18. **B2, folders:** the reparse test in `crates/scan/src/lib.rs` does not assert the ledger. No test shows a refused
+8. **Thumbs pass:** no test that the ledger is flushed when the pass errors or is stopped (`crates/thumbs/src/lib.rs`).
+9. **Runner:** no test that a restart in `tend` posts nothing (`crates/app/src/library.rs`).
+10. **B2, folders:** the reparse test in `crates/scan/src/lib.rs` does not assert the ledger. No test shows a refused
     non-root folder swept by its parent's walk (`crates/catalog/src/roots.rs` tests the root only).
-19. **B4:** no test for the once-per-kind decode log (`crates/app/src/inbox.rs`).
-20. **B5:** no test for bidi isolation of path arguments (`crates/client/src/text/notice.rs`).
-21. **D1 and D2:** no desktop test for the log model's seq offset (`crates/desktop/src/log_model.rs`), or for marking the
+11. **B4:** no test for the once-per-kind decode log (`crates/app/src/inbox.rs`).
+12. **B5:** no test for bidi isolation of path arguments (`crates/client/src/text/notice.rs`).
+13. **D1 and D2:** no desktop test for the log model's seq offset (`crates/desktop/src/log_model.rs`), or for marking the
     displayed rows. Only the pure `list_diff` is tested.
-22. **T, not written:** `THUMBS_VERSION > 0` as a compile-time assert (`crates/render/src/lib.rs`); replacing the 20-byte
+14. **T, not written:** `THUMBS_VERSION > 0` as a compile-time assert (`crates/render/src/lib.rs`); replacing the 20-byte
     JPEG test in `crates/render/src/maker.rs` (around line 285, `whole.get(..20)`) with a file cut inside SOF; a borders
     case in `crates/library/tests/writeback.rs`.
 
 ## Screenshots
 
-23. **F3:** run `just shots` against the current reference (`tools/shots/reference/3edb43b…`, 51 commits behind HEAD) to
+1. **F3:** run `just shots` against the current reference (`tools/shots/reference/3edb43b…`, 51 commits behind HEAD) to
     show the old scenarios still match. Then `just shots --record` and commit the new reference as
     `tools/shots/reference/<sha10>`. Not run.
 
 ## Performance gate
 
-24. `just perf --budgets` for the F1 comparison against `docs/perf/baseline.json`, as restated in `docs/perf/budgets.json`.
+1. `just perf --budgets` for the F1 comparison against `docs/perf/baseline.json`, as restated in `docs/perf/budgets.json`.
     Check the current result, since the catalog has changed since the budgets were measured.
 
 ## By-hand checks
 
-25. Not run by this audit: dismiss the import entry, add a corrupt file, rescan (expect "1 since dismissed", and it
+1. Not run by this audit: dismiss the import entry, add a corrupt file, rescan (expect "1 since dismissed", and it
     survives opening the inbox); a thumbnail Retry does not re-badge import; a failing file mid-pass shows the link
     within about 2 s and opens the updating list; a write-stopped state clears after a healthy restart; a sub-folder
     rescan keeps the root's other unreadable folders; the keyboard-only inbox; a dismissal during a CLI import sticks.

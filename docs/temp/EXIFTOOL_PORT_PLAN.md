@@ -13,6 +13,8 @@ The reference is ExifTool 13.60, installed at `C:\Program Files\ExifTool`. Its s
 **The goal is checkable.** For every file we read, the port finds the same values ExifTool does, in the same places,
 and picks the same winner. A harness runs both on real files and on mutated ones, and zero mismatches is the bar.
 
+**Scope.** The port covers all of ExifTool 13.60, read and write, as set out in `docs/temp/EXIFTOOL_PORT_DESIGN.md`. This plan is the first slice of that design: the read side of the five containers (JPEG, PNG, GIF, WebP and TIFF) for the six fields below. Its steps are the acceptance gate for that slice. The rest of the port is gated by the design's phases and their done tests.
+
 Validated against HEAD e428ab2 (2026-11-12) by a claim-by-claim check of every path, line, ExifTool range and
 behaviour in this plan. The base 4e1ad4d (2026-11-02) is not an ancestor of HEAD: HEAD's history begins at the
 squash commit 88e780b, so the paths and line numbers from the base no longer exist. Every path and line below is at
@@ -93,22 +95,26 @@ The defaults below stand unless a later decision changes them.
        `MicrosoftPhoto:Rating` copy (`Microsoft.pm` 248–249), which is priority 1 and so beats EXIF `RatingPercent`
        (priority 0). The port reads it under that name.
      - Date taken: `DateTimeOriginal`, then `CreateDate`, then `XMP-photoshop:DateCreated`.
-   - Behaviour changes, counted in step 6:
-     - Within XMP, a priority-1 property found later wins: the extended packet over the standard one, and later
-       packets over earlier ones. Today the first wins.
-     - The date chain reads XMP only through `XMP-photoshop:DateCreated`. HEAD also reads XMP `exif:DateTimeOriginal`
-       and `xmp:CreateDate` (`crates/metadata/src/lib.rs:46–47`), and the new chain drops both.
-     - Orientation is read from more places: IFD1, SubIFDs, several EXIF blocks, and the new carriers.
-     - EXIF Rating above 5, and -1, read as none (Step 3). Decision 1 says faithful, so this deviation is listed here
-       and counted in step 6.
+   - Differences from HEAD, counted in step 6. The parser has no exceptions to ExifTool: its values, winners and warnings match ExifTool. These are the places where the app's result, or HEAD's, differs:
+     - Within XMP, the parser follows ExifTool: a priority-1 property found later wins (the extended packet over the
+       standard one, and later packets over earlier ones). HEAD takes the first, so this is a HEAD difference.
+     - The app's date rule is policy: it selects XMP only through `XMP-photoshop:DateCreated`. HEAD also reads XMP
+       `exif:DateTimeOriginal` and `xmp:CreateDate` (`crates/metadata/src/lib.rs:46–47`). The parser still reads those tags
+       exactly as ExifTool does; the app does not select them.
+     - Orientation is read from more places: IFD1, SubIFDs, several EXIF blocks, and the new carriers. The parser reads them
+       as ExifTool does; the app's use of them is the HEAD difference.
+     - The rating rule is app policy: EXIF Rating above 5, and -1, read as none (Step 3). The parser still reports
+       ExifTool's raw value. Listed here and counted in step 6.
    - ExifTool writes our ratings (writeback), so reading them back with its rules keeps one source of truth.
 3. **XMP is ported too, and quick-xml goes.** ExifTool's XMP reader is a tolerant scanner, not an XML parser:
    - An undeclared `xmp:` prefix still matches.
    - A wrong trailing slash on a URI is fixed (ours has one on MicrosoftPhoto).
    - A broken element loses only its own nesting level.
    - Dates are normalized as they are read.
-4. **Out of scope:** IPTC, makernotes, GPS, ExifTool's writing (rating and orientation writes stay with ExifTool), and
-   every other tag. Frame counting stays ours. Formats stay the ones `Format::sniff` knows.
+4. **Scope:** the whole of ExifTool 13.60, read and write, per the design. This plan's slice is the read side for five
+   containers and six fields (see Context). This reverses the earlier out-of-scope list (IPTC, makernotes, GPS, writing).
+   Frame counting stays ours: it is app logic, not ExifTool's. The app's selection rules (decision 2) are the only layer that
+   is not ExifTool's.
 
 ## Steps
 
@@ -160,6 +166,9 @@ moves into the patcher, so the patcher returns `None` rather than an unchecked `
 - **Safety:** read-only on the library. It runs on E: only after the owner approves it, since E: is the library HDD.
 
 ### 2. The port (pg-metadata: the existing modules are extended, and `found.rs`, `jpeg.rs`, `png.rs`, `webp.rs`, `gif.rs` and `irb.rs` are new)
+
+This section is the slice of design phases P1 to P5 (`docs/temp/EXIFTOOL_PORT_DESIGN.md`). The modules listed here are
+that slice, not the whole port.
 
 Every ported function cites its ExifTool file and line.
 
@@ -229,7 +238,7 @@ Every ported function cites its ExifTool file and line.
   - Inflation uses miniz_oxide.
 - **`webp.rs`** (`RIFF.pm` 557–587, 2026–2218).
   - The `EXIF` chunk, with or without the `Exif\0\0` prefix.
-  - `XMP ` and `XMP` followed by a NUL byte: four-byte chunk ids with a trailing space and a trailing NUL. ExifTool
+  - `XMP` followed by a space, and `XMP` followed by a NUL byte: four-byte chunk ids with a trailing space and a trailing NUL. ExifTool
     warns "Incorrect XMP tag ID" on the NUL variant and still reads it.
   - The scan runs to EOF, not to the RIFF size. A truncated chunk stops it.
 - **`gif.rs`** (`GIF.pm` 413–459).
@@ -366,6 +375,7 @@ One commit per verified step. Before building, check that no other build is runn
   `cargo deny check` and `cargo machete crates`.
 - **Acceptance:**
   - Zero raw mismatches against ExifTool 13.60 on corpora 1, 2 and 4, and on 3 if approved.
+  - For the whole port, every design phase's done test passes (design section 7).
   - Fuzzing clean for a fixed time per target.
   - The app-level diff explained file by file.
   - `ratings` identical before and after the file_ratings pass in step 6. The 6 files of 29c4d5e are the one case

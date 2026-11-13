@@ -41,6 +41,7 @@ Coverage of this revision:
 The findings below are as of f3d2e60.
 
 **Status of the findings at HEAD 898b709 (checked 2026-11-12).** Most are resolved: the `catalog`↔`browse` and `decode`↔`metadata` cycles; the `catalog`→`analyze` and `pdq_index` edges; the `video`→`analyze` edge; the `pub conn` leak (now `pub(crate)`); the writer closures; the `CropSource` format; the swap rule and the orientation tables (except video's); the image URL protocol (now in `pg-client`); BLAKE3 and the JPEG marker walks (now in `pg-model` and `pg-container`); progress polling; the `Control` poll (now a condvar); `cfg(windows)`; and the bench's missing import. Still present at HEAD:
+
 - `Format::from_name` reads the stored format name (`crates/catalog/src/lookup.rs:155`, `types.rs:199`);
 - the thumbnail cache ATTACHes the catalog and reads `thumb_clock` (`crates/thumbcache/src/reader.rs:28`);
 - its reader connections are in a thread-local (`reader.rs:90`);

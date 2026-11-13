@@ -183,7 +183,7 @@ Decided. The controller runs in every client. The server is the only data author
 catalog. The desktop talks to a per-user background server on loopback, through the same protocol as every other client.
 Everything else in this section is *Proposed* unless it says otherwise; the open items are in "Open points".
 
-**Ownership**
+### Ownership
 
 - Server: catalog facts (items, ratings, marks, rotation, folders, the tree), scan and job status, persisted
   preferences, thumbnails, listing snapshots, and the event log.
@@ -195,7 +195,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - *Proposed:* a device record, created at login. The desktop is a device too, with a per-start loopback token. Device
   identity is open (below): the record's key, and the snapshot cap that counts per client, depend on it.
 
-**Identity**
+### Identity
 
 - Items are identified by `FileId` on the wire. An index is local to one snapshot on one client and never crosses the
   boundary. The client's data layer converts index-carrying commands (`Select(usize)`, `Rate { item }`,
@@ -205,7 +205,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - The `Event` and `Command` enums in `crates/client/src/controller.rs` use indices (`Select(usize)`, `Rate { item }`). They
   stay local. The wire message set is defined from this section, not from those enums.
 
-**Listings**
+### Listings
 
 - **What a snapshot is:** when a listing opens, the server runs the query and sort once, and keeps the resulting ordered list
   of item IDs under a listing ID and a generation. It stays fixed until the client closes it, it expires, or the client reopens
@@ -224,7 +224,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   reach clients live.
 - Using an expired snapshot returns `SnapshotExpired`, and the client reopens it as above.
 
-**Mutations**
+### Mutations
 
 - Every mutation is a set: `set(field, value, expected_version)`. Relative operations (rotate by one turn) are computed by
   the client into absolute values before they are sent.
@@ -237,7 +237,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - *Open:* the set-only rule has to be checked against the desktop's per-field edits in `crates/desktop/src/gallery/edits.rs`
   before it is final.
 
-**Sync**
+### Sync
 
 - The server numbers events per session. The client records the last number it applied.
 - On a gap or a reconnect the client calls `resume(seq)`. If the server still holds those events, they replay. Otherwise the
@@ -245,7 +245,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - The mapping from server changes to controller events lives in one place, the client's data layer. Its tests are part of
   the design.
 
-**Loading**
+### Loading
 
 - Phases: `Connected` (protocol version checked), `TreeLoaded`, `ListLoading(generation)`, `ListReady(generation)`,
   `ListShown`.
@@ -255,13 +255,13 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   loaded listing silently.
 - `ListReady` matches the reader's `Session::grid` completion (`crates/app/src/reader.rs:257`), not the window being ready.
 
-**Protocol and versions**
+### Protocol and versions
 
 - The handshake carries a protocol version and a build id. The desktop refuses a server with a different protocol version,
   and restarts its own background server. A browser checks the build id on connect and reloads if the server has moved on.
 - The server serves the frontend it was built with, so the browser and the server always match.
 
-**Processes and access**
+### Processes and access
 
 - One binary, `gallery`, with the `serve` subcommand. An always-running per-user background process, started at logon and
   supervised by the desktop. The desktop attaches to it, or starts it, under a single-instance lock.
@@ -281,7 +281,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   server's API. Otherwise they write the catalog directly. No refusal is needed: ordinary SQLite writes already share the
   catalog. The exclusive hold (`crates/catalog/src/lifecycle.rs:49-52`) is taken only for layout changes.
 
-**Testing**
+### Testing
 
 - Controller logic: the existing replay tests.
 - Data layer: a conformance suite against the server, covering versions, sequence numbers and resume, and snapshot
@@ -291,7 +291,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   range fetch, then set the budgets from those numbers. The candidate numbers, unmeasured: listing open no more than the
   in-process time plus 50 ms; a 100-item range fetch with p95 at most 16 ms on loopback.
 
-**Open**
+### Open
 
 - The video side (work in progress; kept open).
 - The TLS library for the LAN listener: `rustls` or `native-tls` (see Server).

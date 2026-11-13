@@ -20,10 +20,10 @@ open, from an audit of the plan against the code. The audit read the working tre
 
 ## Tests
 
-5. **QML stubs** (`crates/desktop/tests/qml/stubs/pg/gallery/`): add `Notices.qml` and `LogModel.qml` with their `qmldir`
+1. **QML stubs** (`crates/desktop/tests/qml/stubs/pg/gallery/`): add `Notices.qml` and `LogModel.qml` with their `qmldir`
    lines, `devMode` in `Settings.qml` and `globalAction` in `Shell.qml`. Run `just qmltest` first to see which tests fail
    without them.
-6. **Missing tests:**
+2. **Missing tests:**
    - `THUMBS_VERSION` is nonzero, against the real constant (`crates/library/src/lib.rs`).
    - `notice_post` dedup ignores `detail` (`crates/catalog/src/inbox.rs`). See the design item on dedup below.
    - Every trigger fires: a test inserts through each (`crates/catalog/src/schema.rs` only checks they exist).
@@ -34,7 +34,7 @@ open, from an audit of the plan against the code. The audit read the working tre
 
 ## Performance gate
 
-7. `just perf` against `docs/perf/baseline.json` has not run since the thumbs-pass restructure. The baseline predates it.
+1. `just perf` against `docs/perf/baseline.json` has not run since the thumbs-pass restructure. The baseline predates it.
 
 ## Design: code and the design disagree
 

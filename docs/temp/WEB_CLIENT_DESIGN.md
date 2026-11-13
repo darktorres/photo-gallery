@@ -118,6 +118,7 @@ Decision: Ship the Yandex TLS change first as its own commit, then the LAN liste
 Why: Each check tests one claim. The captcha risk can only be settled live.
 
 Open:
+
 - Whether every Yandex result host validates under rustls-platform-verifier as under schannel (i.ytimg not reproduced).
 - Revocation latency: whether the accumulative timeout bounds the total within the 30 s whole-request bound, and how often Yandex or result certificates trigger online fetches.
 - Yandex's anti-bot response to the new ClientHello and revocation traffic (captcha rate; must be measured before shipping).
@@ -137,11 +138,13 @@ Open:
 - WEB_CLIENT.md line numbers from design reads, to be re-read before editing.
 
 Measure first:
+
 - Paired live comparison of current and rustls builds: about 50 searches per build; handshake time, first byte time, captcha count, status counts, result counts (thresholds: no increase in captcha or error rate; no search past 30 s from revocation).
 - Network capture during a search and a download: OCSP or CRL request count and latency.
 - Revocation first-connect wait per new end certificate.
 
 Validation notes:
+
 - Corrected by validators: client.rs:22 is the pacing constant; the jar is at client.rs:27-31 and 36-41. Transport text is text.rs:353, not 376 (376 is the SearchError::Request arm). rustls-native-certs-0.8.1 is in the cache (openssl-probe question can be settled from its Cargo.toml); rustls-platform-verifier-android 0.2.0 is absent from the cache.
 - WEB_CLIENT.md 325-326 contains no native-tls claim; the list should drop them or name the error.
 - Contradiction: LAN certificate paths are placed in gallery.json by auth but moved to server.sqlite by device; the TLS design does not place them.
@@ -176,8 +179,8 @@ Decision: Session token: 32 bytes from getrandom, base64url; the server stores o
 Why: Derived CSRF cannot drift from the session; rotation would race the viewer's eight preloads (WEB_CLIENT.md:571). Rejected: raw tokens in the database, HMAC with a server key, per-request rotation, stored CSRF digests.
 
 **Q: Session cookie name, attributes and lifetime?**
-Decision: Name __Host-gallery_session; Secure, HttpOnly, SameSite=Strict, Path=/, no Domain; Max-Age equal to the absolute lifetime. No other cookies from the gallery.
-Why: The __Host- prefix forbids Domain and non-root paths, so sibling hosts cannot set it. Strict keeps cross-site top-level GETs from carrying it; the cost is one login prompt for an externally opened link. Device's sign-in cookie uses Lax (see device); the two disagree and are listed in validation.
+Decision: Name `__Host-gallery_session`; Secure, HttpOnly, SameSite=Strict, Path=/, no Domain; Max-Age equal to the absolute lifetime. No other cookies from the gallery.
+Why: The `__Host-` prefix forbids Domain and non-root paths, so sibling hosts cannot set it. Strict keeps cross-site top-level GETs from carrying it; the cost is one login prompt for an externally opened link. Device's sign-in cookie uses Lax (see device); the two disagree and are listed in validation.
 
 **Q: Session lifetime, renewal and time source?**
 Decision: Idle 30 days, sliding on use; absolute 90 days from login, not extended. last_seen written at most hourly. Expiry uses the server's wall clock in unix milliseconds passed in as now_ms. Elevation lasts 10 minutes. WebSocket rechecks its session every 60 s and on device revocation. All proposals.
@@ -196,7 +199,7 @@ Decision: Ordered steps: (1) add the device to an in-memory deny set; (2) one tr
 Why: The current code discards save results (settings.rs:16-18) and JsonStore keeps failed changes in memory (store.rs:51-58); revocation must fail closed. Rejected: commit-first ordering, revocation by a flag checked later, relying on expiry.
 
 **Q: Password change, reset and the owner epoch?**
-Decision: The owner row holds phc, epoch and changed_ms. A change from a Lan session needs the current password, verified through the queue; then one transaction runs UPDATE owner SET phc, epoch = epoch+1 WHERE epoch = <the epoch read>. Zero rows changed is 409 and the caller retries. The same transaction deletes every device except the caller's and updates the caller's session epoch. Reset from loopback needs no current password and deletes every device, clearing login_failures. Every change posts a notice.
+Decision: The owner row holds phc, epoch and changed_ms. A change from a Lan session needs the current password, verified through the queue; then one transaction runs UPDATE owner SET phc, epoch = epoch+1 WHERE epoch = `<the epoch read>`. Zero rows changed is 409 and the caller retries. The same transaction deletes every device except the caller's and updates the caller's session epoch. Reset from loopback needs no current password and deletes every device, clearing login_failures. Every change posts a notice.
 Why: Compare-and-set makes concurrent changes retry instead of overwriting; one transaction is all-or-nothing. Keeping the caller's device follows the current password as proof. Rejected: a phone reset without the current password, last-writer-wins on the hash.
 
 **Q: Resetting the password when the server is down, and CLI writes?**
@@ -216,7 +219,7 @@ Decision: Without a session only: GET /login and its own small assets (a separat
 Why: The app bundle would expose product code before login; the Host check defeats DNS rebinding; one 401 body gives no route map.
 
 **Q: The loopback listener, launch token, launch file and single-instance rule?**
-Decision: Loopback binds 127.0.0.1 on a random free port chosen per start, with its own router. A 32-byte launch token, in memory, carried only as an Authorization: Bearer header on every loopback route, GET included. The loopback router rejects requests with an Origin header, requires Host 127.0.0.1:port or localhost:port, and never reads cookies. The launch file <home>/launch.json holds the port and token, written temp-then-rename, owner-only DACL on Windows (new code, created before bytes are written) and mode 0600 on Unix, deleted on clean stop. The LAN router never reads it. Single instance: pg-dbfile's Lock on the home folder before the LAN binds, refusing with a message if another server runs.
+Decision: Loopback binds 127.0.0.1 on a random free port chosen per start, with its own router. A 32-byte launch token, in memory, carried only as an Authorization: Bearer header on every loopback route, GET included. The loopback router rejects requests with an Origin header, requires Host 127.0.0.1:port or localhost:port, and never reads cookies. The launch file `<home>`/launch.json holds the port and token, written temp-then-rename, owner-only DACL on Windows (new code, created before bytes are written) and mode 0600 on Unix, deleted on clean stop. The LAN router never reads it. Single instance: pg-dbfile's Lock on the home folder before the LAN binds, refusing with a message if another server runs.
 Why: Random port stops a squatter receiving the token; Host blocks DNS rebinding; bearer headers cannot be sent cross-origin without preflight. Rejected: fixed port, token in a URL or cookie, one credential for both listeners.
 
 **Q: The LAN settings and where the LAN flag lives?**
@@ -264,7 +267,8 @@ Decision: Unit tests: cookie attribute string; Origin and Sec-Fetch-Site rules; 
 Why: Crash, disk and revocation rules are the risky parts and need deterministic tests.
 
 Open:
-- Android Chrome accepts the Secure, __Host-, SameSite=Strict cookie on https://<LAN-IP> with the private CA (P7 phone trust gate; unverified).
+
+- Android Chrome accepts the Secure, `__Host-`, SameSite=Strict cookie on https://`<LAN-IP>` with the private CA (P7 phone trust gate; unverified).
 - Whether Chrome for Android sends Origin on every non-GET and on the WebSocket upgrade, and Sec-Fetch-Site (refusal of missing Origin is the safe default).
 - Clear-Site-Data behaviour on Android Chrome for Cache Storage and HTTP cache.
 - Owner decisions: step-up tier (chosen here); deletes and moves at ordinary level (chosen); no recovery code (rejected by default); last IP not stored in v1.
@@ -294,11 +298,12 @@ Open:
 - New Notice variants must follow the existing enum shape (notice.rs not read in full).
 - WAL with synchronous NORMAL can lose committed transactions on power loss (reason for FULL on auth.sqlite; not rechecked).
 - OWASP, NIST and RFC 6797 statements were recalled, not checked; the 15-character floor rests on the single-factor argument.
-- __Host- and SameSite behaviour in current Chrome for Android is expected, not verified on a device.
+- `__Host-` and SameSite behaviour in current Chrome for Android is expected, not verified on a device.
 - Device label parsing rules not designed.
 - The public login page reveals that the product runs (accepted).
 
 Measure first:
+
 - Argon2id verification time and peak memory on the owner's desktop at 64 MiB, t=3, p=1 and at the OWASP floor, one at a time.
 - Queue wait for a correct password behind a 20-attempt flood.
 - Per-request session lookup latency on the read pool, LAN and loopback.
@@ -308,8 +313,9 @@ Measure first:
 - Phone trust gate on Android Chrome: cookie acceptance, Origin and Sec-Fetch-Site presence, Clear-Site-Data effects.
 
 Validation notes:
+
 - Corrections: the fault module is declared at writeback lib.rs:56-57 (53-54 are use statements). run_command is at cli lib.rs:131; the Scan, Remove, Import and Thumbs arms are at 142, 208, 226 and 242. Layout struct fields are 19-22.
-- Contradictions: (1) Decided item: the exclusive hold is only for layout changes, but the auth offline reset takes an exclusive probe on auth.sqlite; restate the rule or change the design. (2) write_back is settable from any client, but here it needs elevation; the owner decides. (3) Device design: desktop is a device row (random key, server.sqlite) versus no device row here (fixed 'desktop' key). (4) Cookies: auth sets one __Host-gallery_session (Strict); device sets __Host-pg_sign (Lax) plus pg_device (Strict, Path=/api/login). (5) Sign-in lifetime: auth 30 idle and 90 absolute, device 30 idle and 180 absolute. (6) Login with a presented cookie: auth deletes and recreates the device; device reuses it. (7) Logout: auth deletes the device; device keeps it. (8) Password change: auth deletes other devices; device deletes sign-ins only. (9) Loopback reset: auth needs no current password; device requires it. (10) Revoking another device: auth requires elevation; device does not. (11) Pruning: auth prunes after 24 hours; device forbids it. (12) Rate-limit state: auth persists; device keeps it in memory. (13) Failed revocation commit: auth closes the LAN; device keeps LAN up and returns 503. (14) CSRF: auth derived header; device custom header with no derived value. (15) Route names: /api/auth/* versus /api/login, /api/me, /api/logout. (16) Single-instance lock: Lock::take versus a new non-waiting lock. (17) Snapshot key: 'desktop' here is void if the snapshot design is accepted. (18) SameSite of the session cookie: Strict here; realsize's argument assumes Lax. (19) Thumbnail Cache-Control: auth private, realsize's views private with different max-age. (20) TLS certificate paths: gallery.json here, server.sqlite in device.
+- Contradictions: (1) Decided item: the exclusive hold is only for layout changes, but the auth offline reset takes an exclusive probe on auth.sqlite; restate the rule or change the design. (2) write_back is settable from any client, but here it needs elevation; the owner decides. (3) Device design: desktop is a device row (random key, server.sqlite) versus no device row here (fixed 'desktop' key). (4) Cookies: auth sets one `__Host-gallery_session` (Strict); device sets `__Host-pg_sign` (Lax) plus pg_device (Strict, Path=/api/login). (5) Sign-in lifetime: auth 30 idle and 90 absolute, device 30 idle and 180 absolute. (6) Login with a presented cookie: auth deletes and recreates the device; device reuses it. (7) Logout: auth deletes the device; device keeps it. (8) Password change: auth deletes other devices; device deletes sign-ins only. (9) Loopback reset: auth needs no current password; device requires it. (10) Revoking another device: auth requires elevation; device does not. (11) Pruning: auth prunes after 24 hours; device forbids it. (12) Rate-limit state: auth persists; device keeps it in memory. (13) Failed revocation commit: auth closes the LAN; device keeps LAN up and returns 503. (14) CSRF: auth derived header; device custom header with no derived value. (15) Route names: `/api/auth/*` versus /api/login, /api/me, /api/logout. (16) Single-instance lock: Lock::take versus a new non-waiting lock. (17) Snapshot key: 'desktop' here is void if the snapshot design is accepted. (18) SameSite of the session cookie: Strict here; realsize's argument assumes Lax. (19) Thumbnail Cache-Control: auth private, realsize's views private with different max-age. (20) TLS certificate paths: gallery.json here, server.sqlite in device.
 - Corrections in view of the summary: "public" for thumbnails is replaced by private in this design.
 
 ---
@@ -317,11 +323,11 @@ Validation notes:
 ### Device identity
 
 **Q: What is the device record's key, where is it generated and stored?**
-Decision: A 128-bit random id in 32 lowercase hex characters, generated server-side from getrandom (already locked at Cargo.lock:939-940; becomes a direct dependency). Generated inside the insert transaction; a collision is an error, never a reuse. Stored in the devices table of <home>/server.sqlite. Clients never supply it; it identifies and never authorises.
+Decision: A 128-bit random id in 32 lowercase hex characters, generated server-side from getrandom (already locked at Cargo.lock:939-940; becomes a direct dependency). Generated inside the insert transaction; a collision is an error, never a reuse. Stored in the devices table of `<home>`/server.sqlite. Clients never supply it; it identifies and never authorises.
 Why: One CSPRNG path for ids and credentials; catalog_id is not a device key because a readable rebuild keeps it. Rejected: client-chosen ids, sequential ids, hashes of user agent or IP.
 
 **Q: Where does server state live, and what goes in it?**
-Decision: One SQLite file, <home>/server.sqlite, beside gallery.json and outside the catalog folder. Holds: devices (key, kind this_computer or browser, name, created, last_seen, revoked_at, a typed JSON prefs column); sign_ins (one row per browser device; BLAKE3 hash of the sign-in secret; idle and absolute expiry; UNIQUE(device_id)); meta (owner_set marker, owner password verifier, account epoch, cutover import marker); settings (one JSON row for owner-wide and server-wide preferences). gallery.json is read once at cutover and kept unchanged. Saved views and the session listing stay in the catalog, where rebuild carries them (schema.rs:680, 688; rebuild.rs:146-149).
+Decision: One SQLite file, `<home>`/server.sqlite, beside gallery.json and outside the catalog folder. Holds: devices (key, kind this_computer or browser, name, created, last_seen, revoked_at, a typed JSON prefs column); sign_ins (one row per browser device; BLAKE3 hash of the sign-in secret; idle and absolute expiry; UNIQUE(device_id)); meta (owner_set marker, owner password verifier, account epoch, cutover import marker); settings (one JSON row for owner-wide and server-wide preferences). gallery.json is read once at cutover and kept unchanged. Saved views and the session listing stay in the catalog, where rebuild carries them (schema.rs:680, 688; rebuild.rs:146-149).
 Why: Device, sign-in, preferences and owner credential need one transaction domain. The catalog is the wrong place (rebuild replaces the file; only CARRIED tables survive). JsonStore is wrong because quarantine would reset auth and every device at once. write_back is moved here because its default is true (prefs.rs:101).
 Rejected: devices in the catalog, gallery.json, one file per device, preferences split across files.
 
@@ -331,11 +337,11 @@ Why: The device must survive sign-in expiry or every expiry resets preferences a
 Rejected: device equals sign-in; device created on any login request; several sign-ins per device.
 
 **Q: How do the cookies tie to the device, with attributes and lifetimes?**
-Decision: Two cookies. Sign-in cookie __Host-pg_sign: 256-bit random from getrandom; server stores only its BLAKE3 hash; HttpOnly, Secure, SameSite=Lax, Path=/, no Domain; idle 30 days sliding (last used written at most hourly), absolute 180 days; Max-Age equals the absolute value (proposals). Device cookie pg_device: the device key itself (not secret); HttpOnly, Secure, SameSite=Strict, Path=/api/login, Max-Age 400 days refreshed at each login. Only POST /api/login reads the device cookie; it grants nothing. Logout deletes the caller's sign-in and keeps the device and its cookie.
+Decision: Two cookies. Sign-in cookie `__Host-pg_sign`: 256-bit random from getrandom; server stores only its BLAKE3 hash; HttpOnly, Secure, SameSite=Lax, Path=/, no Domain; idle 30 days sliding (last used written at most hourly), absolute 180 days; Max-Age equals the absolute value (proposals). Device cookie pg_device: the device key itself (not secret); HttpOnly, Secure, SameSite=Strict, Path=/api/login, Max-Age 400 days refreshed at each login. Only POST /api/login reads the device cookie; it grants nothing. Logout deletes the caller's sign-in and keeps the device and its cookie.
 Why: Identity is long-lived; the credential is short-lived; the device cookie travels only on the login path. Rejected: one cookie for both jobs, a hashed device cookie, a rotating refresh chain (can be added later), localStorage device ids.
 
 **Q: How does the desktop authenticate over loopback, and where is the launch token?**
-Decision: The desktop has no cookie. Its credential is a 256-bit launch token from getrandom, minted per server start. The server keeps only H = blake3(token), in memory. Token and port go in <home>/launch.json, written through TempFile and persist (platform/src/file.rs:84-109), with an owner-only DACL on Windows set at creation and mode 0600 on Unix. Attach handshake: the desktop sends a fresh 32-byte nonce; the server answers blake3::keyed_hash(H, nonce); the desktop computes H from its token and checks the answer before sending the bearer. After a 401 the desktop re-reads launch.json. launch.json sits in the home, so each home has one server and one token file.
+Decision: The desktop has no cookie. Its credential is a 256-bit launch token from getrandom, minted per server start. The server keeps only H = blake3(token), in memory. Token and port go in `<home>`/launch.json, written through TempFile and persist (platform/src/file.rs:84-109), with an owner-only DACL on Windows set at creation and mode 0600 on Unix. Attach handshake: the desktop sends a fresh 32-byte nonce; the server answers blake3::keyed_hash(H, nonce); the desktop computes H from its token and checks the answer before sending the bearer. After a 401 the desktop re-reads launch.json. launch.json sits in the home, so each home has one server and one token file.
 Why: A squatter on a stale port never sees H or the token. The handshake key is H because the server holds only H (the earlier input's keyed_hash(token, nonce) would require storing the token, contradicting hash-only). An explicit DACL is needed because PG_HOME can point anywhere. Rejected: desktop logs in with the password, a cookie for loopback, a named pipe or Unix socket, the launch file pinned to the default home.
 
 **Q: Which preferences are per device, owner-wide, and where does real_size go?**
@@ -368,7 +374,7 @@ Decision: The LAN accepts sign-in cookies only. The device cookie is read only b
 Why: SameSite does not separate ports on one host; Origin plus header closes cross-port writes. A leaked cookie cannot drive loopback; a leaked token cannot be used from the LAN. Assumption: the desktop's own client sends no Origin (not verified).
 
 **Q: How is one server per home enforced?**
-Decision: The server holds <home>/server.lock for its whole run as an OS exclusive file lock taken without waiting (new non-waiting helper in pg_dbfile). A second server for the same home exits at once with the reason. The desktop attaches through launch.json and the handshake, and starts the server only when attach fails and it takes the lock.
+Decision: The server holds `<home>`/server.lock for its whole run as an OS exclusive file lock taken without waiting (new non-waiting helper in pg_dbfile). A second server for the same home exits at once with the reason. The desktop attaches through launch.json and the handshake, and starts the server only when attach fails and it takes the lock.
 Why: An OS lock is released at process death, so a crash leaves no stale lock. Reusing Lock::take (a five-second wait, a layout-only semantic) and a pid file (pid reuse) were rejected.
 
 **Q: What happens on corruption, missing store, disk full, crash, restart or restored backup?**
@@ -392,6 +398,7 @@ Decision: real_size is per device (a proposal the owner must confirm). The scope
 Why: One-to-one depends on device pixel ratio.
 
 Open:
+
 - Numbers, all proposals: sign-in idle 30 days; absolute 180 days; last-used hourly; device cookie 400 days; 32 live browser devices; four listings per device; global budget; grace length (open); name length 64; ping interval; registry-lock hold time.
 - Owner confirmation of real_size per device and of yandex_folder moving to owner-wide.
 - Whether a 1:1 button is shown (realsize's question).
@@ -404,7 +411,7 @@ Open:
 - Registry lock contention under load unmeasured.
 - Whether hyper and axum send HTTP/2 GOAWAY and cancel in-flight streams per connection (no server source read).
 - SQLite rollback and integrity after SQLITE_FULL; WAL on removable or network homes; assumed.
-- Chrome on Android accepts Secure cookies and __Host- under the private CA (P7); 400-day cookie cap is general knowledge; SameSite=Strict on a Path-scoped cookie unverified.
+- Chrome on Android accepts Secure cookies and `__Host-` under the private CA (P7); 400-day cookie cap is general knowledge; SameSite=Strict on a Path-scoped cookie unverified.
 - Whether the frontend holds more than one listing per device (two tabs share the cap of four).
 - Whether a second browser on one phone is a separate device (by browser design, not checked).
 - Event log storage and device attribution: no event log code found.
@@ -415,6 +422,7 @@ Open:
 - WEB_CLIENT.md must be updated at lines 194-198, 221-223, 244, 278-281 and 574 (this design does not edit it).
 
 Measure first:
+
 - Listing memory per entry (56-byte figure is from HEAP_PROFILE_START.md:63, not re-measured).
 - Time from revoke request to WebSocket close and to the last write drained.
 - Registry-lock hold time under concurrent requests.
@@ -424,6 +432,7 @@ Measure first:
 - That two processes cannot both take the single-instance lock.
 
 Validation notes:
+
 - Corrections: crates/platform/src/testing/lock.rs:2 is wrong as cited; production file locks are in crates/dbfile/src/lock.rs:27-38 and 55-77. The correct statement is that no production server or single-instance lock exists. rebuild.rs views and session are at 148-149 (146 is roots, 147 is folder_failures).
 - Verified as cited: prefs.rs 22-40, 98-110, 125-136, 145-157, 164-173; store.rs 29-37, 51-58; layout.rs 38, 52-56, 92-95; dirs.rs 31-32; settings.rs 4 (stale comment) and 16-41; controller.rs 110-116; shell.rs 87-106; yandex.rs 520-527, 533-550; rebuild.rs 87-91, 134-153, 160-161, 204-208; schema.rs 680, 688, 692-694, 701-702; Cargo.lock 939-940; WEB_CLIENT.md 194-198, 221-223, 244-246, 271-276, 278-284, 561, 574, 581.
 - Contradictions: (1) The device design's open list asks whether desktop writes move in the same step as reads; the decided item says they do, so close the point. (2) Auth design: a full list of disagreements is recorded in the auth validation notes; both cannot be accepted as written. (3) Snapshot design makes the device snapshot-cap decisions void. (4) realsize: real_size per device for all device kinds versus no persisted real_size on phones in v1; gallery.json kept unchanged versus moved into server.sqlite. (5) realsize: the desktop real_size key must match the device design's random desktop id (now settled as random). (6) The device design's stale catalog_id comment in schema.rs:692-694 conflicts with rebuild.rs:204-208.
@@ -510,7 +519,7 @@ Decision: The replica carries shown width and height as u32 (Entry::shown_size, 
 Why: WEB_CLIENT.md:341 says layout matches the desktop exactly, which holds only with the same integers and the same f64 computation. Rejected: f32 (row-boundary rounding), a 2-byte log quantised aspect (lossy).
 
 **Q: The desktop after cutover.**
-Decision: The desktop becomes a client of the same protocol over loopback, with its own replica. Its in-process Vec<Entry> (client grid.rs:109) becomes a FileId and shape replica, or keeps Entry (open). Its reload on scan (Main.qml:127-128 and 255-264; library.rs:145-148) becomes a delta pull. Its selection rule changes at cutover.
+Decision: The desktop becomes a client of the same protocol over loopback, with its own replica. Its in-process Vec`<Entry>` (client grid.rs:109) becomes a FileId and shape replica, or keeps Entry (open). Its reload on scan (Main.qml:127-128 and 255-264; library.rs:145-148) becomes a delta pull. Its selection rule changes at cutover.
 Why: One protocol and one replica logic, tested once; the desktop's extra cost is zero because it has no network hop.
 
 **Q: Corrections to WEB_CLIENT.md that follow from these decisions.**
@@ -522,6 +531,7 @@ Decision: (a) Model test: random interleavings of inserts, deletes (including th
 Why: Each test is a wrong-answer path named above.
 
 Open:
+
 - Owner approval of decision 2 (client replica; no server per-listing state; listing stamp change).
 - Owner approval of the selection rule (decision 15).
 - Owner confirmation that a rating does not reorder the list at once (decision 14).
@@ -545,6 +555,7 @@ Open:
 - Whether a 64-bit set digest is acceptable for destructive bulk actions, or 128 bits.
 
 Measure first:
+
 - Listing memory per entry (56 bytes from HEAP_PROFILE_START.md:63; not re-measured).
 - Keyed sort full read and delta timings at 189,518 items (no keyed sort or delta has been timed).
 - Order digest cost; bulk action check cost; keyed rank per batch.
@@ -552,6 +563,7 @@ Measure first:
 - Notice coalescing and refetch floors under a real scan's bump rate.
 
 Validation notes:
+
 - Corrections: the cold-start list is at lifecycle.rs tests (BEFORE_ORDER_KEY), not the baseline; the real baseline is schema.rs:501-529 (id at 502, missing DEFAULT 0 at 518). set_mark is at lifecycle.rs:90 (160-172 is set_taken_zone). Shrink-to-fit is at grid.rs:134-136. Client selection test is at grid.rs:599 (tests module starts at 403). PROFILING.md:329 gives 601.1 and 559.5 for two build columns; the choice of 559.5 needs its column named and 'offscreen' confirmed.
 - Verified as cited: model grid.rs:14-41 and 74-82; ids.rs:10-11; view.rs:11-19; query.rs:124-137 (14 sort keys); layout.rs:16-18 and 38-53; browse/read/grid.rs 22-32, 83-96, 113-153, 156-168; scope.rs 9-20; query lib.rs 355-390 and 362-366; schema.rs 57-65, 229-231, 502-529, 535-543, 707-734, 755-782; pair.rs 345, 355-363, 434; writers.rs 101, 103-111; roots.rs 58-74; ledger.rs 471; lifecycle.rs 49-52, 139, 164-171, 639-640; controller.rs 204-205, 326, 334-337; Main.qml 127-128, 255-264; library.rs 145-148; edits.rs 75-92; reader.rs 173, 179-181, 209-238; core.rs 173-179.
 - Contradictions: (1) Decision 10 makes unpaired a listing condition, but take_identity writes unpaired = 0 unstamped (pair.rs:355-362), so a file becoming listable when paired would be missed until a digest check; add unpaired to the stamp list. (2) The decided listing stamp (listing_id, generation) is replaced; this needs owner approval and must be recorded as a change to a decided item. (3) Device design's snapshot-cap decisions are void if this is accepted. (4) Auth's 'desktop' snapshot key is void likewise. (5) Rating rule and provisional-row rule are owner confirmations; approving decision 14 needs the doc's 'not a new behaviour' claim settled.
@@ -629,6 +641,7 @@ Why: The honest answer to 'what does 1:1 entail': server decode and tile encode,
 Decision: Not designed here; video stays open.
 
 Open:
+
 - Nothing measured: decode time, PNG tile encode time and bytes per tile, tile size 512, cache budget, concurrency of one, per-device rate limit, first-pixel time on a phone, server memory per decode.
 - Pixel identity between tiles and the desktop's 1:1 pixels is a test to write; not run.
 - PNG encoder speed on 512 px tiles unknown; fallback is a measured alternative, not lossy.
@@ -648,6 +661,7 @@ Open:
 - The phone gate (WEB_CLIENT.md:610-611) decides whether the pixel path ships on phones; owner's default.
 
 Measure first:
+
 - Decode time per format for a 24 MP still; PNG encode time and bytes per 512 px tile.
 - First-pixel time for 1:1 on a phone; tiles per screen.
 - Server memory per decode and the cache budget that holds a phone's working set.
@@ -655,6 +669,7 @@ Measure first:
 - Touch behaviour on the phone gate (pinch, drag, double-tap, overscroll).
 
 Validation notes:
+
 - Corrections: keys.rs:234-249 is Hint::ALL; viewer_hint is at keys.rs:294. keys.rs:341-348 tests grid resize keys; the viewer hint test is keys.rs:399-411; no touch input concept exists in the shared builder, so 'both inputs' is unsupported. keys.rs:222 is Hint::TurnOn; OneToOne is 224, RealSize 225, Loupe 226.
 - Verified as cited: prefs.rs 1-4, 22-29, 103, 147-154; settings.rs 16-18, 25-27, 36-41; store.rs 51-56, 66-75; Viewer.qml 60-64, 175-180, 213-226, 279, 280-281, 314-320, 331-363, 396-404; ImageLayers.qml 72-73, 91-95, 98-109, 100-102; YandexPreview.qml 24, 48-53, 61-66, 139-144, 161-184, 186-190; Hud.qml 91-92; viewport.rs 67-70, 83-89, 97-99, 155-182; images.rs 92, 141-160, 277-290, 289-301; display.rs 50-59, 102-115, 155-160; limits.rs 5-10; Cargo.toml:27.
 - Unverified: the Resizer calls at display.rs:107 and 111 use Lanczos3; the 96 MB and 72 MB figures are arithmetic; the 4096 px cap; Qt WASM touch and overscroll claims.
@@ -717,6 +732,7 @@ Decision: WEB_CLIENT.md lines 122-123 and 322-323 (multipreview has no socket, c
 Why: The doc is the decision record and must not disagree with it.
 
 Open:
+
 - Chrome on Android trust gate (P7) not run; the design depends on it only for HTTP/2 performance.
 - Whether Chrome cancels an in-flight img when its element is removed or src cleared; Blink source not read.
 - Whether a no-store placeholder is reused from memory cache on the same URL (decides the nonce; measure M5).
@@ -739,6 +755,7 @@ Open:
 - Whether 'pending' thumbnails should be visible to the owner.
 
 Measure first:
+
 - M0: h2 negotiated on the phone with the trusted certificate; server logs ALPN.
 - M1: wasted bytes during a fling of 3 screens per second for 5 seconds on about 5,000 items, cold cache; proposed pass at most 25 percent wasted; p95 removal-to-want-list under 200 ms (all proposals).
 - M2: time to a full 60-cell screen at 220 CSS px and DPR 3, for h2, HTTP/1.1 with six connections, and the batch stream if built; 20 cold, 20 warm; report p50 and p95.
@@ -752,6 +769,7 @@ Measure first:
 - M10: Clear-Site-Data on Chrome Android with the page open.
 
 Validation notes:
+
 - Correction: the native-tls FIXME is at schannel.rs:360 (the accept starts at 353; ALPN request at 364-366). The 338-368 range is accurate as a range.
 - Verified as cited: get_nearest_into 138-172 with ORDER BY at 151; put and put_batch 186-205; close at 307-313; reader.rs 80-87 and 90-108; writer.rs 233-238, 255-260, 357-364, 400-407; images.rs 30, 141-161, 185, 214-219; thumbs lib.rs 173-179, 274; providers.cpp 4-5 and 105; render lib.rs 10-14; size.rs 12 and 71-80; image.rs 12-18 and 45-49; pool.rs 18-34; makers.rs 10; WEB_CLIENT.md 122-123, 155, 319-322, 396-397, 410-411, 412-413, 592.
 - Not verified: Chrome image cancellation and placeholder reuse; tokio blocking-pool default; hyper stream default (neither package is in Cargo.lock); the M-series (none run); Win32 chain behaviour on accept.
@@ -792,7 +810,7 @@ Why: Today every command calls open_catalog and prepare before dispatch (cli lib
 Rejected: CLI always calling prepare; refusing CLI writes while a server runs (decided against); always going through the API (a CLI with no server must still work).
 
 **Q: Attach: how the desktop finds, starts or replaces the server.**
-Decision: (1) Probe server.lock with a non-waiting try. If held, read server.json and server.token (catalog directory), connect to 127.0.0.1:<port>, call hello; if protocol and build id match, attach. (2) If free or discovery fails, spawn the same binary as 'gallery serve' with explicit --home and --catalog-dir, detached with no console, using a plain Command with detach flags, not spawn_background (process.rs:22-27 puts the child in a kill-on-close job). A spawn race loser exits at the lock and both attach to the winner. (3) On a mismatch call the old server's authenticated stop route, wait for the lock to free within a bound, then start the new one; an old build without a stop route shows a message naming the process. Never kill. (4) Port 0 recorded in server.json after bind. (5) The window shows a connecting state with the reason in place of the fatal CatalogUnopened exit (desktop lib.rs:164-166). The GUI thread never blocks on attach.
+Decision: (1) Probe server.lock with a non-waiting try. If held, read server.json and server.token (catalog directory), connect to 127.0.0.1:`<port>`, call hello; if protocol and build id match, attach. (2) If free or discovery fails, spawn the same binary as 'gallery serve' with explicit --home and --catalog-dir, detached with no console, using a plain Command with detach flags, not spawn_background (process.rs:22-27 puts the child in a kill-on-close job). A spawn race loser exits at the lock and both attach to the winner. (3) On a mismatch call the old server's authenticated stop route, wait for the lock to free within a bound, then start the new one; an old build without a stop route shows a message naming the process. Never kill. (4) Port 0 recorded in server.json after bind. (5) The window shows a connecting state with the reason in place of the fatal CatalogUnopened exit (desktop lib.rs:164-166). The GUI thread never blocks on attach.
 Why: The lock is the only truth about whether a server is alive. Discovery files left by a crash are treated as absent.
 Rejected: trusting server.json without the lock probe; a desktop-owned server that never attaches; killing an old server; the job-object spawn.
 
@@ -876,6 +894,7 @@ Decision: At C8 the desktop drops its pg-app dependency (desktop Cargo.toml); th
 Why: A dead pg-app dependency would make the boundary check prove nothing.
 
 Open:
+
 - OWNER DECISION (amends a decided item): turns are server commands with request ids, not client absolute values with expected_version.
 - OWNER DECISION: whether the atomic ledger write (server.db attached to the catalog connection, one transaction) holds in this build. Believed from SQLite multi-database transaction semantics; not verified, including under WAL and the SETTINGS batch. Fallback: at-most-once turns.
 - OWNER DECISION: whether the in-band Direct lever ships for one release (recommended: yes, time-boxed).
@@ -902,12 +921,14 @@ Open:
 - OPEN: whether the pg_app blocking pool sized to catalog connections covers the viewer's synchronous full-image decode under concurrent use.
 
 Measure first:
+
 - Listing open time, 100-item range fetch, thumbnail placeholder time-to-fill, attach time with the loopback server, startup with a migration and with a rebuild (backup copy at core.rs:105 copies the whole file), and the time a CLI or desktop waits on the singleton.
 - Cost of the attached ledger transaction per turn against a plain write; ledger size growth and retention under scan-rate event volume.
 - Bounded wait for unacknowledged mutations at exit; handshake and attach bounds; connection pool size and KEEP_CATALOGS; free-space threshold before a layout change (all proposals).
 - Thumbnail height window and placeholder visibility on a first view of an unmade grid.
 
 Validation notes:
+
 - Corrections: every CLI command calls open_catalog at cli lib.rs:136 (inside run_command), not 122. The 'second desktop window' open question's premise is wrong: Library::start is per process (app library.rs:257-262) and the desktop returns early when running (desktop library.rs:101-103), so one process has one Writer. The hazard is two desktop processes; restate the question. The rollback file is gallery.json (layout.rs:37-38), not prefs.json. Cited lines core.rs 69, 91-95, 101, 105, 115, 123, 133-137; lifecycle.rs 40-48 and 49-52; lock.rs 12-13; layout.rs 29-44; app.rs 148-160; edit.rs 27-30; inbox.rs 23 and 431; library.rs 155-160; log file.rs:17; process.rs 22-27; desktop lib.rs 164-166; types.rs 89; roots.rs 221-223; tools/crate-layers.txt:48 verified. Unverified: rebuild.rs 87-91 are close but not exact; core.rs 75-80 newer-schema refusal; Windows lock and DACL claims.
 - Contradictions: (1) C5 and the open list assume resume and gap resync and a server epoch; events D9 removes the event sequence, ring and resume entirely, replacing them with a change vector. Adopt the vector and drop the resume and gap text. (2) Attach rule requires protocol and build id; events D4 drops the general protocol integer and gates on build id equality; pick one. (3) Schema neutrality is false once quarantine's migration 10 or the viewstate version columns ship: pre-cutover binaries then refuse the catalog (core.rs:75-80). No design reserves migration numbers or orders them. (4) Preferences: the cutover keeps whole-file JsonStore writes and a flush; viewstate requires per-field versioned writes and says the desktop never writes a whole Prefs after cutover. (5) Turn: cutover uses relative server commands with request ids; viewstate uses absolute set with expected_version. (6) Rating and border mark: cutover sends no expected_version; viewstate requires it. (7) Ledger: cutover's server.db ledger covers quarantine commits, while quarantine keeps its request id in a catalog table (quarantine_batches.request UNIQUE): two idempotency stores. (8) Placement: cutover says trait types live outside pg-app; events D21 puts wire types in pg-wire (depends on pg-model); amend one rule. (9) Thumbnail cache: cutover says the desktop never writes it after Loopback; thumbs decision 5 keeps desktop-height writes.
 
@@ -916,8 +937,8 @@ Validation notes:
 ### Quarantine (built first)
 
 **Q: Where do quarantined files go, and on which volume?**
-Decision: Per volume, never across volumes. The volume root is found with GetVolumePathNameW on the verbatim path (pg_platform::names::disk_path). A file goes to <volume root>/_quarantine/<batch folder>/<path relative to volume root>. The batch folder is named by a server-generated batch id plus a UTC timestamp and random suffix, so no name is replaced. _quarantine is created at first use; a volume whose root cannot take it is refused with a reason. The photo drive keeps its own _quarantine; nothing goes to D:.
-Why: A same-volume rename keeps the NTFS identity the catalog keys on (dir.rs:296-310). MoveFileExW is called with flags 0 (platform file.rs:200), so a cross-volume rename fails rather than copying. The scanner skips a folder named _quarantine (scan lib.rs:112, 124), so held files are not re-indexed. PLAN.md:175-182 asks for a per-drive _quarantine. Rejected: D: as the store (cross-volume copy changes identities and reads the library over the HDD); a _quarantine inside each library root; the Recycle Bin (restore is not catalog-controlled).
+Decision: Per volume, never across volumes. The volume root is found with GetVolumePathNameW on the verbatim path (pg_platform::names::disk_path). A file goes to `<volume root>`/`_quarantine`/`<batch folder>`/`<path relative to volume root>`. The batch folder is named by a server-generated batch id plus a UTC timestamp and random suffix, so no name is replaced. `_quarantine` is created at first use; a volume whose root cannot take it is refused with a reason. The photo drive keeps its own `_quarantine`; nothing goes to D:.
+Why: A same-volume rename keeps the NTFS identity the catalog keys on (dir.rs:296-310). MoveFileExW is called with flags 0 (platform file.rs:200), so a cross-volume rename fails rather than copying. The scanner skips a folder named `_quarantine` (scan lib.rs:112, 124), so held files are not re-indexed. PLAN.md:175-182 asks for a per-drive `_quarantine`. Rejected: D: as the store (cross-volume copy changes identities and reads the library over the HDD); a `_quarantine` inside each library root; the Recycle Bin (restore is not catalog-controlled).
 
 **Q: Is a quarantine ever allowed to cross volumes?**
 Decision: No. The executor has no copy fallback; ERROR_NOT_SAME_DEVICE is a defect to surface. A cross-volume move is phase 3 with its own design.
@@ -940,7 +961,7 @@ Rejected: leaving reuse as it is; tombstone as the primary design (rows grow and
 **Q: What is the order of operations for one item?**
 Decision: Three steps in chunks of WRITE_BATCH (types.rs:85, 1000). (a) One write transaction: refuse if the file has a file_writes row with temp set (sql.rs:141-149 rule); set files.missing = 1; insert the quarantine row with op moving, home, target and captured volume and file_ref; delete this file's file_writes rows whose temp is NULL. (b) Outside any transaction, the identity-verified handle rename. (c) One write transaction whose WHERE requires files.volume and file_ref to equal the captured identity: set folder_id and name to the target, set observed size, mtime and created from the handle, delete the quarantine op (held). If (c) matches no row, the item is reconciled, not committed.
 Why: Intent first, so a crash after the rename is recognisable by identity. The identity WHERE protects the write itself. Deleting unstarted writes is safe because record_write_temp returns false when the row is gone (queue.rs:211-219).
-Rejected: rename then record (an unrecorded file in _quarantine); commit then rename (a held row for a file still in the library, which the next scan revives silently); one transaction around the rename.
+Rejected: rename then record (an unrecorded file in `_quarantine`); commit then rename (a held row for a file still in the library, which the next scan revives silently); one transaction around the rename.
 
 **Q: How does recovery decide what happened to an interrupted item?**
 Decision: Recovery reads the disk, never a log, using the captured identity. Found at target with identity and not at home: the rename happened; commit (moving: set folder and name, held; restoring: set missing = 0; purging: go to the purge rule). Found at home and not at target: the rename did not happen; for moving, resume if the batch is running; restoring resumes toward home; purging retries. Found at both: conflict, nothing done, problem = conflict, notice. Found at neither with the volume present: lost; delete the quarantine row, leave files.missing = 1 as an ordinary missing file, notice. Volume absent: row waits with problem = offline. Checked at startup for op-set rows, when a volume returns, and lazily for held rows.
@@ -959,17 +980,17 @@ Why: Guarding by the quarantine row names the state directly. The scan never ado
 Rejected: relying on the size and mtime guard; letting the scan adopt a file at a library path (undoes a quarantine); taking the scan lease for quarantine (scans run for hours); discarding the batch.
 
 **Q: How does a held file come back to the library, by restore or by a manual move?**
-Decision: One path. A held row returns only through a server-side identity-verified check: the server opens the file at the seen path (or home for restore), checks identity and created, checks the file is not at target, and in one transaction sets missing = 0 with the folder and name where the file is (the trigger deletes the quarantine row), and posts a notice ('came back at <path>' for a manual move-back). The scan only reports the sighting and enqueues the check. Restore to home is the same transaction after the handle rename. Restore is refused if home is not under a present library root (roots.rs:55-72). Missing folders are created only beneath a present root. If a file exists at home, the row becomes problem = conflict and nothing is overwritten; the user may restore under a server-chosen alternate name ('<stem> (n)<ext>', the keep_aside pattern, platform file.rs:244-254). Restoring to a folder the user picks is phase 3.
+Decision: One path. A held row returns only through a server-side identity-verified check: the server opens the file at the seen path (or home for restore), checks identity and created, checks the file is not at target, and in one transaction sets missing = 0 with the folder and name where the file is (the trigger deletes the quarantine row), and posts a notice ('came back at `<path>`' for a manual move-back). The scan only reports the sighting and enqueues the check. Restore to home is the same transaction after the handle rename. Restore is refused if home is not under a present library root (roots.rs:55-72). Missing folders are created only beneath a present root. If a file exists at home, the row becomes problem = conflict and nothing is overwritten; the user may restore under a server-chosen alternate name ('`<stem> (n)<ext>`', the keep_aside pattern, platform file.rs:244-254). Restoring to a folder the user picks is phase 3.
 Why: Restore and a manual move-back converge on one commit, so the catalog follows the disk either way. Overwrite is never safe; PLAN.md:181-182 agrees.
 Rejected: silent overwrite; folder-picking restore in version 1; restore outside the library; restore clearing the record only inside the restore path.
 
 **Q: How are queued rating and rotation writes handled for a held file?**
 Decision: At step (a) the file's file_writes rows with temp NULL are deleted in the same transaction (nothing on disk is in progress). A file with temp recorded is refused before any change. Edits to held or in-transit files (rating, rotation, borders) are refused with NotInLibrary and never queued. Restore re-queues rating and rotation writes from the catalog's values in its commit. Purge drops remaining writes with the existing dropped notice and deletes them with the row.
 Why: The writer already handles a gone row (queue.rs:211-219). The catalog holds the latest value, so re-queueing on restore loses nothing; queue.rs:292-300 drops writes for missing files today. Quarantine never writes into a file outside the library.
-Rejected: holding queued writes and applying them inside _quarantine (changes the writer's meaning of file_gone); dropping writes without re-queue (lost edits); finishing writes before quarantine.
+Rejected: holding queued writes and applying them inside `_quarantine` (changes the writer's meaning of file_gone); dropping writes without re-queue (lost edits); finishing writes before quarantine.
 
 **Q: Which files are refused at plan time, and which failures are retried?**
-Decision: Refused at plan time, never stored: reparse points; hard links (link count above one); files with temp set; volumes without a stable identity (ScanNote::VolumeFallback, REFACTOR_PLAN.md:826); remote drives (DRIVE_REMOTE, dir.rs:137-144); volumes that cannot take a writable _quarantine; files that cannot be opened (offline). Failures during execution: (1) Transient (sharing or lock violation, access denied, disk full): up to 3 retries 200 ms apart (proposal); then a move-in reverts (missing = 0, quarantine row deleted, notice with Retry); a restore or purge stays held with problem = blocked. The batch continues. (2) Volume absent (path not found, device not ready or not connected): row keeps op with problem = offline; batch pauses for that volume. (3) Identity mismatch or lost: recovery rules. (4) Unclassified: treated as transient with error text kept.
+Decision: Refused at plan time, never stored: reparse points; hard links (link count above one); files with temp set; volumes without a stable identity (ScanNote::VolumeFallback, REFACTOR_PLAN.md:826); remote drives (DRIVE_REMOTE, dir.rs:137-144); volumes that cannot take a writable `_quarantine`; files that cannot be opened (offline). Failures during execution: (1) Transient (sharing or lock violation, access denied, disk full): up to 3 retries 200 ms apart (proposal); then a move-in reverts (missing = 0, quarantine row deleted, notice with Retry); a restore or purge stays held with problem = blocked. The batch continues. (2) Volume absent (path not found, device not ready or not connected): row keeps op with problem = offline; batch pauses for that volume. (3) Identity mismatch or lost: recovery rules. (4) Unclassified: treated as transient with error text kept.
 Why: Each class needs a different person action. A failed move-in leaves the file where it was, so the catalog must show it visible again.
 Rejected: one generic failed state; silent infinite retry; failing the whole batch on the first error; hiding a locked file as moving.
 
@@ -993,7 +1014,7 @@ Why: Purge is the only irreversible action and a LAN cookie is long-lived and st
 Rejected: owner-only with the cookie alone; phone purge with a password step-up now; desktop-only with no server route (breaks sole-writer).
 
 **Q: How is a purge done, and what happens to the catalog row?**
-Decision: Two steps and a repeatable recovery. (1) One transaction sets op = purging. (2) The identity-verified handle compares identity, created, size and mtime. A mismatch sets problem = conflict, reverts op to held, notifies; nothing is deleted. A match clears the read-only attribute if set, sets disposition delete on the handle, closes it. A sharing violation is transient. (3) ThumbCache::forget(file_id) (thumbcache lib.rs:217). (4) One transaction deletes the files row, which cascades to analysis, ratings, file ratings, file writes, border marks and sides, pair rows and failures. (5) The batch folder is removed with RemoveDirectory only if empty; nothing recursive. Recovery: target present with identity, retry step 2; target absent, commit step 4; target present with a different identity, conflict. Unknown files in _quarantine are left alone.
+Decision: Two steps and a repeatable recovery. (1) One transaction sets op = purging. (2) The identity-verified handle compares identity, created, size and mtime. A mismatch sets problem = conflict, reverts op to held, notifies; nothing is deleted. A match clears the read-only attribute if set, sets disposition delete on the handle, closes it. A sharing violation is transient. (3) ThumbCache::forget(file_id) (thumbcache lib.rs:217). (4) One transaction deletes the files row, which cascades to analysis, ratings, file ratings, file writes, border marks and sides, pair rows and failures. (5) The batch folder is removed with RemoveDirectory only if empty; nothing recursive. Recovery: target present with identity, retry step 2; target absent, commit step 4; target present with a different identity, conflict. Unknown files in `_quarantine` are left alone.
 Why: Deleting the disk first means a crash can only leave a file the catalog still believes in, which recovery fixes. The reverse would leave a row for a file that is gone.
 Rejected: deleting the row first; recursive folder delete; POSIX-semantics delete; Recycle Bin on purge.
 
@@ -1002,7 +1023,7 @@ Decision: No automatic purge in version 1. A held file stays until a person rest
 Why: A time-based purge deletes the only copy of a file the user may still want, with no confirmation that they saw it.
 
 **Q: Does a manifest exist on the drive?**
-Decision: Yes, as a recovery copy only. Each batch folder holds manifest.json, written atomically (temp then rename) before the batch's first rename. It lists per item the volume serial, file id, created, size, mtime, home and target paths. The catalog is the authority; the manifest is read only when a file in _quarantine has no catalog row (catalog lost or rebuilt without quarantine tables).
+Decision: Yes, as a recovery copy only. Each batch folder holds manifest.json, written atomically (temp then rename) before the batch's first rename. It lists per item the volume serial, file id, created, size, mtime, home and target paths. The catalog is the authority; the manifest is read only when a file in `_quarantine` has no catalog row (catalog lost or rebuilt without quarantine tables).
 Why: Without it a lost catalog orphans photos (PLAN.md:179 asks for a manifest per batch). A manifest as authority would create two authorities.
 
 **Q: How do open snapshots learn that items left them?**
@@ -1035,7 +1056,7 @@ Decision: Yes. The prefs helper crates/app/src/store.rs (fn quarantine, line 61,
 Why: The word names two operations in one crate. Naming it keep_aside would collide with the platform function of the same name.
 
 **Q: What is the test plan?**
-Decision: Fault points after (a), after (b), after (c) and during recovery, each followed by a check that catalog and disk agree. Cases: a scan that lists before a quarantine and writes after (stays held; Recorded::Held runs); tier 1, tier 2 and replacement candidates that are held rows (not taken); file_writes with temp set (refused); a queued write with temp NULL deleted in (a) and a concurrent record_write_temp returning false (no copy starts); a locked file (retried, then reverted); a volume removed between (b) and (c) (offline, then resumes); a removed drive letter with a different serial (refused); hard link and reparse point (refused at plan); restore onto an existing name (conflict, nothing overwritten); restore after the library root was removed (refused); a replaced file in _quarantine (purge conflict, nothing deleted); a manual move-back (adopted, notice); disk full (blocked, no catalog change beyond the intent revert). Real NTFS scratch folders on Windows; a fake identity provider on Linux.
+Decision: Fault points after (a), after (b), after (c) and during recovery, each followed by a check that catalog and disk agree. Cases: a scan that lists before a quarantine and writes after (stays held; Recorded::Held runs); tier 1, tier 2 and replacement candidates that are held rows (not taken); file_writes with temp set (refused); a queued write with temp NULL deleted in (a) and a concurrent record_write_temp returning false (no copy starts); a locked file (retried, then reverted); a volume removed between (b) and (c) (offline, then resumes); a removed drive letter with a different serial (refused); hard link and reparse point (refused at plan); restore onto an existing name (conflict, nothing overwritten); restore after the library root was removed (refused); a replaced file in `_quarantine` (purge conflict, nothing deleted); a manual move-back (adopted, notice); disk full (blocked, no catalog change beyond the intent revert). Real NTFS scratch folders on Windows; a fake identity provider on Linux.
 Why: Each crash point is a different state on disk and in the catalog.
 
 **Q: Build order.**
@@ -1043,11 +1064,12 @@ Decision: Phase 1: tables, migration, handle primitives, three-step order, recov
 Why: Quarantine ships before any delete or move (decided); purge is the only irreversible action and waits for its tests.
 
 Open:
+
 - Win32 behaviour not verified by any run: SetFileInformationByHandle with FileRenameInfo and ReplaceIfExists FALSE on a DELETE-access handle; whether the rename needs DELETE on the source; share behaviour when another program holds the file without FILE_SHARE_DELETE; FILE_DISPOSITION_INFO and the read-only attribute; ERROR_NOT_SAME_DEVICE (17) from MoveFileExW with flags 0. Needs a Windows test with a scratch folder held open by another process before trust.
 - The error-code classes (sharing 32, lock 33, access denied 5, disk full 112 and 39, path not found 3, device not ready 21, device not connected 1167) are proposals; not checked on E: or a removed drive.
 - Link count: BY_HANDLE_FILE_INFORMATION is filled at dir.rs:186 with nNumberOfLinks; the field is not read elsewhere and its layout in windows-sys was not checked.
 - AUTOINCREMENT migration: whether a migration step can rebuild files with analysis, ratings and file_writes referencing it with foreign keys on (schema.rs:36-44; rebuild.rs). Not read; the tombstone fallback applies if not.
-- Folder rows under _quarantine: committing move-in sets folder_id to a folder row outside every library root; whether it leaks into the tree, facets or folder listing (browse/read/tree.rs; not read) and into scanner in_root logic (writers.rs:96-97) is unverified.
+- Folder rows under `_quarantine`: committing move-in sets folder_id to a folder row outside every library root; whether it leaks into the tree, facets or folder listing (browse/read/tree.rs; not read) and into scanner in_root logic (writers.rs:96-97) is unverified.
 - Writer check and temp record: file_gone (writeback lib.rs:382) then record_write_temp (queue.rs:211-219) is safe only because record returns false once gone; whether open_for_copy verifies the identity of what it opens (file.rs:52-75) is unchecked.
 - Crash durability: assumes a rename returning success is durable after a crash on NTFS, and that the intent row commits before rename; untested.
 - Sidecar files (.xmp and similar) are not moved in version 1; restore leaves them.
@@ -1055,7 +1077,7 @@ Open:
 - Drive letters: the quarantine root derives from the stored home letter (roots store letters); a re-lettered drive is refused by serial; mapping serial to current letter is not implemented (dir.rs:311 reads serial from an open handle only).
 - Mount points and volume roots: behaviour when a library root is a volume root or a volume is mounted at a folder is untested.
 - DrvFs and volumes with NULL created time (schema.rs:508-510): the created check is weaker; the photo drive is NTFS; the case is not closed.
-- A file deleted from _quarantine in Explorer whose id is reused: protected by created on NTFS; not proven.
+- A file deleted from `_quarantine` in Explorer whose id is reused: protected by created on NTFS; not proven.
 - Membership event replay and retention (WEB_CLIENT.md:587): not designed; the events design removes replay.
 - Purge step-up over the LAN depends on the open login details (P14).
 - Two plans on one file, both committed: the version check should refuse the second; concurrency not designed in detail.
@@ -1063,17 +1085,19 @@ Open:
 - Whether pg-library's job machinery supports progress events and chunked commits as described (jobs service.rs not read in depth).
 - Undo across a server restart: not designed.
 - Cited but not re-read: notice model, thumbcache forget, scan lease, lifecycle.rs 49-52, names.rs 71-81, cascade lines in schema.rs (545-665), REFACTOR_PLAN.md:511 and 826, PLAN.md 24 and 34, dir.rs 137-144, writeback fault module, std fs windows.rs:206, Qt qfilesystemengine_win.cpp.
-- No build, run or check of the user's E: drive, its ACLs, free space or whether _quarantine can be created there.
+- No build, run or check of the user's E: drive, its ACLs, free space or whether `_quarantine` can be created there.
 - Phone and desktop numbers (undo window, batch cap, retry counts, age offer, warning threshold, debounce) are proposals.
 
 Measure first:
+
 - Win32 behaviour on a scratch NTFS folder held open by another process (sharing, rename by handle, disposition delete, read-only attribute, error codes).
 - Batch throughput of 1,000-item chunks on the HDD; the cost of invalidating open listings per batch.
 - AUTOINCREMENT table rebuild time on a large catalog.
-- Free space and volume ACLs on E:; whether _quarantine can be created there.
+- Free space and volume ACLs on E:; whether `_quarantine` can be created there.
 - Free-space figures in PLAN.md (E: 21.4 TB used of 22 TB at PLAN.md:34; D: 802 GB free at :35) are estimates, not current measurements.
 
 Validation notes:
+
 - Corrections: the folder tree query is crates/catalog/src/browse/read/tree.rs, not tree.rs:11 in the catalog root; the claim that it counts only missing = 0 files was not checked. PLAN.md:34 is the E: row; the D: row is :35; the removal section at 175-182 is correct. writers.rs displace statement is at 101-102; Recorded::Same returns at 209 and 213.
 - Verified: migration list 36-44 (eight entries, next is 10); files id at 502 with no AUTOINCREMENT anywhere; UNIQUE(volume, file_ref) at 528; partial indexes at 535, 537, 539; files_source_changed at 728-729; CARRIED at rebuild.rs:134-153 with no quarantine table; scan skip rules at scan lib.rs:112 and 124; pair.rs candidate queries at 98, 134 and 198-200; queue.rs:211-219; writers.rs:109-118 (size and mtime guard); types.rs:350-358; platform file.rs 9-25, 52-75, 193-204, 209-226, 244-254; dir.rs 181-192; writeback lib.rs file_gone at 382; jobs service.rs 74-81; InboxPanel.qml:231; LibraryPanel.qml:22; thumbcache lib.rs:217; REFACTOR_PLAN.md 511 and 826; queue.rs:103-120; store.rs:61; schema.rs:802-814.
 - Contradictions: (1) Migration 10 (catalog tables and AUTOINCREMENT rebuild) breaks the cutover's schema-neutral rollback once shipped, and the viewstate version columns need the catalog too; no design orders migration numbers. (2) quarantine_batches.request UNIQUE is a second request-id store beside the cutover's server.db ledger, which covers quarantine commits. (3) Membership events: quarantine coalesces at 200 ms and lists replay as open; the events design has no replay and batches at 250 ms; adopt the vector and use one window. (4) Quarantine says phase 5 for the cutover while the cutover numbers its steps C1 to C9 (C8 is the flip); align the numbering.
@@ -1139,7 +1163,7 @@ Why: DateRange lenient_day drops an unreadable date and so drops the filter sile
 Rejected: strict Listing for stored sessions at once (breaks stored data without migration); field-by-field fallback for the session copy (can apply a truncated listing); lenient wire parsing.
 
 **Q: Selection and scroll identity.**
-Decision: ViewState.current is an Option<FileId>. Input.current stays an index local to one snapshot (input.rs:37-40); the data layer converts using the snapshot. The clear rule (input.rs:70) stays. Scroll is an anchor: the FileId of the topmost visible item (GalleryGrid.topItem(), GalleryGrid.qml:41-45) plus the fraction of that row scrolled past. QML reports the anchor when scroll rests, through a controller pause (300 ms proposal, unmeasured), never per frame or as pixels.
+Decision: ViewState.current is an Option`<FileId>`. Input.current stays an index local to one snapshot (input.rs:37-40); the data layer converts using the snapshot. The clear rule (input.rs:70) stays. Scroll is an anchor: the FileId of the topmost visible item (GalleryGrid.topItem(), GalleryGrid.qml:41-45) plus the fraction of that row scrolled past. QML reports the anchor when scroll rests, through a controller pause (300 ms proposal, unmeasured), never per frame or as pixels.
 Why: An index is valid for one snapshot; pixel offsets break on resize; the desktop model already re-anchors by file (gallery/model.rs:179-201). Note: the doc says the controller owns scroll (WEB_CLIENT.md:192) but the code keeps it in QML (GalleryGrid.qml:42, 123); here the controller holds the anchor and QML keeps rendering.
 
 **Q: Serde compile.**
@@ -1184,6 +1208,7 @@ Decision: The desktop persists no ViewState. A restarted desktop rebuilds its St
 Why: The server survives the desktop; a desktop-side cache could overwrite a newer session.
 
 Open:
+
 - Whether phone and desktop share one session listing (WEB_CLIENT.md:188-198 says it follows the user); ViewState.listing and the session CAS depend on it.
 - Whether real_size is per device or per user (P1).
 - Whether the viewer is restored after reload (proposed no for version 1).
@@ -1202,6 +1227,7 @@ Open:
 - Not verified: the serde compile; replay and QML tests passing; the poisoned-stub run; rowid reuse on the real catalog; the session-read failure hazard (by reading only); Android page-kill and sessionStorage behaviour; Start overrides in a real run.
 
 Measure first:
+
 - The poisoned-stub run's touched set (becomes the Start payload contract).
 - Serde compile of ViewState and Fraction.
 - Count of stored sessions and saved views with unreadable dates (Query strictness).
@@ -1211,6 +1237,7 @@ Measure first:
 - Time to fill the grid after resume.
 
 Validation notes:
+
 - Correction: the Command::Started push is at client controller.rs:366; the apply_view SaveSession is at 363-364.
 - Verified: the 272 count, 112 qproperty, 140 qinvokable, 20 qsignal; per-file counts; 40 inherit; 21 cxx_override; 19 files with qml_element and 7 without; video_source_bridge.rs:24-34; failed_files_bridge.rs 27-31, 38-50, 63-64; Event and Command both have 21 variants (client controller.rs:76-140 and 144-192); Start derives at 37-38; FORMAT 3 at replay.rs:13; desktop controller.rs 38, 39, 51-53, 55, 57 and start_state 91-118; client controller.rs:218 and 291-292; fire() 531-534; deadlines.rs:25-26; GalleryGrid.qml:41-45 and 122-123; Main.qml:89 and 194; qmldir 2-9; size.rs:15-17; listing.rs:50; store.rs:68-75; prefs.rs:147-156; views.rs:34-38; query.rs DateRange serde(default) with lenient_day at 211-213; WEB_CLIENT.md:441 and 568.
 - Not verified: member bodies (labels provisional); the serde compile; Format 3 recordings; the Start payload in a real run; replay.rs:16-21; sessionStorage on Android; Shell.qml's stub range is 6-11 (trivial).
@@ -1243,7 +1270,7 @@ Decision: A running process serves one build_id and one bundle_id for its whole 
 Why: Every response comes from the build the process started with, so no state inside the server can disagree with the bundle.
 
 **Q: How does a stale page reload, and how is a reload loop prevented without storage?**
-Decision: On a stale signal the page navigates to index.html?b=<server bundle_id>&n=<hop>, where n counts automatic reloads in this chain. An inline check in index.html runs before any bundle loads: if its own bundle_id differs from b, the entry is stale despite no-cache, so it shows a static update-failed message with a link to the bare URL and does not reload again. Otherwise it may reload automatically while n is below 3 (proposal). No localStorage, sessionStorage or cookie.
+Decision: On a stale signal the page navigates to index.html?b=`<server bundle_id>`&n=`<hop>`, where n counts automatic reloads in this chain. An inline check in index.html runs before any bundle loads: if its own bundle_id differs from b, the entry is stale despite no-cache, so it shows a static update-failed message with a link to the bare URL and does not reload again. Otherwise it may reload automatically while n is below 3 (proposal). No localStorage, sessionStorage or cookie.
 Why: The URL is the only state that survives reload without storage (storage can be blocked in private windows). The inline check stops a loop even when the app code is the stale part.
 
 **Q: How is a stale cached bundle prevented?**
@@ -1262,7 +1289,7 @@ Why: Replay logs add an epoch, retention numbers and a replay cap, and still nee
 Rejected: a sequence with a 4,096-event ring and 512 to 1,024 replay cap (every number a guess); a persisted sequence (an outbox table); per-item change history.
 
 **Q: Which scopes exist, what bumps each, and what does a client do when one moves?**
-Decision: tree: a scan commit changing folders or files, folder added or removed, delete or move. items: any item attribute commit (rating, mark, turn, scan-written rows; scan rows must bump, see open); the viewport and the viewer's up to eight neighbours (WEB_CLIENT.md:352-353) are revalidated on a move; other held records revalidate when they come into view. listing:<id>:membership: a commit adding, removing or reordering a member of an open listing under its query and sort, including scan, delete, move and quarantine, and a turn under an aspect-ratio sort (query.rs:141-145); evaluated per commit for open listings only; the client reopens with its query and keeps the selected FileId and scroll anchor (WEB_CLIENT.md:218-219). listing:<id>:shape: a turn on a member; the client re-reads that listing's ratio column and re-runs layout. thumbs: the thumbnail cache gained entries, so placeholders can be replaced (decision 16). inbox: notice post, replace or clear, or poke (notice_sink.rs). jobs: scan, import and writer status, coalesced to one bump per second (proposal). settings: write_back and per-user preferences. A bump happens only after the commit it describes.
+Decision: tree: a scan commit changing folders or files, folder added or removed, delete or move. items: any item attribute commit (rating, mark, turn, scan-written rows; scan rows must bump, see open); the viewport and the viewer's up to eight neighbours (WEB_CLIENT.md:352-353) are revalidated on a move; other held records revalidate when they come into view. listing:`<id>`:membership: a commit adding, removing or reordering a member of an open listing under its query and sort, including scan, delete, move and quarantine, and a turn under an aspect-ratio sort (query.rs:141-145); evaluated per commit for open listings only; the client reopens with its query and keeps the selected FileId and scroll anchor (WEB_CLIENT.md:218-219). listing:`<id>`:shape: a turn on a member; the client re-reads that listing's ratio column and re-runs layout. thumbs: the thumbnail cache gained entries, so placeholders can be replaced (decision 16). inbox: notice post, replace or clear, or poke (notice_sink.rs). jobs: scan, import and writer status, coalesced to one bump per second (proposal). settings: write_back and per-user preferences. A bump happens only after the commit it describes.
 Why: Each scope carries the cheapest signal its action needs. The shape scope answers rotation without per-item ratio patches, which would need a FileId column the ratio blob does not have (WEB_CLIENT.md:315-316). A turn can change membership under an aspect sort, so the doc's query-and-sort rule must cover it.
 Rejected: one global generation (every rating reopens every listing); per-item ItemState frames (needs the FileId column); a per-item version map in every poll; treating a turn as no layout effect.
 
@@ -1292,7 +1319,7 @@ Why: Both processes are one binary, so equality is exact for a new server. The a
 Rejected: attaching on protocol match; killing the old server without a graceful stop (an in-flight set becomes unknown); a desktop-only in-process change signal.
 
 **Q: How are thumbnails named, cached and replaced when the cache misses?**
-Decision: The thumbnail URL names its pixels exactly: /api/thumbs/<file_id>@<mtime>.<rotation>.<turns>/<height>, with a render version constant, bumped on any change to resampling, encoding or cache schema, as a query parameter. The image key already carries mtime, rotation and turns (model image.rs:12-21). A rendered thumbnail is public, max-age=31536000, immutable (this decision's own header; see validation: the thumbs and auth designs say private). A miss queues the work and returns a placeholder with no-store, so it is never cached under the immutable key. The client learns a placeholder can be replaced from the thumbs scope and re-requests the images it showed as placeholders.
+Decision: The thumbnail URL names its pixels exactly: /api/thumbs/`<file_id>`@`<mtime>`.`<rotation>`.`<turns>`/`<height>`, with a render version constant, bumped on any change to resampling, encoding or cache schema, as a query parameter. The image key already carries mtime, rotation and turns (model image.rs:12-21). A rendered thumbnail is public, max-age=31536000, immutable (this decision's own header; see validation: the thumbs and auth designs say private). A miss queues the work and returns a placeholder with no-store, so it is never cached under the immutable key. The client learns a placeholder can be replaced from the thumbs scope and re-requests the images it showed as placeholders.
 Why: Only a complete key makes an immutable max-age correct; the doc's URL drops turns (WEB_CLIENT.md:319, 396), and the cache keeps no record of the filter or version that made an entry (THUMBNAIL_RESAMPLING.md:290-292). The no-store placeholder prevents an immutable placeholder staying on the phone indefinitely.
 Rejected: a shorter max-age; a build id in the thumbnail URL (every release discards the thumbnail cache); polling each placeholder.
 
@@ -1328,6 +1355,7 @@ Decision: (a) Golden fixtures for frozen envelopes. (b) A model-based property t
 Why: These failures are orderings that only generated interleavings find.
 
 Open:
+
 - Out-of-band writer: a second process bypassing the single-writer lock writes without a bump; no reliable detector exists (inbox.rs:8 uses data_version only to re-read).
 - A server defect that commits without a bump is caught only as a VersionMismatch diagnostic; clients stay stale on unread records until reload.
 - Reload livelock under constant churn: progress is made but the rate is bounded only by the 250 ms floor and coalescing; cost unmeasured.
@@ -1351,6 +1379,7 @@ Open:
 - Dev loop: a bundle rebuild needs a server restart; whether the bundle can be re-read without one is undecided.
 
 Measure first:
+
 - Refetch round time for a viewport after a bump, and a real scan's bump rate per scope (to decide whether the reload livelock occurs).
 - Cost of per-commit membership evaluation for open listings.
 - Cold start of a held-in-memory bundle on a phone; resident cost of holding the 27.7 MB wasm.
@@ -1358,6 +1387,7 @@ Measure first:
 - Held-poll behaviour of Qt WASM under Android Chrome with the screen off.
 
 Validation notes:
+
 - Corrections: the LAN address change item is at WEB_CLIENT.md:593 (not 458, which is the HTTPS and private-CA text). The native-tls claim at 383-385 is contradicted for version 0.2.18 by schannel.rs:334-366; the choice of rustls is therefore not forced by ALPN alone. notice.rs UpdateAvailable is at 581-584; SessionNotRead's code 46 is at 1333, outside the cited range. Lifecycle Transient 594-598, Notice::Unknown 586-589, RETIRED 769, golden test 1379-1392 and text.ftl 342-343 are correct.
 - Verified: Event and Command both derive Serialize and Deserialize (client controller.rs:75-76, 143-144); Event has 21 variants; no sequence number; controller.rs:1-6 time as input; jobs Bus pops the oldest and counts lagged (events.rs:77-89); Change at 127-140; Generation counters (runner.rs:131-141); inbox.rs EVENTS 1024 (line 59) and POLL 30 s (line 62); tools/lint.py:21; Cargo.lock getrandom 939, blake3 203, native-tls 1434, ureq 2888; Cargo.toml blake3 at 14, proptest at 34, version 0.1.0 at 7; CARGO_PKG_VERSION used only at desktop lib.rs:144; replay FORMAT 3 at replay.rs:13; clippy.toml bans; qnetworkreplywasmimpl.cpp 259, 271, 276; qwebsocket_wasm_p.cpp has no ping API; live_reload.rs 1-6.
 - Contradictions: (1) Step 2 of decision 2 exempts the login POST from the Origin check (decision 19 requires Origin on every POST, login included). Fix the middleware order. (2) Decision 19 does not address a cross-site GET that enqueues work: the thumbs design needs SameSite=Lax plus a Sec-Fetch-Site 403 on the thumbnail GET, and events needs that check too. (3) Thumbnails: this design says public, immutable, with turns in the path and the render version in a query parameter; the thumbs design says private (never public) with thumbs_version in the path and no turns; these cannot both be the contract. (4) No socket: the thumbs design's want list, ready hint and resume(seq) need a channel this design does not provide; placeholder re-request is the thumbs scope here and a per-cell backoff timer in thumbs. (5) Desktop attach: pg-wire placement conflicts with the cutover's rule that trait types live outside pg-app; amend one. (6) Replay and events: the cutover (C5) assumes resume and gap resync, which this design removes; quarantine assumes replay is open, which this design closes.
@@ -1462,7 +1492,7 @@ Rejected: per-cell placeholder URLs; thumbhash in the header (about 4.7 MB for 1
 
 **Q: Thumbnail URL, what it names, and the cache rules.**
 Decision: GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file}@{mtime}.{rotation}/{height}. No turns component. Exact, versioned key: 200 with Cache-Control private, max-age=31536000, immutable. Nearest smaller kept size: 200, no-cache, with X-Thumb naming the smaller height. Miss: 200, no-store, X-Thumb: queued, with the nearest kept smaller size if any, otherwise a 1x1 transparent image (the client shows the thumbhash behind it). An unversioned key returns no-store. The client rotates the decoded image by pending with a CSS transform.
-Why: The cache is keyed by source (mtime and rotation); turns are returned separately (images.rs:227, 235) and applied per display (desktop providers.rs:50-59), so cached bytes do not depend on turns; a turns component would refetch identical bytes on every R press. catalog_id stops a rebuilt catalog's renumbered ids matching an old immutable URL. THUMBS_VERSION (render lib.rs:14) stops a renderer change leaving old bytes. no-store on a miss stops an immutable cache pinning the placeholder. A 202 with no body is not used because <img> handling of an empty 2xx is unverified.
+Why: The cache is keyed by source (mtime and rotation); turns are returned separately (images.rs:227, 235) and applied per display (desktop providers.rs:50-59), so cached bytes do not depend on turns; a turns component would refetch identical bytes on every R press. catalog_id stops a rebuilt catalog's renumbered ids matching an old immutable URL. THUMBS_VERSION (render lib.rs:14) stops a renderer change leaving old bytes. no-store on a miss stops an immutable cache pinning the placeholder. A 202 with no body is not used because `<img>` handling of an empty 2xx is unverified.
 Rejected: turns in the key; the doc's sketch without version or catalog_id; a 202 for a miss; a placeholder under the final URL with immutable.
 Note: the immutable-private choice conflicts with ops and the thumbs design (see validation).
 
@@ -1558,6 +1588,7 @@ Why: The commit and ops row are one transaction. This is reasoned from SQLite's 
 Rejected: designs depending on synchronous FULL (a cost not measured here); in-memory version counters (reset on restart).
 
 Open:
+
 - Nothing built, run or measured. Byte sizes are arithmetic on field widths. Proposals and unmeasured: miss queue 2,000; chunk 500; conflict sample 100; selection cap 4,096; four snapshots per device; 64 MP view bound; ops retention 24 hours and 10,000 rows; body caps 64 KiB and 1 MiB; batching window 100 to 200 ms.
 - Stamp completeness is asserted, not proven; a test should enumerate every wire-visible column against the trigger set. Analysis width, height, orientation and thumbhash are not in analysis_changed (schema.rs:755-758). The write_done swap (queue.rs:260-262) is stamped only by the same transaction's file_writes update.
 - Whether scanner name and folder_id changes (writers.rs:114, pair.rs:357) always move a stamp in the cases the stream needs; a same-size, same-mtime rebind through take_identity was not traced.
@@ -1583,6 +1614,7 @@ Open:
 - Video is not designed; duration and video kind appear as placeholders with no video routes.
 
 Measure first:
+
 - Writer time for a bulk chunk over 189,518 items at 500 per transaction; the write-lock hold under the existing timer.
 - Snapshot facet cost; include and exclude membership cost (bitmap or sorted ids).
 - Byte sizes after brotli or gzip; JSON versus binary parse cost on Android Chrome.
@@ -1590,6 +1622,7 @@ Measure first:
 - Desktop listing memory per entry (56 bytes from HEAP_PROFILE_START.md:63).
 
 Validation notes:
+
 - Corrections: FileState is at crates/catalog/src/browse/read/state.rs:13 (fields 13-24); lines 29-37 are FileSource, not FileState. The f64 division is Entry::aspect in crates/model/src/grid.rs:79-82, not client layout.rs:24-26 (a doc comment); the clamp at client layout.rs:16-18 is correct. The exact mtime compare is images.rs:187 (source_of at 37-39); 177-183 is the nearest lookup. The turn-rule evidence overstates: WEB_CLIENT.md:230-238 says relative operations are computed by the client into absolute values, so the wire's delta departs from the doc and must be recorded as a doc change, not described as the same rule. The catalog_id row is at schema.rs:701-702. THUMBHASH_MAX is at crates/model/src/analysis.rs:138. JsonStore::update is about store.rs:51-57.
 - Unverified: mark_read matching id, uid and rev; InboxEvent::Changed carrying the whole listing; the derived-value range at gallery/model.rs:37-102 (only row_value at 37 seen); the Yandex generation default; the 2,000, 500, 4,096 and 64 MP figures (proposals).
 - Contradictions: (1) The item cursor emits {file_id, changed} with no op, but the echo rule needs the op; the ops row has no file id, so the cursor cannot recover the op. Store the op with the changed row, or drop the echo rule. (2) Ops' durability: the crash decision here assumes NORMAL, but ops moves user-mutation commits to synchronous FULL on a dedicated connection; rewrite this crash statement to FULL. (3) Snapshot memory: ops budgets 56 bytes per entry (from WEB_CLIENT.md:214); this design freezes 16 bytes per item (about 3.5 times smaller). (4) The thumbnail GET here enqueues work and is a GET; ops' route rule says no state-changing route answers to GET; either move the miss queue behind a non-GET or allow a GET that enqueues and justify it against CSRF. (5) Miss queue: this design uses one per-device queue of 2,000 for visible and batch misses; ops has a visible queue on normal-I/O workers and batch misses on dedicated threads; pick one. (6) Body caps: this design sets 64 KiB for mutations and 1 MiB for selections (up to 4,096 entries, about 80 KB of JSON, estimate); ops sets 16 KiB for JSON mutations, which would refuse a legal selection. (7) Thumbnail caching: this design's exact key is private, max-age=31536000, immutable on mtime and rotation (not content); ops keeps thumbnails no-cache until versioned by content; this design's own open item says a same-mtime, same-size replacement serves stale bytes; the key does not meet ops' rule. (8) The decided rule that the CLI's writing commands go through the server while it runs is not defined here (no CLI-as-client rule); ops gives the CLI a direct-write mode.
@@ -1717,7 +1750,7 @@ Why: The desktop runs the task, so the server outlives the desktop, and the deta
 Rejected: a Windows service (administrator rights; different account and profile; DPAPI scope wrong); Run key or Startup shortcut (no restart, no history); the desktop spawning the server (killed with the desktop); COM task creation (needs an unlisted windows feature).
 
 **Q: How is a second server prevented, and how do the CLI and a starting server avoid interleaving?**
-Decision: The server takes a non-blocking exclusive lock on <catalog>.server.lock beside the catalog, through a new try-only function next to the dbfile Lock (Lock::take waits about 5 s, lock.rs:11-13 and 27-38). Held for the process's life; released by the OS on any exit. After taking the lock the server writes a run file serve.json (pid, port, protocol version, build id, token-file path) atomically. A run file found while the lock can be taken is stale. Exit codes: 0 when another live server holds the lock and answers the health probe; 75 when the lock is held by something that is not a server (a CLI direct write or a rebuild), so the task's restart policy retries and then stops. The CLI direct-write mode takes the same lock exclusively for the whole command, waits about 5 s, then fails with a message.
+Decision: The server takes a non-blocking exclusive lock on `<catalog>`.server.lock beside the catalog, through a new try-only function next to the dbfile Lock (Lock::take waits about 5 s, lock.rs:11-13 and 27-38). Held for the process's life; released by the OS on any exit. After taking the lock the server writes a run file serve.json (pid, port, protocol version, build id, token-file path) atomically. A run file found while the lock can be taken is stale. Exit codes: 0 when another live server holds the lock and answers the health probe; 75 when the lock is held by something that is not a server (a CLI direct write or a rebuild), so the task's restart policy retries and then stops. The CLI direct-write mode takes the same lock exclusively for the whole command, waits about 5 s, then fails with a message.
 Why: Keyed on the catalog, the unit that must have one writer. Holding the lock across the CLI write closes the check-then-write race. Exit 0 for every held lock would tell the desktop a server runs when a CLI write holds the catalog.
 Rejected: a named mutex (not keyed on the catalog); a PID file (PIDs reused); a fixed TCP port as the lock; the CLI checking for a server and then writing (a server can start between).
 Note: this design's exclusive server lock conflicts with the decided rule that ordinary writes share the catalog; see validation.
@@ -1799,6 +1832,7 @@ Decision: (1) WEB_CLIENT.md:383-385 says native-tls on Windows has no server-sid
 Why: A design built on a wrong library claim or an unlocated CA carries the error into the build.
 
 Open:
+
 - Phone trust in Chrome on Android: whether a user-installed root is accepted for the stable name and the IP, whether name constraints on the intermediate are enforced, and whether a 90-day leaf is accepted. The decided phone trust test is the gate.
 - Whether verifiers enforce name constraints on the intermediate (Chrome Android for user roots, and any desktop verifier). If not, the constraints document intent only and the damage bound does not hold.
 - Network change: after the adapter's subnet moves outside the constrained prefix, the server cannot issue a leaf for the new address and needs the root file to sign a new intermediate. Laptop owners would hit this; the policy (notice, then manual re-sign) is a proposal.
@@ -1830,6 +1864,7 @@ Open:
 - Whether a desktop's sleep or hibernate stops the task and the server, so the phone gets no response until wake (laptop power behaviour not checked).
 
 Measure first:
+
 - Thumbnail batch throughput at normal priority, with a per-handle low hint, and with thread background mode, on the library drive and the cache drive; interactive miss latency during a batch (decision 28).
 - Whether the power-throttling opt-out changes batch throughput (decision 27).
 - Argon2id hash time on the owner's machine and login latency under a flood (decision 15).
@@ -1841,12 +1876,13 @@ Measure first:
 - Windows checks: the task (non-admin creation, restart on non-zero, logoff, default time limit) and the firewall rule (elevation, Public default); Android Chrome trust of a user root, name constraints and a 90-day leaf.
 
 Validation notes:
+
 - Corrections: the I/O hint decision says file.rs:12-30 (open_read) is the one place reads open files. That is false. The hashing read opens with File::open at analysis analyze.rs:40 (FileHash::of_reader), and the thumbnail miss read uses std::fs::File::open at render maker.rs:86 (read_file, called from images.rs:214). Only the scan pipeline uses open_read (jobs pipeline.rs:288). The hint must be applied at analyze.rs:40 and maker.rs:86 too, or the hash and miss reads are not covered.
 - The login-before-everything rule is at WEB_CLIENT.md:274-275; lines 277-281 hold the safeguards and login bullets. Citation drift only.
 - Emscripten pin: tools/doctor.py has no emsdk or emscripten check today (grep found none); present it as a proposed change.
 - native-tls: the server accept path (schannel.rs:342-375) exists but is behind the alpn-accept feature, which this repo's build does not enable; the FIXME is verified.
 - The desktop never writing the catalog after cutover is contradicted by App::open calling pg_library::open_catalog (app app.rs:62, which runs Catalog::prepare, library lib.rs:19); prepare can migrate, rebuild or move the catalog aside (core.rs:67-92). Either remove prepare from the desktop's start after cutover or make it read-only; the design does not say which.
-- Contradictions: (1) The exclusive server lock on <catalog>.server.lock for the server's whole life conflicts with the decided rule that the exclusive hold is for layout changes only; the shared hold kept by the keeper (core.rs:124, app.rs:62) is the mechanism the decided rule relies on. (2) The CLI direct-write mode taking the exclusive lock for the whole command and failing while a server runs is a refusal, which the decided rule rules out (the decided rule routes writes through the API). (3) The CLI direct-write mode is a second writer when no server runs, while the design rejects a second process for rebuilds as a second writer; the same rule applies to both. (4) The pre-login route set includes a favicon and a notices GET, which are exceptions to the decided login-first rule as written; either remove them or amend the rule. (5) The desktop's start prepare (see above) conflicts with the sole-writer rule after cutover. (6) Body caps: this design sets 16 KiB for JSON mutations; the wire design sets 64 KiB for mutations and 1 MiB for selections, and a 4,096-entry selection is about 80 KB of JSON (estimate). (7) The snapshot memory budget here uses 56 bytes per entry; the wire design freezes 16 bytes per item. (8) Thumbnails: this design says private and no-cache until versioned; the wire design sets an exact versioned key to private immutable. (9) Durability: this design moves user mutations to synchronous FULL; the wire design's crash decision assumes NORMAL. (10) Login lockout state: this design keeps login counters in memory and resets on restart; the auth design persists them across restarts. (11) The reconnect cap and backoff in the snapshot grace text use sequence-number resume, which the events design removes. (12) Attach rule: this design requires build equality; the events design also requires build equality, but this design's protocol check in the attach text names protocol version too; align the two. (13) The desktop's logon task default is off here; the decided rule says the login works while the desktop is closed, so after a reboot with the setting off the phone gets no server until the desktop runs the task. The decided rule holds only while the server is running, unless the default is changed; the owner must decide.
+- Contradictions: (1) The exclusive server lock on `<catalog>`.server.lock for the server's whole life conflicts with the decided rule that the exclusive hold is for layout changes only; the shared hold kept by the keeper (core.rs:124, app.rs:62) is the mechanism the decided rule relies on. (2) The CLI direct-write mode taking the exclusive lock for the whole command and failing while a server runs is a refusal, which the decided rule rules out (the decided rule routes writes through the API). (3) The CLI direct-write mode is a second writer when no server runs, while the design rejects a second process for rebuilds as a second writer; the same rule applies to both. (4) The pre-login route set includes a favicon and a notices GET, which are exceptions to the decided login-first rule as written; either remove them or amend the rule. (5) The desktop's start prepare (see above) conflicts with the sole-writer rule after cutover. (6) Body caps: this design sets 16 KiB for JSON mutations; the wire design sets 64 KiB for mutations and 1 MiB for selections, and a 4,096-entry selection is about 80 KB of JSON (estimate). (7) The snapshot memory budget here uses 56 bytes per entry; the wire design freezes 16 bytes per item. (8) Thumbnails: this design says private and no-cache until versioned; the wire design sets an exact versioned key to private immutable. (9) Durability: this design moves user mutations to synchronous FULL; the wire design's crash decision assumes NORMAL. (10) Login lockout state: this design keeps login counters in memory and resets on restart; the auth design persists them across restarts. (11) The reconnect cap and backoff in the snapshot grace text use sequence-number resume, which the events design removes. (12) Attach rule: this design requires build equality; the events design also requires build equality, but this design's protocol check in the attach text names protocol version too; align the two. (13) The desktop's logon task default is off here; the decided rule says the login works while the desktop is closed, so after a reboot with the setting off the phone gets no server until the desktop runs the task. The decided rule holds only while the server is running, unless the default is changed; the owner must decide.
 
 ---
 

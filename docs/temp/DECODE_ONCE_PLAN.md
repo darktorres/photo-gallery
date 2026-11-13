@@ -368,7 +368,7 @@ pub fn thumbhash(upright: &Rgb) -> Vec<u8>;  // fitted to THUMBHASH_SIDE
 ```
 
 - **The hashes are computed in every mode.** The duplicates toggle gates the pairing (3.6, 3.9), not the hashing. This is the consequence that makes the stored hash values identical in all toggle combinations (decided 2026-11-13, option (a); the rejected alternative is below).
-- **Measured 2026-11-13** (one thread, release, 200 sampled files from `D:\wallhaven\downloads`: 122 JPEG at 9.2 MP mean, 78 PNG at 6.8 MP). For a JPEG, the hashes on the full image cost 41 ms against 4 ms on the scaled image: the pixel hash 3 ms, PDQ 16 ms and ThumbHash 22 ms. The pixel hash and PDQ, the part the duplicates toggle could skip, are about 18 ms of a 135 ms full decode. ThumbHash runs either way, because it is always stored. For a PNG the hashes are the same on both paths, since PNG is not scaled on decode. The resizes dominate the cost, not the pixel hash. 
+- **Measured 2026-11-13** (one thread, release, 200 sampled files from `D:\wallhaven\downloads`: 122 JPEG at 9.2 MP mean, 78 PNG at 6.8 MP). For a JPEG, the hashes on the full image cost 41 ms against 4 ms on the scaled image: the pixel hash 3 ms, PDQ 16 ms and ThumbHash 22 ms. The pixel hash and PDQ, the part the duplicates toggle could skip, are about 18 ms of a 135 ms full decode. ThumbHash runs either way, because it is always stored. For a PNG the hashes are the same on both paths, since PNG is not scaled on decode. The resizes dominate the cost, not the pixel hash.
 - **Why always compute (decided 2026-11-13, option (a)).** Gating the hashing with the duplicates toggle (the rejected option) saves about 24 minutes of CPU on the 85,073-file library, for users who never enable duplicates. Those users would pay for it later: enabling duplicates would then need one more full decode pass (about 2.6 hours of CPU for the library, from the measured full decodes of about 135 ms per JPEG and 62 to 65 ms per PNG, 5.1), plus a re-read of the library (about 306 GiB). Stored hashes would also be absent in one toggle state, so the 5.12 and 6.6 checks could compare only where both sides hold a value. Always computing keeps the stored values identical in every toggle combination, and enabling duplicates is a pairing job.
 
 ### 3.2 The 512 MiB JPEG cap lands here
@@ -1205,38 +1205,38 @@ Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpe
 
    6.4 **Env-gated metrics** (`PG_METRICS=<path>`). A new module `crates/trace/src/metrics.rs` (trace depends only on platform, and it already holds the env-gated diagnostics). The app (`desktop/src/lib.rs`, next to the `PG_TRACE` install at `trace.rs:25`) and the CLI call `pg_trace::metrics::open(path)` once. If the file cannot be opened, there is a stderr warning, metrics stay off, and there is no error. Unset: each emit is one branch (`OUT.get()` is `None`). Import and thumbcache get `trace` in 5.13. The grid metrics are emitted from desktop, because `client` is below `trace` in the layers file (`client` at L12, `trace` at L28), so `client` cannot depend on it.
 
-```rust
-static OUT: OnceLock<Mutex<File>> = OnceLock::new();
+   ```rust
+   static OUT: OnceLock<Mutex<File>> = OnceLock::new();
 
-/// Opens the metrics file for append, once per process. False, and nothing is written, when it cannot be opened.
-pub fn open(path: &Path) -> bool {
-    OpenOptions::new().create(true).append(true).open(path).is_ok_and(|f| OUT.set(Mutex::new(f)).is_ok())
-}
+   /// Opens the metrics file for append, once per process. False, and nothing is written, when it cannot be opened.
+   pub fn open(path: &Path) -> bool {
+       OpenOptions::new().create(true).append(true).open(path).is_ok_and(|f| OUT.set(Mutex::new(f)).is_ok())
+   }
 
-/// One JSON line: the time since process start, the event name, and `fields` (already formatted, no braces).
-pub fn emit(event: &str, fields: std::fmt::Arguments<'_>) {
-    let Some(out) = OUT.get() else { return };
-    let line = format!("{{\"t_ms\":{:.3},\"ev\":\"{event}\",{fields}}}\n", pg_platform::clock::process_age_ms());
-    let mut file = out.lock().unwrap_or_else(PoisonError::into_inner);
-    let _ = file.write_all(line.as_bytes()); // one write per line: File is unbuffered
-}
-```
+   /// One JSON line: the time since process start, the event name, and `fields` (already formatted, no braces).
+   pub fn emit(event: &str, fields: std::fmt::Arguments<'_>) {
+       let Some(out) = OUT.get() else { return };
+       let line = format!("{{\"t_ms\":{:.3},\"ev\":\"{event}\",{fields}}}\n", pg_platform::clock::process_age_ms());
+       let mut file = out.lock().unwrap_or_else(PoisonError::into_inner);
+       let _ = file.write_all(line.as_bytes()); // one write per line: File is unbuffered
+   }
+   ```
 
-Event schema (one JSON object per line; field values are numbers or one of the fixed strings listed):
+   Event schema (one JSON object per line; field values are numbers or one of the fixed strings listed):
 
-| ev | fields | where emitted |
-|---|---|---|
-| `sink_flush` | `files` (uint, files in the batch), `dur_ms` (float, the whole flush), `lock_ms` (float, BEGIN IMMEDIATE to COMMIT), `result` ("ok" or "err") | the merged pass's sink (5.5, 5.6) |
-| `put_batch` | `n` (uint, entries), `dur_ms` (float), `result` ("ok", "not_stored" or "err") | thumbcache's `put_batch` |
-| `grid_merge` | `rows` (uint, rows after the merge), `changed` (uint, items changed), `dur_ms` (float) | the grid merge's caller (desktop, Phase 4) |
-| `grid_1000` | `rows` (uint, the client's count, always >= 1000) | desktop, once per process, at the first count >= 1000 |
+   | ev | fields | where emitted |
+   |---|---|---|
+   | `sink_flush` | `files` (uint, files in the batch), `dur_ms` (float, the whole flush), `lock_ms` (float, BEGIN IMMEDIATE to COMMIT), `result` ("ok" or "err") | the merged pass's sink (5.5, 5.6) |
+   | `put_batch` | `n` (uint, entries), `dur_ms` (float), `result` ("ok", "not_stored" or "err") | thumbcache's `put_batch` |
+   | `grid_merge` | `rows` (uint, rows after the merge), `changed` (uint, items changed), `dur_ms` (float) | the grid merge's caller (desktop, Phase 4) |
+   | `grid_1000` | `rows` (uint, the client's count, always >= 1000) | desktop, once per process, at the first count >= 1000 |
 
-Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"lock_ms":3.210,"result":"ok"}` and `{"t_ms":1240.001,"ev":"grid_1000","rows":1000}`. `result` is on `sink_flush` and `put_batch` so an error shows in the measurements. `grid_1000` is once per process, since the plan's metric is the time to the first 1,000 rows.
+   Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"lock_ms":3.210,"result":"ok"}` and `{"t_ms":1240.001,"ev":"grid_1000","rows":1000}`. `result` is on `sink_flush` and `put_batch` so an error shows in the measurements. `grid_1000` is once per process, since the plan's metric is the time to the first 1,000 rows.
 
-   6.5 **`tools/profiling/pairs_dump.py`.** Python standard library. `python tools/profiling/pairs_dump.py CATALOG_DIR [-o OUT]` (stdout by default), opened read-only (`mode=ro`). The file key is `path_hex + "/" + name_hex`, both from the BLOBs (`folders.path`, `files.name`), hex in Python and not SQL `||` on BLOBs, which would mangle non-UTF-8 bytes. Hex is exact and needs no `PathRules`, so a readable form is not planned. It is keyed by path, not `files.id`, so two catalogs of the same library compare. Lines, sorted, tab-separated, for `diff`:
+      6.5 **`tools/profiling/pairs_dump.py`.** Python standard library. `python tools/profiling/pairs_dump.py CATALOG_DIR [-o OUT]` (stdout by default), opened read-only (`mode=ro`). The file key is `path_hex + "/" + name_hex`, both from the BLOBs (`folders.path`, `files.name`), hex in Python and not SQL `||` on BLOBs, which would mangle non-UTF-8 bytes. Hex is exact and needs no `PathRules`, so a readable form is not planned. It is keyed by path, not `files.id`, so two catalogs of the same library compare. Lines, sorted, tab-separated, for `diff`:
 
-- `A <key> <pixel_hash|-> <pdq|-> <pdq_dihedral|-> <thumbhash|->` from `analysis` (hex of the BLOBs, `-` for NULL). Rows with `error IS NOT NULL` are included, with their `error` as the last field.
-- `P <key_a> <key_b> <distance> <variant>` from `pdq_pairs` (`a < b` by id, re-sorted by key so the order is stable).
+   - `A <key> <pixel_hash|-> <pdq|-> <pdq_dihedral|-> <thumbhash|->` from `analysis` (hex of the BLOBs, `-` for NULL). Rows with `error IS NOT NULL` are included, with their `error` as the last field.
+   - `P <key_a> <key_b> <distance> <variant>` from `pdq_pairs` (`a < b` by id, re-sorted by key so the order is stable).
 
    Exit: 0 ok; 3 the catalog is unreadable or has no `analysis` table. It also prints `PRAGMA user_version` to stderr.
 

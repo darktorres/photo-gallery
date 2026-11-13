@@ -14,7 +14,7 @@ paper name are from that paper.
 - A desktop photo gallery for a library of **~70M images**, with near-duplicate detection aimed at **Pinterest
   saves: many crops and edits of the same picture**, plus the same pin saved at different sizes.
 - **Rust** for everything that runs at scale. **Windows only** for now.
-- A **high-performance desktop UI** first. Phone/web access is not a goal for now.
+- A **high-performance desktop UI** first. A phone/browser client over the LAN is in scope after it; see `docs/temp/WEB_CLIENT.md`.
 - **Non-destructive:** nothing is ever deleted automatically. Removals go to a quarantine folder or the
   Recycle Bin after review.
 

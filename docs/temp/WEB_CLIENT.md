@@ -25,19 +25,19 @@ Candidates came from GitHub topic search by stars (`photo-gallery`, `photos`, `p
 
 **Decided** (approved in review): the controller runs in every client; the server is the only data authority and the only
 process that writes the catalog; the desktop talks to the server over loopback; mutations are versioned sets; items are
-identified by `FileId` on the wire; listings are stamped with a generation and freeze membership and order.
+identified by `FileId` on the wire; listings are stamped with a generation and freeze membership and order. From the latest
+review: the server is async (`axum` on `tokio`); the CLI's writes go through the server while it runs; access is by login,
+not pairing; a cache miss queues the work and returns a placeholder; `write_back` is a server-wide setting that the owner can
+change from any client, on by default; deletes and moves are in version 1, once quarantine exists; scan changes reach clients
+live, and a phone can start scans and imports; the layout runs in a Web Worker; the phone target is Android (Chrome) for now;
+Yandex is in version 1; a server-side folder browser can add library folders; the budgets are set by measurement.
 
 **Target, gated:** one shared QML frontend in the browser and on the desktop. The gate is an HTTPS run of the spike on a
 phone (see "Reusing the QML").
 
-**Proposed, not decided:** every value and mechanism marked *Proposed* below. The validation pass over the 14 open points
-(batched reviewers and a cross-point critique) broke or weakened six recommendations. The table in "Open points" records
-the result.
-
-**Corrected in this revision:** the WebSockets availability (present in the WASM kits, WebChannel absent); the video
-cause and the sequence the logs show (the pause-first fix is rejected); the pairing QR fingerprint (rejected); the origin
-of the 10-minute snapshot value (a proposal, not from the design); the viewer's neighbour preload (eight, not two); the
-thumbnail miss rule (the current code falls back to the original).
+**Open:** the video side (work in progress, kept open by decision); the TLS library (`rustls` or `native-tls`); the login
+details; the scope of `real_size`; the snapshot grace length; the budgets, once measured; whether the desktop's writes move in
+the same step as its reads; device identity. The table in "Open points" records each one, with the validation result.
 
 ## Verdict
 
@@ -191,8 +191,10 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   preferences, thumbnails, listing snapshots, and the event log.
 - Client controller: the current item, selection, panels, viewer, grid size, scroll, filter-bar UI state, and timers
   (time is an input, `now_ms`).
-- Each preference is marked per-device or per-user in the schema. The list is open (below).
-- *Proposed:* a device record, created at pairing. The desktop is a device too, with a per-start loopback token. Device
+- Preferences: per user, `show_borders`, the last file, the session listing and saved views (they follow you to a phone).
+  Per device, `row_height`, `dev_mode` and `yandex_folder`. `real_size` is open. `write_back` is a server-wide setting, changed
+  from any client by the owner, on by default.
+- *Proposed:* a device record, created at login. The desktop is a device too, with a per-start loopback token. Device
   identity is open (below): the record's key, and the snapshot cap that counts per client, depend on it.
 
 **Identity**
@@ -207,6 +209,10 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 
 **Listings**
 
+- **What a snapshot is:** when a listing opens, the server runs the query and sort once, and keeps the resulting ordered list
+  of item IDs under a listing ID and a generation. It stays fixed until the client closes it, it expires, or the client reopens
+  it. The server holds about 56 bytes per entry in memory (`docs/temp/HEAP_PROFILE_START.md:63`), so roughly 56 MB per million
+  items. The client gets the aspect-ratio block once, then fetches item records by range as the grid asks for them.
 - A snapshot freezes membership and order when it opens. Attribute changes update items in place.
 - The server publishes the fields each listing's query and sort read. A change to one of those fields is
   membership-affecting. The client then reopens the listing with the same query and sort, keeps the selected `FileId`,
@@ -215,9 +221,9 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - *Proposed:* a snapshot is released after its client disconnects, after a grace period long enough for a sleeping phone
   (the length is open). A 10-minute idle backstop applies, and each client may hold at most four snapshots. Every number is
   unmeasured. The cap needs a client key, which depends on device identity.
-- *Proposed, version 1 membership changes:* scan-missing files, library folder removal, and rating-driven sort. The desktop
-  edits a rating in place today, so the change for the web client is a membership rule, not a new behaviour. Whether a phone
-  sees scan-driven changes live or only on reconnect is open.
+- *Decided, version 1 membership changes:* scan-missing files, library folder removal, and rating-driven sort. The desktop
+  edits a rating in place today, so for the web client it is a membership rule, not a new behaviour. Scan-driven changes
+  reach clients live.
 - Using an expired snapshot returns `SnapshotExpired`, and the client reopens it as above.
 
 **Mutations**
@@ -261,23 +267,21 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 
 - One binary, `gallery`, with the `serve` subcommand. An always-running per-user background process, started at logon and
   supervised by the desktop. The desktop attaches to it, or starts it, under a single-instance lock.
-- Scans and sync run in the background at low I/O priority, and yield to the desktop.
+- Scans and sync run in the background at low I/O priority, and yield to the desktop. A phone can start scans and imports.
 - The loopback listener binds `127.0.0.1` only. Requests carry a per-start token from a user-only file, so other local
   processes can't use it.
-- The LAN listener is off by default. Once it is on: TLS with a certificate that matches the address the phone uses
-  (*Proposed:* a private CA with an IP subject alternative name, installed on the phone; see "Reusing the QML"), pairing
-  before any request other than pairing, the `Origin` check on the WebSocket, and paired credentials on every mutation.
-  The enforcement is in the transport, not in the client.
-- *Proposed safeguards:* a connection cap, a pre-auth idle timeout, and rate limits on `POST /api/pair`. No values are set.
-- The CLI's writing commands (`gallery scan`, `gallery import`) also write the catalog. *Proposed interim:* they take the
-  catalog's exclusive hold (`crates/dbfile/src/lock.rs`) before opening, and refuse with the in-use message while another
-  process holds it. The desktop's Live hold already acts as the marker, so this can be built before the server exists.
-  *Open:* whether the desktop fails fast or waits (about 5 s). *End state:* the writes go through the server.
-- *Proposed pairing:* the desktop shows a single-use code (a time limit and an attempt cap; values not set). The phone posts
-  it to `POST /api/pair` over trusted TLS, and the server sets an httpOnly cookie bound to a device record the desktop can
-  revoke. A QR code may carry the URL and the code, as a convenience only. A QR fingerprint pin is rejected, because no
-  browser API pins an HTTPS origin's certificate. *Open:* pairing with the desktop closed, and how the phone installs the
-  certificate.
+- The LAN listener is off by default. Once it is on: TLS with a certificate that matches the address the phone uses (the
+  private CA certificate with the LAN name and the IP, already configured; the phone trust test is the gate), login before
+  any request other than login, the `Origin` check on the WebSocket, and a logged-in credential on every mutation. The
+  enforcement is in the transport, not in the client.
+- *Proposed safeguards:* a connection cap, a pre-auth idle timeout, and rate limits on the login request. No values are set.
+- **Login (decided, replaces pairing):** the owner sets a password on the desktop at first run. The phone logs in with it and
+  receives an httpOnly cookie bound to a device record the desktop can revoke. Login needs no desktop window, so it works while
+  the desktop is closed. *Open:* how the password is stored and hashed, lockout and rate limits, the reset path, and whether
+  the QR convenience is still wanted.
+- **CLI writes (decided):** while the server runs, the CLI's writing commands (`gallery scan`, `gallery import`) go through the
+  server's API. Otherwise they write the catalog directly. No refusal is needed: ordinary SQLite writes already share the
+  catalog. The exclusive hold (`crates/catalog/src/lifecycle.rs:49-52`) is taken only for layout changes.
 
 **Testing**
 
@@ -285,22 +289,22 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - Data layer: a conformance suite against the server, covering versions, sequence numbers and resume, and snapshot
   generation mismatch.
 - Integration: the desktop over loopback, and one phone session per release.
-- Before the desktop cuts over: benchmark listing open and range fetch against the current in-process path, and accept
-  the numbers first. *Proposed budgets, unmeasured:* listing open, median of five on the 189,518-file catalog, no more than
-  the in-process time plus 50 ms, both measured in the same run; a 100-item range fetch, p95 at most 16 ms on loopback.
-  Compare `Session::grid` completion, not window readiness.
+- Budgets (decided: measure first): record the in-process baseline for listing open (`Session::grid` completion) and for the
+  range fetch, then set the budgets from those numbers. The candidate numbers, unmeasured: listing open no more than the
+  in-process time plus 50 ms; a 100-item range fetch with p95 at most 16 ms on loopback.
 
 **Open**
 
-- Per-device or per-user, field by field.
-- Whether item deletion and moves are in version 1, since they change membership.
+- The video side (work in progress; kept open).
+- The TLS library for the LAN listener: `rustls` or `native-tls` (see Server).
+- The login details (see Processes and access).
+- The scope of `real_size` (the 1:1 zoom): per device, or per user.
+- The snapshot grace length for a sleeping phone. The 10-minute backstop and the cap of four are proposals.
+- Device identity: the record's key, and the client key for the snapshot cap.
 - The controller's view state. A serialisable struct has to be split out first, as a refactor prerequisite.
-- The snapshot lifetime and the budgets: the values above are proposals, unmeasured.
 - *Proposed:* the desktop cuts over before the browser frontend, in this order: in-process timings, the server and its
   conformance suite, the benchmark, then the cutover. *Open:* whether the desktop's writes (edits, scans, thumbnails,
-  write-back) move in the same step as its reads. If they don't, two processes write, which is the case the sole-writer rule
-  rules out.
-- Device identity, and the desktop's device record.
+  write-back) move in the same step as its reads. If they don't, two processes write, which the sole-writer rule rules out.
 
 ## Design for us
 
@@ -318,15 +322,15 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - **Batching:** a `multipreview`-style stream, with requests in viewport-priority order and cancellation.
   - Carried on the one WebSocket, which also carries events, so plain HTTP on the LAN never runs out of sockets.
   - The client stores each image in Cache Storage under its single URL.
-  - With TLS and HTTP/2 (the LAN certificate from State model), plain `<img>` would also do. But HTTP/2 needs a front (a
-    reverse proxy, or an async server crate), which is undecided. Nothing here is built yet.
+  - With HTTP/2 over the LAN certificate, plain `<img>` would also do. The async server gives HTTP/2 natively, so no second
+    process is needed. Which TLS library carries it is open (see Server). Nothing here is built yet.
 - **Viewer:** a fitted image at screen × DPR, then zoomed regions; JPEG for formats the browser can't decode.
-- **Video:**
+- **Video (work in progress; open):**
   - Original with byte ranges when the browser can play it (`canPlayType` on an exact codec string).
   - Stream-copied to fMP4 or HLS when only the container is wrong.
   - Real-time HLS transcode otherwise, paced in-process, with NVENC on the 2060.
   - Nothing ahead of time.
-- **Events and auth:** see State model. Auth is an httpOnly cookie set by device pairing.
+- **Events and auth:** see State model. Auth is an httpOnly cookie set at login.
 
 **Frontend** (the shared QML app, see "Reusing the QML" for the gate):
 
@@ -335,7 +339,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   the loopback connection to the same server.
 - **Layout:** `layout::justify_into` (`crates/client/src/layout.rs`; the greedy core is about 20 lines, std plus
   `pg_model::num::count`), in `pg-client`'s WASM, run in the frontend's process over the whole listing. It reruns on
-  resize, so the grid matches the desktop exactly. Whether it needs a worker is an open check.
+  resize, so the grid matches the desktop exactly. It runs in a Web Worker (decided); the cross-origin isolation from the HTTPS plan makes that possible.
 - **Scrolling:** our own scroll coordinate scaled under the element-height cap, rows windowed by binary search and images
   mounted only once scrolling slows (LibrePhotos).
 - **State:** positions in typed arrays, selection as id sets and index ranges, select-all on the server. No per-item
@@ -371,19 +375,18 @@ It has no window and no Qt. This section is a draft: the open decisions are at t
 HTTP and WebSocket server, the routes, the cache headers and the auth. `crates/gallery` gets the `serve` subcommand.
 The built frontend (the QML WASM bundle, or the fallback's bundle) is served from a directory first, and embedded later.
 
-**Stack (open).** Two options:
+**Stack (decided: async).** `axum` on `tokio`, with HTTP/2 and WebSockets from `hyper`. It is the project's first async code,
+and every `pg-app` call goes through a blocking pool sized to the catalog's connections. The sync option (`tiny_http` with
+`tungstenite`) is rejected: it has no HTTP/2, and a thread per connection does not suit a WebSocket per client with streamed
+thumbnails. `REFACTOR_PLAN.md:136` already says "the axum server later", which agrees with this.
 
-- **Async: `axum` on `tokio`.** Mainstream, with WebSocket support built in. It would be the project's first async
-  code, and every `pg-app` call would need `spawn_blocking`.
-- **Sync: `tiny_http` with `tungstenite`, a thread per connection.** Matches the thread model the repo already has, and
-  adds no runtime. Byte-range handling for video is written by hand either way, so this costs little.
+**TLS library (open):** `rustls` or `native-tls`. The choice matters for HTTP/2. The Windows backend of `native-tls` 0.2.18 has
+no server-side ALPN (`native-tls-0.2.18/src/imp/schannel.rs` has no server accept path), so it cannot negotiate HTTP/2 on
+Windows. `rustls` is pure Rust and supports server-side ALPN. It does not read the Windows certificate store by default, which
+the LAN setup does not need, because the server loads its own certificate from a file. The repo's only current TLS user is
+`ureq`, through `native-tls` (`Cargo.lock:1434`). Choosing `rustls` adds a second TLS stack beside it.
 
-*Proposed: sync.* `tiny_http` for HTTP, `tungstenite` for the WebSocket, one thread per connection, and one owner thread per
-WebSocket. The repo has no async code, and `crates/app` is documented as sync and runtime-free (`crates/app/Cargo.toml:11`).
-*Open:* whether a sync `tungstenite` socket resumes after a read timeout (unverified in source); `tiny_http`'s threading
-model (unverified); `tiny_http` brings a second TLS stack beside the repo's `native-tls` (`Cargo.lock:1434`); the LAN listener
-needs a connection cap, and thumbnail reads need a worker handoff off the socket's owner thread. `REFACTOR_PLAN.md:136`
-says "the axum server later", which conflicts with this proposal and needs a decision.
+The LAN listener needs a connection cap, and thumbnail reads need a handoff from the async runtime to the blocking pool.
 
 **Endpoints (sketch):**
 
@@ -393,7 +396,7 @@ says "the axum server later", which conflicts with this proposal and needs a dec
 - `GET /api/thumbs/{file_id}@{mtime}.{rotation}/{height}`: cache only, `Cache-Control: public, max-age=31536000,
   immutable`. A missing height gets the nearest one (`ThumbCache::get_nearest`).
 - `GET /api/files/{id}/view?w=&h=`: a fitted image, or the original bytes with `Range` for video.
-- `POST /api/pair`: device pairing, which sets the httpOnly cookie.
+- `POST /api/login`: login, which sets the httpOnly cookie.
 - `POST /api/items/{file_id}/set`: `field`, `value`, `expected_version`. Returns the new version, or `VersionMismatch`.
 - `POST /api/resume`: `seq`. Replays the missed events, or returns `ResyncRequired`.
 - Listing endpoints carry the generation (see State model).
@@ -404,20 +407,19 @@ says "the axum server later", which conflicts with this proposal and needs a dec
 
 - **Snapshots expire.** Expiry and recovery are defined in State model (`SnapshotExpired`, then reopen by query).
 - **The cache is the only source for thumbnails.** A miss is queued, never read from the originals on the request path.
-  The current code falls back to the original on a miss (`crates/app/src/images.rs:179-191`). Which rule the server
-  follows is open (see Open points).
+  Decided: the server queues the work and returns a placeholder. The current code reads the original on a miss
+  (`crates/app/src/images.rs:179-191`); that path changes with the server.
 - **Auth.** The WebSocket checks the `Origin` header, because the cookie is sent with it and cross-site pages can open
   it otherwise. The server binds to the LAN address only when asked.
 
 **Open decisions:**
 
-- **Stack:** *proposed* sync (see Stack above). Open: the axum recommendation in `REFACTOR_PLAN.md:136`.
-- **Catalog writers:** the server is the only process that writes the catalog (State model, decided). The CLI's writing
-  commands: the interim behaviour is proposed in "Processes and access", and is open.
-- **Pairing UX:** *proposed:* a single-use code shown in the desktop window (see "Processes and access"). Open: pairing
-  with the desktop closed, and how the phone installs the certificate.
+- **Stack:** decided, async (see Stack). The TLS library is open.
+- **Catalog writers:** decided. While the server runs it is the only process that writes the catalog, and the CLI's writes go
+  through it (see Processes and access).
+- **Login:** decided over pairing. The details are open (see Processes and access).
 - **Frontend gate:** see "Reusing the QML". It decides whether the fallback frontend is needed.
-- **Thumbnail miss rule:** the design says queue the miss; the current code reads the original. Open.
+- **Thumbnail miss:** decided: queue the work and return a placeholder.
 
 ## Reusing the QML
 
@@ -453,9 +455,8 @@ only what the tests read. A full `pg.gallery` for the browser has to implement a
   cross-origin isolated page. Qt's own WASM test server sends the isolation headers, with the comment "required for
   WebAssembly threads" (`qtbase/util/wasm/qtwasmserver/qtwasmserver.py:67-68, 213`). Isolation needs a secure context.
   Over plain `http://<LAN-IP>` only the single-threaded kit would run, and it has no Multimedia (`wasm_singlethread` has
-  no `Qt6Multimedia` CMake config). *Proposed:* HTTPS with a private CA that the phone trusts, issued with an IP subject
-  alternative name for the LAN address (a public domain with a DNS-01 certificate is the fallback). That makes the page a
-  secure context, so the multithreaded kit can run. The WebSocket must be `wss://`, since a non-local `ws://` from an HTTPS
+  no `Qt6Multimedia` CMake config). *Configured:* HTTPS with a private CA whose certificate has the LAN name and the IP address, installed on the phone. That makes
+  the page a secure context, so the multithreaded kit can run. The WebSocket must be `wss://`, since a non-local `ws://` from an HTTPS
   page is rejected (`qwebsocket_wasm_p.cpp`, about 148–172). Phone trust is untested.
 - **Video.** Qt Multimedia on WASM plays through an HTML5 `<video>` element that it creates on the page
   (`qtmultimedia/src/plugins/multimedia/wasm/common/qwasmvideooutput.cpp:579`). A clip bundled as a `qrc` resource is
@@ -551,26 +552,34 @@ the protocol. The controller already maps events to commands, so most of the wor
 
 ## Open points
 
-Each point was investigated, then validated by two batched reviewers (an evidence lens and a design lens) and a
-cross-point critique. Status: *Proposed* means a recommendation survived validation; *Open* means it did not settle.
-Confidence is the investigator's, after validation.
+Each point was investigated, then validated by two batched reviewers (an evidence lens and a design lens) and a cross-point
+critique. Status: *Decided* means approved in review; *Proposed* means a recommendation survived validation; *Open* means it
+did not settle.
 
-| Point | Status | Proposed decision | Still open |
+| Point | Status | Decision or proposal | Still open |
 |---|---|---|---|
-| P1 Preference scope | Proposed (M) | Server, per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `real_size`, `dev_mode`, `yandex_folder`. `write_back` desktop-only until decided. | `real_size` scope; whether a phone may change `write_back`; device key; `REFACTOR_PLAN.md:785` records a `desktop.json` split that does not exist in `crates/desktop/src/settings.rs` |
-| P2 Deletes and moves | Proposed (H on deferral) | Defer delete and move to version 2. | Whether version 1 includes library folder removal and rating-driven sort (both proposed as membership changes, see Listings); scan-driven live or reconnect |
-| P3 View-state split | Proposed (H on blockers) | A plain `ViewState` struct for user-visible state, validated on read. Exclude `initial`, `StartGate` and `Deadlines`; rebuild timers on reconnect. Scroll must be added to client state. | Where the `Listing` spec sits; mid-start snapshots; serde compile not checked |
-| P4 Snapshot lifetime and budgets | Proposed (L–M) | Release after disconnect with a grace period; 10-minute idle backstop; cap of four per client. | Every number, unmeasured; the grace length for a sleeping phone; the client key; the 10-minute value has no source in the design |
-| P5 Desktop cutover order | Proposed (M) | In-process timings, then server and conformance suite, benchmark, cutover. The in-process server beside the desktop is rejected. | Whether writes move in the same step as reads (otherwise two writers); server stack (see Server) |
-| P6 Video element removal | Open (M on mechanism, L on fix) | Never change or clear the source while the player is Preparing or Prepared; defer until Started, Paused or Stopped. The pause-first fix is rejected: pause is ignored in Preparing. | The fix is unverified (test E1c, Open checks); the served-URL source contract; if the fix fails, a Qt fork or a browser-native element (which gives up the shared QML goal) |
-| P7 HTTPS trust | Proposed (M on Qt, L on phone) | Private CA with an IP SAN installed on the phone; a public domain with DNS-01 as the fallback; `wss://` only. | Phone trust (Chrome on Android, user CAs); Certificate Transparency; `crossOriginIsolated` with a bypassed certificate; Emscripten version match (spike used 5.0.5) |
-| P8 Control and data split | Proposed (M) | Member table and grep test first; the seam at the protocol boundary; inject the controller's start inputs; a poisoned-stub run before any bridge is rewritten. | Per-member labels are provisional; the desktop controller reads app state at start (`crates/desktop/src/controller.rs:39, 51, 55`); the table misses three `video_source` members and one `failed_files` member |
-| P9 Layout threading | Proposed (M on choice, L on numbers) | Keep layout on the calling thread; decide a worker by measurement. | Thresholds (8 ms and 16 ms are proposals) and the 1M target are unset; the 50 ms layout debounce is unverified |
-| P10 Thumbnail transport | Open (L) | Build neither the batch nor HTTP/2 path until the front is decided; then measure time-to-fill on a phone. | The front: a reverse proxy (a second process) or an async crate; Cache Storage (the design relies on it); the miss rule |
-| P11 Phone spike, touch, decode | Proposed (M) | A desktop Chromium pre-screen now, on 127.0.0.1 with CPU throttling; the phone gate after the P7 trust test. | Target phone and browser; iOS scope; pass budgets; preload count is eight, not two |
-| P12 Server stack | Proposed (M) | Sync: `tiny_http` with `tungstenite`, one thread per connection, one owner thread per WebSocket. | `REFACTOR_PLAN.md:136` says axum; the second TLS stack; the connection cap; resume-after-timeout (unverified) |
-| P13 CLI writers | Proposed (M–H) | Interim: writing commands refuse while the catalog's exclusive hold is taken (buildable now). End state: writes go through the server. | Fail fast or wait (about 5 s); whether the desktop refuses too |
-| P14 Pairing | Proposed (M direction, L mechanics) | A single-use code in the desktop window; `POST /api/pair` over trusted TLS; an httpOnly cookie bound to a revocable device record; a QR code as a convenience only. | Pairing with the desktop closed; the certificate install step; the SameSite value (the design says httpOnly only); rate limits. The QR fingerprint pin is rejected. |
+| P1 Preference scope | Proposed; mostly decided | Per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `dev_mode`, `yandex_folder`. `write_back` server-wide, owner-changeable, on by default. | `real_size` scope. No `desktop.json` exists in code, although `REFACTOR_PLAN.md:785` records the split as done (`crates/desktop/src/settings.rs:1-3`). |
+| P2 Deletes and moves | Decided | Delete and move are in version 1, once quarantine exists. Library folder removal and rating-driven sort are membership changes in v1. | Quarantine is not built (`REFACTOR_PLAN.md:511`); it is the first piece of work. |
+| P3 View-state split | Proposed (H on blockers) | A plain `ViewState` struct for user-visible state, validated on read. Exclude `initial`, `StartGate` and `Deadlines`; rebuild timers on reconnect; add scroll to client state. | Where the `Listing` spec sits; mid-start snapshots; serde compile not checked. |
+| P4 Snapshot lifetime | Proposed (L–M) | Released after disconnect, with a grace period; 10-minute idle backstop; cap of four per client. | The grace length for a sleeping phone; the client key; every number is unmeasured. |
+| P5 Desktop cutover | Proposed (M) | In-process timings, then server and conformance suite, benchmark, cutover. The in-process server beside the desktop is rejected. | Whether writes move in the same step as reads (otherwise two writers). |
+| P6 Video element removal | Open | Never change or clear the source while the player is Preparing or Prepared. The pause-first fix is rejected: pause is ignored in Preparing. | Video is work in progress. The candidate fix is unverified (test E1c). The served-URL source. If the fix fails, a Qt fork or a browser-native element. |
+| P7 HTTPS trust | Decided (certificate); gate open | Private CA certificate with the LAN name and the IP, configured; `wss://` only. | Phone trust (Chrome on Android); `crossOriginIsolated` with a bypassed certificate; Emscripten version match (the spike used 5.0.5). |
+| P8 Control and data split | Proposed (M) | Member table and grep test first; the seam at the protocol boundary; a poisoned-stub run before any bridge is rewritten. | Per-member labels are provisional. The desktop controller reads app state at start (`crates/desktop/src/controller.rs:39, 51, 55`). The table misses three `video_source` members and one `failed_files` member. |
+| P9 Layout threading | Decided: Web Worker | Layout runs in a worker. | Measure to set the budget. |
+| P10 Thumbnail transport | Proposed (M) | The async server, which gives HTTP/2 natively. | The TLS library (see Server); whether the WebSocket batch is still needed on the LAN; time-to-fill on a phone, measured. |
+| P11 Phone spike, touch, decode | Decided: Android only | A desktop Chromium pre-screen first, then the phone gate after the trust test. The viewer preloads eight neighbours, so the decode budget counts eight. | Pass budgets, measured first (see Testing). |
+| P12 Server stack | Decided: async | `axum` on `tokio`. | The TLS library: `rustls` or `native-tls`. `native-tls` has no server-side ALPN on Windows. |
+| P13 CLI writers | Decided | While the server runs, the CLI writes through it; otherwise it writes directly. No refusal. | None. |
+| P14 Login | Decided: login, not pairing | The owner sets a password at first run; the phone logs in and gets an httpOnly cookie bound to a revocable device record. Works while the desktop is closed. | Password storage and hashing; lockout and rate limits; the reset path; whether the QR convenience stays. |
+
+**Decided in the latest review, outside the table:**
+
+- Yandex is in version 1.
+- A server-side folder browser can add library folders, from the phone.
+- `PLAN.md:17` is updated to put the browser client in scope.
+- Terms: "saved session" for the catalog's session, "stream" for the event numbering, "launch token" for the desktop's per-start token.
+- The budgets and the phone pass budgets are set by measurement.
 
 **Not yet investigated** (the validation found these gaps; none is decided):
 
@@ -581,21 +590,16 @@ Confidence is the investigator's, after validation.
 - Endpoint coverage: tree, item detail, folder browse, Yandex, scan and job status, inbox, settings, saved views.
 - Item record shape, thumbhash delivery, and the select-all wire format.
 - Auth beyond the handshake: CSRF for cookie-authenticated POSTs, and the SameSite value.
-- LAN safeguards and certificate tooling: generation, renewal, and a DHCP address change.
+- LAN safeguards and certificate tooling: renewal, and a DHCP address change.
 - Windows lifecycle: start at logon, the single-instance lock, supervision, and whether low I/O priority affects blocking reads.
 - Serving the built frontend: compression and cache headers for the 27.7 MB `.wasm`.
 - How queued thumbnail misses are scheduled, reported and retried.
-- The word "session", which means three things in the design.
-- Whether a phone may start scans or imports, or only read status.
-- Reconnect and sleep behaviour.
 - The Qt licence notice for the bundle, and the Emscripten version match.
 - Per-field mutation rules, checked against `gallery/edits.rs`.
-- `PLAN.md:17` says phone or web is not a goal. It is not updated; that is a decision.
-- Yandex scope in the browser client, and whether a server-side folder browser is acceptable on the LAN.
 
 ## Open checks
 
-- **Qt for WebAssembly video.** The grid runs in the spike; video does not. Test E1c, to run in the Chromium spike on
+- **Qt for WebAssembly video (work in progress; open).** The grid runs in the spike; video does not. Test E1c, to run in the Chromium spike on
   127.0.0.1: call `play()`, change the source before the `playing` event, then assert that the element survives and no
   `AbortError` is raised. The candidate fix is to defer source changes until Started, Paused or Stopped, and it is unverified.
   Then:
@@ -608,7 +612,6 @@ Confidence is the investigator's, after validation.
 - **Bridge under the state model.** Under the State model the browser build adds a data-layer transport, not a network
   call per member. Check this with a stub data layer before any bridge is rewritten.
 - **WASM layout on a million ratios,** on the main thread and in a worker. It decides whether the worker is needed.
-  *Proposed thresholds, not set by the design:* keep the main thread if p95 at 1M items is at most 8 ms; move to a worker
-  above 16 ms.
+  *Decided: a worker.* Measure to set the budget, not to choose the design.
 - **Batch stream against HTTP/2** with the trusted LAN certificate, on a phone, for time to fill a screen of thumbnails.
   Deferred until the thumbnail front is decided (P10).

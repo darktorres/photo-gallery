@@ -6,6 +6,8 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QObject>
 #include <QtCore/QString>
+#include <QtGui/QFont>
+#include <QtGui/QGuiApplication>
 
 #include <cstddef>
 #include <vector>
@@ -53,6 +55,20 @@ private:
     int m_argc = 0;
 };
 
+// The offscreen platform has no system font to ask for: its theme's default is the generic "Sans Serif" (the Quick
+// Controls take it, through the platform theme, for every control's font), and its font database on Windows can't
+// resolve that name, so Qt falls back to the first installed family (Agency FB, a very condensed face). The windowed
+// platform takes the user's message font (Segoe UI). So "Sans Serif" is substituted with Segoe UI here, and the
+// screenshots and the QML tests draw the face users see. A substitution, not a font set on the application: the
+// Quick Controls don't read the application font.
+void use_segoe_for_offscreen() {
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != "offscreen")
+        return;
+    QFont::insertSubstitution(QStringLiteral("Sans Serif"), QStringLiteral("Segoe UI"));
+#endif
+}
+
 }  // namespace
 
 std::unique_ptr<QGuiApplication> new_gui_application(rust::Slice<const std::uint8_t> args) {
@@ -60,6 +76,7 @@ std::unique_ptr<QGuiApplication> new_gui_application(rust::Slice<const std::uint
     auto* arguments = new Arguments(args);
     auto app = std::make_unique<QGuiApplication>(arguments->argc(), arguments->argv());
     arguments->setParent(app.get());
+    use_segoe_for_offscreen();
     return app;
 }
 

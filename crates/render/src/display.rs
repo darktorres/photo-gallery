@@ -50,18 +50,11 @@ pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: Turns) -
 pub fn min_size(view: View) -> MinSize {
     match view {
         View::Fit(w, h) => MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN),
-        View::Full => MinSize::Full,
-        // The whole image at a scale where the region keeps ≥ DECODE_MARGIN× the output pixels.
-        View::Region((_, _, rw, rh), w, h) => MinSize::Fit(
-            to_pixels((count(w) * count(DECODE_MARGIN) / rw.max(1e-6)).ceil()),
-            to_pixels((count(h) * count(DECODE_MARGIN) / rh.max(1e-6)).ceil()),
-        ),
+        // A zoomed region is cut from the full decode. A scaled decode grows as the user zooms in, so it would be made
+        // again at every step, and the sharp part would trail the zoom. The full decode is kept (`Images::last_decode`),
+        // and every later region of the picture is a resample of it.
+        View::Full | View::Region(..) => MinSize::Full,
     }
-}
-
-/// `x` rounded toward zero, as a count of pixels.
-fn to_pixels(x: f64) -> usize {
-    pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
 /// A decode as the viewer keeps it: upright, possibly DCT-scaled, with the upright full size of the image it is of.

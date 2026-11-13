@@ -35,12 +35,20 @@ Item {
     readonly property real fullWidth: full.implicitWidth
     readonly property real fullHeight: full.implicitHeight
 
-    // The view has been still for a moment: the viewer renders the visible part (showRegion).
+    // The view wants the visible part rendered (showRegion), now.
     signal regionDue()
 
-    // The view moved: render the visible part again, after a pause. A new image opened: drop the old part.
+    // The view moved: render the visible part at once, and again at most every 50 ms while it keeps moving (a move in
+    // between is rendered when the window is over). A new image opened: drop the old part (dropRegion).
+    property bool regionPending: false
+
     function restartRegion() {
-        regionTimer.restart()
+        if (regionTimer.running) {
+            regionPending = true
+            return
+        }
+        layers.regionDue()
+        regionTimer.start()
     }
 
     // The region as Rust made it: its URL and the part of the image it shows (fractions), placed when it is ready.
@@ -51,6 +59,7 @@ Item {
     }
 
     function dropRegion() {
+        region.held = false
         region.source = ""
     }
 
@@ -69,15 +78,22 @@ Item {
         visible: layers.still || !layers.videoStarted
     }
 
-    // Between fit and 1:1: the visible part, rendered by Rust at the zoom (Lanczos3), after zooming and panning stop.
-    // It is placed by the part of the image it shows, so it stays aligned while the view moves on.
+    // Between fit and 1:1: the visible part, rendered by Rust at the zoom (Lanczos3) as the view moves. It is placed by
+    // the part of the image it shows, so it stays aligned while the view moves on. Once shown it stays until the next
+    // part is ready (retainWhileLoading keeps the pixels), so the fit is never stretched in its place again; at 1:1 and
+    // beyond the original takes over when it has loaded.
     Image {
         id: region
         // The part of the image shown and the one being rendered, as fractions of the image.
         property rect shown: Qt.rect(0, 0, 0, 0)
         property rect next: Qt.rect(0, 0, 0, 0)
-        onStatusChanged: if (status === Image.Ready) shown = next
-        visible: status === Image.Ready && layers.viewport.zoomed && !layers.viewport.pixels
+        // A part has been shown for the picture (cleared by dropRegion).
+        property bool held: false
+        onStatusChanged: if (status === Image.Ready) {
+            shown = next
+            held = true
+        }
+        visible: held && layers.viewport.zoomed && !(layers.viewport.pixels && layers.fullReady)
         x: layers.viewport.ox + shown.x * layers.viewport.dw
         y: layers.viewport.oy + shown.y * layers.viewport.dh
         width: shown.width * layers.viewport.dw
@@ -88,10 +104,15 @@ Item {
         smooth: true
     }
 
+    // Throttles the region's renders while the view moves: the first move renders at once, later moves at most every 50 ms.
     Timer {
         id: regionTimer
-        interval: 150
-        onTriggered: layers.regionDue()
+        interval: 50
+        onTriggered: if (layers.regionPending) {
+            layers.regionPending = false
+            layers.regionDue()
+            start()
+        }
     }
 
     // 1:1 and beyond (and the loupe's source): the original, nearest neighbour.

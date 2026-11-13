@@ -418,8 +418,8 @@ made while a list was on its way is kept. Startup times are in START_PROFILE.md 
   - **Zoom**: + / − around the centre, pinch on a touch screen or touchpad, from fit to 32×; drag pans. The
     wheel steps to the previous or next picture (a touchpad's small scrolls add up to a step). Double-click
     toggles fit and 1:1. Fit is a Lanczos3 resample of the original to the window, down for a large picture and
-    up for a small one; between fit and 1:1 the GPU scales it at once and the visible part is rendered again with
-    Lanczos3 when zooming stops; from 1:1 up it is the original with nearest neighbour, to judge pixels. A picture
+    up for a small one; between fit and 1:1 the visible part is rendered with Lanczos3 as the view moves, and the last
+    one shown stays until the next is ready, so the picture stays sharp; from 1:1 up it is the original with nearest neighbour, to judge pixels. A picture
     smaller than the window opens enlarged, and 1:1 is then the furthest zoom out.
   - **Z** Real Size: pictures open at 1:1 instead of fitted, remembered across pictures and runs.
   - **L** a 10× nearest-neighbour loupe under the cursor; **B** a magenta frame around the image to reveal black

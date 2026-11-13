@@ -1,8 +1,8 @@
 // Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window, up or down, with an antialiased
 // (Lanczos3) resample made in Rust; zoom from fit to 32× around the cursor (pinch, + −) and pan by dragging; the wheel
 // steps to the previous or next picture. Between
-// fit and 1:1 the GPU scales the fitted image at once, and Rust renders the visible part with Lanczos after a
-// pause; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe; borders (B): a
+// fit and 1:1 Rust renders the visible part with Lanczos as the view moves, and the last part shown stays until the
+// next is ready, so the picture stays sharp; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe; borders (B): a
 // bright frame around the image to reveal black bars, and over it what cropping the borders found would cut, with
 // N to mark them as not a border. Rating a picture moves on to the next one.
 //
@@ -95,7 +95,7 @@ Rectangle {
     property bool videoStarted: false
     property string playerError: ""
 
-    // To what the parts made: the view moved (render the visible part again, after a pause), a new image opened
+    // To what the parts made: the view moved (render the visible part again, at once and then at most every 50 ms), a new image opened
     // (drop the old part), play or pause asked for.
     signal viewMoved()
     signal viewReset()
@@ -380,7 +380,7 @@ Rectangle {
                     loupe: viewer.loupe
                     videoStarted: viewer.videoStarted
                     dpr: viewer.dpr
-                    // The part on screen, after a pause: Rust works it out and renders it; "" when none shows.
+                    // The part on screen, as the view moves: Rust works it out and renders it; "" when none shows.
                     onRegionDue: {
                         if (!viewer.visible || !viewportItem.zoomed || viewportItem.pixels)
                             return

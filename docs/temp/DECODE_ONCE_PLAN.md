@@ -165,7 +165,7 @@ The popup text is looked up by need (`disabled_key`). Phase 3 adds `ui-duplicate
 
 ### 2.5 The popup
 
-`Main.qml` has no Popup today (the one Popup-like item is `RatingPopup`, `Viewer.qml:514`, a Label). Add one as a child of `win` after `libraryLoader` (`Main.qml:606`). Qt parents a Popup's content to the window overlay, so it draws above the grid, the viewer and the panels whatever its place in the tree (the Overlay documentation, `qquickpopup.cpp`). It is non-modal, so a press outside it reaches the control under it (OPEN k).
+`Main.qml` has no Popup today (the one Popup-like item is `RatingPopup`, `Viewer.qml:514`, a Label). Add one as a child of `win` after `libraryLoader` (`Main.qml:606`). Qt parents a Popup's content to the window overlay, so it draws above the grid, the viewer and the panels whatever its place in the tree (the Overlay documentation, `qquickpopup.cpp`). It is non-modal, so a press outside it reaches the control under it (settled from the Qt source, verification item k).
 
 ```qml
 Popup {
@@ -596,6 +596,8 @@ impl Drop for Reservation<'_> {
 
 Tests: a second reservation blocks until the first is released; a file over the limit runs alone; a large waiting reservation is granted before a later small one; the budget is released on an error and on a panic.
 
+**Ledger codes (settled 2026-11-13).** The inbox's pass code is the position in `LedgerKind::ALL` (`crates/desktop/src/ledgers.rs:9`, `crates/model/src/notice.rs:310-315`): Thumbs 0, Borders 1, Import 2, ScanFolders 3. The Retry action is on the Thumbs ledger only (`notice.rs:1163`). Phase 3 adds `FilePass::Duplicates`, and `InboxPanel.qml:461` compares `selectedPass === 3` for the scan folders, so a new ledger ahead of ScanFolders would silently break that check. The fix is part of this phase: the QML takes the scan-folders code from Rust (a bound property), not a literal 3.
+
 ### 3.8 Listings and the facet
 
 The duplicates facet has four values, because a file that is not checked yet is neither a duplicate nor unique:
@@ -904,7 +906,7 @@ The layout test in 4.12 checks that the incremental result equals `justify_into`
 
 **Why one range is enough.** The justified layout is greedy from the first row. A change at position p can change every row from p's row onward, and no row before it. So the changed rows are always a suffix of the row list, plus tail inserts and removals. `RowChange::between` (`layout.rs:174-184`, the `RowChange` at `:155`) already expresses one contiguous changed range, and it is sufficient.
 
-**The Qt side (OPEN).** The model must receive the merge's removals and insertions at their positions (`beginRemoveRows` and `beginInsertRows` for middle edits, not only at the tail), and a `dataChanged` for the rows whose frames changed. The gallery model's whole-list path (`gallery/model.rs:220-259`) is not verified for this. It is designed at Phase 4's first step, against that file (OPEN d).
+**The Qt side (OPEN).** The model must receive the merge's removals and insertions at their positions (`beginRemoveRows` and `beginInsertRows` for middle edits, not only at the tail), and a `dataChanged` for the rows whose frames changed. The gallery model's `show()` (`crates/desktop/src/gallery/model.rs`, about lines 215–258) already places a middle insert or remove at its position, so the edit script needs no new design (verification item d).
 
 ### 4.10 The viewer hold and the queue
 
@@ -932,7 +934,7 @@ The layout test in 4.12 checks that the incremental result equals `justify_into`
 - `Reload` for a `since` below `log_horizon`, on another `view_epoch`, and over the bound.
 - **Coverage test** (by behaviour, not by a hand list): each `grid_sql` variant (every sort key, both directions, every filter) is prepared under SQLite's authorizer (`sqlite3_set_authorizer`; rusqlite's `authorizer` is behind the `hooks` feature, which `Cargo.toml:36` enables). It reports every `(table, column)` the statement reads. For each column, the test changes it on a fixture row and checks that the row's `changed` advanced, a `files_log` row was written, or `view_epoch` moved. A column changed only by a bulk rewrite is listed with the rewrite that bumps the epoch. A trigger missing on a new column fails the test. It covers `dups_state` (4.4).
 - **Trigger behaviour pins**: the bundled SQLite fires `AFTER UPDATE` triggers on an upsert conflict (`ON CONFLICT DO UPDATE` is an UPDATE for triggers); a test pins it. A test fails on any `INSERT OR REPLACE` into `analysis` or `pdq_pairs`.
-- **Cascade** (OPEN a): delete a `files` row that has an analysis row and pairs; check the stamps of the mates and partners.
+- **Cascade** (settled, verification item a; kept as a test): delete a `files` row that has an analysis row and pairs; check the stamps of the mates and partners.
 - **Incremental layout equals full layout**: random inserts, removals and aspect changes, including edits at the first and last items, and runs that resync at once or never. The rows equal `justify_into` of the new list (exact `first`, `count` and `height`).
 - Selection and anchor stability when rows insert above; the viewer open; memory (the id index and the positions, 32 bytes per row for the positions, plus the index's entries, measured in Phase 6).
 
@@ -956,8 +958,8 @@ For files whose analysis is due, one decode feeds every enabled stage. The catch
 - `analysis` is stored with `file_hash` (the bytes are hashed, from the read buffer), the dimensions and the metadata. `pixel_hash`, the PDQ hashes and ThumbHash are NULL. `dups_state = 'skipped'` (3.3).
 - Borders: a `file_failures` row with `pass = 'borders'`, `retry = 0` and the error text `too large to look at`, and `store_borders(None)`, so the borders state is terminal and the file is not retried.
 - Thumbnails: none stored. Every thumbnail comes from F (5.1), and an over-cap file has no F, so no thumbnail is cached for it. Its grid tile shows an **app-drawn warning glyph**, not a bitmap from the OS. The image provider (`providers.rs:115`, which already draws the ThumbHash placeholder through `images().placeholder`) returns the glyph when a file has neither a thumbnail nor a ThumbHash. The glyph is drawn at display time, never cached, so it is not a thumbnail source and 5.1's single definition holds. It uses the theme tokens, so it works in light and dark, and it scales cleanly. A tooltip on the tile gives the reason, the same text as the Borders error ("too large to look at"). The glyph and the tooltip wording were approved (2026-11-13).
-- Read: the file is read whole, as the pipeline reads every file today (`pipeline.rs:282-297`). A streaming hash for over-cap files is not designed (OPEN e). The read buffer is held under the pool's lease (5.3).
-- `ImageFacts.pixels` (`crates/model/src/analysis.rs:93`) and `Analysis.thumbhash` (`:41`) become optional, because an over-cap row has no pixels and no ThumbHash. Their readers are not searched yet (OPEN f).
+- Read: the file is read whole, as the pipeline reads every file today (`pipeline.rs:282-297`). No streaming hash is needed (verification item e). The read buffer is held under the pool's lease (5.3).
+- `ImageFacts.pixels` (`crates/model/src/analysis.rs:93`) and `Analysis.thumbhash` (`:41`) become optional, because an over-cap row has no pixels and no ThumbHash. Their production readers are listed in verification item f.
 
 This is a decision, not a fallback: an over-cap file has no stored analysis that depends on pixels, so no second definition exists. The earlier "scaled decode for the analysis" rule is withdrawn.
 
@@ -969,7 +971,7 @@ The budget is built in Phase 3 (3.7) and used here by the merged pass: a worker 
 - Without a budget, twelve workers on large files exceed the 4 GiB target by arithmetic (`convert.rs:26`: a 100 MP RGBA PNG holds about 400 MB in `out.pixels`). The fix is a budget, not a worker count.
 - **Retained buffers** are the other part of memory. The `image` buffer is kept between files up to `KEEP_BYTES` (96 MB, `analyze.rs:64`), so at most 12 x 96 MB = 1.15 GB is retained at steady state. `spare` is released after each file (it is only needed on rotation), and `pdq_in` (512 px) and `small` (100 px) are bounded by their sizes.
 - The peak working set is the in-use budget, plus the retained buffers, plus the grid and the sink: about 3.2 GB at the worst (an estimate). That meets the 4 GiB target by construction, and Phase 6 measures it.
-- **Read buffers** are not in the budget. They are bounded by the pool's lease (`pipeline.rs:282-297`). Whether the lease admits a file larger than its size alone, as the budget does, is OPEN (g).
+- **Read buffers** are not in the budget. They are bounded by the pool's lease (`pipeline.rs:282-297`). Whether the lease admits a file larger than its size alone, as the budget does, is settled: the pool admits it once no other buffer is held (verification item g).
 
 Tests: those of 3.7.
 
@@ -1086,7 +1088,7 @@ What is added:
 - **`put_batch` returns `Ok(false)`** (full): `Notice::CacheFull` and the stop for the pass, as the Thumbs pass does.
 - **A disabled cache** (`ThumbCache::disabled()`, `lib.rs:115-117`): the thumbnail stage is `Skipped` for the pass, with no notice. Its `put_batch` returns `Ok(false)` (`lib.rs:199-201`), so the `Err` path needs a read-only or locked cache file, or a `cfg(test)` failing store, to be reached in a test.
 - **Height.** The thumbnails of a flush are for the grid height read at that flush (5.6). The merged pass is not stopped by a height change (2.9).
-- The callers of `ThumbCache::put` (`thumbcache/src/lib.rs:188-192`, fire-and-forget) are not searched yet (OPEN f).
+- The callers of `ThumbCache::put` (`thumbcache/src/lib.rs:188-192`, fire-and-forget) are listed in verification item f; the thumbcache's own callers are checked when Phase 5 starts.
 
 ### 5.9 Video
 
@@ -1153,7 +1155,7 @@ Inputs: a PNG, a WebP and a 12 MP JPEG. The phase creates them (`make_bench_jpeg
 The benches go in `pg-bench`, which runs only through `cargo bench -p pg-bench --bench ir` (`tools/profiling/bench.py:95`). A bench in `import` would never run under `just perf`. They are added to the `ir` harness through `include!`, as `catalog.rs` is (`linux.rs:105`):
 
 - `per_file` gains `borders_jpeg` (the group at `linux.rs:102` becomes `benchmarks = [analyze_jpeg, thumb_jpeg, borders_jpeg]`). It calls `Analyzer::borders` (`analysis/src/analyze.rs:135`) on `ir/sample.jpg`.
-- `ir/decode.rs` (new): group `decode`, with `decode_png` (the input made in setup by `pg_testkit::png_rgb`), `decode_webp` (`ir/sample.webp`, committed) and `decode_jpeg_12mp` (read in setup from the bench data; not committed).
+- `ir/decode.rs` (new): group `decode`, with `decode_png` (the input made in setup by `pg_testkit::png_rgb`), `decode_webp` (`ir/sample.webp`, generated by `make_bench_jpeg.py --format webp`, not committed) and `decode_jpeg_12mp` (read in setup from the bench data; not committed).
 - `ir/import.rs` (new): group `import`, with `import_merged` (id `small`): runs `pg_import::import` on a 50-file folder from the bench data into a fresh catalog copy made in setup. The budget key is `import-merged` (folder `import_merged.small`, `perf-compare.py:30-35`); it is added only with the bench (Phase 6).
 - `ir/grid.rs` (new, Phase 4): group `grid`, with `grid_merge_1m_top` and `grid_merge_1m_bottom`: a synthetic 1M-row list and a change at the top or the bottom, calling `Grid::merge`.
 - Registration: `main!(library_benchmark_groups = per_file, viewer, catalog, scan, decode, import, grid);` (`linux.rs:107`; `grid` from Phase 4).
@@ -1181,7 +1183,7 @@ cli: analysis borders catalog client codec dedup import jobs library model platf
 
 `writeback` and `crop` are unchanged, and `thumbcache` gains `trace` (for the metrics of 6.4). Check: no cycle. `render`, `thumbcache`, `trace` and `dedup` do not depend on `import` or `bench`. `pg-duplicates` needs no edge (the Dups pass is a module of `pg-import`, 3.7).
 
-Committed inputs: the WebP is committed (small). The 12 MP JPEG is generated into the bench data and not committed (3 to 4 MB per file in git). That is a proposal (OPEN h).
+Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpeg.py`). The WebP and the 12 MP JPEG are generated into the bench data by `make_bench_jpeg.py` and not committed, since 3 to 4 MB per file would go into git. No WebP is tracked in git today, so the earlier "committed WebP" was wrong (settled 2026-11-13, verification item h).
 
 ## Phase 6: validation (the only validation in the plan)
 
@@ -1197,7 +1199,7 @@ Committed inputs: the WebP is committed (small). The 12 MP JPEG is generated int
 3. **Pairing parity and goldens.** Before any new build opens the `dups2` set (5,937 files, `IMPORT.md` "M1 import"), copy it. From a **worktree at the commit before Phase 3** (the pre-change build), capture the old build's hashes, ThumbHash and pairs from the copy, and the four golden fixtures of 3.11. The new build's first open runs the version bump (3.4), so the old side must be captured first. Use `tools/profiling/pairs_dump.py` (6.5) on both sides. Pass criterion: every difference is a JPEG with denom > 1 (the expected change); any other difference fails the step. The golden literals of 3.11 are written into the Phase 3 tests in the closing commit: PNG, WebP and denom-1 JPEG equal the old build; the denom-2 JPEG takes its new value from the new build. The same copy step applies to the manual "open an existing catalog" check (step 5).
 
 4. **Synthetic strata and the measurements.**
-   - **Strata** (6.1): PNG; WebP; 1080p and 4K JPEG; a 24 MP camera JPEG with EXIF orientation 6; a progressive JPEG; small images (100x100 and 16x16); an animated GIF; a corrupt JPEG (the inbox fixture); a JPEG above the 512 MiB cap; 12 adjacent 100+ MP PNGs (the peak-RSS stratum); and a 5,000-file-or-more sample of `D:\wallhaven\downloads` on a copy, with a separate `PG_CATALOG_DIR` (never the real catalog). The disk for the over-cap file and the 12 PNGs is several GB (OPEN i).
+   - **Strata** (6.1): PNG; WebP; 1080p and 4K JPEG; a 24 MP camera JPEG with EXIF orientation 6; a progressive JPEG; small images (100x100 and 16x16); an animated GIF; a corrupt JPEG (the inbox fixture); a JPEG above the 512 MiB cap; 12 adjacent 100+ MP PNGs (the peak-RSS stratum); and a 5,000-file-or-more sample of `D:\wallhaven\downloads` on a copy, with a separate `PG_CATALOG_DIR` (never the real catalog). The 12 PNGs are several GB; the over-cap file needs no disk, since its test is a synthetic header (verification item i).
    - **Measurements** (6.4): process CPU and working set at 12 workers (`gallery import / borders / thumbs --workers 12`, `crates/analysis/examples/stage_times.rs`), per stratum and per toggle combination, compared with today's passes. The regression of 5.1 (both toggles off) is measured here.
    - The first open of an upgraded catalog: the time of the JPEG re-decode (3.4), reported.
    - Targets are reported, not gates (step 7).
@@ -1317,7 +1319,7 @@ The choices the code forced, with one line of reason each. Each can be overridde
 17. **One tie rule: ties ascend by `order_key`, then id, in both directions** (the Name-descending reversal of `grid.rs:160, :166` goes). The merge must reproduce the SQL order, and one rule has no special case. A visible change only for files that share an `order_key`.
 18. **NULL keys last in both directions, as `compare_keys` does today.** The keys are raw SQL values, not coalesced; the `Entry` fields are display values and are not sort keys.
 19. **The over-cap check uses the codec's reservation figure (`w * h * 3` for JPEG).** It is the figure the decoder reserves, so the cap means one thing. PNG and TIFF keep their decoder cap errors.
-20. **The over-cap file is read whole, not streamed.** A streaming read mode is not designed; the read is bounded by the pool's lease (OPEN g).
+20. **The over-cap file is read whole, not streamed.** A streaming read mode is not designed; the read is bounded by the pool's lease (verification item g).
 21. **The budget is released at the end of `process`, first come first served, one per pass run, shared by the import and the Dups pass.** `Outcome` holds no pixels, so holding the budget through the channel only lowers parallelism; FIFO grants keep a large file from starving.
 22. **Batches of 100 files or 250 ms for the import and the Dups pass; `tick_every` flushes a held batch.** The lock hold stays under the app's 100 ms busy wait, and an idle pass flushes on time.
 23. **One `put_batch` per flush, at most 100 entries; no 200 constant.** The constant does not exist; a call per flush keeps the transactions few.
@@ -1339,30 +1341,30 @@ The choices the code forced, with one line of reason each. Each can be overridde
 
 ## Verification items (not decisions)
 
-These are checks that a test, a build or a measurement settles. None is a choice for the user. Each item says where it is settled. Items o and x are resolved; the rule for each is in the section it names.
+These are checks that a test, a build or a measurement settles. None is a choice for the user. Status as of 2026-11-13: settled from the code or the Qt source, with the evidence in each item, are a, d to n, and p to w (o and x were settled earlier). Two stay open because they need code that does not exist yet: b (the planner outcomes, a Phase 4 test) and c (the timings, Phase 6). Where a settlement changed the plan, the change is in the section it names (5.13, 6.1, 3.8).
 
-- **a. ON DELETE CASCADE triggers** (4.4): settled by the Phase 4 test (4.12).
-- **b. The planner outcomes** (4.6): `EXPLAIN QUERY PLAN` on the bundled build, in Phase 6.
-- **c. The cost of the `analysis_rewritten` WHEN and the mate probes**, and of the version bump's pair deletes (3.4, 4.3): timed in Phase 6 against `busy_timeout`.
-- **d. The Qt-side edit script for middle inserts** (4.9): the gallery model is not verified here; designed at Phase 4's first step against `gallery/model.rs:220-259`.
-- **e. A streaming hash for over-cap files** (5.2): not designed; the file is read whole.
-- **f. The readers of `ImageFacts.pixels` and `Analysis.thumbhash`**, which become optional for over-cap rows (5.2), and the callers of `ThumbCache::put` (5.8): not searched; done in Phase 5.
-- **g. The pool's read lease** (5.3): whether it admits a file larger than its size alone.
-- **h. The 12 MP JPEG and the committed WebP** (5.13): confirm (a 12 MP JPEG could come from the `jpeg_4k` stratum scaled up).
-- **i. Disk for the over-cap file and the 12 PNGs** (6.1): several GB; whether NTFS keeps the over-cap file sparse is not settled (writing zeros makes it full size).
-- **j. The Pillow and numpy pins** (6.1): `tools/profiling/requirements.txt` does not exist; pin the versions the build runs.
-- **k. The popup press-through** (2.5): the outside press on a non-modal popup; read `qquickpopup.cpp`'s outside-press handling at build.
-- **l. The combo binding restore** (2.6): tested at build; verified by reading only.
-- **m. The Inbox Retry pass code** (2.6): `selectedPass` must be the `FilePass::Thumbs` code (`notice.rs:281`); confirm at `InboxPanel.qml:64-69`.
-- **n. The started handler and the gated list** (2.7): the handler name at `shell_bridge.rs:69` and the accessor for `Start.gated`; confirm when implementing.
+- **a. Settled 2026-11-13.** Cascade deletes fire the child tables' delete triggers. An experiment on SQLite 3.49.1, with the plan's trigger shapes, showed that deleting a `files` row removed its `analysis` and `pairs` rows, and the pair trigger stamped the mates. The analysis trigger's update of the already-deleted parent did nothing and raised no error. Test 4.12 keeps this on the bundled build, which is SQLite 3.54.1 (`rusqlite` rev 9d76035, `libsqlite3-sys/sqlite3/sqlite3.h`).
+- **b. Open until Phase 4 (method settled).** The bundled version is 3.54.1, as the plan says. The outcomes depend on the Phase 4 queries, which do not exist yet, so `EXPLAIN QUERY PLAN` runs as a test in 4.12 once they are written.
+- **c. Open until Phase 6.** The trigger and version-bump timings can only be measured once the code exists.
+- **d. Settled.** `show()` in `crates/desktop/src/gallery/model.rs` (about lines 215–258) already places a middle insert or remove with `begin_insert_rows` or `begin_remove_rows` at the change's position, and sends `data_changed` for in-place updates. `Plan::shape()` (`crates/client/src/grid.rs:66`) returns one contiguous run per plan, so a delta with several runs is sent as several plans, or as a reset.
+- **e. Settled.** No streaming hash is needed. The pool admits a file larger than its budget only when no other buffer is held (`take()`, `crates/jobs/src/pipeline.rs:391-398`), so the file is read alone. `FileHash::of_reader` already exists for videos (`crates/model/src/analysis.rs:21`). The over-cap file is read whole.
+- **f. Settled, with the readers listed.** Production readers of `ImageFacts.pixels`: `crates/import/src/lib.rs:61` (`pixels.pdq.quality`). Production writers of `Analysis.thumbhash`: `crates/catalog/src/writers.rs:325`, which only stores it. Both need `Option` handling in 5.2. The `maker.rs:201-203` uses are in a test. For `ThumbCache::put`, the one production call found is `crates/app/src/images.rs:260` (`thumbs.put`), which needs checking against the thumbcache type when Phase 5 starts.
+- **g. Settled.** Yes. A file larger than the budget is admitted once no other buffer is held (`take()`, `crates/jobs/src/pipeline.rs:391-398`), and `Options::buffer_bytes` documents it as read alone.
+- **h. Settled: the plan was wrong, and 5.13 and 6.1 are corrected.** The committed bench input is `crates/bench/benches/ir/sample.jpg`, 1280×1017 (1.3 MP), made by `tools/profiling/make_bench_jpeg.py`. No WebP is tracked in git. The WebP and the 12 MP JPEG are generated into the bench data, not committed.
+- **i. Settled by design.** The cap is checked from the header before any decode (3.2), so the over-cap test needs no pixels and no large file. A synthetic JPEG whose start-of-frame declares dimensions above the cap, with no scan data, is enough. Confirm when the test is written that the header read does not need scan data.
+- **j. Settled.** The pins are in `eval/requirements.txt`: `numpy==2.5.4` and `pillow==13.0.0`. `tools/ci/pillow_pin.py` installs the Pillow pin in CI. `tools/profiling/requirements.txt` does not exist, and the bench generator (`make_bench_jpeg.py`) imports numpy and Pillow, so 6.1 cites `eval/requirements.txt`.
+- **k. Settled.** Qt's `blockInput` returns false for a non-modal popup (`quicktemplates/qquickpopup.cpp:584-588`), and `handlePress` closes it on a press outside (`tryClose`, line 606). The press reaches the control underneath, so the control's own handler does the gating (2.5).
+- **l. Settled by source; the restore runs at build.** Qt's `hidePopup` calls `setCurrentItemAtIndex` before it emits `activated` (`quicktemplates/qquickcombobox.cpp:378-385`), so the handler sees the new index and can restore the binding. The restore itself is a QML test at build.
+- **m. Settled, with a correction (3.8).** The pass code is the position in `LedgerKind::ALL` (`crates/desktop/src/ledgers.rs:9`), so the Thumbs ledger is code 0, not a `FilePass::Thumbs` value. Only the Thumbs ledger has the Retry action (`crates/model/src/notice.rs:1163`). The QML's literal 3 for the scan folders is a hazard for Phase 3 and is fixed there.
+- **n. Settled.** The signal is `started` (`crates/desktop/src/shell_bridge.rs:69-70`, `#[qsignal]`). `start_state` (`crates/desktop/src/controller.rs:91-118`) builds the `Start`, so the gated list rides on `Start` as 2.7 says. The accessor goes where `started` is raised.
 - **o. Resolved 2026-11-13.** The grid entries already carry the border state (`Entry.borders`, read from the analysis cut columns and `border_marks`). The gap was `Borders::Unknown`, which covers both "due, not checked yet" and "never checked". `Borders::Pending`, read from `a.borders_due`, separates them (2.6, the grid's border state; string `ui-borders-not-checked`, 2.11).
-- **p. The `Versions` and call-site counts** (3.3, 3.9): counted at the start of Phase 3.
-- **q. The `thumbs/lib.rs:320` and `maker.rs:155` cites** (5.7, 5.9): re-checked at the start of Phase 5.
-- **r. `reader.rs:40-50` and `model.rs:135-149`** (4.8): re-checked at the start of Phase 4.
-- **s. `Catalog: Send`** (5.5): checked at the first build of Phase 5. If it fails, the sink needs a second connection.
-- **t. The runtime thread of `sceneGraphInitialized`** in each configuration (2.10): a Phase 6 manual check.
-- **u. The `check_stored` REAL comparisons** (6.6): confirm that stored REAL values are bit-identical.
-- **v. The `files.name` and `folders.path` BLOB encoding** (6.5): the dumps use hex, so they are exact either way; a readable form would need `PathRules`.
-- **w. The Dups-pass ledger code**: the `file_failures` `pass` column is not constrained by a `CHECK` that the grep found; confirmed when the code lands (3.7).
+- **p. Settled.** `Versions {` occurs 19 times in 12 files, counting declarations, which matches 3.3's figure. The struct-literal sites are counted at the start of Phase 3.
+- **q. Settled.** `maker.rs:155` is `encode_image`, and `thumbs/lib.rs:320` is the video-frame `encode_frame_into` call. Both cites are right where 5.7 and 5.9 use them.
+- **r. Settled.** `thumbcache/src/reader.rs:36-52` is the pending listing, and `desktop/src/gallery/model.rs:135-149` is the grid load. Both cites are right.
+- **s. Settled by inspection; the build confirms it.** `Catalog` holds a `rusqlite::Connection` (`unsafe impl Send` at rusqlite `lib.rs:371`), `PathRules` (a closed enum), `Option<Rebuilt>` (`PathBuf`, `String`, `Carried`) and `Option<pg_dbfile::Live>` (a `File`). None of them is `!Send`, so the sink needs no second connection. The first build of Phase 5 is the compile check.
+- **t. Settled by the Qt docs.** `sceneGraphInitialized` is emitted on the rendering thread (`quick/items/qquickwindow.cpp:1015-1016`), and it is connected as `DirectConnection` (line 840). With the basic render loop, rendering is on the GUI thread, as 2.10 says.
+- **u. Settled.** The REAL columns are `border_sides.straight`, `dev` and `drift` (`schema.rs:598-600`). SQLite stores REAL as 8-byte IEEE values, so a round trip is bit-exact. The check in 6.6 should compare `to_bits()`, not `==`, so any change is caught.
+- **v. Settled.** Dumps use hex (6.5), which is exact and needs no `PathRules`. A readable form is not planned.
+- **w. Settled.** `file_failures.pass` has no `CHECK` (`schema.rs:114` is only a comment, and it is stale: it lists 'thumbs' and 'borders' alone). Phase 3 adds the duplicates pass by code, not by constraint. The old migration's comment is left as it is.
 - **x. Resolved 2026-11-13.** The io attempt count lives in its own table, `io_attempts`, added by TO_10 in Phase 3 (3.3, Decision 3). Not a column on `file_failures`, because the import's failure rows mirror its analysis rows (`ledger.rs:127-128`).
 

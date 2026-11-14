@@ -20,7 +20,7 @@ G: 954 MB).
 The raw read needs an elevated volume handle. On this machine elevation is silent: the account is an administrator,
 `EnableLUA = 1`, `ConsentPromptBehaviorAdmin = 0`; `Start-Process -Verb RunAs` ran without a prompt. Processes
 still start with the filtered token. The design takes the most proper route, and churn is accepted for it. Only NTFS is
-supported (docs/STORAGE.md).
+supported (docs/reference/STORAGE.md).
 
 Outcome: whole-volume scans at sequential speed with a real progress bar, rescans in seconds from the journal,
 the same catalog rows either way. Rows are keyed by `(volume serial, NTFS file ID)`; the 64-bit file ID is the
@@ -50,6 +50,8 @@ Which source a scan uses:
 - **Local NTFS:**
   - stored journal position valid (same journal ID, USN ≥ `LowestValidUsn`) → **journal pass**;
   - otherwise, or a root new to the volume → **full MFT read** (elevation available), else the walker.
+  - Cost: a full read covers the whole volume, so it wins for drive roots and large roots; a small folder is cheaper
+    to walk. Rescans are where the MFT read matters most, since the journal then gives only the changes.
 - **SMB shares are refused, like non-NTFS volumes** (decided 2026-11-01). A share has no MFT, no
   journal and no mount GUID. Two shares of one server volume report the same serial with overlapping trees. It
   doesn't fit volume-relative paths or the duplicate-serial rule, and supporting it properly would be a design of
@@ -173,11 +175,13 @@ collide here (checked).
   - skip name surrogates: `IsReparseTagNameSurrogate`, i.e. bit 29. That covers mount points `0xA0000003`,
     symlinks `0xA000000C` and WSL links `0xA000001D`, but not cloud `0x9000001x`, WOF `0x80000017` or dedup
     `0x80000013`;
-  - keep the other reparse files, but skip ones not local (`OFFLINE`, `RECALL_ON_DATA_ACCESS`);
-  - the walker takes the tag from `EaSize` (MS-FSCC FileIdBothDirectoryInformation: it holds the reparse tag
-    when the reparse attribute is set);
-  - this fixed `scan.rs:46` (`!e.reparse`) skipping every reparse point: the reparse branch is now
-    `crates/scan/src/lib.rs:268`; the name-surrogate filter is not in the tree.
+  - keep the other reparse files, but skip ones not local (`OFFLINE`, `RECALL_ON_DATA_ACCESS`): not in the tree;
+  - the tag is **not** read yet: the walker takes only the reparse attribute (`crates/platform/src/dir.rs:398`).
+    MS-FSCC `FileIdBothDirectoryInformation` carries the tag in `EaSize` when the reparse attribute is set; nothing
+    reads it;
+  - the reparse branch is `crates/scan/src/lib.rs:450` (checked 2026-11-13): a reparse folder is not descended, and a
+    reparse file gets a row only if it already has one, so a new placeholder is not added. The name-surrogate filter
+    is not in the tree either.
 - **Hard links are modelled, not collapsed:** every name of a file under a root is a link (catalog below). A
   hard-linked photo appears in each of its folders, as in Explorer; ratings and analysis stay per file. Every
   pass, journal passes included, has a `scans` row, and a link not seen by a full pass is gone.
@@ -186,6 +190,30 @@ collide here (checked).
     itself (above), and the MFT read from `$STANDARD_INFORMATION` and `$DATA`.
 - **`FileId == 0`** is counted in `ScanStats::errors`. (In the tree, the folder is treated as unreadable instead:
   `crates/scan/src/lib.rs:98`.)
+
+### Cloud folders (decided 2026-11-13)
+
+Decision: **cloud folders are excluded from the library.** Cloud entries are recognised by the reparse tag, not by
+their path, except for the OneDrive folder itself, which the tag can't see.
+
+- **Classification by the tag.** The listing reads the tag from `EaSize` of `FILE_ID_BOTH_DIR_INFO` when the reparse
+  attribute is set (today `platform/src/dir.rs` keeps only the bool). An entry is a cloud entry when
+  `tag & !0x0000F000 == 0x9000001A` (the Cloud Files tags, `IO_REPARSE_TAG_CLOUD`). From the Windows SDK; not yet seen
+  on a real placeholder.
+- **Excluded from the walk.** A cloud file is not added and gets no row. A cloud folder is not descended. The scan
+  reports them as "cloud" (for example "N cloud files excluded"), apart from links and junctions, which get their own
+  count. The message no longer says "indexed."
+- **The folder rule is a path check.** The OneDrive folder is not a reparse point (`C:\Users\Torres\OneDrive` has
+  attributes `ReadOnly, Directory, Archive`), so the tag can't exclude it. Refuse adding a root inside the folder
+  named by the `OneDrive` environment variable (here `C:\Users\Torres\OneDrive`), with a message. Other providers'
+  roots (Dropbox, iCloud, Google Drive) are not covered by this rule: their sync roots would need the registry
+  (`SyncRootManager`), not decided.
+- **Not decided here:** rows already indexed under a cloud folder stay as they are; whether a hydrated placeholder
+  keeps the reparse attribute (if it does, the listing's `FILE_ATTRIBUTE_OFFLINE` and `RECALL_ON_DATA_ACCESS` would be
+  needed to tell online-only from downloaded files).
+- **Tests:** the scan's fake listing gets cloud, symlink and junction tags, and the reparse cases in
+  `crates/scan/src/lib.rs` check the counts. The `OneDrive` root refusal is a unit test with a fake environment.
+  The real-placeholder check needs a machine with a placeholder; it is not in the tree's tests.
 
 ### Catalog (baseline edited in place, version 1, rebuilt on open: `crates/catalog/src/schema.rs` `BASELINE`/`MIGRATIONS`; no `FILLED` in the tree)
 
@@ -324,7 +352,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
    touches `crates/catalog/src/browse/`, which other work is changing, so that work is committed first and the step is confirmed with the owner. Tests: catalog unit tests (links, missing, `move_folder`, `rebuild` from an old catalog),
    the existing suites, and the app's grid and folder tree by screenshot (`run` skill).
 2. **`listing.rs`** (the filter, `FileId == 0`, the unknown list); refusing non-NTFS roots, shares and duplicate
-   serials. The walker moves to `walk.rs`, records links, takes live values by ID, and no longer hides the files
+   serials, and the cloud rule (see "Cloud folders"). The walker moves to `walk.rs`, records links, takes live values by ID, and no longer hides the files
    of folders it couldn't list. Tests: the existing `crates/library/tests/*.rs`, plus hard-link, reparse and
    unreadable-folder cases (a folder with a deny-list ACL).
 3. **`crates/volume`: the parser (`record.rs`, `runs.rs`).** Tests:
@@ -343,9 +371,9 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 8. **Measure once, at the end:**
    - on E:, a cold walk vs a warm walk vs the MFT read (1 vs 2 in flight) vs a journal pass, and the helper's
      peak memory;
-   - results in IO.md "I/O", STORAGE.md, PLAN M1 and `crates/README.md`.
+   - results in IO.md "I/O", docs/reference/STORAGE.md, PLAN M1 and `crates/README.md`.
 
-   Also fix STORAGE.md: the Z: finding (FileId 0, silently empty), and "only NTFS, others refused".
+   Also fix docs/reference/STORAGE.md: the Z: finding (FileId 0, silently empty), and "only NTFS, others refused".
 
 ## Critical files
 
@@ -457,5 +485,5 @@ lines. At `e669f2d` the `mark_missing` item (R-45) is fixed; the rest still hold
 | A volume flush writes MFT records dirty in the cache | VHD test: a file created just before the read |
 | `$STANDARD_INFORMATION` carries `OFFLINE`/`RECALL_ON_DATA_ACCESS`; OneDrive files are reparse points even when local | not testable here: OneDrive has 4 files, none a reparse point. Stays flagged |
 | Throughput with 2 reads in flight; warm-walk time; the helper's peak memory | step 7 |
-| FAT's DST shift and unstable FAT IDs (STORAGE.md) | not tested; unsupported file systems, kept as stated |
+| FAT's DST shift and unstable FAT IDs (docs/reference/STORAGE.md) | not tested; unsupported file systems, kept as stated |
 | WOF and dedup sizes from `$DATA` equal the logical size | VHD test (WOF); dedup not available on client Windows |

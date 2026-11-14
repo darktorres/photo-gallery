@@ -478,7 +478,7 @@ can be added later against the same crates.
    them afterwards at a size adjustable at runtime, into a size-capped cache (PLAN §6). The size/format
    numbers in "Thumbnails" now size that cache rather than a fixed 70M store.
 
-## 10. Key references (excerpts in `docs/reference_archive/papers/`, with findings in `docs/reference_archive/REFERENCES_LEDGER.md`; the claims cited here and in §3 were checked against the papers on 2026-11-13)
+## 10. Key references (excerpts in `docs/research/papers/`, with findings in `docs/research/REFERENCES_LEDGER.md`; the claims cited here and in §3 were checked against the papers on 2026-11-13)
 
 - Evolution of a Web-Scale Near Duplicate Image Detection System (Pinterest): tiers, verifier, grouping,
   incremental updates.

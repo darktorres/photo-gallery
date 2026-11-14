@@ -24,7 +24,7 @@
 //! reads each fresh row once, and a scan with nothing fresh reads nothing. The walk's lease keeps any other walk of the
 //! root out meanwhile.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use pg_model::ids::{FileId, ScanId};
 use pg_model::media::{Ext, Kind};
@@ -193,17 +193,21 @@ impl Catalog {
             // the file coming back under its identity is paired with its row (and its data) rather than taken for a
             // new file. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
             in_batches(conn, &under, scan, &skipped, |tx, fresh| {
-                // Every fresh row's candidates, read for the batch in one statement. Asking row by row gives the same
-                // lists: a fresh row is unpaired when it is read (`fresh_rows`), a candidate is an old row of its own
-                // folder and name (never a fresh row, which has this scan's `last_scan`), and a replaced row is gone
-                // only from its own name. Two fresh rows of one name in one folder cannot be: a scan lists each path once.
-                let candidates = replaced_candidates(tx, fresh, scan)?;
+                let mut replaced_by = tx.prepare_cached(
+                    "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
+                     AND ((unpaired = 1 AND (volume IS NULL OR last_scan < ?4))
+                          OR (missing = 0 AND volume IS NOT NULL AND last_scan < ?4))
+                     AND (created IS NULL OR ?5 IS NULL OR created <> ?5)
+                     ORDER BY id",
+                )?;
                 // The fresh rows this batch leaves unpaired. A replaced row is gone (its row took the file), so it is
                 // not among them. The clearing is one statement for the batch, after the matches.
                 let mut to_clear: Vec<i64> = Vec::new();
                 for f in fresh {
-                    let ids: &[i64] = candidates.get(&f.id).map_or(&[], Vec::as_slice);
-                    match ids {
+                    let ids: Vec<i64> = replaced_by
+                        .query_map(params![f.folder_id, f.name, f.id, scan, f.created], |r| r.get(0))?
+                        .collect::<rusqlite::Result<_>>()?;
+                    match ids.as_slice() {
                         [] => to_clear.push(f.id),
                         [only] => {
                             replace(tx, rules, *only, f, scan, &mut out.temps)?;
@@ -285,43 +289,6 @@ fn in_batches(
         tx.commit()?;
         after = last;
     }
-}
-
-/// The replacement candidates of a batch's fresh rows: for each, the old rows of its own folder and name that `replaced_by`
-/// asks for (`last_scan` before the scan, unpaired or live, with another creation time), read in one statement. Read
-/// before the batch's matches: a candidate is never a fresh row, and two fresh rows cannot share a folder and name (a scan
-/// lists each path once), so no match changes another row's list.
-fn replaced_candidates(tx: &Transaction, fresh: &[Fresh], scan: i64) -> Result<BTreeMap<i64, Vec<i64>>> {
-    let mut out: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
-    if fresh.is_empty() {
-        return Ok(out);
-    }
-    // The names are BLOBs, which JSON cannot hold: they go as hex, and `unhex` reads them back.
-    let rows: Vec<serde_json::Value> = fresh
-        .iter()
-        .map(|f| {
-            let name: String = f.name.iter().map(|b| format!("{b:02X}")).collect();
-            serde_json::json!({ "id": f.id, "folder": f.folder_id, "name": name, "created": f.created })
-        })
-        .collect();
-    let json = serde_json::to_string(&rows).map_err(anyhow::Error::from)?;
-    let mut stmt = tx.prepare_cached(
-        "WITH fresh AS (
-             SELECT value ->> 'id' AS fid, value ->> 'folder' AS folder, unhex(value ->> 'name') AS name,
-                    value ->> 'created' AS created
-             FROM json_each(?1))
-         SELECT fresh.fid, old.id FROM fresh JOIN files old
-         ON old.folder_id = fresh.folder AND old.name = fresh.name AND old.id <> fresh.fid
-            AND ((old.unpaired = 1 AND (old.volume IS NULL OR old.last_scan < ?2))
-                 OR (old.missing = 0 AND old.volume IS NOT NULL AND old.last_scan < ?2))
-            AND (old.created IS NULL OR fresh.created IS NULL OR old.created <> fresh.created)
-         ORDER BY fresh.fid, old.id",
-    )?;
-    for row in stmt.query_map(params![json, scan], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
-        let (fresh_id, old) = row?;
-        out.entry(fresh_id).or_default().push(old);
-    }
-    Ok(out)
 }
 
 /// The volumes of the files this scan saw (a row's `last_scan` is the scan's number).

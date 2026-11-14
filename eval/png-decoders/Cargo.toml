@@ -11,7 +11,7 @@ description = "Speed and output of PNG decoders on the library's PNGs"
 [dependencies]
 anyhow = "1"
 # The app's PNG decoder: the fork pinned in the root Cargo.toml's [patch.crates-io].
-png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b2f5e5ca470dfcd57df4c3c7a" }
+png = { git = "https://github.com/darktorres/image-png", rev = "2f176edb0a07b488d2b0236685f9ec184b91434e" }
 # The fork's upstream, as crates.io has it.
 png-upstream = { package = "png", version = "0.18" }
 zune-core = "0.5"

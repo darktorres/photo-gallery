@@ -1772,6 +1772,7 @@ dependencies = [
  "pg-model",
  "pg-platform",
  "pg-testkit",
+ "pg-writeback",
 ]
 
 [[package]]
@@ -2034,6 +2035,7 @@ dependencies = [
  "pg-scan",
  "pg-testkit",
  "pg-thumbcache",
+ "rusqlite",
 ]
 
 [[package]]
@@ -2104,7 +2106,7 @@ dependencies = [
 [[package]]
 name = "png"
 version = "0.18.1"
-source = "git+https://github.com/darktorres/image-png?rev=f7129d399da2984b2f5e5ca470dfcd57df4c3c7a#f7129d399da2984b2f5e5ca470dfcd57df4c3c7a"
+source = "git+https://github.com/darktorres/image-png?rev=2f176edb0a07b488d2b0236685f9ec184b91434e#2f176edb0a07b488d2b0236685f9ec184b91434e"
 dependencies = [
  "bitflags 2.13.2",
  "crc32fast",

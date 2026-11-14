@@ -412,7 +412,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "png"
 version = "0.18.1"
-source = "git+https://github.com/darktorres/image-png?rev=f7129d399da2984b2f5e5ca470dfcd57df4c3c7a#f7129d399da2984b2f5e5ca470dfcd57df4c3c7a"
+source = "git+https://github.com/darktorres/image-png?rev=2f176edb0a07b488d2b0236685f9ec184b91434e#2f176edb0a07b488d2b0236685f9ec184b91434e"
 dependencies = [
  "bitflags",
  "crc32fast",

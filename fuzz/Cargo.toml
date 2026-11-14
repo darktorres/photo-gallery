@@ -78,7 +78,7 @@ fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", r
 fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }
 gif = { git = "https://github.com/darktorres/image-gif", rev = "c79564c1cdf86e674b281f232aeffd706c325623" }
 image-webp = { git = "https://github.com/darktorres/image-webp", rev = "1e9023c914f8f0793544a34b2c02525ff183863e" }
-png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b2f5e5ca470dfcd57df4c3c7a" }
+png = { git = "https://github.com/darktorres/image-png", rev = "2f176edb0a07b488d2b0236685f9ec184b91434e" }
 quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
 tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
 turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }

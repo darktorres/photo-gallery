@@ -1,4 +1,4 @@
-"""A second opinion for docs/temp/PNG_DECODERS.md: Pillow's own PNG reader (its `zip` decoder over zlib-ng, not libpng),
+"""A second opinion for the PNG decoder comparison: Pillow's own PNG reader (its `zip` decoder over zlib-ng, not libpng),
 on the same files as `png-decoders time`.
 
     python pillow_bench.py --ref-dir DIR [--secs S] FILE...

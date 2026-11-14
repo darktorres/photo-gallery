@@ -1,4 +1,4 @@
-//! The window's panels (S-12.20): whether the filter bar is open, whether the borders are shown, whether the viewer is
+//! The window's panels: whether the filter bar is open, whether the borders are shown, whether the viewer is
 //! open (the grid's keys are the viewer's while it is), whether dev mode is on (the log view's button and key), and which
 //! modal panels are open, in the order they opened. A change reports what changed, so the desktop shows it and
 //! remembers the borders' setting; setting a flag to the value it has is no change. Nothing here calls Qt.

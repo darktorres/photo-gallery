@@ -1,4 +1,4 @@
-//! The saved listing reads back as it was saved (S-18.2): for every folder, recursion, sort and query, what
+//! The saved listing reads back as it was saved: for every folder, recursion, sort and query, what
 //! `save_listing` writes, `listing` returns. The session is where the listing lives between starts.
 
 use pg_app::{App, Config};

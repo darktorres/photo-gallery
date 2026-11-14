@@ -1,4 +1,4 @@
-//! The app's background job (PLAN §4, §6): one thread that saves the cropped copies asked for, scans the folders
+//! The app's background job: one thread that saves the cropped copies asked for, scans the folders
 //! asked for, imports whatever is pending, looks for the borders of what it imported (and of everything after a
 //! new detector), then makes thumbnails at the grid's current height, and sleeps until there is something new to
 //! do.
@@ -106,7 +106,7 @@ struct Inner {
     heights: HeightCell,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
-    /// Rounds finished, however they ended: the app marks each one as a stage for measuring (docs/reference/PROFILING.md).
+    /// Rounds finished, however they ended: the app marks each one as a stage for measuring.
     rounds: AtomicU64,
     notices: Arc<dyn NoticeSink>,
     /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.
@@ -470,8 +470,8 @@ impl Pass<Cx<'_>> for Scans {
                     if s.changed > 0 || s.missing > 0 || s.pairing.rebound > 0 || s.pairing.replaced > 0 {
                         cx.inner.scanned();
                     }
-                    // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision
-                    // 7). Both come after the catalog's commit, which the scan made.
+                    // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
+                    // Both come after the catalog's commit, which the scan made.
                     for (_, e) in scans::forget_replaced(cx.inner.thumbs, &s.pairing.replaced_ids) {
                         cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
                     }

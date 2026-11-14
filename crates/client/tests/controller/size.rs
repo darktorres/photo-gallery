@@ -1,4 +1,4 @@
-//! Traces of the grid's size (S-12.20) through the public `GridSize`: the clamp, the steps, and the thumbnail height.
+//! Traces of the grid's size through the public `GridSize`: the clamp, the steps, and the thumbnail height.
 
 #![expect(
     clippy::expect_used,

@@ -1,5 +1,5 @@
-"""The package versions that produced a number, printed at the top of each script's output (docs/CODE_REVIEW.md,
-decision 5). A script run from its venv imports this module beside it (the scripts run without `python -I`, so the
+"""The package versions that produced a number, printed at the top of each script's output.
+A script run from its venv imports this module beside it (the scripts run without `python -I`, so the
 script's folder is on `sys.path`). Versions are read from the installed metadata, so nothing heavy is imported here:
 the nvImageCodec venv has no torch, and it prints what it has.
 """

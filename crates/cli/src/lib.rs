@@ -186,7 +186,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     println!("{summary}");
                 }
                 print_failures(Kept::Skipped, &s.failures);
-                // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision 7).
+                // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
                 // The cache is opened only then.
                 if !s.pairing.replaced_ids.is_empty() {
                     let (events, printer) = thumb_events();
@@ -516,6 +516,43 @@ mod tests {
             refused.iter().map(|f| (&f.path, f.failure)).collect::<Vec<_>>(),
             [(&b, pg_catalog::FolderFailure::Refused)]
         );
+    }
+
+    /// `gallery remove` takes the folder's kept notices with it (the notices' folder is a foreign key that cascades),
+    /// and the other folder's stay.
+    #[test]
+    fn gallery_remove_takes_the_folders_kept_notices() {
+        use pg_model::notice::ScanNote;
+
+        let dir = pg_testkit::run_folder_with("scratch_cli", "cli-remove", &["a", "b", "catalog"]).unwrap();
+        for folder in ["a", "b"] {
+            std::fs::write(dir.join(folder).join("1.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+        }
+        let catalog_dir = dir.join("catalog").to_string_lossy().into_owned();
+        let gallery = |args: &[&str]| {
+            let mut words = vec!["gallery", "--catalog-dir", catalog_dir.as_str()];
+            words.extend_from_slice(args);
+            Cli::try_parse_from(words).unwrap()
+        };
+        let (a, b) = (dir.join("a").to_string_lossy().into_owned(), dir.join("b").to_string_lossy().into_owned());
+        run_command(gallery(&["scan", &a, &b]), &Control::new()).unwrap();
+
+        let rules = pg_platform::native::PATH_RULES;
+        let root = |folder: &str| pg_platform::names::normalize_path(&dir.join(folder)).unwrap();
+        let (root_a, root_b) = (root("a"), root("b"));
+        let note = |root: &RulePath| Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 1 };
+        let layout = gallery(&["scan"]).layout().unwrap();
+        let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
+        catalog.post_notice(&note(&root_a), 0).unwrap();
+        catalog.post_notice(&note(&root_b), 0).unwrap();
+        assert_eq!(catalog.inbox_entries(10, false).unwrap().len(), 2);
+        drop(catalog);
+
+        run_command(gallery(&["remove", &a]), &Control::new()).unwrap();
+
+        let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
+        let kept: Vec<Notice> = catalog.inbox_entries(10, false).unwrap().into_iter().map(|e| e.notice).collect();
+        assert_eq!(kept, [note(&root_b)]);
     }
 
     #[test]

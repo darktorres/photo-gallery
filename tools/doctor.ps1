@@ -73,7 +73,7 @@ $ffmpegCmd = Get-Command $ffmpegExe -ErrorAction SilentlyContinue
 Optional ($null -ne $ffmpegCmd) 'ffmpeg exe' $ffmpegCmd.Source `
     'the video tests skip without it: set PG_FFMPEG in .env to ffmpeg.exe, or run `just setup`'
 
-# Optional: Docker, which the Linux recipes run in (`just check-linux`, `just perf`, `just fuzz-smoke`, docker/README.md).
+# Optional: Docker, which the Linux recipes run in (`just check-linux`, `just perf`, `just fuzz-smoke`).
 $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
 $dockerUp = $false
 if ($docker) {

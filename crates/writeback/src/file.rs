@@ -23,7 +23,7 @@ pub(crate) fn unchanged(shown: &str, before: (i64, i64), now: (i64, i64)) -> Res
     Ok(())
 }
 
-/// Delete the temp files `temps` (under `rules`) of the writes queued for files a scan replaced (decision 7), by their
+/// Delete the temp files `temps` (under `rules`) of the writes queued for files a scan replaced, by their
 /// disk paths: a plain path would miss a temp in a folder whose name ends in a dot, or delete a sibling folder's file of
 /// the same name. A temp already gone is no error; the ones that couldn't be deleted, with why.
 pub fn discard_temps(rules: PathRules, temps: &[RulePath]) -> Vec<(RulePath, std::io::Error)> {

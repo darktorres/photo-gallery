@@ -1,4 +1,4 @@
-//! What a view shows and in what order (PLAN §7): a `Query` of facets and a `Sort` (`pg_model::query`, the data and
+//! What a view shows and in what order: a `Query` of facets and a `Sort` (`pg_model::query`, the data and
 //! its typed editing). Facets combine with AND, the values inside one facet with OR, and an empty facet doesn't filter.
 //! Both become SQL here, with every value the user typed bound as a parameter. The JSON they are saved and sessioned as
 //! is read and written here too (`from_json`, `to_json`).

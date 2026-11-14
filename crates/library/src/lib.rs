@@ -2,7 +2,7 @@
 //! where the data folders are (`layout`), and how a catalog folder is opened for them (`open_catalog`, `open_thumbs`,
 //! `versions`). What both front ends do around the passes is here too, once: adding a folder (`folders`) and what
 //! follows a scan (`scans`). The passes are their own crates, which the caller depends on directly: `pg-scan`, `pg-import`,
-//! `pg-thumbs`, `pg-borders`, `pg-crop` and `pg-writeback`. See PLAN §4, §8 M1.
+//! `pg-thumbs`, `pg-borders`, `pg-crop` and `pg-writeback`.
 //!
 //! The passes report what they did as values (their stats, the failures they hit), and print nothing: whoever runs
 //! them decides what to show, and in what words.

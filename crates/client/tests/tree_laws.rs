@@ -1,6 +1,6 @@
-//! Laws of the folder tree's rows (S-18.2): every folder in a built tree can be revealed, and the row it reveals is the
+//! Laws of the folder tree's rows: every folder in a built tree can be revealed, and the row it reveals is the
 //! row the path is found at; a folder that is not in the tree is not found. Files directly in the drive roots make a
-//! "Drive roots" row (C-58).
+//! "Drive roots" row.
 
 use pg_client::tree::{Tree, Visible};
 use pg_model::rules::{Merged, PathRules};
@@ -68,7 +68,7 @@ proptest! {
         let all = Merged::default();
         prop_assert_eq!(tree.row_of(&all, true), Some(0));
         prop_assert_eq!(tree.row_of(&all, false), Some(usize::from(has_row)));
-        // The label rule (L-26): the empty folder is "Drive roots" exactly when its row is the second one.
+        // The label rule: the empty folder is "Drive roots" exactly when its row is the second one.
         prop_assert_eq!(tree.shown_as(&all, false) == Some(Visible::DriveRoots), has_row);
         prop_assert_eq!(tree.shown_as(&all, true), Some(Visible::All));
         prop_assert_eq!(tree.reveal(&all, recursive), tree.row_of(&all, recursive));

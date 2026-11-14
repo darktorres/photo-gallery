@@ -1,4 +1,4 @@
-//! The grid's size values (S-12.20). Each type is valid by construction: a constructor refuses what is out of its range,
+//! The grid's size values. Each type is valid by construction: a constructor refuses what is out of its range,
 //! and serde refuses it on read too, so a recording or a stored value can't hold a zero scale or a 5000-pixel thumbnail.
 //! A float that is NaN or infinite is never a size, so every constructor refuses it.
 use serde::{Deserialize, Serialize};

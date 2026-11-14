@@ -1,4 +1,4 @@
-# The words of the front end's own literals: the labels, tooltips, prompts and titles that QML shows (S-19.2). Each entry
+# The words of the front end's own literals: the labels, tooltips, prompts and titles that QML shows. Each entry
 # is read by `text::ui` through `Words.text(id)`, or through `Words.phrase(id, count, text, other)` when it has a value:
 # `$count` chooses a plural form and is not shown; `$text` and `$other` are shown as they are, so a number is passed
 # as text (Fluent may group its digits). The ids start with `ui-`; a test checks that every id the QML uses is here.

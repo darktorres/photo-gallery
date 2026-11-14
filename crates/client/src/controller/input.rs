@@ -1,4 +1,4 @@
-//! The grid's input policy (S-12.16): which item is current, and what a grid key does with it. The key map decides what a
+//! The grid's input policy: which item is current, and what a grid key does with it. The key map decides what a
 //! key means (`keys::grid`); this says what the desktop must do about it. A step to a neighbour needs the model's layout,
 //! so it is a command the desktop resolves; the first and the last item are known from the count, so they are resolved
 //! here. Facts about the list come in as events. Nothing here calls Qt.

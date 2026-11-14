@@ -1,4 +1,4 @@
-//! Pairing, at the end of every scan of a root (S-17.7 decisions 4, 7 and 8). The scan writes each file it finds by its
+//! Pairing, at the end of every scan of a root. The scan writes each file it finds by its
 //! identity ([`crate::ScanWriter::upsert_file`]); a file the catalog has no row for gets a fresh row, `unpaired`, and a row
 //! whose identity is another file's is displaced, `unpaired`. This module decides what those rows are, in tiers:
 //!
@@ -7,7 +7,7 @@
 //! 2. **Moved while closed**: the same file ID, size, mtime and extension on another volume whose files are all gone
 //!    from this scan. Only on a complete scan, since the old volume's files must have been looked for.
 //! 3. **Replacement** (a save over the same name): a fresh row with no children takes the row of the file it replaced,
-//!    which loses its content state and keeps its ratings (decision 7). Only on a complete scan.
+//!    which loses its content state and keeps its ratings. Only on a complete scan.
 //!
 //! The folders the scan did not list (unreadable ones, and the reparse folders it does not follow, with what is below
 //! them) are out of every tier: their rows were not seen, so a row there is neither a candidate nor cleared, and the
@@ -44,7 +44,7 @@ pub use coverage::Coverage;
 pub struct Pairing {
     /// Old rows that took the identity of a new row on another volume (tiers 1 and 2).
     pub rebound: usize,
-    /// Rows that took the identity of the file that replaced them (decision 7).
+    /// Rows that took the identity of the file that replaced them.
     pub replaced: usize,
     /// Fresh rows still unpaired at the end whose candidates, in some tier, were several: nothing was bound to them.
     pub ambiguous: usize,
@@ -390,7 +390,7 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh, scan: i64) 
 }
 
 /// Give the replaced row `id` the identity of the new file `from` (deleted), and reset what was made from the old file
-/// (decision 7): the rotation and its queued turns, the analysis and what hangs off it, the file's own rating. The
+/// The rotation and its queued turns, the analysis and what hangs off it, the file's own rating. The
 /// queued ratings stay, without their temp files, which hold the old file's bytes; the rating row's `value` is written
 /// again from the new file. The temp files to delete go to `temps`.
 fn replace(
@@ -1051,8 +1051,8 @@ mod tests {
         an_inode_reused_under_another_name_leaves_a_tombstone_and_no_rating_posix
     );
 
-    /// ext4 reuses a deleted file's inode for a new file under the same name: that is a save over (decision 4, an
-    /// accepted case), so the new file takes the row and its rating. The test records that it does.
+    /// ext4 reuses a deleted file's inode for a new file under the same name: that is a save over (an accepted
+    /// case), so the new file takes the row and its rating. The test records that it does.
     fn an_inode_reused_under_the_same_name_takes_the_rating(rules: PathRules) {
         let mut c = catalog(rules);
         let first = begin(&mut c);

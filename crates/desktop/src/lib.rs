@@ -1,4 +1,4 @@
-//! The desktop app (PLAN §7): the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it with `run` when it's
+//! The desktop app: the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it with `run` when it's
 //! given no command; everything below the QML lives in `pg-client` and `pg-library`.
 
 mod alert;
@@ -126,7 +126,7 @@ pub fn run(args: &[OsString]) -> i32 {
     if command_line::path("screenshot").is_some() && !command_line::bad_options().is_empty() {
         return refuse_screenshot(command_line::bad_options());
     }
-    // `--locale=pseudo` shows every line in the pseudo-locale (the screenshot matrix's pseudo-locale scenario, S-19.3).
+    // `--locale=pseudo` shows every line in the pseudo-locale (the screenshot matrix's pseudo-locale scenario).
     pg_client::text::set_pseudo(command_line::hooks().pseudo);
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();

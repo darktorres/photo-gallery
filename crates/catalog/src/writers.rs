@@ -101,7 +101,7 @@ impl<'tx> ScanWriter<'tx> {
             backfill: tx.prepare("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
             displace: tx
                 .prepare("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
-            // A new row is unpaired: the pairing at the end of the scan decides what it is (S-17.7 decision 4). A row
+            // A new row is unpaired: the pairing at the end of the scan decides what it is. A row
             // is updated only while it is as the walk read it when it listed the folder (`?12`, `?13`: NULL for none),
             // and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule (a listing
             // has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and retries,
@@ -151,9 +151,9 @@ impl<'tx> ScanWriter<'tx> {
         Ok(Folder { id: FolderId::new(id), key })
     }
 
-    /// Record a file the scan found, by identity (S-17.7 decision 2). A file moved or renamed keeps its row, and so
-    /// does one whose `created` is unknown on either side; a missing row of another root counts as moved here
-    /// (decision 5), a present one is [`Recorded::Foreign`]. A hit whose `created` differs is a different file: the row
+    /// Record a file the scan found, by identity. A file moved or renamed keeps its row, and so
+    /// does one whose `created` is unknown on either side; a missing row of another root counts as moved here;
+    /// a present one is [`Recorded::Foreign`]. A hit whose `created` differs is a different file: the row
     /// is displaced (it keeps its id, folder, name, ratings and content, and loses its identity), and a new row is
     /// made for the identity. A new row is `unpaired` until the pairing at the end of the scan. A row that changed
     /// since the folder was listed (`f.prior`), or that the app is writing into, is only marked seen
@@ -216,7 +216,7 @@ impl<'tx> ScanWriter<'tx> {
     }
 
     /// Mark the row with this identity as seen by this scan, changing nothing else. A reparse point is recorded this
-    /// way: its listing gives no content to analyze, and a row that is there is kept (S-17.7 decision 9).
+    /// way: its listing gives no content to analyze, and a row that is there is kept.
     pub fn seen_identity(&mut self, identity: FileIdentity) -> Result<()> {
         self.seen_identity.execute(params![
             identity.volume.cast_signed(),

@@ -63,8 +63,8 @@ fn max_folder_id(conn: &Connection) -> Result<i64> {
 
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
-    /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD (docs/reference/IO.md
-    /// "I/O"). Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
+    /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD.
+    /// Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
     pub fn pending_import(&self, retry_errors: bool) -> Result<WorkList<WorkItem>> {
         // Counted in the same snapshot: an upper bound (a failure may also be pending), each count read from its
         // index alone.
@@ -98,7 +98,7 @@ impl Catalog {
         Ok(list)
     }
 
-    /// The reliable PDQ hashes of current analyses (PLAN §6), as ids and hash words: `ids[i]`'s hash is `hashes[i]`, and
+    /// The reliable PDQ hashes of current analyses, as ids and hash words: `ids[i]`'s hash is `hashes[i]`, and
     /// a file contributes its 8 orientations. The tier-1 index (`pg_dedup::Pairer`'s) is made from them for each import.
     pub fn pdq_hashes(&self) -> Result<(Vec<FileId>, Vec<[u64; 4]>)> {
         // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the

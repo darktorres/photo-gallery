@@ -732,7 +732,7 @@ mod tests {
         assert!(shown.folder.is_empty() && !shown.recursive);
     }
 
-    /// The label kind of the listed folder (L-26): the empty folder is "Drive roots" only without subfolders and with
+    /// The label kind of the listed folder: the empty folder is "Drive roots" only without subfolders and with
     /// root files (the tree's rule), so a listing of `("", false)` with no root files is "All folders", as the tree's
     /// highlighted row is; a folder is a folder.
     #[test]

@@ -1,4 +1,4 @@
-# The module-cycle allowlist (the modularity plan (git e428ab2), M-0 and M-16). Each line is one known cycle group still to be fixed:
+# The module-cycle allowlist. Each line is one known cycle group still to be fixed:
 #   source crate: member, member, ...
 # source: scan (the text scan, module_graph.py), linux or windows (the compiler's module graph, compiler_graph.py, on
 # that target). crate: the directory name without `pg-`. Members: as the scan labels them. A group that fails the check

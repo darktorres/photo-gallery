@@ -343,7 +343,7 @@ mod tests {
     }
 }
 
-/// Laws of `pg_model::name::Name` (S-17.1), over arbitrary UTF-16 units and arbitrary bytes: the exact round trip,
+/// Laws of `pg_model::name::Name`, over arbitrary UTF-16 units and arbitrary bytes: the exact round trip,
 /// canonical construction (equal names have equal bytes and the reverse), injective name keys, and decoding that
 /// never panics. Nothing here touches the file system: names are built from units and bytes.
 #[cfg(test)]

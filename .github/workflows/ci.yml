@@ -1,4 +1,4 @@
-# CI (S-15). Two jobs: `windows` (the app: lint, the module cycles, tests, the QML tests, the screenshot comparison),
+# CI. Two jobs: `windows` (the app: lint, the module cycles, tests, the QML tests, the screenshot comparison),
 # and `linux` (the whole workspace on Linux, with Qt 6.12 for Linux: the same recipes as the Windows job, lint, the module
 # cycles, tests and the QML tests). Both run the Justfile's recipes, so a check that passes here passes there; the steps that are not
 # recipes are the setup. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
@@ -11,7 +11,7 @@
 #     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
 #   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in docker/apt-packages.txt.
 #
-# The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
+# The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable.
 name: CI
 
 on:
@@ -178,7 +178,7 @@ jobs:
 
       - name: Screenshot comparison against the newest committed reference
         if: github.event_name == 'pull_request'
-        continue-on-error: true # informational until it is stable (plan S-15)
+        continue-on-error: true # informational until it is stable
         run: |
           # The comparison uses the newest reference in this commit's history (tools/compare_shots.py). The checkout is
           # shallow, which holds only the merge commit, so the history is fetched first. A pull request's merge commit

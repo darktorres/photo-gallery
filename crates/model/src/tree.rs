@@ -1,4 +1,4 @@
-//! The folder tree, merged across drives (PLAN §7): its nodes in key order, each with its count and size, and the
+//! The folder tree, merged across drives: its nodes in key order, each with its count and size, and the
 //! lookups the tree panel makes of it. Built from the folders' paths (`TreeBuilder`); the catalog reads the rows. The
 //! paths are typed ([`crate::rules::Path`]): a folder's parts and its key come from the rules the tree is built under.
 

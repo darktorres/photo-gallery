@@ -1,4 +1,4 @@
-"""The module-cycle allowlist (modularity plan at e428ab2, M-0 and M-16): the known cycle groups still to be fixed.
+"""The module-cycle allowlist: the known cycle groups still to be fixed.
 
 `tools/modgraph-allow.txt` has one entry per known group, `source crate: member, member, ...`:
 

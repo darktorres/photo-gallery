@@ -1,4 +1,4 @@
-"""Real 16-bit photographs for docs/temp/PNG_DECODERS.md: the 16-bit RGB set of imagecompression.info (Sachin Garg,
+"""Real 16-bit photographs for the PNG decoder comparison: the 16-bit RGB set of imagecompression.info (Sachin Garg,
 "The New Image Compression Test Set", Jan 2008; redistribution granted with attribution, see its readme.txt).
 
     python make_real16.py --zip rgb16bit.zip [--out DIR]    (default: $PG_ROOT\\eval\\png-decoders\\inputs-real16)

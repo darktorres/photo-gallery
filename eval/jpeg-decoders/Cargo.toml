@@ -3,7 +3,7 @@ name = "jpeg-decoders"
 edition = "2024"
 version = "0.1.0"
 publish = false
-description = "Speed and output of JPEG decoders on the library's kinds of files (docs/JPEG_DECODERS.md)"
+description = "Speed and output of JPEG decoders on the library's kinds of files"
 
 # Not a member of the app's workspace: the decoders compared here aren't the app's dependencies.
 [workspace]
@@ -27,6 +27,6 @@ harness = false
 [profile.release]
 debug = "line-tables-only"
 
-# The app's libjpeg-turbo build (vendor/README.md).
+# The app's libjpeg-turbo build.
 [patch.crates-io]
 turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }

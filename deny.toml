@@ -44,7 +44,7 @@ ignore = true
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
-# The libraries have no UI dependency (PLAN §7): Qt and its bindings come in through pg-desktop only.
+# The libraries have no UI dependency: Qt and its bindings come in through pg-desktop only.
 deny = [
     { crate = "cxx-qt", wrappers = ["pg-desktop", "cxx-qt-lib"] },
     { crate = "cxx-qt-lib", wrappers = ["pg-desktop"] },
@@ -73,7 +73,7 @@ deny = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# The patched crates, pinned by rev from our forks (vendor/README.md). Each fork is ours, carrying the upstream's code.
+# The patched crates, pinned by rev from our forks. Each fork is ours, carrying the upstream's code.
 allow-git = [
     "https://github.com/darktorres/fast_image_resize",
     "https://github.com/darktorres/fdeflate",

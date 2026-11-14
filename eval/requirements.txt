@@ -1,8 +1,8 @@
-# The Python packages of the eval venv (`$PG_ROOT\venv-eval`, eval/README.md), exactly as it was frozen: `pip freeze` on
+# The Python packages of the eval venv (`$PG_ROOT\venv-eval`), exactly as it was frozen: `pip freeze` on
 # Python 3.12.10 with CUDA 13 (torch cu134, onnxruntime-gpu, TensorRT). Install with:
 #   python -m pip install -r eval/requirements.txt
 # The two extra indexes hold the CUDA builds (torch's cu134 wheels, the TensorRT wheels); PyPI stays the primary one.
-# The GPU needs an NVIDIA driver of 580 or newer (eval/README.md). The int8 quantization venv (venv-quant) is separate.
+# The GPU needs an NVIDIA driver of 580 or newer. The int8 quantization venv (venv-quant) is separate.
 --extra-index-url https://download.pytorch.org/whl/cu134
 --extra-index-url https://pypi.nvidia.com
 annotated-doc==0.0.5

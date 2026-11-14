@@ -11,30 +11,35 @@ not ~35 h** (2026-11-02). Quality over speed, but not days of runtime.
 
 ## Status
 
-Done and committed or cached (`<data root>` is the directory outside the repo that holds the datasets and caches):
+Done (`<data root>` is the directory outside the repo that holds the datasets and caches; `PG_ROOT` is `D:\PhotoGallery`):
 
 - Embedding of the 187,806 test images + 18,000 planted edits (D0 pipeline, `sscd_trt_fp16_trim_draft`) in
-  `<data root>\eval_ann`; cached exact ground truths for 25k / 50k; validation gates passed at 25k
-  (`cache/ann/validate.json`, two explained exceptions); characterization in `cache/ann/charact.json`.
+  `<data root>\eval_ann` (205,806 rows, checked 2026-11-14).
 
-Done, **not yet committed**:
+Committed (the harness is in git: `addc480`, 2026-11-07; `4bc7e46` and `0fc1b95` moved its CPU worker into the container):
 
 - `eval/ann/` (data, exact, methods, cpu_worker, metrics, charact, run, report), `eval/plant.py`, the `--draft`
-  changes in `common.py` / `imgload.py` / `embed.py`, the `verify.py --list` option, and the docs / PLAN edits.
-  Checked 2026-11-06: none of the harness is in the tree. `eval/ann/` holds only `__pycache__` (its `.pyc` files are
-  dated 2026-11-02), `eval/plant.py` is absent, `common.py`, `imgload.py` and `embed.py` have no `--draft`, and
-  `verify.py` has no `--list` (its `--pairs` choices are `labeled`, `cross_groups` and `knn`). `eval/bench_ann.py` is
-  tracked, and no measurement doc has an edit for this work. Remaining step 1 applies: recover the files before going on.
+  changes in `common.py` / `imgload.py` / `embed.py`, and the `verify.py --list` option. `eval/` and `docs/temp/` are
+  clean in `git status` (checked 2026-11-14).
+
+Gone (checked 2026-11-14): the ANN cache. `D:\PhotoGallery\cache` (the default, since `PG_CACHE_DIR` is unset) has no
+`ann` folder, and nothing is on E:. It held the validation gates (`validate.json`), the characterization
+(`charact.json`), the exact ground truths for 25k / 50k, a partial tune run (7 of 64 configurations), the 206k results
+and the 5M files. It is treated as deleted: every stage below runs again from the start.
+
 - Scale change: `MAIN = 50_000` (50k test rows + ~4.8k planted copies), trend sizes 12.5k / 25k, `VALIDATE = 25_000`;
   100k and the full base are gone. Sweep cap is now **600 s of total search per configuration** (plus the convergence
   rule: fewer than 0.01% of rows change their top 10).
-- The 50k tune stage had finished 7 of 64 configurations (exact, GPU IVF nlist 256/1024) at 25–30 s each.
-  Earlier 206k results are in `cache/ann/results_tune_206k_stopped.jsonl` and are not used.
 
 ## Remaining steps
 
-1. **Confirm the harness is in the tree.** The files listed under Status must be present; if they are missing, recover
-   them before going on. Commit as soon as step 2 holds, so the work is not lost again.
+The harness is committed and the cache is gone, so the run starts at `validate`.
+
+1. **Validate, characterize, and build the exact ground truth.** From `eval/`, with
+   `PG_DATA_ROOT=<data root>\datasets PG_WORK_DIR=<data root>\eval_ann`: `python -m ann.run validate charact exact`.
+   `tune` refuses to run until `cache/ann/validate.json` passes. The gates are the SIFT1M check (it downloads the
+   corpus into the cache), the 25k ceiling, and the GPU-vs-float64 check. Record each gate's result in step 6. The two
+   exceptions of the earlier run cannot be checked again, since its cache is gone.
 2. **Decide the USearch grid size** (the only open cost lever; see below), then edit `grid()` in `eval/ann/run.py`.
 3. **Run the tune stage** in the background, logged to `<data root>\experiments_<date>.log`, with
    `PG_DATA_ROOT=<data root>\datasets PG_WORK_DIR=<data root>\eval_ann` from `eval/`
@@ -46,15 +51,14 @@ Done, **not yet committed**:
    --rotations 45` on ~250 pairs per kind × band stratum plus 400 misses per family.
 5. **Read `cache/ann/report.md`** and sanity-check it: exact ceiling, planted per edit (~265 pairs per edit, so
    intervals are wide), dups2 recall, true-duplicate recall with Clopper-Pearson bounds.
-6. **Docs:** add a results section here (validation exceptions, characterization, Pareto tables, finalists, trend,
-   planted per edit, true-duplicate recall; flag that GPU IVF timings are inflated by its Python per-list loop and
-   that Windows pip wheels of FAISS/USearch lack SIMD, so CPU numbers come from the Linux wheels, then in WSL and now in the container). Update PLAN §9
-   decision 5 and the M0 line from "being redone" to the result.
-7. **Cleanup:** delete `eval/bench_ann.py` and the `cache/ann/5M_*` files (~5 GB); delete the unused 206k caches
-   (`base_all.npy`, `exact_all.npz`) after the report is read; add the plant / `ann.run` / `--draft` lines to the
-   Run block of `eval/README.md`.
-8. **Commit** (explicit paths only: the files of this work, not unrelated changes): first the harness once step
-   3 shows it works at 50k, then the results and docs once step 6 is done. No push.
+6. **Docs:** add a results section here (validation gates and any exceptions, characterization, Pareto tables,
+   finalists, trend, planted per edit, true-duplicate recall; flag that GPU IVF timings are inflated by its Python
+   per-list loop and that Windows pip wheels of FAISS/USearch lack SIMD, so CPU numbers come from the Linux wheels, then
+   in WSL and now in the container). Update PLAN §9 decision 5 and the M0 line from "being redone" to the result.
+7. **Cleanup:** add the plant / `ann.run` / `--draft` lines to the Run block of `eval/README.md` (not there yet, checked
+   2026-11-14). Delete `eval/bench_ann.py` (tracked, superseded by `eval/ann/`).
+8. **Commit** (explicit paths only, the files of this work, not unrelated changes): the results and docs once step 6 is
+   done. The harness is already committed. No push.
 
 ## The one open choice: USearch grid
 
@@ -88,8 +92,8 @@ NN-descent) stay as designed.
 
 ## Verification
 
-- `python -m ann.run tune` writes `cache/ann/results_tune.jsonl` with names tagged `50k|...`; the first lines match
-  the interrupted run (exact 1.0; GPU IVF nlist 256 r1 at 1.0).
+- `python -m ann.run tune` writes `cache/ann/results_tune.jsonl` with names tagged `50k|...`; the first lines should
+  read exact 1.0 and GPU IVF nlist 256 r1 at 1.0 (the values of the interrupted run, whose file is gone).
 - `report.md` shows the exact ceiling at 1.0 and every planted source↔copy pair present in the exact join.
 - The viewer's k-NN tab shows the verifier samples and misses (`verify_knn_sscd_trt_fp16_trim_draft.csv`).
 - `ruff check .` and `ruff format --check .` pass; `just lint` for the repo.

@@ -55,7 +55,7 @@ pub(crate) fn column_type(
         .optional()
 }
 
-/// Version 5's rows: the session's text keys (`folder` as the JSON of the folder's parts, or, before S-17.8, the
+/// Version 5's rows: the session's text keys (`folder` as the JSON of the folder's parts, or, in an older catalog, the
 /// folder's text; `recursive` as `true` or `false`; `query`; `sort`) become its one row, each key the old reader's
 /// default where it was never saved. Nothing is written for a session never saved. The old shape is a `session` table
 /// with a `key` column; the folders were text when `views.folder` was. On the migration the row goes to `session_row`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Windows side of docs/JPEG_DECODERS.md: GPU decoders, the vendored libjpeg-turbo, and the harness. It was win-build.cmd.
+"""The Windows side of the JPEG decoder comparison: GPU decoders, the vendored libjpeg-turbo, and the harness. It was win-build.cmd.
 
     python eval/jpeg-decoders/win_build.py [turbo jpeggpu gpujpeg parajpeg debesheedas harness]   (default: all)
 

@@ -102,7 +102,7 @@ macro_rules! under_root {
     };
 }
 
-/// The data a row can hold that a pairing would lose (S-17.7 decision 4): a rotation, a rating, the file's own rating,
+/// The data a row can hold that a pairing would lose: a rotation, a rating, the file's own rating,
 /// an analysis or a queued write. Inside a statement over `files`.
 macro_rules! has_children {
     () => {

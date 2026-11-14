@@ -1,7 +1,7 @@
 # The crates: library, import and desktop UI (Rust)
 
-See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/temp/PLAN.md` (§8, M1). The layering and the steps
-that built it are in `docs/temp/REFACTOR_PLAN.md` (its crate table, and the rows for each step).
+See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/temp/PLAN.md` (§8, M1). The layering is in
+`docs/reference/REFACTOR_DESIGN.md`, and the open refactor work is in `docs/plans/REFACTOR_LEDGER.md`.
 
 Every directory under `crates/` is one package, named `pg-<directory>`. From the bottom up:
 

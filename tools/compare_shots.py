@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Screenshot comparison (S-14.1, `just shots`): the working tree's gallery against a reference recorded from a base commit,
+"""Screenshot comparison (`just shots`): the working tree's gallery against a reference recorded from a base commit,
 over the test-hook matrix, on one fixture, pixel by pixel. Exit code 1 when anything differs unexpectedly (or a run fails).
 It was compare-shots.ps1.
 
@@ -128,7 +128,7 @@ SCENARIOS = {
     "dev-mode": scenario("--dev=1"),
     "log": scenario("--dev=1", "--log=1", "--log-view={FIX}\\shot.log"),
 }
-# The pseudo-locale (S-19.3): every line of the front end in the pseudo-locale. No reference has it, so it is run on the
+# The pseudo-locale: every line of the front end in the pseudo-locale. No reference has it, so it is run on the
 # working tree only and its screenshot kept under target/shots/pseudo, for a look; it is not compared.
 PSEUDO = {
     "pseudo-locale": scenario("--locale=pseudo"),

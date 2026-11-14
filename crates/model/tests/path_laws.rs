@@ -1,4 +1,4 @@
-//! Laws of the path keys (S-18.2), checked over generated names and folders against the spec the code's docs state
+//! Laws of the path keys, checked over generated names and folders against the spec the code's docs state
 //! (`pg_model::rules`): a name's key orders names case-insensitively, then exactly; a folder's key orders folders
 //! component by component; the drive is not part of a folder's key. The reference comparator is the spec itself,
 //! written out, not the key functions.

@@ -1,6 +1,6 @@
-//! Magic Kernel Sharp 2021 (Costella, 2021) as the resizer's filter: the one kernel for every resize (PLAN §3 rule 8).
+//! Magic Kernel Sharp 2021 (Costella, 2021) as the resizer's filter: the one kernel for every resize.
 //! The single-pass kernel is k(x) = Σₙ sₙ·m(x − n) over n = −3..=3, with m the magic kernel and s the Sharp 2021 taps;
-//! the paper's two-pass form is checked against it in docs/temp/THUMBNAIL_RESAMPLING.md §4.7.
+//! the paper's two-pass form is checked against it.
 
 use fast_image_resize::{Filter, FilterType};
 

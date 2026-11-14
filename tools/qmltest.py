@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The QML tests (S-14.3, `just qmltest`): Qt Quick Test, offscreen, on the QML that stays in QML.
+"""The QML tests (`just qmltest`): Qt Quick Test, offscreen, on the QML that stays in QML.
 
 The components are staged as the pg.gallery module (target/qmltest/pg/gallery), the way the app has them: the stubs of the
 Rust types (crates/desktop/tests/qml/stubs), and every real QML file, each with a qmldir entry, so the singleton (Ratings)

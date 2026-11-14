@@ -1,4 +1,4 @@
-// WheelListView (S-14.3): a notch moves the view by the system's lines of wheelLineHeight, a burst of notches travels
+// WheelListView: a notch moves the view by the system's lines of wheelLineHeight, a burst of notches travels
 // all of them, and the view stops at its end. Run by `just qmltest`.
 //
 // The tests call wheelBy() with a wheel event's fields rather than sending mouseWheel(): QtTest's mouseWheel reaches a

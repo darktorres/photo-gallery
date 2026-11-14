@@ -1,5 +1,5 @@
 //! sRGB and linear light (IEC 61966-2-1). The resizer averages in linear light: averaging the encoded values darkens
-//! high-contrast detail (docs/temp/THUMBNAIL_RESAMPLING.md §3.4). Two tables, built once and read by every worker: the
+//! high-contrast detail. Two tables, built once and read by every worker: the
 //! 256 decodes of an 8-bit sRGB sample, and the 65,536 encodes of a linear value on a 16-bit grid, each rounded once
 //! to 8 bits. Encoding through the 16-bit grid is exact to the rounding of the 8-bit output.
 

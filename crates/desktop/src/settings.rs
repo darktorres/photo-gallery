@@ -1,7 +1,7 @@
 //! What the window remembers. Every preference is `pg_app`'s, in one file (`gallery.json` in the data folder,
 //! `PG_PREFS` overrides), so it outlives a catalog rebuild: `app::get().prefs()` reads it and `app::get().prefs().update`
 //! changes and saves it. These properties hold no copy: each reads the preferences as they are and writes through them.
-//! Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
+//! Nothing goes to the registry or `%LOCALAPPDATA%`, and nothing of ours is kept on C:.
 
 pub(crate) mod state;
 

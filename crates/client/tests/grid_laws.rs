@@ -1,4 +1,4 @@
-//! Laws of the grid's rows (S-18.2): after a list is set and planned, the rows are consecutive and cover every item
+//! Laws of the grid's rows: after a list is set and planned, the rows are consecutive and cover every item
 //! once, each item is in the row that holds it, and an item's position and file are each other's inverse.
 
 use pg_client::grid::{Changed, Grid};

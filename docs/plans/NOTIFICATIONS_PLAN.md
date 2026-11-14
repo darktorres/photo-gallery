@@ -8,18 +8,18 @@ A row stays while any part of its proper fix is missing. Rows whose fix is in an
 pass removed 20 rows and the resolver plan, which is implemented: the resolvers are enforced by triggers (`pg_model`'s
 `Trigger` and `resolves`, `pg_app`'s `StateOp::Resolve`). The full workspace suite passes except `facets_filter`, which
 fails at HEAD too (`crates/catalog/src/browse/read/tests.rs:702`: the fixture writes analysis version 1 against
-`IMPORT_VERSION` 2, so no file is pending-free). The desktop QML test has not been run.
+`IMPORT_VERSION` 2, so no file is pending-free). `just qmltest` passes (100 tests), including the log panel's keyboard test.
 
 ## Summary
 
 | Section | Rows | Notes |
 |---|---:|---|
-| Behaviour | 1 | The keyboard-scroll fix is in; its QML test has not run. |
-| Tests | 9 | Missing tests. N-12 waits on the dedup decision (N-36). |
+| Behaviour | 0 | |
+| Tests | 7 | Missing tests. N-12 waits on the dedup decision (N-36). |
 | Waiting on a person | 12 | Decisions, including the nine design rows. |
 | Pending | 3 | Performance and screenshot runs not made. |
 | Not reviewed | 1 | By-hand checks, which need a person at the app. |
-| Total | 26 | |
+| Total | 23 | |
 
 Kind legend: `incorrect` is wrong behaviour; `missing` is a fix that is absent; `shortcut` is a fix that is present but
 not the proper one; `untested` is a fix without a test that would catch its regression; `undeclared-deviation` is code
@@ -28,18 +28,14 @@ at a source that no longer exists; `pending` is work not done.
 
 ## Behaviour
 
-| ID | Source | Kind | Where | Problem | Proper fix | Status |
-|---|---|---|---|---|---|---|
-| N-09 | Fix plan 7 | incorrect | `crates/desktop/qml/LogPanel.qml`; Qt `qquickflickable.cpp:3486` | `scrolled()` ran on `movementEnded`, which a keyboard move from rest never reaches (Qt's `setContentY` sets no moving flag). | A keyboard move calls `keyMoved()`, which stops following when the view moves away from the end. Test: `test_a_key_that_moves_the_view_away_stops_it_following` (`tst_log_panel.qml`). | **Open.** Fix and test in; `just qmltest` not run. |
+No open rows.
 
 ## Tests
 
 | ID | Source | Kind | Where | Problem | Proper fix | Status |
 |---|---|---|---|---|---|---|
-| N-10 | Feature plan test 1 | untested | `crates/desktop/tests/qml/stubs/pg/gallery/` | The QML stubs lacked `Notices.qml` and `LogModel.qml`, their `qmldir` lines, and `devMode` and `globalAction` in the `Shell.qml` stub. | Add them, then run `just qmltest` to see which tests fail without them. | **Open.** Stubs added; `just qmltest` not run. |
 | N-12 | Feature plan test 3 | untested | `crates/catalog/src/inbox.rs` (`upsert`) | Stored-notice dedup compares the whole JSON. The only variant with a `detail` field is `CacheStartedOver`, an event with no key, which never reaches that compare. No kept state has `detail`, so as written the test cannot fail. | Re-scope first: decide what dedup means for kept states (N-36). Then test it, or drop the test. | **Blocked** by N-36. |
 | N-13 | Feature plan test 4 | untested | `crates/catalog/src/schema.rs`; `lifecycle.rs:1092-1135`; `ledger.rs:626-690`; `inbox.rs:464` | Some trigger effects are tested. The test that checks the trigger names only checks that they exist. The triggers were not checked one by one. | Check each trigger against the effect tests above, and add a test for each one that has none. | **Open.** Narrowed by validation. |
-| N-14 | Feature plan test 5 | untested | `crates/catalog/src/schema.rs:82`; `crates/cli/src/lib.rs:218` | There is no `roots` trigger: `notices.root` is a foreign key with `ON DELETE CASCADE`. Removal from the CLI's `remove` is not tested end to end. | Test that the CLI's `remove` drops the root's notices, through `remove_root`. | **Open.** The catalog-level cascade is tested; the CLI test is not written. |
 | N-17 | Fix plan test 1 | untested | `crates/scan/src/lib.rs:1309`, `:1093` | The nearest test bounds how long one write transaction holds the lock on a 200k walk. No test checks that a dismissal and a post land within one batch write's time. | Add that test. | **Open.** Needs a timed harness across the 200k walk. |
 | N-18 | Fix plan test 2 | untested | `crates/scan/src/lib.rs` | The write-back test has no Retry or version bump. No test shows a walk that returns an error gives its lease back. | Add the Retry and version-bump cases, and the error-return case. | **Open.** The error-return case is in; the Retry and version-bump cases are not written. |
 | N-21 | Fix plan test 5 | untested | `crates/catalog/src/ledger.rs`; `crates/catalog/src/lifecycle.rs` | Missing: a rotation write-back followed by `--retry`; `EXPLAIN` at 200k files with 50k hidden rows. | Add each remaining test. | **Open.** The `set_import_version` test is in; the other two are not written. |

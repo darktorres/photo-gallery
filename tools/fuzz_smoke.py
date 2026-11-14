@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Each fuzz target (fuzz/, S-18.1) for a short time, in the container's tools image (`just fuzz-smoke`, which runs this
+"""Each fuzz target (fuzz/) for a short time, in the container's tools image (`just fuzz-smoke`, which runs this
 through tools/linux.py fuzz). The tree fuzzed is /head: the launcher's git archive of HEAD. The fuzzer's build is a volume of
 its own. A crash stops the run, and its input is copied to fuzz/artifacts/ in the checkout.
     python3 tools/fuzz_smoke.py [seconds per target, default 60]

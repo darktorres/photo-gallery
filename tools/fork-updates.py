@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Checks the forks under github.com/darktorres against the newest release of each crate upstream (vendor/README.md).
+"""Checks the forks under github.com/darktorres against the newest release of each crate upstream.
 
     fork-updates.py [--lock PATH] [--report PATH]
 
 Cargo.lock names each crate taken from a fork by its git source. The locked version of each is compared with the newest
 stable release of the same crate on crates.io, where the upstream publishes. A newer release is listed, with the fork's
-repository, so the fork can be rebased onto it (vendor/README.md, "To update") or dropped once upstream has the change.
+repository, so the fork can be rebased onto it or dropped once upstream has the change.
 Only released versions count: an upstream commit with no release is not listed here.
 
 Exit status: 0 when every fork is at the newest release, 1 when one has a newer release, 2 when a release could not be
@@ -73,7 +73,7 @@ def report(rows: list[dict[str, str]]) -> str:
             "",
             (
                 "A newer release is out for the crates above. For each one, rebase the fork onto the release tag and bump "
-                "its `rev` in the root `Cargo.toml` (and in the other manifests that pin it), as vendor/README.md describes. "
+                "its `rev` in the root `Cargo.toml` (and in the other manifests that pin it). "
                 "Drop the fork once upstream has its changes."
             ),
         ]

@@ -1,4 +1,4 @@
-"""ANN bake-off on real embeddings: exact GPU self-join vs tuned approximate methods (PLAN §9 decision 5).
+"""ANN bake-off on real embeddings: exact GPU self-join vs tuned approximate methods.
 
 Usage (from eval/, with PG_DATA_ROOT=<datasets folder> PG_WORK_DIR=<run folder>):
     python -m ann.run validate charact exact tune pca finalists verify report

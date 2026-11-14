@@ -1,4 +1,4 @@
-"""debesheedas/GPU-JPEG-Decoder (a course project; 4:4:4 baseline only) for docs/JPEG_DECODERS.md.
+"""debesheedas/GPU-JPEG-Decoder (a course project; 4:4:4 baseline only).
 
 It is a program, not a library: one decode per run, written as a text array to ../testing/cuda_decoder_output_arrays
 relative to the working directory. So: the median of 3 whole runs, minus the median of 3 runs of the same program on

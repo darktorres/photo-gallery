@@ -1,4 +1,4 @@
-// Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window, up or down, with an antialiased
+// Full-window viewer and triage (ImageRater's): fit to the window, up or down, with an antialiased
 // (Lanczos3) resample made in Rust; zoom from fit to 32× around the cursor (pinch, + −) and pan by dragging; the wheel
 // steps to the previous or next picture. Between
 // fit and 1:1 Rust renders the visible part with Lanczos as the view moves, and the last part shown stays until the

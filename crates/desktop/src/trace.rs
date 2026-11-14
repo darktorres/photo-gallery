@@ -1,5 +1,5 @@
 //! The startup stages as the QML sees them: Main.qml calls `Stages.firstFrame()` and `Stages.ready()`. The stages
-//! themselves are `pg-trace`'s (docs/reference/PROFILING.md "Startup"): this module is the bridge, and the app's printing of them
+//! themselves are `pg-trace`'s: this module is the bridge, and the app's printing of them
 //! with `PG_TRACE=1` (`install`).
 
 pub(crate) mod state;

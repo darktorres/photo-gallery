@@ -1,4 +1,4 @@
-"""GPU JPEG encoders for docs/JPEG_ENCODERS.md: nvJPEG (through nvImageCodec) and GPUJPEG (gpujpegtool), from the
+"""GPU JPEG encoders: nvJPEG (through nvImageCodec) and GPUJPEG (gpujpegtool), from the
 PPMs encoders.py prepared (in the container, in the host folder PG_JPEG_ENC_DIR), into its out/ directory, named as
 encoders.py names its own outputs. Then encoders.py score rates them with the CPU encoders. Also the encode time per
 megapixel at Q75 (in-process for nvJPEG: host pixels in, JPEG bytes on the host out; gpujpegtool's own per-iteration

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds Qt 6.12.0 as static libraries with MSVC, for the app's static build (docs/reference/STATIC_BUILD.md). Windows only.
+"""Builds Qt 6.12.0 as static libraries with MSVC, for the app's static build. Windows only.
 
 Two inputs come from the other static recipes, and each is checked before the configure: the libjpeg-turbo prefix
 (build_jpeg_turbo.py, for -system-libjpeg) and the static FFmpeg prefix (build_static_ffmpeg.py, for Qt Multimedia's FFmpeg
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from pgtools import WINDOWS, import_msvc_environment, load_env_file
 
-# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md. --------------------------------------
+# ---- Pins. Change them here, and note the reason beside each one. --------------------------------------
 QT_VERSION = "6.12.0"
 SOURCE_NAME = f"qt-everywhere-src-{QT_VERSION}"
 # Qt publishes an MD5 file, not a SHA-256 one: the SHA-256 here was computed from the zip (its MD5 matches Qt's md5sums.txt).

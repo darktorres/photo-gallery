@@ -5,7 +5,7 @@ Which PNG decoder the app should use: the `png` fork that `pg-codec` calls, agai
 library, seven made for the cases the library lacks (16-bit, Adam7-interlaced, grayscale, animated), four with a
 tRNS transparency chunk (three synthetic, one a real 16-bit photograph), two with filter 0 on every row, and four real
 16-bit photographs. Pillow's PNG reader is a second opinion outside Rust. It is the PNG counterpart of
-[JPEG_DECODERS.md](JPEG_DECODERS.md). Everything runs natively on Windows (`eval/png-decoders`). Wall time, heap traffic
+[JPEG_DECODERS.md](../reference/JPEG_DECODERS.md). Everything runs natively on Windows (`eval/png-decoders`). Wall time, heap traffic
 and the output are measured. No instruction counts (callgrind doesn't run here).
 
 Four timing runs are used, and they differ in load. The **quiet pass 1** (2026-11-14, 20–32% CPU load) gives the first
@@ -18,10 +18,9 @@ are the useful part. Absolute times move by 20–40% between runs, and the 116 M
 
 ## Verdict
 
-- **Output:** every decoder matches the app's output sample for sample on every file, with three exceptions. Wuffs
+- **Output:** every decoder matches the app's output sample for sample on every file, with two exceptions. Wuffs
   writes the colour of a fully transparent colour-key pixel as black, where the app keeps the key colour; the alpha is
-  the same. On the 16-bit colour-key photograph, zune-png gets one sample wrong (the alpha of the key pixel), and
-  libspng's 16-bit RGBA output is wrong (9.3 M of 13.7 M samples), a fault that is not specific to tRNS (see below).
+  the same. On the 16-bit colour-key photograph, zune-png gets one sample wrong (the alpha of the key pixel): it compares the key with its samples while they are still big-endian, using native-endian bytes, so a key whose bytes differ never matches. libspng's 16-bit output was wrong because of the harness, not libspng: libspng writes RGBA16 in host order, and the harness read it as big-endian. The harness is fixed, and libspng now matches the app on that photograph.
   Wuffs' 16-bit output is repacked to the app's layout, inside the timed decode, so it is compared on 16-bit files too.
   Pillow matches the app on every 8-bit file, including the tRNS ones, and keeps the key colour as the app does.
 - **Speed:** the fork and png 0.18 are within 10% of each other on every file in quiet pass 1, and on 18 of the 23
@@ -254,10 +253,9 @@ key comparison. Palette tRNS is a lookup table (`palette.rs`), which is why it c
 costs about 19.5 ms on 2.79 MP, which is roughly 7 ns a pixel; the gray key about 24 ms, roughly 8.5 ns a pixel. Those
 are arithmetic on the table, not a measurement of the loop.
 
-Two results here are in the decoders, not the timing. zune-png leaves the key pixel opaque on the photograph, and its
-key time (1.04×) is close to unkeyed, which fits with zune-png not applying a 16-bit key at all; its source was not
-read. libpng keeps the key colour, as the fork does, and so is the only other decoder identical to the fork on the
-keyed photograph.
+Two results here are in the decoders, not the timing. zune-png leaves the key pixel opaque on the photograph, which its key compare explains (see Output), so its key time (1.04×) is close to unkeyed. libpng and libspng keep the key colour as the fork does; Wuffs writes it black.
+
+Rerun on a quiet machine (15–17% load, 5 s): fork 86.95 → 102.56 ms (1.18×), png 0.18 84.28 → 105.52 (1.25×), zune-png 89.87 → 95.57 (1.06×), libpng 131.01 → 139.80 (1.07×), libspng 173.54 → 208.31 (1.20×), Wuffs 159.41 → 168.19 (1.06×). The earlier quiet pass gave the fork 1.29×, so the fork's cost on this photograph is 1.2–1.3× across the two runs.
 
 ## Inflate (fdeflate and zlib on the same streams)
 
@@ -419,13 +417,8 @@ Every decoder's output was compared with the app's fork's, sample by sample, for
 - **16-bit colour-key photograph** (`real-flower_foveon-16bit-trns`, 13,716,864 samples):
   - libpng: identical to the app.
   - Wuffs: 3 samples differ (the key pixel's colour, written as black; largest 12201). Alpha is identical.
-  - zune-png 0.5: 1 sample differs, the alpha of the key pixel (largest 65535): zune-png leaves that pixel opaque.
-  - libspng: 9,343,104 samples differ (largest 64515). Its 16-bit RGBA output is wrong, not only the key pixel. Forcing
-    libspng's RGBA16 output on the unkeyed photograph gives the same kind of error (the colours are wrong, the alpha
-    is right), so the fault is in its RGB-to-RGBA16 conversion, not in tRNS handling. The libspng RGBA16 timing in the
-    tables above (181.99 → 205.80 ms on the photograph) is therefore the timing of a wrong output, and is not a result.
-    The cause was not located in libspng's source (`spng.c`, its conversion loop and `trns_row`), and it is not yet
-    excluded that the harness uses the format wrongly.
+  - zune-png 0.5: 1 sample differs, the alpha of the key pixel (largest 65535). zune-png 0.5.2 expands 16-bit tRNS (`expand_trns::<true>`, `src/utils.rs`) while its samples are still big-endian; the conversion to native order comes after the expansion (`src/decoder.rs`). The expansion compares the samples with the key's native-endian bytes (`to_ne_bytes()`), so on a little-endian host a key matches only if both bytes of every channel are equal. The flower's key (10887, 12201, 10673) has unequal bytes in all three channels, so pixel (0, 0) stays opaque; it is the only pixel equal to the key. This is an upstream zune-png behaviour, not an app one.
+  - libspng: 9,343,104 samples differed (largest 64515), and the fault was in the harness, now fixed. libspng writes `SPNG_FMT_RGBA16` (and `GA16`) in host order: it converts each 16-bit scanline to host order before those formats' conversion (`spng.c`, line 3247, for every format but RAW). The harness read the output as big-endian, so the colour samples came out byte-swapped. Alpha survived, since 0x0000 and 0xFFFF are unchanged by a swap. The count agrees exactly: a swap leaves 944,544 of the 10,287,648 colour samples equal, so 9,343,104 differ. The harness now swaps those outputs to big-endian inside the timed decode (`harness/dec_libspng.cpp`), and libspng is identical to the app on the photograph. The earlier libspng colour-key timing (181.99 → 205.80 ms) was of the wrong output and is superseded.
 - **APNG:** the decoders output the first frame, which is the library's image exactly (checked on the app's output).
 
 The comparison was checked against a deliberately altered reference: one 8-bit sample gives "1 of … samples differ,
@@ -456,18 +449,16 @@ largest 1", and one 16-bit sample gives "largest 256", which confirms big-endian
   Windows, would say where the time goes before anything is changed.
 - **libpng's and libspng's non-inflate work on the photographs.** libpng's is 1.7–4.3× the fork's, libspng's 5–12×.
   Neither was profiled. The libspng part is the larger, and its cause is not located.
-- **libspng's 16-bit RGBA output.** Wrong for any RGB 16-bit file that asks for RGBA16, with or without tRNS. Check the
-  harness's use of `spng_decode_image` against libspng's documentation, and then its conversion loop. Until then its
-  16-bit colour-key timing is not a result.
-- **Wuffs' unfiltering.** The estimate is about 2.5× the fork's on adaptive rows. Measure Wuffs' inflate on its own,
+- **libspng's 16-bit RGBA and GA16 output.** The fault was in the harness, and it is fixed (see Output). The keyed photograph is timed above on a quiet machine. The GA16 path (16-bit gray with a key) takes the same route, but no test file exists for it yet.
+- **Wuffs' unfiltering.** The estimate is about 2.3× the fork's on adaptive rows. Measure Wuffs' inflate on its own,
   then profile its unfiltering to confirm.
-- **zune-png's 16-bit colour key.** One sample differs (the key pixel's alpha), which is consistent with zune-png not
-  applying a 16-bit key. Read its source to confirm.
+- **zune-png's 16-bit colour key.** Explained (see Output): it compares native-endian key bytes with big-endian samples. Decide whether to report it upstream. The app's fork is not affected.
 - **The fork against png 0.18 on two files.** The 116 MP file (fork 1229.55, png 0.18 1983.78 in pass 2; 988.77 and 1012.37
   in pass 1) and the 2.46 MP RGBA file (29.03 against 21.45 in pass 2; 20.15 against 20.56 in pass 1) vary by more than
   the other files. Rerun both on a quiet machine.
 - **Real photographs with an 8-bit tRNS chunk.** Only the 16-bit photograph has a key. An 8-bit photograph with a key
   would show whether the key cost on real data matches the synthetic files'.
+- **Done since the last round:** the libspng 16-bit output cause (a harness byte-order fault, fixed); the zune-png 16-bit key cause; the keyed photograph re-timed on a quiet machine, in the colour-key section.
 - **Done in this round:** the quiet-machine rerun (quiet pass 2, all 23 files in one run); the colour-key finding, confirmed
   and its cost measured on RGB, gray, palette and a 16-bit photograph; the inflate split by streamed inflate, on the 8-bit
   and photographic streams, at 2, 5 and 6 s; the Wuffs RGB-to-RGBA swizzle check (ruled out as the cost of its RGB path);

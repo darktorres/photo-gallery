@@ -2,7 +2,7 @@
 allow-panic-in-tests = true
 # Tests may print: a skipped test says so, and a test reports its counts. The print lints (Cargo.toml) are for the code that ships.
 allow-print-in-tests = true
-# Phase 3 (docs/plans/CLIPPY_LEDGER.md): the panic-freedom lints, in test code only; the production code is held to them.
+# Test code is exempt from the panic-freedom lints; the production code is held to them.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true

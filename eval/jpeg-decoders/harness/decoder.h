@@ -1,4 +1,4 @@
-// One interface for every decoder the harness measures (docs/JPEG_DECODERS.md).
+// One interface for every decoder the harness measures.
 #pragma once
 #include <cstdint>
 #include <functional>

@@ -198,7 +198,7 @@ fn folders_in_the_trees_order(rules: PathRules) {
 
 under_both_rules!(folders_in_the_trees_order, folders_in_the_trees_order_windows, folders_in_the_trees_order_posix);
 
-/// A file directly in a drive root is counted (C-58): the tree's total is what "All folders" lists, and its root
+/// A file directly in a drive root is counted: the tree's total is what "All folders" lists, and its root
 /// files are what the empty folder lists without subfolders (the "Drive roots" row).
 fn the_tree_counts_what_the_grid_lists(rules: PathRules) {
     let c = library(rules);
@@ -330,7 +330,7 @@ fn check_tree(rules: PathRules, rows: &[(i64, String, i64)]) {
     if rules == PathRules::Windows {
         assert_eq!(flat(&tree), reference_tree(rows));
     }
-    // A drive root's files are in no node, but counted: "All folders" lists every row's files (C-58).
+    // A drive root's files are in no node, but counted: "All folders" lists every row's files.
     let in_root = |path: &str| rules.parse(path).unwrap().parts.is_empty();
     let root_files: i64 = rows.iter().filter(|(_, path, _)| in_root(path)).map(|r| r.2).sum();
     assert_eq!(tree.root_files(), root_files);
@@ -498,7 +498,7 @@ fn order_keys_sort_as_before() {
     before((r"E:\P", "a.jpg"), (r"D:\p", "b.jpg"));
     before((r"D:\ας", "a"), (r"D:\ασ", "a"));
     before((r"D:\a\b", "z"), ("D:\\a\\b\u{1}c", "a"));
-    // A final Σ in a folder name is σ, character by character (S-17.2): `ΑΣ` is not `ας`, and it lists its own files.
+    // A final Σ in a folder name is σ, character by character: `ΑΣ` is not `ας`, and it lists its own files.
     assert_eq!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ασ", "a"));
     assert_ne!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ας", "a"));
 }
@@ -862,7 +862,7 @@ under_both_rules!(
 );
 
 /// A folder whose name ends in Σ lists its files: the writer keys it character by character (σ), and the scope reads
-/// that same key. (Before S-17.8 the scope lower-cased the name whole, to ς, and listed nothing.)
+/// that same key. (In an older build the scope lower-cased the name whole, to ς, and listed nothing.)
 fn a_folder_ending_in_sigma_lists_its_files(rules: PathRules) {
     let c = library(rules);
     crate::fixture::state::add_folder(&c, 9, &spelled(rules, r"D:\ΑΣ")).unwrap();

@@ -1,4 +1,4 @@
-"""ImageReduce's JPEG encode against jpegli baseline 4:4:4, on real inputs, for docs/reference/JPEG_ENCODERS.md "ImageReduce".
+"""ImageReduce's JPEG encode against jpegli baseline 4:4:4, on real inputs.
 
 ImageReduce (its own repo, not this one) encodes with libvips's jpegsave at Q75, 4:4:4, optimize_coding, after a
 thumbnail to 3840x2160 for images over 3840x2160 (mainwindow.cpp processImage). This runs that encode on the same

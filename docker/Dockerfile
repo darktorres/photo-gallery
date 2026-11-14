@@ -1,5 +1,5 @@
 # The Linux environment of CI's Linux job (.github/workflows/ci.yml), for building, checking, benchmarking and fuzzing this
-# repository. Built and run by tools/linux.py (docker/README.md), which passes the versions below from the Justfile, so
+# repository. Built and run by tools/linux.py, which passes the versions below from the Justfile, so
 # each version is written once. Three targets: `base` runs the checks (docker/check.py); `tools` adds the callgrind
 # benches and the fuzzer on top of it; `eval` adds the eval's Linux parts (eval/ann's CPU worker, the JPEG comparisons).
 # The base image is pinned by digest (the index: `docker buildx imagetools inspect ubuntu:26.04`), so a rebuild does not
@@ -73,8 +73,8 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
  && . "$HOME/.cargo/env" \
  && cd /opt/pg && rustup show
 
-# The tools the Justfile pins (just, cargo-deny, cargo-machete) and the module-graph tool of the cycle check (tools/modgraph,
-# the modularity plan (git e428ab2) M-0). Installed with the default toolchain, as CI's install step does for just.
+# The tools the Justfile pins (just, cargo-deny, cargo-machete) and the module-graph tool of the cycle check (tools/modgraph).
+# Installed with the default toolchain, as CI's install step does for just.
 RUN cargo install --locked just --version ${JUST_VERSION} \
  && cargo install --locked cargo-deny --version ${CARGO_DENY_VERSION} \
  && cargo install --locked cargo-machete --version ${CARGO_MACHETE_VERSION} \
@@ -86,7 +86,7 @@ ENV PG_CONTAINER=1
 WORKDIR /work
 CMD ["python3", "docker/check.py"]
 
-# The callgrind benches (docs/reference/PROFILING.md) and the fuzzer: their packages, and their tools at the versions the Justfile
+# The callgrind benches and the fuzzer: their packages, and their tools at the versions the Justfile
 # pins (cargo-fuzz) and at the version of the gungraun library in Cargo.lock (gungraun-runner, which the launcher reads).
 FROM base AS tools
 
@@ -106,7 +106,7 @@ USER pg
 RUN cargo install gungraun-runner --version ${GUNGRAUN_VERSION} \
  && cargo install --locked cargo-fuzz --version ${CARGO_FUZZ_VERSION}
 
-# The eval's Linux parts (docs/JPEG_DECODERS.md, docs/JPEG_ENCODERS.md, docs/TIER2_ANN_BAKEOFF_PLAN.md): the packages the
+# The eval's Linux parts: the packages the
 # JPEG builds and runs need (apt-packages-eval.txt), and a venv with the Python packages the scripts import, at the versions
 # eval/requirements.txt pins (EVAL_PACKAGES, passed by the launcher). /eval is the pg-eval volume's mount point.
 FROM tools AS eval

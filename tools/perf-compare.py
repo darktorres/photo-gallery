@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The instruction-count gate (S-16.2): compares the callgrind totals of the benches with a committed baseline.
+"""The instruction-count gate: compares the callgrind totals of the benches with a committed baseline.
 
     perf-compare.py BASELINE RUN_DIR [--tolerance 0.01] [--update] [--skip PREFIX]... [--budgets [FILE]]
 
@@ -7,7 +7,7 @@ RUN_DIR is gungraun's output (target/gungraun): every `callgrind.*.out` under it
 bench, named by its path relative to RUN_DIR. Its total is the `totals:` line's Ir (the instructions executed). A bench
 moved by more than the tolerance (1% by default) fails the gate, in either direction: an improvement is a baseline
 to update, not an accident to keep. `--update` writes the run as the new baseline (after a change that should move it).
-Exits 1 on a change, on a bench missing from either side, or when there is no baseline yet (S-16.1 makes the first).
+Exits 1 on a change, on a bench missing from either side, or when there is no baseline yet.
 `--skip PREFIX` leaves out the benches whose name starts with PREFIX on both sides, for a run that did not measure them
 (CI has no catalog data): each one is printed as SKIPPED. It cannot be combined with `--update`.
 
@@ -103,7 +103,7 @@ def main() -> int:
         print(f"wrote {len(run)} bench(es) to {args.baseline}")
         return 0
     if not args.baseline.exists():
-        print(f"no baseline at {args.baseline}: measure it (S-16.1) and run with --update", file=sys.stderr)
+        print(f"no baseline at {args.baseline}: measure it and run with --update", file=sys.stderr)
         return 1
 
     base = json.loads(args.baseline.read_text())

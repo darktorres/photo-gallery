@@ -1,4 +1,4 @@
-"""Encode time for docs/reference/JPEG_ENCODERS.md "ImageReduce's switch": ImageReduce's libvips jpegsave (Q75, 4:4:4,
+"""Encode time for ImageReduce's switch: ImageReduce's libvips jpegsave (Q75, 4:4:4,
 optimize_coding) against cjpegli baseline 4:4:4 (Q80), on the same pixels, as imagereduce_switch.py's run CSVs select
 them. Encode only: the pixels are in memory (vips) or a PPM on disk (cjpegli) before the timer starts. cjpegli runs as
 a process per file, so its wall time includes process start; the 8x8 baseline is subtracted for the "net" figure.

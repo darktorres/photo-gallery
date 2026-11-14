@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The JPEG decoder comparison (docs/JPEG_DECODERS.md), on Linux: in the container (`just linux-eval
-eval/jpeg-decoders/linux.py STEP...`, docker/README.md) or natively (it was wsl.sh). Usage, from the repository:
+"""The JPEG decoder comparison, on Linux: in the container (`just linux-eval
+eval/jpeg-decoders/linux.py STEP...`) or natively (it was wsl.sh). Usage, from the repository:
     python3 eval/jpeg-decoders/linux.py STEP...
 Steps: inputs (copy the 7 files to the inputs folder), check (clippy, rustfmt), compare (output vs libjpeg-turbo), time
 (median wall ms), bench (callgrind through gungraun, then the table), marginal (callgrind on whole runs, all threads: libvips
@@ -28,7 +28,7 @@ INPUTS = Path(os.environ.get("JPEG_INPUTS", Path.home() / "jpeg-inputs"))
 EVAL = Path(os.environ.get("JPEG_EVAL", Path.home() / "jpeg-eval"))
 RESTART = Path(os.environ.get("JPEG_RESTART_OUT", Path.home() / "jpeg-restart"))
 ENCODES = Path(os.environ.get("PG_JPEG_ENC_DIR", Path.home() / "jpeg-enc"))
-# Its Cargo.toml takes turbojpeg-sys from the darktorres fork by rev (vendor/README.md).
+# Its Cargo.toml takes turbojpeg-sys from the darktorres fork by rev.
 DST = CLONE / "eval" / "jpeg-decoders"
 NAMES = [
     "pin-base444-1mp",

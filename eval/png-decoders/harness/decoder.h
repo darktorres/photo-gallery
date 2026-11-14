@@ -1,4 +1,4 @@
-// The PNG decoders behind one interface, for the C side of docs/temp/PNG_DECODERS.md. Every decoder gives the app's
+// The PNG decoders behind one interface, for the C side of the PNG decoder comparison. Every decoder gives the app's
 // layout (the png fork's EXPAND output: palette and tRNS to RGB(A), gray below 8 bits to 8, 16-bit kept as big-endian
 // samples, packed row by row, no padding), one thread, full size, into an output buffer it keeps across decodes.
 #pragma once

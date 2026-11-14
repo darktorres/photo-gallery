@@ -60,13 +60,13 @@ zune-jpeg = "0.5"
 # --workspace --all-targets -- -D warnings` (just lint) holds the tree to them.
 [workspace.lints.rust]
 # A `pub` item is one another crate can name; one only this crate uses is `pub(crate)` or narrower, so the public
-# surface is what the compiler sees (the modularity plan (git e428ab2), M-18).
+# surface is what the compiler sees.
 unreachable_pub = "warn"
 
 [workspace.lints.clippy]
 # Every unsafe block says why it is sound.
 undocumented_unsafe_blocks = "warn"
-# Phase 1 of docs/plans/CLIPPY_LEDGER.md: the lints with few or no hits. A deliberate use is `#[expect(.., reason)]` at the site.
+# The lints with few or no hits. A deliberate use is `#[expect(.., reason)]` at the site.
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
@@ -75,25 +75,25 @@ exit = "deny"
 panic = "deny"
 allow_attributes = "warn"
 string_slice = "warn"
-# Phase 2 (docs/plans/CLIPPY_LEDGER.md): printing is for the entry points and the tools, which allow it at their crate root
+# Printing is for the entry points and the tools, which allow it at their crate root
 # with `#![expect(.., reason)]`. A library reports through its results; the app's errors go to its log.
 print_stdout = "deny"
 print_stderr = "deny"
-# Phase 3 (docs/plans/CLIPPY_LEDGER.md): panic-freedom. A failure is a `Result`; an `expect` says why its invariant holds.
+# Panic-freedom: a failure is a `Result`; an `expect` says why its invariant holds.
 unwrap_used = "deny"
 expect_used = "deny"
 indexing_slicing = "deny"
-# Phase 4 (docs/plans/CLIPPY_LEDGER.md): lossless casts are `From` conversions.
+# Lossless casts are `From` conversions.
 cast_lossless = "deny"
-# Phase 4: a narrowing cast is a `try_from` or a documented clamping helper (docs/plans/CLIPPY_LEDGER.md, truncation policy).
+# A narrowing cast is a `try_from` or a documented clamping helper.
 cast_possible_truncation = "deny"
-# Phase 4: a signed value that becomes unsigned is a `try_from`, a clamping helper, or `cast_unsigned` (docs/plans/CLIPPY_LEDGER.md, sign-loss policy).
+# A signed value that becomes unsigned is a `try_from`, a clamping helper, or `cast_unsigned`.
 cast_sign_loss = "deny"
-# Phase 4: a signed value from an unsigned one is a `try_from`, a saturating clamp, or `cast_signed` (docs/plans/CLIPPY_LEDGER.md, wrap policy).
+# A signed value from an unsigned one is a `try_from`, a saturating clamp, or `cast_signed`.
 cast_possible_wrap = "deny"
-# Phase 4: an integer to float conversion is a `pg_model::num` helper (count, size or signed), or a local helper in `jobs`; the expect sits on the helper (docs/plans/CLIPPY_LEDGER.md, precision policy).
+# An integer to float conversion is a `pg_model::num` helper (count, size or signed), or a local helper in `jobs`; the expect sits on the helper.
 cast_precision_loss = "deny"
-# Phase 4: every `as` is replaced by the form its rule states (docs/plans/CLIPPY_LEDGER.md, as-conversions policy).
+# Every `as` is replaced by a conversion that says what it does: `From`, `try_from`, or a named helper.
 as_conversions = "deny"
 
 # Debug builds (and `cargo test`) with the dependencies optimized: decoding, resizing and hashing are all in
@@ -110,7 +110,7 @@ debug = "line-tables-only"
 [profile.release.build-override]
 opt-level = 3
 
-# The heap profiler's build (`--features dhat-heap`, docs/reference/PROFILING.md "Tool: dhat"): release's optimizations with
+# The heap profiler's build (`--features dhat-heap`): release's optimizations with
 # function names and lines for the backtraces, no LTO and incremental, so rebuilds after a change are quick. Its own
 # target directory keeps it from replacing the normal build's artifacts.
 [profile.dhat]
@@ -123,7 +123,7 @@ incremental = true
 # compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit; thumbhash with a
 # reusable encoder that reads RGB; fast_image_resize whose resizer keeps its coefficients; quick-xml whose reader
 # reuses its buffers; png, fdeflate, image-webp, gif and zune-jpeg whose decoders keep their buffers and tables; tiff
-# and zune-core that read small values without allocating (vendor/README.md).
+# and zune-core that read small values without allocating.
 [patch.crates-io]
 fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", rev = "0ea7089165e3c991693f45bcddbf82bbcf9c4e7b" }
 fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }

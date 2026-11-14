@@ -1,6 +1,6 @@
-//! Which folders the scanner takes: the policy of decisions 6 (Windows) and 13 (Linux) in the S-17.7 plan (removed 2026-11-14; last committed at 7086cc5 as docs/temp/S17_7_PLAN.md), decided
-//! from the facts the platform reads (`pg_platform::dir`), with the reason as data (`pg_model::refusal`), which the
-//! client words (review 4 (e428ab2) M-34). A check that can't read a fact refuses: the checks fail closed.
+//! Which folders the scanner takes: the policy for Windows and for Linux, decided
+//! from the facts the platform reads (`pg_platform::dir`), with the reason as data (`pg_model::refusal`),
+//! which `pg_client::text` words. A check that can't read a fact refuses: the checks fail closed.
 
 use std::io;
 
@@ -34,7 +34,7 @@ fn unreadable(fact: Fact, error: &io::Error) -> RefusedReason {
     RefusedReason::Unreadable { fact, error: error.to_string() }
 }
 
-/// The checks of decision 6, in order, before the folder is listed: NTFS on a fixed local disk, the folder itself and
+/// The Windows checks, in order, before the folder is listed: NTFS on a fixed local disk, the folder itself and
 /// where it really is.
 fn check_ntfs<F: RootFacts>(facts: &F, path: &[Unit]) -> Result<(), RefusedReason> {
     // 1. A network path, refused by its text: no call is made.
@@ -92,7 +92,7 @@ fn same_path(a: &[Unit], b: &[Unit]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| fold(*x) == fold(*y))
 }
 
-/// The check of decision 13: the file system's type, refused by [`FS_TYPES`].
+/// The Linux check: the file system's type, refused by [`FS_TYPES`].
 fn check_fs(path: &[Unit]) -> Result<(), RefusedReason> {
     let f_type = pg_platform::dir::fs_type(path).map_err(|e| unreadable(Fact::FileSystem, &e))?;
     check_fs_type(f_type)

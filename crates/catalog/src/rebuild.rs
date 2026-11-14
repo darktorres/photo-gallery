@@ -240,7 +240,7 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     Ok(())
 }
 
-/// The saved views' folders, copied as text from a catalog before S-17.8: each becomes the rules' stored bytes. The
+/// The saved views' folders, copied as text from an older catalog: each becomes the rules' stored bytes. The
 /// text is split by the rules, so a folder that the old text named is the same folder; a NUL in it is refused, and the
 /// copy is rolled back with the rest.
 fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Result<()> {

@@ -1,4 +1,4 @@
-//! Traces of the panels' flags (S-12.20), the modal panels' mirror and the global shortcuts' rule.
+//! Traces of the panels' flags, the modal panels' mirror and the global shortcuts' rule.
 
 #![expect(
     clippy::expect_used,

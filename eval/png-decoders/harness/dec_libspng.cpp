@@ -11,6 +11,7 @@
 // allocator given to spng_ctx_new2, which is alloc_count.h's.
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <spng.h>
@@ -82,6 +83,12 @@ private:
         if ((ret = spng_decoded_image_size(ctx, fmt, &size))) return failed(ret);
         out_.resize(size);
         if ((ret = spng_decode_image(ctx, out_.data(), out_.size(), fmt, flags))) return failed(ret);
+        // libspng writes SPNG_FMT_RGBA16 and GA16 samples in host order (its scanline is converted to host order before
+        // these formats' conversion, spng.c), where the app's layout and the other decoders' is big-endian. Swap them
+        // here, in the timed decode, as Wuffs' repacking is. The harness is little-endian (Windows), so swap every pair.
+        if (fmt == SPNG_FMT_RGBA16 || fmt == SPNG_FMT_GA16) {
+            for (size_t i = 0; i + 1 < out_.size(); i += 2) std::swap(out_[i], out_[i + 1]);
+        }
         dims_ = {ihdr.width, ihdr.height, channels, bytes_per_sample};
         return {};
     }

@@ -1,5 +1,5 @@
-//! Videos, through FFmpeg (our own pinned build, which Qt Multimedia plays them with too: crates/README.md
-//! "Build"): what the import stores about one, and the frame its ThumbHash and thumbnails are made from.
+//! Videos, through FFmpeg (our own pinned build, which Qt Multimedia plays them with too): what the import
+//! stores about one, and the frame its ThumbHash and thumbnails are made from.
 //!
 //! "Upright" is as players show it: the stream's display matrix (a phone's rotation tag) applied, then the
 //! catalog rotation. Near-duplicate detection doesn't cover videos yet: no pixel hash or PDQ.

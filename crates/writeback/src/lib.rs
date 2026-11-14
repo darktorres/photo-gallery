@@ -1,8 +1,8 @@
-//! Writing the user's changes into the files themselves (PLAN §2): ratings as `XMP:Rating` (ExifTool), turns
+//! Writing the user's changes into the files themselves: ratings as `XMP:Rating` (ExifTool), turns
 //! losslessly (`pg_edit::rotate`). The catalog changed already when the user acted; this catches the files up,
 //! from the `file_writes` queue, so a write survives quitting and a file that is offline waits for its drive.
 //!
-//! Files keep their NTFS identity, which is the catalog's identity for them (PLAN §4). Writing a temp file and
+//! Files keep their NTFS identity, which is the catalog's identity for them. Writing a temp file and
 //! renaming it over the original (what `exiftool -overwrite_original` and jpegtran-based tools do) would make the
 //! file new to the catalog, and lose its rating. So every write has two steps:
 //! 1. the new content is written, complete, to a temp file beside the original (one per kind of write), from the file

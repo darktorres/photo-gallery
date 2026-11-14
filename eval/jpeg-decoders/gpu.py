@@ -1,4 +1,4 @@
-"""nvJPEG (torchvision.io.decode_jpeg on CUDA) against CPU decoders on Windows, for docs/JPEG_DECODERS.md.
+"""nvJPEG (torchvision.io.decode_jpeg on CUDA) against CPU decoders on Windows.
 
 Run with the eval venv (torch with CUDA): python eval/jpeg-decoders/gpu.py FILE...
 
@@ -35,7 +35,7 @@ CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchroni
 
 def blocking_sync() -> None:
     """Make the primary context of device 0 block on synchronize(), so waiting for the GPU doesn't bill CPU time
-    (spinning would count as the decode's CPU cost). Must run before the first CUDA call; see JPEG_DECODERS.md.
+    (spinning would count as the decode's CPU cost). Must run before the first CUDA call.
     Done through the driver's own DLL, so no torch is needed (the nvImageCodec venv has none)."""
     cuda = ctypes.CDLL("nvcuda.dll")
     if (rc := cuda.cuInit(0)) != 0:

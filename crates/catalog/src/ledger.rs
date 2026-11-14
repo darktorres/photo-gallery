@@ -756,6 +756,83 @@ mod tests {
         assert_eq!(hidden(&c), [(1, 1), (2, 1)], "pending now, so hidden");
     }
 
+    // A turn written back into the file turns its analysis, and the import row follows the analysis's rotation through
+    // `analysis_import_rewritten`, keeping its serial: the same failure, turned. A `--retry` of the same bytes at that
+    // rotation is the same failure again.
+    #[test]
+    fn a_turn_written_back_moves_the_import_rows_rotation_and_keeps_its_serial() {
+        let c = catalog(PathRules::Posix);
+        analysis(&c, 1, 10, 100, Some("no"));
+        c.mark_ledger_read(IMPORT, newest(&c, IMPORT), 1).unwrap();
+        let seen = serials(&c, "import");
+        let rotations = |c: &Catalog| {
+            raw::rows_of(c, "SELECT rotation FROM file_failures WHERE pass = 'import'", [], |r| r.get::<_, i64>(0))
+        };
+        assert_eq!(rotations(&c), [0]);
+        let job = queue::Job {
+            file_id: FileId::new(1),
+            write: pg_model::write::Write::Turns(Turns::new(1)),
+            temp: None,
+            attempts: 0,
+        };
+        let rewrite = queue::Rewrite { before: None, after: (10, 100), metadata_only: None };
+        c.write_done(&job, queue::WriteEffect::TurnedBack { rewrite, turns: Turns::new(1) }).unwrap();
+        // One turn back is rotation 3 (`analysis_turned_back`): the row takes it, and is the same failure.
+        assert_eq!(rotations(&c), [3]);
+        assert_eq!(serials(&c, "import"), seen, "the same failure, turned: not news");
+        // `--retry` of the same bytes, analysed at that rotation: the row is kept.
+        c.retry_failures(FilePass::Import).unwrap();
+        c.conn
+            .execute(
+                "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
+                 VALUES (1, ?1, 10, 100, 3, 'image', 5, 'no')",
+                (versions().import,),
+            )
+            .unwrap();
+        assert_eq!(rotations(&c), [3]);
+        assert_eq!(serials(&c, "import"), seen, "a retry of the same bytes is the same failure");
+    }
+
+    // `files_failures_hidden` fires only when `pending` or `missing` changes (its WHEN): an update that changes neither
+    // leaves the row's `hidden` alone, and a change to either sets it from the file as it is now.
+    #[test]
+    fn the_hidden_trigger_fires_only_when_pending_or_missing_changes() {
+        let c = catalog(PathRules::Posix);
+        analysis(&c, 1, 10, 100, Some("no"));
+        let hidden = |c: &Catalog| -> i64 {
+            c.conn.query_row("SELECT hidden FROM file_failures WHERE file_id = 1", [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(hidden(&c), 0);
+        c.conn.execute("UPDATE file_failures SET hidden = 7 WHERE file_id = 1", []).unwrap();
+        c.conn.execute("UPDATE files SET pending = pending WHERE id = 1", []).unwrap();
+        assert_eq!(hidden(&c), 7, "neither pending nor missing changed: the row is not rewritten");
+        c.conn.execute("UPDATE files SET pending = 1 - pending WHERE id = 1", []).unwrap();
+        assert_eq!(hidden(&c), 1, "pending now: hidden");
+        c.conn.execute("UPDATE files SET pending = 0 WHERE id = 1", []).unwrap();
+        assert_eq!(hidden(&c), 0, "not pending: listed");
+        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 1", []).unwrap();
+        assert_eq!(hidden(&c), 1, "missing: hidden");
+    }
+
+    // A new IMPORT_VERSION fires `files_failures_hidden` only where a file's pending changes: a row whose file was already
+    // pending keeps its `hidden`, here set to a value the trigger would not write.
+    #[test]
+    fn set_import_version_fires_the_hidden_trigger_only_where_pending_changes() {
+        let c = catalog(PathRules::Posix);
+        analysis(&c, 1, 10, 100, Some("no"));
+        analysis(&c, 2, 10, 100, Some("no"));
+        raw::set_size(&c, FileId::new(2), 11);
+        c.conn.execute("UPDATE file_failures SET hidden = 7 WHERE file_id = 2", []).unwrap();
+        crate::lifecycle::set_import_version(&c.conn, versions().import + 1).unwrap();
+        let hidden = raw::rows_of(
+            &c,
+            "SELECT file_id, hidden FROM file_failures WHERE pass = 'import' ORDER BY file_id",
+            [],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        );
+        assert_eq!(hidden, [(1, 1), (2, 7)]);
+    }
+
     // The import's rows are hidden while their file is missing or pending, and come back with their serials, so none
     // is news again: missing and back, a new IMPORT_VERSION failing the same bytes again, a thumbnail Retry, and a
     // metadata-only write-back (and a `--retry` after it).

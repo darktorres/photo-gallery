@@ -1,4 +1,4 @@
-// GridRow (S-14.3): the cells follow the row's items, a settling view keeps the items it has (no cells are made for a
+// GridRow: the cells follow the row's items, a settling view keeps the items it has (no cells are made for a
 // view on its way, nor for a row made while settling), and a change of items makes new cells where their places change.
 // The row's values are set here as the model's roles set them: one property per field, each a change that takes the row
 // again. Run by `just qmltest`.

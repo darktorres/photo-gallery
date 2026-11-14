@@ -9,7 +9,7 @@
 //! of the path's end (NTFS holds such a name, as in a folder `Acme Inc.` copied from Linux or macOS, and the plain
 //! form then names `Acme Inc`, another folder or none). A stored path reaches std, FFmpeg and ExifTool through
 //! `names::disk_path`, its verbatim form: the one way production code turns a catalog's path into one it opens
-//! (review 4 (e428ab2) R-2). The volume calls (`GetVolumePathNameW`, `GetDriveTypeW`) take the plain form
+//! The volume calls (`GetVolumePathNameW`, `GetDriveTypeW`) take the plain form
 //! (`NativePath::set_plain`, the crate's own) as they always did.
 //!
 //! ExifTool reads and writes a verbatim path, through its stay-open argument file and its command line alike (checked

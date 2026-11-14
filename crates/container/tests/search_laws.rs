@@ -1,4 +1,4 @@
-//! Laws of the container walks' byte search (S-18.2): `find` is where a naive search first finds the needle, and
+//! Laws of the container walks' byte search: `find` is where a naive search first finds the needle, and
 //! `range_in` gives back the place of a slice of the bytes. The needle is never empty: `find` windows over it.
 
 use pg_container::{find, range_in};

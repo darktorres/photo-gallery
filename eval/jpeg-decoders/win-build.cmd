@@ -1,5 +1,5 @@
 @echo off
-rem The Windows side of docs/JPEG_DECODERS.md: GPU decoders, the vendored libjpeg-turbo, and the harness.
+rem The Windows side of the JPEG decoder comparison: GPU decoders, the vendored libjpeg-turbo, and the harness.
 rem   eval\jpeg-decoders\win-build.cmd [turbo jpeggpu gpujpeg parajpeg debesheedas harness]   (default: all)
 rem Sources go to %JPEG_EVAL%\src at pinned commits (patches\*.patch applied on a fresh clone), builds to
 rem %JPEG_EVAL%\build. Needs win-env.cmd's toolchain: VS Build Tools, the CUDA toolkit (CUDA_PATH), CMake, Ninja,

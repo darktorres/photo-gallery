@@ -4,7 +4,7 @@
 //! DLLs at run time (src/ffi.rs), and the functions it calls are looked up by name there.
 //!
 //! On Windows the FFmpeg DLLs are also copied beside the app's binary: Qt Multimedia loads the same DLLs to play
-//! videos (same major version), so gallery.exe needs them beside it (crates/README.md "Build"). The test executables
+//! videos (same major version), so gallery.exe needs them beside it. The test executables
 //! don't: pg-video finds them by their full path.
 
 #![expect(clippy::panic, reason = "a build script fails by panicking, and cargo prints the message")]

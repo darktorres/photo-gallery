@@ -1,4 +1,4 @@
-// JPEG decoder harness for docs/JPEG_DECODERS.md: the same measurement for every decoder, CPU and GPU.
+// JPEG decoder harness: the same measurement for every decoder, CPU and GPU.
 //
 //   harness list
 //   harness time [--secs S] [--dec a,b,...] FILE...   per file and decoder: median wall ms per decode, process CPU

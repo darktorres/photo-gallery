@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Wall-clock timing of a library scan (S-17.7 step 8). One library, three timed scans, each into the catalog of its run:
+"""Wall-clock timing of a library scan. One library, three timed scans, each into the catalog of its run:
   first      a fresh catalog, the library scanned from nothing;
   unchanged  the same library scanned again, nothing changed;
   renumbered every file renamed to another number in its own folder (its folder and content kept), then scanned again:
-             each file is paired with its row, not made new (S-17.7 plan, decision 6;
-             removed 2026-11-14, last committed at 7086cc5).
-Not gated: perf-compare.py reads callgrind outputs only. The numbers go into docs/reference/PROFILING.md, with the commit, the binary,
+             each file is paired with its row, not made new (removed 2026-11-14, last committed at 7086cc5).
+Not gated: perf-compare.py reads callgrind outputs only. The numbers go into the profiling reference, with the commit, the binary,
 the drive the library is on and whether the caches were dropped.
 
     python3 tools/profiling/scan_timing.py GALLERY LIBRARY WORK [--drop-caches]

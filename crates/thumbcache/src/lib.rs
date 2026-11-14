@@ -1,4 +1,4 @@
-//! Grid thumbnails (PLAN §6): made after the import by a background task, and on demand, at whatever height the
+//! Grid thumbnails: made after the import by a background task, and on demand, at whatever height the
 //! grid uses right now. The height is a runtime value, never a stored setting: the cache is keyed by
 //! (file, height), so changing it only means new entries, and old heights age out.
 //!
@@ -7,7 +7,7 @@
 //! `open` changes it when asked. The background task fills it up to the cap and may evict other heights to make
 //! room for the current one; on-demand requests evict the least recently used entries of any height.
 //!
-//! The layout keeps every scan off the pixels (docs/reference/START_PROFILE.md "Startup"): the entries (a few dozen bytes each) and the
+//! The layout keeps every scan off the pixels: the entries (a few dozen bytes each) and the
 //! JPEGs are separate tables, so the entries pack densely while the JPEGs stay in their own pages, and the totals
 //! are one row kept by triggers, so nothing ever sums the entries. Opening reads the totals, not the entries: they
 //! are checked against the entries at most once a day (`HEAL_INTERVAL`, a scan of the entries' sizes), so opening
@@ -85,8 +85,8 @@ impl ThumbCache {
     /// subscribe first. A file SQLite finds damaged, or that is not a database at all, is moved aside to
     /// `thumbs.sqlite.bad` and made anew (an [`Event::StartedOver`] says so): damage in the file's header or layout is
     /// found here; damage SQLite finds in the entries' pages only at the day's check of the totals, so up to a day
-    /// late. No check reads a JPEG's bytes: a thumbnail that doesn't decode is found by the reader (see
-    /// `crates/README.md`). `thumbs_version` is the thumbnailer's (`pg_render::THUMBS_VERSION`): a file whose mark is
+    /// late. No check reads a JPEG's bytes: a thumbnail that doesn't decode is found by the reader.
+    /// `thumbs_version` is the thumbnailer's (`pg_render::THUMBS_VERSION`): a file whose mark is
     /// another forgets how far each height was checked, so the next passes look at every file again.
     pub fn open(
         path: &Path,

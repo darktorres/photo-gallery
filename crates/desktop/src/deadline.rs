@@ -1,4 +1,4 @@
-//! The window's one deadline timer (S-12.18): the glue to cpp/deadline.cpp. The shell arms it to the controller's next deadline
+//! The window's one deadline timer: the glue to cpp/deadline.cpp. The shell arms it to the controller's next deadline
 //! (`controller::deadlines`), on the GUI thread. The timer is a child of the shell's QObject, and when it fires it queues the
 //! shell's `timeout` invokable, so the pauses run as an ordinary event and never inside another call of the shell.
 

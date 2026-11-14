@@ -9,7 +9,7 @@
 //! Names and folders are exact: a listed name is a [`Name`] (its units as the system gave them), a folder is a
 //! [`RulePath`] that the walk extends by its names, and a folder is opened by its units. Nothing is decoded lossily.
 //!
-//! Identity and pairing (S-17.7): a file is recorded by its volume and file ID; a file the catalog has no row for is
+//! Identity and pairing: a file is recorded by its volume and file ID; a file the catalog has no row for is
 //! paired at the end of the scan (`pg_catalog::Catalog::pair_after_scan`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 //!
@@ -173,7 +173,7 @@ struct DirEntry {
     file_id: u64,
     size: u64,
     mtime: i64,
-    /// A reparse point (a junction, a symlink, or a cloud placeholder's reparse data): never followed (decision 9).
+    /// A reparse point (a junction, a symlink, or a cloud placeholder's reparse data): never followed.
     reparse: bool,
     /// The volume the entry is on (its own, or the folder's).
     volume: u64,
@@ -197,7 +197,7 @@ fn list<L: Listing>(
         beat();
         let name = name_from_native(e.name);
         // An entry with no file ID has no identity to keep its rows by. The folder is then unreadable, so its
-        // entries are not recorded and its rows are not marked missing (decision 10).
+        // entries are not recorded and its rows are not marked missing.
         if e.file_id == 0 && !name.is_dot() {
             no_id = true;
             return;
@@ -234,7 +234,7 @@ fn open_folder<L: Listing>(lister: &mut L, rules: PathRules, path: &RulePath) ->
 }
 
 /// What a scan of a root did. The counts are for the report; `replaced_ids` and `temps` are for the caller to act on
-/// after the scan's commit (the thumbnails and the temp files of the replaced files; decision 7).
+/// after the scan's commit (the thumbnails and the temp files of the replaced files).
 #[derive(Debug, Default)]
 pub struct ScanStats {
     pub folders: u64,
@@ -249,11 +249,11 @@ pub struct ScanStats {
     pub complete: bool,
     /// The first folders that couldn't be read (`FAILURES_KEPT`).
     pub failures: Vec<FileFailure>,
-    /// Paths of the same file (a hard link, or a row of another root) that were skipped, not recorded (decision 5).
+    /// Paths of the same file (a hard link, or a row of another root) that were skipped, not recorded.
     pub duplicates: u64,
-    /// Reparse points indexed without following them: a file's row is kept, a folder's subtree is kept (decision 9).
+    /// Reparse points indexed without following them: a file's row is kept, a folder's subtree is kept.
     pub skipped_reparse: u64,
-    /// Folders not descended into because they were already on the path (a bind-mount cycle, decision 11).
+    /// Folders not descended into because they were already on the path (a bind-mount cycle).
     pub loops: u64,
     /// Folders under the root on another device whose file system is refused (a network or pseudo file system mounted under
     /// a local root). Their files are not seen, so their rows are left as they are. Each is in the folder ledger.
@@ -307,7 +307,7 @@ impl std::fmt::Display for ScanError {
 
 impl std::error::Error for ScanError {}
 
-/// Whether the folder `root` may be scanned for its identities (decisions 6 and 13): the reason it may not, if not. The
+/// Whether the folder `root` may be scanned for its identities: the reason it may not, if not. The
 /// scan makes this check first, and so does adding a folder to the library.
 pub fn check_folder(rules: PathRules, root: &RulePath) -> Result<(), RefusedReason> {
     refusal::check_root(&units_of(&rules.join(root)))
@@ -445,7 +445,7 @@ fn walk_leased<L: Listing>(
     // The verdict on each device a folder under the root is on, by its first folder (the reason, if refused): one check
     // per mount, not per folder.
     let mut mounts: BTreeMap<u64, Result<(), RefusedReason>> = BTreeMap::new();
-    // Each identity recorded or seen this scan: the second path to a file is skipped (decision 5).
+    // Each identity recorded or seen this scan: the second path to a file is skipped.
     let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
     let mut entries: Vec<DirEntry> = Vec::new();
     let mut batch = Batch::default();
@@ -899,7 +899,7 @@ mod tests {
 
     #[test]
     fn an_entry_with_no_file_id_makes_its_folder_unreadable() {
-        // The folder's other entries are not recorded either: the listing fails as a whole (decision 10).
+        // The folder's other entries are not recorded either: the listing fails as a whole.
         let mut lister = FakeListing::new(1, &[("", vec![file("a.jpg", 7, 1), file("b.jpg", 0, 1)])]);
         let mut entries = Vec::new();
         assert!(list(&mut lister, &0, 1, &mut entries, &mut || {}).is_err());
@@ -996,7 +996,7 @@ mod tests {
         assert_eq!(c.status().unwrap().missing, 0);
     }
 
-    /// The keys the scan stores are the ones the grid looks folders up by (CODE_REVIEW C-23): a folder ending in Σ
+    /// The keys the scan stores are the ones the grid looks folders up by: a folder ending in Σ
     /// after a letter (`ΟΔΥΣΣΕΥΣ`, whose final sigma lowercases differently from a whole-word fold) lists its files,
     /// alone and with its subfolders, under both rules.
     fn scanned_folders_list_their_files_in_the_grid(rules: PathRules) {
@@ -1307,6 +1307,30 @@ mod tests {
         assert!(row(&c, 5, 1).unwrap(), "a real change was blocked by a change number");
     }
 
+    /// A new import version between a folder's listing and the batch that writes its files: the bump makes the analysed
+    /// files pending (their analyses are older than the version), and the batch, which finds them unchanged, keeps
+    /// neither analysed.
+    #[test]
+    fn a_version_bump_between_the_listing_and_the_batch_is_not_undone() {
+        let path = on_disk("scan-version-bump");
+        let tree = [("", vec![file("f.jpg", 7, 1), folder("sub", 20)]), ("sub", vec![file("g.jpg", 8, 1)])];
+        let mut c = open(&path);
+        scan_fake(&mut c, &tree, 1);
+        state::stub_analysis_of_all(&c).unwrap();
+        assert_eq!(c.status().unwrap().pending, 0);
+
+        // The bump is made while sub is listed, so both batches are written after it.
+        let hook_path = path.clone();
+        let mut lister = FakeListing::new(1, &tree).on_listing("sub", move || {
+            let bumped = pg_catalog::Versions { import: 2, ..versions() };
+            drop(Catalog::prepare(&hook_path, bumped, pg_platform::native::PATH_RULES).unwrap());
+        });
+        let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
+        assert_eq!((stats.changed, stats.missing), (0, 0));
+        let pending = c.status().unwrap().pending;
+        assert_eq!(pending, 2, "the bump made both files pending, and the walk kept neither analysed");
+    }
+
     #[test]
     fn a_folder_of_25_000_entries_is_written_whole_across_the_batch_size() {
         let mut c = catalog();
@@ -1351,7 +1375,7 @@ mod tests {
         assert_eq!((c.status().unwrap().files, c.status().unwrap().missing), (11, 0));
     }
 
-    // Decision 5, across roots: a present row of another root keeps its identity (the file here is a second path to it,
+    // Across roots: a present row of another root keeps its identity (the file here is a second path to it,
     // skipped), and a missing one does not (its file moved here while the app was closed: the row moves with it, and
     // no second row is made).
     #[test]

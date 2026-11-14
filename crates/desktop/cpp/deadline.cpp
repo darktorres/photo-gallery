@@ -1,4 +1,4 @@
-// The window's one deadline timer (S-12.18; the design passed spike S13 in docs/REFACTOR_PLAN.md). Re-arming restarts the owner's
+// The window's one deadline timer. Re-arming restarts the owner's
 // one QTimer, so a later or an earlier deadline replaces the pending one, and a timeout that arrives after a re-arm is harmless:
 // the controller fires only the deadlines that are due.
 

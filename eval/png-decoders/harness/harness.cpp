@@ -1,4 +1,4 @@
-// The C side of docs/temp/PNG_DECODERS.md: libpng, libspng and Wuffs, measured as eval/png-decoders' Rust harness
+// The C side of the PNG decoder comparison: libpng, libspng and Wuffs, measured as eval/png-decoders' Rust harness
 // (src/main.rs) measures the app's fork.
 //
 //   png-c-harness time [--secs S] FILE...     median ms per decode, one thread, full size; counting off

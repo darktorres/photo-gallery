@@ -1,10 +1,10 @@
-"""The workspace's structural rules, checked (crates/README.md, ground rules 2 and 6, M-14 and M-16).
+"""The workspace's structural rules, checked.
 
 1. Crate layers: each crate's normal dependencies on other workspace crates are exactly the ones its line in
    `tools/crate-layers.txt` lists, and each of them is on an earlier line. A new internal edge fails until the file
    changes in the same commit, and the file's order is a layering, so the normal graph has no cycle.
 2. Dev edges: the graph of every internal edge (normal, dev and build) has no cycle. A crate's tests may not depend on
-   a crate that depends on it (M-14: the test helpers sit on the crates they test, below the crates whose tests use them).
+   a crate that depends on it (the test helpers sit on the crates they test, below the crates whose tests use them).
 3. Re-exports: a `pub use` in production code names a child module of the module it is in (a crate's public API laid
    over its private layout). One that names another crate is allowed only in a boundary file (`REEXPORT_BOUNDARIES`),
    and one through `crate::` or `super::` (an item kept at an old path) is not allowed.

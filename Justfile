@@ -50,7 +50,7 @@ build profile="release": _qt
 # Build, then put the Qt DLLs and QML modules next to gallery.exe (needed once per profile, and after Qt updates).
 # qoffscreen is included on purpose: the test hooks run the window offscreen (QT_QPA_PLATFORM=offscreen), and windeployqt
 # otherwise deploys only qwindows.
-# Not Qt's FFmpeg: the build already put ours there (crates/README.md "Build"). `just deploy release pdb` also puts
+# Not Qt's FFmpeg: the build already put ours there. `just deploy release pdb` also puts
 # Qt's PDBs there (Qt's "Debug Information Files", when installed): Pin reads a DLL's PDB only from beside it, for
 # the instruction profiles (tools/profiling/callgraph).
 deploy profile="release" pdb="": (build profile)
@@ -112,16 +112,16 @@ _lint-tools:
 
 # Every check: formatting, clippy, dependencies, the crate boundaries (tools/boundaries.py: the crate layers, acyclic dev
 # edges, re-exports, platform code), the Python, the Markdown and the QML (tools/lint.py, every OS). cargo-machete reads
-# only our crates: vendor/ keeps the upstream's lints (vendor/README.md).
+# only our crates: vendor/ keeps the upstream's lints.
 lint: _qt _lint-tools && lint-qml
     {{ py }} tools/lint.py
 
-# The module-cycle check (the modularity plan (git e428ab2), M-0): the compiler's module graph of each library crate on this
+# The module-cycle check: the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the
 # cxx-qt bridge modules the compiler does not. cargo-modules is a tool, not a dependency: its version is pinned here and
 # in CI's install steps (.github/workflows/ci.yml; bump both; the container reads it from here). A missing or different
 # one is installed at the pin. A cycle group that is not on the allowlist (tools/modgraph-allow.txt) fails the check, and
-# the allowlist is empty (M-16): any module cycle fails. CI runs it on both targets.
+# the allowlist is empty: any module cycle fails. CI runs it on both targets.
 cargo_modules_version := "0.28.0"
 
 # The module-cycle check (above). Its install of cargo-modules does nothing when the pinned version is installed.
@@ -130,7 +130,7 @@ modgraph: _qt
     {{ py }} tools/modgraph/module_graph.py
     {{ py }} tools/modgraph/compiler_graph.py
 
-# The survey a modularity review starts from (review 4 (e428ab2), M-48): every public item and where it is
+# The survey a modularity review starts from: every public item and where it is
 # used (tools/modgraph/api_surface.py, which needs cargo-modules; the JSON goes to target/modgraph), every internal
 # dependency edge and what goes through it (edges.py), and the duplicate code (dupes.py). Reports, not gates: they match by name.
 modgraph-report: _qt
@@ -145,7 +145,7 @@ modgraph-report: _qt
 shots *args: _qt
     {{ py }} tools/compare_shots.py {{ args }}
 
-# The QML tests (S-14.3): Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen, against the
+# The QML tests: Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen, against the
 # components staged as the pg.gallery module (tools/qmltest.py). The stubs stand in for the Rust types, so the tests
 # check the QML and nothing Rust.
 qmltest: _qt
@@ -165,23 +165,23 @@ check-linux-head *args:
 linux-build *args:
     {{ py }} tools/linux.py build {{ args }}
 
-# The instruction-count gate (S-16.2): the callgrind benches in the container, compared with docs/perf/baseline.json at
+# The instruction-count gate: the callgrind benches in the container, compared with docs/perf/baseline.json at
 # ±1% (tools/perf_check.py). After a change that should move the counts: `just perf --update`. The bench data is the
 # folder PG_BENCH_DATA_SOURCE names in .env, mounted read-only into the container.
 perf *args:
     {{ py }} tools/linux.py perf {{ args }}
 
-# Each fuzz target for a short time, in the container (fuzz/, tools/fuzz_smoke.py): the fuzz smoke test (S-18.3).
+# Each fuzz target for a short time, in the container (fuzz/, tools/fuzz_smoke.py): the fuzz smoke test.
 # `just fuzz-smoke 300` runs five minutes per target.
 fuzz-smoke *args:
     {{ py }} tools/linux.py fuzz {{ args }}
 
 # The callgrind benches without the gate: gungraun's options (`just linux-bench --save-baseline=before`). Saves no archive
-# for a filtered run (docs/reference/PROFILING.md).
+# for a filtered run.
 linux-bench *args:
     {{ py }} tools/linux.py bench {{ args }}
 
-# An eval script's Linux part, in the container's eval image (docker/README.md): the JPEG comparisons
+# An eval script's Linux part, in the container's eval image: the JPEG comparisons
 # (`just linux-eval eval/jpeg-decoders/linux_build.py`, then `linux.py`, `harness_linux.py`, `restart.py`, `encoders.py`
 # with their steps). Its sources, builds and inputs stay in the pg-eval volume; JPEG_SRC_DIR and PG_JPEG_ENC_DIR (.env)
 # are mounted when set. The ANN bake-off's CPU worker runs the same way, through `tools/linux.py ann-worker`.
@@ -189,7 +189,7 @@ linux-eval *args:
     {{ py }} tools/linux.py eval {{ args }}
 
 # A headless Linux `gallery` (release, no Qt) of the working tree, built in the container and copied into OUT: a binary
-# to run elsewhere, e.g. in WSL, which only runs binaries (docker/README.md).
+# to run elsewhere, e.g. in WSL, which only runs binaries.
 linux-gallery out:
     {{ py }} tools/linux.py gallery {{ out }}
 

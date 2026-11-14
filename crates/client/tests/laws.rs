@@ -1,4 +1,4 @@
-//! The laws of the justified layout (S-18.2), over generated aspects, widths, heights and spacings: the rows cover
+//! The laws of the justified layout, over generated aspects, widths, heights and spacings: the rows cover
 //! every item once and in order, every row fits the width, the rows stay at or below the target height, and a closed
 //! row fills the width exactly (`justify_into` scales it so).
 

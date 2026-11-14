@@ -5,7 +5,7 @@ back to bytecode quietly, and says why only with --verbose; qmllint's own compil
 it rejects, so qmlcachegen itself is run here as the build runs it. Run this after a build: it reads the types of the
 pg.gallery module (the Rust QObjects) from the last build's plugin.qmltypes.
 
-The module is laid out in target/qmllint/pg/gallery as the build lays it out (vendor/README.md, qt-build-utils): its
+The module is laid out in target/qmllint/pg/gallery as the build lays it out (qt-build-utils): its
 qmldir, its qmltypes and, beside them, copies of the QML as the qmldir lists them (qml/Main.qml, ...), plus a resource file
 mapping the module's resource paths to them, which qmlcachegen resolves the module through. The copies are of the sources
 as they are now, so the QML can be linted again without a rebuild. qmllint matches a file to its qmldir entry (Ratings is a

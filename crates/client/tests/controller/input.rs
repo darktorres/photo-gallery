@@ -1,4 +1,4 @@
-//! Traces of the grid's input policy (S-12.16).
+//! Traces of the grid's input policy.
 
 use pg_client::controller::input::{Command, Event, Input};
 use pg_client::keys::Grid;

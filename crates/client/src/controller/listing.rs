@@ -1,4 +1,4 @@
-//! The listing's policy (S-12.15): what a change to where the grid looks does. The desktop keeps the listing and applies
+//! The listing's policy: what a change to where the grid looks does. The desktop keeps the listing and applies
 //! each change it reports; this says what follows, as commands, with no Qt. Every change that is applied opens a list
 //! and remembers the session, except a sort choice that isn't one (it changes nothing).
 

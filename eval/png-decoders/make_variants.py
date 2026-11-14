@@ -1,4 +1,4 @@
-"""Chunk-level variants of the inputs, for docs/temp/PNG_DECODERS.md. The pixels are never re-encoded: each variant is its
+"""Chunk-level variants of the inputs, for the PNG decoder comparison. The pixels are never re-encoded: each variant is its
 source file with one chunk added or removed.
 
     python make_variants.py [--out DIR]     (default: $PG_ROOT\\eval\\png-decoders\\inputs-variants)
@@ -28,7 +28,7 @@ from make_inputs import RGB_SOURCE, chunk, gray_of, ihdr, load, samples_bytes  #
 
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 TEXT_KINDS = {b"tEXt", b"zTXt", b"iTXt", b"iCCP"}
-# The library files of the table (docs/temp/PNG_DECODERS.md), by stem: the six from the sample and the 116 MP one.
+# The library files of the comparison's table, by stem: the six from the sample and the 116 MP one.
 LIBRARY_STEMS = [
     "pinterest_1141451468122730916",
     "pinterest_1141451468123671931",
@@ -86,7 +86,7 @@ def library_file(stem: str) -> Path:
 
 def filter0_png(pixels: np.ndarray) -> bytes:
     """The 8-bit image with filter type 0 on every row. Unfiltering is then a copy, so a decode is nearly all inflate:
-    a decoder's total time on this file is its inflate cost, which is what docs/temp/PNG_DECODERS.md asks about."""
+    a decoder's total time on this file is its inflate cost, which is what the PNG decoder comparison asks about."""
     h, w, c = pixels.shape
     raw = b"".join(b"\x00" + row.tobytes() for row in samples_bytes(pixels, 8))
     return SIGNATURE + ihdr(w, h, 8, c, False) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")

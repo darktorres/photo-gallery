@@ -1,4 +1,4 @@
-//! Ratings, dates, orientation and frame counts as the files themselves hold them (PLAN §2: the catalog is the
+//! Ratings, dates, orientation and frame counts as the files themselves hold them (the catalog is the
 //! source of truth; the file is read at import, [`Meta::read`], and written back by `pg-writeback`).
 //!
 //! The rating is read from the file's XMP packet, found where each container keeps it and parsed as XML with

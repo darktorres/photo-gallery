@@ -1,4 +1,4 @@
-//! Traces of the pauses (S-18/S-12.18), in virtual time: each case is (now_ms, arm or fire) in order.
+//! Traces of the pauses, in virtual time: each case is (now_ms, arm or fire) in order.
 
 use pg_client::controller::deadlines::{Deadlines, Timer};
 

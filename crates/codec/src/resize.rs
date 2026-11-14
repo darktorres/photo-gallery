@@ -1,7 +1,7 @@
 //! Resizing in linear light with Magic Kernel Sharp 2021 (`kernel`), the one resize for every pipeline: the grid's and
 //! the viewer's pixels, PDQ's and ThumbHash's input. An 8-bit sRGB image is decoded to linear light (`linear`), resized
-//! in floating point, and encoded back to 8-bit sRGB once. The resize is part of the model (PLAN §3 rule 8): PDQ and
-//! ThumbHash take the sRGB bytes it returns, as their specs do (docs/temp/THUMBNAIL_RESAMPLING.md §7.2).
+//! in floating point, and encoded back to 8-bit sRGB once. The resize is part of the model: PDQ and
+//! ThumbHash take the sRGB bytes it returns, as their specs do.
 
 use anyhow::{Context, Result};
 use fast_image_resize::images::{TypedImage, TypedImageRef};

@@ -1,4 +1,4 @@
-//! `gallery`: the photo gallery (PLAN §7). Without arguments it opens the app (crates/desktop), which imports the library
+//! `gallery`: the photo gallery. Without arguments it opens the app (crates/desktop), which imports the library
 //! in the background; with a command (`gallery scan`, `gallery import`, … see `pg_cli`) it runs that pass on
 //! the command line instead. Without the `desktop` feature only the commands run.
 
@@ -10,7 +10,7 @@
 use std::ffi::OsString;
 use std::process::ExitCode;
 
-// The heap profiler's build (docs/reference/PROFILING.md "Tool: dhat"). It sees Rust's allocations only: Qt's and FFmpeg's go
+// The heap profiler's build. It sees Rust's allocations only: Qt's and FFmpeg's go
 // to the C runtime's heap.
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]

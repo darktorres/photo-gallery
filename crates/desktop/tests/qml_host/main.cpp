@@ -1,4 +1,4 @@
-// The QML test host (S-14.3, `just qmltest`): Qt Quick Test's own main, as qmltestrunner is, with the image providers the
+// The QML test host (`just qmltest`): Qt Quick Test's own main, as qmltestrunner is, with the image providers the
 // app registers in C++ (crates/desktop/src/lib.rs: thumb, thumbhash, full). The app's providers decode the catalog's
 // files through Rust, which the tests don't have, so these stand in: each one makes a plain image of the size asked for,
 // and the image:// URLs the tests pass resolve as they do in the app.

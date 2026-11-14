@@ -30,7 +30,7 @@ just deploy     # the release build, with Qt's DLLs and QML modules next to gall
 ## Documentation
 
 - `docs/PLAN.md`: goals, constraints and milestones.
-- `docs/temp/REFACTOR_PLAN.md` and `docs/reference/REFACTOR_DESIGN.md`: how the code was restructured, and why.
+- `docs/reference/REFACTOR_DESIGN.md`: how the code was restructured, and why. Open refactor work is in `docs/plans/REFACTOR_LEDGER.md`.
 - `crates/README.md`: the crates, their layers, and the build in detail.
 - `docs/eval/`: the model and verifier measurements: `MODELS.md` (models and accelerators), `VERIFIER.md` (PDQ, the verifier and grouping), and `TEST_SET.md` (hardware, test set and labels).
 - `docs/reference/`: facts that stay true, e.g. `IO.md` (HDD read order, buffers, long paths), `START_PROFILE.md` (where the start goes, thread by thread) and `THUMBNAILS.md` (thumbnail resize, encode and priority measurements) and `JPEG_DECODERS.md` (which JPEG decoder the app uses, and why) and `REVERSE_SEARCH.md` (Yandex reverse image search: what it returns and how the port reads it).

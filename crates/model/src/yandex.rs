@@ -1,4 +1,4 @@
-//! The outcomes of a Yandex reverse image search and of the save of its results, as data (R-1): `pg-app` builds them,
+//! The outcomes of a Yandex reverse image search and of the save of its results, as data: `pg-app` builds them,
 //! and the front ends word them (`pg_client::text::yandex_status`). The errors keep what the user reads (a code, a
 //! count, the lower layers' text); the paths are as the user sees them.
 

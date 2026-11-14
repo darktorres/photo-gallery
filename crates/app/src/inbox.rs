@@ -1431,7 +1431,7 @@ mod tests {
     }
 
     // A post folds into the waiting post of its key only when nothing clears the key after it: a resolve between two
-    // posts of a key ends the first one's state, so the second starts a new count (N-19).
+    // posts of a key ends the first one's state, so the second starts a new count.
     #[test]
     fn a_post_does_not_fold_past_a_resolve_of_its_key() {
         let mut work = Work::default();
@@ -1607,7 +1607,7 @@ mod tests {
     }
 
     // A stored row of a kind this build knows that won't read is said once per kind, however often the inbox is read; a
-    // kind this build doesn't know is expected, and is not said (N-27).
+    // kind this build doesn't know is expected, and is not said.
     #[test]
     fn an_unreadable_row_is_said_once_per_kind() {
         let (path, dir) = catalog_in("inbox-undecodable");
@@ -1817,7 +1817,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // A session save clears a failed read of the session, and a trigger clears only the kinds its resolver names (N-03):
+    // A session save clears a failed read of the session, and a trigger clears only the kinds its resolver names:
     // another failure stays until its own success.
     #[test]
     fn a_trigger_clears_its_own_kinds_and_no_others() {

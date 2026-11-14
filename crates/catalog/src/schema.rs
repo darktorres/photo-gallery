@@ -386,7 +386,7 @@ END;
 /// for the other passes (`part` is the pass) have nothing that clears them now, so they go.
 const TO_10_LEDGER_NOT_WRITTEN: &str = "DELETE FROM notices WHERE kind = 'ledger-not-written' AND part <> 'thumbs';";
 
-/// Version 11: two fixes the notifications ledger's review found (N-04, N-06).
+/// Version 11: two fixes that a review of the notifications found.
 /// - **The import row's `hidden`**: `analysis_import` (`TO_9_CHEAPER_WRITES`) set it from `files.missing` alone, so a
 ///   failed analysis that left its file pending (the file's size differs from the analysis's) made a row the grid's failed
 ///   filter hid while the inbox listed it. It is `missing OR pending`, as `files_failures_hidden` keeps it, on an insert and
@@ -553,7 +553,7 @@ CREATE TABLE files(
     volume    INTEGER,
     file_ref  INTEGER,           -- NTFS file ID; the low 48 bits are the MFT record number
     -- The creation time (FILETIME ticks), where the file system gives one; NULL where it doesn't (drvfs). Two
-    -- values agree when either is NULL or they are equal: see the scanner's identity rules (S-17.7 decision 2).
+    -- values agree when either is NULL or they are equal: see the scanner's identity rules.
     created   INTEGER,
     folder_id INTEGER NOT NULL REFERENCES folders(id),
     name      BLOB NOT NULL,     -- the file name as the OS has it (Name bytes)
@@ -575,7 +575,7 @@ CREATE TABLE files(
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
--- A file's identity from its file ID alone: the pairing's candidates on another volume (decision 4, tier 2).
+-- A file's identity from its file ID alone: the pairing's candidates on another volume (tier 2).
 CREATE INDEX files_ref ON files(file_ref);
 CREATE INDEX folders_key ON folders(key);
 -- The grid's name order and every folder's files (a range of keys: browse::read::scope).
@@ -690,7 +690,7 @@ CREATE TABLE roots(
     added INTEGER NOT NULL       -- Unix seconds
 );
 
--- Ratings: the catalog is the source of truth, for every format (PLAN §2). Unrated files have no row.
+-- Ratings: the catalog is the source of truth, for every format. Unrated files have no row.
 CREATE TABLE ratings(
     file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
     rating  INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),

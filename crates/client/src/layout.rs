@@ -1,4 +1,4 @@
-//! Justified grid layout (PLAN §7): rows of images at their aspect ratio, each row scaled to fill the width.
+//! Justified grid layout: rows of images at their aspect ratio, each row scaled to fill the width.
 //! Computed in Rust for any row height, so the grid can change size at runtime; the UI only positions delegates.
 
 use std::ops::Range;

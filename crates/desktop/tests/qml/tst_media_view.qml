@@ -1,4 +1,4 @@
-// The media view's video source (S-17 Unit B): a video plays by its file's id, a new file replaces it, and an item
+// The media view's video source: a video plays by its file's id, a new file replaces it, and an item
 // that isn't a video stops it. The VideoSource is a stub (tests/qml/stubs) whose state is in VideoLog; the players and
 // the decoder are not run here. Run by `just qmltest`.
 import QtQuick
@@ -72,7 +72,7 @@ TestCase {
     }
 
     // A video opened before its import has no size yet (fw, fh 0): its picture shows anyway, over the whole view, and
-    // the VideoOutput fits the frame in it (C-57).
+    // the VideoOutput fits the frame in it.
     function test_a_video_without_a_size_shows_at_the_view_size() {
         const m = createTemporaryObject(mediaC, tc, { fw: 0, fh: 0 })
         verify(m !== null)

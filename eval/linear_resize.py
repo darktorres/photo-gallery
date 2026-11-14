@@ -6,9 +6,9 @@ linear.rs (the sRGB transfer functions). PDQ's input is made here, so the eval h
 - Window (fork rule, kernel.rs `fork_rows`): an output sample's centre is (o + 0.5) * scale; its window is the input
   samples within support * max(scale, 1) of the centre, clipped to the image; the kernel is evaluated at
   (x - (centre - 0.5)) / max(scale, 1); each row is normalised to sum 1. It is one combined kernel, not the paper's
-  two-pass form (their edges differ by a few levels at the border; see docs/temp/THUMBNAIL_RESAMPLING.md §4.13).
-- Two passes, vertical then horizontal, in float64. The app works in float32; the difference is at most one level
-  (§4.13), which the check in __main__ confirms against the app's own output.
+  two-pass form (their edges differ by a few levels at the border).
+- Two passes, vertical then horizontal, in float64. The app works in float32; the difference is at most one level,
+  which the check in __main__ confirms against the app's own output.
 - Encode: clamp to 0-1, the sRGB OETF, and round half up once to 8 bits.
 
 Usage (a check against the app's 220 px outputs, given the inputs and the outputs of the Rust probe):

@@ -256,7 +256,7 @@ pub struct ScannedFile<'a> {
     pub ext: Ext,
     pub size: u64,
     pub mtime: i64,
-    /// Its creation time (FILETIME ticks), where the listing gives one (S-17.7 decision 2).
+    /// Its creation time (FILETIME ticks), where the listing gives one.
     pub created: Option<i64>,
     /// The catalog's row for the identity when its folder was listed (`Catalog::prior_states`), read outside any
     /// transaction; `None` when there was none. The row is written only while it is still so, and no write of the
@@ -353,7 +353,7 @@ pub enum Recorded {
     Same,
     /// A new file, moved, renamed, rewritten, back from missing, or the file that now has an identity another row had.
     Changed,
-    /// The identity is a present row of another root, which this scan doesn't write (S-17.7 decision 5).
+    /// The identity is a present row of another root, which this scan doesn't write.
     Foreign,
 }
 

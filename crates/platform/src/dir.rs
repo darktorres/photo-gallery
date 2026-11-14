@@ -4,7 +4,7 @@
 //! library decides which entries it keeps.
 //!
 //! The facts about the volume a folder is on are here too ([`RootFacts`], [`fs_type`]): the scanner decides from them
-//! which folders it accepts, and why it refuses one (`pg_scan::refusal`, review 4 (e428ab2) M-34).
+//! which folders it accepts, and why it refuses one (`pg_scan::refusal`).
 
 #[cfg(windows)]
 use crate::native::NativePath;

@@ -1,5 +1,5 @@
 # Weekly check of the forks under github.com/darktorres against their crates' newest upstream releases
-# (tools/fork-updates.py, vendor/README.md). One issue stays open while a fork is behind, and closes once none is.
+# (tools/fork-updates.py). One issue stays open while a fork is behind, and closes once none is.
 # The check fails the run only when it cannot read a release, so the issue is the notification for a new one.
 name: Fork releases
 

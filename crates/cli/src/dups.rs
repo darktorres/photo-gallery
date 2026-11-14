@@ -1,6 +1,6 @@
 //! The `dups` report: what tiers 0–1 found, as data (identical files, identical pixels, and PDQ pairs, plus the groups
 //! they form together), and printed. Grouping here is plain connected components, enough to inspect tiers 0–1. The real
-//! grouping is multicut over verified tier-2 edges (PLAN §5, M3).
+//! grouping is multicut over verified tier-2 edges.
 
 use std::collections::BTreeMap;
 

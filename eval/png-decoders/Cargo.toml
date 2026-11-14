@@ -3,14 +3,14 @@ name = "png-decoders"
 edition = "2024"
 version = "0.1.0"
 publish = false
-description = "Speed and output of PNG decoders on the library's PNGs (docs/PNG_DECODERS.md)"
+description = "Speed and output of PNG decoders on the library's PNGs"
 
 # Not a member of the app's workspace: the decoders compared here aren't the app's dependencies.
 [workspace]
 
 [dependencies]
 anyhow = "1"
-# The app's PNG decoder: the fork pinned in the root Cargo.toml's [patch.crates-io] (vendor/README.md).
+# The app's PNG decoder: the fork pinned in the root Cargo.toml's [patch.crates-io].
 png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b2f5e5ca470dfcd57df4c3c7a" }
 # The fork's upstream, as crates.io has it.
 png-upstream = { package = "png", version = "0.18" }

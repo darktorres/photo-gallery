@@ -1,5 +1,5 @@
 //! PNG decoders behind one interface, each decoding to packed 8-bit samples on one thread, for the speed and output
-//! comparison in docs/PNG_DECODERS.md.
+//! comparison.
 //!
 //! - The app's `png`, the fork `pg-codec` decodes with (`Codecs::png`): its scratch kept per decoder, text and ICC
 //!   chunks skipped, EXPAND, the app's 512 MiB limit.

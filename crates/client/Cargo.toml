@@ -7,8 +7,8 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The front end's logic, Qt-free and WASM-safe (PLAN §7): the desktop wraps it, and the web client shares it. It takes
-# the layout now (S-10.1); the rest of the desktop's logic moves in with the modules of S-10.
+# The front end's logic, Qt-free and WASM-safe: the desktop wraps it, and the web client shares it. It takes
+# the layout now; the rest of the desktop's logic is moving in, module by module.
 [dependencies]
 pg-model = { path = "../model" }
 serde.workspace = true
@@ -16,6 +16,6 @@ serde_json.workspace = true
 fluent-bundle.workspace = true
 unic-langid.workspace = true
 
-# The laws of the layout (tests/laws.rs), generated (S-18.2).
+# The laws of the layout (tests/laws.rs), generated.
 [dev-dependencies]
 proptest.workspace = true

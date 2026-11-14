@@ -84,5 +84,5 @@ gungraun::main!(library_benchmark_groups = decoders);
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
-    eprintln!("the callgrind benches run on Linux (docs/reference/PROFILING.md)");
+    eprintln!("the callgrind benches run on Linux only (`just perf` runs them in the container)");
 }

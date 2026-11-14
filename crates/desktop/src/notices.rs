@@ -37,7 +37,7 @@
 //! `Reader` (`pg_app::reader`, the kinds `FailedFiles`, `CopyDetails` and `RevealFolder`), which keeps only the newest
 //! request of each kind per session and cancels a stale one; each kind is its own, so none cancels another. Each caller
 //! asks, then goes on when its read is delivered: the list shows "loading", Copy copies, Reveal lists the folder or toasts
-//! `FileNoLongerInLibrary`. These reads are the user's, so waiting behind a listing that is running is acceptable. The rule: what the notifications added or use reads nothing on the GUI thread. The rest of the window's catalog work on that thread is its own plan: `docs/plans/GUI_THREAD_PLAN.md`.
+//! `FileNoLongerInLibrary`. These reads are the user's, so waiting behind a listing that is running is acceptable. The rule: what the notifications added or use reads nothing on the GUI thread. The rest of the window's catalog work on that thread is left for a separate change.
 //!
 //! **Reveal waits for its own listing.** The controller stamps each `Command::OpenList` with a generation from one
 //! counter of its own; the grid carries it (through `GalleryModel::open_listing` and `Grid::arrive`, never through QML),

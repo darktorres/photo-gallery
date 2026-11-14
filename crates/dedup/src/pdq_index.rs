@@ -1,4 +1,4 @@
-//! Exact PDQ radius search by multi-index hashing (PLAN §5 tier 1).
+//! Exact PDQ radius search by multi-index hashing.
 //!
 //! The 256-bit hash is split into 16 chunks of 16 bits, each with its own table. Two hashes within distance
 //! d ≤ 31 differ in at most one bit in at least one chunk (pigeonhole: 16 chunks × 2 bits > 31), so probing each

@@ -1,5 +1,5 @@
 @echo off
-rem Build environment for the GPU decoder builds (docs/JPEG_DECODERS.md "To rerun"): MSVC from the VS Build Tools,
+rem Build environment for the GPU decoder builds: MSVC from the VS Build Tools,
 rem the CUDA toolkit and Ninja. Keys from the repo's .env are loaded when the environment does not already set them,
 rem so PG_ROOT, LLVM_DIR, CUDA_ARCH and JPEG_EVAL can live there. CUDA_PATH is read from the environment: NVIDIA's
 rem installer sets it, and a shell started before that install can get it from .env instead.

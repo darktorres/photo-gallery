@@ -1,4 +1,4 @@
-//! What the app tells the user, as data (docs/plans/NOTIFICATIONS_PLAN.md, review 4 (e428ab2) R-1): a [`Notice`] is built
+//! What the app tells the user, as data: a [`Notice`] is built
 //! by the crate that has the outcome (the job, the app, the window), stored in the catalog's inbox by its code, recorded
 //! in the log, and worded by `pg_client::text` for each front end. Nothing here is English, so a notice is read in the
 //! reader's language, whichever one it was posted in; a stored notice is re-worded when the words change.
@@ -166,7 +166,7 @@ impl Source {
     }
 }
 
-/// What a scan counted that the user may want to know (S-17.7 decision 12), by its code (`scan-note`'s selector).
+/// What a scan counted that the user may want to know, by its code (`scan-note`'s selector).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScanNote {
     /// Files skipped because another path (a hard link) or another folder of the library holds them.

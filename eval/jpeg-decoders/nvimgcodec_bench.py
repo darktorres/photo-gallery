@@ -1,4 +1,4 @@
-"""nvImageCodec (NVIDIA's codec library over nvJPEG) for docs/JPEG_DECODERS.md: one image at a time per backend, and
+"""nvImageCodec (NVIDIA's codec library over nvJPEG): one image at a time per backend, and
 batches, each with the pixels copied to host memory; CPU time per image; output against libjpeg-turbo.
 
 Run with its own venv (python -m pip install -r eval/jpeg-decoders/requirements.txt; bin/python on

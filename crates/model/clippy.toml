@@ -6,7 +6,7 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
 
-# The shared model stays free of platform code, so the web client can build it (S-15): no clock, no threads, no files.
+# The shared model stays free of platform code, so the web client can build it: no clock, no threads, no files.
 # The wasm32 check proves it builds; these rules stop a host-only call from creeping in unnoticed.
 disallowed-types = [
     { path = "std::collections::HashMap", reason = "randomly seeded; use BTreeMap (or a fixed-seed hasher)" },

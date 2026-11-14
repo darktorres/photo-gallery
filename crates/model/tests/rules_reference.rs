@@ -1,5 +1,5 @@
-//! The new keys (S-17.2) against the reference corpus recorded from the string keys before the change
-//! (`reference_keys.tsv`, S-17.0). Every difference must be intended, so the test states them: names must match
+//! The new keys against the reference corpus recorded from the string keys before the change
+//! (`reference_keys.tsv`). Every difference must be intended, so the test states them: names must match
 //! exactly; a folder key may differ only where the old key lower-cased a word-final Σ to ς (the old keys used
 //! `str::to_lowercase` on a whole component, the new ones lower-case per character, as names always did), and the
 //! difference is exactly that ς → σ.

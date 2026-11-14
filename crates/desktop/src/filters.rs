@@ -1,4 +1,4 @@
-//! The filter bar's query (PLAN §7): the files a `query::Query` keeps, edited through typed calls
+//! The filter bar's query: the files a `query::Query` keeps, edited through typed calls
 //! (`pg_model::query`'s editing API), so the QML never builds or reads it, and the counts next to the choices
 //! (`browse::read::facets`). The query is the listing's (`controller.rs`): this object edits it and shows its properties,
 //! and the list facets' rows are `FacetChoices` (facet_choices.rs), which read the query and the counts directly. FilterBar.qml

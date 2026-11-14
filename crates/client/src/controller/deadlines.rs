@@ -1,4 +1,4 @@
-//! The pauses the window waits out (S-12.18): a query typed is shown after a short rest, the session is saved once the
+//! The pauses the window waits out: a query typed is shown after a short rest, the session is saved once the
 //! selection rests, the grid re-lays out once a resize settles, the thumbnails follow a size change. Each is a deadline
 //! on a monotonic `now_ms` the host passes in (no clock is read here, so the tests run in virtual time). Arming a timer
 //! that is already armed moves its deadline (the pause starts again). The host runs one timer, set to `next_deadline`,

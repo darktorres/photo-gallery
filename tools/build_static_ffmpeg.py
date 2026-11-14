@@ -4,7 +4,7 @@ build-static-ffmpeg.ps1.
 
 Reproducible: the inputs are pinned below (the FFmpeg commit, the MSVC toolset and Windows SDK, the MSYS2 packages), and each
 one is checked before it is used. The source is fetched by commit hash. Every step's log and the outputs' hashes go to
-<work>\\manifest.json. The reasons for each step are in docs/reference/STATIC_BUILD.md.
+<work>\\manifest.json.
 
     python tools/build_static_ffmpeg.py                           # into <PG_HOME>\\static\\ffmpeg
     python tools/build_static_ffmpeg.py --work D:\\scratch\\run2    # a clean run, into another folder
@@ -28,7 +28,7 @@ from pgtools import WINDOWS, import_msvc_environment, load_env_file
 
 HERE = Path(__file__).resolve().parent
 
-# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md.
+# ---- Pins. Change them here, and note the reason beside each one.
 FFMPEG_URL = "https://github.com/FFmpeg/FFmpeg.git"
 FFMPEG_COMMIT = "7adfbe40dcde598f93a6963d2f7b22cd75202ccc"  # n9.0.2-39-g7adfbe40dc, the commit the pinned build came from
 FFMPEG_RELEASE = "9.0.2"  # the RELEASE file at that commit
@@ -40,7 +40,7 @@ SYSTEM_LIBS = ["user32.lib", "bcrypt.lib"]
 DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
 DEFAULT_MSYS = Path(r"C:\tools\msys64")
 
-# The configure line. --prefix is added below. Each flag is the pilot's, see docs/reference/STATIC_BUILD.md.
+# The configure line. --prefix is added below. Each flag is the pilot's.
 CONFIGURE_FLAGS = [
     "--toolchain=msvc", "--enable-static", "--disable-shared",
     "--extra-cflags='-MD -Brepro'",  # the app's dynamic CRT (MSVCRT); -Brepro: same bytes per build

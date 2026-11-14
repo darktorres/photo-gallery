@@ -1,5 +1,5 @@
-//! Everything the import computes from one file's bytes (PLAN §4): tiers 0a/0b/1 and what the grid needs to lay
-//! out before any thumbnail exists. No thumbnails here: they are a background task after the import (PLAN §6).
+//! Everything the import computes from one file's bytes: tiers 0a/0b/1 and what the grid needs to lay
+//! out before any thumbnail exists. No thumbnails here: they are a background task after the import.
 
 use anyhow::{Context, Result};
 use pg_model::turns::Turns;
@@ -28,7 +28,7 @@ pub const IMPORT_VERSION: i64 = 2;
 
 /// The JPEG decode keeps at least this many pixels on the upright long side…
 const DECODE_MIN_LONG: usize = 512;
-/// …and on the short side, so the later SSCD input (320 px, PLAN §5 tier 2) can come from the same decode rule.
+/// …and on the short side, so the later SSCD input (320 px, tier 2) can come from the same decode rule.
 const DECODE_MIN_SHORT: usize = 320;
 /// PDQ input: fitted into 512 px by the resizer (linear-light MKS2021, sRGB bytes out), which PDQ's luminance step
 /// reads as its spec says (hashing.pdf pp. 10–11).
@@ -183,8 +183,8 @@ pub fn pixel_hash(img: &Rgb) -> Result<[u8; 16]> {
     Ok(h.digest128().to_le_bytes())
 }
 
-/// The ThumbHash of `img`, fitted into the format's 100 px through `small`. The encoder reads RGB as it is
-/// (vendor/README.md "thumbhash"): the hash of the same pixels as opaque RGBA.
+/// The ThumbHash of `img`, fitted into the format's 100 px through `small`. The encoder reads RGB as it is:
+/// the hash of the same pixels as opaque RGBA.
 fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut thumbhash::Encoder) -> Result<ThumbHash> {
     let small = if resizer.fit_within(img, THUMBHASH_SIDE, small)? { &*small } else { img };
     let mut bytes = [0; THUMBHASH_MAX];

@@ -6,7 +6,7 @@ index a8f42d3..f235ef2 100644
      }
      generate_bindings(&headers.include)?;
  
-+    // The static build (PG_FFMPEG_STATIC, the static FFmpeg's lib folder; docs/reference/STATIC_BUILD.md): FFmpeg is linked
++    // The static build (PG_FFMPEG_STATIC, the static FFmpeg's lib folder): FFmpeg is linked
 +    // in, so there are no DLLs to copy or load. ffi/load.rs then points its functions at the linked ones (cfg pg_ffmpeg_static).
 +    println!("cargo:rerun-if-env-changed=PG_FFMPEG_STATIC");
 +    println!("cargo::rustc-check-cfg=cfg(pg_ffmpeg_static)");
@@ -27,7 +27,7 @@ index a8f42d3..f235ef2 100644
  }
  
 +/// The static FFmpeg's libraries (MSVC, built by tools/build_static_ffmpeg.py) from `lib_dir`, linked into pg-video.
-+/// Its link needs these Windows libraries: FFmpeg's .pc files don't list them (docs/reference/STATIC_BUILD.md).
++/// Its link needs these Windows libraries: FFmpeg's .pc files don't list them.
 +fn link_static(lib_dir: &Path) {
 +    println!("cargo::rustc-link-search=native={}", lib_dir.display());
 +    for lib in ["avcodec", "avformat", "avutil", "swresample", "swscale"] {

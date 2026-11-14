@@ -1,4 +1,4 @@
-//! Laws of the pure model types, checked over generated inputs (S-18.2): the quarter-turn group, the EXIF orientation
+//! Laws of the pure model types, checked over generated inputs: the quarter-turn group, the EXIF orientation
 //! as a mirror plus turns, and the image key's text round trip. Each law is one the code's docs state.
 
 use pg_model::ids::FileId;

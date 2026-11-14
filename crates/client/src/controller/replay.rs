@@ -1,4 +1,4 @@
-//! A recorded session, and its replay (S-12.18). The desktop writes one JSON line per record when `PG_RECORD` names a
+//! A recorded session, and its replay. The desktop writes one JSON line per record when `PG_RECORD` names a
 //! file: first `Init` (the start the controller was made from), then one `Update` per event, with the time it was
 //! applied at and the commands it gave. `replay` starts a controller from `Init`, applies
 //! each `Update`'s event at its time, and checks that the commands are the recorded ones. Time is an input, so nothing

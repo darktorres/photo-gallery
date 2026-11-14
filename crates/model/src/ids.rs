@@ -24,14 +24,14 @@ impl FileId {
 /// A file's identity on its volume: on Windows, the volume's serial number and the file's NTFS file ID; on Unix,
 /// the volume and the inode (on Linux the volume is the file system's UUID, `pg_platform::dir`; a device without one
 /// keeps its device number, which can change across a restart, and the scan says so). The file ID survives renames and moves, so a moved
-/// file keeps its row and its analysis (PLAN §4). On NTFS its low 48 bits are the MFT record number, which the
+/// file keeps its row and its analysis. On NTFS its low 48 bits are the MFT record number, which the
 /// catalog reads its files in (`files.file_ref & 0xFFFFFFFFFFFF` in SQL: a locality order, a heuristic that is
 /// harmless where the file system doesn't follow it). An inode can be reused after a file is deleted; the size and
 /// mtime the catalog also keeps tell the scanner when a row is a different file.
 ///
 /// The volume is 64 bits on both platforms: the NTFS `FileIdInfo` serial, or on Unix the file system's UUID (the device number where there is none). A 32-bit
 /// serial is not unique (two NTFS volumes on one machine can share its low 32 bits), so a catalog from before the
-/// 64-bit volume is moved aside and rebuilt, not converted (S-17.7 decision 1).
+/// 64-bit volume is moved aside and rebuilt, not converted.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct FileIdentity {
     pub volume: u64,

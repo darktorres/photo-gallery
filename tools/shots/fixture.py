@@ -48,7 +48,7 @@ def merged(path: str) -> str:
 
 
 def text_of(stored: bytes | str) -> str:
-    # A folder's path is a BLOB of its name bytes (WTF-8 on Windows, S-17.3); a name with no unpaired surrogate is
+    # A folder's path is a BLOB of its name bytes (WTF-8 on Windows); a name with no unpaired surrogate is
     # plain UTF-8, which is all this fixture makes.
     return stored if isinstance(stored, str) else stored.decode("utf-8", "surrogatepass")
 
@@ -67,14 +67,14 @@ def merged_parts_json(merged_text: str) -> str:
 
 
 def typed_folders(conn: sqlite3.Connection) -> bool:
-    # The layout S-17.8 made: a saved view's folder is a BLOB (the stored bytes of its parts), and the session's
+    # The newer layout: a saved view's folder is a BLOB (the stored bytes of its parts), and the session's
     # folder is the JSON of its parts. An older catalog keeps both as text (the same fixture serves both builds).
     columns = conn.execute("pragma table_info(views)").fetchall()
     return any(name == "folder" and kind.upper() == "BLOB" for _, name, kind, *_ in columns)
 
 
 def session_row(conn: sqlite3.Connection) -> bool:
-    # The layout M-43 made: the session is one row (an `id` column), not text keys.
+    # The newer layout: the session is one row (an `id` column), not text keys.
     return any(name == "id" for _, name, *_ in conn.execute("pragma table_info(session)").fetchall())
 
 
@@ -91,7 +91,7 @@ def views(catalog: Path) -> None:
     )
     sort = '{"key":"name","descending":false}'
     if session_row(conn):
-        # Version 5 (M-43): the session is one row in the views' columns, its folder stored as a view's is.
+        # Version 5: the session is one row in the views' columns, its folder stored as a view's is.
         conn.execute(
             "insert or replace into session(id, folder, recursive, query, sort) values (1, ?, ?, ?, ?)",
             (beta.encode("utf-8"), 0, "{}", sort),

@@ -156,7 +156,7 @@ def main() -> None:
         "the video tests skip without it: set PG_FFMPEG in .env to the ffmpeg executable, or run `just setup` (Windows)",
     )
 
-    # Optional: Docker, which the Linux checks run in (`just check-linux`, `just perf`, docker/README.md).
+    # Optional: Docker, which the Linux checks run in (`just check-linux`, `just perf`).
     docker_up = False
     if shutil.which("docker"):
         probe = ["docker", "version", "--format", "{{.Server.Version}}"]

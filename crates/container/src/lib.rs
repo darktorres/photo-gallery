@@ -1,4 +1,4 @@
-//! A file's containers, walked without allocating (PLAN §2: the file's own metadata and its pixels' structure):
+//! A file's containers, walked without allocating (the file's own metadata and its pixels' structure):
 //! JPEG marker segments (and whether the frame is progressive), the chunks of an extended XMP packet, PNG chunks,
 //! RIFF (WebP) chunks and GIF blocks. Each walk yields byte ranges of the file, so the metadata reader and the
 //! lossless rewriter share one reading of each format's structure, and one rule for whether a file is animated

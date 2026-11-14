@@ -100,7 +100,7 @@ pub(crate) enum Op {
         new_mtime: i64,
         reply: Sender<Result<()>>,
     },
-    /// The file's thumbnails are dropped: its content was replaced (S-17.7 decision 7).
+    /// The file's thumbnails are dropped: its content was replaced.
     Forget {
         file_id: FileId,
         reply: Sender<Result<()>>,

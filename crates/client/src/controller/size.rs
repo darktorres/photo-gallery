@@ -1,4 +1,4 @@
-//! The grid's size (S-12.20): the row height the user chose (Ctrl +/−, the size box, a pinch), clamped, and the thumbnail
+//! The grid's size: the row height the user chose (Ctrl +/−, the size box, a pinch), clamped, and the thumbnail
 //! height it asks for (the row height times the screen's scale). The row height changes at once; the thumbnail height and
 //! the saved row height follow after a pause, which the deadlines (`deadlines.rs`) time. Nothing here calls Qt.
 //!

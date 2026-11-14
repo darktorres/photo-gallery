@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The CPU side of docs/JPEG_DECODERS.md, on Linux (it was wsl-build.sh): the decoders and encoders under JPEG_EVAL
+"""The CPU side of the JPEG decoder comparison, on Linux (it was wsl-build.sh): the decoders and encoders under JPEG_EVAL
 (default ~/jpeg-eval), and the harness (harness/) with libjpeg-turbo, parajpeg, jpegli and Wuffs. Usage, from the
 repository: `just linux-eval eval/jpeg-decoders/linux_build.py [STEP...]` (the container, whose pg-eval volume keeps the
 builds), or natively:

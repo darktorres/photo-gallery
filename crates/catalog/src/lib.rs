@@ -1,6 +1,6 @@
-//! The catalog (PLAN §6): SQLite in WAL mode, the source of truth for files, analyses, pairs and ratings.
+//! The catalog: SQLite in WAL mode, the source of truth for files, analyses, pairs and ratings.
 //!
-//! File identity is (volume serial, NTFS file ID), so moves and renames need no re-analysis (PLAN §4). An analysis
+//! File identity is (volume serial, NTFS file ID), so moves and renames need no re-analysis. An analysis
 //! row records what it was computed from: the size, mtime, catalog rotation and kind, and the pipeline version.
 //! When any differ, the file is pending again (`files.pending`, kept by triggers). That is all the resumability
 //! there is: every batch is one transaction, and the work list is an index.

@@ -1,4 +1,4 @@
-//! The import pass (PLAN §4): every pending file is read once, in on-disk order, and analyzed (tiers 0a/0b/1,
+//! The import pass: every pending file is read once, in on-disk order, and analyzed (tiers 0a/0b/1,
 //! dimensions, ThumbHash). Each new PDQ hash is queried against the index, then inserted, so tier-1 pairs appear
 //! during the import (query-then-insert). Results are committed in batches: stopping at any point loses at most
 //! the current batch, and the next run picks up the rest from the catalog.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The build environment of the GPU decoder builds on Windows (docs/JPEG_DECODERS.md "To rerun"): MSVC from the Visual Studio
+"""The build environment of the GPU decoder builds on Windows: MSVC from the Visual Studio
 Build Tools (found by vswhere), the CUDA toolkit, and the paths win_build.py reads. It was win-env.cmd, which win-build.cmd
 called; win_build.py calls setup() here. The repo's .env supplies the keys the environment does not set (PG_ROOT, LLVM_DIR,
 CUDA_ARCH, JPEG_EVAL, and CUDA_PATH when NVIDIA's installer has not set it in this shell). Windows only.

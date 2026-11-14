@@ -1,4 +1,4 @@
-"""JPEG encoders against each other for docs/JPEG_ENCODERS.md: bytes at equal SSIMULACRA2, and encode speed.
+"""JPEG encoders against each other: bytes at equal SSIMULACRA2, and encode speed.
 
 On Linux, with linux_build.py's tools in JPEG_EVAL/bin; in the container, each step is
 `just linux-eval eval/jpeg-decoders/encoders.py STEP`, with PG_JPEG_ENC_DIR (.env) the host folder it works in:

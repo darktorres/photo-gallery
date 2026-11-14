@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(t.folders().total(), 5);
     }
 
-    /// The label rule (L-26): the empty folder is "Drive roots" only without subfolders and with root files, and "All"
+    /// The label rule: the empty folder is "Drive roots" only without subfolders and with root files, and "All"
     /// otherwise, even when no "Drive roots" row is shown; a folder is its node, and a folder the tree lacks is none.
     #[test]
     fn the_empty_folder_is_drive_roots_only_without_subfolders_and_with_root_files() {

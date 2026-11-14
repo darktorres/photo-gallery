@@ -1,4 +1,4 @@
-"""The PNGs docs/temp/PNG_DECODERS.md's sample lacks: 16-bit, Adam7-interlaced, grayscale and animated (APNG).
+"""The PNGs the decoder comparison's sample lacks: 16-bit, Adam7-interlaced, grayscale and animated (APNG).
 
     python make_inputs.py [--out DIR]           write the files (default: $PG_ROOT\\eval\\png-decoders\\inputs)
     python make_inputs.py --verify-dump DIR     check the app's 16-bit dumps (png-decoders dump DIR ...) against the source
@@ -24,7 +24,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import DATA_ROOT, pg_path  # noqa: E402
 
-# The library images behind the inputs, by the names docs/temp/PNG_DECODERS.md's table gives them.
+# The library images behind the inputs, by the names the decoder comparison's table gives them.
 RGB_SOURCE = "pinterest_1141451468123671931"  # rgb-3mp
 RGBA_SOURCE = "pinterest_1141451468123671747"  # rgba-2mp
 

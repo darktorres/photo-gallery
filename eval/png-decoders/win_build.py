@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The C side of docs/temp/PNG_DECODERS.md on Windows: zlib (static, shared by libpng and libspng), libpng, libspng,
+"""The C side of the PNG decoder comparison on Windows: zlib (static, shared by libpng and libspng), libpng, libspng,
 Wuffs, and the harness (harness/, which builds png-c-harness.exe). It follows eval/jpeg-decoders/win_build.py.
 
     python eval/png-decoders/win_build.py [zlib libpng libspng wuffs harness]   (default: all)

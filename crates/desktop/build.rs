@@ -19,8 +19,7 @@ fn main() -> Result<(), String> {
     mascots.sort();
     resources.extend(mascots);
 
-    // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that
-    // (vendor/README.md).
+    // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that: a fork with local changes, so qmlcachegen sees the module as Qt's CMake build lays it out
     let mut builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("pg.gallery")
             // The models' base class (QAbstractListModel) is declared there: without it in the qmldir, the QML
@@ -63,7 +62,7 @@ fn main() -> Result<(), String> {
             .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true))
             .qml_file(QmlFile::from("qml/Theme.qml").singleton(true)),
     )
-    // Before the files and resources below: the builder emits their path lines when they are added (vendor/README.md).
+    // Before the files and resources below: the builder emits their path lines when they are added.
     // CI sets PG_DESKTOP_CONTENT_KEY to a hash of this crate, so the build reruns when the crate changes and not when a
     // checkout makes its files newer. Local builds leave it unset and use the path lines.
     .content_key_env("PG_DESKTOP_CONTENT_KEY")

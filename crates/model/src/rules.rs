@@ -1,4 +1,4 @@
-//! Paths under a set of rules (S-17.2): a path is an anchor (the text before the root: a Windows drive `D:`, the UNC
+//! Paths under a set of rules: a path is an anchor (the text before the root: a Windows drive `D:`, the UNC
 //! root `\`, or the empty anchor of a Unix path) and its parts, each a [`Name`]. The keys that order folders and
 //! files, the containment test and the scope of a folder are functions of the parts under the rules. The drive is
 //! not part of a folder's key, so one folder on every drive is one key (as the tree and the catalog have always had
@@ -43,7 +43,7 @@ impl Path {
     }
 }
 
-/// A folder as the tree and the catalog hold it (S-17.8): its parts, the anchor (the drive, or the UNC root) dropped.
+/// A folder as the tree and the catalog hold it: its parts, the anchor (the drive, or the UNC root) dropped.
 /// The same folder on two drives is one `Merged`. The empty `Merged` is every folder: with `recursive` the whole
 /// library, without it the files directly in the drive roots. Serialises as the array of its parts.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default, serde::Serialize, serde::Deserialize)]

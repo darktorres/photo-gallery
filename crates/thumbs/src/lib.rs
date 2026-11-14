@@ -1,4 +1,4 @@
-//! The background thumbnail task (PLAN §6): after the import, thumbnails for every analyzed file at the height
+//! The background thumbnail task: after the import, thumbnails for every analyzed file at the height
 //! the grid currently uses, in on-disk order, until done or until the cache is full of that height. Runs at idle
 //! priority, as it competes with the user for the disk and the CPU. The cache is shared with the app's on-demand
 //! thumbnails; neither waits for the other but in the cache's writer, one batch at a time.

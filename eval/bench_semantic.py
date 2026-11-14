@@ -1,4 +1,4 @@
-"""A second model for the first pass (PLAN §9 decision 2: keywords and semantic search): CLIP / SigLIP 2 image
+"""A second model for the first pass (keywords and semantic search): CLIP / SigLIP 2 image
 encoders on the local GPU, torch fp16 vs TensorRT fp16, and how faithful TensorRT is to torch fp32.
 
 Usage: python bench_semantic.py [--models clip_b32 siglip2_b16 ...] [--batch 64] [--iters 30] [--images 128]

@@ -1,4 +1,4 @@
-// The viewer's gesture rules (S-14.3): stepping stops at the ends of the list, rating moves on, turning and closing
+// The viewer's gesture rules: stepping stops at the ends of the list, rating moves on, turning and closing
 // signal the window, and the keys reach those calls. The Rust types the viewer needs (pg.gallery) are stubs
 // (tests/qml/stubs), so these tests check Viewer.qml, not the decoder or the catalog. Run by `just qmltest`.
 import QtQuick
@@ -133,7 +133,7 @@ TestCase {
         galleryStub.viewedFileId = 0
     }
 
-    // A resize renders the fit again at the window's new size (C-15), once the size has settled, not at each step of
+    // A resize renders the fit again at the window's new size, once the size has settled, not at each step of
     // the drag. Opened from closed, as the window does it, so the content is made.
     function test_a_resize_renders_the_fit_again_once_it_settles() {
         galleryStub.viewedKey = "k"
@@ -152,7 +152,7 @@ TestCase {
     }
 
     // A pixel-ratio change (the window moved to a screen with another ratio) hands the ratio to the view, and the fit
-    // is rendered at the new device size once it has settled (C-15, L-43).
+    // is rendered at the new device size once it has settled.
     function test_a_pixel_ratio_change_renders_the_fit_at_the_new_size() {
         galleryStub.viewedKey = "k"
         const v = viewer(-1, 3)

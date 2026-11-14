@@ -178,17 +178,10 @@ impl qobject::FolderModel {
         };
         let model = self.qt_thread();
         crate::app::get().reading().session().tree(move |tree| {
-            let tree = match tree {
-                Ok(tree) => {
-                    crate::app::resolved("tree-failed");
-                    tree
-                }
-                Err(e) => {
-                    let error = crate::app::error_text(&format!("{e:#}"));
-                    crate::app::post(pg_model::notice::Notice::TreeFailed { error });
-                    FolderTree::empty(pg_platform::native::PATH_RULES)
-                }
-            };
+            let tree = crate::app::observe(pg_model::notice::Op::Tree, tree, |e| {
+                pg_model::notice::Notice::TreeFailed { error: crate::app::error_text(&format!("{e:#}")) }
+            })
+            .unwrap_or_else(|| FolderTree::empty(pg_platform::native::PATH_RULES));
             // Fails only when the model is gone (the window closing).
             let _ = model.queue(move |model| model.apply(generation, tree));
         });

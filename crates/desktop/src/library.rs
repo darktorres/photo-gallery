@@ -133,6 +133,11 @@ impl qobject::Library {
         let taken = Pending::take(pending);
         if taken.progress {
             self.as_mut().refresh_progress();
+            // While a pass has failed files, the inbox's "N failed" link follows the pass: it is poked here, not left to
+            // the inbox's poll (30 s) or to the job's next round.
+            if running().is_some_and(|library| library.status().progress.failed > 0) {
+                app::get().inbox().poke();
+            }
         }
         if taken.writes {
             self.as_mut().refresh_writes();

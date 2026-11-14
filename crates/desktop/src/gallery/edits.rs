@@ -24,11 +24,9 @@ impl qobject::GalleryModel {
         if turns == Turns::NONE {
             return;
         }
-        if let Err(e) = crate::app::get().library().turn(id, turns) {
-            edit_failed(EditOp::Rotate, &e);
+        if edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns)).is_none() {
             return;
         }
-        crate::app::resolved_part("edit-failed", EditOp::Rotate.code());
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
@@ -76,11 +74,9 @@ impl qobject::GalleryModel {
         let Some(id) = self.grid.id_at(at) else { return };
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Some(stars).filter(|r| r.get() > 0);
-        if let Err(e) = crate::app::get().edit().rate(id, rating) {
-            edit_failed(EditOp::Rate, &e);
+        if edit_outcome(EditOp::Rate, crate::app::get().edit().rate(id, rating)).is_none() {
             return;
         }
-        crate::app::resolved_part("edit-failed", EditOp::Rate.code());
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
@@ -98,11 +94,9 @@ impl qobject::GalleryModel {
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
-        if let Err(err) = crate::app::get().edit().set_border_mark(e.id, marked) {
-            edit_failed(EditOp::MarkBorder, &err);
+        if edit_outcome(EditOp::MarkBorder, crate::app::get().edit().set_border_mark(e.id, marked)).is_none() {
             return;
         }
-        crate::app::resolved_part("edit-failed", EditOp::MarkBorder.code());
         let loading = self.loading;
         self.as_mut()
             .rust_mut()
@@ -128,6 +122,9 @@ impl qobject::GalleryModel {
 }
 
 /// The inbox says that the edit `op` couldn't be saved, for `error`.
-fn edit_failed(op: EditOp, error: &impl std::fmt::Display) {
-    crate::app::post(Notice::EditFailed { op, error: crate::app::error_text(error) });
+fn edit_outcome<T, E: std::fmt::Display>(op: EditOp, result: Result<T, E>) -> Option<T> {
+    crate::app::observe(pg_model::notice::Op::Edit(op), result, |e| Notice::EditFailed {
+        op,
+        error: crate::app::error_text(e),
+    })
 }

@@ -1,13 +1,28 @@
 //! The catalog's schema: the SQL that makes a new catalog, the version a file is at, and how a file is brought to a
 //! version. A file is compared with [`expected`], the schema this build makes in memory from the same SQL, so the
 //! layout checked is the layout created.
+//!
+//! ## Storage
+//!
+//! The inbox's and the ledgers' layout is in `crates/catalog/src/schema.rs` (`TO_3_NOTICES`, `TO_4_FAILURES`,
+//! `TO_8_NOTIFY`). Notable:
+//!
+//! - `ledger_ack.dismissed_to` (a serial, not a time);
+//! - `notices.rev`, the index `notices(kind, root)`, and `notices_uid` recreated with the Events' bound;
+//! - `file_failures.hidden`, the partial index `file_failures_live`, `files_failures_stale` (not on import rows, and not on `missing`), and the triggers `files_failures_hidden` and `analysis_import_*`;
+//! - `folder_failures` with its serial stamp, and `scan_leases`, which a rebuild doesn't carry (`rebuild::TRANSIENT`).
+//!
+//! A migration is a list of steps (`schema::Step`): SQL that changes the layout, or a Rust conversion of rows
+//! (`crate::convert`), which finds the old shape by the columns it has, never by the version, and is idempotent. The
+//! rebuild's copy runs every `Rust` step of every migration on the copied rows, so a catalog rebuilt from any version is
+//! converted as its migrations would have converted it.
 
 use anyhow::{Context, anyhow};
 use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, Transaction};
 
-use crate::convert::{Source, convert_notify, convert_session};
+use crate::convert::{Source, convert_notify, convert_session, retire_kinds};
 use crate::error::Result;
 use crate::transaction::write_transaction;
 
@@ -42,6 +57,8 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_7_WRITE_CHECKS)],
     TO_8_NOTIFY,
     &[Step::Sql(TO_9_CHEAPER_WRITES)],
+    &[Step::Sql(TO_10_LEDGER_NOT_WRITTEN)],
+    TO_11_NOTIFY_FIXES,
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -65,7 +82,7 @@ const TO_2_CHANGE_STAMPS: &str = concat!(
     stamp!("border_sides_stamp_delete", "DELETE", "border_sides", old),
 );
 
-/// Version 3: the inbox (docs/temp/NOTIFICATIONS.md), what the app told the user, kept until it is dismissed.
+/// Version 3: the inbox (see `inbox.rs`), what the app told the user, kept until it is dismissed.
 ///
 /// A row is a `pg_model::notice::Notice` as JSON (`data`), with what the inbox sorts and filters by beside it. A kept
 /// state (`key`, its kind's code, folder and part) is one row that the next post of its key replaces and counts; an event
@@ -231,7 +248,7 @@ CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
     stamp!("file_writes_stamp_delete", "DELETE", "file_writes", old),
 );
 
-/// Version 8: the inbox's storage as docs/temp/NOTIFICATIONS.md describes it. The layout is added first, the rows are
+/// Version 8: the inbox's storage as the docs below describe it. The layout is added first, the rows are
 /// converted (`convert::convert_notify`), and the column they were converted from is dropped.
 const TO_8_NOTIFY: &[Step] = &[Step::Sql(TO_8_NOTIFY_ADD), Step::Rust(convert_notify), Step::Sql(TO_8_NOTIFY_DROP)];
 
@@ -361,6 +378,36 @@ BEGIN
         FROM files f WHERE new.error IS NOT NULL AND f.id = new.file_id
         ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error
         WHERE file_failures.error IS NOT excluded.error;
+END;
+";
+
+/// Version 10: a `ledger-not-written` notice is the thumbnails' only (the borders' and the import's ledger rows are
+/// written in the transaction of their own work, so a failure there fails the batch). The rows an earlier build kept
+/// for the other passes (`part` is the pass) have nothing that clears them now, so they go.
+const TO_10_LEDGER_NOT_WRITTEN: &str = "DELETE FROM notices WHERE kind = 'ledger-not-written' AND part <> 'thumbs';";
+
+/// Version 11: two fixes the notifications ledger's review found (N-04, N-06).
+/// - **The import row's `hidden`**: `analysis_import` (`TO_9_CHEAPER_WRITES`) set it from `files.missing` alone, so a
+///   failed analysis that left its file pending (the file's size differs from the analysis's) made a row the grid's failed
+///   filter hid while the inbox listed it. It is `missing OR pending`, as `files_failures_hidden` keeps it, on an insert and
+///   on a conflict. A `pending` that changes after the insert is `files_failures_hidden`'s, and the row is there by then.
+/// - **The retired kinds** (`Notice::RETIRED`) go, and every ledger row's `hidden` is recomputed (`convert::retire_kinds`).
+const TO_11_NOTIFY_FIXES: &[Step] = &[Step::Sql(TO_11_IMPORT_HIDDEN), Step::Rust(retire_kinds)];
+
+/// [`TO_11_NOTIFY_FIXES`]' trigger: the import's ledger row is made hidden when its file is missing or pending, and a
+/// conflict updates `hidden` as well as `error`.
+const TO_11_IMPORT_HIDDEN: &str = "DROP TRIGGER analysis_import;
+CREATE TRIGGER analysis_import AFTER INSERT ON analysis
+WHEN new.error IS NOT NULL OR EXISTS (SELECT 1 FROM file_failures WHERE file_id = new.file_id AND pass = 'import')
+BEGIN
+    DELETE FROM file_failures WHERE file_id = new.file_id AND pass = 'import'
+        AND (new.error IS NULL OR mtime IS NOT new.mtime OR size IS NOT new.size OR rotation IS NOT new.rotation);
+    INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)
+        SELECT new.file_id, 'import', new.mtime, new.size, new.rotation, new.error, 0, new.analyzed,
+               (f.missing OR f.pending)
+        FROM files f WHERE new.error IS NOT NULL AND f.id = new.file_id
+        ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error, hidden = excluded.hidden
+        WHERE file_failures.error IS NOT excluded.error OR file_failures.hidden IS NOT excluded.hidden;
 END;
 ";
 
@@ -942,6 +989,42 @@ mod tests {
         a_write_out_of_its_kinds_range_is_dropped_and_refused_posix
     );
 
+    /// Version 11 makes a pending file's failed import row hidden, and drops the retired kinds, on a catalog at version 9
+    /// that holds both: the row was left visible by `analysis_import`, and a `root-refused` notice by version 8.
+    fn version_11_hides_the_pending_imports_and_retires_the_kinds(rules: PathRules) {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 8).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
+                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, 1, x'61');
+             INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)
+                 VALUES (1, 'import', 1, 1, 0, 'no', 0, 1, 0);
+             INSERT INTO notices(level, source, kind, data, created, updated) VALUES
+                 (2, 'app', 'root-refused', '{}', 0, 0), (2, 'app', 'listing-failed', '{}', 0, 0);",
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        let hidden: i64 =
+            conn.query_row("SELECT hidden FROM file_failures WHERE pass = 'import'", [], |r| r.get(0)).unwrap();
+        assert_eq!(hidden, 1, "a pending file's import row is hidden");
+        let kinds: Vec<String> = conn
+            .prepare("SELECT kind FROM notices ORDER BY kind")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(kinds, ["listing-failed"]);
+    }
+
+    under_both_rules!(
+        version_11_hides_the_pending_imports_and_retires_the_kinds,
+        version_11_hides_the_pending_imports_and_retires_the_kinds_windows,
+        version_11_hides_the_pending_imports_and_retires_the_kinds_posix
+    );
+
     fn triggers(conn: &Connection) -> Vec<String> {
         conn.prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' ORDER BY name")
             .unwrap()
@@ -981,6 +1064,37 @@ mod tests {
     fn before_notify_is_the_inbox_conversions_source() {
         let at = usize::try_from(BEFORE_NOTIFY - BASELINE_VERSION).unwrap();
         assert!(std::ptr::eq(MIGRATIONS[at], TO_8_NOTIFY));
+    }
+
+    /// The version-10 migration drops the stored `ledger-not-written` rows of the borders and the import (a kind the
+    /// build no longer posts for them), and keeps the thumbnails'.
+    #[test]
+    fn the_ledger_not_written_rows_of_other_passes_go() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Version 9: the migration before TO_10 (`MIGRATIONS[8]`) is the next one to run.
+        let before = BASELINE_VERSION + 8;
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, before).unwrap();
+        for (key, part) in [
+            ("ledger-not-written|borders", "borders"),
+            ("ledger-not-written|import", "import"),
+            ("ledger-not-written|thumbs", "thumbs"),
+        ] {
+            conn.execute(
+                "INSERT INTO notices(key, part, level, source, kind, data, created, updated)
+                 VALUES (?1, ?2, 1, 'thumbs', 'ledger-not-written', '{}', 0, 0)",
+                (key, part),
+            )
+            .unwrap();
+        }
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        let kept: Vec<String> = conn
+            .prepare("SELECT part FROM notices WHERE kind = 'ledger-not-written' ORDER BY part")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(kept, ["thumbs"]);
     }
 
     /// Every user-visible change stamps its file (`files.changed`), in the same statement as the change: the file

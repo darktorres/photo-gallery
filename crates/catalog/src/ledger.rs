@@ -1,4 +1,4 @@
-//! The failure ledgers (docs/temp/NOTIFICATIONS.md). The files a pass couldn't make its result of, for the state each file was
+//! The failure ledgers (see the docs below). The files a pass couldn't make its result of, for the state each file was
 //! in (`file_failures`): the thumbnails' and the borders' passes write theirs; the import's rows are kept by triggers
 //! on `analysis` (`TO_8_NOTIFY`), mirroring the failed analyses. And the folders the walks couldn't take
 //! (`folder_failures`), which the scan's writer records and a complete walk sweeps (`Catalog::mark_missing`).
@@ -15,6 +15,79 @@
 //! ([`Catalog::clear_failures`]); a file gone missing keeps them, hidden (`hidden`), so they come back with their serials.
 //! A failure that holds writes nothing when it is recorded again ([`Catalog::record_failures`]): it keeps its serial, so
 //! it is not news again.
+//!
+//! ## The failure ledgers
+//!
+//! The files a pass failed on are the `file_failures` table of `catalog.sqlite` (migration `TO_4`, changed by
+//! `TO_8_NOTIFY`), read and written by `pg_catalog::ledger`: one row per file and pass (thumbnails, borders, import),
+//! holding the file as the pass read it (mtime, size, rotation), the error, whether the pass tries it again by itself
+//! (`retry`), when it first failed, a serial (`meta.seq` when it was recorded) and whether it is hidden.
+//!
+//! - **Thumbnails and borders** write their own rows. A failure is recorded only while the catalog has the file as the pass
+//!   read it. Recorded again unchanged, nothing is written and the serial stays: a file that fails at every pass is not news
+//!   each time. A new error updates the row and keeps the serial. A file whose mtime, size or rotation changes leaves these
+//!   ledgers (`files_failures_stale`), as does a file made since (the pass's flush, a thumbnail the window made on demand)
+//!   and a replaced file (`pair.rs`). A deleted file's rows go with it.
+//! - **The import's rows mirror its failed analyses**, kept by triggers on `analysis` (`analysis_import`,
+//!   `analysis_import_rewritten`, `analysis_import_removed`), with the state of the bytes the analysis read.
+//!   `analysis_import` fires its body only for a failure or for a file that has
+//!   a row, so the common analysis, a success with nothing recorded, costs the import one index probe. A re-analysis that fails on the same bytes (an `IMPORT_VERSION` bump, `gallery import --retry`) keeps
+//!   the row and its serial; a changed file that fails again is a new row with a new serial (a dismissed entry comes back);
+//!   a fixed file's row goes, and so does a deleted analysis's. An in-place update of the analysis by a write-back (the
+//!   app rewrote the file: `file_rewritten`, `analysis_turned_back`) copies the new state into the row and keeps the
+//!   serial. `files_failures_stale` doesn't touch the import's rows, and a Retry or a rotation that bumps `files.seq`
+//!   doesn't either, so a thumbnail Retry never re-badges the import.
+//! - **Missing is hidden, not removed.** A file gone missing keeps its rows of every pass, and the import's rows are also
+//!   hidden while the file is pending (`hidden`, kept by `files_failures_hidden`, which fires only when `pending` or
+//!   `missing` changes). They come back with their old serials, so an offline blip or a folder removed and added again is
+//!   not news. The inbox reads the rest through the partial index `file_failures_live(pass, serial) WHERE hidden = 0`, and
+//!   every read repeats that literal condition (`live_failures!()`), since SQLite uses a partial index only then. The inbox
+//!   and the grid's failed filter agree by construction.
+//! - What a failure is decides what follows (`pg_render::maker::MakeError`): a file that can't be read (`Unreadable`: an
+//!   offline drive, a file in use or gone) is not recorded, only counted, and the pass tries it again; the job's
+//!   `unreadable-files` state says how many, and clears after a complete pass with none. A file that doesn't decode
+//!   (`Undecodable`) is recorded with `retry`, and the next pass tries it again. A thumbnail that panicked, and a border
+//!   search that failed or panicked, are recorded without `retry`: the pass doesn't list them again until the file changes,
+//!   or the user retries.
+//! - **The thumbnails' pass** buffers its failures and writes them through its own connection in batches, or at least every
+//!   2 s (`LEDGER_EVERY`), whatever ends the pass. A write that fails doesn't fail the pass (its files are tried again) and
+//!   posts `ledger-not-written` (`LedgerOutcome::Failed`) until one works (`Written`; an empty pass is `Untouched` and clears
+//!   nothing). This state is the thumbnails' only: their ledger is in the catalog and their results in the cache, two
+//!   databases.
+//! - **The borders' rows are written in the borders transaction** (`Tx::ledger_writer`, beside `Tx::borders_writer`): a
+//!   batch stores its results and its ledger rows or neither, so a failure leaves the files due and is the round's
+//!   failure (`round-failed`), not `ledger-not-written`.
+//! - **The window's on-demand thumbnails** (`app/src/images.rs`): a thumbnail that doesn't decode is recorded through the
+//!   inbox's writer (each file once while it is among the last 256), before the fallback to a smaller kept thumbnail, and
+//!   logged once. An original that can't be read, a file being rewritten and a file the catalog doesn't have are not
+//!   recorded. A thumbnail the window makes takes its file out of the ledger, through the writer too, only while the ledger
+//!   has rows.
+//!
+//! ### An entry's state: shown, new, unread
+//!
+//! Each ledger is one entry of the inbox (`EntryId::Ledger { kind, seen }`, where `kind` is a `LedgerKind`: a pass's
+//! files, or `scan-folders`). `ledger_ack` holds the user's marks by serial: `seen_to` (the newest serial listed when they
+//! last read or dismissed it), `dismissed_to` (the newest serial listed when they dismissed it, or none) and `read`.
+//! `Catalog::ledger_state` reads the ledger's newest and oldest live rows, one index seek each, and applies the rules:
+//!
+//! - **shown** iff it has live rows and (`dismissed_to` is none, or a row has `serial > dismissed_to`);
+//! - **new** iff a row has `serial > seen_to`;
+//! - **unread** iff shown and (never read, or new).
+//!
+//! Marking it read moves only `seen_to`; dismissing it moves `dismissed_to` and `seen_to`; neither ever moves back. So
+//! opening the inbox never hides an entry, and a dismissed entry comes back with its next row, saying how many came since
+//! it was dismissed. The counts (`Catalog::ledger_counts`) are read only while the inbox is open.
+//!
+//! **`THUMBS_VERSION`** (`pg_render`) is the thumbnailer's version, bumped by hand when a change of the decoder or the maker
+//! could make a file that failed work. The catalog keeps the version it last ran under (`meta.thumbs_version`): a new one
+//! relists the thumbnails that won't be tried again (`retry = 0`) and empties the thumbnails' ledger. The cache keeps its
+//! own mark, and a new one makes every height forget how far it was checked, so the next pass looks at every file once. A
+//! new `BORDERS_VERSION` empties the borders' ledger, as the pass redoes them all.
+//!
+//! **Retry** (the thumbnails' entry) is `Catalog::retry_failures`: the rows go, and the files are listed again by the next
+//! pass, which the job is woken for. The import's rows mirror its analyses and are never deleted by a Retry; its failures
+//! are retried by `gallery import --retry`, and its entry has "Show the failed files", which lists every file whose analysis
+//! failed (the `failed` status, in every folder).
 
 use std::collections::BTreeSet;
 
@@ -642,6 +715,47 @@ mod tests {
         the_imports_ledger_mirrors_its_failed_analyses_posix
     );
 
+    // A failed analysis that leaves its file pending (the analysis is of other bytes) is hidden as the pending file's row
+    // is: the grid's failed filter hides it, so the inbox must not list it. The conflict path keeps it hidden, and an
+    // analysis of the file's own bytes shows it.
+    #[test]
+    fn a_failed_analysis_that_leaves_its_file_pending_is_hidden() {
+        let c = catalog(PathRules::Posix);
+        analysis(&c, 1, 10, 100, None);
+        raw::set_size(&c, FileId::new(1), 11);
+        analysis(&c, 1, 10, 100, Some("no"));
+        let hidden = |c: &Catalog| -> i64 {
+            c.conn.query_row("SELECT hidden FROM file_failures WHERE pass = 'import'", [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(hidden(&c), 1);
+        assert!(!state(&c, IMPORT).live, "hidden rows are not live");
+        analysis(&c, 1, 10, 100, Some("still no"));
+        assert_eq!(hidden(&c), 1, "the conflict keeps it hidden");
+        analysis(&c, 1, 11, 100, Some("no"));
+        assert_eq!(hidden(&c), 0, "analysed as the file is, it is not pending, so it is listed");
+    }
+
+    // A new IMPORT_VERSION makes the analyses it doesn't cover stale: every file they are of becomes pending, and its
+    // import row is hidden with it (`set_import_version`'s recompute, through `files_failures_hidden`). A file with no
+    // row has none to hide.
+    #[test]
+    fn a_new_import_version_hides_the_import_rows_of_the_files_it_makes_pending() {
+        let c = catalog(PathRules::Posix);
+        analysis(&c, 1, 10, 100, Some("no"));
+        analysis(&c, 2, 10, 100, Some("no"));
+        let hidden = |c: &Catalog| {
+            raw::rows_of(
+                c,
+                "SELECT file_id, hidden FROM file_failures WHERE pass = 'import' ORDER BY file_id",
+                [],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+            )
+        };
+        assert_eq!(hidden(&c), [(1, 0), (2, 0)], "analysed as the files are: listed");
+        crate::lifecycle::set_import_version(&c.conn, versions().import + 1).unwrap();
+        assert_eq!(hidden(&c), [(1, 1), (2, 1)], "pending now, so hidden");
+    }
+
     // The import's rows are hidden while their file is missing or pending, and come back with their serials, so none
     // is news again: missing and back, a new IMPORT_VERSION failing the same bytes again, a thumbnail Retry, and a
     // metadata-only write-back (and a `--retry` after it).
@@ -736,9 +850,11 @@ mod tests {
             .unwrap();
         c.record_failures(FilePass::Borders, &[failure(3, "c")], 1).unwrap();
         let (one, two) = (raw::file_seq(&c, FileId::new(1)), raw::file_seq(&c, FileId::new(2)));
-        crate::lifecycle::set_thumbs_version(&c.conn, versions().thumbs).unwrap();
+        raw::start_thumbs_version(&c);
         assert_eq!(serials(&c, "thumbs").len(), 2, "the same version changes nothing");
-        crate::lifecycle::set_thumbs_version(&c.conn, versions().thumbs + 1).unwrap();
+        assert_eq!(raw::file_seq(&c, FileId::new(1)), one, "and lists nothing again");
+        raw::older_thumbs_version(&c);
+        raw::start_thumbs_version(&c);
         assert!(raw::file_seq(&c, FileId::new(1)) > one, "the panicked file is listed again");
         assert_eq!(raw::file_seq(&c, FileId::new(2)), two);
         assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());

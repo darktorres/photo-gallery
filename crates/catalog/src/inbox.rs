@@ -1,4 +1,4 @@
-//! The inbox's rows (docs/temp/NOTIFICATIONS.md): what the app told the user, kept until they dismiss it. A row is a
+//! The inbox's rows (see the docs below): what the app told the user, kept until they dismiss it. A row is a
 //! [`Notice`], stored as JSON in this build's form and read back typed; one of a kind this build doesn't know reads as
 //! [`Notice::Unknown`]. Uses `core` (the connection), `ledger` (the ledgers' entries, read in the rows' snapshot),
 //! `types` (the library folder a notice is about) and `transaction`.
@@ -12,10 +12,41 @@
 //! (`crate::ledger`), never a row here.
 //!
 //! Every write says whether it changed a row (`changes()`), so a caller refreshes only on a real change.
+//!
+//! ## The inbox
+//!
+//! The notices kept are the `notices` table of `catalog.sqlite` (migration `TO_3`, changed by `TO_8_NOTIFY`), read and
+//! written by `pg_catalog::inbox`: a row holds the notice as JSON with its kind, level and source beside it, a count of its
+//! posts and their first and last times, its read and dismissed marks, and its revision. A row is named by its id, its
+//! `uid` (`meta.seq` when it was made; ids are reused) and its `rev`. `root` is the library folder it is about, a foreign
+//! key that removes the row with the folder.
+//!
+//! - An **event** is a row each time it is posted. Dismissing one deletes it (nothing can bring it back). Events are
+//!   bounded on their own: past `kept_events!()` (1000) keyless rows, the `notices_uid` trigger deletes the oldest at each
+//!   insert, by insertion order (`uid`), read ones first; never the row just inserted (so a row posted with an old time is
+//!   never the one preferred), and never a state.
+//! - A **state** is one row per key, bounded by its keys (codes × library folders × parts, all finite). Posted again it is
+//!   counted and holds the latest; if it says something new (its data changed) its `rev` rises and it is unread again,
+//!   even if it was dismissed, and if not it keeps its marks: a problem that holds is not news each time. A dismissed state
+//!   is kept, so a repost of the same data stays dismissed, for 30 days (`DISMISSED_FOR`, `Catalog::prune_inbox`). Its
+//!   resolver clears it (`inbox::clear`), or replaces the whole set of a kind and folder (`Catalog::replace_notices`: a
+//!   complete walk of a library folder posts what it found and clears the rest).
+//! - A notice about a folder no longer in the library is not kept.
+//! - At most 200 entries are listed (`pg_app::inbox::LISTED`), rows and ledgers together, newest first.
+//!
+//! **Marks address a revision.** A mark or a dismissal names `(id, uid, rev)`, so one sent for revision N never lands on
+//! N+1 and swallows its news; a row since gone is a no-op. An entry's identity for the window (`EntryId::entry()`) leaves
+//! the revision out, so a new revision is the same entry changed, not a new one. "Mark all read" and "Clear all" cover the
+//! ids the window displayed (and the ledgers at the serial it displayed), never an entry it wasn't given. Every write
+//! (`post_notice`, `replace_notices`, `clear_notices`, the marks, the dismissals, `record_failures`, `clear_failures`) says
+//! whether it changed a row, and the writer reads the inbox again only after a real change or a `data_version` change.
+//!
+//! Before a catalog of an earlier version is migrated, it is copied aside as `catalog.sqlite.pre-v<N>.bak` (once): the
+//! migrations can't be undone, and an older build refuses a later catalog.
 
 use rusqlite::{Connection, params};
 
-use pg_model::notice::{Key, Level, Lifecycle, Notice, Part};
+use pg_model::notice::{Key, Level, Lifecycle, Notice, Part, Trigger, resolves};
 use pg_model::rules::PathRules;
 
 use crate::core::Catalog;
@@ -136,6 +167,37 @@ impl Catalog {
     /// kind and folder. Nothing is written when there are none. Whether a row went.
     pub fn clear_notices(&self, key: &Key<'_>) -> Result<bool> {
         self.replace_notices(key, &[], 0)
+    }
+
+    /// The kept notices that `trigger` clears no longer hold: every kept kind and part whose resolver the trigger
+    /// matches ([`resolves`]), in every folder, is removed. Found by the rows' own kinds and parts, through the table
+    /// ([`Notice::resolvers_of`]); a scoped kind (a folder's notes) has no trigger and is left alone. Nothing is written
+    /// when no kept row is cleared. Whether a row went.
+    pub fn resolve_notices(&self, trigger: Trigger) -> Result<bool> {
+        let kept: Vec<(String, Option<String>)> = {
+            let mut stmt = self.conn.prepare_cached("SELECT DISTINCT kind, part FROM notices WHERE key IS NOT NULL")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let cleared: Vec<(String, Option<String>)> = kept
+            .into_iter()
+            .filter(|(code, part)| {
+                Notice::resolvers_of(code, part.as_deref()).into_iter().any(|resolver| resolves(resolver, trigger))
+            })
+            .collect();
+        if cleared.is_empty() {
+            return Ok(false);
+        }
+        let tx = write_transaction(&self.conn)?;
+        let mut changed = false;
+        for (code, part) in &cleared {
+            changed |= tx.execute(
+                "DELETE FROM notices WHERE key IS NOT NULL AND kind = ?1 AND part IS ?2",
+                params![code, part.as_deref()],
+            )? > 0;
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 
     /// The entries listed, newest first, at most `limit`: the rows not dismissed, and the ledgers' entries (with their
@@ -496,6 +558,23 @@ mod tests {
         a_dismissed_event_goes_and_a_dismissed_state_is_kept_posix
     );
 
+    // A mark of one row (an older one, not the newest) reads that row alone: the rows posted before and after it keep
+    // their state, so a later row is not read by an earlier one's mark.
+    #[test]
+    fn a_mark_of_an_older_row_leaves_the_later_rows_unread() {
+        let c = catalog(PathRules::Posix);
+        c.post_notice(&event(1), 10).unwrap();
+        c.post_notice(&event(2), 11).unwrap();
+        c.post_notice(&event(3), 12).unwrap();
+        let listed = c.inbox_entries(10, false).unwrap();
+        assert_eq!(listed.iter().map(|e| e.notice.clone()).collect::<Vec<_>>(), [event(3), event(2), event(1)]);
+        assert!(c.mark_read(&[listed[1].id], 13).unwrap());
+        let after = c.inbox_entries(10, false).unwrap();
+        let read: Vec<(Notice, bool)> = after.iter().map(|e| (e.notice.clone(), e.read)).collect();
+        assert_eq!(read, [(event(3), false), (event(2), true), (event(1), false)]);
+        assert_eq!(c.unread().unwrap(), 2);
+    }
+
     // "Clear all" and "Mark all read" reach only the entries displayed: one posted since is left as it is.
     #[test]
     fn the_all_operations_reach_only_what_was_displayed() {
@@ -675,6 +754,30 @@ mod tests {
         assert_eq!(i64::try_from(events(&c).len()).unwrap(), KEPT_EVENTS);
         c.post_notice(&event(KEPT_EVENTS), 13).unwrap();
         assert_eq!(i64::try_from(events(&c).len()).unwrap(), KEPT_EVENTS);
+        // The insert trigger keeps the Events at the bound, so an update could only prune past it with that trigger off.
+        // Off, the Events go past the bound; a state's update (a post again) prunes none of them; the trigger, put back
+        // from its stored text, prunes at the next insert.
+        let trigger: String = c
+            .conn
+            .query_row("SELECT sql FROM sqlite_schema WHERE type = 'trigger' AND name = 'notices_uid'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        c.conn.execute_batch("DROP TRIGGER notices_uid").unwrap();
+        c.conn
+            .execute(
+                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+                 INSERT INTO notices(level, source, kind, data, created, updated)
+                 SELECT 1, 'app', 'rescan-failed', '{}', 0, 0 FROM n",
+                [3],
+            )
+            .unwrap();
+        assert_eq!(i64::try_from(events(&c).len()).unwrap(), KEPT_EVENTS + 3);
+        c.post_notice(&failed("c"), 14).unwrap();
+        assert_eq!(i64::try_from(events(&c).len()).unwrap(), KEPT_EVENTS + 3, "an update prunes no Event");
+        c.conn.execute_batch(&trigger).unwrap();
+        c.post_notice(&event(KEPT_EVENTS + 9), 15).unwrap();
+        assert_eq!(i64::try_from(events(&c).len()).unwrap(), KEPT_EVENTS, "the trigger is back at the bound");
     }
 
     // A clear with nothing stored reads `notices(kind, root)` and takes no write lock.

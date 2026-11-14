@@ -8,3 +8,5 @@ Settings 1.0 Settings.qml
 KeyMap 1.0 KeyMap.qml
 Shell 1.0 Shell.qml
 Words 1.0 Words.qml
+Notices 1.0 Notices.qml
+LogModel 1.0 LogModel.qml

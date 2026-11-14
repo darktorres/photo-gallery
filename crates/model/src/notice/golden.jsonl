@@ -3,7 +3,7 @@
 {"kind":"round-failed","error":"access is denied"}
 {"kind":"round-panicked","message":"index out of bounds"}
 {"kind":"cache-full","height":220,"made":40}
-{"kind":"cropped","folder":"D:\\Crops","saved":5,"skipped":1,"failed":1,"first_error":{"path":"D:\\Photos\\a.jpg","error":"unexpected end of file","panicked":false}}
+{"kind":"cropped","folder":"D:\\Crops","saved":5,"skipped":1,"failed":1,"failures":[{"path":"D:\\Photos\\a.jpg","error":"unexpected end of file","panicked":false}]}
 {"kind":"crop-failed","error":"access is denied"}
 {"kind":"catalog-rebuilt","kept":"D:\\Gallery\\catalog.sqlite.bad","why":"table files: column added","carried":{"carried":"rows","files":1200,"folders":2}}
 {"kind":"catalog-not-closed","error":"access is denied"}
@@ -39,7 +39,7 @@
 {"kind":"import-failed","counts":{"new":3,"earlier":0}}
 {"kind":"scan-folders-failed","counts":{"new":2,"earlier":1}}
 {"kind":"unreadable-files","pass":"thumbs","count":7}
-{"kind":"ledger-not-written","pass":"borders","error":"access is denied"}
+{"kind":"ledger-not-written","error":"access is denied"}
 {"kind":"notices-lost","count":4}
 {"kind":"file-no-longer-in-library"}
 {"kind":"update-available","version":"1.2.0"}

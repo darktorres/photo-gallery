@@ -1,6 +1,37 @@
 //! The library folders (`roots`) and their scans: which folders the library holds, a walk's start (with its lease) and
 //! end, the files a finished walk didn't see, and the folder ledger's rows a walk records or sweeps. Methods of
 //! `Catalog`.
+//!
+//! ### The folder ledger
+//!
+//! The folders a walk couldn't read are the `folder_failures` table: one row per folder, by its exact path (`UNIQUE(path)`,
+//! as `folders.path`), tied to the library folder that holds it (a foreign key: removing the library folder, or `add_root`
+//! replacing the folders inside a new one, removes its rows), with the reason (`unreadable`, `mount-refused`, `refused`),
+//! the error, the `scans` row of the walk that last saw it (`walk`), a serial and when it was first seen. It is the inbox's
+//! `scan-folders-failed` entry, acknowledged as `scan-folders` in `ledger_ack` with the same rules; its detail lists the
+//! folders grouped by library folder, with the reason and the error, Copy includes them, and Reveal opens a folder's parent.
+//!
+//! The rule is **written as it goes, swept at the end**:
+//!
+//! - **During the walk**, each folder it can't open or list, and each refused mount, is upserted inside the batch's
+//!   transaction that commits around it (`ScanWriter`'s `folder_failed`), with `walk` this walk's id. The covering library
+//!   folder is resolved in Rust once per walk (`types::covering_root`, since the Windows rules compare names
+//!   Unicode-lowercased, which SQLite's `lower()` doesn't); the insert checks the library folder's id and path, so a walk
+//!   of a folder no library folder covers, or one whose library folder was removed mid-walk, writes nothing and doesn't
+//!   fail. An unchanged unreadable folder keeps its serial and `first_seen`: it is not news again.
+//! - **At the end of a complete walk of folder F**, in `mark_missing`'s last transaction, the rows under F whose `walk` is
+//!   older than this walk's go, except those strictly below a folder the walk skipped as unreadable or a refused mount: it
+//!   never looked there, so it can't say they resolved. A reparse folder spares nothing. A root walk sweeps its library
+//!   folder; a sub-folder walk sweeps exactly its subtree, so nothing is counted twice and nothing outside the walk is
+//!   touched. `scans` ids only grow, and the scan lease means no overlapping walk runs meanwhile.
+//! - **An incomplete walk sweeps nothing**: what it wrote is still true.
+//! - **A refused root** (the walked folder itself: not NTFS, a FAT drive) is refused before any walk, so there is no scans
+//!   row; `Catalog::folder_refused` writes it in a small transaction of its own with `walk` the newest `scans` id, so the
+//!   next complete walk of it or of a folder above it sweeps it.
+//!
+//! The scan's other notes are split by what they describe (`ScanNote::lifecycle`): the conditions of a library folder
+//! (`duplicates`, `reparse`, `ambiguous`, `unpaired`, `volume-id`) are states keyed `(root, code)` and replaced only by a
+//! root walk; what one walk did (`replaced`, `rebound`) is an event of that walk, with its count.
 
 use std::collections::BTreeMap;
 
@@ -407,6 +438,25 @@ mod tests {
         the_ledger_follows_complete_walks_and_the_library,
         the_ledger_follows_complete_walks_and_the_library_windows,
         the_ledger_follows_complete_walks_and_the_library_posix
+    );
+
+    // A sub-folder refused by its file system (a mount, or a file system the library refuses) is a row of the ledger
+    // while the walk of its parent refuses it, and the next complete walk of the parent, which sees it again, sweeps it.
+    fn a_refused_sub_folder_is_swept_by_its_parents_next_complete_walk(rules: PathRules) {
+        let mut c = library(rules);
+        let refused = [(r"D:\r\m", FolderFailure::MountRefused), (r"D:\r\n", FolderFailure::Refused)];
+        walk(&mut c, r"D:\r", &refused, &[], true);
+        assert_eq!(paths(&c), stored(rules, &[r"D:\r\m", r"D:\r\n"]));
+        let reasons: Vec<String> = ledger(&c).into_iter().map(|row| row.1).collect();
+        assert_eq!(reasons, ["mount-refused", "refused"]);
+        walk(&mut c, r"D:\r", &[], &[], true);
+        assert!(paths(&c).is_empty(), "the parent's complete walk resolves them");
+    }
+
+    under_both_rules!(
+        a_refused_sub_folder_is_swept_by_its_parents_next_complete_walk,
+        a_refused_sub_folder_is_swept_by_its_parents_next_complete_walk_windows,
+        a_refused_sub_folder_is_swept_by_its_parents_next_complete_walk_posix
     );
 
     // Nothing is recorded for a folder no library folder holds, nor once its library folder is removed mid-walk.

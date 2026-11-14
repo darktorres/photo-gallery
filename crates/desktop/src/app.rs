@@ -1,5 +1,5 @@
 //! The window's one `pg_app::App`, held for the process, and how the window tells the user what happened: it posts a
-//! notice to the app's inbox ([`post`]), and says when one no longer holds ([`resolved`]). The inbox logs each notice;
+//! notice to the app's inbox ([`post`]), and says when one no longer holds ([`observe`]). The inbox logs each notice;
 //! the `Notices` object shows them.
 //!
 //! The order of shutdown is in `lib.rs` (`run`): [`stop`] (the reader, the library), then the engine goes (the image
@@ -9,7 +9,7 @@ use std::fmt::Display;
 use std::sync::OnceLock;
 
 use pg_app::{App, Config};
-use pg_model::notice::{ERROR_CAP, Key, Notice, Part, tidy};
+use pg_model::notice::{ERROR_CAP, Notice, Op, Trigger, tidy};
 
 static APP: OnceLock<App> = OnceLock::new();
 
@@ -24,15 +24,20 @@ pub(crate) fn post(notice: Notice) {
     get().inbox().post(notice);
 }
 
-/// The kept notices of the kind `code` (a `Notice::code`) no longer hold: what they said failed went through. Costs
-/// nothing when the inbox holds none.
-pub(crate) fn resolved(code: &'static str) {
-    get().inbox().clear(Key::all(code, None).to_buf());
-}
-
-/// [`resolved`], for the kept notice of the kind `code` whose part is `part` (an edit's operation).
-pub(crate) fn resolved_part(code: &'static str, part: &'static str) {
-    get().inbox().clear(Key { code, root: None, part: Some(Part::Code(part)) }.to_buf());
+/// The outcome of the operation `op`: a failure is posted (`failure` words it, for the error), and a success is the
+/// operation's trigger, which clears the notice its failure kept. Both are the same `op`, so a failure can't be posted
+/// without a clear for it. The value on success, `None` on a failure.
+pub(crate) fn observe<T, E>(op: Op, result: Result<T, E>, failure: impl FnOnce(&E) -> Notice) -> Option<T> {
+    match result {
+        Ok(value) => {
+            get().inbox().resolve(Trigger::Op(op));
+            Some(value)
+        }
+        Err(e) => {
+            post(failure(&e));
+            None
+        }
+    }
 }
 
 /// An error's text as a notice keeps it: its causes after it (`{:#}`), on one line, capped.

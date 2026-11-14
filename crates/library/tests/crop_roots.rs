@@ -61,6 +61,6 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
 
     let out = dir.join("out");
     let s = pg_crop::save(&c, &ids, &out, &opts, &ctl).unwrap();
-    assert_eq!((s.saved, s.failed), (2, 0), "{:?}", s.error);
+    assert_eq!((s.saved, s.failed), (2, 0), "{:?}", s.failures);
     assert_eq!(files_under(&out).len(), 2, "both copies are kept: {:?}", files_under(&out));
 }

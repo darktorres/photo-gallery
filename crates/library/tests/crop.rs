@@ -145,7 +145,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The copies of the library folder `images`: under the copies' folder, in the library folder's place.
     let copies = place_in(&out, &root);
     let s = pg_crop::save(&c, &all, &out, &opts, &ctl).unwrap();
-    assert_eq!((s.saved, s.skipped, s.failed), (3, 2, 0), "{:?}", s.error);
+    assert_eq!((s.saved, s.skipped, s.failed), (3, 2, 0), "{:?}", s.failures);
     assert!(s.remaining.is_empty());
     for (i, path) in files.iter().enumerate() {
         if i != 2 {

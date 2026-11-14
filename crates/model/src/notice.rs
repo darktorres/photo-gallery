@@ -5,12 +5,90 @@
 //!
 //! Each kind is one variant: its code (permanent, the stored tag and the words' ids), its level, its source (the inbox's
 //! category), its lifecycle (how the inbox keeps it) and its actions. A new kind is one variant here, its words, and the
-//! call that posts it (the checklist is in docs/temp/NOTIFICATIONS.md). Paths of the library are [`RulePath`]s, exact; files
+//! call that posts it (the checklist is in the module docs below). Paths of the library are [`RulePath`]s, exact; files
 //! of the app's own (the preferences, a kept catalog) are the text the system gave.
 //!
 //! Serialised internally tagged by `kind`, kebab-case. A field added later is `#[serde(default)]`, so an older row still
 //! reads. A row of a kind this build doesn't know is [`Notice::Unknown`], which the decoder in `pg-app` makes; it is never
 //! written back.
+//!
+//! ## Notices (`pg_model::notice`)
+//!
+//! A `Notice` is a typed value, built by the crate that has the outcome and worded by `pg_client::text` for each front
+//! end. Nothing in a notice is English, so it is read in the reader's language, and a stored one is worded again when the
+//! words change. Each kind is one variant with:
+//!
+//! - its **code**, the stored tag and the root of its words' ids (`notice-<code>-title`, `notice-<code>-body`). Codes are
+//!   permanent: a stored row of a code this build doesn't know reads as `Notice::Unknown`, which is never written back.
+//!   The codes come from one table, the `ids!` macro, which also gives the words' ids; `Notice::RETIRED` lists the codes
+//!   of kinds that were removed (`scan-unreadable`, `mount-refused`, `root-refused`, replaced by the folder ledger), which no kind
+//!   may take again and whose rows read as `Unknown`.
+//! - its **level** (info, warning, error) and its **source**, the inbox's category (`source-<code>`).
+//! - its **lifecycle** (`Lifecycle`): an *event* is kept each time it is posted; a *transient* is a toast and a log record
+//!   only (feedback on what the user just did); a *state* is kept under its key, replaced by the next post of that key and
+//!   cleared once the problem is gone; a *ledger* entry is built from a failure ledger when the inbox is read.
+//! - for a state, its **resolver** (`Resolver`): what clears it. `Lifecycle::State(key, resolver)` carries it, so a state
+//!   without one doesn't compile. A state about a library folder is also cleared when the folder is removed
+//!   (`root-removal`, through the catalog's foreign key). The table is in `notice/resolver_table.golden`.
+//! - its **actions** besides dismissing it: copy the details, retry, show the failed files.
+//!
+//! A state's key is its kind, the library folder it is about (resolved to the folder of the library that holds it, so
+//! removing the folder clears it) and a part, which is always a code (a scan note, an operation, a pass), never a folder:
+//! per-folder facts are the catalog's folder ledger.
+//!
+//! The stored form is JSON, internally tagged by `kind`, kebab-case; a field added later is `#[serde(default)]`.
+//! `Notice::samples()` holds one notice of each kind. Each sample's stored form is pinned in `model/src/notice/golden.jsonl`
+//! (the test checks that each writes its golden line and reads back as the sample, and names the kind that differs), and
+//! the code is checked against the serde tag. The `ids!` table stays the one source of the codes: the tag is pinned by
+//! `the_code_is_the_stored_kind` and the golden test, and a derive (strum) would be a third mechanism.
+//!
+//! Text a notice carries is tidied (`notice::tidy`): control characters become spaces, and past its cap (`ERROR_CAP`, 2 KiB,
+//! for an error) it is cut at a character's edge and ends in `…`, with the mark inside the cap, so the result is never
+//! more than the cap's bytes. A path in the words is bidi-isolated (U+2068 … U+2069, `client/src/text/notice.rs`), so a
+//! folder named in Arabic or Hebrew doesn't reorder the words around it; the bundle's own isolation stays off.
+//!
+//! ### Adding a kind
+//!
+//! 1. A variant of `Notice`, with its code in the `ids!` table, and its arms in `level`, `source` and `lifecycle`
+//!    (exhaustive matches: it doesn't compile without them). A state names its resolver there.
+//! 2. A sample in `Notice::samples()`, its line in `notice/golden.jsonl`, and an arm in the test `ordinal`. A state's row
+//!    in `notice/resolver_table.golden`.
+//! 3. Its words: the `notice-<code>-title` and `-body` entries in `client/locales/en/text.ftl`, and its values in
+//!    `client/src/text/notice.rs` (`args`). The parity test checks the file's entries against the samples' ids.
+//! 4. The call that posts it, from the crate that has the outcome, and the call that clears it, where its resolver is.
+//!
+//! A removed kind's code moves to the `retired:` list of `ids!`. A new action is a variant of `Action`, the window's
+//! handler for it, and the kinds that offer it in `Notice::actions`.
+//!
+//! ### What clears a kept notice
+//!
+//! Every kept kind and part, and its resolvers, in the samples' order. The table is the output of
+//! `Notice::resolver_markdown()` (from `Notice::resolver_table()`), pinned in `notice/resolver_table.golden`. The test
+//! `the_resolver_table_is_the_golden_one` fails, printing the table, when the output differs from that file.
+//!
+//! The table lists every part the type allows. Which are posted: `unreadable-files` by the thumbnails' and the borders'
+//! passes (the import doesn't post it), and `ledger-not-written` by the thumbnails' pass only (see `ledger.rs`).
+//!
+//! What each resolver is, in the code:
+//!
+//! - `next-success(op)`: the next success of the same operation clears it (the window's reads and edits through
+//!   `app::resolved`, the job's round, a ledger write).
+//! - `complete-pass(pass)`: the next complete run of the pass, one that read every file it had to (the runner's
+//!   `files_read`, and `cache-full` after a complete thumbnail pass that didn't fill the cache).
+//! - `status-poll`: the writer's status as it changes. `write-failed` is posted by `pg_writeback::Writer` at its one status
+//!   choke point when the error goes from none to some (or changes) and cleared when it goes back to none; `write-stopped`
+//!   means "restarts exhausted", posted where `pg_app::Library::tend` gives the writer up (a stop at shutdown, or a panic a
+//!   restart recovers from, posts nothing). `Library::start` clears both before the new writer starts, since a new writer
+//!   starts with no error and would never see the change that clears an earlier run's state.
+//! - `cache-recovery`: the thumbnail cache's writer publishes `TouchesWritten` or `Stored` at its first success after a
+//!   failure; `pg_thumbcache::Event::effect` turns its events into a post or a clear, which the app's forwarder applies (the
+//!   command line prints the posts only).
+//! - `next-save`: the next save of the preferences (`PrefStore::update`).
+//! - `root-walk`: the next complete walk of the whole library folder replaces the folder's kept scan notes with the ones
+//!   it found.
+//!
+
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -143,7 +221,7 @@ impl ScanNote {
         matches!(self, ScanNote::Ambiguous | ScanNote::UnpairedWithData | ScanNote::VolumeFallback)
     }
 
-    /// How the inbox keeps the note, by what it describes (docs/temp/NOTIFICATIONS.md): a condition of the library folder
+    /// How the inbox keeps the note, by what it describes (see the module docs): a condition of the library folder
     /// (hard links and reparse points come out the same on every walk) is kept under `(root, code)` and replaced only by
     /// the next walk of the whole folder; what one walk did (the rows it replaced or bound again) is an event of that
     /// walk, with its count.
@@ -230,6 +308,21 @@ pub struct FileFailure {
     /// The pass panicked on the file (caught): `error` is the panic's message.
     #[serde(default)]
     pub panicked: bool,
+}
+
+/// The failures of a `Cropped` notice: a list, or the one failure an older build kept (`first_error`), or none (null).
+fn failures_or_one<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Vec<FileFailure>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        Many(Vec<FileFailure>),
+        One(FileFailure),
+    }
+    Ok(match Option::<OneOrMany>::deserialize(de)? {
+        None => Vec::new(),
+        Some(OneOrMany::Many(failures)) => failures,
+        Some(OneOrMany::One(failure)) => vec![failure],
+    })
 }
 
 /// What a failed edit was doing (`Notice::EditFailed`), one inbox entry each.
@@ -380,13 +473,16 @@ pub enum Notice {
         height: ThumbHeight,
         made: u64,
     },
-    /// A crop job that ran to the end of its request: the folder its copies went to, and how it went.
+    /// A crop job that ran to the end of its request: the folder its copies went to, and how it went. `failures` are the
+    /// first few that failed, each with its file (`failed` counts them all).
     Cropped {
         folder: String,
         saved: u64,
         skipped: u64,
         failed: u64,
-        first_error: Option<FileFailure>,
+        /// A row an older build wrote holds one failure as `first_error` (or null): that reads as the list of one.
+        #[serde(default, alias = "first_error", deserialize_with = "failures_or_one")]
+        failures: Vec<FileFailure>,
     },
     /// A crop job that failed before it could save anything.
     CropFailed {
@@ -564,10 +660,10 @@ pub enum Notice {
         pass: FilePass,
         count: u64,
     },
-    /// A pass's failures couldn't be written to the failure ledger (a catalog locked for long, a full disk): its files
-    /// are tried again by its next pass.
+    /// The thumbnails' failures couldn't be written to their failure ledger (a catalog locked for long, a full disk): its
+    /// files are tried again by the next pass. Thumbnails only: the borders and the import write their ledger rows in
+    /// the transaction of their own work, so a failure there fails the batch instead.
     LedgerNotWritten {
-        pass: FilePass,
         error: String,
     },
 
@@ -626,7 +722,7 @@ pub enum Resolver {
 }
 
 impl Resolver {
-    /// The resolver's name, as the generated table in docs/temp/NOTIFICATIONS.md writes it: `next-success(edit-rate)`.
+    /// The resolver's name, as the golden table `notice/resolver_table.golden` writes it: `next-success(edit-rate)`.
     pub fn name(self) -> String {
         match self {
             Resolver::NextSuccess(op) => format!("next-success({})", op.code()),
@@ -682,6 +778,36 @@ impl Op {
             Op::Edit(EditOp::Rotate) => "edit-rotate",
             Op::Edit(EditOp::MarkBorder) => "edit-mark-border",
         }
+    }
+}
+
+/// What happened, for the kept notices it clears. A success site names its trigger, never a kind: [`resolves`] says
+/// which kept states a trigger clears, so the rule for each kind is in one place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Trigger {
+    /// The operation succeeded.
+    Op(Op),
+    /// A pass ran to its end and read every file it had to.
+    Pass(FilePass),
+    /// The writer's status is none again: its error is gone, or the writer started again.
+    Status,
+    /// The thumbnail cache's writer is writing again after a failure.
+    CacheRecovery,
+    /// The preferences were saved.
+    Save,
+}
+
+/// Whether `trigger` clears a kept state whose resolver is `resolver`. [`Resolver::RootWalk`] and
+/// [`Resolver::RootRemoval`] have no trigger: a complete walk replaces its folder's notes (a replace scoped to the
+/// folder), and a removal goes through the catalog's foreign key. Neither matches here.
+pub fn resolves(resolver: Resolver, trigger: Trigger) -> bool {
+    match (resolver, trigger) {
+        (Resolver::NextSuccess(op), Trigger::Op(done)) => op == done,
+        (Resolver::CompletePass(pass), Trigger::Pass(done)) => pass == done,
+        (Resolver::StatusPoll, Trigger::Status)
+        | (Resolver::CacheRecovery, Trigger::CacheRecovery)
+        | (Resolver::NextSave, Trigger::Save) => true,
+        _ => false,
     }
 }
 
@@ -978,7 +1104,8 @@ impl Notice {
             Notice::EditFailed { .. } => Source::Edit,
             Notice::BordersFailed { .. } => Source::Borders,
             Notice::ImportFailed { .. } => Source::Import,
-            Notice::UnreadableFiles { pass, .. } | Notice::LedgerNotWritten { pass, .. } => match pass {
+            Notice::LedgerNotWritten { .. } => Source::Thumbs,
+            Notice::UnreadableFiles { pass, .. } => match pass {
                 FilePass::Thumbs => Source::Thumbs,
                 FilePass::Borders => Source::Borders,
                 FilePass::Import => Source::Import,
@@ -1004,8 +1131,8 @@ impl Notice {
             Notice::UnreadableFiles { pass, .. } => {
                 self.key(None, Some(Part::Code(pass.code())), Resolver::CompletePass(*pass))
             }
-            Notice::LedgerNotWritten { pass, .. } => {
-                self.key(None, Some(Part::Code(pass.code())), Resolver::NextSuccess(Op::LedgerWrite(*pass)))
+            Notice::LedgerNotWritten { .. } => {
+                self.key(None, None, Resolver::NextSuccess(Op::LedgerWrite(FilePass::Thumbs)))
             }
             Notice::RoundFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Round)),
             Notice::CacheFull { .. } => self.key(None, None, Resolver::CompletePass(FilePass::Thumbs)),
@@ -1074,7 +1201,7 @@ impl Notice {
         }
     }
 
-    /// Every kept kind and part, and what clears it: the table docs/temp/NOTIFICATIONS.md lists (generated by
+    /// Every kept kind and part, and what clears it: the table `notice/resolver_table.golden` lists (generated by
     /// [`Notice::resolver_markdown`], and compared by a test). In the samples' order, each part in its list's.
     pub fn resolver_table() -> Vec<ResolverRow> {
         Notice::samples()
@@ -1088,7 +1215,7 @@ impl Notice {
             .collect()
     }
 
-    /// The resolver table as docs/temp/NOTIFICATIONS.md holds it: a Markdown table, a row per kept kind and part.
+    /// The resolver table as `notice/resolver_table.golden` holds it: a Markdown table, a row per kept kind and part.
     pub fn resolver_markdown() -> String {
         let mut text = String::from("| Kind | Part | Cleared by |\n|---|---|---|\n");
         for row in Notice::resolver_table() {
@@ -1097,6 +1224,19 @@ impl Notice {
             text.push_str(&format!("| `{}` | {part} | {} |\n", row.code, resolvers.join(", ")));
         }
         text
+    }
+
+    /// What clears the kept kind `code` (a [`Notice::code`]) in `part` (its part's code, if it has one), as the table
+    /// has it: the resolvers of the notice the table was made from, so a stored row is cleared by the same rule a
+    /// posted notice is. Empty for a kind the table doesn't keep.
+    pub fn resolvers_of(code: &str, part: Option<&str>) -> Vec<Resolver> {
+        static TABLE: OnceLock<Vec<ResolverRow>> = OnceLock::new();
+        let table = TABLE.get_or_init(Notice::resolver_table);
+        table
+            .iter()
+            .find(|row| row.code == code && row.part == part)
+            .map(|row| row.resolvers.clone())
+            .unwrap_or_default()
     }
 
     /// The library folder it is about, if any: the inbox ties it to the folder of the library that holds it, so it goes
@@ -1180,7 +1320,7 @@ impl Notice {
             Notice::RoundFailed { error: error() },
             Notice::RoundPanicked { message: "index out of bounds".into() },
             Notice::CacheFull { height: crate::size::ThumbHeight::DEFAULT, made: 40 },
-            Notice::Cropped { folder: r"D:\Crops".into(), saved: 5, skipped: 1, failed: 1, first_error: Some(failure) },
+            Notice::Cropped { folder: r"D:\Crops".into(), saved: 5, skipped: 1, failed: 1, failures: vec![failure] },
             Notice::CropFailed { error: error() },
             Notice::CatalogRebuilt {
                 kept: r"D:\Gallery\catalog.sqlite.bad".into(),
@@ -1234,7 +1374,7 @@ impl Notice {
             Notice::ImportFailed { counts: Some(LedgerCounts { new: 3, earlier: 0 }) },
             Notice::ScanFoldersFailed { counts: Some(LedgerCounts { new: 2, earlier: 1 }) },
             Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 7 },
-            Notice::LedgerNotWritten { pass: FilePass::Borders, error: error() },
+            Notice::LedgerNotWritten { error: error() },
             Notice::NoticesLost { count: 4 },
             Notice::FileNoLongerInLibrary,
             Notice::UpdateAvailable { version: "1.2.0".into() },
@@ -1258,9 +1398,6 @@ fn each_part(notice: Notice) -> Vec<Notice> {
         }
         Notice::UnreadableFiles { count, .. } => {
             FilePass::ALL.iter().map(|&pass| Notice::UnreadableFiles { pass, count }).collect()
-        }
-        Notice::LedgerNotWritten { error, .. } => {
-            FilePass::ALL.iter().map(|&pass| Notice::LedgerNotWritten { pass, error: error.clone() }).collect()
         }
         other => vec![other],
     }
@@ -1475,15 +1612,29 @@ mod tests {
         }
     }
 
-    /// A row an older build wrote, without the fields added since, still reads.
+    /// A row an older build wrote, without the fields added since, still reads: its one `first_error` is the list of one,
+    /// and a null one is none. A row with the list reads as it is.
     #[test]
     fn an_older_row_without_a_later_field_reads() {
         let old = r#"{"kind":"cropped","folder":"D:\\Crops","saved":1,"skipped":0,"failed":1,
             "first_error":{"path":"a.jpg","error":"bad"}}"#;
-        let Notice::Cropped { first_error: Some(failure), .. } = serde_json::from_str::<Notice>(old).unwrap() else {
+        let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(old).unwrap() else {
             panic!("not a crop");
         };
-        assert!(!failure.panicked);
+        assert_eq!(failures.len(), 1);
+        assert!(!failures[0].panicked);
+        let none = r#"{"kind":"cropped","folder":"D:\\Crops","saved":1,"skipped":0,"failed":0,"first_error":null}"#;
+        let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(none).unwrap() else {
+            panic!("not a crop");
+        };
+        assert!(failures.is_empty());
+        let list = r#"{"kind":"cropped","folder":"D:\\Crops","saved":0,"skipped":0,"failed":2,
+            "failures":[{"path":"a.jpg","error":"bad"},{"path":"b.jpg","error":"worse","panicked":true}]}"#;
+        let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(list).unwrap() else {
+            panic!("not a crop");
+        };
+        assert_eq!(failures.len(), 2);
+        assert!(failures[1].panicked);
     }
 
     #[test]
@@ -1590,14 +1741,14 @@ mod tests {
         }
     }
 
-    /// The table in `docs/temp/NOTIFICATIONS.md` is the generated one ([`Notice::resolver_markdown`]), so the doc says
+    /// The table in `notice/resolver_table.golden` is the generated one ([`Notice::resolver_markdown`]), so the doc says
     /// what clears each kept kind as the code does.
     #[test]
-    fn the_documented_resolver_table_is_the_generated_one() {
+    fn the_resolver_table_is_the_golden_one() {
         // Embedded at build time: the shared model reads no files.
-        let doc = include_str!("../../../docs/temp/NOTIFICATIONS.md").replace("\r\n", "\n");
+        let golden = include_str!("notice/resolver_table.golden").replace("\r\n", "\n");
         let table = Notice::resolver_markdown();
-        assert!(doc.contains(&table), "docs/temp/NOTIFICATIONS.md's resolver table is not the generated one:\n{table}");
+        assert_eq!(golden, table, "notice/resolver_table.golden is not the generated table");
     }
 
     /// Every kept kind and part is in the resolver table once, with its resolver and, for one about a library folder,
@@ -1643,6 +1794,39 @@ mod tests {
         assert_eq!(markdown.lines().count(), table.len() + 2);
         assert!(markdown.contains("| `scan-note` | `duplicates` | `root-walk`, `root-removal` |"), "{markdown}");
         assert!(markdown.contains("| `prefs-not-saved` | — | `next-save` |"), "{markdown}");
+    }
+
+    /// A trigger clears the resolver of its own family and no other: the rule the writer applies to every kept kind.
+    #[test]
+    fn a_trigger_clears_only_its_own_family() {
+        assert!(resolves(Resolver::NextSuccess(Op::Round), Trigger::Op(Op::Round)));
+        assert!(!resolves(Resolver::NextSuccess(Op::Session), Trigger::Op(Op::Round)));
+        let ledger = Op::LedgerWrite(FilePass::Thumbs);
+        assert!(!resolves(Resolver::NextSuccess(ledger), Trigger::Op(Op::LedgerWrite(FilePass::Borders))));
+        assert!(resolves(Resolver::CompletePass(FilePass::Thumbs), Trigger::Pass(FilePass::Thumbs)));
+        assert!(!resolves(Resolver::CompletePass(FilePass::Thumbs), Trigger::Pass(FilePass::Import)));
+        assert!(!resolves(Resolver::CompletePass(FilePass::Thumbs), Trigger::Op(Op::Round)));
+        assert!(resolves(Resolver::StatusPoll, Trigger::Status));
+        assert!(!resolves(Resolver::StatusPoll, Trigger::Save));
+        assert!(resolves(Resolver::CacheRecovery, Trigger::CacheRecovery));
+        assert!(resolves(Resolver::NextSave, Trigger::Save));
+        // The scoped two have no trigger.
+        for trigger in [Trigger::Status, Trigger::CacheRecovery, Trigger::Save, Trigger::Pass(FilePass::Thumbs)] {
+            assert!(!resolves(Resolver::RootWalk, trigger) && !resolves(Resolver::RootRemoval, trigger), "{trigger:?}");
+        }
+    }
+
+    /// The table a stored row is cleared by is the table of the notices posted: [`Notice::resolvers_of`] answers each
+    /// kept kind and part as [`Notice::resolvers`] does for the notice.
+    #[test]
+    fn a_stored_kind_is_cleared_by_what_its_notice_is() {
+        for notice in Notice::samples().into_iter().flat_map(each_part) {
+            let Lifecycle::State(key, _) = notice.lifecycle() else { continue };
+            let part = key.part.map(|Part::Code(code)| code);
+            assert_eq!(Notice::resolvers_of(key.code, part), notice.resolvers(), "{notice:?}");
+        }
+        assert!(Notice::resolvers_of("write-dropped", None).is_empty());
+        assert!(Notice::resolvers_of("listing-failed", Some("nope")).is_empty());
     }
 
     #[test]

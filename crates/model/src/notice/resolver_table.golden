@@ -1,0 +1,31 @@
+| Kind | Part | Cleared by |
+|---|---|---|
+| `scan-note` | `duplicates` | `root-walk`, `root-removal` |
+| `scan-note` | `reparse` | `root-walk`, `root-removal` |
+| `scan-note` | `ambiguous` | `root-walk`, `root-removal` |
+| `scan-note` | `unpaired` | `root-walk`, `root-removal` |
+| `scan-note` | `volume-id` | `root-walk`, `root-removal` |
+| `round-failed` | — | `next-success(round)` |
+| `cache-full` | — | `complete-pass(thumbs)` |
+| `prefs-not-saved` | — | `next-save` |
+| `cache-touches-not-written` | — | `cache-recovery` |
+| `cache-not-stored` | — | `cache-recovery` |
+| `write-failed` | — | `status-poll` |
+| `write-stopped` | — | `status-poll` |
+| `listing-failed` | — | `next-success(listing)` |
+| `row-read-failed` | — | `next-success(row-read)` |
+| `reload-failed` | — | `next-success(reload)` |
+| `facets-failed` | — | `next-success(facets)` |
+| `tree-failed` | — | `next-success(tree)` |
+| `views-failed` | `list` | `next-success(views-list)` |
+| `views-failed` | `save` | `next-success(views-save)` |
+| `views-failed` | `delete` | `next-success(views-delete)` |
+| `session-not-saved` | — | `next-success(session)` |
+| `edit-failed` | `rate` | `next-success(edit-rate)` |
+| `edit-failed` | `rotate` | `next-success(edit-rotate)` |
+| `edit-failed` | `mark-border` | `next-success(edit-mark-border)` |
+| `unreadable-files` | `thumbs` | `complete-pass(thumbs)` |
+| `unreadable-files` | `borders` | `complete-pass(borders)` |
+| `unreadable-files` | `import` | `complete-pass(import)` |
+| `ledger-not-written` | — | `next-success(ledger-write-thumbs)` |
+| `session-not-read` | — | `next-success(session)` |

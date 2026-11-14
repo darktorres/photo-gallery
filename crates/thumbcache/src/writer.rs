@@ -432,3 +432,58 @@ fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: ThumbHeig
     tx.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc::channel;
+
+    use super::*;
+
+    /// A failure and the success after it: each kind's failure is ended by its own success event, once.
+    #[test]
+    fn a_failure_then_a_success_emits_the_event_that_ends_it() {
+        let events = Bus::new(8);
+        let sub = events.subscribe();
+        let mut failing = Failing::default();
+        failing.touches(Err(anyhow::anyhow!("busy")), &events);
+        failing.touches(Ok(()), &events);
+        failing.not_stored(&anyhow::anyhow!("disk full"), &events);
+        failing.stored(&events);
+        assert_eq!(
+            sub.take().items,
+            vec![
+                Event::TouchesNotWritten { error: "busy".into() },
+                Event::TouchesWritten,
+                Event::NotStored { error: "disk full".into() },
+                Event::Stored,
+            ]
+        );
+        // Nothing is failing now: a success says nothing.
+        failing.touches(Ok(()), &events);
+        failing.stored(&events);
+        assert!(sub.take().items.is_empty());
+    }
+
+    /// Through the writer's ops: a flush of the touches that can't be written (no `entries` table yet) is the failure,
+    /// and the next flush that goes through is its success.
+    #[test]
+    fn a_touch_flush_that_fails_then_succeeds_emits_both() {
+        let events = Bus::new(8);
+        let sub = events.subscribe();
+        let mut conn = Connection::open_in_memory().unwrap();
+        let (mut touches, mut failing) = (Touches::default(), Failing::default());
+        let flush = |conn: &mut Connection, touches: &mut Touches, failing: &mut Failing| {
+            let (reply, answer) = channel();
+            apply(Op::Flush(reply), conn, touches, failing, &events);
+            answer.recv().unwrap();
+        };
+        apply(Op::Touch(1), &mut conn, &mut touches, &mut failing, &events);
+        flush(&mut conn, &mut touches, &mut failing);
+        conn.execute_batch("CREATE TABLE entries(id INTEGER PRIMARY KEY, last_used INTEGER);").unwrap();
+        flush(&mut conn, &mut touches, &mut failing);
+        let items = sub.take().items;
+        assert_eq!(items.len(), 2, "{items:?}");
+        assert!(matches!(items[0], Event::TouchesNotWritten { .. }), "{items:?}");
+        assert_eq!(items[1], Event::TouchesWritten);
+    }
+}

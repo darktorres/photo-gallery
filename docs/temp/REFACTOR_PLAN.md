@@ -108,7 +108,7 @@ The findings below are as of f3d2e60.
 - **Service patterns** (`Runner`, `Writer`, `ui::loader`, the ThumbCache writer):
   - Progress reaches the UI by polling a message list with a single consumer (`runner.rs:183` `take_messages`,
     `library.rs:226` `poll`), so a second front end would steal its messages. (Since gone: the job posts its notices to the
-    app's inbox, docs/temp/NOTIFICATIONS.md.)
+    app's inbox, `crates/app/src/inbox.rs`.)
   - `Control::checkpoint` polls every 100 ms while paused (`control.rs:152-163`).
   - `ThumbCache` is passed as a leaked `&'static` (`cli.rs:278-279`, `tests/writeback.rs:101`).
   - Per-thread state: the UI's catalog connection and `Maker` (`state.rs:44-47`), the provider's JPEG buffer

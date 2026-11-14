@@ -14,7 +14,7 @@ use pg_model::rules::Path as RulePath;
 
 use pg_exiftool::ExifTool;
 use pg_jobs::control::Control;
-use pg_jobs::failure::file_failure;
+use pg_jobs::failure::{FAILURES_KEPT, file_failure};
 use pg_jobs::pipeline::{self, Options, Read};
 use pg_model::notice::FileFailure;
 use pg_model::progress::Phase;
@@ -27,9 +27,9 @@ pub struct Stats {
     /// Nothing to crop now (no borders, marked, changed since), or not in the library any more.
     pub skipped: usize,
     pub failed: usize,
-    /// The first failure, with its file. A panic on a file is a failure of that file (`Cause::Panicked`), which is
-    /// not queued again.
-    pub error: Option<FileFailure>,
+    /// The first failures, each with its file, up to `FAILURES_KEPT`; `failed` counts them all. A panic on a file is a
+    /// failure of that file (`Cause::Panicked`), which is not queued again.
+    pub failures: Vec<FileFailure>,
     /// What a stop left (to queue again).
     pub remaining: Vec<FileId>,
 }
@@ -71,7 +71,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
     // the copies into a different folder from the one named.
     let folder = real_folder(folder)?;
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
-    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
+    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, failures: Vec::new(), remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
     let mut paths = PathArena::default();
     for &id in ids {
@@ -152,9 +152,9 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    stats
-                        .error
-                        .get_or_insert_with(|| file_failure(rules.display_stored(paths.get(job.source.path)), &e));
+                    if stats.failures.len() < FAILURES_KEPT {
+                        stats.failures.push(file_failure(rules.display_stored(paths.get(job.source.path)), &e));
+                    }
                 }
             }
             Ok(true)

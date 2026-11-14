@@ -326,11 +326,7 @@ notice-unreadable-files-body = { $count ->
     [one] { $text } file couldn't be read (an offline drive, or a file in use): it is tried again by the next pass
    *[other] { $text } files couldn't be read (an offline drive, or files in use): they are tried again by the next pass
 }
-notice-ledger-not-written-title = { $pass ->
-    [thumbs] The thumbnails' failures couldn't be kept
-    [borders] The borders' failures couldn't be kept
-   *[import] The import's failures couldn't be kept
-}
+notice-ledger-not-written-title = The thumbnails' failures couldn't be kept
 notice-ledger-not-written-body = The files that failed are tried again by the next pass: { $error }
 notice-notices-lost-title = Notices weren't kept
 notice-notices-lost-body = { $count ->

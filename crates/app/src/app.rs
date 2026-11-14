@@ -196,7 +196,7 @@ fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox
             while let Some(event) = sub.recv() {
                 match event.effect() {
                     Some(Effect::Post(notice)) => inbox.post(notice),
-                    Some(Effect::Clear(key)) => inbox.clear(key),
+                    Some(Effect::Resolve(trigger)) => inbox.resolve(trigger),
                     None => {}
                 }
             }

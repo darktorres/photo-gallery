@@ -14,7 +14,7 @@
 //! - **When the file can't be renamed** (another process has it open without sharing its deletion), the rotation is
 //!   skipped for this record and tried at the next: the file runs a few lines past its cap. Only once it has grown
 //!   past twice the cap (the rename fails persistently) is it copied aside and emptied in place, which can lose a line
-//!   another instance appends between the copy and the emptying: the one loss, documented in docs/temp/NOTIFICATIONS.md.
+//!   another instance appends between the copy and the emptying: the one loss, documented in `src/lib.rs`.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, Write as _};

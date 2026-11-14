@@ -126,7 +126,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
     keeps marks and counts, `catalog/src/inbox.rs:304-315`); no counts embedded in text that changes each round.
     `RoundPanicked` → `State` with `NextSuccess(Op::Round)`; a deterministic panic retries at the cap interval only.
     `ScanFailed` → keyed `State` per root with explicit `Key::all("scan-failed", Some(root))` cleared when a scan of that
-    root succeeds. Regenerate the resolver table in `docs/temp/NOTIFICATIONS.md` (`the_documented_resolver_table_is_the_generated_one`),
+    root succeeds. Regenerate the resolver table in `crates/model/src/notice/resolver_table.golden` (`the_resolver_table_is_the_golden_one`),
     `golden.jsonl`, the `ordinal` test, `crates/client/locales/en/text.ftl`.
 6. **Scans**: read `roots()` per popped path (`runner.rs:450-456`; today a folder added mid-scan is dropped by `continue`),
     drop the stale `library.contains(&path)` at `:491` (replace with fresh roots, or a sub-folder scan replaces a root's
@@ -245,7 +245,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
   `NotFound`, `next_try_at`); 5.8 (`is_current` `Err`); migrations table 1261-1268.
 - **NTFS_MFT_SCAN_PLAN** 279-291/345: `content_gen` in `files` only now (trigger); `analysis.content_gen`, `stale!` and the
   cache `Source` follow later.
-- **NOTIFICATIONS.md**: resolver table, scan/lease paragraphs (`Lost`, `work_leases`, per-batch fence), borders ledger
+- **NOTIFICATIONS.md** (removed; its content is in the crates' module docs): resolver table, scan/lease paragraphs (`Lost`, `work_leases`, per-batch fence), borders ledger
   paragraph (isolation), lines 236-241 (thumbs `Other` now recorded).
 
 ## Order of work (one build at the end)

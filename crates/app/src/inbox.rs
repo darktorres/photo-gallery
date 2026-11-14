@@ -1,4 +1,4 @@
-//! The inbox (docs/temp/NOTIFICATIONS.md): what the app tells the user, kept in the catalog until they dismiss it. A service:
+//! The inbox: what the app tells the user, kept in the catalog until they dismiss it. A service:
 //! it holds the catalog's path, and its own connection on its own thread; it never reaches the `App`.
 //!
 //! Every producer posts a [`Notice`] ([`Inbox::post`]), from any thread: the notice is logged there and then (so a
@@ -15,9 +15,10 @@
 //! is written before it, so the Retry relists it). What `Work` holds:
 //! - Events: a bounded queue ([`EVENTS`]); one it has no room for is counted, and a [`Notice::NoticesLost`] says how
 //!   many after the next write that goes through.
-//! - States' posts, replaces and clears, which supersede the waiting ones they cover: a post replaces the waiting post
-//!   of its key and carries its repeats forward (so the count never under-counts); a replace or a clear removes every
-//!   waiting op inside its scope. Bounded by the keys and scopes waiting.
+//! - States' posts, replaces, clears and resolves (a [`Trigger`]: it clears every kept kind its resolver matches). A post
+//!   folds into the waiting post of its key and carries its repeats forward (so the count never under-counts), unless a
+//!   clear or a resolve waits after it; a replace or a clear removes every waiting op inside its scope; an identical
+//!   waiting resolve is moot. Bounded by the keys and scopes waiting.
 //! - Marks, dismissals and the Retry: at human rate, never dropped.
 //! - The window's thumbnail reports, the latest per file.
 //! - The flags: whether the inbox is viewed (the latest wins: the ledgers' counts are read only then), a poke, the stop.
@@ -37,6 +38,68 @@
 //! A pass's failure ledger (`pg_catalog::ledger`) is an entry of its own, listed with the rows. The writer also keeps
 //! the thumbnails' ledger for the thumbnails the window makes ([`Inbox::thumb_failed`], [`Inbox::thumb_made`]), and
 //! carries out the user's Retry ([`Inbox::retry`]).
+//!
+//! ### The writer (`pg_app::Inbox`)
+//!
+//! `pg_app::Inbox` (`App::inbox`) is the one way in. `post` logs the notice on the caller's thread (a kept state posted
+//! again within `LOG_AGAIN`, a minute, is not logged again) and queues it for the inbox's writer, a thread with its own
+//! connection. The writer keeps it, then reads the inbox and publishes what it lists (`InboxEvent::Changed`) and a `Toast`
+//! for each entry that is news. What another process changed (the command line, a pass's own connection) is found by the
+//! catalog's `data_version`, every 30 s (`POLL`), when the window is activated, after each of the job's rounds, and
+//! whenever a pass changes a ledger (`Inbox::poke`). The window never reads the catalog for the inbox's listing.
+//!
+//! **One work log.** What is queued is one `Work`, under one lock with a condvar, shared by the handles and the
+//! writer: a wake is never lost to a full channel, and a close never blocks. Every op takes a sequence number under that
+//! lock, in the same critical section as its push, and the writer applies what it takes in that order across every kind
+//! of op (a thumbnail failure reported before the user's Retry is written before it, so the Retry relists it). The lock is
+//! held only to push or to swap, never across SQL. `Work` holds:
+//!
+//! - Events: a bounded queue (`EVENTS`, 1024). One it has no room for is counted toward `NoticesLost`.
+//! - States' posts, replaces, clears and resolves, which supersede the waiting ops they cover: a post replaces the
+//!   waiting post of its key and carries its repeats forward (they sum even when the data differs, so the count never
+//!   under-counts), unless a clear or a resolve waits after it; a replace or a clear removes every waiting op inside its
+//!   scope; an identical waiting resolve is moot. 50 same-data posts between two drains are one upsert
+//!   whose count rises by 50. Bounded by the distinct keys and scopes waiting.
+//! - Marks, dismissals and the Retry: at human rate, never dropped.
+//! - The window's thumbnail reports (`thumb_failed`, `thumb_made`), the latest per file.
+//! - The flags: whether the inbox is viewed (the latest wins), a poke, the stop.
+//!
+//! Whether a clear has work is decided by SQL on the writer: `replace_notices` reads `notices(kind, root)` first and
+//! takes no write lock when nothing is stored.
+//!
+//! **Failures.** The writer's connection waits `BUSY_TIMEOUT` (100 ms, set by `Catalog::set_busy_timeout`; every other
+//! connection waits 5 s) for a lock another connection holds, so it checks its stop at least that often. A write that is
+//! still busy (`pg_catalog::Error::is_busy`, which walks the error's chain) is tried again, in order, until it goes
+//! through: a scan's batch or an import's flush only delays it. Any other failure, `SQLITE_LOCKED` included (a conflict
+//! inside the connection, which trying again on the same connection could loop on), is not tried again: a lost event or
+//! state op counts toward `NoticesLost`, and a mark or a dismissal that fails is logged and the inbox is read again, which
+//! undoes the window's optimistic change (it doesn't count as lost). `NoticesLost` is posted after the next write that goes
+//! through, and counts lost notices only. The Retry is one writer command: it writes `Catalog::retry_failures`, then wakes
+//! the job; a failure reads the inbox again. The writer applies its ops through a small `Store` trait, so the tests inject
+//! `SQLITE_BUSY` and `SQLITE_LOCKED`.
+//!
+//! **Shutdown.** `Inbox::close` sets the stop under the `Work` lock and wakes the writer, which goes on writing (and trying
+//! a busy catalog again) what is queued until it is empty or `SHUTDOWN_DRAIN` (5 s) has passed, then logs what is left.
+//! `App::shutdown` is idempotent, and `impl Drop for App` calls it, so a front end that only drops the app still closes the
+//! cache, the inbox and the catalogs in their order.
+//!
+//! **Counts only when viewed.** A ledger entry is listed from its cheap state (see `ledger.rs`). Its counts (the total, how many are
+//! new, how many came since a dismissal) are read only while the inbox is open (`Inbox::set_viewing`); otherwise
+//! `Entry.counts` is `None` and nothing renders a count. A row's count is its posts, always read.
+//!
+//! **The toast rule.** An event toasts when it is new. A state toasts when it becomes unread (new, or posted again with new
+//! data after it was read or dismissed), or when its `rev` rises while it is unread, at most once per entry per
+//! `LOG_AGAIN` (60 s): a run of failing files toasts once, and the entry shows the latest. A ledger toasts when it turns
+//! unread. A transient notice is only logged and toasted. The startup's listing is the baseline and toasts nothing.
+//!
+//! **The decoder.** A stored row of a known kind whose payload doesn't read (a field it needs is missing) reads as
+//! `Unknown` with the error, which the writer logs once per kind per process; a retired or unknown kind is expected and
+//! not reported.
+//!
+//! The job posts through `pg_jobs::NoticeSink` (`post`, `replace`, `clear`, `poke`), which the inbox implements; it lives in
+//! `pg-jobs` so that the job (`pg_library::runner`) and the writer (`pg_writeback`) both post through it. Tests use
+//! `pg_jobs_testkit::RecordingSink`. The command line passes a printing sink and prints the same words
+//! (`pg_client::text::notice_line`) for the notices it has. A rebuilt catalog's notice is `Rebuilt::notice`.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -51,7 +114,7 @@ use pg_catalog::ledger::Failure;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::ids::FileId;
-use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice};
+use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice, Trigger};
 
 use crate::error::{Result, failed};
 
@@ -105,14 +168,27 @@ enum StateOp {
     Replace { scope: KeyBuf, notices: Vec<Notice>, at: i64 },
     /// The kept notices of `scope` no longer hold.
     Clear { scope: KeyBuf },
+    /// The kept notices that `trigger` clears no longer hold, whatever their folder (`Catalog::resolve_notices`).
+    Resolve(Trigger),
 }
 
 impl StateOp {
-    /// Whether everything this op touches is inside `scope`, so a later replace or clear of `scope` makes it moot.
+    /// Whether everything this op touches is inside `scope`, so a later replace or clear of `scope` makes it moot. A
+    /// resolve touches kinds by their trigger, so it is never moot for a scope.
     fn within(&self, scope: &KeyBuf) -> bool {
         match self {
             StateOp::Post { key, .. } => covers(scope, key),
             StateOp::Replace { scope: inner, .. } | StateOp::Clear { scope: inner } => covers(scope, inner),
+            StateOp::Resolve(_) => false,
+        }
+    }
+
+    /// Whether this op may clear a waiting post of `key`: a clear or replace whose scope covers it, or any resolve.
+    fn clears(&self, key: &KeyBuf) -> bool {
+        match self {
+            StateOp::Post { .. } => false,
+            StateOp::Replace { scope, .. } | StateOp::Clear { scope } => covers(scope, key),
+            StateOp::Resolve(_) => true,
         }
     }
 }
@@ -199,12 +275,17 @@ impl Work {
     }
 
     /// Queue a state's op, superseding the waiting ones it covers.
+    ///
+    /// A post folds into the waiting post of its key only when nothing that clears the key waits after that post: a
+    /// clear ends the post's state, so the post after it starts a new count. (A mark or a dismissal between two posts
+    /// does not stop the fold: the count and the latest data come out the same either way.)
     fn state(&mut self, mut op: StateOp) {
         match &mut op {
             StateOp::Post { key, repeats, .. } => {
                 let same =
                     self.states.iter().position(|(_, s)| matches!(s, StateOp::Post { key: k, .. } if *k == *key));
                 if let Some(at) = same
+                    && !self.states[at + 1..].iter().any(|(_, s)| s.clears(key))
                     && let (_, StateOp::Post { repeats: before, .. }) = self.states.remove(at)
                 {
                     *repeats = repeats.saturating_add(before);
@@ -213,6 +294,12 @@ impl Work {
             StateOp::Replace { scope, .. } | StateOp::Clear { scope } => {
                 let scope = &*scope;
                 self.states.retain(|(_, s)| !s.within(scope));
+            }
+            StateOp::Resolve(trigger) => {
+                // A waiting resolve of the same trigger is moot: this one clears whatever that one would, since a
+                // notice posted between them is of a kind the trigger clears too.
+                let trigger = *trigger;
+                self.states.retain(|(_, s)| !matches!(s, StateOp::Resolve(t) if *t == trigger));
             }
         }
         let seq = self.seq();
@@ -381,6 +468,12 @@ impl Inbox {
         self.push(|w| w.state(StateOp::Clear { scope: key }));
     }
 
+    /// The kept notices that `trigger` clears no longer hold (every kind whose resolver it matches, in every folder).
+    /// Queued like any state op, so it is applied in order with the posts around it.
+    pub fn resolve(&self, trigger: Trigger) {
+        self.push(|w| w.state(StateOp::Resolve(trigger)));
+    }
+
     /// Mark the entries `ids` read, as they were displayed (a row at its revision, a ledger up to its serial).
     pub fn mark_read(&self, ids: Vec<EntryId>) {
         if !ids.is_empty() {
@@ -515,8 +608,8 @@ impl NoticeSink for Inbox {
         Inbox::replace(self, scope, notices);
     }
 
-    fn clear(&self, key: KeyBuf) {
-        Inbox::clear(self, key);
+    fn resolve(&self, trigger: Trigger) {
+        Inbox::resolve(self, trigger);
     }
 
     fn poke(&self) {
@@ -541,6 +634,7 @@ trait Store {
     fn post(&self, notice: &Notice, times: u64, at: i64) -> pg_catalog::Result<bool>;
     fn replace(&self, scope: &Key<'_>, notices: &[Notice], at: i64) -> pg_catalog::Result<bool>;
     fn clear(&self, scope: &Key<'_>) -> pg_catalog::Result<bool>;
+    fn resolve(&self, trigger: Trigger) -> pg_catalog::Result<bool>;
     fn mark(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool>;
     fn dismiss(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool>;
     fn retry(&self, pass: FilePass) -> pg_catalog::Result<()>;
@@ -569,6 +663,10 @@ impl Store for Catalog {
 
     fn clear(&self, scope: &Key<'_>) -> pg_catalog::Result<bool> {
         self.clear_notices(scope)
+    }
+
+    fn resolve(&self, trigger: Trigger) -> pg_catalog::Result<bool> {
+        self.resolve_notices(trigger)
     }
 
     fn mark(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool> {
@@ -625,7 +723,7 @@ impl Step {
     /// How many notices are lost when it can't be written (a mark, a dismissal or a Retry is not a notice).
     fn notices(&self) -> u64 {
         match self {
-            Step::Event { .. } | Step::State(StateOp::Clear { .. }) => 1,
+            Step::Event { .. } | Step::State(StateOp::Clear { .. } | StateOp::Resolve(_)) => 1,
             Step::State(StateOp::Post { repeats, .. }) => *repeats,
             Step::State(StateOp::Replace { notices, .. }) => count(notices.len()).max(1),
             Step::ThumbsFailed(failures) => count(failures.len()),
@@ -663,6 +761,7 @@ fn apply(store: &impl Store, step: &mut Step, now: i64) -> pg_catalog::Result<bo
         Step::State(StateOp::Post { notice, repeats, at, .. }) => store.post(notice, *repeats, *at),
         Step::State(StateOp::Replace { scope, notices, at }) => store.replace(&scope.key(), notices, *at),
         Step::State(StateOp::Clear { scope }) => store.clear(&scope.key()),
+        Step::State(StateOp::Resolve(trigger)) => store.resolve(*trigger),
         Step::Mutation(Mutation::MarkRead(ids)) => store.mark(ids, now),
         Step::Mutation(Mutation::Dismiss(ids)) => store.dismiss(ids, now),
         Step::Mutation(Mutation::Retry(pass, _)) => store.retry(*pass).map(|()| true),
@@ -1128,6 +1227,9 @@ mod tests {
         fn clear(&self, scope: &Key<'_>) -> pg_catalog::Result<bool> {
             self.write(|c| c.clear_notices(scope))
         }
+        fn resolve(&self, trigger: Trigger) -> pg_catalog::Result<bool> {
+            self.write(|c| c.resolve_notices(trigger))
+        }
         fn mark(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool> {
             self.write(|c| c.mark_all_read(ids, now))
         }
@@ -1328,6 +1430,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // A post folds into the waiting post of its key only when nothing clears the key after it: a resolve between two
+    // posts of a key ends the first one's state, so the second starts a new count (N-19).
+    #[test]
+    fn a_post_does_not_fold_past_a_resolve_of_its_key() {
+        let mut work = Work::default();
+        work.state(post_op(failed("a")));
+        work.state(StateOp::Resolve(Trigger::Op(pg_model::notice::Op::Listing)));
+        work.state(post_op(failed("b")));
+        let ops = work.take().ops;
+        let [
+            Op::State(StateOp::Post { notice: first, repeats: 1, .. }),
+            Op::State(StateOp::Resolve(_)),
+            Op::State(StateOp::Post { notice: second, repeats: 1, .. }),
+        ] = &ops[..]
+        else {
+            panic!("the post, the resolve and the post, each counted once");
+        };
+        assert_eq!((first, second), (&failed("a"), &failed("b")));
+    }
+
+    // A mark between two posts of a key does not stop the fold: the count and the latest data come out the same.
+    #[test]
+    fn a_mark_between_two_posts_does_not_stop_the_fold() {
+        let mut work = Work::default();
+        work.state(post_op(failed("a")));
+        work.mutation(Mutation::MarkRead(Vec::new()));
+        work.state(post_op(failed("b")));
+        let ops = work.take().ops;
+        let [Op::Mutation(_), Op::State(StateOp::Post { notice, repeats: 2, .. })] = &ops[..] else {
+            panic!("the mark, then one post counting both");
+        };
+        assert_eq!(notice, &failed("b"));
+    }
+
+    // Resolves of one trigger wait as one: a notice posted between them is cleared by the later one all the same.
+    #[test]
+    fn a_waiting_resolve_of_the_same_trigger_is_one() {
+        let mut work = Work::default();
+        let round = Trigger::Op(pg_model::notice::Op::Round);
+        work.state(StateOp::Resolve(round));
+        work.state(post_op(failed("a")));
+        work.state(StateOp::Resolve(round));
+        assert_eq!(work.states.len(), 2);
+    }
+
     // Folded posts are one row counted as many times as they were posted, holding the latest.
     #[test]
     fn folded_posts_count_every_repeat() {
@@ -1455,6 +1602,25 @@ mod tests {
         writer.handle(&catalog, batch(vec![Op::Mutation(Mutation::MarkRead(vec![id]))]));
         post(&mut writer, "d");
         assert_eq!(toasts(&sub), [failed("d")]);
+        drop(catalog);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A stored row of a kind this build knows that won't read is said once per kind, however often the inbox is read; a
+    // kind this build doesn't know is expected, and is not said (N-27).
+    #[test]
+    fn an_unreadable_row_is_said_once_per_kind() {
+        let (path, dir) = catalog_in("inbox-undecodable");
+        let catalog = open(&path);
+        catalog.post_notice(&Notice::ListingFailed { error: "x".into() }, 0).unwrap();
+        catalog.post_notice(&Notice::ReloadFailed { error: "x".into() }, 0).unwrap();
+        fixture::state::rewrite_notices(&catalog, "listing-failed", "listing-failed", "{}").unwrap();
+        fixture::state::rewrite_notices(&catalog, "reload-failed", "retired-kind", "{}").unwrap();
+        let (mut writer, _sub) = writer();
+        writer.refresh(&catalog, false);
+        assert_eq!(writer.undecodable, BTreeSet::from(["listing-failed".to_string()]));
+        writer.refresh(&catalog, false);
+        assert_eq!(writer.undecodable.len(), 1, "a second read says nothing new");
         drop(catalog);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1636,13 +1802,39 @@ mod tests {
     fn a_clear_of_nothing_writes_nothing() {
         let (inbox, path, dir) = inbox("inbox-clear-nothing");
         assert!(inbox.settle());
-        let other = open(&path);
+        let mut other = open(&path);
         let before = other.data_version().unwrap();
+        // Another connection holds the write lock: a clear of nothing takes none, so it still goes through.
+        let held = other.tx().unwrap();
         inbox.clear(Key::all("listing-failed", None).to_buf());
         inbox.clear(Key::all("edit-failed", None).to_buf());
-        assert!(inbox.settle());
+        inbox.resolve(Trigger::Op(pg_model::notice::Op::Listing));
+        assert!(inbox.settle(), "a clear of nothing waited for the write lock another connection holds");
+        drop(held);
         assert_eq!(other.data_version().unwrap(), before);
         drop(other);
+        inbox.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A session save clears a failed read of the session, and a trigger clears only the kinds its resolver names (N-03):
+    // another failure stays until its own success.
+    #[test]
+    fn a_trigger_clears_its_own_kinds_and_no_others() {
+        use pg_model::notice::Op as ModelOp;
+        let (inbox, _path, dir) = inbox("inbox-triggers");
+        assert!(inbox.settle());
+        inbox.post(Notice::SessionNotRead { error: "read".into() });
+        inbox.post(failed("edit"));
+        assert!(inbox.settle());
+        assert_eq!(notices(&inbox.listing()).len(), 2);
+        inbox.resolve(Trigger::Save);
+        inbox.resolve(Trigger::Op(ModelOp::Session));
+        assert!(inbox.settle());
+        assert_eq!(notices(&inbox.listing()), [failed("edit")]);
+        inbox.resolve(Trigger::Op(ModelOp::Edit(EditOp::Rotate)));
+        assert!(inbox.settle());
+        assert!(notices(&inbox.listing()).is_empty());
         inbox.close();
         let _ = std::fs::remove_dir_all(&dir);
     }

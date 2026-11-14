@@ -25,7 +25,7 @@ use pg_client::controller::size;
 use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
 use pg_model::ids::FileId;
-use pg_model::notice::{Notice, ViewOp};
+use pg_model::notice::{Notice, Op, ViewOp};
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
@@ -108,23 +108,14 @@ fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
     }
 }
 
-/// The inbox says that the change `op` to the saved views failed, for `error`.
-fn views_failed(op: ViewOp, error: &impl std::fmt::Display) {
-    app::post(Notice::ViewsFailed { op, error: app::error_text(error) });
+/// The outcome of the change `op` to the saved views: a failure is posted, and a success clears what its failure kept.
+fn views_outcome<T, E: std::fmt::Display>(op: ViewOp, result: Result<T, E>) -> Option<T> {
+    app::observe(Op::Views(op), result, |e| Notice::ViewsFailed { op, error: app::error_text(e) })
 }
 
 /// The names of the saved views, sorted (`saved_views`).
 fn view_names() -> QStringList {
-    let views = match app::get().views().all() {
-        Ok(views) => {
-            app::resolved_part("views-failed", ViewOp::List.code());
-            views
-        }
-        Err(e) => {
-            views_failed(ViewOp::List, &e);
-            Vec::new()
-        }
-    };
+    let views = views_outcome(ViewOp::List, app::get().views().all()).unwrap_or_default();
     views.iter().map(|v| QString::from(&v.name)).collect()
 }
 
@@ -315,18 +306,12 @@ impl qobject::Shell {
             return;
         }
         let view = SavedView { name, listing: controller::listing() };
-        match app::get().views().save(&view) {
-            Ok(()) => app::resolved_part("views-failed", ViewOp::Save.code()),
-            Err(e) => views_failed(ViewOp::Save, &e),
-        }
+        views_outcome(ViewOp::Save, app::get().views().save(&view));
         self.as_mut().set_saved_views(view_names());
     }
 
     pub(crate) fn delete_view(mut self: Pin<&mut Self>, name: &QString) {
-        match app::get().views().delete(&name.to_string()) {
-            Ok(()) => app::resolved_part("views-failed", ViewOp::Delete.code()),
-            Err(e) => views_failed(ViewOp::Delete, &e),
-        }
+        views_outcome(ViewOp::Delete, app::get().views().delete(&name.to_string()));
         self.as_mut().set_saved_views(view_names());
     }
 
@@ -493,10 +478,11 @@ impl qobject::Shell {
                 gallery::post(move |model| model.set_border_marked(item, marked));
             }
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
-            Command::SaveSession(listing) => match app::get().views().save_listing(&listing) {
-                Ok(()) => app::resolved("session-not-saved"),
-                Err(e) => app::post(Notice::SessionNotSaved { error: app::error_text(&format!("{e:#}")) }),
-            },
+            Command::SaveSession(listing) => {
+                app::observe(Op::Session, app::get().views().save_listing(&listing), |e| Notice::SessionNotSaved {
+                    error: app::error_text(&format!("{e:#}")),
+                });
+            }
             // Saved by `prefs_effect`, above, from the file the window shows now.
             Command::SaveLastFile => {}
             Command::Relayout { .. } => self.as_mut().later(|shell| shell.relayout_due()),

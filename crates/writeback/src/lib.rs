@@ -42,7 +42,7 @@ use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::analysis::FileHash;
 use pg_model::format::Format;
 use pg_model::media::Kind;
-use pg_model::notice::{ERROR_CAP, Key, Notice, tidy};
+use pg_model::notice::{ERROR_CAP, Notice, Trigger, tidy};
 use pg_model::rules::Path as RulePath;
 
 use pg_model::write::{Write, WriteKind};
@@ -190,7 +190,7 @@ impl Inner {
         // Posted with the status let go: a post only queues.
         match error {
             Some(Some(error)) => self.notices.post(write_failed_notice(&error)),
-            Some(None) => self.notices.clear(Key::all("write-failed", None).to_buf()),
+            Some(None) => self.notices.resolve(Trigger::Status),
             None => {}
         }
         self.changes.publish(Change::Writes);
@@ -768,7 +768,7 @@ mod tests {
             [
                 Call::Post(write_failed_notice(&failed("disk full"))),
                 Call::Post(write_failed_notice(&failed("read-only"))),
-                Call::Clear(Key::all("write-failed", None).to_buf()),
+                Call::Resolve(Trigger::Status),
             ]
         );
         let mut dropped = Dropped::default();

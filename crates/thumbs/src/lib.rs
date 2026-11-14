@@ -365,11 +365,19 @@ mod tests {
 
     /// The file whose thumbnail panics.
     static PANIC_ON: Mutex<Option<FileId>> = Mutex::new(None);
+    /// The file whose thumbnail asks its pass to stop (before it is made, so the pass is stopped with that file's result
+    /// in hand).
+    static STOP_ON: Mutex<Option<(FileId, Arc<Control>)>> = Mutex::new(None);
     /// Held by each test that runs the pass: the fault is the process's, and file ids repeat from catalog to catalog.
     static ONE_PASS: Mutex<()> = Mutex::new(());
 
-    /// Panics when `id` is the file asked for.
+    /// Asks the pass to stop when `id` is the file asked for, and panics when it is the file that panics.
     pub(super) fn fault(id: FileId) {
+        if let Some((stop, ctl)) = STOP_ON.lock().unwrap_or_else(PoisonError::into_inner).as_ref()
+            && *stop == id
+        {
+            ctl.request_stop();
+        }
         if *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) == Some(id) {
             panic!("a fault: the thumbnail of file {} panics", id.get());
         }
@@ -504,6 +512,25 @@ mod tests {
         assert!(first.cache_full && !first.complete);
         assert_eq!(first.ledger, LedgerOutcome::Written);
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
+    }
+
+    /// The failures are written when the pass is stopped too, not only when it runs to its end: a file fails, and the
+    /// stop is asked in its thumbnail, so the pass ends with that failure waiting for the ledger.
+    #[test]
+    fn the_ledger_is_written_when_the_pass_is_stopped() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-ledger-stop", &["a.png", "b.png"], 1 << 30);
+        let a = state::file_id(&c, "a.png").unwrap();
+        *PANIC_ON.lock().unwrap() = Some(a);
+        let ctl = Arc::new(Control::new());
+        *STOP_ON.lock().unwrap() = Some((a, ctl.clone()));
+        let first = run(&cache, &catalog_path, h(64), &Options::new(Priority::Normal), &ctl).unwrap();
+        *PANIC_ON.lock().unwrap() = None;
+        *STOP_ON.lock().unwrap() = None;
+        assert_eq!(first.failed, 1, "the file that panicked was reached before the stop");
+        assert_eq!(first.ledger, LedgerOutcome::Written);
+        let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure recorded") };
+        assert_eq!(failed.file_id, a);
     }
 
     /// A failure's kind, by its error's type, never its text: what the ledger records, and with which retry.

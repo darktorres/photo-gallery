@@ -38,6 +38,13 @@ pub fn set_meta_seq(c: &Catalog, value: i64) -> Result<()> {
     Ok(())
 }
 
+/// Time passes for every scan lease: each heartbeat is `secs` older (a walk that has not renewed since, as a listing that
+/// outlasts the lease does not). Past `SCAN_LEASE_SECS`, the lease is one a crashed walk left, and the next walk takes it.
+pub fn age_leases(c: &Catalog, secs: i64) -> Result<()> {
+    c.conn.execute("UPDATE scan_leases SET heartbeat = heartbeat - ?1", [secs])?;
+    Ok(())
+}
+
 /// A file changed on disk: its mtime is `mtime`, and its analysis follows, as a metadata write's does.
 pub fn change_mtime(c: &Catalog, id: FileId, mtime: i64) -> Result<()> {
     c.conn.execute("UPDATE files SET mtime = ?2 WHERE id = ?1", params![id.get(), mtime])?;
@@ -248,4 +255,10 @@ pub fn set_text_temp_layout(path: &std::path::Path, id: FileId, temp_text: &str)
         params![id.get(), temp_text],
     )?;
     Ok(())
+}
+
+/// The stored notice rows of kind `kind` are rewritten to kind `to_kind` with `data` as their payload: a row that won't
+/// read, as an older build or a damaged file leaves one. Returns how many rows changed.
+pub fn rewrite_notices(c: &Catalog, kind: &str, to_kind: &str, data: &str) -> Result<usize> {
+    Ok(c.conn.execute("UPDATE notices SET kind = ?2, data = ?3 WHERE kind = ?1", params![kind, to_kind, data])?)
 }

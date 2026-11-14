@@ -160,17 +160,10 @@ impl qobject::Filters {
         let filters = self.qt_thread();
         let shown = pg_platform::native::PATH_RULES.display_merged(&listing.folder);
         crate::app::get().reading().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
-            let facets = match facets {
-                Ok(facets) => {
-                    crate::app::resolved("facets-failed");
-                    facets
-                }
-                Err(e) => {
-                    let error = crate::app::error_text(&format!("{shown}: {e:#}"));
-                    crate::app::post(pg_model::notice::Notice::FacetsFailed { error });
-                    Facets::default()
-                }
-            };
+            let facets = crate::app::observe(pg_model::notice::Op::Facets, facets, |e| {
+                pg_model::notice::Notice::FacetsFailed { error: crate::app::error_text(&format!("{shown}: {e:#}")) }
+            })
+            .unwrap_or_default();
             // Fails only when the filter bar is gone (the window closing).
             let _ = filters.queue(move |filters| filters.apply_facets(generation, facets));
         });

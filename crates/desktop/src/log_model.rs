@@ -10,6 +10,26 @@
 //!
 //! With `--log-view=<path>` (the screenshots' fixed log) the view shows that file, read with the log's reader, and
 //! follows nothing: the app's own logging is unchanged.
+//!
+//! ## Dev mode and the log view
+//!
+//! Dev mode shows the log view's button in the status bar. **Ctrl+Shift+D** turns it on and off and saves it in the
+//! preferences (`dev_mode`); `--dev=1` or `PG_DEV=1` turns it on for one run without saving it, and leaves the preferences
+//! file as it was. **Ctrl+Shift+L** opens and closes the log view in dev mode, and **Ctrl+Shift+N** the inbox.
+//!
+//! The shortcuts are Qt `Shortcut`s (`GlobalShortcuts.qml`), which Qt matches before the focused item's keys, so they work
+//! from the grid, the viewer and a text field. What a shortcut does is the controller's (`pg_client::controller`): while a
+//! dialog or a menu is open, it is that panel's and the shortcut does nothing; the log view's key closes it when it is open,
+//! and opens it otherwise (closing the inbox first, and the inbox's the log). Each modal panel reports its opening and
+//! closing (`Shell.panelOpened`, `panelClosed`, by its `PanelKind.qml` code), so the controller knows which are open. The
+//! open panels are an ordered set (`Panels.modals`): opening a kind already open moves it to the top, and closing removes it
+//! wherever it is, so it holds each kind at most once.
+//!
+//! The log view (`LogPanel.qml`, over `LogModel`) shows this run's records and the files', oldest first. It follows new
+//! ones while it is at the end, and stops following when the user scrolls away; the selection is by record (`seq`), kept
+//! when the oldest rows are trimmed, and cleared if its own row was. A row is one line; a click shows its whole message and
+//! detail below. Escape or Close dismisses it, and Tab stays in it. `--log-view=<file>` shows that file's records instead,
+//! read with the `pg_log` reader and subscribed to nothing (the `log` screenshot); the app's own logging is unchanged.
 
 pub(crate) mod state;
 
@@ -49,14 +69,12 @@ fn level_code(level: Level) -> i32 {
     }
 }
 
-/// The row of `index`, from 0 (a row Qt asks for is never negative).
-fn row_number(index: &QModelIndex) -> u64 {
-    u64::try_from(index.row()).unwrap_or(0)
-}
-
 impl qobject::LogModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let Some(record) = usize::try_from(index.row()).ok().and_then(|row| self.rows.get(row)) else {
+        let Ok(row) = usize::try_from(index.row()) else {
+            return QVariant::default();
+        };
+        let Some(record) = self.rows.get(row) else {
             return QVariant::default();
         };
         match role {
@@ -66,7 +84,7 @@ impl qobject::LogModel {
             ROLE_MESSAGE => QVariant::from(&QString::from(&record.message)),
             ROLE_DETAIL => QVariant::from(&QString::from(record.detail.as_deref().unwrap_or_default())),
             // A number QML holds exactly (far below 2^53).
-            ROLE_SEQ => QVariant::from(&pg_model::num::size(self.first.saturating_add(row_number(index)))),
+            ROLE_SEQ => QVariant::from(&pg_model::num::size(self.seq_of(row))),
             _ => QVariant::default(),
         }
     }
@@ -142,8 +160,7 @@ impl qobject::LogModel {
 
     fn show_all(mut self: Pin<&mut Self>, records: Vec<pg_log::Record>) {
         self.as_mut().begin_reset_model();
-        self.as_mut().rust_mut().first = 0;
-        self.as_mut().rust_mut().rows = records.into();
+        self.as_mut().rust_mut().reset(records);
         self.as_mut().end_reset_model();
         self.as_mut().rust_mut().ready = true;
         self.ready_changed();
@@ -169,14 +186,23 @@ impl qobject::LogModel {
         );
         self.as_mut().rust_mut().rows.extend(records);
         self.as_mut().end_insert_rows();
-        let extra = self.rows.len().saturating_sub(pg_log::RING_RECORDS);
+        let extra = self.over_cap();
         if extra > 0 {
             self.as_mut().begin_remove_rows(&root, 0, i32::try_from(extra - 1).unwrap_or(i32::MAX));
-            let mut this = self.as_mut().rust_mut();
-            this.rows.drain(..extra);
-            // The rows left keep their numbers.
-            this.first = this.first.saturating_add(u64::try_from(extra).unwrap_or(u64::MAX));
+            self.as_mut().rust_mut().drop_oldest(extra);
             self.as_mut().end_remove_rows();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_level_has_the_code_the_panel_colours() {
+        assert_eq!(level_code(Level::Info), 0);
+        assert_eq!(level_code(Level::Warning), 1);
+        assert_eq!(level_code(Level::Error), 2);
     }
 }

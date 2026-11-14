@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, Key, KeyBuf, Notice, StartOverReason, tidy};
+use pg_model::notice::{ERROR_CAP, Notice, StartOverReason, Trigger, tidy};
 use pg_model::path::{FilePath, WorkList};
 use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
@@ -88,8 +88,8 @@ pub enum Event {
 pub enum Effect {
     /// Tell the user this notice.
     Post(Notice),
-    /// The kept notice this key names no longer holds (the writer recovered).
-    Clear(KeyBuf),
+    /// What the writer's recovery clears: the kept notices its trigger names ([`Trigger`]).
+    Resolve(Trigger),
 }
 
 impl Event {
@@ -108,9 +108,9 @@ impl Event {
                 })
             }
             Event::TouchesNotWritten { error: e } => post(Notice::CacheTouchesNotWritten { error: error(e) }),
-            Event::TouchesWritten => Some(Effect::Clear(Key::all("cache-touches-not-written", None).to_buf())),
+            Event::TouchesWritten => Some(Effect::Resolve(Trigger::CacheRecovery)),
             Event::NotStored { error: e } => post(Notice::CacheNotStored { error: error(e) }),
-            Event::Stored => Some(Effect::Clear(Key::all("cache-not-stored", None).to_buf())),
+            Event::Stored => Some(Effect::Resolve(Trigger::CacheRecovery)),
             Event::WalNotMerged { error: e } => post(Notice::CacheWalNotMerged { error: error(e) }),
             Event::StartedOver { reason, path, detail } => post(Notice::CacheStartedOver {
                 reason: *reason,
@@ -133,16 +133,17 @@ pub struct Usage {
 mod tests {
     use super::*;
 
-    /// A failure posts its notice, and the recovery after it clears that notice's key: the key the notice is kept under.
+    /// A failure posts its notice, and the recovery after it is a trigger the notice's own resolver answers to.
     #[test]
-    fn a_recovery_clears_the_key_its_failure_is_kept_under() {
+    fn a_recovery_is_the_trigger_that_clears_its_failure() {
         for (failure, recovery) in [
             (Event::TouchesNotWritten { error: "busy".into() }, Event::TouchesWritten),
             (Event::NotStored { error: "busy".into() }, Event::Stored),
         ] {
             let Some(Effect::Post(notice)) = failure.effect() else { panic!("{failure:?} posts") };
-            let pg_model::notice::Lifecycle::State(key, _) = notice.lifecycle() else { panic!("{notice:?} is kept") };
-            assert_eq!(recovery.effect(), Some(Effect::Clear(key.to_buf())), "{recovery:?}");
+            let Some(Effect::Resolve(trigger)) = recovery.effect() else { panic!("{recovery:?} resolves") };
+            let cleared = notice.resolvers().into_iter().any(|r| pg_model::notice::resolves(r, trigger));
+            assert!(cleared, "{notice:?} is not cleared by {trigger:?}");
         }
     }
 }

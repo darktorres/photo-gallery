@@ -286,8 +286,10 @@ mod tests {
             "{gone:?}"
         );
         let whole = jpeg(640, 480, 1);
-        // Its header alone: a JPEG cut short past its first scan decodes, grey below the cut.
-        let cut = whole.get(..20).unwrap();
+        // Cut inside its frame header (the SOF segment: its marker and length are there, its size is not): the frame
+        // is what the decoder can't do without, so the cut file is undecodable. Found by the marker, not an offset.
+        let sof = whole.windows(2).position(|w| w == [0xFF, 0xC0] || w == [0xFF, 0xC2]).expect("a frame header");
+        let cut = whole.get(..sof + 6).unwrap();
         assert!(matches!(maker.make(cut, 64, Turns::NONE), Err(MakeError::Undecodable(_))));
         assert!(matches!(maker.make(b"not an image", 64, Turns::NONE), Err(MakeError::Undecodable(_))));
         std::fs::remove_dir_all(&dir).unwrap();

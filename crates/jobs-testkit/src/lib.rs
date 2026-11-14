@@ -10,14 +10,14 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Subscription};
-use pg_model::notice::{KeyBuf, Notice};
+use pg_model::notice::{KeyBuf, Notice, Trigger};
 
 /// What a [`RecordingSink`] was told, in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Call {
     Post(Notice),
     Replace(KeyBuf, Vec<Notice>),
-    Clear(KeyBuf),
+    Resolve(Trigger),
 }
 
 /// A notice sink that keeps every call, for a test to look at ([`RecordingSink::take`]), and counts the pokes.
@@ -48,7 +48,7 @@ impl RecordingSink {
             .into_iter()
             .filter_map(|call| match call {
                 Call::Post(notice) => Some(notice),
-                Call::Replace(..) | Call::Clear(_) => None,
+                Call::Replace(..) | Call::Resolve(_) => None,
             })
             .collect()
     }
@@ -72,8 +72,8 @@ impl NoticeSink for RecordingSink {
         self.push(Call::Replace(scope, notices));
     }
 
-    fn clear(&self, key: KeyBuf) {
-        self.push(Call::Clear(key));
+    fn resolve(&self, trigger: Trigger) {
+        self.push(Call::Resolve(trigger));
     }
 
     fn poke(&self) {

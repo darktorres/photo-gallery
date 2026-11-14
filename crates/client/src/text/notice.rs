@@ -100,13 +100,14 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("height", height.to_string());
             a.set("made", made.to_string());
         }
-        Notice::Cropped { folder, saved, skipped, failed, first_error } => {
+        Notice::Cropped { folder, saved, skipped, failed, failures } => {
             a.set("folder", isolated(folder));
             a.set("saved", saved.to_string());
             a.set("skipped", skipped.to_string());
             // A number: the entry says "none failed" for 0.
             a.set("failed", pg_model::num::size(*failed));
-            let (path, error) = match first_error {
+            // The entry shows the first failure; the list is kept for the rest.
+            let (path, error) = match failures.first() {
                 Some(FileFailure { path, error, .. }) => (isolated(path), error.clone()),
                 None => (String::new(), String::new()),
             };
@@ -194,8 +195,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("pass", pass.code());
             plural(a, *count);
         }
-        Notice::LedgerNotWritten { pass, error } => {
-            a.set("pass", pass.code());
+        Notice::LedgerNotWritten { error } => {
             a.set("error", error.clone());
         }
         Notice::NoticesLost { count } => plural(a, *count),
@@ -275,8 +275,13 @@ mod tests {
         assert_eq!(text(&a, "path"), isolate(r"D:\Gallery\gallery.json"));
         assert_eq!(text(&a, "kept"), "none");
 
-        let a =
-            values(&Notice::Cropped { folder: r"D:\out".into(), saved: 1, skipped: 0, failed: 0, first_error: None });
+        let a = values(&Notice::Cropped {
+            folder: r"D:\out".into(),
+            saved: 1,
+            skipped: 0,
+            failed: 0,
+            failures: Vec::new(),
+        });
         assert_eq!(text(&a, "folder"), isolate(r"D:\out"));
         assert_eq!(text(&a, "path"), "", "no first failure: nothing to isolate");
 

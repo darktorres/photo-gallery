@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use crate::core::Catalog;
-use crate::lifecycle::{set_borders_version, set_import_version};
+use crate::lifecycle::{set_borders_version, set_import_version, set_thumbs_version};
 use crate::queue;
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
@@ -242,6 +242,17 @@ pub(crate) fn older_borders_version(c: &Catalog) {
 /// This build starts on the catalog: its detector's version is taken.
 pub(crate) fn start_borders_version(c: &Catalog) {
     set_borders_version(&c.conn, BORDERS_VERSION).unwrap();
+}
+
+/// The thumbnails' version as an older build left it: the stored mark (`meta.thumbs_version`), older than this build's
+/// thumbnailer.
+pub(crate) fn older_thumbs_version(c: &Catalog) {
+    c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'thumbs_version'", [pg_render::THUMBS_VERSION - 1]).unwrap();
+}
+
+/// This build starts on the catalog: its thumbnailer's version is taken, and a failure of an older one is listed again.
+pub(crate) fn start_thumbs_version(c: &Catalog) {
+    set_thumbs_version(&c.conn, pg_render::THUMBS_VERSION).unwrap();
 }
 
 /// The rating the catalog holds for a file (`ratings`), unrated as `None`.

@@ -20,7 +20,7 @@ number. Reads go through `pipeline::run` with 8 readers (`crates/jobs/src/pipeli
 A reparse point is not followed. A file with a row keeps it, and gets no content from the listing; a folder is not descended, so its files are kept and not marked missing. An entry with `FileId == 0` makes its folder unreadable, which is reported with the other unreadable folders (S-17.7 decisions 9 and 10).
 The unreadable folders, the refused mounts and a refused library folder are kept one row per folder in the catalog's
 folder ledger (`folder_failures`), which the inbox shows as one entry; the schema and its rules are in
-[NOTIFICATIONS.md](../temp/NOTIFICATIONS.md) ("The folder ledger", and "Storage, as `TO_8_NOTIFY` leaves it").
+the module docs of `crates/catalog/src/roots.rs` (the folder ledger) and `crates/catalog/src/schema.rs` (storage).
 
 ## Drive kinds (on NTFS)
 

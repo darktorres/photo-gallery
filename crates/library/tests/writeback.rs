@@ -21,7 +21,7 @@ use pg_jobs_testkit::{Call, Quiet, RecordingSink};
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
-use pg_model::notice::{Key, Notice};
+use pg_model::notice::{Notice, Trigger};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
@@ -743,11 +743,11 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
         .iter()
         .filter(|call| match call {
             Call::Post(notice) => matches!(notice, Notice::WriteFailed { .. }),
-            Call::Clear(key) => key.code == "write-failed",
+            Call::Resolve(trigger) => *trigger == Trigger::Status,
             Call::Replace(..) => false,
         })
         .collect();
-    assert_eq!(failure_calls.last(), Some(&&Call::Clear(Key::all("write-failed", None).to_buf())), "{told:?}");
+    assert_eq!(failure_calls.last(), Some(&&Call::Resolve(Trigger::Status)), "{told:?}");
 
     drop(c);
     quiet.check();

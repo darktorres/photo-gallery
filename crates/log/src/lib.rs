@@ -1,10 +1,62 @@
-//! The app's log (docs/temp/NOTIFICATIONS.md): what went wrong that the user needn't act on (diagnostics), and every notice
+//! The app's log: what went wrong that the user needn't act on (diagnostics), and every notice
 //! the inbox shows, recorded by its code. A record is a JSON line in `gallery.log` in the data folder (`init`), which is
 //! capped and rotated (`file`), and the newest records are also kept in memory from the process's start (`subscribe`),
 //! so the window's log view shows this run's records at once and follows the new ones; `read` adds the older ones from
 //! the files. Before `init`, and when the file can't be written, a record goes to stderr too: none is dropped.
 //!
 //! Only the window writes `gallery.log`; the command line prints to stderr.
+//!
+//! ## The log (`pg-log`)
+//!
+//! `gallery.log` in the data folder, written by the window only (the command line prints to stderr). Each record is one
+//! JSON line:
+//!
+//! | Field | What it holds |
+//! | --- | --- |
+//! | `t` | Milliseconds since 1970, UTC (absent on an older build's plain line) |
+//! | `local` | The local time it was written at, `2026-11-10 17:04:16`: what the log view shows |
+//! | `level` | `info`, `warning` or `error` (the notices' levels) |
+//! | `target` | What it is about, a word: `session`, `library`, `gallery`, `panic`, ... |
+//! | `msg` | The message, at most 4 KiB (`MESSAGE_CAP`) |
+//! | `detail` | Optional: a backtrace, a notice's details; at most 16 KiB (`DETAIL_CAP`) |
+//! | `pid`, `session`, `seq` | The process, when it started, and the record's number in it: a record's identity |
+//! | `file_only` | Present (true) only on a record written to the file alone (below) |
+//!
+//! `DETAIL_CAP` is 16 KiB, not the message's 4: a panic's backtrace is a detail, one passes 4 KiB (a few dozen frames, each
+//! with its file and line), and the frames that place the panic are its end. A capped text ends in `…`, the mark inside
+//! the cap.
+//!
+//! Each run starts with a `session` record whose detail is the build and the data folder. A record is appended as it
+//! comes, in one write, by a file opened and closed for it, so a reader or a second instance sees every line, and a
+//! panic's write needs no lock (one `write_all` of one line on an append handle is one append). Before the log has its
+//! file, and when the file can't take a record, the record goes to stderr too.
+//!
+//! **Rotation never sleeps.** Past 5 MiB (`FILE_CAP`) the file is rotated to `.1`, `.1` to `.2`, the oldest dropped:
+//!
+//! - the file is first renamed aside (`gallery.log.next`); only when that worked is `.1` shifted to `.2` and the aside file
+//!   made `.1`, so a failed rename shifts nothing and a retry can't overwrite an older file;
+//! - rotations are serialized between processes by an OS lock on `gallery.log.lock` (std's `File::try_lock`, released by
+//!   the OS when a process ends): a process that finds it taken skips the rotation for this record;
+//! - an aside file left by a crash between the renames is finished first, under the lock; the reader reads it meanwhile, in
+//!   its place between `.1` and the file;
+//! - **skip, then fall back:** when the file can't be renamed (another process has it open without sharing its deletion),
+//!   the rotation is skipped for this record and tried at the next, so the file runs a few lines past its cap. Only once it
+//!   has grown past twice the cap (the rename fails persistently) is it copied aside and emptied in place. That can lose a
+//!   line another instance of the app appends between the copy and the emptying: **the one documented loss**.
+//!
+//! The reader takes the plain lines an older build wrote (`2026-10-30 17:04:16 text`, as info, with their time), the lines a
+//! plain record ran on to (a panic's backtrace, as its detail), and a JSON line the app was stopped in the middle of (as
+//! text).
+//!
+//! The newest records of this run (at most 5000, and 4 MiB of their text) are kept in memory from the process's start,
+//! whether or not the log view is ever opened. A subscriber (`pg_log::subscribe`) gets them and then each new one; with the
+//! files' records (`pg_log::read`) merged by `Feed::merge`, none is missed and none is there twice. Every hold of the
+//! records in memory goes through one guard (`RingGuard`: keeping a record, the panic path, subscribing), which marks the
+//! thread as holding them, so ordinary contention just waits and no record is lost. A panic raised while its own thread
+//! holds them (which could not take them again without deadlocking) is written to the file only, marked `file_only`, and
+//! `Feed::merge` keeps such records from the file, so the view still shows it once.
+//!
+//! A panic is recorded by the panic hook (`pg_log::panic`), even when it came while the log was being written.
 
 mod file;
 mod record;

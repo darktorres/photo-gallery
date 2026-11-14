@@ -2,6 +2,12 @@
 //! `AutoText`), so a file, folder or view name, a path or an error holding `<b>` or `<img>` would be drawn as HTML (and
 //! defeat the elision). Each one whose text isn't fixed words (a `words.text` or `words.phrase` call, or a literal) sets
 //! its `textFormat`: `Text.PlainText`, unless it means otherwise.
+//!
+//! ## Plain text
+//!
+//! A `Label` or `Text` shows a value that looks like markup as rich text (Qt's `AutoText`), so a name, a path or an error
+//! holding `<b>` would be drawn as HTML. Every one whose text isn't fixed words sets `textFormat: Text.PlainText`; the test
+//! `qml_text::every_label_that_shows_a_value_is_plain_text` (`crates/desktop/src/qml_text.rs`) fails on one that doesn't.
 
 use std::fs;
 use std::path::Path;

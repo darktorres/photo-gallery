@@ -1,7 +1,7 @@
 # The crates: library, import and desktop UI (Rust)
 
 See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/temp/PLAN.md` (§8, M1). The layering and the steps
-that built it are in `docs/REFACTOR_PLAN.md` (its crate table, and the rows for each step).
+that built it are in `docs/temp/REFACTOR_PLAN.md` (its crate table, and the rows for each step).
 
 Every directory under `crates/` is one package, named `pg-<directory>`. From the bottom up:
 
@@ -27,7 +27,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/reference/PROFILING.md`).
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
-  memory for the window's log view (`docs/temp/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
+  memory for the window's log view (`crates/log/src/lib.rs`). Only the window writes it; the command line prints to stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges; and what the edit and the metadata read of them, written once (a
   PNG's or WebP's animation and frames, a lossless WebP, a GIF's image descriptors, a PNG chunk's CRC put right).
@@ -61,7 +61,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
   schema, the file-write queue (`queue`), the reads (`browse`), the filters and sort (their SQL is `query`'s), the
-  duplicate reports, the inbox (`inbox`) and the files the passes failed on (`ledger`; `docs/temp/NOTIFICATIONS.md`). Its API
+  duplicate reports, the inbox (`inbox`) and the files the passes failed on (`ledger`; `crates/catalog/src/ledger.rs`). Its API
   is `Catalog`'s methods, each concern's in an `impl Catalog` of its own module (`roots`, `lookup`, `work`, `borders`,
   `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); `core` is the lifecycle.
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
@@ -283,7 +283,7 @@ Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows
 (`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and the
 thumbnail cache), `gallery.json`, `gallery.log` and, on Windows, `sqlite-aliases` (where a folder whose name SQLite
 can't open is reached by an alias): nothing of the app's is written outside it. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
-is the session's, with the build and the data folder (the log's format is in `docs/temp/NOTIFICATIONS.md`), and
+is the session's, with the build and the data folder (the log's format is in `crates/log/src/lib.rs`), and
 `gallery status` prints the data folder. The app's preferences (write-back, Real Size, borders, row height, the last
 file selected, dev mode) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and
 where you were (folder, subfolders, filters, sort) are in the catalog. Each of these is resolved in one place,

@@ -14,6 +14,7 @@
 use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
+use pg_model::notice::Notice;
 use pg_model::rules::PathRules;
 
 use crate::error::{Error, Result};
@@ -114,7 +115,7 @@ pub(crate) fn convert_session(tx: &Transaction<'_>, source: Source, rules: PathR
     Ok(())
 }
 
-/// `TO_8_NOTIFY`'s rows (docs/temp/NOTIFICATIONS.md):
+/// `TO_8_NOTIFY`'s rows (see the storage docs in `schema.rs`):
 /// - every time, idempotently: the retired scan notices go (they held counts, not paths, so they can't become rows of
 ///   the folder ledger, which the next walk fills); a `write-dropped` notice becomes an Event (no key, no part); every
 ///   failed analysis gets its import ledger row, if it has none (with serials in `(files.seq, file_id)` order, after
@@ -153,6 +154,22 @@ pub(crate) fn convert_notify(tx: &Transaction<'_>, source: Source, _rules: PathR
             params![backfill.max_id_before, backfill.base],
         )?;
     }
+    recompute_hidden(tx)
+}
+
+/// `TO_11_NOTIFY_FIXES`' rows: the retired kinds go (every code `Notice::RETIRED` lists, which a catalog past version 7
+/// may still hold: `convert_notify` removed only two of them, and only on the way from version 7), and every ledger row's
+/// `hidden` is recomputed, as `convert_notify` does. Idempotent on either path.
+pub(crate) fn retire_kinds(tx: &Transaction<'_>, _source: Source, _rules: PathRules) -> Result<()> {
+    for &code in Notice::RETIRED {
+        tx.execute("DELETE FROM main.notices WHERE kind = ?1", [code])?;
+    }
+    recompute_hidden(tx)
+}
+
+/// Each ledger row's `hidden` is its file's `missing OR (import AND pending)`, as `files_failures_hidden` keeps it: a
+/// trigger does not fire for a row that was already there when its file's flags were set, so a conversion computes it.
+fn recompute_hidden(tx: &Transaction<'_>) -> Result<()> {
     tx.execute(
         "UPDATE main.file_failures SET hidden = h.v
          FROM (SELECT l.id AS id, (f.missing OR (l.pass = 'import' AND f.pending)) AS v

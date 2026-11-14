@@ -125,6 +125,24 @@ TestCase {
         tryVerify(() => list.atYEnd, 2000)
     }
 
+    // A key that moves the view away from the end stops it following, as a wheel does: when the next record comes the view
+    // stays where the key put it. (A keyboard move from rest has no movementEnded, so the key itself has to say so.)
+    function test_a_key_that_moves_the_view_away_stops_it_following() {
+        const p = panel(200)
+        const list = findChild(p, "logList")
+        tryVerify(() => list.atYEnd)
+        tryVerify(() => list.activeFocus)
+        verify(p.following)
+        // The current row is 0, above the view: Down moves to row 1, and the view moves with it.
+        keyClick(Qt.Key_Down)
+        tryVerify(() => !p.following, 2000, "a key that moves the view away stops it following")
+        const at = list.contentY
+        record("while away", "")
+        wait(50)
+        verify(!list.atYEnd, "the view stays where the key put it")
+        fuzzyCompare(list.contentY, at, 1)
+    }
+
     // The selection is its row's number: rows trimmed before it move it, and it is let go when its own row goes.
     function test_the_selection_follows_its_row_through_a_trim() {
         const p = panel(5)

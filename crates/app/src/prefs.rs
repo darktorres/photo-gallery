@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::inbox::Inbox;
 use crate::store::JsonStore;
-use pg_model::notice::{ERROR_CAP, Key, Notice, tidy};
+use pg_model::notice::{ERROR_CAP, Notice, Trigger, tidy};
 
 /// The preferences file's content. Fields missing from a file take their defaults; fields the file has that this version
 /// doesn't know are ignored.
@@ -147,7 +147,7 @@ impl PrefStore {
     pub fn update(&self, change: impl FnOnce(&mut Prefs)) -> std::io::Result<()> {
         let result = self.store.update(change);
         match &result {
-            Ok(()) => self.inbox.clear(Key::all("prefs-not-saved", None).to_buf()),
+            Ok(()) => self.inbox.resolve(Trigger::Save),
             Err(e) => self.inbox.post(Notice::PrefsNotSaved {
                 path: self.path.display().to_string(),
                 error: tidy(&e.to_string(), ERROR_CAP),

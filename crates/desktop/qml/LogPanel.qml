@@ -4,7 +4,8 @@
 // kept. Escape or Close dismisses it; Tab stays within it.
 //
 // The view follows the newest record (`following`) until the user scrolls away from the end, and again once they scroll
-// back to it: the flag is set at the user's scroll only, since `atYEnd` read after an insert is stale. The selection is
+// back to it: the flag is set at the user's scroll (a wheel, the scroll bar, a drag) or at a key that moves the row, never
+// from `atYEnd` after an insert, which is stale. The selection is
 // the row's number (the `seq` role), which it keeps as the oldest rows are trimmed: it is found again after a trim, and
 // let go when its own row was trimmed.
 pragma ComponentBehavior: Bound
@@ -31,6 +32,13 @@ ModalOverlay {
     // The user scrolled (a drag, a flick, the wheel, the scroll bar): following again only at the end.
     function scrolled() {
         following = list.atYEnd
+    }
+
+    // A key that moves the current row (the list's own keyboard navigation) is the user scrolling, as a wheel or a scroll
+    // bar is. The view moves with the row, but a keyboard move from rest ends with no movementEnded (Qt's setContentY
+    // sets no moving flag), so the flag is read from the row: following only while it is the newest one.
+    function keyMoved() {
+        following = list.currentIndex === list.count - 1
     }
 
     function select(row: int, seq: real, text: string) {
@@ -92,6 +100,11 @@ ModalOverlay {
                 onCountChanged: if (panel.following) positionViewAtEnd()
                 onMovementEnded: panel.scrolled()
                 onWheelScrolled: panel.scrolled()
+                // The keys that move the current row. The row is read a call later, when the view has been moved to it.
+                Keys.onPressed: (event) => {
+                    if ([Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End].includes(event.key))
+                        Qt.callLater(panel.keyMoved)
+                }
                 ScrollBar.vertical: ScrollBar {
                     onPressedChanged: if (!pressed) panel.scrolled()
                 }

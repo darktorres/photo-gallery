@@ -13,6 +13,71 @@
 //! never one the window wasn't given. While the panel is open the inbox reads the ledgers' counts
 //! (`Inbox::set_viewing`); while it is open and the window active, what is shown is marked read, a new listing's entries
 //! too.
+//!
+//! ## The window
+//!
+//! `Notices` (`src/notices.rs`): the status bar's Inbox button shows the unread count and opens the inbox; the newest toast
+//! is in the status bar (an info goes after 6 s, a warning stays until it is replaced or the inbox opens). The inbox
+//! (`InboxPanel.qml`) lists the entries, newest first. The list is keyed by entry and updated by a diff of each listing
+//! (`list_diff.rs`), so a new notice keeps the selection and the open details, and it is driven from the keyboard. Opening the inbox marks read the entries it displays, and entries arriving while it is open and
+//! the window active are marked when they are shown. A row's details have Copy (to the clipboard) and Dismiss; Clear all
+//! dismisses the entries displayed. **Ctrl+Shift+N** opens and closes it. `--inbox=1` opens it for the screenshots, and
+//! `--inbox-expand=<ledger>` opens a ledger's entry, by the ledger's code.
+//!
+//! **The status bar's link.** The job line says "N failed" as a link only while the inbox lists that ledger (a
+//! `passes` property with a change signal, a bit per ledger with a listed entry or an `unreadable-files` state); otherwise it
+//! is plain text. A click opens the inbox expanded at that entry, and an entry that appears later expands when it does. A
+//! pass that writes or clears ledger rows calls `Control::ledger_changed`, whose hook the runner sets to the inbox's poke
+//! (the thumbnails' and the borders' passes after each write or clear that changed rows, the import after every batch,
+//! since its rows move by trigger, and the scan); pokes coalesce in `Work`. The thumbnails' pass flushes at least every
+//! 2 s, so the entry follows a failing file within about 2 s.
+//!
+//! **The inbox's own reads leave the GUI thread.** A ledger entry's list (its newest files, or its folders, with the
+//! counts read together), what Copy adds to an entry's words, and the folder a Reveal opens are read by the window's
+//! `Reader` (`pg_app::reader`, the kinds `FailedFiles`, `CopyDetails` and `RevealFolder`), which keeps only the newest
+//! request of each kind per session and cancels a stale one; each kind is its own, so none cancels another. Each caller
+//! asks, then goes on when its read is delivered: the list shows "loading", Copy copies, Reveal lists the folder or toasts
+//! `FileNoLongerInLibrary`. These reads are the user's, so waiting behind a listing that is running is acceptable. The rule: what the notifications added or use reads nothing on the GUI thread. The rest of the window's catalog work on that thread is its own plan: `docs/plans/GUI_THREAD_PLAN.md`.
+//!
+//! **Reveal waits for its own listing.** The controller stamps each `Command::OpenList` with a generation from one
+//! counter of its own; the grid carries it (through `GalleryModel::open_listing` and `Grid::arrive`, never through QML),
+//! and `Shell::list_shown` reports the generation shown. A reveal is consumed only by its own listing's `ListShown`, and
+//! navigating away drops it.
+//! ## Where the window tells
+//!
+//! Every report of the window, and what it is: the notice it posts (the inbox logs it, its target the notice's source),
+//! or a log record when it stays a diagnostic. A state is cleared by its resolver (the table in `notice/resolver_table.golden`).
+//!
+//! | Site | Target, level | What | Recorded as |
+//! | --- | --- | --- | --- |
+//! | `lib.rs` `run` | `session`, info | The run's start: the build and the data folder | log |
+//! | `lib.rs` `run` | `config`, warning | `PG_THUMB_CAP_GB` didn't parse | log |
+//! | `panic_log.rs` hook | `panic`, error | A panic, with its backtrace | log (the box, for a fatal one) |
+//! | `app.rs` `stop` | `app`, warning | The background work didn't stop | log |
+//! | `controller.rs` `Core` (3) | `record`, warning | `PG_RECORD` couldn't be written | log |
+//! | `pg_app` `yandex::Yandex::new` (from `--yandex-fixture`) | `yandex`, info | A recording answers the searches | log |
+//! | `pg_app` `App::stop` | `yandex`, warning | A search, a save or a fetch still ran at the stop | log |
+//! | `gallery/state.rs` `with_details` | `gallery`, warning | A file's row couldn't be read | `RowReadFailed` |
+//! | `gallery/state.rs` `fresh_entry` | `gallery`, warning | A file's row couldn't be read again | `ReloadFailed` |
+//! | `gallery/model.rs` `open_listing` | `gallery`, warning | The list couldn't be read | `ListingFailed` |
+//! | `gallery/edits.rs` `rotate`, `set_rating`, `set_border_marked` | `edit`, warning | An edit couldn't be saved | `EditFailed` |
+//! | `filters.rs` `count_facets` | `filters`, warning | The filter bar's counts couldn't be read | `FacetsFailed` |
+//! | `folders.rs` `reload` | `folders`, warning | The folder tree couldn't be read | `TreeFailed` |
+//! | `shell.rs` `view_names`, `save_view`, `delete_view` | `views`, warning | The saved views couldn't be listed, saved, deleted | `ViewsFailed` |
+//! | `shell.rs` `execute` (`SaveSession`) | `session`, warning | The session couldn't be saved | `SessionNotSaved` |
+//! | `picker.rs` `pick` | `picker`, warning | The folder dialog failed (the call, the start folder) | `PickerFailed` |
+//! | `picker.rs` `report_unlisted` | `picker`, warning | The app's folder dialog couldn't list a folder | `PickerFailed` |
+//! | `library.rs` `load_roots` | `library`, warning | The library's folders couldn't be read | `FoldersUnreadable` |
+//! | `library.rs` `start` | `library`, error | The background work didn't start | `LibraryUnavailable` |
+//! | `library.rs` `start` | `library`, warning | The change pump didn't start | log |
+//! | `providers.rs` (4) | `providers`, warning | An image request failed, or wasn't one | log (a thumbnail that doesn't decode is also recorded in the ledger, by `pg_app::Images`) |
+//! | `animation.rs` `restart` | `animation`, warning | An animation couldn't be read | log |
+//! | `video_source.rs` `play`, `video_player.rs` `play_path` | `video`, warning | A video couldn't be opened | log |
+//! | `yandex.rs` (3) | `yandex`, warning | A search's file, the pump, a thread | log (the panel says it) |
+//! | `log_model.rs` `start` | `log`, warning | The log view's reader didn't start | log |
+//!
+//! The writer's failures (`write-failed`, `write-stopped`) and a dropped edit (`write-dropped`, an event: a lost edit is a
+//! fact, not a condition) are posted by `pg_writeback` and `pg_app::Library`; the window's `refresh_writes` only shows the writer's status.
 
 pub(crate) mod state;
 

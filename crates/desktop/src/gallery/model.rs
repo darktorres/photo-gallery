@@ -96,17 +96,10 @@ impl qobject::GalleryModel {
         let model = self.qt_thread();
         let shown = pg_platform::native::PATH_RULES.display_merged(&folder);
         crate::app::get().reading().session().grid(folder, recursive, query, sort, move |entries| {
-            let entries = match entries {
-                Ok(entries) => {
-                    crate::app::resolved("listing-failed");
-                    entries
-                }
-                Err(e) => {
-                    let error = crate::app::error_text(&format!("{shown}: {e:#}"));
-                    crate::app::post(pg_model::notice::Notice::ListingFailed { error });
-                    Vec::new()
-                }
-            };
+            let entries = crate::app::observe(pg_model::notice::Op::Listing, entries, |e| {
+                pg_model::notice::Notice::ListingFailed { error: crate::app::error_text(&format!("{shown}: {e:#}")) }
+            })
+            .unwrap_or_default();
             // Fails only when the model is gone (the window closing): nothing left to show it in.
             let _ = model.queue(move |model| model.apply(generation, entries));
         });

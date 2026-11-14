@@ -10,7 +10,7 @@ use pg_client::text::cli::{Line, line};
 use pg_jobs::NoticeSink;
 use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
-use pg_model::notice::{KeyBuf, Notice};
+use pg_model::notice::{KeyBuf, Notice, Trigger};
 use pg_model::progress::Progress;
 use pg_thumbcache::Effect;
 
@@ -52,6 +52,8 @@ impl NoticeSink for PrintingSink {
     }
 
     fn replace(&self, _scope: KeyBuf, _notices: Vec<Notice>) {}
+
+    fn resolve(&self, _trigger: Trigger) {}
 
     fn poke(&self) {}
 }
@@ -124,7 +126,7 @@ pub(crate) fn report_pass(pass: pg_model::notice::FilePass, unreadable: usize, l
         eprintln!("{}", text::notice_line(&Notice::UnreadableFiles { pass, count }, rules));
     }
     if let Some(error) = ledger_error {
-        eprintln!("{}", text::notice_line(&Notice::LedgerNotWritten { pass, error }, rules));
+        eprintln!("{}", text::notice_line(&Notice::LedgerNotWritten { error }, rules));
     }
 }
 

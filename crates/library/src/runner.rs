@@ -25,7 +25,7 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Part, tidy};
+use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Op, Trigger, tidy};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
@@ -307,8 +307,9 @@ impl Inner {
         self.notices.post(notice);
     }
 
-    fn clear(&self, key: Key<'_>) {
-        self.notices.clear(key.to_buf());
+    /// What happened that clears the kept notices its trigger names (see [`Trigger`]).
+    fn resolve(&self, trigger: Trigger) {
+        self.notices.resolve(trigger);
     }
 
     /// A pass couldn't read `unreadable` of its files (they are tried again by its next pass): what its kept notice says,
@@ -317,25 +318,25 @@ impl Inner {
         if unreadable > 0 {
             self.notify(Notice::UnreadableFiles { pass, count: count(unreadable) });
         } else if complete {
-            self.clear(Key { code: "unreadable-files", root: None, part: Some(Part::Code(pass.code())) });
+            self.resolve(Trigger::Pass(pass));
         }
     }
 
     /// What a pass's writes to the failure ledger came to: a failure is said; a write that went through clears what an
     /// earlier failure said; a pass that wrote nothing says nothing (it is no success of the ledger's write).
-    fn ledger_written(&self, pass: FilePass, outcome: LedgerOutcome) {
+    fn ledger_written(&self, outcome: LedgerOutcome) {
         match outcome {
             LedgerOutcome::Failed(error) => {
-                self.notify(Notice::LedgerNotWritten { pass, error: tidy(&error, ERROR_CAP) });
+                self.notify(Notice::LedgerNotWritten { error: tidy(&error, ERROR_CAP) });
             }
-            LedgerOutcome::Written => self.ledger_not_written_gone(pass),
+            LedgerOutcome::Written => self.ledger_not_written_gone(),
             LedgerOutcome::Untouched => {}
         }
     }
 
-    /// `pass`'s ledger was written: its kept `ledger-not-written` goes.
-    fn ledger_not_written_gone(&self, pass: FilePass) {
-        self.clear(Key { code: "ledger-not-written", root: None, part: Some(Part::Code(pass.code())) });
+    /// The thumbnails' ledger was written: a `ledger-not-written` kept for an earlier failure is no longer true.
+    fn ledger_not_written_gone(&self) {
+        self.resolve(Trigger::Op(Op::LedgerWrite(FilePass::Thumbs)));
     }
 
     fn scanned(&self) {
@@ -372,7 +373,7 @@ impl Inner {
             match self.round_caught(&mut catalog) {
                 Ok(step) => {
                     // A round that ran is the end of a failed one's notice.
-                    self.clear(Key::all("round-failed", None));
+                    self.resolve(Trigger::Op(Op::Round));
                     again = matches!(step, Step::Preempted);
                 }
                 Err(notice) => self.notify(notice),
@@ -437,7 +438,7 @@ impl Pass<Cx<'_>> for Crops {
                     saved: count(s.saved),
                     skipped: count(s.skipped),
                     failed: count(s.failed),
-                    first_error: s.error.map(file_failure),
+                    failures: s.failures.into_iter().map(file_failure).collect(),
                 }),
                 Err(e) => cx.inner.notify(Notice::CropFailed { error: error_text(&e) }),
             }
@@ -540,11 +541,7 @@ impl Pass<Cx<'_>> for Borders {
         }
         cx.inner.files_read(FilePass::Borders, s.unreadable, s.complete);
         // The borders' ledger rows are written in the transaction of the borders they go with (`pg_borders::find`): a
-        // failure to write them fails the batch, which is the round's failure, not a ledger's of its own. A batch that
-        // went in wrote its rows, which resolves a `ledger-not-written` an earlier build kept for the borders.
-        if s.files > 0 {
-            cx.inner.ledger_not_written_gone(FilePass::Borders);
-        }
+        // failure to write them fails the batch, which is the round's failure, not a ledger's of its own.
         Ok(Step::Done)
     }
 }
@@ -563,10 +560,10 @@ impl Pass<Cx<'_>> for Thumbs {
         if s.cache_full {
             cx.inner.notify(Notice::CacheFull { height, made: count(s.made) });
         } else if s.complete {
-            cx.inner.clear(Key::all("cache-full", None));
+            cx.inner.resolve(Trigger::Pass(FilePass::Thumbs));
         }
         cx.inner.files_read(FilePass::Thumbs, s.unreadable, s.complete);
-        cx.inner.ledger_written(FilePass::Thumbs, s.ledger);
+        cx.inner.ledger_written(s.ledger);
         Ok(Step::Done)
     }
 }
@@ -577,7 +574,7 @@ mod tests {
     use std::time::Instant;
 
     use pg_jobs_testkit::{Call, Quiet, RecordingSink};
-    use pg_model::notice::{KeyBuf, ScanNote};
+    use pg_model::notice::ScanNote;
     use pg_platform::native::PATH_RULES;
 
     use super::*;
@@ -667,10 +664,6 @@ mod tests {
         }
     }
 
-    fn kept(code: &'static str, part: Option<&'static str>) -> KeyBuf {
-        KeyBuf { code, root: None, part: part.map(Part::Code) }
-    }
-
     /// A file that can't be read (here, gone since the import) is said, not recorded in the ledger; once nothing is
     /// left to read, the next complete pass (its early return) clears what was said.
     #[test]
@@ -689,7 +682,7 @@ mod tests {
         sink.take();
         run(&mut Thumbs, &inner);
         assert!(sink.posted().is_empty(), "{:?}", sink.calls());
-        assert!(sink.calls().contains(&Call::Clear(kept("unreadable-files", Some("thumbs")))), "{:?}", sink.calls());
+        assert!(sink.calls().contains(&Call::Resolve(Trigger::Pass(FilePass::Thumbs))), "{:?}", sink.calls());
     }
 
     /// A cache too small for one thumbnail is said; a complete pass (here, once its file left the library) clears it.
@@ -708,7 +701,7 @@ mod tests {
         pg_scan::scan(&mut Catalog::open(&catalog_path, PATH_RULES).unwrap(), &root, &Control::new()).unwrap();
         sink.take();
         run(&mut Thumbs, &inner);
-        assert!(sink.calls().contains(&Call::Clear(kept("cache-full", None))), "{:?}", sink.calls());
+        assert!(sink.calls().contains(&Call::Resolve(Trigger::Pass(FilePass::Thumbs))), "{:?}", sink.calls());
     }
 
     /// A round that fails (its catalog can't be opened) is said; the next round that runs clears it.
@@ -724,7 +717,7 @@ mod tests {
         wait_for("the round's failure", || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })));
         std::fs::rename(&aside, &catalog_path).unwrap();
         runner.wake();
-        wait_for("the failure cleared", || sink.calls().contains(&Call::Clear(kept("round-failed", None))));
+        wait_for("the failure cleared", || sink.calls().contains(&Call::Resolve(Trigger::Op(Op::Round))));
         assert!(runner.stop(Duration::from_secs(30)));
     }
 
@@ -798,15 +791,12 @@ mod tests {
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
-        inner.ledger_written(FilePass::Thumbs, LedgerOutcome::Untouched);
+        inner.ledger_written(LedgerOutcome::Untouched);
         assert!(sink.take().is_empty());
-        inner.ledger_written(FilePass::Thumbs, LedgerOutcome::Failed("disk full".into()));
-        assert_eq!(
-            sink.take(),
-            [Call::Post(Notice::LedgerNotWritten { pass: FilePass::Thumbs, error: "disk full".into() })]
-        );
-        inner.ledger_written(FilePass::Thumbs, LedgerOutcome::Written);
-        assert_eq!(sink.take(), [Call::Clear(kept("ledger-not-written", Some("thumbs")))]);
+        inner.ledger_written(LedgerOutcome::Failed("disk full".into()));
+        assert_eq!(sink.take(), [Call::Post(Notice::LedgerNotWritten { error: "disk full".into() })]);
+        inner.ledger_written(LedgerOutcome::Written);
+        assert_eq!(sink.take(), [Call::Resolve(Trigger::Op(Op::LedgerWrite(FilePass::Thumbs)))]);
     }
 
     /// The job pokes its sink when a pass says the ledger changed (`Control::ledger_changed`).

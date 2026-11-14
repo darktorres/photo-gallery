@@ -16,7 +16,7 @@ use pg_jobs::events::{Bus, Change};
 use pg_library::folders::AddError;
 use pg_library::runner::{Generation, HeightCell, Runner};
 use pg_model::ids::{FileId, RootId};
-use pg_model::notice::{Key, Notice};
+use pg_model::notice::{Notice, Trigger};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
@@ -94,8 +94,7 @@ impl Library {
         heights: HeightCell,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Library> {
-        notices.clear(Key::all("write-stopped", None).to_buf());
-        notices.clear(Key::all("write-failed", None).to_buf());
+        notices.resolve(Trigger::Status);
         let changes = Arc::new(Bus::new(256));
         let runner =
             Runner::start(catalog_path.clone(), thumbs, heights, changes.clone(), notices.clone()).map_err(failed)?;
@@ -375,8 +374,8 @@ mod tests {
         fn replace(&self, scope: KeyBuf, notices: Vec<Notice>) {
             self.calls.lock().unwrap().push(format!("replace {} {}", scope.code, notices.len()));
         }
-        fn clear(&self, key: KeyBuf) {
-            self.calls.lock().unwrap().push(format!("clear {}", key.code));
+        fn resolve(&self, trigger: Trigger) {
+            self.calls.lock().unwrap().push(format!("resolve {trigger:?}"));
         }
         fn poke(&self) {}
     }
@@ -398,7 +397,7 @@ mod tests {
     #[test]
     fn a_start_clears_the_writers_states_first() {
         let (library, sink, dir) = library("library-start");
-        assert_eq!(sink.calls()[..2], ["clear write-stopped", "clear write-failed"]);
+        assert_eq!(sink.calls()[..1], ["resolve Status"]);
         assert!(library.stop());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -420,6 +419,27 @@ mod tests {
         assert_eq!(stopped(&sink), 1);
         assert!(library.stop());
         assert_eq!(stopped(&sink), 1, "a stop posts nothing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A restart posts nothing: a writer that has ended is started again once its wait is over, and that is not news
+    /// (only giving up is, and that has its own test).
+    #[test]
+    fn a_restart_posts_nothing() {
+        let (library, sink, dir) = library("library-restart");
+        let before = sink.calls().len();
+        {
+            let mut slot = library.writer();
+            slot.writer.stop();
+            // Its wait is over: the restart is due now.
+            slot.retry_at = Some(Instant::now());
+            library.tend(&mut slot);
+            assert_eq!(slot.restarts, 1);
+            assert!(!slot.given_up);
+            assert!(slot.writer.is_running(), "the writer was started again");
+        }
+        assert_eq!(sink.calls().len(), before, "a restart posts nothing: {:?}", sink.calls());
+        assert!(library.stop());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -13,13 +13,37 @@
 //! paired at the end of the scan (`pg_catalog::Catalog::pair_after_scan`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 //!
-//! The catalog's write lock is never held across the file system or a wait (docs/temp/NOTIFICATIONS.md, W2). A folder is
+//! The catalog's write lock is never held across the file system or a wait (the write-lock section of the module docs, W2). A folder is
 //! listed outside any transaction, into the batch being built, with the catalog's rows for its files as they were then
 //! (`Catalog::prior_states`); a full batch is written in one short write transaction, which changes only the rows still
 //! as they were read (a write-back between the listing and the write is kept). A pause or a stop writes the batch built
 //! first, then waits with nothing held. Two walks of overlapping folders never interleave: a walk holds the scan lease
 //! of its folder (`Catalog::begin_scan`), renewed with each batch and through a pause, and a walk refused one is
 //! [`ScanError::Busy`].
+//!
+//! ## The scan and the write lock
+//!
+//! A walk never holds the catalog's write lock across the file system or a wait (`pg_scan`):
+//!
+//! - Each folder is listed outside any transaction, into the batch being built, with the catalog's `(size, mtime)` of its
+//!   files as they were then (`Catalog::prior_states`). A batch is written at a folder boundary once it holds `BATCH`
+//!   (10 000) entries, in one short write transaction (folder rows, the files seen, the new files, the folder ledger's
+//!   rows), and committed at once. A folder larger than a batch is held whole.
+//! - The batch changes a file's row only where it still has the size and mtime that were read and no write of the app's
+//!   into it is in progress (`not_being_written!`): a write-back committed between the listing and the batch is kept, and
+//!   the file is only marked seen; the next walk lists its new state. Stamps such as `files.seq` are not compared, since
+//!   imports, Retry and rotations bump them.
+//! - A pause or a stop first writes the batch built, then waits with no transaction open. `mark_missing` still runs only at
+//!   the end of a complete walk. Pairing (`pair_after_scan`) and `mark_missing` run in batches of at most 1000 rows, each in
+//!   its own transaction.
+//! - **Two walks of overlapping folders never interleave** (one is inside the other): a walk holds a **scan lease**
+//!   (`scan_leases`, `Catalog::begin_scan`, which refuses when an unexpired lease covers an overlapping folder). The walk
+//!   renews it with each batch and every 20 s while it is held up; one with no heartbeat for `SCAN_LEASE_SECS` (60 s) is a
+//!   crashed process's, and expires. It is given back in `mark_missing`'s last transaction, or when the `ScanLease` is
+//!   dropped (a stop, an error, a panic). A refused walk is `ScanError::Busy`: the job puts it back on its queue and tries
+//!   again after 5 s (`BUSY_RETRY`); `gallery scan` says another process is scanning and fails, or waits with `--wait`.
+//!
+//! So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -159,11 +183,18 @@ struct DirEntry {
 /// Lists a folder's media files and subfolders into `entries`, reusing the first ones: returns how many. The
 /// platform gives the records; the choices are here: a record needs its file ID, the dot folders are skipped, and
 /// only files the library holds and folders are kept. Reparse points are kept, marked, so the walk can index them
-/// without following them.
-fn list<L: Listing>(lister: &mut L, dir: &L::Dir, root_volume: u64, entries: &mut Vec<DirEntry>) -> io::Result<usize> {
+/// without following them. `beat` runs before each record, so a listing that takes long can renew the walk's lease.
+fn list<L: Listing>(
+    lister: &mut L,
+    dir: &L::Dir,
+    root_volume: u64,
+    entries: &mut Vec<DirEntry>,
+    beat: &mut dyn FnMut(),
+) -> io::Result<usize> {
     let mut n = 0;
     let mut no_id = false;
     lister.each(dir, |e| {
+        beat();
         let name = name_from_native(e.name);
         // An entry with no file ID has no identity to keep its rows by. The folder is then unreadable, so its
         // entries are not recorded and its rows are not marked missing (decision 10).
@@ -363,16 +394,18 @@ fn walk<L: Listing>(
     ctl: &Control,
     lister: &mut L,
 ) -> Result<ScanStats, ScanError> {
-    walk_in_batches(catalog, root, ctl, lister, BATCH)
+    walk_in_batches(catalog, root, ctl, lister, BATCH, RENEW_EVERY)
 }
 
-/// [`walk`], writing a batch once it holds `batch_size` entries ([`BATCH`]; the tests use small ones, to cross it).
+/// [`walk`], writing a batch once it holds `batch_size` entries ([`BATCH`]; the tests use small ones, to cross it), and
+/// renewing the lease once `renew_every` has passed since the last renewal ([`RENEW_EVERY`]; the tests use a shorter one).
 fn walk_in_batches<L: Listing>(
     catalog: &mut Catalog,
     root: &RulePath,
     ctl: &Control,
     lister: &mut L,
     batch_size: usize,
+    renew_every: Duration,
 ) -> Result<ScanStats, ScanError> {
     let rules = catalog.rules();
     let root_dir = open_folder(lister, rules, root).with_context(|| format!("can't open {}", rules.display(root)))?;
@@ -383,12 +416,14 @@ fn walk_in_batches<L: Listing>(
     })?;
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    Ok(walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume, batch_size)?)
+    Ok(walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume, batch_size, renew_every)?)
 }
 
 /// The walk of `root` under its lease: each folder listed outside any transaction into the batch, each full batch
 /// written in a transaction of its own; at the end, the pairing, and for a complete walk the missing marks and the
-/// folder ledger's sweep.
+/// folder ledger's sweep. The lease is renewed at each checkpoint, while a folder is listed (each record, once
+/// `renew_every` has passed), and with each batch: a walk that can't renew it has lost it, and ends with the error.
+#[expect(clippy::too_many_arguments, reason = "the walk's pacing is passed beside its batch size, for the tests")]
 fn walk_leased<L: Listing>(
     lease: &mut ScanLease<'_>,
     root: &RulePath,
@@ -397,6 +432,7 @@ fn walk_leased<L: Listing>(
     root_dir: L::Dir,
     root_volume: u64,
     batch_size: usize,
+    renew_every: Duration,
 ) -> Result<ScanStats> {
     let rules = lease.rules();
     let scan_id = lease.id();
@@ -422,7 +458,7 @@ fn walk_leased<L: Listing>(
     while let Some(frame) = stack.pop() {
         // A stop ends the walk here: nothing is marked missing and the scan's `finished` stays NULL. The pairing
         // still runs, on what was seen (tier 1 only: it needs no whole tree).
-        if !checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed)? {
+        if !checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed, renew_every)? {
             complete = false;
             break;
         }
@@ -436,7 +472,23 @@ fn walk_leased<L: Listing>(
                 }
             },
         };
-        let listed = match list(lister, &dir, root_volume, &mut entries) {
+        // The records renew the lease as they come (a listing can outlast it, and another walk take it then).
+        let mut lost = None;
+        let listed = {
+            let mut beat = || {
+                if lost.is_none() && renewed.elapsed() >= renew_every {
+                    match renew(&*lease, root) {
+                        Ok(()) => renewed = Instant::now(),
+                        Err(e) => lost = Some(e),
+                    }
+                }
+            };
+            list(lister, &dir, root_volume, &mut entries, &mut beat)
+        };
+        if let Some(e) = lost {
+            return Err(e);
+        }
+        let listed = match listed {
             Ok(n) => n,
             Err(e) => {
                 unreadable(&mut stats, &mut skipped, &mut batch, rules, frame.path, &e);
@@ -564,7 +616,7 @@ fn unreadable(
 
 /// The walk's checkpoint before each folder, with nothing of the catalog held across a wait: a pause or a stop first
 /// writes the batch built so far, and a pause renews the lease while it lasts (so does a walk held up anywhere, every
-/// [`RENEW_EVERY`]). False for a stop.
+/// `renew_every`, [`RENEW_EVERY`] in production). False for a stop.
 fn checkpoint(
     lease: &mut ScanLease<'_>,
     root: &RulePath,
@@ -572,8 +624,9 @@ fn checkpoint(
     batch: &mut Batch,
     stats: &mut ScanStats,
     renewed: &mut Instant,
+    renew_every: Duration,
 ) -> Result<bool> {
-    if renewed.elapsed() >= RENEW_EVERY {
+    if renewed.elapsed() >= renew_every {
         renew(lease, root)?;
         *renewed = Instant::now();
     }
@@ -620,6 +673,9 @@ fn write_batch(
         return Ok(());
     }
     let scan_id = lease.id();
+    // Renewed just before the batch's transaction: a walk whose lease was taken (it expired while the walk was held up)
+    // writes nothing beside the other walk's writes.
+    renew(&*lease, root)?;
     let tx = lease.tx()?;
     let mut ledger = false;
     {
@@ -710,6 +766,8 @@ mod tests {
         refused: Vec<Vec<Unit>>,
         /// Run when the folder at the path is listed, before its entries are given.
         hooks: Vec<(String, Hook)>,
+        /// Run when the folder at the path has been listed, after its entries are given.
+        after: Vec<(String, Hook)>,
     }
 
     impl FakeListing {
@@ -726,7 +784,7 @@ mod tests {
                     (units_of(fake_path(rules, rel).as_bytes()), rel.to_string(), entries.clone())
                 })
                 .collect();
-            FakeListing { tree, root_volume, refused: Vec::new(), hooks: Vec::new() }
+            FakeListing { tree, root_volume, refused: Vec::new(), hooks: Vec::new(), after: Vec::new() }
         }
 
         /// The same tree, with the mount at `rel` (spelled under `rules`) refused by its file system.
@@ -738,6 +796,12 @@ mod tests {
         /// The same tree, running `hook` each time the folder at `rel` is listed.
         fn on_listing(mut self, rel: &str, hook: impl FnMut() + Send + 'static) -> FakeListing {
             self.hooks.push((rel.to_string(), Box::new(hook)));
+            self
+        }
+
+        /// The same tree, running `hook` once the folder at `rel` has been listed (all its entries given).
+        fn after_listing(mut self, rel: &str, hook: impl FnMut() + Send + 'static) -> FakeListing {
+            self.after.push((rel.to_string(), Box::new(hook)));
             self
         }
     }
@@ -787,6 +851,11 @@ mod tests {
                     created: None,
                 });
             }
+            for (at, hook) in &mut self.after {
+                if at == rel {
+                    hook();
+                }
+            }
             Ok(())
         }
     }
@@ -833,14 +902,14 @@ mod tests {
         // The folder's other entries are not recorded either: the listing fails as a whole (decision 10).
         let mut lister = FakeListing::new(1, &[("", vec![file("a.jpg", 7, 1), file("b.jpg", 0, 1)])]);
         let mut entries = Vec::new();
-        assert!(list(&mut lister, &0, 1, &mut entries).is_err());
+        assert!(list(&mut lister, &0, 1, &mut entries, &mut || {}).is_err());
     }
 
     #[test]
     fn the_dot_entries_may_have_no_file_id() {
         let mut lister = FakeListing::new(1, &[("", vec![file(".", 0, 1), file("..", 0, 1), file("a.jpg", 7, 1)])]);
         let mut entries = Vec::new();
-        assert_eq!(list(&mut lister, &0, 1, &mut entries).unwrap(), 1);
+        assert_eq!(list(&mut lister, &0, 1, &mut entries, &mut || {}).unwrap(), 1);
     }
 
     #[test]
@@ -865,6 +934,8 @@ mod tests {
         assert_eq!(stats.missing, 0);
         let status = c.status().unwrap();
         assert_eq!((status.files, status.missing), (1, 0));
+        // A reparse file is not a failure: the folder ledger has no row for it.
+        assert!(c.failed_folders(10).unwrap().is_empty());
     }
 
     #[test]
@@ -877,6 +948,8 @@ mod tests {
         // The subtree was not listed, so its file is not missing.
         assert_eq!(stats.missing, 0);
         assert_eq!(c.status().unwrap().missing, 0);
+        // Nor is the reparse folder a failure: it is skipped, not recorded as unreadable or refused.
+        assert!(c.failed_folders(10).unwrap().is_empty());
     }
 
     #[test]
@@ -908,6 +981,7 @@ mod tests {
         assert_eq!((stats.skipped_reparse, stats.pairing.rebound, stats.pairing.ambiguous), (1, 1, 0));
         assert_eq!(stats.missing, 0);
         assert_eq!(c.status().unwrap().missing, 0);
+        assert!(c.failed_folders(10).unwrap().is_empty(), "a reparse folder is not a failure");
     }
 
     #[test]
@@ -1043,7 +1117,7 @@ mod tests {
         assert_eq!(stats.missing, 0);
     }
 
-    // The walk's transactions (docs/temp/NOTIFICATIONS.md, W2): nothing holds the catalog's write lock across a listing or a
+    // The walk's transactions (the write-lock section of the module docs, W2): nothing holds the catalog's write lock across a listing or a
     // pause, overlapping walks are refused while one runs, and a batch changes only the rows still as it read them.
 
     use std::sync::Arc;
@@ -1267,12 +1341,12 @@ mod tests {
             tree
         };
         let mut first = FakeListing::new(1, &folders("f0"));
-        let before = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut first, 2).unwrap();
+        let before = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut first, 2, RENEW_EVERY).unwrap();
         assert_eq!((before.files, c.status().unwrap().files), (11, 11));
         let mut tree = folders("f4");
         tree[5].1.last_mut().unwrap().name = "renamed.jpg".to_string();
         let mut second = FakeListing::new(2, &tree);
-        let stats = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut second, 2).unwrap();
+        let stats = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut second, 2, RENEW_EVERY).unwrap();
         assert_eq!((stats.pairing.rebound, stats.pairing.ambiguous, stats.missing), (11, 0, 0));
         assert_eq!((c.status().unwrap().files, c.status().unwrap().missing), (11, 0));
     }
@@ -1301,6 +1375,47 @@ mod tests {
 
     /// Every write transaction of a walk of 200 000 files, the pairing and the missing marks included, holds the write
     /// lock for at most this long (wall clock, in a debug build, whose SQLite is optimized: `profile.dev.package."*"`).
+    /// A listing that outlasts the lease keeps it: each record renews it once `renew_every` has passed. A minute passes
+    /// before the folder's first record; when its listing is done the lease is fresh, so another walk of the root is
+    /// refused rather than let in on the old lease.
+    #[test]
+    fn a_listing_that_outlasts_the_lease_keeps_it() {
+        let path = on_disk("scan-long-listing");
+        let tree = [("", vec![file("a.jpg", 1, 1), file("b.jpg", 2, 1), file("c.jpg", 3, 1)])];
+        let (aging, checking) = (path.clone(), path.clone());
+        let mut lister = FakeListing::new(1, &tree)
+            .on_listing("", move || state::age_leases(&open(&aging), pg_catalog::SCAN_LEASE_SECS + 1).unwrap())
+            .after_listing("", move || {
+                let mut other = open(&checking);
+                assert!(other.begin_scan(&fake_root()).is_err(), "the lease was renewed while the folder listed");
+            });
+        let mut c = open(&path);
+        let stats = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut lister, BATCH, Duration::ZERO).unwrap();
+        assert_eq!((stats.files, stats.complete), (3, true));
+    }
+
+    /// A walk whose lease another walk took (it expired while this one was listing, and the other walk ran to its end)
+    /// ends with an error at its next renewal, and gives nothing back: the lease is not its own. Nothing of it is left
+    /// behind, and the next walk runs.
+    #[test]
+    fn a_walk_whose_lease_was_taken_ends_with_an_error() {
+        let path = on_disk("scan-lease-taken");
+        let tree = [("", vec![file("a.jpg", 1, 1), file("b.jpg", 2, 1)])];
+        let (aging, taking) = (path.clone(), path.clone());
+        let mut lister = FakeListing::new(1, &tree).on_listing("", move || {
+            state::age_leases(&open(&aging), pg_catalog::SCAN_LEASE_SECS + 1).unwrap();
+            let other = [("", vec![file("z.jpg", 9, 1)])];
+            let mut c = open(&taking);
+            let done = walk(&mut c, &fake_root(), &Control::new(), &mut FakeListing::new(1, &other));
+            assert!(done.is_ok(), "the other walk takes the expired lease and completes");
+        });
+        let mut c = open(&path);
+        let failed = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut lister, BATCH, Duration::ZERO);
+        assert!(failed.is_err(), "a walk whose lease was taken ends with an error");
+        let next = walk(&mut open(&path), &fake_root(), &Control::new(), &mut FakeListing::new(1, &tree)).unwrap();
+        assert!(next.complete, "the next walk is not refused");
+    }
+
     /// A batch of `BATCH` new files is the longest hold; the bound is several times what it takes, so a listing or a
     /// pause inside a hold (seconds, or for ever) fails the test, and a slow machine doesn't.
     const HOLD_BOUND: Duration = Duration::from_secs(3);

@@ -95,7 +95,7 @@ fn a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder() -> Result<(
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let stats = pg_crop::save(&c, &[dotted, sibling], &out, &opts, &Control::new())?;
 
-    assert_eq!((stats.saved, stats.failed), (2, 0), "{:?}", stats.error);
+    assert_eq!((stats.saved, stats.failed), (2, 0), "{:?}", stats.failures);
     assert_eq!(std::fs::read(verbatim(&dir.join("images").join("Acme Inc.").join("a.jpg")))?, dotted_original);
     assert_eq!(std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?, sibling_original);
     let copies = files_under(&out);
@@ -121,7 +121,7 @@ fn a_copy_into_a_folder_ending_in_a_dot_is_written_there() -> Result<()> {
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let stats = pg_crop::save(&c, &[sibling], &out, &opts, &Control::new())?;
 
-    assert_eq!((stats.saved, stats.failed), (1, 0), "{:?}", stats.error);
+    assert_eq!((stats.saved, stats.failed), (1, 0), "{:?}", stats.failures);
     assert_eq!(files_under(&verbatim(&out)).len(), 1, "the copy is in Out.");
     assert!(!dir.join("Out").exists(), "a folder without the dot was made");
     assert_eq!(std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?, original);

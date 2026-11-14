@@ -13,6 +13,9 @@
 /// and the next pass looks at every file again.
 pub const THUMBS_VERSION: i64 = 1;
 
+// Zero is the mark of a catalog or a cache that has none: this build's thumbnails must differ from it, or a bump is missed.
+const _: () = assert!(THUMBS_VERSION > 0);
+
 pub mod display;
 pub mod maker;
 pub mod player;

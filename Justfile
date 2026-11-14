@@ -177,7 +177,7 @@ fuzz-smoke *args:
     {{ py }} tools/linux.py fuzz {{ args }}
 
 # The callgrind benches without the gate: gungraun's options (`just linux-bench --save-baseline=before`). Saves no archive
-# for a filtered run (docs/temp/PROFILING.md).
+# for a filtered run (docs/reference/PROFILING.md).
 linux-bench *args:
     {{ py }} tools/linux.py bench {{ args }}
 

@@ -110,7 +110,7 @@ debug = "line-tables-only"
 [profile.release.build-override]
 opt-level = 3
 
-# The heap profiler's build (`--features dhat-heap`, docs/temp/PROFILING.md "Tool: dhat"): release's optimizations with
+# The heap profiler's build (`--features dhat-heap`, docs/reference/PROFILING.md "Tool: dhat"): release's optimizations with
 # function names and lines for the backtraces, no LTO and incremental, so rebuilds after a change are quick. Its own
 # target directory keeps it from replacing the normal build's artifacts.
 [profile.dhat]

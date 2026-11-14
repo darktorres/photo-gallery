@@ -25,7 +25,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   and the video player is handed an open file (`file::player_handle`), the same call on every platform.
   `tools/boundaries.py` checks it. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
-- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/temp/PROFILING.md`).
+- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/reference/PROFILING.md`).
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
   memory for the window's log view (`docs/temp/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and

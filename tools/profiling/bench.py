@@ -5,7 +5,7 @@ which runs tools/perf_check.py and so this). Usage, inside the container:
 The tree benched is /head: the launcher's git archive of HEAD (tools/linux.py), so the working tree's uncommitted work stays
 out. The Cargo target and the bench data are volumes of their own (/bench), and the results are in /bench/target/gungraun.
 A full run's .out files are archived (zstd) to docs/perf/callgrind/<sha>.tar.zst in the checkout, one archive per benched
-commit; unpack with `tar --zstd -xf`, then read them with tools/profiling/cgtab.py (docs/temp/PROFILING.md).
+commit; unpack with `tar --zstd -xf`, then read them with tools/profiling/cgtab.py (docs/reference/PROFILING.md).
 A bench name as an argument runs only the matching benches (gungraun's FILTER), e.g. `catalog::list`. Such a run is partial,
 so it isn't archived: an archive would replace the commit's full one with a subset. Options (starting with -, e.g.
 --save-baseline=before) don't make a run partial, but an option's value must follow `=`: a bare option before a plain

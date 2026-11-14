@@ -1,7 +1,7 @@
 # Heap profile: scan, import and the passes (dhat, 2026-11-01 and 2026-11-02)
 
 Every Rust heap allocation of `gallery scan`, `gallery import` and the borders and thumbnail passes, measured with dhat
-before the fixes and after three rounds of them. The method is in [PROFILING.md](../temp/PROFILING.md) ("Tool: dhat heap
+before the fixes and after three rounds of them. The method is in [PROFILING.md](PROFILING.md) ("Tool: dhat heap
 profiles"). Qt's, FFmpeg's and libjpeg-turbo's allocations are not in these numbers.
 
 **The profiles are no longer on disk** (`D:\PhotoGallery\scratch_dhat`), so the totals below cannot be re-derived; they

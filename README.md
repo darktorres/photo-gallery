@@ -35,4 +35,4 @@ just deploy     # the release build, with Qt's DLLs and QML modules next to gall
 - `docs/eval/`: the model and verifier measurements: `MODELS.md` (models and accelerators), `VERIFIER.md` (PDQ, the verifier and grouping), and `TEST_SET.md` (hardware, test set and labels).
 - `docs/reference/`: facts that stay true, e.g. `IO.md` (HDD read order, buffers, long paths), `START_PROFILE.md` (where the start goes, thread by thread) and `THUMBNAILS.md` (thumbnail resize, encode and priority measurements) and `JPEG_DECODERS.md` (which JPEG decoder the app uses, and why) and `REVERSE_SEARCH.md` (Yandex reverse image search: what it returns and how the port reads it).
 - `docs/temp/`: the other measurement docs, e.g. `BORDERS.md`, `REFACTOR_MEASUREMENTS.md`, `OPEN_ITEMS.md`, `TIER2_ANN_BAKEOFF_PLAN.md`, `VIDEO_PLAYER.md`.
-- `docs/temp/PROFILING.md`: the callgrind benches and the instruction-count gate.
+- `docs/plans/PROFILING_PLAN.md`: what the profiling still has to measure, and the leads not acted on.

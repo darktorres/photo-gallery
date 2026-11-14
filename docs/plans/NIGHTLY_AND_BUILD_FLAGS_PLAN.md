@@ -7,7 +7,7 @@ Status as of 2026-11-14.
 - The toolchain pin that Phase 6 decides on is already taken: `rust-toolchain.toml` pins `nightly-2026-11-06` (commit
   edf7a39, "Pin the toolchain to nightly-2026-11-06 and fix the lints it adds"). Builds, CI and the container all use it.
 - The survey is at `nightly-2026-09-22`.
-- Nothing for this plan has been built or benchmarked. `docs/temp/PROFILING.md` has measurements from 2026-11-07 to
+- Nothing for this plan has been built or benchmarked. `docs/reference/PROFILING.md` has measurements from 2026-11-07 to
   2026-11-11 for other work, but no HEAD baseline (Phase 1b) is recorded.
 - `target/` was cleaned on 2026-11-06 (48 GiB freed) and has been rebuilt since (15,208 files on 2026-11-14).
 - Product code is untouched by this plan.
@@ -32,7 +32,7 @@ What the survey found:
 3. **The largest likely wins are stable and untried:** `-C target-cpu=x86-64-v3`, release LTO with
    `codegen-units = 1`, PGO, and the dev profile's debuginfo (`target/` was 48 GiB). The loop interchange in the PDQ DCT
    (E8) is already in the tree; only its measurement remains.
-4. **The performance numbers in `docs/temp/PROFILING.md` are stale.** They were measured at 41eaa1c. Since then, commit
+4. **The performance numbers in `docs/reference/PROFILING.md` are stale.** They were measured at 41eaa1c. Since then, commit
    81ad925 fixed the strided column pass in PDQ `box_1d`, so the "box_1d is 21% of analyze, cache-miss-bound" lead is
    gone, and later commits changed allocation and copying. Phase 1 re-measures before anything is judged.
 
@@ -75,7 +75,7 @@ when it gives the same result.
   numbers recorded. Robustness findings (crashes, UB) are fixed regardless of size.
 - **Measure at the end of the steps, not per step**, except where a number decides the next step.
 - **Commits.** Commit each verified step separately, with the measured counts in the message. No unrelated changes in a
-  commit. Push is a separate step. Results also go in `docs/temp/PROFILING.md` as a dated subsection (commit, tool,
+  commit. Push is a separate step. Results also go in `docs/reference/PROFILING.md` as a dated subsection (commit, tool,
   counts), and its "Open" list is updated.
 
 ## 1. Phases (the order of work)
@@ -224,7 +224,7 @@ Notable closures (full lists in the appendix):
 ## Critical files
 
 - Edited by adoptions: `Cargo.toml` (profiles); `.cargo/config.toml` (a new file, for `target-cpu`);
-  `crates/analysis/src/pdq.rs` (E8 is already applied, so only a measurement or a revert would edit it); `docs/temp/PROFILING.md`
+  `crates/analysis/src/pdq.rs` (E8 is already applied, so only a measurement or a revert would edit it); `docs/reference/PROFILING.md`
   (results). With the pin: `rust-toolchain.toml`, `tools/profiling/bench.py`, and the section 5 sites.
 - New: bench inputs in `crates/bench/benches/ir/linux.rs`. `fuzz/` exists as a top-level crate with seven targets, so no
   per-crate `fuzz/` directories are needed.

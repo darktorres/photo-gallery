@@ -9,7 +9,7 @@ the counts are exact, and the few that move between runs are marked.
 ## How it was measured
 
 - **Binary:** release `gallery.exe` built before the history was squashed, Qt 6.12.0 (msvc2022_64) with its PDBs beside the DLLs.
-- **Tool:** the Pin call graph (`tools/profiling/callgraph`, docs/temp/PROFILING.md), from process start until the first
+- **Tool:** the Pin call graph (`tools/profiling/callgraph`, docs/reference/PROFILING.md), from process start until the first
   thread enters `pg_stage_ready`; then `symbolize.py` for Windows' and the driver's functions. One run: 297 s under
   Pin.
 - **Data:** the scratch catalog rebuilt for tracked work, `D:\PhotoGallery\scratch_tracked\catalog`: the pinterest

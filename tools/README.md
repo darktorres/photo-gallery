@@ -29,13 +29,13 @@ arguments, where it has any.
 | `ci/pillow_pin.py` | Installs the Pillow pin of `eval/requirements.txt` for CI's eval tests | CI | `.github/workflows/ci.yml` |
 | `profiling/ci_setup.py` | The Linux system setup of CI: the apt packages, the FFmpeg and libclang links, Rust | Linux | `.github/workflows/ci.yml` |
 | `profiling/bench.py` | The callgrind benches of the committed HEAD, in the container | Linux (container) | `linux.py bench`, `perf_check.py` |
-| `profiling/bench_data.py` | The catalog benches' data, from a catalog folder; a `-large` layout gets its failure ledger seeded (`--ledger-rows`, 100,000 by default) | both | by hand, before `just perf` (`docs/temp/PROFILING.md`) |
+| `profiling/bench_data.py` | The catalog benches' data, from a catalog folder; a `-large` layout gets its failure ledger seeded (`--ledger-rows`, 100,000 by default) | both | by hand, before `just perf` (`docs/reference/PROFILING.md`) |
 | `profiling/make_bench_jpeg.py` | The per-file benches' input: a deterministic synthetic photo | both | `bench.py`; by hand |
-| `profiling/scan_timing.py` | The wall-clock timing of a library scan (three timed scans, each into its run's catalog) | Linux | by hand (`docs/temp/PROFILING.md`) |
+| `profiling/scan_timing.py` | The wall-clock timing of a library scan (three timed scans, each into its run's catalog) | Linux | by hand (`docs/reference/PROFILING.md`) |
 | `profiling/synthetic_library.py` | A synthetic photo library for profiling: small by default, or `--profile large` (200,000 files, a quarter of them broken JPEGs, `--broken`) for the large bench data | both | `scan_timing.py`, the shots fixture, `bench_data.py`'s data |
-| `profiling/cgtab.py` | Callgrind output as tables: self and inclusive cost, and the diff of two runs | both | by hand (`docs/temp/PROFILING.md`) |
-| `profiling/callgraph/build.py` | Builds `callgraph.dll` into `target/pin` with the Pin kit (clang-cl, LLVM) | Windows only | by hand (`docs/temp/PROFILING.md`) |
-| `profiling/callgraph/profile.py` | The instruction profile of the gallery under Pin, one file per thread | Windows only | by hand (`docs/temp/PROFILING.md`) |
+| `profiling/cgtab.py` | Callgrind output as tables: self and inclusive cost, and the diff of two runs | both | by hand (`docs/reference/PROFILING.md`) |
+| `profiling/callgraph/build.py` | Builds `callgraph.dll` into `target/pin` with the Pin kit (clang-cl, LLVM) | Windows only | by hand (`docs/reference/PROFILING.md`) |
+| `profiling/callgraph/profile.py` | The instruction profile of the gallery under Pin, one file per thread | Windows only | by hand (`docs/reference/PROFILING.md`) |
 | `profiling/callgraph/symbolize.py` | Turns `callgraph.dll`'s profiles into named ones, from the PDBs (dbghelp) | Windows only | `profile.py` |
 | `build_jpeg_turbo.py` | Builds libjpeg-turbo (JPEG 8.0, static, the dynamic CRT) for Qt's JPEG plugin and the app's turbojpeg | Windows only (MSVC) | by hand, into `PG_HOME\static\jpeg-turbo` or `--work` |
 | `build_static_ffmpeg.py` | Builds the static FFmpeg 9.0 for pg-video and Qt Multimedia, with its CRT and link checks | Windows only (MSVC, MSYS2) | by hand, into `PG_HOME\static\ffmpeg` or `--work` |

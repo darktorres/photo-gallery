@@ -1,4 +1,4 @@
-//! Startup stages, for measuring them (docs/temp/PROFILING.md "Startup"). Each stage is a function with a plain C name,
+//! Startup stages, for measuring them (docs/reference/PROFILING.md "Startup"). Each stage is a function with a plain C name,
 //! called when the app gets there:
 //!
 //! - Intel SDE counts the instructions between two of them, on every thread: `sde -icount -controller_default_start

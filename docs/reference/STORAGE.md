@@ -73,5 +73,5 @@ catalog, scan and platform tests).
   Linux before S-17 Unit F. Two tests need a file that can't be read or written (the borders file, the writeback copy);
   as root that can't be made, so they are skipped there, and the container runs them as the user `pg` (`docker/check.py`), where they check.
 - **Timed:** a 10,000-file library scans in about 1.6 s warm and 4.8 s cold on WSL's ext4 disk, and a rescan after
-  renumbering pairs every file with its row (`docs/temp/PROFILING.md`, Measurements, 2026-11-07). The Windows run (10,000
+  renumbering pairs every file with its row (`docs/reference/PROFILING.md`, Measurements, 2026-11-07). The Windows run (10,000
   files on `D:`, first scan 1.316 s) and the cold VM after `wsl --shutdown` (1.353 s) are in the same section.

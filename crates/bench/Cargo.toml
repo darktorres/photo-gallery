@@ -7,7 +7,7 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The callgrind benches (benches/ir.rs): gungraun runs them under Valgrind, which is Linux-only (docs/temp/PROFILING.md),
+# The callgrind benches (benches/ir.rs): gungraun runs them under Valgrind, which is Linux-only (docs/reference/PROFILING.md),
 # so the benches are built there only; elsewhere the target's `main` prints where to run them.
 [dependencies]
 pg-analysis = { path = "../analysis" }

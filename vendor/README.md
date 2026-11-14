@@ -398,7 +398,7 @@ and locks a `std::sync::Mutex`. Its README lists the changes; the output (`dhat-
 
 It also walks frame pointers instead of unwind tables, but only on Linux and macOS (`build.rs`). On Windows it
 unwinds with `backtrace` (`RtlVirtualUnwind`), still outside the lock. Only `gallery`'s `dhat-heap` feature uses it
-(docs/temp/PROFILING.md "Tool: dhat"). It is a git dependency of `gallery` (`crates/gallery/Cargo.toml`), pinned by rev to
+(docs/reference/PROFILING.md "Tool: dhat"). It is a git dependency of `gallery` (`crates/gallery/Cargo.toml`), pinned by rev to
 `darktorres/dhat-rs`, and it keeps its own `rustfmt.toml`, as upstream's.
 
 To update: commit the change in the fork, then change the `rev` in `crates/gallery/Cargo.toml`.

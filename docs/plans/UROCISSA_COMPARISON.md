@@ -128,7 +128,7 @@ against a clone at `102025d` on the same day. Where a claim was wrong, the text 
   reset"; the application-crash point is on sqlite.org/pragma.html, extracted, not quoted verbatim). So the window is
   different, not absent. Urocissa acknowledges from RAM and can lose about a second of edits on any crash.
 - **Measurement.** We have instruction counts, dhat heap profiles, SDE and Pin call graphs, and
-  stage timings with recorded results (`docs/temp/PROFILING.md`, `docs/reference/HEAP_PROFILE.md`,
+  stage timings with recorded results (`docs/reference/PROFILING.md`, `docs/reference/HEAP_PROFILE.md`,
   `docs/reference/START_PROFILE.md`). Urocissa's performance gates have no committed results
   (checked: the clone tracks no performance result files).
 

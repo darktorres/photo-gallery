@@ -86,7 +86,7 @@ ENV PG_CONTAINER=1
 WORKDIR /work
 CMD ["python3", "docker/check.py"]
 
-# The callgrind benches (docs/temp/PROFILING.md) and the fuzzer: their packages, and their tools at the versions the Justfile
+# The callgrind benches (docs/reference/PROFILING.md) and the fuzzer: their packages, and their tools at the versions the Justfile
 # pins (cargo-fuzz) and at the version of the gungraun library in Cargo.lock (gungraun-runner, which the launcher reads).
 FROM base AS tools
 

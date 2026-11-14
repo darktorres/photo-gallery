@@ -285,7 +285,7 @@ impl Work {
                 let same =
                     self.states.iter().position(|(_, s)| matches!(s, StateOp::Post { key: k, .. } if *k == *key));
                 if let Some(at) = same
-                    && !self.states[at + 1..].iter().any(|(_, s)| s.clears(key))
+                    && !self.states.get(at + 1..).into_iter().flatten().any(|(_, s)| s.clears(key))
                     && let (_, StateOp::Post { repeats: before, .. }) = self.states.remove(at)
                 {
                     *repeats = repeats.saturating_add(before);

@@ -166,6 +166,17 @@ pub mod qobject {
         #[cxx_name = "saveCroppedCopiesPicked"]
         fn save_cropped_copies_picked(self: &GalleryModel) -> i32;
 
+        /// How many files the cut dialog says its borders come off (the listed files with borders found).
+        #[qinvokable]
+        #[cxx_name = "cutBordersCount"]
+        fn cut_borders_count(self: &GalleryModel) -> i32;
+
+        /// The user confirmed cutting the borders off the originals (CutBordersDialog): the library rewrites those files in
+        /// place, in the background. Returns how many it asked for.
+        #[qinvokable]
+        #[cxx_name = "cutBordersConfirmed"]
+        fn cut_borders_confirmed(self: &GalleryModel) -> i32;
+
         #[qinvokable]
         #[cxx_name = "rowOf"]
         fn row_of(self: &GalleryModel, item: i32) -> i32;

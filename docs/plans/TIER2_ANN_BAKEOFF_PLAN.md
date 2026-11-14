@@ -14,7 +14,7 @@ and the caches.
 
 ## State (checked 2026-11-14)
 
-**Done**
+### Done
 
 - Embeddings of the 187,806 test images and 18,000 planted edits, model `sscd_trt_fp16_trim_draft` (`embed.py --trim
   --draft`), in `<data root>\eval_ann`: `emb_sscd_trt_fp16_trim_draft.npy` holds 205,806 rows, `files.txt` lists them,
@@ -24,7 +24,7 @@ and the caches.
   came in `addc480` (2026-11-07). `0fc1b95` (2026-11-11) moved the CPU worker into the container. `4bc7e46` (2026-11-09)
   moved the eval's folders under `PG_ROOT`. None of these files has uncommitted changes.
 
-**Gone**
+### Gone
 
 - The ANN cache. `D:\PhotoGallery\cache` (the default, since `PG_CACHE_DIR` is unset) has no `ann` folder. The user
   reports none on E:. The earlier version of this plan listed what it held: validation gates, characterization, exact

@@ -23,7 +23,7 @@ for [docs/reference/PNG_DECODERS.md](../../docs/reference/PNG_DECODERS.md). It r
   the text-free copies of the library files, under `inputs-variants` and `inputs-notext`. The 16-bit photograph's colour-key variant takes its key from the app's dump
   of that photo, so run `dump` on `inputs-real16` (into `ref`) first.
 - `make_real16.py`: four real 16-bit photographs from the imagecompression.info 16-bit RGB set, read from its zip
-  (`--zip PATH`, the archive downloaded from https://imagecompression.info/test_images/rgb16bit.zip), under
+  (`--zip PATH`, the archive downloaded from <https://imagecompression.info/test_images/rgb16bit.zip>), under
   `inputs-real16`. Their terms are in the archive's readme.txt; they allow redistribution with attribution.
 
 ## To rerun
@@ -77,7 +77,7 @@ Intel VTune 2024.3 is installed (oneAPI), and its user-mode sampling needs no ad
 - the Rust harness, `target\release\png-decoders.exe`, which writes `png_decoders.pdb` next to it.
 
     & "C:\Program Files (x86)\Intel\oneAPI\vtune\2024.3\bin64\amplxe-cl.exe" -collect hotspots `
-        -result-dir "$env:PG_ROOT\eval\png-decoders\profiles\NAME" -- <exe> time --secs 5 FILE
+  -result-dir "$env:PG_ROOT\eval\png-decoders\profiles\NAME" -- <exe> time --secs 5 FILE
     & "C:\Program Files (x86)\Intel\oneAPI\vtune\2024.3\bin64\amplxe-cl.exe" -report hotspots `
         -result-dir "$env:PG_ROOT\eval\png-decoders\profiles\NAME" -format=csv -report-knob show-issues=false
 

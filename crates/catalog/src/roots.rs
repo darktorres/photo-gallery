@@ -413,6 +413,28 @@ mod tests {
         a_folder_is_its_exact_path_and_keeps_its_serial_posix
     );
 
+    // The insert trigger stamps a new folder's serial past the ones already there (N-13, `folder_failures_stamp`). A
+    // folder recorded again keeps its stamp, so the walk that follows sees only the new one as news.
+    fn a_new_folder_failure_is_stamped_past_the_older_ones(rules: PathRules) {
+        let mut c = library(rules);
+        walk(&mut c, r"D:\r", &[(r"D:\r\a", UNREADABLE)], &[], true);
+        let first = ledger(&c);
+        assert_eq!(first.len(), 1, "{first:?}");
+        assert!(first[0].2 > 0, "the insert is stamped: {first:?}");
+        walk(&mut c, r"D:\r", &[(r"D:\r\a", UNREADABLE), (r"D:\r\b", UNREADABLE)], &[], true);
+        let both = ledger(&c);
+        let a = both.iter().find(|row| row.0 == spelled(rules, r"D:\r\a")).unwrap();
+        let b = both.iter().find(|row| row.0 == spelled(rules, r"D:\r\b")).unwrap();
+        assert_eq!(a.2, first[0].2, "a folder recorded again keeps its serial");
+        assert!(b.2 > a.2, "a new folder is stamped past the older one: {both:?}");
+    }
+
+    under_both_rules!(
+        a_new_folder_failure_is_stamped_past_the_older_ones,
+        a_new_folder_failure_is_stamped_past_the_older_ones_windows,
+        a_new_folder_failure_is_stamped_past_the_older_ones_posix
+    );
+
     // Only a complete walk resolves anything. Below a folder it couldn't read the rows stay (it never looked), below a
     // reparse folder they go (nothing below one can resolve while it is one), and a reparse folder is no row. The rows
     // go with their library folder: removed, or replaced by one above it.

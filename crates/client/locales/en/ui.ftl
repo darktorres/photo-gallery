@@ -30,6 +30,17 @@ ui-review = Review
 ui-name = Name
 ui-save-crops = Save cropped copies ({ $text })…
 ui-crop-tooltip = Copies of the listed files with their borders cut off, in a folder you choose (the originals stay as they are). JPEGs are cropped losslessly; their left and top cuts move inward to the next 8 or 16 px block.
+ui-cut-originals = Cut borders from originals…
+ui-cut-tooltip = Rewrites the listed originals with their borders cut off, in place. No backup is kept. JPEGs are re-encoded at their own quality; TIFFs are re-encoded losslessly with their metadata kept; lossy WebPs stay lossy. Files with nothing to cut, or a format that isn't cut, are skipped.
+ui-cut-borders = Cut borders
+ui-cut-borders-title = Cut borders from the originals?
+ui-cut-borders-question = Cut the borders off { $text } { $count ->
+    [one] file?
+   *[other] files?
+} { $count ->
+    [one] Its original will be rewritten in place.
+   *[other] Their originals will be rewritten in place.
+} No backup copy is kept.
 ui-contains = contains…
 ui-clear = Clear
 

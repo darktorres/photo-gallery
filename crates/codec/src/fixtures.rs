@@ -13,6 +13,14 @@ pub fn orient(img: Rgb, orientation: Orientation) -> Rgb {
     Rgb { width, height, pixels }
 }
 
+/// A lossy WebP of `w` × `h` RGB pixels at `quality` (libwebp's 0–100), as the cut's re-encode writes one. Fails for
+/// `pixels` that don't hold `w × h` RGB pixels.
+pub fn webp_lossy_rgb(w: u32, h: u32, pixels: &[u8], quality: f32) -> anyhow::Result<Vec<u8>> {
+    let expected = usize::try_from(w)? * usize::try_from(h)? * 3;
+    anyhow::ensure!(pixels.len() == expected, "{} bytes for a {w}×{h} RGB image", pixels.len());
+    Ok(webp::Encoder::from_rgb(pixels, w, h).encode(quality).to_vec())
+}
+
 /// An RGB8 TIFF written by the tiff crate's encoder, classic or BigTIFF (`image` writes only classic). Fails as the
 /// encoder does, for one when `pixels` doesn't hold `w × h` RGB pixels.
 pub fn tiff_rgb8(w: u32, h: u32, pixels: &[u8], big: bool) -> tiff::TiffResult<Vec<u8>> {

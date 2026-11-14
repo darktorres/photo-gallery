@@ -44,6 +44,7 @@ fn main() -> Result<(), String> {
                 "qml/GridCell.qml",
                 "qml/LibraryPanel.qml",
                 "qml/SaveViewDialog.qml",
+                "qml/CutBordersDialog.qml",
                 "qml/ModalOverlay.qml",
                 "qml/TestHooks.qml",
                 "qml/ImageLayers.qml",

@@ -1,14 +1,17 @@
-//! Saving cropped copies (`pg_edit::crop`): each file's borders as the catalog has them (found, not marked as not a
-//! border), cut off into a copy at `<folder>\<library folder place>\<path inside it>`, with the original's
-//! modification time. The originals are never written: a folder whose copies would land in the library is refused
-//! up front, and each file is checked to still be the one its borders were found in.
+//! Two ways of cutting a file's borders off (`pg_edit::crop`), each for the borders the catalog has for the file as found
+//! (not marked as not a border), and each checked to be still the file its borders were found in:
+//! - [`save`]: a cut copy, at `<folder>\<library folder place>\<path inside it>`, with the original's modification time.
+//!   The originals are never written; a folder whose copies would land in the library is refused up front.
+//! - [`cut`]: the original itself, rewritten in place, once the user has confirmed it. It is the only write of an
+//!   original this crate makes, and it refuses to run without that confirmation.
 
 use pg_model::ids::FileId;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use pg_catalog::{Catalog, CropSource};
-use pg_edit::crop::crop;
+use pg_edit::crop::{self, crop};
 use pg_model::path::{PathArena, PathRef};
 use pg_model::rules::Path as RulePath;
 
@@ -21,6 +24,8 @@ use pg_model::progress::Phase;
 use pg_platform::file::TempFile;
 use pg_platform::names::disk_path_of;
 use pg_platform::names::{set_path, shown};
+use pg_platform::native::NativePath;
+use pg_writeback::{ReplaceError, replace};
 
 pub struct Stats {
     pub saved: usize,
@@ -171,6 +176,182 @@ enum Written {
     },
     /// Changed since its borders were found.
     Skipped,
+}
+
+/// What `cut` did: the counts for the report, the files whose originals changed (the caller forgets their thumbnails),
+/// and what a stop left to do (queue it again).
+#[derive(Default)]
+pub struct CutStats {
+    pub saved: usize,
+    /// Nothing to cut now (no borders, marked, changed since), or not in the catalog any more.
+    pub skipped: usize,
+    /// A format that is not cut in place. Every still format is cut now, so this stays 0; it is kept for the report.
+    pub unsupported: usize,
+    pub failed: usize,
+    /// The first failures, each with its file, up to `FAILURES_KEPT`; `failed` counts them all.
+    pub failures: Vec<FileFailure>,
+    /// The files whose originals were rewritten.
+    pub cut: Vec<FileId>,
+    pub remaining: Vec<FileId>,
+}
+
+struct CutJob {
+    id: FileId,
+    source: CropSource,
+}
+
+/// What writing one original came to.
+enum CutWritten {
+    Saved {
+        after: (i64, i64),
+    },
+    /// Changed since its borders were found.
+    Skipped,
+}
+
+/// What a worker of `cut` keeps from one original to the next: its ExifTool, started for the first original that needs
+/// its tags copied over.
+#[derive(Default)]
+struct CutWorker {
+    exiftool: Option<ExifTool>,
+}
+
+/// Cut the borders off the originals of `ids`, in place: each file's borders as the catalog has them, cut exactly into
+/// bytes in the file's own format (`pg_edit::crop::cut`), which replace the original (`pg_writeback::replace`). The
+/// originals change, so this refuses to run unless `confirmed`, which only the user's confirmation gives. No backup is
+/// kept, and no border mark is set: the cut's file has no borders left, and its detection is stored as none. Bytes that
+/// come out without their metadata (JPEG, TIFF, lossy WebP) get the original's tags first, by ExifTool, so a failed tag
+/// copy leaves the original as it was. A file that fails is counted and the rest go on; a file whose catalog row can't be
+/// updated after its cut counts as failed, though its original is cut.
+pub fn cut(catalog: &Catalog, ids: &[FileId], confirmed: bool, opts: &Options, ctl: &Control) -> Result<CutStats> {
+    ensure!(confirmed, "the originals are changed only once the user has confirmed it");
+    let rules = catalog.rules();
+    let mut stats = CutStats::default();
+    let mut jobs = Vec::with_capacity(ids.len());
+    let mut paths = PathArena::default();
+    for &id in ids {
+        let Some(source) = catalog.crop_source(id, &mut paths)? else {
+            stats.skipped += 1;
+            continue;
+        };
+        jobs.push(CutJob { id, source });
+    }
+    if jobs.is_empty() {
+        return Ok(stats);
+    }
+
+    let phase = ctl.begin(Phase::Crop, u64::try_from(jobs.len()).unwrap_or(u64::MAX));
+    let mut done = vec![false; jobs.len()];
+    pipeline::run(
+        &jobs,
+        |job, native| {
+            set_path(native, paths.get(job.source.path));
+            Read::File
+        },
+        opts,
+        ctl,
+        || Ok(CutWorker::default()),
+        |worker: &mut CutWorker, i, bytes| {
+            cut_original(jobs.get(i).context("an item outside the pass")?, &paths, bytes, worker)
+        },
+        |i, result, len| {
+            let (Some(job), Some(job_done)) = (jobs.get(i), done.get_mut(i)) else {
+                bail!("an item outside the pass");
+            };
+            *job_done = true;
+            let result = result.and_then(|written| match written {
+                CutWritten::Saved { after } => {
+                    // The original is cut whatever the catalog says after this, so its thumbnails are forgotten either way.
+                    stats.cut.push(job.id);
+                    catalog
+                        .borders_cut(job.id, after)
+                        .context("the borders are cut, but the catalog wasn't updated")?;
+                    Ok(CutWritten::Saved { after })
+                }
+                other => Ok(other),
+            });
+            ctl.add(len, result.is_err());
+            match result {
+                Ok(CutWritten::Saved { .. }) => stats.saved += 1,
+                Ok(CutWritten::Skipped) => stats.skipped += 1,
+                Err(e) => {
+                    stats.failed += 1;
+                    if stats.failures.len() < FAILURES_KEPT {
+                        stats.failures.push(file_failure(rules.display_stored(paths.get(job.source.path)), &e));
+                    }
+                }
+            }
+            Ok(true)
+        },
+    )?;
+    drop(phase);
+    stats.remaining = jobs.iter().zip(&done).filter(|(_, d)| !**d).map(|(j, _)| j.id).collect();
+    Ok(stats)
+}
+
+/// Cut `job`'s borders off the original as it was read (`bytes`), and replace the original with the result. Bytes that
+/// come out without their metadata take the original's tags first (`with_tags`), so a failure there leaves the original
+/// untouched.
+fn cut_original(job: &CutJob, paths: &PathArena, bytes: &[u8], worker: &mut CutWorker) -> Result<CutWritten> {
+    let s = &job.source;
+    let path = disk_path_of(paths.get(s.path));
+    if pg_platform::file::stat(&path).with_context(|| format!("reading {}", shown(&path)))? != (s.size, s.mtime)
+        || usize::try_from(s.size).ok() != Some(bytes.len())
+    {
+        return Ok(CutWritten::Skipped);
+    }
+    let cropped = crop::cut(bytes, s.format, s.width, s.height, s.cut)?;
+    let new = if cropped.metadata { cropped.bytes } else { with_tags(&path, &cropped.bytes, &mut worker.exiftool)? };
+    let mut native = NativePath::default();
+    set_path(&mut native, paths.get(s.path));
+    let temp = temp_beside(&path).context("a file without a name")?;
+    match replace(&path, &native, &temp, &new, (s.size, s.mtime)) {
+        Ok(after) => Ok(CutWritten::Saved { after }),
+        // Nothing was copied into it: the original is as it was.
+        Err(ReplaceError::Untouched(e)) => Err(e),
+        // Part-written: the whole new content is in the temp, which the message names.
+        Err(ReplaceError::Incomplete { temp, error }) => bail!(
+            "{} may be incomplete: copying its cut into it failed ({error:#}); the whole new content is in {}",
+            shown(&path),
+            shown(&temp)
+        ),
+    }
+}
+
+/// The temp of a cut, beside `path`: the file's name with a dot in front and `.cut.pg-write` after it, as the queued
+/// writes' temps are named.
+fn temp_beside(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?;
+    let mut temp = OsString::from(".");
+    temp.push(name);
+    temp.push(".cut.pg-write");
+    Some(path.with_file_name(temp))
+}
+
+/// `bytes` (the cut of `original`, which came out without its metadata) with the original's tags copied onto them by
+/// ExifTool. They are written to a temporary beside the original, tagged there, and read back; the temporary is removed
+/// on every path. Nothing of the original is written.
+fn with_tags(original: &Path, bytes: &[u8], exiftool: &mut Option<ExifTool>) -> Result<Vec<u8>> {
+    let temp = tags_temp_beside(original).context("a file without a name")?;
+    let guard = TempFile::new(&temp);
+    std::fs::write(&temp, bytes).with_context(|| format!("writing {}", shown(&temp)))?;
+    ExifTool::running(exiftool, &pg_exiftool::program())?.copy_tags(original, &temp)?;
+    let tagged = std::fs::read(&temp).with_context(|| format!("reading {}", shown(&temp)))?;
+    drop(guard);
+    Ok(tagged)
+}
+
+/// The temporary `with_tags` tags a cut in, beside `path`: the file's stem with a dot in front and `.cut-tags` after it,
+/// then its extension, which ExifTool takes the file's format from.
+fn tags_temp_beside(path: &Path) -> Option<PathBuf> {
+    let mut name = OsString::from(".");
+    name.push(path.file_stem()?);
+    name.push(".cut-tags");
+    if let Some(ext) = path.extension() {
+        name.push(".");
+        name.push(ext);
+    }
+    Some(path.with_file_name(name))
 }
 
 /// Write `job`'s copy of the file read as `bytes`, through `temp` (a worker's buffer for the temporary path's bytes).

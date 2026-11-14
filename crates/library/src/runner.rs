@@ -91,6 +91,8 @@ struct Queue {
     scans: VecDeque<RulePath>,
     /// Cropped copies to save: the files, and the folder.
     crops: VecDeque<(Vec<FileId>, PathBuf)>,
+    /// Borders to cut off the originals: the files. Queued only once confirmed (`Runner::cut_borders`).
+    cuts: VecDeque<Vec<FileId>>,
 }
 
 struct Inner {
@@ -236,6 +238,16 @@ impl Runner {
         self.wake_up();
     }
 
+    /// Cut the borders off the originals of these files, in place (`pg_crop::cut`), after the copies asked for. Nothing
+    /// is queued unless `confirmed`: the originals change, and only the user's confirmation says they may.
+    pub fn cut_borders(&self, ids: Vec<FileId>, confirmed: bool) {
+        if !confirmed {
+            return;
+        }
+        self.inner.queue().cuts.push_back(ids);
+        self.wake_up();
+    }
+
     /// The catalog has new work outside a scan (a file turned in place needs its analysis redone): start a round.
     pub fn wake(&self) {
         self.wake_up();
@@ -339,6 +351,18 @@ impl Inner {
         self.resolve(Trigger::Op(Op::LedgerWrite(FilePass::Thumbs)));
     }
 
+    /// Originals were cut in place: their thumbnails are forgotten (they show the uncut pixels), and the import that
+    /// follows analyzes them again. The app is told the files changed.
+    fn cut_done(&self, cut: &[FileId]) {
+        if cut.is_empty() {
+            return;
+        }
+        for (_, e) in scans::forget_replaced(self.thumbs, cut) {
+            self.notify(Notice::CutFailed { error: error_text(&e) });
+        }
+        self.imported();
+    }
+
     fn scanned(&self) {
         self.scans_done.fetch_add(1, Ordering::Relaxed);
         self.changes.publish(Change::Scanned);
@@ -404,9 +428,11 @@ impl Inner {
         };
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
-            schedule::round(&mut [&mut Crops, &mut Scans, &mut Import, &mut Borders, &mut Thumbs], &mut cx, |cx| {
-                cx.inner.ctl.stop_requested()
-            })?
+            schedule::round(
+                &mut [&mut Crops, &mut Cuts, &mut Scans, &mut Import, &mut Borders, &mut Thumbs],
+                &mut cx,
+                |cx| cx.inner.ctl.stop_requested(),
+            )?
         };
         *conn = Some(catalog);
         Ok(step)
@@ -441,6 +467,38 @@ impl Pass<Cx<'_>> for Crops {
                     failures: s.failures.into_iter().map(file_failure).collect(),
                 }),
                 Err(e) => cx.inner.notify(Notice::CropFailed { error: error_text(&e) }),
+            }
+        }
+    }
+}
+
+/// Cuts the borders off the originals asked for, one request at a time (`pg_crop::cut`). A stopped cut keeps its rest at
+/// the front of the queue. Its notice is told when the request is done.
+struct Cuts;
+
+impl Pass<Cx<'_>> for Cuts {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+        loop {
+            let Some(ids) = cx.inner.queue().cuts.pop_front() else {
+                return Ok(Step::Done);
+            };
+            // Queued only once confirmed (`Runner::cut_borders`).
+            match pg_crop::cut(cx.catalog, &ids, true, &Options::new(Priority::BelowNormal), &cx.inner.ctl) {
+                Ok(s) => {
+                    cx.inner.cut_done(&s.cut);
+                    if !s.remaining.is_empty() {
+                        cx.inner.queue().cuts.push_front(s.remaining);
+                        return Ok(Step::Preempted);
+                    }
+                    cx.inner.notify(Notice::BordersCut {
+                        saved: count(s.saved),
+                        skipped: count(s.skipped),
+                        unsupported: count(s.unsupported),
+                        failed: count(s.failed),
+                        failures: s.failures.into_iter().map(file_failure).collect(),
+                    });
+                }
+                Err(e) => cx.inner.notify(Notice::CutFailed { error: error_text(&e) }),
             }
         }
     }
@@ -810,6 +868,27 @@ mod tests {
         let before = sink.pokes();
         runner.inner.ctl.ledger_changed();
         assert_eq!(sink.pokes(), before + 1);
+        assert!(runner.stop(Duration::from_secs(30)));
+    }
+
+    /// A cut is queued only once confirmed: an unconfirmed one queues nothing. A confirmed one runs its pass, which says
+    /// what became of the file (here, a file with no borders to cut: skipped).
+    #[test]
+    fn a_cut_is_queued_only_when_confirmed_and_is_told() {
+        let (dir, catalog_path, _root) = library("runner-cut", &["a.png"]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let runner =
+            Runner::start(catalog_path.clone(), cache, height_64(), Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        let id = pg_catalog::fixture::state::present_files(&c).unwrap()[0].0;
+        runner.cut_borders(vec![id], false);
+        assert!(runner.inner.queue().cuts.is_empty(), "an unconfirmed cut queues nothing");
+        runner.cut_borders(vec![id], true);
+        wait_for("the cut's notice", || sink.posted().iter().any(|n| matches!(n, Notice::BordersCut { .. })));
+        let posted = sink.posted();
+        let told = Notice::BordersCut { saved: 0, skipped: 1, unsupported: 0, failed: 0, failures: Vec::new() };
+        assert!(posted.contains(&told), "{posted:?}");
         assert!(runner.stop(Duration::from_secs(30)));
     }
 }

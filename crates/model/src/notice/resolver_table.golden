@@ -8,8 +8,8 @@
 | `round-failed` | — | `next-success(round)` |
 | `cache-full` | — | `complete-pass(thumbs)` |
 | `prefs-not-saved` | — | `next-save` |
-| `cache-touches-not-written` | — | `cache-recovery` |
-| `cache-not-stored` | — | `cache-recovery` |
+| `cache-touches-not-written` | — | `touches-recovered` |
+| `cache-not-stored` | — | `store-recovered` |
 | `write-failed` | — | `status-poll` |
 | `write-stopped` | — | `status-poll` |
 | `listing-failed` | — | `next-success(listing)` |

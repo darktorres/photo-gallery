@@ -1329,6 +1329,48 @@ mod tests {
         assert_eq!((stats.changed, stats.missing), (0, 0));
         let pending = c.status().unwrap().pending;
         assert_eq!(pending, 2, "the bump made both files pending, and the walk kept neither analysed");
+        // The stale analyses are kept, not deleted: they stay what the grid shows until the import redoes them, and the
+        // import's queue holds exactly the two files.
+        assert_eq!(c.status().unwrap().analyzed, 2, "both analyses are still stored, stale");
+        assert_eq!(c.pending_import(false).unwrap().items.len(), 2, "both files are due for the import");
+    }
+
+    /// A Retry (the user's, or a pass's) between a folder's listing and the batch that writes its files. It moves the
+    /// files' change numbers (`files.seq`), which the walk does not compare (only size and mtime are), so the batch
+    /// keeps what it read: nothing changed on disk, nothing is due, and the Retry's own work is not undone.
+    #[test]
+    fn a_retry_between_the_listing_and_the_batch_is_not_undone() {
+        use pg_catalog::ledger::Failure;
+        use pg_model::notice::FilePass;
+
+        let path = on_disk("scan-retry");
+        let tree = [("", vec![file("f.jpg", 7, 1), folder("sub", 20)]), ("sub", vec![file("g.jpg", 8, 1)])];
+        let mut c = open(&path);
+        scan_fake(&mut c, &tree, 1);
+        state::stub_analysis_of_all(&c).unwrap();
+        let f = state::file_id(&c, "f.jpg").unwrap();
+        // f.jpg is 1 byte (`file`'s third argument), mtime 1.
+        let listed = Listed { size: 1, mtime: 1, rotation: Turns::NONE };
+        // f.jpg's thumbnail failed; the user retries it while sub is listed.
+        let failure = Failure {
+            file_id: f,
+            mtime: 1,
+            size: 1,
+            rotation: Turns::NONE,
+            error: "does not decode".into(),
+            retry: true,
+        };
+        c.record_failures(FilePass::Thumbs, &[failure], 1).unwrap();
+        assert!(c.any_failures(FilePass::Thumbs).unwrap());
+        let hook_path = path.clone();
+        let mut lister = FakeListing::new(1, &tree).on_listing("sub", move || {
+            open(&hook_path).retry_failures(FilePass::Thumbs).unwrap();
+        });
+        let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
+        assert_eq!((stats.changed, stats.missing), (0, 0), "a change number is not a change on disk");
+        assert!(c.is_current(f, &listed).unwrap(), "the batch kept f.jpg as it was listed");
+        assert_eq!(c.status().unwrap().pending, 0, "the Retry made nothing due");
+        assert!(!c.any_failures(FilePass::Thumbs).unwrap(), "the Retry's ledger rows stay gone");
     }
 
     #[test]

@@ -968,7 +968,8 @@ mod tests {
         let now = stamped(&c, now);
         c.conn.execute("DELETE FROM analysis WHERE file_id = ?1", [item.id.get()]).unwrap();
         // `analysis_removed`: a file with no analysis is pending again.
-        let pending: i64 = c.conn.query_row("SELECT pending FROM files WHERE id = ?1", [item.id.get()], |r| r.get(0)).unwrap();
+        let pending: i64 =
+            c.conn.query_row("SELECT pending FROM files WHERE id = ?1", [item.id.get()], |r| r.get(0)).unwrap();
         assert_eq!(pending, 1, "a deleted analysis leaves its file pending");
         stamped(&c, now);
     }

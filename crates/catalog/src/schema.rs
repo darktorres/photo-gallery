@@ -834,9 +834,10 @@ mod tests {
     use super::*;
     use crate::browse::fixtures::library;
     use crate::browse::fixtures::under_both_rules;
+    use crate::fixture::{self, raw};
     use crate::test_support::changed_since;
     use pg_dbfile::Difference;
-    use pg_model::ids::FileId;
+    use pg_model::ids::{FileId, FolderId};
     use pg_model::rating::Rating;
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
@@ -864,6 +865,53 @@ mod tests {
         both.sort();
         tables.sort();
         assert_eq!(both, tables);
+    }
+
+    /// Every trigger of the current schema, with the test that covers it (`module::name`; an `under_both_rules!` test is
+    /// named by its base name). [`every_trigger_names_the_test_that_covers_it`] fails on a trigger this list does not
+    /// name, and on a name the schema does not have.
+    const TRIGGER_TESTS: &[(&str, &str)] = &[
+        ("files_added", "schema::a_new_file_is_pending_and_takes_the_next_seq"),
+        ("files_changed", "core::pending_follows_what_the_analysis_was_made_from"),
+        ("files_source_changed", "writers::a_size_change_alone_moves_the_file_in_the_thumbnail_source"),
+        ("analysis_added", "core::pending_follows_what_the_analysis_was_made_from"),
+        ("analysis_changed", "core::pending_follows_what_the_analysis_was_made_from"),
+        ("analysis_removed", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
+        ("ratings_stamp_insert", "schema::each_user_visible_change_names_its_file"),
+        ("ratings_stamp_update", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
+        ("ratings_stamp_delete", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
+        ("border_marks_stamp_insert", "schema::each_user_visible_change_names_its_file"),
+        ("border_marks_stamp_delete", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
+        ("file_writes_stamp_insert", "schema::each_user_visible_change_names_its_file"),
+        ("file_writes_stamp_update", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
+        ("file_writes_stamp_delete", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
+        ("analysis_cut_stamp", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
+        ("analysis_removed_stamp", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
+        ("border_sides_stamp_insert", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
+        ("border_sides_stamp_delete", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
+        ("notices_uid", "inbox::events_past_the_bound_go_oldest_first_and_never_the_one_just_posted"),
+        ("file_failures_stamp", "ledger::a_ledger_is_one_entry_new_again_with_a_new_failure"),
+        ("files_failures_stale", "ledger::a_failure_is_one_row_for_the_file_as_it_failed"),
+        ("files_failures_hidden", "ledger::the_hidden_trigger_fires_only_when_pending_or_missing_changes"),
+        ("analysis_import", "ledger::a_failed_analysis_that_leaves_its_file_pending_is_hidden"),
+        (
+            "analysis_import_rewritten",
+            "ledger::a_turn_written_back_moves_the_import_rows_rotation_and_keeps_its_serial",
+        ),
+        ("analysis_import_removed", "ledger::the_imports_ledger_mirrors_its_failed_analyses"),
+        ("folder_failures_stamp", "roots::a_new_folder_failure_is_stamped_past_the_older_ones"),
+    ];
+
+    /// The schema's triggers are exactly the ones [`TRIGGER_TESTS`] names: a trigger added without a row there fails here.
+    #[test]
+    fn every_trigger_names_the_test_that_covers_it() {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        let mut live = triggers(&conn);
+        let mut named: Vec<String> = TRIGGER_TESTS.iter().map(|(trigger, _)| trigger.to_string()).collect();
+        live.sort();
+        named.sort();
+        assert_eq!(named, live, "TRIGGER_TESTS names each trigger of the schema, once");
     }
 
     /// One migration of SQL steps.
@@ -1107,7 +1155,11 @@ mod tests {
         c.queue_rotation(FileId::new(3), Turns::new(1)).unwrap();
         let (_, now) = changed_since(&c, 0);
 
-        // The rating is taken away (its row deleted), then the border mark, then the queued turn is changed again.
+        // The rating is changed (its row updated), then taken away (its row deleted), then the border mark, then the
+        // queued turn is changed again and written.
+        c.set_rating(FileId::new(1), Rating::new(4), false).unwrap();
+        let (changed, now) = changed_since(&c, now);
+        assert_eq!(changed, [FileId::new(1)], "a rating's update");
         c.set_rating(FileId::new(1), None, false).unwrap();
         let (changed, now) = changed_since(&c, now);
         assert_eq!(changed, [FileId::new(1)], "a rating's delete");
@@ -1115,8 +1167,18 @@ mod tests {
         let (changed, now) = changed_since(&c, now);
         assert_eq!(changed, [FileId::new(2)], "a border mark's delete");
         c.queue_rotation(FileId::new(3), Turns::new(2)).unwrap();
-        let (changed, _) = changed_since(&c, now);
+        let (changed, now) = changed_since(&c, now);
         assert_eq!(changed, [FileId::new(3)], "a queued write's update");
+        // Written: the turn is taken off the row, which a zero deletes (`write_done`).
+        let job = crate::queue::Job {
+            file_id: FileId::new(3),
+            write: pg_model::write::Write::Turns(Turns::new(3)),
+            temp: None,
+            attempts: 0,
+        };
+        c.write_done(&job, crate::queue::WriteEffect::Nothing).unwrap();
+        let (changed, _) = changed_since(&c, now);
+        assert_eq!(changed, [FileId::new(3)], "a queued write's delete");
     }
 
     /// Every user-visible change stamps its file (`files.changed`), in the same statement as the change: the file
@@ -1148,5 +1210,22 @@ mod tests {
         })
         .unwrap();
         assert_eq!(changed_since(&c, after), (vec![], after));
+    }
+
+    /// `files_added`: a new file is pending (it has no analysis, so it is due), and takes the next change number for its
+    /// `seq` and its `changed` alike: the newest change, for the thumbnails and the change list.
+    #[test]
+    fn a_new_file_is_pending_and_takes_the_next_seq() {
+        let c = library(PathRules::Windows);
+        let before = raw::meta_seq(&c);
+        fixture::insert(&c, &[fixture::File::new(FileId::new(5), FolderId::new(1), "e.jpg", 50, 7)]).unwrap();
+        assert_eq!(raw::meta_seq(&c), before + 1, "the insert takes one number");
+        let (pending, seq, changed): (i64, i64, i64) = c
+            .conn
+            .query_row("SELECT pending, seq, changed FROM files WHERE id = 5", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!((pending, seq, changed), (1, before + 1, before + 1));
     }
 }

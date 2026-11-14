@@ -20,6 +20,7 @@ parajpeg.workspace = true
 png.workspace = true
 tiff.workspace = true
 turbojpeg.workspace = true
+webp.workspace = true
 zune-core.workspace = true
 zune-jpeg.workspace = true
 

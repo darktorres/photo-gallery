@@ -24,4 +24,8 @@ QtObject {
     property bool viewedBorderMarked: false
     // The full-size image's URL (the real one comes from the Rust grammar: pg_client::image).
     property string viewedFullUrl: ""
+
+    // The cut-borders calls of Main (askCutBorders, the dialog's confirmed): the real ones are the Rust invokables.
+    function cutBordersCount() { return 0 }
+    function cutBordersConfirmed() { return 0 }
 }

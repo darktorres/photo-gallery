@@ -24,9 +24,9 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import DATA_ROOT, pg_path  # noqa: E402
+from make_inputs import RGB_SOURCE, chunk, encode, gray_of, ihdr, load, samples_bytes
 
-from make_inputs import RGB_SOURCE, chunk, encode, gray_of, ihdr, load, samples_bytes  # noqa: E402
+from common import DATA_ROOT, pg_path
 
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 TEXT_KINDS = {b"tEXt", b"zTXt", b"iTXt", b"iCCP"}
@@ -110,9 +110,7 @@ def main() -> None:
     trns = {
         "palette-2mp-trns": with_trns(palette, alphas),
         "rgb8-3mp-trns": with_trns(library_file(RGB_SOURCE).read_bytes(), struct.pack(">HHH", *(int(v) for v in key))),
-        "gray8-2mp-trns": with_trns(
-            (out.parent / "inputs" / "gray8-2mp.png").read_bytes(), struct.pack(">H", gray_key)
-        ),
+        "gray8-2mp-trns": with_trns((out.parent / "inputs" / "gray8-2mp.png").read_bytes(), struct.pack(">H", gray_key)),
     }
     for name, data in trns.items():
         (out / f"{name}.png").write_bytes(data)

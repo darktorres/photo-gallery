@@ -794,4 +794,29 @@ mod tests {
         assert!(!c.clear_notices(&Key::all("edit-failed", None)).unwrap());
         assert_eq!(c.conn.total_changes(), changes);
     }
+
+    // A dismissal sticks across connections: a state dismissed through one handle is still dismissed when the catalog is
+    // reopened, and the same data posted again does not bring it back; data that says something new is news again.
+    #[test]
+    fn a_dismissal_sticks_across_a_reopen() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "inbox-dismissal").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let rules = pg_platform::native::PATH_RULES;
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        c.post_notice(&failed("a"), 10).unwrap();
+        let id = c.inbox_entries(10, false).unwrap()[0].id;
+        assert!(c.dismiss(id, 11).unwrap());
+        drop(c);
+
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        assert!(c.inbox_entries(10, false).unwrap().is_empty(), "dismissed, and still so after a reopen");
+        assert_eq!(c.unread().unwrap(), 0);
+        c.post_notice(&failed("a"), 12).unwrap();
+        assert!(c.inbox_entries(10, false).unwrap().is_empty(), "the same data posted again stays dismissed");
+        c.post_notice(&failed("b"), 13).unwrap();
+        let back = c.inbox_entries(10, false).unwrap();
+        assert_eq!((back.len(), back[0].read), (1, false), "new data is listed again, unread");
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

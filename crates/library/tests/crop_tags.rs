@@ -1,6 +1,6 @@
 //! A crop whose copy can't be given its tags (here ExifTool can't run) is a failure, and leaves no untagged copy at its
-//! output, nor a temporary beside it. In its own test binary: it sets `PG_EXIFTOOL` for the whole process, which the
-//! other crop tests must not see.
+//! output, nor a temporary beside it; a cut whose tags can't be copied leaves its original as it was. In its own test
+//! binary: it sets `PG_EXIFTOOL` for the whole process, which the other crop tests must not see.
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -9,6 +9,7 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_model::path::PathArena;
 
 const W: u32 = 320;
 const H: u32 = 240;
@@ -70,4 +71,39 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     assert_eq!((stats.saved, stats.failed), (0, 1), "the copy's tags could not be written: a failure");
     let left = files_under(&out);
     assert!(left.is_empty(), "no untagged copy and no temporary is left: {left:?}");
+}
+
+/// A TIFF cut whose tags can't be copied (ExifTool can't run) fails, and the original is as it was: the bytes, no
+/// temporary beside it, and the catalog still has its borders to cut.
+#[test]
+fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
+    let dir = pg_testkit::run_folder_with("scratch_rate", "crop_tags_cut", &["images"]).unwrap();
+    let mut bytes = Cursor::new(Vec::new());
+    letterboxed().write_to(&mut bytes, image::ImageFormat::Tiff).unwrap();
+    let images = dir.join("images");
+    let path = images.join("d.tif");
+    std::fs::write(&path, bytes.get_ref()).unwrap();
+
+    let mut c =
+        Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+    let ctl = Control::new();
+    let root = pg_platform::names::normalize_path(&images).unwrap();
+    c.add_root(&root).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_borders::find(&mut c, &opts, &ctl).unwrap();
+    let id = state::file_id(&c, "d.tif").unwrap();
+    let before = std::fs::read(&path).unwrap();
+
+    // SAFETY: this test binary runs no other test that reads PG_EXIFTOOL, so nothing reads it concurrently.
+    unsafe { std::env::set_var("PG_EXIFTOOL", dir.join("no-such-exiftool")) };
+    let stats = pg_crop::cut(&c, &[id], true, &opts, &ctl).unwrap();
+    assert_eq!((stats.saved, stats.failed), (0, 1), "the tags could not be copied: a failure ({:?})", stats.failures);
+    assert_eq!(std::fs::read(&path).unwrap(), before, "the original is as it was");
+    assert_eq!(files_under(&images), vec![path.clone()], "no temporary is left beside it");
+    assert!(
+        c.crop_source(id, &mut PathArena::default()).unwrap().is_some(),
+        "the catalog still has the borders to cut"
+    );
 }

@@ -30,6 +30,8 @@ Pane {
     // Listed files with borders to crop off (GalleryModel.croppable), and the user asking to save them cropped.
     property int croppable: 0
     signal saveCropsRequested()
+    // The user asking to cut the borders off the listed originals (the window asks first: CutBordersDialog).
+    signal cutBordersRequested()
 
     // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
     function countFacets() { filters.countFacets() }
@@ -257,6 +259,15 @@ Pane {
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
                         ToolTip.text: words.text("ui-crop-tooltip")
+                    }
+                    Button {
+                        text: words.text("ui-cut-originals")
+                        enabled: bar.croppable > 0
+                        font.pixelSize: 12
+                        onClicked: bar.cutBordersRequested()
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: words.text("ui-cut-tooltip")
                     }
                 }
 

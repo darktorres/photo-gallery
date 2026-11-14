@@ -206,6 +206,16 @@ notice-cropped-body = { $saved } saved in { $folder }; { $skipped } had nothing 
 }
 notice-crop-failed-title = Saving cropped copies failed
 notice-crop-failed-body = { $error }
+notice-borders-cut-title = Borders cut from the originals
+notice-borders-cut-body = { $saved } cut in place; { $skipped } had nothing to cut; { $unsupported ->
+    [0] none skipped for their format;
+   *[other] { $unsupported } skipped, a format that is not cut in place;
+} { $failed ->
+    [0] none failed
+   *[other] { $failed } failed, the first: { $path }: { $error }
+}
+notice-cut-failed-title = Cutting the borders failed
+notice-cut-failed-body = { $error }
 notice-catalog-rebuilt-title = The catalog was rebuilt
 notice-catalog-rebuilt-body = It didn't match this version of the app ({ $why }), so a new one was made and the old one kept as { $kept }. { $carried ->
     [rows] It took the old one's { $files } files and { $folders } library folders.

@@ -204,6 +204,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -281,6 +287,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libwebp-sys"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54cd30df7c7165ce74a456e4ca9732c603e8dc5e60784558c1c6dc047f876733"
+dependencies = [
+ "cc",
+ "glob",
+]
+
+[[package]]
 name = "litrs"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,6 +348,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "parajpeg"
+version = "0.1.0"
+source = "git+https://github.com/darktorres/parajpeg?rev=8e2c53a89d6681615478dbd52d7efdb18f136c01#8e2c53a89d6681615478dbd52d7efdb18f136c01"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "pg-codec"
 version = "0.1.0"
 dependencies = [
@@ -340,10 +364,12 @@ dependencies = [
  "gif",
  "image",
  "image-webp",
+ "parajpeg",
  "pg-model",
  "png",
  "tiff",
  "turbojpeg",
+ "webp",
  "zune-core",
  "zune-jpeg",
 ]
@@ -644,6 +670,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "webp"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c071456adef4aca59bf6a583c46b90ff5eb0b4f758fc347cea81290288f37ce1"
+dependencies = [
+ "libwebp-sys",
+]
 
 [[package]]
 name = "weezl"

@@ -45,6 +45,7 @@ so it needs a caller marker, and this header is that marker. Retire `X-Gallery-R
 
 **B5. TLS: one stack, `rustls`, for the LAN listener and for ureq.** The reasons changed after C2. The doc said
 native-tls cannot do server ALPN on Windows. That is false. The real reasons are these:
+
 - rustls is async-friendly and has first-class tokio and axum integration. native-tls's server accept is blocking and
   opt-in, so axum would need a `spawn_blocking` wrapper around every TLS accept.
 - Keeping two TLS stacks (rustls for the server, native-tls for ureq) doubles the trust surface.
@@ -54,6 +55,7 @@ native-tls cannot do server ALPN on Windows. That is false. The real reasons are
 Supersedes the reconciled doc's TLS premise and the native-tls "no ALPN" reason.
 
 **B6. Thumbnails.**
+
 - A miss with nothing cached: `200 image/png`, a 1x1 transparent PNG, `Cache-Control: no-store`, `X-Thumb-State: pending`.
   The ThumbHash is drawn in CSS. This is transport's answer, and writes' "returns the ThumbHash placeholder" is dropped.
 - A miss at height h with a nearest cached height: `307` to the nearest height's URL, with `Cache-Control: no-store`.
@@ -99,6 +101,7 @@ saves are off in v1 (O30). Result folder is owner-wide (O31).
 migration ships, these rows stay unversioned, and the pre-migration window is as O17 describes.
 
 **B14. Rebuild fixes (must land before any code).**
+
 - Set `PRAGMA foreign_keys = OFF` outside the transaction. Inside a transaction it is a no-op (`SETTINGS` sets it ON at
   `schema.rs:424`, and each migration runs in one transaction).
 - `DROP TABLE files` removes every trigger on `files`. The rebuild must recreate all of them: `files_added`,
@@ -232,6 +235,7 @@ the scratchpad. The record name did not parse; the reasons are what the design n
 memory-mapped views, hard-link writes, and the journal wrapping.
 
 **Design (proposed, not yet accepted):**
+
 1. Our writes: compute the hash from the bytes we write, and store it in the same transaction. Drop the deferred `None`
    at `crates/writeback/src/lib.rs:565`, which is the pixel-rotation gap.
 2. External changes: read the USN journal (the plan's journal pass, step 3.9, already reads every reason). A record with a

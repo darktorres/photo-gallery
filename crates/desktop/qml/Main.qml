@@ -190,6 +190,21 @@ ApplicationWindow {
         cropPicker.pick(1)
     }
 
+    // Where the filter bar's "Cut borders from originals" starts: the count is asked for, then the dialog confirms.
+    function askCutBorders() {
+        cutDialog.count = galleryModel.cutBordersCount()
+        cutDialog.open()
+    }
+
+    // The cut dialog's confirmation is the only way the originals are rewritten. It reports as the save-view dialog to the
+    // shell: PanelKind has no kind of its own, and any modal dialog counts the same for the shortcuts.
+    CutBordersDialog {
+        id: cutDialog
+        onConfirmed: galleryModel.cutBordersConfirmed()
+        onClosed: grid.takeFocus()
+        onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+    }
+
     function relayout() {
         const anchor = current >= 0 ? current : grid.topItem()
         grid.settling = true
@@ -512,6 +527,7 @@ ApplicationWindow {
             onEdited: shell.queryEdited()
             croppable: galleryModel.croppable
             onSaveCropsRequested: win.askSaveCrops()
+            onCutBordersRequested: win.askCutBorders()
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: topBar.bottom

@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import DATA_ROOT, pg_path  # noqa: E402
+from common import DATA_ROOT, pg_path
 
 # The library images behind the inputs, by the names the decoder comparison's table gives them.
 RGB_SOURCE = "pinterest_1141451468123671931"  # rgb-3mp

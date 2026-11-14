@@ -80,8 +80,9 @@
 //!   means "restarts exhausted", posted where `pg_app::Library::tend` gives the writer up (a stop at shutdown, or a panic a
 //!   restart recovers from, posts nothing). `Library::start` clears both before the new writer starts, since a new writer
 //!   starts with no error and would never see the change that clears an earlier run's state.
-//! - `cache-recovery`: the thumbnail cache's writer publishes `TouchesWritten` or `Stored` at its first success after a
-//!   failure; `pg_thumbcache::Event::effect` turns its events into a post or a clear, which the app's forwarder applies (the
+//! - `touches-recovered` and `store-recovered`: the thumbnail cache's writer publishes `TouchesWritten` at its first success
+//!   after `TouchesNotWritten`, and `Stored` at its first success after `NotStored`. Each clears only the notice of its own
+//!   failure. `pg_thumbcache::Event::effect` turns its events into a post or a clear, which the app's forwarder applies (the
 //!   command line prints the posts only).
 //! - `next-save`: the next save of the preferences (`PrefStore::update`).
 //! - `root-walk`: the next complete walk of the whole library folder replaces the folder's kept scan notes with the ones
@@ -488,6 +489,19 @@ pub enum Notice {
     CropFailed {
         error: String,
     },
+    /// The borders cut off the originals (`pg_crop::cut`): what became of each file. The first failures are kept with
+    /// their files, as the copies' notice keeps them.
+    BordersCut {
+        saved: u64,
+        skipped: u64,
+        unsupported: u64,
+        failed: u64,
+        failures: Vec<FileFailure>,
+    },
+    /// A cut that failed before it could change anything.
+    CutFailed {
+        error: String,
+    },
 
     // The app's files.
     /// The catalog didn't match this build's schema, so it was moved aside (to `kept`) and a new one made, which took the
@@ -710,8 +724,10 @@ pub enum Resolver {
     CompletePass(FilePass),
     /// The writer's status, as it changes: an error gone back to none, a writer started again.
     StatusPoll,
-    /// The thumbnail cache's writer, at its first success after a failure.
-    CacheRecovery,
+    /// The thumbnail cache's writer, at its first success after a failed write of the times entries were shown.
+    TouchesRecovered,
+    /// The thumbnail cache's writer, at its first success after a failed store of a thumbnail.
+    StoreRecovered,
     /// The next save of the preferences.
     NextSave,
     /// The next complete walk of the whole library folder, which replaces the folder's kept notices with the ones it
@@ -728,7 +744,8 @@ impl Resolver {
             Resolver::NextSuccess(op) => format!("next-success({})", op.code()),
             Resolver::CompletePass(pass) => format!("complete-pass({})", pass.code()),
             Resolver::StatusPoll => "status-poll".to_string(),
-            Resolver::CacheRecovery => "cache-recovery".to_string(),
+            Resolver::TouchesRecovered => "touches-recovered".to_string(),
+            Resolver::StoreRecovered => "store-recovered".to_string(),
             Resolver::NextSave => "next-save".to_string(),
             Resolver::RootWalk => "root-walk".to_string(),
             Resolver::RootRemoval => "root-removal".to_string(),
@@ -791,8 +808,10 @@ pub enum Trigger {
     Pass(FilePass),
     /// The writer's status is none again: its error is gone, or the writer started again.
     Status,
-    /// The thumbnail cache's writer is writing again after a failure.
-    CacheRecovery,
+    /// The thumbnail cache's writer wrote the times entries were shown, after a failed write of them.
+    TouchesRecovered,
+    /// The thumbnail cache's writer stored a thumbnail, after a failed store.
+    StoreRecovered,
     /// The preferences were saved.
     Save,
 }
@@ -805,7 +824,8 @@ pub fn resolves(resolver: Resolver, trigger: Trigger) -> bool {
         (Resolver::NextSuccess(op), Trigger::Op(done)) => op == done,
         (Resolver::CompletePass(pass), Trigger::Pass(done)) => pass == done,
         (Resolver::StatusPoll, Trigger::Status)
-        | (Resolver::CacheRecovery, Trigger::CacheRecovery)
+        | (Resolver::TouchesRecovered, Trigger::TouchesRecovered)
+        | (Resolver::StoreRecovered, Trigger::StoreRecovered)
         | (Resolver::NextSave, Trigger::Save) => true,
         _ => false,
     }
@@ -929,6 +949,8 @@ ids! {
     CacheFull => "cache-full",
     Cropped => "cropped",
     CropFailed => "crop-failed",
+    BordersCut => "borders-cut",
+    CutFailed => "cut-failed",
     CatalogRebuilt => "catalog-rebuilt",
     CatalogNotClosed => "catalog-not-closed",
     PrefsUnreadable => "prefs-unreadable",
@@ -1012,7 +1034,7 @@ impl Notice {
                     Level::Info
                 }
             }
-            Notice::Cropped { failed, .. } => {
+            Notice::Cropped { failed, .. } | Notice::BordersCut { failed, .. } => {
                 if *failed == 0 {
                     Level::Info
                 } else {
@@ -1048,6 +1070,7 @@ impl Notice {
             | Notice::RoundFailed { .. }
             | Notice::RoundPanicked { .. }
             | Notice::CropFailed { .. }
+            | Notice::CutFailed { .. }
             | Notice::CacheDisabled { .. }
             | Notice::WriteFailed { .. }
             | Notice::WriteStopped
@@ -1076,7 +1099,10 @@ impl Notice {
             | Notice::RescanFailed { .. }
             | Notice::LibraryUnavailable { .. } => Source::Library,
             Notice::CacheFull { .. } | Notice::ThumbsFailed { .. } => Source::Thumbs,
-            Notice::Cropped { .. } | Notice::CropFailed { .. } => Source::Crop,
+            Notice::Cropped { .. }
+            | Notice::CropFailed { .. }
+            | Notice::BordersCut { .. }
+            | Notice::CutFailed { .. } => Source::Crop,
             Notice::CatalogRebuilt { .. }
             | Notice::CatalogNotClosed { .. }
             | Notice::ListingFailed { .. }
@@ -1137,9 +1163,8 @@ impl Notice {
             Notice::RoundFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Round)),
             Notice::CacheFull { .. } => self.key(None, None, Resolver::CompletePass(FilePass::Thumbs)),
             Notice::PrefsNotSaved { .. } => self.key(None, None, Resolver::NextSave),
-            Notice::CacheTouchesNotWritten { .. } | Notice::CacheNotStored { .. } => {
-                self.key(None, None, Resolver::CacheRecovery)
-            }
+            Notice::CacheTouchesNotWritten { .. } => self.key(None, None, Resolver::TouchesRecovered),
+            Notice::CacheNotStored { .. } => self.key(None, None, Resolver::StoreRecovered),
             Notice::WriteFailed { .. } | Notice::WriteStopped => self.key(None, None, Resolver::StatusPoll),
             Notice::ListingFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Listing)),
             Notice::RowReadFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::RowRead)),
@@ -1162,6 +1187,8 @@ impl Notice {
             | Notice::RoundPanicked { .. }
             | Notice::Cropped { .. }
             | Notice::CropFailed { .. }
+            | Notice::BordersCut { .. }
+            | Notice::CutFailed { .. }
             | Notice::CatalogRebuilt { .. }
             | Notice::CatalogNotClosed { .. }
             | Notice::PrefsUnreadable { .. }
@@ -1249,6 +1276,8 @@ impl Notice {
             | Notice::CacheFull { .. }
             | Notice::Cropped { .. }
             | Notice::CropFailed { .. }
+            | Notice::BordersCut { .. }
+            | Notice::CutFailed { .. }
             | Notice::CatalogRebuilt { .. }
             | Notice::CatalogNotClosed { .. }
             | Notice::PrefsUnreadable { .. }
@@ -1380,6 +1409,18 @@ impl Notice {
             Notice::UpdateAvailable { version: "1.2.0".into() },
             Notice::Unknown { code: "from-a-newer-build".into() },
             Notice::SessionNotRead { error: error() },
+            Notice::BordersCut {
+                saved: 4,
+                skipped: 1,
+                unsupported: 1,
+                failed: 1,
+                failures: vec![FileFailure {
+                    path: r"D:\Photos\c.png".into(),
+                    error: "may be incomplete".into(),
+                    panicked: false,
+                }],
+            },
+            Notice::CutFailed { error: error() },
         ]
     }
 }
@@ -1468,10 +1509,12 @@ mod tests {
             Notice::UpdateAvailable { .. } => 44,
             Notice::Unknown { .. } => 45,
             Notice::SessionNotRead { .. } => 46,
+            Notice::BordersCut { .. } => 47,
+            Notice::CutFailed { .. } => 48,
         }
     }
 
-    const KINDS: usize = 47;
+    const KINDS: usize = 49;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {
@@ -1725,19 +1768,30 @@ mod tests {
         assert!(dropped.resolvers().is_empty());
     }
 
-    /// The cache's failures are kept, and cleared by the cache's writer at its first success after them.
+    /// The cache's failures are kept, each cleared by the cache's writer at its first success after that failure.
     #[test]
     fn the_caches_failures_are_kept_until_the_cache_recovers() {
-        for notice in
-            [Notice::CacheTouchesNotWritten { error: "e".into() }, Notice::CacheNotStored { error: "e".into() }]
-        {
-            assert!(
-                matches!(
-                    notice.lifecycle(),
-                    Lifecycle::State(Key { root: None, part: None, .. }, Resolver::CacheRecovery)
-                ),
-                "{notice:?}"
-            );
+        for (notice, resolver) in [
+            (Notice::CacheTouchesNotWritten { error: "e".into() }, Resolver::TouchesRecovered),
+            (Notice::CacheNotStored { error: "e".into() }, Resolver::StoreRecovered),
+        ] {
+            assert_eq!(notice.lifecycle(), Lifecycle::State(Key::all(notice.code(), None), resolver), "{notice:?}");
+        }
+    }
+
+    /// A cache recovery clears its own failure's notice and no other: a touch success does not clear a not-stored
+    /// notice, a store success does not clear a touch failure's, and each still clears its own.
+    #[test]
+    fn each_cache_recovery_clears_only_its_own_failure() {
+        let pairs = [
+            (Notice::CacheTouchesNotWritten { error: "e".into() }, Trigger::TouchesRecovered),
+            (Notice::CacheNotStored { error: "e".into() }, Trigger::StoreRecovered),
+        ];
+        for (failure, own) in &pairs {
+            for (_, recovery) in &pairs {
+                let cleared = failure.resolvers().into_iter().any(|r| resolves(r, *recovery));
+                assert_eq!(cleared, recovery == own, "{failure:?} is cleared by {recovery:?}");
+            }
         }
     }
 
@@ -1772,7 +1826,8 @@ mod tests {
         assert_eq!(row("scan-note", Some("duplicates")), Some(vec![Resolver::RootWalk, Resolver::RootRemoval]));
         assert_eq!(row("scan-note", Some("replaced")), None);
         assert_eq!(row("write-dropped", None), None);
-        assert_eq!(row("cache-not-stored", None), Some(vec![Resolver::CacheRecovery]));
+        assert_eq!(row("cache-touches-not-written", None), Some(vec![Resolver::TouchesRecovered]));
+        assert_eq!(row("cache-not-stored", None), Some(vec![Resolver::StoreRecovered]));
         assert_eq!(row("edit-failed", Some("rotate")), Some(vec![Resolver::NextSuccess(Op::Edit(EditOp::Rotate))]));
         assert_eq!(row("unreadable-files", Some("import")), Some(vec![Resolver::CompletePass(FilePass::Import)]));
         // Every resolver is some kept kind's.
@@ -1783,13 +1838,14 @@ mod tests {
                 Resolver::NextSuccess(_) => "next-success",
                 Resolver::CompletePass(_) => "complete-pass",
                 Resolver::StatusPoll => "status-poll",
-                Resolver::CacheRecovery => "cache-recovery",
+                Resolver::TouchesRecovered => "touches-recovered",
+                Resolver::StoreRecovered => "store-recovered",
                 Resolver::NextSave => "next-save",
                 Resolver::RootWalk => "root-walk",
                 Resolver::RootRemoval => "root-removal",
             })
             .collect();
-        assert_eq!(used.len(), 7, "{used:?}");
+        assert_eq!(used.len(), 8, "{used:?}");
         let markdown = Notice::resolver_markdown();
         assert_eq!(markdown.lines().count(), table.len() + 2);
         assert!(markdown.contains("| `scan-note` | `duplicates` | `root-walk`, `root-removal` |"), "{markdown}");
@@ -1808,10 +1864,18 @@ mod tests {
         assert!(!resolves(Resolver::CompletePass(FilePass::Thumbs), Trigger::Op(Op::Round)));
         assert!(resolves(Resolver::StatusPoll, Trigger::Status));
         assert!(!resolves(Resolver::StatusPoll, Trigger::Save));
-        assert!(resolves(Resolver::CacheRecovery, Trigger::CacheRecovery));
+        assert!(resolves(Resolver::TouchesRecovered, Trigger::TouchesRecovered));
+        assert!(resolves(Resolver::StoreRecovered, Trigger::StoreRecovered));
         assert!(resolves(Resolver::NextSave, Trigger::Save));
         // The scoped two have no trigger.
-        for trigger in [Trigger::Status, Trigger::CacheRecovery, Trigger::Save, Trigger::Pass(FilePass::Thumbs)] {
+        let triggers = [
+            Trigger::Status,
+            Trigger::TouchesRecovered,
+            Trigger::StoreRecovered,
+            Trigger::Save,
+            Trigger::Pass(FilePass::Thumbs),
+        ];
+        for trigger in triggers {
             assert!(!resolves(Resolver::RootWalk, trigger) && !resolves(Resolver::RootRemoval, trigger), "{trigger:?}");
         }
     }

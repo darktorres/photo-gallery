@@ -9,7 +9,8 @@ workspace = true
 
 # The pass that saves cropped copies of the borders the catalog has: it cuts them (`pg-edit`), copies the metadata
 # (`pg-exiftool`) and checks each original is unchanged (`pg_platform::file::stat`); the copies' folders are compared
-# in their real form (`pg_platform::names::normalize_path`).
+# in their real form (`pg_platform::names::normalize_path`). It also cuts the borders off the originals themselves, in
+# place (`pg-writeback`'s `replace`), once confirmed.
 # Its tests that need a catalog are `pg-library`'s (they prepare one with `pg_library::versions`).
 [dependencies]
 pg-catalog = { path = "../catalog" }
@@ -18,6 +19,7 @@ pg-exiftool = { path = "../exiftool" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
+pg-writeback = { path = "../writeback" }
 anyhow.workspace = true
 
 [dev-dependencies]

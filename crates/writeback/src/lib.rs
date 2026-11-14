@@ -57,8 +57,11 @@ use pg_jobs::events::Change;
 pub mod fault;
 mod file;
 
+mod inplace;
+
 pub use file::{discard_temps, temp_of};
 use file::{stat, sync, unchanged, write_into};
+pub use inplace::{ReplaceError, replace};
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
 const SETTLE_SECS: i64 = 2;

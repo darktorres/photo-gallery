@@ -94,7 +94,7 @@ pub enum Effect {
 
 impl Event {
     /// What the event does to the user's notices (the app's inbox; the command line prints only a [`Effect::Post`]):
-    /// a failure is a notice, and the writer's first success after one clears its kept notice.
+    /// a failure is a notice, and the writer's first success after one clears that failure's kept notice, and no other.
     pub fn effect(&self) -> Option<Effect> {
         let error = |e: &str| tidy(e, ERROR_CAP);
         let post = |notice| Some(Effect::Post(notice));
@@ -108,9 +108,9 @@ impl Event {
                 })
             }
             Event::TouchesNotWritten { error: e } => post(Notice::CacheTouchesNotWritten { error: error(e) }),
-            Event::TouchesWritten => Some(Effect::Resolve(Trigger::CacheRecovery)),
+            Event::TouchesWritten => Some(Effect::Resolve(Trigger::TouchesRecovered)),
             Event::NotStored { error: e } => post(Notice::CacheNotStored { error: error(e) }),
-            Event::Stored => Some(Effect::Resolve(Trigger::CacheRecovery)),
+            Event::Stored => Some(Effect::Resolve(Trigger::StoreRecovered)),
             Event::WalNotMerged { error: e } => post(Notice::CacheWalNotMerged { error: error(e) }),
             Event::StartedOver { reason, path, detail } => post(Notice::CacheStartedOver {
                 reason: *reason,
@@ -144,6 +144,34 @@ mod tests {
             let Some(Effect::Resolve(trigger)) = recovery.effect() else { panic!("{recovery:?} resolves") };
             let cleared = notice.resolvers().into_iter().any(|r| pg_model::notice::resolves(r, trigger));
             assert!(cleared, "{notice:?} is not cleared by {trigger:?}");
+        }
+    }
+
+    /// Each recovery clears the notice of its own failure and no other: a touch success does not clear a not-stored
+    /// notice, a store success does not clear a touch failure's, and each still clears its own.
+    #[test]
+    fn each_recovery_clears_only_its_own_failure() {
+        let failures = [Event::TouchesNotWritten { error: "busy".into() }, Event::NotStored { error: "busy".into() }];
+        let recoveries = [Event::TouchesWritten, Event::Stored];
+        let notices: Vec<Notice> = failures
+            .iter()
+            .map(|failure| match failure.effect() {
+                Some(Effect::Post(notice)) => notice,
+                _ => panic!("{failure:?} posts a notice"),
+            })
+            .collect();
+        let triggers: Vec<Trigger> = recoveries
+            .iter()
+            .map(|recovery| match recovery.effect() {
+                Some(Effect::Resolve(trigger)) => trigger,
+                _ => panic!("{recovery:?} resolves a notice"),
+            })
+            .collect();
+        for (i, notice) in notices.iter().enumerate() {
+            for (j, trigger) in triggers.iter().enumerate() {
+                let cleared = notice.resolvers().into_iter().any(|r| pg_model::notice::resolves(r, *trigger));
+                assert_eq!(cleared, i == j, "{notice:?} is cleared by {trigger:?}");
+            }
         }
     }
 }

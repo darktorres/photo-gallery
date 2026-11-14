@@ -188,6 +188,11 @@ impl Library {
         self.runner.save_crops(ids, folder);
     }
 
+    /// Cut the borders off these files' originals, in place (see `Runner::cut_borders`).
+    pub fn cut_borders(&self, ids: Vec<FileId>, confirmed: bool) {
+        self.runner.cut_borders(ids, confirmed);
+    }
+
     /// Scan these folders (the job skips folders no longer in the library).
     pub fn scan(&self, roots: Vec<RulePath>) {
         self.runner.scan(roots);
@@ -284,6 +289,14 @@ impl LibraryService {
     pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
         if let Some(library) = self.running() {
             library.save_crops(ids, folder);
+        }
+    }
+
+    /// Cut the borders off these files' originals, in place, once the user has confirmed it (`confirmed`: the only
+    /// caller that passes `true` is the confirmation dialog's accept). A no-op until the library has started.
+    pub fn cut_borders(&self, ids: Vec<FileId>, confirmed: bool) {
+        if let Some(library) = self.running() {
+            library.cut_borders(ids, confirmed);
         }
     }
 
@@ -440,6 +453,58 @@ mod tests {
         }
         assert_eq!(sink.calls().len(), before, "a restart posts nothing: {:?}", sink.calls());
         assert!(library.stop());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A writer that has run for `RESTART_RESET` is healthy: its restart count starts over, so its next failure gets the
+    /// first wait again. A writer that has not run that long keeps its count.
+    #[test]
+    fn a_healthy_writer_starts_its_restart_count_over() {
+        let (library, sink, dir) = library("library-healthy");
+        let before = sink.calls().len();
+        {
+            let mut slot = library.writer();
+            slot.restarts = MAX_RESTARTS - 1;
+            slot.started = Instant::now();
+            library.tend(&mut slot);
+            assert_eq!(slot.restarts, MAX_RESTARTS - 1, "a writer that just started keeps its count");
+            slot.started = Instant::now().checked_sub(RESTART_RESET).expect("the clock is older than a minute");
+            library.tend(&mut slot);
+            assert_eq!(slot.restarts, 0, "a writer that ran for RESTART_RESET starts its count over");
+            assert!(!slot.given_up);
+        }
+        assert_eq!(sink.calls().len(), before, "a reset posts nothing: {:?}", sink.calls());
+        assert!(library.stop());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The writer's `write-stopped` state of one run is cleared by the next run's start, which is the healthy restart:
+    /// the start resolves the status triggers before its writer can post, and the writer it starts is running and not
+    /// given up. (The notice's resolver is `Trigger::Status`, as `write-stopped` is in the model.)
+    #[test]
+    fn a_restart_after_a_given_up_writer_resolves_the_status_before_its_writer_posts() {
+        let (first, first_sink, dir) = library("library-restart-given-up");
+        {
+            let mut slot = first.writer();
+            slot.writer.stop();
+            slot.restarts = MAX_RESTARTS;
+            first.tend(&mut slot);
+            assert!(slot.given_up);
+        }
+        assert!(first_sink.calls().contains(&"post write-stopped".to_string()));
+        assert!(first.stop());
+
+        // The next run, on the same catalog.
+        let layout = pg_library::layout::Layout::in_home(&dir);
+        let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::disabled()));
+        let sink = Arc::new(Recording::default());
+        let heights = HeightCell::default();
+        heights.set(ThumbHeight::new(100).expect("a height in range"));
+        let second = Library::start(layout.catalog_path(), thumbs, heights, sink.clone()).unwrap();
+        assert_eq!(sink.calls()[..1], ["resolve Status"]);
+        assert!(!second.status().writer_stopped, "the new run's writer is not given up");
+        assert!(!sink.calls().iter().any(|c| c == "post write-stopped"), "{:?}", sink.calls());
+        assert!(second.stop());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

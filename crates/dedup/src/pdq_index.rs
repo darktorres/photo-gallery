@@ -49,9 +49,6 @@ pub(crate) struct PdqIndex {
     /// How many entries (the first ones) are in the flat tables; the rest are chained.
     indexed: usize,
     chunks: [Chunk; CHUNKS],
-    /// Per-entry stamp of the last query that saw it, to skip duplicate candidates without a set.
-    seen: Vec<u32>,
-    query_no: u32,
 }
 
 #[derive(Default)]
@@ -181,7 +178,7 @@ impl PdqIndex {
     /// The index of these entries: `ids[i]`'s hash words are `hashes[i]`.
     pub(crate) fn build(ids: Vec<FileId>, hashes: Vec<[u64; 4]>) -> PdqIndex {
         assert_eq!(ids.len(), hashes.len());
-        let mut index = PdqIndex { seen: vec![0; ids.len()], ids, hashes, ..PdqIndex::default() };
+        let mut index = PdqIndex { ids, hashes, ..PdqIndex::default() };
         index.reindex();
         index
     }
@@ -199,7 +196,6 @@ impl PdqIndex {
     pub(crate) fn reserve(&mut self, additional: usize) {
         self.ids.reserve(additional);
         self.hashes.reserve(additional);
-        self.seen.reserve(additional);
         let chained = additional.min(MIN_REINDEX.max(self.indexed / 8));
         for chunk in &mut self.chunks {
             chunk.next.reserve(chained);
@@ -218,7 +214,6 @@ impl PdqIndex {
         }
         self.ids.push(id);
         self.hashes.push(words);
-        self.seen.push(0);
         if self.ids.len() - self.indexed >= MIN_REINDEX.max(self.indexed / 8) {
             self.reindex();
         }
@@ -281,7 +276,7 @@ impl PdqIndex {
     /// The entries matching any of `orientations` within `radius`: for each neighbour, the least distance and the
     /// index of the orientation it matched, in `best`. `found` and `best` are the caller's buffers (cleared here).
     pub(crate) fn best_matches(
-        &mut self,
+        &self,
         orientations: &[Hash],
         radius: u32,
         found: &mut Vec<(FileId, u32)>,
@@ -301,43 +296,41 @@ impl PdqIndex {
     }
 
     /// Every entry within `radius` (≤ [`MAX_RADIUS`]) of `hash`, as (id, distance), into `out` (cleared first), in
-    /// no particular order.
-    pub(crate) fn query(&mut self, hash: &Hash, radius: u32, out: &mut Vec<(FileId, u32)>) {
+    /// no particular order. Each entry is reported once, though it is a candidate in every chunk where it is near.
+    pub(crate) fn query(&self, hash: &Hash, radius: u32, out: &mut Vec<(FileId, u32)>) {
         assert!(radius <= MAX_RADIUS);
         out.clear();
-        self.query_no = self.query_no.wrapping_add(1);
-        if self.query_no == 0 {
-            self.seen.fill(0);
-            self.query_no = 1;
-        }
-        let PdqIndex { ids, hashes, indexed, chunks, seen, query_no } = self;
+        let PdqIndex { ids, hashes, indexed, chunks, .. } = self;
         let words = hash.words();
-        let mut check = |p: usize| {
-            let (Some(stamp), Some(e), Some(&id)) = (seen.get_mut(p), hashes.get(p), ids.get(p)) else {
-                return;
-            };
-            if *stamp == *query_no {
+        let probes: [u16; CHUNKS] = std::array::from_fn(|c| value(&words, c));
+        // An entry is a candidate in chunk `c` when its value there is within one bit of the query's (the probes), so
+        // it can be one in several chunks. It is reported only in the first chunk that reaches it: a hit is checked
+        // against its earlier chunks' values, which needs no table. (Checked after the distance, since only a hit can
+        // be reported, and the test is per candidate.)
+        let mut check = |p: usize, c: usize| {
+            let Some(e) = hashes.get(p) else { return };
+            let d: u32 = e.iter().zip(&words).map(|(a, b)| (a ^ b).count_ones()).sum();
+            if d > radius
+                || probes.iter().take(c).enumerate().any(|(earlier, &q)| (value(e, earlier) ^ q).count_ones() <= 1)
+            {
                 return;
             }
-            *stamp = *query_no;
-            let d: u32 = e.iter().zip(&words).map(|(a, b)| (a ^ b).count_ones()).sum();
-            if d <= radius {
+            if let Some(&id) = ids.get(p) {
                 out.push((id, d));
             }
         };
-        for (c, chunk) in chunks.iter().enumerate() {
-            let v = value(&words, c);
+        for (c, (chunk, v)) in chunks.iter().zip(probes).enumerate() {
             for probe in std::iter::once(v).chain((0..16).map(|b| v ^ (1 << b))) {
                 let at = usize::from(probe);
                 if let Some(&[start, end]) = chunk.offsets.get(at..at + 2)
                     && let Some(positions) = chunk.positions.get(pg_model::num::index(start)..pg_model::num::index(end))
                 {
-                    positions.iter().for_each(|&p| check(pg_model::num::index(p)));
+                    positions.iter().for_each(|&p| check(pg_model::num::index(p), c));
                 }
                 let mut link = chunk.heads.get(probe);
                 while link != END {
                     let p = pg_model::num::index(link) - 1;
-                    check(p);
+                    check(p, c);
                     link = chunk.next.get(p - *indexed).copied().unwrap_or(END);
                 }
             }
@@ -537,5 +530,32 @@ mod tests {
         }
         // Reindexed at 3000 + 4096; the last 2004 are chained.
         assert_eq!((index.indexed, index.len()), (built + MIN_REINDEX, all.len()));
+    }
+
+    /// An image's orientations are several entries under one id, and each entry within the radius counts with its own
+    /// distance, though it is near in several chunks: each is reported exactly once, built or chained. (Ids are not
+    /// unique here, so [`check`] does not apply.)
+    #[test]
+    fn each_entry_is_reported_once_under_its_own_distance() {
+        let (all, queries) = sample(900);
+        let id_of = |p: usize| FileId::new(i64::try_from(p / 8).unwrap());
+        let half = all.len() / 2;
+        let mut index = PdqIndex::build((0..half).map(id_of).collect(), all[..half].iter().map(Hash::words).collect());
+        for (p, h) in all.iter().enumerate().skip(half) {
+            index.insert(id_of(p), h).unwrap();
+        }
+        assert!(index.indexed < index.len(), "the test needs chained entries too");
+        let mut out = Vec::new();
+        let mut repeated = 0;
+        for q in &queries {
+            index.query(q, MAX_RADIUS, &mut out);
+            out.sort();
+            let mut want: Vec<(FileId, u32)> =
+                (0..index.len()).map(|p| (id_of(p), q.distance(&all[p]))).filter(|&(_, d)| d <= MAX_RADIUS).collect();
+            want.sort();
+            assert_eq!(out, want);
+            repeated += out.windows(2).filter(|w| w[0].0 == w[1].0).count();
+        }
+        assert!(repeated > 0, "the queries need an image with two orientations in reach");
     }
 }

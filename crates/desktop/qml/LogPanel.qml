@@ -41,6 +41,18 @@ ModalOverlay {
         following = list.currentIndex === list.count - 1
     }
 
+    // The keys that move the row, read a turn later: the view has moved to the row by then.
+    function keyPressed(key: int) {
+        if ([Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End].includes(key))
+            keyMovedLater.restart()
+    }
+
+    Timer {
+        id: keyMovedLater
+        interval: 0
+        onTriggered: panel.keyMoved()
+    }
+
     function select(row: int, seq: real, text: string) {
         selected = row
         selectedSeq = seq
@@ -100,11 +112,8 @@ ModalOverlay {
                 onCountChanged: if (panel.following) positionViewAtEnd()
                 onMovementEnded: panel.scrolled()
                 onWheelScrolled: panel.scrolled()
-                // The keys that move the current row. The row is read a call later, when the view has been moved to it.
-                Keys.onPressed: (event) => {
-                    if ([Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End].includes(event.key))
-                        Qt.callLater(panel.keyMoved)
-                }
+                // The keys that move the current row (read a turn later, see `keyPressed`).
+                Keys.onPressed: (event) => panel.keyPressed(event.key)
                 ScrollBar.vertical: ScrollBar {
                     onPressedChanged: if (!pressed) panel.scrolled()
                 }

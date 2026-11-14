@@ -33,7 +33,11 @@ pub(crate) fn pending_import_sql(retry_errors: bool) -> &'static str {
 /// The work list of a statement whose rows start with `work_columns!()` and number at most `bound`, read in
 /// `conn`'s transaction: the items in a `Vec` of that capacity, each folder's path read once.
 pub(crate) fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound: usize) -> Result<WorkList<WorkItem>> {
-    let mut rows = stmt.query([])?;
+    work_list_of(conn, stmt.query([])?, bound)
+}
+
+/// [`work_list`] of the rows a statement gave (`rows`, from its parameters or none).
+fn work_list_of(conn: &Connection, mut rows: rusqlite::Rows<'_>, bound: usize) -> Result<WorkList<WorkItem>> {
     let (mut list, mut folder) = (WorkList::default(), None);
     while let Some(r) = rows.next()? {
         if folder.is_none() {
@@ -53,6 +57,12 @@ pub(crate) fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound
         });
     }
     Ok(list)
+}
+
+/// The item of file `id` as the work lists have it (`work_columns!`), or `None` when it isn't in the catalog.
+pub(crate) fn work_item(conn: &Connection, id: FileId) -> Result<Option<WorkItem>> {
+    let mut stmt = conn.prepare_cached(concat!("SELECT ", work_columns!(), " FROM files f WHERE f.id = ?1"))?;
+    Ok(work_list_of(conn, stmt.query([id.get()])?, 1)?.items.pop())
 }
 
 /// The largest folder id of the catalog (-1 for none): an O(1) read of the table's last row. The thumbnail cache reads

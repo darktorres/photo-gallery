@@ -111,13 +111,33 @@ impl qobject::GalleryModel {
         let Some(folder) = crate::picker::take(crate::picker::state::Purpose::SaveCrops) else {
             return 0;
         };
-        let ids: Vec<FileId> =
-            self.grid.entries().iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
+        let ids = self.borders_found();
         let n = qt_int(ids.len());
         if n > 0 {
             crate::app::get().library().save_crops(ids, folder);
         }
         n
+    }
+
+    /// How many files the cut dialog says its borders come off: the files the copy action takes.
+    pub(crate) fn cut_borders_count(&self) -> i32 {
+        qt_int(self.borders_found().len())
+    }
+
+    /// The user confirmed "Cut borders from originals" in CutBordersDialog: the library rewrites those originals with
+    /// their borders cut off, in the background. The only call that passes `confirmed` as true. Returns how many it asked for.
+    pub(crate) fn cut_borders_confirmed(&self) -> i32 {
+        let ids = self.borders_found();
+        let n = qt_int(ids.len());
+        if n > 0 {
+            crate::app::get().library().cut_borders(ids, true);
+        }
+        n
+    }
+
+    /// The listed files whose borders were found (and not marked as not a border).
+    fn borders_found(&self) -> Vec<FileId> {
+        self.grid.entries().iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect()
     }
 }
 

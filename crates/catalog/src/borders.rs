@@ -2,16 +2,45 @@
 //! (`set_border_mark`, the review). Methods of `Catalog`; the details read the sides in their snapshot
 //! (`border_sides_on`).
 
-use rusqlite::Connection;
+use anyhow::anyhow;
 use rusqlite::types::Type;
+use rusqlite::{Connection, params};
 
-use pg_model::detection;
+use pg_model::detection::{self, Detection};
 use pg_model::ids::FileId;
 
 use crate::core::Catalog;
-use crate::error::Result;
+use crate::current::{IS_CURRENT, query_current};
+use crate::error::{Error, Result};
+use crate::work::work_item;
+use crate::writers::BordersWriter;
 
 impl Catalog {
+    /// A file's borders were cut off in its original (`pg_crop::cut`), which now has the (size, mtime) `after`. The cut is
+    /// exact, so the file has no borders left: its detection is stored as none now, with no mark (the review's). Its
+    /// analysis was made of the uncut pixels, and its size and mtime no longer match the file's, so the next import
+    /// analyzes it again, and the borders pass looks at the cut file once more.
+    pub fn borders_cut(&self, file_id: FileId, after: (i64, i64)) -> Result<()> {
+        let tx = crate::transaction::write_transaction(&self.conn)?;
+        tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
+        // The file as it is now, which the detection is stored for, and the stored size its analysis has (a detection of
+        // none has no cut, whatever that size is).
+        let item = work_item(&tx, file_id)?
+            .ok_or_else(|| Error::Other(anyhow!("file {} isn't in the catalog", file_id.get())))?;
+        let (width, height): (u32, u32) =
+            tx.query_row("SELECT width, height FROM analysis WHERE file_id = ?1", [file_id.get()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
+        // The store is refused for a file with a write of the app's in progress: the cut is then not recorded, and
+        // the import sees the file changed.
+        if !query_current(&mut tx.prepare(IS_CURRENT)?, file_id, &item.listed())? {
+            return Err(Error::Other(anyhow!("file {} is being written: its cut is not recorded", file_id.get())));
+        }
+        BordersWriter::new(&tx)?.store_borders(&item, Some(&Detection::none(width, height)))?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
     /// than detection finds (`detection::MAX_SIDES`) can only be in a damaged catalog: an error.
     pub fn border_sides(&self, file_id: FileId) -> Result<detection::Sides> {

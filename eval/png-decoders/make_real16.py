@@ -17,8 +17,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import pg_path  # noqa: E402
-from make_inputs import encode  # noqa: E402
+from make_inputs import encode
+
+from common import pg_path
 
 CHOSEN = ["flower_foveon", "leaves_iso_200", "nightshot_iso_1600", "big_tree"]
 

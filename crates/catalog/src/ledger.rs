@@ -984,6 +984,62 @@ mod tests {
         assert!(plan.contains("folder_failures_serial") && !plan.contains("TEMP B-TREE"), "{plan}");
     }
 
+    // The inbox's reads skip the hidden rows (a file gone missing, or an import pending) and take the live ones, by the
+    // same index, with 5,000 hidden among 6,000 files. Without ANALYZE (production never runs it) the planner does not
+    // look at the row counts, so the plans are those of any size: this checks them, and that the reads return live rows.
+    #[test]
+    fn the_ledgers_reads_seek_their_index_past_many_hidden_rows() {
+        const FILES: i64 = 6_000;
+        const HIDDEN: i64 = 5_000;
+        const LIVE: i64 = FILES - HIDDEN;
+        // A table scan, not `SCAN CONSTANT ROW` (a constant the plan reads, with no table behind it).
+        let scans_a_table = |plan: &str| plan.lines().any(|l| l.contains("SCAN") && !l.contains("SCAN CONSTANT ROW"));
+        let c = catalog_of(PathRules::Posix, FILES);
+        let failures: Vec<Failure> = (1..=FILES).map(|i| failure(i, "no")).collect();
+        assert!(c.record_failures(FilePass::Thumbs, &failures, 1).unwrap());
+        for id in 1..=HIDDEN {
+            raw::set_missing(&c, FileId::new(id));
+        }
+        let hidden: i64 =
+            c.conn.query_row("SELECT count(*) FROM file_failures WHERE hidden = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(hidden, HIDDEN);
+
+        let plan = raw::query_plan(&c, FILE_LEDGER_NEWEST, ["thumbs"]);
+        assert!(
+            plan.contains("file_failures_live") && !scans_a_table(&plan) && !plan.contains("TEMP B-TREE"),
+            "{plan}"
+        );
+        let plan = raw::query_plan(&c, FILE_LEDGER_OLDEST, ["thumbs"]);
+        assert!(
+            plan.contains("file_failures_live") && !scans_a_table(&plan) && !plan.contains("TEMP B-TREE"),
+            "{plan}"
+        );
+        let plan = raw::query_plan(&c, FILE_LEDGER_COUNTS, params!["thumbs", 0, Option::<i64>::None]);
+        assert!(plan.contains("file_failures_live") && !scans_a_table(&plan), "{plan}");
+
+        // The ends and the counts are the live rows': the hidden ones are not the ends, whichever serials they have.
+        let (live_min, live_max): (i64, i64) = c
+            .conn
+            .query_row(
+                "SELECT min(serial), max(serial) FROM file_failures WHERE pass = 'thumbs' AND hidden = 0",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let end = |sql: &str| -> i64 { c.conn.query_row(sql, ["thumbs"], |r| r.get(0)).unwrap() };
+        assert_eq!(end(FILE_LEDGER_NEWEST), live_max, "the newest live row");
+        assert_eq!(end(FILE_LEDGER_OLDEST), live_min, "the oldest live row");
+        let counts: (i64, i64, i64) = c
+            .conn
+            .query_row(FILE_LEDGER_COUNTS, params!["thumbs", 0, Option::<i64>::None], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(counts, (LIVE, LIVE, 0), "the total and the new count the live rows only");
+        // The failed-files listing (its SQL is inline in `failed_files_since`) reads the live rows too.
+        assert_eq!(c.failed_files(FilePass::Thumbs, 10_000).unwrap().len(), usize::try_from(LIVE).unwrap());
+    }
+
     // At scale a record of 100k failures and their Retry are set-based statements (no per-row round trip): each well
     // within a bound in a debug build. The bound is wide on purpose; it catches a per-row regression, not a slow host.
     #[test]

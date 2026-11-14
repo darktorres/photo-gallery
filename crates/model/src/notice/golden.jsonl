@@ -44,3 +44,5 @@
 {"kind":"file-no-longer-in-library"}
 {"kind":"update-available","version":"1.2.0"}
 {"kind":"session-not-read","error":"access is denied"}
+{"kind":"borders-cut","saved":4,"skipped":1,"unsupported":1,"failed":1,"failures":[{"path":"D:\\Photos\\c.png","error":"may be incomplete","panicked":false}]}
+{"kind":"cut-failed","error":"access is denied"}

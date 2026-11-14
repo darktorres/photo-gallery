@@ -50,9 +50,7 @@ impl Tables {
 pub(crate) fn tables() -> &'static Tables {
     static TABLES: OnceLock<Tables> = OnceLock::new();
     TABLES.get_or_init(|| Tables {
-        decode: std::array::from_fn(|v| {
-            pg_model::num::f64_to_f32(eotf(pg_model::num::count(v) / 255.0))
-        }),
+        decode: std::array::from_fn(|v| pg_model::num::f64_to_f32(eotf(pg_model::num::count(v) / 255.0))),
         encode: encode_table(),
     })
 }

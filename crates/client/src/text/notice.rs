@@ -73,6 +73,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         }
         Notice::RoundFailed { error }
         | Notice::CropFailed { error }
+        | Notice::CutFailed { error }
         | Notice::CatalogNotClosed { error }
         | Notice::CacheTouchesNotWritten { error }
         | Notice::CacheNotStored { error }
@@ -99,6 +100,19 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         Notice::CacheFull { height, made } => {
             a.set("height", height.to_string());
             a.set("made", made.to_string());
+        }
+        Notice::BordersCut { saved, skipped, unsupported, failed, failures } => {
+            a.set("saved", saved.to_string());
+            a.set("skipped", skipped.to_string());
+            a.set("unsupported", unsupported.to_string());
+            a.set("failed", pg_model::num::size(*failed));
+            // The entry shows the first failure; the list is kept for the rest.
+            let (path, error) = match failures.first() {
+                Some(FileFailure { path, error, .. }) => (isolated(path), error.clone()),
+                None => (String::new(), String::new()),
+            };
+            a.set("path", path);
+            a.set("error", error);
         }
         Notice::Cropped { folder, saved, skipped, failed, failures } => {
             a.set("folder", isolated(folder));

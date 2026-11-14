@@ -25,3 +25,5 @@ pg-import = { path = "../import" }
 pg-scan = { path = "../scan" }
 pg-testkit = { path = "../testkit" }
 pg-jobs-testkit = { path = "../jobs-testkit" }
+# A test's fault in the thumbnail cache's own database (a trigger that refuses the store).
+rusqlite.workspace = true

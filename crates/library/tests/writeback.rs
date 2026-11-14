@@ -903,6 +903,39 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     quiet.check();
 }
 
+/// Forty-two turns of one PNG queued while the writer is making them (a wake every few): all are made, once each, so the
+/// file ends turned by 42 mod 4 = 2 quarter turns, and nothing is written twice or lost.
+#[test]
+fn rapid_turns_of_one_file_are_all_made_once() {
+    let (dir, files, catalog_path, c) = imported("rapid-turns").unwrap();
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let (path, _) = &files[1];
+    let name = Path::new(path).file_name().unwrap().to_string_lossy().into_owned();
+    let id = state::file_id(&c, &name).unwrap();
+    let original = shown(path).unwrap();
+    for n in 0..42 {
+        c.queue_rotation(id, Turns::new(1)).unwrap();
+        if n % 5 == 0 {
+            writer.wake();
+        }
+    }
+    writer.wake();
+    wait_for_queue(&c).unwrap();
+    assert_eq!(writer.status().error, None);
+    let turned = orient(original, pg_model::orientation::Orientation::new(3).unwrap());
+    let rotation = state::file_rotation(&c, &name).unwrap();
+    let bytes = std::fs::read(path).unwrap();
+    let now = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, Turns::new(rotation))
+        .unwrap()
+        .image;
+    assert_eq!((now.width, now.height), (turned.width, turned.height), "{path}");
+    assert_eq!(now.pixels, turned.pixels, "{path}: lossless, turned by 2 in all");
+    drop(writer);
+    drop(c);
+    quiet.check();
+}
+
 /// A job that panics (as a damaged file the edit can't take would) is that job's failure, recorded and counted as any
 /// other: the writer goes on with the other jobs and stays running. Before, the panic ended the writer thread with
 /// nothing recorded, and every later start died on the same job.

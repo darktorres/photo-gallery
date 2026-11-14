@@ -1,12 +1,13 @@
 //! Encoding: decoded pixels as a JPEG ([`JpegEncoder`]: the thumbnails, and a photo re-encoded for a service), and a
 //! crop of a format the lossless rewriters don't cut (TIFF and BMP), decoded, cropped and encoded again in the same
-//! format ([`cropped`]).
+//! format ([`cropped`]). The cut of an original (`pg_edit::crop::cut`) re-encodes a JPEG exactly, at the quality its
+//! tables say ([`jpeg_cropped`], [`jpeg_quality`]), and a lossy WebP lossy again ([`webp_lossy_cropped`]).
 
 use anyhow::{Context, Result, bail, ensure};
 use image::ImageFormat;
 use pg_model::{format::Format, num};
 use std::io::Cursor;
-use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
+use turbojpeg::{Colorspace, Compressor, Image, PixelFormat, Subsamp};
 
 use crate::codecs::tiff::{decoded_color, tiff_limits};
 use crate::pixels::{Rgb, release_over};
@@ -88,6 +89,137 @@ pub fn cropped(bytes: &[u8], format: Format, x: u32, y: u32, w: u32, h: u32) -> 
     let mut out = Cursor::new(Vec::new());
     img.crop_imm(x, y, w, h).write_to(&mut out, format).context("encoding")?;
     Ok(out.into_inner())
+}
+
+/// The quality a cut lossy WebP is encoded at, on libwebp's 0–100 scale. libwebp keeps no quantization tables to read
+/// the source's quality from, so every cut lossy WebP is encoded at this one.
+pub const WEBP_LOSSY_QUALITY: f32 = 90.0;
+
+/// `bytes` (a still lossy WebP, RGB or with alpha) decoded, cropped to `rect` (left, top, width, height, stored pixels)
+/// and encoded lossy again at `quality` (libwebp's 0–100), its alpha kept. The metadata is not carried over.
+pub fn webp_lossy_cropped(bytes: &[u8], rect: [u32; 4], quality: f32) -> Result<Vec<u8>> {
+    let image = webp::Decoder::new(bytes).decode().context("decoding")?;
+    let alpha = image.is_alpha();
+    let pixels = rows(&image[..], image.width(), if alpha { 4 } else { 3 }, rect)?;
+    let [_, _, w, h] = rect;
+    let encoder = if alpha { webp::Encoder::from_rgba(&pixels, w, h) } else { webp::Encoder::from_rgb(&pixels, w, h) };
+    Ok(encoder.encode(quality).to_vec())
+}
+
+/// `bytes` (a still JPEG in YCbCr or grey) decoded, cropped to `rect` (left, top, width, height, stored pixels) and
+/// encoded again at `quality` (libjpeg-turbo's 1–100), with the chroma subsampling of the source. The crop is exact:
+/// it is on no block grid, as a DCT crop's is. The metadata is not carried over. A JPEG in another colour space (CMYK,
+/// YCCK, or RGB) is refused, since its re-encode would change its colours.
+pub fn jpeg_cropped(bytes: &[u8], rect: [u32; 4], quality: i32) -> Result<Vec<u8>> {
+    let header = turbojpeg::read_header(bytes).context("decoding")?;
+    ensure!(
+        matches!(header.colorspace, Colorspace::YCbCr | Colorspace::Gray),
+        "a JPEG in {:?} colour isn't cut: re-encoding it would change its colours",
+        header.colorspace
+    );
+    let image = turbojpeg::decompress(bytes, PixelFormat::RGB).context("decoding")?;
+    let pixels = rows(&image.pixels, u32::try_from(image.width)?, 3, rect)?;
+    let [_, _, w, h] = rect;
+    let mut compressor = Compressor::new()?;
+    compressor.set_quality(quality)?;
+    compressor.set_subsamp(header.subsamp)?;
+    let w = num::index(w);
+    let image = Image { pixels: &pixels[..], width: w, pitch: w * 3, height: num::index(h), format: PixelFormat::RGB };
+    Ok(compressor.compress_to_vec(image)?)
+}
+
+/// The luminance quantization table of the IJG standard (ITU-T T.81, Annex K, Table K.1), in natural (row-major) order.
+const IJG_LUMA: [i32; 64] = [
+    16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22, 29, 51,
+    87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101,
+    72, 92, 95, 98, 112, 100, 103, 99,
+];
+
+/// The natural (row-major) index of each entry of a JPEG quantization table, which the file stores in zigzag order.
+const ZIGZAG: [usize; 64] = [
+    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21,
+    28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54,
+    47, 55, 62, 63,
+];
+
+/// The luminance table libjpeg writes at `quality` (1–100), in natural order: the IJG standard scaled by the IJG
+/// quality formula and clamped to 1–255 (`jpeg_set_quality`, with baseline forced).
+fn ijg_luma(quality: u8) -> [i32; 64] {
+    let q = i32::from(quality.clamp(1, 100));
+    let scale = if q < 50 { 5000 / q } else { 200 - 2 * q };
+    IJG_LUMA.map(|v| ((v * scale + 50) / 100).clamp(1, 255))
+}
+
+/// The quality (IJG's 1–100) the JPEG `bytes` was encoded at, read from its luminance quantization table: the quality
+/// whose table is the file's, and for a table that no quality gives (another encoder's), the one closest by the sum of
+/// the absolute differences. Equal tables quantize alike, so the lowest of them is given. `None` when the file has no
+/// luminance table.
+pub fn jpeg_quality(bytes: &[u8]) -> Option<u8> {
+    let table = jpeg_luma_table(bytes)?;
+    (1..=100u8).min_by_key(|&q| ijg_luma(q).iter().zip(&table).map(|(a, b)| (a - b).abs()).sum::<i32>())
+}
+
+/// The luminance table of the JPEG `bytes` (its first DQT table with id 0, before the scan), in natural order. `None` when
+/// there is none, or the markers before the scan don't parse.
+fn jpeg_luma_table(bytes: &[u8]) -> Option<[i32; 64]> {
+    if bytes.get(..2)? != [0xFF, 0xD8] {
+        return None;
+    }
+    let mut at = 2;
+    loop {
+        // Fill bytes (0xFF) may come before a marker's code.
+        while bytes.get(at)? == &0xFF && bytes.get(at + 1)? == &0xFF {
+            at += 1;
+        }
+        if bytes.get(at)? != &0xFF {
+            return None;
+        }
+        let marker = *bytes.get(at + 1)?;
+        at += 2;
+        match marker {
+            // Standalone markers, with no length: a restart, or a temporary.
+            0x01 | 0xD0..=0xD7 => continue,
+            // The end of the image, or the scan: the tables are all before it.
+            0xD9 | 0xDA => return None,
+            _ => {}
+        }
+        let len = usize::from(u16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]));
+        let segment = bytes.get(at + 2..at.checked_add(len)?)?;
+        if marker == 0xDB
+            && let Some(table) = dqt_luma(segment)
+        {
+            return Some(table);
+        }
+        at += len;
+    }
+}
+
+/// The luminance table among a DQT segment's tables (8- or 16-bit, stored in zigzag order), in natural order.
+fn dqt_luma(mut segment: &[u8]) -> Option<[i32; 64]> {
+    while let Some((&spec, rest)) = segment.split_first() {
+        let size = match spec >> 4 {
+            0 => 1,
+            1 => 2,
+            _ => return None,
+        };
+        let body = rest.get(..64 * size)?;
+        if spec & 0x0F == 0 {
+            let mut table = [0; 64];
+            for (&natural, entry) in ZIGZAG.iter().zip(body.chunks_exact(size)) {
+                let value = match *entry {
+                    [b] => i32::from(b),
+                    [hi, lo] => i32::from(u16::from_be_bytes([hi, lo])),
+                    _ => continue,
+                };
+                if let Some(slot) = table.get_mut(natural) {
+                    *slot = value;
+                }
+            }
+            return Some(table);
+        }
+        segment = rest.get(64 * size..)?;
+    }
+    None
 }
 
 /// A TIFF of 8- or 16-bit CMYK or RGB samples (one plane, unsigned), cropped to `rect` (left, top, width, height)
@@ -248,6 +380,60 @@ mod tests {
             let tiff::decoder::DecodingResult::U8(got) = got else { panic!("8-bit samples") };
             assert_eq!(got, want);
         }
+    }
+
+    /// A gradient JPEG of 24 × 16 pixels at `quality`, with the chroma subsampling `subsamp`, from libjpeg-turbo.
+    fn jpeg_at(quality: i32, subsamp: Subsamp) -> Vec<u8> {
+        let (w, h) = (24usize, 16usize);
+        let pixels: Vec<u8> = (0..w * h * 3).map(|i| u8::try_from(i * 7 % 256).unwrap()).collect();
+        let mut c = Compressor::new().unwrap();
+        c.set_quality(quality).unwrap();
+        c.set_subsamp(subsamp).unwrap();
+        c.compress_to_vec(Image { pixels: &pixels[..], width: w, pitch: w * 3, height: h, format: PixelFormat::RGB })
+            .unwrap()
+    }
+
+    /// The quality read from a libjpeg-turbo JPEG is the one it was encoded at, for every quality from 1 to 100.
+    #[test]
+    fn jpeg_quality_reads_the_quality_libjpeg_wrote() {
+        for q in 1..=100 {
+            assert_eq!(jpeg_quality(&jpeg_at(q, Subsamp::Sub2x2)), Some(u8::try_from(q).unwrap()), "quality {q}");
+        }
+    }
+
+    /// A JPEG cut exactly keeps its colour space and subsampling, and its size is the crop's, on no block grid.
+    #[test]
+    fn jpeg_cropped_is_exact_and_keeps_the_subsampling() {
+        for subsamp in [Subsamp::Sub2x2, Subsamp::Sub2x1, Subsamp::None, Subsamp::Gray] {
+            let file = jpeg_at(85, subsamp);
+            // Left 5, top 3, 7 × 9 pixels: not on an 8 or 16 px grid.
+            let out = jpeg_cropped(&file, [5, 3, 7, 9], 85).unwrap();
+            let header = turbojpeg::read_header(&out).unwrap();
+            assert_eq!((header.width, header.height), (7, 9), "{subsamp:?}");
+            assert_eq!(header.subsamp, subsamp, "{subsamp:?}");
+            assert_eq!(jpeg_quality(&out), Some(85), "{subsamp:?}");
+        }
+        assert!(jpeg_cropped(&jpeg_at(85, Subsamp::Sub2x2), [21, 0, 4, 1], 85).is_err(), "a crop outside the image");
+    }
+
+    /// A file with no luminance table to read has no quality; a table that no quality gives still reads as the
+    /// nearest one.
+    #[test]
+    fn jpeg_quality_needs_a_luminance_table() {
+        assert_eq!(jpeg_quality(&[0xFF, 0xD8, 0xFF, 0xD9]), None);
+        assert_eq!(jpeg_quality(b"not a jpeg"), None);
+        let file = jpeg_at(75, Subsamp::Sub2x2);
+        assert_eq!(jpeg_quality(&file[..20]), None, "cut off before the tables");
+        // The table at 75 with every entry doubled is the one at 50 (the IJG scale halves, then doubles back): no
+        // quality gives it exactly for the rounding, so the nearest, about 50, is read.
+        let mut custom = file.clone();
+        let dqt = custom.windows(2).position(|w| w == [0xFF, 0xDB]).unwrap();
+        // The first table's entries follow its 4-byte header and 1-byte id.
+        for entry in &mut custom[dqt + 5..dqt + 5 + 64] {
+            *entry = entry.saturating_mul(2);
+        }
+        let q = jpeg_quality(&custom).unwrap();
+        assert!((45..=55).contains(&q), "{q}");
     }
 
     /// A 16-bit RGB TIFF is cropped in its 16-bit samples, at its depth and in its kind, classic or BigTIFF.

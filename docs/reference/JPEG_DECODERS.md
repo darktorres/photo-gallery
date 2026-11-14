@@ -230,6 +230,7 @@ analysis, and the Yandex transcode. A JPEG parajpeg declines goes to libjpeg-tur
 
   1.8 MP 4:2:0 (`s420`): libjpeg-turbo 6.6 ms, parajpeg 6 threads 4.3 ms, 12 threads 3.9 ms. Six threads keep about
   half of the CPU for the import's workers, and cost about 2.3× the CPU of libjpeg-turbo per decode (133 against 58 ms).
+
 - **Concurrency bug, fixed in the fork:** parajpeg's shared thread pool runs one parallel job at a time. Two decodes on
   several threads at once hang, so the tests (which run in parallel) hung. The fork's shim serializes the decodes
   (`darktorres/parajpeg` `8e2c53a`, regression test `decodes_on_several_threads_at_once_all_finish`). The viewer shows one

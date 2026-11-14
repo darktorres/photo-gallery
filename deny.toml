@@ -58,14 +58,18 @@ deny = [
     { crate = "png", wrappers = ["pg-codec", "pg-testkit", "pg-edit", "image"] },
     { crate = "gif", wrappers = ["pg-codec", "image"] },
     { crate = "image-webp", wrappers = ["pg-codec", "pg-edit", "image"] },
+    # libwebp, the lossy WebP encoder and decoder: pg-codec's alone.
+    { crate = "webp", wrappers = ["pg-codec"] },
+    { crate = "libwebp-sys", wrappers = ["webp"] },
     { crate = "tiff", wrappers = ["pg-codec", "image"] },
     { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff"] },
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
     # SQLite is pg-catalog's and the thumbnail cache's, pg-dbfile's (the shared schema check), and pg-bench's (the catalog
-    # benches).
-    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-dbfile", "pg-thumbcache", "pg-bench"] },
+    # benches), and pg-thumbs's test, which makes a fault in the thumbnail cache's own database (a trigger that refuses
+    # the store).
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-dbfile", "pg-thumbcache", "pg-bench", "pg-thumbs"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
 ]

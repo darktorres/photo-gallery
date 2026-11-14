@@ -533,6 +533,42 @@ mod tests {
         assert_eq!(failed.file_id, a);
     }
 
+    /// A pass that ends with an error (here, the cache refuses the batch it stores) writes the failures it has before
+    /// it returns the error, so the ledger holds the file that panicked, and the pass's checkpoint is not moved. The
+    /// next pass, the cache working, makes the file that was refused and lists the panicked one again, as it is still
+    /// failing; the ledger holds it once.
+    #[test]
+    fn a_pass_that_errors_writes_its_failures_before_it_returns_the_error() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (dir, catalog_path, c, cache, _quiet) = imported("thumbs-pass-error", &["a.png", "b.png"], 1 << 30);
+        let a = state::file_id(&c, "a.png").unwrap();
+        *PANIC_ON.lock().unwrap() = Some(a);
+        // The cache's data table refuses every thumbnail: the store's error comes back to the pass.
+        let refusing = rusqlite::Connection::open(dir.join("thumbs.sqlite")).unwrap();
+        refusing
+            .execute_batch(
+                "CREATE TRIGGER refuse_data BEFORE INSERT ON data
+                 BEGIN SELECT RAISE(ABORT, 'the cache refuses the thumbnail'); END;",
+            )
+            .unwrap();
+        let opts = Options::new(Priority::Normal);
+        let err = run(&cache, &catalog_path, h(64), &opts, &Control::new())
+            .err()
+            .expect("the pass returns the store's error");
+        refusing.execute_batch("DROP TRIGGER refuse_data").unwrap();
+        assert!(format!("{err:#}").contains("the cache refuses the thumbnail"), "{err:#}");
+        // The failure was written before the error was returned, and it is the one that panicked.
+        let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure recorded") };
+        assert_eq!((failed.file_id, failed.retry), (a, false));
+        assert!(failed.error.contains("a fault"), "{}", failed.error);
+        // The next pass, with the cache working: the refused file is made, the one that panics fails again, and the
+        // ledger still holds it once.
+        let second = run(&cache, &catalog_path, h(64), &opts, &Control::new()).unwrap();
+        *PANIC_ON.lock().unwrap() = None;
+        assert_eq!((second.needed, second.made, second.failed, second.complete), (2, 1, 1, true));
+        assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
+    }
+
     /// A failure's kind, by its error's type, never its text: what the ledger records, and with which retry.
     #[test]
     fn a_failure_is_classified_by_its_type() {

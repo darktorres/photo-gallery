@@ -33,6 +33,6 @@ just deploy     # the release build, with Qt's DLLs and QML modules next to gall
 - `docs/REFACTOR_PLAN.md` and `docs/REFACTOR_DESIGN.md`: how the code was restructured, and why.
 - `crates/README.md`: the crates, their layers, and the build in detail.
 - `docs/eval/`: the model and verifier measurements: `MODELS.md` (models and accelerators), `VERIFIER.md` (PDQ, the verifier and grouping), and `TEST_SET.md` (hardware, test set and labels).
-- `docs/reference/`: facts that stay true, e.g. `IO.md` (HDD read order, buffers, long paths) and `START_PROFILE.md` (where the start goes, thread by thread).
-- `docs/temp/`: the other measurement docs, e.g. `THUMBNAILS.md`, `BORDERS.md`, `REVERSE_SEARCH.md`, `REFACTOR_MEASUREMENTS.md`, `OPEN_ITEMS.md`, `JPEG_DECODERS.md`, `TIER2_ANN_BAKEOFF_PLAN.md`, `VIDEO_PLAYER.md`.
+- `docs/reference/`: facts that stay true, e.g. `IO.md` (HDD read order, buffers, long paths), `START_PROFILE.md` (where the start goes, thread by thread) and `THUMBNAILS.md` (thumbnail resize, encode and priority measurements).
+- `docs/temp/`: the other measurement docs, e.g. `BORDERS.md`, `REVERSE_SEARCH.md`, `REFACTOR_MEASUREMENTS.md`, `OPEN_ITEMS.md`, `JPEG_DECODERS.md`, `TIER2_ANN_BAKEOFF_PLAN.md`, `VIDEO_PLAYER.md`.
 - `docs/temp/PROFILING.md`: the callgrind benches and the instruction-count gate.

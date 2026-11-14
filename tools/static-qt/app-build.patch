@@ -1,5 +1,5 @@
 diff --git a/crates/desktop/build.rs b/crates/desktop/build.rs
-index 05d235a..21a0fb1 100644
+index 05d235a..49413c2 100644
 --- a/crates/desktop/build.rs
 +++ b/crates/desktop/build.rs
 @@ -19,6 +19,10 @@ fn main() -> Result<(), String> {
@@ -13,7 +13,7 @@ index 05d235a..21a0fb1 100644
      // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that
      // (vendor/README.md).
      let mut builder = CxxQtBuilder::new_qml_module(
-@@ -115,10 +119,116 @@ fn main() -> Result<(), String> {
+@@ -115,10 +119,170 @@ fn main() -> Result<(), String> {
      if std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
          builder = builder.file("src/live_reload.rs").cpp_file("cpp/live_reload.cpp");
      }
@@ -44,7 +44,8 @@ index 05d235a..21a0fb1 100644
 +        std::env::var_os("QT_DIR").ok_or("PG_QT_STATIC needs QT_DIR, the static Qt's prefix")?,
 +    );
 +    let ffmpeg = std::path::PathBuf::from(
-+        std::env::var_os("PG_FFMPEG_STATIC").ok_or("PG_QT_STATIC needs PG_FFMPEG_STATIC, the static FFmpeg's lib folder")?,
++        std::env::var_os("PG_FFMPEG_STATIC")
++            .ok_or("PG_QT_STATIC needs PG_FFMPEG_STATIC, the static FFmpeg's lib folder")?,
 +    );
 +    println!("cargo::rustc-cfg=pg_static_qt");
 +    for lib in STATIC_QT_LIBS {
@@ -119,12 +120,65 @@ index 05d235a..21a0fb1 100644
 +
 +/// The Windows libraries the static Qt's libraries use (the manifest's non-Qt6 system entries).
 +const STATIC_QT_SYSTEM_LIBS: &[&str] = &[
-+    "Dwmapi", "Dxva2", "advapi32", "amstrmid", "authz", "avrt", "bcrypt", "comdlg32", "crypt32", "d2d1", "d3d11",
-+    "d3d12", "d3d9", "dnsapi", "dwrite", "dxgi", "dxguid", "evr", "gdi32", "icuin", "icuuc", "imm32", "iphlpapi",
-+    "kernel32", "ksuser", "mf", "mfcore", "mfplat", "mfreadwrite", "mfuuid", "mpr", "mscms", "ncrypt", "netapi32",
-+    "ntdll", "ole32", "oleaut32", "propsys", "runtimeobject", "secur32", "setupapi", "shcore", "shell32", "shlwapi",
-+    "strmiids", "synchronization", "uiautomationcore", "user32", "userenv", "uuid", "uxtheme", "version", "windowsapp",
-+    "winhttp", "winmm", "winspool", "wmcodecdspuuid", "ws2_32", "wtsapi32",
++    "Dwmapi",
++    "Dxva2",
++    "advapi32",
++    "amstrmid",
++    "authz",
++    "avrt",
++    "bcrypt",
++    "comdlg32",
++    "crypt32",
++    "d2d1",
++    "d3d11",
++    "d3d12",
++    "d3d9",
++    "dnsapi",
++    "dwrite",
++    "dxgi",
++    "dxguid",
++    "evr",
++    "gdi32",
++    "icuin",
++    "icuuc",
++    "imm32",
++    "iphlpapi",
++    "kernel32",
++    "ksuser",
++    "mf",
++    "mfcore",
++    "mfplat",
++    "mfreadwrite",
++    "mfuuid",
++    "mpr",
++    "mscms",
++    "ncrypt",
++    "netapi32",
++    "ntdll",
++    "ole32",
++    "oleaut32",
++    "propsys",
++    "runtimeobject",
++    "secur32",
++    "setupapi",
++    "shcore",
++    "shell32",
++    "shlwapi",
++    "strmiids",
++    "synchronization",
++    "uiautomationcore",
++    "user32",
++    "userenv",
++    "uuid",
++    "uxtheme",
++    "version",
++    "windowsapp",
++    "winhttp",
++    "winmm",
++    "winspool",
++    "wmcodecdspuuid",
++    "ws2_32",
++    "wtsapi32",
 +];
 +
  /// Whether the content key is set (non-empty), as CI sets it: the builder then emits no path lines for the sources.

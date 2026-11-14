@@ -1,6 +1,6 @@
 # PNG decoder comparison
 
-The speed and output of the PNG decoders on the library's PNGs, for [docs/PNG_DECODERS.md](../../docs/PNG_DECODERS.md).
+The speed and output of the PNG decoders on the library's PNGs, for [docs/PNG_DECODERS.md](../../docs/temp/PNG_DECODERS.md).
 It runs natively on Windows; nothing here needs WSL.
 
 - `src/`: the Rust harness. Its decoders are the app's `png` fork (the pin in the root `Cargo.toml`), the same crate

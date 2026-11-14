@@ -1,6 +1,6 @@
 # Refactor measurements
 
-Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
+Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md).
 
 ## Phase 0 baseline (2026-11-02, before the refactor)
 

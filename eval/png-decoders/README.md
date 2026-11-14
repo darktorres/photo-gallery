@@ -1,7 +1,7 @@
 # PNG decoder comparison
 
 The speed, heap traffic and output of the PNG decoders on the library's PNGs, on generated and real 16-bit inputs,
-for [docs/temp/PNG_DECODERS.md](../../docs/temp/PNG_DECODERS.md). It runs natively on Windows; nothing here needs WSL.
+for [docs/reference/PNG_DECODERS.md](../../docs/reference/PNG_DECODERS.md). It runs natively on Windows; nothing here needs WSL.
 
 - `src/`: the Rust harness. Its decoders are the app's `png` fork (the pin in the root `Cargo.toml`), the same crate
   from crates.io (`png` 0.18), and zune-png 0.5. It has a counting global allocator for the `allocs` command, and

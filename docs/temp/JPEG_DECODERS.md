@@ -3,7 +3,7 @@
 Which JPEG decoder the app should use: libjpeg-turbo, as `pg-codec` calls it, against every other decoder found
 (eight on the CPU, six on the GPU) on seven library files, plus restart markers and lossless baseline conversion
 (`eval/jpeg-decoders`, 2026-10-31). Instruction counts use the callgrind setup in [PROFILING.md](PROFILING.md).
-Encoders are in [JPEG_ENCODERS.md](JPEG_ENCODERS.md).
+Encoders are in [JPEG_ENCODERS.md](../reference/JPEG_ENCODERS.md).
 
 ## Verdict: keep libjpeg-turbo
 

@@ -1,4 +1,4 @@
-"""ImageReduce's JPEG encode against jpegli baseline 4:4:4, on real inputs, for docs/temp/JPEG_ENCODERS.md "ImageReduce".
+"""ImageReduce's JPEG encode against jpegli baseline 4:4:4, on real inputs, for docs/reference/JPEG_ENCODERS.md "ImageReduce".
 
 ImageReduce (its own repo, not this one) encodes with libvips's jpegsave at Q75, 4:4:4, optimize_coding, after a
 thumbnail to 3840x2160 for images over 3840x2160 (mainwindow.cpp processImage). This runs that encode on the same
@@ -32,7 +32,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-GRID = [65, 70, 75, 80, 85, 90]  # jpegli qualities; the libjpeg quality scale, which jpegli's -q follows
+GRID = [65, 70, 75, 76, 77, 78, 80, 85, 90]  # jpegli qualities; the libjpeg quality scale, which jpegli's -q follows
 REF_Q = 75  # ImageReduce's quality
 BIG_W, BIG_H = 3840, 2160  # ImageReduce's thumbnail box for images over this size
 
@@ -114,10 +114,7 @@ def run_one(path: Path, tmp_root: str) -> dict:
         data = path.read_bytes()
         img = pyvips.Image.new_from_buffer(data, "", access="sequential")
         w, h = img.width, img.height
-        rec.update(w=w, h=h, bands=img.bands)
-        if img.bands == 4 or img.hasalpha():
-            rec["skip"] = "alpha"
-            return rec
+        rec.update(w=w, h=h, bands=img.bands, alpha=int(img.hasalpha()))
         base, thumb = thumbnail_or_full(data, w, h)
         rec["thumb"] = int(thumb)
         # ImageReduce's own encode: metadata kept, as libvips does by default.
@@ -129,6 +126,8 @@ def run_one(path: Path, tmp_root: str) -> dict:
         px = base.colourspace("srgb") if base.interpretation != "srgb" else base
         if px.format != "uchar":
             px = px.cast("uchar")
+        if px.bands == 4:  # libvips's JPEG save drops the alpha band and keeps RGB as stored (checked)
+            px = px.extract_band(0, n=3)
         if px.bands != 3:
             rec["skip"] = f"bands={px.bands}"
             return rec

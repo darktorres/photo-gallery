@@ -2,7 +2,7 @@
 
 Which JPEG encoder ImageReduce (and the thumbnail cache) should use: libjpeg-turbo at ImageReduce's settings
 against mozjpeg, jpegli, guetzli, nvJPEG and GPUJPEG, by the bytes each needs for the same perceived quality
-(`eval/jpeg-decoders/encoders.py`, 2026-10-31). Decoders are in [JPEG_DECODERS.md](JPEG_DECODERS.md); the thumbnail
+(`eval/jpeg-decoders/encoders.py`, 2026-10-31). Decoders are in [JPEG_DECODERS.md](../temp/JPEG_DECODERS.md); the thumbnail
 encoder comparison (jpegli −9% bytes, AVIF −38%) is in THUMBNAILS.md "Thumbnails".
 
 ## Verdict
@@ -50,7 +50,7 @@ The camera files (their own tables, at high quality) are the fair test, and thei
 | `jpegli` | `cjpegli -q Q --chroma_subsampling=444` (progressive by default) | jpegli 031a007 |
 | `jpegli-base` | the same, `-p 0` | |
 | `guetzli` | `guetzli --quality Q` | guetzli 214f2bb |
-| `nvjpeg` | nvImageCodec encoder (nvJPEG): quality Q, 4:4:4, optimized Huffman, baseline | CUDA 13; nvImageCodec 0.9 as measured (`eval/jpeg-decoders/requirements.txt` pins 0.10.0.9, and these figures were not rerun on it) |
+| `nvjpeg` | nvImageCodec encoder (nvJPEG): quality Q, 4:4:4, optimized Huffman, baseline | CUDA 13; nvImageCodec 0.9.0.20 as measured. The pinned 0.10.0.9 gives byte-identical output on the 40 camera originals at Q75 and Q80 (80 files, 2026-11-14), so these figures stand for it too; the seven inputs above were not rerun, as their source folder isn't on this machine |
 | `gpujpeg` | `gpujpegtool -e -q Q --subsampled=4:4:4 -i` (its default restart interval, 8) | GPUJPEG 37ab481 |
 
 ## Bytes for the same quality
@@ -117,25 +117,29 @@ copy's files without "mozjpeg" in the name, since ImageReduce never reprocesses 
 
 | Set | Files | Today's output bigger than input (kept as original) | Matched score: jpegli / vips image bytes |
 |---|---:|---:|---:|
-| Pinterest originals | 1,162 (1,035 JPEG, 88 PNG, 39 WebP) | 981 (84%) | 0.927 |
-| Camera originals | 40 (20 on the thumbnail path) | 2 (5%) | 0.834 |
+| Pinterest originals | 1,215 (1,035 JPEG, 140 PNG, 40 WebP; 53 have alpha, kept as RGB) | 981 (81%) | 0.923 |
+| Camera originals | 40 (20 on the thumbnail path) | 2 (5%) | 0.833 |
 
 The matched figure is the jpegli bytes needed for the score vips got, per file. ImageReduce can't search per file, so
 the switch has to use one jpegli quality. Totals use the keep-original rule (keep the input when the output is bigger),
-with the vips metadata (571 Pinterest files, 39 camera files carry ICC or EXIF) copied onto the jpegli side:
+with the vips metadata (573 Pinterest files, 39 camera files carry ICC or EXIF) copied onto the jpegli side:
 
 | jpegli Q | Pinterest: median Δscore / size vs vips / total bytes | Camera: median Δscore / size vs vips / total bytes |
 |---|---|---|
-| 65 | −5.44 / 0.792 / −17.4% | −5.57 / 0.663 / −35.2% |
-| 70 | −2.70 / 0.858 / −11.4% | −3.70 / 0.716 / −29.4% |
-| 75 | −0.51 / 0.895 / −7.0% | −2.00 / 0.767 / −23.3% |
-| 80 | **+0.38 / 0.951 / −2.1%** | **+0.28 / 0.860 / −13.8%** |
-| 85 | +3.01 / 1.036 / +1.7% | +3.20 / 1.031 / +2.4% |
-| 90 | +4.82 / 1.137 / +7.1% | +6.07 / 1.353 / +34.7% |
+| 65 | −5.38 / 0.785 / −18.1% | −5.57 / 0.663 / −35.2% |
+| 70 | −2.70 / 0.853 / −12.1% | −3.70 / 0.716 / −29.4% |
+| 75 | −0.55 / 0.893 / −7.6% | −2.00 / 0.767 / −23.3% |
+| 76 | +0.09 / 0.901 / −6.8% | −1.56 / 0.775 / −22.2% |
+| 77 | −0.02 / 0.913 / −5.8% | −1.00 / 0.798 / −20.3% |
+| 78 | **+0.35 / 0.931 / −3.9%** | **−0.01 / 0.826 / −17.0%** |
+| 80 | +0.45 / 0.950 / −2.5% | +0.28 / 0.860 / −13.8% |
+| 85 | +3.08 / 1.036 / +1.9% | +3.20 / 1.031 / +2.4% |
+| 90 | +4.88 / 1.140 / +8.4% | +6.07 / 1.353 / +34.7% |
 
-- **Q80 is quality-neutral to slightly better on both sets and smaller on both.** The gain is mostly on camera files:
-  the Pinterest originals are already compressed, so most keep their originals either way.
-- **Q76–78 was not run.** The median score should cross zero there, with more savings than Q80.
+- **Q78 is the setting.** It's the matched point on the camera files (median score change −0.01) and slightly better
+  on the Pinterest files (+0.35), with 4–17% fewer bytes. Q80 scores better still but saves less: 2.5% and 13.8%.
+- **Q77 saves a little more on the Pinterest files at the same score, but is 1 point lower on the camera files.**
+  The Pinterest originals are already compressed, so most keep their originals either way.
 - **Encode time** (`eval/jpeg-decoders/imagereduce_timing.py`, same files, one thread for libvips, three runs each,
   median): per megapixel, jpegli is about even with ImageReduce's encode, but a per-file cjpegli call costs more.
 
@@ -145,12 +149,16 @@ with the vips metadata (571 Pinterest files, 39 camera files carry ICC or EXIF) 
   | Camera originals, all 40 (median 3.8 MP) | 11.5 | 12.9 (15.9 with startup) | 1.39× |
 
   cjpegli starts in about 13 ms, which is most of a one-megapixel encode, so a per-file call is slower than the net
-  column. Calling jpegli's library in-process would avoid that. The vips side encodes from memory without metadata,
-  and cjpegli's threads can't be set from its command line, so the comparison is approximate.
-- **Not done:** the switch needs a libjpegli build linked into ImageReduce, and the ICC and EXIF segments copied
+  column. The vips side encodes from memory without metadata; cjpegli runs one thread.
+- **Encode time, in-process:** calling jpegli's library directly (a small C++ program, not in the repo, using the
+  settings cjpegli uses) gives 12.7 ms/MP on the Pinterest sample (vips 13.5, about 6% faster) and 12.8 on the camera
+  files (vips 11.5, about 11% slower). Its output is byte-identical to cjpegli's on all 40 camera files.
+- **Not done:** the switch itself: a libjpegli build linked into ImageReduce, and the ICC and EXIF segments copied
   across. The score for the 20 thumbnail-path camera files is against the resized image, so it doesn't include the
   resize.
-- **Not tested:** alpha PNG and WebP (53 files, skipped), and the one PNG over libvips's 65,500-pixel limit.
+- **Checked:** alpha PNG and WebP are encoded by libvips with the alpha band dropped and RGB kept as stored, so they're
+  in the tables. One PNG is over the 65,500-pixel limit: ImageReduce skips any image with a side over 65,500
+  (`mainwindow.cpp` line 114) before encoding, so jpegli never sees it.
 
 To rerun (Windows, native, not the container): set `IMAGEREDUCE_VIPS_BIN` to ImageReduce's `vips-dev-8.18\bin`,
 `JPEGLI_BUILD` to jpegli's build folder, and `PG_DATA_ROOT` and `CAMERA_ROOT` to the library and camera folders, then
@@ -164,9 +172,9 @@ python eval/jpeg-decoders/imagereduce_timing.py WORK --n 500
 
 ## What to do
 
-- **ImageReduce:** switch to jpegli baseline 4:4:4 at Q80 (see above), not progressive, copying the ICC and EXIF
-  segments across. Keep its "keep the original if the re-encode isn't smaller" rule, which today keeps 84% of the
-  Pinterest originals. Q76–78 is worth one more run before the setting is fixed.
+- **ImageReduce:** switch to jpegli baseline 4:4:4 at Q78 (see above), not progressive, copying the ICC and EXIF
+  segments across. Keep its "keep the original if the re-encode isn't smaller" rule, which today keeps 81% of the
+  Pinterest originals.
 - **Not progressive:** for any encoder.
 - **The thumbnail cache:** THUMBNAILS.md "Thumbnails" already measured jpegli at −9% bytes; nothing here changes that.
 

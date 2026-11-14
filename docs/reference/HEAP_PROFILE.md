@@ -7,7 +7,7 @@ profiles"). Qt's, FFmpeg's and libjpeg-turbo's allocations are not in these numb
 **The profiles are no longer on disk** (`D:\PhotoGallery\scratch_dhat`), so the totals below cannot be re-derived; they
 are the record. The per-site tables that went with them were removed on 2026-11-13: their file and line references had
 moved, most of the fixes they proposed are in the code, and the full text is in git history (`ce1622a`). What is still
-open is in [OPEN_ITEMS.md](../temp/OPEN_ITEMS.md).
+open is in [OPEN_ITEMS.md](../plans/OPEN_ITEMS.md).
 
 ## Workload and runs
 
@@ -63,4 +63,4 @@ The thumbnail pass recycles its JPEG buffers per batch. Border sides are held in
 gif no longer collects its XMP unless asked. BigTIFF is recognized, the one behaviour change in these rounds. The
 command line is read once, and every connection closes before exit.
 
-Open items from these profiles, and the items they did not cover, are in [OPEN_ITEMS.md](../temp/OPEN_ITEMS.md).
+Open items from these profiles, and the items they did not cover, are in [OPEN_ITEMS.md](../plans/OPEN_ITEMS.md).

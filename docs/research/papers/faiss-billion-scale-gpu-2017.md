@@ -4,7 +4,7 @@ Jeff Johnson, Matthijs Douze, Hervé Jégou (Facebook AI Research). arXiv:1702.0
 
 Excerpts taken on 2026-11-13 from the PDF `Billion-scale similarity search with GPUs.pdf` (12 pages), which is not kept: the abstract and §1 Introduction, §6.5 The k-NN graph, §6.6 Using the k-NN graph and §7 Conclusion. The text is the PDF's text layer as is, joined into paragraphs. Figures, table bodies and display equations are left out, except where marked *transcribed*: those were copied by hand from the rendered page. Exponents are written with `^` (s^r), and `*[p. N]*` marks the PDF page.
 
-Kept for: PLAN §10 (IVF-PQ, k-NN graph construction); FAISS GPU IVF is a family in `docs/temp/TIER2_ANN_BAKEOFF_PLAN.md`.
+Kept for: PLAN §10 (IVF-PQ, k-NN graph construction); FAISS GPU IVF is a family in `docs/plans/TIER2_ANN_BAKEOFF_PLAN.md`.
 
 ---
 

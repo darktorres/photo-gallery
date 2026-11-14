@@ -1,5 +1,5 @@
 diff --git a/crates/desktop/build.rs b/crates/desktop/build.rs
-index 95f94ff..2a154be 100644
+index 05d235a..21a0fb1 100644
 --- a/crates/desktop/build.rs
 +++ b/crates/desktop/build.rs
 @@ -19,6 +19,10 @@ fn main() -> Result<(), String> {
@@ -13,11 +13,11 @@ index 95f94ff..2a154be 100644
      // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that
      // (vendor/README.md).
      let mut builder = CxxQtBuilder::new_qml_module(
-@@ -104,10 +108,116 @@ fn main() -> Result<(), String> {
+@@ -115,10 +119,116 @@ fn main() -> Result<(), String> {
      if std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
          builder = builder.file("src/live_reload.rs").cpp_file("cpp/live_reload.cpp");
      }
-+    // A static Qt (PG_QT_STATIC set; docs/STATIC_BUILD.md): the modules the QML uses, the plugins' registration
++    // A static Qt (PG_QT_STATIC set; docs/reference/STATIC_BUILD.md): the modules the QML uses, the plugins' registration
 +    // (cpp/static_qt.cpp), and the libraries of the static link. Only that build sets the variable: the shared build is
 +    // unchanged.
 +    if std::env::var_os("PG_QT_STATIC").is_some() {
@@ -34,7 +34,7 @@ index 95f94ff..2a154be 100644
  
 +/// The static Qt's libraries beyond the modules cxx-qt links: the plugins and QML plugins (paths under QT_DIR, the static
 +/// Qt's prefix), the Windows libraries Qt's static libraries need, and the static FFmpeg that Qt's FFmpeg plugin uses
-+/// (PG_FFMPEG_STATIC, its lib folder). The lists are the static link line of the check program (docs/STATIC_BUILD.md).
++/// (PG_FFMPEG_STATIC, its lib folder). The lists are the static link line of the check program (docs/reference/STATIC_BUILD.md).
 +///
 +/// The libraries go out as `rustc-link-search` and `rustc-link-lib`, which reach the binary that depends on this crate.
 +/// `rustc-link-arg` would not: it is for the crate's own link, so the plugins would be lost (the app would start without
@@ -132,11 +132,11 @@ index 95f94ff..2a154be 100644
      std::env::var("PG_DESKTOP_CONTENT_KEY").is_ok_and(|key| !key.is_empty())
 diff --git a/crates/desktop/cpp/static_qt.cpp b/crates/desktop/cpp/static_qt.cpp
 new file mode 100644
-index 0000000..115beda
+index 0000000..8cf78f7
 --- /dev/null
 +++ b/crates/desktop/cpp/static_qt.cpp
 @@ -0,0 +1,77 @@
-+// The static Qt build (PG_QT_STATIC set, docs/STATIC_BUILD.md): a static Qt loads no plugin from disk, so each plugin and
++// The static Qt build (PG_QT_STATIC set, docs/reference/STATIC_BUILD.md): a static Qt loads no plugin from disk, so each plugin and
 +// QML plugin the app uses is registered here, by its class name (the qmldir "classname" and the plugin's own name).
 +// build.rs compiles this file only for the static build. gui_app.rs calls pg_static_qt_link (below) under the
 +// pg_static_qt cfg, so this object, with the registrations, is linked in even though nothing else names it.
@@ -214,10 +214,10 @@ index 0000000..115beda
 +    init_quick_controls_resources();
 +}
 diff --git a/crates/desktop/src/gui_app.rs b/crates/desktop/src/gui_app.rs
-index a58f1bc..2220f5b 100644
+index 6528c9b..97c3113 100644
 --- a/crates/desktop/src/gui_app.rs
 +++ b/crates/desktop/src/gui_app.rs
-@@ -18,12 +18,30 @@ mod ffi {
+@@ -7,12 +7,30 @@ use pg_platform::args::arg_bytes;
  
  use std::ffi::OsString;
  
@@ -229,7 +229,7 @@ index a58f1bc..2220f5b 100644
 +
  /// The application, with `args` (`main`'s: the program's name first) as Qt's argc and argv. Call on the main thread,
  /// before any other Qt object.
- pub fn new(args: &[OsString]) -> cxx::UniquePtr<cxx_qt_lib::QGuiApplication> {
+ pub(crate) fn new(args: &[OsString]) -> cxx::UniquePtr<cxx_qt_lib::QGuiApplication> {
 +    keep_static_qt_plugins();
      ffi::new_gui_application(&argv_bytes(args))
  }

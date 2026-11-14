@@ -29,9 +29,9 @@ The metadata code is in `crates/metadata/` (package `pg-metadata`, 1,459 lines i
   `exif.rs:46–72`).
   - It wants 42 in the header (43 for BigTIFF, in TIFF files only).
   - Value sizes and bounds: `value_range` (`tiff.rs:118–135`) applies the TIFF type-size table, the count and the
-    bounds. The entry count and per-entry bounds are checked at `tiff.rs:95–100`.
+    bounds. The entry count and per-entry bounds are checked at `tiff.rs:93–102`.
   - IFD0 gives Orientation (`tiff.rs:139–141`: BYTE, SHORT or LONG, plus LONG8 in BigTIFF), Rating and RatingPercent
-    (`tiff.rs:155–163`: BYTE, SHORT or LONG, plus LONG8 or IFD8 in BigTIFF, each fitting a u32), and the XMP tag 700.
+    (`tiff.rs:155–164`, the `uint` reader: BYTE, SHORT or LONG, plus LONG8 or IFD8 in BigTIFF, each fitting a u32), and the XMP tag 700.
     Orientation takes the last copy that reads, so an unreadable later copy leaves the earlier value (`exif.rs:54–55`).
     Rating, RatingPercent, the XMP packet and the two dates take the last copy even when it is unreadable, and then
     read as none (`exif.rs:57–67`).
@@ -41,7 +41,8 @@ The metadata code is in `crates/metadata/` (package `pg-metadata`, 1,459 lines i
   rules.
   - `parse_iso_date` (`crates/model/src/date.rs:9`, in `pg-model`) is also used outside metadata: by
     `crates/video/src/lib.rs:146` and `:148` (video creation time). `Day::parse` is called from the client input
-    (`crates/client/src/input.rs:105`) from the desktop filters (`crates/desktop/src/filters.rs:137`), and from catalog tests.
+    (`crates/client/src/input.rs:105`), the desktop filters (`crates/desktop/src/filters.rs:137`), `crates/model/src/query.rs:212`,
+    `crates/query/src/lib.rs:546`, the `Day` deserialiser (`crates/model/src/date.rs:98`), and catalog tests.
   - `wall_clock_seconds` (`crates/model/src/date.rs:34`) is also used by `Day`, the video tests and `exif_date`.
 - **The container walk:** `Container::walk` (`crates/metadata/src/container.rs:29`; `struct Container` at `:22`).
   - JPEG: APP1 only. EXIF is the first `Exif\0\0` segment. XMP packets are read last standard packet first (`container.rs:47–48`), then `ExtendedXmps`
@@ -94,7 +95,8 @@ The defaults below stand unless a later decision changes them.
    - Within a name, `FoundTag` decides (`ExifTool.pm` 9498–9678):
      - EXIF Orientation, Rating and RatingPercent are priority 0: the first one found wins, unless a later one is in
        the priority directory.
-     - Dates are priority 1: the last one found wins, except JPEG IFD1, which is low priority.
+     - The EXIF dates are priority 1: the last one found wins, except JPEG IFD1, which is low priority. The XMP copies in the
+       exif and tiff namespaces are priority 0 (`XMP.pm:1992` and `:2462`; `CreateDate` at `:1053`).
      - XMP Rating beats EXIF Rating. EXIF DateTimeOriginal and CreateDate beat their XMP copies.
    - Across names, the app picks:
      - Rating: `Rating`, then `RatingPercent`, scaled by `percent`. ExifTool's `RatingPercent` name also carries the XMP
@@ -111,15 +113,31 @@ The defaults below stand unless a later decision changes them.
      - Orientation is read from more places: IFD1, SubIFDs, several EXIF blocks, and the new carriers. The parser reads them
        as ExifTool does; the app's use of them is the HEAD difference.
      - The rating rule is app policy: a Rating above 5, and -1, read as none (Step 3). EXIF Rating is unsigned, so -1 comes
-       only from XMP. HEAD clamps EXIF Rating above 5 to 5 (`crates/metadata/src/lib.rs:89`). The parser still reports
+       only from XMP. A Rating that reads as none falls through to the next source, as at HEAD (`crates/metadata/src/xmp.rs:113–116`,
+       `crates/metadata/src/lib.rs:82` and `:94`). HEAD clamps EXIF Rating above 5 to 5 (`crates/metadata/src/lib.rs:89`). The parser still reports
        ExifTool's raw value. Listed here and counted in step 6.
      - Rating order: HEAD takes XMP Rating, then MicrosoftPhoto (as a percentage), then EXIF Rating
        (`crates/metadata/src/lib.rs:83–94`). The plan takes XMP Rating, then EXIF Rating, then `RatingPercent`, which
        carries MicrosoftPhoto. So an EXIF Rating of 2 with a MicrosoftPhoto of 75 reads 4 at HEAD and 2 under the plan.
-     - Extended XMP: HEAD assembles the extended packets with no HasExtendedXMP check (line 48); the port assembles only
+     - Extended XMP: HEAD assembles the extended packets with no HasExtendedXMP check (`container.rs:49`; line 48 is `packets.reverse()`); the port assembles only
        the GUID that HasExtendedXMP names (ExifTool.pm 7611–7629).
      - GIF: HEAD counts an XMP packet only if the walk reaches the trailer (`container.rs:98–102`). The port counts it
        before a truncation, as ExifTool does: the installed ExifTool reads XMP Rating 3 from a synthetic truncated GIF.
+     - Duplicate IFD0 tags: ExifTool keeps the first Orientation, Rating or RatingPercent that reads (Orientation is
+       `Priority => 0` at `Exif.pm:691`; Rating and RatingPercent are `Avoid => 1` at `Exif.pm:1521–1545`; the duplicate
+       rule is at `ExifTool.pm:9564–9614`). HEAD keeps the last copy (`crates/metadata/src/exif.rs:54–58`). A crafted JPEG
+       with two Orientation entries (6, then 8) reads 6 in ExifTool and 8 at HEAD; two Rating entries (2, then 5) read 2
+       and 5. The HEAD test at `crates/metadata/src/lib.rs:394–396` asserts last-wins and will change.
+     - Date alone or short EXIF date: HEAD returns none for an EXIF date shorter than 19 bytes or without the separators
+       at 4, 7, 10, 13 and 16 (`exif.rs:12`, `:15`), so `2020:01:02` falls through to the next date source. Step 3's
+       "a date alone means midnight" is a change from HEAD.
+     - TIFF magic number: HEAD requires 42 (43 for BigTIFF; `tiff.rs:43–47`). ExifTool only warns, for APP1
+       (`ExifTool.pm:8672`), so a crafted APP1 with magic 0x2b reads Orientation 6 in ExifTool.
+     - JPEG EXIF match and joined segments: HEAD requires `Exif\0\0` at offset 0 (`crates/container/src/lib.rs:94–96`)
+       and takes only the first APP1 (`crates/metadata/src/container.rs:37–40`). ExifTool matches `/^(.{0,4})Exif\0./is`
+       (`ExifTool.pm:7774`) and joins multi-segment EXIF.
+     - PNG `eXIf` prefix: HEAD reads the chunk with no `Exif\0\0` strip (`container.rs:58`). A crafted PNG with that prefix
+       before the TIFF reads Orientation 6 in ExifTool and nothing at HEAD.
      - New carriers (PNG `zxIf` and `tXMP`, raw profiles, WebP `XMP\0`) also feed Rating and the dates, not only
        Orientation (lines 110–111 cover Orientation only).
    - ExifTool writes our ratings (writeback), so reading them back with its rules keeps one source of truth.
@@ -177,8 +195,8 @@ moves into the patcher, so the patcher returns `None` rather than an unchecked `
   - The first task: confirm how a batch separates files and keeps duplicates in order. `-args` keeps duplicates;
     JSON may merge them. If needed, run one file per `-execute`.
   - A second run without `-a` gives the winners and their groups.
-- **Inputs:** N ExifTool processes run in parallel over a list: a folder, a list file, or an Everything query
-  (`es.exe` 1.1.0.38, fetched into a scratch folder; not checked).
+- **Inputs:** N ExifTool processes run in parallel over a list: a folder or a list file
+  (a directory walk that writes a fixed list file; `es.exe` is not used).
 - **Cache:** JSONL in `<data root>\scratch_exif_oracle\`, keyed by path, size and mtime.
 - **Our side:** dumps every occurrence (name, group1, the value as `-n` prints it, file order) and the winners,
   through step 2's recording sink.
@@ -186,10 +204,13 @@ moves into the patcher, so the patcher returns `None` rather than an unchecked `
   reproducing input.
 - **Safety:** read-only on the library. It runs on E: only after the owner approves it, since E: is the library HDD.
 
-### 2. The port (pg-metadata: the existing modules are extended, and `found.rs`, `jpeg.rs`, `png.rs`, `webp.rs`, `gif.rs` and `irb.rs` are new)
+### 2. The port (in the `pg-et-*` crates, per design §1.2: `found.rs`, `jpeg.rs`, `png.rs`, `webp.rs`, `gif.rs`, `irb.rs`, `tiff.rs` and `xmp.rs` are the modules these crates hold)
 
 This section is the slice of design phases P1 to P5, plus the PNG and GIF parts of P6a and the WebP part of P7a
 (`docs/temp/EXIFTOOL_PORT_DESIGN.md`). The modules listed here are that slice, not the whole port.
+
+Crate placement: the port is built in the `pg-et-*` crates from the start, as design §1.2 places it. `pg-metadata` is
+not reused as the reader (design §1.3). `pg-metadata` calls the new crates, and its old reader is removed at step 6.
 
 Every ported function cites its ExifTool file and line.
 
@@ -335,7 +356,7 @@ Each mismatch is fixed in the port, and its minimized input becomes a builder te
   external change, unless one of our rating writes is queued (`:374–375`). A reader that reads an unchanged file
   differently would overwrite the catalog rating.
   - So for each file where the old read equals `file_ratings` and the new read differs, `file_ratings` is set to the
-    new value. A read of none deletes the row (`set_file_rating` with `None`, `queue.rs:318–324`). Then `sync_file_rating` finds no difference and changes nothing, so `ratings` is untouched. This order
+    new value. A read of none deletes the row (`set_file_rating` with `None`, `queue.rs:318–324`; the sync path's own delete is `delete_file_rating`, `writers.rs:385`). Then `sync_file_rating` finds no difference and changes nothing, so `ratings` is untouched. This order
     is what keeps `ratings` fixed: this pass must run before any re-analysis.
   - This is a one-off pass in the switch-over commit, after a backup of the catalog. It runs before any re-analysis,
     so ratings can be compared before and after it.
@@ -356,7 +377,7 @@ Each mismatch is fixed in the port, and its minimized input becomes a builder te
   - The 6 files of 29c4d5e are covered by the exception above.
 - **Then remove** `legacy` and quick-xml from the workspace `Cargo.toml` (including its quick-xml fork patch),
   `crates/metadata/Cargo.toml`, `fuzz/Cargo.toml` (`:82`) and the quick-xml entries in `deny.toml` (`:53`, `:84`),
-  checked with `cargo deny` and `cargo machete`.
+  the lock files (`Cargo.lock` at `:1921` and `:2214–2216`, `fuzz/Cargo.lock` at `:393` and `:446–448`) change in the same commit, since `just test` runs `--locked`. Then `cargo deny` and `cargo machete` check the result.
 
 ### 7. ImageRater's metadata fixer for rating writes (pg-exiftool `lib.rs`, used by pg-writeback `crates/writeback/src/lib.rs`)
 
@@ -377,15 +398,15 @@ Independent of the port; its own commit. Not done yet.
 - **The rebuild is slightly lossy:** segments ExifTool can't copy are dropped. That is the trade ratings already
   make, and it only happens after the plain write has failed.
 - **Test**, in `crates/library/tests/writeback.rs`, skipped without ExifTool:
-  - A JPEG whose metadata 13.60 won't update in place, but will after the rebuild. Finding such damage is the first
-    task, e.g. an IFD entry pointing outside the segment.
+  - A JPEG whose metadata 13.60 won't update in place, but will after the rebuild. Build it synthetically through
+    `pg-et-testkit`, with an IFD entry pointing outside its segment.
   - The turn must reach the file, not the catalog.
 
 ### 8. Docs
 
 - A measurement entry for the port: the rules ported, mismatch counts per corpus and run, and every behaviour change,
   including step 0's bug. `docs/FINDINGS.md` no longer exists (it was renamed to `docs/temp/FINDINGS.md` at ce1622a and deleted at 8486787), so the entry goes in a new
-  topic file under `docs/temp/`, named when step 8 lands.
+  file under `docs/eval/`, where ff8b152 moved the other measurements.
 - Module docs name ExifTool 13.60 as the source.
 - **License:** settled in the design's D14 (Artistic 1.0 or GPL-1+, confirmed 2026-11-13). The repo has no licence file
   today. Step 8 adds a note in `crates/README.md` that cites D14 and says a legal review comes before any public release;
@@ -409,7 +430,7 @@ One commit per verified step. Before building, check that no other build is runn
   without `just`.
 - **Acceptance:**
   - Zero raw mismatches against ExifTool 13.60 on corpora 1, 2 and 4, and on 3 if approved.
-  - For the whole port, every design phase's done test passes (design section 7).
+  - Whole port, later (not this slice): every design phase's done test passes (design section 7).
   - Fuzzing clean for a fixed time per target.
   - The app-level diff explained file by file.
   - Step 0: `patch_orientation` returns `None` unless the result reads back as `o`; the `None` path, the read-back error

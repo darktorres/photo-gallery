@@ -4,9 +4,10 @@ Status (2026-11-14): a plan, not started. It has changed no product code.
 
 It has been through fifteen adversarial reviews. The design was reworked around one writer per process after the fifth.
 The fifteenth was the first whose reviewers were told nothing of the earlier rounds, and it found faults the briefed
-rounds had passed over; the document was then restructured and rewritten. This text has not been reviewed since. The
-reviews' findings are not kept here. What depends on code not yet checked, or on a measurement not yet made, is under
-[Open](#open).
+rounds had passed over; the document was then restructured and rewritten, and its list of decisions was folded into the
+sections that describe them. This text has not been reviewed since. The reviews' findings are not kept here, so whether
+a round before the sixth considered and rejected one writer is not known. What depends on code not yet checked, or on a
+measurement not yet made, is under [Open](#open).
 
 Seeded by [NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (item C2).
 
@@ -21,7 +22,9 @@ Seeded by [NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (item C2).
 | [Shutdown](#shutdown) | closing the window, the system ending the session, and the shutdown's steps |
 | [Inventory](#inventory) | every site on the GUI thread today, and where each goes |
 | [Measurements](#measurements) | the numbers behind [Why](#why) |
-| [Open](#open), [Decisions](#decisions) | what is not settled, and what is, with the reason |
+| [Open](#open) | what is not settled, and what was checked against the code |
+
+**Reasons.** Each choice is given with its reason where it is described. There is no separate list of decisions.
 
 **Citations.** Sites are named by symbol, with a `file:line` as it was when read. Line numbers drift: re-read each site
 by symbol before acting on it. A path is given in full the first time; a short one after it (`inbox.rs:455`, or a bare
@@ -118,7 +121,7 @@ so it knows nothing of commands, the bus, the job or the write-back.
 | Command thread | `pg_app` | One thread that owns the GUI's commands: it coalesces them (R6), runs each as an edit-class write, and does what follows a commit. |
 | Point lane | `pg_app` | A FIFO executor with its own thread and read connection, opened at startup. It serves details, entry, `file_path`, views and roots. It never drops a request and never waits on the writer (a WAL read). It keeps its page cache. After stop it answers each queued request with an error. |
 | Listing lane | `pg_app` | The existing `Reader`, unchanged in behaviour (`crates/app/src/reader.rs:209-238`: the newest request per Reader session and kind replaces the waiting one and cancels the running one). Its connection becomes a read connection. |
-| Providers | `pg_app`, desktop | The image providers read through `Images` and the catalog pool on their own threads, as today (`crates/app/src/images.rs`). They do not use the point lane. |
+| Providers | `pg_app`, desktop | The image providers read through `Images` and the catalog pool on their own threads, as today (`crates/app/src/images.rs`). They do not use the point lane, so its one thread is not a bottleneck for them. |
 | Probe threads, the control lane, the pool | `pg_app` | Part 5's workers: see [Part 5](#part-5-the-worker-items). |
 
 **Read connections.** Every connection but the writer's is opened with `PRAGMA query_only = ON`, so SQLite refuses a
@@ -135,8 +138,8 @@ to it, on a `query_only` connection that it opens and drops for each call (`crat
 
 **Two rules for every write.**
 
-- *A transaction holds only SQL.* Whatever a write needs computed is computed by its caller first. Part 2a is the first
-  case: the import's pairing.
+- *A transaction holds only SQL.* Anything computed inside it keeps every other write waiting, so whatever a write needs
+  computed is computed by its caller first. Part 2a is the first case: the import's pairing.
 - *A write decides inside its transaction.* A worker reads on one connection and writes on another, so what it read may
   be stale by the time its write runs. A closure re-reads, inside the transaction, whatever its write depends on, as
   `store_analysis` does with `IS_CURRENT`. The transaction type has only writers today (`core.rs:209-237`); it gains the
@@ -175,8 +178,9 @@ Edits come at a person's pace and service writes are small, so the job is not st
 | `Failed(E)` | the closure returned its error; the transaction was rolled back |
 | `Catalog(_)` | beginning or committing failed |
 
-So `Stopped` is a variant of its own and is never looked for inside an error chain. The passes' closures return `anyhow`
-errors today (`crates/import/src/lib.rs:54`, `crates/borders/src/lib.rs:68`, the scan's `write_batch`), the inbox's a
+So `Stopped` is a variant of its own and is never looked for inside an error chain: a walk of the chain would miss it
+wherever an error is flattened (Part 1). The passes' closures return `anyhow` errors today
+(`crates/import/src/lib.rs:54`, `crates/borders/src/lib.rs:68`, the scan's `write_batch`), the inbox's a
 `pg_catalog::Result` (`crates/app/src/inbox.rs:541-553`); each keeps its own.
 
 **Stops.** Every call carries its caller's stop: a `Stop` from `pg-platform`, a predicate that is polled. `pg-platform`
@@ -184,7 +188,8 @@ has no such type today.
 
 - *A stop ends a call only while the call is waiting*: queued behind others, or at the head while the writer waits on
   another process's lock. Such a call returns `Stopped`. A call that finds the writer free runs, and a closure that has
-  begun runs to its commit. After the `Database` has closed, every call returns `Stopped`.
+  begun runs to its commit: it is never cut, which would leave its transaction half done. After the `Database` has
+  closed, every call returns `Stopped`.
 - *Withdrawing a waiting call.* The caller and the writer meet on the queue's lock: either the writer has taken the
   call, and the caller waits for it to finish, or the caller removes it. So a borrowed closure is never left with the
   writer after its caller has returned.
@@ -228,17 +233,18 @@ itself.
 
 **The closure may borrow, but not a read connection.** The caller blocks until the closure has run or been withdrawn, so
 the hand-off is scoped, like `std::thread::scope`. The flushes borrow pass-local state today
-(`crates/import/src/lib.rs:50-89`, `crates/borders/src/lib.rs:60-117`, `crates/catalog/src/pair.rs:96-229`). The
-lifetimes of the closure and of the stop are erased in one documented `unsafe` block in `pg-catalog`. `write` requires
-`F: Send` and `R: Send`. That alone does not keep the caller's read connection out: the connection is `Send`, and the
-passes hold it as `&mut Catalog` today (`import/src/lib.rs:32`, `borders/src/lib.rs:50`, `scan/src/lib.rs:379`). So the
-passes hold their read connection as `&Catalog`. A shared reference to it is not `Send`, because the connection is not
-`Sync`, and a closure that captured it does not compile. Without that, a closure could read stale state through it on
-the writer's thread.
+(`crates/import/src/lib.rs:50-89`, `crates/borders/src/lib.rs:60-117`, `crates/catalog/src/pair.rs:96-229`), and the
+alternative is to restructure every flush to own its data. The lifetimes of the closure and of the stop are erased in
+one documented `unsafe` block in `pg-catalog`. `write` requires `F: Send` and `R: Send`. That alone does not keep the
+caller's read connection out: the connection is `Send`, and the passes hold it as `&mut Catalog` today
+(`import/src/lib.rs:32`, `borders/src/lib.rs:50`, `scan/src/lib.rs:379`). So the passes hold their read connection as
+`&Catalog`. A shared reference to it is not `Send`, because the connection is not `Sync`, and a closure that captured it
+does not compile. Without that, a closure could read stale state through it on the writer's thread.
 
-**A panic in a closure.** The transaction's drop rolls it back, and the writer keeps its connection. The panic is
-resumed on the caller's thread, where the caller's own handling applies: the job catches a pass's panic, and the
-write-back catches a panic inside a job as that job's failure (`panics::guard`, `crates/writeback/src/lib.rs:411`).
+**A panic in a closure.** The transaction's drop rolls it back, and the writer keeps its connection: reopening it would
+add a failure path for nothing. The panic is resumed on the caller's thread, where the caller's own handling applies:
+the job catches a pass's panic, and the write-back catches a panic inside a job as that job's failure (`panics::guard`,
+`crates/writeback/src/lib.rs:411`).
 
 - *The marker.* The panic hook asks a thread-local whether the panic will be caught (`CAUGHT`,
   `crates/jobs/src/panics.rs:11-14`), and shows the fatal box when it is not set
@@ -336,7 +342,8 @@ One thread in `pg_app` that owns the GUI's commands.
 
 - **Stored.** Each value the GUI holds from the catalog stays where it lives today, and gains the revision it was read
   at: the grid's listing and the listing held under the viewer (`pg_client::Grid`, `crates/client/src/grid.rs:109`,
-  `:121`), the details slots, the folder tree, the facets, the saved views and the roots. R2 says how they change.
+  `:121`), the details slots, the folder tree, the facets, the saved views and the roots. R2 says how they change. A
+  stored value is what one read or one ack returned: there is no second cache of the catalog with its own invalidation.
 - **The details slots.** Details are point-lane values, not derived from the grid. The GUI keeps four slots: the
   viewer's open item, its previous and its next (so arrow navigation finds the neighbours ready), and the grid's
   selection, whose line `refresh_derived` renders (`gallery/model.rs:264-272`). Each slot holds one result and its
@@ -418,13 +425,15 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
   controller event. The window stays, saying it is closing, and the worker's stop is raised. A wait ends at once; a
   migration or a transaction in progress runs to its end and cannot be cut short, so the open may still succeed.
   `app::stop` and `app::shutdown` already tolerate a missing app (`crates/desktop/src/app.rs:55`, `:64`). The window
-  does not vanish while the process still holds the file.
+  does not vanish while the process still holds the file: the next launch would then fail to open it.
 
 ## Rules
 
 - **R1, a read never waits and never hides a pending edit.** A read result goes to the stored layer, under R2. The
   pending set is drawn over it, so a file with a pending command keeps showing its pending value (R4). No result is
-  refused or merged because a command is pending; R2 refuses a result only for being older than what is held.
+  refused or merged because a command is pending; R2 refuses a result only for being older than what is held. A read
+  that waited for a pending write would tie the point lane to the writer, and a point lane that replaced a waiting
+  request, as the `Reader` does, would drop results; it does neither ([Components](#components)).
 - **R2, every stored value carries its revision and only moves forward; a change that a result missed is read again.**
 
   | Stored value | Read by | Applies when | Read again on |
@@ -478,8 +487,9 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
   window shows only the last toast of a pass anyway (`desktop/src/notices.rs:294`).
   - *"Refresh everything"* is one list, used by R3 and R3a: the grid's listing and the folder tree (through the listing
     lane, as `Scanned` does today, `desktop/qml/Main.qml:127-128`, `:255-265`), the facets (`Main.qml:142-145`), the
-    details slots, the views, the roots, the status lines, and the inbox's poke (`desktop/src/library.rs:134-160`). It
-    re-lists, so it drops a file rated out of the filter, as any reload does today.
+    details slots, the views, the roots, the status lines, and the inbox's poke (`desktop/src/library.rs:134-160`). The
+    grid alone is not enough: the tree, the facets and the status lines would stay stale. The refresh re-lists, so it
+    drops a file rated out of the filter, as any reload does today.
   - *It is spaced.* A full listing of the large root takes up to 430 ms (`crates/app/src/reader.rs:178-183`) and a full
     layout pass on the GUI thread. A refresh is not started while the last one is in flight, nor within 5 s of the last
     one's start; a cause that arrives meanwhile is kept, and one refresh follows. The 5 s is chosen, not measured.
@@ -487,6 +497,9 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
   own writer: scan, import, remove, the marks that make files pending import, borders, thumbs and the write-back
   (`crates/cli/src/lib.rs:218`, `:228`, `:248`, `:279`, `:324`). The screenshot fixtures
   (`tools/shots/fixture.py:82-102`) write rows directly with no revision; they run with no window open.
+  - *The tool keeps writing the catalog itself.* The alternative is one process owning the file, with the tool sending
+    its work to a running window. That would remove this rule and every wait on another process, at the cost of a
+    protocol between the two. Two processes on one WAL database is a supported arrangement, so it is not taken.
   - *`data_version` alone is not the test.* It moves whenever any other connection commits
     (`crates/app/src/inbox.rs:716`), and that includes this process's writer.
   - *The test is a revision this process did not write.* The `Database` keeps the last revision it has seen, raised only
@@ -523,10 +536,11 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
     refresh, so those files can show their old picture for up to 5 s, where today's re-read is immediate.
 - **R4, a pending edit is shown and marked.** Its value comes from the pending set; the stored layer is changed only by
   reads and acks.
-  - *A pending value is marked.* It is dimmed, and assistive technology is told it is pending. The mark appears only
-    after the command has been pending for 200 ms: an ack normally lands quickly, and a mark shown at once would flicker
-    on every edit. So for up to 200 ms a new rating shows unmarked. The 200 ms is chosen; how long an ack takes is not
-    measured ([Open](#open)). One timer serves every pending command; no row has its own.
+  - *A pending value is marked.* It is dimmed, which needs no marker on the image, and assistive technology is told it
+    is pending. The mark appears only after the command has been pending for 200 ms: an ack normally lands quickly, and
+    a mark shown at once would flicker on every edit. So for up to 200 ms a new rating shows unmarked. The 200 ms is
+    chosen; how long an ack takes is not measured ([Open](#open)). One timer serves every pending command; no row has
+    its own.
   - *A pending rating or border mark* shows its new value at once.
   - *A pending turn does not turn the picture.* The image key is `<id>@<mtime>.<rotation>.<pending_turns>`
     (`desktop/src/gallery/items.rs:41-46`), and on a thumbnail miss, the placeholder and the full image the providers
@@ -587,8 +601,8 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
   - *The wait.* The writer's connection has a busy handler in place of the 5 s timeout (rusqlite's `busy_handler` takes
     a closure, `src/busy.rs:55-57`). It sleeps and tries again, and gives up when the current call's stop is raised. It
     is installed after `SETTINGS`, because `PRAGMA busy_timeout` replaces it (`crates/catalog/src/schema.rs:377-378`; so
-    does `Catalog::set_busy_timeout`, `core.rs:190`). No write is lost to the busy timeout; a write ends unwritten only
-    when its own stop is raised.
+    does `Catalog::set_busy_timeout`, `core.rs:190`). No write is lost to the busy timeout, and no caller has a busy
+    loop of its own; a write ends unwritten only when its own stop is raised.
   - *The busy state.* A function is told when the process has waited 10 s on another process, for a write of any class
     or for one of the open's waits, and again when that wait ends: the lock is had, or no write is left waiting for it.
     The 10 s counts the unbroken wait, not one write's: when a write is stopped and the next takes over the same wait,
@@ -603,29 +617,33 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
     would hold. A transient toast says so. `Library.busy` already exists (`cpp/screenshot.cpp:105` reads it), so the
     property has another name. It is built in Part 4; in Parts 1 to 3 the function only logs.
   - *The cap is the GUI's.* The pending set holds at most 10,000 file commands. A file command beyond that is refused on
-    the Qt thread, before it is sent. Commands that name no file are few (about one session save a second at most) and
-    are not counted, so the cap never refuses the close's own session save. The value is chosen, not measured.
+    the Qt thread, before it is sent: the GUI is the only place that knows the count when a command is made. Commands
+    that name no file are few (about one session save a second at most) and are not counted, so the cap never refuses
+    the close's own session save. The value is chosen, not measured.
   - A command that fails for another reason (a constraint error) fails at once.
 - **R6, coalescing per file and operation.** The command thread coalesces the commands still waiting in its own queue,
-  per (file, operation) pair, not per file alone. Commands that name no file (a saved view, the session, a folder)
-  coalesce per operation and key: the session keeps the last value, and a view keeps the last command for its name.
+  per (file, operation) pair, not per file alone: a turn is a delta, so keeping only a file's last command would drop
+  turns. Commands that name no file (a saved view, the session, a folder) coalesce per operation and key: the session
+  keeps the last value, and a view keeps the last command for its name.
   - turns add up, mod 4, as `queue_rotation` does (`crates/catalog/src/queue.rs:103-125`); a sum of zero is still sent,
     so its commands are acked;
   - a rating or a border mark keeps the last value. Every command gets its own ack message, by its id; the commands one
     write carried get the same snapshot. If that write fails, they all fail.
 - **R7, a multi-step operation is one command, its probes run first, and its write is one transaction.**
   - *Adding a folder.* It is pending from the click. Normalize and the NTFS checks (`check_folder`,
-    `crates/scan/src/lib.rs:281-283`, which calls `refusal::check_root`) run first, on a probe thread. Today
+    `crates/scan/src/lib.rs:281-283`, which calls `refusal::check_root`) run first, on a probe thread of their own: on
+    the writer, the command thread or a shared pool, a dead drive would hold up everything behind it. Today
     `pg_library::folders::add_folder` does the probes and `add_root` in one call
     (`crates/library/src/folders.rs:31-34`), for the app and the command-line tool; it is split in two. The probe thread
-    posts its result to the Qt thread. If the add is still pending and the close's decision is idle, the Qt thread sends
-    the command. Otherwise the result is kept and nothing is sent ([Shutdown](#shutdown)). The command's whole work is
-    one short write transaction (`add_root`, `crates/catalog/src/roots.rs:39-53`, which also deletes the roots nested in
-    the new one). After the commit the command thread queues the scan (`Runner::scan`). A refusal by the probes is that
-    pending item's failure: of today's three refusals, the two that come from normalize and `check_folder` are found by
-    the probe and never reach an ack; a catalog error is the command's failure. A probe of a dead drive may not return
-    for a long time, and the add stays pending meanwhile. Nothing has been written for it, so an unsent add does not
-    hold a close, and is dropped if the window closes ([Shutdown](#shutdown)).
+    posts its result to the Qt thread and does not send the command itself, since it cannot know that the window is
+    closing. If the add is still pending and the close's decision is idle, the Qt thread sends the command. Otherwise
+    the result is kept and nothing is sent ([Shutdown](#shutdown)). The command's whole work is one short write
+    transaction (`add_root`, `crates/catalog/src/roots.rs:39-53`, which also deletes the roots nested in the new one).
+    After the commit the command thread queues the scan (`Runner::scan`). A refusal by the probes is that pending item's
+    failure: of today's three refusals, the two that come from normalize and `check_folder` are found by the probe and
+    never reach an ack; a catalog error is the command's failure. A probe of a dead drive may not return for a long
+    time, and the add stays pending meanwhile. Nothing has been written for it, so an unsent add does not hold a close,
+    and is dropped if the window closes ([Shutdown](#shutdown)).
   - *Removing a folder.* One command, one transaction (`remove_root`, `crates/catalog/src/roots.rs:58-72`), which
     deletes the root row, sets `missing = 1` over the folder's files, and cascades the root's notices and folder-ledger
     rows by foreign key. Today `remove_folder` reads the roots in a separate statement first
@@ -642,7 +660,7 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
     queued after `folder_removed` has found nothing to stop. Today both calls are synchronous, so they cannot.
     `begin_scan` does not check the folder (`crates/catalog/src/roots.rs:79-100`). It gains the check, inside its
     transaction: when no root is the folder or contains it, it refuses, and the job drops that scan without a notice.
-    That closes both orders, and needs nothing disabled in the panel.
+    That closes both orders, where disabling the panel's button would close only one.
 - **R8, blocking calls from the GUI thread are refused.** The blocking entry points move into a `providers` module of
   `pg_app`'s facade, which the GUI modules do not call. The desktop's providers call them
   (`crates/desktop/src/providers.rs:44-119`). The facade checks the calling thread's role on every blocking call, in
@@ -657,10 +675,11 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
 - **R9, startup.** No bridge object that reaches the app exists before the app does, and the GUI thread opens no
   catalog. [Startup](#startup) is the design.
 - **R10, visibility.** The public surface of `pg_app` is its message types and its facade (the blocking `providers`
-  module is part of the facade). The catalog data types the front end needs move to `pg-model`, which every crate may
-  depend on: `Facets`, `pg_catalog::inbox::Entry` (aliased `InboxEntry` in `crates/app/src/reexport.rs:10`),
-  `FailedFile`, `FailedFolder`, `FolderFailure`, and the listing and inbox data. Then `Catalogs`, `Reading`, `Views`,
-  `Edit`, `LibraryService` and `Session` become `pub(crate)`, and `reexport.rs` is removed with its allowlist entry in
+  module is part of the facade). The commands and acks cross that boundary, so their payloads must be types the front
+  end may name. The catalog data types the front end needs move to `pg-model`, which every crate may depend on:
+  `Facets`, `pg_catalog::inbox::Entry` (aliased `InboxEntry` in `crates/app/src/reexport.rs:10`), `FailedFile`,
+  `FailedFolder`, `FolderFailure`, and the listing and inbox data. Then `Catalogs`, `Reading`, `Views`, `Edit`,
+  `LibraryService` and `Session` become `pub(crate)`, and `reexport.rs` is removed with its allowlist entry in
   `tools/boundaries.py` (line 35). The other items that file passes to the front end move to `pg-model` too: `Change`
   and `Cause` (from `pg_jobs`), `WriteError` (`pg_writeback`), `ThumbCap` (`pg_thumbcache`) and `InboxCounts`
   (`pg_catalog`). `pg-model` is the leaf of `tools/crate-layers.txt` and already holds `FileId`; `jobs`, `library`,
@@ -832,11 +851,13 @@ thread runs on the prepared connection before it moves it to the writer; and the
 | `remove_root` | one `UPDATE` over the folder | 2.3 to 3.6 s (debug, the larger root) |
 | the preparation's marks, in another process | every file row, twice | seconds; not measured |
 
-**The revision.** A migration adds one `meta` row holding it (one `Step::Sql`; a migration already runs in one write
-transaction, `crates/catalog/src/schema.rs:401-435`). `meta` is a key and value table with no triggers on it. The
-existing `meta.seq` (`crates/catalog/src/sql.rs:17-19`) is not it: that is the thumbnail clock, bumped by triggers and
-`set_mark` and read by the thumbnail cache. An older build refuses a newer schema (`crates/catalog/src/core.rs:75-81`,
-`:143-148`), so no process writes the file without bumping, apart from the screenshot fixtures (R3a).
+**The revision.** One number for the whole catalog. A sequence kept by the GUI's commands alone could not order the
+import's, the scan's and the removal's writes, and a read must be able to say which writes it includes. A migration adds
+one `meta` row holding it (one `Step::Sql`; a migration already runs in one write transaction,
+`crates/catalog/src/schema.rs:401-435`). `meta` is a key and value table with no triggers on it. The existing `meta.seq`
+(`crates/catalog/src/sql.rs:17-19`) is not it: that is the thumbnail clock, bumped by triggers and `set_mark` and read
+by the thumbnail cache. An older build refuses a newer schema (`crates/catalog/src/core.rs:75-81`, `:143-148`), so no
+process writes the file without bumping, apart from the screenshot fixtures (R3a).
 
 - *The bump is the writer's, at commit.* A transaction holds many writes (the import stores 500 analyses and their pairs
   in one), so the writer bumps once, just before `COMMIT`, in the same transaction as the data.
@@ -861,8 +882,9 @@ Part 1 only writes the revision. The reads that return it are built in Part 3, w
 
 Today the import (`crates/import/src/lib.rs`) runs each 500-file batch as: open the transaction; `store_analysis`;
 `pair_and_insert` (query, then insert) inside it; `store_pdq_pair`; commit. With one writer, that transaction would run
-on the writer's thread, and its pairing (76 to 92% of the hold) would keep every other write waiting. The design
-replaces it:
+on the writer's thread, and its pairing (76 to 92% of the hold) would keep every other write waiting. The hold is the
+reason, not correctness: today's import already skips pairing for a rejected file and has no index rollback. The
+design replaces it:
 
 - **Scratch split.** `PdqIndex::best_matches` and `query` (`crates/dedup/src/pdq_index.rs:283-345`, both `&mut self`
   today) take `&self` and a caller-owned `QueryScratch { seen: Vec<u32>, query_no: u32, found: Vec<(FileId, u32)> }`.
@@ -922,7 +944,7 @@ first one paid for. Measure that first ([Open](#open)). If only the first one co
 as it is and this part is not built.
 
 If they do stall, an automatic checkpoint runs on the writer's thread after a commit and delays whatever is queued
-behind it, an edit included. So the writer decides when:
+behind it, an edit included. So the writer decides when, and runs it itself; the checkpoint gets no thread of its own:
 
 - The writer's connection registers a WAL hook (`Connection::wal_hook`, verified in the locked rusqlite revision
   `9d76035` behind the `hooks` feature, `Cargo.toml:36`; it takes `&mut Connection`). Registering a hook replaces
@@ -944,7 +966,8 @@ behind it, an edit included. So the writer decides when:
   thumbnail cache's pending query holds one read transaction over both files (`crates/thumbcache/src/reader.rs:29-62`),
   and a pass that keeps a cursor open across its own writes would do the same. Another process appends too. All of that
   is true of the automatic checkpoint today.
-- A file size is not used as the trigger, because the WAL file keeps its size after a checkpoint.
+- A file size is not used as the trigger, because the WAL file keeps its size after a checkpoint, so a size test would
+  fire on every commit.
 - The close still runs `TRUNCATE` (`crates/catalog/src/core.rs:52-53`), on the writer's connection, last
   ([Shutdown](#shutdown)).
 - Measured (first observations; see [Measurements](#measurements)): with auto-checkpoint on, a commit at 1000 frames
@@ -1189,7 +1212,8 @@ itself when the system's session really ends (`qwindowscontext.cpp:1159-1175`). 
 `onClosing` always accepts. So the close's decision must know when a quit, not the user, is asking.
 
 **The close's decision** is one plain value. `onClosing` reads it, and nothing else decides whether the window may
-close.
+close. If each close decided again from the pending set, the window's own second close would be refused, and "quit
+anyway" would never close it.
 
 | State | Meaning |
 | --- | --- |
@@ -1197,8 +1221,9 @@ close.
 | waiting | the user asked to close, and something holds it; input is blocked |
 | complete | the window may close; the next `onClosing` accepts |
 
-*What holds a close:* a command that has been sent and is neither acked nor failed; and an edit that has been dispatched
-but whose command is not yet made. Rate, turn and the border mark are made in a closure queued to the model
+*What holds a close.* The window waits, because a drain with a deadline after it has gone would lose edits silently. Two
+things hold it: a command that has been sent and is neither acked nor failed; and an edit that has been dispatched but
+whose command is not yet made. Rate, turn and the border mark are made in a closure queued to the model
 (`shell.rs:477-494`, `gallery.rs:61-64`), so between the dispatch and that closure the pending set does not hold them
 yet. A count of such closures stands beside the pending set. It is a guard carried inside the closure and released when
 the closure is dropped, run or not: `gallery::post` discards a closure when there is no model and ignores a failed queue
@@ -1268,7 +1293,8 @@ the quit causes accepts:
   of `aboutToQuit` sets it.
 
 **When the window closes.** An add whose command was never sent is dropped, and the `Shell` logs it: nothing was written
-for it. Whatever the command thread still holds is dropped and logged by that thread (step 1 below).
+for it. It is dropped only then: dropped at the close's request, it would be lost even if the user then chose to keep
+working. Whatever the command thread still holds is dropped and logged by that thread (step 1 below).
 
 **The stated guarantee.** An edit the user made is lost at exit only in these cases: an add whose command had not been
 sent when the window closed; the user chose "quit anyway"; the operating system ended the session before it was written
@@ -1704,218 +1730,3 @@ are today's busy timeout, kept, not chosen.
   - `Player::start` reads its file on its own thread (`crates/render/src/player.rs:72`), and `requestImageResponse` runs
     on Qt's pixmap-reader thread (`qquickpixmapcache.cpp:1000-1003`).
   - There is a single window, no window geometry is persisted, and there is no undo and no multi-select edit.
-
-## Decisions
-
-What was decided, and why. Each names where the design is.
-
-### The writer and the catalog
-
-- **One writer per process** ([The writer](#the-writer)). Several writers on one lock was the cause of the lost rating
-  and of the waits behind the import. With one writer, a write inside the process cannot fail busy, a new edit waits for
-  what is in progress and not for a queue of job writes, and the order of writes is a queue's order. Whether an earlier
-  review considered and rejected this is not known: their findings were not kept.
-- **The writer takes opaque closures; commands, coalescing, acks and what follows a commit belong to a command thread in
-  `pg_app`** ([The command thread](#the-command-thread)). `pg-catalog` cannot know the bus, the job or the write-back.
-  And what follows a commit takes locks: on the writer's thread it could deadlock the shutdown.
-- **The writer serves edits first, then the write-back and the inbox, then the job, and never interrupts.** An edit is
-  what the user is watching; a job write is what can wait.
-- **A transaction holds only SQL, and decides inside itself** ([Components](#components), Part 2a). Anything computed
-  inside it keeps every other write waiting, and anything read before it, on another connection, may be stale.
-- **Every other connection is `query_only`, closed by drop, and a write function takes a transaction** (Part 1). The
-  rule is enforced by SQLite and by the types, so it needs no check that greps the source. Closing by drop matters
-  because `query_only` does not stop a checkpoint.
-- **`write` returns its own error type, with `Stopped` as a variant.** The passes' closures have different error types,
-  and a stop found by walking an error chain would be missed where an error is flattened.
-- **`Stopped` is not a failure** (Part 1). The write-back counts no attempt and sets no error for it, and the job posts
-  no notice: the pass ends as a preemption does.
-- **Every `write` call carries its caller's stop, which ends it only while it waits.** A waiting call ends when its
-  thread is told to stop, after its grace if it has one, so each stop in the shutdown returns, whatever another process
-  holds. A closure that has begun is never cut: its transaction would be half done. A stop is a polled predicate,
-  because whoever raises it cannot notify the writer's queue.
-- **The job's write stop is a new quit flag, not `Control::stop`.** `Control::stop` is raised by every new request and
-  means "commit what you have"; the passes write after it is raised.
-- **The job's and the write-back's stops have a 4 s grace.** An instant stop would drop the job's final flush and the
-  lease's release whenever the writer is briefly busy; today those get the 5 s busy timeout. It is 4 s, not 5, so that a
-  write that gives up returns before the runner's 5 s wait for the job ends.
-- **A closure may borrow its caller's state, through one documented `unsafe` block; a pass holds its read connection as
-  `&Catalog`.** The flushes borrow pass-local state today, and the alternative is to restructure every flush to own its
-  data. The connection is `Send`, so the `Send` bound alone would let a closure read stale state through it on the
-  writer's thread.
-- **A panic in a closure is resumed on the caller's thread, and the writer keeps its connection.** The transaction's
-  drop has rolled back; reopening would add a failure path for nothing. Each call carries its caller's "will be caught"
-  marker, so a caller that does not catch still gets the fatal box. That box is then on the writer's thread, and every
-  write waits until it is dismissed; that is accepted.
-- **The main thread is the GUI thread only while the event loop runs.** The open until Part 3 and the shutdown's joins
-  block on it, and R8 must not refuse them.
-- **The `Database` is the only way the app, the tool and the tests open a catalog; the thumbnail cache's attach is the
-  one exception.** The cache and the catalog do not depend on each other, and the attach only reads.
-- **The preparation's marks run on the writer** (Part 1). They change values a running window shows, so they must bump
-  the revision.
-- **The open's waits take the open's stop; later read connections never wait** ([Opening the
-  `Database`](#opening-the-database)). The `Database` holds the shared hold for its life, so nothing can take the
-  exclusive hold under it.
-- **The scan's lease is released by a call, and its heartbeat rolls a batch back when the lease is lost** (Part 1). A
-  write in a destructor could block during an unwind. A job write can now wait long enough to lose the lease.
-- **Tests use catalog files, not `:memory:`** (Part 1). A `:memory:` database has one connection. A single-connection
-  mode would be product code that only tests use.
-- **The command-line tool keeps writing the catalog itself.** The alternative is one process owning the file, with the
-  tool sending its work to a running window. That would remove R3a and cross-process waits, at the cost of a protocol
-  between the two. Two processes on one WAL database is a supported arrangement, so it is not taken.
-
-### The revision and other processes
-
-- **One catalog-wide revision, bumped once at commit, and only when the transaction changed something** (Part 1). A
-  sequence from the GUI's commands alone cannot order the import, scan and removal writes, and a read must be able to
-  say which writes it includes. An unconditional bump would turn empty commits into writes. Migrations bump explicitly,
-  because `total_changes` does not count DDL.
-- **Another process's write is a stored revision this process has not seen, checked by the writer in every transaction
-  and by a watcher once a second** (R3a). `data_version` also moves on this process's own commits. The watcher alone
-  misses a foreign write that an own commit follows before it looks; the writer alone misses one while it is idle. A
-  commit counter keeps the watcher from taking an own commit for a foreign one.
-- **A foreign revision is reported when it is seen, not when the transaction that saw it ends** (R3a). A long
-  transaction would otherwise delay it past the watcher's second.
-- **A refresh of everything is one fixed list, spaced 5 s apart** (R3). A lagging subscriber and a foreign write both
-  cause it. The list includes the folder tree, the facets and the status lines, which a re-read of the grid alone would
-  leave stale. A foreign pass commits every second or two, and each refresh is a full listing and a full layout pass.
-- **The inbox keeps its own `data_version` comparison** (R3a). It also tells the inbox of this process's ledger writes.
-- **The writer waits on another process through a busy handler that gives up on the call's stop** (R5). No write is lost
-  to the busy timeout, and no caller has a busy loop of its own.
-- **The busy state shows after 10 s, as a QML property** (R5). A database notice would itself be held by the same lock.
-
-### The import and the checkpoint
-
-- **The import computes its pairs outside the write transaction, stores only the pairs of stored files, and inserts into
-  the index only after commit** (Part 2a). The reason is the hold: pairing was 76 to 92% of it, and it would now be the
-  writer's. Today's import already skips pairing for a rejected file and has no index rollback, so this fixes no
-  correctness fault. A failed commit leaves the index unchanged.
-- **A checkpoint, if it must leave the commit path, is run by the writer, once per due mark, when no edit is waiting**
-  (Part 2b). It is not a thread of its own. It bounds the WAL no better than the automatic checkpoint does: a long-held
-  reader pins both. Part 2b is built only if the counted measurement shows that checkpoints stall as a rule.
-- **The checkpoint trigger is the WAL frame count, through the WAL hook, not the file size** (Part 2b). The file keeps
-  its size after a checkpoint, so a size test would fire on every commit.
-
-### The read side
-
-- **Reads never wait; the point lane never drops a request** (R1). A read that waited on a pending write would tie the
-  point lane to the writer. A `Reader`-style replacement would drop results. The point lane has its own connection,
-  opened at startup, and keeps its page cache, so the GUI never opens one.
-- **Reads that reach the GUI run in a snapshot that returns the revision; the others are left alone** (Part 3). The
-  providers' reads feed no stored value, so they need none.
-- **Every stored value carries its revision and only moves forward; a change noted while a read was in flight is read
-  again** (R2). That covers roots, views and details as well as entries. A revision check alone loses a file that
-  changed while a listing containing it was loading. The notes ask for a read; they never refuse a result. A new listing
-  removes from the sparse map only the entries it is at least as new as.
-- **No second cache of the catalog with its own invalidation** ([Qt-side values](#qt-side-values)). A stored value is
-  what one read or one ack returned. The details memo is replaced by four slots: the viewer's item, its previous and
-  next, and the grid's selection.
-- **The events that name a file carry its revision; a command publishes no event** (Part 3). `Turned` and `Rewritten`
-  name their file, so the grid re-reads only that file; more than 256 in one pass become a refresh of everything. The
-  window that sent a command has the ack, and there is one window, so a rating never goes through the pump and never
-  causes a re-list.
-- **The write-back's rating rewrite publishes `Rewritten`** (Part 3). It changes the file's row, and the entry and the
-  details would otherwise stay stale until a re-list.
-- **One pump serves the process, subscribed at Ready** (Part 3). Edits work without the job, a change published before
-  the pump subscribed would be missed, and a pump bound to one `Library` object is lost with it at a live reload. It
-  waits with `recv()`, drains with `take()` and reads the lag count, which no pump reads today.
-- **Per-file changes reach the grid in Rust, not through the QML signal** (Part 3). The signal chain carries no payload
-  and is recorded for replay.
-- **Providers use `Images` and the catalog pool on their own threads, not the point lane.** The point lane is not a
-  bottleneck for them.
-
-### The GUI's edits
-
-- **The GUI holds stored values and pending commands as two layers; the stored values stay where they live, and the
-  pending set is one** ([Qt-side values](#qt-side-values), R4). A read never has to be dropped or merged because an edit
-  is pending, and a failed command needs no read to undo it. One set gives the cap its count, and the close's decision
-  and the harness one place to look.
-- **An ack carries what the catalog holds, read inside the command's transaction** (R4). The stored layer is refreshed
-  in one snapshot at the ack's revision.
-- **One place receives every ack** ([The command thread](#the-command-thread)). Commands start in three objects, and a
-  live reload rebuilds them.
-- **A pending edit is marked by dimming, after 200 ms, and its pending state is exposed to assistive technology** (R4).
-  Dimming needs no marker on the image. An ack normally lands quickly, and a mark at once would flicker on every edit;
-  the cost is that a new value shows unmarked for up to 200 ms. The grid and the viewer have no accessibility properties
-  today, so that part is new work.
-- **A pending turn does not turn the picture; the image key follows the stored layer** (R4). A key ahead of the catalog
-  makes the providers serve, and Qt cache, unturned pixels under the turned key. The picture turns at the ack, as it
-  does today after the queue write commits.
-- **The roots list stays the stored one; pending adds and removals are drawn beside it** (R4). The panel's rows index
-  the stored roots, so a list changed by pending items could send a removal to the wrong folder.
-- **Coalescing is per file and operation, on the command thread** (R6). Per file alone drops turns, because a turn is a
-  delta.
-- **The pending set is capped at 10,000 file commands, on the Qt thread** (R5). The GUI is the only place that knows the
-  count when a command is made.
-- **An add is pending from the click; its probes run on a thread of their own; its command is sent by the Qt thread when
-  the probe reports** (R7). On the writer, the command thread or any shared pool, a dead drive would hold everything
-  behind it. The probe thread cannot know that the window is closing, so it does not send the command itself.
-- **Removing a folder is one transaction, and returns the removed root's path** (R7). The measured hold is 2.3 to 3.6 s
-  (debug, one machine). Every write queued during it waits and none fails. The path is what stops the scans under the
-  folder.
-- **A rescan is not a catalog write, and a scan begins only for a folder that is still a root** (R7). The removal and
-  the rescan can cross in either order once neither is synchronous. The check is inside `begin_scan`'s transaction,
-  where it cannot be raced; disabling a button would close only one order.
-- **Part 1 includes the command thread, with the GUI still waiting for each reply** ([Build order](#build-order)). Part
-  1 makes the pool read-only, so the GUI's writes need their new path at once. The command's 5 s deadline keeps today's
-  behaviour, and the GUI waits for a definite reply, so it never reports a failure for a write that then commits.
-
-### Startup
-
-- **The window opens with a loading placeholder; the app is opened and the start state read on a startup worker**
-  ([Startup](#startup)). This is a cost the goal forces. The start state is read on the worker because the controller is
-  built from it synchronously and has no loading state.
-- **The app stays a process-wide value, and a `Loader` creates the main content on Ready.** QML constructs the bridge
-  objects through `Default`, so they cannot be handed the app. The `Loader` makes the order a fact of construction: no
-  bridge object that reaches the app exists before the app does.
-- **A failed open stays fatal, a stopped open is not a failure, and a close before Ready keeps the window until the
-  worker ends.** There is no app, and so no inbox, to carry a notice for a failed open. A close before Ready stops the
-  open, and a fatal box for that would be wrong. A window that vanished while the process still held the file would make
-  the next launch fail to open it.
-
-### Closing and exit
-
-- **The close has one decision, with three states, and `onClosing` only reads it** ([Closing the
-  window](#closing-the-window)). Deciding from the pending set at each close made the window's own second close be
-  refused, so "quit anyway" never closed it.
-- **Closing waits for the commands already sent and the edits already dispatched.** A drain with a deadline after the
-  window has gone would lose edits silently. Rate, turn and the border mark are made in a closure queued to the model; a
-  close between the dispatch and the closure would otherwise be accepted and the command dropped. The count of such
-  closures is a guard released on drop, since a posted closure may never run.
-- **An unsent add does not hold a close, and is dropped only when the window closes.** Its probe may never return.
-  Dropped at the request, it would be lost even if the user then chose to keep working.
-- **While closing, input is blocked and the controller returns no session save.** Nothing may add a command while the
-  window waits. Gating only the timer's arming misses the paths that return a session save directly.
-- **A close can be taken back by the keep-working event, which undoes what the request did.** Without it a long foreign
-  lock leaves only the choice that loses the edits. It arms the session save and fires again only the timers the flush
-  drained: a listing made with no query waiting would lose the scroll position and the selection.
-- **A file, view or folder command that fails while the window waits to close takes the close back; a failed session
-  save does not.** The failure notice of an edit is then seen; closing over it would hide that the edit did not happen.
-  A session save is not an edit, and taking the close back for it would loop while the catalog refuses writes.
-- **A quit goes through the close's decision, and is requested first.** Qt's quit closes every window and is dropped if
-  one refuses, so nothing skips `onClosing`. The harness and the session's real end set the decision to complete before
-  they quit.
-- **Only `onClosing` flushes and sets the closing flag; session end sends a save-now event and then blocks up to 3 s on
-  the command thread and the preferences writer** ([The operating system ending the
-  session](#the-operating-system-ending-the-session)). A session end can be cancelled, and the window must then go on as
-  before; the flush drops the query's and the layout's timers, which is right only for a window that is going away. The
-  wait is on those threads, not on the pending set, because acks are posted to the thread that is blocked. Before Ready
-  the handler does nothing.
-- **The shutdown's joins run on the main thread after the window has closed, bounded at about 12 s for the listed
-  waits** ([The shutdown's steps](#the-shutdowns-steps)). No UI remains to block.
-
-### The rest of the GUI thread's work
-
-- **The job's requests go through one ordered lane; probes each get a thread; the rest share a pool** (Part 5). Two
-  heights or a pause and an unpause on a pool could be applied reversed.
-- **Preferences: the value is read from memory, and the file is written by the preferences writer, which drains at
-  shutdown** (Part 5). A save no longer blocks the GUI's reads, and queued saves cannot land out of order.
-- **The log is written by a log thread, flushed on exit and on panic** (Part 5). Every log call opens the file today. A
-  crash can lose the last lines, which is accepted for the GUI's own calls.
-- **The animation player's sink is closed on the GUI thread before its join is handed off** (Part 5). The sink's safety
-  rests on that.
-- **Blocking calls from the GUI thread are refused in every build; a violation logs rather than panics** (R8). A panic
-  across the bridge aborts the process. The thread role lives in `pg-platform`, so `write` can check it below `pg_app`.
-- **The front end sees `pg_app`'s messages and `pg-model`'s types, and nothing of `pg-catalog`** (R10). The commands and
-  acks cross the boundary, so their payloads must be types the front end may name.
-- **Accepted on the GUI thread:** the clipboard, which Qt requires there; mutexes that nothing holds across I/O; and, in
-  a debug build, live reload, which may rebuild the window with commands still running.

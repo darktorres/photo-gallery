@@ -110,8 +110,9 @@ References, for design ideas only:
 - **Clock.** Audio is the master clock when there is audio. 1,080 of the 1,712 dataset videos have no
   audio, so the steady-clock path is the common case, not an edge case.
   - The heard position is the written media time minus the WASAPI padding and latency and swresample's
-    delay. `IAudioClock` is only an average unless the endpoint reports a fixed frequency (not yet checked against the WASAPI docs), so the A/V offset
-    gets an acceptance criterion, measured with a microphone.
+    delay. `IAudioClock::GetPosition` gives an accurate device position per call (Microsoft documents this), and `GetFrequency`
+    is constant over a stream's life on Windows Vista and later. The docs don't quantify the residual error, so the A/V
+    offset gets an acceptance criterion, measured with a microphone.
   - The clock starts when the first video frame and first audio buffer are ready (Qt starts it on the first
     packet, so its first frames come late and render back to back).
   - At each render tick the newest frame due is shown and older ones are dropped. Qt has no late-frame drop.
@@ -178,7 +179,7 @@ References, for design ideas only:
 
 ### A: size and risk
 
-- Roughly 6–8k lines of Rust plus the C++ item and its shaders. For scale, Qt's playback engine
+- An estimate, not measured: roughly 6–8k lines of Rust plus the C++ item and its shaders. For scale, Qt's playback engine
   (`qtmultimedia/src/plugins/multimedia/ffmpeg/playbackengine`) is about 4.1k lines of C++.
 - **Main risks:**
   - One shared device: decoding and Qt's rendering on one immediate context. Multithread protection
@@ -209,7 +210,7 @@ PR #17764, merged on 2026-10-15 into the 0.42.0 milestone, which shipped on 2026
 ### B: pieces
 
 - **Bindings.** Our own `bindgen` over `client.h`, `render.h` and `render_d3d11.h` (53 functions across `client.h` and `render.h`; `render_d3d11.h` declares only structs; the player
-  needs about 20–25, through an allowlist). No `libmpv2` or other crates. Check `mpv_client_api_version()`
+  needs a subset of them, through an allowlist; the subset is set when the bridge is written). No `libmpv2` or other crates. Check `mpv_client_api_version()`
   for 2.6 or later at start.
 - **Render bridge.**
   - A C++ bridge object, not the item, owns the mpv core and its render context (one context per core).
@@ -253,14 +254,22 @@ PR #17764, merged on 2026-10-15 into the 0.42.0 milestone, which shipped on 2026
   1. **We build it** (the shipping route). Pinned mpv commit, meson with MSYS2 clang64 under D:, against our
      FFmpeg 9 DLLs (BtbN ships the MinGW `.dll.a` import libraries): one FFmpeg.
      - Dependencies beyond libplacebo and libass (freetype, fribidi, harfbuzz): shaderc and spirv-cross (the
-       D3D11 renderer needs both at configure time), Vulkan headers, lcms2. mpv also needs FFmpeg's avfilter DLL (avdevice is optional)
-       which we don't deploy today.
-     - Configure with `-Dgpl=false -Dlibmpv=true -Dcplayer=false`, every optional feature off, then enable
-       d3d11 and its dependencies explicitly, so a missing one fails the configure instead of silently
-       dropping the D3D11 renderer. Disable rubberband explicitly: `-Dgpl=false` does not gate it, and it is enabled whenever found.
-     - The runtime is about 23 MSYS2 DLLs (about 26 MB: libc++, libplacebo, shaderc, spirv-cross, libass and
-       its font stack…) plus `vulkan-1.dll`, which libplacebo imports. The deploy copies an explicit list,
-       checked against the built DLL's imports.
+       D3D11 renderer needs both at configure time), Vulkan headers and lcms2 are optional: configure passes with `-Dvulkan=disabled` and with `-Dlcms2=disabled`
+       (tested on MSYS2). With `-Dvulkan=disabled`, `vulkan-1.dll` stays in the closure, since libplacebo still imports it (measured). mpv also needs FFmpeg's avfilter DLL
+       (required; avfilter-12.dll, 37.7 MB, is not deployed today). avdevice is optional: it is linked only if its
+       feature is on.
+     - Configure (tested on MSYS2 clang64, meson 1.12.1, mpv 0.42.0):
+       `meson setup build src -Dbuildtype=release -Dgpl=false -Dlibmpv=true -Dcplayer=false -Dauto_features=disabled
+       -Dgl=disabled -Dwin32-threads=enabled -Dd3d11=enabled -Dshaderc=enabled -Dspirv-cross=enabled -Dlcms2=enabled
+       -Dvulkan=enabled -Drubberband=disabled`. `auto_features=disabled` is what turns every optional feature off;
+       `-Dgl=disabled` is needed because gl otherwise fails configure without an OpenGL output; `-Dwin32-threads=enabled`
+       is needed because the pthread timer path does not compile on this toolchain. d3d11 needs shaderc and spirv-cross,
+       and configure fails without them, so a missing one is caught. `-Dgpl=false` does not gate rubberband (its
+       meson file has no gpl check), so it is disabled by name.
+     - The runtime, measured on the MSYS2 build: 23 MSYS2 DLLs (26.1 MB: libc++, libplacebo, shaderc, spirv-cross,
+       libass and its font stack), `vulkan-1.dll` (0.76 MB, imported by libplacebo and by libmpv itself), and six of our
+       FFmpeg DLLs (183.7 MB: avcodec, avfilter, avformat, avutil, swresample, swscale). The deploy copies an explicit
+       list, checked against the built DLL's imports. The clang64 `vulkan-1.dll` must be copied, not the System32 one.
      - Don't install MSYS2's mpv or ffmpeg packages: they are GPL builds, and their FFmpeg DLLs have the
        same names as ours.
   2. **A pinned daily LGPL build** (zhongfly/mpv-winbuild), for the spike only. Pin its sha256 and keep a
@@ -280,7 +289,8 @@ PR #17764, merged on 2026-10-15 into the 0.42.0 milestone, which shipped on 2026
   - The D3D11 render API is new (mpv 0.42.0) and was merged on 2026-10-15 (kasper93). The maintainer calls the render
     API "limited" and suggests window embedding for D3D11 instead. Device loss isn't reported on D3D11 (a pending fix, open
     PR #18700). Bugs in it are ours to work around until fixed upstream.
-  - Way 1's toolchain and runtime: MSYS2 upkeep and a 23-DLL closure on every mpv bump.
+  - Way 1's toolchain and runtime: MSYS2 upkeep (the build needs 64 clang64 packages) and a 23-DLL MSYS2 closure plus
+    our FFmpeg DLLs on every mpv bump.
   - Opening time and preloading. Playlist prefetch is off by default and only opens the next file's
     demuxer; a pre-decoded neighbour needs a second mpv core with its own render context.
   - The loop is `loop-file=inf`, which mpv implements as an end-of-file seek back to the start; whether it's gapless is unmeasured.
@@ -301,7 +311,7 @@ PR #17764, merged on 2026-10-15 into the 0.42.0 milestone, which shipped on 2026
 |---|---|---|
 | Our code | ~6–8k lines + C++ item and shaders | C++ item and bridge, bindings, watchdogs + mpv build |
 | FFmpeg copies | one (ours) | one (way 1) or two (way 2) |
-| Toolchain and runtime added | qsb (Creator's, or built once) | MSYS2 + meson, ~23 DLLs + vulkan-1 (way 1) |
+| Toolchain and runtime added | qsb (Creator's, or built once) | MSYS2 + meson, 23 MSYS2 DLLs + vulkan-1 + 6 FFmpeg DLLs, 210 MB (way 1) |
 | Hardware fallback | ours: table, decoder by name, 3 errors, watchdog | mpv's, plus our AV1 check and a watchdog |
 | HDR | our BT.2390 + HLG OOTF; DV 8.4 as HLG, no profile 5 | gl_video BT.2390; DV as base layer |
 | Audio device changes | ours | mpv's, plus a re-select when reopening fails |
@@ -323,7 +333,7 @@ the ones that moved the comparison:
   bugs, and the size (6–8k lines, not 4–6k).
 - **B:** the HDR advantage is gone (the render API doesn't use libplacebo's renderer), `gpu-next` isn't an
   option there, the render step needs the external-content bracket, way 1 needs shaderc, spirv-cross and a
-  23-DLL runtime, and way 2 is a spike artifact only.
+  23-MSYS2-DLL runtime (plus our FFmpeg DLLs), and way 2 is a spike artifact only.
 - **Both:** the device must be handed to Qt before the window is shown, Qt can't recover a lost imported
   device, the item is hand-written C++, and nothing ships licence texts yet.
 
@@ -366,8 +376,8 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
 
 - **Dataset videos** (`pinterest`, 1,712 files at `D:\PhotoGallery\datasets\pinterest\Videos`): 837 H.264,
   748 VP9 and 127 VP8. There is no AV1, HEVC or PQ among them; 3 are HLG, and 523 are taller than 1080 px. Import: 1,712
-  files with 0 failed, in 20 s (84 files/s, about 200 MB/s). Thumbnails (poster frames at 256 px; an earlier run, script and log not kept): 1,712 with
-  0 failed, in 19.5 s. 63 H.264 files carry a creation date.
+  files with 0 failed, in 20.9 s (82 files/s, about 195 MB/s; `gallery import` on a scratch catalog, release build of
+  2026-11-14). Thumbnails at 256 px: 1,712 with 0 failed, in 27.9 s (`gallery thumbs --height 256`, same run). 63 H.264 files carry a creation date.
 - **What the dataset videos test** (header-only ffprobe of all 1,712, one at a time, with no failures):
   - All 8-bit 4:2:0 (5 of them full-range, `yuvj420p`); profiles: VP9 profile 0, H.264 Constrained Baseline (581), High (233) and Main (23).
   - 3 are HLG (ARIB-STD-B67 transfer; all `tumblr_*`), 8-bit. No PQ, no 10-bit. No Dolby Vision found, though one
@@ -393,13 +403,18 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
     (`advanced-ffmpeg-configuration.qdoc`). It is global for every codec and read once per process. Other
     variables also change decoder behaviour (`QT_ENABLE_EXPERIMENTAL_CODECS`, `QT_FFMPEG_HW_ALLOW_PROFILE_MISMATCH`).
   - Our stopgap (`crates/desktop/cpp/gpu_device.cpp`, documented in `crates/desktop/src/gpu_device.rs`): ask D3D11 for the AV1 profile at startup and, without
-    it, turn hardware decoding off. Then AV1 plays through libdav1d (61 frames in 2.4 s in an earlier run; the clip and log are not kept), but every codec
-    decodes on the CPU on this machine.
+    it, turn hardware decoding off. Then AV1 plays through libdav1d: about 60 frames in 2.4 s (25 fps) on a 3 s AV1 test clip, with our FFmpeg 9 DLLs beside
+    `gallery.exe` (they contain libdav1d; the app's deploy copies them there, and `--no-ffmpeg` keeps Qt's out). With no copy of our FFmpeg DLLs beside the exe, Qt's own FFmpeg gives 0 frames for the same clip, even with the
+    stopgap's value set. The loader takes the copy beside the exe first, whatever PATH says. Every codec decodes on the CPU on this machine.
   - Rust's `std::env::set_var` doesn't reach Qt here. Qt reads the C runtime's copy of the environment,
     which `SetEnvironmentVariableW` doesn't update, so the variable is set with `qputenv`.
 - **FFmpeg can't loop animated WebP:** its `webp_anim` demuxer has no `read_seek`, and its own loop is off by
   default (`ignore_loop=1`). `ffmpeg -stream_loop 2` gives 10 frames instead of 30, while GIF and APNG give 30. Through Qt's player, an
-  animated WebP plays once, then restarts repeatedly (an earlier run saw tens of thousands of restarts a second; not re-measured).
+  animated WebP plays once when looping is off. With infinite loops it stops after the first pass, because the
+  demuxer does not loop itself by default and an infinite loop needs a seek back, which `webp_anim` does not
+  support. Qt's run delivered 2 of 10 frames and logged the demuxer's skip warning at 24–43k lines a second. The
+  CLI gives 8 frames in 3 s with `-stream_loop -1` and 30 with `-ignore_loop 0`, which loops inside the demuxer.
+  The app does not send animated WebP to Qt's player: it plays through `AnimationPlayer`.
   - Qt's `AnimatedImage` has no APNG. Its WebP support comes from the `qwebp` image plugin, which the Qt 6.12
     kit ships; whether the app deploys it is a separate question.
   - So animations play through our own player (`crates/desktop/src/animation.rs`, on `pg_codec`'s decoders, which

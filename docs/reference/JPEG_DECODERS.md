@@ -3,7 +3,7 @@
 Which JPEG decoder the app should use: libjpeg-turbo, as `pg-codec` calls it, measured against every other decoder
 found (eight on the CPU, six on the GPU) on seven library files, plus restart markers and lossless baseline
 conversion. The measurements are from 2026-10-31, with additions from 2026-11-14 marked where they appear. Instruction
-counts use the callgrind setup in [PROFILING.md](PROFILING.md). Encoders are in [JPEG_ENCODERS.md](../reference/JPEG_ENCODERS.md).
+counts use the callgrind setup in [PROFILING.md](../temp/PROFILING.md). Encoders are in [JPEG_ENCODERS.md](JPEG_ENCODERS.md).
 The harness and scripts are in `eval/jpeg-decoders`.
 
 ## Verdict: keep libjpeg-turbo
@@ -312,7 +312,7 @@ rounding" below for what was re-measured and what was not.
   64 against 4.0 ms of wall. With blocking sync the CPU time is below the wall time on every row, so the spin-inflated
   CPU figures in the table above are upper bounds.
 - **Throughput:** libjpeg-turbo spreads over 12 threads, while nvJPEG here is bounded by its one Huffman thread.
-  The GPU is also what SSCD needs (../reference/IO.md "I/O": the full pass is GPU-bound at 410 img/s).
+  The GPU is also what SSCD needs (IO.md "I/O": the full pass is GPU-bound at 410 img/s).
 - **Windows against WSL:** Pillow on Windows (libjpeg-turbo) is within 10% of the WSL libjpeg-turbo times on camera
   files (111 against 124 ms, 47 against 49 ms), so the two tables compare.
 
@@ -388,7 +388,7 @@ Per image, decoded pixels copied to pinned host memory. Batches are N copies of 
 - **Throughput, not latency:** the GPU at about 820–880 small files/s (to host, batch 64) is likely less than all 12 CPU
   threads decode at 1/2 (one thread: 200–270/s; not measured across threads). It adds decode capacity and frees the CPU
   for PDQ, ThumbHash and the resizes, but its GPU time competes with SSCD, which keeps this GPU busy at 410 img/s
-  (../reference/IO.md "I/O").
+  (IO.md "I/O").
 
 ## nvImageCodec and debesheedas
 

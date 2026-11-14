@@ -388,7 +388,7 @@ creates a Direct3D 9 object during window creation.
 
 ### JPEG decoders (`eval/jpeg-decoders`, 2026-10-31)
 
-Moved to [JPEG_DECODERS.md](JPEG_DECODERS.md): libjpeg-turbo against five CPU decoders, nvJPEG's two backends,
+Moved to [JPEG_DECODERS.md](../reference/JPEG_DECODERS.md): libjpeg-turbo against five CPU decoders, nvJPEG's two backends,
 NVDEC, restart markers, lossless baseline conversion, and the decoders researched but not measured. Verdict:
 keep libjpeg-turbo, and convert progressive files to baseline (2.6× fewer instructions, identical pixels).
 

@@ -2,7 +2,7 @@
 
 Which JPEG encoder ImageReduce (and the thumbnail cache) should use: libjpeg-turbo at ImageReduce's settings
 against mozjpeg, jpegli, guetzli, nvJPEG and GPUJPEG, by the bytes each needs for the same perceived quality
-(`eval/jpeg-decoders/encoders.py`, 2026-10-31). Decoders are in [JPEG_DECODERS.md](../temp/JPEG_DECODERS.md); the thumbnail
+(`eval/jpeg-decoders/encoders.py`, 2026-10-31). Decoders are in [JPEG_DECODERS.md](JPEG_DECODERS.md); the thumbnail
 encoder comparison (jpegli −9% bytes, AVIF −38%) is in THUMBNAILS.md "Thumbnails".
 
 ## Verdict

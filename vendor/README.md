@@ -402,3 +402,18 @@ unwinds with `backtrace` (`RtlVirtualUnwind`), still outside the lock. Only `gal
 `darktorres/dhat-rs`, and it keeps its own `rustfmt.toml`, as upstream's.
 
 To update: commit the change in the fork, then change the `rev` in `crates/gallery/Cargo.toml`.
+
+## parajpeg
+
+Fork of `anniigr/parajpeg` (`darktorres/parajpeg`, MIT), pinned by rev in the root `Cargo.toml`: upstream's C++20 sources
+at `f45081d`, which are not changed, and two commits on top: `5592e9a` adds what cargo needs (`Cargo.toml`, `build.rs`, which
+compiles the CPU backend and the shim with cc, using clang-cl on Windows, and links clang's builtins runtime for
+`__builtin_cpu_supports`; `csrc/shim.cpp`, two `extern "C"` functions; `src/lib.rs`, `header` and `decode_rgb`), and
+`8e2c53a` serializes the decodes in the shim with a mutex. Upstream's shared thread pool runs one parallel job at a time,
+so two decodes on several threads at once hang (`decodes_on_several_threads_at_once_all_finish` in the fork reproduces it).
+The pin is `8e2c53a`. Its tests are `cargo test` in the fork. The app uses it for the viewer's full-size JPEG decodes (`pg-codec`'s
+`Decoder::with_full_threads`, set by `pg-render`'s `Maker`), and a JPEG it declines goes to libjpeg-turbo. Its pixels are
+libjpeg-turbo's, checked in `crates/codec/src/decode.rs`; `compares_real_jpegs` (ignored) checks a folder of photos.
+
+To update: commit the change in the fork, then change the `rev` of `parajpeg` in the root `Cargo.toml` and the `allow-git`
+entry in `deny.toml` stays as it is.

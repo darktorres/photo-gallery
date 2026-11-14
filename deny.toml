@@ -82,6 +82,7 @@ allow-git = [
     "https://github.com/darktorres/image-png",
     "https://github.com/darktorres/cxx-qt",
     "https://github.com/darktorres/quick-xml",
+    "https://github.com/darktorres/parajpeg",
     "https://github.com/darktorres/rusqlite",
     "https://github.com/darktorres/thumbhash",
     "https://github.com/darktorres/image-tiff",

@@ -16,6 +16,7 @@ fast_image_resize.workspace = true
 gif.workspace = true
 image.workspace = true
 image-webp.workspace = true
+parajpeg.workspace = true
 png.workspace = true
 tiff.workspace = true
 turbojpeg.workspace = true

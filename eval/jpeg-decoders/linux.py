@@ -39,6 +39,10 @@ NAMES = [
     "sony-base422-7mp",
     "a6000-base422-24mp",
 ]
+# JPEG_NAMES (comma-separated, from NAMES) runs the comparison on a subset, for when some of the photos aren't at hand.
+if os.environ.get("JPEG_NAMES"):
+    chosen = set(os.environ["JPEG_NAMES"].split(","))
+    NAMES = [name for name in NAMES if name in chosen]
 FILES = [INPUTS / f"{name}.jpg" for name in NAMES]
 
 

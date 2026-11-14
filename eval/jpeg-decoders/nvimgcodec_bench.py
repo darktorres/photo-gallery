@@ -30,6 +30,7 @@ def backends(nv) -> dict:
     return {
         "default": None,
         "GPU_ONLY": nv.BackendKind.GPU_ONLY,
+        "HW_GPU_ONLY": nv.BackendKind.HW_GPU_ONLY,  # the JPEG engine: not on Turing, so it reports "cannot be created"
         "HYBRID_CPU_GPU": nv.BackendKind.HYBRID_CPU_GPU,
         "CPU_ONLY": nv.BackendKind.CPU_ONLY,
     }

@@ -75,12 +75,21 @@ impl MinSize {
 /// [`Decoder::decode_stored_into`] for the file as stored).
 pub struct Decoder {
     jpeg: Decompressor,
+    /// Threads for a full-size JPEG decode, through parajpeg (0: libjpeg-turbo only).
+    full_threads: usize,
     codecs: Codecs,
 }
 
 impl Decoder {
     pub fn new() -> Result<Decoder> {
-        Ok(Decoder { jpeg: Decompressor::new()?, codecs: Codecs::default() })
+        Self::with_full_threads(0)
+    }
+
+    /// A decoder whose full-size JPEG decodes run on `threads` threads, through parajpeg (`pg_parajpeg`). Its pixels
+    /// are libjpeg-turbo's, so the choice changes no hash; a JPEG parajpeg doesn't decode goes to libjpeg-turbo.
+    /// Smaller decodes (the thumbnails') stay on libjpeg-turbo's one thread, which is what the batch work wants.
+    pub fn with_full_threads(threads: usize) -> Result<Decoder> {
+        Ok(Decoder { jpeg: Decompressor::new()?, full_threads: threads, codecs: Codecs::default() })
     }
 
     /// Free what one oversize file grew: buffers over `bytes` (see [`crate::pixels::release_over`]).
@@ -145,6 +154,18 @@ impl Decoder {
         quarter_turn: bool,
         out: &mut Rgb,
     ) -> Result<(u8, (u32, u32))> {
+        // A full decode on several threads (the viewer's decoder only). Whatever parajpeg doesn't decode goes on to
+        // libjpeg-turbo below, which then decides.
+        if matches!(min, MinSize::Full)
+            && self.full_threads > 0
+            && let Some(header) = parajpeg::header(bytes)
+        {
+            out.pixels.resize(header.rgb_len(), 0);
+            if parajpeg::decode_rgb(bytes, self.full_threads, header, &mut out.pixels) {
+                (out.width, out.height) = (pg_model::num::index(header.width), pg_model::num::index(header.height));
+                return Ok((1, (header.width, header.height)));
+            }
+        }
         let header = self.jpeg.read_header(bytes)?;
         let (w, h) = (header.width, header.height);
         // The decode happens before rotation, so an upright minimum turns with the image.
@@ -249,6 +270,141 @@ pub fn transform_into(
         }
     }
     (ow, oh)
+}
+
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+    use crate::encode::{Chroma, JpegEncoder};
+
+    /// A picture with edges, a gradient in each channel and some noise, so every part of the decode has work to do.
+    fn picture(width: usize, height: usize) -> Rgb {
+        let mut pixels = Vec::with_capacity(width * height * 3);
+        for y in 0..height {
+            for x in 0..width {
+                let noise = (x * 7919 + y * 104_729) % 61;
+                pixels.push(u8::try_from(x * 255 / width + noise).unwrap_or(255));
+                pixels.push(u8::try_from(y * 255 / height).unwrap_or(255));
+                pixels.push(u8::try_from((x + y) * 255 / (width + height)).unwrap_or(255));
+            }
+        }
+        Rgb { width, height, pixels }
+    }
+
+    fn jpeg_of(width: usize, height: usize, chroma: Chroma) -> Vec<u8> {
+        JpegEncoder::new(90, chroma).unwrap().encode(&picture(width, height)).unwrap()
+    }
+
+    fn decode_full(decoder: &mut Decoder, bytes: &[u8]) -> Result<Rgb> {
+        let mut out = Rgb::default();
+        decoder.decode_into(
+            bytes,
+            Format::Jpeg,
+            Orientation::UPRIGHT,
+            MinSize::Full,
+            Turns::NONE,
+            &mut out,
+            &mut Vec::new(),
+        )?;
+        Ok(out)
+    }
+
+    #[test]
+    fn parajpeg_decodes_the_pixels_libjpeg_turbo_does() {
+        for (width, height, chroma) in [(64, 48, Chroma::Half), (101, 37, Chroma::Full), (640, 480, Chroma::Half)] {
+            let jpeg = jpeg_of(width, height, chroma);
+            let plain = decode_full(&mut Decoder::new().unwrap(), &jpeg).unwrap();
+            let header = parajpeg::header(&jpeg).expect("parajpeg reads the header of a JPEG it can decode");
+            let mut parallel = vec![0u8; header.rgb_len()];
+            assert!(parajpeg::decode_rgb(&jpeg, 3, header, &mut parallel), "{width}x{height}");
+            assert!(parallel == plain.pixels, "{width}x{height}: parajpeg's pixels differ from libjpeg-turbo's");
+        }
+    }
+
+    #[test]
+    fn the_parallel_decoder_gives_the_same_image() {
+        let jpeg = jpeg_of(640, 480, Chroma::Half);
+        let plain = decode_full(&mut Decoder::new().unwrap(), &jpeg).unwrap();
+        let parallel = decode_full(&mut Decoder::with_full_threads(6).unwrap(), &jpeg).unwrap();
+        assert_eq!((parallel.width, parallel.height), (640, 480));
+        assert!(parallel.pixels == plain.pixels);
+    }
+
+    #[test]
+    fn a_damaged_jpeg_gets_libjpegs_answer() {
+        let mut jpeg = jpeg_of(640, 480, Chroma::Half);
+        jpeg.truncate(jpeg.len() / 2);
+        let plain = decode_full(&mut Decoder::new().unwrap(), &jpeg);
+        let parallel = decode_full(&mut Decoder::with_full_threads(6).unwrap(), &jpeg);
+        assert_eq!(plain.is_ok(), parallel.is_ok());
+        if let (Ok(plain), Ok(parallel)) = (plain, parallel) {
+            assert!(parallel.pixels == plain.pixels);
+        }
+    }
+
+    #[test]
+    fn a_thumbnail_decode_stays_on_libjpeg_turbo() {
+        // Upright (a thumbnail's minimum) is not a full decode: the parallel path is not taken, and the size is the
+        // scaled one, which only libjpeg-turbo gives.
+        let jpeg = jpeg_of(640, 480, Chroma::Half);
+        let mut out = Rgb::default();
+        Decoder::with_full_threads(6)
+            .unwrap()
+            .decode_into(
+                &jpeg,
+                Format::Jpeg,
+                Orientation::UPRIGHT,
+                MinSize::Upright(100, 100),
+                Turns::NONE,
+                &mut out,
+                &mut Vec::new(),
+            )
+            .unwrap();
+        assert_eq!((out.width, out.height), (160, 120));
+    }
+
+    /// Every JPEG under `PG_JPEG_COMPARE_DIR`: parajpeg's full decode against libjpeg-turbo's, pixel by pixel, on the
+    /// files libjpeg-turbo decodes. Ignored by default, since it reads a folder of photos: `cargo test -p pg-codec --
+    /// --ignored compares_real_jpegs`.
+    #[test]
+    #[ignore = "reads a folder of real photos: set PG_JPEG_COMPARE_DIR"]
+    fn compares_real_jpegs() {
+        use std::path::PathBuf;
+        let root = PathBuf::from(std::env::var_os("PG_JPEG_COMPARE_DIR").expect("PG_JPEG_COMPARE_DIR"));
+        let mut turbo = Decoder::new().unwrap();
+        let (mut compared, mut no_header, mut mismatched) = (0usize, 0usize, Vec::new());
+        let mut stack = vec![root];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                let jpeg = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg"));
+                if !jpeg {
+                    continue;
+                }
+                let bytes = std::fs::read(&path).unwrap();
+                let Ok(plain) = decode_full(&mut turbo, &bytes) else { continue };
+                let Some(header) = parajpeg::header(&bytes) else {
+                    no_header += 1;
+                    continue;
+                };
+                let mut out = vec![0u8; header.rgb_len()];
+                compared += 1;
+                if !(parajpeg::decode_rgb(&bytes, 6, header, &mut out) && out == plain.pixels) {
+                    mismatched.push(path);
+                }
+            }
+        }
+        eprintln!("compared {compared}, parajpeg declined {no_header}, mismatched {}", mismatched.len());
+        assert!(compared > 0, "no JPEG to compare under PG_JPEG_COMPARE_DIR");
+        assert!(mismatched.is_empty(), "parajpeg's pixels differ from libjpeg-turbo's: {mismatched:?}");
+    }
 }
 
 #[cfg(test)]

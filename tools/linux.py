@@ -372,6 +372,8 @@ def eval_mounts_and_env():
             fail(f"JPEG_SRC_DIR is not a folder: {source}")
         mounts_list += ["-v", f"{posix(source)}:/jpeg-src:ro"]
         env.append("JPEG_SRC_DIR=/jpeg-src")
+    if os.environ.get("JPEG_NAMES"):  # a subset of linux.py's NAMES (eval/jpeg-decoders/linux.py)
+        env.append(f"JPEG_NAMES={os.environ['JPEG_NAMES']}")
     return mounts_list, env
 
 

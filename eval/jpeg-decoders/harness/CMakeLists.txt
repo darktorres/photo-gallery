@@ -12,7 +12,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(WITH_CUDA "nvJPEG, and CUDA for parajpeg/jpeggpu/GPUJPEG" OFF)
 
+if(WITH_CUDA)
+  # colour.cu: the colour stage for jpeggpu's planes. sm_75 is the RTX 2060 this was measured on; CUDA 13's CCCL headers
+  # need MSVC's conforming preprocessor, as win_env.py's flags give the other CUDA builds. Set before the target exists.
+  enable_language(CUDA)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 75)
+  endif()
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  if(WIN32)
+    string(APPEND CMAKE_CUDA_FLAGS " -Xcompiler=/Zc:preprocessor")
+  endif()
+endif()
+
 add_executable(harness harness.cpp dec_turbo.cpp dec_parajpeg.cpp dec_jpegli.cpp dec_wuffs.cpp dec_gpu.cpp)
+if(WITH_CUDA)
+  target_sources(harness PRIVATE colour.cu)
+endif()
 set_source_files_properties(dec_turbo.cpp PROPERTIES INCLUDE_DIRECTORIES "${TURBO_INCLUDE}")
 target_link_libraries(harness PRIVATE "${TURBO_LIB}")
 if(NOT WIN32)

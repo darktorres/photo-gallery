@@ -52,17 +52,43 @@ void gpu_init() { cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync); }
 #ifdef HAVE_JPEGGPU
 #include <jpeggpu/jpeggpu.h>
 
+#include "colour.h"
+
 namespace {
 
 struct JpegGpu : Decoder {
     jpeggpu_decoder_t d = nullptr;
     cudaStream_t s = nullptr;
     Pinned in, host;
-    DevBuf tmp, plane[3];
+    DevBuf tmp, plane[3], rgb;
     std::string init;
-    JpegGpu() {
+    bool to_rgb;  // true: the colour stage (colour.cu) runs on the planes, and RGB goes to the host
+    explicit JpegGpu(bool rgb_out = false) : to_rgb(rgb_out) {
         if (jpeggpu_decoder_startup(&d) != JPEGGPU_SUCCESS) init = "jpeggpu_decoder_startup failed";
         cudaStreamCreate(&s);
+    }
+    // Upsampling and colour conversion on the device, then the RGB copy to pinned host memory.
+    std::string rgb_out(const jpeggpu_img_info& info, const jpeggpu_img& img, Image& out) {
+        if (info.num_components != 3) return "colour stage: not three components";
+        int w = info.sizes_x[0], h = info.sizes_y[0], cw = info.sizes_x[1], ch = info.sizes_y[1];
+        if (info.sizes_x[2] != cw || info.sizes_y[2] != ch || img.pitch[1] != img.pitch[2])
+            return "colour stage: chroma planes differ";
+        int hs = (w + cw - 1) / cw, vs = (h + ch - 1) / ch;
+        if (!((hs == 1 && vs == 1) || (hs == 2 && vs == 1) || (hs == 2 && vs == 2)))
+            return "colour stage: sampling " + std::to_string(hs) + "x" + std::to_string(vs) + " not supported";
+        size_t n = size_t(w) * h * 3;
+        if (!rgb.ensure(n) || !host.ensure(n)) return "cudaMalloc rgb";
+        cudaError_t e = ycc_to_rgb(img.image[0], img.pitch[0], img.image[1], img.image[2], img.pitch[1], w, h, cw,
+                                   ch, hs, vs, rgb.p, s);
+        if (e != cudaSuccess) return cudaGetErrorString(e);
+        CU(cudaMemcpyAsync(host.p, rgb.p, n, cudaMemcpyDeviceToHost, s));
+        CU(cudaStreamSynchronize(s));
+        out.layout = Image::RGB;
+        out.width = uint32_t(w);
+        out.height = uint32_t(h);
+        out.data = host.p;
+        out.size = n;
+        return {};
     }
     ~JpegGpu() override {
         if (d) jpeggpu_decoder_cleanup(d);
@@ -93,6 +119,7 @@ struct JpegGpu : Decoder {
         }
         st = jpeggpu_decoder_decode(d, &img, tmp.p, tmp_size, s);
         if (st != JPEGGPU_SUCCESS) return jpeggpu_get_status_string(st);
+        if (to_rgb) return rgb_out(info, img, out);
         if (!host.ensure(total)) return "cudaMallocHost";
         for (int c = 0; c < n; c++)
             CU(cudaMemcpy2DAsync(host.p + off[c], size_t(info.sizes_x[c]), plane[c].p, size_t(img.pitch[c]),
@@ -271,6 +298,8 @@ void add_gpu(std::vector<DecoderSpec>& v) {
 #ifdef HAVE_JPEGGPU
     v.push_back({"jpeggpu", "jpeggpu, planes to pinned host (no upsampling, no colour conversion)",
                  [] { return std::make_unique<JpegGpu>(); }, true});
+    v.push_back({"jpeggpu-rgb", "jpeggpu planes + our colour stage (colour.cu: fancy upsampling, libjpeg YCbCr), RGB to pinned host",
+                 [] { return std::make_unique<JpegGpu>(true); }, true});
 #endif
 #ifdef HAVE_GPUJPEG
     v.push_back({"gpujpeg", "GPUJPEG, RGB to its host buffer (GPU Huffman only with restart markers)",

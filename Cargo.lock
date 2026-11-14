@@ -1567,6 +1567,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "parajpeg"
+version = "0.1.0"
+source = "git+https://github.com/darktorres/parajpeg?rev=8e2c53a89d6681615478dbd52d7efdb18f136c01#8e2c53a89d6681615478dbd52d7efdb18f136c01"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "pastey"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1733,6 +1741,7 @@ dependencies = [
  "image 0.25.10",
  "image-webp",
  "miniz_oxide 0.9.1",
+ "parajpeg",
  "pg-container",
  "pg-model",
  "pg-testkit",

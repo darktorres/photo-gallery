@@ -59,10 +59,15 @@ pub struct Maker {
     file: Vec<u8>,
 }
 
+/// Threads for the viewer's full-size decodes (`Maker::decode_file` and `Maker::turn_jpeg`), through parajpeg. Six
+/// of the i7-8700's twelve: on a 7.5 MP camera JPEG a decode takes 30 ms against libjpeg-turbo's 57 ms (19 ms with all
+/// twelve), at about twice the CPU time, which leaves the import's workers some of the cores while a photo is shown.
+pub const VIEWER_THREADS: usize = 6;
+
 impl Maker {
     pub fn new() -> Result<Maker> {
         Ok(Maker {
-            decoder: Decoder::new()?,
+            decoder: Decoder::with_full_threads(VIEWER_THREADS)?,
             resizer: Resizer::new(),
             encoder: JpegEncoder::new(JPEG_QUALITY, Chroma::Half)?,
             image: Rgb::default(),

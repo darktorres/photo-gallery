@@ -29,6 +29,9 @@ image-webp = "0.2"
 libc = "0.2"
 libloading = "0.9"
 miniz_oxide = "0.9"
+# pg-codec's full-size JPEG decoder for the viewer: parajpeg's CPU backend, bit-identical to libjpeg-turbo's decode.
+# Our fork adds the crate (Cargo.toml, build.rs, the C shim); the C++ is upstream's, at f45081d.
+parajpeg = { git = "https://github.com/darktorres/parajpeg", rev = "8e2c53a89d6681615478dbd52d7efdb18f136c01" }
 pdqhash = "0.1"
 png = "0.18"
 proptest = "1"

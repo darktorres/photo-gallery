@@ -215,7 +215,11 @@ refactor. The dated logs in `docs/` keep the old paths; the table is for reading
 
 ## Build
 
-Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crate) and Qt 6.12 for MSVC
+Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crate), and LLVM for clang-cl on Windows:
+parajpeg's C++ (the viewer's full-size JPEG decoder, `crates/codec`) is built with clang-cl, because its AVX2 kernels use
+GCC/Clang attributes that MSVC lacks. `CLANG_CL` names another `clang-cl.exe`; the build fails with the install's name
+if none is found at `C:\Program Files\LLVM\bin`. The clang-cl the build uses is the one LLVM installs, the same as
+libclang's. Qt 6.12 for MSVC
 (the `msvc2022_64` kit, whose folder `QT_DIR` in `.env` names; `just doctor` checks it), with the **Qt Image Formats** add-on: the Yandex panel
 shows remote previews through Qt's decoders, and without its `qwebp` plugin WebP results stay blank. Writing ratings into files needs
 [ExifTool](https://exiftool.org) on `PATH` (or `PG_EXIFTOOL`); without it they stay queued and the bottom bar

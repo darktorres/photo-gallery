@@ -1,7 +1,7 @@
 # Notifications: the notices and the log
 
 How the app tells the user what happened, and what it records for a developer. The open items are in
-[NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md). This is the reference for the code as it is: the notice types, the inbox
+[NOTIFICATIONS_PLAN.md](../plans/NOTIFICATIONS_PLAN.md). This is the reference for the code as it is: the notice types, the inbox
 and its writer, the failure ledgers, the log, dev mode and the log view.
 
 ## Notices (`pg_model::notice`)

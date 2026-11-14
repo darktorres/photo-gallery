@@ -1,19 +1,9 @@
 # Notifications: open items
 
-Status (2026-11-14): the notifications feature is built (S1 to S3, then the fix plan, implemented at `e634c83`). The
-reference for the code is [NOTIFICATIONS.md](NOTIFICATIONS.md) in this folder. This file is the one list of what is still
-open, merged from the feature-level list and the fix plan. Each item was checked against HEAD `472eaf5` by reading the
-code. Nothing was built or run. Items marked *read* were found by reading the code and have not been reproduced.
-
-## Done here, tracked elsewhere
-
-- **C2, the inbox's own reads off the GUI thread:** done. The failed-files ledger (`crates/desktop/src/failed_files.rs`),
-  the Copy of failed files (`crates/desktop/src/notices.rs`) and Reveal (`crates/desktop/src/shell.rs`, `reveal`) read
-  through the catalog reader's session, and the inbox's marks, dismissals and retries are queued to its writer. The
-  window's other catalog work on the GUI thread is listed in [GUI_THREAD_PLAN.md](GUI_THREAD_PLAN.md).
-- **The scan's lock:** done. A scan lists outside any transaction and writes each batch in one short write transaction,
-  and a pause writes the batch before it waits (`crates/scan/src/lib.rs`, the module docs and `checkpoint`). What is
-  still open is the test gap under Tests, item W2.
+Status (2026-11-14): the notifications plan was implemented at `e634c83`. This file lists only what is still not done or
+incomplete. Each item was checked against HEAD `472eaf5` by reading the code. Nothing was built or run. Items marked
+*read* were found by reading the code and have not been reproduced. The reference for the code is
+[NOTIFICATIONS.md](NOTIFICATIONS.md) in this folder.
 
 ## Behaviour
 
@@ -160,12 +150,3 @@ on 2026-11-14; the "design says" column was not checked against `NOTIFICATIONS.m
    survives opening the inbox); a thumbnail Retry does not re-badge import; a failing file mid-pass shows the link
    within about 2 s and opens the updating list; a write-stopped state clears after a healthy restart; a sub-folder
    rescan keeps the root's other unreadable folders; the keyboard-only inbox; a dismissal during a CLI import sticks.
-
-## Checked and closed
-
-- **`PassFailed` is not a retirement candidate.** The status bar's "N failed" link text comes from `pass_failed`
-  (`crates/client/src/text.rs:261`), which renders `Message::PassFailed`. `refresh_progress` calls it
-  (`crates/desktop/src/library.rs:175`). There is no `PassFailed` arm in `pass_status`. Keep the message and the
-  `pass-failed` entry (`crates/client/locales/en/text.ftl:72`).
-- **B5, bidi isolation of path arguments:** covered. `a_notices_paths_are_bidi_isolated`
-  (`crates/client/src/text/notice.rs:248`) checks the path values of notices with a folder, a root and a file.

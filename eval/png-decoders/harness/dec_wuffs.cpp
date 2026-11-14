@@ -16,8 +16,10 @@
 // so is the buffer the repacking reads from. aux's DecodeImage makes one decoder object per call
 // (wuffs_png__decoder__alloc: calloc, freed with free), so that object's allocation is made and freed per decode, and
 // counted by alloc_count.h: the C allocator names are routed there for this translation unit only.
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstdlib>
 #include <cstring>
 #include <limits.h>
@@ -162,4 +164,87 @@ private:
 
 void add_wuffs(std::vector<DecoderSpec>& v) {
     v.push_back({"wuffs", [] { return std::make_unique<Wuffs>(); }});
+}
+
+// Wuffs' zlib decoder (the inflater its PNG decoder uses) on a file's IDAT stream, streamed the way the zlib and fdeflate
+// measurements are: input in 16 KiB pieces, output in a 96 KiB window. Wuffs reads its history from the output buffer,
+// so the window's last 32 KiB are kept when it is rolled back, as fdeflate's are. `fresh` makes a new decoder for each
+// call (libpng's way); otherwise one decoder is kept and reset (initialized again) per call. False if the stream does not
+// end with `raw` bytes.
+namespace {
+std::vector<uint8_t> g_inflate_work;      // the decoder's work buffer, kept across calls
+wuffs_zlib__decoder g_inflate_kept;       // the decoder kept across calls when not `fresh`
+}  // namespace
+
+bool wuffs_inflate_stream(const std::vector<uint8_t>& stream, std::vector<uint8_t>& window, size_t raw, bool fresh) {
+    const size_t kInChunk = 16 << 10, kHistory = 32 << 10, kMinRoom = 16 << 10;
+    std::unique_ptr<wuffs_zlib__decoder> own;
+    wuffs_zlib__decoder* dec = &g_inflate_kept;
+    if (fresh) {
+        own = std::make_unique<wuffs_zlib__decoder>();
+        dec = own.get();
+    }
+    const wuffs_base__status init = wuffs_zlib__decoder__initialize(dec, sizeof *dec, WUFFS_VERSION, 0);
+    if (!wuffs_base__status__is_ok(&init)) return false;
+    if (std::getenv("PNG_INFLATE_NO_CHECKSUM")) wuffs_zlib__decoder__set_quirk(dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1);
+    const wuffs_base__range_ii_u64 need = wuffs_zlib__decoder__workbuf_len(dec);
+    if (g_inflate_work.size() < need.max_incl) g_inflate_work.resize(size_t(need.max_incl));
+    const wuffs_base__slice_u8 work = wuffs_base__make_slice_u8(g_inflate_work.data(), size_t(need.max_incl));
+
+    size_t at = 0, pos = 0, total = 0;
+    while (true) {
+        const size_t end = std::min(at + kInChunk, stream.size());
+        wuffs_base__io_buffer src{};
+        src.data = wuffs_base__make_slice_u8(const_cast<uint8_t*>(stream.data()) + at, end - at);
+        src.meta.wi = end - at;
+        src.meta.ri = 0;
+        src.meta.closed = end == stream.size();
+        if (window.size() - pos < kMinRoom) {  // roll: keep the last 32 KiB as history
+            std::memmove(window.data(), window.data() + pos - kHistory, kHistory);
+            pos = kHistory;
+        }
+        wuffs_base__io_buffer dst{};
+        dst.data = wuffs_base__make_slice_u8(window.data(), window.size());
+        dst.meta.wi = pos;
+        dst.meta.ri = pos;
+        dst.meta.closed = false;
+
+        const wuffs_base__status st = wuffs_zlib__decoder__transform_io(dec, &dst, &src, work);
+        const size_t produced = dst.meta.wi - pos, consumed = src.meta.ri;
+        total += produced;
+        pos = dst.meta.wi;
+        at += consumed;
+        if (wuffs_base__status__is_error(&st)) return false;
+        if (wuffs_base__status__is_complete(&st)) return total == raw;
+        // A suspension (the input or the window ran out) that made no progress is a stall.
+        if (produced == 0 && consumed == 0) return false;
+    }
+}
+
+// The same decoder in one call: the whole stream in, the whole output (`out`, sized to the raw scanlines) out. Its
+// time has none of the streaming's costs (the 16 KiB input pieces, the window roll), so it shows what Wuffs' inflate
+// costs on its own. True if the stream ends with out.size() bytes.
+bool wuffs_inflate_once(const std::vector<uint8_t>& stream, std::vector<uint8_t>& out, bool fresh) {
+    std::unique_ptr<wuffs_zlib__decoder> own;
+    wuffs_zlib__decoder* dec = &g_inflate_kept;
+    if (fresh) {
+        own = std::make_unique<wuffs_zlib__decoder>();
+        dec = own.get();
+    }
+    const wuffs_base__status init = wuffs_zlib__decoder__initialize(dec, sizeof *dec, WUFFS_VERSION, 0);
+    if (!wuffs_base__status__is_ok(&init)) return false;
+    if (std::getenv("PNG_INFLATE_NO_CHECKSUM")) wuffs_zlib__decoder__set_quirk(dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1);
+    const wuffs_base__range_ii_u64 need = wuffs_zlib__decoder__workbuf_len(dec);
+    if (g_inflate_work.size() < need.max_incl) g_inflate_work.resize(size_t(need.max_incl));
+    const wuffs_base__slice_u8 work = wuffs_base__make_slice_u8(g_inflate_work.data(), size_t(need.max_incl));
+
+    wuffs_base__io_buffer src{};
+    src.data = wuffs_base__make_slice_u8(const_cast<uint8_t*>(stream.data()), stream.size());
+    src.meta.wi = stream.size();
+    src.meta.closed = true;
+    wuffs_base__io_buffer dst{};
+    dst.data = wuffs_base__make_slice_u8(out.data(), out.size());
+    dst.meta.closed = false;
+    const wuffs_base__status st = wuffs_zlib__decoder__transform_io(dec, &dst, &src, work);
+    return wuffs_base__status__is_complete(&st) && !wuffs_base__status__is_error(&st) && dst.meta.wi == out.size();
 }

@@ -7,17 +7,20 @@ for [docs/temp/PNG_DECODERS.md](../../docs/temp/PNG_DECODERS.md). It runs native
   from crates.io (`png` 0.18), and zune-png 0.5. It has a counting global allocator for the `allocs` command, and
   `inflate` and `inflate-stream`, which time fdeflate (the fork's inflater) on a file's IDAT stream alone: `inflate` in
   one call, `inflate-stream` in 16 KiB input pieces into a 96 KiB window that is rolled back to its last 32 KiB.
+  `PNG_INFLATE_NO_CHECKSUM=1` times the inflate without the zlib checksum, as the app's fork runs it (the C harness's
+  zlib then reads raw deflate). Set it for all three inflate commands, or the figures are not comparable with the app.
 - `harness/`: the C++ harness (MSVC, CMake + Ninja): libpng 1.6.59, libspng 0.7.4, Wuffs d28ecd4, all with zlib 1.4
   (static). `win_build.py` clones and builds them at their pinned commits under `$PG_ROOT\eval\png-decoders`. Its
   commands are `time`, `compare`, `allocs`, `inflate` (zlib, one call), `inflate-stream` (zlib, streamed as the Rust
-  one is) and `dump` (each decoder's raw output, for finding where it differs).
+  one is), `inflate-wuffs` (Wuffs' zlib decoder, streamed and in one call) and `dump` (each decoder's raw output, for
+  finding where it differs).
 - `pillow_bench.py`: Pillow's PNG reader (its own `zip` decoder over zlib-ng, not libpng), as a second opinion. It
   skips 16-bit files, which Pillow reads at 8 bits. Run it with the Python that has Pillow and numpy
   (`$PG_ROOT\venv-eval`, see [eval/README.md](../README.md)).
 - `make_inputs.py`: writes the seven generated inputs (16-bit, Adam7, grayscale, APNG) under
   `$PG_ROOT\eval\png-decoders\inputs`, and with `--verify-dump DIR` checks the app's 16-bit output against its source.
-- `make_variants.py`: the tRNS variants, the filter-0 variants and the text-free copies of the library files, under
-  `inputs-variants` and `inputs-notext`. The 16-bit photograph's colour-key variant takes its key from the app's dump
+- `make_variants.py`: the tRNS variants (including 16-bit grey and the real photograph's key), the filter-0 variants and
+  the text-free copies of the library files, under `inputs-variants` and `inputs-notext`. The 16-bit photograph's colour-key variant takes its key from the app's dump
   of that photo, so run `dump` on `inputs-real16` (into `ref`) first.
 - `make_real16.py`: four real 16-bit photographs from the imagecompression.info 16-bit RGB set, read from its zip
   (`--zip PATH`, the archive downloaded from https://imagecompression.info/test_images/rgb16bit.zip), under

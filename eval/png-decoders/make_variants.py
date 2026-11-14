@@ -8,6 +8,8 @@ source file with one chunk added or removed.
   transparent wherever it occurs); 8-bit grayscale gets a key (the grey of pixel (0, 0)).
 - `*-notext`: the library file with its tEXt, zTXt, iTXt and iCCP chunks removed, for libspng, which can't skip text.
   The app's decoder and libpng skip text already, so the pixels and the output are unchanged.
+- `gray16-2mp-trns`: 16-bit grayscale, the 8-bit grey of `gray8-2mp` times 257, with a 16-bit key (pixel (0, 0)'s
+  grey). It is the only input that makes libspng decode to GA16, which is host-ordered like RGBA16.
 - `real-flower_foveon-16bit-trns`: the 16-bit photograph with a 16-bit colour key (the photo's pixel (0, 0)), read
   from the app's dump of it (`ref/`), so `dump` must have run on `inputs-real16` first.
 """
@@ -24,7 +26,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import DATA_ROOT, pg_path  # noqa: E402
 
-from make_inputs import RGB_SOURCE, chunk, gray_of, ihdr, load, samples_bytes  # noqa: E402
+from make_inputs import RGB_SOURCE, chunk, encode, gray_of, ihdr, load, samples_bytes  # noqa: E402
 
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 TEXT_KINDS = {b"tEXt", b"zTXt", b"iTXt", b"iCCP"}
@@ -124,6 +126,13 @@ def main() -> None:
     data = with_trns(flower.read_bytes(), key16)
     (out / "real-flower_foveon-16bit-trns.png").write_bytes(data)
     print(f"{out / 'real-flower_foveon-16bit-trns.png'}  {len(data) / 1e6:.2f} MB")
+
+    # 16-bit grey with a key: the 8-bit grey of gray8-2mp, times 257, with the key of pixel (0, 0). The only input that
+    # makes libspng decode to GA16.
+    grey = np.asarray(Image.open(out.parent / "inputs" / "gray8-2mp.png").convert("L"))[..., None].astype(np.uint16) * 257
+    data = with_trns(encode(grey, depth=16), struct.pack(">H", int(grey[0, 0, 0])))
+    (out / "gray16-2mp-trns.png").write_bytes(data)
+    print(f"{out / 'gray16-2mp-trns.png'}  {len(data) / 1e6:.2f} MB")
 
     # Filter 0 on every row, from the two largest library RGB images (the 2.79 and 4.28 MP ones of the table).
     for name, stem in [("rgb8-3mp-filter0", RGB_SOURCE), ("rgb8-4mp-filter0", "pinterest_1141451468122225667")]:

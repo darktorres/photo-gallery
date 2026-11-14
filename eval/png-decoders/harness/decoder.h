@@ -39,6 +39,10 @@ struct DecoderSpec {
     std::function<std::unique_ptr<Decoder>()> make;
 };
 
+// Wuffs' zlib decoder, streamed, for harness.cpp's inflate-wuffs (dec_wuffs.cpp): see its comment there.
+bool wuffs_inflate_stream(const std::vector<uint8_t>& stream, std::vector<uint8_t>& window, size_t raw, bool fresh);
+bool wuffs_inflate_once(const std::vector<uint8_t>& stream, std::vector<uint8_t>& out, bool fresh);
+
 // Each dec_*.cpp adds its decoder.
 void add_libpng(std::vector<DecoderSpec>&);
 void add_libspng(std::vector<DecoderSpec>&);

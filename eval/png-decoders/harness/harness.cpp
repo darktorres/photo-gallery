@@ -286,6 +286,11 @@ bool inflate_once(z_stream& s, const std::vector<uint8_t>& stream, std::vector<u
     return inflate(&s, Z_FINISH) == Z_STREAM_END && s.total_out == out.size();
 }
 
+// PNG_INFLATE_NO_CHECKSUM=1 times the inflate the way the app's fork runs it: no zlib checksum (the fork ignores it, as
+// png does by default). zlib then reads raw deflate, which starts after the stream's 2-byte zlib header.
+bool no_checksum() { return std::getenv("PNG_INFLATE_NO_CHECKSUM") != nullptr; }
+int init_inflate(z_stream* s) { return no_checksum() ? inflateInit2(s, -15) : inflateInit(s); }
+
 // The stream inflated the way a streaming reader does it, as Rust's inflate_stream does for fdeflate: input in 16 KiB
 // pieces, output into a 96 KiB window that is reused and discarded (zlib keeps its own history, so it needs no rolling).
 // False if the stream doesn't end or doesn't inflate to `raw` bytes.
@@ -395,15 +400,16 @@ int inflate_stream_mode(const std::vector<std::string>& args) {
             std::printf("%-*s  interlaced: skipped\n", int(width), name.c_str());
             continue;
         }
-        const std::vector<uint8_t> stream = idat_stream(bytes);
+        const std::vector<uint8_t> whole = idat_stream(bytes);
+        const std::vector<uint8_t> stream = no_checksum() ? std::vector<uint8_t>(whole.begin() + 2, whole.end()) : whole;
         const size_t raw = stored_scanline_bytes(info);
         z_stream s{};
-        if (inflateInit(&s) != Z_OK) return 1;
+        if (init_inflate(&s) != Z_OK) return 1;
         const double reused = median_ms(budget, [&] { return inflateReset(&s) == Z_OK && inflate_streamed(s, stream, window, raw); });
         inflateEnd(&s);
         const double fresh = median_ms(budget, [&] {
             z_stream t{};
-            if (inflateInit(&t) != Z_OK) return false;
+            if (init_inflate(&t) != Z_OK) return false;
             const bool ok = inflate_streamed(t, stream, window, raw);
             inflateEnd(&t);
             return ok;
@@ -413,6 +419,46 @@ int inflate_stream_mode(const std::vector<std::string>& args) {
             return 1;
         }
         std::printf("%-*s  %22.2f  %22.2f\n", int(width), name.c_str(), reused, fresh);
+        std::fflush(stdout);
+    }
+    return 0;
+}
+
+// wuffs_inflate_stream (Wuffs' zlib decoder, streamed) on each file's IDAT stream: one decoder reset between decodes, and
+// a new decoder each decode. Interlaced files are skipped, as in inflate_stream_mode.
+int inflate_wuffs_mode(const std::vector<std::string>& args) {
+    double budget = 1.0;
+    size_t first = 0;
+    if (args.size() >= 2 && args[0] == "--secs") {
+        budget = std::atof(args[1].c_str());
+        first = 2;
+    }
+    size_t width = 0;
+    for (size_t i = first; i < args.size(); i++) width = std::max(width, stem(args[i]).size());
+    std::printf("Inflate, Wuffs zlib, median ms per decode: streamed (input in 16 KiB pieces, output in a 96 KiB window) and in one call.\n");
+    std::printf("%*s  %22s  %22s  %22s  %22s\n", int(width), "", "streamed, reused", "streamed, new", "one call, reused", "one call, new");
+    std::vector<uint8_t> window(96 << 10);
+    for (size_t i = first; i < args.size(); i++) {
+        std::vector<uint8_t> bytes;
+        PngInfo info;
+        if (!load(args[i], bytes, info)) return 1;
+        const std::string name = stem(args[i]);
+        if (info.interlace) {
+            std::printf("%-*s  interlaced: skipped\n", int(width), name.c_str());
+            continue;
+        }
+        const std::vector<uint8_t> stream = idat_stream(bytes);
+        const size_t raw = stored_scanline_bytes(info);
+        const double reused = median_ms(budget, [&] { return wuffs_inflate_stream(stream, window, raw, false); });
+        const double fresh = median_ms(budget, [&] { return wuffs_inflate_stream(stream, window, raw, true); });
+        std::vector<uint8_t> whole(raw);
+        const double once_reused = median_ms(budget, [&] { return wuffs_inflate_once(stream, whole, false); });
+        const double once_fresh = median_ms(budget, [&] { return wuffs_inflate_once(stream, whole, true); });
+        if (reused < 0 || fresh < 0 || once_reused < 0 || once_fresh < 0) {
+            std::fprintf(stderr, "%s: Wuffs inflate failed\n", name.c_str());
+            return 1;
+        }
+        std::printf("%-*s  %22.2f  %22.2f  %22.2f  %22.2f\n", int(width), name.c_str(), reused, fresh, once_reused, once_fresh);
         std::fflush(stdout);
     }
     return 0;
@@ -461,6 +507,7 @@ int main(int argc, char** argv) {
     if (cmd == "dump") return dump_mode(args);
     if (cmd == "inflate") return inflate_mode(args);
     if (cmd == "inflate-stream") return inflate_stream_mode(args);
+    if (cmd == "inflate-wuffs") return inflate_wuffs_mode(args);
     std::fprintf(stderr, "unknown command %s\n", cmd.c_str());
     return 2;
 }

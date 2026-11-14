@@ -210,6 +210,15 @@ fn compare(decoders: &mut Decoders, files: &[(String, Vec<u8>)]) -> Result<()> {
 }
 
 /// The IDAT chunks' data, joined: the zlib stream of the image.
+/// A fresh decompressor. PNG_INFLATE_NO_CHECKSUM=1 ignores the zlib checksum, as the app's fork does by default.
+fn decompressor() -> fdeflate::Decompressor {
+    let mut d = fdeflate::Decompressor::new();
+    if std::env::var_os("PNG_INFLATE_NO_CHECKSUM").is_some() {
+        d.ignore_adler32();
+    }
+    d
+}
+
 fn idat_stream(png: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut pos = 8;
@@ -312,13 +321,13 @@ fn inflate_stream(files: &[(String, Vec<u8>)], budget: Duration) -> Result<()> {
         }
         let want = stored_scanline_bytes(bytes)?;
         let stream = idat_stream(bytes);
-        let mut reused = fdeflate::Decompressor::new();
+        let mut reused = decompressor();
         let reused_ms = median_ms(budget, || {
             reused.reset();
             check_total(inflate_streamed(&mut reused, &stream, &mut window)?, want)
         })?;
         let new_ms = median_ms(budget, || {
-            check_total(inflate_streamed(&mut fdeflate::Decompressor::new(), &stream, &mut window)?, want)
+            check_total(inflate_streamed(&mut decompressor(), &stream, &mut window)?, want)
         })?;
         println!("{name:width$}  {reused_ms:>22.2}  {new_ms:>22.2}");
     }
@@ -347,12 +356,12 @@ fn inflate(files: &[(String, Vec<u8>)], budget: Duration) -> Result<()> {
         let raw = stored_scanline_bytes(bytes)?;
         let stream = idat_stream(bytes);
         let mut buf = vec![0u8; raw];
-        let mut reused = fdeflate::Decompressor::new();
+        let mut reused = decompressor();
         let reused_ms = median_ms(budget, || {
             reused.reset();
             inflate_once(&mut reused, &stream, &mut buf)
         })?;
-        let new_ms = median_ms(budget, || inflate_once(&mut fdeflate::Decompressor::new(), &stream, &mut buf))?;
+        let new_ms = median_ms(budget, || inflate_once(&mut decompressor(), &stream, &mut buf))?;
         println!("{name:width$}  {reused_ms:>22.2}  {new_ms:>22.2}");
     }
     Ok(())

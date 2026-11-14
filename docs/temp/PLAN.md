@@ -208,7 +208,7 @@ at any time. It costs a second read of the originals, in the background and in o
 
 **Cache layout now (2026-10-31):** one SQLite file, `thumbs.sqlite`, with the entries (file, height, source,
 size, last use) apart from the JPEGs and the totals kept by triggers, so nothing that runs often reads the JPEGs
-(START_PROFILE.md "Startup"). The JPEGs are keyed by entry id, so they can move to packed shard files later without
+(../reference/START_PROFILE.md "Startup"). The JPEGs are keyed by entry id, so they can move to packed shard files later without
 touching the entries. Format: JPEG (libjpeg-turbo q85, 4:2:0). Cap: 50 GB by default, in bytes (§9.1).
 
 ---

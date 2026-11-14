@@ -254,7 +254,7 @@ cost, but indirect recursion (A → B → A) is still counted twice.
 
 ## Measurements
 
-The start after the optimizations, drilled thread by thread: [START_PROFILE.md](START_PROFILE.md) (2026-11-01).
+The start after the optimizations, drilled thread by thread: [START_PROFILE.md](../reference/START_PROFILE.md) (2026-11-01).
 
 Heap totals of a scan, an import and the borders and thumbnail passes, before and after three rounds of fixes (dhat;
 the profiles themselves are no longer on disk): [HEAP_PROFILE.md](../reference/HEAP_PROFILE.md) (2026-11-01, 2026-11-02).

@@ -1,5 +1,7 @@
 # The start, to `ready`, after the optimizations
 
+A snapshot. Re-measure before acting on any of these numbers.
+
 Where every instruction of the app's start goes, thread by thread, after the order key, the grid model, tracked
 work, the one D3D11 device, the deferred QML and the PDQ column pass (PLAN §7, first stage). Instructions, not time:
 the counts are exact, and the few that move between runs are marked.
@@ -101,7 +103,7 @@ every device a process makes; making one device is the most the app can do.
   ("Text and fonts on the main thread, about 0.3 G"); it is now the largest item on this thread.
 - **The Direct3D 9 probe** (QTBUG-50371's workaround in Qt's window creation, deferred) costs 165 M instead of
   585 M: one signature scan instead of three. Most likely because the app's device is alive when the window is
-  made, so NVIDIA's loader is still loaded; before, the AV1 probe's device had been released by then.
+  made, so NVIDIA's loader is still loaded; before, the AV1 probe's device had been released by then. Deferred by user decision, 2026-10-31.
 - **`heal()` here is a regression of tracked work.** `ThumbCache::open` runs it on the caller's thread, the GUI
   thread, before the window exists. The plan put it at the start of the cache's writer thread. Before tracked work it
   ran on the library job's thread after `ready`, once per round; now it runs once per process.
@@ -145,20 +147,6 @@ Qt rendering until the list arrives, so the count is far higher than at normal s
 
 A catalog connection costs 2.26 M to open, against 0.88 M before: `execute_batch`'s first statement makes SQLite
 parse the schema, which tracked work's triggers and indexes made larger.
-
-## Leads, by size
-
-1. **`heal()` on the GUI thread, 91 M:** a regression; run it as the cache writer thread's first job, as planned.
-2. **Qt's font fallback query, 215 M:** find which character triggers it, and whether Qt can be given the fallback
-   fonts so it doesn't populate every family (Qt's source in `C:\Qt\6.12.0\Src`).
-3. **The Direct3D 9 probe, 165 M:** deferred (PLAN, user decision 2026-10-31).
-4. **The file selector's qrc lookups, 72 M,** on the type loader the load waits for: whether the engine can do
-   without `QQmlFileSelector`.
-5. **A catalog connection per image thread, 22.6 M:** each parses the schema.
-6. **The list, 6,900 instructions per file:** fewer columns, or the extension as a number.
-
-Out of reach: NVIDIA's signature checks (733 M per device), Qt's type registration (106 M). Not costs at normal
-speed: the render thread's and the driver's per-frame work.
 
 ## Startup (2026-10-31)
 

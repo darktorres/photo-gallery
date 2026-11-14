@@ -345,7 +345,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   their posters look washed out.
   - Layout (`crates/thumbcache/src/lib.rs`): the entries (a few dozen bytes each) and the JPEGs are separate tables, and the totals
     are one row that triggers keep, so opening the cache and listing what's missing never read the JPEGs
-    (START_PROFILE.md "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
+    (docs/reference/START_PROFILE.md "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
     the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
@@ -385,7 +385,7 @@ The window comes up before anything is read from the catalog: the folder tree, t
 counts are read by a thread of their own (`crates/app/src/reader.rs`), oldest request first, each kind keeping only its newest
 (which cancels one of its kind running), and shown when they arrive ("Loading…" meanwhile). The selection stays
 with its file when a list is refreshed; while the viewer is open a new list waits for it to close. A rating or a turn
-made while a list was on its way is kept. Startup times are in START_PROFILE.md "Startup".
+made while a list was on its way is kept. Startup times are in docs/reference/START_PROFILE.md "Startup".
 
 - **Folder tree** (left): folders with the same path on different drives are one node (their drives are shown
   in green). "All folders" lists everything (it turns subfolders on); "Drive roots", shown when files lie directly

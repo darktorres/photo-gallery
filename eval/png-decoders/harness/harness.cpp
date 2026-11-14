@@ -492,6 +492,48 @@ int dump_mode(const std::vector<std::string>& args) {
 
 }  // namespace
 
+// profile --decoder NAME [--secs S] FILE...: one decoder (libpng, libspng or wuffs) decoding each file in turn for S
+// seconds, for a profiler to sample. It prints the decode count, not a time: the timings come from `time`.
+int profile_mode(const std::vector<std::string>& args) {
+    std::string want;
+    double budget = 1.0;
+    size_t first = 0;
+    while (first + 1 < args.size() && args[first].rfind("--", 0) == 0) {
+        if (args[first] == "--decoder") want = args[first + 1];
+        else if (args[first] == "--secs") budget = std::atof(args[first + 1].c_str());
+        else break;
+        first += 2;
+    }
+    size_t index = names().size();
+    for (size_t i = 0; i < names().size(); i++) {
+        if (names()[i] == want) index = i;
+    }
+    if (index == names().size()) {
+        std::fprintf(stderr, "usage: png-c-harness profile --decoder {libpng|libspng|wuffs} [--secs S] FILE...\n");
+        return 2;
+    }
+    auto decoders = make_all();
+    for (size_t i = first; i < args.size(); i++) {
+        std::vector<uint8_t> bytes;
+        PngInfo info;
+        if (!load(args[i], bytes, info)) return 1;
+        Decoder& dec = *decoders[index];
+        const double start = now_ms();
+        size_t decodes = 0;
+        while (now_ms() - start < budget * 1e3) {
+            Result r = dec.decode(bytes, info);
+            if (r.status != Status::Ok) {
+                std::fprintf(stderr, "%s: %s\n", stem(args[i]).c_str(), r.why.c_str());
+                return 1;
+            }
+            sink = sink + dec.out().size();
+            decodes++;
+        }
+        std::printf("%s: %zu decodes of %s in %.1f s\n", stem(args[i]).c_str(), decodes, want.c_str(), budget);
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     std::vector<std::string> args(argv + 1, argv + argc);
     if (args.empty()) {
@@ -508,6 +550,7 @@ int main(int argc, char** argv) {
     if (cmd == "inflate") return inflate_mode(args);
     if (cmd == "inflate-stream") return inflate_stream_mode(args);
     if (cmd == "inflate-wuffs") return inflate_wuffs_mode(args);
+    if (cmd == "profile") return profile_mode(args);
     std::fprintf(stderr, "unknown command %s\n", cmd.c_str());
     return 2;
 }

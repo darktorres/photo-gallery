@@ -28,7 +28,11 @@ add_executable(png-c-harness
 set_source_files_properties(harness.cpp PROPERTIES INCLUDE_DIRECTORIES "${ZLIB_INCLUDE}")
 set_source_files_properties(dec_libpng.cpp PROPERTIES INCLUDE_DIRECTORIES "${LIBPNG_INCLUDE}")
 set_source_files_properties(dec_libspng.cpp PROPERTIES INCLUDE_DIRECTORIES "${SPNG_INCLUDE}")
+# Wuffs compiles its SIMD unfilter only when the compiler's target has AVX2 (/arch:AVX2 defines __AVX2__). Without it
+# Wuffs runs its scalar unfilter, which is not what an app built with AVX2 would run. That flag goes on dec_wuffs.cpp
+# alone, the only translation unit that includes Wuffs, so the other decoders' code is built as before.
 set_source_files_properties(dec_wuffs.cpp PROPERTIES
-  COMPILE_DEFINITIONS "WUFFS_SOURCE=\"${WUFFS_SRC}/release/c/wuffs-unsupported-snapshot.c\"")
+  COMPILE_DEFINITIONS "WUFFS_SOURCE=\"${WUFFS_SRC}/release/c/wuffs-unsupported-snapshot.c\""
+  COMPILE_OPTIONS "/arch:AVX2")
 target_compile_definitions(png-c-harness PRIVATE SPNG_STATIC)
 target_link_libraries(png-c-harness PRIVATE "${LIBPNG_LIB}" "${SPNG_LIB}" "${ZLIB_LIB}")

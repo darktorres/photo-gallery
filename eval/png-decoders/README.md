@@ -81,6 +81,16 @@ Intel VTune 2024.3 is installed (oneAPI), and its user-mode sampling needs no ad
     & "C:\Program Files (x86)\Intel\oneAPI\vtune\2024.3\bin64\amplxe-cl.exe" -report hotspots `
         -result-dir "$env:PG_ROOT\eval\png-decoders\profiles\NAME" -format=csv -report-knob show-issues=false
 
+The C harness has the same `profile` command, for one decoder: `png-c-harness profile --decoder libpng|libspng|wuffs
+--secs 10 FILE`. Its libraries need debug info to name their static functions: zlib, libpng and libspng built as
+RelWithDebInfo into `deps-prof` (the same configure options as `win_build.py`, with the install prefix changed), and the
+harness-prof build linked against them (`-DLIBPNG_LIB`, `-DSPNG_LIB`, `-DZLIB_LIB` pointing into `deps-prof`).
+
+Wuffs compiles its SIMD unfilter only with `/arch:AVX2`. The harness passes that flag to `dec_wuffs.cpp` alone (its
+CMakeLists), so the timing build and the profiling build both run Wuffs' SIMD unfilter. The earlier timing build had no
+such flag and ran the scalar one; the `build\harness-scalar` copy of it is kept for comparison, and `build\harness-avx2`
+(the whole harness built with `/arch:AVX2`) is no longer needed for Wuffs.
+
 The reports name the functions and, for the Rust and Wuffs code, their source files. Some static functions in the
 libraries stay unnamed (`func@0x…`), because their libraries were built without PDBs. Profiles go under `$PG_ROOT`,
 not into the repo.

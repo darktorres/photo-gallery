@@ -28,7 +28,7 @@ from pgtools import WINDOWS, import_msvc_environment, load_env_file
 
 HERE = Path(__file__).resolve().parent
 
-# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md. --------------------------------------------
+# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md.
 FFMPEG_URL = "https://github.com/FFmpeg/FFmpeg.git"
 FFMPEG_COMMIT = "7adfbe40dcde598f93a6963d2f7b22cd75202ccc"  # n9.0.2-39-g7adfbe40dc, the commit the pinned build came from
 FFMPEG_RELEASE = "9.0.2"  # the RELEASE file at that commit

@@ -28,6 +28,7 @@ bisect, `checked_mul`/`saturating_mul` for backoff); `just lint` at the end; nat
 pg-dev container.
 
 ## Facts that shape the design
+
 - Baseline frozen; `MIGRATIONS` = TO_2..TO_9; **TO_10 is the audit slice**, one migration `[Sql(a), Rust(dups_repair)]`
   (SQL first so the column exists). DO's TO_10 content is absorbed; DO's TO_11 stays TO_11 (no renumbering).
 - `content_gen` is also recorded in `docs/temp/NTFS_MFT_SCAN_PLAN.md:279-291,345`: that plan gets amended too.
@@ -39,7 +40,9 @@ pg-dev container.
   catalogs, so a data repair must be a Rust `convert` step (`convert.rs:1-12`).
 
 ## TO_10 contents
+
 **Sql:**
+
 - `files.content_gen INTEGER NOT NULL DEFAULT 0` + trigger `files_content_gen AFTER UPDATE OF size, mtime, volume,
   file_ref` (not `created`: its backfill would bump it); `DROP VIEW thumb_sources` + recreate (TO_6 shape) with
   `f.content_gen`.
@@ -66,6 +69,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
 ## Fixes
 
 ### A. Removal, scans, leases
+
 1. **`IS_CURRENT`** (`catalog/src/current.rs:13-16`): add `AND missing = 0` and `AND content_gen = ?5`; `query_current`
    binds it. Every user inherits it (`AnalysisWriter` writers.rs:294, `BordersWriter` :450, `Catalog::is_current`
    lookup.rs:25, thumbs keep-check). Plumb `content_gen` through `Listed`, `work_columns!()`/`work_list`
@@ -104,30 +108,31 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
    holds it instead.
 
 ### B. Round, retry, schedule (BM D17, DO 2.9/3.10)
-6. `Step::Busy{until: Instant}` (`jobs/schedule.rs:9-14`). `schedule::round` runs every pass; on a pass `Err` **or panic**
+
+1. `Step::Busy{until: Instant}` (`jobs/schedule.rs:9-14`). `schedule::round` runs every pass; on a pass `Err` **or panic**
    it records the first error, continues with the later passes and returns it last; stop/`Preempted` logic unchanged;
    rewrite `an_error_ends_the_round_with_it`. `Cx.catalog` becomes `Option<Catalog>` with reopen after a panic
    (`runner.rs:383-392`).
-7. **One deadline table** in the runner (replaces `BUSY_RETRY`, `runner.rs:42,355`): busy retry, failure backoff
+2. **One deadline table** in the runner (replaces `BUSY_RETRY`, `runner.rs:42,355`): busy retry, failure backoff
    5/10/20/40/60 s (forever; reset on a successful `Done` round; per-pass deadlines so a foreign lease doesn't re-run the
    failing pass every 5 s), `next_try_at`, the idle check, the slow rescan, scan retries. A user wake runs at once without
    resetting the count; an error never sets `again`. `Waker` gets a "take the wake flag" method (start of a round) so
    `again = true` doesn't leave `woken` set and cost an empty round + `Change::Round`.
-8. **`wake()` must not `request_stop`** (`runner.rs:265`; the sticky `woken` guarantees another round). Stop stays for
+3. **`wake()` must not `request_stop`** (`runner.rs:265`; the sticky `woken` guarantees another round). Stop stays for
    `folder_removed`, crops, scan requests. Today a turned photo or Retry (`desktop/library.rs:140-144`,
    `notices.rs:484`) restarts a non-resumable walk from the root, so a startup rescan would starve.
-9. **Clear `round-failed` only on a `Done` round** (not `Preempted`, `runner.rs:370-372`).
-10. **Notices**: `RoundFailed` stays a `State`, static data (no per-retry countdown; a state re-posted with unchanged data
+4. **Clear `round-failed` only on a `Done` round** (not `Preempted`, `runner.rs:370-372`).
+5. **Notices**: `RoundFailed` stays a `State`, static data (no per-retry countdown; a state re-posted with unchanged data
     keeps marks and counts, `catalog/src/inbox.rs:304-315`); no counts embedded in text that changes each round.
     `RoundPanicked` → `State` with `NextSuccess(Op::Round)`; a deterministic panic retries at the cap interval only.
     `ScanFailed` → keyed `State` per root with explicit `Key::all("scan-failed", Some(root))` cleared when a scan of that
     root succeeds. Regenerate the resolver table in `docs/temp/NOTIFICATIONS.md` (`the_documented_resolver_table_is_the_generated_one`),
     `golden.jsonl`, the `ordinal` test, `crates/client/locales/en/text.ftl`.
-11. **Scans**: read `roots()` per popped path (`runner.rs:450-456`; today a folder added mid-scan is dropped by `continue`),
+6. **Scans**: read `roots()` per popped path (`runner.rs:450-456`; today a folder added mid-scan is dropped by `continue`),
     drop the stale `library.contains(&path)` at `:491` (replace with fresh roots, or a sub-folder scan replaces a root's
     scan-notes); per-root retry deadline, dropped on `folder_removed`; a renamed/moved root gets a distinct "folder not
     found" state with "remove then add" advice, not endless silent retry.
-12. **Rescans (BM 3.9/DO 3.10)**: a scan of every root once at job start (after the catalog opened and `roots()` succeeded);
+7. **Rescans (BM 3.9/DO 3.10)**: a scan of every root once at job start (after the catalog opened and `roots()` succeeded);
     a **cheap idle check** (separate path: no `Change::Round`, no inbox poke): `Catalog::idle_work()` = `EXISTS` probes on
     `files_to_import`, the borders-due and dups-due indexes, `roots_gen`, earliest `next_try_at`, actionable work only
     (DO's `feature_counts` is a UI count; amend DO 2.8/3.10); a **slow full rescan** timed from completion (default 6 h).
@@ -138,21 +143,22 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
     slowest worker; `JOB_STOP_WAIT` 5 s at quit leaves the lease up to 60 s).
 
 ### C. Pairing and import
-13. **Q3 pairing**: `pdq_hashes()` drops `f.missing = 0` (`work.rs:106,113,123`; readers filter via `present_pdq_pairs`).
+
+1. **Q3 pairing**: `pdq_hashes()` drops `f.missing = 0` (`work.rs:106,113,123`; readers filter via `present_pdq_pairs`).
     A restored file needs nothing. No trigger on `missing` 1→0 (`files_missing_dups`, DO 4.4, stays a separate stamp trigger).
-14. **`dups_state` + pairs-only module in `pg_import`** (DO 3.3/3.5/3.7, slice): `pending_pairs` paged by keyset on
+2. **`dups_state` + pairs-only module in `pg_import`** (DO 3.3/3.5/3.7, slice): `pending_pairs` paged by keyset on
     `file_id`, ≤100 rows per transaction; the write tx re-verifies the hash and `pending = 0` before `pair_and_insert`,
     `store_pdq_pair`, `store_pairs_done` (guarded, `temp` guard); holds the `pair` lease. The `dups_repair` step makes the
     whole library `due` once; the pass rebuilds pairs from stored `pdq_dihedral` with no file reads (ON CONFLICT keeps
     the best distance). Out: toggles/`Features`, `DUPS_VERSION` bump code, `store_hashes`, `skipped`, `FilePass::Duplicates`.
-15. **`pdq_hashes` error** (`work.rs:109-119`): at hash load, mark rows with `pdq_dihedral IS NULL AND pdq_quality >= MIN`
+3. **`pdq_hashes` error** (`work.rs:109-119`): at hash load, mark rows with `pdq_dihedral IS NULL AND pdq_quality >= MIN`
     `pending = 1` (`mark_pending` pattern, `work.rs:141`) **before** the worklist read in the same pass, skip them in the
     index, log once; skip `dups_state <> 'done'` rows too. The hash load stays in RAM (D13 deletes it in Phase 5) but lazy:
     built at the first PDQ-eligible result, never cached across rounds (`PdqIndex` has no delete, a re-analysed file's old
     entries would pair later files wrongly). `IndexFull` is unreachable (2^32): no item.
-16. **Pairer vs commit**: a failed/retried flush rolls the Pairer back to its length at flush start (truncate if append-only,
+4. **Pairer vs commit**: a failed/retried flush rolls the Pairer back to its length at flush start (truncate if append-only,
     else rebuild lazily). Intra-batch pairs stay found because inserts happen during the flush, before commit.
-17. **Flush errors (new; becomes the `Sink` body later)**: a `Flusher` in `jobs/pipeline.rs` beside `batched` wrapping
+5. **Flush errors (new; becomes the `Sink` body later)**: a `Flusher` in `jobs/pipeline.rs` beside `batched` wrapping
     `flush`, with a classifier closure (`pg_jobs` can't name `pg_catalog::Error`). Classify by SQLite primary code:
     CONSTRAINT/Value attributable to an item → terminal; BUSY, FULL, IOERR, READONLY, CORRUPT → systemic: keep the batch,
     retry with stop-aware backoff, never bisect. Closures consume the batch only after commit and apply counters after
@@ -161,16 +167,17 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
     a stale pair row rebuilds/skips the pair instead of failing the item; the terminal item gets a `retry:false` ledger row.
     Announce committed work despite `Err`: passes take `&mut Stats`, Import adopts Borders' `done`-copy pattern, so
     `imported()` and `files_read(…, complete=false)` still run (`runner.rs:516,530,556`).
-18. **Bytes vs listed size**: a length mismatch between bytes read and `item.size` is `changed`, store nothing
+6. **Bytes vs listed size**: a length mismatch between bytes read and `item.size` is `changed`, store nothing
     (mid-copy files, camera card, cloud sync; `import/lib.rs:105-113`).
 
 ### D. Read errors
-19. **`Unreadable(io::Error)` in `pg_platform`** (jobs, video already depend on it; add `analysis → platform` to
+
+1. **`Unreadable(io::Error)` in `pg_platform`** (jobs, video already depend on it; add `analysis → platform` to
     `tools/crate-layers.txt:30`, `Cargo.lock`). Created in `pipeline::read_whole`/`read_error` (`pipeline.rs:273,282`),
     `pg_video::Unopened`, and `analysis/analyze.rs:40-41,196` (`file_hash_of`, a bare `io::Error` today).
     Verified: codecs map to `ImageError`, none returns a bare `io::Error`. Passes test `downcast_ref::<Unreadable>()`.
     Tests: a held file (`pg_testkit::held`) for an image and a video classify `Unreadable`; a truncated JPEG does not.
-20. **`io_attempts` (DO 5.6)**: counted only while the file's folder is present (`folder_present` moves from writeback's
+2. **`io_attempts` (DO 5.6)**: counted only while the file's folder is present (`folder_present` moves from writeback's
     private `Inner` to `Catalog`, memoised per folder per flush, checked **outside** write transactions: `is_dir` on a dead
     share blocks); spaced by `next_try_at` (wall clock is fine; only leases need monotonic); `NotFound` is not an attempt
     (`next_try_at = now + 60 s`, wait for the rescan); the third counted attempt writes the terminal row (`store_failure`
@@ -179,28 +186,31 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
     Amend DO 5.6's `downcast_ref::<std::io::Error>()` text (it also misses `Unopened`).
 
 ### E. Thumbnails and borders
-21. `store_borders -> Result<bool>`; gate `done.stored += 1` and the `found_known` push (`borders/lib.rs:71-73,99-100`, the
+
+1. `store_borders -> Result<bool>`; gate `done.stored += 1` and the `found_known` push (`borders/lib.rs:71-73,99-100`, the
     push clears the file's ledger row) on `true` (DO 3.5 last bullet).
-22. Thumbs: `still_wanted = || heights.get() == Some(height)` replaces the height listener's `request_stop`
+2. Thumbs: `still_wanted = || heights.get() == Some(height)` replaces the height listener's `request_stop`
     (`runner.rs:182-189`; DO 2.9, race-free, amend line 272/R-85); `is_current` `Err` per item → "not current"
     (`thumbs/lib.rs:231`); `put_batch` `Err` records `cache_error` and ends production without aborting the ledger flush
     (DO 5.8). Record `Other` failures as `retry:true` ledger rows for visibility (optional). **No retry-list query**: the
     `fold`/`first_failed` mechanism is deleted by D35/4.7; the earlier plan cited D31 for it wrongly.
-23. **Orphans**: no eager prune (it regresses "remove, then re-add keeps analyses", `app/library.rs:311-314`). When
+3. **Orphans**: no eager prune (it regresses "remove, then re-add keeps analyses", `app/library.rs:311-314`). When
     `put_batch` reports full, the pass asks the reader (which attaches the catalog, `reader.rs:28`) for entries joined to
     `files.missing = 1` through **its own present-files view** (never `thumb_sources`, which hides unanalysed/failed
     files), calls `forget` per id (`thumbcache/lib.rs:217`), retries once, then reports `cache_full`. Never prune on
     a scan-detected `missing`. `forget_many` (BM 3.5/4.5) replaces the loop later. Eviction itself (`writer.rs:406`) unchanged.
 
 ### F. Stuck copy and writeback (BM 4.3 slice)
-24. Exclude `file_writes.temp IS NOT NULL` files from `pending_import_sql`, `pending_borders`, `pending_sql` (alias variant
+
+1. Exclude `file_writes.temp IS NOT NULL` files from `pending_import_sql`, `pending_borders`, `pending_sql` (alias variant
     of `not_being_written!`); keep the store guard as second defence; count them as "waiting for a write", not `changed`.
-25. Parking: `NEXT_READY` (`queue.rs:316`) uses `file_writes_ready`; writeback parks the job instead of `return Ok(())` at the
+2. Parking: `NEXT_READY` (`queue.rs:316`) uses `file_writes_ready`; writeback parks the job instead of `return Ok(())` at the
     removed-file-with-temp case and the offline case (`writeback/lib.rs:395`, ~:439; offline is not an attempt, so the
     same temp row came first every drain and starved later jobs); periodic unpark plus `retry_write_copies`
     (`queue.rs:306`) on the same timer, folder check outside write transactions. Document that the status line may flap.
 
 ### G. Tests (every item), plus
+
 - Race tests: remove the root between two scan batches, between two pairing batches, and before `begin_scan`; lease takeover
   and `Lost` with the root still present; removal interrupted mid-pager then resumed; re-add during removal.
 - `folder_removed`: deterministic test with a pass that blocks on a channel (start a round, call `folder_removed`, release the
@@ -216,6 +226,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
   `missing`, a replace-with-same-size case, and a writeback rewrite (must not livelock: it changes size/mtime itself).
 
 ## Docs to amend (same change)
+
 - **BM**: §1.2 rule 4, §1.3 bullet 2, §7 "one BASELINE edit" → migrations (baseline frozen) with TO_10 as the first; D1
   (stale `schema.rs:18-24` claim; index-guard exemption, TO_9 `files_fresh` precedent); D10/3.8 (interim source-pattern
   guard, pager statement allowlisted); D13 (`pdq_hashes` stays until Phase 5); D16/1.9/2.1 (`work_leases` subset now,
@@ -238,6 +249,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
   paragraph (isolation), lines 236-241 (thumbs `Other` now recorded).
 
 ## Order of work (one build at the end)
+
 1. TO_10 consts, the Rust repair step, `rebuild.rs` lists, bench `LAYOUT`.
 2. Catalog core: lease helper and error variants; `ScanLease` fences, `ScanWriter` fence, `begin_scan` guard; `remove_root`
    pager + `root_removals`; `roots_gen`, `idle_work`; `IS_CURRENT` + `content_gen` plumbing; `store_borders -> bool`;
@@ -252,6 +264,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
 7. Docs amendments, tests for every item, one build, tests, `just lint`.
 
 ## Verification
+
 - `cargo test` over catalog, scan, jobs, import, borders, thumbs, thumbcache, dedup, writeback, library, model, cli
   (native PowerShell, `QT_DIR` on PATH), then `just lint`; Linux CI pass in the pg-dev container only.
 - Manual in the app: start a large scan, remove the folder mid-scan (job stops, nothing reappears, grid empties); remove,

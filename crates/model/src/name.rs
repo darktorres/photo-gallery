@@ -131,6 +131,11 @@ impl Name {
     /// The name in lower case, appended: each scalar value by Unicode's lower case, an unpaired surrogate or a stray
     /// byte as its own bytes. Case-insensitive comparison and the case-insensitive part of the name key use this.
     pub fn push_lower(&self, out: &mut Vec<u8>) {
+        // ASCII is its own units, and its lower case is the ASCII one: the common name needs no decoding.
+        if self.0.is_ascii() {
+            out.extend(self.0.iter().map(u8::to_ascii_lowercase));
+            return;
+        }
         let mut buf = [0u8; 4];
         for unit in self.units() {
             match unit {
@@ -280,6 +285,29 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ascii_lower_case_is_the_units_one() {
+        // Every ASCII byte but NUL, as one name: the fast path must give what the unit walk gives.
+        let every: Vec<u8> = (1..=0x7F).collect();
+        let name = Name::from_wtf8(&every).expect("ASCII is canonical WTF-8");
+        let mut walked = Vec::new();
+        for unit in name.units() {
+            match unit {
+                Unit::Char(c) => {
+                    let mut buf = [0u8; 4];
+                    for lower in c.to_lowercase() {
+                        walked.extend_from_slice(lower.encode_utf8(&mut buf).as_bytes());
+                    }
+                }
+                Unit::Surrogate(_) | Unit::Byte(_) => unreachable!("ASCII has no surrogates or stray bytes"),
+            }
+        }
+        let mut fast = Vec::new();
+        name.push_lower(&mut fast);
+        assert_eq!(fast, walked);
+        assert_eq!(fast, every.to_ascii_lowercase());
+    }
 
     #[test]
     fn a_paired_surrogate_is_one_scalar_and_a_lone_one_is_kept() {

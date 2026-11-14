@@ -103,10 +103,11 @@ impl Resizer {
         out.pixels.resize(n_dst.checked_mul(3).context("output size overflows")?, 0);
         (out.width, out.height) = (width, height);
         let (out_px, _) = out.pixels.as_chunks_mut::<3>();
+        let t = linear::tables();
         for (bytes, px) in out_px.iter_mut().zip(&self.dst) {
             let [x, y, z] = px.0;
             let [r, g, b] = bytes;
-            (*r, *g, *b) = (linear::encode(x), linear::encode(y), linear::encode(z));
+            (*r, *g, *b) = (t.encode(x), t.encode(y), t.encode(z));
         }
         Ok(())
     }
@@ -114,9 +115,10 @@ impl Resizer {
 
 /// The sRGB bytes of an image as linear light, into `src`, which keeps its capacity.
 fn decode_into(src: &mut Vec<F32x3>, bytes: &[u8]) {
+    let t = linear::tables();
     src.clear();
     let (pixels, _) = bytes.as_chunks::<3>();
-    src.extend(pixels.iter().map(|&[r, g, b]| F32x3::new([linear::decode(r), linear::decode(g), linear::decode(b)])));
+    src.extend(pixels.iter().map(|&[r, g, b]| F32x3::new([t.decode(r), t.decode(g), t.decode(b)])));
 }
 
 /// A side in pixels as `fast_image_resize` takes it.

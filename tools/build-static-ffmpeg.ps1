@@ -2,7 +2,7 @@
 #
 # Reproducible: the inputs are pinned below (the FFmpeg commit, the MSVC toolset and Windows SDK, the MSYS2 packages),
 # and each one is checked before it is used. The source is fetched by commit hash. Every step's log and the outputs'
-# hashes go to <Work>\manifest.json. The reasons for each step are in docs/STATIC_BUILD.md.
+# hashes go to <Work>\manifest.json. The reasons for each step are in docs/reference/STATIC_BUILD.md.
 #
 #   pwsh -File tools/build-static-ffmpeg.ps1                       # into D:\PhotoGallery\static\ffmpeg
 #   pwsh -File tools/build-static-ffmpeg.ps1 -Work D:\scratch\run2  # a clean run, into another folder
@@ -18,7 +18,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ---- Pins. Change them here, and record the reason in docs/STATIC_BUILD.md. --------------------------------------
+# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md. --------------------------------------
 $FFmpegCommit  = '7adfbe40dcde598f93a6963d2f7b22cd75202ccc'   # n9.0.2-39-g7adfbe40dc, the commit the pinned build came from
 $FFmpegRelease = '9.0.2'                                      # the RELEASE file at that commit
 $Toolset       = '14.44.35207'                                # MSVC toolset (vcvars64 -vcvars_ver)
@@ -27,7 +27,7 @@ $MsysPackages  = @{ make = '4.4.1-3'; diffutils = '3.12-1' } # installed if miss
 # The Windows libraries the static link needs. FFmpeg's .pc files don't list them (Libs.private is empty).
 $SystemLibs    = @('user32.lib', 'bcrypt.lib')
 
-# The configure line. --prefix is added below. Each flag is the pilot's, see docs/STATIC_BUILD.md.
+# The configure line. --prefix is added below. Each flag is the pilot's, see docs/reference/STATIC_BUILD.md.
 $ConfigureFlags = @(
     '--toolchain=msvc', '--enable-static', '--disable-shared',
     "--extra-cflags='-MD -Brepro'",                          # the app's dynamic CRT (MSVCRT); -Brepro: same bytes per build

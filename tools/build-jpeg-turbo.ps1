@@ -1,6 +1,6 @@
 # Builds libjpeg-turbo (JPEG 8.0 API, static, the dynamic CRT) once, for both the static Qt's JPEG plugin and the app's
 # turbojpeg. One archive in the process: Qt's qjpeg and the app's turbojpeg must not carry two libjpeg copies (their
-# structs differ in size, and the link resolves both to one of them). The reasons are in docs/STATIC_BUILD.md.
+# structs differ in size, and the link resolves both to one of them). The reasons are in docs/reference/STATIC_BUILD.md.
 #
 #   pwsh -File tools/build-jpeg-turbo.ps1                          # into D:\PhotoGallery\static\jpeg-turbo
 #   pwsh -File tools/build-jpeg-turbo.ps1 -Work D:\scratch\jpeg    # a clean run, into another folder
@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ---- Pins. Change them here, and record the reason in docs/STATIC_BUILD.md. --------------------------------------
+# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md. --------------------------------------
 # The libjpeg-turbo sources are inside the rust-turbojpeg fork at this commit (turbojpeg-sys/libjpeg-turbo), the same
 # commit the root Cargo.toml pins for turbojpeg-sys, so the app's and Qt's libjpeg come from one source.
 $ForkUrl    = 'https://github.com/darktorres/rust-turbojpeg'

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds libjpeg-turbo (JPEG 8.0 API, static, the dynamic CRT) once, for both the static Qt's JPEG plugin and the app's
 turbojpeg. One archive in the process: Qt's qjpeg and the app's turbojpeg must not carry two libjpeg copies (their structs
-differ in size, and the link resolves both to one of them). The reasons are in docs/STATIC_BUILD.md. Windows only (MSVC).
+differ in size, and the link resolves both to one of them). The reasons are in docs/reference/STATIC_BUILD.md. Windows only (MSVC).
 It was build-jpeg-turbo.ps1.
 
     python tools/build_jpeg_turbo.py                            # into <PG_HOME>\\static\\jpeg-turbo
@@ -25,7 +25,7 @@ from pathlib import Path
 
 from pgtools import WINDOWS, import_msvc_environment, load_env_file
 
-# ---- Pins. Change them here, and record the reason in docs/STATIC_BUILD.md. --------------------------------------------
+# ---- Pins. Change them here, and record the reason in docs/reference/STATIC_BUILD.md. --------------------------------------------
 # The libjpeg-turbo sources are inside the rust-turbojpeg fork at this commit (turbojpeg-sys/libjpeg-turbo), the same commit
 # the root Cargo.toml pins for turbojpeg-sys, so the app's and Qt's libjpeg come from one source.
 FORK_URL = "https://github.com/darktorres/rust-turbojpeg"

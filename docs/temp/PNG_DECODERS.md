@@ -8,10 +8,12 @@ tRNS transparency chunk (four synthetic, one a real 16-bit photograph), two with
 [JPEG_DECODERS.md](../reference/JPEG_DECODERS.md). Everything runs natively on Windows (`eval/png-decoders`). Wall time, heap traffic
 and the output are measured. No instruction counts (callgrind doesn't run here).
 
-Five timing runs are used, and they differ in load. The **quiet pass 1** (2026-11-14, 20–32% CPU load) gives the first
+Six timing runs are used, and they differ in load. The **quiet pass 1** (2026-11-14, 20–32% CPU load) gives the first
 table of the seven library files and the seven generated ones. The **quiet pass 2** (2026-11-14, 17–40% load) gives
 all 23 files in one run, and the colour-key comparison. The **quiet pass 3** (2026-11-14, 7–27% load) gives all 24 files with Wuffs' AVX2 build beside its scalar build, back to
-back on each file, and the keyed comparison of the fork against png 0.18 and zune-png in one run. The **high-load pass** (83–99% load, other sessions running)
+back on each file, and the keyed comparison of the fork against png 0.18 and zune-png in one run. The **quiet pass 4** (2026-11-14) gives the fork, png 0.18, zune-png, libpng, libspng and Wuffs' AVX2 build on eleven
+files, each Rust and C run back to back, for the same-run comparisons the open questions asked for. Load was not checked
+during this run. The **high-load pass** (83–99% load, other sessions running)
 gives the rest, and its absolute times are unreliable. The **streamed-inflate runs** (7–28% load) time the inflate of
 each file's stream alone, in both libraries. Within each run the decoders ran back to back, so the ratios inside a run
 are the useful part. Absolute times move by 20–40% between runs, and the 116 MP file moved 24% (988.77 ms in pass 1,
@@ -252,6 +254,36 @@ file. It changes nothing where the pixels don't reach its SIMD unfilter: the 16-
 generic filter), the 8-bit grey files (1-byte pixels), the palette file (a lookup), and the filter-0 files (their
 unfilter is a copy). The fork is not in this run, so the fork against Wuffs on the same files is still to be timed
 in one run.
+
+### Quiet pass 4 (fork against Wuffs, and the open questions)
+
+Median ms per decode, one thread, full size, 2 s budget. Each file ran the Rust harness (the fork, png 0.18, zune-png)
+and then the C harness (libpng, libspng, Wuffs with AVX2), back to back. The keyed photograph is a real 8-bit
+Pinterest photo (`pinterest_1141451468123671931`) with a tRNS chunk keyed on pixel (0, 0), made with the synthetic
+variants' code; its unkeyed sibling is the row above it in the table.
+
+| Input | fork (app) | png 0.18 | zune-png 0.5 | libpng 1.6 | libspng 0.7 | Wuffs, AVX2 | fork ÷ Wuffs |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 116 MP | 979.99 | 940.54 | 1210.07 | 1742.92 | 1764.64 | 1030.39 | 0.95× |
+| RGBA 2.46 MP | 19.14 | 19.22 | 24.65 | 38.81 | 38.39 | 22.94 | 0.83× |
+| RGB 4.28 MP | 35.92 | 35.97 | 59.63 | 64.15 | 64.11 | 43.83 | 0.82× |
+| RGB 2.79 MP (the unkeyed sibling of the key photo) | 10.54 | 10.64 | 15.03 | 21.67 | 21.34 | 11.10 | 0.95× |
+| RGB 2.07 MP | 5.63 | 5.73 | 7.60 | 11.67 | 11.17 | 5.52 | 1.02× |
+| RGB 1.01 MP | 9.08 | 9.11 | 13.56 | 18.03 | 17.72 | 11.46 | 0.79× |
+| RGBA 0.96 MP | 10.00 | 9.93 | 12.70 | 18.85 | 18.50 | 11.93 | 0.84× |
+| real-pinterest-8bit-trns (key (251, 251, 251)) | 13.25 | 26.38 | 18.20 | 25.99 | 32.93 | 26.17 | 0.51× |
+| rgb8-3mp-trns (synthetic key) | 13.30 | 26.57 | 18.21 | 25.93 | 32.67 | 26.16 | 0.51× |
+| rgb8-interlaced-3mp | 21.74 | 20.31 | 29.91 | 41.36 | 29.31 | 29.39 | 0.74× |
+| rgb8-4mp-filter0 | 44.56 | 44.36 | 47.97 | 71.57 | 120.46 | 78.81 | 0.57× |
+
+- **116 MP and 2.46 MP RGBA:** the fork and png 0.18 are tied within 4% (979.99 against 940.54 ms; 19.14 against 19.22).
+  The gaps in quiet passes 1 and 2 don't reproduce here; their cause wasn't measured.
+- **The real 8-bit key:** the keyed photograph takes 13.25 ms on the fork, against 13.30 ms for the synthetic key and
+  10.54 ms for the unkeyed sibling in the same run, so the key cost on real data is the synthetic one (about 26%). png
+  0.18 takes 26.38 ms on it. Wuffs writes the key pixels black: 1,341,222 samples differ, as on the synthetic file.
+- **The fork against Wuffs with AVX2 (8-bit RGB and RGBA):** the fork is faster on every such file in this run except
+  the 2.07 MP one, where they tie (1.02×). It is 0.79–0.95× on the photographs, 0.74× on the interlaced file, and 0.51×
+  on the keyed files.
 
 ### High-load pass (the rest of the inputs, and the same files again)
 
@@ -588,17 +620,10 @@ largest 1", and one 16-bit sample gives "largest 256", which confirms big-endian
 
 - **Colour-key expansion in the fork: fixed, pinned and re-timed quietly** (`2f176ed`, the fork section and quiet pass 3's
   keyed run).
-- **libpng's and libspng's non-inflate work on the photographs: answered by the profiles.** It is the unfilter. libspng's is its generic 16-bit paeth (no fast path for 6-byte pixels), about 3.7× libpng's unfilter time on the same photo. libpng's is about 2× the fork's. Both are upstream library behaviour, so the candidate is a report to libspng, like zune-png's.
 - **libspng's 16-bit RGBA and GA16 output.** The fault was in the harness, and it is fixed (see Output). The keyed photograph is timed above on a quiet machine. The GA16 path is tested on `gray16-2mp-trns` and matches the app.
-- **Wuffs' unfiltering: re-timed with AVX2 (quiet pass 3).** The SIMD unfilter is 1.2–1.8× faster on the 8-bit RGB and
-  RGBA files, and changes nothing on the others. The fork is not in that run: time it against Wuffs AVX2 on the 8-bit
-  RGB files in one run before saying which is faster there.
-- **zune-png's 16-bit colour key.** Explained (see Output): it compares native-endian key bytes with big-endian samples. Decide whether to report it upstream. The app's fork is not affected.
-- **The fork against png 0.18 on two files.** The 116 MP file (fork 1229.55, png 0.18 1983.78 in pass 2; 988.77 and 1012.37
-  in pass 1) and the 2.46 MP RGBA file (29.03 against 21.45 in pass 2; 20.15 against 20.56 in pass 1) vary by more than
-  the other files. Rerun both on a quiet machine.
-- **Real photographs with an 8-bit tRNS chunk.** Only the 16-bit photograph has a key. An 8-bit photograph with a key
-  would show whether the key cost on real data matches the synthetic files'.
+- **Wuffs' unfiltering: re-timed with AVX2 (quiet pass 3), and the fork against it on the 8-bit RGB files (quiet pass 4).** Nothing open.
+- **The fork against png 0.18 on two files: answered** in quiet pass 4 (tied within 4% on the 116 MP and the 2.46 MP RGBA file).
+- **Real photograph with an 8-bit tRNS chunk: answered** in quiet pass 4 (the key cost matches the synthetic file's).
 - **Done since the last round:** the libspng 16-bit output cause (a harness byte-order fault, fixed); the zune-png 16-bit key cause; the keyed photograph re-timed on a quiet machine, in the colour-key section; the GA16 test file (`gray16-2mp-trns`); Wuffs' inflate measured, with the zlib checksum found to be a fifth of zlib's time on the 8-bit files.
 - **Done in this round:** the quiet-machine rerun (quiet pass 2, all 23 files in one run); the colour-key finding, confirmed
   and its cost measured on RGB, gray, palette and a 16-bit photograph; the inflate split by streamed inflate, on the 8-bit

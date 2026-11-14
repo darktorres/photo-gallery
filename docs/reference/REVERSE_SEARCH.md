@@ -69,7 +69,7 @@ the Sites list above was the wrong target for group 1:
 - **Page 1 of Similar is a captcha, with or without `yp`** (rechecked 2026-10-31). Yandex answers it with HTTP
   200 and JSON `{"type": "captcha", "captcha": {…}}`, which links to `showcaptcha`. The script never reports it:
   it reads that as an unexpected structure, stops paging and keeps page 0. So the script gets one page of
-  similar images, whatever `SIMILAR_PAGES_TO_DOWNLOAD` says (20 in the script).
+  similar images, whatever `SIMILAR_PAGES_TO_DOWNLOAD` says (the script's file sets 20; the runs above used 5).
 - **The app's first version failed on it.** Its client reported the page-1 captcha as an error of the whole
   search, so the other sizes and page 0 were dropped and the panel said "captcha". It now does what the script
   does: a failure on a page after the first ends the list.
@@ -80,10 +80,15 @@ the Sites list above was the wrong target for group 1:
 ### Decision and the port (2026-10-31)
 
 - **The `yp` szm cookie is sent** (user decision): it is a cookie the site's own JavaScript sets, and no
-  challenge is passed. `spravka` is never sent, so the Sites list is not fetched (its pages 1 and up need it,
-  and copying it from a passed-challenge session would get around the bot check).
-- **The port** (`pg_yandex`, the panel in `crates/desktop`, usage in PLAN §8 M2): plain HTTP to `yandex.com`
-  like the script, group 1 from the results page's `cbirOtherSizes`, group 2 from the similar JSON API with
-  `yp`, up to 5 pages. Like the script, a failure on a page after the first (in practice the page-1 captcha)
-  ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with
+  challenge is passed. The Sites list is not fetched (its pages 1 and up need `spravka`). The port does not copy
+  `spravka` from a passed-challenge session, since that would get around the bot check. It has no `spravka`
+  handling of its own, though: it keeps every cookie Yandex sets (`crates/yandex/src/client.rs:28-29`), so a
+  `spravka` that a response sets would be sent back. Whether Yandex sets it for a client that has not passed a
+  captcha is not established.
+- **The port** (`pg_yandex`, the panel in `crates/desktop`, usage in PLAN §8 M2): plain HTTP to `yandex.ru`
+  (`crates/yandex/src/client.rs:11-15`). Every measurement above is on `yandex.com`, so the cookie and captcha
+  behaviour on `.ru` is not measured. Group 1 comes from the results page's `cbirOtherSizes`, group 2 from the
+  similar JSON API with `yp`, up to 5 pages. The `yp` value is fixed at `1920x1080:1920x937`
+  (`client.rs:112`), not the browser's real screen metrics. Like the script, a failure on a page after the first
+  (in practice the page-1 captcha) ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with
   a note; one on the upload or the other sizes is the search's error. A captcha is reported, never retried.

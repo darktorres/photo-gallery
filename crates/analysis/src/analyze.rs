@@ -20,17 +20,18 @@ use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
-/// in place, which keeps the library, ratings and views. Not a schema version. Until the first release it is not
-/// bumped: a change that alters what is stored means the owner recreates the catalogs (a change to the tables is a
-/// migration of the catalog's schema, `MIGRATIONS` in `pg_catalog`'s `schema.rs`, whose baseline is frozen). From the
-/// first release on, a change that alters what is stored bumps it.
-pub const IMPORT_VERSION: i64 = 1;
+/// in place, which keeps the library, ratings and views. Not a schema version (a change to the tables is a migration
+/// of the catalog's schema, `MIGRATIONS` in `pg_catalog`'s `schema.rs`, whose baseline is frozen). Bumped when what is
+/// stored changes. Version 2: the resize is linear-light MKS2021 (`pg_codec::resize`), which changes the PDQ and
+/// ThumbHash inputs and so their hashes and the pairs made from them.
+pub const IMPORT_VERSION: i64 = 2;
 
 /// The JPEG decode keeps at least this many pixels on the upright long side…
 const DECODE_MIN_LONG: usize = 512;
 /// …and on the short side, so the later SSCD input (320 px, PLAN §5 tier 2) can come from the same decode rule.
 const DECODE_MIN_SHORT: usize = 320;
-/// PDQ input: fitted into 512 px with Lanczos3, as `eval/pdq.py` (Meta's recommendation).
+/// PDQ input: fitted into 512 px by the resizer (linear-light MKS2021, sRGB bytes out), which PDQ's luminance step
+/// reads as its spec says (hashing.pdf pp. 10–11).
 const PDQ_SIDE: usize = 512;
 /// ThumbHash input limit (the format's own maximum).
 const THUMBHASH_SIDE: usize = 100;

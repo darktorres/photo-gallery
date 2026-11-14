@@ -8,7 +8,8 @@ cosine similarity = 1 - d/128 and every embedding tool (evaluate.py, verify.py, 
 it unchanged. Meta's recommended match threshold is d <= 31 (cosine >= 0.758).
 
 Images are hashed upright (EXIF applied) after downscaling to <= 512 px, as Meta's reference
-hasher recommends; the hash itself downsamples to 64x64 internally.
+hasher recommends. The downscale is the app's (linear_resize.py: Magic Kernel Sharp 2021 in linear light, sRGB bytes
+out), so the eval hashes the same pixels as the app's PDQ; the hash itself downsamples to 64x64 internally.
 """
 
 import argparse
@@ -23,16 +24,14 @@ from PIL import Image
 
 from common import DATA_ROOT, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
+from linear_resize import FIT_SIDE, fit_within
 
-PREP_SIDE = 512
 MEANINGFUL_D = 31  # Meta's recommended PDQ match threshold
 
 
 def prepare(im: Image.Image) -> np.ndarray:
-    if max(im.size) > PREP_SIDE:
-        im = im.copy()
-        im.thumbnail((PREP_SIDE, PREP_SIDE), Image.Resampling.LANCZOS)
-    return np.asarray(im)
+    """The pixels PDQ hashes: the app's resize to <= 512 px (linear light, sRGB bytes out), upright RGB."""
+    return fit_within(np.asarray(im.convert("RGB")), FIT_SIDE)
 
 
 def to_vector(bits: np.ndarray) -> np.ndarray:
@@ -42,7 +41,9 @@ def to_vector(bits: np.ndarray) -> np.ndarray:
 
 def hash_file(rel: str) -> tuple[np.ndarray, int] | None:
     try:
-        bits, quality = pdqhash.compute(prepare(load_rgb(DATA_ROOT / rel)))
+        # The app's decode: a DCT-scaled decode keeping >= 512 px long and 320 short, as analyze.rs (DECODE_MIN_*).
+        # Moves the hash by 0 bits at the median and at most 6 on a 60-image sample (scratchpad eval_pdq/smoke.py).
+        bits, quality = pdqhash.compute(prepare(load_rgb(DATA_ROOT / rel, draft_sides=(512, 320))))
         return bits, int(quality)
     except Exception:  # noqa: BLE001 (a file that will not hash is reported as None)
         return None

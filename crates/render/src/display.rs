@@ -18,8 +18,9 @@ use pg_model::num::count;
 use pg_model::orientation::Orientation;
 use pg_model::turns::Turns;
 
-/// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (THUMBNAILS.md "Thumbnails"): the
-/// thumbnails' decode and the viewer's keep this margin.
+/// The resize from a DCT-scaled decode keeping ≥ 4× the target matched a full decode with Lanczos3 (THUMBNAILS.md
+/// "Thumbnails"); not re-measured with MKS2021 (docs/temp/THUMBNAIL_RESAMPLING.md §7.2). The thumbnails' decode and
+/// the viewer's keep this margin.
 pub(crate) const DECODE_MARGIN: usize = 4;
 
 /// Decode `bytes` upright at the smallest DCT scale that keeps `min` (full size if the image is smaller) into a

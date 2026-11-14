@@ -840,10 +840,14 @@ mod tests {
         assert_eq!(raw::cut_sides(&c), [None; 4]);
         let due = c.pending_borders().unwrap();
         assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
+        let (_, since) = changed_since(&c, 0);
         let tx = c.tx().unwrap();
         tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [Some(0), Some(41), Some(0), Some(41)]);
+        // The cut and its sides (`analysis_cut_stamp`, `border_sides_stamp_insert`) name the file to a client that keeps
+        // its list.
+        assert_eq!(changed_since(&c, since).0, [item.id], "the borders name their file");
         assert_eq!(c.border_sides(item.id).unwrap(), found.sides);
         assert!(c.pending_borders().unwrap().is_empty());
 
@@ -963,6 +967,9 @@ mod tests {
         c.conn.execute("DELETE FROM border_sides WHERE file_id = ?1", [item.id.get()]).unwrap();
         let now = stamped(&c, now);
         c.conn.execute("DELETE FROM analysis WHERE file_id = ?1", [item.id.get()]).unwrap();
+        // `analysis_removed`: a file with no analysis is pending again.
+        let pending: i64 = c.conn.query_row("SELECT pending FROM files WHERE id = ?1", [item.id.get()], |r| r.get(0)).unwrap();
+        assert_eq!(pending, 1, "a deleted analysis leaves its file pending");
         stamped(&c, now);
     }
 

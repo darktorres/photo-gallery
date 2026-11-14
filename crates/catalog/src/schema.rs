@@ -1097,6 +1097,28 @@ mod tests {
         assert_eq!(kept, ["thumbs"]);
     }
 
+    /// The stamps of a rating, a border mark and a queued write are triggers of their own on delete and on update as
+    /// well as on insert: taking each back (or changing it again) names its file, as the insert did (N-13).
+    #[test]
+    fn each_stamp_trigger_names_its_file_on_delete_and_update() {
+        let c = library(PathRules::Windows);
+        c.set_rating(FileId::new(1), Rating::new(3), false).unwrap();
+        c.set_border_mark(FileId::new(2), true).unwrap();
+        c.queue_rotation(FileId::new(3), Turns::new(1)).unwrap();
+        let (_, now) = changed_since(&c, 0);
+
+        // The rating is taken away (its row deleted), then the border mark, then the queued turn is changed again.
+        c.set_rating(FileId::new(1), None, false).unwrap();
+        let (changed, now) = changed_since(&c, now);
+        assert_eq!(changed, [FileId::new(1)], "a rating's delete");
+        c.set_border_mark(FileId::new(2), false).unwrap();
+        let (changed, now) = changed_since(&c, now);
+        assert_eq!(changed, [FileId::new(2)], "a border mark's delete");
+        c.queue_rotation(FileId::new(3), Turns::new(2)).unwrap();
+        let (changed, _) = changed_since(&c, now);
+        assert_eq!(changed, [FileId::new(3)], "a queued write's update");
+    }
+
     /// Every user-visible change stamps its file (`files.changed`), in the same statement as the change: the file
     /// itself, its analysis, its rating, its border mark and its queued write. A view is not a file's change.
     #[test]

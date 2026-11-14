@@ -201,7 +201,7 @@ pub(crate) fn insert_analysis(c: &Catalog, row: &AnalysisRow) {
         .execute(
             "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height, frames,
                                   duration_ms, error)
-             VALUES (?1, 1, ?2, ?3, 0, ?4, 0, ?5, ?6, ?7, ?8, ?9, ?10)",
+             VALUES (?1, ?11, ?2, ?3, 0, ?4, 0, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 row.file,
                 row.size,
@@ -212,7 +212,8 @@ pub(crate) fn insert_analysis(c: &Catalog, row: &AnalysisRow) {
                 row.height,
                 row.frames,
                 row.duration_ms,
-                row.error
+                row.error,
+                IMPORT_VERSION
             ],
         )
         .unwrap();

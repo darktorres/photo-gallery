@@ -1,9 +1,10 @@
 # JPEG decoders
 
-Which JPEG decoder the app should use: libjpeg-turbo, as `pg-codec` calls it, against every other decoder found
-(eight on the CPU, six on the GPU) on seven library files, plus restart markers and lossless baseline conversion
-(`eval/jpeg-decoders`, 2026-10-31). Instruction counts use the callgrind setup in [PROFILING.md](PROFILING.md).
-Encoders are in [JPEG_ENCODERS.md](../reference/JPEG_ENCODERS.md).
+Which JPEG decoder the app should use: libjpeg-turbo, as `pg-codec` calls it, measured against every other decoder
+found (eight on the CPU, six on the GPU) on seven library files, plus restart markers and lossless baseline
+conversion. The measurements are from 2026-10-31, with additions from 2026-11-14 marked where they appear. Instruction
+counts use the callgrind setup in [PROFILING.md](PROFILING.md). Encoders are in [JPEG_ENCODERS.md](../reference/JPEG_ENCODERS.md).
+The harness and scripts are in `eval/jpeg-decoders`.
 
 ## Verdict: keep libjpeg-turbo
 
@@ -24,15 +25,17 @@ Encoders are in [JPEG_ENCODERS.md](../reference/JPEG_ENCODERS.md).
     markers), so it suits the viewer, not the batch jobs.
   - **jpeggpu** decodes one image on the GPU in 1.1–2.1 ms (Pinterest) and 10.6 ms (24 MP, 8.8× libjpeg-turbo),
     with 0.3–1.6 ms of CPU and no restart markers needed. But it is experimental, rejects progressive files and
-    stops at YCbCr planes: upsampling and colour conversion would be ours to write.
+    stops at YCbCr planes: upsampling and colour conversion would be ours to write. With our colour stage
+    (`jpeggpu-rgb`, below) it reaches 2.5× libjpeg-turbo's throughput on a 7.5 MP camera file (397 against 156 img/s,
+    with 12 workers on libjpeg-turbo).
 
 Changing to a decoder whose pixels differ (every one measured here except libvips, parajpeg and Wuffs) would also
 change every stored `pixel_hash`, which would mean a re-import.
 
 ## All decoders at a glance
 
-Speeds are against libjpeg-turbo on the seven inputs: wall time on one thread, the
-full-size table below, unless noted. "Claimed" figures come from the project's own benchmarks on other hardware.
+Speeds are against libjpeg-turbo on the seven inputs: wall time on one thread, the full-size table below, unless
+noted. "Claimed" figures come from the project's own benchmarks on other hardware.
 
 | Decoder | Runs on | Measured here | DCT scaling | Pixels against the app's decode | Speed | Verdict |
 |---|---|---|---|---|---|---|
@@ -41,7 +44,7 @@ full-size table below, unless noted. "Claimed" figures come from the project's o
 | Pillow 13 (libjpeg-turbo) | CPU | yes (Windows) | `draft()`, decoded sizes round up (`ceil(w/d)`) | same library | within 10% of the WSL times | reference only |
 | zune-jpeg 0.5.15 | CPU (Rust) | yes | **no** | within 4 levels (50–73 dB) | 3–35% slower full size | no |
 | jpeg-decoder 0.3.2 | CPU (Rust), worker threads | yes | 1/2–1/8 | within 4 levels (50–73 dB) | 1.3–3.0× slower, despite extra threads | no |
-| FFmpeg 8 `mjpeg` | CPU | yes | `lowres` 1/2–1/8 | 29 dB on 4:2:0 | 1.3× faster on progressive; 1.2–3.2× slower otherwise (counted before the C-50 fix, see the note below the FFmpeg tables) | no |
+| FFmpeg 8 `mjpeg` | CPU | yes | `lowres` 1/2–1/8 | 29 dB on 4:2:0 | 1.3× faster on progressive; 1.2–3.2× slower otherwise (instruction counts from before the C-50 fix, see "Instructions per decode") | no |
 | libvips 8.18 | CPU (libjpeg-turbo) | yes | shrink-on-load, rounds down | identical at full size | 1.2–2.0× slower; its threads don't speed up a decode | no |
 | nvJPEG `HYBRID` (torchvision's) | GPU + CPU Huffman | yes | no | 69 dB on 4:4:4, 29.5–59 dB subsampled; 60–64 dB with `--interpolate` | batch 64: 1.8–33 ms; CPU time ≈ wall time, measured with CUDA's spinning wait (at batch 1 the CPU time fell from 30.9 to 19.9 ms with blocking sync, "nvJPEG through torchvision" below) | no |
 | nvJPEG `GPU_HYBRID`, batches over 50 | GPU | yes | no | same as `HYBRID` | 1.1–2.9 ms Pinterest, 13–15 ms camera, CPU 0.02–0.6 ms; not progressive or restart-marker files; 24 MP batches don't fit 6 GB | candidate for the thumbnail job |
@@ -51,7 +54,7 @@ full-size table below, unless noted. "Claimed" figures come from the project's o
 | Intel Quick Sync (`mjpeg_qsv`) | iGPU | no: UHD 630 disabled in the BIOS | — | — | — | only if the iGPU is enabled |
 | parajpeg 0.1.0, CPU | CPU, threads within one image (AVX2) | yes | **no** | **identical** | 1 thread: 1.0–1.9× slower; 12 threads: 2.8–2.9× faster on camera files (3.5–4.7× with markers) at 2.8–4.3× the CPU | for full-size viewer decodes |
 | parajpeg 0.1.0, CUDA | GPU | yes | no | **identical** | 5–8 ms on Pinterest files (slower than the CPU); 1.9–2.8× faster on camera files, CPU 4.8–15 ms | no: its CPU backend is better |
-| jpeggpu | GPU, GPU Huffman without markers | yes | no | planes within 1 level (63–74 dB) | **1.1–2.1 ms Pinterest, 4.3 ms phone and Sony, 10.6 ms 24 MP; CPU 0.3–1.6 ms**; planes only, no progressive; RGB with our colour stage (`jpeggpu-rgb`) 1.6–5.4 ms | the GPU candidate for the thumbnail job, with the colour stage written ("jpeggpu with the colour stage") |
+| jpeggpu | GPU, GPU Huffman without markers | yes | no | planes within 1 level (63–74 dB) | **1.1–2.1 ms Pinterest, 4.3 ms phone and Sony, 10.6 ms 24 MP; CPU 0.3–1.6 ms**; planes only, no progressive; RGB with our colour stage (`jpeggpu-rgb`) 1.6–5.4 ms | the GPU candidate for the thumbnail job, with the colour stage written ("jpeggpu and its colour stage") |
 | GPUJPEG (CESNET) | GPU | yes | no | 57–64 dB on 4:4:4; 29.5–50 dB subsampled; no progressive | without markers: up to 1.9× slower than libjpeg-turbo (CPU Huffman); with markers: 1.8–24.5 ms, CPU 0.2–1.4 ms | only with restart markers, and its chroma is off |
 | Wuffs (2026-10-31 snapshot) | CPU, memory-safe | yes | no | **identical** | instructions: equal on 4:4:4, 7–24% more on subsampled, 41% more progressive | the memory-safe option; no scaling |
 | jpegli (decoder) | CPU | yes | — | 49–52 dB: its own dequantization, by design | 1.8–2.2× the instructions | no |
@@ -82,11 +85,13 @@ The main kinds in the library.
 | `sony-base422-7mp` (Sony compact) | baseline 4:2:2 | 3648×2056, 3.6 MB |
 | `a6000-base422-24mp` (Sony A6000) | baseline 4:2:2 | 6000×4000, 5.6 MB |
 
-## Decoders measured
+The originals are not on the machine the 2026-11-14 runs were made on. Where a run used stand-ins, the table or
+section says so; the stand-in files are listed in the section "Instructions per decode".
 
-All decode to packed RGB8 on one thread unless noted. "Scaled" is the DCT scale `analyze` asks
-for (long side ≥ 512, short side ≥ 320): 1/2 for the Pinterest files, 1/4 for the phone and the 7 MP Sony, 1/8
-for the A6000.
+## Method
+
+All decoders decode to packed RGB8 on one thread unless noted. "Scaled" is the DCT scale `analyze` asks for (long side
+≥ 512, short side ≥ 320): 1/2 for the Pinterest files, 1/4 for the phone and the 7 MP Sony, 1/8 for the A6000.
 
 - **libjpeg-turbo:** the vendored 3.x, called as `pg-codec` does: accurate IDCT, smooth upsampling.
 - **libjpeg-turbo fast:** the same, with `TJPARAM_FASTDCT` and `TJPARAM_FASTUPSAMPLE`.
@@ -99,12 +104,16 @@ for the A6000.
 - **nvJPEG:** through torchvision 0.29 (CUDA 13.4) on Windows (`gpu.py`), with Pillow 13 and pyvips 8.18.7 as
   CPU references in the same process.
 
+Instruction counts are callgrind on the Linux build. Most come from gungraun (`eval/jpeg-decoders/benches/ir.rs`).
+libvips and jpeg-decoder do their work in threads gungraun doesn't count, so their figures come from whole runs
+instead (`linux.py marginal`: 3 decodes minus 1, halved, all threads). That method gives the same numbers as gungraun
+for libjpeg-turbo, to within 0.5 M.
+
+Wall times are medians on WSL (`wsl.sh`) unless a section says Windows.
+
 ## Instructions per decode
 
-Millions of instructions; callgrind, Linux build. Most come from gungraun. libvips and jpeg-decoder do
-their work in threads gungraun doesn't count, so their figures come from whole runs instead (`linux.py marginal`:
-3 decodes minus 1, halved, all threads). That method gives the same numbers as gungraun for libjpeg-turbo, to
-within 0.5 M.
+Millions of instructions, Linux build.
 
 | Full size | turbo | turbo fast | zune | jpeg-decoder | FFmpeg | libvips |
 |---|---:|---:|---:|---:|---:|---:|
@@ -126,17 +135,18 @@ within 0.5 M.
 | sony-base422-7mp (1/4) | 285.3 | **284.1** | 357.6 | 289.1 | 307.1 |
 | a6000-base422-24mp (1/8) | 378.4 | **377.9** | 761.5 | 582.8 | 396.1 |
 
-**C-50, measured 2026-11-14.** Before it, `Decoders::new` left FFmpeg's MJPEG decoders unopened, so the measured decode
-also opened one, and every column's input was dropped inside the measured call. Now the four decoders (one per `lowres`)
-open in `Decoders::new`, and `run` returns the input, so neither is counted. The rows above are pre-fix and were not
-re-run on the seven inputs (the originals aren't on this machine). On four stand-in inputs (below), the fix lowers the FFmpeg
-counts by about 0.2 M instructions per decode, which is about 0.2% of FFmpeg's counts. So the table's FFmpeg full and
-scaled rows are about 0.2 M high. The libjpeg-turbo, turbo fast, zune-jpeg and libvips rows did not change on the
-stand-ins. jpeg-decoder changed by 0.2 M on one of the four (`pin-base444-3mp`, full: 88.3 pre-fix, 88.5 at HEAD). The
-wall-time rows below (from `wsl.sh`) were not re-measured.
+**FFmpeg's counts predate the C-50 fix.** Before it, `Decoders::new` left FFmpeg's MJPEG decoders unopened, so the
+measured decode also opened one, and every column's input was dropped inside the measured call. The fix opens the four
+decoders (one per `lowres`) in `Decoders::new`, and `run` returns the input, so neither is counted. The two tables above
+are the pre-fix counts, and the seven original inputs were not re-run after it.
 
-Stand-ins, the bench at the pre-C-50 commit (`262004b^`, extracted and built with the same `build.rs`) and at HEAD, same
-container, same inputs (`JPEG_NAMES` limits the run to these four):
+On four stand-in inputs, the fix lowers FFmpeg's counts by about 0.2 M instructions per decode, which is about 0.2% of
+them. So FFmpeg's full and scaled figures above are about 0.2 M high. libjpeg-turbo, turbo fast, zune-jpeg and libvips
+did not change on the stand-ins. jpeg-decoder changed by 0.2 M on one of the four (`pin-base444-3mp`, full: 88.3 before
+the fix, 88.5 at HEAD).
+
+The stand-in run used the bench at the pre-C-50 commit (`262004b^`, built with the same `build.rs`) and at HEAD, in the
+same container, with the same inputs (`JPEG_NAMES` limits the run to these four):
 
 | Stand-in (size) | FFmpeg full, pre → HEAD | FFmpeg scaled, pre → HEAD |
 |---|---:|---:|
@@ -145,14 +155,15 @@ container, same inputs (`JPEG_NAMES` limits the run to these four):
 | `pin-prog420-1mp` (736×1104, progressive 4:4:4) | 86.2 → 86.0 | 67.6 → 67.4 |
 | `pin-base420-1mp` (1280×1017, baseline 4:2:0) | 124.4 → 124.2 | 63.1 → 62.9 |
 
-The bench's other three inputs (`phone-base420-4mp`, `sony-base422-7mp`, `a6000-base422-24mp`) have no stand-in files on this
-machine. Their rows are not reported: the bench panics on missing files, so placeholder copies of `pin-base420-1mp` were
-used to fill them in.
+The other three inputs (`phone-base420-4mp`, `sony-base422-7mp`, `a6000-base422-24mp`) had no stand-in files, so their
+rows are not reported: the bench panics on missing files, and placeholder copies of `pin-base420-1mp` were used to fill
+them in.
 
 ## Wall time
 
-Median ms; WSL, i7-8700, machine at 6–18% load. A run during a busy spell (100%: a VMware VM
-plus the app) was 2–3× slower everywhere and was discarded; a repeat when quiet matched the first quiet run.
+Median ms; WSL, i7-8700, machine at 6–18% load. A run during a busy spell (100%: a VMware VM plus the app) was 2–3×
+slower everywhere and was discarded; a repeat when quiet matched the first quiet run. The FFmpeg rows are from before
+the C-50 fix and were not re-measured.
 
 | Full size | turbo | turbo fast | zune | jpeg-decoder | FFmpeg | libvips |
 |---|---:|---:|---:|---:|---:|---:|
@@ -199,11 +210,72 @@ From `tools/profiling/cgtab.py` on the gungraun outputs.
 - **The fast libjpeg-turbo options save 3–11% of a full decode on subsampled files and nothing at the scales
   `analyze` uses.** Scaled IDCTs have no fast variant, and 4:4:4 has nothing to upsample. They cost 29 dB on 4:2:0.
 
+## Viewer: parajpeg for full-size decodes (measured 2026-11-14)
+
+The viewer's full-size decodes (`Maker::decode_file` and `Maker::turn_jpeg`, `MinSize::Full`) run through parajpeg on
+6 threads (`pg-render`'s `VIEWER_THREADS`). Everything else stays on libjpeg-turbo: thumbnails (`MinSize::Upright`), the
+analysis, and the Yandex transcode. A JPEG parajpeg declines goes to libjpeg-turbo.
+
+- **Pixels:** identical. Harness: 0 mismatched channels on both files below. The app's ignored test
+  (`compares_real_jpegs`) on the D: Pinterest subset (`dups2`): 5,933 JPEGs, 0 mismatched, 1 declined (libjpeg-turbo decodes it).
+- **Threads:** one full decode of the 7.5 MP 4:2:2 camera file (3648×2056), median wall time, harness, i7-8700, the
+  machine with other load (libjpeg-turbo 57 ms here, 37 ms when quiet earlier):
+
+| Threads | Wall ms | CPU ms |
+|---|---:|---:|
+| libjpeg-turbo (1) | 57.3 | 58.2 |
+| parajpeg 1 | 67.9 | 68.4 |
+| parajpeg 6 (chosen) | 29.7 | 133.9 |
+| parajpeg 12 | 18.9 | 128.5 |
+
+  1.8 MP 4:2:0 (`s420`): libjpeg-turbo 6.6 ms, parajpeg 6 threads 4.3 ms, 12 threads 3.9 ms. Six threads keep about
+  half of the CPU for the import's workers, and cost about 2.3× the CPU of libjpeg-turbo per decode (133 against 58 ms).
+- **Concurrency bug, fixed in the fork:** parajpeg's shared thread pool runs one parallel job at a time. Two decodes on
+  several threads at once hang, so the tests (which run in parallel) hung. The fork's shim serializes the decodes
+  (`darktorres/parajpeg` `8e2c53a`, regression test `decodes_on_several_threads_at_once_all_finish`). The viewer shows one
+  photo at a time, so the lock costs nothing it needs. Upstream has the bug as well.
+- **Build:** parajpeg is C++20 and needs clang-cl on Windows (its AVX2 kernels use GCC/Clang attributes and
+  `__builtin_cpu_supports`). The fork's `build.rs` uses LLVM's clang-cl (`CLANG_CL` overrides the path) and links clang's
+  builtins runtime. `crates/README.md` ("Build") lists it.
+
+## jpeggpu and its colour stage (`jpeggpu-rgb`, measured 2026-11-14)
+
+jpeggpu's planes go through a colour stage on the GPU (`harness/colour.cu`): libjpeg-turbo's default ("fancy") chroma
+upsampling for h2v1 and h2v2, and its fixed-point YCbCr → RGB tables. The output is RGB in pinned host memory, as
+nvJPEG's is.
+
+- **The stage is exact.** Fed libjpeg-turbo's own planes, it reproduces libjpeg-turbo's RGB with no mismatched channel
+  on 4:2:0, 4:2:2 and 4:4:4 files, odd sizes included (`harness/colour_check.cu`). The difference left in `jpeggpu-rgb`
+  (mean 0.03, max 3) therefore comes from jpeggpu's planes, which are up to 1 level off, and the upsampling and
+  conversion spread that.
+- **Inputs:** the seven files are not on the machine this was run on. Measured on a 7.5 MP 4:2:2 camera file
+  (3648×2056), and on the same photo resized to 1801×1015 and encoded at 4:2:0 and at 4:4:4 (ImageMagick). The
+  harness's Windows build, RTX 2060, machine otherwise quiet.
+
+| Input | turbo, wall (CPU) | jpeggpu planes | `jpeggpu-rgb` | nvJPEG GPU Huffman | `jpeggpu-rgb` against turbo: mean / max / PSNR |
+|---|---:|---:|---:|---:|---:|
+| 7.5 MP 4:2:2 camera | 37.5 ms (38.9) | 4.41 ms (1.02) | 5.39 ms (1.12) | 16.9 ms (12.6) | 0.028 / 3 / 62.9 dB |
+| 1.8 MP 4:2:0 | 4.58 ms (4.84) | 1.30 ms (0.46) | 1.63 ms (0.34) | 3.09 ms (2.56) | 0.038 / 3 / 61.0 dB |
+| 1.8 MP 4:4:4 | 6.75 ms (7.35) | 1.49 ms (0.41) | 1.56 ms (0.29) | 3.91 ms (2.46) | 0.042 / 3 / 60.4 dB |
+
+Throughput, images per second, CPU ms per image in brackets: libjpeg-turbo on 12 workers against `jpeggpu-rgb` on 4:
+
+| Input | turbo ×12 | `jpeggpu-rgb` ×4 |
+|---|---:|---:|
+| 7.5 MP 4:2:2 camera | 156 (62) | **397 (1.1)** |
+| 1.8 MP 4:2:0 | 1,320 (7.2) | **1,688 (0.5)** |
+
+- **Camera files:** 2.5× the throughput of libjpeg-turbo on 12 workers, at 1/57 of its CPU per image. This is the case
+  the 1.1–2.9× range in the verdict is about, and it holds on this input.
+- **Limits are unchanged:** progressive files are still rejected, and the decoder is experimental. A progressive file
+  still needs the CPU or a lossless conversion to baseline first.
+
 ## nvJPEG through torchvision (Huffman decoding on the CPU)
 
-Windows, RTX 2060, machine at 10–17% load. The table gives ms per image, with the decoded pixels
-left on the GPU and, in brackets, copied back to host memory. Batches are N copies of the file in one
-`decode_jpeg` call. The 24 MP file stops at batch 32: 72 MB per decoded image, against the GPU's 6 GB.
+Windows, RTX 2060, machine at 10–17% load. The table gives ms per image, with the decoded pixels left on the GPU and,
+in brackets, copied back to host memory. Batches are N copies of the file in one `decode_jpeg` call. The 24 MP file
+stops at batch 32: 72 MB per decoded image, against the GPU's 6 GB. These rows were measured with CUDA's default
+spinning wait; the blocking-sync figures are in the next subsection.
 
 | Input | Pillow full / draft² | nvJPEG batch 1 | batch 8 | batch 32 | batch 64 |
 |---|---:|---:|---:|---:|---:|
@@ -215,43 +287,10 @@ left on the GPU and, in brackets, copied back to host memory. Batches are N copi
 | sony-base422-7mp | 44.07 / 28.00 | 48.43 (41.65) | 30.24 (34.30) | 29.46 (32.16) | 29.18 (32.60) |
 | a6000-base422-24mp | 111.14 / 47.24 | 85.53 (100.62) | 62.34 (74.46) | 61.93 (72.98) | — |
 
-¹ These two rows are full decodes: `gpu.py` asked Pillow's `draft()` for the ceiling size, `ceil(w/d)`, and for
-these files Pillow then picked no reduction.
+¹ These two rows are full decodes: `gpu.py` asked Pillow's `draft()` for the ceiling size, `ceil(w/d)`, and for these
+files Pillow then picked no reduction. ² The draft column was measured before C-47 was fixed; see "Pillow `draft()`
+rounding" below for what was re-measured and what was not.
 
-² The column was measured before C-47 was fixed. Pillow's `draft()` picks the largest DCT scale that still gives at
-least the requested size, and the decoded size is the ceiling (3840×2151 at 1/4 is 960×538, not 960×537), so a
-ceiling request can select a larger image than `1/d` for a side that isn't a multiple of `d`. `gpu.py` now requests
-the floor size, as `nvjpeg.py` does, and raises if the decoded size is not `ceil(w/d) × ceil(h/d)`. The figures above
-were not re-measured, and the other rows were not checked for the same effect, because the old script did not check
-the decoded size.
-
-**Re-measured 2026-11-14 with the fixed `gpu.py`** (decoded size checked, blocking sync on). The footnote ¹ rows are
-the two whose sides are odd at `d = 2` (1267 and 1017), and they were full decodes in the table. Now they are real
-half decodes. The files are same-size stand-ins (the originals aren't on this machine), and this run was slower
-overall than the table's (Pillow full 9.4 ms against the table's 4.4 ms on the 1280×1017 file; the load wasn't
-measured, so the cause is unknown), so compare within this run only:
-
-| Stand-in (size) | Pillow full | Pillow 1/2 (decoded size) | 1/2 ÷ full |
-|---|---:|---:|---:|
-| 844×1267 (`pin-base444-1mp`'s size) | 9.79 ms | 5.89 ms (422×634) | 0.60 |
-| 1280×1017 (`pin-base420-1mp`'s size) | 9.42 ms | 5.24 ms (640×509) | 0.56 |
-
-The camera file 3648×2056 (`sony-base422-7mp`'s size, from E:\Cameras) has both sides divisible by 4, so the
-rounding bug never affected its 1/4 row, and it now measures 48.2 ms at 1/4 against 73.3 ms full.
-
-- **The CPU was the limit, measured with CUDA's spinning wait.** The process's CPU time per image equalled the wall
-  time at every batch size, but that includes the time the CPU spent spinning for the GPU. With blocking sync
-  (`blocking_sync()` in `gpu.py`) the CPU time at batch 1 fell from 30.9 to 19.9 ms, so about 7–11 ms of it was the
-  spin. These two runs are `gpu_spin.txt` and `gpu_blocking.txt`; the files are not in the repository, and the
-  figures here were not reproduced in this pass. Turing has no hardware JPEG decoder, so nvJPEG's hybrid backend does
-  the Huffman decoding on one CPU thread and leaves the GPU the IDCT and color conversion. The table above has not
-  been re-measured with blocking sync. **Re-measured 2026-11-14** (`gpu.py`, blocking sync on, the stand-ins above):
-  the camera file (3648×2056) at batch 1 costs 45.2 ms of CPU per image on the GPU path against 79.7 ms of wall time,
-  and 79.6 ms of CPU to host against 113.8 ms of wall; at batch 64 it is 48.9 and 57.5 ms of CPU against 53.1 and
-  67.7 ms of wall. The 844×1267 file (1.1 MP) at batch 1 costs 3.9 ms of CPU against 7.6 ms of wall, and 3.5 ms at batch
-  64 against 4.0 ms of wall. So with blocking sync the CPU time is below the wall time on every row, and the
-  spin-inflated CPU figures in the table are upper bounds. The old spin/blocking pair (`gpu_spin.txt`,
-  `gpu_blocking.txt`) is still not in the repository, so the 30.9 → 19.9 ms comparison is still unreproduced.
 - **What batching does:** it removes the per-call latency, from 2.7–3.5 ms down to 1.8–2.3 ms per small Pinterest
   file, and then levels off: about 450–560 images/s on one core.
 - **Against the CPU decode `analyze` actually uses:**
@@ -260,28 +299,60 @@ rounding bug never affected its 1/4 row, and it now measures 48.2 ms at 1/4 agai
     it's 1.2–1.6×.
   - **Camera photos:** it's no faster or slower (26–62 ms against 24–49 ms), since the CPU decode skips most of
     the IDCT and nvJPEG can't scale.
+- **The CPU was the limit, measured with CUDA's spinning wait.** The process's CPU time per image equalled the wall
+  time at every batch size, but that includes the time the CPU spent spinning for the GPU. With blocking sync
+  (`blocking_sync()` in `gpu.py`) the CPU time at batch 1 fell from 30.9 to 19.9 ms, so about 7–11 ms of it was the
+  spin. Turing has no hardware JPEG decoder, so nvJPEG's hybrid backend does the Huffman decoding on one CPU thread and
+  leaves the GPU the IDCT and colour conversion. The 30.9 → 19.9 ms pair is from runs (`gpu_spin.txt`, `gpu_blocking.txt`)
+  that are not in the repository, so it is not reproduced here.
+- **Blocking sync, re-measured 2026-11-14** (`gpu.py`, blocking sync on, the stand-ins in "Pillow `draft()` rounding"
+  below): the camera file (3648×2056) at batch 1 costs 45.2 ms of CPU per image on the GPU path against 79.7 ms of wall
+  time, and 79.6 ms of CPU to host against 113.8 ms of wall; at batch 64 it is 48.9 and 57.5 ms of CPU against 53.1 and
+  67.7 ms of wall. The 844×1267 file (1.1 MP) at batch 1 costs 3.9 ms of CPU against 7.6 ms of wall, and 3.5 ms at batch
+  64 against 4.0 ms of wall. With blocking sync the CPU time is below the wall time on every row, so the spin-inflated
+  CPU figures in the table above are upper bounds.
 - **Throughput:** libjpeg-turbo spreads over 12 threads, while nvJPEG here is bounded by its one Huffman thread.
   The GPU is also what SSCD needs (../reference/IO.md "I/O": the full pass is GPU-bound at 410 img/s).
-- **Windows against WSL:** Pillow on Windows (libjpeg-turbo) is within 10% of the WSL libjpeg-turbo times on
-  camera files (111 against 124 ms, 47 against 49 ms), so the two tables compare.
+- **Windows against WSL:** Pillow on Windows (libjpeg-turbo) is within 10% of the WSL libjpeg-turbo times on camera
+  files (111 against 124 ms, 47 against 49 ms), so the two tables compare.
+
+### Pillow `draft()` rounding
+
+Pillow's `draft()` picks the largest DCT scale that still gives at least the requested size, and the decoded size is the
+ceiling (3840×2151 at 1/4 is 960×538, not 960×537). A ceiling request can therefore select a larger image than `1/d` for
+a side that isn't a multiple of `d`. `gpu.py` now requests the floor size, as `nvjpeg.py` does, and raises if the decoded
+size is not `ceil(w/d) × ceil(h/d)`.
+
+The draft column above was measured before that fix, and only the two files whose sides are odd at `d = 2` (1267 and
+1017) have been re-measured. Those two were full decodes in the table; with the fixed `gpu.py` they are real half
+decodes. The other rows' draft figures were not checked for the same effect, because the old script did not check the
+decoded size. The files are same-size stand-ins (the originals aren't on this machine). This run was slower overall
+than the table's (Pillow full 9.4 ms against the table's 4.4 ms on the 1280×1017 file; the load wasn't measured, so the
+cause is unknown), so compare within this run only:
+
+| Stand-in (size) | Pillow full | Pillow 1/2 (decoded size) | 1/2 ÷ full |
+|---|---:|---:|---:|
+| 844×1267 (`pin-base444-1mp`'s size) | 9.79 ms | 5.89 ms (422×634) | 0.60 |
+| 1280×1017 (`pin-base420-1mp`'s size) | 9.42 ms | 5.24 ms (640×509) | 0.56 |
+
+The camera file 3648×2056 (`sony-base422-7mp`'s size, from E:\Cameras) has both sides divisible by 4, so the rounding
+never affected its 1/4 row, and it measures 48.2 ms at 1/4 against 73.3 ms full.
 
 ## nvJPEG with Huffman decoding on the GPU
 
-`nvjpeg.py`, 2026-10-31; RTX 2060, nvJPEG 13.2.3, the DLL torchvision
-ships, machine at ~25% load from a VMware VM. torchvision's `decode_jpeg` has no backend option, so `nvjpeg.py`
-calls nvJPEG through ctypes and compares its two backends for this GPU:
+`nvjpeg.py`, 2026-10-31; RTX 2060, nvJPEG 13.2.3, the DLL torchvision ships, machine at ~25% load from a VMware VM.
+torchvision's `decode_jpeg` has no backend option, so `nvjpeg.py` calls nvJPEG through ctypes and compares its two
+backends for this GPU:
 
 - **`HYBRID`:** Huffman decoding on the CPU, the rest on the GPU. This is what torchvision measured above.
-- **`GPU_HYBRID`:** Huffman decoding on the GPU too. The batched API (`nvjpegDecodeBatched`) only uses it for
-  batches over 50 baseline interleaved files; the decoupled API (one image at a time) uses it per image.
+- **`GPU_HYBRID`:** Huffman decoding on the GPU too. The batched API (`nvjpegDecodeBatched`) only uses it for batches
+  over 50 baseline interleaved files; the decoupled API (one image at a time) uses it per image.
 
-The CUDA context waits by sleeping (`cudaDeviceScheduleBlockingSync`), so CPU time counts work. CUDA's default
-spins while it waits, which bills the GPU's time to the CPU: in the first run, every row showed CPU time equal to
-wall time, including `GPU_HYBRID` at batch 64, which with blocking sync costs 0.03 ms. The torchvision rows above
-were measured with spinning, and `HYBRID` measured here (with blocking sync) still costs the CPU 0.8–1.0× its wall
-time. The torchvision conclusion that the CPU is the limit therefore stands, but its CPU figures are overstated by the
-spin (30.9 against 19.9 ms at batch 1). Those two runs are not in the repository; `nvjpeg.py` itself was run on
-nvJPEG 13.2.3.
+The CUDA context waits by sleeping (`cudaDeviceScheduleBlockingSync`), so CPU time counts work. CUDA's default spins
+while it waits, which bills the GPU's time to the CPU: in the first run, every row showed CPU time equal to wall time,
+including `GPU_HYBRID` at batch 64, which with blocking sync costs 0.03 ms. `HYBRID` measured here (with blocking sync)
+still costs the CPU 0.8–1.0× its wall time. The torchvision conclusion that the CPU is the limit therefore stands, but
+its CPU figures are overstated by the spin (30.9 against 19.9 ms at batch 1). `nvjpeg.py` itself was run on nvJPEG 13.2.3.
 
 Per image, decoded pixels copied to pinned host memory. Batches are N copies of one file.
 
@@ -297,41 +368,68 @@ Per image, decoded pixels copied to pinned host memory. Batches are N copies of 
 
 ¹ Noisy: 29–31 ms in the two later runs.
 
-- **Batches over 50 move the whole decode off the CPU:** 0.02–0.08 ms of CPU per Pinterest file and about 0.5 ms
-  per camera file, against 4–7 ms and 24–50 ms of CPU for Pillow's scaled decode. Batch 50 and below (1, 8, 32), it runs
+- **Batches over 50 move the whole decode off the CPU:** 0.02–0.08 ms of CPU per Pinterest file and about 0.5 ms per
+  camera file, against 4–7 ms and 24–50 ms of CPU for Pillow's scaled decode. Batch 50 and below (1, 8, 32), it runs
   exactly like `HYBRID`.
 - **It's also the fastest decode here:** 1.1–2.9 ms per Pinterest file, and 13–15 ms per camera file. These are
   full-size decodes against Pillow's scaled ones; nvJPEG can only scale in its hardware backend.
 - **Exceptions:**
   - **Progressive files** (17% of the Pinterest census) always decode Huffman on the CPU.
-  - **The 24 MP file doesn't fit a batch over 50:** 51 × 72 MB of output is over what the 6 GB card has free.
-    The decoupled API is the only GPU route for it: 42 ms to host, against Pillow's 140 ms full and 49 ms at 1/8,
-    but still 32 ms of CPU (Pillow 1/8: 50 ms), so GPU Huffman does only part of the work.
+  - **The 24 MP file doesn't fit a batch over 50:** 51 × 72 MB of output is over what the 6 GB card has free. The
+    decoupled API is the only GPU route for it: 42 ms to host, against Pillow's 140 ms full and 49 ms at 1/8, but still
+    32 ms of CPU (Pillow 1/8: 50 ms), so GPU Huffman does only part of the work.
   - **The decoupled API doesn't help small files:** its CPU time stays near `HYBRID`'s. It helps camera files
     (CPU 12–32 ms against `HYBRID`'s 28–63 ms).
 - **Same pixels as `HYBRID`** on all seven files (max difference 0).
-- **Smooth chroma upsampling is a flag:** `NVJPEG_FLAGS_UPSAMPLING_WITH_INTERPOLATION` (`--interpolate`) brings
-  nvJPEG within 3 levels of Pillow on 4:2:0 and 4:2:2: 64 dB on pin-base420-1mp (from 50), 61 dB on the phone
-  photo (from 29.5), 63 dB on the Sony (from 59). It costs nothing measurable. It's still not bit-exact, so
-  `pixel_hash` values would change.
-- **Throughput, not latency:** the GPU at about 820–880 small files/s (to host, batch 64) is likely less than all
-  12 CPU threads decode at 1/2 (one thread: 200–270/s; not measured across threads). It adds decode capacity and
-  frees the CPU for PDQ, ThumbHash and the resizes, but its GPU time competes with SSCD, which keeps this GPU busy
-  at 410 img/s (../reference/IO.md "I/O").
+- **Smooth chroma upsampling is a flag:** `NVJPEG_FLAGS_UPSAMPLING_WITH_INTERPOLATION` (`--interpolate`) brings nvJPEG
+  within 3 levels of Pillow on 4:2:0 and 4:2:2: 64 dB on pin-base420-1mp (from 50), 61 dB on the phone photo (from
+  29.5), 63 dB on the Sony (from 59). It costs nothing measurable. It's still not bit-exact, so `pixel_hash` values
+  would change.
+- **Throughput, not latency:** the GPU at about 820–880 small files/s (to host, batch 64) is likely less than all 12 CPU
+  threads decode at 1/2 (one thread: 200–270/s; not measured across threads). It adds decode capacity and frees the CPU
+  for PDQ, ThumbHash and the resizes, but its GPU time competes with SSCD, which keeps this GPU busy at 410 img/s
+  (../reference/IO.md "I/O").
+
+## nvImageCodec and debesheedas
+
+- **nvImageCodec 0.10.0.9** (`nvimgcodec_bench.py`; this run had 2.8–4.1 cores of other load, so read it as rough;
+  0.10.0.9 is the version the numbers were measured with, and `eval/jpeg-decoders/requirements.txt` pins it):
+  - **One image per call** costs about what nvJPEG does with its default backend: 3.4–7.6 ms on the Pinterest files,
+    20–53 ms on camera files. The CPU time equalled the wall time in the spinning run; with blocking sync
+    (`blocking_sync()` in `nvimgcodec_bench.py`) the CPU time at batch 1 fell from 16.8 to 13.3 ms, so the spin
+    explains about 3 ms of it, not all of it. The spinning and blocking runs (`nvimgcodec_blocking.txt` and its
+    spinning counterpart) are not in the repository and were not reproduced in this pass.
+  - **Batches** spread the Huffman decoding over CPU threads: batch 64 runs at 1.6–3.5 ms per Pinterest file and 5–9 ms
+    per camera file, but costs 4–8 ms and 19–25 ms of CPU per image, which is libjpeg-turbo's own CPU cost. The
+    blocking-sync run still shows CPU time about 2× the wall time at batch 64, which fits CPU threads doing the Huffman
+    decoding. That is an inference from CPU time, not a trace of which backend ran. Against it, `GPU_HYBRID` in
+    `nvjpeg.py` (CPU 0.02 ms) and `HYBRID` (3.2 ms) at batch 64 show what a GPU Huffman path looks like, and nvImageCodec's
+    batches do not look like that.
+  - The **CPU backend is 2.0–3.5× slower** than libjpeg-turbo on one image (11.4 ms on `pin-base444-1mp`, 234 ms on the
+    A6000).
+  - **Backend kinds on this card (checked 2026-11-14, RTX 2060, nvImageCodec 0.10.0.9, `nvimgcodec_bench.py` on
+    `DSC00896.JPG`, the 3648×2056 4:2:2 camera file):** `GPU_ONLY` decodes nothing: `decode` returns `None`, with
+    `[pynvimgcodec] Something went wrong during decoding image #0`. `HW_GPU_ONLY` (the JPEG engine) can't be created:
+    `Internal error - Could not create decoder. Code: 7`, as Turing has no such engine. Both have their own lines in the
+    bench (`backends()` lists `HW_GPU_ONLY`). On the same file `default` ran at 18.8–44.9 ms per image and
+    `HYBRID_CPU_GPU` at 24.6–57.4 ms (two runs, batches 1–64), with the same pixels as libjpeg-turbo's (62.9 dB) for the
+    two that decode.
+  - So: an integration layer with nothing to gain here over calling nvJPEG directly.
+- **debesheedas/GPU-JPEG-Decoder** (`debesheedas.py`) is a course project that decodes in a single warp: 1.3 s for 1.1 MP
+  and 3.6 s for 2.9 MP past its 0.2 s start-up (a whole process per decode, including writing its text output).
 
 ## Restart markers and lossless baseline conversion
 
-`restart.sh`, 2026-10-31, WSL. Every fast GPU decoder
-outside nvJPEG relies on restart markers to split the Huffman stream (GPUJPEG, the Fastvideo SDK, parajpeg's
-fastest path). None of the seven inputs has any, and `jpegtran` can add them, or turn progressive into baseline,
-without re-encoding. Variants made with jpegtran 2.1.5 `-copy all -optimize`:
+`restart.sh`, 2026-10-31, WSL. Every fast GPU decoder outside nvJPEG relies on restart markers to split the Huffman
+stream (GPUJPEG, the Fastvideo SDK, parajpeg's fastest path). None of the seven inputs has any, and `jpegtran` can add
+them, or turn progressive into baseline, without re-encoding. Variants made with jpegtran 2.1.5 `-copy all -optimize`:
 
 - **baseline:** no markers;
 - **every 10 MCUs** (`-restart 10B`, the Fastvideo encoder's interval);
 - **every MCU row** (`-restart 1`).
 
-Decoded pixels are identical to the original's in every variant, at full size and 1/2 (`djpeg` output compared
-byte for byte). Instructions are the vendored libjpeg-turbo's, per decode.
+Decoded pixels are identical to the original's in every variant, at full size and 1/2 (`djpeg` output compared byte for
+byte). Instructions are the vendored libjpeg-turbo's, per decode.
 
 | Input | baseline: size | M instr. full / scaled | row markers: size | M instr. full / scaled |
 |---|---:|---:|---:|---:|
@@ -343,36 +441,39 @@ byte for byte). Instructions are the vendored libjpeg-turbo's, per decode.
 | sony-base422-7mp | −23.3%¹ | 356.3 / 285.4 | −23.3%¹ | 405.5 / 334.6 (+14%, +17%) |
 | a6000-base422-24mp | −9.1%¹ | 832.7 / 376.2 | −9.1%¹ | 923.1 / 455.0 (+11%, +21%) |
 
-The marker percentages compare with the baseline column. ¹ Mostly not compression: jpegtran drops what follows the
-first image's end marker, which is where the cameras put their MPF preview (1616×1080 on the A6000, 1920×1080 on
-the Sony; the 160×120 EXIF thumbnail survives). Without it, the saving is about 3% on the A6000 and under 1% on
-the Sony. The phone's 14% is real Huffman optimization; its 512×288 preview sits inside EXIF and is kept.
+The marker percentages compare with the baseline column. ¹ Mostly not compression: jpegtran drops what follows the first
+image's end marker, which is where the cameras put their MPF preview (1616×1080 on the A6000, 1920×1080 on the Sony; the
+160×120 EXIF thumbnail survives). Without it, the saving is about 3% on the A6000 and under 1% on the Sony. The phone's
+14% is real Huffman optimization; its 512×288 preview sits inside EXIF and is kept.
 
-- **Progressive → baseline is a clear win:** the progressive file takes 2.6× fewer instructions full size and 3.2×
-  fewer scaled, decodes in 1.99 ms instead of 6.46 (1.35 instead of 3.76 at 1/2), with identical pixels and
-  0.1% smaller. It also qualifies for nvJPEG's GPU Huffman: batch 64 in 0.70 ms per image with 0.02 ms of CPU,
-  against 3.3 ms and 2.6 ms of CPU as progressive. These are the originals ImageReduce keeps when its re-encode
-  comes out bigger, so the fix belongs there.
-- **Restart markers cost the current paths:** libjpeg-turbo takes 4–21% more instructions with a marker per MCU
-  row, more on the high-bitrate camera files; wall times grew up to 8% full size and 13% scaled. And nvJPEG's batched `GPU_HYBRID` decodes
-  Huffman on the CPU again for files with markers (phone at batch 64: 32 ms of CPU, against 0.5 ms without);
-  its decoupled API is unaffected. A marker every 10 MCUs costs slightly more instructions, and 1.7–10.7% more size on
-  the Pinterest files. So markers only pay off with a decoder that uses them (GPUJPEG, Fastvideo, parajpeg), and
-  none is adopted.
+- **Progressive → baseline is a clear win:** the progressive file takes 2.6× fewer instructions full size and 3.2× fewer
+  scaled, decodes in 1.99 ms instead of 6.46 (1.35 instead of 3.76 at 1/2), with identical pixels and 0.1% smaller. It
+  also qualifies for nvJPEG's GPU Huffman: batch 64 in 0.70 ms per image with 0.02 ms of CPU, against 3.3 ms and 2.6 ms
+  of CPU as progressive.
+- **Applied:** the originals ImageReduce keeps when its re-encode comes out bigger are progressive, so the conversion
+  belongs there. It is in `darktorres/ImageReduce` (commit `7b670d4`, 2026-10-31), with a one-off pass
+  (`--baseline-existing`). The pass ran on the D: Pinterest copy (`D:\PhotoGallery\datasets\pinterest`, 186,578 files,
+  2026-11-14): 43,603 progressive files converted, pixels verified, total 5,713.7 → 5,782.4 MB (+1.20%; median +0.87% per
+  file). A second dry run finds no progressive files left.
+- **Restart markers cost the current paths:** libjpeg-turbo takes 4–21% more instructions with a marker per MCU row, more
+  on the high-bitrate camera files; wall times grew up to 8% full size and 13% scaled. nvJPEG's batched `GPU_HYBRID`
+  decodes Huffman on the CPU again for files with markers (phone at batch 64: 32 ms of CPU, against 0.5 ms without); its
+  decoupled API is unaffected. A marker every 10 MCUs costs slightly more instructions, and 1.7–10.7% more size on the
+  Pinterest files. So markers only pay off with a decoder that uses them (GPUJPEG, Fastvideo, parajpeg), and none is
+  adopted.
 - **Don't run `jpegtran -optimize` on camera originals:** it deletes their large embedded preview.
 
 ## Every decoder in one harness
 
-`eval/jpeg-decoders/harness`, 2026-10-31: one C++ program, built on Windows (MSVC, CUDA 13.4) and in WSL
-(clang), decodes with every library through one interface, so they're measured alike. Each decoder keeps its
-buffers between calls. GPU decoders copy their output to pinned host memory and wait for it, and the CUDA context
-sleeps while it waits, so CPU time is real work. Timing is the Rust harness's: warm-up decodes, then samples for at
-least 2 s and 5 samples, the median; CPU time is the process's (all threads) per decode. Output is compared with
-libjpeg-turbo's (jpeggpu, which returns planes, with libjpeg-turbo's planes).
+`eval/jpeg-decoders/harness`, 2026-10-31: one C++ program, built on Windows (MSVC, CUDA 13.4) and in WSL (clang), decodes
+with every library through one interface, so they're measured alike. Each decoder keeps its buffers between calls. GPU
+decoders copy their output to pinned host memory and wait for it, and the CUDA context sleeps while it waits, so CPU
+time is real work. Timing is the Rust harness's: warm-up decodes, then samples for at least 2 s and 5 samples, the
+median; CPU time is the process's (all threads) per decode. Output is compared with libjpeg-turbo's (jpeggpu, which
+returns planes, with libjpeg-turbo's planes).
 
-The inputs are the seven files as they are, the progressive one converted losslessly to baseline, and each with a
-restart marker every MCU row (`restart.py`; jpegtran's output is baseline, so the row-marker progressive file is
-baseline too).
+The inputs are the seven files as they are, the progressive one converted losslessly to baseline, and each with a restart
+marker every MCU row (`restart.py`; jpegtran's output is baseline, so the row-marker progressive file is baseline too).
 
 | Decoder | Version | Built |
 |---|---|---|
@@ -384,13 +485,13 @@ baseline too).
 | jpegli | 031a007 (2026-06-01) | WSL |
 | Wuffs | d28ecd4 (2026-10-31), `wuffs_aux::DecodeImage` to RGBA (its AVX2 path) | WSL |
 
-The first Windows run was discarded: a VMware VM was taking 3.3 cores, which made single-thread decodes 30–50%
-slower whenever they shared a core with it. The run below had 0.3–0.6 cores of other load.
+The first Windows run was discarded: a VMware VM was taking 3.3 cores, which made single-thread decodes 30–50% slower
+whenever they shared a core with it. The run below had 0.3–0.6 cores of other load.
 
 ### Instructions per decode (CPU decoders)
 
-Millions; callgrind in WSL, all threads, (3 decodes − 1) / 2. libjpeg-turbo's counts are 1–4% below the
-gungraun ones above (this harness's C++ build against the Rust one).
+Millions; callgrind in WSL, all threads, (3 decodes − 1) / 2. libjpeg-turbo's counts are 1–4% below the gungraun ones
+above (this harness's C++ build against the Rust one).
 
 | Input | turbo | turbo planes | parajpeg 1 thread | parajpeg 12 threads | jpegli | Wuffs |
 |---|---:|---:|---:|---:|---:|---:|
@@ -407,20 +508,21 @@ gungraun ones above (this harness's C++ build against the Rust one).
 | phone-base420-4mp | 270.0 | 248.9 | **223.8** | 224.6 | 424.5 | 288.7 |
 | a6000-base422-24mp | **876.7** | 752.0 | 956.2 | 958.3 | 1,762.0 | 1,010.2 |
 
-- **Wuffs is libjpeg-turbo's equal on baseline 4:4:4,** 81% of the Pinterest census, and 7–24% behind on
-  subsampled files and 41% on progressive. Its pixels are identical. It has no DCT scaling, which `analyze` needs.
-- **parajpeg on one thread** costs 1.0–1.6× libjpeg-turbo's instructions, and slightly fewer on the phone photo
-  and the progressive file.
+- **Wuffs is libjpeg-turbo's equal on baseline 4:4:4,** 81% of the Pinterest census, and 7–24% behind on subsampled files
+  and 41% on progressive. Its pixels are identical. It has no DCT scaling, which `analyze` needs.
+- **parajpeg on one thread** costs 1.0–1.6× libjpeg-turbo's instructions, and slightly fewer on the phone photo and the
+  progressive file.
 - **parajpeg's speculative decoding is the price of its threads:** without markers, 12 threads execute 30–80% more
-  instructions than one on baseline files (4% on the progressive one); with a marker per row, none, since each segment decodes independently.
+  instructions than one on baseline files (4% on the progressive one); with a marker per row, none, since each segment
+  decodes independently.
 - **jpegli's decoder costs about twice libjpeg-turbo's** (it decodes in floating point).
-- **Planes only** (no upsampling, no colour conversion) saves 9–30%. That is the share of the decode that
-  jpeggpu leaves out.
+- **Planes only** (no upsampling, no colour conversion) saves 9–30%. That is the share of the decode that jpeggpu leaves
+  out.
 
 ### Wall and CPU time per decode on Windows
 
-Median ms, with process CPU ms in brackets. Windows process times tick every 15.6 ms, so CPU figures below about
-0.1 ms aren't resolved. nvJPEG uses smooth chroma upsampling (`NVJPEG_FLAGS_UPSAMPLING_WITH_INTERPOLATION`).
+Median ms, with process CPU ms in brackets. Windows process times tick every 15.6 ms, so CPU figures below about 0.1 ms
+aren't resolved. nvJPEG uses smooth chroma upsampling (`NVJPEG_FLAGS_UPSAMPLING_WITH_INTERPOLATION`).
 
 | Input | turbo | parajpeg 1 thread | parajpeg 12 threads | parajpeg CUDA | nvJPEG | nvJPEG GPU Huffman | jpeggpu (planes) | GPUJPEG |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -441,22 +543,21 @@ Median ms, with process CPU ms in brackets. Windows process times tick every 15.
 | sony-base422-7mp | 40.80 (41.5) | 49.76 (50.0) | 9.38 (83.0) | 38.66 (6.4) | 35.51 (30.4) | 15.41 (11.4) | **4.67 (1.3)** | 16.96 (1.1) |
 | a6000-base422-24mp | 89.51 (90.4) | 134.84 (133.3) | 25.25 (228.2) | 55.02 (11.7) | 78.40 (66.3) | 36.53 (24.0) | **10.41 (1.4)** | 24.50 (1.4) |
 
-- **jpeggpu is the fastest single-image decode on every file without markers:** 1.5–8.8× faster than
-  libjpeg-turbo (6.1–8.8× on camera files), with 2–23% of its CPU time. With markers, parajpeg's 12 threads beat
-  it on the 1 MP files. Its output stops at YCbCr planes on the GPU; the upsampling and colour conversion it skips
-  are a small kernel (nvJPEG does them in its GPU time). It rejects progressive files.
-- **parajpeg's threads pay off on camera files:** 2.8–2.9× faster without markers, 3.5–4.7× with. On Pinterest
-  files they gain 1.2–1.6× without markers and 2.3–2.8× with. They take 2.8–4.3× the CPU time without markers.
-  One thread is 1.0–1.9× slower than libjpeg-turbo.
-- **parajpeg's CUDA backend loses to its CPU backend:** 4–8 ms on the Pinterest files, which libjpeg-turbo decodes
-  in 1.7–8 ms, and slower with markers (59 ms on the phone photo).
-- **nvJPEG one image at a time:** with Huffman on the CPU it runs at 0.65–1.1× libjpeg-turbo's wall time, with
-  40–95% of its CPU time. Its decoupled `GPU_HYBRID` API brings the camera files to 40–64% of libjpeg-turbo's time
-  (17–38 ms, 10–26 ms of CPU) and gains little on small ones.
-- **GPUJPEG needs markers:** without them its CPU Huffman decoder is up to 1.9× slower than libjpeg-turbo; with them
-  it decodes on the GPU with 0.2–1.4 ms of CPU, but at 2.4–5.3× jpeggpu's wall time on camera files.
-- **Restart markers don't slow libjpeg-turbo's wall time** measurably here (−4% to +10%), against 4–21% more
-  instructions.
+- **jpeggpu is the fastest single-image decode on every file without markers:** 1.5–8.8× faster than libjpeg-turbo (6.1–8.8×
+  on camera files), with 2–23% of its CPU time. With markers, parajpeg's 12 threads beat it on the 1 MP files. Its output
+  stops at YCbCr planes on the GPU; the upsampling and colour conversion it skips are a small kernel (nvJPEG does them in
+  its GPU time). It rejects progressive files.
+- **parajpeg's threads pay off on camera files:** 2.8–2.9× faster without markers, 3.5–4.7× with. On Pinterest files they
+  gain 1.2–1.6× without markers and 2.3–2.8× with. They take 2.8–4.3× the CPU time without markers. One thread is 1.0–1.9×
+  slower than libjpeg-turbo.
+- **parajpeg's CUDA backend loses to its CPU backend:** 4–8 ms on the Pinterest files, which libjpeg-turbo decodes in
+  1.7–8 ms, and slower with markers (59 ms on the phone photo).
+- **nvJPEG one image at a time:** with Huffman on the CPU it runs at 0.65–1.1× libjpeg-turbo's wall time, with 40–95% of
+  its CPU time. Its decoupled `GPU_HYBRID` API brings the camera files to 40–64% of libjpeg-turbo's time (17–38 ms,
+  10–26 ms of CPU) and gains little on small ones.
+- **GPUJPEG needs markers:** without them its CPU Huffman decoder is up to 1.9× slower than libjpeg-turbo; with them it
+  decodes on the GPU with 0.2–1.4 ms of CPU, but at 2.4–5.3× jpeggpu's wall time on camera files.
+- **Restart markers don't slow libjpeg-turbo's wall time** measurably here (−4% to +10%), against 4–21% more instructions.
 
 ### Wall and CPU time per decode in WSL (CPU decoders)
 
@@ -482,18 +583,17 @@ On 12 workers (images/s, CPU ms per image):
 | phone-base420-4mp | **223 (51.0)** | 194 (56.7) | 114 (92.5) | 177 (66.1) |
 | a6000-base422-24mp | **64 (182)** | 48 (240) | 41 (284) | 46 (247) |
 
-- **Wuffs runs at 1.0–1.3× libjpeg-turbo's time on one thread,** in line with its instruction counts, but at
-  0.57–0.79× its throughput on 12 workers, probably because it writes 4 bytes per pixel against 3 and the workers
-  share the memory bus.
+- **Wuffs runs at 1.0–1.3× libjpeg-turbo's time on one thread,** in line with its instruction counts, but at 0.57–0.79× its
+  throughput on 12 workers, probably because it writes 4 bytes per pixel against 3 and the workers share the memory bus.
 - **jpegli decodes at 1.4–2.3× libjpeg-turbo's time,** at 0.4–0.6× its throughput.
-- **parajpeg in WSL is close to the Windows build:** 2.3–2.9× faster than libjpeg-turbo on camera files with 12
-  threads (2.8–2.9× on Windows).
+- **parajpeg in WSL is close to the Windows build:** 2.3–2.9× faster than libjpeg-turbo on camera files with 12 threads
+  (2.8–2.9× on Windows).
 
 ### Throughput
 
-Images per second, with CPU ms per image in brackets. Every worker has its own decoder and decodes the same file
-over and over; the GPU rows use 4 workers (4 streams). The last column is `nvjpeg.py`'s best batched figure
-(`GPU_HYBRID`, to host). That run had about 2.8 cores of other load, from Everything indexing the encoder outputs.
+Images per second, with CPU ms per image in brackets. Every worker has its own decoder and decodes the same file over
+and over; the GPU rows use 4 workers (4 streams). The last column is `nvjpeg.py`'s best batched figure (`GPU_HYBRID`, to
+host). That run had about 2.8 cores of other load, from Everything indexing the encoder outputs.
 
 | Input | turbo ×12 | parajpeg ×12 (1 thread each) | nvJPEG ×4 | nvJPEG GPU Huffman ×4 | parajpeg CUDA ×4 | jpeggpu ×4 | GPUJPEG ×4 (row markers) | nvJPEG batched |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -505,20 +605,20 @@ over and over; the GPU rows use 4 workers (4 streams). The last column is `nvjpe
 | sony-base422-7mp | 171 (62.7) | 120 (79.4) | 49 (47.8) | 124 (18.9) | 52 (9.2) | **282–499 (1.5–2.8)** | 58 (1.2) | 65 (0.34), batch 64 |
 | a6000-base422-24mp | 71 (148) | 46 (220) | 20 (94.2) | 47 (39.8) | 21 (25.3) | **140 (3.9)** | 40 (1.0) | 23 (30.8), decoupled³ |
 
-¹ The row-marker file is baseline. ³ Batches over 50 of 24 MP don't fit the 6 GB card. jpeggpu was rerun after
-a harness fix (its first run stopped at the progressive file); its ranges are the spread of 2–4 repeats, which varied
-up to 3× on the small files, probably with the GPU's clock state. Its 8-worker figures were no better than 4
-(2,094–2,436/s on the 1 MP files, 450–547/s on the Sony).
+¹ The row-marker file is baseline. ³ Batches over 50 of 24 MP don't fit the 6 GB card. jpeggpu was rerun after a harness
+fix (its first run stopped at the progressive file); its ranges are the spread of 2–4 repeats, which varied up to 3× on
+the small files, probably with the GPU's clock state. Its 8-worker figures were no better than 4 (2,094–2,436/s on the
+1 MP files, 450–547/s on the Sony).
 
-- **jpeggpu on 4 workers out-decodes libjpeg-turbo on 12 on the camera files:** 1.1× on the phone photo, 1.6–2.9× on
-  the Sony, 2.0× on the A6000, with 2.7–3.9 ms of CPU per image against 43–148 ms. On the small files it lands
-  anywhere from 0.2× to 1.2× libjpeg-turbo's rate, depending on the repeat. Every other GPU path is slower than
-  libjpeg-turbo on 12 workers.
-- **The GPU's case is CPU time, not speed:** jpeggpu costs about 0.9 ms of CPU per image, GPUJPEG with markers
-  about 1 ms, and batched `GPU_HYBRID` 0.0–0.3 ms, against 5–148 ms for libjpeg-turbo. The thumbnail job also
-  runs PDQ, ThumbHash and the resizes on the CPU, and SSCD keeps the GPU busy.
-- **parajpeg on one thread per image has about half libjpeg-turbo's throughput.** Use it only for single decodes
-  that are waited on.
+- **jpeggpu on 4 workers out-decodes libjpeg-turbo on 12 on the camera files:** 1.1× on the phone photo, 1.6–2.9× on the
+  Sony, 2.0× on the A6000, with 2.7–3.9 ms of CPU per image against 43–148 ms. On the small files it lands anywhere from
+  0.2× to 1.2× libjpeg-turbo's rate, depending on the repeat. Every other GPU path is slower than libjpeg-turbo on 12
+  workers.
+- **The GPU's case is CPU time, not speed:** jpeggpu costs about 0.9 ms of CPU per image, GPUJPEG with markers about 1 ms,
+  and batched `GPU_HYBRID` 0.0–0.3 ms, against 5–148 ms for libjpeg-turbo. The thumbnail job also runs PDQ, ThumbHash and
+  the resizes on the CPU, and SSCD keeps the GPU busy.
+- **parajpeg on one thread per image has about half libjpeg-turbo's throughput.** Use it only for single decodes that are
+  waited on.
 
 ### Output against libjpeg-turbo
 
@@ -527,53 +627,22 @@ Mean |difference| / largest / PSNR, on the same inputs.
 - **Identical:** parajpeg (CPU and CUDA) and Wuffs on every file.
 - **nvJPEG with interpolation:** max 3; 69 dB on 4:4:4, 60.6–65.1 dB subsampled.
 - **jpeggpu (planes against libjpeg-turbo's planes):** max 1; 63–74 dB.
-- **GPUJPEG:** 57.5–63.8 dB on 4:4:4 and 4:2:2, but 29.5 dB on the phone's 4:2:0 (mean 6.3, max 57) and 46–50 dB
-  on the Pinterest 4:2:0 files: no smooth chroma upsampling.
-- **jpegli:** 49–52 dB, max 5–36, also on 4:4:4. Its decoder biases dequantized coefficients towards zero and
-  works in floating point (`idct.cc`), a deliberate change of reconstruction, not an error.
+- **GPUJPEG:** 57.5–63.8 dB on 4:4:4 and 4:2:2, but 29.5 dB on the phone's 4:2:0 (mean 6.3, max 57) and 46–50 dB on the
+  Pinterest 4:2:0 files: no smooth chroma upsampling.
+- **jpegli:** 49–52 dB, max 5–36, also on 4:4:4. Its decoder biases dequantized coefficients towards zero and works in
+  floating point (`idct.cc`), a deliberate change of reconstruction, not an error.
 - **debesheedas:** 51 dB (mean 0.5, max 3) on 4:4:4 without markers; 6–7 dB, unusable, with markers or 4:2:0.
-
-### nvImageCodec and debesheedas
-
-- **nvImageCodec 0.10.0.9** (`nvimgcodec_bench.py`; this run had 2.8–4.1 cores of other load, so read it as rough;
-  0.10.0.9 is the version the numbers were measured with, and `eval/jpeg-decoders/requirements.txt` pins it):
-  - **One image per call** costs about what nvJPEG does with its default backend: 3.4–7.6 ms on the Pinterest
-    files, 20–53 ms on camera files. The CPU time equalled the wall time in the spinning run; with blocking sync
-    (`blocking_sync()` in `nvimgcodec_bench.py`) the CPU time at batch 1 fell from 16.8 to 13.3 ms, so the spin
-    explains about 3 ms of it, not all of it. These figures (`nvimgcodec_blocking.txt` and its spinning counterpart) are
-    not in the repository and were not reproduced in this pass.
-  - **Batches** spread the Huffman decoding over CPU threads: batch 64 runs at 1.6–3.5 ms per Pinterest file and
-    5–9 ms per camera file, but costs 4–8 ms and 19–25 ms of CPU per image, which is libjpeg-turbo's own CPU cost.
-    The blocking-sync run still shows CPU time about 2× the wall time at batch 64, which fits CPU threads doing the
-    Huffman decoding. That is an inference from CPU time, not a trace of which backend ran. Against it,
-    `GPU_HYBRID` in `nvjpeg.py` (CPU 0.02 ms) and `HYBRID` (3.2 ms) at batch 64 show what a GPU Huffman path looks
-    like, and nvImageCodec's batches do not look like that; the earlier wording that it "never used" the GPU path
-    was stronger than the saved runs support.
-  - The **CPU backend is 2.0–3.5× slower** than libjpeg-turbo on one image (11.4 ms on `pin-base444-1mp`, 234 ms on
-    the A6000).
-  - **Backend kinds on this card (re-checked 2026-11-14, RTX 2060, nvImageCodec 0.10.0.9, `nvimgcodec_bench.py` on
-    `DSC00896.JPG`, the 3648×2056 4:2:2 camera file):** `GPU_ONLY` decodes nothing: `decode` returns `None`, with
-    `[pynvimgcodec] Something went wrong during decoding image #0`. `HW_GPU_ONLY` (the JPEG engine) can't be created:
-    `Internal error - Could not create decoder. Code: 7`, as Turing has no such engine. Both now have their own lines
-    in the bench (`backends()` lists `HW_GPU_ONLY`). The earlier probe scripts (`gpu_only_probe.py`,
-    `gpu_only_kinds.py`) are not in the repository, and their saved output was never kept; this check replaces them.
-    On the same file `default` ran at 18.8–44.9 ms per image and `HYBRID_CPU_GPU` at 24.6–57.4 ms (two runs, batches 1–64), with the same pixels as
-    libjpeg-turbo's (62.9 dB) for the two that decode.
-  - So: an integration layer with nothing to gain here over calling nvJPEG directly.
-- **debesheedas/GPU-JPEG-Decoder** (`debesheedas.py`) is a course project that decodes in a single warp: 1.3 s
-  for 1.1 MP and 3.6 s for 2.9 MP past its 0.2 s start-up (a whole process per decode, including writing its
-  text output).
 
 ## Other decoders, researched but not measured
 
 As of 2026-10-31. First the links and claims for the decoders measured above:
 
-- **parajpeg** ([anniigr/parajpeg](https://github.com/anniigr/parajpeg), version 0.1.0): splits one image across
-  threads without restart markers, by speculative self-synchronising Huffman decoding. It claims 2.8–3.1× on an
-  Apple M3 with 8 threads; the i7-8700 with 12 measured 2.8–2.9× on camera files.
-- **jpeggpu** ([nolmoonen/jpeggpu](https://github.com/nolmoonen/jpeggpu)): GPU Huffman for one image without
-  markers (Weißenberger and Schmidt, 2021). It claims 1.26 ms against nvJPEG's 6.89 ms on 6 MP on an RTX 2070;
-  measured here, 4.3 ms against nvJPEG's 29–34 ms on 4–7.5 MP.
+- **parajpeg** ([anniigr/parajpeg](https://github.com/anniigr/parajpeg), version 0.1.0): splits one image across threads
+  without restart markers, by speculative self-synchronising Huffman decoding. It claims 2.8–3.1× on an Apple M3 with 8
+  threads; the i7-8700 with 12 measured 2.8–2.9× on camera files.
+- **jpeggpu** ([nolmoonen/jpeggpu](https://github.com/nolmoonen/jpeggpu)): GPU Huffman for one image without markers
+  (Weißenberger and Schmidt, 2021). It claims 1.26 ms against nvJPEG's 6.89 ms on 6 MP on an RTX 2070; measured here,
+  4.3 ms against nvJPEG's 29–34 ms on 4–7.5 MP.
 - **GPUJPEG** ([CESNET/GPUJPEG](https://github.com/CESNET/GPUJPEG)), **nvImageCodec**
   ([NVIDIA/nvImageCodec](https://github.com/NVIDIA/nvImageCodec)), **Wuffs**
   ([google/wuffs](https://github.com/google/wuffs)), **jpegli** ([google/jpegli](https://github.com/google/jpegli)),
@@ -581,126 +650,27 @@ As of 2026-10-31. First the links and claims for the decoders measured above:
 
 Not measured:
 
-- **Fastvideo SDK** (commercial, needs a licence): the vendor's benchmark puts it 19–75× faster with markers than
-  without, and without markers it decodes Huffman on the CPU.
-- **NVDEC** (FFmpeg `mjpeg_cuvid`, measured once): the 2060's video engine decodes 4:2:0 JPEG only. It rejects
-  4:4:4 and 4:2:2, and on 4:2:0 it was no faster than FFmpeg's CPU decoder, with the same CPU time.
-- **nvJPEG `HARDWARE`** (A100/A30, Hopper, Blackwell) and **Intel Quick Sync** (the UHD 630 is disabled in the
-  BIOS): not available on this machine.
-- **Not useful here:** epeg (libjpeg's DCT scaling, which we use), jpegn (Go), Fulim13/jpeg (writes a custom
-  format, can't read JFIF).
+- **Fastvideo SDK** (commercial, needs a licence): the vendor's benchmark puts it 19–75× faster with markers than without,
+  and without markers it decodes Huffman on the CPU.
+- **NVDEC** (FFmpeg `mjpeg_cuvid`, measured once): the 2060's video engine decodes 4:2:0 JPEG only. It rejects 4:4:4 and
+  4:2:2, and on 4:2:0 it was no faster than FFmpeg's CPU decoder, with the same CPU time.
+- **nvJPEG `HARDWARE`** (A100/A30, Hopper, Blackwell) and **Intel Quick Sync** (the UHD 630 is disabled in the BIOS): not
+  available on this machine.
+- **Not useful here:** epeg (libjpeg's DCT scaling, which we use), jpegn (Go), Fulim13/jpeg (writes a custom format,
+  can't read JFIF).
 - **The Python libraries in Iglovikov, "Need for Speed: A Comprehensive Benchmark of JPEG Decoders in Python"**
-  ([arXiv 2501.13131](https://arxiv.org/html/2501.13131v1), 2025) are wrappers around decoders measured above:
-  OpenCV `imdecode` (its bundled libjpeg-turbo; `IMREAD_REDUCED_*` is the same DCT scaling), TensorFlow
-  `decode_jpeg` (bundled libjpeg-turbo), torchvision's CPU `decode_jpeg` (libjpeg-turbo), jpeg4py (ctypes over the
-  system libjpeg-turbo), Pillow-SIMD (SIMD in resize and filters, not in the decoder), imageio and scikit-image
-  (both read through Pillow), and kornia-rs (`kornia-io`: zune-jpeg by default, the `turbojpeg` crate as a feature).
-  The paper's gaps between them are binding overhead and disk I/O (it times cold-cache file reads). It says Pillow
-  uses the original libjpeg; its wheels ship libjpeg-turbo.
+  ([arXiv 2501.13131](https://arxiv.org/html/2501.13131v1), 2025) are wrappers around decoders measured above: OpenCV
+  `imdecode` (its bundled libjpeg-turbo; `IMREAD_REDUCED_*` is the same DCT scaling), TensorFlow `decode_jpeg` (bundled
+  libjpeg-turbo), torchvision's CPU `decode_jpeg` (libjpeg-turbo), jpeg4py (ctypes over the system libjpeg-turbo),
+  Pillow-SIMD (SIMD in resize and filters, not in the decoder), imageio and scikit-image (both read through Pillow), and
+  kornia-rs (`kornia-io`: zune-jpeg by default, the `turbojpeg` crate as a feature). The paper's gaps between them are
+  binding overhead and disk I/O (it times cold-cache file reads). It says Pillow uses the original libjpeg; its wheels
+  ship libjpeg-turbo.
 
-## jpeggpu with the colour stage (`jpeggpu-rgb`, 2026-11-14)
+## Decode for the SSCD pipeline (`eval/bench_decode.py`, subset, 2026-10-29)
 
-jpeggpu's planes now go through a colour stage on the GPU (`harness/colour.cu`): libjpeg-turbo's default
-("fancy") chroma upsampling for h2v1 and h2v2, and its fixed-point YCbCr → RGB tables. The output is RGB in pinned
-host memory, as nvJPEG's is.
-
-- **The stage is exact.** Fed libjpeg-turbo's own planes, it reproduces libjpeg-turbo's RGB with no mismatched
-  channel on 4:2:0, 4:2:2 and 4:4:4 files, odd sizes included (`harness/colour_check.cu`). The difference left in
-  `jpeggpu-rgb` (mean 0.03, max 3) therefore comes from jpeggpu's planes, which are up to 1 level off, and the
-  upsampling and conversion spread that.
-- **Inputs:** the seven files are not on the machine this was run on. Measured on a 7.5 MP 4:2:2 camera file
-  (3648×2056), and on the same photo resized to 1801×1015 and encoded at 4:2:0 and at 4:4:4 (ImageMagick). The
-  harness's Windows build, RTX 2060, machine otherwise quiet.
-
-| Input | turbo, wall (CPU) | jpeggpu planes | `jpeggpu-rgb` | nvJPEG GPU Huffman | `jpeggpu-rgb` against turbo: mean / max / PSNR |
-|---|---:|---:|---:|---:|---:|
-| 7.5 MP 4:2:2 camera | 37.5 ms (38.9) | 4.41 ms (1.02) | 5.39 ms (1.12) | 16.9 ms (12.6) | 0.028 / 3 / 62.9 dB |
-| 1.8 MP 4:2:0 | 4.58 ms (4.84) | 1.30 ms (0.46) | 1.63 ms (0.34) | 3.09 ms (2.56) | 0.038 / 3 / 61.0 dB |
-| 1.8 MP 4:4:4 | 6.75 ms (7.35) | 1.49 ms (0.41) | 1.56 ms (0.29) | 3.91 ms (2.46) | 0.042 / 3 / 60.4 dB |
-
-Throughput, images per second, CPU ms per image in brackets: libjpeg-turbo on 12 workers against `jpeggpu-rgb`
-on 4:
-
-| Input | turbo ×12 | `jpeggpu-rgb` ×4 |
-|---|---:|---:|
-| 7.5 MP 4:2:2 camera | 156 (62) | **397 (1.1)** |
-| 1.8 MP 4:2:0 | 1,320 (7.2) | **1,688 (0.5)** |
-
-- **Camera files:** 2.5× the throughput of libjpeg-turbo on 12 workers, at 1/57 of its CPU per image. This is the
-  case the 1.1–2.9× range above was about, and it holds on this input.
-- **Limits are unchanged:** progressive files are still rejected, and the decoder is experimental. A progressive
-  file still needs the CPU or a lossless conversion to baseline first.
-
-## Viewer: parajpeg for full-size decodes (2026-11-14)
-
-The viewer's full-size decodes (`Maker::decode_file` and `Maker::turn_jpeg`, `MinSize::Full`) now run through parajpeg
-on 6 threads (`pg-render`'s `VIEWER_THREADS`). Everything else stays on libjpeg-turbo: thumbnails (`MinSize::Upright`),
-the analysis, and the Yandex transcode. A JPEG parajpeg declines goes to libjpeg-turbo.
-
-- **Pixels:** identical. Harness: 0 mismatched channels on both files below. The app's ignored test
-  (`compares_real_jpegs`) on the D: Pinterest subset (`dups2`): 5,933 JPEGs, 0 mismatched, 1 declined (libjpeg-turbo decodes it).
-- **Threads:** one full decode of the 7.5 MP 4:2:2 camera file (3648×2056), median wall time, harness, i7-8700, the
-  machine with other load (libjpeg-turbo 57 ms here, 37 ms when quiet earlier):
-
-| Threads | Wall ms | CPU ms |
-|---|---:|---:|
-| libjpeg-turbo (1) | 57.3 | 58.2 |
-| parajpeg 1 | 67.9 | 68.4 |
-| parajpeg 6 (chosen) | 29.7 | 133.9 |
-| parajpeg 12 | 18.9 | 128.5 |
-
-  1.8 MP 4:2:0 (`s420`): libjpeg-turbo 6.6 ms, parajpeg 6 threads 4.3 ms, 12 threads 3.9 ms. Six threads keep about
-  half of the CPU for the import's workers, and cost about 2.3× the CPU of libjpeg-turbo per decode (133 against 58 ms).
-- **Concurrency bug, fixed in the fork:** parajpeg's shared thread pool runs one parallel job at a time. Two decodes on
-  several threads at once hang, so the tests (which run in parallel) hung. The fork's shim serializes the decodes
-  (`darktorres/parajpeg` `8e2c53a`, regression test `decodes_on_several_threads_at_once_all_finish`). The viewer shows one
-  photo at a time, so the lock costs nothing it needs. Upstream has the bug as well.
-- **Build:** parajpeg is C++20 and needs clang-cl on Windows (its AVX2 kernels use GCC/Clang attributes and
-  `__builtin_cpu_supports`). The fork's `build.rs` uses LLVM's clang-cl (`CLANG_CL` overrides the path) and links clang's
-  builtins runtime. `crates/README.md` ("Build") lists it.
-
-## Done
-
-- **Progressive originals → baseline:** done in `darktorres/ImageReduce` (commit `7b670d4`, 2026-10-31), with the
-  one-off pass (`--baseline-existing`). The pass was run on the D: Pinterest copy (`D:\PhotoGallery\datasets\pinterest`,
-  186,578 files, 2026-11-14): 43,603 progressive files converted, pixels verified, total 5,713.7 → 5,782.4 MB (+1.20%;
-  median +0.87% per file). A second dry run finds no progressive files left.
-- **The viewer's full-size decodes through parajpeg** (above), and jpeggpu's colour stage (`jpeggpu-rgb`).
-- **Re-measured 2026-11-14:** the Pillow `draft()` rounding rows (the footnote ¹ rows), the nvJPEG blocking-sync CPU
-  figures, and the nvImageCodec backend kinds (`GPU_ONLY` decodes nothing and `HW_GPU_ONLY` can't be created on this
-  card). Each is in its section, with the stand-in files named.
-
-## To rerun
-
-- **CPU decoders (Rust harness)**, in the container: `just linux-eval eval/jpeg-decoders/linux.py inputs check compare
-  time bench marginal`, with `JPEG_SRC_DIR` in `.env` naming the folder of the seven photos (mounted read-only). The
-  inputs are library photos, so they're copied into the `pg-eval` volume (`/eval/jpeg-inputs`) and never into the repo.
-  Natively on Linux, `python3 eval/jpeg-decoders/linux.py ...` with the packages of `docker/apt-packages-eval.txt`.
-- **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
-  (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
-  backends).
-- **Restart markers and baseline conversion:** `just linux-eval eval/jpeg-decoders/restart.py`. It keeps the
-  variants in the `pg-eval` volume (`/eval/jpeg-restart`).
-- **The C++ harness:**
-  - Build: `python eval\jpeg-decoders\win_build.py` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
-    `win_env.py` sets them up) and `just linux-eval eval/jpeg-decoders/linux_build.py` in the container. Both
-    clone the third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or the `pg-eval` volume's
-    `/eval/jpeg-eval` and apply
-    `eval/jpeg-decoders/patches/`: for jpeggpu, C++20 and binary file reads for MSVC; for parajpeg, its GCC flags
-    kept off nvcc and MSVC equivalents of two builtins.
-  - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with
-    CUDA 13.4's `bin\x64` on PATH; `harness.exe list` names the decoders.
-  - Linux, in the container: `just linux-eval eval/jpeg-decoders/harness_linux.py compare ir time throughput`.
-  - nvImageCodec, in its own venv (`python -m pip install -r eval/jpeg-decoders/requirements.txt`, which pins
-    nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
-    `nvimgcodec_bench.py --ref-dir DIR
-    FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`. debesheedas: `debesheedas.py --exe
-    DECODER.exe --ref-dir DIR FILE...`.
-
-## Decode benchmark (`eval/bench_decode.py`, subset, 2026-10-29)
-
-1,000 random JPEGs (median 0.96 MP, 120 KB), each turned into SSCD's 320×320 input, files already in
-RAM, machine otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full`.
+1,000 random JPEGs (median 0.96 MP, 120 KB), each turned into SSCD's 320×320 input, files already in RAM, machine
+otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full`.
 
 | Pipeline | img/s, 1 process | img/s, 12 processes | Cosine vs reference: min / p1 / p50 |
 |---|---|---|---|
@@ -709,17 +679,40 @@ RAM, machine otherwise idle. Cosine = SSCD fp16 embedding vs the same image thro
 | libvips `thumbnail` (shrink-on-load + Lanczos3) | 78 | 293 | 0.920 / 0.972 / 0.993 |
 | nvJPEG batched on the GPU + antialiased GPU resize | 267 | – (one process) | 0.991 / 0.995 / 0.999 |
 
-- **DCT-scaled decode is the winner: 2.1× full decode on the CPU, nearly the same embedding.** In
-  Rust: libjpeg-turbo's scaling factors (`turbojpeg` crate), the same mechanism.
-- **nvJPEG** gives the most faithful fast output but only 267 img/s. The 2060 has no hardware JPEG
-  engine, so Huffman decoding still runs on the CPU, and it competes with SSCD for the GPU.
-- **libvips is the slowest fast option here and moves embeddings the most** (min cosine 0.92):
-  Lanczos3 sharpens differently from the bilinear antialias the model was evaluated with. It may
-  speed up with `VIPS_CONCURRENCY=1` per process (12 processes each starting vips threads
-  oversubscribe the CPU). Not pursued, since `draft()` already wins.
-- **The rule that matters: index and query images must go through the same decode + resize.** A
-  0.97–0.99 cosine shift is harmless when it applies to every image, and harmful when only one side
-  of a pair gets it.
-- At 550 img/s, decoding 70M images takes ~1.5 days on the CPU. The disk (~1,600 files/s in MFT
-  order) and SSCD fp16 (410 img/s) are now within the same range, so the pass is GPU-bound at
-  ~2 days.
+- **DCT-scaled decode is the winner: 2.1× full decode on the CPU, nearly the same embedding.** In Rust: libjpeg-turbo's
+  scaling factors (`turbojpeg` crate), the same mechanism.
+- **nvJPEG** gives the most faithful fast output but only 267 img/s. The 2060 has no hardware JPEG engine, so Huffman
+  decoding still runs on the CPU, and it competes with SSCD for the GPU.
+- **libvips is the slowest fast option here and moves embeddings the most** (min cosine 0.92): Lanczos3 sharpens
+  differently from the bilinear antialias the model was evaluated with. It may speed up with `VIPS_CONCURRENCY=1` per
+  process (12 processes each starting vips threads oversubscribe the CPU). Not pursued, since `draft()` already wins.
+- **The rule that matters: index and query images must go through the same decode + resize.** A 0.97–0.99 cosine shift is
+  harmless when it applies to every image, and harmful when only one side of a pair gets it.
+- At 550 img/s, decoding 70M images takes ~1.5 days on the CPU. The disk (~1,600 files/s in MFT order) and SSCD fp16
+  (410 img/s) are now within the same range, so the pass is GPU-bound at ~2 days.
+
+## To rerun
+
+- **CPU decoders (Rust harness)**, in the container: `just linux-eval eval/jpeg-decoders/linux.py inputs check compare
+  time bench marginal`, with `JPEG_SRC_DIR` in `.env` naming the folder of the seven photos (mounted read-only). The
+  inputs are library photos, so they're copied into the `pg-eval` volume (`/eval/jpeg-inputs`) and never into the repo.
+  Natively on Linux, `python3 eval/jpeg-decoders/linux.py ...` with the packages of `docker/apt-packages-eval.txt`.
+  `JPEG_NAMES` (comma-separated, from the names in `linux.py`) runs a subset.
+- **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
+  (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
+  backends).
+- **Restart markers and baseline conversion:** `just linux-eval eval/jpeg-decoders/restart.py`. It keeps the variants in
+  the `pg-eval` volume (`/eval/jpeg-restart`).
+- **The C++ harness:**
+  - Build: `python eval\jpeg-decoders\win_build.py` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
+    `win_env.py` sets them up) and `just linux-eval eval/jpeg-decoders/linux_build.py` in the container. Both clone the
+    third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or the `pg-eval` volume's
+    `/eval/jpeg-eval` and apply `eval/jpeg-decoders/patches/`: for jpeggpu, C++20 and binary file reads for MSVC; for
+    parajpeg, its GCC flags kept off nvcc and MSVC equivalents of two builtins.
+  - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with CUDA
+    13.4's `bin\x64` on PATH; `harness.exe list` names the decoders.
+  - Linux, in the container: `just linux-eval eval/jpeg-decoders/harness_linux.py compare ir time throughput`.
+  - nvImageCodec, in its own venv (`python -m pip install -r eval/jpeg-decoders/requirements.txt`, which pins
+    nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
+    `nvimgcodec_bench.py --ref-dir DIR FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`.
+    debesheedas: `debesheedas.py --exe DECODER.exe --ref-dir DIR FILE...`.

@@ -1,32 +1,61 @@
 # PNG decoders
 
 Which PNG decoder the app should use: the `png` fork that `pg-codec` calls, against the same crate from crates.io
-(0.18.1), zune-png 0.5.2, libpng 1.6.59, libspng 0.7.4 and Wuffs (d28ecd4), on fourteen PNGs: seven from the library,
-seven made for the cases the library lacks (16-bit, Adam7-interlaced, grayscale, animated). Pillow's PNG reader is a
-second opinion outside Rust. It is the PNG counterpart of [JPEG_DECODERS.md](JPEG_DECODERS.md). Everything runs
-natively on Windows (`eval/png-decoders`, 2026-11-14). Wall time, heap traffic and the output are measured. No
-instruction counts (callgrind doesn't run here).
+(0.18.1), zune-png 0.5.2, libpng 1.6.59, libspng 0.7.4 and Wuffs (d28ecd4). The inputs are 24 PNGs: seven from the
+library, seven made for the cases the library lacks (16-bit, Adam7-interlaced, grayscale, animated), four with a
+tRNS transparency chunk (three synthetic, one a real 16-bit photograph), two with filter 0 on every row, and four real
+16-bit photographs. Pillow's PNG reader is a second opinion outside Rust. It is the PNG counterpart of
+[JPEG_DECODERS.md](JPEG_DECODERS.md). Everything runs natively on Windows (`eval/png-decoders`). Wall time, heap traffic
+and the output are measured. No instruction counts (callgrind doesn't run here).
 
-## Verdict: keep the app's png fork
+Four timing runs are used, and they differ in load. The **quiet pass 1** (2026-11-14, 20–32% CPU load) gives the first
+table of the seven library files and the seven generated ones. The **quiet pass 2** (2026-11-14, 17–40% load) gives
+all 23 files in one run, and the colour-key comparison. The **high-load pass** (83–99% load, other sessions running)
+gives the rest, and its absolute times are unreliable. The **streamed-inflate runs** (7–28% load) time the inflate of
+each file's stream alone, in both libraries. Within each run the decoders ran back to back, so the ratios inside a run
+are the useful part. Absolute times move by 20–40% between runs, and the 116 MP file moved 24% (988.77 ms in pass 1,
+1229.55 ms in pass 2).
 
-- **Output:** every decoder matches the app's output sample for sample on every file it can produce. PNG is lossless,
-  so this is the bar. Wuffs can't produce the app's 16-bit layout (its 16-bit RGB(A) is little-endian), so those three
-  files are not comparable for it.
-- **Speed:** the fork is the fastest on 10 of the 14 files. png 0.18 is 0.5–3% faster on the other four (rgb-4mp,
-  rgba-1mp, apng, rgba8-interlaced), which is within noise on the small ones. The gap to the others is large: zune-png
-  is 1.2–1.5× the fork, Pillow 1.5–2.5×, libpng and libspng about 2× on 8-bit RGB(A) and about 2.5–3× on 16-bit RGB.
-  Wuffs is level on the palette file (5.85 vs 5.62 ms), 1.4–2.1× on the other 8-bit files, and 2.0× on the 116 MP file.
+## Verdict
+
+- **Output:** every decoder matches the app's output sample for sample on every file, with three exceptions. Wuffs
+  writes the colour of a fully transparent colour-key pixel as black, where the app keeps the key colour; the alpha is
+  the same. On the 16-bit colour-key photograph, zune-png gets one sample wrong (the alpha of the key pixel), and
+  libspng's 16-bit RGBA output is wrong (9.3 M of 13.7 M samples), a fault that is not specific to tRNS (see below).
+  Wuffs' 16-bit output is repacked to the app's layout, inside the timed decode, so it is compared on 16-bit files too.
+  Pillow matches the app on every 8-bit file, including the tRNS ones, and keeps the key colour as the app does.
+- **Speed:** the fork and png 0.18 are within 10% of each other on every file in quiet pass 1, and on 18 of the 23
+  files in quiet pass 2. The exceptions in pass 2 are the 116 MP file (png 0.18 61% slower), the 2.46 MP RGBA file
+  (png 0.18 26% faster; it was tied in pass 1), and the two 8-bit colour-key files (png 0.18 17–18% faster) and the
+  filter-0 file (png 0.18 13% slower). The fork is not slower than the crate it's forked from, apart from the
+  colour-key cases and the two files above. The other decoders are slower: libpng 1.3–3.0× the fork on the unkeyed files in pass 2 (1.5–2.1× on 8-bit
+  RGB, 2.4–3.0× on the 16-bit synthetics, 1.5–1.7× on the photographs); libspng 1.4–2.5× on 8-bit, 2.6–4.8× on the
+  16-bit synthetics, and 1.9–3.1× on the photographs.
+- **Colour keys (confirmed in pass 2):** the fork decodes an 8-bit RGB file with a colour key 2.8× slower than the same
+  image without one, and a grey file with a key 5.1× slower. On the 16-bit photograph the fork is 1.3× slower with its
+  key. Palette tRNS costs nothing. libpng pays 1.1–1.3× on the 8-bit files and 1.05× on the photograph. The inflate is
+  not the cause: the key adds a chunk and leaves the compressed stream alone, and the inflate of the keyed and unkeyed
+  photograph measured the same (79.3 and 79.4 ms). The cost is in the expansion. The fork's expansion (`expand_trns_line`
+  in `src/decoder/transform.rs` at `f7129d3`, read but not profiled) compares each pixel's colour with the key one
+  pixel at a time. png 0.18 expands the keys faster than the fork (25.1 against 30.5 ms on the RGB file). This is the
+  one result in the study that points to a change in the app. The fix has not been designed, because no profile has
+  been taken.
+- **Inflate:** zlib (libpng and libspng) inflates the same stream 1.3–2.0× more slowly than fdeflate (the fork's
+  inflater). On the 8-bit files that difference accounts for 68–99% of libpng's gap to the fork; on the photographs
+  for 41–61%. On the photographs the rest is libpng's own per-row work, at 1.7–4.3× the fork's. libspng's non-inflate
+  work is 5–12× the fork's on the photographs. Neither is profiled. See the inflate section.
 - **Heap traffic:** the fork makes no heap calls per decode once its buffers are at size (its `Scratch` holds the
-  inflate state and the row buffers). png 0.18 makes 11–19 calls (about 400 KiB, its inflate state) per decode. The
-  C decoders make 1–10 calls (44–67 KiB). zune-png hands back a new output buffer each decode, so it requests the
-  whole image every time: 1.2 GB on the 116 MP file.
-- **Nothing to change.** A faster decoder would have to match every pixel, and none is faster.
+  inflate state and the row buffers). png 0.18 makes 11–20 calls (about 400 KiB, its inflate state) per decode. The C
+  decoders make 5–12 calls (45–120 KiB), and Wuffs one 44 KiB call. zune-png hands back a new output buffer each
+  decode, so it requests the whole image every time: 1.2 GB on the 116 MP file.
+- **Nothing to change yet.** The colour-key expansion is the only finding that points at the app's code, and it is
+  confirmed in cost, not in cause. The other gaps are between libraries, not in the app.
 
 ## What was measured
 
 Each decoder decodes the file's bytes to packed samples on one thread, full size. The output buffer is reused across
 decodes, as the app reuses its output. Each time is the median over at least five decodes, after two warm-up decodes,
-for at least two seconds.
+for at least one or two seconds.
 
 - **png (app fork):** the fork at `f7129d3`, decoded as `Codecs::png` does: its scratch kept between files, text and
   ICC chunks skipped, EXPAND (16-bit kept), the app's 512 MiB limit.
@@ -38,17 +67,18 @@ for at least two seconds.
 - **libpng 1.6.59** (static, with zlib 1.4): the standard read API, EXPAND-equivalent transforms, 16-bit kept. It
   creates its read structures on each decode, which is how libpng is normally used. Text chunks are skipped.
 - **libspng 0.7.4** (static, with the same zlib 1.4): its raw output with the palette and tRNS expansions. It creates
-  its context on each decode. **It cannot skip text chunks** (6 of the 7 library files have tEXt, 1–3 each), so its
-  time includes reading them.
-- **Wuffs d28ecd4:** `wuffs_aux::DecodeImage` to the matching pixel format (RGB, RGBA, gray). It recreates its decoder
-  object on each call (about 44 KiB), but keeps its pixel and work buffers.
+  its context on each decode. It cannot skip text chunks, so the library files were run as copies with their tEXt,
+  zTXt, iTXt and iCCP chunks removed (`make_variants.py`), for every decoder. The pixels are unchanged, and the fork
+  and libpng skip those chunks anyway.
+- **Wuffs d28ecd4:** `wuffs_aux::DecodeImage`, to the nearest of Wuffs' output formats. For 8-bit gray, RGB and RGBA
+  that is the app's layout. For 8-bit gray+alpha (Wuffs' PNG decoder won't write YA_NONPREMUL for it) it decodes to
+  RGBA and keeps the gray and alpha. For 16-bit it decodes to BGRA_NONPREMUL_4X16LE, its own 16-bit format, and
+  repacks: samples swapped to big-endian and reordered, the alpha dropped for RGB. The repacking is in the timed decode,
+  since that is what the app's layout costs with Wuffs. Wuffs recreates its decoder object on each call (about 44 KiB),
+  and keeps its pixel and work buffers.
 - **Pillow 12.2.0 (second opinion, `pillow_bench.py`):** Pillow's own PNG reader, a `zip` decoder over zlib-ng 1.3.1,
   not libpng. Its time covers `Image.open`, `load` and any conversion, so it includes Pillow's object overhead as well
-  as the decode.
-
-The timed runs (`time --secs 2`) were done back to back on the same machine, with the machine at 20–32% CPU load
-(sampled before and after). The Rust run agrees with an earlier pass within 4%, and the C run with its earlier pass
-within about 5% on the large files. The small files carry more noise: a few milliseconds each.
+  as the decode. A grey or RGB colour key is converted to LA or RGBA, as the app gives.
 
 ## Inputs
 
@@ -80,16 +110,49 @@ RGB(A), interlaced or APNG files. Each row uses the least-residual filter, at zl
 | `gray8-2mp` | grayscale 8-bit | 2.79 MP, 0.4 MB | `rgb-3mp`, luminance (0.299, 0.587, 0.114) |
 | `apng-rgb8-3frames` | RGB 8-bit, APNG | 3 frames of 2.79 MP, 3.1 MB | `rgb-3mp`; frame 0 is the default image, frames 1–2 are shifted and flipped copies |
 
-Two caveats on the 16-bit inputs. Each sample is the 8-bit value × 257, so its high and low bytes are equal. That
-compresses better than a camera's 16-bit file would, so inflate is cheaper here than on real 16-bit data. And the
-inputs are synthetic, so the grayscale and APNG cases are a check on the code paths, not a sample of real files.
+The 16-bit inputs written here are synthetic: each sample is the 8-bit value × 257, so its high and low bytes are
+equal. That compresses better than real 16-bit data, so their inflate is cheaper than a photograph's (see the real
+photographs below).
 
-No input is a camera or scanner file, and no input carries tRNS.
+**Chunk variants** (`make_variants.py`, under `$PG_ROOT\eval\png-decoders\inputs-variants`). The pixels are never
+re-encoded; a chunk is added or the file is copied.
+
+| Input | Kind | Size | Made from |
+|---|---|---|---|
+| `palette-2mp-trns` | palette, tRNS | 2.07 MP, 0.8 MB | `palette-2mp`, one alpha per palette entry (they vary) |
+| `rgb8-3mp-trns` | RGB 8-bit, colour key | 2.79 MP, 1.0 MB | `rgb-3mp`, key = the colour of pixel (0, 0) |
+| `gray8-2mp-trns` | grayscale 8-bit, key | 2.79 MP, 0.4 MB | `gray8-2mp`, key = the grey of pixel (0, 0) |
+| `rgb8-3mp-filter0` | RGB 8-bit, filter 0 | 2.79 MP | `rgb-3mp`, filter type 0 on every row |
+| `rgb8-4mp-filter0` | RGB 8-bit, filter 0 | 4.28 MP | `rgb-4mp`, filter type 0 on every row |
+| `real-flower_foveon-16bit-trns` | RGB 16-bit, colour key | 3.43 MP, 15.6 MB | `real-flower_foveon`, key = the colour of pixel (0, 0), as 16-bit big-endian R, G, B |
+
+The filter-0 variants make unfiltering a copy, so a decoder's whole time on them is almost all inflate. They are the
+check on the inflate question below.
+
+**Real photographs** (`make_real16.py`, under `$PG_ROOT\eval\png-decoders\inputs-real16`). The 16-bit RGB set of
+[imagecompression.info](https://www.imagecompression.info/test_images), "The New Image Compression Test Set" (Sachin
+Garg, 2008), whose terms allow redistribution with attribution. The archive holds 16-bit PPMs, which were read from the
+zip and written as 16-bit PNGs with the same encoder. The four chosen span 3.4 to 27.7 MP.
+
+| Input | Size | PNG size |
+|---|---|---|
+| `real-flower_foveon` | 2268 × 1512 (3.43 MP) | 15.6 MB |
+| `real-leaves_iso_200` | 3008 × 2000 (6.02 MP) | 31.0 MB |
+| `real-nightshot_iso_1600` | 3136 × 2352 (7.38 MP) | 37.7 MB |
+| `real-big_tree` | 6088 × 4550 (27.70 MP) | 145.5 MB |
+
+These are the inputs the synthetic 16-bit files stood in for. Their PNGs are about 10× the synthetic 16-bit files' size
+per megapixel (about 5 MB per MP against 0.5 MB per MP), which is why their inflate cost differs from those.
+
+**Text-free library copies** (`inputs-notext`): the seven library files with their text chunks removed, used for all
+decoders in the matrix (see libspng above).
 
 ## Decode time
 
+### Quiet pass 1 (the seven library files and the seven generated ones)
+
 Median ms per decode, one thread, full size. The Rust and C columns come from one run each, back to back. Pillow is
-from its own run, in the same session.
+from its own run, in the same session. Machine load 20–32%.
 
 | Input | png (app fork) | png 0.18 | zune-png 0.5 | libpng 1.6 | libspng 0.7 | Wuffs | Pillow 12 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -100,19 +163,191 @@ from its own run, in the same session.
 | rgba-2mp | **20.15** | 20.56 | 25.64 | 40.45 | 40.88 | 39.59 | 50.07 |
 | palette-2mp | **5.62** | 5.61 | 7.63 | 12.32 | 11.41 | 5.85 | 11.32 |
 | rgb-116mp | **988.77** | 1012.37 | 1335.29 | 1815.83 | 1829.23 | 1965.26 | 2336.43 |
-| rgb16-3mp | **15.97** | 17.18 | 21.06 | 47.11 | 74.42 | n/c | n/a |
-| rgba16-2mp | **28.05** | 28.91 | 32.52 | 71.61 | 133.81 | n/c | n/a |
-| rgb16-interlaced-3mp | **26.59** | 29.04 | 43.05 | 78.06 | 77.60 | n/c | n/a |
+| rgb16-3mp | **15.97** | 17.18 | 21.06 | 47.11 | 74.42 | 118.34* | n/a |
+| rgba16-2mp | **28.05** | 28.91 | 32.52 | 71.61 | 133.81 | 177.80* | n/a |
+| rgb16-interlaced-3mp | **26.59** | 29.04 | 43.05 | 78.06 | 77.60 | 129.69* | n/a |
 | rgb8-interlaced-3mp | **23.42** | 24.34 | 31.45 | 42.34 | 30.68 | 38.40 | 38.66 |
 | rgba8-interlaced-2mp | 33.62 | 32.58 | 41.89 | 80.36 | 60.57 | 55.06 | 59.64 |
 | gray8-2mp | **5.90** | 5.79 | 8.38 | 10.48 | 14.41 | 8.50 | 9.07 |
-| apng-rgb8-3frames | 12.13 | 12.07 | 17.05 | 24.91 | 23.88 | 18.76 | 24.58 |
+| apng-rgb8-3frames | **12.13** | 12.07 | 17.05 | 24.91 | 23.88 | 18.76 | 24.58 |
 
-n/c: not comparable (Wuffs writes 16-bit RGB(A) little-endian only). n/a: Pillow reads 16-bit RGB(A) at 8 bits.
+Bold: the fastest of the Rust decoders, or tied within 1%. n/a: Pillow reads 16-bit RGB(A) at 8 bits. \*: the Wuffs
+figures for the 16-bit files were taken before its repacking was in the timed decode, so they are from the high-load
+pass and carry its load; quiet pass 2 has the repacked figures.
 
-The gap to libpng and libspng on 8-bit RGB is about 2×, and on 16-bit RGB about 2.5–3× (libspng is slower still on
-16-bit, at 74 and 134 ms). Their inflate is zlib's; the fork's is fdeflate. That's a likely cause, but it is not
-profiled here. Interlacing costs the fork about 2× (rgb-3mp 11.0 → 23.4 ms), and the C decoders 1.4–1.9×.
+### Quiet pass 2 (all 23 files, one run, 17–40% load)
+
+Median ms per decode, one thread, full size, every decoder back to back on each file. Taken from
+`quiet_table.md`. Pillow was not run in this pass.
+
+| Input | png (app fork) | png 0.18 | zune-png 0.5 | libpng 1.6 | libspng 0.7 | Wuffs |
+|---|---:|---:|---:|---:|---:|---:|
+| rgb-116mp | 1229.55 | 1983.78 | 1743.65 | 1751.92 | 1724.14 | 1924.05 |
+| rgb-4mp | 42.30 | 39.48 | 64.47 | 62.96 | 62.49 | 65.03 |
+| rgb-1mp | 9.46 | 9.64 | 15.29 | 17.73 | 17.45 | 19.02 |
+| rgba-1mp | 11.08 | 10.65 | 17.06 | 18.38 | 18.05 | 20.67 |
+| rgba-2mp | 29.03 | 21.45 | 25.27 | 38.06 | 37.52 | 38.34 |
+| rgb-3mp | 10.99 | 10.87 | 15.38 | 22.61 | 21.33 | 18.43 |
+| palette-2mp | 5.56 | 5.57 | 8.33 | 11.73 | 11.27 | 5.85 |
+| apng-rgb8-3frames | 14.21 | 13.26 | 16.78 | 24.30 | 23.39 | 18.71 |
+| gray8-2mp | 5.79 | 5.72 | 8.26 | 10.03 | 14.19 | 8.53 |
+| rgb16-3mp | 15.89 | 15.71 | 21.24 | 48.07 | 76.95 | 74.04 |
+| rgb16-interlaced-3mp | 29.01 | 30.22 | 40.25 | 68.16 | 74.91 | 70.41 |
+| rgb8-interlaced-3mp | 21.00 | 22.81 | 30.95 | 43.87 | 30.39 | 39.21 |
+| rgba16-2mp | 29.49 | 30.18 | 34.23 | 72.98 | 110.33 | 93.80 |
+| rgba8-interlaced-2mp | 33.60 | 36.52 | 40.97 | 63.78 | 53.22 | 54.56 |
+| gray8-2mp-trns | 29.50 | 24.47 | 9.21 | 12.67 | 21.99 | 29.08 |
+| palette-2mp-trns | 5.47 | 5.38 | 7.67 | 12.23 | 11.47 | 5.78 |
+| rgb8-3mp-filter0 | 8.83 | 9.96 | 11.40 | 14.88 | 14.60 | 9.06 |
+| rgb8-3mp-trns | 30.51 | 25.13 | 18.15 | 24.97 | 37.48 | 35.15 |
+| rgb8-4mp-filter0 | 49.76 | 48.43 | 48.74 | 68.64 | 67.73 | 47.26 |
+| real-big_tree | 689.27 | 645.30 | 675.52 | 1041.11 | 1969.38 | 1914.94 |
+| real-flower_foveon | 94.27 | 88.47 | 92.15 | 139.92 | 176.85 | 166.98 |
+| real-leaves_iso_200 | 143.90 | 140.12 | 147.31 | 246.75 | 446.07 | 415.47 |
+| real-nightshot_iso_1600 | 170.25 | 171.15 | 172.02 | 294.23 | 453.32 | 435.86 |
+
+The 116 MP file moved 24% from pass 1 to pass 2 for the fork, and the 2.46 MP RGBA file moved 44%. Single-file figures
+carry about that much uncertainty. Ratios between decoders on one file within one pass are the reliable part.
+
+### High-load pass (the rest of the inputs, and the same files again)
+
+Load 83–99% for the whole pass, so the absolute times are higher than the quiet passes' (the fork's 1 MP decode reads
+15.7 ms here and 9.4 ms there). Within a file the decoders ran back to back, so the ratios are the useful part.
+
+| Input | png (app fork) | png 0.18 | zune-png 0.5 | libpng 1.6 | libspng 0.7 | Wuffs |
+|---|---:|---:|---:|---:|---:|---:|
+| rgb-1mp (for reference) | 15.65 | 19.58 | 23.77 | 29.33 | 27.01 | 27.96 |
+| rgb-3mp (for reference) | 20.75 | 27.31 | 30.47 | 29.06 | 29.24 | 26.67 |
+| rgb-4mp (for reference) | 73.04 | 69.51 | 101.50 | 95.53 | 105.43 | 92.61 |
+| palette-2mp (for reference) | 10.81 | 9.42 | 13.53 | 18.65 | 16.24 | 9.57 |
+| rgb8-3mp-filter0 | 13.48 | 14.33 | 20.41 | 20.06 | 19.23 | 13.10 |
+| rgb8-4mp-filter0 | 75.32 | 76.64 | 87.38 | 90.22 | 90.44 | 66.93 |
+| palette-2mp-trns | 13.10 | 9.34 | 16.46 | 16.52 | 15.34 | 9.05 |
+| gray8-2mp-trns | 50.74 | 35.85 | 16.07 | 17.60 | 31.71 | 44.53 |
+| rgb8-3mp-trns | 45.04 | 47.99 | 36.48 | 32.68 | 58.87 | 53.52 |
+| real-flower_foveon (3.43 MP, 16-bit) | 130.94 | 141.81 | 140.38 | 192.99 | 307.73 | 221.21 |
+| real-leaves_iso_200 (6.02 MP, 16-bit) | 241.77 | 281.06 | 310.29 | 329.38 | 662.46 | 500.83 |
+| real-nightshot_iso_1600 (7.38 MP, 16-bit) | 314.38 | 322.72 | 429.68 | 430.37 | 681.37 | 575.00 |
+| real-big_tree (27.70 MP, 16-bit) | 1136.46 | 1087.93 | 1083.64 | 1547.85 | 2730.67 | 2656.91 |
+
+The palette and gray tRNS rows here are not trusted: the palette-trns fork figure (13.10 ms) is 2.4× the same file's
+time in quiet pass 2 (5.47 ms), which is the sort of error the load causes. The high-load pass is kept for correctness
+and as a second look at the ratios.
+
+### Colour-key transparency (quiet pass 2, same run, and the 16-bit photograph)
+
+Each keyed file was timed with its unkeyed sibling in the same run. The first table's rows come from quiet pass 2; the
+photograph's come from its own run, with the unkeyed photograph in the same run.
+
+| File pair | png (app fork) | png 0.18 | zune-png 0.5 | libpng 1.6 |
+|---|---:|---:|---:|---:|
+| `rgb-3mp` → `rgb8-3mp-trns` (RGB colour key) | 10.99 → 30.51 (2.8×) | 10.87 → 25.13 (2.3×) | 15.38 → 18.15 (1.2×) | 22.61 → 24.97 (1.1×) |
+| `gray8-2mp` → `gray8-2mp-trns` (grey colour key) | 5.79 → 29.50 (5.1×) | 5.72 → 24.47 (4.3×) | 8.26 → 9.21 (1.1×) | 10.03 → 12.67 (1.3×) |
+| `palette-2mp` → `palette-2mp-trns` (palette alphas) | 5.56 → 5.47 (1.0×) | 5.57 → 5.38 (1.0×) | 8.33 → 7.67 (0.9×) | 11.73 → 12.23 (1.0×) |
+| `real-flower_foveon` → `…-trns` (16-bit colour key) | 85.04 → 109.35 (1.3×) | 88.60 → 131.55 (1.5×) | 92.06 → 96.02 (1.0×) | 135.41 → 141.69 (1.05×) |
+
+The inflate is not the difference. The key adds a chunk and leaves the IDAT stream alone, so the same bytes are inflated.
+The streamed fdeflate measured them at 5.49 ms (keyed) and 5.39 ms (unkeyed) on the RGB file, and 79.27 and 79.42 ms
+on the photograph. So the extra time is the expansion. The fork's expansion (`expand_trns_line` in
+`src/decoder/transform.rs` at `f7129d3`) was read, not profiled: it handles one pixel at a time, with a slice copy and a
+key comparison. Palette tRNS is a lookup table (`palette.rs`), which is why it costs nothing. The rgb8 key in the fork
+costs about 19.5 ms on 2.79 MP, which is roughly 7 ns a pixel; the gray key about 24 ms, roughly 8.5 ns a pixel. Those
+are arithmetic on the table, not a measurement of the loop.
+
+Two results here are in the decoders, not the timing. zune-png leaves the key pixel opaque on the photograph, and its
+key time (1.04×) is close to unkeyed, which fits with zune-png not applying a 16-bit key at all; its source was not
+read. libpng keeps the key colour, as the fork does, and so is the only other decoder identical to the fork on the
+keyed photograph.
+
+## Inflate (fdeflate and zlib on the same streams)
+
+The question was whether zlib's inflate, which libpng and libspng use, explains their gap to the fork's fdeflate. It
+is measured two ways, and the streamed one is the one used here. The earlier single-call numbers (one call over the
+whole stream into a buffer of the whole image) did not match the fork's whole decode and are superseded.
+
+The **streamed inflate** (`inflate-stream` in both harnesses) feeds the IDAT stream in 16 KiB pieces and inflates into
+a 96 KiB window, which is rolled back to its last 32 KiB of history when it fills (fdeflate needs that history; zlib
+keeps its own). Each library reuses its state across decodes. The median ms per decode, reused state:
+
+**8-bit and synthetic files** (runs at 2 s and 5 s; the 2 s run covers all the rows, the 5 s run the ones marked):
+
+| Input | fdeflate, 2 s | zlib, 2 s | zlib ÷ fdeflate, 2 s | fdeflate, 5 s | zlib, 5 s | zlib ÷ fdeflate, 5 s |
+|---|---:|---:|---:|---:|---:|---:|
+| 116 MP RGB | 606.93 | 1541.53 | 2.54 | 573.09 | 1124.00 | 1.96 |
+| rgb-4mp | 27.12 | 64.62 | 2.38 | 30.72 | 49.86 | 1.62 |
+| rgb-1mp | 6.17 | 13.16 | 2.13 | 6.21 | 12.26 | 1.97 |
+| rgba-1mp | 7.52 | 15.37 | 2.04 | 7.46 | 14.33 | 1.92 |
+| rgba-2mp | 14.43 | 34.96 | 2.42 | 14.23 | 30.82 | 2.17 |
+| rgb-3mp | 5.39 | 15.32 | 2.84 | 5.18 | 16.69 | 3.22 |
+| palette-2mp | 4.28 | 7.87 | 1.84 | 4.08 | 8.30 | 2.03 |
+| apng-rgb8-3frames | 6.27 | 16.65 | 2.66 | | | |
+| gray8-2mp | 2.57 | 5.81 | 2.26 | | | |
+| rgb16-3mp | 8.53 | 26.94 | 3.16 | | | |
+| rgba16-2mp | 22.17 | 56.28 | 2.54 | | | |
+| rgb8-3mp-filter0 | 8.88 | 15.19 | 1.71 | 7.83 | 13.00 | 1.66 |
+| rgb8-4mp-filter0 | 62.65 | 61.54 | 0.98 | 44.47 | 61.88 | 1.39 |
+| rgb8-3mp-trns (key) | 5.49 | 14.33 | 2.61 | 5.30 | 14.23 | 2.68 |
+| palette-2mp-trns | 4.10 | 7.67 | 1.87 | | | |
+| gray8-2mp-trns | 2.52 | 5.66 | 2.25 | | | |
+
+**The four real photographs** (6 s runs, the ones the 2 s run also covered in the last two columns):
+
+| Input | fdeflate, 6 s | zlib, 6 s | zlib ÷ fdeflate, 6 s | fdeflate, 2 s | zlib, 2 s | zlib ÷ fdeflate, 2 s |
+|---|---:|---:|---:|---:|---:|---:|
+| real-big_tree (27.7 MP) | 503.02 | 716.36 | 1.42 | 633.51 | 694.79 | 1.10 |
+| real-flower_foveon (3.4 MP) | 79.42 | 104.22 | 1.31 | 104.91 | 107.48 | 1.02 |
+| real-leaves_iso_200 (6.0 MP) | 110.44 | 152.73 | 1.38 | 147.16 | 159.94 | 1.09 |
+| real-nightshot_iso_1600 (7.4 MP) | 148.98 | 201.74 | 1.35 | 223.78 | 211.25 | 0.94 |
+| real-flower_foveon-16bit-trns (key) | 79.27 | 105.47 | 1.33 | 84.13 | 178.60 | 2.12 |
+
+**How much of each gap is inflate.** Quiet pass 2's full decodes, minus the 5 s streamed inflate of the same file,
+for the 8-bit files. The gap is libpng's full decode minus the fork's. The inflate part is zlib's minus fdeflate's:
+
+| Input | fork − fdeflate | libpng − zlib | gap (libpng − fork) | of which inflate (zlib − fdeflate) |
+|---|---:|---:|---:|---:|
+| rgb-1mp | 9.46 − 6.21 = 3.3 | 17.73 − 12.26 = 5.5 | 8.3 | 6.1 (73%) |
+| rgb-3mp | 10.99 − 5.18 = 5.8 | 22.61 − 16.69 = 5.9 | 11.6 | 11.5 (99%) |
+| palette-2mp | 5.56 − 4.08 = 1.5 | 11.73 − 8.30 = 3.4 | 6.2 | 4.2 (68%) |
+| rgb-4mp | 42.30 − 30.72 = 11.6 | 62.96 − 49.86 = 13.1 | 20.7 | 19.1 (93%) |
+| rgba-1mp | 11.08 − 7.46 = 3.6 | 18.38 − 14.33 = 4.1 | 7.3 | 6.9 (94%) |
+
+For the photographs the same comparison, with the 6 s inflate and quiet pass 2's decodes:
+
+| Input | libpng gap | of which inflate | libpng non-inflate ÷ fork non-inflate | libspng non-inflate ÷ fork non-inflate |
+|---|---:|---:|---:|---:|
+| real-flower_foveon | 45.7 ms | 24.8 ms (54%) | 35.7 ÷ 14.9 = 2.4 | 72.6 ÷ 14.9 = 4.9 |
+| real-leaves_iso_200 | 102.9 ms | 42.3 ms (41%) | 94.0 ÷ 33.5 = 2.8 | 293.3 ÷ 33.5 = 8.8 |
+| real-nightshot_iso_1600 | 123.9 ms | 52.8 ms (43%) | 92.5 ÷ 21.3 = 4.3 | 251.6 ÷ 21.3 = 11.8 |
+| real-big_tree | 352 ms | 213 ms (61%) | 325 ÷ 186 = 1.7 | 1253 ÷ 186 = 6.7 |
+
+Non-inflate is each decoder's quiet-pass-2 decode minus its streamed inflate, so it includes unfiltering, row handling
+and the output, and it is a difference of two runs. Treat the ratios as indicative.
+
+What this supports:
+
+- **zlib inflates 1.3–2.0× more slowly than fdeflate on the same stream** (median 1.97 across the ten 8-bit rows at 5 s;
+  median 1.35 across the photographs at 6 s). Those ratios are the inflate result, and it is not a single-file claim.
+- **On the 8-bit files, the inflate difference is most of libpng's gap to the fork** (68–99%). rgb-3mp is the clearest:
+  the inflate difference of 10–12 ms covers the whole 11.6 ms gap. So for those files the libpng gap is mainly zlib.
+- **On the photographs, inflate is 41–61% of libpng's gap.** The rest is libpng's own non-inflate work, at 1.7–4.3× the
+  fork's. This is a 16-bit effect: it is not in the 8-bit ratios.
+- **libspng's extra cost is not in its inflate.** It uses the same zlib 1.4, so its inflate matches libpng's, and its
+  non-inflate work is 5–12× the fork's on the photographs. The cause was not located; it is outside zlib. Its 16-bit
+  synthetic files (2.6–4.8× the fork) point the same way.
+
+The 2 s runs are the least reliable. fdeflate was 21–33% slower on the photographs in the 2 s run than in the 6 s run,
+while zlib was within 5%, which is why the 2 s photograph ratios were 0.9–1.1 and the 6 s ones 1.3–1.4. On the 4.28 MP
+filter-0 file fdeflate moved from 62.7 ms (2 s) to 44.5 ms (5 s). A single ratio from one run carries about ±30%; the
+medians across files are the usable figures.
+
+**Filter-0 files and Wuffs.** The filter-0 files make unfiltering a copy, so their whole decode is almost all inflate.
+On the 2.79 MP file, the fork decodes the filter-0 version in 8.83 ms, against its adaptive version's 10.99 ms; the
+fork's streamed inflate of the two streams is 7.83 ms (filter 0) and 5.18 ms (adaptive), so the fork's unfiltering of
+the adaptive rows is about 6 ms. Wuffs decodes the filter-0 file in 9.06 ms and the adaptive one in 18.43 ms. Wuffs'
+own inflate was not measured on its own, so this is an estimate: if its inflate costs about fdeflate's, its unfiltering
+on the adaptive rows is about 13 ms, roughly 2.3× the fork's (5.8 ms). Its RGB output path is not the cause. Decoding RGB as
+RGBA changes Wuffs' time by 3–10% (18.86 → 19.53 ms on 1.01 MP, 18.57 → 20.52 on 2.79 MP, 65.43 → 67.59 on 4.28 MP;
+the RGBA output is 33% larger).
 
 ## Heap traffic
 
@@ -123,69 +358,122 @@ calls also go through; libspng's context allocator; a counting `operator new` fo
 
 | Input | png (app fork) | png 0.18 | zune-png 0.5 | libpng 1.6 | libspng 0.7 | Wuffs |
 |---|---|---|---|---|---|---|
-| rgb-1mp | 0 | 16 / 404 KiB | 18 / 9,996 KiB | 8 / 54 KiB | 5 / 48 KiB | 1 / 44 KiB |
-| rgb-3mp | 0 | 15 / 404 KiB | 17 / 18,343 KiB | 8 / 57 KiB | 5 / 51 KiB | 1 / 44 KiB |
-| rgb-4mp | 0 | 17 / 404 KiB | 29 / 41,416 KiB | 8 / 60 KiB | 7 / 55 KiB | 1 / 44 KiB |
-| rgba-1mp | 0 | 18 / 404 KiB | 18 / 11,569 KiB | 8 / 55 KiB | 5 / 50 KiB | 1 / 44 KiB |
-| rgba-2mp | 0 | 17 / 404 KiB | 19 / 27,426 KiB | 8 / 58 KiB | 5 / 53 KiB | 1 / 44 KiB |
-| palette-2mp | 1 / 1 KiB | 19 / 407 KiB | 20 / 14,176 KiB | 10 / 57 KiB | 5 / 45 KiB | 1 / 44 KiB |
+| rgb-1mp | 0 | 16 / 404 KiB | 11 / 9,996 KiB | 8 / 54 KiB | 5 / 48 KiB | 1 / 44 KiB |
+| rgb-3mp | 0 | 15 / 404 KiB | 10 / 18,342 KiB | 8 / 57 KiB | 5 / 51 KiB | 1 / 44 KiB |
+| rgb-4mp | 0 | 17 / 404 KiB | 13 / 41,415 KiB | 8 / 60 KiB | 7 / 55 KiB | 1 / 44 KiB |
+| rgba-1mp | 0 | 18 / 404 KiB | 11 / 11,569 KiB | 8 / 55 KiB | 5 / 50 KiB | 1 / 44 KiB |
+| rgba-2mp | 0 | 17 / 404 KiB | 12 / 27,425 KiB | 8 / 58 KiB | 5 / 53 KiB | 1 / 44 KiB |
+| palette-2mp | 1 / 1 KiB | 19 / 407 KiB | 13 / 14,176 KiB | 10 / 57 KiB | 5 / 45 KiB | 1 / 44 KiB |
 | rgb-116mp | 0 | 16 / 404 KiB | 13 / 1,204,074 KiB | 8 / 56 KiB | 5 / 50 KiB | 1 / 44 KiB |
-| rgb16-3mp | 0 | 13 / 404 KiB | 5 / 33,908 KiB | 8 / 65 KiB | 5 / 59 KiB | n/c |
-| rgba16-2mp | 0 | 11 / 403 KiB | 5 / 42,421 KiB | 8 / 67 KiB | 5 / 62 KiB | n/c |
-| rgb16-interlaced-3mp | 0 | 14 / 412 KiB | 6 / 50,787 KiB | 8 / 65 KiB | 6 / 67 KiB | n/c |
+| rgb16-3mp | 0 | 13 / 404 KiB | 5 / 33,908 KiB | 8 / 65 KiB | 5 / 59 KiB | 1 / 44 KiB |
+| rgba16-2mp | 0 | 11 / 403 KiB | 5 / 42,421 KiB | 8 / 67 KiB | 5 / 62 KiB | 1 / 44 KiB |
+| rgb16-interlaced-3mp | 0 | 14 / 412 KiB | 6 / 50,787 KiB | 8 / 65 KiB | 6 / 67 KiB | 1 / 44 KiB |
 | rgb8-interlaced-3mp | 0 | 15 / 408 KiB | 6 / 25,932 KiB | 8 / 57 KiB | 6 / 55 KiB | 1 / 44 KiB |
 | rgba8-interlaced-2mp | 0 | 14 / 408 KiB | 6 / 32,623 KiB | 8 / 58 KiB | 6 / 57 KiB | 1 / 44 KiB |
 | gray8-2mp | 0 | 14 / 404 KiB | 6 / 11,306 KiB | 8 / 51 KiB | 5 / 46 KiB | 1 / 44 KiB |
 | apng-rgb8-3frames | 0 | 16 / 422 KiB | 7 / 19,362 KiB | 8 / 57 KiB | 5 / 51 KiB | 1 / 44 KiB |
+| palette-2mp-trns | 1 / 1 KiB | 20 / 407 KiB | 20 / 16,202 KiB | 12 / 59 KiB | 5 / 45 KiB | 1 / 44 KiB |
+| gray8-2mp-trns | 1 / 0 KiB | 16 / 404 KiB | 7 / 14,029 KiB | 10 / 55 KiB | 5 / 46 KiB | 1 / 44 KiB |
+| rgb8-3mp-trns | 1 / 0 KiB | 17 / 404 KiB | 18 / 21,068 KiB | 10 / 60 KiB | 5 / 51 KiB | 1 / 44 KiB |
+| rgb8-3mp-filter0 | 0 | 13 / 404 KiB | 5 / 17,509 KiB | 8 / 57 KiB | 5 / 51 KiB | 1 / 44 KiB |
+| rgb8-4mp-filter0 | 0 | 14 / 403 KiB | 5 / 34,910 KiB | 8 / 60 KiB | 5 / 54 KiB | 1 / 44 KiB |
+| real-flower_foveon | 0 | 11 / 403 KiB | 5 / 55,387 KiB | 8 / 75 KiB | 5 / 70 KiB | 1 / 44 KiB |
+| real-leaves_iso_200 | 0 | 12 / 403 KiB | 5 / 100,734 KiB | 8 / 84 KiB | 5 / 79 KiB | 1 / 44 KiB |
+| real-nightshot_iso_1600 | 0 | 11 / 403 KiB | 5 / 123,213 KiB | 8 / 85 KiB | 5 / 80 KiB | 1 / 44 KiB |
+| real-big_tree | 0 | 11 / 403 KiB | 5 / 466,743 KiB | 8 / 120 KiB | 5 / 115 KiB | 1 / 44 KiB |
+
+The zune-png call counts in this table come from the high-load pass and differ from the quiet pass's (18 against 11 on
+the 1 MP file, say), while its requested bytes match. Its call count isn't stable from run to run. The fork's and
+png 0.18's counts were the same in both passes. The libpng count on the palette and tRNS files (10–12 calls, against
+8) is libpng's tRNS and palette transforms allocating their own buffers. The keyed photograph was not counted.
 
 What the numbers include:
 
-- **Fork:** no calls in steady state. Its one call on palette-2mp is a 1 KiB buffer.
+- **Fork:** no calls in steady state. Its one call on the palette and tRNS files is a 1 KiB buffer.
 - **png 0.18:** its inflate state and row buffers, about 400 KiB, allocated again each decode.
 - **zune-png:** the output buffer plus its own working memory, all allocated each decode. Peak above the start was
   942 MB on the 116 MP file.
 - **libpng:** the read and info structures, zlib's inflate state and window (32 KiB), the 8 KiB zbuf, row buffers and
   the keep list. Every allocation goes through libpng's user allocator, zlib included.
-- **libspng:** the context, zlib's state and window, and its text-chunk storage (it can't skip text). Its output
-  buffer is reused.
-- **Wuffs:** one 44 KiB decoder object per call. Its pixel and work buffers are reused, so they add nothing after
-  warm-up. Its inflate state lives in that decoder object, so it is not like-for-like with the fork, which keeps its
-  inflate state.
+- **libspng:** the context, zlib's state and window, and its text-chunk storage. Its output buffer is reused. The
+  library files here are text-free, so their text storage is absent.
+- **Wuffs:** one 44 KiB decoder object per call. Its pixel, work and repacking buffers are reused, so they add nothing
+  after warm-up.
 - **Pillow:** not measured. Its image buffers are allocated in C, outside any hook this harness can count.
 
 ## Output
 
-Every decoder's output was compared with the app's fork's, sample by sample, for every file it can produce:
+Every decoder's output was compared with the app's fork's, sample by sample, for every file (24 of them):
 
-- **8-bit files** (eleven of them, the grayscale, APNG and both 8-bit interlaced files among them): the two Rust
-  decoders, libpng, libspng, Wuffs and Pillow are all identical to the app.
-- **16-bit files:** the app's output is the source × 257 exactly (checked by `make_inputs.py --verify-dump`). The three
-  Rust decoders, libpng and libspng are identical to it. Wuffs is not comparable. Pillow reads 16-bit RGB(A) at 8 bits,
-  so it is not compared.
+- **8-bit files** (the eleven library and generated ones, plus the palette, gray and RGB tRNS files and the two filter-0
+  files): libpng, libspng, both Rust crates, and Wuffs are identical to the app, except Wuffs on the two colour-key
+  files. Pillow is identical on every 8-bit file, the tRNS ones included.
+- **Colour-key difference (Wuffs only, 8-bit):** on `rgb8-3mp-trns` (1,341,222 of 11,141,120 samples) and `gray8-2mp-trns`
+  (448,299 of 5,570,560), Wuffs differs from the app. The difference is the colour of the fully transparent key pixels,
+  which Wuffs writes as black (0) where the app keeps the key colour (251 in these files). The alpha is identical in
+  every sample. This is in the output, so `compare` reports it.
+- **16-bit files** (the synthetic ones and the four real photographs): the app's output is the source × 257 exactly for
+  the synthetic files (checked by `make_inputs.py --verify-dump`), and the fork's dump equals the photographs' PPM
+  samples exactly. Every decoder is identical to the app on every 16-bit file without a key, Wuffs included since its
+  repacking. Pillow reads 16-bit RGB(A) at 8 bits, so it is not compared.
+- **16-bit colour-key photograph** (`real-flower_foveon-16bit-trns`, 13,716,864 samples):
+  - libpng: identical to the app.
+  - Wuffs: 3 samples differ (the key pixel's colour, written as black; largest 12201). Alpha is identical.
+  - zune-png 0.5: 1 sample differs, the alpha of the key pixel (largest 65535): zune-png leaves that pixel opaque.
+  - libspng: 9,343,104 samples differ (largest 64515). Its 16-bit RGBA output is wrong, not only the key pixel. Forcing
+    libspng's RGBA16 output on the unkeyed photograph gives the same kind of error (the colours are wrong, the alpha
+    is right), so the fault is in its RGB-to-RGBA16 conversion, not in tRNS handling. The libspng RGBA16 timing in the
+    tables above (181.99 → 205.80 ms on the photograph) is therefore the timing of a wrong output, and is not a result.
+    The cause was not located in libspng's source (`spng.c`, its conversion loop and `trns_row`), and it is not yet
+    excluded that the harness uses the format wrongly.
 - **APNG:** the decoders output the first frame, which is the library's image exactly (checked on the app's output).
 
-The comparison was also checked against a deliberately altered reference: one 8-bit sample gives "1 of … samples
-differ, largest 1", and one 16-bit sample gives "largest 256", which confirms big-endian reading.
+The comparison was checked against a deliberately altered reference: one 8-bit sample gives "1 of … samples differ,
+largest 1", and one 16-bit sample gives "largest 256", which confirms big-endian reading.
 
 ## Tooling
 
-- `eval/png-decoders/src/` (Rust): the fork, png 0.18 and zune-png, with the counting allocator (`allocs`).
+- `eval/png-decoders/src/` (Rust): the fork, png 0.18 and zune-png, with the counting allocator (`allocs`), `inflate`
+  (fdeflate, one call over the whole stream), and `inflate-stream` (fdeflate, streamed in 16 KiB pieces into a 96 KiB
+  rolled window).
 - `eval/png-decoders/harness/` (C++, MSVC): libpng 1.6.59, libspng 0.7.4, Wuffs d28ecd4, zlib 1.4 (static, shared by
-  libpng and libspng). Built with `eval\png-decoders\win_build.py` (`$env:PG_ROOT='D:\PhotoGallery'`).
+  libpng and libspng). Its commands are `time`, `compare`, `allocs`, `inflate` (zlib, one call), `inflate-stream` (zlib,
+  streamed the same way as the Rust one) and `dump`. Built with `eval\png-decoders\win_build.py`
+  (`$env:PG_ROOT='D:\PhotoGallery'`).
 - `eval/png-decoders/make_inputs.py`: writes the seven generated inputs, checks Pillow's decode of the 8-bit ones
   against the source, and checks the app's 16-bit dump with `--verify-dump`.
+- `eval/png-decoders/make_variants.py`: the tRNS variants (including the real-photo key), the filter-0 variants and the
+  text-free library copies.
+- `eval/png-decoders/make_real16.py`: the four real photographs, from the imagecompression.info zip.
 - `eval/png-decoders/pillow_bench.py`: Pillow's reader, timed and compared against the app's dump.
+- `eval/png-decoders/quiet_table.md`: the quiet pass 2 table, generated from the timing files.
 
 ## Next
 
-- **Find the cause of the 2× gap** on 8-bit RGB for the zlib-based decoders: profile libpng's inflate against the
-  fork's fdeflate (the claim above, that the gap is inflate, is a guess until then).
-- **Wuffs on 16-bit:** either byte-swap its little-endian output inside the timed decode (and count it), or find a
-  big-endian 16-bit format. Until then it's not comparable on 16-bit.
-- **libspng can't skip text chunks**, so its time carries them. Either measure libspng with text stripped from the
-  inputs, or accept the difference and say so.
-- **Real 16-bit files:** the 16-bit inputs are synthetic (8-bit × 257). A camera or scanner 16-bit file would show
-  whether the inflate advantage holds on data with real low bytes.
-- **Untested paths:** palette and RGB or gray with tRNS. The C and Rust code handles them, but no input has tRNS, so
-  they are implemented and not measured.
-- **Quiet-machine rerun:** the final timing ran at 20–32% CPU load. The small files (1–2 MP) carry the most noise.
+- **Colour-key expansion in the fork.** The cost (2.8× on RGB, 5.1× on gray, 1.3× on the 16-bit photograph) is
+  confirmed in one run, and the inflate is ruled out by the identical streams. The mechanism is read from
+  `expand_trns_line` but not profiled. A profiler trace of the keyed and unkeyed file, once a profiler is set up on
+  Windows, would say where the time goes before anything is changed.
+- **libpng's and libspng's non-inflate work on the photographs.** libpng's is 1.7–4.3× the fork's, libspng's 5–12×.
+  Neither was profiled. The libspng part is the larger, and its cause is not located.
+- **libspng's 16-bit RGBA output.** Wrong for any RGB 16-bit file that asks for RGBA16, with or without tRNS. Check the
+  harness's use of `spng_decode_image` against libspng's documentation, and then its conversion loop. Until then its
+  16-bit colour-key timing is not a result.
+- **Wuffs' unfiltering.** The estimate is about 2.5× the fork's on adaptive rows. Measure Wuffs' inflate on its own,
+  then profile its unfiltering to confirm.
+- **zune-png's 16-bit colour key.** One sample differs (the key pixel's alpha), which is consistent with zune-png not
+  applying a 16-bit key. Read its source to confirm.
+- **The fork against png 0.18 on two files.** The 116 MP file (fork 1229.55, png 0.18 1983.78 in pass 2; 988.77 and 1012.37
+  in pass 1) and the 2.46 MP RGBA file (29.03 against 21.45 in pass 2; 20.15 against 20.56 in pass 1) vary by more than
+  the other files. Rerun both on a quiet machine.
+- **Real photographs with an 8-bit tRNS chunk.** Only the 16-bit photograph has a key. An 8-bit photograph with a key
+  would show whether the key cost on real data matches the synthetic files'.
+- **Done in this round:** the quiet-machine rerun (quiet pass 2, all 23 files in one run); the colour-key finding, confirmed
+  and its cost measured on RGB, gray, palette and a 16-bit photograph; the inflate split by streamed inflate, on the 8-bit
+  and photographic streams, at 2, 5 and 6 s; the Wuffs RGB-to-RGBA swizzle check (ruled out as the cost of its RGB path);
+  libspng on the real photographs (confirmed 1.9–3.1× the fork, with its non-inflate work the larger part); the 16-bit colour-key
+  photograph, with its results in the output table.
+- **Done in the earlier round:** the four real 16-bit photographs; the three synthetic tRNS inputs, with Wuffs' colour-key
+  difference documented; Wuffs' 16-bit output, now repacked to the app's layout and identical on every 16-bit file;
+  libspng's text chunks, removed from the library copies for every decoder; the libpng and libspng C-side decoders;
+  the Wuffs decoder.

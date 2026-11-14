@@ -16,6 +16,8 @@ png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b
 png-upstream = { package = "png", version = "0.18" }
 zune-core = "0.5"
 zune-png = "0.5"
+# The deflate decoder the fork and png 0.18 inflate with, for `inflate` (inflate-only timing; see main.rs).
+fdeflate = "0.3.7"
 
 [profile.release]
 debug = "line-tables-only"

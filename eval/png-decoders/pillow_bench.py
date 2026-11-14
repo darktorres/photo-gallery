@@ -40,6 +40,10 @@ def decode(data: bytes) -> Image.Image:
     im.load()
     if im.mode == "P":
         im = im.convert("RGBA" if "transparency" in im.info else "RGB")
+    elif im.mode == "L" and "transparency" in im.info:  # a grey colour key: gray+alpha, as the app gives
+        im = im.convert("LA")
+    elif im.mode == "RGB" and "transparency" in im.info:  # an RGB colour key: RGBA
+        im = im.convert("RGBA")
     elif im.mode not in ("L", "RGB", "RGBA"):
         im = im.convert("RGBA" if "A" in im.getbands() else "RGB")
     return im

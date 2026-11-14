@@ -149,6 +149,7 @@ def harness(root: Path) -> None:
             "cmake", "-G", "Ninja", "-S", str(HERE / "harness"), "-B", str(build / "harness"), "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_CXX_COMPILER=cl",
             f"-DZLIB_LIB={deps / 'zlib' / 'lib' / ZLIB_STATIC_LIB}",
+            f"-DZLIB_INCLUDE={deps / 'zlib' / 'include'}",
             f"-DLIBPNG_INCLUDE={deps / 'libpng' / 'include' / 'libpng16'}",
             f"-DLIBPNG_LIB={deps / 'libpng' / 'lib' / 'libpng16_static.lib'}",
             f"-DSPNG_INCLUDE={deps / 'libspng' / 'include'}",

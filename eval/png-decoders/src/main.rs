@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use png_decoders::{Dec, Decoders, Dims};
 
 /// Counts every heap call of the process: the decoders' allocations are the only ones made while `allocs` measures.
@@ -88,6 +88,8 @@ fn main() -> Result<()> {
         "time" => time(&mut decoders, &files, Duration::from_secs_f64(secs)),
         "compare" => compare(&mut decoders, &files),
         "allocs" => allocs(&mut decoders, &files),
+        "inflate" => inflate(&files, Duration::from_secs_f64(secs)),
+        "inflate-stream" => inflate_stream(&files, Duration::from_secs_f64(secs)),
         _ => bail!("unknown command {cmd}"),
     }
 }
@@ -203,6 +205,155 @@ fn compare(decoders: &mut Decoders, files: &[(String, Vec<u8>)]) -> Result<()> {
             }
         }
         println!();
+    }
+    Ok(())
+}
+
+/// The IDAT chunks' data, joined: the zlib stream of the image.
+fn idat_stream(png: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut pos = 8;
+    while let Some(head) = png.get(pos..pos + 8) {
+        let len = u32::from_be_bytes([head[0], head[1], head[2], head[3]]) as usize;
+        if &head[4..8] == b"IDAT"
+            && let Some(data) = png.get(pos + 8..pos + 8 + len)
+        {
+            out.extend_from_slice(data);
+        }
+        pos += 12 + len;
+    }
+    out
+}
+
+/// The size of the filtered scanlines as stored in the file (before EXPAND): one filter byte a row, then the row's
+/// samples at the file's depth, palette indices included.
+fn stored_scanline_bytes(bytes: &[u8]) -> Result<usize> {
+    let w = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]) as usize;
+    let h = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]) as usize;
+    let (depth, color) = (bytes[24] as usize, bytes[25]);
+    let samples = match color {
+        0 | 3 => 1,
+        2 => 3,
+        4 => 2,
+        6 => 4,
+        _ => bail!("unknown colour type {color}"),
+    };
+    Ok(h * (1 + (w * samples * depth).div_ceil(8)))
+}
+
+/// One decode of `stream` into `buf`, which must be exactly the stored scanlines' size and end the stream.
+fn inflate_once(d: &mut fdeflate::Decompressor, stream: &[u8], buf: &mut [u8]) -> Result<()> {
+    let (_, produced) = d.read(stream, buf, 0, true).map_err(|e| anyhow!("{e:?}"))?;
+    if produced != buf.len() || !d.is_done() {
+        bail!("inflated {produced} of {} bytes (done: {})", buf.len(), d.is_done());
+    }
+    Ok(())
+}
+
+/// The input is fed to the inflater in pieces of this size, as a streaming reader feeds it.
+const IN_CHUNK: usize = 16 << 10;
+/// The output window a streamed inflate writes into, and the history it keeps when the window is full (back-references
+/// reach 32 KiB back, so fdeflate needs that much before it can write further; zlib keeps its own history).
+const WINDOW: usize = 96 << 10;
+const HISTORY: usize = 32 << 10;
+
+/// The stream inflated through fdeflate as a streaming reader does it: input in `IN_CHUNK` pieces, output into a
+/// `WINDOW` that is rolled, keeping the last `HISTORY` bytes, when it can't take another piece. The output itself is
+/// discarded, as unfiltering would consume it. Returns the number of bytes inflated.
+fn inflate_streamed(d: &mut fdeflate::Decompressor, stream: &[u8], window: &mut [u8]) -> Result<usize> {
+    let (mut at_in, mut pos, mut total) = (0, 0, 0);
+    while !d.is_done() {
+        if window.len() - pos < IN_CHUNK {
+            window.copy_within(pos - HISTORY..pos, 0);
+            pos = HISTORY;
+        }
+        let end = (at_in + IN_CHUNK).min(stream.len());
+        let (used, produced) = d
+            .read(&stream[at_in..end], window, pos, end == stream.len())
+            .map_err(|e| anyhow!("{e:?}"))?;
+        if used == 0 && produced == 0 {
+            bail!("the stream stalled after {total} bytes");
+        }
+        at_in += used;
+        pos += produced;
+        total += produced;
+    }
+    Ok(total)
+}
+
+/// The median over the same protocol as `time`: two warm-ups, at least five samples and `budget` in all.
+fn median_ms(budget: Duration, mut f: impl FnMut() -> Result<()>) -> Result<f64> {
+    for _ in 0..2 {
+        f()?;
+    }
+    let mut samples = Vec::new();
+    let start = Instant::now();
+    while samples.len() < 5 || start.elapsed() < budget {
+        let t = Instant::now();
+        f()?;
+        samples.push(t.elapsed().as_secs_f64() * 1e3);
+    }
+    samples.sort_by(f64::total_cmp);
+    Ok(samples[samples.len() / 2])
+}
+
+/// `inflate_streamed` on each file's IDAT stream, with fdeflate: one decompressor reset between decodes (the fork's
+/// way) and a new one each decode (png 0.18's). The output is checked against the stored scanline size. Interlaced
+/// files are skipped, as in `inflate`.
+fn inflate_stream(files: &[(String, Vec<u8>)], budget: Duration) -> Result<()> {
+    println!("Inflate, streamed (fdeflate, input in 16 KiB pieces, output in a 96 KiB rolled window), median ms per decode.");
+    let width = files.iter().map(|f| f.0.len()).max().unwrap_or(0);
+    println!("{:width$}  {:>22}  {:>22}", "", "reset, reused", "new per decode");
+    let mut window = vec![0u8; WINDOW];
+    for (name, bytes) in files {
+        if bytes.get(28) != Some(&0) {
+            println!("{name:width$}  interlaced: skipped");
+            continue;
+        }
+        let want = stored_scanline_bytes(bytes)?;
+        let stream = idat_stream(bytes);
+        let mut reused = fdeflate::Decompressor::new();
+        let reused_ms = median_ms(budget, || {
+            reused.reset();
+            check_total(inflate_streamed(&mut reused, &stream, &mut window)?, want)
+        })?;
+        let new_ms = median_ms(budget, || {
+            check_total(inflate_streamed(&mut fdeflate::Decompressor::new(), &stream, &mut window)?, want)
+        })?;
+        println!("{name:width$}  {reused_ms:>22.2}  {new_ms:>22.2}");
+    }
+    Ok(())
+}
+
+fn check_total(inflated: usize, want: usize) -> Result<()> {
+    if inflated != want {
+        bail!("inflated {inflated} of {want} bytes");
+    }
+    Ok(())
+}
+
+/// The inflate step alone, with fdeflate, on each file's IDAT stream into its filtered scanlines (filter bytes
+/// included): once with one decompressor reset between decodes, as the fork keeps its own, and once with a new
+/// decompressor each decode, as png 0.18 makes it. Interlaced files are skipped (their passes aren't one raster).
+fn inflate(files: &[(String, Vec<u8>)], budget: Duration) -> Result<()> {
+    println!("Inflate only (fdeflate), median ms per decode: the IDAT stream to its scanlines.");
+    let width = files.iter().map(|f| f.0.len()).max().unwrap_or(0);
+    println!("{:width$}  {:>22}  {:>22}", "", "reset, reused", "new per decode");
+    for (name, bytes) in files {
+        if bytes.get(28) != Some(&0) {
+            println!("{name:width$}  interlaced: skipped");
+            continue;
+        }
+        let raw = stored_scanline_bytes(bytes)?;
+        let stream = idat_stream(bytes);
+        let mut buf = vec![0u8; raw];
+        let mut reused = fdeflate::Decompressor::new();
+        let reused_ms = median_ms(budget, || {
+            reused.reset();
+            inflate_once(&mut reused, &stream, &mut buf)
+        })?;
+        let new_ms = median_ms(budget, || inflate_once(&mut fdeflate::Decompressor::new(), &stream, &mut buf))?;
+        println!("{name:width$}  {reused_ms:>22.2}  {new_ms:>22.2}");
     }
     Ok(())
 }

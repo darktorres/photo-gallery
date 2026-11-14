@@ -12,10 +12,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <zlib.h>
 
 #include "alloc_count.h"
 #include "decoder.h"
@@ -253,6 +256,194 @@ int allocs_mode(const std::vector<std::string>& args) {
     return 0;
 }
 
+// The file's IDAT chunks, joined: the zlib stream of the image.
+std::vector<uint8_t> idat_stream(const std::vector<uint8_t>& png) {
+    std::vector<uint8_t> out;
+    size_t pos = 8;
+    while (pos + 8 <= png.size()) {
+        const uint32_t len = (uint32_t(png[pos]) << 24) | (uint32_t(png[pos + 1]) << 16) |
+                             (uint32_t(png[pos + 2]) << 8) | uint32_t(png[pos + 3]);
+        if (std::memcmp(&png[pos + 4], "IDAT", 4) == 0 && pos + 8 + len <= png.size()) {
+            out.insert(out.end(), png.begin() + pos + 8, png.begin() + pos + 8 + len);
+        }
+        pos += 12 + size_t(len);
+    }
+    return out;
+}
+
+// The stored scanlines' size: one filter byte a row, then the row's samples at the file's depth (before EXPAND).
+size_t stored_scanline_bytes(const PngInfo& info) {
+    const uint32_t samples = info.color == 0 || info.color == 3 ? 1 : info.color == 2 ? 3 : info.color == 4 ? 2 : 4;
+    return size_t(info.height) * (1 + (size_t(info.width) * samples * info.depth + 7) / 8);
+}
+
+// One inflate of `stream` into `out` (exactly the stored size) with `s`, which is initialised or reset.
+bool inflate_once(z_stream& s, const std::vector<uint8_t>& stream, std::vector<uint8_t>& out) {
+    s.next_in = const_cast<Bytef*>(stream.data());
+    s.avail_in = uInt(stream.size());
+    s.next_out = out.data();
+    s.avail_out = uInt(out.size());
+    return inflate(&s, Z_FINISH) == Z_STREAM_END && s.total_out == out.size();
+}
+
+// The stream inflated the way a streaming reader does it, as Rust's inflate_stream does for fdeflate: input in 16 KiB
+// pieces, output into a 96 KiB window that is reused and discarded (zlib keeps its own history, so it needs no rolling).
+// False if the stream doesn't end or doesn't inflate to `raw` bytes.
+bool inflate_streamed(z_stream& s, const std::vector<uint8_t>& stream, std::vector<uint8_t>& window, size_t raw) {
+    const size_t kInChunk = 16 << 10;
+    size_t at = 0;
+    while (true) {
+        const size_t end = std::min(at + kInChunk, stream.size());
+        s.next_in = const_cast<Bytef*>(stream.data() + at);
+        s.avail_in = uInt(end - at);
+        int rc = Z_OK;
+        do {
+            s.next_out = window.data();
+            s.avail_out = uInt(window.size());
+            rc = inflate(&s, Z_NO_FLUSH);
+            if (rc != Z_OK && rc != Z_STREAM_END && rc != Z_BUF_ERROR) return false;
+        } while (rc == Z_OK && s.avail_out == 0);
+        if (rc == Z_STREAM_END) return s.total_out == raw;
+        at = end;
+        if (at == stream.size()) return false;  // the stream ended without Z_STREAM_END
+    }
+}
+
+// The median over time's protocol: two warm-ups, at least five samples and `budget` seconds in all. -1 on a failure.
+template <typename F>
+double median_ms(double budget, F f) {
+    for (int w = 0; w < 2; w++) {
+        if (!f()) return -1;
+    }
+    std::vector<double> samples;
+    const double start = now_ms();
+    while (samples.size() < 5 || now_ms() - start < budget * 1e3) {
+        const double t = now_ms();
+        if (!f()) return -1;
+        samples.push_back(now_ms() - t);
+    }
+    std::sort(samples.begin(), samples.end());
+    return samples[samples.size() / 2];
+}
+
+// The inflate step alone, with zlib (what libpng and libspng inflate with), on each file's IDAT stream into its stored
+// scanlines: once with one inflate state reset between decodes, once with a new state each decode (libpng's way).
+// Interlaced files are skipped. The Rust harness's `inflate` times fdeflate the same way.
+int inflate_mode(const std::vector<std::string>& args) {
+    double budget = 1.0;
+    size_t first = 0;
+    if (args.size() >= 2 && args[0] == "--secs") {
+        budget = std::atof(args[1].c_str());
+        first = 2;
+    }
+    size_t width = 0;
+    for (size_t i = first; i < args.size(); i++) width = std::max(width, stem(args[i]).size());
+    std::printf("Inflate only (zlib), median ms per decode: the IDAT stream to its scanlines.\n");
+    std::printf("%*s  %22s  %22s\n", int(width), "", "reset, reused", "new per decode");
+    for (size_t i = first; i < args.size(); i++) {
+        std::vector<uint8_t> bytes;
+        PngInfo info;
+        if (!load(args[i], bytes, info)) return 1;
+        const std::string name = stem(args[i]);
+        if (info.interlace) {
+            std::printf("%-*s  interlaced: skipped\n", int(width), name.c_str());
+            continue;
+        }
+        const std::vector<uint8_t> stream = idat_stream(bytes);
+        std::vector<uint8_t> out(stored_scanline_bytes(info));
+        z_stream s{};
+        if (inflateInit(&s) != Z_OK) return 1;
+        const double reused = median_ms(budget, [&] { return inflateReset(&s) == Z_OK && inflate_once(s, stream, out); });
+        inflateEnd(&s);
+        const double fresh = median_ms(budget, [&] {
+            z_stream t{};
+            if (inflateInit(&t) != Z_OK) return false;
+            const bool ok = inflate_once(t, stream, out);
+            inflateEnd(&t);
+            return ok;
+        });
+        if (reused < 0 || fresh < 0) {
+            std::fprintf(stderr, "%s: inflate failed\n", name.c_str());
+            return 1;
+        }
+        std::printf("%-*s  %22.2f  %22.2f\n", int(width), name.c_str(), reused, fresh);
+        std::fflush(stdout);
+    }
+    return 0;
+}
+
+// inflate_streamed on each file's IDAT stream with zlib: one inflate state reset between decodes, and a new state each
+// decode (libpng's way). Interlaced files are skipped, as in inflate_mode.
+int inflate_stream_mode(const std::vector<std::string>& args) {
+    double budget = 1.0;
+    size_t first = 0;
+    if (args.size() >= 2 && args[0] == "--secs") {
+        budget = std::atof(args[1].c_str());
+        first = 2;
+    }
+    size_t width = 0;
+    for (size_t i = first; i < args.size(); i++) width = std::max(width, stem(args[i]).size());
+    std::printf("Inflate, streamed (zlib, input in 16 KiB pieces, output in a 96 KiB window), median ms per decode.\n");
+    std::printf("%*s  %22s  %22s\n", int(width), "", "reset, reused", "new per decode");
+    std::vector<uint8_t> window(96 << 10);
+    for (size_t i = first; i < args.size(); i++) {
+        std::vector<uint8_t> bytes;
+        PngInfo info;
+        if (!load(args[i], bytes, info)) return 1;
+        const std::string name = stem(args[i]);
+        if (info.interlace) {
+            std::printf("%-*s  interlaced: skipped\n", int(width), name.c_str());
+            continue;
+        }
+        const std::vector<uint8_t> stream = idat_stream(bytes);
+        const size_t raw = stored_scanline_bytes(info);
+        z_stream s{};
+        if (inflateInit(&s) != Z_OK) return 1;
+        const double reused = median_ms(budget, [&] { return inflateReset(&s) == Z_OK && inflate_streamed(s, stream, window, raw); });
+        inflateEnd(&s);
+        const double fresh = median_ms(budget, [&] {
+            z_stream t{};
+            if (inflateInit(&t) != Z_OK) return false;
+            const bool ok = inflate_streamed(t, stream, window, raw);
+            inflateEnd(&t);
+            return ok;
+        });
+        if (reused < 0 || fresh < 0) {
+            std::fprintf(stderr, "%s: streamed inflate failed\n", name.c_str());
+            return 1;
+        }
+        std::printf("%-*s  %22.2f  %22.2f\n", int(width), name.c_str(), reused, fresh);
+        std::fflush(stdout);
+    }
+    return 0;
+}
+
+// Each decoder's output for each file, as DIR/NAME.DECODER.raw: for finding where a decoder differs from the app.
+int dump_mode(const std::vector<std::string>& args) {
+    if (args.size() < 2) {
+        std::fprintf(stderr, "usage: png-c-harness dump DIR FILE...\n");
+        return 2;
+    }
+    const std::string dir = args[0];
+    auto decoders = make_all();
+    for (size_t i = 1; i < args.size(); i++) {
+        std::vector<uint8_t> bytes;
+        PngInfo info;
+        if (!load(args[i], bytes, info)) return 1;
+        for (size_t d = 0; d < decoders.size(); d++) {
+            Result r = decoders[d]->decode(bytes, info);
+            if (r.status != Status::Ok) continue;
+            const std::string path = dir + "/" + stem(args[i]) + "." + names()[d] + ".raw";
+            std::FILE* f = std::fopen(path.c_str(), "wb");
+            if (!f) return 1;
+            std::fwrite(decoders[d]->out().data(), 1, decoders[d]->out().size(), f);
+            std::fclose(f);
+            std::printf("%s\n", path.c_str());
+        }
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -267,6 +458,9 @@ int main(int argc, char** argv) {
     if (cmd == "time") return time_mode(args);
     if (cmd == "compare") return compare_mode(args);
     if (cmd == "allocs") return allocs_mode(args);
+    if (cmd == "dump") return dump_mode(args);
+    if (cmd == "inflate") return inflate_mode(args);
+    if (cmd == "inflate-stream") return inflate_stream_mode(args);
     std::fprintf(stderr, "unknown command %s\n", cmd.c_str());
     return 2;
 }

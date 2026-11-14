@@ -11,7 +11,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+# Timings come from Release. RelWithDebInfo is the same optimization (/O2) plus the PDB that a profiler needs (VTune
+# names the functions with it); profile with that build, and time with Release.
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
   message(FATAL_ERROR "png-c-harness is measured as Release (CMAKE_BUILD_TYPE is ${CMAKE_BUILD_TYPE})")
 endif()
 

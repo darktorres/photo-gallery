@@ -66,3 +66,21 @@ Timings should be taken on a quiet machine. The harnesses run the decoders back 
 ratios hold up under load better than its absolute times do. Absolute times still moved 20–40% between runs in the
 study, so compare ratios within one run, and use a budget of at least 5 s for the inflate-stream numbers (a 2 s run
 gave the real photographs' fdeflate times 21–33% high).
+
+## Profiling
+
+Intel VTune 2024.3 is installed (oneAPI), and its user-mode sampling needs no admin rights. Two builds have symbols:
+
+- the C harness, as RelWithDebInfo (`/O2` plus a PDB), in `build\harness-prof`. Configure it with the same
+  `-DLIBPNG_INCLUDE` … `-DWUFFS_SRC` paths as `build\harness`, `-DCMAKE_BUILD_TYPE=RelWithDebInfo`, then build the
+  `png-c-harness` target. Timings still come from the Release build.
+- the Rust harness, `target\release\png-decoders.exe`, which writes `png_decoders.pdb` next to it.
+
+    & "C:\Program Files (x86)\Intel\oneAPI\vtune\2024.3\bin64\amplxe-cl.exe" -collect hotspots `
+        -result-dir "$env:PG_ROOT\eval\png-decoders\profiles\NAME" -- <exe> time --secs 5 FILE
+    & "C:\Program Files (x86)\Intel\oneAPI\vtune\2024.3\bin64\amplxe-cl.exe" -report hotspots `
+        -result-dir "$env:PG_ROOT\eval\png-decoders\profiles\NAME" -format=csv -report-knob show-issues=false
+
+The reports name the functions and, for the Rust and Wuffs code, their source files. Some static functions in the
+libraries stay unnamed (`func@0x…`), because their libraries were built without PDBs. Profiles go under `$PG_ROOT`,
+not into the repo.

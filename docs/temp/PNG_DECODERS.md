@@ -35,8 +35,8 @@ are the useful part. Absolute times move by 20–40% between runs, and the 116 M
   key. Palette tRNS costs nothing. libpng pays 1.1–1.3× on the 8-bit files and 1.05× on the photograph. The inflate is
   not the cause: the key adds a chunk and leaves the compressed stream alone, and the inflate of the keyed and unkeyed
   photograph measured the same (79.3 and 79.4 ms). The cost is in the expansion. The fork's expansion (`expand_trns_line`
-  in `src/decoder/transform.rs` at `f7129d3`, read but not profiled) compares each pixel's colour with the key one
-  pixel at a time. png 0.18 expands the keys faster than the fork (25.1 against 30.5 ms on the RGB file). This is the
+  in `src/decoder/transform.rs` at `f7129d3`) compares each pixel's colour with the key one pixel at a time, and
+  profiling confirms that is where the time goes (see the profile below). png 0.18 expands the keys faster than the fork (25.1 against 30.5 ms on the RGB file). This is the
   one result in the study that points to a change in the app. The fix has not been designed, because no profile has
   been taken.
 - **Inflate:** zlib (libpng and libspng) inflates the same stream 1.3–2.0× more slowly than fdeflate (the fork's
@@ -249,8 +249,13 @@ photograph's come from its own run, with the unkeyed photograph in the same run.
 The inflate is not the difference. The key adds a chunk and leaves the IDAT stream alone, so the same bytes are inflated.
 The streamed fdeflate measured them at 5.49 ms (keyed) and 5.39 ms (unkeyed) on the RGB file, and 79.27 and 79.42 ms
 on the photograph. So the extra time is the expansion. The fork's expansion (`expand_trns_line` in
-`src/decoder/transform.rs` at `f7129d3`) was read, not profiled: it handles one pixel at a time, with a slice copy and a
-key comparison. Palette tRNS is a lookup table (`palette.rs`), which is why it costs nothing. The rgb8 key in the fork
+`src/decoder/transform.rs` at `f7129d3`) handles one pixel at a time, with a slice copy and a key comparison. A profile
+of the fork alone (VTune, 10 s a file, `png-decoders profile`) puts most of the keyed decode in that function. Its
+share of the fork's CPU time: 70% on the 8-bit RGB file, 83% on the grey file, 26% on the 16-bit photo (`expand_trns_line16`).
+Inside it, the slice copy and the key comparison are library calls per pixel (`copy_from_slice` to `memmove`/`memcpy`,
+slice `==` to `memcmp`): on RGB 34% and 28% of the fork's time, on grey 46% and 30%, on the photo 11% and 11%. The loop's
+own code is about 1–3%. Unkeyed files show no expansion frames at all. Shares are from one run each; the absolute times
+from this session were noisy (other sessions were running, about 20 Python processes), so they are not used here. Palette tRNS is a lookup table (`palette.rs`), which is why it costs nothing. The rgb8 key in the fork
 costs about 19.5 ms on 2.79 MP, which is roughly 7 ns a pixel; the gray key about 24 ms, roughly 8.5 ns a pixel. Those
 are arithmetic on the table, not a measurement of the loop.
 
@@ -470,10 +475,10 @@ largest 1", and one 16-bit sample gives "largest 256", which confirms big-endian
 
 ## Next
 
-- **Colour-key expansion in the fork.** The cost (2.8× on RGB, 5.1× on gray, 1.3× on the 16-bit photograph) is
-  confirmed in one run, and the inflate is ruled out by the identical streams. The mechanism is read from
-  `expand_trns_line` but not profiled. A profiler trace of the keyed and unkeyed file, once a profiler is set up on
-  Windows, would say where the time goes before anything is changed.
+- **Colour-key expansion in the fork: profiled, the fix is open.** The per-pixel copy and key comparison in
+  `expand_trns_line` (`expand_trns_line16` for 16-bit) are most of the keyed decode (see the colour-key section). A
+  change would compare the key as a fixed-size value and write fixed-size samples, so the loop needs no library calls.
+  Not designed or made yet; it's a change to the app's fork and needs a decision.
 - **libpng's and libspng's non-inflate work on the photographs.** libpng's is 1.7–4.3× the fork's, libspng's 5–12×.
   Neither was profiled. The libspng part is the larger, and its cause is not located.
 - **libspng's 16-bit RGBA and GA16 output.** The fault was in the harness, and it is fixed (see Output). The keyed photograph is timed above on a quiet machine. The GA16 path is tested on `gray16-2mp-trns` and matches the app.

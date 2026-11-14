@@ -71,7 +71,7 @@ static GLOBAL: Counting = Counting;
 fn main() -> Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        bail!("usage: png-decoders time [--secs S] FILE... | compare FILE... | allocs FILE... | dump DIR FILE...");
+        bail!("usage: png-decoders time [--secs S] FILE... | compare FILE... | allocs FILE... | dump DIR FILE... | profile [--secs S] FILE...");
     }
     let cmd = args.remove(0);
     if cmd == "dump" {
@@ -86,6 +86,7 @@ fn main() -> Result<()> {
     let mut decoders = Decoders::new();
     match cmd.as_str() {
         "time" => time(&mut decoders, &files, Duration::from_secs_f64(secs)),
+        "profile" => profile(&mut decoders, &files, Duration::from_secs_f64(secs)),
         "compare" => compare(&mut decoders, &files),
         "allocs" => allocs(&mut decoders, &files),
         "inflate" => inflate(&files, Duration::from_secs_f64(secs)),
@@ -128,6 +129,22 @@ fn dump(args: &[String]) -> Result<()> {
 
 fn label(dims: Dims, bps: usize) -> String {
     format!("{:>5.2} MP  {} ch  {:>2}-bit", (dims.width * dims.height) as f64 / 1e6, dims.channels, bps * 8)
+}
+
+/// `profile --secs S FILE...`: the fork alone, decoding each file in turn for S seconds, for a profiler to sample. It
+/// prints the decode count, not a time: the timings come from `time`.
+fn profile(decoders: &mut Decoders, files: &[(String, Vec<u8>)], budget: Duration) -> Result<()> {
+    let mut out = Vec::new();
+    for (name, bytes) in files {
+        let start = Instant::now();
+        let mut decodes = 0u64;
+        while start.elapsed() < budget {
+            black_box(decoders.decode(Dec::Fork, black_box(bytes), &mut out)?);
+            decodes += 1;
+        }
+        println!("{name}: {decodes} decodes of the fork in {:.1} s", budget.as_secs_f64());
+    }
+    Ok(())
 }
 
 fn time(decoders: &mut Decoders, files: &[(String, Vec<u8>)], budget: Duration) -> Result<()> {

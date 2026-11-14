@@ -9,7 +9,7 @@ sections that describe them. This text has not been reviewed since. The reviews'
 a round before the sixth considered and rejected one writer is not known. What depends on code not yet checked, or on a
 measurement not yet made, is under [Open](#open).
 
-Seeded by [NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (item C2).
+Seeded by [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) (item C2).
 
 ## How to read this
 

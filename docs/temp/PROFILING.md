@@ -160,7 +160,7 @@ uncommitted work stays out and the build runs on the container's own disk. Argum
 is not archived; options such as `--save-baseline` do not make a run partial. An option's value goes after `=`:
 `--save-baseline before` is refused, because `before` could be a bench name.
 
-**The large dataset** (2026-11-11, for the notifications' fix plan, [NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md)
+**The large dataset** (2026-11-11, for the notifications' fix plan, [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md)
 F0). Three catalog benches measure what the inbox and the scan do at scale:
 
 - `scan_walk` (`first`, `again`): `pg_scan::scan_with` over a synthetic tree (`pg-scan`'s `bench` feature,

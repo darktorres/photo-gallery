@@ -2,29 +2,58 @@
 //! thumbnail height, quitting). It holds no text: whoever shows the progress formats it (the command line, the app).
 //! The phase and the progress are the model's (`pg_model::progress`); the clock they are timed by is here.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
-use pg_model::progress::{Phase, Progress};
+use pg_model::progress::{Mark, Phase, Progress};
 
 use crate::events::{Bus, Subscription, Watch};
 
-/// The progress of the phase running, and when it began: a [`Progress`] read from it has the time since then.
+/// The rate and the time left are taken over this much of the phase's latest progress: a sliding window.
+const RATE_WINDOW: Duration = Duration::from_secs(30);
+/// Marks of the count go down at most this often, so a window holds about `RATE_WINDOW / MARK_EVERY` of them.
+const MARK_EVERY: Duration = Duration::from_millis(500);
+
+/// The progress of the phase running, when it began, and the marks of its count the rate window is taken from.
 #[derive(Clone)]
 struct Running {
     progress: Progress,
     started: Instant,
+    /// (when, count), oldest first. The front one is where the window starts: the latest mark at least a window
+    /// old, or the phase's start.
+    marks: VecDeque<(Instant, u64)>,
 }
 
 impl Running {
-    fn idle() -> Running {
-        Running { progress: Progress::idle(), started: Instant::now() }
+    fn begun(progress: Progress, started: Instant) -> Running {
+        Running { progress, started, marks: VecDeque::from([(started, 0)]) }
     }
 
-    /// The progress as it is now, with the time the phase has run.
-    fn read(&self) -> Progress {
-        Progress { elapsed: self.started.elapsed(), ..self.progress.clone() }
+    fn idle() -> Running {
+        Running::begun(Progress::idle(), Instant::now())
+    }
+
+    /// Notes the count at `now` (when it is due), and forgets the marks the window no longer starts from.
+    fn mark(&mut self, now: Instant) {
+        let due = self.marks.back().is_none_or(|&(at, _)| now.saturating_duration_since(at) >= MARK_EVERY);
+        if due {
+            self.marks.push_back((now, self.progress.done));
+        }
+        while self.marks.get(1).is_some_and(|&(at, _)| at + RATE_WINDOW <= now) {
+            self.marks.pop_front();
+        }
+    }
+
+    /// The progress as it is at `now`, with the time the phase has run and the window's start.
+    fn read(&self, now: Instant) -> Progress {
+        let (at, done) = self.marks.front().copied().unwrap_or((self.started, 0));
+        Progress {
+            elapsed: now.saturating_duration_since(self.started),
+            since: Mark { at: at.saturating_duration_since(self.started), done },
+            ..self.progress.clone()
+        }
     }
 }
 
@@ -191,7 +220,7 @@ impl Control {
         let now = Instant::now();
         *self.last_event.lock().unwrap_or_else(PoisonError::into_inner) = now;
         let progress = Progress { phase, total, ..Progress::idle() };
-        self.progress.set(Running { progress, started: now });
+        self.progress.set(Running::begun(progress, now));
         self.changed();
         PhaseGuard { ctl: self }
     }
@@ -212,9 +241,11 @@ impl Control {
 
     fn update(&self, change: impl FnOnce(&mut Progress)) {
         let mut last = self.last_event.lock().unwrap_or_else(PoisonError::into_inner);
+        let now = Instant::now();
         let due = self.progress.update(|running| {
             change(&mut running.progress);
-            (last.elapsed() >= EVENT_INTERVAL).then(|| running.read())
+            running.mark(now);
+            (now.saturating_duration_since(*last) >= EVENT_INTERVAL).then(|| running.read(now))
         });
         if let Some(progress) = due {
             *last = Instant::now();
@@ -225,14 +256,14 @@ impl Control {
 
     /// The phase ended: its final progress goes out as an event, and the phase is idle. Called by [`PhaseGuard`]'s drop.
     fn finish(&self) {
-        let ended = self.progress.update(|running| std::mem::replace(running, Running::idle()).read());
+        let ended = self.progress.update(|running| std::mem::replace(running, Running::idle()).read(Instant::now()));
         self.events.publish(Event::Finished(ended));
         self.changed();
     }
 
     /// The progress now, with the time its phase has run.
     pub fn snapshot(&self) -> Progress {
-        self.progress.get().read()
+        self.progress.get().read(Instant::now())
     }
 
     /// Progress and phase-end events from now on.
@@ -275,6 +306,31 @@ mod tests {
         assert!(first.elapsed >= Duration::from_millis(20), "{:?}", first.elapsed);
         std::thread::sleep(Duration::from_millis(5));
         assert!(ctl.snapshot().elapsed > first.elapsed, "read again, later");
+    }
+
+    #[test]
+    fn the_rate_is_over_the_latest_window_and_the_marks_stay_few() {
+        let t0 = Instant::now();
+        let mut running = Running::begun(Progress { total: 1000, ..Progress::idle() }, t0);
+        for s in 1..=60u64 {
+            // 10 files a second for the first 30 s, then 2 a second.
+            running.progress.done = if s <= 30 { s * 10 } else { 300 + (s - 30) * 2 };
+            running.mark(t0 + Duration::from_secs(s));
+        }
+        let read = running.read(t0 + Duration::from_secs(60));
+        assert_eq!(read.elapsed, Duration::from_secs(60));
+        assert_eq!(read.rate(), 2.0, "the last 30 s: 60 files");
+        assert_eq!(read.eta(), 320.0, "640 files left at 2 a second");
+        assert!(running.marks.len() <= 32, "{} marks", running.marks.len());
+    }
+
+    #[test]
+    fn early_in_a_phase_the_window_is_the_whole_phase() {
+        let t0 = Instant::now();
+        let mut running = Running::begun(Progress { total: 100, ..Progress::idle() }, t0);
+        running.progress.done = 50;
+        running.mark(t0 + Duration::from_secs(5));
+        assert_eq!(running.read(t0 + Duration::from_secs(5)).rate(), 10.0);
     }
 
     #[test]

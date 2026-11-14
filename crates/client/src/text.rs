@@ -530,7 +530,8 @@ mod tests {
     fn a_pass_line_says_how_far_it_is() {
         let rules = PathRules::Windows;
         let elapsed = std::time::Duration::from_secs(15);
-        let p = Progress { phase: Phase::Import, done: 1500, total: 4000, failed: 2, bytes: 0, elapsed };
+        let since = Default::default();
+        let p = Progress { phase: Phase::Import, done: 1500, total: 4000, failed: 2, bytes: 0, elapsed, since };
         assert_eq!(pass_status(&p, rules), "Importing 1,500 of 4,000 · 100/s · 25 s left");
         assert_eq!(pass_failed(&p), "2 failed");
         let height = pg_model::size::ThumbHeight::new(256).expect("a height in range");

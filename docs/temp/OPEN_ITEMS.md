@@ -54,3 +54,27 @@ Checked against the code and the eval outputs on 2026-11-12. Each item says what
 - Yandex: whether the browser shows all 18 other sizes or about 5 is not measured; only one photo was tested.
   **Open.** This needs a live check with the desktop app (`--find-similar`). A search of the Rust code found no cap on the
   other sizes, and REVERSE_SEARCH.md records 18 for the one photo.
+- Page cache per catalog connection (formerly the start profile's lead 6). **Open.** `SETTINGS` sets
+  `cache_size = -262144` (256 MB) on every connection (`crates/catalog/src/schema.rs:378`), applied in `Catalog::open`
+  and `prepare` (`crates/catalog/src/core.rs:101`, `:140`). Only the start's reader releases its pages, after each job
+  (`crates/app/src/reader.rs:183`). The thumbnail reader connections set -131072 (`crates/thumbcache/src/reader.rs:27`)
+  and only read a few rows each. SQLite's memory is outside dhat, so this has not been measured. Measure the resident
+  set of the start with a smaller cache before changing it.
+- Tier-1 index offsets per import (from the import profile). **Open.** `PdqIndex::reindex` (`crates/dedup/src/pdq_index.rs:229-240`)
+  allocates 16 offset tables of 65,537 `u32`s (4.2 MB) whenever the index has entries, including the rebuild from existing
+  hashes. Only the empty index is free now. Measure an import into a copy of the pinterest catalog (190k files) before
+  deciding. The rebuild's `(i64, Hash)` list (about 7.6 MB, an estimate) is not measured either.
+- Resizer buffers are never trimmed (from the import profile). **Open.** `Analyzer::trim` (`crates/analysis/src/analyze.rs:156-162`)
+  frees the image, the spare, the PDQ and ThumbHash buffers, the decoder and the detector, but not the resizer. Its `src` and
+  `dst` (`crates/codec/src/resize.rs:22-23`, 12 bytes a pixel) are kept at full size per worker. A 24 MP non-JPEG file could
+  leave about 290 MB held per worker (an estimate from the decode size, not measured).
+- Windows path copies per file (from the import profile). **Open.** `set_file` (`crates/platform/src/names.rs:27-46`) builds
+  the folder's and the name's UTF-16 buffers for every file, then copies them into the reused `NativePath`. Lead: write the
+  units straight from the work list's arena.
+- Dihedral hashes collected per analysis (from the import profile). **Open.** `crates/catalog/src/writers.rs:333` collects each
+  stored analysis's eight dihedral hashes into a 256-byte `Vec<u8>`. Bind the slices instead, as the PDQ hash already is.
+- Import at scale, not profiled. **Open.** The 305-JPEG sample has no EXIF, no earlier hashes, no large files and no
+  non-JPEG decodes, so the import's costs for those are estimates. Profile an import of a copy of the pinterest catalog.
+- On-demand thumbnails and viewer reads, not profiled. **Open.** The heap profile covered the scan, the import and the
+  borders and thumbnail passes, and the app's start. The app's on-demand thumbnail requests and viewer reads were checked
+  by screenshots and the cached bytes only.

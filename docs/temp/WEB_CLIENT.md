@@ -209,7 +209,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 
 - **What a snapshot is:** when a listing opens, the server runs the query and sort once, and keeps the resulting ordered list
   of item IDs under a listing ID and a generation. It stays fixed until the client closes it, it expires, or the client reopens
-  it. The server holds about 56 bytes per entry in memory (`docs/temp/HEAP_PROFILE_START.md:63`), so roughly 56 MB per million
+  it. The server holds about 56 bytes per entry in memory (`crates/model/src/grid.rs:41`), so roughly 56 MB per million
   items. The client gets the aspect-ratio block once, then fetches item records by range as the grid asks for them.
 - A snapshot freezes membership and order when it opens. Attribute changes update items in place.
 - The server publishes the fields each listing's query and sort read. A change to one of those fields is

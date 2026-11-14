@@ -256,11 +256,25 @@ cost, but indirect recursion (A → B → A) is still counted twice.
 
 The start after the optimizations, drilled thread by thread: [START_PROFILE.md](START_PROFILE.md) (2026-11-01).
 
-Every heap allocation of a scan, an import and the borders and thumbnail passes, site by site (dhat), before and
-after three rounds of fixes: [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01, 2026-11-02).
+Heap totals of a scan, an import and the borders and thumbnail passes, before and after three rounds of fixes (dhat;
+the profiles themselves are no longer on disk): [HEAP_PROFILE.md](../reference/HEAP_PROFILE.md) (2026-11-01, 2026-11-02).
 
-Every heap allocation of the app's start on the default catalog (dhat), before and after:
-[HEAP_PROFILE_START.md](HEAP_PROFILE_START.md) (2026-11-01, 2026-11-02).
+Heap allocations of the app's start on the default catalog (dhat, Rust side only), before and after three rounds of
+fixes (2026-11-01, 2026-11-02). The dhat profiles are no longer on disk, so these totals cannot be re-derived; they
+are the record. Under dhat and offscreen the stage times were not comparable to the release ones above.
+
+| | Before | After the first fixes | After the second | After the third |
+|---|---:|---:|---:|---:|
+| Allocated | 38.9 MB in 16,523 blocks | 13.1 MB in 686 | 12.9 MB in 521 | 11.9 MB in 354 |
+| Peak | 17.2 MB in 2,125 blocks | 11.4 MB in 131 | 11.4 MB in 131 | 11.5 MB in 118 |
+| At exit | 1.9 KB in 26 blocks | 2.1 KB in 26 | 2.1 KB in 26 | 1.2 KB in 15 |
+
+- **The list** is 189,518 entries of 56 bytes (`crates/model/src/grid.rs:41`), 10.6 MB. Before the fixes its `Vec`
+  was built without a size hint, so it doubled to 262,144 slots (14.7 MB, 4.1 MB unused) and was the peak. After the
+  third fixes it is one block, sized to its exact count.
+- **The rest** after the third fixes: the rows (537 KB), the placeholders' RGBA (101 blocks, 290 KB, handed to Qt
+  without a copy), and per-thread buffers and connections. The cached JPEGs are read into a per-thread buffer, so a
+  cache hit allocates nothing in steady state.
 
 ### Wall-clock library scan, WSL (`tools/profiling/scan-timing.sh`, 2026-11-07)
 

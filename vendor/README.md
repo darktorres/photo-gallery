@@ -61,7 +61,7 @@ Fork of `rusqlite/rusqlite` (`darktorres/rusqlite`), pinned by rev in the root `
 local commit, marked `photo-gallery` in `src/cache.rs`: `StatementCache::get` sets a statement's cache key only when it
 prepares the statement. A statement taken from the cache still carries the key it was cached under, yet `get` set a
 new one on every call, copying the SQL into a new `Arc<str>` for each `prepare_cached` hit: one allocation per query,
-hit or miss (docs/HEAP_PROFILE.md, site 11). A test there (`test_cache_hit_keeps_key`) checks that a hit keeps the key;
+hit or miss (found by dhat's profile of the import, 2026-11-01). A test there (`test_cache_hit_keeps_key`) checks that a hit keeps the key;
 it fails without the change. Upstream still has it, in 0.41.1 and on master.
 
 To update: rebase the commit onto the new release tag (`git rebase --onto <tag> v0.41.1`), change the `rev` and the

@@ -120,8 +120,8 @@ reference was read from Urocissa's source but not verified against a checkout.
 - **Durability.** Our SQLite WAL commits each change before the UI acknowledges it. Urocissa
   acknowledges from RAM and can lose about a second of edits on a crash.
 - **Measurement.** We have instruction counts, dhat heap profiles, SDE and Pin call graphs, and
-  stage timings with recorded results (`docs/temp/PROFILING.md`, `docs/HEAP_PROFILE.md`,
-  `docs/START_PROFILE.md`). Urocissa's performance gates have no committed results
+  stage timings with recorded results (`docs/temp/PROFILING.md`, `docs/reference/HEAP_PROFILE.md`,
+  `docs/temp/START_PROFILE.md`). Urocissa's performance gates have no committed results
   (not re-checked).
 
 ## Trade-off, not a clear win

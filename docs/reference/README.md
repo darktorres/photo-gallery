@@ -5,3 +5,5 @@ goes here only when it has no tasks. Plans stay in [`docs/plans/`](../plans/) or
 sources (papers, the references ledger) stay in [`research/`](../research/).
 
 - [STORAGE.md](STORAGE.md): drive kinds, file systems that are refused, and file identity on Linux.
+- [HEAP_PROFILE.md](HEAP_PROFILE.md): heap totals of the scan, the import and the passes, before and after three rounds of
+  fixes (dhat, 2026-11-01 and 2026-11-02). The profiles are no longer on disk.

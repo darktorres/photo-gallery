@@ -423,7 +423,7 @@ Open:
 
 Measure first:
 
-- Listing memory per entry (56-byte figure is from HEAP_PROFILE_START.md:63, not re-measured).
+- Listing memory per entry (56 bytes, `crates/model/src/grid.rs:41`).
 - Time from revoke request to WebSocket close and to the last write drained.
 - Registry-lock hold time under concurrent requests.
 - Password-hash time on desktop and phone.
@@ -536,7 +536,7 @@ Open:
 - Owner approval of the selection rule (decision 15).
 - Owner confirmation that a rating does not reorder the list at once (decision 14).
 - Owner confirmation that provisional rows are not listed (decision 10).
-- Desktop memory after cutover: keep Entry (about 10.6 MB measured for 189,518 files, HEAP_PROFILE_START.md:154) or move to FileIds and shapes (16 bytes per item, proposal).
+- Desktop memory after cutover: keep Entry (about 10.6 MB for 189,518 files, dhat 2026-11-02, PROFILING.md "Measurements") or move to FileIds and shapes (16 bytes per item, proposal).
 - Order digest cost and cadence at 189,518 and 1,000,000 items (not measured).
 - Keyed rank cost per delta (one O(N) Rust pass per batch); an expression index would be a schema change not designed here.
 - Stamp coverage completeness: production writers not fully grepped. INSERT OR REPLACE at ledger.rs:471 and an analysis update in borders_due (lifecycle.rs:139) are unchecked for other paths.
@@ -556,7 +556,7 @@ Open:
 
 Measure first:
 
-- Listing memory per entry (56 bytes from HEAP_PROFILE_START.md:63; not re-measured).
+- Listing memory per entry (56 bytes, `crates/model/src/grid.rs:41`).
 - Keyed sort full read and delta timings at 189,518 items (no keyed sort or delta has been timed).
 - Order digest cost; bulk action check cost; keyed rank per batch.
 - Phone worker memory (16 bytes per item plus spare buffer) and merge time per delta on Android Chrome.
@@ -1619,7 +1619,7 @@ Measure first:
 - Snapshot facet cost; include and exclude membership cost (bitmap or sorted ids).
 - Byte sizes after brotli or gzip; JSON versus binary parse cost on Android Chrome.
 - Cost of the attached ledger transaction per turn against a plain write; ledger growth under scan-rate volume.
-- Desktop listing memory per entry (56 bytes from HEAP_PROFILE_START.md:63).
+- Desktop listing memory per entry (56 bytes, `crates/model/src/grid.rs:41`).
 
 Validation notes:
 

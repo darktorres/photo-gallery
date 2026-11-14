@@ -1,25 +1,8 @@
-# Refactor design: the record, the deviations, and what is open
+# Refactor design: the record and the deviations
 
-Status (2026-11-12, HEAD `898b709`): this file is the design record, rewritten from the code. It replaces the 2026-11-06 version, whose Context described the tree as of 2026-11-02. The status source is the ledger in `docs/temp/REFACTOR_PLAN.md` ("Order of work"); where this file and the ledger disagree on status, the ledger wins and the disagreement is listed under "Ledger corrections" below. Commit hashes cited in the ledger are only reachable by object id: history was squashed into one commit, `88e780b` ("the full history squashed into one commit", 2026-11-06), and `5eb81bc` and `c552170` are not ancestors of `main`.
+Status (2026-11-12, HEAD `898b709`): this file is the design record, rewritten from the code. It replaces the 2026-11-06 version, whose Context described the tree as of 2026-11-02. The status source is the ledger in `docs/temp/REFACTOR_PLAN.md` ("Order of work"); where this file and the ledger disagree on status, the ledger wins. Commit hashes cited in the ledger are only reachable by object id: history was squashed into one commit, `88e780b` ("the full history squashed into one commit", 2026-11-06), and `5eb81bc` and `c552170` are not ancestors of `main`.
 
-## 1. Where the refactor stands
-
-Done, per the ledger: steps 0 to 11 (scaffolding, spike, the cycle cuts, the platform, model, catalog, thumbnail cache, render, library and CLI, `pg-client`, `pg-app`), the QML split and typed bridge (S-12.2, S-12.3, S-12.5 to S-12.22 except the open items below), the typed-name model (S-17.1 to S-17.7), the text seam (S-19.1 to S-19.3), and the crate splits (S-20.1 to S-20.3).
-
-Open, per the ledger:
-
-| ID | Status | What is left |
-|---|---|---|
-| S-12 (step 12) | partly fixed | The per-component facades, and the `CurrentItem` spike (ledger, step 12). S-12.1 is partly fixed (the grid's per-row role lists). |
-| S-13 | open | S-13.5 (final measurement): the `round_done` startup stage and the rebuild's first-start cost are not measured. S-13.1 has a wrong crate count (see below). |
-| S-14 | partly fixed | Verification. `just test` and `just qmltest` run; the screenshot matrix is in place. Coverage gaps are listed in the S-14 row. |
-| S-15 | open | CI exists (`.github/workflows/ci.yml`, `windows` and `linux` jobs). `603c5e0` passed; `15ca4e1` failed on 2026-11-08 on a Windows test (`cropped_copies_cut_the_borders_and_leave_the_originals`) and on the Linux `cargo doc` broken links. |
-| S-16 | partly fixed | Performance. The callgrind baseline holds 11 results (`docs/perf/baseline.json`); LTO and inlining by measurement (S-16.3) and the checkpoints are the open parts. |
-| S-21 | open | The REVIEW rows still listed as open: R-66, R-75, R-76, R-77, R-78, R-80, R-83, R-101, R-112, R-113, R-127. R-75, R-83 and R-101 are "partly fixed" in `REVIEW.md`. Each gets a measured before and after. |
-
-The web client's stack is undecided. `docs/temp/WEB_CLIENT.md` holds the research and the open checks (including the Qt-for-WebAssembly screen check, S-12.4 S14, not run). Nothing in the desktop refactor depends on that decision.
-
-## 2. Corrected baseline
+## 1. Corrected baseline
 
 These facts were checked against the tree at HEAD `898b709` on 2026-11-12. They replace the Context of the old file.
 
@@ -37,7 +20,7 @@ These facts were checked against the tree at HEAD `898b709` on 2026-11-12. They 
 - **WSL.** Retired (commit `62b4540`). There is no `just wsl-check` recipe, and `tools/wsl-check.sh` and `tools/profiling/wsl-bench.sh` are gone. Linux checks run in the `pg-dev` container (`just check-linux`) and in CI's `linux` job. Ledger rows S-01.3 and S-17.8 describe WSL and are historical.
 - **Fuzzing.** `fuzz/` is outside the workspace and has seven targets (containers, metadata, edit, model keys and query JSON, codec transform).
 
-## 3. The design as built
+## 2. The design as built
 
 The decisions from the old file, each with its status.
 
@@ -55,7 +38,7 @@ The decisions from the old file, each with its status.
 12. **Crate splits.** Built (S-20). The pass crates are split out of `pg-library`. The ledger records one deviation in S-20.3.
 13. **Verification.** Built with gaps. `just lint` (includes the wasm32 check of `pg-model` and `pg-client`, `cargo deny`, machete, ruff, markdownlint, `lint-qml`), `just test`, `just qmltest`, `just shots`, `just perf`, `just fuzz-smoke`. CI is in place but red at `15ca4e1` (S-15).
 
-## 4. Deviations from the old plan
+## 3. Deviations from the old plan
 
 - The controller's test layout is `crates/client/tests/` (facets, sort and the start traces), not a single `crates/client/tests/controller/` directory.
 - `Place` was the name in the session and views code until S-12.9 and is `Listing` now.
@@ -63,16 +46,7 @@ The decisions from the old file, each with its status.
 - `pg_catalog::query` does not exist. `from_json` and `to_json` are in `pg-query` (`crates/query/src/lib.rs:320,326`).
 - The web client's verdict is not recorded in this file. See `WEB_CLIENT.md`.
 
-## 5. Ledger corrections (made in `REFACTOR_PLAN.md` on 2026-11-12)
-
-- S-13.1 says "the 24 crates". There are 34 (`members = ["crates/*"]`).
-- S-13.1's dependency claim (desktop depends only on Qt and `pg-app`) is false: seven runtime pg crates plus `pg-testkit` for tests.
-- S-17.5 is "fixed" in its row but "partly done" in the "Now" paragraph. One of them is wrong; the code has `NativePath` and the scanner test, so "fixed" looks right.
-- S-01.3 and S-17.8 describe `just wsl-check` and `tools/wsl-check.sh`, which no longer exist. Mark them as superseded by the Linux container and CI.
-- S-12.13 had no row in the ledger. It now has one, "merged into S-12.7b", and its original scope is flagged there as open: `StartGate` takes a `FileId`, not a `Listing`.
-- The REVIEW rows the old file listed as open (R-79, R-81, R-96, R-119, R-120) are not in `REVIEW.md`, and the ledger records them as closed in S-12.12, S-12.19 and S-12.21. No action beyond keeping the ledger as the status source.
-
-## 6. Reuse (verified names)
+## 4. Reuse (verified names)
 
 - `pg_model::query` (`Query`, `Sort`, `SortKey`): `crates/model/src/query.rs`.
 - `pg_model::view::{Listing, SavedView}`: `crates/model/src/view.rs`.
@@ -90,11 +64,11 @@ The decisions from the old file, each with its status.
 
 Not in the code, so not reusable: `command_line::value`, `Tree::row_of_path`, `tools/wsl-check.sh`, `tools/profiling/wsl-bench.sh`, and the key-check pattern cited at `catalog/src/lib.rs:1637-1643` (that file is 54 lines).
 
-## 7. Verification
+## 5. Verification
 
-The state in sections 1 to 6 was checked on 2026-11-12 by reading the code and the ledger, not by running the builds. Four independent reviews (QML and `Main.qml`, Rust names and paths, build and CI, and design, spikes and ledger) each checked their scope against HEAD `898b709`, and the line counts and the squash were spot-checked by hand. Spike results S8 to S13 cannot be re-run from the repository: their commits are unreachable and the spike branch is gone. They are recorded in the ledger.
+The state in sections 1 to 4 was checked on 2026-11-12 by reading the code and the ledger, not by running the builds. Four independent reviews (QML and `Main.qml`, Rust names and paths, build and CI, and design, spikes and ledger) each checked their scope against HEAD `898b709`, and the line counts and the squash were spot-checked by hand. Spike results S8 to S13 cannot be re-run from the repository: their commits are unreachable and the spike branch is gone. They are recorded in the ledger.
 
-## 8. Risks (current)
+## 6. Risks (current)
 
 1. **CI is red at `15ca4e1`** (S-15). A Windows test on crop borders and Linux `cargo doc` links. Until a green run, the S-15 claim "CI passes" is not true.
 2. **Facades and the `CurrentItem` spike** (S-12, open). The last part of the QML split.

@@ -25,7 +25,6 @@ No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERS
 - the `CACHE_VERSION` doc (`crates/thumbcache/src/config.rs`);
 - `crates/README.md` cache layout paragraph (line 316);
 - `docs/temp/PLAN.md` "Schema (user decision, 2026-10-30 ...)" paragraph (line 334; "no migrations yet", line 341);
-- `docs/temp/REFACTOR_DESIGN.md` policy lines (34, 38, 192);
 - `docs/temp/REFACTOR_PLAN.md:390` ("no schema bumps before release");
 - `docs/temp/BOUNDED_MEMORY_PLAN.md:2004` ("the cache layout freezes with BASELINE", which rests on the rule) and `:1197` ("CACHE_VERSION stays 1").
 

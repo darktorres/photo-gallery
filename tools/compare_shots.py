@@ -4,7 +4,7 @@ over the test-hook matrix, on one fixture, pixel by pixel. Exit code 1 when anyt
 It was compare-shots.ps1.
 
     python tools/compare_shots.py --record <commit>     # build <commit> once and record its screenshots as a reference
-    python tools/compare_shots.py                       # working tree against the reference (the only one, or --base <commit>)
+    python tools/compare_shots.py                       # working tree against the newest reference in its history
     python tools/compare_shots.py --expect apply-view   # these scenarios are declared to differ: reported, not failures
     python tools/compare_shots.py --self                # the working tree against itself: the matrix's own determinism
     python tools/compare_shots.py --only view0,apply-view
@@ -392,19 +392,35 @@ def run_side(exe: Path, side: str, scenarios: dict[str, Scenario], wait: float) 
     return results
 
 
+def history() -> list[str]:
+    """This checkout's commits, each before its parents: the working tree's commit first, then its ancestors."""
+    result = subprocess.run(
+        ["git", "-C", str(REPO), "rev-list", "--date-order", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.split() if result.returncode == 0 else []
+
+
 def resolve_reference(base: str) -> Path:
-    """The reference to compare with: the only one recorded, or the one for --base."""
-    refs = [path for path in REF_ROOT.iterdir() if (path / "manifest.json").is_file()] if REF_ROOT.exists() else []
-    if not refs:
+    """The reference to compare with: the one for --base, else the newest one recorded in this commit's history. On a
+    pull request CI checks out the merge commit, so its history includes main, and the newest reference is main's."""
+    if base:
+        folder = REF_ROOT / git_commit(base)[:10]
+        if not (folder / "manifest.json").is_file():
+            sys.exit(f"no reference for {base}: record it with just shots --record {base}")
+        return folder
+    recorded = {path.name for path in REF_ROOT.iterdir() if (path / "manifest.json").is_file()} if REF_ROOT.exists() else set()
+    if not recorded:
         sys.exit("no reference recorded: run just shots --record <commit>")
-    if not base:
-        if len(refs) > 1:
-            sys.exit(f"several references ({', '.join(path.name for path in refs)}): pass --base <commit>")
-        return refs[0]
-    folder = REF_ROOT / git_commit(base)[:10]
-    if not (folder / "manifest.json").is_file():
-        sys.exit(f"no reference for {base}: record it with just shots --record {base}")
-    return folder
+    for commit in history():
+        if commit[:10] in recorded:
+            return REF_ROOT / commit[:10]
+    sys.exit(
+        f"no reference in this commit's history (recorded: {', '.join(sorted(recorded))}). A shallow checkout has only "
+        "its own commit: git fetch --unshallow. Or pass --base <commit>."
+    )
 
 
 def save_reference(sha: str, results: list[Shot], wait: float, qmake: Path) -> Path:
@@ -620,7 +636,9 @@ def bootstrap(python: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--record", default="", metavar="COMMIT", help="build COMMIT and record its screenshots as the reference")
-    parser.add_argument("--base", default="", metavar="COMMIT", help="the reference to compare with (when several exist)")
+    parser.add_argument(
+        "--base", default="", metavar="COMMIT", help="the reference to compare with (default: the newest in the history)"
+    )
     parser.add_argument("--self", action="store_true", help="the working tree against itself")
     parser.add_argument("--wait", type=float, default=10.0, help="the most to wait for a settled window, in seconds")
     parser.add_argument("--only", default="", help="comma-separated scenario names to run")

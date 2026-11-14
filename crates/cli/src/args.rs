@@ -30,7 +30,7 @@ impl Cli {
 
 #[derive(clap::Args)]
 pub(crate) struct PipelineArgs {
-    /// Reads in flight (IO.md "I/O": ≥ 8 reaches the HDD's sequential speed).
+    /// Reads in flight (docs/reference/IO.md "I/O": ≥ 8 reaches the HDD's sequential speed).
     #[arg(long, default_value_t = 8)]
     readers: usize,
     /// Decode threads (default: all logical CPUs).

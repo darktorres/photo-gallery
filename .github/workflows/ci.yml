@@ -176,12 +176,14 @@ jobs:
           python tools/ci/pillow_pin.py install
           just test-eval
 
-      - name: Screenshot comparison against the committed reference
+      - name: Screenshot comparison against the newest committed reference
         if: github.event_name == 'pull_request'
         continue-on-error: true # informational until it is stable (plan S-15)
         run: |
-          # Without --base, the comparison uses the one reference under tools/shots/reference. A PR's base has none unless
-          # someone recorded one, so looking it up failed every run. --python: the Python 3.12 that setup-python put on PATH.
+          # The comparison uses the newest reference in this commit's history (tools/compare_shots.py). The checkout is
+          # shallow, which holds only the merge commit, so the history is fetched first. A pull request's merge commit
+          # includes main, so main's reference is found. --python: the Python 3.12 that setup-python put on PATH.
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch --unshallow --quiet; fi
           just shots --python python
 
       - name: Screenshot report

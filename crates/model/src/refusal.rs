@@ -1,4 +1,4 @@
-//! Why the scanner refuses a folder (docs/S17_7_PLAN.md, decisions 6 and 13): as data, which `pg-scan` decides from the
+//! Why the scanner refuses a folder (decisions 6 and 13 of the S-17.7 plan, removed 2026-11-14; last committed at 7086cc5 as docs/temp/S17_7_PLAN.md): as data, which `pg-scan` decides from the
 //! platform's facts and `pg_client::text` words (review 4 (e428ab2), R-1 and M-34). Nothing here is English, so a
 //! refusal is shown in the reader's language, whichever one the scan ran in.
 

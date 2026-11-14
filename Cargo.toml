@@ -63,7 +63,7 @@ unreachable_pub = "warn"
 [workspace.lints.clippy]
 # Every unsafe block says why it is sound.
 undocumented_unsafe_blocks = "warn"
-# Phase 1 of docs/CLIPPY_LEDGER.md: the lints with few or no hits. A deliberate use is `#[expect(.., reason)]` at the site.
+# Phase 1 of docs/plans/CLIPPY_LEDGER.md: the lints with few or no hits. A deliberate use is `#[expect(.., reason)]` at the site.
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
@@ -72,25 +72,25 @@ exit = "deny"
 panic = "deny"
 allow_attributes = "warn"
 string_slice = "warn"
-# Phase 2 (docs/CLIPPY_LEDGER.md): printing is for the entry points and the tools, which allow it at their crate root
+# Phase 2 (docs/plans/CLIPPY_LEDGER.md): printing is for the entry points and the tools, which allow it at their crate root
 # with `#![expect(.., reason)]`. A library reports through its results; the app's errors go to its log.
 print_stdout = "deny"
 print_stderr = "deny"
-# Phase 3 (docs/CLIPPY_LEDGER.md): panic-freedom. A failure is a `Result`; an `expect` says why its invariant holds.
+# Phase 3 (docs/plans/CLIPPY_LEDGER.md): panic-freedom. A failure is a `Result`; an `expect` says why its invariant holds.
 unwrap_used = "deny"
 expect_used = "deny"
 indexing_slicing = "deny"
-# Phase 4 (docs/CLIPPY_LEDGER.md): lossless casts are `From` conversions.
+# Phase 4 (docs/plans/CLIPPY_LEDGER.md): lossless casts are `From` conversions.
 cast_lossless = "deny"
-# Phase 4: a narrowing cast is a `try_from` or a documented clamping helper (docs/CLIPPY_LEDGER.md, truncation policy).
+# Phase 4: a narrowing cast is a `try_from` or a documented clamping helper (docs/plans/CLIPPY_LEDGER.md, truncation policy).
 cast_possible_truncation = "deny"
-# Phase 4: a signed value that becomes unsigned is a `try_from`, a clamping helper, or `cast_unsigned` (docs/CLIPPY_LEDGER.md, sign-loss policy).
+# Phase 4: a signed value that becomes unsigned is a `try_from`, a clamping helper, or `cast_unsigned` (docs/plans/CLIPPY_LEDGER.md, sign-loss policy).
 cast_sign_loss = "deny"
-# Phase 4: a signed value from an unsigned one is a `try_from`, a saturating clamp, or `cast_signed` (docs/CLIPPY_LEDGER.md, wrap policy).
+# Phase 4: a signed value from an unsigned one is a `try_from`, a saturating clamp, or `cast_signed` (docs/plans/CLIPPY_LEDGER.md, wrap policy).
 cast_possible_wrap = "deny"
-# Phase 4: an integer to float conversion is a `pg_model::num` helper (count, size or signed), or a local helper in `jobs`; the expect sits on the helper (docs/CLIPPY_LEDGER.md, precision policy).
+# Phase 4: an integer to float conversion is a `pg_model::num` helper (count, size or signed), or a local helper in `jobs`; the expect sits on the helper (docs/plans/CLIPPY_LEDGER.md, precision policy).
 cast_precision_loss = "deny"
-# Phase 4: every `as` is replaced by the form its rule states (docs/CLIPPY_LEDGER.md, as-conversions policy).
+# Phase 4: every `as` is replaced by the form its rule states (docs/plans/CLIPPY_LEDGER.md, as-conversions policy).
 as_conversions = "deny"
 
 # Debug builds (and `cargo test`) with the dependencies optimized: decoding, resizing and hashing are all in

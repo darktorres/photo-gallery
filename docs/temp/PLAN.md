@@ -162,7 +162,7 @@ plain connected components (`pg-dedup`'s `UnionFind`). Tiers 2 and 3 are not in 
   - Geometric check: Hough pre-filter, then clique-filtered RANSAC. That paper reports about 12 ms per pair
     (RANSAC 2D Cliques).
 - **Vision-language model as a last-resort judge** (option, later): only for pairs the verifier can't settle
-  geometrically, e.g. a liquify/slimming edit vs another frame, or a hair recolor (VERIFIER.md, "Gray zone").
+  geometrically, e.g. a liquify/slimming edit vs another frame, or a hair recolor (../eval/VERIFIER.md, "Gray zone").
   Ask a VLM (e.g. Claude vision) "same picture, possibly edited, or a different picture?", cache the answer per
   pair, and treat it like a review label. Expected to be a small fraction of pairs; cost and latency per pair
   decide whether it's worth it over hand review.
@@ -171,7 +171,7 @@ plain connected components (`pg-dedup`'s `UnionFind`). Tiers 2 and 3 are not in 
 
 - Verified edges, signed (match / aligned-but-different, weighted by the verifier's margin) → correlation
   clustering by greedy additive edge contraction (multicut). Measured in M0 to beat union-find plus a split
-  pass (VERIFIER.md: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
+  pass (../eval/VERIFIER.md: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
 - Each group gets a canonical **keeper**: the largest pixel area that contains the others, then the highest
   quality. **Folder preferences** override this: an ordered list of patterns (e.g. prefer `originals\` over
   `backup\` or `pinterest\`); newest/oldest as further tie-breakers.
@@ -269,7 +269,7 @@ can be added later against the same crates.
   - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image` (done: DCT-scaled decode, JPEG_DECODERS.md "Decode benchmark"; the import uses libjpeg-turbo).
   - Resize with `fast_image_resize`, verified with the aliasing paper's downsampled-circle test (not done).
   - Thumbnail encode with JPEG (turbo/jpegli) vs WebP (done: AVIF/WebP/JPEG XL too, THUMBNAILS.md "Thumbnails").
-  - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, MODELS.md "TensorRT and ONNX Runtime").
+  - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, ../eval/MODELS.md "TensorRT and ONNX Runtime").
 - **ANN bake-off** on 5M vectors: USearch HNSW int8 vs FAISS IVF-PQ, measuring recall at radius, RAM and
   insert speed. A first run on synthetic vectors was invalid (unclustered data, untuned indexes; TIER2_ANN_BAKEOFF_PLAN.md
   "Nearest-neighbour search, first attempt"); it is being redone on the test set's real embeddings plus planted
@@ -293,7 +293,7 @@ can be added later against the same crates.
     within 4 bits (max 14, from the DCT-scaled decode). Labeled-pair recall at d ≤ 0 / 8 / 16 / 22 / 31 is
     **30.8 / 66.0 / 75.4 / 80.4 / 83.2%** (M0: 32.6 / 65.7 / 74.8 / 80.1 / 82.8%). No cross-group pair at d ≤ 31.
   - **Tiers 0a/0b:** 0 byte-identical groups and 234 pixel-identical groups (468 files), from the `.mozjpeg.jpg`
-    re-encodes (TEST_SET.md).
+    re-encodes (../eval/TEST_SET.md).
   - **Resumable:** an import killed after 1,500 files and rerun ends with the same 2,784 pairs as an uninterrupted
     run. Renamed and moved files keep their analysis; a deleted file is marked missing; a touched file is
     re-analyzed alone.
@@ -436,7 +436,7 @@ can be added later against the same crates.
    So400m/16 NaFlex** (native aspect ratio, 256 patches; TensorRT fp16), so keywords and semantic search need no
    second decode of the originals. Cost: ~154 GPU hours for 70M (~6.4 days), so the GPU, not decoding (~1.5 days),
    becomes the limit of that pass. NaFlex needs only ~208 × 304 px at 256 patches, so it can also run as a
-   background GPU task on the import's downscaled working image instead of holding up the import (MODELS.md: "A second model" and "NaFlex").
+   background GPU task on the import's downscaled working image instead of holding up the import (../eval/MODELS.md: "A second model" and "NaFlex").
 3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). Measured
    on the subset: SSCD tolerates flips, so no flipped embedding, pending confirmation on the full set.
 4. **Heavy crops:** if M0 shows SSCD misses small crops, consider region embeddings for reference images. That

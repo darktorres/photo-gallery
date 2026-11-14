@@ -8,24 +8,24 @@ Checked against the code and the eval outputs on 2026-11-12. Each item says what
   already takes marks on verifier pairs (`eval/viewer.py`, one `pair_marks.json` per run), but no run has a marks file yet.
 - Verifier speed, next levers. **Open.** DISK runs on TensorRT by default (`eval/verify.py`, `--disk-runtime trt`). The
   6.7 pairs/s figure was measured before the 262004b verifier fix and has not been re-measured. LightGlue still runs in
-  PyTorch (kornia); `eval/` has no LightGlue-ONNX or TensorRT path. 768 px was tried and not adopted (VERIFIER.md,
+  PyTorch (kornia); `eval/` has no LightGlue-ONNX or TensorRT path. 768 px was tried and not adopted (../eval/VERIFIER.md,
   "not adopted"). The rotation retries are not gated: `--rotations` defaults to `none`, and when it is on, every
   non-matching pair pays for the retries.
 - Verifier robustness: the median-residual measure swings for ~0.3% of pairs when a few keypoints change
   (TensorRT vs torch flips); look at those with the hand marks. **Open.** The 0.3% figure was measured before the fix
-  (VERIFIER.md, the rotations section, which says so). It has not been re-measured since, and there are no hand marks.
+  (../eval/VERIFIER.md, the rotations section, which says so). It has not been re-measured since, and there are no hand marks.
 - Second model (So400m NaFlex): choose a runtime. **Open.** No So400m code exists in the crates, only in `eval/` and
-  the docs. The cause is recorded in MODELS.md ("Why So400m loses precision on TensorRT"), and so is the ONNX
+  the docs. The cause is recorded in ../eval/MODELS.md ("Why So400m loses precision on TensorRT"), and so is the ONNX
   Runtime GELU-fusion result (84 img/s at torch fp16's fidelity). Not recorded in any doc: the neighbour-agreement
   numbers (0.939 vs 0.984; top-5 0.961 vs 0.990; 0.949 vs 0.996 on the subset), the torch fp16 cosine of 0.9993, and
   the claim that fp32 LayerNorm doesn't help. Those need a measurement note or a rerun before they are cited. The
-  small text-query test (MODELS.md, NaFlex section) has not been run.
+  small text-query test (../eval/MODELS.md, NaFlex section) has not been run.
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
-  template portraits with different faces (the 12-image group). **Open.** 670+671 and 429 are in VERIFIER.md's grouping
-  section (lines 72–88). The template-portrait case is at VERIFIER.md:78; the "12-image group" is not named there, so
+  template portraits with different faces (the 12-image group). **Open.** 670+671 and 429 are in ../eval/VERIFIER.md's grouping
+  section (lines 72–88). The template-portrait case is at ../eval/VERIFIER.md:78; the "12-image group" is not named there, so
   find it in the grouping output before marking it.
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused comparison (see
-  "Verifier prototype, first run"). **Deferred.** That section (VERIFIER.md:123) is still the only record.
+  "Verifier prototype, first run"). **Deferred.** That section (../eval/VERIFIER.md:123) is still the only record.
 - Hand-label a sample of `review_*.csv` to estimate real precision. **Open.** `eval/evaluate.py` writes
   `review_<model>.csv` (line 187), but no such file exists in `D:\PhotoGallery\eval` or `eval_smoke`, so no sample has
   been drawn for any model.
@@ -44,7 +44,7 @@ Checked against the code and the eval outputs on 2026-11-12. Each item says what
   vectors exist, and the crates have no semantic search.
 - Full-set runs (on hold). **Unclear.** No doc says "on hold". What exists: full-set SSCD embeddings
   (`D:\PhotoGallery\eval\emb_sscd_fp16.npy`, 187,806 rows) and a full-set cross-group verify (2026-11-09). Not run: the
-  full k-NN verify (187,808 images, "hours per run", VERIFIER.md). TEST_SET.md's "full set, not run yet" is stale. Confirm
+  full k-NN verify (187,808 images, "hours per run", ../eval/VERIFIER.md). ../eval/TEST_SET.md's "full set, not run yet" is stale. Confirm
   whether this is still on hold.
 - Video player: Qt Multimedia plays videos now, with hardware decoding turned off on a GPU without AV1 decoding
   (a stopgap, "Videos and animations"). Choose between our own engine on our FFmpeg 9 and libmpv with its D3D11

@@ -1,6 +1,6 @@
 # I/O
 
-Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [TEST_SET.md](TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
+Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
 
 - **HDD read order (`eval/bench_hdd.py`, 2026-10-29): read in MFT order, or keep ≥ 8 reads in
   flight. Either gives ~3× path order and reaches the disk's sequential speed.** Unbuffered reads

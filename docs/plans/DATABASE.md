@@ -33,7 +33,7 @@ From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse/`, `crate
 - **Two processes write the same file** at once: the app and `gallery` (import, thumbs).
 - **Windows, from Rust, in-process.** Batched writes plus point updates (ratings, rotations), reads while writing.
 
-Later: semantic search (SigLIP 2 So400m/16 NaFlex, 1152-d, ~161 GB in fp16 at 70M, PLAN §9 decision 2; MODELS.md "A second model"), text search over
+Later: semantic search (SigLIP 2 So400m/16 NaFlex, 1152-d, ~161 GB in fp16 at 70M, PLAN §9 decision 2; docs/eval/MODELS.md "A second model"), text search over
 names, folders, tags and maybe captions or OCR, the duplicate groups.
 
 ## Verdict

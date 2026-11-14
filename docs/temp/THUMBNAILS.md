@@ -1,6 +1,6 @@
 # Thumbnails
 
-Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [TEST_SET.md](TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
+Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
 
 ## Thumbnails (`eval/bench_thumbs.py`, 300 random images, 2026-10-30)
 

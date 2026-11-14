@@ -32,5 +32,6 @@ just deploy     # the release build, with Qt's DLLs and QML modules next to gall
 - `docs/PLAN.md`: goals, constraints and milestones.
 - `docs/REFACTOR_PLAN.md` and `docs/REFACTOR_DESIGN.md`: how the code was restructured, and why.
 - `crates/README.md`: the crates, their layers, and the build in detail.
-- `docs/temp/`: the measurement docs, e.g. `TEST_SET.md`, `IO.md`, `THUMBNAILS.md`, `MODELS.md`, `VERIFIER.md`, `BORDERS.md`, `REVERSE_SEARCH.md`, `REFACTOR_MEASUREMENTS.md`, `OPEN_ITEMS.md`, `JPEG_DECODERS.md`, `TIER2_ANN_BAKEOFF_PLAN.md`, `VIDEO_PLAYER.md` and `START_PROFILE.md`.
+- `docs/eval/`: the model and verifier measurements: `MODELS.md` (models and accelerators), `VERIFIER.md` (PDQ, the verifier and grouping), and `TEST_SET.md` (hardware, test set and labels).
+- `docs/temp/`: the other measurement docs, e.g. `IO.md`, `THUMBNAILS.md`, `BORDERS.md`, `REVERSE_SEARCH.md`, `REFACTOR_MEASUREMENTS.md`, `OPEN_ITEMS.md`, `JPEG_DECODERS.md`, `TIER2_ANN_BAKEOFF_PLAN.md`, `VIDEO_PLAYER.md` and `START_PROFILE.md`.
 - `docs/temp/PROFILING.md`: the callgrind benches and the instruction-count gate.

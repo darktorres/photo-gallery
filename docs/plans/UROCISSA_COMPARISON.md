@@ -117,7 +117,7 @@ against a clone at `102025d` on the same day. Where a claim was wrong, the text 
   (`crates/analysis/src/analyze.rs:30-32`, scaling in `crates/codec/src/decode.rs`). Urocissa decodes at full
   resolution.
 - **Near-duplicate detection.** We run PDQ with 16-chunk multi-index lookup at radius ≤ 31
-  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/temp/VERIFIER.md`. Urocissa
+  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/eval/VERIFIER.md`. Urocissa
   does exact hashing only. Its perceptual hash is computed but not used.
 - **Layout runs in Rust.** Our justified rows are computed in `crates/client/src/layout.rs`.
   Urocissa runs Knuth–Plass in a web worker (`gallery-frontend/src/worker/toDataWorker.ts:324`) and updates

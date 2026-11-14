@@ -106,12 +106,55 @@ iteration excluded, also including the copies to and from the GPU.
 - **The GPU encoders take 0.5–1 ms per megapixel,** 14–42× faster than libjpeg-turbo on the camera files, but
   their files are no smaller (nvJPEG) or 4–34% bigger (GPUJPEG) at the same quality.
 
+## ImageReduce's switch on real inputs
+
+`eval/jpeg-decoders/imagereduce_switch.py`, 2026-11-14. ImageReduce's encode is libvips 8.18.7's `jpegsave` at Q75,
+4:4:4, `optimize_coding`, after a thumbnail to 3840×2160 for images over that size. Its output's quantization tables
+are the standard Annex K tables at Q75, baseline, so the `JCP_FASTEST` note above holds. Each input is decoded the way
+ImageReduce decodes it, both encoders get the same 8-bit sRGB pixels, and every output is decoded by libvips and
+scored with SSIMULACRA2 against those pixels. Inputs are the originals ImageReduce would still receive: the library
+copy's files without "mozjpeg" in the name, since ImageReduce never reprocesses its own outputs.
+
+| Set | Files | Today's output bigger than input (kept as original) | Matched score: jpegli / vips image bytes |
+|---|---:|---:|---:|
+| Pinterest originals | 1,162 (1,035 JPEG, 88 PNG, 39 WebP) | 981 (84%) | 0.927 |
+| Camera originals | 40 (20 on the thumbnail path) | 2 (5%) | 0.834 |
+
+The matched figure is the jpegli bytes needed for the score vips got, per file. ImageReduce can't search per file, so
+the switch has to use one jpegli quality. Totals use the keep-original rule (keep the input when the output is bigger),
+with the vips metadata (571 Pinterest files, 39 camera files carry ICC or EXIF) copied onto the jpegli side:
+
+| jpegli Q | Pinterest: median Δscore / size vs vips / total bytes | Camera: median Δscore / size vs vips / total bytes |
+|---|---|---|
+| 65 | −5.44 / 0.792 / −17.4% | −5.57 / 0.663 / −35.2% |
+| 70 | −2.70 / 0.858 / −11.4% | −3.70 / 0.716 / −29.4% |
+| 75 | −0.51 / 0.895 / −7.0% | −2.00 / 0.767 / −23.3% |
+| 80 | **+0.38 / 0.951 / −2.1%** | **+0.28 / 0.860 / −13.8%** |
+| 85 | +3.01 / 1.036 / +1.7% | +3.20 / 1.031 / +2.4% |
+| 90 | +4.82 / 1.137 / +7.1% | +6.07 / 1.353 / +34.7% |
+
+- **Q80 is quality-neutral to slightly better on both sets and smaller on both.** The gain is mostly on camera files:
+  the Pinterest originals are already compressed, so most keep their originals either way.
+- **Q76–78 was not run.** The median score should cross zero there, with more savings than Q80.
+- **Not done:** the switch needs a libjpegli build linked into ImageReduce, the ICC and EXIF segments copied across,
+  and its own timing (not measured here). The score for the 20 thumbnail-path camera files is against the resized
+  image, so it doesn't include the resize.
+- **Not tested:** alpha PNG and WebP (53 files, skipped), and the one PNG over libvips's 65,500-pixel limit.
+
+To rerun (Windows, native, not the container): set `IMAGEREDUCE_VIPS_BIN` to ImageReduce's `vips-dev-8.18\bin`,
+`JPEGLI_BUILD` to jpegli's build folder, and `PG_DATA_ROOT` and `CAMERA_ROOT` to the library and camera folders, then
+
+```sh
+python eval/jpeg-decoders/imagereduce_switch.py run library --out WORK/library.csv
+python eval/jpeg-decoders/imagereduce_switch.py run camera --n 40 --out WORK/camera.csv
+python eval/jpeg-decoders/imagereduce_switch.py summarize WORK/library.csv WORK/camera.csv
+```
+
 ## What to do
 
-- **ImageReduce:** worth testing jpegli baseline (`-p 0`, 4:4:4) in place of mozjpeg `JCP_FASTEST`, on the files
-  ImageReduce actually receives, with SSIMULACRA2 against the original. The camera-file result says 7–25% smaller
-  at equal quality. The Pinterest results say a file that already matches libjpeg-turbo's Q75 tables loses quality
-  on any switch, so ImageReduce should keep its "keep the original if the re-encode isn't smaller" rule.
+- **ImageReduce:** switch to jpegli baseline 4:4:4 at Q80 (see above), not progressive, copying the ICC and EXIF
+  segments across. Keep its "keep the original if the re-encode isn't smaller" rule, which today keeps 84% of the
+  Pinterest originals. Q76–78 is worth one more run before the setting is fixed.
 - **Not progressive:** for any encoder.
 - **The thumbnail cache:** THUMBNAILS.md "Thumbnails" already measured jpegli at −9% bytes; nothing here changes that.
 

@@ -136,9 +136,20 @@ with the vips metadata (571 Pinterest files, 39 camera files carry ICC or EXIF) 
 - **Q80 is quality-neutral to slightly better on both sets and smaller on both.** The gain is mostly on camera files:
   the Pinterest originals are already compressed, so most keep their originals either way.
 - **Q76–78 was not run.** The median score should cross zero there, with more savings than Q80.
-- **Not done:** the switch needs a libjpegli build linked into ImageReduce, the ICC and EXIF segments copied across,
-  and its own timing (not measured here). The score for the 20 thumbnail-path camera files is against the resized
-  image, so it doesn't include the resize.
+- **Encode time** (`eval/jpeg-decoders/imagereduce_timing.py`, same files, one thread for libvips, three runs each,
+  median): per megapixel, jpegli is about even with ImageReduce's encode, but a per-file cjpegli call costs more.
+
+  | Set | vips Q75 ms/MP | cjpegli Q80 ms/MP, net of process start | cjpegli, wall time, total ratio |
+  |---|---:|---:|---:|
+  | Pinterest originals, 500 random (median 0.99 MP) | 13.5 | 11.2 (24.9 with startup) | 1.63× |
+  | Camera originals, all 40 (median 3.8 MP) | 11.5 | 12.9 (15.9 with startup) | 1.39× |
+
+  cjpegli starts in about 13 ms, which is most of a one-megapixel encode, so a per-file call is slower than the net
+  column. Calling jpegli's library in-process would avoid that. The vips side encodes from memory without metadata,
+  and cjpegli's threads can't be set from its command line, so the comparison is approximate.
+- **Not done:** the switch needs a libjpegli build linked into ImageReduce, and the ICC and EXIF segments copied
+  across. The score for the 20 thumbnail-path camera files is against the resized image, so it doesn't include the
+  resize.
 - **Not tested:** alpha PNG and WebP (53 files, skipped), and the one PNG over libvips's 65,500-pixel limit.
 
 To rerun (Windows, native, not the container): set `IMAGEREDUCE_VIPS_BIN` to ImageReduce's `vips-dev-8.18\bin`,
@@ -148,6 +159,7 @@ To rerun (Windows, native, not the container): set `IMAGEREDUCE_VIPS_BIN` to Ima
 python eval/jpeg-decoders/imagereduce_switch.py run library --out WORK/library.csv
 python eval/jpeg-decoders/imagereduce_switch.py run camera --n 40 --out WORK/camera.csv
 python eval/jpeg-decoders/imagereduce_switch.py summarize WORK/library.csv WORK/camera.csv
+python eval/jpeg-decoders/imagereduce_timing.py WORK --n 500
 ```
 
 ## What to do

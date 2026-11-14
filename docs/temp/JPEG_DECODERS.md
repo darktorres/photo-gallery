@@ -225,7 +225,7 @@ the decoded size.
   - **Camera photos:** it's no faster or slower (26–62 ms against 24–49 ms), since the CPU decode skips most of
     the IDCT and nvJPEG can't scale.
 - **Throughput:** libjpeg-turbo spreads over 12 threads, while nvJPEG here is bounded by its one Huffman thread.
-  The GPU is also what SSCD needs (IO.md "I/O": the full pass is GPU-bound at 410 img/s).
+  The GPU is also what SSCD needs (../reference/IO.md "I/O": the full pass is GPU-bound at 410 img/s).
 - **Windows against WSL:** Pillow on Windows (libjpeg-turbo) is within 10% of the WSL libjpeg-turbo times on
   camera files (111 against 124 ms, 47 against 49 ms), so the two tables compare.
 
@@ -281,7 +281,7 @@ Per image, decoded pixels copied to pinned host memory. Batches are N copies of 
 - **Throughput, not latency:** the GPU at about 820–880 small files/s (to host, batch 64) is likely less than all
   12 CPU threads decode at 1/2 (one thread: 200–270/s; not measured across threads). It adds decode capacity and
   frees the CPU for PDQ, ThumbHash and the resizes, but its GPU time competes with SSCD, which keeps this GPU busy
-  at 410 img/s (IO.md "I/O").
+  at 410 img/s (../reference/IO.md "I/O").
 
 ## Restart markers and lossless baseline conversion
 

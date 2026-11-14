@@ -1,6 +1,6 @@
 # I/O
 
-Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md); the old titles are listed in [FINDINGS.md](FINDINGS.md).
+Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md).
 
 - **HDD read order (`eval/bench_hdd.py`, 2026-10-29): read in MFT order, or keep ≥ 8 reads in
   flight. Either gives ~3× path order and reaches the disk's sequential speed.** Unbuffered reads
@@ -21,8 +21,9 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     each cost a disk rotation.
   - **Caveat: this folder was copied in one go, so it is nearly ideal** (1.2% of files fragmented).
     Older parts of the 70M library are likely more scattered, which favors MFT or cluster order
-    even more. The Rust scanner should read the MFT (or USN journal), sort by record number, and
-    keep a deep read queue.
+    even more. The import already reads in MFT record order, with 8 readers (`pending_import` in
+    `crates/catalog/src/work.rs`). Reading the MFT or the USN journal in the scanner, instead of listing folders,
+    is planned in [`NTFS_MFT_SCAN_PLAN.md`](../temp/NTFS_MFT_SCAN_PLAN.md).
   - Sparse sample (every 25th file, `--stride 25`): every order runs at ~140 files/s (random 125),
     and 8 in flight gives ~245. When files are far apart, each read pays a seek whatever the order;
     only queue depth helps.

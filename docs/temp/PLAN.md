@@ -91,7 +91,7 @@ overhead across 70M files, it is more like **1–3 days**. A second pass costs t
   second time (BORDERS.md "Border detector in the gallery"). This bears on where embeddings run (§9, decision 6).
 - **Read in on-disk order.** Parallel random reads on one spindle thrash the head. M0 compared path order, NTFS
   file-ID (MFT record) order and physical order (first-extent LCN via `FSCTL_GET_RETRIEVAL_POINTERS`): MFT order, or
-  8 reads in flight, reaches the disk's sequential speed, ~3× path order (IO.md "I/O"). The import sorts by MFT
+  8 reads in flight, reaches the disk's sequential speed, ~3× path order (../reference/IO.md "I/O"). The import sorts by MFT
   record and keeps 8 reads in flight (`pg-jobs`, `Options::readers`, default 8).
 
 ```text
@@ -264,7 +264,7 @@ can be added later against the same crates.
     §9 decision 4).
   - Python is used here only for ONNX export and the evaluation scripts in `eval/`.
 - **I/O benchmark** of read orderings on E: (path vs file ID vs LCN) (done: MFT order, or 8 reads in flight, ~3×
-  path order; IO.md "I/O").
+  path order; ../reference/IO.md "I/O").
 - **Throughput benchmarks:**
   - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image` (done: DCT-scaled decode, JPEG_DECODERS.md "Decode benchmark"; the import uses libjpeg-turbo).
   - Resize with `fast_image_resize`, verified with the aliasing paper's downsampled-circle test (not done).

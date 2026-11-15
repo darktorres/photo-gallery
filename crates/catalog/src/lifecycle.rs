@@ -11,7 +11,6 @@ use pg_model::media::Ext;
 use pg_model::rules::PathRules;
 
 use crate::error::{Error, Result};
-use crate::transaction::write_transaction;
 use crate::types::{TAKEN_ZONE_QUERY, rules_name};
 
 /// Why the paths of the catalog on `conn` don't read as paths under `rules` (`meta.path_rules`): they were stored under
@@ -191,22 +190,32 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>) -> Result<(
 /// recorded them): the number marked. The scan records only the extensions it holds, so they never come back, and
 /// every read of the catalog (the grid, an entry, the tree, the facets, the status) leaves them out as it leaves out
 /// any missing file, where one such row would fail the grid's list. A queued write on one is dropped as any write on
-/// a missing file is. In one write transaction, at `Catalog::prepare`.
-pub(crate) fn mark_unheld_missing(conn: &Connection) -> Result<usize> {
-    let tx = write_transaction(conn)?;
-    let exts: Vec<String> = tx
-        .prepare("SELECT DISTINCT ext FROM files WHERE missing = 0")?
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
-    let mut marked = 0;
-    {
+/// a missing file is. At `Catalog::prepare`, and only when `meta.held_exts` is another build's set: like
+/// [`set_import_version`], one [`set_mark`], so a start of the same build reads no file. A scan's writes stamp the set
+/// of the build that made them ([`stamp_held_exts`]), so the rows a build with more extensions records after this one
+/// started are looked at again at this build's next start.
+pub(crate) fn mark_unheld_missing(conn: &Connection) -> Result<()> {
+    set_mark(conn, "held_exts", &pg_model::media::held_exts(), |tx| {
+        let exts: Vec<String> = tx
+            .prepare("SELECT DISTINCT ext FROM files WHERE missing = 0")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
         let mut mark = tx.prepare("UPDATE files SET missing = 1 WHERE ext = ?1 AND missing = 0")?;
         for ext in exts.iter().filter(|ext| Ext::of(ext.as_str()).is_none()) {
-            marked += mark.execute([ext])?;
+            mark.execute([ext])?;
         }
-    }
-    tx.commit()?;
-    Ok(marked)
+        Ok(())
+    })
+}
+
+/// Stamp `meta.held_exts` with this build's set, in the transaction of a write that records or revives files (the
+/// scan's [`crate::ScanWriter`], the pairing after a scan): the rows it writes are of the extensions this build holds,
+/// so a build that holds fewer looks for them at its next start ([`mark_unheld_missing`]). Writes nothing when the set
+/// is this build's already.
+pub(crate) fn stamp_held_exts(tx: &Connection) -> Result<()> {
+    tx.prepare_cached("UPDATE meta SET value = ?1 WHERE key = 'held_exts' AND value IS NOT ?1")?
+        .execute([pg_model::media::held_exts()])?;
+    Ok(())
 }
 
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
@@ -940,11 +949,15 @@ mod tests {
                 drop(writer);
                 tx.commit().unwrap();
             }
+            // What a build that holds `xyz` leaves: its row, and its set in the mark (its scan stamped it).
             c.conn.execute("UPDATE files SET ext = 'xyz' WHERE name = ?1", [b"b.jpg".to_vec()]).unwrap();
+            c.conn.execute("UPDATE meta SET value = 'jpg,xyz;mp4' WHERE key = 'held_exts'", []).unwrap();
         }
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         let missing: i64 = c.conn.query_row("SELECT missing FROM files WHERE ext = 'xyz'", [], |r| r.get(0)).unwrap();
         assert_eq!(missing, 1);
+        let mark: String = c.conn.query_row("SELECT value FROM meta WHERE key = 'held_exts'", [], |r| r.get(0)).unwrap();
+        assert_eq!(mark, pg_model::media::held_exts());
         let all = pg_model::rules::Merged::default();
         assert_eq!(c.list_grid(&all, true, &Query::default(), Sort::default()).unwrap().len(), 1);
         let status = c.status().unwrap();
@@ -961,6 +974,74 @@ mod tests {
         a_file_of_an_extension_not_held_is_missing_after_prepare,
         a_file_of_an_extension_not_held_is_missing_after_prepare_windows,
         a_file_of_an_extension_not_held_is_missing_after_prepare_posix
+    );
+
+    /// `prepare` looks for unheld extensions only when the mark is another build's set, and a scan's writes (its
+    /// writer, and the pairing after it) stamp this build's: so a row another build records after this one started is
+    /// looked at again at this build's next start, and a start after this build's own scan reads no file.
+    fn the_unheld_extensions_are_looked_for_when_another_build_wrote(rules: PathRules) {
+        let dir = run_folder(SCRATCH, &format!("held-exts-{}", rules_name(rules))).unwrap();
+        let path = dir.join("catalog.sqlite");
+        let mark = |c: &Catalog| -> String {
+            c.conn.query_row("SELECT value FROM meta WHERE key = 'held_exts'", [], |r| r.get(0)).unwrap()
+        };
+        let present = |c: &Catalog, name: &str| -> bool {
+            let missing: i64 = c
+                .conn
+                .query_row("SELECT missing FROM files WHERE name = ?1", [name.as_bytes().to_vec()], |r| r.get(0))
+                .unwrap();
+            missing == 0
+        };
+        let other = "jpg,xyz;mp4";
+        let mut c = Catalog::prepare(&path, versions(), rules).unwrap();
+        assert_eq!(mark(&c), pg_model::media::held_exts(), "a new catalog's first start looks, and marks");
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
+        for (n, name) in ["a.jpg", "b.jpg"].into_iter().enumerate() {
+            // Each batch of the scan runs while the other build's set is the mark: its writer stamps this build's.
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'held_exts'", [other]).unwrap();
+            let tx = c.tx().unwrap();
+            let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+            let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
+            let file = ScannedFile {
+                identity: FileIdentity::new(1, 10 + u64::try_from(n).unwrap()),
+                name: &Name::from(name),
+                ext: Ext::of_name(name).unwrap(),
+                size: 10,
+                mtime: 100,
+                created: None,
+                prior: None,
+            };
+            writer.upsert_file(&folder, &file).unwrap();
+            drop(writer);
+            tx.commit().unwrap();
+            assert_eq!(mark(&c), pg_model::media::held_exts(), "the scan's writer stamps the mark");
+        }
+        // The pairing after the scan stamps it too (its rebinds revive rows).
+        c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'held_exts'", [other]).unwrap();
+        let coverage = crate::pair::Coverage { complete: true, skipped: &[] };
+        c.pair_after_scan(&p(rules, r"D:\x"), scan, coverage).unwrap();
+        assert_eq!(mark(&c), pg_model::media::held_exts(), "the pairing after the scan stamps the mark");
+        // The other build records a row of an extension this one doesn't hold, and stamps its set.
+        c.conn.execute("UPDATE files SET ext = 'xyz' WHERE name = ?1", [b"b.jpg".to_vec()]).unwrap();
+        c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'held_exts'", [other]).unwrap();
+        drop(c);
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        assert!(!present(&c, "b.jpg") && present(&c, "a.jpg"), "another build's set: looked for, and marked missing");
+        assert_eq!(mark(&c), pg_model::media::held_exts());
+        // With this build's set as the mark, a start reads no file: a row it doesn't hold is left as it is.
+        c.conn.execute("UPDATE files SET ext = 'xyz', missing = 0 WHERE name = ?1", [b"a.jpg".to_vec()]).unwrap();
+        drop(c);
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        assert!(present(&c, "a.jpg"), "this build's set: not looked for");
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    under_both_rules!(
+        the_unheld_extensions_are_looked_for_when_another_build_wrote,
+        the_unheld_extensions_are_looked_for_when_another_build_wrote_windows,
+        the_unheld_extensions_are_looked_for_when_another_build_wrote_posix
     );
 
     under_both_rules!(

@@ -81,6 +81,7 @@ impl<'tx> ScanWriter<'tx> {
         root: &RulePath,
     ) -> Result<ScanWriter<'tx>> {
         tx.prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?.execute([scan.get()])?;
+        crate::lifecycle::stamp_held_exts(tx)?;
         let covering = covering_root(tx, rules, root)?.map(|r| (r.id.get(), rules.join(&r.path)));
         Ok(ScanWriter {
             scan: scan.get(),
@@ -1286,8 +1287,30 @@ mod tests {
         a_new_pairing_version_owes_the_eligible_analyses_again_and_drops_the_pairs_posix
     );
 
+    /// [`PairingWork`]'s columns, to compare two reads.
+    fn columns(w: &crate::PairingWork) -> (Vec<FileId>, Vec<bool>, Vec<[pg_model::pdq::Hash; 4]>, usize) {
+        (w.ids.clone(), w.owed.clone(), w.hashes.clone(), w.legacy)
+    }
+
+    /// In memory, and on a file, where the pass reads on a connection of its own (`Catalog::reader`): the same rows,
+    /// including the commits made just before it opened.
     fn pairing_work_lists_the_present_hashed_files_in_one_read(rules: PathRules) {
-        let mut c = two_files(rules);
+        for on_file in [false, true] {
+            let dir = on_file.then(|| {
+                pg_testkit::run_folder("scratch_catalog", &format!("pairing-work-{}", crate::types::rules_name(rules)))
+                    .unwrap()
+            });
+            let path = dir.as_ref().map_or_else(|| std::path::PathBuf::from(":memory:"), |d| d.join("catalog.sqlite"));
+            pairing_work_at(rules, &path);
+            if let Some(dir) = dir {
+                std::fs::remove_dir_all(&dir).unwrap();
+            }
+        }
+    }
+
+    fn pairing_work_at(rules: PathRules, path: &std::path::Path) {
+        let (mut c, _) = crate::test_support::one_file_at(rules, path);
+        add_file(&c, 2, "b.jpg");
         add_file(&c, 3, "c.jpg");
         add_file(&c, 4, "d.jpg");
         add_file(&c, 5, "e.jpg");
@@ -1309,6 +1332,8 @@ mod tests {
         store_for(&mut c, 6, &picture([6; 32], 100));
         c.mark_pending(&[FileId::new(6)]).unwrap();
         let work = c.pairing_work().unwrap();
+        let read = c.reader(1024).unwrap().pairing_work().unwrap();
+        assert_eq!(columns(&read), columns(&work), "the reader reads what the catalog's connection does");
         let ids: Vec<i64> = work.ids.iter().map(|id| id.get()).collect();
         assert_eq!(ids, vec![1, 2]);
         assert_eq!(work.owed, vec![true, false]);

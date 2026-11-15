@@ -95,6 +95,43 @@ const PAIRING_WORK: &str = "SELECT a.file_id, o.file_id IS NOT NULL, a.pdq_dihed
      WHERE f.id = a.file_id AND f.missing = 0 AND f.pending = 0 AND a.pdq_quality >= ?1
      ORDER BY a.file_id";
 
+/// [`Catalog::pairing_work`], read on `conn` in one transaction (its one snapshot).
+fn pairing_work_on(conn: &Connection) -> Result<PairingWork> {
+    let tx = conn.unchecked_transaction()?;
+    let bound: usize = tx.query_row("SELECT count(*) FROM analysis", [], |r| r.get(0))?;
+    let mut work = PairingWork {
+        ids: Vec::with_capacity(bound),
+        owed: Vec::with_capacity(bound),
+        hashes: Vec::with_capacity(bound),
+        legacy: 0,
+    };
+    let mut stmt = tx.prepare(PAIRING_WORK)?;
+    let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
+    while let Some(r) = rows.next()? {
+        let id = FileId::new(r.get(0)?);
+        let Some(blob) = r.get_ref(2)?.as_blob_or_null()? else {
+            work.legacy += 1;
+            continue;
+        };
+        let hashes = pg_model::pdq::from_blob(blob)
+            .ok_or_else(|| Error::Other(anyhow!("file {} has malformed stored hashes", id.get())))?;
+        work.ids.push(id);
+        work.owed.push(r.get(1)?);
+        work.hashes.push(hashes);
+    }
+    drop(rows);
+    drop(stmt);
+    tx.commit()?;
+    Ok(work)
+}
+
+impl crate::Reader<'_> {
+    /// [`Catalog::pairing_work`], on this reader's connection.
+    pub fn pairing_work(&self) -> Result<PairingWork> {
+        pairing_work_on(self.conn())
+    }
+}
+
 /// The owed pictures the pairing pass can make: those of present, non-pending files.
 const OWED: &str = "FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND f.missing = 0 AND f.pending = 0";
 
@@ -139,34 +176,10 @@ impl Catalog {
     /// file whose analysis has stored hashes and a reliable quality. The owed ones (a `pairs_owed` row) are among them,
     /// with the others (the stored side). One snapshot, because a file that changed between two reads could be owed a
     /// pair that its partner's read never sees. The columns are sized from the analyses' count first, so they never
-    /// grow (an upper bound: every analysis), and each row's hashes are read from the blob in place.
+    /// grow (an upper bound: every analysis), and each row's hashes are read from the blob in place. The pass reads it
+    /// on a [`Reader`](crate::Reader) of its own ([`Reader::pairing_work`](crate::Reader::pairing_work)).
     pub fn pairing_work(&self) -> Result<PairingWork> {
-        let tx = self.conn.unchecked_transaction()?;
-        let bound: usize = tx.query_row("SELECT count(*) FROM analysis", [], |r| r.get(0))?;
-        let mut work = PairingWork {
-            ids: Vec::with_capacity(bound),
-            owed: Vec::with_capacity(bound),
-            hashes: Vec::with_capacity(bound),
-            legacy: 0,
-        };
-        let mut stmt = tx.prepare(PAIRING_WORK)?;
-        let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
-        while let Some(r) = rows.next()? {
-            let id = FileId::new(r.get(0)?);
-            let Some(blob) = r.get_ref(2)?.as_blob_or_null()? else {
-                work.legacy += 1;
-                continue;
-            };
-            let hashes = pg_model::pdq::from_blob(blob)
-                .ok_or_else(|| Error::Other(anyhow!("file {} has malformed stored hashes", id.get())))?;
-            work.ids.push(id);
-            work.owed.push(r.get(1)?);
-            work.hashes.push(hashes);
-        }
-        drop(rows);
-        drop(stmt);
-        tx.commit()?;
-        Ok(work)
+        pairing_work_on(&self.conn)
     }
 
     /// Owe every eligible picture its pairs again, and drop the pairs (`gallery pair --again`): what the pairing pass

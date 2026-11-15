@@ -43,7 +43,7 @@ mod error;
 pub use error::{Error, Result};
 mod schema;
 
-pub use self::core::{Catalog, ScanLease, Tx};
+pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};
 pub use types::{
     CropSource, Folder, FolderFailure, Listed, Prior, Rebuilt, Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip,
     SkipReason, Status, Versions, WorkItem, WriteTarget,

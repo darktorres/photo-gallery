@@ -9,7 +9,7 @@ each run the machine's CPU load is read; a run that starts above 30% is flagged 
 such runs are left out of the medians). Prints every run, then the median of each part per worker count.
 
 -Owed: 'all' (every eligible picture owes its pairs, `pairs_again`) or a number (that many owe, `set_owed.py`).
--Slice: the slice size (`PG_PROBE_SLICE`), when the probe takes one.
+-Slice: the slice size (`PG_PROBE_SLICE`); -CacheKib: the pass's page cache (`PG_PROBE_CACHE_KIB`). 0: the default.
 
 .EXAMPLE
 tools/profiling/pairing/sweep.ps1 -Catalog D:\scratch\pairing\catalog.sqlite -Workers 1,6,12 -Reps 4
@@ -20,6 +20,7 @@ param(
     [int] $Reps = 4,
     [string] $Owed = 'all',
     [int] $Slice = 0,
+    [int] $CacheKib = 0,
     [string] $Probe = (Join-Path $PSScriptRoot '..\..\..\target\release\examples\pairs_probe.exe'),
     [string] $Work = (Join-Path ([IO.Path]::GetTempPath()) 'pg_pairing_sweep')
 )
@@ -45,6 +46,7 @@ foreach ($rep in 1..$Reps) {
             $env:PG_PROBE_KEEP_OWED = '1'
         }
         if ($Slice -gt 0) { $env:PG_PROBE_SLICE = "$Slice" } else { Remove-Item Env:PG_PROBE_SLICE -ErrorAction SilentlyContinue }
+        if ($CacheKib -gt 0) { $env:PG_PROBE_CACHE_KIB = "$CacheKib" } else { Remove-Item Env:PG_PROBE_CACHE_KIB -ErrorAction SilentlyContinue }
         $env:PG_PROBE_WORKERS = "$w"
         $load = Get-Load
         $line = (& $Probe $Work 2>&1) -join ' '

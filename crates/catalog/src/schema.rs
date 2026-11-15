@@ -429,6 +429,10 @@ INSERT INTO meta(key, value) VALUES ('pairing_version', ",
 ///   blob. The data step (`convert::pairs_owed_and_hashes`) checks every blob before it cuts it, and carries what was owed.
 /// - **`meta.vacuum_owed`**: dropping the columns leaves their pages in use until a `VACUUM`, which can't run in the
 ///   migration's transaction; `Catalog::prepare` runs it after the commit (`lifecycle::vacuum_if_owed`).
+/// - **`meta.held_exts`**: the set of extensions of the last build that opened or scanned the catalog
+///   (`pg_model::media::held_exts`). `Catalog::prepare` looks for files of extensions it doesn't hold only when the set
+///   is another (`lifecycle::mark_unheld_missing`), instead of reading every file at every start. Seeded empty, so the
+///   first start looks.
 const TO_13_PAIRS_OWED: &[Step] =
     &[Step::Sql(TO_13_QUEUE), Step::Rust(pairs_owed_and_hashes), Step::Sql(TO_13_DROP_COLUMNS)];
 
@@ -436,6 +440,7 @@ const TO_13_QUEUE: &str = "CREATE TABLE pairs_owed(
     file_id INTEGER PRIMARY KEY REFERENCES analysis(file_id) ON DELETE CASCADE
 );
 INSERT INTO meta(key, value) VALUES ('vacuum_owed', 1);
+INSERT INTO meta(key, value) VALUES ('held_exts', '');
 ";
 
 const TO_13_DROP_COLUMNS: &str = "DROP INDEX analysis_dups_due;

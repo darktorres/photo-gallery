@@ -20,9 +20,30 @@ use pg_model::progress::Phase;
 use pg_platform::priority;
 
 /// The owed pictures per slice of the join: bounds a slice's pairs in memory, and makes the writes incremental.
-const SLICE: usize = 50_000;
+pub const SLICE: usize = 50_000;
+/// The page cache of the pass's connections, in KiB: the load's read connection, and the catalog's own while the pass
+/// writes (`Catalog::bounded_cache`). The load reads `analysis` once, in order, and the writes look rows up by key, so
+/// neither needs the app's 256 MB. Measured on 187,804 pictures (docs/reference/PROFILING.md, "The pairing pass"): 16,
+/// 32, 64 and 256 MB gave a peak commit of 131, 150, 184 and 214 MB, the load and the writes no faster above 16.
+pub const CACHE_KIB: u32 = 16 * 1024;
 /// The owed pictures per write transaction.
 const WRITE: usize = 2_000;
+
+/// What a pass may be tuned by: the defaults are [`SLICE`] and [`CACHE_KIB`]. The tests and the probe
+/// (`PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB`) set others: a small slice runs the multi-slice path on a small library.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Settings {
+    /// The owed pictures per slice (at least 1).
+    pub slice: usize,
+    /// The page cache of the pass's connections, in KiB.
+    pub cache_kib: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Settings {
+        Settings { slice: SLICE, cache_kib: CACHE_KIB }
+    }
+}
 
 /// What a pass did.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -52,13 +73,21 @@ pub struct Timings {
     pub commit: Duration,
 }
 
-/// Pairs what is owed. Nothing owed is one probe, and no hash is read.
+/// Pairs what is owed, with the default [`Settings`]. Nothing owed is one probe, and no hash is read.
 pub fn pair(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<PairStats> {
+    pair_with(catalog, opts, Settings::default(), ctl)
+}
+
+/// [`pair`] with `settings`.
+pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl: &Control) -> Result<PairStats> {
     if !catalog.has_owed_pairs()? {
         return Ok(PairStats { complete: true, ..PairStats::default() });
     }
+    // The catalog's cache is bounded until the pass returns, however it leaves.
+    let mut catalog = catalog.bounded_cache(settings.cache_kib)?;
     let loading = Instant::now();
-    let work = catalog.pairing_work()?;
+    // Read on a connection of its own, closed (its cache freed) as soon as the pictures are read.
+    let work = catalog.reader(settings.cache_kib)?.pairing_work()?;
     let load = loading.elapsed();
     let owed: Vec<usize> = work.owed.iter().enumerate().filter(|&(_, &o)| o).map(|(i, _)| i).collect();
     let mut stats = PairStats { legacy: work.legacy, complete: true, ..PairStats::default() };
@@ -77,7 +106,7 @@ pub fn pair(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Pair
     let start = || priority::set_current_thread(opts.priority);
     let pause = || ctl.checkpoint();
 
-    'slices: for slice in owed.chunks(SLICE) {
+    'slices: for slice in owed.chunks(settings.slice.max(1)) {
         let (Some(&first), Some(&last)) = (slice.first(), slice.last()) else { continue };
         let joining = Instant::now();
         let joined = joiner.join(first..last + 1, opts.workers, &start, &pause);

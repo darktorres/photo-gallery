@@ -72,6 +72,12 @@ impl MediaType {
     }
 }
 
+/// The extensions this build holds, images then videos (`jpg,jpeg,…;mp4,…`): the fingerprint of the set, which the
+/// catalog keeps (`meta.held_exts`) so it can tell when a build with another set opened or scanned it.
+pub fn held_exts() -> String {
+    format!("{};{}", IMAGE_EXTENSIONS.join(","), VIDEO_EXTENSIONS.join(","))
+}
+
 /// One of the extensions the library holds, as a byte: images first, then videos, in the lists' order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Ext(u8);

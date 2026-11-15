@@ -34,7 +34,12 @@ pub(crate) fn p(rules: PathRules, text: &str) -> RulePath {
 
 /// A catalog with one file in it, under `rules`.
 pub(crate) fn one_file(rules: PathRules) -> (Catalog, i64) {
-    let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+    one_file_at(rules, Path::new(":memory:"))
+}
+
+/// [`one_file`] at `path` (`:memory:`, or a new file).
+pub(crate) fn one_file_at(rules: PathRules, path: &Path) -> (Catalog, i64) {
+    let c = Catalog::prepare(path, versions(), rules).unwrap();
     crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
     crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\x")).unwrap();
     fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]).unwrap();

@@ -92,6 +92,24 @@ fn a_stop_before_the_pass_writes_nothing_and_the_pairs_stay_owed() {
     assert_eq!(c.owed_pairs().unwrap(), 0);
 }
 
+/// The pass on a slice of one owed picture (a pass of several slices on this small library) makes the pairs one slice
+/// makes, and a catalog's page cache is the app's again after the pass, which bounded it while it ran.
+#[test]
+fn slices_of_one_make_the_pairs_one_slice_makes() {
+    let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (mut c, ctl, _dir) = imported("slices");
+    let whole = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
+    let pairs = state::pairs(&c).unwrap();
+    c.pairs_again().unwrap();
+    let settings = pg_import::pairs::Settings { slice: 1, ..pg_import::pairs::Settings::default() };
+    let sliced = pg_import::pairs::pair_with(&mut c, &opts(), settings, &ctl).unwrap();
+    assert!(sliced.complete);
+    assert_eq!((sliced.files, sliced.pairs), (whole.files, whole.pairs));
+    assert_eq!(state::pairs(&c).unwrap(), pairs);
+    assert_eq!(c.owed_pairs().unwrap(), 0);
+    assert_eq!(state::cache_kib(&c).unwrap(), 262_144, "the app's cache, after the pass");
+}
+
 #[test]
 fn a_batch_that_cannot_be_written_stores_nothing_and_the_next_pass_makes_it_all() {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);

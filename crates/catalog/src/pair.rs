@@ -270,7 +270,7 @@ impl Catalog {
 
 /// Run `tier` over the fresh rows of the root this scan saw ([`fresh_rows`]), outside the `skipped` folders, in
 /// batches of at most [`WRITE_BATCH`] by id: each batch is read in a write transaction of its own, which the tier's
-/// queries and writes run in, and which commits before the next. A row a batch bound or cleared is gone from the next
+/// queries and writes run in (and `meta.held_exts` is stamped in), and which commits before the next. A row a batch bound or cleared is gone from the next
 /// one's read, and an id below the last read is never read again.
 fn in_batches(
     conn: &Connection,
@@ -284,6 +284,8 @@ fn in_batches(
         let tx = write_transaction(conn)?;
         let batch = fresh_rows(&tx, under, scan, after)?;
         let Some(last) = batch.last().map(|f| f.id) else { return Ok(()) };
+        // A rebind or a replacement revives a row with the fresh row's extension, which this build holds.
+        crate::lifecycle::stamp_held_exts(&tx)?;
         let batch: Vec<Fresh> = batch.into_iter().filter(|f| !skipped.contains(&f.folder_id)).collect();
         tier(&tx, &batch)?;
         tx.commit()?;

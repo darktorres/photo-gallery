@@ -519,8 +519,8 @@ runs, and `sweep.ps1` flags and leaves out the runs that start above 30%.
 
 | Script (`tools/profiling/pairing/`) | Measures |
 |---|---|
-| `sweep.ps1 -Catalog <src> -Workers 1,2,4,6,12 -Reps 4 [-Owed N] [-Slice N]` | `pairs_probe`'s wall clock and its parts (`PairStats::timings`) per worker count; medians |
-| `peak_mem.ps1 -Catalog <src> -Owed 0,1,30000,all` | peak working set and peak commit, sampled every 15 ms |
+| `sweep.ps1 -Catalog <src> -Workers 1,2,4,6,12 -Reps 4 [-Owed N] [-Slice N] [-CacheKib N]` | `pairs_probe`'s wall clock and its parts (`PairStats::timings`) per worker count; medians |
+| `peak_mem.ps1 -Catalog <src> -Owed 0,1,30000,187804 [-Slice N] [-CacheKib N]` | peak working set and peak commit (MiB, as the script prints them), sampled every 15 ms |
 | `set_owed.py <catalog> <N>` | makes N pictures owe their pairs, spread over the ids (either layout) |
 | `dhat_top.py <dhat-heap.json>` | the heap sites live at the peak (`target/dhat/gallery.exe --catalog-dir <copy> pair`) |
 
@@ -577,9 +577,55 @@ diagonals. Slices are still 50,000. Medians of 3 quiet runs:
 
 - **Correctness:** the migrated copy's pass gives the oracle's 5,277 pairs exactly. 0 of 187,808 blobs failed the
   transpose check, and integrity and foreign-key checks are clean.
-- **The file:** 209.4 MB at v12, 169.6 MB at v13 after the `VACUUM`. The migration, `VACUUM` included, and a full pass
-  together took 6.3 s at 12 workers.
-- **The commits** vary from 35 to 310 ms, with checkpoints; the statements are half of what they were.
+- **The file:** 209.4 MB at v12, 177.8 MB (169.6 MiB) at v13 after the `VACUUM` and a pass. The migration, `VACUUM`
+  included, and a full pass together took 6.3 s at 12 workers.
+- **The commits** vary from 35 to 310 ms, with checkpoints; the statements are half of what they were. Block C found
+  that most of this, and part of the "before" commits too, is the probe's own `pairs_again`: its WAL was merged by the
+  pass's first commits. The load's 0.08 s was read from pages `pairs_again` had just cached.
+
+#### After block C: the pass's connections and `prepare`
+
+Block C reads the pictures on a read-only connection of their own (`Catalog::reader`), bounds the catalog's cache while
+the pass writes (`Catalog::bounded_cache`), and makes the slice and the cache size parameters of the pass
+(`pairs::Settings`). `prepare` now looks for unheld extensions only when `meta.held_exts` is another build's set, uses the
+cached current schema, and does its one-off work on a 16 MB cache. The probe now closes and reopens the catalog after
+`pairs_again`, so it times the pass alone (cold cache, no WAL of its own to merge). Medians of 3 quiet runs, the default
+16 MB cache:
+
+| Workers | Total | Load | Join | Write statements | Commits |
+|---|---|---|---|---|---|
+| 1 | 7.78 s (10.63) | 0.15 s | 7.35 s | 0.22 s | 0.03 s |
+| 6 | 3.03 s | 0.14 s | 2.63 s | 0.23 s | 0.03 s |
+| 12 | 2.63 s (6.56) | 0.14 s | 2.22 s | 0.23 s | 0.03 s |
+
+**The cache size** of the pass's connections (all 187,804 owed, 12 workers, owed rows set by `set_owed.py` so the probe
+reads nothing first; 2 runs each, which agreed within 2 MiB):
+
+| Cache | Peak commit, all owed | Peak commit, one owed | Load | Write statements |
+|---|---|---|---|---|
+| 16 MB (chosen) | 131 MiB | 92 MiB | 0.15 s | 0.19 s |
+| 32 MB | 150 MiB | 92 MiB | 0.15 - 0.18 s | 0.19 s |
+| 64 MB | 184 MiB | 100 MiB | 0.16 - 0.17 s | 0.19 s |
+| 256 MB (the app's) | 214 MiB | 147 MiB | 0.19 s | 0.21 s |
+
+Nothing owed peaks at 2 MiB of commit: the pass is one probe. Before the rebuild these peaks were 415 MB (all owed) and
+366 MB (one owed).
+
+**`prepare` at every start** (the probe's whole process with nothing owed, 7 - 9 interleaved runs): **42 ms** when the
+mark is this build's, against 111 - 126 ms when it is stale and the files are read for unheld extensions. A scan's writes
+stamp the mark (`ScanWriter`, and the pairing after a scan), so a row a build with more extensions records is looked at
+again at the next start of a build with fewer.
+
+**Migration 13 under the app's pragmas** (gate G2b; the copy aside, the data step and `VACUUM`, from the 209.4 MB v12
+copy, 3 runs):
+
+| | Wall | Peak commit | Peak WAL | File after |
+|---|---|---|---|---|
+| The app's 256 MB cache | 3.6 - 4.2 s | 438 MiB | 169 MiB | 176.4 MB |
+| A 16 MB cache for `prepare`'s work (kept) | 4.3 - 4.4 s | 221 MiB | 169 MiB | 176.4 MB |
+
+The rest of the peak is `VACUUM`'s copy of the file, which `temp_store = MEMORY` builds in RAM. It happens once, at the
+first start of a build with migration 13. The pass on the migrated copy gives the oracle's 5,277 pairs exactly.
 
 ---
 

@@ -115,6 +115,11 @@ pub fn owes_pairs(c: &Catalog, name: &str) -> Result<bool> {
     )?)
 }
 
+/// The page cache of the catalog's connection, in KiB (`PRAGMA cache_size`, which the catalog sets in KiB).
+pub fn cache_kib(c: &Catalog) -> Result<i64> {
+    Ok(-c.conn.query_row("PRAGMA cache_size", [], |r| r.get::<_, i64>(0))?)
+}
+
 /// Every pair stored, as its two files' ids (`a` below `b`) and its distance, in order.
 pub fn pairs(c: &Catalog) -> Result<Vec<(i64, i64, i64)>> {
     let mut stmt = c.conn.prepare("SELECT a, b, distance FROM pdq_pairs ORDER BY a, b")?;

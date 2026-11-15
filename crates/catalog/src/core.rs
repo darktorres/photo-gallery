@@ -29,6 +29,10 @@ use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{Rebuilt, Versions};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, ScanWriter};
 
+/// The page cache of [`Catalog::prepare`]'s own work, in KiB: the copy aside, a migration and its `VACUUM` read and write
+/// each page once or twice, so a larger cache would only hold the whole file.
+const PREPARE_CACHE_KIB: i64 = 16 * 1024;
+
 pub struct Catalog {
     pub(crate) conn: Connection,
     /// The path rules the catalog's paths are stored under (`meta.path_rules`, checked when it opens).
@@ -79,6 +83,8 @@ impl Catalog {
                     path.display()
                 )));
             }
+            // The current schema is built once per process; an earlier one only when a catalog is found at it.
+            Some(found) if found == current => mismatch(&conn, found, current_expected()?)?,
             Some(found) => mismatch(&conn, found, &expected(found)?)?,
         };
         // A catalog of this build's schema whose paths were stored under other rules is refused before anything is
@@ -99,6 +105,10 @@ impl Catalog {
             conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         }
         conn.execute_batch(SETTINGS)?;
+        // What follows is one-off work over whole tables (the copy aside, a migration, its `VACUUM`, a mark's
+        // recompute), which reads each page once or twice: on a small cache, so it does not fill the app's 256 MB with
+        // the whole file (a migration's peak commit was 438 MiB with it). `SETTINGS` restores the app's at the end.
+        conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
         // A catalog of this build's schema at an earlier version is copied aside before it is migrated (a rebuilt one
         // was: the old file is kept as it was).
         if let Some(found) = version.filter(|&found| rebuilt.is_none() && found > 0 && found < current && !memory) {
@@ -120,6 +130,8 @@ impl Catalog {
         set_pairing_version(&conn, versions.pairing).with_context(|| format!("catalog {}", path.display()))?;
         set_thumbs_version(&conn, versions.thumbs).with_context(|| format!("catalog {}", path.display()))?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
+        conn.execute_batch(SETTINGS)?;
+        conn.release_memory()?;
         pg_query::register_functions(&conn)?;
         // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
         // come in meanwhile, since the preparer's lock is still held).
@@ -192,6 +204,76 @@ impl Catalog {
     /// own, and checks for a stop between tries, sets a shorter one.
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<()> {
         Ok(self.conn.busy_timeout(timeout)?)
+    }
+
+    /// A connection of its own for one long read ([`Reader`]), whose page cache is at most `cache_kib` KiB and goes when
+    /// it is dropped: a read of a whole table (the pairing pass's) leaves neither its pages in this connection's cache
+    /// (the app's 256 MB, `SETTINGS`) nor the cache in the process. It opens the same file read-only, so it needs no
+    /// check of the schema (this connection's open made it), and this catalog's shared hold on the file keeps a rebuild
+    /// out. An in-memory catalog (the tests') has no file another connection could open: its reads run on this one.
+    pub fn reader(&self, cache_kib: u32) -> Result<Reader<'_>> {
+        let Some(file) = self.conn.path().filter(|f| !f.is_empty()) else {
+            return Ok(Reader { catalog: self, own: None });
+        };
+        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}"))?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
+        Ok(Reader { catalog: self, own: Some(conn) })
+    }
+
+    /// Bound this connection's page cache to `kib` KiB until the guard is dropped, which restores the cache's size and
+    /// gives back the pages over it (`sqlite3_db_release_memory`), however the holder leaves (an error, a stop, a panic).
+    /// The pairing pass's writes read every owed analysis through this connection, which would otherwise fill the app's
+    /// 256 MB cache and keep it filled after the pass (the app keeps its catalog open across passes).
+    pub fn bounded_cache(&mut self, kib: u32) -> Result<BoundedCache<'_>> {
+        let app: i64 = self.conn.query_row("PRAGMA cache_size", [], |r| r.get(0))?;
+        self.conn.pragma_update(None, "cache_size", -i64::from(kib))?;
+        Ok(BoundedCache { catalog: self, app })
+    }
+}
+
+/// A read of the catalog on a connection of its own ([`Catalog::reader`]), or on the catalog's when it is in memory.
+pub struct Reader<'c> {
+    catalog: &'c Catalog,
+    /// The read-only connection; `None` for an in-memory catalog, whose reads run on its own connection.
+    own: Option<Connection>,
+}
+
+impl Reader<'_> {
+    /// The connection the reads run on.
+    pub(crate) fn conn(&self) -> &Connection {
+        self.own.as_ref().unwrap_or(&self.catalog.conn)
+    }
+}
+
+/// The catalog with its connection's page cache bounded ([`Catalog::bounded_cache`]); used as the catalog, through
+/// `Deref`. Dropping it restores the cache.
+pub struct BoundedCache<'c> {
+    catalog: &'c mut Catalog,
+    /// The cache's size before (`PRAGMA cache_size`: pages, or KiB when negative).
+    app: i64,
+}
+
+impl Deref for BoundedCache<'_> {
+    type Target = Catalog;
+
+    fn deref(&self) -> &Catalog {
+        &*self.catalog
+    }
+}
+
+impl DerefMut for BoundedCache<'_> {
+    fn deref_mut(&mut self) -> &mut Catalog {
+        &mut *self.catalog
+    }
+}
+
+impl Drop for BoundedCache<'_> {
+    /// Nothing to report from a drop: a pragma that fails leaves the cache bounded, which costs only speed.
+    fn drop(&mut self) {
+        let _ = self.catalog.conn.pragma_update(None, "cache_size", self.app);
+        let _ = self.catalog.conn.release_memory();
     }
 }
 
@@ -523,4 +605,57 @@ mod tests {
         files_marked_are_imported_again_once_windows,
         files_marked_are_imported_again_once_posix
     );
+
+    /// The cache size of a connection, in KiB (`PRAGMA cache_size` as the catalog sets it: negative).
+    fn cache_kib(conn: &rusqlite::Connection) -> i64 {
+        -conn.query_row("PRAGMA cache_size", [], |r| r.get::<_, i64>(0)).unwrap()
+    }
+
+    /// A file catalog's reader is a connection of its own: read-only, its cache bounded, and it sees what was committed
+    /// before it opened. An in-memory catalog's reads run on its own connection (another one would be another, empty
+    /// database).
+    #[test]
+    fn a_reader_reads_the_catalog_file_on_a_bounded_read_only_connection() {
+        let rules = pg_platform::native::PATH_RULES;
+        let dir = pg_testkit::run_folder("scratch_catalog", "reader").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        c.conn.execute("UPDATE meta SET value = 'just before' WHERE key = 'taken_zone'", []).unwrap();
+        let reader = c.reader(1024).unwrap();
+        assert!(reader.own.is_some());
+        let zone: String =
+            reader.conn().query_row("SELECT value FROM meta WHERE key = 'taken_zone'", [], |r| r.get(0)).unwrap();
+        assert_eq!(zone, "just before");
+        assert_eq!(cache_kib(reader.conn()), 1024);
+        assert_eq!(cache_kib(&c.conn), 262_144, "the catalog's own cache is left as it is");
+        assert!(reader.conn().execute("UPDATE meta SET value = 'x' WHERE key = 'taken_zone'", []).is_err(), "read-only");
+        drop(reader);
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let memory = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let reader = memory.reader(1024).unwrap();
+        assert!(reader.own.is_none());
+        assert!(std::ptr::eq(reader.conn(), &memory.conn));
+    }
+
+    /// The bound holds while the guard does, and the app's cache comes back however its holder leaves.
+    #[test]
+    fn a_bounded_cache_is_restored_when_its_guard_goes() {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), pg_platform::native::PATH_RULES).unwrap();
+        let fails = |c: &mut Catalog| -> crate::Result<()> {
+            let bounded = c.bounded_cache(2048)?;
+            assert_eq!(cache_kib(&bounded.conn), 2048);
+            bounded.conn.execute("SELECT * FROM no_such_table", [])?;
+            Ok(())
+        };
+        assert!(fails(&mut c).is_err());
+        assert_eq!(cache_kib(&c.conn), 262_144, "restored after an error");
+        let panics = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _bounded = c.bounded_cache(2048).unwrap();
+            panic!("the holder panics");
+        }));
+        assert!(panics.is_err());
+        assert_eq!(cache_kib(&c.conn), 262_144, "restored after a panic");
+    }
 }

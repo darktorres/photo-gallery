@@ -15,9 +15,9 @@ uses Lanczos3; see P-03).
 | Section | Rows | Notes |
 |---|---:|---|
 | Pending | 6 | Measurements not made, or checks the reference asks for |
-| Leads | 4 | Measured ideas that have not been acted on |
+| Leads | 5 | Measured ideas that have not been acted on |
 | Decisions | 2 | Need a person: a quality trade-off and a gate threshold |
-| Total | 12 | |
+| Total | 13 | |
 
 Kind legend: `pending` is a measurement or a check not made; `lead` is an idea from a measurement that is not acted on;
 `decision` needs a choice between cost and something else.
@@ -41,6 +41,7 @@ Kind legend: `pending` is a measurement or a check not made; `lead` is an idea f
 | P-05 | Reference, the start (2026-10-31) | lead | `crates/desktop/src/gpu_device.rs`, `crates/desktop/cpp/gpu_device.cpp` | A Direct3D 11 device costs about 0.9 G instructions here, most of it NVIDIA's loader checking its signature. The app now makes one device per start, shared with Qt Quick. Nothing is kept across starts. | Lead, not measured: cache the probe's result per adapter and driver version, and measure whether a start with the cache skips the device. | **Open.** |
 | P-06 | Reference, the start (2026-10-31) | lead | Qt's window creation (`WindowCreationData::create` → `GpuDescription::detect` → `Direct3DCreate9`) | Qt creates a Direct3D 9 object while creating the window: 0.55 G on the main thread, with three signature scans. Why Qt does it is not known. | Find out why from Qt's source (`C:\Qt\6.12.0\Src`), and whether a setting avoids it. | **Not investigated.** |
 | P-07 | Reference, `gallery status` (2026-10-31) | lead | `crates/catalog/src/lookup.rs` (`Catalog::status`) | The eight `count(*)` queries are 96% of the `status` command's 1.05 G instructions. It is a diagnostic command, so this is not a problem today. | If it ever matters: one pass with aggregates (`sum(missing = 0)`-style), or an index on `files(missing)`. | **Not acted on.** |
+| P-13 | Reference, "The pairing pass", after block D (2026-11-15, `98c6973`) | lead | `crates/dedup/src/join.rs` (`scan_avx2`, `consider`, `Sides::words`) | On one worker the full pass is 5.15 s, of which the join's scan is 3.9 s: 2.1x faster than before the rebuild, against the pairing plan's target of 3.5x (2.6 - 3.2 s). Its gate G4 (the kernel's loop nest) was not run. Where the scan's instructions and misses go is not measured since the rebuild. | First measure: one join under callgrind (`--zero-before`/`--dump-after` on `Joiner::join`, `PG_PROBE_WORKERS=1`; recipe in the reference), to split the vector loop, `consider`, and the reads of candidates' full hashes from the 48 MB store (`Sides::words`, likely cache misses). Then try the candidates G4 left: the query vectors register-tiled across the 17 probes, and the swapped loop (stored entries in the vector). Keep a kernel only if it matches brute force on every path (`every_path_matches_brute_force`) and the oracle's 5,277 pairs. | **Open.** Measure first. |
 
 ## Decisions
 

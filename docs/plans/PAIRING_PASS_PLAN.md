@@ -1,5 +1,25 @@
 # Pairing pass plan: rebuilt for speed and memory
 
+## Status (2026-11-15)
+
+Blocks A - D are done: `d3d307a` (A and B), `b7d13a6` (C), `98c6973` (D). The measurements and each gate's result are
+in [PROFILING.md](../reference/PROFILING.md), "The pairing pass". Against the targets below:
+
+| Target | Result |
+|---|---|
+| Same pairs | Met: the oracle's 5,277 exactly, in one slice, four slices, and partial passes on both paths |
+| 12 workers, 5x or better | Met: 6.56 -> 1.27 s (5.2x) |
+| 1 worker, 3.5x or better | **Not met**: 10.63 -> 5.15 s (2.1x); the scan is 3.9 s of it. Tracked as P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md) |
+| A pass for a few files, about 0.35 s | Met: 0.24 s for one owed picture |
+| Peak commit at most 330 MB | Met: 254 MiB all owed, 75 MiB one owed |
+| `prepare` at every start, about 30 ms | 42 ms for the probe's whole process with nothing owed (111 - 126 ms when the extension check runs) |
+
+Gates: G1, G2, G2b, G3, G5, G6 and the cache size are measured and set. **G4 (the kernel's loop nest) was not run**:
+at one 200,000 slice the query buckets are the longer side, which the current kernel already vectorizes; the other
+candidates are left to P-13. **G5's 400,000 slice on a synthetic 500,000-picture corpus was not run** (this library is
+one slice at 200,000). Not tested: a failed write while the overlapped join is paused (the unpaused case is).
+**Left: block E** (the benches `pairing.join` and `pairing.write`, and the docs list under Docs).
+
 ## Context
 
 The pairing pass (post-import duplicate detection: `pg_import::pairs`, the join in `crates/dedup/src/join.rs`,

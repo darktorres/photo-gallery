@@ -545,11 +545,11 @@ debounces and runs a journal pass. The rescan button becomes a fallback; "full r
 
 Each numbered step is committed on its own. Step 1 is five commits. Step 2 is one commit.
 
-**Before step 1:** the crop cut work is another owner's uncommitted code: `crates/crop/src/lib.rs`,
-`crates/edit/src/crop.rs`, `crates/catalog/src/borders.rs`, `crates/writeback/src/inplace.rs` (untracked), and the desktop QML
-(`CutBordersDialog.qml`, untracked). It is committed first, since step 1 edits the same files. The same goes for
-`crates/catalog/src/browse/`, which other work is changing: that work is committed first, and the step is confirmed with the
-owner.
+**Before step 1:** the crop cut work (`crates/crop/src/lib.rs`, `crates/edit/src/crop.rs`, `crates/catalog/src/borders.rs`,
+`crates/writeback/src/inplace.rs`, and the desktop QML) was another owner's uncommitted code when this plan was written. It is
+committed at `724a882` ("Borders cut in place"), and the tree was clean on 2026-11-14 after the plan moved to `docs/plans/`
+(`bff2224`). Step 1 starts from that commit. If that work changes again before step 1, its owner commits it first, since step 1
+edits the same files. `crates/catalog/src/browse/` gets the same check before step 1.
 
 1. **Catalog model.** Files: `crates/catalog/src/` (`schema.rs` migrations from version 12, `links`, `volumes`; `writers.rs`
    `ScanWriter`; `roots.rs` `mark_missing`, `mark_missing_ref`, roots by volume; `rebuild.rs`; `queue.rs` `file_rewritten`;

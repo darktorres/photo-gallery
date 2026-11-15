@@ -14,7 +14,7 @@ leads that were not acted on are in [PROFILING_PLAN.md](../plans/PROFILING_PLAN.
 | Pin call graph (`tools/profiling/callgraph`) | SDE's counts plus the call graph and inclusive costs, in callgrind's format | Windows | Call graphs of the Windows app |
 | callgrind / gungraun | Per-function counts, call graph, cache simulation, run-to-run diffs | pg-dev container (`docker/`) | Regression benches. It measures the Linux build of the per-file code, not ours |
 | DynamoRIO (`inscount`, `drcachesim`) | Totals; cache simulation | Windows | Considered for cache questions; not used |
-| ETW PMC counting (`xperf -pmc InstructionRetired`) | Hardware instruction counts per thread, no slowdown | Windows | No per-function view; blocked when Hyper-V/VBS is on |
+| ETW PMC counting and sampling (WPR with a `HardwareCounter` profile) | Hardware counts per thread (instructions, cycles, mispredicts) at each context switch; cycles sampled by instruction address | Windows | Works with VBS on (checked 2026-11-15, i7-8700). One sampled source per trace; mispredict sampling records nothing here. See "The one-worker scan on the hardware" |
 | `-C instrument-coverage` | Exact execution counts per code region | Windows | A proxy for loop counts, not instructions |
 
 ---
@@ -732,10 +732,63 @@ and the cost of each wrong.
 | The sorts (`StageSet::sort`, 16 stages) | 4.7 G | 12 M | 50 M D1 read, 126 M D1 write misses | the radix's second pass scatters into 256 buckets x 3 arrays |
 | The slice's query side (transposes, permutation) | 0.5 G | | | |
 
-At about 15 - 20 cycles each, the scan's 413 M mispredicts are some 6 - 8 G cycles: **roughly 1.5 s of the 3.9 s scan**,
-almost all of it from two loops whose trip counts depend on the data. The full hashes the candidates read from the
-48 MB store (`Sides::words`) do not show: so few lanes pass the head test that `consider` is negligible. The ranked
-leads are in P-13 ([PROFILING_PLAN.md](../plans/PROFILING_PLAN.md)).
+Callgrind's branch model has no history, so its 413 M overstate the hardware's (289 M, next section), and its estimate
+of the mispredicts' cost here (6 - 8 G cycles, "roughly 1.5 s") is superseded by the cycle samples below. The full
+hashes the candidates read from the 48 MB store (`Sides::words`) do not show: so few lanes pass the head test that
+`consider` is negligible (the hardware agrees: under 1% of the scan's cycles).
+
+#### The one-worker scan on the hardware (P-13, `98c6973`)
+
+Same pass (all owed, `PG_PROBE_WORKERS=1`, `PG_PROBE_SORTERS=0`), the Windows release build, i7-8700, VBS on. Two WPR
+traces: counters read at every context switch (`HardwareCounter` with `InstructionRetired`, `BranchMispredictsRetired`,
+`UnhaltedCoreCycles` on `CSwitch`; deltas charged to the thread switched out), and `UnhaltedCoreCycles` sampled every
+65,536 cycles (keyword `PmcProfile`, `SampledCounter`), the samples mapped to the probe's image through the loader
+events. Both read with a ctypes ETW reader (`OpenTraceW`/`ProcessTrace`; the counters are the
+`EVENT_HEADER_EXT_TYPE_PMC_COUNTERS` extended item, the samples PerfInfo opcode 47). Sampling mispredicts
+(`BranchMispredictsRetired` or `BranchMispredictions`) recorded no event on this machine, and a profile with two sampled
+sources kept only one.
+
+- **The scan's threads: 28.9 G instructions, 16.6 G cycles (1.74 per cycle), 289 M mispredicts.**
+- Cycle samples in `scan_avx2`: 267,367 (17.5 G cycles, the sampling run's scan 4.9 s against 3.9 s unsampled):
+
+| Part of `scan_avx2` | Share | Per unit |
+|---|---:|---|
+| The vector loop | 47.9% | about 12 cycles per iteration (669 M); its floor is about 6 (23 fused uops at 4 a cycle, 6 of them on port 5) |
+| The ordering rule's pointer (`suffix`'s walk) | 23.0% | about 19 cycles per setup (204 M) |
+| A stored entry's setup (code, head words, broadcasts) | 25.1% | of which 12.1% on the three instructions where the walk returns: its exit's recovery |
+| The bucket and probe loops | 3.1% | |
+| Lanes that pass, `consider`, the store reads | 0.9% | |
+
+- The sorts: 46,616 samples (about 3 G cycles). The radix's second pass (three arrays) is 24% of them; zeroing the
+  output and scratch arrays every stage (`clear` then `resize`) 9%.
+- **Loop counts replayed on the real hashes** (every setup's suffix from the sorted codes): 668,985,053 vector
+  iterations and 204,314,684 setups, callgrind's counts. A fixed trip count per (bucket, probe), the whole query
+  bucket for every stored entry, would be 1,273,969,575 iterations (1.90x). 75% of the setups meet a query bucket of
+  17 - 32 entries, so a special case for small buckets changes nothing (1.00x at 4 or 8 entries).
+
+What this says about the leads (P-13). A kernel with fixed trip counts doubles the loop that is already half the scan
+and runs at twice its floor, against the walk's 23 - 35%: a loss unless the loop then runs near its floor, and at 12
+workers it loses the hyperthread's cover for its stalls. The ordering rule needs no lane mask in any kernel: `consider`
+rejects what is not owed. The swapped loop has the same counts. The second-pass rewrite saves at most part of 24% of
+the sorts (about 0.17 s on one worker, hidden behind the scan from 4 threads). What the samples point to is the walk:
+its exit is unpredictable (it advances 0 - 3 entries a time), and an 8-wide compare from the pointer gives the same start
+with one branch that almost never fires (the pointer moves at most a bucket, about 23 entries, per probe).
+
+**After the vector start** (`suffix_avx2`, the AVX2 kernel's only change; the codes padded by eight). Same pass, HEAD's
+build and the new one interleaved, 5 runs each, a fresh catalog copy per run, CPU load 10 - 34% before the runs;
+medians in ms:
+
+| Workers | Build | Pass | Join | Sort wait | Scan (min - max) |
+|---:|---|---:|---:|---:|---:|
+| 1 | `98c6973` | 5,003 | 4,576 | 683 | 3,802 (3,784 - 3,890) |
+| 1 | vector start | 4,356 | 3,890 | 667 | **3,109** (3,053 - 3,226) |
+| 12 | `98c6973` | 1,279 | 849 | 112 | 655 (637 - 688) |
+| 12 | vector start | 1,258 | 808 | 185 | **523** (513 - 547) |
+
+The scan is 18% faster on one worker and 20% on 12; the oracle's 5,277 pairs are identical on all seven paths of the
+check (one slice, slices of 50,000, one worker, 300 / 3,000 / 30,000 owed). On 12 workers most of the gain moves into
+the sort wait (112 -> 185 ms): two sorters no longer keep ahead of a 523 ms scan, so the join there is now bound by the
+sorts, and the sorts' costs (the second pass 24%, the zeroing 9%) are no longer hidden.
 
 ---
 

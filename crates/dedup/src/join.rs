@@ -55,6 +55,8 @@ const QUERY_ORIENTATIONS: usize = 2 * ORIENTATIONS;
 pub const MAX_PICTURES: u32 = u32::MAX >> 4;
 /// The code's owed bit.
 const OWED: u32 = 1 << 3;
+/// The zeros after a sorted side's codes: [`suffix_avx2`] reads eight codes from any position up to the side's length.
+const CODE_PADDING: usize = 8;
 
 /// A pair of pictures by their index (`a < b`), and the least distance over their orientations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -588,8 +590,9 @@ impl Sides<'_, '_> {
 }
 
 /// Entries sorted by one chunk, in three arrays: entry `j` has the first two words `head0[j]`, `head1[j]` (with four
-/// zeros of padding, for the vector kernel's loads) and `code[j]`; `offsets[v]..offsets[v + 1]` are the entries whose
-/// chunk is `v`, in the order the entries were given (the sort is stable).
+/// zeros of padding, for the vector kernel's loads) and `code[j]` (with eight, for [`suffix_avx2`]'s);
+/// `offsets[v]..offsets[v + 1]` are the entries whose chunk is `v`, in the order the entries were given (the sort is
+/// stable).
 #[derive(Default)]
 struct Sorted {
     offsets: Vec<u32>,
@@ -655,7 +658,7 @@ fn sort_into(out: &mut Sorted, scratch: &mut Vec<Rec>, n: usize, entry: impl Fn(
     out.head1.clear();
     out.head1.resize(n + 4, 0);
     out.code.clear();
-    out.code.resize(n, 0);
+    out.code.resize(n + CODE_PADDING, 0);
     for r in scratch.iter() {
         let slot = &mut hi[usize::from(r.key >> 8)];
         let at = index(*slot);
@@ -711,20 +714,53 @@ fn consider(st: &Stage<'_, '_, '_>, x: usize, y: usize, out: &mut Vec<Pair>) {
     }
 }
 
-/// Where stored entry `x`'s queries start in the query bucket `[lo, hi)`: the whole bucket when it owes nothing, else
-/// past the entries of pictures up to its own (`from`, the probe's pointer, moves forward only: the stored entries come
-/// in picture order).
+/// Where the queries of the stored entry with code `xc` start in the query bucket `[lo, hi)` of `codes`: the whole
+/// bucket when it owes nothing, else past the entries of pictures up to its own (`from`, the probe's pointer, moves
+/// forward only: the stored entries come in picture order).
 #[inline(always)]
-fn suffix(st: &Stage<'_, '_, '_>, x: usize, lo: usize, hi: usize, from: &mut usize) -> usize {
-    let xc = st.stored.code.get(x).copied().unwrap_or(0);
+fn suffix(xc: u32, codes: &[u32], lo: usize, hi: usize, from: &mut usize) -> usize {
     if xc & OWED == 0 {
         return lo;
     }
     let picture = xc >> 4;
-    while *from < hi && st.query.code.get(*from).is_some_and(|&yc| yc >> 4 <= picture) {
+    while *from < hi && codes.get(*from).is_some_and(|&yc| yc >> 4 <= picture) {
         *from += 1;
     }
     *from
+}
+
+/// [`suffix`] without its data-dependent walk: eight codes compared at a time, the pointer moved past those of pictures
+/// up to `xc`'s (a bucket is in picture order, so they lead). The loop repeats only when all eight do, and the pointer
+/// moves at most a bucket per probe, so its branch is almost always predicted. The codes past `hi` (the next bucket's,
+/// or the padding) can only make the step longer, and the step is cut at `hi`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+fn suffix_avx2(xc: u32, codes: &[u32], lo: usize, hi: usize, from: &mut usize) -> usize {
+    use std::arch::x86_64::{
+        __m256i, _mm256_castsi256_ps, _mm256_cmpgt_epi32, _mm256_loadu_si256, _mm256_movemask_ps, _mm256_set1_epi32,
+        _mm256_srli_epi32,
+    };
+    if xc & OWED == 0 {
+        return lo;
+    }
+    // A picture is below MAX_PICTURES (28 bits), so it and every shifted code are non-negative as an i32.
+    let picture = _mm256_set1_epi32(i32::try_from(xc >> 4).unwrap_or(i32::MAX));
+    loop {
+        let Some(eight) = codes.get(*from..*from + CODE_PADDING) else {
+            // Not reached: `from <= hi <= n`, and the codes hold n + CODE_PADDING values.
+            return suffix(xc, codes, lo, hi, from);
+        };
+        // SAFETY: `eight` is CODE_PADDING (8) u32s, the 32 bytes the unaligned load reads.
+        let eight = unsafe { _mm256_loadu_si256(eight.as_ptr().cast::<__m256i>()) };
+        let later = _mm256_cmpgt_epi32(_mm256_srli_epi32::<4>(eight), picture);
+        let later = u32::try_from(_mm256_movemask_ps(_mm256_castsi256_ps(later))).unwrap_or(0);
+        let step = index((later | (1 << CODE_PADDING)).trailing_zeros());
+        *from = (*from + step).min(hi);
+        if step < CODE_PADDING || *from == hi {
+            return *from;
+        }
+    }
 }
 
 /// The probe of query bucket `v`'s `p`th (0: the same value; 1..17: the value with bit `p - 1` flipped).
@@ -746,7 +782,8 @@ fn scan_block(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>
             let (slo, shi) = st.stored.bucket(probe(v, p));
             let mut from = qlo;
             for x in slo..shi {
-                for y in suffix(st, x, qlo, qhi, &mut from)..qhi {
+                let xc = st.stored.code.get(x).copied().unwrap_or(0);
+                for y in suffix(xc, &st.query.code, qlo, qhi, &mut from)..qhi {
                     consider(st, x, y, out);
                 }
             }
@@ -791,7 +828,8 @@ unsafe fn scan_avx2(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec
             let (slo, shi) = st.stored.bucket(probe(v, p));
             let mut from = qlo;
             for x in slo..shi {
-                let mut y = suffix(st, x, qlo, qhi, &mut from);
+                let xc = st.stored.code.get(x).copied().unwrap_or(0);
+                let mut y = suffix_avx2(xc, &st.query.code, qlo, qhi, &mut from);
                 let (x0, x1) =
                     (st.stored.head0.get(x).copied().unwrap_or(0), st.stored.head1.get(x).copied().unwrap_or(0));
                 let vx0 = _mm256_set1_epi64x(i64::from_ne_bytes(x0.to_ne_bytes()));
@@ -1093,7 +1131,8 @@ mod tests {
             sort_into(&mut out, &mut scratch, entries.len(), |e| entries[e], c);
             let mut want = entries.clone();
             want.sort_by_key(|(w, _)| chunk(w, c));
-            assert_eq!(out.code, want.iter().map(|(_, i)| *i).collect::<Vec<_>>(), "chunk {c}");
+            assert_eq!(out.code[..entries.len()], want.iter().map(|(_, i)| *i).collect::<Vec<_>>()[..], "chunk {c}");
+            assert_eq!(out.code.len(), entries.len() + CODE_PADDING);
             assert_eq!(out.head0[..entries.len()], want.iter().map(|(w, _)| w[0]).collect::<Vec<_>>()[..]);
             assert_eq!(out.head1[..entries.len()], want.iter().map(|(w, _)| w[1]).collect::<Vec<_>>()[..]);
             assert_eq!(out.head0.len(), entries.len() + 4);
@@ -1101,6 +1140,46 @@ mod tests {
                 let (lo, hi) = out.bucket(v);
                 assert!(out.code[lo..hi].iter().all(|&i| chunk(&entries[index(i)].0, c) == v));
                 assert_eq!(hi - lo, want.iter().filter(|(w, _)| chunk(w, c) == v).count());
+            }
+        }
+    }
+
+    #[test]
+    fn the_vector_suffix_starts_where_the_walk_does() {
+        #[cfg(target_arch = "x86_64")]
+        if std::arch::is_x86_feature_detected!("avx2") {
+            let mut rng = Rng(7);
+            let code = |rng: &mut Rng, picture: u32| (picture << 4) | u32::try_from(rng.below(16)).unwrap();
+            // Buckets of 0 - 40 queries in picture order (a picture repeats: several of its orientations share a
+            // bucket), with pictures near 0 and near MAX_PICTURES (the vector compare is signed). The last bucket
+            // ends at the codes' length, so its reads go into the padding.
+            let (mut codes, mut buckets) = (Vec::new(), Vec::new());
+            for b in 0..400 {
+                let base = if b % 3 == 0 { MAX_PICTURES - 100 } else { 0 };
+                let mut pictures: Vec<u32> =
+                    (0..rng.below(41)).map(|_| base + u32::try_from(rng.below(60)).unwrap()).collect();
+                pictures.sort_unstable();
+                let lo = codes.len();
+                codes.extend(pictures.iter().map(|&p| code(&mut rng, p)));
+                buckets.push((lo, codes.len(), base));
+            }
+            codes.resize(codes.len() + CODE_PADDING, 0);
+            for &(lo, hi, base) in &buckets {
+                // One probe's stored entries, in picture order, owed or not (bit 3 of the code).
+                let mut stored: Vec<u32> = (0..rng.below(30))
+                    .map(|_| {
+                        let picture = base + u32::try_from(rng.below(64)).unwrap();
+                        code(&mut rng, picture)
+                    })
+                    .collect();
+                stored.sort_unstable_by_key(|c| c >> 4);
+                let (mut walk, mut vector) = (lo, lo);
+                for &xc in &stored {
+                    let want = suffix(xc, &codes, lo, hi, &mut walk);
+                    // SAFETY: AVX2 was detected above.
+                    let got = unsafe { suffix_avx2(xc, &codes, lo, hi, &mut vector) };
+                    assert_eq!((got, vector), (want, walk), "bucket {lo}..{hi}, stored code {xc:#x}");
+                }
             }
         }
     }

@@ -76,6 +76,14 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
 - On-demand thumbnails and viewer reads, not profiled. **Open.** The heap profile covered the scan, the import and the
   borders and thumbnail passes, and the app's start. The app's on-demand thumbnail requests and viewer reads were checked
   by screenshots and the cached bytes only.
+- Grid thumbhash shows when scrolling up, never when scrolling down (opened 2026-11-15). **Open, not measured.** Seen while
+  fast-scrolling the grid. From the code: a cell shows its thumbhash until its thumb is `Ready` and has faded in
+  (`crates/desktop/qml/GridCell.qml`); cells and their requests are made 1500 px ahead of the view (`GalleryGrid.qml`,
+  `cacheBuffer`); thumb requests run on a LIFO pool whose comment assumes the newest requests are the ones on screen
+  (`crates/desktop/cpp/providers.cpp:4-5`). Nothing has shown which of these gives the direction difference. Plan: thumbnail
+  all of `D:\PhotoGallery\datasets\planted` first (18,000 images; `gallery scan`, `import`, `thumbs --height 220`, with
+  nothing else running), then time a fast scroll down and back up with per-request timestamps. Temporary logs tagged
+  `DEBUGLOG` are in those three files and must be removed afterwards.
 
 ## S-17.7: file identity and placeholders (moved from `docs/temp/S17_7_PLAN.md`, checked 2026-11-14)
 

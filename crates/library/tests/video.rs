@@ -204,7 +204,7 @@ fn videos() {
     let mut analyzer = analyze::Analyzer::new().unwrap();
     for (path, turns, want) in [(&rotated, 0, 8), (&rotated, 1, 1), (&mirrored, 0, 2), (&mirrored, 1, 7)] {
         let a = analyzer.video(path, Turns::new(turns)).unwrap();
-        assert_eq!(a.record.orientation.get(), want, "{} with {turns} turn(s)", path.display());
+        assert_eq!(a.orientation.get(), want, "{} with {turns} turn(s)", path.display());
     }
 
     assert_eq!(poster_ms(3000), 300);
@@ -269,5 +269,5 @@ fn a_video_in_a_folder_ending_in_a_dot_is_read_from_that_folder() {
     std::fs::copy(verbatim(&media.join("mirrored.mp4")), verbatim(&plain.join("a.mp4"))).unwrap();
     let mut analyzer = analyze::Analyzer::new().unwrap();
     let a = analyzer.video(&verbatim(&dotted.join("a.mp4")), Turns::new(0)).unwrap();
-    assert_eq!(a.record.orientation.get(), 1, "the dotted folder's own file");
+    assert_eq!(a.orientation.get(), 1, "the dotted folder's own file");
 }

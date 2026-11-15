@@ -8,7 +8,7 @@ use gungraun::prelude::*;
 use pg_analysis::analyze::Analyzer;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_codec::pixels::Rgb;
-use pg_model::analysis::Analyzed;
+use pg_model::analysis::Analysis;
 use pg_model::image::View;
 use pg_render::display::{self, Shown};
 use pg_model::turns::Turns;
@@ -47,7 +47,7 @@ fn for_thumb() -> (Vec<u8>, Maker) {
 
 #[library_benchmark]
 #[bench::sample(setup = for_analyze)]
-fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analyzed {
+fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analysis {
     black_box(or_stop(analyzer.analyze(black_box(&bytes), Turns::NONE), "analyze"))
 }
 

@@ -731,9 +731,13 @@ fn no_duplicates_waits_for_the_pairing_pass(rules: PathRules) {
     let no_duplicates =
         |c: &crate::Catalog| ids(c, "", true, &Query { duplicates: Some(false), ..Query::default() }, Sort::default());
     assert_eq!(no_duplicates(&c), [6, 5]);
-    c.conn.execute("UPDATE analysis SET dups_state = 'due' WHERE file_id = 2", []).unwrap();
+    c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (2)", []).unwrap();
     assert!(no_duplicates(&c).is_empty());
-    c.conn.execute("UPDATE analysis SET dups_state = 'done' WHERE file_id = 2", []).unwrap();
+    // Owed by a missing file: the pass can't pair it, so it does not hold the list back.
+    c.conn.execute("UPDATE files SET missing = 1 WHERE id = 2", []).unwrap();
+    assert!(!no_duplicates(&c).is_empty());
+    c.conn.execute("UPDATE files SET missing = 0 WHERE id = 2", []).unwrap();
+    c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 2", []).unwrap();
     assert_eq!(no_duplicates(&c), [6, 5]);
 }
 

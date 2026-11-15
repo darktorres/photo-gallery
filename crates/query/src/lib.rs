@@ -347,13 +347,14 @@ macro_rules! duplicates {
 }
 const DUPLICATES: &str = duplicates!();
 /// An imported file without one, while no pair is owed: a file's pairs are unknown until the pairing pass has paired
-/// every due file (the import leaves them owed, `analysis.dups_state`), so none is listed as not a duplicate before
-/// then. The owed files are looked for through the partial index `analysis_dups_due`, once per query.
+/// every owed file (the import leaves them owed, `pairs_owed`), so none is listed as not a duplicate before then. Only
+/// the owed files the pass can pair count (present, not pending), as in `Catalog::has_owed_pairs`. The subquery names
+/// nothing of the outer row, so it runs once per query: a walk of the queue, a lookup of each file.
 const NOT_DUPLICATES: &str = concat!(
     "a.file_id IS NOT NULL AND NOT ",
     duplicates!(),
-    " AND NOT EXISTS (SELECT 1 FROM analysis owed JOIN files owed_file ON owed_file.id = owed.file_id
-        WHERE owed.dups_state = 'due' AND owed_file.missing = 0 AND owed_file.pending = 0)"
+    " AND NOT EXISTS (SELECT 1 FROM pairs_owed owed CROSS JOIN files owed_file
+        WHERE owed_file.id = owed.file_id AND owed_file.missing = 0 AND owed_file.pending = 0)"
 );
 
 /// The value a sort orders by, as an integer expression over the file `f` and its analysis `a` (NULL: none, which

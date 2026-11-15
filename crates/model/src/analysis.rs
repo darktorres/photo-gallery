@@ -46,15 +46,6 @@ pub struct Analysis {
     pub media: Media,
 }
 
-/// One file's analysis, and the 8 dihedral PDQ hashes of its image (the query side of tier 1: the orientations the
-/// import pairs on). Those are returned beside the record, not held in it: the catalog stores them with it, and the
-/// import's pairing reads them. A video has none.
-#[derive(Clone)]
-pub struct Analyzed {
-    pub record: Analysis,
-    pub pdq_dihedral: Option<[pdq::Hash; 8]>,
-}
-
 /// When a file was taken: a wall-clock time (no time zone: what the camera's clock showed), or a UTC instant (a
 /// video's creation time). The catalog filters and sorts by the wall clock: a UTC instant is shown as the wall clock
 /// of this computer's zone, and kept as the instant too, so the wall clock can be computed again for another zone.

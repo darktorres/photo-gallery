@@ -15,6 +15,7 @@ use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use pg_model::notice::Notice;
+use pg_model::pdq::Hash;
 use pg_model::rules::PathRules;
 
 use crate::error::{Error, Result};
@@ -155,6 +156,75 @@ pub(crate) fn convert_notify(tx: &Transaction<'_>, source: Source, _rules: PathR
         )?;
     }
     recompute_hidden(tx)
+}
+
+/// `TO_13_PAIRS_OWED`'s rows, in this order, on either path; idempotent.
+/// 1. **The cut.** Each 256-byte `pdq_dihedral` in `main` (a migrated file's, or a rebuild's copy of the old file's) is
+///    checked: its orientations 4..8 must be the transposes of 0..4 ([`Hash::transpose`]), as the hasher makes them. One
+///    that passes keeps its first 128 bytes; one that fails, or a blob of any length but 128 or 256, is NULL: a "legacy"
+///    analysis, which the pairing pass reports (`gallery import --again` hashes it again). The join has no fallback for
+///    a picture without the identity, so none is kept. A 128-byte blob is already converted.
+/// 2. **The carry.** When the source's `analysis` has `dups_state` (a draft-v12 file), its owed analyses get their
+///    `pairs_owed` row, if their analysis in `main` is still eligible after the cut. An older file owes nothing (version
+///    12 left its analyses done).
+/// 3. **The rule** that a `pairs_owed` row is an eligible analysis's (stored hashes, a reliable quality) is made true:
+///    any other row goes, or the pass could never clear it.
+/// 4. A rebuild's file is new: it owes no `VACUUM`.
+pub(crate) fn pairs_owed_and_hashes(tx: &Transaction<'_>, source: Source, _rules: PathRules) -> Result<()> {
+    let mut failed = Vec::new();
+    {
+        let mut stmt =
+            tx.prepare("SELECT file_id, pdq_dihedral FROM main.analysis WHERE length(pdq_dihedral) = 256")?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            if !transposes_hold(r.get_ref(1)?.as_blob()?) {
+                failed.push(r.get::<_, i64>(0)?);
+            }
+        }
+    }
+    {
+        let mut null = tx.prepare("UPDATE main.analysis SET pdq_dihedral = NULL WHERE file_id = ?1")?;
+        for id in &failed {
+            null.execute([id])?;
+        }
+    }
+    tx.execute_batch(
+        "UPDATE main.analysis SET pdq_dihedral = NULL
+             WHERE pdq_dihedral IS NOT NULL AND length(pdq_dihedral) NOT IN (128, 256);
+         UPDATE main.analysis SET pdq_dihedral = substr(pdq_dihedral, 1, 128) WHERE length(pdq_dihedral) = 256;",
+    )?;
+    let from = source.schema();
+    if column_type(tx, from, "analysis", "dups_state")?.is_some() {
+        tx.execute(
+            &format!(
+                "INSERT OR IGNORE INTO main.pairs_owed(file_id)
+                 SELECT o.file_id FROM {from}.analysis o JOIN main.analysis a ON a.file_id = o.file_id
+                 WHERE o.dups_state = 'due' AND a.pdq_dihedral IS NOT NULL AND a.pdq_quality >= ?1"
+            ),
+            [pg_model::pdq::MIN_QUALITY],
+        )?;
+    }
+    tx.execute(
+        "DELETE FROM main.pairs_owed WHERE file_id NOT IN
+             (SELECT file_id FROM main.analysis WHERE pdq_dihedral IS NOT NULL AND pdq_quality >= ?1)",
+        [pg_model::pdq::MIN_QUALITY],
+    )?;
+    if source == Source::Carried {
+        tx.execute("UPDATE main.meta SET value = 0 WHERE key = 'vacuum_owed'", [])?;
+    }
+    Ok(())
+}
+
+/// Whether a 256-byte blob of 8 orientations has 4..8 as the transposes of 0..4.
+fn transposes_hold(blob: &[u8]) -> bool {
+    let (hashes, rest) = blob.as_chunks::<{ pg_model::pdq::HASH_BYTES }>();
+    let kept = pg_model::pdq::ORIENTATIONS;
+    rest.is_empty()
+        && hashes.len() == 2 * kept
+        && (0..kept).all(|v| match (hashes.get(v), hashes.get(v + kept)) {
+            (Some(k), Some(t)) => Hash(*k).transpose() == Hash(*t),
+            _ => false,
+        })
 }
 
 /// `TO_11_NOTIFY_FIXES`' rows: the retired kinds go (every code `Notice::RETIRED` lists, which a catalog past version 7

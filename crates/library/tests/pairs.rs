@@ -1,4 +1,4 @@
-//! The pairing pass on real files: the import leaves the pictures' pairs owed (`analysis.dups_state`), the pass makes them,
+//! The pairing pass on real files: the import leaves the pictures' pairs owed (`pairs_owed`), the pass makes them,
 //! a stop leaves what is owed owed, and a write that fails stores none of its batch, so the next pass makes them all.
 
 use std::path::PathBuf;
@@ -55,16 +55,16 @@ fn the_import_owes_the_pairs_and_the_pass_makes_them() {
     let (mut c, ctl, _dir) = imported("pass");
     // Nothing is paired by the import; the pictures owe their pairs.
     assert!(state::pairs(&c).unwrap().is_empty());
-    assert_eq!(state::dups_state(&c, "a.png").unwrap(), "due");
-    assert_eq!(state::dups_state(&c, "b.png").unwrap(), "due");
+    assert!(state::owes_pairs(&c, "a.png").unwrap());
+    assert!(state::owes_pairs(&c, "b.png").unwrap());
     assert!(c.owed_pairs().unwrap() >= 2);
 
     let stats = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
     assert!(stats.complete);
     let (lo, hi) = the_twins(&c);
     assert!(state::pairs(&c).unwrap().contains(&(lo, hi, 0)), "the same picture pairs at distance 0");
-    assert_eq!(state::dups_state(&c, "a.png").unwrap(), "done");
-    assert_eq!(state::dups_state(&c, "b.png").unwrap(), "done");
+    assert!(!state::owes_pairs(&c, "a.png").unwrap());
+    assert!(!state::owes_pairs(&c, "b.png").unwrap());
     assert_eq!(c.owed_pairs().unwrap(), 0);
 
     // Nothing owed: the next pass is one probe, and makes nothing.
@@ -101,7 +101,7 @@ fn a_batch_that_cannot_be_written_stores_nothing_and_the_next_pass_makes_it_all(
     assert!(pg_import::pairs::pair(&mut c, &opts(), &ctl).is_err(), "the write's failure is the pass's");
     // The batch's transaction rolled back: no pair, and every picture still owes its pairs.
     assert!(state::pairs(&c).unwrap().is_empty());
-    assert_eq!(state::dups_state(&c, "a.png").unwrap(), "due");
+    assert!(state::owes_pairs(&c, "a.png").unwrap());
     assert_eq!(c.owed_pairs().unwrap(), owed);
     state::allow_pair_writes(&c).unwrap();
     let made = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();

@@ -7,7 +7,7 @@
 use anyhow::{Context, anyhow};
 use rusqlite::{Connection, OptionalExtension, Statement, Transaction, params};
 
-use pg_model::analysis::Analyzed;
+use pg_model::analysis::Analysis;
 use pg_model::detection::Detection;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::notice::FilePass;
@@ -228,7 +228,7 @@ impl<'tx> ScanWriter<'tx> {
 }
 
 /// The import's writes: analyses, failures, and the file ratings they carry. The pairs are the pairing pass's
-/// ([`PairsWriter`]); an analysis that owes them is stored as `dups_state = 'due'`.
+/// ([`PairsWriter`]); an analysis that owes them has a `pairs_owed` row.
 pub struct AnalysisWriter<'tx> {
     /// The build's IMPORT_VERSION, which a stored failure is made against.
     import: i64,
@@ -238,6 +238,7 @@ pub struct AnalysisWriter<'tx> {
     failure: Statement<'tx>,
     borders_due: Statement<'tx>,
     delete_sides: Statement<'tx>,
+    owe_pairs: Statement<'tx>,
     known_rating: Statement<'tx>,
     queued_rating: Statement<'tx>,
     set_rating: Statement<'tx>,
@@ -254,12 +255,13 @@ impl<'tx> AnalysisWriter<'tx> {
             delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
-                    file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
-                    taken, taken_utc, duration_ms, poster_ms, borders_due, pdq_dihedral, dups_state)
+                    file_hash, pixel_hash, format, orientation, width, height, pdq_dihedral, pdq_quality, thumbhash,
+                    frames, taken, taken_utc, duration_ms, poster_ms, borders_due)
                  VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END,
-                         CASE WHEN ?16 THEN ?15 END, ?17, ?18, 0, ?21, CASE WHEN ?22 THEN 'due' ELSE 'done' END)",
+                         CASE WHEN ?16 THEN ?15 END, ?17, ?18, 0)",
             )?,
+            owe_pairs: tx.prepare("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
             failure: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     borders_due)
@@ -292,21 +294,22 @@ impl<'tx> AnalysisWriter<'tx> {
     }
 
     /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
-    pub fn store_analysis(&mut self, item: &WorkItem, analyzed: &Analyzed) -> Result<bool> {
+    pub fn store_analysis(&mut self, item: &WorkItem, analyzed: &Analysis) -> Result<bool> {
         if !self.current(item)? {
             return Ok(false);
         }
-        let a = &analyzed.record;
-        // A re-analysis invalidates the file's tier-1 pairs: it owes new ones (`dups_state`), which the pairing pass makes.
+        let a = analyzed;
+        // A re-analysis invalidates the file's tier-1 pairs: it owes new ones (`pairs_owed`), which the pairing pass
+        // makes. The REPLACE below deletes the old analysis and, through the foreign key, its `pairs_owed` row, so a
+        // picture owes its pairs exactly when the row is put back below.
         self.delete_pairs.execute([item.id.get()])?;
         let (taken, taken_utc) = a.taken.map_or((None, false), |t| {
             let (seconds, utc) = t.parts();
             (Some(seconds), utc)
         });
         let (image, video) = (a.image(), a.video());
-        // A picture with orientation hashes and a reliable quality owes its pairs (what the pass pairs, `pairs.rs`).
-        let owes_pairs = analyzed.pdq_dihedral.is_some()
-            && image.is_some_and(|i| i.pixels.pdq.quality >= pg_model::pdq::MIN_QUALITY);
+        // A picture of a reliable quality owes its pairs (what the pass pairs, `pairs.rs`).
+        let owes_pairs = image.is_some_and(|i| i.pixels.pdq.quality >= pg_model::pdq::MIN_QUALITY);
         self.analysis.execute(params![
             item.id.get(),
             a.version,
@@ -318,7 +321,7 @@ impl<'tx> AnalysisWriter<'tx> {
             a.orientation.get(),
             a.width,
             a.height,
-            image.map(|i| &i.pixels.pdq.hash.0[..]),
+            image.map(|i| pg_model::pdq::to_blob(&i.pixels.pdq.orientations)),
             image.map(|i| i.pixels.pdq.quality),
             a.thumbhash.as_slice(),
             a.frames,
@@ -328,9 +331,10 @@ impl<'tx> AnalysisWriter<'tx> {
             video.map(|v| v.poster_ms),
             item.rotation.get(),
             item.kind.key(),
-            analyzed.pdq_dihedral.map(|d| d.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
-            owes_pairs,
         ])?;
+        if owes_pairs {
+            self.owe_pairs.execute([item.id.get()])?;
+        }
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id.get()])?;
         self.delete_sides.execute([item.id.get()])?;
@@ -396,24 +400,28 @@ impl<'tx> PairsWriter<'tx> {
             pair: tx.prepare(
                 "INSERT INTO pdq_pairs(a, b, distance)
                  SELECT ?1, ?2, ?3
-                 WHERE (SELECT pdq FROM analysis WHERE file_id = ?1) IS ?4
-                   AND (SELECT pdq FROM analysis WHERE file_id = ?2) IS ?5
+                 WHERE (SELECT pdq_dihedral FROM analysis WHERE file_id = ?1) IS ?4
+                   AND (SELECT pdq_dihedral FROM analysis WHERE file_id = ?2) IS ?5
                  ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance WHERE excluded.distance < pdq_pairs.distance",
             )?,
-            done: tx.prepare("UPDATE analysis SET dups_state = 'done' WHERE file_id = ?1 AND dups_state = 'due' AND pdq IS ?2")?,
+            done: tx.prepare(
+                "DELETE FROM pairs_owed
+                 WHERE file_id = ?1 AND (SELECT pdq_dihedral FROM analysis WHERE file_id = ?1) IS ?2",
+            )?,
         })
     }
 
-    /// Store the pair `a`, `b` at `distance`, found from the hashes `pdq_a` and `pdq_b` (the analyses' `pdq`), if both
-    /// files still hold them. Whether it was stored.
-    pub fn pair(&mut self, a: FileId, b: FileId, distance: u32, pdq_a: &[u8], pdq_b: &[u8]) -> Result<bool> {
-        let (a, b, pdq_a, pdq_b) = if a < b { (a, b, pdq_a, pdq_b) } else { (b, a, pdq_b, pdq_a) };
-        Ok(self.pair.execute(params![a.get(), b.get(), distance, pdq_a, pdq_b])? > 0)
+    /// Store the pair `a`, `b` at `distance`, found from the stored hashes `hashes_a` and `hashes_b` (the analyses'
+    /// `pdq_dihedral`, as `pg_model::pdq::to_blob` makes it), if both files still hold them. Whether it was stored.
+    pub fn pair(&mut self, a: FileId, b: FileId, distance: u32, hashes_a: &[u8], hashes_b: &[u8]) -> Result<bool> {
+        let (a, b, hashes_a, hashes_b) = if a < b { (a, b, hashes_a, hashes_b) } else { (b, a, hashes_b, hashes_a) };
+        Ok(self.pair.execute(params![a.get(), b.get(), distance, hashes_a, hashes_b])? > 0)
     }
 
-    /// Mark the file's pairs made, if it still holds `pdq` (the hash they were made from). Whether it was marked.
-    pub fn done(&mut self, file: FileId, pdq: &[u8]) -> Result<bool> {
-        Ok(self.done.execute(params![file.get(), pdq])? > 0)
+    /// Mark the file's pairs made (its `pairs_owed` row goes), if it still holds `hashes` (the stored hashes they were
+    /// made from). Whether it was marked.
+    pub fn done(&mut self, file: FileId, hashes: &[u8]) -> Result<bool> {
+        Ok(self.done.execute(params![file.get(), hashes])? > 0)
     }
 }
 
@@ -595,7 +603,7 @@ mod tests {
     use crate::test_support::*;
     use crate::{Catalog, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
-    use pg_model::analysis::{Analysis, Analyzed, FileHash, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
+    use pg_model::analysis::{Analysis, FileHash, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
     use pg_model::detection::Detection;
     use pg_model::format::Format;
     use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
@@ -864,7 +872,7 @@ mod tests {
             media: a_jpeg(),
         };
         let tx = c.tx().unwrap();
-        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         // The import leaves them to the borders pass.
         assert_eq!(raw::cut_sides(&c), [None; 4]);
@@ -921,7 +929,7 @@ mod tests {
         // Analyzed again (the file changed): the old borders go, the new ones are due.
         let tx = c.tx().unwrap();
         tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
-        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [None; 4]);
         assert!(c.border_sides(item.id).unwrap().is_empty());
@@ -956,7 +964,7 @@ mod tests {
             media: a_jpeg(),
         };
         let tx = c.tx().unwrap();
-        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         let seq = |c: &Catalog| -> i64 {
             c.conn.query_row("SELECT seq FROM files WHERE id = ?1", [item.id.get()], |r| r.get(0)).unwrap()
@@ -1054,7 +1062,7 @@ mod tests {
                 media: a_jpeg(),
             };
             let tx = c.tx().unwrap();
-            tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+            tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
             tx.borders_writer().unwrap().store_borders(&item, Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {
@@ -1117,12 +1125,13 @@ mod tests {
         fixture::insert(c, &[fixture::File::new(FileId::new(id), FolderId::new(1), name, 10, 100)]).unwrap();
     }
 
-    /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all eight orientations (the
-    /// writer does not check them).
-    fn picture(hash: [u8; 32], quality: u8) -> Analyzed {
-        let pdq = pg_model::pdq::Pdq { hash: pg_model::pdq::Hash(hash), quality };
+    /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all four kept orientations (the
+    /// writer does not check them), so its stored hashes are [`blob`]`(hash[0])`.
+    fn picture(hash: [u8; 32], quality: u8) -> Analysis {
+        let pdq =
+            pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash(hash); pg_model::pdq::ORIENTATIONS], quality };
         let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
-        let record = Analysis {
+        Analysis {
             version: IMPORT_VERSION,
             file_hash: FileHash([1; 32]),
             orientation: Orientation::UPRIGHT,
@@ -1132,8 +1141,12 @@ mod tests {
             frames: 1,
             taken: None,
             media: Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels }),
-        };
-        Analyzed { record, pdq_dihedral: Some([pg_model::pdq::Hash(hash); 8]) }
+        }
+    }
+
+    /// The stored hashes of [`picture`]`([byte; 32], _)`: what the pairs' guards compare.
+    fn blob(byte: u8) -> [u8; pg_model::pdq::BLOB_BYTES] {
+        [byte; pg_model::pdq::BLOB_BYTES]
     }
 
     /// File `id`'s work item as the work lists give it now, pending or not.
@@ -1142,15 +1155,21 @@ mod tests {
     }
 
     /// Stores `stored` as the import of file `id` stores it.
-    fn store_for(c: &mut Catalog, id: i64, stored: &Analyzed) {
+    fn store_for(c: &mut Catalog, id: i64, stored: &Analysis) {
         let item = item_of(c, id);
         let tx = c.tx().unwrap();
         assert!(tx.analysis_writer(versions().import).unwrap().store_analysis(&item, stored).unwrap());
         tx.commit().unwrap();
     }
 
-    fn dups_state(c: &Catalog, id: i64) -> String {
-        c.conn.query_row("SELECT dups_state FROM analysis WHERE file_id = ?1", [id], |r| r.get(0)).unwrap()
+    /// The files with a `pairs_owed` row, by id.
+    fn state_owed(c: &Catalog) -> Vec<i64> {
+        raw::rows_of(c, "SELECT file_id FROM pairs_owed ORDER BY file_id", [], |r| r.get(0))
+    }
+
+    /// Whether file `id` owes its pairs (a `pairs_owed` row).
+    fn owes(c: &Catalog, id: i64) -> bool {
+        c.conn.query_row("SELECT EXISTS(SELECT 1 FROM pairs_owed WHERE file_id = ?1)", [id], |r| r.get(0)).unwrap()
     }
 
     /// The stored distance of the pair `a`, `b` (`a < b`), if there is one.
@@ -1162,18 +1181,24 @@ mod tests {
         let mut c = two_files(rules);
         store_for(&mut c, 1, &picture([1; 32], pg_model::pdq::MIN_QUALITY));
         store_for(&mut c, 2, &picture([2; 32], pg_model::pdq::MIN_QUALITY - 1));
-        assert_eq!(dups_state(&c, 1), "due");
-        assert_eq!(dups_state(&c, 2), "done", "below the quality it owes nothing");
-        // Analyzed again, it owes again; a failure owes nothing.
+        assert!(owes(&c, 1));
+        assert!(!owes(&c, 2), "below the quality it owes nothing");
+        // Analyzed again, it owes again: the REPLACE's delete takes the row through the foreign key, and the writer
+        // puts it back.
         store_for(&mut c, 1, &picture([3; 32], 100));
-        assert_eq!(dups_state(&c, 1), "due");
+        assert!(owes(&c, 1));
+        // A failure owes nothing: its REPLACE takes the row, and nothing puts it back.
         let item = item_of(&c, 1);
         analyzed(&mut c, &item);
-        assert_eq!(dups_state(&c, 1), "done");
-        assert!(
-            c.conn.execute("UPDATE analysis SET dups_state = 'skipped' WHERE file_id = 1", []).is_err(),
-            "the CHECK holds"
-        );
+        assert!(!owes(&c, 1));
+        // An analysis that goes (a path taken over by another file, `pair.rs`) takes its row with it.
+        store_for(&mut c, 1, &picture([4; 32], 100));
+        assert!(owes(&c, 1));
+        c.conn.execute("DELETE FROM analysis WHERE file_id = 1", []).unwrap();
+        assert!(!owes(&c, 1));
+        // A row needs its analysis.
+        assert!(c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (2)", []).is_ok());
+        assert!(c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (99)", []).is_err(), "no analysis 99");
     }
 
     under_both_rules!(
@@ -1186,11 +1211,13 @@ mod tests {
         let mut c = two_files(rules);
         store_for(&mut c, 1, &picture([1; 32], 100));
         store_for(&mut c, 2, &picture([2; 32], 100));
-        let (one, two) = ([1; 32], [2; 32]);
+        let (one, two) = (blob(1), blob(2));
         let tx = c.tx().unwrap();
         let mut pairs = tx.pairs_writer().unwrap();
-        // Made from file 2's old hash (it was analyzed again since): refused, whatever the distance.
-        assert!(!pairs.pair(FileId::new(1), FileId::new(2), 3, &one, &[9; 32]).unwrap());
+        // Made from file 2's old hashes (it was analyzed again since): refused, whatever the distance.
+        assert!(!pairs.pair(FileId::new(1), FileId::new(2), 3, &one, &blob(9)).unwrap());
+        // A blob that holds only the first hash (the old `pdq` column's 32 bytes) is not the stored hashes.
+        assert!(!pairs.pair(FileId::new(1), FileId::new(2), 3, &one, &[2; 32]).unwrap());
         // Made from the hashes both hold: stored; the order of the files does not matter.
         assert!(pairs.pair(FileId::new(2), FileId::new(1), 5, &two, &one).unwrap());
         assert!(
@@ -1198,13 +1225,14 @@ mod tests {
             "a higher distance does not replace"
         );
         assert!(pairs.pair(FileId::new(1), FileId::new(2), 4, &one, &two).unwrap(), "a lower one does");
-        // A file is marked done only while it holds the hash its pairs were made from.
-        assert!(!pairs.done(FileId::new(2), &[9; 32]).unwrap());
+        // A file is marked done only while it holds the hashes its pairs were made from.
+        assert!(!pairs.done(FileId::new(2), &blob(9)).unwrap());
         assert!(pairs.done(FileId::new(1), &one).unwrap());
+        assert!(!pairs.done(FileId::new(1), &one).unwrap(), "done once");
         drop(pairs);
         tx.commit().unwrap();
         assert_eq!(pair_distance(&c, 1, 2), Some(4));
-        assert_eq!((dups_state(&c, 1).as_str(), dups_state(&c, 2).as_str()), ("done", "due"));
+        assert_eq!((owes(&c, 1), owes(&c, 2)), (false, true));
     }
 
     under_both_rules!(
@@ -1219,16 +1247,16 @@ mod tests {
         store_for(&mut c, 2, &picture([2; 32], 100));
         let tx = c.tx().unwrap();
         let mut pairs = tx.pairs_writer().unwrap();
-        assert!(pairs.pair(FileId::new(1), FileId::new(2), 5, &[1; 32], &[2; 32]).unwrap());
-        assert!(pairs.done(FileId::new(1), &[1; 32]).unwrap());
-        assert!(pairs.done(FileId::new(2), &[2; 32]).unwrap());
+        assert!(pairs.pair(FileId::new(1), FileId::new(2), 5, &blob(1), &blob(2)).unwrap());
+        assert!(pairs.done(FileId::new(1), &blob(1)).unwrap());
+        assert!(pairs.done(FileId::new(2), &blob(2)).unwrap());
         drop(pairs);
         tx.commit().unwrap();
         assert_eq!(pair_distance(&c, 1, 2), Some(5));
         // File 2 changed: its pairs go with the old analysis, and it owes them again.
         store_for(&mut c, 2, &picture([3; 32], 100));
         assert_eq!(pair_distance(&c, 1, 2), None);
-        assert_eq!((dups_state(&c, 1).as_str(), dups_state(&c, 2).as_str()), ("done", "due"));
+        assert_eq!((owes(&c, 1), owes(&c, 2)), (false, true));
     }
 
     under_both_rules!(
@@ -1241,7 +1269,7 @@ mod tests {
         let mut c = two_files(rules);
         store_for(&mut c, 1, &picture([1; 32], 100));
         store_for(&mut c, 2, &picture([2; 32], pg_model::pdq::MIN_QUALITY - 1));
-        c.conn.execute("UPDATE analysis SET dups_state = 'done'", []).unwrap();
+        c.conn.execute("DELETE FROM pairs_owed", []).unwrap();
         raw::add_pdq_pair(&c, 1, 2, 5);
         // The same version: nothing changes.
         crate::lifecycle::set_pairing_version(&c.conn, pg_model::pdq::PAIRING_VERSION).unwrap();
@@ -1249,7 +1277,7 @@ mod tests {
         // Another version: the eligible analysis owes its pairs, the ineligible one owes nothing, and the pairs go.
         crate::lifecycle::set_pairing_version(&c.conn, pg_model::pdq::PAIRING_VERSION + 1).unwrap();
         assert_eq!(pair_distance(&c, 1, 2), None);
-        assert_eq!((dups_state(&c, 1).as_str(), dups_state(&c, 2).as_str()), ("due", "done"));
+        assert_eq!((owes(&c, 1), owes(&c, 2)), (true, false));
     }
 
     under_both_rules!(
@@ -1266,24 +1294,34 @@ mod tests {
         add_file(&c, 6, "f.jpg");
         store_for(&mut c, 1, &picture([1; 32], 100));
         store_for(&mut c, 2, &picture([2; 32], 100));
-        c.conn.execute("UPDATE analysis SET dups_state = 'done' WHERE file_id = 2", []).unwrap();
+        c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 2", []).unwrap();
         // A failure: no hashes at all.
         let failed = item_of(&c, 3);
         analyzed(&mut c, &failed);
-        // Legacy: a hash, but no orientation hashes, and so no pairs owed (an older build's analysis: the migration's
-        // default).
+        // Legacy: a reliable quality but no stored hashes, and so no pairs owed (an older build's analysis, or one
+        // whose hashes failed the migration's check).
         store_for(&mut c, 4, &picture([4; 32], 100));
-        c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL, dups_state = 'done' WHERE file_id = 4", []).unwrap();
+        c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL WHERE file_id = 4", []).unwrap();
+        c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 4", []).unwrap();
         // Missing, and pending: neither is paired.
         store_for(&mut c, 5, &picture([5; 32], 100));
         c.conn.execute("UPDATE files SET missing = 1 WHERE id = 5", []).unwrap();
         store_for(&mut c, 6, &picture([6; 32], 100));
         c.mark_pending(&[FileId::new(6)]).unwrap();
         let work = c.pairing_work().unwrap();
-        let listed: Vec<(i64, bool)> = work.pictures.iter().map(|p| (p.id.get(), p.due)).collect();
-        assert_eq!(listed, vec![(1, true), (2, false)]);
+        let ids: Vec<i64> = work.ids.iter().map(|id| id.get()).collect();
+        assert_eq!(ids, vec![1, 2]);
+        assert_eq!(work.owed, vec![true, false]);
+        assert_eq!(work.hashes, vec![[pg_model::pdq::Hash([1; 32]); 4], [pg_model::pdq::Hash([2; 32]); 4]]);
         assert_eq!(work.legacy, 1);
         assert_eq!(c.owed_pairs().unwrap(), 1);
+        assert!(c.has_owed_pairs().unwrap());
+        // Files 5 and 6 owe theirs too, but one is missing and the other pending: not counted, and not something the
+        // pass can make.
+        assert_eq!(state_owed(&c), vec![1, 5, 6]);
+        c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 1", []).unwrap();
+        assert_eq!(c.owed_pairs().unwrap(), 0);
+        assert!(!c.has_owed_pairs().unwrap());
     }
 
     under_both_rules!(

@@ -106,10 +106,10 @@ pub fn borders_due(c: &Catalog, name: &str) -> Result<i64> {
     )?)
 }
 
-/// `analysis.dups_state` of the file called `name`: `due` while its pairs are owed.
-pub fn dups_state(c: &Catalog, name: &str) -> Result<String> {
+/// Whether the file called `name` owes its pairs (a `pairs_owed` row): true until the pairing pass has paired it.
+pub fn owes_pairs(c: &Catalog, name: &str) -> Result<bool> {
     Ok(c.conn.query_row(
-        "SELECT a.dups_state FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = ?1",
+        "SELECT EXISTS(SELECT 1 FROM pairs_owed o JOIN files f ON f.id = o.file_id WHERE f.name = ?1)",
         [name.as_bytes()],
         |r| r.get(0),
     )?)

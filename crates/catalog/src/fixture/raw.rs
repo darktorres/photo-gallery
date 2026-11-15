@@ -157,8 +157,8 @@ pub(crate) fn set_taken(c: &Catalog, id: i64, seconds: i64) {
     c.conn.execute("UPDATE analysis SET taken = ?2 WHERE file_id = ?1", params![id, seconds]).unwrap();
 }
 
-/// A pair of files close enough to list as duplicates (the dedup's tier 1). Their analyses owe nothing (`dups_state`
-/// stays as it is): the test seeds the pair as the pairing pass would have stored it.
+/// A pair of files close enough to list as duplicates (the dedup's tier 1). What their analyses owe (`pairs_owed`) stays
+/// as it is: the test seeds the pair as the pairing pass would have stored it.
 pub(crate) fn add_pdq_pair(c: &Catalog, a: i64, b: i64, distance: i64) {
     c.conn.execute("INSERT INTO pdq_pairs(a, b, distance) VALUES (?1, ?2, ?3)", params![a, b, distance]).unwrap();
 }

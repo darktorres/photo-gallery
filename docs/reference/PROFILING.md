@@ -500,6 +500,89 @@ libjpeg-turbo, and convert progressive files to baseline (2.6× fewer instructio
 
 ---
 
+### The pairing pass
+
+The tier-1 pairs after the import (`pg_import::pairs`, the join in `pg_dedup::join`), measured for
+[PAIRING_PASS_PLAN.md](../plans/PAIRING_PASS_PLAN.md). The data is the user's library (189,520 files, 187,804 pictures
+with orientation hashes). The release build ran on an i7-8700 (6 cores, 12 threads). Every run was on a scratch copy,
+never the live catalog.
+
+**The scratch catalog.** Start from the copy kept before migration v9
+(`<catalog dir>\catalog.sqlite.pre-v9.bak`) placed in a scratch folder as `catalog.sqlite`. Let the CLI migrate it
+(`gallery --catalog-dir <scratch> status`): it comes out at v12, with 5,277 pairs and 189,520 files. Copy that file
+aside as the source of every run: the scripts copy it fresh for each run, since a pass changes it. The pairs a full pass
+makes (`gallery --catalog-dir <copy> pair --again`, then `present_pdq_pairs` dumped as `a b distance`) are the oracle:
+5,277 pairs, which every change to the pass must reproduce exactly.
+
+**The machine is shared.** The CPU load before runs varied from 24% to 82%. So every figure is a median of interleaved
+runs, and `sweep.ps1` flags and leaves out the runs that start above 30%.
+
+| Script (`tools/profiling/pairing/`) | Measures |
+|---|---|
+| `sweep.ps1 -Catalog <src> -Workers 1,2,4,6,12 -Reps 4 [-Owed N] [-Slice N]` | `pairs_probe`'s wall clock and its parts (`PairStats::timings`) per worker count; medians |
+| `peak_mem.ps1 -Catalog <src> -Owed 0,1,30000,all` | peak working set and peak commit, sampled every 15 ms |
+| `set_owed.py <catalog> <N>` | makes N pictures owe their pairs, spread over the ids (either layout) |
+| `dhat_top.py <dhat-heap.json>` | the heap sites live at the peak (`target/dhat/gallery.exe --catalog-dir <copy> pair`) |
+
+**Callgrind, one join at a time** (pg-dev container, `pairs_probe` built there, `PG_PROBE_WORKERS=1`):
+`valgrind --tool=callgrind --zero-before=<join entry point> --dump-after=<join entry point> pairs_probe <copy>`.
+That writes one dump per slice's join, and `cgtab.py` reads each one. The entry point is `pg_dedup::join::join`; after
+the rebuild it is the joiner's per-slice method, kept `#[inline(never)]` so the toggle has a symbol to match. Line-level
+counts need the Rust sources at the path the binary names: link `rust-src` at `/rustc/<commit hash>`.
+
+#### Before the rebuild (HEAD `0b82126`)
+
+Pass at 12 workers: **7.4 s median** (11.6 - 12.1 s on 1 worker, 7.2 - 7.4 s at 6, flat past 6 workers). It ran in
+slices of 50,000 owed pictures, 4 for the whole library.
+
+Re-measured with `sweep.ps1` once the pass reported its timings, on a quieter machine (2 reps):
+
+| Workers | Total | Load | Join | Write statements | Commits |
+|---|---|---|---|---|---|
+| 1 | 10.63 s | 0.27 s | 9.27 s | 0.34 s | 0.71 s |
+| 12 | 6.56 s | 0.28 s | 5.15 s | 0.35 s | 0.74 s |
+
+The join is 87% of the pass at 1 worker and 78% at 12. The commits cost twice the statements.
+
+| Part | Wall (12 workers) | Instructions (1 worker) | Cause |
+|---|---|---|---|
+| Join preparation | 1.5 - 1.7 s | 17.7 G | `is_symmetric` recomputed for every picture on every slice: a bit-by-bit 16x16 transpose, 486 ns each |
+| Sorts | 2.1 - 2.5 s | 2.6 G | 16 chunks x 4 slices x 2 sides of a 65,536-bucket counting sort of 40-byte entries (561 ms per slice on one thread); the stored side re-sorted every slice; 64 fresh 30 MB buffers |
+| Writes | 1.1 - 1.4 s | 2.8 G | 187,804 `UPDATE`s of the `analysis` row: 98.7 MB of WAL, 22 - 24 checkpoints; `commit()` alone 0.75 - 1.1 s |
+| Load | 0.34 - 0.56 s | 1.49 G | rusqlite decoding (0.93 G), three scans of `analysis JOIN files`, a temp B-tree for `ORDER BY`, a second 50 MB copy of the hashes |
+| Scan stages | 0.9 s (5.2 s on 1 worker) | 54.6 G | 1.78 G vector iterations, 7.1 G lane slots for 2.9 G useful candidates |
+| `Catalog::prepare` | about 130 ms | 0.41 G | `mark_unheld_missing` scans 190 k rows (64 ms); the expected schema built twice |
+
+| Memory | Peak commit | Rust heap at the peak (dhat) |
+|---|---|---|
+| Nothing owed | 62 MB | |
+| One owed picture | 366 MB | 201.9 MB |
+| All 187,804 owed | 415 MB | 247.7 MB: `Vec<PairingPicture>` 79.7 MB (17 growth steps allocate 159 MB), the `Vec<Picture>` copy 48.3 MB, the join's base entries 30 + 21 MB, one stage 66 MB |
+
+The other 167 MB of the all-owed peak is SQLite's page cache (the app's 256 MB `cache_size`, filled by the load), the
+binary and the stacks. A pass for one owed picture takes 1.3 - 1.6 s (0.18 s with nothing owed), almost all of it fixed
+cost: load 0.3 s, the symmetry check 0.43 s, the stored side's sorts 0.35 s, startup.
+
+#### After block B: the data and the join's layout
+
+Block B made the stored hashes the 4 kept orientations (migration 13, with `pairs_owed` as a queue table). The join now
+keeps one permuted store, sorts with a radix into three arrays, applies the ordering rule as a suffix, and chunks on the
+diagonals. Slices are still 50,000. Medians of 3 quiet runs:
+
+| Workers | Total | Load | Join | Write statements | Commits |
+|---|---|---|---|---|---|
+| 1 | 7.79 s (10.63) | 0.08 s | 7.31 s | 0.18 s | 0.21 s |
+| 6 | 3.17 s | 0.08 s | 2.64 s | 0.16 s | 0.31 s |
+| 12 | 2.85 s (6.56) | 0.08 s | 2.27 s | 0.17 s | 0.31 s |
+
+- **Correctness:** the migrated copy's pass gives the oracle's 5,277 pairs exactly. 0 of 187,808 blobs failed the
+  transpose check, and integrity and foreign-key checks are clean.
+- **The file:** 209.4 MB at v12, 169.6 MB at v13 after the `VACUUM`. The migration, `VACUUM` included, and a full pass
+  together took 6.3 s at 12 workers.
+- **The commits** vary from 35 to 310 ms, with checkpoints; the statements are half of what they were.
+
+---
+
 ## Where the other results are
 
 - [START_PROFILE.md](START_PROFILE.md): where the start goes, thread by thread, and the startup before and after the

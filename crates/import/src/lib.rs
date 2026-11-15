@@ -1,14 +1,14 @@
 //! The import pass: every pending file is read once, in on-disk order, and analyzed (tiers 0a/0b/1, dimensions,
 //! ThumbHash). Results are committed in batches: stopping at any point loses at most the current batch, and the next
 //! run picks up the rest from the catalog. The tier-1 pairs are not found here: an analysis with orientation hashes
-//! owes them (`analysis.dups_state = 'due'`), and the pairing pass (`pairs`) makes them after the import.
+//! owes them (a `pairs_owed` row), and the pairing pass (`pairs`) makes them after the import.
 
 pub mod pairs;
 
 use anyhow::{Context, Result};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, WorkItem};
-use pg_model::analysis::Analyzed;
+use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
 
 use pg_jobs::control::Control;
@@ -89,7 +89,7 @@ fn store(
     catalog: &mut Catalog,
     counts: &mut Counts,
     items: &[WorkItem],
-    batch: &mut Vec<(usize, Result<Analyzed>)>,
+    batch: &mut Vec<(usize, Result<Analysis>)>,
     ctl: &Control,
 ) -> Result<bool> {
     let tx = catalog.tx()?;

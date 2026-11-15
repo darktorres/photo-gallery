@@ -8,7 +8,7 @@
 //! in `eval/pdq.py` did.
 use std::sync::OnceLock;
 
-use pg_model::pdq::{HASH_BYTES, Hash, Pdq};
+use pg_model::pdq::{HASH_BYTES, Hash, ORIENTATIONS, Pdq};
 
 const BUFFER: usize = 64;
 const DCT_OUT: usize = 16;
@@ -23,23 +23,33 @@ pub struct Hasher {
 }
 
 impl Hasher {
-    /// The hash of the image as is, plus its quality: what [`Hasher::hash_rgb_dihedral`]'s first variant is checked
+    /// The hash of the image as is, plus its quality: what [`Hasher::hash_rgb_dihedral`]'s first orientation is checked
     /// against.
     #[cfg(test)]
-    pub fn hash_rgb(&mut self, rgb: &[u8], width: usize, height: usize) -> Pdq {
+    pub fn hash_rgb(&mut self, rgb: &[u8], width: usize, height: usize) -> (Hash, u8) {
         let (dct, quality) = self.dct16(rgb, width, height);
-        Pdq { hash: to_bits(&dct), quality }
+        (to_bits(&dct), quality)
     }
 
-    /// The 8 dihedral hashes: index 0 is the image as is; the others are the hashes of its rotations and mirrors,
-    /// derived from the DCT coefficients (as Meta's `dihedral` hasher does) rather than by re-hashing pixels.
-    pub fn hash_rgb_dihedral(&mut self, rgb: &[u8], width: usize, height: usize) -> (Pdq, [Hash; 8]) {
+    /// The picture's PDQ in its kept orientations (`pg_model::pdq::ORIENTATIONS`): index 0 is the image as is, 1..4 its
+    /// mirrors, derived from the DCT coefficients (as Meta's `dihedral` hasher does) rather than by re-hashing pixels.
+    /// The other four dihedral variants (4..8, the transposed ones) are the transposes of these, bit for bit
+    /// (`Hash::transpose`), so they are not made.
+    pub fn hash_rgb_dihedral(&mut self, rgb: &[u8], width: usize, height: usize) -> Pdq {
         let (dct, quality) = self.dct16(rgb, width, height);
-        let mut variants = [Hash([0; HASH_BYTES]); 8];
-        for (v, out) in variants.iter_mut().enumerate() {
+        let mut orientations = [Hash([0; HASH_BYTES]); ORIENTATIONS];
+        for (v, out) in orientations.iter_mut().enumerate() {
             *out = to_bits(&dihedral(&dct, v));
         }
-        (Pdq { hash: variants[0], quality }, variants)
+        Pdq { orientations, quality }
+    }
+
+    /// All eight dihedral variants, the transposed ones made from their own coefficients: what the tests check the
+    /// kept four and their transposes against.
+    #[cfg(test)]
+    fn all_variants(&mut self, rgb: &[u8], width: usize, height: usize) -> [Hash; 8] {
+        let (dct, _) = self.dct16(rgb, width, height);
+        std::array::from_fn(|v| to_bits(&dihedral(&dct, v)))
     }
 
     /// Luma, then a two-pass Jarosz tent filter, a 64×64 decimation and a 16×16 DCT, plus the quality metric.
@@ -360,9 +370,9 @@ mod tests {
     fn matches_reference_crate() {
         for (w, h) in [(512, 384), (300, 512), (64, 64), (97, 211)] {
             let rgb = test_image(w, h);
-            let ours = Hasher::default().hash_rgb(&rgb, w, h);
+            let (ours, _) = Hasher::default().hash_rgb(&rgb, w, h);
             let (theirs, _) = reference(&rgb, w, h);
-            assert_eq!(ours.hash.0, theirs, "{w}x{h}");
+            assert_eq!(ours.0, theirs, "{w}x{h}");
         }
     }
 
@@ -373,7 +383,7 @@ mod tests {
         let (w, h) = (320, 240);
         let rgb = test_image(w, h);
         let mut hasher = Hasher::default();
-        let (_, variants) = hasher.hash_rgb_dihedral(&rgb, w, h);
+        let variants = hasher.all_variants(&rgb, w, h);
         for (v, variant) in variants.iter().enumerate() {
             let transpose = v & 4 != 0;
             let (ow, oh) = if transpose { (h, w) } else { (w, h) };
@@ -392,9 +402,28 @@ mod tests {
                     out[d..d + 3].copy_from_slice(&rgb[s..s + 3]);
                 }
             }
-            let direct = hasher.hash_rgb(&out, ow, oh).hash;
+            let (direct, _) = hasher.hash_rgb(&out, ow, oh);
             let d = direct.distance(variant);
             assert!(d <= 12, "variant {v}: distance {d}");
+        }
+    }
+
+    /// The kept orientations are the first four variants, and the other four are their transposes bit for bit: what
+    /// the catalog (`analysis.pdq_dihedral` holds four) and the join (it transposes the queries) rely on.
+    #[test]
+    fn the_kept_orientations_and_their_transposes_are_the_eight_variants() {
+        for (w, h) in [(512, 384), (300, 512), (64, 64), (97, 211), (320, 240)] {
+            let rgb = test_image(w, h);
+            let mut hasher = Hasher::default();
+            let all = hasher.all_variants(&rgb, w, h);
+            let pdq = hasher.hash_rgb_dihedral(&rgb, w, h);
+            let (hash, quality) = hasher.hash_rgb(&rgb, w, h);
+            assert_eq!(pdq.hash(), hash, "{w}x{h}");
+            assert_eq!(pdq.quality, quality, "{w}x{h}");
+            for v in 0..ORIENTATIONS {
+                assert_eq!(pdq.orientations[v], all[v], "{w}x{h} variant {v}");
+                assert_eq!(pdq.orientations[v].transpose(), all[v + 4], "{w}x{h} variant {}", v + 4);
+            }
         }
     }
 }

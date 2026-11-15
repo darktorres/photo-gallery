@@ -110,6 +110,83 @@ where
     Ok(tx.commit()?)
 }
 
+/// The free space a migration needs, in multiples of the catalog file's size: the copy aside (`rebuild::back_up`) and
+/// the migration's WAL, which rewrites at most every page once (it is checkpointed after the commit, before a `VACUUM`).
+const MIGRATION_ROOM: u64 = 2;
+/// The free space a `VACUUM` needs, in multiples of the file's size: it writes the whole new file through the WAL.
+const VACUUM_ROOM: u64 = 1;
+
+/// Whether `free` bytes leave room for `times` the catalog file's `len`; an unknown free space (`None`) goes ahead, as a
+/// write that then fails fails as any other does.
+fn has_room(len: u64, free: Option<u64>, times: u64) -> bool {
+    free.is_none_or(|free| free >= len.saturating_mul(times))
+}
+
+/// The catalog file's size and the free space of its volume (`None` when it can't be read).
+fn size_and_free(path: &Path) -> (u64, Option<u64>) {
+    let len = std::fs::metadata(path).map_or(0, |m| m.len());
+    let folder = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    (len, pg_platform::volume::space(folder).map(|s| s.free))
+}
+
+/// Refuse a migration of the catalog at `path` when its volume has no room for it ([`MIGRATION_ROOM`]): before the
+/// copy aside, so the catalog is left as it is, and the error says how much is needed and where.
+pub(crate) fn ensure_room_to_migrate(path: &Path) -> Result<()> {
+    let (len, free) = size_and_free(path);
+    if has_room(len, free, MIGRATION_ROOM) {
+        return Ok(());
+    }
+    let mb = |bytes: u64| bytes.div_ceil(1_000_000);
+    Err(Error::Other(anyhow!(
+        "catalog {}: bringing it to this build's version needs {} MB free on its drive (a copy aside and the \
+         migration's log), and {} MB are: free some space and start again",
+        path.display(),
+        mb(len.saturating_mul(MIGRATION_ROOM)),
+        mb(free.unwrap_or(0))
+    )))
+}
+
+/// The `VACUUM` a migration left owed (`meta.vacuum_owed`, schema version 13's), after its commit: the WAL is merged
+/// first, the file is rewritten without the dropped columns' pages, and the WAL is merged again, then the mark is
+/// cleared. Not run without room for it ([`VACUUM_ROOM`]), and a `VACUUM` that fails (busy, the disk filled) fails
+/// nothing: the catalog is whole either way, so it is logged and the mark kept, for the next start. `path` is `None`
+/// for an in-memory catalog.
+pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>) -> Result<()> {
+    let owed: i64 = conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0))?;
+    if owed == 0 {
+        return Ok(());
+    }
+    if let Some(path) = path {
+        let (len, free) = size_and_free(path);
+        if !has_room(len, free, VACUUM_ROOM) {
+            pg_log::warn(
+                "migration",
+                &format!(
+                    "catalog {}: no room to compact it after its migration; it is tried again at the next start",
+                    path.display()
+                ),
+            );
+            return Ok(());
+        }
+    }
+    match conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);") {
+        Ok(()) => {
+            conn.execute("UPDATE meta SET value = 0 WHERE key = 'vacuum_owed'", [])?;
+            Ok(())
+        }
+        Err(e) => {
+            let name = path.map_or_else(|| ":memory:".to_string(), |p| p.display().to_string());
+            pg_log::warn(
+                "migration",
+                &format!(
+                    "catalog {name}: compacting it after its migration failed ({e}); it is tried again at the next start"
+                ),
+            );
+            Ok(())
+        }
+    }
+}
+
 /// Mark missing the present files whose extension this build doesn't hold (`media::Ext::of`; a build that held more
 /// recorded them): the number marked. The scan records only the extensions it holds, so they never come back, and
 /// every read of the catalog (the grid, an entry, the tree, the facets, the status) leaves them out as it leaves out
@@ -153,13 +230,15 @@ pub(crate) fn set_pairing_version(conn: &Connection, current: i64) -> Result<()>
 /// change stamped so the views read them again. Returns how many analyses owe their pairs now. The pairing version's
 /// change makes it (`set_pairing_version`), and `gallery pair --again` does too.
 pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<usize> {
-    let owed = tx.execute(
-        "UPDATE analysis SET dups_state = 'due' WHERE pdq_dihedral IS NOT NULL AND pdq_quality >= ?1",
+    // Only the rows not owed already are written: an analysis that owes its pairs keeps its row.
+    tx.execute(
+        "INSERT OR IGNORE INTO pairs_owed(file_id)
+         SELECT file_id FROM analysis WHERE pdq_dihedral IS NOT NULL AND pdq_quality >= ?1",
         [pg_model::pdq::MIN_QUALITY],
     )?;
     tx.execute_batch("DELETE FROM pdq_pairs;")?;
     tx.execute_batch(next_seq!())?;
-    Ok(owed)
+    Ok(tx.query_row("SELECT count(*) FROM pairs_owed", [], |r| r.get(0))?)
 }
 
 /// Make the thumbnails' failure ledger this build's: when the catalog's `meta.thumbs_version` is another
@@ -187,6 +266,20 @@ pub(crate) fn set_taken_zone(conn: &Connection) -> Result<()> {
             "UPDATE analysis SET taken = unixepoch(taken_utc, 'unixepoch', 'localtime') WHERE taken_utc IS NOT NULL",
         )?)
     })
+}
+
+#[cfg(test)]
+mod room_tests {
+    use super::has_room;
+
+    #[test]
+    fn room_is_a_multiple_of_the_file_and_unknown_room_goes_ahead() {
+        assert!(has_room(100, Some(200), 2));
+        assert!(!has_room(100, Some(199), 2));
+        assert!(has_room(100, None, 2), "an unknown free space goes ahead");
+        assert!(has_room(0, Some(0), 2), "a new file needs nothing");
+        assert!(!has_room(u64::MAX, Some(u64::MAX - 1), 1));
+    }
 }
 
 #[cfg(test)]
@@ -1267,5 +1360,167 @@ mod tests {
                 std::fs::remove_dir_all(&dir).unwrap();
             }
         }
+    }
+
+    /// Four random hashes (a xorshift from `seed`).
+    fn four_hashes(seed: u64) -> [pg_model::pdq::Hash; 4] {
+        let mut x = seed | 1;
+        std::array::from_fn(|_| {
+            let mut b = [0u8; 32];
+            for byte in &mut b {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                *byte = x.to_le_bytes()[0];
+            }
+            pg_model::pdq::Hash(b)
+        })
+    }
+
+    /// The 256-byte blob a draft-v12 build stored: the four kept orientations, then their transposes.
+    fn eight_blob(four: &[pg_model::pdq::Hash; 4]) -> Vec<u8> {
+        four.iter().map(|h| h.0).chain(four.iter().map(|h| h.transpose().0)).flatten().collect()
+    }
+
+    /// A draft-v12 catalog at `path` with six analysed pictures, file `id` = row `id`:
+    /// 1. kept hashes and their transposes, owed;  2. the same, done;  3. eight unrelated hashes, owed;
+    /// 4. a 100-byte blob, owed;  5. good hashes of an unreliable quality, owed (no build makes that: the rule removes it);
+    /// 6. no blob (an older build's), done.
+    fn before_migration_13(rules: PathRules, path: &Path) -> Vec<[pg_model::pdq::Hash; 4]> {
+        let conn = Connection::open(path).unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, 12).unwrap();
+        let v = versions();
+        conn.execute_batch(&format!(
+            "UPDATE meta SET value = {} WHERE key = 'import_version';
+             UPDATE meta SET value = {} WHERE key = 'borders_version';
+             UPDATE meta SET value = {} WHERE key = 'thumbs_version';",
+            v.import, v.borders, v.thumbs
+        ))
+        .unwrap();
+        let folder = p(rules, r"D:\p");
+        conn.execute("INSERT INTO scans(id, root, started) VALUES (1, ?1, 0)", [rules.join(&folder)]).unwrap();
+        let key = rules.folder_key(&folder.parts);
+        conn.execute(
+            "INSERT INTO folders(id, path, key) VALUES (1, ?1, ?2)",
+            rusqlite::params![rules.join(&folder), key],
+        )
+        .unwrap();
+        let fours: Vec<_> = (1..=6u64).map(|id| four_hashes(id * 0x9E37_79B9)).collect();
+        for (id, four) in (1..=6_i64).zip(&fours) {
+            let name = Name::from(format!("{id}.jpg").as_str());
+            conn.execute(
+                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
+                 VALUES (?1, 1, ?1, 1, ?2, 'jpg', 'image', 10, 100, 1, ?3)",
+                rusqlite::params![id, name.as_bytes(), rules.order_key(&key, &name)],
+            )
+            .unwrap();
+            let blob = match id {
+                3 => eight_blob(&four_hashes(77))
+                    .into_iter()
+                    .take(128)
+                    .chain(eight_blob(&four_hashes(78)).into_iter().skip(128))
+                    .collect(),
+                4 => vec![7u8; 100],
+                _ => eight_blob(four),
+            };
+            let blob = (id != 6).then_some(blob);
+            let quality = if id == 5 { 10 } else { 100 };
+            let state = if matches!(id, 2 | 6) { "done" } else { "due" };
+            conn.execute(
+                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, pdq, pdq_quality,
+                     pdq_dihedral, dups_state)
+                 VALUES (?1, ?2, 10, 100, 0, 'image', 5, ?3, ?4, ?5, ?6)",
+                rusqlite::params![id, v.import, four[0].0.to_vec(), quality, blob, state],
+            )
+            .unwrap();
+        }
+        fours
+    }
+
+    /// What migration 13 leaves: the owed rows carried where they still hold, the good blobs cut to the kept four, the
+    /// bad ones gone, no `dups_state` or `pdq`, and no `VACUUM` owed.
+    fn migration_13_left(c: &Catalog, fours: &[[pg_model::pdq::Hash; 4]]) {
+        let blobs: Vec<(i64, Option<Vec<u8>>)> =
+            raw::rows_of(c, "SELECT file_id, pdq_dihedral FROM analysis ORDER BY file_id", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            });
+        let kept = |id: usize| Some(pg_model::pdq::to_blob(&fours[id - 1]).to_vec());
+        assert_eq!(
+            blobs,
+            vec![(1, kept(1)), (2, kept(2)), (3, None), (4, None), (5, kept(5)), (6, None)],
+            "the good blobs cut to their first 128 bytes, the bad ones nulled"
+        );
+        let owed: Vec<i64> = raw::rows_of(c, "SELECT file_id FROM pairs_owed ORDER BY file_id", [], |r| r.get(0));
+        assert_eq!(owed, vec![1], "only the eligible owed analysis owes");
+        let columns: Vec<String> = raw::rows_of(c, "SELECT name FROM pragma_table_info('analysis')", [], |r| r.get(0));
+        assert!(!columns.iter().any(|n| n == "dups_state" || n == "pdq"), "{columns:?}");
+        let vacuum: i64 =
+            c.conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
+        assert_eq!(vacuum, 0);
+        let work = c.pairing_work().unwrap();
+        assert_eq!(work.ids.iter().map(|i| i.get()).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(work.legacy, 3, "files 3, 4 and 6: a reliable quality and no stored hashes");
+    }
+
+    /// Migration 13 on both paths: migrated (the data step reads `main`, then `VACUUM` runs after the commit), and
+    /// rebuilt (the copy brings the 256-byte blobs over, and the data step reads the old file's `dups_state`).
+    fn migration_13_is_the_same_on_both_paths(rules: PathRules) {
+        for rebuilt in [false, true] {
+            let dir = run_folder(SCRATCH, &format!("migration-13-{rebuilt}-{}", rules_name(rules))).unwrap();
+            let path = dir.join("catalog.sqlite");
+            let fours = before_migration_13(rules, &path);
+            if rebuilt {
+                raw::on_disk(&path).execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
+            }
+            let c = Catalog::prepare(&path, versions(), rules).unwrap();
+            assert_eq!(c.rebuilt().is_some(), rebuilt);
+            migration_13_left(&c, &fours);
+            // The data step again changes nothing (idempotent).
+            let tx = c.conn.unchecked_transaction().unwrap();
+            crate::convert::pairs_owed_and_hashes(&tx, crate::convert::Source::Main, rules).unwrap();
+            tx.commit().unwrap();
+            migration_13_left(&c, &fours);
+            // The header and the journal survive the VACUUM.
+            assert_eq!(pg_dbfile::user_version(&c.conn).unwrap(), current_version().unwrap());
+            assert_eq!(pg_dbfile::application_id(&c.conn).unwrap(), crate::schema::APPLICATION_ID);
+            let mode: String = c.conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+            assert_eq!(mode, "wal");
+            drop(c);
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    under_both_rules!(
+        migration_13_is_the_same_on_both_paths,
+        migration_13_is_the_same_on_both_paths_windows,
+        migration_13_is_the_same_on_both_paths_posix
+    );
+
+    /// A `VACUUM` that can't run (another connection reads) fails nothing: the mark stays, and the next start runs it.
+    #[test]
+    fn a_vacuum_that_fails_leaves_the_mark_for_the_next_start() {
+        let rules = pg_platform::native::PATH_RULES;
+        let dir = run_folder(SCRATCH, "vacuum-fails").unwrap();
+        let path = dir.join("catalog.sqlite");
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
+        let conn = raw::on_disk(&path);
+        conn.execute_batch("PRAGMA busy_timeout = 0; UPDATE meta SET value = 1 WHERE key = 'vacuum_owed';").unwrap();
+        let reader = raw::on_disk(&path);
+        reader.execute_batch("BEGIN; SELECT count(*) FROM files;").unwrap();
+        // A write lock the VACUUM can't get while the reader's snapshot is open.
+        conn.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        let other = raw::on_disk(&path);
+        other.execute_batch("PRAGMA busy_timeout = 0;").unwrap();
+        super::vacuum_if_owed(&other, Some(&path)).unwrap();
+        let owed: i64 = other.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
+        assert_eq!(owed, 1, "kept for the next start");
+        conn.execute_batch("COMMIT;").unwrap();
+        reader.execute_batch("COMMIT;").unwrap();
+        drop((conn, reader));
+        super::vacuum_if_owed(&other, Some(&path)).unwrap();
+        let owed: i64 = other.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
+        assert_eq!(owed, 0, "done once nothing holds the file");
+        drop(other);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

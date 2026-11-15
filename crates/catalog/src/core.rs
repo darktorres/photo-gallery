@@ -18,8 +18,8 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::{Error, Result};
 use crate::lifecycle::{
-    check_rules, in_use, mark_unheld_missing, set_borders_version, set_import_version, set_pairing_version,
-    set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive,
+    check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, set_borders_version, set_import_version,
+    set_pairing_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, vacuum_if_owed,
 };
 use crate::rebuild::{back_up, db_file, rebuild};
 use crate::schema::{
@@ -102,6 +102,7 @@ impl Catalog {
         // A catalog of this build's schema at an earlier version is copied aside before it is migrated (a rebuilt one
         // was: the old file is kept as it was).
         if let Some(found) = version.filter(|&found| rebuilt.is_none() && found > 0 && found < current && !memory) {
+            ensure_room_to_migrate(path)?;
             back_up(&conn, path, found)?;
         }
         bring_to(&conn, BASELINE, MIGRATIONS, rules, current).with_context(|| format!("catalog {}", path.display()))?;
@@ -112,6 +113,7 @@ impl Catalog {
             )));
         }
         check_rules(&conn, path, rules)?;
+        vacuum_if_owed(&conn, (!memory).then_some(path))?;
         mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;

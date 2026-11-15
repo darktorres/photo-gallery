@@ -179,7 +179,7 @@ fn pending_thumbs(run: PathBuf) -> Pending {
 // run over its 50,000 failures.
 const IMPORT_BATCH: usize = 500;
 
-fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analyzed) {
+fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analysis) {
     let catalog = open_layout(LARGE_LAYOUT);
     let roots = or_stop(catalog.roots(), "the library folders");
     #[expect(clippy::panic, reason = "a layout with no library folder is a bug in the bench data")]
@@ -198,7 +198,7 @@ fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analyzed) {
 // the triggers the catalog keeps on them (the import's failure ledger among them).
 #[library_benchmark]
 #[bench::batch(setup = for_import_flush)]
-fn import_flush((mut catalog, items, analyzed): (Catalog, Vec<WorkItem>, Analyzed)) -> Catalog {
+fn import_flush((mut catalog, items, analyzed): (Catalog, Vec<WorkItem>, Analysis)) -> Catalog {
     let tx = or_stop(catalog.tx(), "the batch's transaction");
     {
         let mut writer = or_stop(tx.analysis_writer(IMPORT_VERSION), "the analysis writer");

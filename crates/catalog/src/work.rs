@@ -71,25 +71,32 @@ fn max_folder_id(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT coalesce(max(id), -1) FROM folders", [], |r| r.get(0))?)
 }
 
-/// A picture the pairing pass pairs (`Catalog::pairing_work`).
-pub struct PairingPicture {
-    pub id: FileId,
-    /// Its pairs are owed (`analysis.dups_state`): the pass pairs it with the pictures before and after it.
-    pub due: bool,
-    /// The hash the pairs are made from (the analysis's `pdq`, orientation 0): the guard of `PairsWriter`.
-    pub pdq: pg_model::pdq::Hash,
-    /// Its eight orientations' hashes, in `pg_analysis::pdq`'s order.
-    pub orientations: [pg_model::pdq::Hash; 8],
-}
-
-/// The pictures of the pairing pass, and how many analyses it leaves out.
+/// The pictures of the pairing pass, in file-id order, as columns (`Catalog::pairing_work`): picture `i` is file
+/// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]`. The join takes the columns as they are.
 pub struct PairingWork {
-    /// Every picture, in file-id order.
-    pub pictures: Vec<PairingPicture>,
-    /// Analyses made before the orientation hashes were stored (`pdq_dihedral IS NULL`) and of a reliable quality: not
-    /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures.
+    pub ids: Vec<FileId>,
+    /// Its pairs are owed (a `pairs_owed` row): the pass pairs it with the pictures before and after it.
+    pub owed: Vec<bool>,
+    /// Its kept orientations' hashes (`pg_model::pdq::ORIENTATIONS`, in `pg_analysis::pdq`'s order): what the pairs are
+    /// made from, and, as `pg_model::pdq::to_blob` stores them, the guard of `PairsWriter`.
+    pub hashes: Vec<[pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS]>,
+    /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
+    /// orientation hashes, or whose hashes failed the check of migration 13): not paired, and reported. Re-importing
+    /// them (`gallery import --again`) makes them pictures.
     pub legacy: usize,
 }
+
+/// The statement [`Catalog::pairing_work`] reads: every present, non-pending file's analysis of a reliable quality, by
+/// file id. `analysis` is the outer loop (`CROSS JOIN`), read in its own rowid order, so the `ORDER BY` costs no sort;
+/// each file is a lookup by key, and so is the `pairs_owed` row. The rows without stored hashes are the legacy ones,
+/// counted in the same scan.
+const PAIRING_WORK: &str = "SELECT a.file_id, o.file_id IS NOT NULL, a.pdq_dihedral
+     FROM analysis a CROSS JOIN files f LEFT JOIN pairs_owed o ON o.file_id = a.file_id
+     WHERE f.id = a.file_id AND f.missing = 0 AND f.pending = 0 AND a.pdq_quality >= ?1
+     ORDER BY a.file_id";
+
+/// The owed pictures the pairing pass can make: those of present, non-pending files.
+const OWED: &str = "FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND f.missing = 0 AND f.pending = 0";
 
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
@@ -129,41 +136,37 @@ impl Catalog {
     }
 
     /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is a present, non-pending
-    /// file whose analysis has orientation hashes and a reliable quality. The owed ones (`dups_state = 'due'`) are
-    /// among them, with the others (the stored side). One snapshot, because a file that changed between two reads
-    /// could be owed a pair that its partner's read never sees.
+    /// file whose analysis has stored hashes and a reliable quality. The owed ones (a `pairs_owed` row) are among them,
+    /// with the others (the stored side). One snapshot, because a file that changed between two reads could be owed a
+    /// pair that its partner's read never sees. The columns are sized from the analyses' count first, so they never
+    /// grow (an upper bound: every analysis), and each row's hashes are read from the blob in place.
     pub fn pairing_work(&self) -> Result<PairingWork> {
         let tx = self.conn.unchecked_transaction()?;
-        let legacy: usize = tx.query_row(
-            "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
-             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NULL AND a.pdq_quality >= ?1",
-            [pg_model::pdq::MIN_QUALITY],
-            |r| r.get(0),
-        )?;
-        let mut stmt = tx.prepare(
-            "SELECT a.file_id, a.dups_state = 'due', a.pdq, a.pdq_dihedral
-             FROM analysis a JOIN files f ON f.id = a.file_id
-             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NOT NULL AND a.pdq_quality >= ?1
-             ORDER BY a.file_id",
-        )?;
+        let bound: usize = tx.query_row("SELECT count(*) FROM analysis", [], |r| r.get(0))?;
+        let mut work = PairingWork {
+            ids: Vec::with_capacity(bound),
+            owed: Vec::with_capacity(bound),
+            hashes: Vec::with_capacity(bound),
+            legacy: 0,
+        };
+        let mut stmt = tx.prepare(PAIRING_WORK)?;
         let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
-        let mut pictures = Vec::new();
         while let Some(r) = rows.next()? {
             let id = FileId::new(r.get(0)?);
-            let due: bool = r.get(1)?;
-            let pdq: Vec<u8> = r.get(2)?;
-            let dihedral: Vec<u8> = r.get(3)?;
-            let (pdq, orientations) =
-                match (<[u8; 32]>::try_from(pdq.as_slice()), <[[u8; 32]; 8]>::try_from(dihedral.as_chunks::<32>().0)) {
-                    (Ok(pdq), Ok(orientations)) => (pg_model::pdq::Hash(pdq), orientations.map(pg_model::pdq::Hash)),
-                    _ => return Err(Error::Other(anyhow!("file {} has a malformed PDQ hash", id.get()))),
-                };
-            pictures.push(PairingPicture { id, due, pdq, orientations });
+            let Some(blob) = r.get_ref(2)?.as_blob_or_null()? else {
+                work.legacy += 1;
+                continue;
+            };
+            let hashes = pg_model::pdq::from_blob(blob)
+                .ok_or_else(|| Error::Other(anyhow!("file {} has malformed stored hashes", id.get())))?;
+            work.ids.push(id);
+            work.owed.push(r.get(1)?);
+            work.hashes.push(hashes);
         }
         drop(rows);
         drop(stmt);
         tx.commit()?;
-        Ok(PairingWork { pictures, legacy })
+        Ok(work)
     }
 
     /// Owe every eligible picture its pairs again, and drop the pairs (`gallery pair --again`): what the pairing pass
@@ -175,14 +178,15 @@ impl Catalog {
         Ok(owed)
     }
 
-    /// How many pairs are owed: the files the pairing pass has yet to pair (present and not pending).
+    /// How many pictures owe their pairs: the files the pairing pass has yet to pair (present and not pending).
     pub fn owed_pairs(&self) -> Result<usize> {
-        Ok(self.conn.query_row(
-            "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
-             WHERE a.dups_state = 'due' AND f.missing = 0 AND f.pending = 0",
-            [],
-            |r| r.get(0),
-        )?)
+        Ok(self.conn.query_row(&format!("SELECT count(*) {OWED}"), [], |r| r.get(0))?)
+    }
+
+    /// Whether any picture owes its pairs ([`Catalog::owed_pairs`] above zero): the pairing pass's "nothing to do",
+    /// one probe.
+    pub fn has_owed_pairs(&self) -> Result<bool> {
+        Ok(self.conn.query_row(&format!("SELECT EXISTS(SELECT 1 {OWED})"), [], |r| r.get(0))?)
     }
 
     /// Make these files due for the import again (`files.pending`), whatever their analysis: after a fix to what

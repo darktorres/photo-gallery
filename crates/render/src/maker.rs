@@ -176,7 +176,7 @@ impl Maker {
 mod tests {
     use super::*;
     use pg_analysis::analyze::Analyzer;
-    use pg_model::analysis::Analyzed;
+    use pg_model::analysis::Analysis;
     use pg_testkit::run_folder;
     use std::path::PathBuf;
 
@@ -201,10 +201,9 @@ mod tests {
         pg_testkit::png_rgba(u32::try_from(w).unwrap(), u32::try_from(h).unwrap(), &rgba).unwrap()
     }
 
-    fn summary(a: &Analyzed) -> impl PartialEq + std::fmt::Debug + use<> {
-        let r = &a.record;
+    fn summary(r: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
         let px = &r.image().unwrap().pixels;
-        let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, a.pdq_dihedral);
+        let hashes = (px.pixel_hash, px.pdq);
         (r.file_hash, r.format(), r.orientation, r.width, r.height, r.thumbhash, r.frames, hashes)
     }
 

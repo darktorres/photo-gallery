@@ -29,8 +29,8 @@ const MIN_DEFAULT_CAP_BYTES: i64 = 1_000_000_000;
 /// (`MIN_DEFAULT_CAP_BYTES`) and 50 GB (`MAX_DEFAULT_CAP_BYTES`). A cache on a small disk can't fill it; one on a large
 /// disk gets the 50 GB it always had.
 pub fn default_cap_bytes(dir: &Path) -> i64 {
-    pg_platform::volume::total_bytes(dir)
-        .and_then(|total| i64::try_from(total / 20).ok())
+    pg_platform::volume::space(dir)
+        .and_then(|space| i64::try_from(space.total / 20).ok())
         .map_or(MAX_DEFAULT_CAP_BYTES, |share| share.clamp(MIN_DEFAULT_CAP_BYTES, MAX_DEFAULT_CAP_BYTES))
 }
 

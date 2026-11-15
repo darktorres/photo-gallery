@@ -6,7 +6,7 @@ use crate::fixture::{self, raw};
 use crate::{Catalog, Recorded, ScannedFile, Versions, WorkItem, queue};
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
-use pg_model::analysis::{Analysis, Analyzed, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
+use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId};
 use pg_model::media::Ext;
@@ -83,15 +83,10 @@ pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, 
 
 /// The facts of a JPEG with no rating and stand-in hashes, for the analyses the tests store.
 pub(crate) fn a_jpeg() -> Media {
-    let pdq = pg_model::pdq::Pdq { hash: pg_model::pdq::Hash([0; 32]), quality: 0 };
+    let pdq =
+        pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash([0; 32]); pg_model::pdq::ORIENTATIONS], quality: 0 };
     let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
     Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels })
-}
-
-/// An analysis as the import holds it: an image's dihedral hashes are stand-ins (`a_jpeg`'s), a video's are none.
-pub(crate) fn stored_analysis(record: &Analysis) -> Analyzed {
-    let pdq_dihedral = record.image().map(|_| [pg_model::pdq::Hash([0; 32]); 8]);
-    Analyzed { record: record.clone(), pdq_dihedral }
 }
 
 /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
@@ -121,7 +116,7 @@ pub(crate) fn store_taken(c: &mut Catalog, item: &WorkItem, taken: Option<Taken>
         media: a_jpeg(),
     };
     let tx = c.tx().unwrap();
-    tx.analysis_writer(versions().import).unwrap().store_analysis(item, &stored_analysis(&analysis)).unwrap();
+    tx.analysis_writer(versions().import).unwrap().store_analysis(item, &analysis).unwrap();
     tx.commit().unwrap();
 }
 

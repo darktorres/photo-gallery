@@ -22,7 +22,7 @@ use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, Transaction};
 
-use crate::convert::{Source, convert_notify, convert_session, retire_kinds};
+use crate::convert::{Source, convert_notify, convert_session, pairs_owed_and_hashes, retire_kinds};
 use crate::error::Result;
 use crate::transaction::write_transaction;
 
@@ -60,6 +60,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_10_LEDGER_NOT_WRITTEN)],
     TO_11_NOTIFY_FIXES,
     &[Step::Sql(TO_12_PAIRING_PASS)],
+    TO_13_PAIRS_OWED,
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -416,6 +417,31 @@ INSERT INTO meta(key, value) VALUES ('pairing_version', ",
     ");
 "
 );
+
+/// Version 13: what the pairing pass owes is a queue, and the stored hashes are the four kept orientations.
+/// - **`pairs_owed`**, one row per analysis that owes its pairs, replaces `analysis.dups_state` and its partial index.
+///   Marking a picture done is a delete from a narrow table, not an update of the wide `analysis` row: the pass's
+///   187,804 writes made 98.7 MB of WAL as updates and 3.4 MB as deletes, 4.2x faster. The row is keyed by the analysis
+///   (`ON DELETE CASCADE`), so an analysis that goes (a re-analysis's REPLACE, a path taken over by another file) takes
+///   it, and no row outlives the analysis it is owed for.
+/// - **`pdq_dihedral` keeps orientations 0..4** (128 bytes, `pg_model::pdq::ORIENTATIONS`): 4..8 are their transposes bit
+///   for bit, which the join makes. `pdq` goes: it was the blob's first 32 bytes, and the pairs' guards compare the
+///   blob. The data step (`convert::pairs_owed_and_hashes`) checks every blob before it cuts it, and carries what was owed.
+/// - **`meta.vacuum_owed`**: dropping the columns leaves their pages in use until a `VACUUM`, which can't run in the
+///   migration's transaction; `Catalog::prepare` runs it after the commit (`lifecycle::vacuum_if_owed`).
+const TO_13_PAIRS_OWED: &[Step] =
+    &[Step::Sql(TO_13_QUEUE), Step::Rust(pairs_owed_and_hashes), Step::Sql(TO_13_DROP_COLUMNS)];
+
+const TO_13_QUEUE: &str = "CREATE TABLE pairs_owed(
+    file_id INTEGER PRIMARY KEY REFERENCES analysis(file_id) ON DELETE CASCADE
+);
+INSERT INTO meta(key, value) VALUES ('vacuum_owed', 1);
+";
+
+const TO_13_DROP_COLUMNS: &str = "DROP INDEX analysis_dups_due;
+ALTER TABLE analysis DROP COLUMN dups_state;
+ALTER TABLE analysis DROP COLUMN pdq;
+";
 
 /// [`TO_11_NOTIFY_FIXES`]' trigger: the import's ledger row is made hidden when its file is missing or pending, and a
 /// conflict updates `hidden` as well as `error`.
@@ -1174,8 +1200,7 @@ mod tests {
     #[test]
     fn the_pairing_pass_keeps_the_pairs_an_older_catalog_made() {
         let conn = Connection::open_in_memory().unwrap();
-        let before = current_version().unwrap() - 1;
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, before).unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 11).unwrap();
         // The rows name files this test does not make: only the migration's effect on them is tested.
         conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
         conn.execute_batch(
@@ -1184,7 +1209,7 @@ mod tests {
              INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (1, 2, 5, 3);",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 12).unwrap();
         let state: String =
             conn.query_row("SELECT dups_state FROM analysis WHERE file_id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(state, "done");

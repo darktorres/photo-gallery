@@ -100,7 +100,9 @@ enum Action {
     /// The app's upsert, one statement per file.
     Upsert,
     /// A plain INSERT per file; `folded` sets `files_added`'s values in it (one `meta.seq` bump for the batch).
-    Plain { folded: bool },
+    Plain {
+        folded: bool,
+    },
     /// One statement for the whole batch (`json_each`): the upsert, or the folded plain INSERT.
     SetUpsert,
     SetFolded,
@@ -239,7 +241,8 @@ fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> 
         std::io::stdout(),
         "{}\t{}\t{rows} rows\t{micros} us\tlookaside hits {hit}, misses for size {size}, misses with slots full {full}, \
          slots used at most {used}",
-        variant.key, variant.about
+        variant.key,
+        variant.about
     )?;
     Ok(())
 }
@@ -257,7 +260,9 @@ fn remove(conn: &Connection, removed: Removed) -> Result<()> {
     match removed {
         Removed::Nothing => {}
         Removed::Added => conn.execute_batch("DROP TRIGGER files_added")?,
-        Removed::AddedAndIndex(index) => conn.execute_batch(&format!("DROP TRIGGER files_added; DROP INDEX {index}"))?,
+        Removed::AddedAndIndex(index) => {
+            conn.execute_batch(&format!("DROP TRIGGER files_added; DROP INDEX {index}"))?
+        }
         Removed::AllOnFiles => {
             let names: Vec<String> = conn
                 .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = 'files'")?
@@ -405,7 +410,10 @@ fn timed_rows(conn: &Connection, ctx: &Ctx, action: Action) -> Result<()> {
 }
 
 fn upsert_sql() -> String {
-    format!("{COLUMNS}) VALUES ({}, 1) {DO_UPDATE} WHERE files.size IS ?12 AND files.mtime IS ?13 AND {GUARD}", marks(11))
+    format!(
+        "{COLUMNS}) VALUES ({}, 1) {DO_UPDATE} WHERE files.size IS ?12 AND files.mtime IS ?13 AND {GUARD}",
+        marks(11)
+    )
 }
 
 fn marks(n: usize) -> String {
@@ -418,7 +426,10 @@ fn bump(conn: &Connection) -> Result<i64> {
 }
 
 fn ids(conn: &Connection) -> Result<Vec<i64>> {
-    Ok(conn.prepare("SELECT id FROM files ORDER BY id")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    Ok(conn
+        .prepare("SELECT id FROM files ORDER BY id")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
 }
 
 /// The `known` lookup of each file, as the writer makes it before each write: each finds a row when `exists`.
@@ -450,8 +461,20 @@ fn each_file(conn: &Connection, ctx: &Ctx, sql: &str, seq: Option<i64>, changed:
         let (old_size, old_mtime) = (changed.then_some(f.size), changed.then_some(f.mtime));
         let seq_or_old_size: &dyn ToSql = if let Some(seq) = &seq { seq } else { &old_size };
         let values: [&dyn ToSql; 14] = [
-            &VOLUME, &f.file_ref, &none, &folder_id, &f.name, &f.ext, &f.kind, &size, &f.mtime, &ctx.scan,
-            &f.order_key, seq_or_old_size, &old_mtime, &id,
+            &VOLUME,
+            &f.file_ref,
+            &none,
+            &folder_id,
+            &f.name,
+            &f.ext,
+            &f.kind,
+            &size,
+            &f.mtime,
+            &ctx.scan,
+            &f.order_key,
+            seq_or_old_size,
+            &old_mtime,
+            &id,
         ];
         let bound = values.get(..write.parameter_count()).context("more parameters than values")?;
         ensure!(write.execute(bound)? == 1, "one row written");

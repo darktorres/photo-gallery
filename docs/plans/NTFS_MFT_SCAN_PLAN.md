@@ -252,7 +252,8 @@ So the listing can't see WOF. `fsutil file layout` still shows the reparse attri
 
 **Hard links are modelled, not collapsed.** Every name of a file under a root is a link (see Catalog). A hard-linked photo
 appears in each of its folders, as in Explorer; ratings and analysis stay per file. Every pass, journal passes included,
-has a `scans` row, and a link not seen by a full pass is gone. A listing's size and mtime can be wrong for a hard-linked
+has a `scans` row, and a link not seen by a full pass is gone (seen: in the pass's seen set, see `ScanWriter` under
+Catalog). A listing's size and mtime can be wrong for a hard-linked
 file, as the walker section says; step 2's walker takes every value from the file itself, and the MFT read takes them from
 `$STANDARD_INFORMATION` and `$DATA`.
 
@@ -292,16 +293,145 @@ path, except for the OneDrive folder itself, which the tag can't see.
 
 ### Catalog
 
-Schema changes are migrations (`crates/catalog/src/schema.rs:43–62`). The baseline stays frozen at version 1, and
-`MIGRATIONS` reaches version 11 today.
+Schema changes are migrations (`crates/catalog/src/schema.rs:43–64`). The baseline stays frozen at version 1, and
+`MIGRATIONS` reaches version 13 (`TO_13_PAIRS_OWED`, committed in `d3d307a`).
 
-**Migrations.** Every schema change below is a migration from version 12 on, in one transaction with its version. A
-migration converts the rows whose meaning changes, with Rust steps:
+**Migrations.** Every schema change below is a migration after those of `docs/plans/SCAN_OPTIMIZATION_PLAN.md`, which
+lands first (its decision D5, 2026-11-15), in one transaction with its version. The pairing work took version 13, and
+the scan plan takes the next one. A migration converts the rows whose meaning changes, with Rust steps:
 
 - `links`: one per old file row;
 - `volumes`: from the old serial;
 - `content_gen`: from mtime;
 - `own_usn` and `own_from` are added in step 6, not here.
+
+**The table-rebuild step.** The `files`/`links` split takes columns off `files`, and SQLite can do that only by
+rebuilding the table.
+
+**Three tables are rebuilt, not one:**
+
+- `files`, for the split;
+- `folders`, whose `path` becomes the path inside the volume;
+- `roots`, which becomes `(volume, rel_path)`.
+
+`folders.path` and `roots.path` are column-level `UNIQUE` (`schema.rs:599`, `:743`). DROP COLUMN refuses a UNIQUE column
+(`sqlite3.c:123030`), and its autoindex can't be dropped. Keeping `path` to hold `rel_path` breaks the uniqueness, since
+`D:\Photos` and `E:\Photos` are both `\Photos`.
+
+- `roots` has cascading children: `notices.root` and `folder_failures.root` are `ON DELETE CASCADE` (`schema.rs:101`,
+  `:330`). Rebuilt with foreign keys on, its drop silently deletes the whole inbox and the folder ledger.
+- `folders` is referenced by `files.folder_id` with no action (`schema.rs:612`). Its drop with foreign keys on fails.
+- Two more tables store full paths, and need `Rust` steps if their paths become relative:
+  - `folder_failures.path` (`UNIQUE`, "exact bytes, as folders.path", `schema.rs:331`), which then needs a rebuild too;
+  - `scans.root`.
+
+  "Nothing else stores letters" (below) is corrected to say so.
+
+The runner can't do any of this safely today:
+
+- `bring_to` runs each migration in a write transaction with foreign keys on;
+- the pragma can't change inside a transaction (`sqlite3.c:146480-146483`);
+- with foreign keys on, `DROP TABLE files` first deletes every row and runs the `ON DELETE` actions
+  (`sqlite3.c:138579-138601`), taking `analysis`, `pairs_owed`, the ratings and the rest with it;
+- and `foreign_key_check` then passes, since nothing is left orphaned.
+
+This step was the scan plan's Phase 0 until 2026-11-15. That plan no longer needs it (its D6), and moved it here with
+the corrections an adversarial review found. Every point below was checked against the SQLite 3.54.1 source in the fork
+and the code.
+
+1. **`Step::Rebuild { table, create }`**, run as SQLite's documented twelve steps (`ALTER TABLE` page, "Making Other
+   Kinds Of Table Schema Changes").
+2. **What the migration drops comes first, in `Sql` steps before the `Rebuild`.** An index, trigger or view on a column
+   that goes can't be made again on the new table. So the migration drops it first, and the `Rebuild` makes again only
+   what is still in the schema when it runs.
+   - **Views and triggers made again are not checked by SQLite.** `CREATE VIEW` resolves no columns
+     (`sqlite3CreateView`, `sqlite3.c:129851`), and a trigger is only checked by the schema fixer.
+     - A view over a dropped column is made without error, and fails only when it is read. An example: `thumb_sources`
+       reads `f.folder_id`, `f.name` and `folders.path`.
+     - Item 9's before-and-after comparison would pass, since the view's text is unchanged.
+   - So after making them again, the step runs `SELECT * FROM <view> LIMIT 0` for each view, and fails on an error.
+     The migration test also renames each rebuilt table there and back, which makes SQLite resolve every trigger.
+3. **Foreign keys off, for that migration only, decided with no race.**
+   - `bring_to` reads the next version outside a transaction and decides from that migration whether foreign keys must
+     be off. It sets them (the pragma silently does nothing inside a transaction), begins, and reads the version again.
+   - **On every branch:** if the version inside the transaction differs from the one decided on, it rolls back and
+     loops. Otherwise a connection that decided "no rebuild, foreign keys on" for version *v*, and then found *v+1*
+     inside its transaction, would run that rebuild with foreign keys on, and delete every row of user data. (Not
+     reachable in production, since `prepare` holds its lock and the exclusive hold, `core.rs:73`, `:98-101`. But the
+     test of two connections migrating at once is exactly this race.)
+   - **`Step::Rebuild` checks for itself** that `PRAGMA foreign_keys` reads 0 before its `DROP TABLE`, and fails
+     otherwise.
+   - **Afterwards, the guard restores the connection's previous value** rather than forcing foreign keys on, since a
+     test runs with them off on purpose (`schema.rs:1210`). It runs after the transaction has ended. It must not fail
+     silently: `make_replacement` doesn't set `SETTINGS` again between `bring_to` and `carry_rows` (`rebuild.rs:106-111`),
+     so the copy would take orphan rows without a word.
+   - **A migration with a `Rebuild` step must not rely on cascades in its other steps,** a REPLACE of a parent row
+     included. With foreign keys off, a REPLACE skips its cascade, and the child row still matches the new row's key,
+     so no check reports it. The app relies on that cascade today: the analysis REPLACE removes its `pairs_owed` row
+     (`writers.rs:303-305`).
+4. **The foreign-key check is scoped.** `PRAGMA foreign_key_check(t)` runs on each table the migration writes while
+   foreign keys are off, and on each table that references a rebuilt one. Those are the only rows the migration can
+   break. That includes the tables its other steps fill, for example `folders.volume → volumes`. The migration rolls
+   back on any row reported. A whole-database
+   check would roll back on a violation the step didn't cause, at every start, and this build could then never open
+   that catalog.
+5. **Every trigger and view is saved, dropped and made again.**
+   - Most of the schema names `files` from other tables: the `analysis` triggers, the `stamp!` triggers,
+     `analysis_import`, and the views `present_pdq_pairs` and `thumb_sources` (`thumb_folders` reads only `folders`).
+   - With `legacy_alter_table` off, the rename checks every trigger and view, and fails on one that names a missing
+     table (`sqlite3.c:122541-122552`, `:122603-122604`). Dropping them all and making them again from the saved text
+     works either way, and needs no matching of names in SQL text.
+   - `rebuild::copy_tables` drops and re-creates triggers only (`rebuild.rs:184-191`, `:238-240`), so the views need
+     code of their own.
+   - **Key saved objects by type and name.** The index `files_changed` and the trigger `files_changed` share a name
+     (`schema.rs:644`, `:820`).
+   - **Save with `ORDER BY rowid`, and make them again in that order.** SQLite fires the newest trigger first, so the
+     order is part of the behaviour.
+6. **The rebuild itself:** create `<table>_new` from `create`, copy the shared columns, drop the old table, and rename
+   the new one. References into `files` from child tables keep pointing at the new table; only references to
+   `files_new` would be rewritten (`sqlite3.c:122560-122569`).
+7. **`meta.vacuum_owed` = 1**, since the old table's pages stay free in the file otherwise. `lifecycle.rs:148-187` runs
+   the VACUUM after the commit.
+8. **The catalog rebuild** (`rebuild.rs`) needs two changes.
+   - **It can't fill a new NOT NULL column with no default.**
+     - `copy_tables` copies every table by its shared columns first (`rebuild.rs:197-225`). Only after that does it run
+       the `Rust` steps that would fill the new columns (`:230-234`).
+     - Until now every new NOT NULL column came from `ADD COLUMN`, which SQLite allows only with a default, so the copy
+       never failed. A `Rebuild` can make the first ones without a default: `folders.rel_path` and `volume`,
+       `roots.rel_path` and `volume`, and whatever item 10 removes.
+     - Then the copy fails, and `rebuild()` makes an empty catalog and records `Carried::Nothing` (`rebuild.rs:73-78`).
+       A scratch catalog from a dev build, or one with an extra index, would come up empty, with its rows only in
+       `.replaced`. `an_earlier_layout_is_moved_aside_and_a_new_catalog_is_made` already shows this, with `order_key`.
+     - **The fix:** `copy_tables` lets a `Rust` step declare the tables it converts from an old shape. For those
+       tables, the step does the copy itself, from `carried`, instead of the plain copy. A column default would hide the
+       very mistake item 10 wants caught, so defaults are not the fix.
+   - **`CARRIED` gains `links` and `volumes`.** `carried_is_every_table_of_the_current_schema` (`schema.rs:906`)
+     enforces it.
+   - **The every-version test carries rows.** `every_older_version_reaches_the_current_one_on_both_paths`
+     (`lifecycle.rs:1422`) rebuilds empty catalogs, so it can't catch a failed copy. It gets at least one row in each
+     carried table, at each version, and checks that the row arrives.
+9. **Tests:**
+   - **Before and after, not only against `expected`.** `expected_for` runs the same step, so an object the step loses
+     is missing from the expected schema too, and "equals `expected`" still holds. So compare the schema before and
+     after the migration: every object other than the rebuilt table, and other than what the migration itself adds or
+     drops, has the same type, name and SQL. `TRIGGER_TESTS` would catch a lost trigger, but nothing would catch a lost
+     index.
+   - The rebuild keeps every row, and every child row:
+     - of `files`: `analysis`, `pairs_owed`, `ratings`, `file_ratings`, `file_writes`, `border_*`, `pdq_pairs` and
+       `file_failures`;
+     - of `roots`: `notices` and `folder_failures`;
+     - of `folders`: `files`.
+   - A copy that breaks a foreign key rolls back and leaves the version.
+   - Two connections that migrate at once: one does the work, the other finds the version done. A connection that
+     decided on version *v* and finds *v+1* loops instead of running it.
+   - The connection's foreign-keys setting is restored afterwards, after an error too.
+   - `vacuum_owed` is set, and the file shrinks after the VACUUM.
+   - `a_comment_in_a_stored_definition_is_not_a_schema_change` (`lifecycle.rs:876`) puts its comment in
+     `CREATE TABLE files(`. After the rebuild that text is gone from both the file and the expected schema, so the test
+     would pass without testing anything. Move its comment to another table.
+10. **The column defaults.** The scan plan keeps `files`' defaults: `pending`'s default of 1 is right for any new row, and
+    `analysis_added` stamps `seq` and `changed` again when the analysis is stored. This rebuild may remove them, so that
+    an INSERT that leaves one out fails. That is a guard, not a fix, so decide it with the rest of the split.
 
 Each Rust step checks the old shape by its columns and is idempotent (`schema.rs:15–16, 30`), since the rebuild
 (`rebuild.rs`) runs the steps again on carried rows. The rebuild runs only when a catalog's schema differs from this
@@ -365,8 +495,13 @@ same value. The serial is stored as `volume.cast_signed()` (`crates/catalog/src/
   skip it (writes stay queued).
 - The merge that drops the drive letter is `PathRules::merge` (`crates/model/src/rules.rs:154`, "its anchor dropped"). Its
   stored form is `PathRules::join_merged` (`rules.rs:160`), with the `Merged` type at `:51` and the tests around `:481`.
-  Folder keys and `order_key` don't change. Nothing else stores letters: `session` keeps a file ID and a merged folder path,
-  and `views.folder` a merged path (`crates/catalog/src/schema.rs:729`, the baseline's comment).
+  Folder keys and `order_key` don't change. Besides `folders` and `roots`, two tables store full paths, with their
+  letters:
+  - `folder_failures.path` (`schema.rs:331`);
+  - `scans.root`.
+
+  Both are converted with the rest (see the table-rebuild step). `session` keeps a file ID and a merged folder path, and
+  `views.folder` a merged path (`crates/catalog/src/schema.rs:729`, the baseline's comment), so neither stores a letter.
 
 **Folders are a tree.** `parent_id` + `name` are the truth. `rel_path` is derived and kept indexed for `under_root!` range
 queries. `move_folder` changes one `parent_id`/`name`, then rewrites the derived paths and `order_key`s under it, one
@@ -388,7 +523,7 @@ statement each.
 
 - `files` keeps identity (`volume`, `file_ref`), `size`, `mtime`, `kind`, `missing`, `pending`, `seq` and the per-file data
   (analysis, ratings, writes).
-- A new **`links(id, file_id, folder_id, name, ext, order_key, last_scan)`**, `UNIQUE(folder_id, name)`, takes `folder_id`,
+- A new **`links(id, file_id, folder_id, name, ext, order_key)`**, `UNIQUE(folder_id, name)`, takes `folder_id`,
   `name`, `ext` and `order_key` off `files`. `files_order` and `files_present` move to `links`. The grid, the folder counts
   and the order list read links. A file reads and writes through any present link (`crates/writeback/src/lib.rs`, the
   import's paths). A file is missing when it has no present link. The migration makes one link per old row.
@@ -419,13 +554,51 @@ pass in step 6. Until step 6, a full read misses changes made during it, and the
 `Catalog::mark_missing_ref(volume, file_ref)` is new.
 
 **`mark_missing(root, scan, skipped)`** (`crates/catalog/src/roots.rs:150`; today its third argument is the skip list, called
-from `crates/scan/src/lib.rs:591`) becomes: links under `root` that this scan didn't see are deleted, except under the pass's
+from `crates/scan/src/lib.rs:591`) becomes: links under `root` that this scan didn't see (not in its seen set) are deleted, except under the pass's
 unknown directories. Then files left without a present link are marked missing. In an MFT read each root gets its own scan
 ID.
 
-**`ScanWriter`** (`crates/catalog/src/writers.rs`, built by `scan_writer` (`crates/catalog/src/core.rs:212`, which calls
-`ScanWriter::new` at `:213`)) is rewritten. It writes files and links, records folders by ref (moving them), and takes the
+**`ScanWriter`** (`crates/catalog/src/writers.rs`, built by `scan_writer` (`crates/catalog/src/core.rs:287`, which calls
+`ScanWriter::new` at `:288`)) is rewritten. It writes files and links, records folders by ref (moving them), and takes the
 unknown list. Every source writes through it, unelevated.
+
+It keeps the rules of `docs/plans/SCAN_OPTIMIZATION_PLAN.md`, whose Phases 1 and 3 land first. Its report
+(`docs/temp/scan-optimizations-validation.md`) has the measurements.
+
+- **No INSERT trigger on `files` or `links`.**
+  - A trigger makes every INSERT multi-write, so SQLite opens a statement journal for each row. On a first scan,
+    removing the trigger and that journal together cut the scan by 43%.
+  - The writer sets `pending`, `seq` and `changed` on the rows it inserts, and `content_gen` too. Whether the table
+    rebuild also removes their defaults, so an INSERT that leaves one out fails, is decided with the split (see the
+    table-rebuild step, item 10).
+  - `seq` and `changed` take one change number per batch.
+- **The writer says what it means.**
+  - A new file or link is a plain INSERT.
+  - A changed one is an UPDATE of the known row by its id, with the listing's guard: size and mtime as listed, and no
+    write of the app's into it in progress. No upsert is used.
+  - The known lookup also returns whether the row's folder is under the root, so no second query asks.
+  - UPDATE triggers stay where many writers change a column, as `files_changed` and `files_source_changed` do now.
+- **"Seen by this pass" is a set the pass holds, not a column it writes.**
+  - **Two sets, keyed by scan.**
+    - The scan plan's `temp.scan_seen(id, unpaired)` holds file ids, for one scan at a time.
+    - Here a pass sees links and files, and an MFT read gives each root its own scan id within one pass.
+    - So the sets are:
+      - `temp.scan_seen_links(scan, id)`;
+      - `temp.scan_seen_files(scan, id, unpaired)`, with a partial index on `(scan, id) WHERE unpaired = 1`.
+
+      Each has `PRIMARY KEY (scan, id)`. They are made by the first pass on a connection, outside any transaction, and
+      emptied of a scan's rows when its lease ends.
+    - The link sweep reads the link set. `mark_missing` and the identity pairing read the file set: a file is seen
+      when any of its links is.
+  - The pairing's fresh rows are the file set's unpaired entries, through its own partial index, joined to `files` with
+    `unpaired = 1` checked again. That is the scan plan's Phase 3 design. A partial index on `files` would hold every
+    root's unpaired rows, and the unpaired rows with children that are never cleared.
+  - The scan plan's Phase F order holds here too: a folder's rows are read before it is listed. The MFT read takes its
+    rows from its own snapshot, which it takes before it reads the MFT.
+  - `mark_missing`, the link sweep and the identity pairing read it, so a pass that changes nothing writes nothing.
+  - That is why `links` has no `last_scan`, and why `files` has already lost its own (the scan plan's Phase 3).
+  - A journal pass sees only the changed refs, so it sweeps nothing by the set. Its deletions come from the journal, as
+    described under Journal passes.
 
 **Reused:** the catalog's statement style (constants, `concat!` macros) and `rebuild` (`crates/catalog/src/rebuild.rs:53`).
 `Ext::of_name_bytes` (`crates/model/src/media.rs:108`; the older name `of_name_utf16` at `4e1ad4d`), `Control`
@@ -551,7 +724,19 @@ committed at `724a882` ("Borders cut in place"), and the tree was clean on 2026-
 (`bff2224`). Step 1 starts from that commit. If that work changes again before step 1, its owner commits it first, since step 1
 edits the same files. `crates/catalog/src/browse/` gets the same check before step 1.
 
-1. **Catalog model.** Files: `crates/catalog/src/` (`schema.rs` migrations from version 12, `links`, `volumes`; `writers.rs`
+**Also before step 1:** `docs/plans/SCAN_OPTIMIZATION_PLAN.md` lands first (its D5, decided 2026-11-15). Step 1 starts
+from what that plan leaves:
+
+- `files` without `files_added`, `last_scan` or `files_fresh`, with its column defaults kept;
+- removing a library folder ends the scans under it (that plan's Phase F2);
+- `temp.scan_seen`, which step 1 replaces with the two scan-keyed sets above;
+- the walk reading each folder's rows before listing it (that plan's Phase F);
+- the split INSERT and UPDATE in `ScanWriter`;
+- the walker's parallel listing (its Phase 4). Step 2 moves that listing to `walk.rs` with the rest of the walker.
+
+Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schema.rs` before step 1.
+
+1. **Catalog model.** Files: `crates/catalog/src/` (`schema.rs` migrations after the scan plan's, the table-rebuild step, `links`, `volumes`; `writers.rs`
    `ScanWriter`; `roots.rs` `mark_missing`, `mark_missing_ref`, roots by volume; `rebuild.rs`; `queue.rs` `file_rewritten`;
    `sql.rs` `stale!`; `core.rs` `prepare`/`open`; `lookup.rs` `file_by_path`; `dups.rs`; `borders.rs`; the new `move_folder`),
    `crates/catalog/src/browse/`, `crates/query/src/lib.rs` (`pg_path`; `Cargo.toml` gains `pg-platform`),

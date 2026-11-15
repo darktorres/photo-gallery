@@ -713,6 +713,30 @@ scan, 3.9 s, is where a better kernel would show.
 The cap was 330 MB at every setting; before the rebuild these were 366 MB (one owed) and 415 MB (all owed). A pass with
 one owed picture takes 0.24 s in all (0.15 s of it the load), against 1.3 - 1.6 s before.
 
+#### One join under callgrind, one worker (P-13, `98c6973`)
+
+`pairs_probe` built in the pg-tools container, on the migrated copy, all 187,804 owed, `PG_PROBE_WORKERS=1`,
+`PG_PROBE_SORTERS=0`: `valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes --zero-before='<pg_dedup::join::Joiner>::join'
+--dump-after='<pg_dedup::join::Joiner>::join'`. The join: **36.7 G instructions, 452 M mispredicted branches** (8.8%
+of 5.1 G conditional branches), 120 M D1 read misses, 128 M D1 write misses. The prototype had predicted 19 G for the
+scan; it counted the iterations right (670 M vector iterations, 204 M (stored entry x probe) setups, both as predicted)
+and the cost of each wrong.
+
+| Part | Instructions | Mispredicts | Cache | Where |
+|---|---|---|---|---|
+| The scan (`scan_avx2`, with its inlined intrinsics and bounds checks) | 26.8 G | 413 M | 66 M D1 read misses | `join.rs` `scan_avx2`, `suffix` |
+| - the ordering rule's pointer (`suffix`'s `while`) | 3.9 G | **216 M** | | a data-dependent walk per stored entry |
+| - the vector loop's exit (`while y < qhi`) | 1.8 G | **197 M** | | one per setup: the trip count changes with every stored entry |
+| - the popcounts and compares (intrinsics) | 11.4 G | | | 17 instructions per 4 lanes |
+| - the lanes that pass (`consider`) | small | 0.8 M | | 670 M lane tests, almost none pass |
+| The sorts (`StageSet::sort`, 16 stages) | 4.7 G | 12 M | 50 M D1 read, 126 M D1 write misses | the radix's second pass scatters into 256 buckets x 3 arrays |
+| The slice's query side (transposes, permutation) | 0.5 G | | | |
+
+At about 15 - 20 cycles each, the scan's 413 M mispredicts are some 6 - 8 G cycles: **roughly 1.5 s of the 3.9 s scan**,
+almost all of it from two loops whose trip counts depend on the data. The full hashes the candidates read from the
+48 MB store (`Sides::words`) do not show: so few lanes pass the head test that `consider` is negligible. The ranked
+leads are in P-13 ([PROFILING_PLAN.md](../plans/PROFILING_PLAN.md)).
+
 ---
 
 ## Where the other results are

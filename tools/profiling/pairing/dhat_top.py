@@ -6,14 +6,17 @@ Prints the total at the peak and over the run, then the `count` (default 14) sit
 peak, each with the first frames of its backtrace. A site is named by its innermost frame in a `pg_` crate (or
 rusqlite/SQLite's), which is the code that decided to allocate (docs/reference/PROFILING.md, "Tool: dhat").
 """
+
 import json
 import sys
+from pathlib import Path
 
 OURS = ("pg_", "rusqlite", "sqlite3", "libsqlite")
 
 
 def main() -> None:
-    profile = json.load(open(sys.argv[1], encoding="utf-8"))
+    with Path(sys.argv[1]).open(encoding="utf-8") as f:
+        profile = json.load(f)
     count = int(sys.argv[2]) if len(sys.argv) > 2 else 14
     frames = profile["ftbl"]
 

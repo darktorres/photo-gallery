@@ -4,6 +4,7 @@ Date: 2026-11-15. Scope: the scan step of import (`pg_scan::scan`) only. Pairing
 scope and is not assessed here, except where an index or a trigger it depends on is also paid by the scan's writes.
 
 The list was validated in four rounds the same day:
+
 - a first validation against the code and one profile, with two experiments;
 - a reevaluation that reparsed every profile and read the bundled SQLite's source;
 - an adversarial pass that tested the new claims by experiment;
@@ -15,6 +16,7 @@ Where a round corrected an earlier one, this report gives the corrected figure; 
 ## Bottom line
 
 The scan's main per-file cost on a first scan comes from two things together:
+
 - the `files_added` trigger;
 - a statement journal SQLite opens for every file's INSERT, because of the trigger and the upsert's own DO UPDATE
   clause.
@@ -35,10 +37,12 @@ copy of the app:
 | Rescan, 200,000 files (Windows, cold, median of 5) | 3.29 s | (same code path) | |
 
 Two build settings add to it:
+
 - a larger lookaside (more slots): on Windows it halves the fixed write again;
 - memory statistics off: −10%.
 
 The rescan has its own costs:
+
 - the `seen` UPDATE's journal and foreign-key check;
 - an `in_root` query for every unchanged file;
 - with cold caches, the listing: a third of a cold rescan, and 6.7× faster on 8 threads.

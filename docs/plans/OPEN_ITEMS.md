@@ -84,6 +84,47 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
   all of `D:\PhotoGallery\datasets\planted` first (18,000 images; `gallery scan`, `import`, `thumbs --height 220`, with
   nothing else running), then time a fast scroll down and back up with per-request timestamps. Temporary logs tagged
   `DEBUGLOG` are in those three files and must be removed afterwards.
+- Cross-language LTO with the bundled SQLite (opened 2026-11-15). **Open, not tried.**
+  - **Today.** SQLite is built by `libsqlite3-sys`'s `cc` build: MSVC's `cl` on Windows, gcc in the Linux container.
+    Either way it sits outside Rust's LTO.
+  - **What was measured.** Fat LTO with one codegen unit on the Rust side alone gave −0.7% on the scan
+    (`docs/temp/scan-optimizations-validation.md`, item 21). That was a callgrind run in the container, so with gcc,
+    not MSVC.
+  - **Cross-language LTO** brings SQLite in: Rust built with `-Clinker-plugin-lto`, SQLite compiled by clang with
+    `-flto=thin`, and both optimized together at the link by `lld-link`. The rustc book's "Linker-plugin-based LTO"
+    chapter covers it.
+  - **The toolchain fits.** `rustc 1.101.0-nightly` uses LLVM 23.1.5, and `C:\Program Files\LLVM\bin` has clang 23.1.5,
+    `clang-cl`, `lld-link` and `llvm-lib`. They aren't on PATH.
+  - **The compiler is chosen for SQLite alone.**
+    - The `cc` variables (`CC_x86_64_pc_windows_msvc`, `CFLAGS_x86_64_pc_windows_msvc`) are global. In `Cargo.lock`,
+      `cc` also builds blake3, libwebp-sys, parajpeg, cxx and the cxx-qt build crates, and turbojpeg-sys builds through
+      `cmake`, which reads `CC` and `CFLAGS` too.
+    - Set globally, they would make build 2 measure every C dependency's compiler change, and `-flto=thin` would turn
+      all of them into bitcode.
+    - So the fork's `libsqlite3-sys/build.rs` picks the compiler and flags behind a variable or feature only it reads,
+      as the scan plan's Phase 2 does for its defines.
+  - **The link.** The MSVC linker can't read bitcode, so the LTO builds also need `-Clinker=lld-link`.
+  - **What it can gain.** SQLite is one translation unit, so its own code is already optimized as a whole. The gain is at
+    the Rust-to-SQLite boundary: inlining the per-row bind, step, column and reset calls into rusqlite.
+    - Expected: a few percent at most.
+    - The scan plan's Phases 1 and 3 (`docs/plans/SCAN_OPTIMIZATION_PLAN.md`) shrink that boundary further, so measure
+      after them.
+  - **What to check first:**
+    - whether any static library the app links was built with MSVC's `/GL`, which `lld-link` can't read (the Qt static
+      build is the one to check);
+    - which rustc flag selects fat LTO across the languages;
+    - for the container, a clang built on the same LLVM as rustc in `pg-tools`, since GCC objects can't take part.
+  - **Plan: four release builds,** each measured on the scan probe's first scan and rescan at 200k (instruction counts in
+    the container, wall time on Windows) and on `just perf`:
+    1. MSVC, as today;
+    2. clang, no LTO;
+    3. clang with cross-language ThinLTO;
+    4. clang with cross-language fat LTO.
+
+    Build 2 separates the compiler change from LTO: a different compiler alone may make SQLite faster or slower.
+  - **The rule for adopting one:** it must beat build 1 on both instruction counts and Windows time, with no loss
+    elsewhere in `just perf`. Fat LTO is chosen over ThinLTO only if it also beats ThinLTO on both, since its link is
+    serial and much heavier. Record the build-time cost of the winner.
 
 ## S-17.7: file identity and placeholders (moved from `docs/temp/S17_7_PLAN.md`, checked 2026-11-14)
 

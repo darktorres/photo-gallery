@@ -6,11 +6,21 @@ The owed pictures are spread over the ids (a multiplicative hash of the id order
 folder's. Works on both layouts: the draft v12 column (`analysis.dups_state`) and the v13 queue table (`pairs_owed`).
 Never run it on the live catalog: it rewrites what is owed.
 """
+
 import sqlite3
 import sys
 
-ELIGIBLE = "pdq_dihedral IS NOT NULL AND pdq_quality >= 50"
-SPREAD = "ORDER BY (file_id * 2654435761) % 1000003"
+# The N owed: eligible pictures (a hash that is there and good enough to pair), spread over the ids by a multiplicative
+# hash of the id. The two layouts' statements, each whole, so no query is built from strings.
+OWE_QUEUE = (
+    "INSERT INTO pairs_owed SELECT file_id FROM analysis WHERE pdq_dihedral IS NOT NULL AND pdq_quality >= 50 "
+    "ORDER BY (file_id * 2654435761) % 1000003 LIMIT ?"
+)
+OWE_COLUMN = (
+    "UPDATE analysis SET dups_state = 'due' WHERE file_id IN "
+    "(SELECT file_id FROM analysis WHERE pdq_dihedral IS NOT NULL AND pdq_quality >= 50 "
+    "ORDER BY (file_id * 2654435761) % 1000003 LIMIT ?)"
+)
 
 
 def main() -> None:
@@ -22,15 +32,11 @@ def main() -> None:
     con.execute("BEGIN IMMEDIATE")
     if "pairs_owed" in tables:
         con.execute("DELETE FROM pairs_owed")
-        con.execute(f"INSERT INTO pairs_owed SELECT file_id FROM analysis WHERE {ELIGIBLE} {SPREAD} LIMIT ?", (n,))
+        con.execute(OWE_QUEUE, (n,))
         owed = con.execute("SELECT count(*) FROM pairs_owed").fetchone()[0]
     else:
         con.execute("UPDATE analysis SET dups_state = 'done' WHERE dups_state = 'due'")
-        con.execute(
-            f"UPDATE analysis SET dups_state = 'due' WHERE file_id IN "
-            f"(SELECT file_id FROM analysis WHERE {ELIGIBLE} {SPREAD} LIMIT ?)",
-            (n,),
-        )
+        con.execute(OWE_COLUMN, (n,))
         owed = con.execute("SELECT count(*) FROM analysis WHERE dups_state = 'due'").fetchone()[0]
     con.execute("COMMIT")
     con.execute("PRAGMA wal_checkpoint(TRUNCATE)")

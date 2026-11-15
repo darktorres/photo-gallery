@@ -7,7 +7,7 @@
 //! found in exactly one probe of a chunk; a pair that matches in several chunks is reported only in the first, which is
 //! checked on the hits, not on the candidates.
 //!
-//! **The chunks are diagonals of the bit grid** ([`permuted`]). The pigeonhole argument holds for any partition of the
+//! **The chunks are diagonals of the bit grid** (`permuted`). The pigeonhole argument holds for any partition of the
 //! 256 bits into 16 groups of 16, and a distance is the same under any permutation of the bits. A row of the 16x16
 //! coefficient grid, the obvious chunk, is skewed on real pictures: queries x stored candidates are 1.28x what uniform
 //! chunks give; the wrapped diagonals (column minus row) give 1.04x. Every hash is permuted once, as it is stored, and the
@@ -124,7 +124,7 @@ pub(crate) fn best_kernel() -> Kernel {
     Kernel::Scalar
 }
 
-/// The most query entries ([`QUERY_ORIENTATIONS`] per owed picture of a slice) the few-owed path takes by default, per
+/// The most query entries (`QUERY_ORIENTATIONS` per owed picture of a slice) the few-owed path takes by default, per
 /// thread of the join ([`Tuning::few_entries`]); a larger slice takes the sorted path. Gate G6 (docs/reference/
 /// PROFILING.md, "The pairing pass"): the few-owed path's work is spread over every thread, while the sorted path's
 /// floor, sorting the stored side, is not, so the crossover grows with the threads: near 240 entries on one thread and
@@ -144,6 +144,20 @@ pub struct Tuning {
     pub sorters: Option<usize>,
     /// The most query entries the few-owed path takes. `None`: [`FEW_ENTRIES_PER_THREAD`] for each of the join's threads.
     pub few_entries: Option<usize>,
+}
+
+impl Tuning {
+    /// The sorter threads a join on `threads` threads runs: [`Tuning::sorters`], or by the thread count, and two at
+    /// most (side by side is the most there is).
+    pub fn sorters_on(&self, threads: usize) -> usize {
+        self.sorters.unwrap_or_else(|| default_sorters(threads)).min(2)
+    }
+
+    /// The most query entries the few-owed path takes in a join on `threads` threads: [`Tuning::few_entries`], or
+    /// [`FEW_ENTRIES_PER_THREAD`] for each thread.
+    pub fn few_entries_on(&self, threads: usize) -> usize {
+        self.few_entries.unwrap_or_else(|| FEW_ENTRIES_PER_THREAD.saturating_mul(threads))
+    }
 }
 
 /// The sorter threads of a join on `threads` threads: the workers are the rest. Gate G3 (docs/reference/PROFILING.md,
@@ -256,7 +270,7 @@ impl<'a> Joiner<'a> {
         let sides = Sides { joiner: self, pictures: &pictures, transposed: &transposed, rank: &rank };
         let mut times = JoinTimes { prepare: preparing.elapsed(), ..JoinTimes::default() };
         let queries = pictures.len() * QUERY_ORIENTATIONS;
-        let few = self.tuning.few_entries.unwrap_or_else(|| FEW_ENTRIES_PER_THREAD.saturating_mul(threads));
+        let few = self.tuning.few_entries_on(threads);
         let mut pairs = if queries <= few {
             self.few_owed(&sides, queries, threads, start, control, &mut times)?
         } else {
@@ -278,7 +292,7 @@ impl<'a> Joiner<'a> {
         control: &(dyn Fn() -> bool + Sync),
         times: &mut JoinTimes,
     ) -> Option<Vec<Pair>> {
-        let sorters = self.tuning.sorters.unwrap_or_else(|| default_sorters(threads)).min(2);
+        let sorters = self.tuning.sorters_on(threads);
         let workers = threads.saturating_sub(sorters).max(1);
         let stored = self.stored.len();
         let mut found = Vec::new();
@@ -458,15 +472,7 @@ fn few_entry(sides: &Sides<'_, '_>, chunks: &[FewChunk], x: usize, out: &mut Vec
 /// Stored entry `xw` (code `xc`) against the query entries of value `u` in chunk `c`: as the sorted path's [`consider`]
 /// does, the ordering rule, then the first two words' distance, then the full one and the first chunk that matches.
 #[inline(always)]
-fn few_hits(
-    sides: &Sides<'_, '_>,
-    few: &FewChunk,
-    xw: &[u64; 4],
-    xc: u32,
-    u: usize,
-    c: usize,
-    out: &mut Vec<Pair>,
-) {
+fn few_hits(sides: &Sides<'_, '_>, few: &FewChunk, xw: &[u64; 4], xc: u32, u: usize, c: usize, out: &mut Vec<Pair>) {
     let q = &few.sorted;
     let (lo, hi) = q.bucket(u);
     for y in lo..hi {

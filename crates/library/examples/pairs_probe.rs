@@ -55,7 +55,8 @@ fn main() -> Result<()> {
     let seconds = start.elapsed().as_secs_f64();
     let t = stats.timings;
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
-    let sorters = settings.join.sorters.unwrap_or_else(|| pg_import::pairs::default_sorters(workers));
+    // What the join ran with: its tuning resolved for the pass's threads, as the join resolves it.
+    let (sorters, few) = (settings.join.sorters_on(workers), settings.join.few_entries_on(workers));
     writeln!(
         std::io::stdout(),
         "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, sorters {sorters}, slice \
@@ -65,7 +66,7 @@ fn main() -> Result<()> {
         stats.pairs,
         settings.slice,
         settings.cache_kib,
-        settings.join.few_entries.unwrap_or_else(|| pg_import::pairs::FEW_ENTRIES_PER_THREAD * workers),
+        few,
         stats.complete,
         ms(t.load),
         ms(t.join),

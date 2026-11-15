@@ -76,6 +76,7 @@ every `analysis` page, at most the file's size), and `VACUUM`'s WAL (the new fil
 Option<Space { total, free }>`, the same `GetDiskFreeSpaceExW` call (its first out-pointer, null today) and on Linux
 `f_bavail`, with no new `unsafe` block (plus the non-Windows, non-Linux stub at `volume.rs:45`); its one caller,
 `thumbcache/src/config.rs:32` (the cache's cap), takes `total`. The check runs before `back_up`:
+
 - not room for the copy and the migration: `prepare` fails with an error naming the space needed and the folder, as a
   failed copy does today, and the catalog is not touched;
 - room for those but not for `VACUUM`: the migration runs and `vacuum_owed` is set (item 3);

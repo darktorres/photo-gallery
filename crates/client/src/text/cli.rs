@@ -333,7 +333,14 @@ impl Line {
             }
             Line::PairDone { files, pairs, seconds } => vec![("files", files), ("pairs", pairs), ("seconds", seconds)],
             Line::PairTimings { load, join, sort, scan, write, commit } => {
-                vec![("load", load), ("join", join), ("sort", sort), ("scan", scan), ("write", write), ("commit", commit)]
+                vec![
+                    ("load", load),
+                    ("join", join),
+                    ("sort", sort),
+                    ("scan", scan),
+                    ("write", write),
+                    ("commit", commit),
+                ]
             }
             Line::PairsAgain { count } | Line::PairsLegacy { count } | Line::PairsOwed { count } => {
                 vec![("count", count)]

@@ -35,7 +35,6 @@ at a source that no longer exists; `pending` is work not done.
 
 No open rows. N-47 is closed in this revision (see the changes at the end).
 
-
 | ID | Source | Kind | Where | Problem | Proper fix | Status |
 |---|---|---|---|---|---|---|
 

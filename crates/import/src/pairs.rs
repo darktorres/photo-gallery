@@ -15,9 +15,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use pg_catalog::{Catalog, PairingWork};
-use pg_dedup::join::{JoinTimes, Joined, Joiner, Pair};
-/// The join's tuning, which [`Settings::join`] holds, and its sorter count by threads (the probe prints it).
-pub use pg_dedup::join::{FEW_ENTRIES_PER_THREAD, Tuning, default_sorters};
+use pg_dedup::join::{JoinTimes, Joined, Joiner, Pair, Tuning};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::num::index;

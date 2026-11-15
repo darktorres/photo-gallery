@@ -3,17 +3,18 @@
 
 use crate::browse::fixtures::spelled;
 use crate::fixture::{self, raw};
-use crate::{Catalog, Recorded, ScannedFile, Versions, WorkItem, queue};
+use crate::{Catalog, Prior, Recorded, ScanLease, ScannedFile, Versions, WorkItem, queue};
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
 use pg_model::format::Format;
-use pg_model::ids::{FileId, FileIdentity, FolderId};
+use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::media::Ext;
 use pg_model::name::Name;
 use pg_model::orientation::Orientation;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
+use std::mem::ManuallyDrop;
 use std::path::Path;
 
 /// The versions this build's analyses are stamped with, as the library passes them to [`Catalog::prepare`].
@@ -63,10 +64,34 @@ pub(crate) fn state(c: &Catalog, id: FileId) -> (bool, i64) {
     (due(c, id), raw::file_seq(c, id))
 }
 
-/// A walk of `root` begun, its lease given back at once: the tests begin walks one after another, or several of one
-/// folder without ending them.
-pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> pg_model::ids::ScanId {
-    c.begin_scan(root).unwrap().id()
+/// A walk of `root` begun: its `scans` row and its lease, which it keeps until its end ([`lease`]), so its writes find
+/// it. Written as `Catalog::begin_scan` writes them, without its refusal of an overlapping walk: the tests of the
+/// writers begin walks one after another, or several of one folder, without ending them (the lease's own rules are
+/// tested through `begin_scan`).
+pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> ScanId {
+    let bytes = c.rules().join(root);
+    c.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [&bytes]).unwrap();
+    let scan = ScanId::new(c.conn.last_insert_rowid());
+    c.conn
+        .execute(
+            "INSERT INTO scan_leases(id, root, holder, heartbeat) VALUES (?1, ?2, 'a test', unixepoch())",
+            rusqlite::params![scan.get(), bytes],
+        )
+        .unwrap();
+    scan
+}
+
+/// The lease of the walk `scan` of `root` ([`begin`]), to run its end through (`pair_after_scan`, `mark_missing`) as
+/// the walk does. It is not given back when dropped: the test goes on with the walk, or ends it (`mark_missing` does).
+pub(crate) fn lease<'c>(c: &'c mut Catalog, scan: ScanId, root: &RulePath) -> ManuallyDrop<ScanLease<'c>> {
+    ManuallyDrop::new(ScanLease::new(c, scan, root.clone()))
+}
+
+/// The rows a walk compares `identities` with, the files it listed in `folder` just now: the folder's rows, read
+/// before the listing ([`Catalog::folder_rows`]), then the others' by identity ([`Catalog::prior_states`]).
+pub(crate) fn listed(c: &Catalog, folder: &RulePath, identities: &[FileIdentity]) -> Vec<Option<Prior>> {
+    let rows = c.folder_rows(folder).unwrap();
+    c.prior_states(&rows, identities).unwrap()
 }
 
 /// The scanner finding file 7 on volume 1 in D:\x like this, its folder listed just before; whether that changed the
@@ -74,7 +99,7 @@ pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> pg_model::ids::ScanId {
 pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, size: u64, mtime: i64) -> bool {
     let rules = c.rules();
     let identity = FileIdentity::new(1, 7);
-    let prior = c.prior_states(&p(rules, r"D:\x"), &[identity]).unwrap().remove(0);
+    let prior = listed(c, &p(rules, r"D:\x"), &[identity]).remove(0);
     let tx = c.tx().unwrap();
     let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
     let folder = writer.folder(&p(rules, r"D:\x")).unwrap();

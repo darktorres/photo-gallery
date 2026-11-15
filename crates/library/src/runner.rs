@@ -219,9 +219,9 @@ impl Runner {
         self.wake_up();
     }
 
-    /// A library folder was removed: the scans asked for under `root` are dropped, and one walking a folder under it now
-    /// stops at its next batch (what it recorded is committed; it isn't asked for again, as the folder is no longer in
-    /// the library).
+    /// A library folder was removed: the scans asked for under `root` are dropped, and one walking a folder under it is
+    /// woken. That walk writes nothing more: the removal took its lease (`Catalog::remove_root`), so its next write
+    /// ends it as `ScanError::Removed`, and it isn't asked for again, as the folder is no longer in the library.
     pub fn stop_scans_under(&self, root: &RulePath) {
         let rules = pg_platform::native::PATH_RULES;
         self.inner.queue().scans.retain(|path| !rules.is_under(path, root));
@@ -563,6 +563,10 @@ impl Pass<Cx<'_>> for Scans {
                 // Another walk of an overlapping folder holds its lease (in this process or another): nothing was
                 // written, and the scan is tried again once that walk can have ended.
                 Err(ScanError::Busy { .. }) => cx.inner.walk_busy(path),
+                // The folder was removed from the library while it was walked (here, or by another process): the
+                // removal marked its files missing and took the walk's lease, so the walk wrote nothing after it.
+                // Nothing failed, and the folder isn't asked for again.
+                Err(ScanError::Removed { .. }) => {}
                 Err(ScanError::Failed(e)) => {
                     cx.inner.notify(Notice::ScanFailed { root: path, error: error_text(&e) });
                     // Its batches before the error are in.

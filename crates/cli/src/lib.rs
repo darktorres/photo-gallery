@@ -209,6 +209,9 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     // Another process walks a folder that overlaps this one: said, and the command fails (`--wait`
                     // waits for it instead).
                     Err(busy @ pg_scan::ScanError::Busy { .. }) => bail!("{busy}"),
+                    // Another process removed the folder from the library meanwhile (`gallery remove`, or the app):
+                    // said, and the command fails, as the scan asked for didn't happen.
+                    Err(removed @ pg_scan::ScanError::Removed { .. }) => bail!("{removed}"),
                     Err(pg_scan::ScanError::Failed(e)) => return Err(e),
                 };
                 let mut report = scan_report(&root, &s, rules, start.elapsed().as_secs_f64()).into_iter();

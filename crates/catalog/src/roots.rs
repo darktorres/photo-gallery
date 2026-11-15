@@ -33,8 +33,6 @@
 //! (`duplicates`, `reparse`, `ambiguous`, `unpaired`, `volume-id`) are states keyed `(root, code)` and replaced only by a
 //! root walk; what one walk did (`replaced`, `rebound`) is an event of that walk, with its count.
 
-use std::collections::BTreeMap;
-
 use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -46,8 +44,8 @@ use crate::error::{Error, Result};
 use crate::ledger::failure::tidy;
 use crate::transaction::write_transaction;
 use crate::types::{
-    FOLDER_FAILED, FolderFailure, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH, covering_root,
-    folders_under, roots_on, skipped_folders, under_params,
+    FOLDER_FAILED, FolderFailure, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH,
+    covering_root, folders_under, roots_on, skipped_folders, under_params,
 };
 
 impl Catalog {
@@ -86,18 +84,34 @@ impl Catalog {
     /// Take a folder out of the library. Its files are marked missing, not deleted: adding it back (or the drive
     /// returning) brings them back with their analysis and ratings. Its notices and its folder ledger's rows go (their
     /// foreign key). Returns how many files it hid; `None`, with nothing changed, when `root` is not a library folder.
+    ///
+    /// The walks of the folder, or of folders inside it, end: their leases go in the same transaction as the marks, in
+    /// any process, so each walk's next write finds its lease gone and writes nothing ([`Error::RootRemoved`]). A walk
+    /// would otherwise write what it listed after the marks, and bring the folder's files back as present.
     pub fn remove_root(&self, root: RootId) -> Result<Option<usize>> {
+        let rules = self.rules;
         let tx = write_transaction(&self.conn)?;
         let path: Option<Vec<u8>> =
             tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
         let Some(path) = path else { return Ok(None) };
-        let path = self.rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
+        let path = rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
         tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
-        let [p1, p2, p3] = under_params(self.rules, &path);
+        let [p1, p2, p3] = under_params(rules, &path);
         let n = tx.execute(
             concat!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN (", under_root!(), ")"),
             params![p1, p2, p3],
         )?;
+        // The leases matched by the rules, as `begin_scan` matches them (by case too under Windows').
+        let leases: Vec<(i64, Vec<u8>)> = tx
+            .prepare("SELECT id, root FROM scan_leases")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (id, walked) in leases {
+            let walked = rules.parse_bytes(&walked).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
+            if rules.is_under(&walked, &path) {
+                tx.execute("DELETE FROM scan_leases WHERE id = ?1", [id])?;
+            }
+        }
         tx.commit()?;
         Ok(Some(n))
     }
@@ -129,26 +143,33 @@ impl Catalog {
             params![scan.get(), bytes, lease_holder()],
         )?;
         tx.commit()?;
-        Ok(ScanLease::new(self, scan))
+        Ok(ScanLease::new(self, scan, root.clone()))
     }
 
     pub fn finish_scan(&self, scan: ScanId) -> Result<()> {
         self.conn.execute("UPDATE scans SET finished = unixepoch() WHERE id = ?1", [scan.get()])?;
         Ok(())
     }
+}
 
-    /// The end of a complete walk of `root` (`scan` its id). Files under `root` that it didn't see are marked missing;
+impl ScanLease<'_> {
+    /// The end of a complete walk of the lease's folder. Files under it that the walk didn't see are marked missing;
     /// their rows stay (ratings, decisions). Files in `skipped` folders (and their subfolders) are left as they are: the
     /// walk didn't list them (it couldn't, they are mounts it refuses, or reparse folders it doesn't follow), so it saw
     /// nothing there to compare with. The marks are batches of at most `WRITE_BATCH` (1 000) folders or files, each in a short
     /// transaction of its own, so no other writer waits behind the whole pass.
     ///
-    /// Then, in one last transaction, the folder ledger's rows under `root` that this walk didn't see (`walk` before
-    /// it) are resolved and go, except those strictly below a folder it skipped as unreadable or a refused mount (it
-    /// never looked there; a reparse folder spares nothing, since what is below it can't resolve while it is one), and
-    /// the walk's lease is given back. The number of files marked.
-    pub fn mark_missing(&self, root: &RulePath, scan: ScanId, skipped: &[Skip]) -> Result<usize> {
-        let rules = self.rules;
+    /// Then, in one last transaction, the folder ledger's rows under the folder that this walk didn't see (`walk`
+    /// before it) are resolved and go, except those strictly below a folder it skipped as unreadable or a refused mount
+    /// (it never looked there; a reparse folder spares nothing, since what is below it can't resolve while it is one),
+    /// and the walk's lease is given back. The number of files marked.
+    ///
+    /// Each transaction holds the lease first ([`ScanLease::renew`]'s check): one that is gone (the folder removed
+    /// from the library, which took it) writes nothing, and the marks end with [`Error::RootRemoved`] or
+    /// [`Error::LeaseLost`]. Another walk of the folder may have begun then, whose rows these marks would hide.
+    pub fn mark_missing(&self, skipped: &[Skip]) -> Result<usize> {
+        let (rules, root, scan) = (self.rules, self.root(), self.id());
+        let held = self.held();
         // Read once: the lease keeps any other walk of these folders out.
         let folders: Vec<i64> = {
             let snapshot = self.conn.unchecked_transaction()?;
@@ -161,6 +182,7 @@ impl Catalog {
         let mut pending = folders.as_slice();
         while !pending.is_empty() {
             let tx = write_transaction(&self.conn)?;
+            held.hold(&tx)?;
             let (mut done, mut rows) = (0, 0);
             {
                 let mut mark = tx.prepare_cached(
@@ -179,12 +201,15 @@ impl Catalog {
             pending = pending.get(done..).unwrap_or_default();
         }
         let tx = write_transaction(&self.conn)?;
+        held.hold(&tx)?;
         sweep_folder_failures(&tx, rules, root, scan, skipped)?;
         tx.execute("DELETE FROM scan_leases WHERE id = ?1", [scan.get()])?;
         tx.commit()?;
         Ok(marked)
     }
+}
 
+impl Catalog {
     /// A folder refused before a walk of it began (not NTFS, a FAT drive, and so on: the walked folder itself, so there
     /// is no walk and no scan id), with its error, in the folder ledger, in a small transaction of its own. Its `walk`
     /// is the newest `scans` row: any later walk has a larger id, so the next complete walk of the folder (or of one
@@ -209,38 +234,60 @@ impl Catalog {
         Ok(written > 0)
     }
 
-    /// The catalog's rows for `identities`, the files a walk listed in `folder`, as they are now (their size and mtime;
-    /// `None` for an identity with no row), read in one snapshot outside any transaction of a walk's: what a walk reads
-    /// when it lists a folder, so that its batch, written later, changes only rows still so
-    /// ([`crate::ScannedFile::prior`]).
-    ///
-    /// The folder's rows are read at once, which is where a listed file's row is but for a file new to the folder (or
-    /// to the catalog); those are looked up by identity, one by one. So the answer doesn't depend on `folder`, only
-    /// the cost: one statement for a folder walked before, rather than one per file.
-    pub fn prior_states(&self, folder: &RulePath, identities: &[FileIdentity]) -> Result<Vec<Option<Prior>>> {
+    /// The rows of `folder` as they are now, with the change number now as their mark ([`FolderRows`]), read in one
+    /// snapshot outside any transaction of a walk's. A walk reads them just before it lists the folder: so a write-back
+    /// that commits after the read, while the folder is listed or later, leaves a row that no longer equals what was
+    /// read, and the batch only marks the file seen ([`crate::ScannedFile::prior`]). Read after the listing, they
+    /// would be the write-back's, and the batch would write the older listing over them.
+    pub fn folder_rows(&self, folder: &RulePath) -> Result<FolderRows> {
         let snapshot = self.conn.unchecked_transaction()?;
-        let mut out = Vec::with_capacity(identities.len());
-        {
-            let mut in_folder = snapshot.prepare_cached(
-                "SELECT volume, file_ref, size, mtime FROM files
-                 WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
-            )?;
-            let known: BTreeMap<(i64, i64), Prior> = in_folder
+        let rows = {
+            let mark: i64 =
+                snapshot.prepare_cached("SELECT value FROM meta WHERE key = 'seq'")?.query_row([], |r| r.get(0))?;
+            let rows = snapshot
+                .prepare_cached(
+                    "SELECT volume, file_ref, size, mtime FROM files
+                     WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
+                )?
                 .query_map([self.rules.join(folder)], |r| {
                     Ok(((r.get(0)?, r.get(1)?), Prior { size: r.get(2)?, mtime: r.get(3)? }))
                 })?
                 .collect::<rusqlite::Result<_>>()?;
-            let mut by_identity =
-                snapshot.prepare_cached("SELECT size, mtime FROM files WHERE volume = ?1 AND file_ref = ?2")?;
-            for identity in identities {
-                let key = (identity.volume.cast_signed(), identity.file_index.cast_signed());
-                let prior = match known.get(&key) {
-                    Some(prior) => Some(*prior),
-                    None => by_identity
-                        .query_row(params![key.0, key.1], |r| Ok(Prior { size: r.get(0)?, mtime: r.get(1)? }))
-                        .optional()?,
-                };
-                out.push(prior);
+            FolderRows { mark, rows }
+        };
+        snapshot.commit()?;
+        Ok(rows)
+    }
+
+    /// The rows of `identities`, the files a walk listed in the folder whose rows are `rows` (read before the listing,
+    /// [`Catalog::folder_rows`]), as the batch is to compare them ([`crate::ScannedFile::prior`]): `None` for an
+    /// identity with no row.
+    ///
+    /// A listed file's row is among the folder's but for a file new to the folder (or to the catalog); those are looked
+    /// up by identity, one by one, in one snapshot, after the listing (it gives the identities). Order alone doesn't
+    /// make that read safe: a write-back opens the file by its row's path, and a hard link, or a file moved away and
+    /// back, reaches the same file by another name, so it can rewrite the file the walk listed in this folder, and commit,
+    /// before this read. So a row whose change number is past the folder's mark, which changed after the listing began,
+    /// is `None` too: the file is only marked seen, and the next walk records it. An import or a rating in that
+    /// window bumps the number as well, and recording the file's move waits for the next walk; nothing is lost.
+    pub fn prior_states(&self, rows: &FolderRows, identities: &[FileIdentity]) -> Result<Vec<Option<Prior>>> {
+        let key = |identity: &FileIdentity| (identity.volume.cast_signed(), identity.file_index.cast_signed());
+        let mut out: Vec<Option<Prior>> = identities.iter().map(|i| rows.rows.get(&key(i)).copied()).collect();
+        if out.iter().all(Option::is_some) {
+            return Ok(out);
+        }
+        let snapshot = self.conn.unchecked_transaction()?;
+        {
+            let mut by_identity = snapshot
+                .prepare_cached("SELECT size, mtime, changed FROM files WHERE volume = ?1 AND file_ref = ?2")?;
+            for (identity, prior) in identities.iter().zip(out.iter_mut()).filter(|(_, prior)| prior.is_none()) {
+                let (volume, file_ref) = key(identity);
+                let row = by_identity
+                    .query_row(params![volume, file_ref], |r| {
+                        Ok((Prior { size: r.get(0)?, mtime: r.get(1)? }, r.get::<_, i64>(2)?))
+                    })
+                    .optional()?;
+                *prior = row.filter(|&(_, changed)| changed <= rows.mark).map(|(row, _)| row);
             }
         }
         snapshot.commit()?;
@@ -253,7 +300,7 @@ fn lease_holder() -> String {
     format!("process {}", std::process::id())
 }
 
-/// The folder ledger's sweep at the end of a complete walk of `root` (`scan`), on `conn` ([`Catalog::mark_missing`]).
+/// The folder ledger's sweep at the end of a complete walk of `root` (`scan`), on `conn` ([`ScanLease::mark_missing`]).
 fn sweep_folder_failures(
     conn: &Connection,
     rules: PathRules,
@@ -292,7 +339,7 @@ mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, WriteHolds, raw};
     use crate::ledger::Failure;
-    use crate::test_support::{begin, p, versions};
+    use crate::test_support::{begin, lease, listed, p, versions};
     use crate::types::rules_name;
     use crate::{Catalog, Error, FolderFailure, Prior, Recorded, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason};
     use pg_model::ids::{FileIdentity, ScanId};
@@ -332,7 +379,7 @@ mod tests {
         drop(writer);
         tx.commit().unwrap();
         if complete {
-            lease.mark_missing(&root, scan, &skipped).unwrap();
+            lease.mark_missing(&skipped).unwrap();
         }
         scan
     }
@@ -496,19 +543,48 @@ mod tests {
         tx.commit().unwrap();
         assert!(!lease.folder_refused(&elsewhere, "not NTFS").unwrap());
         drop(lease);
-        // Removed between two batches of a walk: the next batch records nothing.
+        // Removed between two batches of a walk: the removal took the walk's lease, so the next batch writes nothing,
+        // and says why.
         let root = p(rules, r"D:\r");
         let mut lease = c.begin_scan(&root).unwrap();
         let scan = lease.id();
         let id = lease.root_id(&root).unwrap().unwrap();
         lease.remove_root(id).unwrap();
         let tx = lease.tx().unwrap();
-        let mut writer = tx.scan_writer(scan, &root).unwrap();
-        assert!(!writer.folder_failed(&p(rules, r"D:\r\a"), UNREADABLE, "denied").unwrap());
-        drop(writer);
-        tx.commit().unwrap();
+        assert!(matches!(tx.scan_writer(scan, &root).err(), Some(Error::RootRemoved { .. })));
+        drop(tx);
         assert!(paths(&lease).is_empty());
     }
+
+    // Removing a library folder ends the walks of it and of the folders inside it, in any process: their leases go with
+    // the marks, and each one's next write (a batch, the missing marks, a renewal) writes nothing and says why. A walk of
+    // another library folder goes on. A walk whose lease expired and was taken over is told apart: its folder is still
+    // the library's.
+    fn removing_a_folder_ends_the_walks_under_it(rules: PathRules) {
+        let mut c = library(rules);
+        assert!(c.add_root(&p(rules, r"D:\s")).unwrap());
+        let (r, sub, s) = (p(rules, r"D:\r"), p(rules, r"D:\r\sub"), p(rules, r"D:\s"));
+        let (of_r, of_sub, of_s) = (begin(&mut c, &r), begin(&mut c, &sub), begin(&mut c, &s));
+        let id = c.root_id(&r).unwrap().unwrap();
+        c.remove_root(id).unwrap();
+        let removed = |e: Option<Error>| matches!(e, Some(Error::RootRemoved { .. }));
+        {
+            let tx = c.tx().unwrap();
+            assert!(removed(tx.scan_writer(of_r, &r).err()), "a batch of the removed folder's walk");
+            assert!(removed(tx.scan_writer(of_sub, &sub).err()), "a batch of a walk of a folder inside it");
+            drop(tx.scan_writer(of_s, &s).unwrap());
+        }
+        assert!(removed(lease(&mut c, of_r, &r).mark_missing(&[]).err()), "the missing marks");
+        assert!(removed(lease(&mut c, of_sub, &sub).renew().err()), "a renewal");
+        c.conn.execute("DELETE FROM scan_leases WHERE id = ?1", [of_s.get()]).unwrap();
+        assert!(matches!(lease(&mut c, of_s, &s).renew(), Err(Error::LeaseLost { .. })), "an expired lease");
+    }
+
+    under_both_rules!(
+        removing_a_folder_ends_the_walks_under_it,
+        removing_a_folder_ends_the_walks_under_it_windows,
+        removing_a_folder_ends_the_walks_under_it_posix
+    );
 
     // A folder refused before its walk began is a row of the ledger (one, however often refused); a walk already
     // running doesn't resolve it, the next complete walk does.
@@ -516,7 +592,6 @@ mod tests {
         let mut c = library(rules);
         let root = p(rules, r"D:\r");
         let lease = c.begin_scan(&root).unwrap();
-        let running = lease.id();
         assert!(lease.folder_refused(&root, "not an NTFS volume").unwrap());
         assert!(lease.folder_refused(&root, "not an NTFS volume").unwrap());
         let rows = ledger(&lease);
@@ -524,7 +599,7 @@ mod tests {
             rows.iter().map(|r| (r.0.as_str(), r.1.as_str())).collect::<Vec<_>>(),
             [(spelled(rules, r"D:\r").as_str(), "refused")]
         );
-        lease.mark_missing(&root, running, &[]).unwrap();
+        lease.mark_missing(&[]).unwrap();
         assert_eq!(ledger(&lease).len(), 1, "the walk running when it was refused doesn't resolve it");
         drop(lease);
         walk(&mut c, r"D:\r", &[], &[], true);
@@ -606,7 +681,7 @@ mod tests {
         }
         assert_eq!(busy(&mut b, r"D:\r"), None, "given back when dropped");
         let lease = a.begin_scan(&p(rules, r"D:\r")).unwrap();
-        lease.mark_missing(&p(rules, r"D:\r"), lease.id(), &[]).unwrap();
+        lease.mark_missing(&[]).unwrap();
         assert_eq!(busy(&mut b, r"D:\r"), None, "given back at the end of a complete walk");
         drop(lease);
         a.begin_scan(&p(rules, r"D:\r")).unwrap().release().unwrap();
@@ -617,7 +692,7 @@ mod tests {
             c.conn.execute("UPDATE scan_leases SET heartbeat = heartbeat - ?1", [SCAN_LEASE_SECS + 1]).unwrap();
         };
         stale(&b);
-        assert!(lease.renew().unwrap());
+        lease.renew().unwrap();
         assert!(busy(&mut b, r"D:\r").is_some(), "renewed");
         stale(&b);
         let scan = lease.id();
@@ -627,7 +702,7 @@ mod tests {
         assert!(busy(&mut b, r"D:\r").is_some(), "renewed by a batch");
         stale(&b);
         assert_eq!(busy(&mut b, r"D:\r"), None, "expired: a crashed walk's");
-        assert!(!lease.renew().unwrap(), "the expired lease is gone");
+        assert!(matches!(lease.renew(), Err(Error::LeaseLost { .. })), "the expired lease is gone");
         drop(lease);
         drop((a, b));
         std::fs::remove_dir_all(&dir).unwrap();
@@ -658,15 +733,28 @@ mod tests {
             tx.commit().unwrap();
             recorded
         };
-        let listed = |c: &Catalog| c.prior_states(&root, &[identity]).unwrap().remove(0);
+        let listed = |c: &Catalog| listed(c, &root, &[identity]).remove(0);
         let scan = begin(&mut c, &root);
         let prior = listed(&c);
         assert_eq!(found(&mut c, scan, 10, 100, prior), Recorded::Changed);
         let id = fixture::state::file_id(&c, "a.jpg").unwrap();
         // The folder says where to look first, not what is found: the row of a file listed in another folder (moved
-        // there), or in one the catalog has no row for, is the same; an identity with no row has none.
-        let elsewhere = c.prior_states(&p(rules, r"D:\r\new"), &[identity, FileIdentity::new(1, 8)]).unwrap();
+        // there, or a second name of it), or in one the catalog has no row for, is the same; an identity with no row
+        // has none.
+        let new = p(rules, r"D:\r\new");
+        let rows = c.folder_rows(&new).unwrap();
+        let elsewhere = c.prior_states(&rows, &[identity, FileIdentity::new(1, 8)]).unwrap();
         assert_eq!(elsewhere, [Some(Prior { size: 10, mtime: 100 }), None]);
+        // Unless that row changed after the folder's rows were read, its listing begun: a write-back through the row's
+        // own name can have rewritten the file the folder listed. It has no row to compare with then, and is only seen.
+        c.conn.execute("UPDATE files SET mtime = 101 WHERE id = ?1", [id.get()]).unwrap();
+        assert_eq!(c.prior_states(&rows, &[identity]).unwrap(), [None]);
+        assert_eq!(found(&mut c, scan, 10, 100, None), Recorded::Same);
+        assert_eq!(raw::file_row(&c).3, 101, "the write-back's row is kept");
+        // A row of the folder itself was read before the listing, so it is as it was then, whatever changed since.
+        let rows = c.folder_rows(&root).unwrap();
+        c.conn.execute("UPDATE files SET mtime = 100 WHERE id = ?1", [id.get()]).unwrap();
+        assert_eq!(c.prior_states(&rows, &[identity]).unwrap(), [Some(Prior { size: 10, mtime: 101 })]);
         // Listed, then rewritten by the app before the batch: the row is the newer.
         let prior = listed(&c);
         assert_eq!(prior, Some(Prior { size: 10, mtime: 100 }));
@@ -723,7 +811,7 @@ mod tests {
         let root = p(rules, r"D:\r");
         let scan = begin(&mut c, &root);
         let holds = WriteHolds::watch();
-        assert_eq!(c.mark_missing(&root, scan, &[]).unwrap(), 25_000);
+        assert_eq!(lease(&mut c, scan, &root).mark_missing(&[]).unwrap(), 25_000);
         let held = holds.take();
         // About 1 000 files a batch (a folder's files are marked together): 25 batches, then the sweep.
         assert!((25..=27).contains(&held.len()), "{} holds", held.len());
@@ -731,7 +819,7 @@ mod tests {
         // Nothing left to mark: 1 000 folders a batch, then the sweep.
         let scan = begin(&mut c, &root);
         let holds = WriteHolds::watch();
-        assert_eq!(c.mark_missing(&root, scan, &[]).unwrap(), 0);
+        assert_eq!(lease(&mut c, scan, &root).mark_missing(&[]).unwrap(), 0);
         assert_eq!(holds.take().len(), 3);
     }
 

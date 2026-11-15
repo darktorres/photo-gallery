@@ -73,14 +73,17 @@ pub struct ScanWriter<'tx> {
 }
 
 impl<'tx> ScanWriter<'tx> {
-    /// The writer of the walk `scan` of `root`, in `tx`: the walk's lease is renewed (the heartbeat of each batch).
+    /// The writer of the walk `scan` of `root`, in `tx`: the walk's lease is renewed (the heartbeat of each batch), and
+    /// must still be the walk's. One that is gone (the folder removed from the library, which took it, or expired) is
+    /// [`crate::Error::RootRemoved`] or [`crate::Error::LeaseLost`], with nothing written: the batch would bring a
+    /// removed folder's files back as present, or interleave with another walk's.
     pub(crate) fn new(
         tx: &'tx Transaction,
         scan: ScanId,
         rules: PathRules,
         root: &RulePath,
     ) -> Result<ScanWriter<'tx>> {
-        tx.prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?.execute([scan.get()])?;
+        crate::core::HeldLease { scan, rules, root }.hold(tx)?;
         crate::lifecycle::stamp_held_exts(tx)?;
         let covering = covering_root(tx, rules, root)?.map(|r| (r.id.get(), rules.join(&r.path)));
         Ok(ScanWriter {
@@ -125,7 +128,7 @@ impl<'tx> ScanWriter<'tx> {
 
     /// Record a folder the walk couldn't take (`failure`: unreadable, or a mount it refuses) with its error, in the
     /// folder ledger, as seen by this walk: the end of a complete walk of a folder above it sweeps the rows this walk
-    /// didn't see (`Catalog::mark_missing`). One already recorded keeps its serial, so it is not news again. Nothing is
+    /// didn't see (`ScanLease::mark_missing`). One already recorded keeps its serial, so it is not news again. Nothing is
     /// written when no library folder holds the walked one, or it was removed since the writer was made. Whether a row
     /// was written.
     pub fn folder_failed(&mut self, path: &RulePath, failure: FolderFailure, error: &str) -> Result<bool> {
@@ -657,7 +660,7 @@ mod tests {
     /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
     fn found_as(c: &mut Catalog, scan: ScanId, identity: FileIdentity, created: Option<i64>) -> Recorded {
         let rules = c.rules();
-        let prior = c.prior_states(&p(rules, r"D:\x"), &[identity]).unwrap().remove(0);
+        let prior = listed(c, &p(rules, r"D:\x"), &[identity]).remove(0);
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
         let folder = writer.folder(&p(rules, r"D:\x")).unwrap();

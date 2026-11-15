@@ -2,7 +2,7 @@
 //! between them, the SQL constants they share, and the helpers for a folder's subtree. A leaf: it uses no module of
 //! the crate but `error`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::anyhow;
@@ -80,7 +80,7 @@ pub(crate) fn covering_root(conn: &Connection, rules: PathRules, path: &RulePath
     Ok(roots_on(conn, rules)?.into_iter().find(|r| rules.is_under(path, &r.path)))
 }
 
-/// The most rows a pass over a walk's results (`Catalog::mark_missing`, `Catalog::pair_after_scan`) writes in one
+/// The most rows a pass over a walk's results (`ScanLease::mark_missing`, `ScanLease::pair_after_scan`) writes in one
 /// transaction: each batch commits at once, so another writer waits for one batch at most, never for the pass.
 pub(crate) const WRITE_BATCH: usize = 1000;
 
@@ -95,7 +95,7 @@ pub struct Skip {
     pub reason: SkipReason,
 }
 
-/// Why a walk did not list a folder. All three leave the folder's rows unjudged (`Catalog::mark_missing`, the
+/// Why a walk did not list a folder. All three leave the folder's rows unjudged (`ScanLease::mark_missing`, the
 /// pairing). The first two are failures (`ScanWriter::folder_failed` records them): what lies below one was never
 /// looked at, so the end of the walk keeps the folder ledger's rows there. A reparse folder is not a failure: what lies
 /// below it can't be resolved while it is one, so its rows are swept.
@@ -260,10 +260,11 @@ pub struct ScannedFile<'a> {
     pub mtime: i64,
     /// Its creation time (FILETIME ticks), where the listing gives one.
     pub created: Option<i64>,
-    /// The catalog's row for the identity when its folder was listed (`Catalog::prior_states`), read outside any
-    /// transaction; `None` when there was none. The row is written only while it is still so, and no write of the
-    /// app's into it is in progress: one changed since (a write-back between the listing and the batch's write) is
-    /// only marked seen, and the next walk lists its new state.
+    /// The catalog's row for the identity as the walk read it, no later than the listing of the file's folder
+    /// (`Catalog::prior_states`), outside any transaction. `None` when there was none, or when the row changed after the
+    /// folder's listing began: either way an existing row is not overwritten. The row is written only while it is
+    /// still as read, and no write of the app's into it is in progress: one changed since (a write-back between the
+    /// listing and the batch's write) is only marked seen, and the next walk lists its new state.
     pub prior: Option<Prior>,
 }
 
@@ -272,6 +273,17 @@ pub struct ScannedFile<'a> {
 pub struct Prior {
     pub size: i64,
     pub mtime: i64,
+}
+
+/// A folder's rows as a walk reads them just before it lists the folder (`Catalog::folder_rows`): each one's size and
+/// mtime by its identity, and the catalog's change number then (`meta.seq`), the mark. A write-back that rewrites a file
+/// commits its new size and mtime, which bumps the row's change number (`files.changed`) past the mark; so a row read
+/// later, by identity, whose change number is past the mark, changed after the listing began, and the listing may be
+/// older than it.
+#[derive(Debug, Default)]
+pub struct FolderRows {
+    pub(crate) mark: i64,
+    pub(crate) rows: BTreeMap<(i64, i64), Prior>,
 }
 
 /// A folder's row, with its part of its files' order key (`PathRules::folder_key`).

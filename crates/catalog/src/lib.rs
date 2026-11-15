@@ -45,8 +45,8 @@ mod schema;
 
 pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};
 pub use types::{
-    CropSource, Folder, FolderFailure, Listed, Prior, Rebuilt, Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip,
-    SkipReason, Status, Versions, WorkItem, WriteTarget,
+    CropSource, Folder, FolderFailure, FolderRows, Listed, Prior, Rebuilt, Recorded, Root, SCAN_LEASE_SECS,
+    ScannedFile, Skip, SkipReason, Status, Versions, WorkItem, WriteTarget,
 };
 pub use work::PairingWork;
 pub use writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, ScanWriter};

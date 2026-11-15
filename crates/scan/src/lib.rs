@@ -10,13 +10,14 @@
 //! [`RulePath`] that the walk extends by its names, and a folder is opened by its units. Nothing is decoded lossily.
 //!
 //! Identity and pairing: a file is recorded by its volume and file ID; a file the catalog has no row for is
-//! paired at the end of the scan (`pg_catalog::Catalog::pair_after_scan`), which is what makes a renumbered volume or a file moved
+//! paired at the end of the scan (`pg_catalog::ScanLease::pair_after_scan`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 //!
 //! The catalog's write lock is never held across the file system or a wait (the write-lock section of the module docs, W2). A folder is
-//! listed outside any transaction, into the batch being built, with the catalog's rows for its files as they were then
-//! (`Catalog::prior_states`); a full batch is written in one short write transaction, which changes only the rows still
-//! as they were read (a write-back between the listing and the write is kept). A pause or a stop writes the batch built
+//! listed outside any transaction, into the batch being built, with the catalog's rows for its files as they were
+//! before its listing (`Catalog::folder_rows`, `Catalog::prior_states`); a full batch is written in one short write
+//! transaction, which changes only the rows still as they were read (a write-back from the listing to the write is
+//! kept). A pause or a stop writes the batch built
 //! first, then waits with nothing held. Two walks of overlapping folders never interleave: a walk holds the scan lease
 //! of its folder (`Catalog::begin_scan`), renewed with each batch and through a pause, and a walk refused one is
 //! [`ScanError::Busy`].
@@ -26,7 +27,10 @@
 //! A walk never holds the catalog's write lock across the file system or a wait (`pg_scan`):
 //!
 //! - Each folder is listed outside any transaction, into the batch being built, with the catalog's `(size, mtime)` of its
-//!   files as they were then (`Catalog::prior_states`). A batch is written at a folder boundary once it holds `BATCH`
+//!   files as they were before the listing: the folder's rows are read just before it (`Catalog::folder_rows`), and a
+//!   file whose row is elsewhere is looked up by identity after it, a row changed since the listing began counting as
+//!   none (`Catalog::prior_states`: a write-back through a hard link's other name). A batch is written at a folder
+//!   boundary once it holds `BATCH`
 //!   (10 000) entries, in one short write transaction (folder rows, the files seen, the new files, the folder ledger's
 //!   rows), and committed at once. A folder larger than a batch is held whole.
 //! - The batch changes a file's row only where it still has the size and mtime that were read and no write of the app's
@@ -42,6 +46,11 @@
 //!   crashed process's, and expires. It is given back in `mark_missing`'s last transaction, or when the `ScanLease` is
 //!   dropped (a stop, an error, a panic). A refused walk is `ScanError::Busy`: the job puts it back on its queue and tries
 //!   again after 5 s (`BUSY_RETRY`); `gallery scan` says another process is scanning and fails, or waits with `--wait`.
+//! - **Every write transaction of a walk holds the lease first**: the batches', the pairing's and the missing marks'.
+//!   Removing the library folder takes the leases of the walks under it, in the transaction that marks its files missing
+//!   (`Catalog::remove_root`), in any process; the walk's next write then writes nothing, and the walk ends as
+//!   `ScanError::Removed`. So nothing of a removed folder is written again, by the walk's last batch or by a rebind of
+//!   its pairing.
 //!
 //! So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing.
 
@@ -274,8 +283,9 @@ pub struct RefusedMount {
 }
 
 /// Why a scan didn't run, or didn't finish: the folder is refused (before any walk; the refusal is in the folder
-/// ledger), a walk of an overlapping folder holds its lease (nothing was written: try again once it ends), or the scan
-/// failed (its batches before the error are in).
+/// ledger), a walk of an overlapping folder holds its lease (nothing was written: try again once it ends), the folder
+/// was removed from the library while it was walked (nothing more was written: there is nothing to try again), or the
+/// scan failed (its batches before the error are in).
 #[derive(Debug)]
 pub enum ScanError {
     Refused(RefusedReason),
@@ -284,6 +294,12 @@ pub enum ScanError {
     Busy {
         root: String,
         holder: String,
+    },
+    /// The library folder that holds `root` was removed while the walk ran, in this process or another
+    /// (`pg_catalog::Error::RootRemoved`): the removal took the walk's lease, and the walk's next write found it gone
+    /// and wrote nothing. Its batches before the removal are in, and are marked missing with the folder's other files.
+    Removed {
+        root: String,
     },
     Failed(anyhow::Error),
 }
@@ -300,6 +316,7 @@ impl std::fmt::Display for ScanError {
         match self {
             ScanError::Refused(reason) => write!(f, "refused: {reason}"),
             ScanError::Busy { root, holder } => write!(f, "a scan of {root} is running ({holder})"),
+            ScanError::Removed { root } => write!(f, "{root} was removed from the library while it was scanned"),
             ScanError::Failed(e) => write!(f, "{e:#}"),
         }
     }
@@ -416,7 +433,21 @@ fn walk_in_batches<L: Listing>(
     })?;
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    Ok(walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume, batch_size, renew_every)?)
+    walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume, batch_size, renew_every).map_err(
+        |e| match removed(&e) {
+            Some(root) => ScanError::Removed { root },
+            None => ScanError::Failed(e),
+        },
+    )
+}
+
+/// The folder whose removal from the library ended the walk with `e` (`pg_catalog::Error::RootRemoved`, anywhere in its
+/// chain), if that is what ended it.
+fn removed(e: &anyhow::Error) -> Option<String> {
+    e.chain().find_map(|cause| match cause.downcast_ref::<pg_catalog::Error>() {
+        Some(pg_catalog::Error::RootRemoved { root }) => Some(root.clone()),
+        _ => None,
+    })
 }
 
 /// The walk of `root` under its lease: each folder listed outside any transaction into the batch, each full batch
@@ -472,12 +503,15 @@ fn walk_leased<L: Listing>(
                 }
             },
         };
+        // The folder's rows as they are before it is listed: a write-back that commits while it is listed, or later,
+        // leaves a row that no longer equals them, and the batch keeps it (`Catalog::folder_rows`).
+        let rows = lease.folder_rows(&frame.path)?;
         // The records renew the lease as they come (a listing can outlast it, and another walk take it then).
         let mut lost = None;
         let listed = {
             let mut beat = || {
                 if lost.is_none() && renewed.elapsed() >= renew_every {
-                    match renew(&*lease, root) {
+                    match renew(&*lease) {
                         Ok(()) => renewed = Instant::now(),
                         Err(e) => lost = Some(e),
                     }
@@ -564,10 +598,11 @@ fn walk_leased<L: Listing>(
             });
         }
         if !files.is_empty() {
-            // The rows as they are now, read as the folder is listed and outside any transaction: the batch, written
-            // later, changes only those still so (a write-back in between is kept).
+            // The rows the batch compares with: the folder's, read before the listing, and the others' by identity, read
+            // now but none changed since the listing began (`Catalog::prior_states`). The batch, written later, changes
+            // only those still so, so a write-back from the folder's listing on is kept.
             let identities: Vec<FileIdentity> = files.iter().map(|f| f.identity).collect();
-            let priors = lease.prior_states(&frame.path, &identities)?;
+            let priors = lease.prior_states(&rows, &identities)?;
             ensure!(priors.len() == files.len(), "the catalog gave {} rows for {} files", priors.len(), files.len());
             for (file, prior) in files.iter_mut().zip(priors) {
                 file.prior = prior;
@@ -584,11 +619,12 @@ fn walk_leased<L: Listing>(
     // What is built is written, however the walk ended (a stop commits what it has).
     write_batch(lease, root, &mut batch, &mut stats, ctl)?;
     // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
-    // and outside the folders it skipped.
-    stats.pairing = lease.pair_after_scan(root, scan_id, Coverage { complete, skipped: &skipped })?;
+    // and outside the folders it skipped. Each of its transactions, and the missing marks', holds the lease first, as
+    // the batches do: after the folder's removal, none of them writes.
+    stats.pairing = lease.pair_after_scan(Coverage { complete, skipped: &skipped })?;
     if complete {
         // Its last transaction sweeps the folder ledger under `root` and gives the lease back.
-        stats.missing = lease.mark_missing(root, scan_id, &skipped)?;
+        stats.missing = lease.mark_missing(&skipped)?;
         lease.finish_scan(scan_id)?;
         ctl.ledger_changed();
     }
@@ -627,7 +663,7 @@ fn checkpoint(
     renew_every: Duration,
 ) -> Result<bool> {
     if renewed.elapsed() >= renew_every {
-        renew(lease, root)?;
+        renew(lease)?;
         *renewed = Instant::now();
     }
     if ctl.is_paused() || ctl.stop_requested() {
@@ -641,22 +677,18 @@ fn checkpoint(
             Checkpoint::Paused => {
                 // A pause set after the look above: what is built is written now, not held over the pause.
                 write_batch(lease, root, batch, stats, ctl)?;
-                renew(lease, root)?;
+                renew(lease)?;
                 *renewed = Instant::now();
             }
         }
     }
 }
 
-/// Renew the walk's lease. A lease that is gone (it expired while the walk was held up, and another walk may have
-/// begun) ends the walk: it can no longer tell that it is alone.
-fn renew(lease: &ScanLease<'_>, root: &RulePath) -> Result<()> {
-    ensure!(
-        lease.renew()?,
-        "the lease of the scan of {} was lost (it expired while the walk was held up)",
-        lease.rules().display(root)
-    );
-    Ok(())
+/// Renew the walk's lease. A lease that is gone ends the walk: its folder was removed from the library, which took it
+/// (`pg_catalog::Error::RootRemoved`, [`ScanError::Removed`]), or it expired while the walk was held up, and another
+/// walk may have begun (`pg_catalog::Error::LeaseLost`): the walk can no longer tell that it is alone.
+fn renew(lease: &ScanLease<'_>) -> Result<()> {
+    Ok(lease.renew()?)
 }
 
 /// Write the batch in one write transaction, committed at once, and empty it: the folder ledger's rows, the reparse
@@ -675,7 +707,7 @@ fn write_batch(
     let scan_id = lease.id();
     // Renewed just before the batch's transaction: a walk whose lease was taken (it expired while the walk was held up)
     // writes nothing beside the other walk's writes.
-    renew(&*lease, root)?;
+    renew(&*lease)?;
     let tx = lease.tx()?;
     let mut ledger = false;
     {
@@ -1305,6 +1337,78 @@ mod tests {
         let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
         assert_eq!(stats.changed, 1);
         assert!(row(&c, 5, 1).unwrap(), "a real change was blocked by a change number");
+    }
+
+    /// A write-back that commits once a folder's entries are given, before the walk goes on (the hook after the root's
+    /// listing): the batch keeps the row the write-back made. The folder's rows were read before its listing, so the
+    /// row no longer equals them, and the file is only marked seen.
+    #[test]
+    fn a_write_back_while_its_own_folder_is_listed_is_kept() {
+        let path = on_disk("scan-write-back-own-folder");
+        let tree = [("", vec![file("f.jpg", 7, 1)])];
+        let mut c = open(&path);
+        scan_fake(&mut c, &tree, 1);
+        let f = state::file_id(&c, "f.jpg").unwrap();
+        let hook_path = path.clone();
+        let mut lister = FakeListing::new(1, &tree).after_listing("", move || {
+            state::change_mtime(&open(&hook_path), f, 999).unwrap();
+        });
+        let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
+        assert_eq!((stats.changed, stats.missing), (0, 0));
+        let rewritten = Listed { size: 1, mtime: 999, rotation: Turns::NONE };
+        assert!(c.is_current(f, &rewritten).unwrap(), "the write-back's row was undone by an older listing");
+    }
+
+    /// A file with two names (hard links) in two folders, listed first by the name its row doesn't have, and rewritten
+    /// by the app through the row's name once that folder is listed, before the walk looks the file up by its identity:
+    /// the batch keeps the row the write-back made. The row changed after the walk began listing the folder (its change
+    /// number is past the folder's mark), so the file is only marked seen.
+    #[test]
+    fn a_write_back_through_another_name_of_a_file_is_kept() {
+        let path = on_disk("scan-write-back-hard-link");
+        let first = [("", vec![folder("a", 20), folder("b", 21)]), ("a", vec![file("p.jpg", 7, 1)]), ("b", vec![])];
+        let mut c = open(&path);
+        scan_fake(&mut c, &first, 1);
+        let f = state::file_id(&c, "p.jpg").unwrap();
+        // b now holds a second name of the file, and the walk lists it first (it takes the root's last folder first).
+        let linked = [
+            ("", vec![folder("a", 20), folder("b", 21)]),
+            ("a", vec![file("p.jpg", 7, 1)]),
+            ("b", vec![file("q.jpg", 7, 1)]),
+        ];
+        let hook_path = path.clone();
+        let mut lister = FakeListing::new(1, &linked).after_listing("b", move || {
+            state::change_mtime(&open(&hook_path), f, 999).unwrap();
+        });
+        let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
+        assert_eq!((stats.changed, stats.duplicates), (0, 1));
+        let rewritten = Listed { size: 1, mtime: 999, rotation: Turns::NONE };
+        assert!(c.is_current(f, &rewritten).unwrap(), "the write-back's row was undone by an older listing");
+    }
+
+    /// The folder removed from the library while it is walked, by another process (which can't stop this walk): the
+    /// walk ends at its next write, writing nothing, and the folder's files stay missing.
+    #[test]
+    fn a_folder_removed_while_it_is_walked_is_not_written_again() {
+        let path = on_disk("scan-removed");
+        let mut c = open(&path);
+        scan_fake(&mut c, &three_folders(), 1);
+        // Every file is changed on disk, so the walk has its files to write.
+        let mut changed = three_folders();
+        for (_, entries) in &mut changed {
+            for e in entries.iter_mut().filter(|e| !e.folder) {
+                e.size = 5;
+            }
+        }
+        let root = c.root_id(&fake_root()).unwrap().unwrap();
+        let hook_path = path.clone();
+        let mut lister = FakeListing::new(1, &changed).after_listing("b", move || {
+            assert_eq!(open(&hook_path).remove_root(root).unwrap(), Some(3));
+        });
+        let walked = walk(&mut c, &fake_root(), &Control::new(), &mut lister);
+        assert!(matches!(walked, Err(ScanError::Removed { .. })), "{walked:?}");
+        let status = c.status().unwrap();
+        assert_eq!((status.files, status.missing), (0, 3), "the removed folder's files were written again");
     }
 
     /// A new import version between a folder's listing and the batch that writes its files: the bump makes the analysed

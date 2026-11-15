@@ -268,7 +268,7 @@ const TO_8_NOTIFY: &[Step] = &[Step::Sql(TO_8_NOTIFY_ADD), Step::Rust(convert_no
 ///   inbox reads the rest through the partial index `file_failures_live`.
 /// - **The folders a walk couldn't read** (`folder_failures`): one row per folder, by its exact path, tied to the library
 ///   folder that holds it; `walk` is the `scans` row of the walk that last saw it, which a later complete walk of a folder
-///   above it sweeps by (`Catalog::mark_missing`). `reason`: `unreadable` | `mount-refused` | `refused`.
+///   above it sweeps by (`ScanLease::mark_missing`). `reason`: `unreadable` | `mount-refused` | `refused`.
 /// - **The scan leases** (`scan_leases`, transient: a rebuild carries none): one row per walk running (`id` its `scans`
 ///   row), so two walks of overlapping folders never interleave (`Catalog::begin_scan`).
 const TO_8_NOTIFY_ADD: &str = concat!(

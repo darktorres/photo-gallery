@@ -293,7 +293,8 @@ impl Catalog {
 
 impl Tx<'_> {
     /// The writer of the scan `scan` of `root`, in this transaction. Making it renews the walk's lease (the heartbeat
-    /// of each batch the walk writes), and resolves the library folder that holds `root`, once, for the folder ledger.
+    /// of each batch the walk writes), which must still be the walk's ([`Error::RootRemoved`], [`Error::LeaseLost`]),
+    /// and resolves the library folder that holds `root`, once, for the folder ledger.
     pub fn scan_writer(&self, scan: ScanId, root: &RulePath) -> Result<ScanWriter<'_>> {
         ScanWriter::new(&self.inner, scan, self.rules, root)
     }
@@ -328,20 +329,26 @@ impl Tx<'_> {
 
 /// A walk's lease of the folder it walks, which [`Catalog::begin_scan`] takes: while it holds, no other walk of a
 /// folder that overlaps it begins (one is inside the other), in this process or another, so two walks never interleave
-/// their writes. The walk renews it with each batch it writes (`Tx::scan_writer`, or [`ScanLease::renew`] while it
-/// waits); a lease with no heartbeat for `SCAN_LEASE_SECS` is taken to be a crashed walk's, and expires.
+/// their writes. The walk renews it with each write transaction (`Tx::scan_writer`, the pairing's batches and the
+/// missing marks', [`ScanLease::pair_after_scan`] and [`ScanLease::mark_missing`]), and with [`ScanLease::renew`] while
+/// it waits; a lease with no heartbeat for `SCAN_LEASE_SECS` is taken to be a crashed walk's, and expires. Removing
+/// the library folder takes the leases of the walks under it (`Catalog::remove_root`). Each of the walk's write
+/// transactions begins with the heartbeat, which must find the lease: one that doesn't writes nothing, and fails as
+/// [`Error::RootRemoved`] or [`Error::LeaseLost`].
 ///
-/// It is released at the end of a complete walk, in `Catalog::mark_missing`'s last transaction, or by
+/// It is released at the end of a complete walk, in [`ScanLease::mark_missing`]'s last transaction, or by
 /// [`ScanLease::release`], and in any case when it is dropped (a stop, an error or a panic leaves through here). It
 /// borrows the catalog and is used as it: the walk reads and writes through the lease.
 pub struct ScanLease<'c> {
     catalog: &'c mut Catalog,
     scan: ScanId,
+    /// The folder walked.
+    root: RulePath,
 }
 
 impl<'c> ScanLease<'c> {
-    pub(crate) fn new(catalog: &'c mut Catalog, scan: ScanId) -> ScanLease<'c> {
-        ScanLease { catalog, scan }
+    pub(crate) fn new(catalog: &'c mut Catalog, scan: ScanId, root: RulePath) -> ScanLease<'c> {
+        ScanLease { catalog, scan, root }
     }
 
     /// The walk's `scans` row, which its writes are stamped with.
@@ -349,15 +356,21 @@ impl<'c> ScanLease<'c> {
         self.scan
     }
 
-    /// The walk is alive: its heartbeat is now. One short write, outside any transaction of the walk's. False when the
-    /// lease is gone (released, or expired and taken by another walk): the walk can no longer tell that it is alone.
-    pub fn renew(&self) -> Result<bool> {
-        let renewed = self
-            .catalog
-            .conn
-            .prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?
-            .execute([self.scan.get()])?;
-        Ok(renewed > 0)
+    /// The folder the walk walks.
+    pub fn root(&self) -> &RulePath {
+        &self.root
+    }
+
+    /// The walk is alive: its heartbeat is now. One short write, outside any transaction of the walk's. A lease that
+    /// is gone (its folder removed from the library, or expired and taken by another walk) is
+    /// [`Error::RootRemoved`] or [`Error::LeaseLost`]: the walk can no longer tell that it is alone.
+    pub fn renew(&self) -> Result<()> {
+        self.held().hold(&self.catalog.conn)
+    }
+
+    /// The check of this lease that each of the walk's write transactions begins with ([`HeldLease::hold`]).
+    pub(crate) fn held(&self) -> HeldLease<'_> {
+        HeldLease { scan: self.scan, rules: self.catalog.rules, root: &self.root }
     }
 
     /// Give the lease back now, with the error if it can't be (dropping it gives it back too, but says nothing).
@@ -389,6 +402,35 @@ impl Drop for ScanLease<'_> {
 
 /// Give back the lease of walk `scan`, on `conn`; nothing is written when it is gone already (a complete walk gave it
 /// back in its last transaction).
+/// A walk's lease, as its write transactions check it: its scan, and the folder it walks, under `rules`.
+#[derive(Clone, Copy)]
+pub(crate) struct HeldLease<'a> {
+    pub(crate) scan: ScanId,
+    pub(crate) rules: PathRules,
+    pub(crate) root: &'a RulePath,
+}
+
+impl HeldLease<'_> {
+    /// The lease is still the walk's: its heartbeat is now, written on `conn` (in its transaction, when one is open: the
+    /// first statement of each of the walk's write transactions, so what the transaction writes commits only with the
+    /// lease held). A lease that is gone writes nothing: [`Error::RootRemoved`] when no library folder holds the walked
+    /// folder any more (its removal took the lease), [`Error::LeaseLost`] otherwise (it expired, and another walk may
+    /// have begun).
+    pub(crate) fn hold(&self, conn: &Connection) -> Result<()> {
+        let held = conn
+            .prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?
+            .execute([self.scan.get()])?;
+        if held > 0 {
+            return Ok(());
+        }
+        let root = self.rules.display(self.root);
+        Err(match crate::types::covering_root(conn, self.rules, self.root)? {
+            None => Error::RootRemoved { root },
+            Some(_) => Error::LeaseLost { root },
+        })
+    }
+}
+
 pub(crate) fn release_lease(conn: &Connection, scan: ScanId) -> Result<()> {
     let held: bool = conn
         .prepare_cached("SELECT EXISTS(SELECT 1 FROM scan_leases WHERE id = ?1)")?
@@ -506,12 +548,14 @@ mod tests {
         assert_eq!(renamed.kind, Kind::Video);
         analyzed(&mut c, &renamed);
         assert!(!due(&c, id));
-        // Gone, then back: nothing to import, but the thumbnails look at it both times.
+        // Gone (a complete scan that didn't see it), then back (the next scan): nothing to import, but the thumbnails
+        // look at it both times.
         let seq = raw::file_seq(&c, id);
         let next = begin(&mut c, &p(rules, r"D:\x"));
-        c.mark_missing(&p(rules, r"D:\x"), next, &[]).unwrap();
+        lease(&mut c, next, &p(rules, r"D:\x")).mark_missing(&[]).unwrap();
         let gone = raw::file_seq(&c, id);
-        scanned(&mut c, next, "a.mp4", 13, 103);
+        let back = begin(&mut c, &p(rules, r"D:\x"));
+        scanned(&mut c, back, "a.mp4", 13, 103);
         assert_eq!(c.pending_import(false).unwrap().len(), 0);
         assert!(seq < gone && gone < raw::file_seq(&c, id));
     }
@@ -526,7 +570,7 @@ mod tests {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let put = |c: &mut Catalog, scan: pg_model::ids::ScanId, folder: &str, name: &str, file_ref: u64| {
             let identity = FileIdentity::new(1, file_ref);
-            let prior = c.prior_states(&p(rules, folder), &[identity]).unwrap().remove(0);
+            let prior = listed(c, &p(rules, folder), &[identity]).remove(0);
             let tx = c.tx().unwrap();
             let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
             let folder = writer.folder(&p(rules, folder)).unwrap();
@@ -545,13 +589,13 @@ mod tests {
         let next = begin(&mut c, &p(rules, r"D:\x"));
         put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
         let locked = crate::Skip { path: p(rules, r"D:\x\locked"), reason: crate::SkipReason::Unreadable };
-        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), next, &[locked]).unwrap(), 0);
+        assert_eq!(lease(&mut c, next, &p(rules, r"D:\x")).mark_missing(&[locked]).unwrap(), 0);
         assert_eq!(raw::missing_count(&c), 0);
 
         // Once it can be listed again, a scan that doesn't see its files marks them.
         let later = begin(&mut c, &p(rules, r"D:\x"));
         put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
-        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), later, &[]).unwrap(), 2);
+        assert_eq!(lease(&mut c, later, &p(rules, r"D:\x")).mark_missing(&[]).unwrap(), 2);
         assert_eq!(raw::missing_count(&c), 2);
     }
 
@@ -628,7 +672,10 @@ mod tests {
         assert_eq!(zone, "just before");
         assert_eq!(cache_kib(reader.conn()), 1024);
         assert_eq!(cache_kib(&c.conn), 262_144, "the catalog's own cache is left as it is");
-        assert!(reader.conn().execute("UPDATE meta SET value = 'x' WHERE key = 'taken_zone'", []).is_err(), "read-only");
+        assert!(
+            reader.conn().execute("UPDATE meta SET value = 'x' WHERE key = 'taken_zone'", []).is_err(),
+            "read-only"
+        );
         drop(reader);
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();

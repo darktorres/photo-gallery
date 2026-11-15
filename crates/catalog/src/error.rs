@@ -1,8 +1,9 @@
 //! The catalog's errors. Callers branch on a few cases: [`Error::Interrupted`], a statement stopped by the cancel flag
 //! (`Catalog::cancel_when`) or by SQLite's own interrupt; [`Error::ScanBusy`], a walk refused because another walks an
-//! overlapping folder (`Catalog::begin_scan`); and [`Error::is_busy`], the catalog locked by another connection past
-//! the busy timeout. Every other failure is one of the sources the catalog reads or writes through (SQLite, a stored
-//! value, a file), or [`Error::Other`]: an `anyhow` error that carries its context.
+//! overlapping folder (`Catalog::begin_scan`); [`Error::RootRemoved`] and [`Error::LeaseLost`], a walk whose lease is
+//! gone (its folder removed from the library, or the lease expired); and [`Error::is_busy`], the catalog locked by
+//! another connection past the busy timeout. Every other failure is one of the sources the catalog reads or writes
+//! through (SQLite, a stored value, a file), or [`Error::Other`]: an `anyhow` error that carries its context.
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -25,6 +26,16 @@ pub enum Error {
     /// or its lease expires (`SCAN_LEASE_SECS` without a heartbeat).
     #[error("a scan of {root} is running ({holder})")]
     ScanBusy { root: String, holder: String },
+    /// A walk of `root` lost its lease: it had no heartbeat for `SCAN_LEASE_SECS` (the walk was held up), so it expired,
+    /// and another walk of an overlapping folder may have begun. The write that found it gone wrote nothing: the walk
+    /// can no longer tell that it is alone.
+    #[error("the lease of the scan of {root} was lost (it expired while the walk was held up)")]
+    LeaseLost { root: String },
+    /// The folder `root` was removed from the library while a walk of it ran: the removal took its lease
+    /// (`Catalog::remove_root`), and the walk's write that found it gone wrote nothing, so nothing of the folder is
+    /// written again after its removal.
+    #[error("{root} was removed from the library while it was scanned")]
+    RootRemoved { root: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -57,9 +68,13 @@ impl Error {
                     == Some(rusqlite::ErrorCode::DatabaseBusy)
                     || cause.downcast_ref::<Error>().is_some_and(Error::is_busy)
             }),
-            Error::Interrupted | Error::Value(_) | Error::PathRules { .. } | Error::ScanBusy { .. } | Error::Io(_) => {
-                false
-            }
+            Error::Interrupted
+            | Error::Value(_)
+            | Error::PathRules { .. }
+            | Error::ScanBusy { .. }
+            | Error::LeaseLost { .. }
+            | Error::RootRemoved { .. }
+            | Error::Io(_) => false,
         }
     }
 }

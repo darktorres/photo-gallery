@@ -956,7 +956,8 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         let missing: i64 = c.conn.query_row("SELECT missing FROM files WHERE ext = 'xyz'", [], |r| r.get(0)).unwrap();
         assert_eq!(missing, 1);
-        let mark: String = c.conn.query_row("SELECT value FROM meta WHERE key = 'held_exts'", [], |r| r.get(0)).unwrap();
+        let mark: String =
+            c.conn.query_row("SELECT value FROM meta WHERE key = 'held_exts'", [], |r| r.get(0)).unwrap();
         assert_eq!(mark, pg_model::media::held_exts());
         let all = pg_model::rules::Merged::default();
         assert_eq!(c.list_grid(&all, true, &Query::default(), Sort::default()).unwrap().len(), 1);
@@ -1020,7 +1021,7 @@ mod tests {
         // The pairing after the scan stamps it too (its rebinds revive rows).
         c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'held_exts'", [other]).unwrap();
         let coverage = crate::pair::Coverage { complete: true, skipped: &[] };
-        c.pair_after_scan(&p(rules, r"D:\x"), scan, coverage).unwrap();
+        lease(&mut c, scan, &p(rules, r"D:\x")).pair_after_scan(coverage).unwrap();
         assert_eq!(mark(&c), pg_model::media::held_exts(), "the pairing after the scan stamps the mark");
         // The other build records a row of an extension this one doesn't hold, and stamps its set.
         c.conn.execute("UPDATE files SET ext = 'xyz' WHERE name = ?1", [b"b.jpg".to_vec()]).unwrap();

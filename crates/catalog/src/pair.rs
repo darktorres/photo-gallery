@@ -26,12 +26,12 @@
 
 use std::collections::BTreeSet;
 
-use pg_model::ids::{FileId, ScanId};
+use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
 use pg_model::rules::{Path as RulePath, PathRules};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::core::Catalog;
+use crate::core::{HeldLease, ScanLease};
 use crate::error::Result;
 use crate::transaction::write_transaction;
 use crate::types::{WRITE_BATCH, skipped_folders, under_params};
@@ -71,16 +71,22 @@ struct Fresh {
     order_key: Vec<u8>,
 }
 
-impl Catalog {
-    /// The pairing at the end of a scan of `root` (`scan` is its id), over what `coverage` says the scan saw. Tier 1
-    /// runs on any scan that reached this point. Tier 2, the replacements and the clearing run when the walk was
-    /// complete, since they need the tree to have been looked through: they leave out the folders it skipped, whose
-    /// rows were not seen, and pair only the fresh rows this scan saw.
-    pub fn pair_after_scan(&mut self, root: &RulePath, scan: ScanId, coverage: Coverage<'_>) -> Result<Pairing> {
-        let scan = scan.get();
+impl ScanLease<'_> {
+    /// The pairing at the end of the scan of the lease's folder, over what `coverage` says the scan saw. Tier 1 runs on
+    /// any scan that reached this point. Tier 2, the replacements and the clearing run when the walk was complete,
+    /// since they need the tree to have been looked through: they leave out the folders it skipped, whose rows were not
+    /// seen, and pair only the fresh rows this scan saw.
+    ///
+    /// Each batch's transaction holds the lease first ([`ScanLease::renew`]'s check): one that is gone (the folder
+    /// removed from the library, which took it) writes nothing, and the pairing ends with [`crate::Error::RootRemoved`]
+    /// or [`crate::Error::LeaseLost`]. A rebind or a replacement would otherwise bring a removed folder's rows back as
+    /// present.
+    pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> Result<Pairing> {
+        let held = self.held();
+        let scan = self.id().get();
         let rules = self.rules;
         let conn = &self.conn;
-        let under = under_params(rules, root);
+        let under = under_params(rules, self.root());
         // A row this scan saw was upserted in a folder it listed; one in a skipped folder is left out all the same.
         let skipped = {
             let snapshot = conn.unchecked_transaction()?;
@@ -93,7 +99,7 @@ impl Catalog {
         let mut ambiguous = BTreeSet::new();
 
         // Tier 1: the same folder and name, on another volume.
-        in_batches(conn, &under, scan, &skipped, |tx, fresh| {
+        in_batches(conn, held, &under, scan, &skipped, |tx, fresh| {
             let mut same_name = tx.prepare_cached(
                 "SELECT id FROM files WHERE volume IS NOT NULL AND volume <> ?1 AND file_ref = ?2 AND folder_id = ?3
                  AND name = ?4 AND size = ?5 AND mtime = ?6 AND (created IS NULL OR ?7 IS NULL OR created = ?7)
@@ -125,7 +131,7 @@ impl Catalog {
             // folder it did not skip. The volumes are read once, at the tier's first batch, not per candidate (a
             // volume's rows, per candidate, was a quadratic scan).
             let mut seen: Option<BTreeSet<i64>> = None;
-            in_batches(conn, &under, scan, &skipped, |tx, fresh| {
+            in_batches(conn, held, &under, scan, &skipped, |tx, fresh| {
                 if seen.is_none() {
                     seen = Some(seen_volumes(tx, scan)?);
                 }
@@ -192,7 +198,7 @@ impl Catalog {
             // saw are cleared: an unpaired row it did not see is a file that is gone for now, and stays unpaired, so
             // the file coming back under its identity is paired with its row (and its data) rather than taken for a
             // new file. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
-            in_batches(conn, &under, scan, &skipped, |tx, fresh| {
+            in_batches(conn, held, &under, scan, &skipped, |tx, fresh| {
                 let mut replaced_by = tx.prepare_cached(
                     "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
                      AND ((unpaired = 1 AND (volume IS NULL OR last_scan < ?4))
@@ -269,11 +275,13 @@ impl Catalog {
 }
 
 /// Run `tier` over the fresh rows of the root this scan saw ([`fresh_rows`]), outside the `skipped` folders, in
-/// batches of at most [`WRITE_BATCH`] by id: each batch is read in a write transaction of its own, which the tier's
-/// queries and writes run in (and `meta.held_exts` is stamped in), and which commits before the next. A row a batch bound or cleared is gone from the next
-/// one's read, and an id below the last read is never read again.
+/// batches of at most [`WRITE_BATCH`] by id: each batch is read in a write transaction of its own, which holds the
+/// walk's lease first (`held`), which the tier's queries and writes run in (and `meta.held_exts` is stamped in), and
+/// which commits before the next. A row a batch bound or cleared is gone from the next one's read, and an id below the
+/// last read is never read again.
 fn in_batches(
     conn: &Connection,
+    held: HeldLease<'_>,
     under: &[Vec<u8>; 3],
     scan: i64,
     skipped: &BTreeSet<i64>,
@@ -282,6 +290,7 @@ fn in_batches(
     let mut after = i64::MIN;
     loop {
         let tx = write_transaction(conn)?;
+        held.hold(&tx)?;
         let batch = fresh_rows(&tx, under, scan, after)?;
         let Some(last) = batch.last().map(|f| f.id) else { return Ok(()) };
         // A rebind or a replacement revives a row with the fresh row's extension, which this build holds.
@@ -301,7 +310,7 @@ fn seen_volumes(tx: &Transaction, scan: i64) -> Result<std::collections::BTreeSe
 
 /// The fresh rows of the root that this scan saw (`last_scan`), with an identity and no children: the rows to pair, the
 /// next batch of them, at most [`WRITE_BATCH`] with an id after `after`, by id. A row with children is counted by
-/// [`Catalog::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list, so
+/// [`ScanLease::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list, so
 /// it is not paired until a scan sees it.
 ///
 /// Read through `files_fresh` (`INDEXED BY`: the plan is the point, and a schema without the index fails here rather
@@ -438,8 +447,10 @@ fn replace(
 mod tests {
     use super::*;
     use crate::browse::fixtures::{spelled, under_both_rules};
-    use crate::{Recorded, ScannedFile, Versions};
+    use crate::test_support::lease;
+    use crate::{Catalog, Recorded, ScannedFile, Versions};
     use pg_model::ids::FileIdentity;
+    use pg_model::ids::ScanId;
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::rules::PathRules;
@@ -457,10 +468,10 @@ mod tests {
         .unwrap()
     }
 
-    /// A walk of D:\x begun, its lease given back at once (the tests begin walks one after another).
+    /// A walk of D:\x begun, its lease kept (`test_support::begin`: the tests begin walks one after another).
     fn begin(c: &mut Catalog) -> ScanId {
         let rules = c.rules();
-        c.begin_scan(&p(rules, r"D:\x")).unwrap().id()
+        crate::test_support::begin(c, &p(rules, r"D:\x"))
     }
 
     /// The scanner finding a file in D:\x with this identity, name, size and creation time (mtime 100).
@@ -490,7 +501,7 @@ mod tests {
     ) -> Recorded {
         let rules = c.rules();
         let identity = FileIdentity::new(volume, file);
-        let prior = c.prior_states(&p(rules, folder), &[identity]).unwrap().remove(0);
+        let prior = crate::test_support::listed(c, &p(rules, folder), &[identity]).remove(0);
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
         let folder = writer.folder(&p(rules, folder)).unwrap();
@@ -506,7 +517,7 @@ mod tests {
     /// The pairing of a scan of D:\x that skipped no folder, `complete` or stopped.
     fn pair(c: &mut Catalog, scan: ScanId, complete: bool) -> Pairing {
         let rules = c.rules();
-        c.pair_after_scan(&p(rules, r"D:\x"), scan, Coverage { complete, skipped: &[] }).unwrap()
+        lease(c, scan, &p(rules, r"D:\x")).pair_after_scan(Coverage { complete, skipped: &[] }).unwrap()
     }
 
     /// The pairing of a complete scan of D:\x that did not list `skipped` (the folders' texts).
@@ -516,7 +527,7 @@ mod tests {
             .iter()
             .map(|text| crate::Skip { path: p(rules, text), reason: crate::SkipReason::Unreadable })
             .collect();
-        c.pair_after_scan(&p(rules, r"D:\x"), scan, Coverage { complete: true, skipped: &skipped }).unwrap()
+        lease(c, scan, &p(rules, r"D:\x")).pair_after_scan(Coverage { complete: true, skipped: &skipped }).unwrap()
     }
 
     fn count(c: &Catalog) -> i64 {
@@ -960,6 +971,34 @@ mod tests {
         swapped_names_across_a_volume_change_are_not_cross_bound_posix
     );
 
+    /// The library folder removed after the scan's batches and before its pairing (by another process, which can't stop
+    /// the walk; or between two of the pairing's batches): the pairing writes nothing, so no rebind brings the removed
+    /// folder's rows back as present, and it says the folder was removed.
+    fn a_pairing_after_its_folder_was_removed_writes_nothing(rules: PathRules) {
+        let mut c = catalog(rules);
+        assert!(c.add_root(&p(rules, r"D:\x")).unwrap());
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, None);
+        pair(&mut c, first, true);
+        // The volume renumbered: the next scan finds the file under another identity, a fresh row that tier 1 rebinds.
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 7, "a.jpg", 10, None);
+        let root = c.root_id(&p(rules, r"D:\x")).unwrap().unwrap();
+        assert_eq!(c.remove_root(root).unwrap(), Some(2));
+        let paired =
+            lease(&mut c, second, &p(rules, r"D:\x")).pair_after_scan(Coverage { complete: false, skipped: &[] });
+        assert!(matches!(paired, Err(crate::Error::RootRemoved { .. })), "{paired:?}");
+        assert_eq!(count(&c), 2, "nothing was rebound");
+        let present: i64 = c.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(present, 0, "the removed folder's rows stay missing");
+    }
+
+    under_both_rules!(
+        a_pairing_after_its_folder_was_removed_writes_nothing,
+        a_pairing_after_its_folder_was_removed_writes_nothing_windows,
+        a_pairing_after_its_folder_was_removed_writes_nothing_posix
+    );
+
     /// A missing row is never a replacement candidate: a rated photo deleted (a complete scan marked it missing), then a
     /// new file under its name in its folder, leaves the rating on the deleted photo's row.
     fn a_missing_row_is_never_a_replacement_candidate(rules: PathRules) {
@@ -972,7 +1011,7 @@ mod tests {
 
         let deleted = begin(&mut c);
         pair(&mut c, deleted, true);
-        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), deleted, &[]).unwrap(), 1);
+        assert_eq!(lease(&mut c, deleted, &p(rules, r"D:\x")).mark_missing(&[]).unwrap(), 1);
 
         let third = begin(&mut c);
         found(&mut c, third, 1, 9, "a.jpg", 12, Some(6));

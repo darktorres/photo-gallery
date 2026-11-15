@@ -103,7 +103,14 @@ fn pair_and_report(
     });
     // Two decimals: the parts are fractions of a second.
     let (t, part) = (s.timings, |d: std::time::Duration| format!("{:.2}", d.as_secs_f64()));
-    say(&Line::PairTimings { load: part(t.load), join: part(t.join), write: part(t.write), commit: part(t.commit) });
+    say(&Line::PairTimings {
+        load: part(t.load),
+        join: part(t.join),
+        sort: part(t.joins.sort),
+        scan: part(t.joins.scan),
+        write: part(t.write),
+        commit: part(t.commit),
+    });
     if s.legacy > 0 {
         say(&Line::PairsLegacy { count: s.legacy.to_string() });
     }

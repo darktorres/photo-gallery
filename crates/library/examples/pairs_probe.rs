@@ -5,7 +5,8 @@
 //! - `PG_PROBE_KEEP_OWED` set: the pass pairs what the catalog owes (`tools/profiling/pairing/set_owed.py` sets it).
 //!   Unset: every eligible picture owes its pairs again first (`pairs_again`), the pass over the whole library; the
 //!   catalog is then closed and opened again, so the pass does not merge that write's WAL or read its cached pages.
-//! - `PG_PROBE_SLICE` and `PG_PROBE_CACHE_KIB` set the pass's `Settings` (default `pairs::SLICE`, `pairs::CACHE_KIB`).
+//! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_SORTERS` and `PG_PROBE_FEW` set the pass's `Settings` (default
+//!   `pairs::SLICE`, `pairs::CACHE_KIB`, the join's sorters and few-owed threshold by thread count).
 //!
 //! One line: what was owed, what was paired, the wall clock, and where it went (`PairStats::timings`).
 
@@ -20,17 +21,20 @@ use pg_jobs::pipeline::Options;
 use pg_model::rules::PathRules;
 use pg_platform::priority::Priority;
 
+/// The environment variable `name` parsed, when it is set and parses.
+fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
+    std::env::var(name).ok().and_then(|v| v.parse().ok())
+}
+
 fn main() -> Result<()> {
     let folder = PathBuf::from(std::env::args().nth(1).context("usage: pairs_probe <folder with catalog.sqlite>")?);
-    let workers = std::env::var("PG_PROBE_WORKERS").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    let workers = env("PG_PROBE_WORKERS").unwrap_or(1);
     let keep = std::env::var_os("PG_PROBE_KEEP_OWED").is_some();
     let mut settings = pg_import::pairs::Settings::default();
-    if let Some(slice) = std::env::var("PG_PROBE_SLICE").ok().and_then(|v| v.parse().ok()) {
-        settings.slice = slice;
-    }
-    if let Some(kib) = std::env::var("PG_PROBE_CACHE_KIB").ok().and_then(|v| v.parse().ok()) {
-        settings.cache_kib = kib;
-    }
+    settings.slice = env("PG_PROBE_SLICE").unwrap_or(settings.slice);
+    settings.cache_kib = env("PG_PROBE_CACHE_KIB").unwrap_or(settings.cache_kib);
+    settings.join.sorters = env("PG_PROBE_SORTERS").or(settings.join.sorters);
+    settings.join.few_entries = env("PG_PROBE_FEW").or(settings.join.few_entries);
     let path = folder.join("catalog.sqlite");
     let mut catalog = Catalog::prepare(&path, pg_library::versions(), PathRules::Windows)?;
     let owed = if keep {
@@ -51,17 +55,23 @@ fn main() -> Result<()> {
     let seconds = start.elapsed().as_secs_f64();
     let t = stats.timings;
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+    let sorters = settings.join.sorters.unwrap_or_else(|| pg_import::pairs::default_sorters(workers));
     writeln!(
         std::io::stdout(),
-        "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, slice {}, cache {} KiB, \
-         complete {}) | load {:.0} join {:.0} write {:.0} commit {:.0} ms",
+        "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, sorters {sorters}, slice \
+         {}, cache {} KiB, few {}, complete {}) | load {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} write {:.0} \
+         commit {:.0} ms",
         stats.files,
         stats.pairs,
         settings.slice,
         settings.cache_kib,
+        settings.join.few_entries.unwrap_or_else(|| pg_import::pairs::FEW_ENTRIES_PER_THREAD * workers),
         stats.complete,
         ms(t.load),
         ms(t.join),
+        ms(t.joins.prepare),
+        ms(t.joins.sort),
+        ms(t.joins.scan),
         ms(t.write),
         ms(t.commit),
     )?;

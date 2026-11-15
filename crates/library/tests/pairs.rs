@@ -110,6 +110,27 @@ fn slices_of_one_make_the_pairs_one_slice_makes() {
     assert_eq!(state::cache_kib(&c).unwrap(), 262_144, "the app's cache, after the pass");
 }
 
+/// A write that fails while the next slice's join runs (slices of one picture, so every write overlaps a join) is the
+/// pass's error: the join is stopped and joined, nothing of the batch is stored, and the next pass makes it all.
+#[test]
+fn a_write_that_fails_while_the_next_join_runs_stops_it_and_is_the_error() {
+    let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (mut c, ctl, _dir) = imported("overlap-fault");
+    let owed = c.owed_pairs().unwrap();
+    assert!(owed >= 2, "a second slice to join while the first is written");
+    let settings = pg_import::pairs::Settings { slice: 1, ..pg_import::pairs::Settings::default() };
+    state::fail_pair_writes(&c).unwrap();
+    assert!(pg_import::pairs::pair_with(&mut c, &opts(), settings, &ctl).is_err());
+    assert!(state::pairs(&c).unwrap().is_empty());
+    assert_eq!(state::cache_kib(&c).unwrap(), 262_144, "the app's cache, after a failed pass");
+    state::allow_pair_writes(&c).unwrap();
+    let made = pg_import::pairs::pair_with(&mut c, &opts(), settings, &ctl).unwrap();
+    assert!(made.complete);
+    let (lo, hi) = the_twins(&c);
+    assert!(state::pairs(&c).unwrap().contains(&(lo, hi, 0)));
+    assert_eq!(c.owed_pairs().unwrap(), 0);
+}
+
 #[test]
 fn a_batch_that_cannot_be_written_stores_nothing_and_the_next_pass_makes_it_all() {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);

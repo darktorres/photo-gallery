@@ -627,6 +627,92 @@ copy, 3 runs):
 The rest of the peak is `VACUUM`'s copy of the file, which `temp_store = MEMORY` builds in RAM. It happens once, at the
 first start of a build with migration 13. The pass on the migrated copy gives the oracle's 5,277 pairs exactly.
 
+#### After block D: the join's engine
+
+Block D sorts each stage on 1 - 2 sorter threads while the workers scan the one before (a ring of two stage sets), adds
+a few-owed path (each chunk's query values in a bitmap, one pass over the store), makes the slice 200,000 (one slice
+for this library), and, with several slices, writes a slice while the next one's join runs. The probe now prints the
+join's parts: `prepare` (the slice's query side), `sort` (the time the scan waited for its sorts) and `scan`. Medians of
+3 quiet runs, default settings, all 187,804 owed:
+
+| Workers | Sorters | Total | Load | Join | Sort wait | Scan | Write statements | Commits |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0 | 5.15 s (10.63) | 0.15 s | 4.70 s | 0.68 s | 3.91 s | 0.23 s | 0.04 s |
+| 2 | 0 | 3.37 s | 0.17 s | 2.87 s | 0.71 s | 2.06 s | 0.29 s | 0.04 s |
+| 4 | 1 | 2.02 s | 0.15 s | 1.58 s | 0.05 s | 1.44 s | 0.24 s | 0.04 s |
+| 6 | 1 | 1.50 s | 0.15 s | 1.09 s | 0.05 s | 0.93 s | 0.23 s | 0.04 s |
+| 12 | 2 | 1.27 s (6.56) | 0.14 s | 0.83 s | 0.06 s | 0.68 s | 0.24 s | 0.04 s |
+
+The plan's targets: at 12 workers 5x or better, met (5.2x). On one worker 3.5x, **not met** (2.1x): what is left there is
+the scan itself, 3.9 s on one thread. A pass for a few files, 0.35 s, met (below).
+
+**Correctness on the real data** (`oracle_d.ps1` in the scratch folder; every case gives the oracle's 5,277 pairs
+exactly, nothing left owed): all owed in one slice at 12 workers and at 1; all owed in four slices of 50,000, with the
+write overlap; and 300, 3,000 and 30,000 owed, with those pictures' pairs deleted first (14, 143 and 1,553 of them), on
+the few-owed path (300) and the sorted path (3,000 and 30,000, and 3,000 on one worker).
+
+**G3, the sorter threads** (total, 2 runs each):
+
+| Threads | 0 sorters | 1 sorter | 2 sorters |
+|---|---|---|---|
+| 2 | **3.17 s** | 4.37 s | 4.39 s |
+| 4 | 2.28 s | **1.96 s** | 2.63 s |
+| 6 | 1.99 s | **1.51 s** | 1.65 s |
+| 8 | 1.93 s | **1.41 s** | 1.46 s |
+| 12 | 1.80 s | 1.51 s | **1.22 s** |
+
+Below 4 threads a sorter costs a worker the scan needs more; from 10 the scan is fast enough that one sorter falls
+behind (it waited 0.33 s at 12). `join::default_sorters`: 0 up to 3 threads, 1 from 4 to 9, 2 from 10.
+
+**G5, the slice** (total, 2 runs each, the machine busier than for the table above):
+
+| Slice | 1 worker | 6 workers | 12 workers |
+|---|---|---|---|
+| 50,000 (4 slices) | 7.50 s | 2.13 s | 1.85 s |
+| 100,000 (2 slices) | 5.88 s | 1.63 s | 1.47 s |
+| 200,000 (1 slice, kept) | 5.08 s | 1.57 s | 1.44 s |
+
+Every slice sorts the whole stored side again and sets up every probe again, so one slice is cheapest. The plan's
+400,000 on a synthetic 500,000-picture corpus was not run: this library is one slice at 200,000, and a larger slice is a
+question for a larger library, whose stored side alone already passes the cap (about 0.5 KB per picture).
+
+**G6, the few-owed path against the sorted path** (join, 2 runs each; the few-owed path forced on with `PG_PROBE_FEW`,
+the sorted path forced with 0):
+
+| Owed | Few-owed, 12 workers | Sorted, 12 workers | Few-owed, 1 worker | Sorted, 1 worker |
+|---|---|---|---|---|
+| 1 | 60 ms | | 169 ms | 274 ms |
+| 30 | | 256 ms | 260 ms | 264 ms |
+| 300 | 92 ms | 261 ms | 385 ms | 297 ms |
+| 1,000 | 189 ms | 264 ms | 880 ms | 388 ms |
+| 2,500 | 308 ms | 280 ms | 2,228 ms | 508 ms |
+
+The few-owed path's work is spread over every thread; the sorted path's floor (sorting the stored side, about 0.2 s) is
+not. So the threshold is per thread: 1,000 query entries (125 owed pictures) per thread, `FEW_ENTRIES_PER_THREAD`. A
+first version, which looked each hit up by binary search and read the query's full hash, was 2 - 3x slower per hit
+(1,000 owed: 324 ms on 12 workers, 2,862 ms on 1); the kept one sorts each chunk's queries as a stage does and tests a
+value and its six low-bit neighbours with one bitmap word.
+
+**G4, the kernel's loop nest: not built.** The swapped loop (stored entries in the vector, the query broadcast) was a
+candidate because at 50,000 a stored bucket averaged 11.5 entries against 6.1 queries. At one slice of 200,000 a query
+bucket averages 23 (1.5 M entries over 65,536 values) against the same 11.5 stored, so the current loop already
+vectorizes the longer side. Register-tiling the query vectors across the 17 probes was not tried either. The one-worker
+scan, 3.9 s, is where a better kernel would show.
+
+**Peak memory** (default settings, 12 workers, 2 runs that agreed within 2 MiB):
+
+| Owed | Peak commit | Join | Path |
+|---|---|---|---|
+| 0 | 2 MiB | | (one probe) |
+| 1 | 75 MiB | 91 ms | few-owed |
+| 300 | 76 MiB | 184 ms | few-owed |
+| 3,000 | 118 MiB | 292 ms | sorted |
+| 30,000 | 148 MiB | 393 ms | sorted |
+| 187,804 | 254 MiB | 822 ms | sorted |
+
+The cap was 330 MB at every setting; before the rebuild these were 366 MB (one owed) and 415 MB (all owed). A pass with
+one owed picture takes 0.24 s in all (0.15 s of it the load), against 1.3 - 1.6 s before.
+
 ---
 
 ## Where the other results are

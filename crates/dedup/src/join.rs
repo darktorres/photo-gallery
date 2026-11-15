@@ -28,9 +28,16 @@
 //! both sides into three arrays per side, 20 bytes per entry: the first two words (what the kernels filter on) and the
 //! code (`picture << 4 | owed << 3 | orientation`). The full hash of a candidate that passes the filter is read back from
 //! the store by its code.
+//!
+//! **Two paths, one set of candidates.** The sorted path sorts the next stage on 1 - 2 sorter threads while the workers
+//! scan this one (a ring of two stage sets; [`Tuning::sorters`]). A slice with few query entries ([`Tuning::few_entries`])
+//! sorts nothing of the stored side: each chunk's query values go in a bitmap, and one pass over the store tests every
+//! stored entry's values and their one-bit neighbours against them. Both test the same (stored, query, chunk) candidates
+//! with the same rules, so they return the same pairs.
 
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+use std::time::{Duration, Instant};
 
 use pg_model::num::index;
 use pg_model::pdq::{Hash, MATCH_DISTANCE, ORIENTATIONS, transpose_rows};
@@ -117,6 +124,67 @@ pub(crate) fn best_kernel() -> Kernel {
     Kernel::Scalar
 }
 
+/// The most query entries ([`QUERY_ORIENTATIONS`] per owed picture of a slice) the few-owed path takes by default, per
+/// thread of the join ([`Tuning::few_entries`]); a larger slice takes the sorted path. Gate G6 (docs/reference/
+/// PROFILING.md, "The pairing pass"): the few-owed path's work is spread over every thread, while the sorted path's
+/// floor, sorting the stored side, is not, so the crossover grows with the threads: near 240 entries on one thread and
+/// near 16,000 on twelve.
+pub const FEW_ENTRIES_PER_THREAD: usize = 1_000;
+/// The stored entries a worker of the few-owed path takes at a time (its unit of work, and of control).
+const FEW_BLOCK: usize = 4096;
+/// The stage sets in the sorted path's ring: the one the workers scan, and the one the sorters fill.
+const RING: usize = 2;
+
+/// What a join may be tuned by (the gates of docs/plans/PAIRING_PASS_PLAN.md set the defaults, which `None` takes).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tuning {
+    /// The threads that sort the next stage while the workers scan this one, out of the join's threads: 0 sorts on
+    /// the workers' thread between the stages, 1 sorts both sides of a stage in turn, 2 sorts them side by side.
+    /// `None`: by the thread count ([`default_sorters`]).
+    pub sorters: Option<usize>,
+    /// The most query entries the few-owed path takes. `None`: [`FEW_ENTRIES_PER_THREAD`] for each of the join's threads.
+    pub few_entries: Option<usize>,
+}
+
+/// The sorter threads of a join on `threads` threads: the workers are the rest. Gate G3 (docs/reference/PROFILING.md,
+/// "The pairing pass"): below 4 threads a sorter costs a worker the scan needs more; from 4 one sorter keeps ahead of
+/// the scan; from 10 the scan is fast enough that one sorter falls behind, and two side by side keep up.
+pub fn default_sorters(threads: usize) -> usize {
+    match threads {
+        0..=3 => 0,
+        4..=9 => 1,
+        _ => 2,
+    }
+}
+
+/// Where a join's time went (wall clock, on the thread that runs it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct JoinTimes {
+    /// The slice's query side: its pictures, their ranks and their transposed orientations, permuted.
+    pub prepare: Duration,
+    /// Waiting for the stages' sorts: all of them when the sorts run between the scans, the part the scans did not
+    /// cover when sorters run ahead. The few-owed path's small sorts.
+    pub sort: Duration,
+    /// The scans of the stages, or the few-owed path's pass over the store.
+    pub scan: Duration,
+}
+
+impl std::ops::AddAssign for JoinTimes {
+    fn add_assign(&mut self, other: JoinTimes) {
+        self.prepare += other.prepare;
+        self.sort += other.sort;
+        self.scan += other.scan;
+    }
+}
+
+/// A slice's join: its pairs, and where its time went.
+#[derive(Debug)]
+pub struct Joined {
+    /// By `(a, b)`, `a < b`, the least distance of each.
+    pub pairs: Vec<Pair>,
+    pub times: JoinTimes,
+}
+
 /// The pass's join: every picture's stored orientations, permuted, built once; [`Joiner::join`] then pairs one slice of
 /// the queries at a time against them.
 pub struct Joiner<'a> {
@@ -127,6 +195,7 @@ pub struct Joiner<'a> {
     /// Orientation `o` of picture `i`, permuted, at `ORIENTATIONS * i + o`.
     stored: Vec<[u64; 4]>,
     kernel: Kernel,
+    tuning: Tuning,
 }
 
 impl<'a> Joiner<'a> {
@@ -136,7 +205,14 @@ impl<'a> Joiner<'a> {
             return Err(TooManyPictures(hashes.len()));
         }
         let stored = hashes.iter().flat_map(|h| h.iter().map(permuted)).collect();
-        Ok(Joiner { hashes, owed, stored, kernel: best_kernel() })
+        Ok(Joiner { hashes, owed, stored, kernel: best_kernel(), tuning: Tuning::default() })
+    }
+
+    /// The same join with `tuning`.
+    #[must_use]
+    pub fn tuned(mut self, tuning: Tuning) -> Joiner<'a> {
+        self.tuning = tuning;
+        self
     }
 
     /// The same join on `kernel` (the tests run each).
@@ -152,9 +228,10 @@ impl<'a> Joiner<'a> {
 
     /// The pairs in which the query side is one of `queries` (a range of indices; the owed ones in it query).
     ///
-    /// `threads` workers per stage (at least one); `start` runs once in each worker before it works (the caller sets its
-    /// priority there); `control` is asked before each block of buckets and returns false to stop, and may block (a
-    /// pause). `None` when it stopped the join: nothing is returned then. Not inlined, so a profiler can toggle on it.
+    /// `threads` threads in all (at least one): the sorters ([`Tuning::sorters`]) and the workers. `start` runs once in
+    /// each thread before it works (the caller sets its priority there); `control` is asked before each block of work,
+    /// by the workers and the sorters, returns false to stop, and may block (a pause). `None` when it stopped the join:
+    /// nothing is returned then. Not inlined, so a profiler can toggle on it.
     #[inline(never)]
     pub fn join(
         &self,
@@ -162,8 +239,9 @@ impl<'a> Joiner<'a> {
         threads: usize,
         start: &(dyn Fn() + Sync),
         control: &(dyn Fn() -> bool + Sync),
-    ) -> Option<Vec<Pair>> {
+    ) -> Option<Joined> {
         let threads = threads.max(1);
+        let preparing = Instant::now();
         let pictures: Vec<u32> = queries.filter(|&i| self.owes(i)).filter_map(|i| u32::try_from(i).ok()).collect();
         let mut rank = vec![0u32; self.hashes.len()];
         for (k, &p) in (0u32..).zip(&pictures) {
@@ -176,18 +254,284 @@ impl<'a> Joiner<'a> {
             .flat_map(|&p| self.hashes.get(index(p)).into_iter().flatten().map(|h| permuted(&h.transpose())))
             .collect();
         let sides = Sides { joiner: self, pictures: &pictures, transposed: &transposed, rank: &rank };
+        let mut times = JoinTimes { prepare: preparing.elapsed(), ..JoinTimes::default() };
+        let queries = pictures.len() * QUERY_ORIENTATIONS;
+        let few = self.tuning.few_entries.unwrap_or_else(|| FEW_ENTRIES_PER_THREAD.saturating_mul(threads));
+        let mut pairs = if queries <= few {
+            self.few_owed(&sides, queries, threads, start, control, &mut times)?
+        } else {
+            self.sorted(&sides, queries, threads, start, control, &mut times)?
+        };
+        compact(&mut pairs);
+        Some(Joined { pairs, times })
+    }
 
-        let (mut stored, mut query, mut scratch) = (Sorted::default(), Sorted::default(), Vec::new());
+    /// The sorted path: per chunk, both sides sorted into buckets and the buckets probed. The sorts of a stage run on
+    /// the sorter threads while the workers scan the one before (a ring of [`RING`] stage sets), or between the scans
+    /// with no sorter.
+    fn sorted(
+        &self,
+        sides: &Sides<'_, '_>,
+        queries: usize,
+        threads: usize,
+        start: &(dyn Fn() + Sync),
+        control: &(dyn Fn() -> bool + Sync),
+        times: &mut JoinTimes,
+    ) -> Option<Vec<Pair>> {
+        let sorters = self.tuning.sorters.unwrap_or_else(|| default_sorters(threads)).min(2);
+        let workers = threads.saturating_sub(sorters).max(1);
+        let stored = self.stored.len();
         let mut found = Vec::new();
-        for c in 0..CHUNKS {
-            sort_into(&mut stored, &mut scratch, self.stored.len(), |e| sides.stored_entry(e), c);
-            sort_into(&mut query, &mut scratch, pictures.len() * QUERY_ORIENTATIONS, |e| sides.query_entry(e), c);
-            let stage = Stage { c, stored: &stored, query: &query, sides: &sides };
-            let mut pairs = run_stage(self.kernel, &stage, threads, start, control)?;
-            found.append(&mut pairs);
+        if sorters == 0 {
+            let (mut set, mut scratch) = (StageSet::default(), Scratch::default());
+            for c in 0..CHUNKS {
+                if !control() {
+                    return None;
+                }
+                let sorting = Instant::now();
+                set.sort(c, sides, stored, queries, &mut scratch, false, start);
+                times.sort += sorting.elapsed();
+                let scanning = Instant::now();
+                let stage = Stage { c, stored: &set.stored, query: &set.query, sides };
+                found.append(&mut run_stage(self.kernel, &stage, workers, start, control)?);
+                times.scan += scanning.elapsed();
+            }
+            return Some(found);
         }
-        compact(&mut found);
-        Some(found)
+        let stopped = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let (full_tx, full_rx) = std::sync::mpsc::sync_channel::<(usize, StageSet)>(RING);
+            let (free_tx, free_rx) = std::sync::mpsc::sync_channel::<StageSet>(RING);
+            for _ in 0..RING {
+                let _ = free_tx.send(StageSet::default());
+            }
+            let stopped = &stopped;
+            let sorter = scope.spawn(move || {
+                start();
+                let mut scratch = Scratch::default();
+                for c in 0..CHUNKS {
+                    // The workers dropped their end: they stopped, or are done.
+                    let Ok(mut set) = free_rx.recv() else { return };
+                    if stopped.load(Relaxed) || !control() {
+                        stopped.store(true, Relaxed);
+                        return;
+                    }
+                    set.sort(c, sides, stored, queries, &mut scratch, sorters == 2, start);
+                    // Never blocks: the channel holds every set there is.
+                    if full_tx.send((c, set)).is_err() {
+                        return;
+                    }
+                }
+            });
+            for _ in 0..CHUNKS {
+                let waiting = Instant::now();
+                // The sorter stopped (a stop, or its panic, which the join below resumes).
+                let Ok((c, set)) = full_rx.recv() else { break };
+                times.sort += waiting.elapsed();
+                let scanning = Instant::now();
+                let stage = Stage { c, stored: &set.stored, query: &set.query, sides };
+                let scanned = run_stage(self.kernel, &stage, workers, start, control);
+                times.scan += scanning.elapsed();
+                let Some(mut pairs) = scanned else {
+                    stopped.store(true, Relaxed);
+                    break;
+                };
+                found.append(&mut pairs);
+                let _ = free_tx.send(set);
+            }
+            // Releases a sorter waiting for a set.
+            drop(free_tx);
+            if let Err(panic) = sorter.join() {
+                std::panic::resume_unwind(panic);
+            }
+        });
+        (!stopped.load(Relaxed)).then_some(found)
+    }
+
+    /// The few-owed path: the query side is small, so the stored side is not sorted. Each chunk's query entries are
+    /// sorted as a stage's are ([`Sorted`]), with a bitmap of the values they take, and one pass over the store tests
+    /// each stored entry's value in every chunk, and its one-bit neighbours, against the bitmaps. A hit is the same
+    /// candidate the sorted path's probe finds, tested by the same rules ([`few_hits`]), so the pairs are the same.
+    fn few_owed(
+        &self,
+        sides: &Sides<'_, '_>,
+        queries: usize,
+        threads: usize,
+        start: &(dyn Fn() + Sync),
+        control: &(dyn Fn() -> bool + Sync),
+        times: &mut JoinTimes,
+    ) -> Option<Vec<Pair>> {
+        let sorting = Instant::now();
+        let mut scratch = Vec::new();
+        let chunks: Vec<FewChunk> = (0..CHUNKS).map(|c| FewChunk::new(sides, queries, c, &mut scratch)).collect();
+        drop(scratch);
+        times.sort += sorting.elapsed();
+        let scanning = Instant::now();
+        let blocks = self.stored.len().div_ceil(FEW_BLOCK);
+        let found = parallel(threads, blocks, start, control, |block, out| {
+            let lo = block * FEW_BLOCK;
+            for x in lo..(lo + FEW_BLOCK).min(self.stored.len()) {
+                few_entry(sides, &chunks, x, out);
+            }
+        });
+        times.scan += scanning.elapsed();
+        found
+    }
+}
+
+/// One chunk's query entries for the few-owed path: sorted by that chunk as a stage's are, and the values they take as a
+/// bitmap of the 65,536 (8 KB, where a stage's offsets are 256 KB): the pass over the store tests the bitmap, and looks
+/// at the offsets only on a hit.
+struct FewChunk {
+    bits: Vec<u64>,
+    sorted: Sorted,
+}
+
+/// For a chunk value's low six bits `l`: the bits of its bitmap word that are the value itself and its six neighbours
+/// in the low six bits (`l ^ 1 << k`, `k < 6`), which lie in the same word. The other ten neighbours are in other words.
+#[expect(clippy::indexing_slicing, reason = "built at compile time, `l` below the array's 64")]
+const NEAR: [u64; 64] = {
+    let mut near = [0u64; 64];
+    let mut l = 0;
+    while l < 64 {
+        let mut mask = 1u64 << l;
+        let mut k = 0;
+        while k < 6 {
+            mask |= 1u64 << (l ^ (1 << k));
+            k += 1;
+        }
+        near[l] = mask;
+        l += 1;
+    }
+    near
+};
+
+impl FewChunk {
+    fn new(sides: &Sides<'_, '_>, queries: usize, c: usize, scratch: &mut Vec<Rec>) -> FewChunk {
+        let mut sorted = Sorted::default();
+        sort_into(&mut sorted, scratch, queries, |e| sides.query_entry(e), c);
+        let mut bits = vec![0u64; VALUES / 64];
+        for (v, pair) in sorted.offsets.windows(2).enumerate() {
+            if let ([lo, hi], Some(word)) = (pair, bits.get_mut(v >> 6))
+                && hi > lo
+            {
+                *word |= 1 << (v & 63);
+            }
+        }
+        FewChunk { bits, sorted }
+    }
+
+    /// The bitmap's word of value `v`.
+    #[inline(always)]
+    fn word(&self, v: usize) -> u64 {
+        self.bits.get(v >> 6).copied().unwrap_or(0)
+    }
+}
+
+/// The few-owed path's work for stored entry `x`: in each chunk, its value and the value's 16 one-bit neighbours tested
+/// against that chunk's bitmap (the value and its six low-bit neighbours with one word, [`NEAR`]), and the query entries
+/// of each value that is set tested in full.
+#[inline(always)]
+fn few_entry(sides: &Sides<'_, '_>, chunks: &[FewChunk], x: usize, out: &mut Vec<Pair>) {
+    let (xw, xc) = sides.stored_entry(x);
+    for (c, few) in chunks.iter().enumerate() {
+        let v = chunk(&xw, c);
+        let low = v & 63;
+        let word = few.word(v);
+        if word & NEAR.get(low).copied().unwrap_or(0) != 0 {
+            for p in 0..7 {
+                let u = probe(v, p);
+                if (word >> (u & 63)) & 1 != 0 {
+                    few_hits(sides, few, &xw, xc, u, c, out);
+                }
+            }
+        }
+        for k in 6..16 {
+            let u = v ^ (1 << k);
+            if (few.word(u) >> low) & 1 != 0 {
+                few_hits(sides, few, &xw, xc, u, c, out);
+            }
+        }
+    }
+}
+
+/// Stored entry `xw` (code `xc`) against the query entries of value `u` in chunk `c`: as the sorted path's [`consider`]
+/// does, the ordering rule, then the first two words' distance, then the full one and the first chunk that matches.
+#[inline(always)]
+fn few_hits(
+    sides: &Sides<'_, '_>,
+    few: &FewChunk,
+    xw: &[u64; 4],
+    xc: u32,
+    u: usize,
+    c: usize,
+    out: &mut Vec<Pair>,
+) {
+    let q = &few.sorted;
+    let (lo, hi) = q.bucket(u);
+    for y in lo..hi {
+        let (Some(&yc), Some(&y0), Some(&y1)) = (q.code.get(y), q.head0.get(y), q.head1.get(y)) else { return };
+        if !owed(xc, yc) {
+            continue;
+        }
+        let head = (xw[0] ^ y0).count_ones() + (xw[1] ^ y1).count_ones();
+        if head > MATCH_DISTANCE {
+            continue;
+        }
+        let yw = sides.words(yc);
+        let distance = head + (xw[2] ^ yw[2]).count_ones() + (xw[3] ^ yw[3]).count_ones();
+        if distance <= MATCH_DISTANCE && !matched_earlier(xw, &yw, c) {
+            let (xp, yp) = (xc >> 4, yc >> 4);
+            out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
+        }
+    }
+}
+
+/// One stage's two sorted sides.
+#[derive(Default)]
+struct StageSet {
+    stored: Sorted,
+    query: Sorted,
+}
+
+/// The radix sort's scratch of each side, reused from stage to stage.
+#[derive(Default)]
+struct Scratch {
+    stored: Vec<Rec>,
+    query: Vec<Rec>,
+}
+
+impl StageSet {
+    /// Both sides sorted by chunk `c`: the `stored` entries and the `queries` entries; with `side_by_side`, the stored
+    /// side on a thread of its own (which runs `start` first) while this one sorts the queries.
+    #[expect(clippy::too_many_arguments, reason = "one stage's sort: its sides, sizes, scratch and how to run it")]
+    fn sort(
+        &mut self,
+        c: usize,
+        sides: &Sides<'_, '_>,
+        stored: usize,
+        queries: usize,
+        scratch: &mut Scratch,
+        side_by_side: bool,
+        start: &(dyn Fn() + Sync),
+    ) {
+        let StageSet { stored: stored_out, query: query_out } = self;
+        let Scratch { stored: stored_scratch, query: query_scratch } = scratch;
+        if side_by_side {
+            std::thread::scope(|scope| {
+                let other = scope.spawn(|| {
+                    start();
+                    sort_into(stored_out, stored_scratch, stored, |e| sides.stored_entry(e), c);
+                });
+                sort_into(query_out, query_scratch, queries, |e| sides.query_entry(e), c);
+                if let Err(panic) = other.join() {
+                    std::panic::resume_unwind(panic);
+                }
+            });
+        } else {
+            sort_into(stored_out, stored_scratch, stored, |e| sides.stored_entry(e), c);
+            sort_into(query_out, query_scratch, queries, |e| sides.query_entry(e), c);
+        }
     }
 }
 
@@ -486,11 +830,26 @@ fn run_stage(
     start: &(dyn Fn() + Sync),
     control: &(dyn Fn() -> bool + Sync),
 ) -> Option<Vec<Pair>> {
+    parallel(threads, VALUES.div_ceil(BLOCK), start, control, |block, out| {
+        let lo = block * BLOCK;
+        scan(kernel, st, lo..(lo + BLOCK).min(VALUES), out);
+    })
+}
+
+/// Runs `work` on the blocks `0..blocks`, each once, on `threads` workers that take the next block as they finish one
+/// and ask `control` before each. The pairs found, compacted; or `None` when `control` stopped it.
+fn parallel(
+    threads: usize,
+    blocks: usize,
+    start: &(dyn Fn() + Sync),
+    control: &(dyn Fn() -> bool + Sync),
+    work: impl Fn(usize, &mut Vec<Pair>) + Sync,
+) -> Option<Vec<Pair>> {
     let next = AtomicUsize::new(0);
     let stopped = AtomicBool::new(false);
     let mut all = Vec::new();
     std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads)
+        let workers: Vec<_> = (0..threads.max(1))
             .map(|_| {
                 scope.spawn(|| {
                     start();
@@ -500,11 +859,11 @@ fn run_stage(
                             stopped.store(true, Relaxed);
                             break;
                         }
-                        let lo = next.fetch_add(1, Relaxed).saturating_mul(BLOCK);
-                        if lo >= VALUES {
+                        let block = next.fetch_add(1, Relaxed);
+                        if block >= blocks {
                             break;
                         }
-                        scan(kernel, st, lo..(lo + BLOCK).min(VALUES), &mut out);
+                        work(block, &mut out);
                     }
                     compact(&mut out);
                     out
@@ -650,11 +1009,28 @@ mod tests {
     }
 
     fn run(kernel: Kernel, lib: &Library, queries: Range<usize>, threads: usize) -> Vec<Pair> {
+        run_tuned(kernel, lib, queries, threads, Tuning::default())
+    }
+
+    fn run_tuned(kernel: Kernel, lib: &Library, queries: Range<usize>, threads: usize, tuning: Tuning) -> Vec<Pair> {
         Joiner::new(&lib.hashes, &lib.owed)
             .unwrap()
             .with_kernel(kernel)
+            .tuned(tuning)
             .join(queries, threads, &|| {}, &|| true)
             .unwrap()
+            .pairs
+    }
+
+    /// Every way a join can run: no sorter, one, two side by side; and the few-owed path never and always.
+    fn tunings() -> Vec<Tuning> {
+        let mut all = Vec::new();
+        for sorters in [Some(0), Some(1), Some(2)] {
+            for few_entries in [Some(0), Some(usize::MAX)] {
+                all.push(Tuning { sorters, few_entries });
+            }
+        }
+        all
     }
 
     fn kernels() -> Vec<Kernel> {
@@ -762,9 +1138,13 @@ mod tests {
         let want = brute(&lib, 0..lib.hashes.len());
         assert!(want.len() > 1000, "the copies pair with each other: {}", want.len());
         for kernel in kernels() {
-            assert_eq!(run(kernel, &lib, 0..lib.hashes.len(), 2), want, "{kernel:?}");
-            for slice in [0..40, 40..41, 41..120] {
-                assert_eq!(run(kernel, &lib, slice.clone(), 2), brute(&lib, slice.clone()), "{kernel:?} {slice:?}");
+            for tuning in tunings() {
+                let all = 0..lib.hashes.len();
+                assert_eq!(run_tuned(kernel, &lib, all, 3, tuning), want, "{kernel:?} {tuning:?}");
+                for slice in [0..40, 40..41, 41..120] {
+                    let got = run_tuned(kernel, &lib, slice.clone(), 3, tuning);
+                    assert_eq!(got, brute(&lib, slice.clone()), "{kernel:?} {tuning:?} {slice:?}");
+                }
             }
         }
     }
@@ -778,7 +1158,7 @@ mod tests {
         let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap();
         let mut parts = Vec::new();
         for slice in [0..77, 77..150, 150..300] {
-            let got = joiner.join(slice.clone(), 2, &|| {}, &|| true).unwrap();
+            let got = joiner.join(slice.clone(), 2, &|| {}, &|| true).unwrap().pairs;
             assert_eq!(got, brute(&lib, slice));
             parts.extend(got);
         }
@@ -837,8 +1217,61 @@ mod tests {
     fn a_stop_returns_none() {
         let mut rng = Rng(3);
         let lib = corpus(&mut rng, 50, 10);
-        let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap();
-        assert_eq!(joiner.join(0..50, 2, &|| {}, &|| false), None);
+        for tuning in tunings() {
+            let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
+            assert!(joiner.join(0..50, 4, &|| {}, &|| false).is_none(), "{tuning:?}");
+        }
+    }
+
+    /// A stop that comes while the sorter is ahead of the scan (or mid-pass over the store) ends the join, with every
+    /// thread joined: the call returns, with nothing.
+    #[test]
+    fn a_stop_in_the_middle_returns_none_with_the_sorters_running() {
+        let mut rng = Rng(23);
+        let lib = corpus(&mut rng, 600, 8);
+        for tuning in tunings() {
+            for after in [1, 5, 40, 300] {
+                let (asked, refused) = (AtomicUsize::new(0), AtomicBool::new(false));
+                let control = || {
+                    let go = asked.fetch_add(1, Relaxed) < after;
+                    refused.fetch_or(!go, Relaxed);
+                    go
+                };
+                let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
+                let joined = joiner.join(0..600, 4, &|| {}, &control);
+                // A join with fewer blocks of work than `after` finishes before the stop: it returns its pairs then.
+                assert_eq!(joined.is_none(), refused.load(Relaxed), "{tuning:?}, stopped after {after}");
+            }
+            let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
+            let asked = AtomicUsize::new(0);
+            assert!(joiner.join(0..600, 4, &|| {}, &|| asked.fetch_add(1, Relaxed) < 2).is_none(), "{tuning:?}");
+        }
+    }
+
+    /// The sorted path with each number of sorters, and the few-owed path, find the same pairs as brute force, on every
+    /// kernel and at every owed share (the few-owed path forced on and off by its threshold).
+    #[test]
+    fn every_path_matches_brute_force() {
+        let mut rng = Rng(0x51_7CC1_B727_220A);
+        for owed_in_ten in [10, 3, 1] {
+            let lib = corpus(&mut rng, 350, owed_in_ten);
+            let want = brute(&lib, 0..lib.hashes.len());
+            assert!(want.len() > 10, "the corpus must have pairs to find");
+            for kernel in kernels() {
+                for tuning in tunings() {
+                    for threads in [1, 3, 6] {
+                        let got = run_tuned(kernel, &lib, 0..lib.hashes.len(), threads, tuning);
+                        assert_eq!(got, want, "{kernel:?} {tuning:?} on {threads}, owed {owed_in_ten} in 10");
+                    }
+                }
+            }
+            // A slice, which the few-owed path takes by default when it is small.
+            for slice in [0..20, 100..103, 200..350] {
+                for tuning in tunings() {
+                    assert_eq!(run_tuned(best_kernel(), &lib, slice.clone(), 4, tuning), brute(&lib, slice.clone()));
+                }
+            }
+        }
     }
 
     /// The full library's join, from a dump of a catalog's hashes (`PG_JOIN_DUMP`: records of an id as `i64`

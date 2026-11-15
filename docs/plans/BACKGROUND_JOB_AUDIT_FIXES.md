@@ -31,7 +31,7 @@ pg-dev container.
 
 - Baseline frozen; `MIGRATIONS` = TO_2..TO_9; **TO_10 is the audit slice**, one migration `[Sql(a), Rust(dups_repair)]`
   (SQL first so the column exists). DO's TO_10 content is absorbed; DO's TO_11 stays TO_11 (no renumbering).
-- `content_gen` is also recorded in `docs/temp/NTFS_MFT_SCAN_PLAN.md:279-291,345`: that plan gets amended too.
+- `content_gen` is also recorded in `docs/plans/NTFS_MFT_SCAN_PLAN.md:279-291,345`: that plan gets amended too.
 - Two recorded plans conflict on `INSERT OR REPLACE` vs upsert for `analysis` (BM 2.1/2.4 vs DO 3.5/4.4); BM Q3 already
   decides "the missing flag is ignored when pairs form" (D25 wording ambiguous).
 - Real guard tests for a migration: `carried_is_every_table_of_the_current_schema` (`schema.rs:804`),

@@ -23,7 +23,7 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     Older parts of the 70M library are likely more scattered, which favors MFT or cluster order
     even more. The import already reads in MFT record order, with 8 readers (`pending_import` in
     `crates/catalog/src/work.rs`). Reading the MFT or the USN journal in the scanner, instead of listing folders,
-    is planned in [`NTFS_MFT_SCAN_PLAN.md`](../temp/NTFS_MFT_SCAN_PLAN.md).
+    is planned in [`NTFS_MFT_SCAN_PLAN.md`](../plans/NTFS_MFT_SCAN_PLAN.md).
   - Sparse sample (every 25th file, `--stride 25`): every order runs at ~140 files/s (random 125),
     and 8 in flight gives ~245. When files are far apart, each read pays a seek whatever the order;
     only queue depth helps.

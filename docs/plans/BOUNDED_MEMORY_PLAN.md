@@ -33,7 +33,7 @@ A code-only audit found that almost every library-wide pass holds its whole work
   - MFT rungs read `$INDEX_ROOT` and `$INDEX_ALLOCATION` raw (an LCN-sorted sweep with fixups), not `$STANDARD_INFORMATION` and `$DATA`.
   - MFT rungs filter folders by whether the client's token has FILE_LIST_DIRECTORY access, so their output equals the walk's.
   - Step 3.9's `usn_stale` and deviation J-a stay.
-  - `docs/temp/NTFS_MFT_SCAN_PLAN.md` must be amended to match. Its helper currently takes MFT-record values and sends every folder. It also gains the `ResizeJournal` request (3.9).
+  - `docs/plans/NTFS_MFT_SCAN_PLAN.md` must be amended to match. Its helper currently takes MFT-record values and sends every folder. It also gains the `ResizeJournal` request (3.9).
 - **No volume service.** The ladder is: the per-session helper (MFT read where elevation is silent), then 3.9, then the walk. The service's main gain, following the journal while the app is closed, is mostly covered by journal sizing with consent (Q-S6, step 3.9, runner and CLI). The rest of its gain is for non-admin and multi-user installs, which do not exist yet. Its costs are an installer (none exists), a SYSTEM attack surface, pipe-server authentication, emulated per-folder AccessCheck, and a durable dirty-reference store. Revisit this if the app ever ships with an installer to non-admin users.
 
 Every other open question takes the recommended option unless the user says otherwise (§7).
@@ -1006,7 +1006,7 @@ The journal only says where to look. Listings are the truth, and results replay 
     - **Non-admins:** never resized; the notice explains why.
     - The CLI `gallery journal size` stays as the manual path. Nothing ever resizes silently.
     - **Tests:** the FakeVolume estimate; the offer, decline and re-offer rules; the helper request validation (local NTFS volume only; bounds checked); the journal ID kept after a resize on the test VHD.
-    - `docs/temp/NTFS_MFT_SCAN_PLAN.md` gets the `ResizeJournal` request.
+    - `docs/plans/NTFS_MFT_SCAN_PLAN.md` gets the `ResizeJournal` request.
   - **App:** Rescan uses the journal; a 'Full rescan' action forces the walk.
   - **Watch** (app only, Q-S7):
     - **Handles:** one thread holds an overlapped `wait_read` per capable volume, registered with VolumeGuard.

@@ -70,7 +70,7 @@ pub(crate) enum Command {
     },
     /// Take a folder out of the library (its files are hidden, not deleted from the catalog).
     Remove { root: PathBuf },
-    /// Analyze every new or changed file: hashes, PDQ (+ tier-1 pairs), dimensions, ThumbHash.
+    /// Analyze every new or changed file: hashes, PDQ, dimensions, ThumbHash; then pair the duplicates (`pair`).
     Import {
         #[command(flatten)]
         pipeline: PipelineArgs,
@@ -81,6 +81,18 @@ pub(crate) enum Command {
         /// what the import reads, which does not bump IMPORT_VERSION.
         #[arg(long, num_args = 1.., value_name = "PATH")]
         again: Vec<PathBuf>,
+        /// Leave the duplicates unpaired: `pair` does it later (until then "No duplicates" stays empty).
+        #[arg(long)]
+        no_pair: bool,
+    },
+    /// Pair the duplicates: every picture owed its pairs (the import leaves them owed) against every picture hashed. The
+    /// import does it too, unless --no-pair; the app does it in the background.
+    Pair {
+        #[command(flatten)]
+        pipeline: PipelineArgs,
+        /// Owe every picture its pairs again and drop the pairs first: after a change to what pairs are.
+        #[arg(long)]
+        again: bool,
     },
     /// Thumbnails at the given grid height for every imported file (the app does this in the background).
     Thumbs {

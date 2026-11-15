@@ -64,6 +64,7 @@ pass-scan = Scanning { $root }
 # A scan's status line: its name (`pass-scan`) and the images found so far
 pass-found = { $what } · { $count } images found
 pass-import = Importing
+pass-pairing = Pairing
 pass-borders = Finding borders
 pass-crop = Saving cropped copies
 pass-thumbs = Thumbnails at { $height } px

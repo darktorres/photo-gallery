@@ -18,8 +18,8 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::{Error, Result};
 use crate::lifecycle::{
-    check_rules, in_use, mark_unheld_missing, set_borders_version, set_import_version, set_taken_zone,
-    set_thumbs_version, take_lock, take_shared, try_exclusive,
+    check_rules, in_use, mark_unheld_missing, set_borders_version, set_import_version, set_pairing_version,
+    set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive,
 };
 use crate::rebuild::{back_up, db_file, rebuild};
 use crate::schema::{
@@ -27,7 +27,7 @@ use crate::schema::{
 };
 use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{Rebuilt, Versions};
-use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, ScanWriter};
+use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, ScanWriter};
 
 pub struct Catalog {
     pub(crate) conn: Connection,
@@ -115,6 +115,7 @@ impl Catalog {
         mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
+        set_pairing_version(&conn, versions.pairing).with_context(|| format!("catalog {}", path.display()))?;
         set_thumbs_version(&conn, versions.thumbs).with_context(|| format!("catalog {}", path.display()))?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
         pg_query::register_functions(&conn)?;
@@ -228,6 +229,11 @@ impl Tx<'_> {
     /// The writer of the borders, in this transaction.
     pub fn borders_writer(&self) -> Result<BordersWriter<'_>> {
         BordersWriter::new(&self.inner)
+    }
+
+    /// The writer of the pairing pass, in this transaction.
+    pub fn pairs_writer(&self) -> Result<PairsWriter<'_>> {
+        PairsWriter::new(&self.inner)
     }
 
     /// Commit what was written through this transaction's writers.

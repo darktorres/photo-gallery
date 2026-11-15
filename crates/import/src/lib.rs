@@ -1,15 +1,15 @@
-//! The import pass: every pending file is read once, in on-disk order, and analyzed (tiers 0a/0b/1,
-//! dimensions, ThumbHash). Each new PDQ hash is queried against the index, then inserted, so tier-1 pairs appear
-//! during the import (query-then-insert). Results are committed in batches: stopping at any point loses at most
-//! the current batch, and the next run picks up the rest from the catalog.
+//! The import pass: every pending file is read once, in on-disk order, and analyzed (tiers 0a/0b/1, dimensions,
+//! ThumbHash). Results are committed in batches: stopping at any point loses at most the current batch, and the next
+//! run picks up the rest from the catalog. The tier-1 pairs are not found here: an analysis with orientation hashes
+//! owes them (`analysis.dups_state = 'due'`), and the pairing pass (`pairs`) makes them after the import.
+
+pub mod pairs;
 
 use anyhow::{Context, Result};
 use pg_analysis::analyze::Analyzer;
-use pg_catalog::Catalog;
-use pg_dedup::Pairer;
+use pg_catalog::{Catalog, WorkItem};
 use pg_model::analysis::Analyzed;
 use pg_model::media::Kind;
-use pg_model::pdq::MIN_QUALITY;
 
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
@@ -20,75 +20,33 @@ const BATCH: usize = 500;
 pub struct ImportStats {
     /// The files the pass had to import.
     pub pending: usize,
-    /// The hashes the tier-1 index held when the pass began.
-    pub indexed: usize,
     pub files: usize,
     pub failed: usize,
-    pub pairs: usize,
     /// Files changed while they were read (or being rewritten by the app): nothing stored, due again.
     pub changed: usize,
+}
+
+/// What the writer has stored so far.
+#[derive(Default)]
+struct Counts {
+    files: usize,
+    failed: usize,
+    changed: usize,
 }
 
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
     let work = catalog.pending_import(retry_errors)?;
     let items = &work.items;
     let sep = catalog.rules().sep_byte();
-    let mut stats = ImportStats { pending: items.len(), indexed: 0, files: 0, failed: 0, pairs: 0, changed: 0 };
-    // Most rounds (a new thumbnail height, a turn) have nothing to import: don't load every hash for them.
+    let mut stats = ImportStats { pending: items.len(), files: 0, failed: 0, changed: 0 };
     if items.is_empty() {
         return Ok(stats);
     }
-    let (ids, hashes) = catalog.pdq_hashes()?;
-    let mut pairer = Pairer::build(ids, hashes);
-    // Every file of the list may add its 8 orientations.
-    pairer.reserve(items.len() * 8);
-    stats.indexed = pairer.len();
 
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Import, u64::try_from(items.len()).unwrap_or(u64::MAX));
 
-    let mut flush = |batch: &mut Vec<(usize, Result<Analyzed>)>, stats: &mut ImportStats| -> Result<()> {
-        let tx = catalog.tx()?;
-        let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
-        for (i, result) in batch.drain(..) {
-            let item = items.get(i).context("an import result for no file")?;
-            match result {
-                Ok(a) => {
-                    if !writer.store_analysis(item, &a)? {
-                        stats.changed += 1;
-                        continue;
-                    }
-                    let quality_ok = a.record.image().is_some_and(|i| i.pixels.pdq.quality >= MIN_QUALITY);
-                    if let Some(dihedral) = a.pdq_dihedral.filter(|_| quality_ok) {
-                        // The new image's 8 orientations against every stored orientation of the earlier ones,
-                        // then stored: the pair is found the same whichever image comes first, with the best per
-                        // neighbour.
-                        for &(other, d, v) in pairer.pair_and_insert(item.id, &dihedral)? {
-                            writer.store_pdq_pair(item.id, other, d, v)?;
-                            stats.pairs += 1;
-                        }
-                    }
-                }
-                Err(e) => {
-                    if !writer.store_failure(item, &format!("{e:#}"))? {
-                        stats.changed += 1;
-                        continue;
-                    }
-                    stats.failed += 1;
-                }
-            }
-            stats.files += 1;
-        }
-        drop(writer);
-        tx.commit()?;
-        // The import's failure ledger is kept by the catalog's triggers on the analyses, whose changes don't show in a
-        // statement's count: every batch committed may have moved it, so whoever shows it reads it again (cheap, and
-        // the reads coalesce).
-        ctl.ledger_changed();
-        Ok(())
-    };
-
-    pipeline::batched(
+    let (state, result) = pipeline::batched(
         items,
         |item, wide| {
             if item.kind == Kind::Video {
@@ -114,7 +72,52 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
             }
         },
         Batch { size: BATCH, every: None },
-        |batch| flush(batch, &mut stats).map(|()| true),
-    )?;
+        (catalog, Counts::default()),
+        |(catalog, counts), batch| store(catalog, counts, items, batch, ctl),
+    );
+    result?;
+    let (_, counts) = state;
+    stats.files = counts.files;
+    stats.failed = counts.failed;
+    stats.changed = counts.changed;
     Ok(stats)
+}
+
+/// Stores a batch of analyses (or failures) in one transaction. It runs on the writer's thread (`pipeline::batched`),
+/// while the workers analyze the next files.
+fn store(
+    catalog: &mut Catalog,
+    counts: &mut Counts,
+    items: &[WorkItem],
+    batch: &mut Vec<(usize, Result<Analyzed>)>,
+    ctl: &Control,
+) -> Result<bool> {
+    let tx = catalog.tx()?;
+    let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
+    for (i, result) in batch.drain(..) {
+        let item = items.get(i).context("an import result for no file")?;
+        match result {
+            Ok(a) => {
+                if !writer.store_analysis(item, &a)? {
+                    counts.changed += 1;
+                    continue;
+                }
+            }
+            Err(e) => {
+                if !writer.store_failure(item, &format!("{e:#}"))? {
+                    counts.changed += 1;
+                    continue;
+                }
+                counts.failed += 1;
+            }
+        }
+        counts.files += 1;
+    }
+    drop(writer);
+    tx.commit()?;
+    // The import's failure ledger is kept by the catalog's triggers on the analyses, whose changes don't show in a
+    // statement's count: every batch committed may have moved it, so whoever shows it reads it again (cheap, and
+    // the reads coalesce).
+    ctl.ledger_changed();
+    Ok(true)
 }

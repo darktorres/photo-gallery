@@ -167,6 +167,17 @@ impl Unwritten {
     }
 }
 
+/// What the thumbs pass's writer keeps across its batches: the catalog the files are checked against and the failures are
+/// written to, the thumbnails waiting to be kept, and what the pass has counted so far.
+struct Writing {
+    catalog: Catalog,
+    thumbs: Vec<Thumb>,
+    unwritten: Unwritten,
+    first_failed: Option<i64>,
+    tried: usize,
+    stats: ThumbStats,
+}
+
 /// One pass at `height`: the files changed since the last complete one (or all of them, `ThumbCache::pending`). The
 /// files whose thumbnail couldn't be made are recorded in the catalog's failure ledger (`pg_catalog::ledger`), and the
 /// ledger's files whose thumbnail it makes leave it.
@@ -200,27 +211,33 @@ pub fn run(
     stats.cache_bytes = u64::try_from(cache.totals()?.0)?;
     // To check each file against before its thumbnail is kept, and for the failure ledger.
     let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
-    let rules = catalog.rules();
-    let sep = rules.sep_byte();
+    let sep = catalog.rules().sep_byte();
     // The files the ledger holds: only those leave it when they are made (a clear of every file made would take the
     // catalog's write lock at every batch).
     let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Thumbs)?;
-    // The thumbnails made from the files as listed, to keep (put in the cache) with each batch.
-    let mut thumbs: Vec<Thumb> = Vec::with_capacity(BATCH);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
     let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
-    let (mut tried, mut first_failed) = (0, None);
-    let mut unwritten = Unwritten { failures: Vec::new(), since: Instant::now() };
     // The phase ends when this is dropped: after the last flush, before the cache is checked and shrunk, or when the
     // pass leaves early (an error, a panic).
     let phase = ctl.begin(Phase::Thumbs { height: thumb }, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    // The writer's state: the catalog (moved in, and back when the pass ends), the thumbnails to keep, the failures.
+    let writing = Writing {
+        catalog,
+        thumbs: Vec::with_capacity(BATCH),
+        unwritten: Unwritten { failures: Vec::new(), since: Instant::now() },
+        first_failed: None,
+        tried: 0,
+        stats,
+    };
 
-    // A batch of results: the thumbnails made from the file as listed are kept, the failures recorded; false once the
-    // cache is full.
-    let mut flush = |batch: &mut Vec<(usize, Result<Vec<u8>>)>, stats: &mut ThumbStats| -> Result<bool> {
+    // A batch of results, written by the writer's thread: the thumbnails made from the file as listed are kept, the
+    // failures recorded; false once the cache is full.
+    let flush = |writing: &mut Writing, batch: &mut Vec<(usize, Result<Vec<u8>>)>| -> Result<bool> {
+        let Writing { catalog, thumbs, unwritten, first_failed, tried, stats } = writing;
+        let rules = catalog.rules();
         for (i, result) in batch.drain(..) {
-            tried += 1;
+            *tried += 1;
             let item = items.get(i).context("a thumbnail result for no work item")?;
             match result {
                 // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
@@ -233,7 +250,7 @@ pub fn run(
                     } else {
                         spare.lock().unwrap_or_else(PoisonError::into_inner).push(data);
                         stats.changed += 1;
-                        fold(&mut first_failed, item.seq);
+                        fold(first_failed, item.seq);
                     }
                 }
                 Err(e) => {
@@ -244,7 +261,7 @@ pub fn run(
                         stats.unreadable += 1;
                     }
                     if !matches!(failed, Failed::Panicked) {
-                        fold(&mut first_failed, item.seq);
+                        fold(first_failed, item.seq);
                     }
                     let path = rules.display_stored(&work.path(item.path, sep));
                     let error = format!("{e:#}");
@@ -264,14 +281,14 @@ pub fn run(
             }
         }
         if unwritten.failures.len() >= BATCH || unwritten.since.elapsed() >= LEDGER_EVERY {
-            unwritten.write(&catalog, &mut first_failed, &mut stats.ledger, ctl);
+            unwritten.write(catalog, first_failed, &mut stats.ledger, ctl);
         }
         if thumbs.is_empty() {
             return Ok(true);
         }
         let n = thumbs.len();
         let made_known: Vec<FileId> = thumbs.iter().map(|t| t.file_id).filter(|id| known.contains(id)).collect();
-        let stored = cache.put_batch(&mut thumbs, Some(thumb))?;
+        let stored = cache.put_batch(thumbs, Some(thumb))?;
         spare.lock().unwrap_or_else(PoisonError::into_inner).extend(thumbs.drain(..).map(|t| t.data));
         if stored {
             stats.made += n;
@@ -292,7 +309,7 @@ pub fn run(
         Ok(stored)
     };
 
-    let ran = pipeline::batched(
+    let (writing, ran) = pipeline::batched(
         items,
         |item, wide| {
             // A video's poster frame is read by FFmpeg, from its path: a part of the file, not counted as read.
@@ -332,9 +349,10 @@ pub fn run(
         },
         // The failures go to the ledger at least every `LEDGER_EVERY`, so the inbox follows a long pass.
         Batch { size: BATCH, every: Some(LEDGER_EVERY) },
-        |batch| flush(batch, &mut stats),
+        writing,
+        flush,
     );
-    drop(flush);
+    let Writing { catalog, mut unwritten, mut first_failed, tried, mut stats, .. } = writing;
     // The failures are written whatever ended the pass (an error, a stop, the cache full), before its checkpoint.
     unwritten.write(&catalog, &mut first_failed, &mut stats.ledger, ctl);
     ran?;
@@ -399,6 +417,7 @@ mod tests {
                 import: pg_analysis::analyze::IMPORT_VERSION,
                 borders: pg_analysis::borders::BORDERS_VERSION,
                 thumbs: 1,
+                pairing: pg_model::pdq::PAIRING_VERSION,
             },
             pg_platform::native::PATH_RULES,
         )
@@ -660,6 +679,7 @@ mod tests {
             import: pg_analysis::analyze::IMPORT_VERSION,
             borders: pg_analysis::borders::BORDERS_VERSION,
             thumbs: 1,
+            pairing: pg_model::pdq::PAIRING_VERSION,
         }
     }
 }

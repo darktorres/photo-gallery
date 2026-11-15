@@ -49,8 +49,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   `rewrite.rs`).
 - `analysis` (`pg-analysis`): the import's analysis of a file: its hashes (BLAKE3, XXH3, PDQ, ThumbHash) and the border
   detector (`BORDERS_VERSION`).
-- `dedup` (`pg-dedup`): the tier-1 duplicates: the PDQ index, the import's pairing and the union-find that groups
-  pairs.
+- `dedup` (`pg-dedup`): the tier-1 duplicates: the all-pairs join (`join`, which the pairing pass runs), and the
+  union-find that groups pairs.
 - `render` (`pg-render`): the display images made from the files, upright (the one reader of the EXIF orientation for
   a decode): the grid's thumbnails (`maker`, whose `MakeError` says
   whether a file couldn't be read or doesn't decode, and `THUMBS_VERSION`), the viewer's images (`display`: the decode a
@@ -73,7 +73,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `scan` (`pg-scan`): the folder walk: the directory listing (`pg-platform`), the skipped folders, and the catalog rows
   for what it finds; and which folders it takes (`refusal`: the policy, from the platform's facts, with a typed
   reason).
-- `import` (`pg-import`): a file's analysis (`pg-analysis`) and its pairing (`pg-dedup`), written to the catalog.
+- `import` (`pg-import`): a file's analysis (`pg-analysis`), written to the catalog; and the pairing pass after it
+  (`pairs`, which runs `pg-dedup`'s join on the pictures that owe their pairs).
 - `thumbs` (`pg-thumbs`): the thumbnail pass: makes the thumbnails the catalog says are missing (`pg-render`, into the
   thumbnail cache).
 - `writeback` (`pg-writeback`): writes the queued ratings and turns into the files (`pg-exiftool`, `pg-edit`).
@@ -191,7 +192,7 @@ refactor. The dated logs in `docs/` keep the old paths; the table is for reading
 | `core/src/catalog.rs` | `catalog/src/lib.rs` (the readers and writers are `catalog/src/browse/`, `queue.rs`, `dups.rs`) |
 | `core/src/browse.rs`, `browse/` | `catalog/src/browse.rs`, `catalog/src/browse/` |
 | `core/src/analyze.rs`, `borders.rs`, `pdq.rs` | `analysis/src/` (the same names) |
-| `core/src/pdq_index.rs` | `dedup/src/pdq_index.rs` |
+| `core/src/pdq_index.rs` | gone: the all-pairs join is `dedup/src/join.rs`, run by the pairing pass (`import/src/pairs.rs`) |
 | `core/src/decode.rs`, `codecs.rs`, `pixels.rs`, `resize.rs`, `animation.rs` | `codec/src/` (the same names); the animation player is `render/src/player.rs` |
 | `core/src/maker.rs`, `display.rs` | `render/src/` (the same names) |
 | `core/src/rotate.rs`, `crop.rs`, `rewrite.rs` | `edit/src/` (the same names) |
@@ -333,8 +334,9 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 - **Import** reads files in MFT-record order with 8 reads in flight, decodes once (libjpeg-turbo, DCT-scaled
   to ≥ 512 × 320), and stores the BLAKE3 file hash, the pixel hash, PDQ, dimensions and a ThumbHash, plus the
   frame count (from the GIF, APNG or WebP container) and the date taken (EXIF DateTimeOriginal, else XMP). Each new
-  PDQ hash is queried (all 8 orientations) and then inserted, so tier-1 pairs (d ≤ 31) come out of the import
-  itself. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
+  PDQ hash is stored with its 8 orientations, and a picture of reliable quality owes its tier-1 pairs
+  (`analysis.dups_state = 'due'`): the pairing pass after the import finds them (d ≤ 31), so the import only hashes
+  and stores. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
   creation date come from the container: the rotation matrix, and Apple's local creation date before the UTC
   `creation_time`. Its ThumbHash comes from the poster frame, at 10% of the duration (at most 10 s). Videos get
   no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
@@ -401,7 +403,8 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
   subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
 - **Filter bar** (`FilterBar.qml`, `crates/query/src/lib.rs`): type (image, animated, video), extension, rating (unrated,
   1–5), shape (landscape, portrait, square), file size, megapixels, duration, date taken, date modified,
-  duplicates (has / has none, from tiers 0a, 0b and tier-1 pairs within PDQ 22), import status (imported, not
+  duplicates (has / has none, from tiers 0a, 0b and tier-1 pairs within PDQ 22; "has none" is listed only once no
+  picture owes its pairs, so it is empty until the pairing pass has run), import status (imported, not
   yet, unreadable), borders (none, black, white, coloured, blurred bars), their review (not marked, marked not a
   border) and part of the name. Facets combine with AND, the choices inside one with OR. Each type, extension
   and borders choice shows how many files choosing it would show, given the other facets. Filtering and sorting are

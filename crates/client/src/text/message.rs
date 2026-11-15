@@ -166,6 +166,7 @@ messages! {
     /// A scan's line: its name (`what`) and the images found so far.
     PassFound { what: String, count: String } => "pass-found",
     PassImport => "pass-import",
+    PassPairing => "pass-pairing",
     PassBorders => "pass-borders",
     PassCrop => "pass-crop",
     PassThumbs { height: String } => "pass-thumbs",

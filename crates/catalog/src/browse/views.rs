@@ -90,6 +90,7 @@ mod tests {
                 import: pg_analysis::analyze::IMPORT_VERSION,
                 borders: pg_analysis::borders::BORDERS_VERSION,
                 thumbs: 1,
+                pairing: pg_model::pdq::PAIRING_VERSION,
             },
             PathRules::Posix,
         )

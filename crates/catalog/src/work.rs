@@ -71,6 +71,26 @@ fn max_folder_id(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT coalesce(max(id), -1) FROM folders", [], |r| r.get(0))?)
 }
 
+/// A picture the pairing pass pairs (`Catalog::pairing_work`).
+pub struct PairingPicture {
+    pub id: FileId,
+    /// Its pairs are owed (`analysis.dups_state`): the pass pairs it with the pictures before and after it.
+    pub due: bool,
+    /// The hash the pairs are made from (the analysis's `pdq`, orientation 0): the guard of `PairsWriter`.
+    pub pdq: pg_model::pdq::Hash,
+    /// Its eight orientations' hashes, in `pg_analysis::pdq`'s order.
+    pub orientations: [pg_model::pdq::Hash; 8],
+}
+
+/// The pictures of the pairing pass, and how many analyses it leaves out.
+pub struct PairingWork {
+    /// Every picture, in file-id order.
+    pub pictures: Vec<PairingPicture>,
+    /// Analyses made before the orientation hashes were stored (`pdq_dihedral IS NULL`) and of a reliable quality: not
+    /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures.
+    pub legacy: usize,
+}
+
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
     /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD.
@@ -108,41 +128,61 @@ impl Catalog {
         Ok(list)
     }
 
-    /// The reliable PDQ hashes of current analyses, as ids and hash words: `ids[i]`'s hash is `hashes[i]`, and
-    /// a file contributes its 8 orientations. The tier-1 index (`pg_dedup::Pairer`'s) is made from them for each import.
-    pub fn pdq_hashes(&self) -> Result<(Vec<FileId>, Vec<[u64; 4]>)> {
-        // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the
-        // join below costs a quarter of reading it.
-        let present: usize = self.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0))?;
-        // An analysis made before the orientations were stored has its main hash but not these: its pairs would
-        // be missing one way round. Those files are re-analyzed (`import --again`), not matched with what they lack.
-        let without: i64 = self.conn.query_row(
+    /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is a present, non-pending
+    /// file whose analysis has orientation hashes and a reliable quality. The owed ones (`dups_state = 'due'`) are
+    /// among them, with the others (the stored side). One snapshot, because a file that changed between two reads
+    /// could be owed a pair that its partner's read never sees.
+    pub fn pairing_work(&self) -> Result<PairingWork> {
+        let tx = self.conn.unchecked_transaction()?;
+        let legacy: usize = tx.query_row(
             "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
              WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NULL AND a.pdq_quality >= ?1",
             [pg_model::pdq::MIN_QUALITY],
             |r| r.get(0),
         )?;
-        if without > 0 {
-            return Err(Error::Other(anyhow!(
-                "{without} analyses have no orientation hashes (made by an older build): re-import them"
-            )));
-        }
-        let (mut ids, mut hashes) = (Vec::with_capacity(present * 8), Vec::with_capacity(present * 8));
-        let mut stmt = self.conn.prepare(
-            "SELECT a.file_id, a.pdq_dihedral FROM analysis a JOIN files f ON f.id = a.file_id
-             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NOT NULL AND a.pdq_quality >= ?1",
+        let mut stmt = tx.prepare(
+            "SELECT a.file_id, a.dups_state = 'due', a.pdq, a.pdq_dihedral
+             FROM analysis a JOIN files f ON f.id = a.file_id
+             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NOT NULL AND a.pdq_quality >= ?1
+             ORDER BY a.file_id",
         )?;
         let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
+        let mut pictures = Vec::new();
         while let Some(r) = rows.next()? {
             let id = FileId::new(r.get(0)?);
-            let blob: Vec<u8> = r.get(1)?;
-            let (orientations, _) = blob.as_chunks::<{ pg_model::pdq::HASH_BYTES }>();
-            for orientation in orientations {
-                ids.push(id);
-                hashes.push(pg_model::pdq::Hash(*orientation).words());
-            }
+            let due: bool = r.get(1)?;
+            let pdq: Vec<u8> = r.get(2)?;
+            let dihedral: Vec<u8> = r.get(3)?;
+            let (pdq, orientations) =
+                match (<[u8; 32]>::try_from(pdq.as_slice()), <[[u8; 32]; 8]>::try_from(dihedral.as_chunks::<32>().0)) {
+                    (Ok(pdq), Ok(orientations)) => (pg_model::pdq::Hash(pdq), orientations.map(pg_model::pdq::Hash)),
+                    _ => return Err(Error::Other(anyhow!("file {} has a malformed PDQ hash", id.get()))),
+                };
+            pictures.push(PairingPicture { id, due, pdq, orientations });
         }
-        Ok((ids, hashes))
+        drop(rows);
+        drop(stmt);
+        tx.commit()?;
+        Ok(PairingWork { pictures, legacy })
+    }
+
+    /// Owe every eligible picture its pairs again, and drop the pairs (`gallery pair --again`): what the pairing pass
+    /// then makes is all of them again. Returns how many are owed.
+    pub fn pairs_again(&mut self) -> Result<usize> {
+        let tx = write_transaction(&self.conn)?;
+        let owed = crate::lifecycle::owe_pairs_again(&tx)?;
+        tx.commit()?;
+        Ok(owed)
+    }
+
+    /// How many pairs are owed: the files the pairing pass has yet to pair (present and not pending).
+    pub fn owed_pairs(&self) -> Result<usize> {
+        Ok(self.conn.query_row(
+            "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
+             WHERE a.dups_state = 'due' AND f.missing = 0 AND f.pending = 0",
+            [],
+            |r| r.get(0),
+        )?)
     }
 
     /// Make these files due for the import again (`files.pending`), whatever their analysis: after a fix to what

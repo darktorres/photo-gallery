@@ -37,5 +37,6 @@ pub fn versions() -> pg_catalog::Versions {
         import: pg_analysis::analyze::IMPORT_VERSION,
         borders: pg_analysis::borders::BORDERS_VERSION,
         thumbs: pg_render::THUMBS_VERSION,
+        pairing: pg_model::pdq::PAIRING_VERSION,
     }
 }

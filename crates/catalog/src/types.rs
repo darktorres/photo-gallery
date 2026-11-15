@@ -225,6 +225,8 @@ pub struct Versions {
     pub import: i64,
     pub borders: i64,
     pub thumbs: i64,
+    /// `pg_model::pdq::PAIRING_VERSION`: the pairs the pairing pass makes.
+    pub pairing: i64,
 }
 
 /// The local zone's UTC offsets, in seconds, on January 1 and July 1 of 2000 and of 2030: the zone's fingerprint, as

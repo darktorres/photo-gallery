@@ -143,6 +143,25 @@ pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<()>
     })
 }
 
+/// Make the pairs this build's: when the catalog's `meta.pairing_version` is another, every eligible analysis is due again
+/// (the pairing pass makes all of them) and the pairs go, with the changes stamped so the views read them again.
+pub(crate) fn set_pairing_version(conn: &Connection, current: i64) -> Result<()> {
+    set_mark(conn, "pairing_version", &current, |tx| owe_pairs_again(tx).map(|_| ()))
+}
+
+/// Every eligible analysis (orientation hashes and a reliable quality) owes its pairs again, and the pairs go, with the
+/// change stamped so the views read them again. Returns how many analyses owe their pairs now. The pairing version's
+/// change makes it (`set_pairing_version`), and `gallery pair --again` does too.
+pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<usize> {
+    let owed = tx.execute(
+        "UPDATE analysis SET dups_state = 'due' WHERE pdq_dihedral IS NOT NULL AND pdq_quality >= ?1",
+        [pg_model::pdq::MIN_QUALITY],
+    )?;
+    tx.execute_batch("DELETE FROM pdq_pairs;")?;
+    tx.execute_batch(next_seq!())?;
+    Ok(owed)
+}
+
 /// Make the thumbnails' failure ledger this build's: when the catalog's `meta.thumbs_version` is another
 /// (`pg_render::THUMBS_VERSION`, a decoder that may take what the old one failed on), the files whose thumbnail panicked
 /// are listed again for the pass (the others are, by the pass's own rule), and the rows go: the next pass records what

@@ -75,7 +75,7 @@ fn copy_layout(layout: &str) -> PathBuf {
 }
 
 fn versions() -> Versions {
-    Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: 1 }
+    Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: 1, pairing: pg_model::pdq::PAIRING_VERSION }
 }
 
 fn open_catalog() -> Catalog {
@@ -147,10 +147,7 @@ fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn facets(catalog: Catalog) -> (Catalog, Facets) {
-    let facets = or_stop(
-        catalog.facets(&pg_model::rules::Merged::default(), true, &Query::default()),
-        "the facets",
-    );
+    let facets = or_stop(catalog.facets(&pg_model::rules::Merged::default(), true, &Query::default()), "the facets");
     (catalog, black_box(facets))
 }
 

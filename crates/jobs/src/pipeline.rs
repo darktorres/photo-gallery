@@ -18,7 +18,7 @@ use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossbeam_channel::bounded;
+use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
 use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
 
@@ -229,15 +229,22 @@ pub struct Batch {
     pub every: Option<Duration>,
 }
 
-/// [`run`] for a pass that writes its results in batches, the skeleton the per-file passes share: each result is
-/// counted on `ctl` (its bytes, and whether it failed) and kept, and `flush` gets the kept ones (`(index, result)`, in
-/// completion order) to write and empty, when the batch is due ([`Batch`]) and once more when the pass ends. `flush`
-/// returns false to stop the pass, with no last flush. An error (of the pass, or of `flush`) loses the batch kept.
+/// [`run`] for a pass that writes its results in batches, the skeleton the per-file passes share. Each result is counted
+/// on `ctl` (its bytes, and whether it failed) and kept. A batch that is due ([`Batch`]) goes to a writer thread, which
+/// makes it with `flush` on the writer's state `writer`, while the counting goes on: the counter never waits for a
+/// write. The writer takes a batch only when it is waiting for one; while it is busy the kept results keep growing
+/// (commits coalesce), and the counting waits only when twice the batch size is kept. So at most three batches' worth
+/// of results are held: the writer's, the one kept, and the one at its limit.
+///
+/// `flush` returns false to stop the pass: the writer then discards what is queued, and the pass ends after the
+/// results counted are written. An error or a panic of `flush` ends the pass, which loses what is queued and kept; so
+/// does an error of the pass itself. The writer's state comes back in any case, with the pass's result: a caller that
+/// has more to write (a ledger) writes it from the state.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the pass's parts: its items, how each is read, the options, the control, and the worker's state, work, batch and flush"
+    reason = "the pass's parts: its items, how each is read, the options, the control, the worker's state, the batches, the writer's state and its flush"
 )]
-pub fn batched<T, S, R>(
+pub fn batched<T, S, R, W>(
     items: &[T],
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
     opts: &Options,
@@ -245,28 +252,130 @@ pub fn batched<T, S, R>(
     init: impl Fn() -> Result<S> + Sync,
     process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
     batch: Batch,
-    mut flush: impl FnMut(&mut Vec<(usize, Result<R>)>) -> Result<bool>,
-) -> Result<()>
+    writer: W,
+    flush: impl FnMut(&mut W, &mut Vec<(usize, Result<R>)>) -> Result<bool> + Send,
+) -> (W, Result<()>)
 where
     T: Sync,
     R: Send,
+    W: Send,
 {
-    let mut kept: Vec<(usize, Result<R>)> = Vec::with_capacity(batch.size);
-    let mut since = Instant::now();
-    let mut going = true;
-    run(items, read, opts, ctl, init, process, |i, result, len| {
-        ctl.add(len, result.is_err());
-        kept.push((i, result));
-        if kept.len() >= batch.size || batch.every.is_some_and(|every| since.elapsed() >= every) {
-            since = Instant::now();
-            going = flush(&mut kept)?;
+    let size = batch.size.max(1);
+    // A rendezvous: the sink hands a batch over only to a writer that is waiting for one. The vectors the writer is done
+    // with come back on the other channel, to be kept again.
+    let (to_writer, from_sink) = bounded::<Vec<(usize, Result<R>)>>(0);
+    let (recycled_tx, recycled_rx) = unbounded::<Vec<(usize, Result<R>)>>();
+    // Set when the writer failed or stopped: the pass ends, and nothing more is handed over.
+    let failed = AtomicBool::new(false);
+    let failed = &failed;
+
+    std::thread::scope(|s| {
+        let writing = s.spawn(move || {
+            let mut writer = writer;
+            let mut flush = flush;
+            let mut outcome: Result<()> = Ok(());
+            let mut stopped = false;
+            for mut kept in from_sink {
+                if !stopped {
+                    match panics::guard(AssertUnwindSafe(|| flush(&mut writer, &mut kept))) {
+                        Ok(true) => {}
+                        Ok(false) => stopped = true,
+                        Err(e) => {
+                            outcome = Err(e);
+                            stopped = true;
+                        }
+                    }
+                    if stopped {
+                        failed.store(true, Ordering::SeqCst);
+                    }
+                }
+                kept.clear();
+                // Nothing waits for the vector once the sink has ended.
+                let _ = recycled_tx.send(kept);
+            }
+            (writer, outcome)
+        });
+
+        let mut kept: Vec<(usize, Result<R>)> = Vec::with_capacity(size);
+        let mut since = Instant::now();
+        let ran = run(items, read, opts, ctl, init, process, |i, result, len| {
+            ctl.add(len, result.is_err());
+            kept.push((i, result));
+            if failed.load(Ordering::SeqCst) {
+                return Ok(false);
+            }
+            let every = batch.every.is_some_and(|every| since.elapsed() >= every);
+            if kept.len() >= size || every {
+                let wait = kept.len() >= 2 * size;
+                if !hand_over(&to_writer, &recycled_rx, &mut kept, size, wait) {
+                    failed.store(true, Ordering::SeqCst);
+                    return Ok(false);
+                }
+                since = Instant::now();
+            }
+            Ok(!failed.load(Ordering::SeqCst))
+        });
+        // The results counted and not yet handed over are the last batch: written, unless the pass failed.
+        if ran.is_ok() && !failed.load(Ordering::SeqCst) && !kept.is_empty() {
+            let _ = hand_over(&to_writer, &recycled_rx, &mut kept, size, true);
         }
-        Ok(going)
-    })?;
-    if going {
-        flush(&mut kept)?;
+        drop(to_writer);
+        let (writer, outcome) = match writing.join() {
+            Ok(done) => done,
+            Err(panic) => std::panic::resume_unwind(panic),
+        };
+        let result = match (ran, outcome) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Ok(()), Err(e)) | (Err(e), Ok(())) => Err(e),
+            (Err(e), Err(w)) => Err(e.context(format!("and the writer ended with: {w:#}"))),
+        };
+        (writer, result)
+    })
+}
+
+/// Hands the kept results to the writer, and keeps the vector the writer returns (or a new one) in their place. A
+/// batch the writer is not waiting for is kept, to grow, unless `wait` (then the sink waits for the writer). Whether the
+/// writer is still there to take it.
+fn hand_over<R>(
+    to_writer: &Sender<Vec<(usize, Result<R>)>>,
+    recycled: &Receiver<Vec<(usize, Result<R>)>>,
+    kept: &mut Vec<(usize, Result<R>)>,
+    size: usize,
+    wait: bool,
+) -> bool {
+    /// What became of the batch.
+    enum Handed {
+        /// The writer has it.
+        Taken,
+        /// The writer is busy: the batch is kept, to grow.
+        Busy,
+        /// The writer has ended.
+        Gone,
     }
-    Ok(())
+    let batch = std::mem::take(kept);
+    let handed = if wait {
+        match to_writer.send(batch) {
+            Ok(()) => Handed::Taken,
+            Err(_) => Handed::Gone,
+        }
+    } else {
+        match to_writer.try_send(batch) {
+            Ok(()) => Handed::Taken,
+            Err(TrySendError::Full(batch)) => {
+                *kept = batch;
+                Handed::Busy
+            }
+            Err(TrySendError::Disconnected(_)) => Handed::Gone,
+        }
+    };
+    match handed {
+        Handed::Taken => {
+            *kept = recycled.try_recv().unwrap_or_else(|_| Vec::with_capacity(size));
+            true
+        }
+        Handed::Busy => true,
+        Handed::Gone => false,
+    }
 }
 
 /// The error of an item that couldn't be read. A panic in `read` comes as an I/O error holding it, and stays a panic.
@@ -767,5 +876,179 @@ mod tests {
         let std = File::open(dir.join("missing.jpg")).unwrap_err();
         assert_eq!((ours.kind(), ours.raw_os_error()), (std.kind(), std.raw_os_error()));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod batched_tests {
+    use anyhow::anyhow;
+    use pg_platform::priority::Priority;
+
+    use super::*;
+
+    fn options() -> Options {
+        let mut opts = Options::new(Priority::Normal);
+        opts.workers = 2;
+        opts
+    }
+
+    fn no_file(_: &usize, _: &mut NativePath) -> Read {
+        Read::Streamed { bytes: 0 }
+    }
+
+    /// Every result reaches the writer, in batches, and the writer's state comes back with the pass's `Ok`.
+    #[test]
+    fn every_result_is_written_and_the_writer_comes_back() {
+        let items: Vec<usize> = (0..1000).collect();
+        let ctl = Control::new();
+        let (written, result) = batched(
+            &items,
+            no_file,
+            &options(),
+            &ctl,
+            || Ok(()),
+            |_, i, _| Ok(i * 2),
+            Batch { size: 100, every: None },
+            Vec::new(),
+            |written: &mut Vec<usize>, batch| {
+                written.extend(batch.drain(..).filter_map(|(_, r)| r.ok()));
+                Ok(true)
+            },
+        );
+        result.unwrap();
+        let mut got = written;
+        got.sort_unstable();
+        assert_eq!(got, (0..1000).map(|i| i * 2).collect::<Vec<_>>());
+        assert_eq!(ctl.snapshot().done, 1000);
+    }
+
+    /// The count goes on while a write waits: a count held behind the write would stop at one batch.
+    #[test]
+    fn the_count_goes_on_while_a_write_waits() {
+        let items: Vec<usize> = (0..400).collect();
+        let ctl = Control::new();
+        let (_, result) = batched(
+            &items,
+            no_file,
+            &options(),
+            &ctl,
+            || Ok(()),
+            |_, i, _| Ok(i),
+            Batch { size: 100, every: None },
+            (),
+            |_, batch| {
+                let started = Instant::now();
+                while ctl.snapshot().done < 150 {
+                    if started.elapsed() > Duration::from_secs(20) {
+                        return Err(anyhow!("the count stopped behind a write"));
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                batch.clear();
+                Ok(true)
+            },
+        );
+        result.unwrap();
+        assert_eq!(ctl.snapshot().done, 400);
+    }
+
+    /// A write that asks to stop ends the pass: nothing is written after it, and the pass is `Ok`.
+    #[test]
+    fn a_stop_from_the_writer_writes_nothing_more() {
+        let items: Vec<usize> = (0..1000).collect();
+        let ctl = Control::new();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let (_, result) = batched(
+            &items,
+            no_file,
+            &options(),
+            &ctl,
+            || Ok(()),
+            |_, i, _| Ok(i),
+            Batch { size: 100, every: None },
+            (),
+            |_, batch| {
+                batch.clear();
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(false)
+            },
+        );
+        result.unwrap();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// A write that fails ends the pass with its error, and the writer's state still holds what was written before.
+    #[test]
+    fn an_error_from_the_writer_keeps_what_was_written_before() {
+        let items: Vec<usize> = (0..1000).collect();
+        let ctl = Control::new();
+        let (written, result) = batched(
+            &items,
+            no_file,
+            &options(),
+            &ctl,
+            || Ok(()),
+            |_, i, _| Ok(i),
+            Batch { size: 100, every: None },
+            Vec::new(),
+            |written: &mut Vec<usize>, batch| {
+                if written.len() >= 100 {
+                    return Err(anyhow!("disk full"));
+                }
+                written.extend(batch.drain(..).map(|(i, _)| i));
+                Ok(true)
+            },
+        );
+        assert!(result.is_err());
+        assert!(written.len() >= 100);
+    }
+
+    /// A panic in a write is the pass's error, not a crash, and the writer's state comes back.
+    #[test]
+    fn a_panic_in_the_writer_is_the_passes_error() {
+        let items: Vec<usize> = (0..300).collect();
+        let ctl = Control::new();
+        let (_, result) = batched(
+            &items,
+            no_file,
+            &options(),
+            &ctl,
+            || Ok(()),
+            |_, i, _| Ok(i),
+            Batch { size: 100, every: None },
+            (),
+            |_, batch| {
+                batch.clear();
+                panic!("a write panics");
+            },
+        );
+        let error = result.unwrap_err();
+        assert!(panics::is_panic(&error), "{error:#}");
+    }
+
+    /// A batch is never held longer than twice the batch size, however slow the writes are.
+    #[test]
+    fn no_batch_grows_past_twice_the_size() {
+        let items: Vec<usize> = (0..2000).collect();
+        let ctl = Control::new();
+        let (largest, result) = batched(
+            &items,
+            no_file,
+            &options(),
+            &ctl,
+            || Ok(()),
+            |_, i, _| Ok(i),
+            Batch { size: 50, every: None },
+            0usize,
+            |largest: &mut usize, batch| {
+                *largest = (*largest).max(batch.len());
+                std::thread::sleep(Duration::from_millis(2));
+                batch.clear();
+                Ok(true)
+            },
+        );
+        result.unwrap();
+        assert!(largest <= 100, "a batch of {largest} results");
+        assert!(largest >= 50);
     }
 }

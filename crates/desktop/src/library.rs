@@ -185,7 +185,7 @@ impl qobject::Library {
             Phase::Thumbs { .. } => Some(FilePass::Thumbs),
             Phase::Borders => Some(FilePass::Borders),
             Phase::Import => Some(FilePass::Import),
-            Phase::Idle | Phase::Scan { .. } | Phase::Crop => None,
+            Phase::Idle | Phase::Scan { .. } | Phase::Crop | Phase::Pairing => None,
         };
         self.as_mut().set_failed_pass(crate::ledgers::kind_code(pass.map(LedgerKind::File)));
     }

@@ -27,8 +27,12 @@ cli-not-in-library = { $root }: not in the library
 
 # gallery import
 cli-marked-again = { $count } files to analyze again
-cli-import-pending = { $pending } files to import; the tier-1 index held { $indexed } hashes
-cli-import-done = imported { $files } files ({ $failed } failed{ $changed }), { $pairs } PDQ pairs, { $seconds } s
+cli-import-pending = { $pending } files to import
+cli-import-done = imported { $files } files ({ $failed } failed{ $changed }), { $seconds } s
+cli-pair-done = paired { $files } files: { $pairs } PDQ pairs, { $seconds } s
+cli-pairs-again = { $count } files owe their pairs again (their pairs are dropped)
+cli-pairs-legacy = { $count } analyses have no orientation hashes (made by an older build): `gallery import --again` analyzes them again
+cli-pairs-owed = { $count } files not paired yet (run `gallery pair`)
 # A path named to import again that holds no file of the library
 cli-no-file-there = { $path }: no file of the library there
 

@@ -106,6 +106,33 @@ pub fn borders_due(c: &Catalog, name: &str) -> Result<i64> {
     )?)
 }
 
+/// `analysis.dups_state` of the file called `name`: `due` while its pairs are owed.
+pub fn dups_state(c: &Catalog, name: &str) -> Result<String> {
+    Ok(c.conn.query_row(
+        "SELECT a.dups_state FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = ?1",
+        [name.as_bytes()],
+        |r| r.get(0),
+    )?)
+}
+
+/// Every pair stored, as its two files' ids (`a` below `b`) and its distance, in order.
+pub fn pairs(c: &Catalog) -> Result<Vec<(i64, i64, i64)>> {
+    let mut stmt = c.conn.prepare("SELECT a, b, distance FROM pdq_pairs ORDER BY a, b")?;
+    Ok(stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Makes every pair write fail, until [`allow_pair_writes`]: a pass that writes a pair then fails as a write does.
+pub fn fail_pair_writes(c: &Catalog) -> Result<()> {
+    Ok(c.conn.execute_batch(
+        "CREATE TRIGGER pairs_fault BEFORE INSERT ON pdq_pairs BEGIN SELECT RAISE(ABORT, 'a test fault'); END;",
+    )?)
+}
+
+/// Lets the pair writes through again (see [`fail_pair_writes`]).
+pub fn allow_pair_writes(c: &Catalog) -> Result<()> {
+    Ok(c.conn.execute_batch("DROP TRIGGER pairs_fault;")?)
+}
+
 /// Make the borders of the file called `name` due again, its file unchanged (as an analysis made again does).
 pub fn make_borders_due(c: &Catalog, name: &str) -> Result<()> {
     c.conn.execute(

@@ -7,6 +7,17 @@ pub const HASH_BYTES: usize = 32;
 pub const MATCH_DISTANCE: u32 = 31;
 /// Below this quality the hash is unreliable (flat or near-flat images); Meta's recommendation.
 pub const MIN_QUALITY: u8 = 50;
+/// [`PAIRING_VERSION`] as a literal, for SQL made at compile time (the migration that seeds the catalog's mark).
+#[macro_export]
+macro_rules! pairing_version {
+    () => {
+        1
+    };
+}
+/// The version of the pairs the pairing pass makes (what matches within [`MATCH_DISTANCE`], among the reliable hashes):
+/// bumped when the matching rule or the pairs' distances change. A catalog whose `meta.pairing_version` is another marks
+/// every eligible analysis due, and its pairs go (`pg_catalog::Versions::pairing`).
+pub const PAIRING_VERSION: i64 = pairing_version!();
 /// [`GROUP_DISTANCE`] as a literal, for SQL made at compile time.
 #[macro_export]
 macro_rules! group_distance {

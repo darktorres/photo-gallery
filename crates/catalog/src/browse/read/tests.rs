@@ -724,6 +724,25 @@ fn facets_filter(rules: PathRules) {
 
 under_both_rules!(facets_filter, facets_filter_windows, facets_filter_posix);
 
+/// "No duplicates" lists nothing while a present file owes its pairs (the pairing pass has yet to pair it, so no file is
+/// known to have none), and lists the same again once nothing is owed.
+fn no_duplicates_waits_for_the_pairing_pass(rules: PathRules) {
+    let c = mixed_library(rules);
+    let no_duplicates =
+        |c: &crate::Catalog| ids(c, "", true, &Query { duplicates: Some(false), ..Query::default() }, Sort::default());
+    assert_eq!(no_duplicates(&c), [6, 5]);
+    c.conn.execute("UPDATE analysis SET dups_state = 'due' WHERE file_id = 2", []).unwrap();
+    assert!(no_duplicates(&c).is_empty());
+    c.conn.execute("UPDATE analysis SET dups_state = 'done' WHERE file_id = 2", []).unwrap();
+    assert_eq!(no_duplicates(&c), [6, 5]);
+}
+
+under_both_rules!(
+    no_duplicates_waits_for_the_pairing_pass,
+    no_duplicates_waits_for_the_pairing_pass_windows,
+    no_duplicates_waits_for_the_pairing_pass_posix
+);
+
 fn sorts_put_missing_values_last(rules: PathRules) {
     let c = mixed_library(rules);
     let all = Query::default();
@@ -889,6 +908,7 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
             import: pg_analysis::analyze::IMPORT_VERSION,
             borders: pg_analysis::borders::BORDERS_VERSION,
             thumbs: 1,
+            pairing: pg_model::pdq::PAIRING_VERSION,
         },
         PathRules::Posix,
     )

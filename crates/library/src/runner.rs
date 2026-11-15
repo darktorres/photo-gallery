@@ -429,7 +429,7 @@ impl Inner {
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
             schedule::round(
-                &mut [&mut Crops, &mut Cuts, &mut Scans, &mut Import, &mut Borders, &mut Thumbs],
+                &mut [&mut Crops, &mut Cuts, &mut Scans, &mut Import, &mut Pairing, &mut Borders, &mut Thumbs],
                 &mut cx,
                 |cx| cx.inner.ctl.stop_requested(),
             )?
@@ -580,6 +580,22 @@ impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
         let s = pg_import::import(cx.catalog, &Options::new(Priority::BelowNormal), false, &cx.inner.ctl)?;
         if s.files > 0 {
+            cx.inner.imported();
+        }
+        Ok(Step::Done)
+    }
+}
+
+/// Pairs what the import left owed (`pg_import::pairs`): the pictures analyzed since the last pass, against every
+/// picture hashed. Right after the import, so that a later pass skipped by a preempt or a stop leaves the duplicates owed
+/// for no longer than it takes to pair them (seconds for a few thousand pictures).
+struct Pairing;
+
+impl Pass<Cx<'_>> for Pairing {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+        let s = pg_import::pairs::pair(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
+        // The duplicates the views list change with the pairs stored.
+        if s.pairs > 0 || s.files > 0 {
             cx.inner.imported();
         }
         Ok(Step::Done)

@@ -91,15 +91,31 @@ pub enum Line {
     },
     ImportPending {
         pending: String,
-        indexed: String,
     },
     /// `changed`: the [`Line::ChangedWhileRead`] words, or empty.
     ImportDone {
         files: String,
         failed: String,
         changed: String,
+        seconds: String,
+    },
+    /// The pairing pass: the files paired, the pairs stored.
+    PairDone {
+        files: String,
         pairs: String,
         seconds: String,
+    },
+    /// The owed pairs were marked again (`gallery pair --again`): how many analyses owe them.
+    PairsAgain {
+        count: String,
+    },
+    /// Analyses without orientation hashes, left out of the pairs (made by an older build).
+    PairsLegacy {
+        count: String,
+    },
+    /// Files the pairs are still owed for (`gallery status`).
+    PairsOwed {
+        count: String,
     },
     NoFileThere {
         path: String,
@@ -230,6 +246,10 @@ impl Line {
             Line::MarkedAgain { .. } => "cli-marked-again",
             Line::ImportPending { .. } => "cli-import-pending",
             Line::ImportDone { .. } => "cli-import-done",
+            Line::PairDone { .. } => "cli-pair-done",
+            Line::PairsAgain { .. } => "cli-pairs-again",
+            Line::PairsLegacy { .. } => "cli-pairs-legacy",
+            Line::PairsOwed { .. } => "cli-pairs-owed",
             Line::NoFileThere { .. } => "cli-no-file-there",
             Line::ThumbsNeeded { .. } => "cli-thumbs-needed",
             Line::ThumbsDone { .. } => "cli-thumbs-done",
@@ -296,9 +316,13 @@ impl Line {
             Line::TempNotDeleted { root, temp, error } => vec![("root", root), ("temp", temp), ("error", error)],
             Line::Removed { root, hidden } => vec![("root", root), ("hidden", hidden)],
             Line::NotInLibrary { root } => vec![("root", root)],
-            Line::ImportPending { pending, indexed } => vec![("pending", pending), ("indexed", indexed)],
-            Line::ImportDone { files, failed, changed, pairs, seconds } => {
-                vec![("files", files), ("failed", failed), ("changed", changed), ("pairs", pairs), ("seconds", seconds)]
+            Line::ImportPending { pending } => vec![("pending", pending)],
+            Line::ImportDone { files, failed, changed, seconds } => {
+                vec![("files", files), ("failed", failed), ("changed", changed), ("seconds", seconds)]
+            }
+            Line::PairDone { files, pairs, seconds } => vec![("files", files), ("pairs", pairs), ("seconds", seconds)],
+            Line::PairsAgain { count } | Line::PairsLegacy { count } | Line::PairsOwed { count } => {
+                vec![("count", count)]
             }
             Line::NoFileThere { path } => vec![("path", path)],
             Line::ThumbsNeeded { needed, height, held } => vec![("needed", needed), ("height", height), ("held", held)],
@@ -395,8 +419,12 @@ impl Line {
             Line::Removed { root: s(), hidden: s() },
             Line::NotInLibrary { root: s() },
             Line::MarkedAgain { count: s() },
-            Line::ImportPending { pending: s(), indexed: s() },
-            Line::ImportDone { files: s(), failed: s(), changed: s(), pairs: s(), seconds: s() },
+            Line::ImportPending { pending: s() },
+            Line::ImportDone { files: s(), failed: s(), changed: s(), seconds: s() },
+            Line::PairDone { files: s(), pairs: s(), seconds: s() },
+            Line::PairsAgain { count: s() },
+            Line::PairsLegacy { count: s() },
+            Line::PairsOwed { count: s() },
             Line::NoFileThere { path: s() },
             Line::ThumbsNeeded { needed: s(), height: s(), held: s() },
             Line::ThumbsDone {
@@ -485,13 +513,11 @@ mod tests {
             files: "12".into(),
             failed: "1".into(),
             changed: line(&Line::ChangedWhileRead { count: "2".into() }),
-            pairs: "3".into(),
             seconds: "0.5".into(),
         };
-        assert_eq!(
-            line(&done),
-            "imported 12 files (1 failed, 2 changed while read, left for the next pass), 3 PDQ pairs, 0.5 s"
-        );
+        assert_eq!(line(&done), "imported 12 files (1 failed, 2 changed while read, left for the next pass), 0.5 s");
+        let paired = Line::PairDone { files: "12".into(), pairs: "3".into(), seconds: "0.5".into() };
+        assert_eq!(line(&paired), "paired 12 files: 3 PDQ pairs, 0.5 s");
         let tier = Line::DupsIdentical { tier: Tier::Pixels, groups: "2".into(), files: "5".into() };
         assert_eq!(line(&tier), "tier 0b identical pixels: 2 groups, 5 files");
     }

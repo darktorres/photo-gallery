@@ -87,6 +87,26 @@ fn say(l: &Line) {
 }
 
 /// Seconds as the command line shows them: one decimal.
+/// The pairing pass, and its report: the files paired, the pairs stored, and the analyses that have no orientation
+/// hashes and so are left out (made by an older build).
+fn pair_and_report(
+    catalog: &mut Catalog,
+    opts: &pg_jobs::pipeline::Options,
+    ctl: &Control,
+    start: Instant,
+) -> Result<()> {
+    let s = pg_import::pairs::pair(catalog, opts, ctl)?;
+    say(&Line::PairDone {
+        files: s.files.to_string(),
+        pairs: s.pairs.to_string(),
+        seconds: secs(start.elapsed().as_secs_f64()),
+    });
+    if s.legacy > 0 {
+        say(&Line::PairsLegacy { count: s.legacy.to_string() });
+    }
+    Ok(())
+}
+
 fn secs(seconds: f64) -> String {
     format!("{seconds:.1}")
 }
@@ -223,21 +243,30 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 None => bail!(line(&Line::NotInLibrary { root: name })),
             }
         }
-        Command::Import { pipeline, retry_errors, again } => {
+        Command::Import { pipeline, retry_errors, again, no_pair } => {
             if !again.is_empty() {
                 let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
                 say(&Line::MarkedAgain { count: marked.to_string() });
             }
             let opts = pipeline.options(Priority::Normal);
             let s = pg_import::import(&mut catalog, &opts, retry_errors, ctl)?;
-            say(&Line::ImportPending { pending: s.pending.to_string(), indexed: s.indexed.to_string() });
+            say(&Line::ImportPending { pending: s.pending.to_string() });
             say(&Line::ImportDone {
                 files: s.files.to_string(),
                 failed: s.failed.to_string(),
                 changed: changed_while_read(s.changed),
-                pairs: s.pairs.to_string(),
                 seconds: secs(start.elapsed().as_secs_f64()),
             });
+            if !no_pair {
+                pair_and_report(&mut catalog, &opts, ctl, start)?;
+            }
+        }
+        Command::Pair { pipeline, again } => {
+            if again {
+                let count = catalog.pairs_again()?;
+                say(&Line::PairsAgain { count: count.to_string() });
+            }
+            pair_and_report(&mut catalog, &pipeline.options(Priority::Normal), ctl, start)?;
         }
         Command::Thumbs { height, cap, pipeline, foreground } => {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
@@ -301,6 +330,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 pending: s.pending.to_string(),
                 pairs: s.pdq_pairs.to_string(),
             });
+            let owed = catalog.owed_pairs()?;
+            if owed > 0 {
+                say(&Line::PairsOwed { count: owed.to_string() });
+            }
             say(&Line::StatusWrites { queued: s.queued_writes.to_string(), failing: s.failed_writes.to_string() });
             match ThumbCache::read_usage(&layout.thumbs_path())? {
                 Some(u) => say(&Line::StatusCache {

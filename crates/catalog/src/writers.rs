@@ -227,7 +227,8 @@ impl<'tx> ScanWriter<'tx> {
     }
 }
 
-/// The import's writes: analyses, failures, the file ratings they carry, and tier-1 pairs.
+/// The import's writes: analyses, failures, and the file ratings they carry. The pairs are the pairing pass's
+/// ([`PairsWriter`]); an analysis that owes them is stored as `dups_state = 'due'`.
 pub struct AnalysisWriter<'tx> {
     /// The build's IMPORT_VERSION, which a stored failure is made against.
     import: i64,
@@ -243,7 +244,6 @@ pub struct AnalysisWriter<'tx> {
     delete_rating: Statement<'tx>,
     set_file_rating: Statement<'tx>,
     delete_file_rating: Statement<'tx>,
-    pair: Statement<'tx>,
 }
 
 impl<'tx> AnalysisWriter<'tx> {
@@ -255,10 +255,10 @@ impl<'tx> AnalysisWriter<'tx> {
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
-                    taken, taken_utc, duration_ms, poster_ms, borders_due, pdq_dihedral)
+                    taken, taken_utc, duration_ms, poster_ms, borders_due, pdq_dihedral, dups_state)
                  VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END,
-                         CASE WHEN ?16 THEN ?15 END, ?17, ?18, 0, ?21)",
+                         CASE WHEN ?16 THEN ?15 END, ?17, ?18, 0, ?21, CASE WHEN ?22 THEN 'due' ELSE 'done' END)",
             )?,
             failure: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
@@ -281,11 +281,6 @@ impl<'tx> AnalysisWriter<'tx> {
             delete_rating: tx.prepare(DELETE_RATING)?,
             set_file_rating: tx.prepare(SET_FILE_RATING)?,
             delete_file_rating: tx.prepare(DELETE_FILE_RATING)?,
-            pair: tx.prepare(
-                "INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance, variant = excluded.variant
-                 WHERE excluded.distance < pdq_pairs.distance",
-            )?,
         })
     }
 
@@ -302,13 +297,16 @@ impl<'tx> AnalysisWriter<'tx> {
             return Ok(false);
         }
         let a = &analyzed.record;
-        // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
+        // A re-analysis invalidates the file's tier-1 pairs: it owes new ones (`dups_state`), which the pairing pass makes.
         self.delete_pairs.execute([item.id.get()])?;
         let (taken, taken_utc) = a.taken.map_or((None, false), |t| {
             let (seconds, utc) = t.parts();
             (Some(seconds), utc)
         });
         let (image, video) = (a.image(), a.video());
+        // A picture with orientation hashes and a reliable quality owes its pairs (what the pass pairs, `pairs.rs`).
+        let owes_pairs = analyzed.pdq_dihedral.is_some()
+            && image.is_some_and(|i| i.pixels.pdq.quality >= pg_model::pdq::MIN_QUALITY);
         self.analysis.execute(params![
             item.id.get(),
             a.version,
@@ -331,6 +329,7 @@ impl<'tx> AnalysisWriter<'tx> {
             item.rotation.get(),
             item.kind.key(),
             analyzed.pdq_dihedral.map(|d| d.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
+            owes_pairs,
         ])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id.get()])?;
@@ -358,12 +357,6 @@ impl<'tx> AnalysisWriter<'tx> {
         Ok(true)
     }
 
-    pub fn store_pdq_pair(&mut self, a: FileId, b: FileId, distance: u32, variant: usize) -> Result<()> {
-        let (a, b) = if a < b { (a, b) } else { (b, a) };
-        self.pair.execute(params![a.get(), b.get(), distance, variant])?;
-        Ok(())
-    }
-
     /// Three-way rating sync. `file_ratings` holds what the file was last known to hold; a file rating that
     /// differs from it was set by another program after that, so it becomes the catalog rating. Otherwise the
     /// catalog's stands (it may be newer and not written back yet, or the file can't hold one). A write of our own
@@ -385,6 +378,42 @@ impl<'tx> AnalysisWriter<'tx> {
             None => self.delete_file_rating.execute([file_id.get()])?,
         };
         Ok(())
+    }
+}
+
+/// The pairing pass's writes. A pair is stored only while both files still hold the hashes it was computed from: a
+/// file re-analyzed in between (by an import, here or in another process) has its own pairs owed again (its pass makes
+/// them), and a stale pair must never be stored beside them. A file is marked done only while it holds the hash its
+/// pairs were made from, so its owed state is kept by a change in the meantime.
+pub struct PairsWriter<'tx> {
+    pair: Statement<'tx>,
+    done: Statement<'tx>,
+}
+
+impl<'tx> PairsWriter<'tx> {
+    pub(crate) fn new(tx: &'tx Transaction) -> Result<PairsWriter<'tx>> {
+        Ok(PairsWriter {
+            pair: tx.prepare(
+                "INSERT INTO pdq_pairs(a, b, distance)
+                 SELECT ?1, ?2, ?3
+                 WHERE (SELECT pdq FROM analysis WHERE file_id = ?1) IS ?4
+                   AND (SELECT pdq FROM analysis WHERE file_id = ?2) IS ?5
+                 ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance WHERE excluded.distance < pdq_pairs.distance",
+            )?,
+            done: tx.prepare("UPDATE analysis SET dups_state = 'done' WHERE file_id = ?1 AND dups_state = 'due' AND pdq IS ?2")?,
+        })
+    }
+
+    /// Store the pair `a`, `b` at `distance`, found from the hashes `pdq_a` and `pdq_b` (the analyses' `pdq`), if both
+    /// files still hold them. Whether it was stored.
+    pub fn pair(&mut self, a: FileId, b: FileId, distance: u32, pdq_a: &[u8], pdq_b: &[u8]) -> Result<bool> {
+        let (a, b, pdq_a, pdq_b) = if a < b { (a, b, pdq_a, pdq_b) } else { (b, a, pdq_b, pdq_a) };
+        Ok(self.pair.execute(params![a.get(), b.get(), distance, pdq_a, pdq_b])? > 0)
+    }
+
+    /// Mark the file's pairs made, if it still holds `pdq` (the hash they were made from). Whether it was marked.
+    pub fn done(&mut self, file: FileId, pdq: &[u8]) -> Result<bool> {
+        Ok(self.done.execute(params![file.get(), pdq])? > 0)
     }
 }
 
@@ -566,8 +595,9 @@ mod tests {
     use crate::test_support::*;
     use crate::{Catalog, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
-    use pg_model::analysis::{Analysis, Taken, ThumbHash};
+    use pg_model::analysis::{Analysis, Analyzed, FileHash, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
     use pg_model::detection::Detection;
+    use pg_model::format::Format;
     use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
     use pg_model::media::Ext;
     use pg_model::name::Name;
@@ -1073,6 +1103,193 @@ mod tests {
         a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well,
         a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well_windows,
         a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well_posix
+    );
+
+    /// A catalog with files 1 and 2 in D:\x, both pending: the import has not analyzed them yet.
+    fn two_files(rules: PathRules) -> Catalog {
+        let (c, _) = one_file(rules);
+        add_file(&c, 2, "b.jpg");
+        c
+    }
+
+    /// Adds file `id` (pending) to the scan and folder of [`one_file`].
+    fn add_file(c: &Catalog, id: i64, name: &'static str) {
+        fixture::insert(c, &[fixture::File::new(FileId::new(id), FolderId::new(1), name, 10, 100)]).unwrap();
+    }
+
+    /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all eight orientations (the
+    /// writer does not check them).
+    fn picture(hash: [u8; 32], quality: u8) -> Analyzed {
+        let pdq = pg_model::pdq::Pdq { hash: pg_model::pdq::Hash(hash), quality };
+        let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
+        let record = Analysis {
+            version: IMPORT_VERSION,
+            file_hash: FileHash([1; 32]),
+            orientation: Orientation::UPRIGHT,
+            width: 400,
+            height: 300,
+            thumbhash: ThumbHash::default(),
+            frames: 1,
+            taken: None,
+            media: Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels }),
+        };
+        Analyzed { record, pdq_dihedral: Some([pg_model::pdq::Hash(hash); 8]) }
+    }
+
+    /// File `id`'s work item as the work lists give it now, pending or not.
+    fn item_of(c: &Catalog, id: i64) -> WorkItem {
+        crate::work::work_item(&c.conn, FileId::new(id)).unwrap().unwrap()
+    }
+
+    /// Stores `stored` as the import of file `id` stores it.
+    fn store_for(c: &mut Catalog, id: i64, stored: &Analyzed) {
+        let item = item_of(c, id);
+        let tx = c.tx().unwrap();
+        assert!(tx.analysis_writer(versions().import).unwrap().store_analysis(&item, stored).unwrap());
+        tx.commit().unwrap();
+    }
+
+    fn dups_state(c: &Catalog, id: i64) -> String {
+        c.conn.query_row("SELECT dups_state FROM analysis WHERE file_id = ?1", [id], |r| r.get(0)).unwrap()
+    }
+
+    /// The stored distance of the pair `a`, `b` (`a < b`), if there is one.
+    fn pair_distance(c: &Catalog, a: i64, b: i64) -> Option<i64> {
+        c.conn.query_row("SELECT distance FROM pdq_pairs WHERE a = ?1 AND b = ?2", [a, b], |r| r.get(0)).ok()
+    }
+
+    fn an_analysis_owes_its_pairs_only_with_hashes_of_a_reliable_quality(rules: PathRules) {
+        let mut c = two_files(rules);
+        store_for(&mut c, 1, &picture([1; 32], pg_model::pdq::MIN_QUALITY));
+        store_for(&mut c, 2, &picture([2; 32], pg_model::pdq::MIN_QUALITY - 1));
+        assert_eq!(dups_state(&c, 1), "due");
+        assert_eq!(dups_state(&c, 2), "done", "below the quality it owes nothing");
+        // Analyzed again, it owes again; a failure owes nothing.
+        store_for(&mut c, 1, &picture([3; 32], 100));
+        assert_eq!(dups_state(&c, 1), "due");
+        let item = item_of(&c, 1);
+        analyzed(&mut c, &item);
+        assert_eq!(dups_state(&c, 1), "done");
+        assert!(
+            c.conn.execute("UPDATE analysis SET dups_state = 'skipped' WHERE file_id = 1", []).is_err(),
+            "the CHECK holds"
+        );
+    }
+
+    under_both_rules!(
+        an_analysis_owes_its_pairs_only_with_hashes_of_a_reliable_quality,
+        an_analysis_owes_its_pairs_only_with_hashes_of_a_reliable_quality_windows,
+        an_analysis_owes_its_pairs_only_with_hashes_of_a_reliable_quality_posix
+    );
+
+    fn a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from(rules: PathRules) {
+        let mut c = two_files(rules);
+        store_for(&mut c, 1, &picture([1; 32], 100));
+        store_for(&mut c, 2, &picture([2; 32], 100));
+        let (one, two) = ([1; 32], [2; 32]);
+        let tx = c.tx().unwrap();
+        let mut pairs = tx.pairs_writer().unwrap();
+        // Made from file 2's old hash (it was analyzed again since): refused, whatever the distance.
+        assert!(!pairs.pair(FileId::new(1), FileId::new(2), 3, &one, &[9; 32]).unwrap());
+        // Made from the hashes both hold: stored; the order of the files does not matter.
+        assert!(pairs.pair(FileId::new(2), FileId::new(1), 5, &two, &one).unwrap());
+        assert!(
+            !pairs.pair(FileId::new(1), FileId::new(2), 9, &one, &two).unwrap(),
+            "a higher distance does not replace"
+        );
+        assert!(pairs.pair(FileId::new(1), FileId::new(2), 4, &one, &two).unwrap(), "a lower one does");
+        // A file is marked done only while it holds the hash its pairs were made from.
+        assert!(!pairs.done(FileId::new(2), &[9; 32]).unwrap());
+        assert!(pairs.done(FileId::new(1), &one).unwrap());
+        drop(pairs);
+        tx.commit().unwrap();
+        assert_eq!(pair_distance(&c, 1, 2), Some(4));
+        assert_eq!((dups_state(&c, 1).as_str(), dups_state(&c, 2).as_str()), ("done", "due"));
+    }
+
+    under_both_rules!(
+        a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from,
+        a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from_windows,
+        a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from_posix
+    );
+
+    fn a_new_analysis_drops_the_pairs_it_made_and_owes_them_again(rules: PathRules) {
+        let mut c = two_files(rules);
+        store_for(&mut c, 1, &picture([1; 32], 100));
+        store_for(&mut c, 2, &picture([2; 32], 100));
+        let tx = c.tx().unwrap();
+        let mut pairs = tx.pairs_writer().unwrap();
+        assert!(pairs.pair(FileId::new(1), FileId::new(2), 5, &[1; 32], &[2; 32]).unwrap());
+        assert!(pairs.done(FileId::new(1), &[1; 32]).unwrap());
+        assert!(pairs.done(FileId::new(2), &[2; 32]).unwrap());
+        drop(pairs);
+        tx.commit().unwrap();
+        assert_eq!(pair_distance(&c, 1, 2), Some(5));
+        // File 2 changed: its pairs go with the old analysis, and it owes them again.
+        store_for(&mut c, 2, &picture([3; 32], 100));
+        assert_eq!(pair_distance(&c, 1, 2), None);
+        assert_eq!((dups_state(&c, 1).as_str(), dups_state(&c, 2).as_str()), ("done", "due"));
+    }
+
+    under_both_rules!(
+        a_new_analysis_drops_the_pairs_it_made_and_owes_them_again,
+        a_new_analysis_drops_the_pairs_it_made_and_owes_them_again_windows,
+        a_new_analysis_drops_the_pairs_it_made_and_owes_them_again_posix
+    );
+
+    fn a_new_pairing_version_owes_the_eligible_analyses_again_and_drops_the_pairs(rules: PathRules) {
+        let mut c = two_files(rules);
+        store_for(&mut c, 1, &picture([1; 32], 100));
+        store_for(&mut c, 2, &picture([2; 32], pg_model::pdq::MIN_QUALITY - 1));
+        c.conn.execute("UPDATE analysis SET dups_state = 'done'", []).unwrap();
+        raw::add_pdq_pair(&c, 1, 2, 5);
+        // The same version: nothing changes.
+        crate::lifecycle::set_pairing_version(&c.conn, pg_model::pdq::PAIRING_VERSION).unwrap();
+        assert_eq!(pair_distance(&c, 1, 2), Some(5));
+        // Another version: the eligible analysis owes its pairs, the ineligible one owes nothing, and the pairs go.
+        crate::lifecycle::set_pairing_version(&c.conn, pg_model::pdq::PAIRING_VERSION + 1).unwrap();
+        assert_eq!(pair_distance(&c, 1, 2), None);
+        assert_eq!((dups_state(&c, 1).as_str(), dups_state(&c, 2).as_str()), ("due", "done"));
+    }
+
+    under_both_rules!(
+        a_new_pairing_version_owes_the_eligible_analyses_again_and_drops_the_pairs,
+        a_new_pairing_version_owes_the_eligible_analyses_again_and_drops_the_pairs_windows,
+        a_new_pairing_version_owes_the_eligible_analyses_again_and_drops_the_pairs_posix
+    );
+
+    fn pairing_work_lists_the_present_hashed_files_in_one_read(rules: PathRules) {
+        let mut c = two_files(rules);
+        add_file(&c, 3, "c.jpg");
+        add_file(&c, 4, "d.jpg");
+        add_file(&c, 5, "e.jpg");
+        add_file(&c, 6, "f.jpg");
+        store_for(&mut c, 1, &picture([1; 32], 100));
+        store_for(&mut c, 2, &picture([2; 32], 100));
+        c.conn.execute("UPDATE analysis SET dups_state = 'done' WHERE file_id = 2", []).unwrap();
+        // A failure: no hashes at all.
+        let failed = item_of(&c, 3);
+        analyzed(&mut c, &failed);
+        // Legacy: a hash, but no orientation hashes, and so no pairs owed (an older build's analysis: the migration's
+        // default).
+        store_for(&mut c, 4, &picture([4; 32], 100));
+        c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL, dups_state = 'done' WHERE file_id = 4", []).unwrap();
+        // Missing, and pending: neither is paired.
+        store_for(&mut c, 5, &picture([5; 32], 100));
+        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 5", []).unwrap();
+        store_for(&mut c, 6, &picture([6; 32], 100));
+        c.mark_pending(&[FileId::new(6)]).unwrap();
+        let work = c.pairing_work().unwrap();
+        let listed: Vec<(i64, bool)> = work.pictures.iter().map(|p| (p.id.get(), p.due)).collect();
+        assert_eq!(listed, vec![(1, true), (2, false)]);
+        assert_eq!(work.legacy, 1);
+        assert_eq!(c.owed_pairs().unwrap(), 1);
+    }
+
+    under_both_rules!(
+        pairing_work_lists_the_present_hashed_files_in_one_read,
+        pairing_work_lists_the_present_hashed_files_in_one_read_windows,
+        pairing_work_lists_the_present_hashed_files_in_one_read_posix
     );
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {

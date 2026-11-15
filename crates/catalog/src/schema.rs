@@ -59,6 +59,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_9_CHEAPER_WRITES)],
     &[Step::Sql(TO_10_LEDGER_NOT_WRITTEN)],
     TO_11_NOTIFY_FIXES,
+    &[Step::Sql(TO_12_PAIRING_PASS)],
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -393,6 +394,28 @@ const TO_10_LEDGER_NOT_WRITTEN: &str = "DELETE FROM notices WHERE kind = 'ledger
 ///   on a conflict. A `pending` that changes after the insert is `files_failures_hidden`'s, and the row is there by then.
 /// - **The retired kinds** (`Notice::RETIRED`) go, and every ledger row's `hidden` is recomputed (`convert::retire_kinds`).
 const TO_11_NOTIFY_FIXES: &[Step] = &[Step::Sql(TO_11_IMPORT_HIDDEN), Step::Rust(retire_kinds)];
+
+/// Version 12: the pairs are found by a pass after the import (`pg_import::pair`), not by the import. An analysis that
+/// owes its pairs is `dups_state = 'due'`: the import sets it for every picture with orientation hashes and a reliable
+/// quality, and the pass sets 'done' once the pairs are written. Every existing analysis was paired inline under this
+/// build's constants, so the column takes 'done' and the catalog keeps its pairs.
+/// - **`pdq_pairs.variant` goes**: nothing reads it, and the stored side's orientation is not the relative transform of
+///   the pair, so it could not be read as one. The pairs are `(a, b, distance)`.
+/// - **`meta.pairing_version`** is seeded with this build's `PAIRING_VERSION`, which the join's output depends on:
+///   `Catalog::prepare` marks every eligible analysis due when it changes (`lifecycle::set_pairing_version`).
+const TO_12_PAIRING_PASS: &str = concat!(
+    "ALTER TABLE analysis ADD COLUMN dups_state TEXT NOT NULL DEFAULT 'done' CHECK (dups_state IN ('done', 'due'));
+CREATE INDEX analysis_dups_due ON analysis(file_id) WHERE dups_state = 'due';
+DROP VIEW present_pdq_pairs;
+ALTER TABLE pdq_pairs DROP COLUMN variant;
+CREATE VIEW present_pdq_pairs AS
+    SELECT p.* FROM pdq_pairs p JOIN files fa ON fa.id = p.a JOIN files fb ON fb.id = p.b
+    WHERE fa.missing = 0 AND fb.missing = 0;
+INSERT INTO meta(key, value) VALUES ('pairing_version', ",
+    pg_model::pairing_version!(),
+    ");
+"
+);
 
 /// [`TO_11_NOTIFY_FIXES`]' trigger: the import's ledger row is made hidden when its file is missing or pending, and a
 /// conflict updates `hidden` as well as `error`.
@@ -1143,6 +1166,44 @@ mod tests {
             .collect::<rusqlite::Result<_>>()
             .unwrap();
         assert_eq!(kept, ["thumbs"]);
+    }
+
+    /// Version 12 (`TO_12_PAIRING_PASS`): an older catalog's pairs are kept, and its analyses are done (they were paired
+    /// inline), so nothing is owed on upgrade; the CHECK holds; `variant` is gone and `present_pdq_pairs` still reads the
+    /// table; and `meta.pairing_version` is seeded with this build's.
+    #[test]
+    fn the_pairing_pass_keeps_the_pairs_an_older_catalog_made() {
+        let conn = Connection::open_in_memory().unwrap();
+        let before = current_version().unwrap() - 1;
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, before).unwrap();
+        // The rows name files this test does not make: only the migration's effect on them is tested.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        conn.execute_batch(
+            "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, pdq, pdq_quality, pdq_dihedral)
+             VALUES (1, 1, 10, 100, 0, 'image', 0, zeroblob(32), 100, zeroblob(256));
+             INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (1, 2, 5, 3);",
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        let state: String =
+            conn.query_row("SELECT dups_state FROM analysis WHERE file_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(state, "done");
+        assert!(
+            conn.execute("UPDATE analysis SET dups_state = 'skipped' WHERE file_id = 1", []).is_err(),
+            "the CHECK holds"
+        );
+        let pairs: i64 = conn
+            .query_row("SELECT count(*) FROM pdq_pairs WHERE a = 1 AND b = 2 AND distance = 5", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pairs, 1);
+        let variant: i64 = conn
+            .query_row("SELECT count(*) FROM pragma_table_info('pdq_pairs') WHERE name = 'variant'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(variant, 0);
+        conn.query_row("SELECT count(*) FROM present_pdq_pairs", [], |r| r.get::<_, i64>(0)).unwrap();
+        let seeded: i64 =
+            conn.query_row("SELECT value FROM meta WHERE key = 'pairing_version'", [], |r| r.get(0)).unwrap();
+        assert_eq!(seeded, pg_model::pdq::PAIRING_VERSION);
     }
 
     /// The stamps of a rating, a border mark and a queued write are triggers of their own on delete and on update as

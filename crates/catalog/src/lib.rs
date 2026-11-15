@@ -48,7 +48,8 @@ pub use types::{
     CropSource, Folder, FolderFailure, Listed, Prior, Rebuilt, Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip,
     SkipReason, Status, Versions, WorkItem, WriteTarget,
 };
-pub use writers::{AnalysisWriter, BordersWriter, LedgerWriter, ScanWriter};
+pub use work::{PairingPicture, PairingWork};
+pub use writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, ScanWriter};
 
 #[cfg(test)]
 mod test_support;

@@ -468,7 +468,9 @@ mod tests {
     #[test]
     fn a_restart_posts_nothing() {
         let (library, sink, dir) = library("library-restart");
-        let before = sink.calls().len();
+        // Only posts count: the job's own rounds resolve notices on their own schedule, while this test runs.
+        let posts = |sink: &Recording| sink.calls().iter().filter(|c| c.starts_with("post")).count();
+        let before = posts(&sink);
         {
             let mut slot = library.writer();
             slot.writer.stop();
@@ -479,7 +481,7 @@ mod tests {
             assert!(!slot.given_up);
             assert!(slot.writer.is_running(), "the writer was started again");
         }
-        assert_eq!(sink.calls().len(), before, "a restart posts nothing: {:?}", sink.calls());
+        assert_eq!(posts(&sink), before, "a restart posts nothing: {:?}", sink.calls());
         assert!(library.stop());
         let _ = std::fs::remove_dir_all(&dir);
     }

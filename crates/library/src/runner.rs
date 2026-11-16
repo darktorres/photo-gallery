@@ -847,9 +847,22 @@ mod tests {
         names: &[&str],
         hashing: pg_model::features::Hashing,
     ) -> (PathBuf, PathBuf, RulePath) {
+        library_sized(prefix, names, hashing, 8)
+    }
+
+    /// [`library_with`], with square pictures of `side` pixels (the border detector looks at those of 64 or more).
+    fn library_sized(
+        prefix: &str,
+        names: &[&str],
+        hashing: pg_model::features::Hashing,
+        side: u32,
+    ) -> (PathBuf, PathBuf, RulePath) {
         let dir = pg_testkit::run_folder_with("scratch_runner", prefix, &["images"]).unwrap();
+        // A pattern, not a flat colour: a flat picture has too little PDQ quality to owe its pairs.
+        let pixels: Vec<u8> =
+            (0..side * side * 3).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap()).collect();
         for name in names {
-            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(side, side, &pixels).unwrap()).unwrap();
         }
         let catalog_path = dir.join("catalog.sqlite");
         let mut c = Catalog::prepare(&catalog_path, crate::versions(), PATH_RULES).unwrap();
@@ -882,6 +895,36 @@ mod tests {
         inner.features.set(Features { borders: false, duplicates: true });
         assert_eq!(run(&mut Hashes, &inner), Step::Done);
         assert_eq!(c.owed_hashes().unwrap(), 0, "turned on, the pass makes them");
+    }
+
+    /// One round makes the thumbnails, then the hashes, then the pairs, then the borders: each pass ends its phase
+    /// (`Finished`) in that order. A picture imported without its hashes owes all four, at a 300-pixel size the borders
+    /// look at.
+    #[test]
+    fn a_round_makes_the_thumbnails_then_the_hashes_then_the_pairs_then_the_borders() {
+        let (dir, catalog_path, _root) =
+            library_sized("runner-order", &["a.png"], pg_model::features::Hashing::Skip, 300);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        let ended = inner.ctl.subscribe();
+        inner.round(&mut None).unwrap();
+        let order: Vec<&str> = ended
+            .take()
+            .items
+            .into_iter()
+            .filter_map(|event| match event {
+                pg_jobs::control::Event::Finished(progress) => match progress.phase {
+                    pg_model::progress::Phase::Thumbs { .. } => Some("thumbs"),
+                    pg_model::progress::Phase::Hashes => Some("hashes"),
+                    pg_model::progress::Phase::Pairing => Some("pairs"),
+                    pg_model::progress::Phase::Borders => Some("borders"),
+                    _ => None,
+                },
+                pg_jobs::control::Event::Progress(_) => None,
+            })
+            .collect();
+        assert_eq!(order, ["thumbs", "hashes", "pairs", "borders"]);
     }
 
     /// The thumbnail cache beside the catalog, holding at most `cap` bytes (`None`: the default), leaked as the job's

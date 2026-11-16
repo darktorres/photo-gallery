@@ -1607,7 +1607,9 @@ fn run_team<S: Schedule>(
     Some((pairs, spent))
 }
 
-/// One thread of [`run_team`].
+/// One thread of [`run_team`]. Not inlined, so a profiler can toggle on it: a team thread starts here, and the callgrind
+/// bench of the join (`crates/bench/benches/ir/pairing.rs`) counts the team's work by it.
+#[inline(never)]
 fn member<S: Schedule>(
     team: &Team<S>,
     start: &(dyn Fn() + Sync),

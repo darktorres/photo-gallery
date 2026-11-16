@@ -4,6 +4,7 @@
 // the few-owed threshold at one thread (the stored side is streamed once against the owed pictures' lists). The pass
 // runs the join on the team of its workers; one thread keeps the count to the work alone.
 
+use gungraun::Callgrind;
 use pg_dedup::join::{Joined, Joiner};
 use pg_model::pdq::{Hash, ORIENTATIONS};
 
@@ -71,8 +72,12 @@ fn for_join(owed_every: usize) -> (Vec<[Hash; ORIENTATIONS]>, Vec<bool>) {
     (hashes, owed)
 }
 
-// The store's build and the join of every owed picture, on one thread.
-#[library_benchmark]
+// The store's build and the join of every owed picture, on one thread. The join's work runs on its team's thread, which
+// gungraun's entry point (a callgrind toggle on this function, per thread) would not count: the second toggle, on the
+// function a team thread starts in, counts it too.
+#[library_benchmark(
+    config = LibraryBenchmarkConfig::default().tool(Callgrind::with_args(["--toggle-collect=*pg_dedup::join::member*"]))
+)]
 #[bench::all(args = (1), setup = for_join)]
 #[bench::few(args = (FEW_EVERY), setup = for_join)]
 fn join((hashes, owed): (Vec<[Hash; ORIENTATIONS]>, Vec<bool>)) -> Option<Joined> {

@@ -790,6 +790,95 @@ check (one slice, slices of 50,000, one worker, 300 / 3,000 / 30,000 owed). On 1
 the sort wait (112 -> 185 ms): two sorters no longer keep ahead of a 523 ms scan, so the join there is now bound by the
 sorts, and the sorts' costs (the second pass 24%, the zeroing 9%) are no longer hidden.
 
+#### The scan kernel (pairing plan, second round, step 3)
+
+The kernel tests a stored entry against eight query entries at once: the stage's head (`w` `u32` words of the chunks
+after its own), the stored side's in rows and the query side's in columns, against a bound exact for the pairs the
+stage reports (`31 - 2 x earlier chunks outside the head - [the probe flips a bit]`, at least 4). Same machine and
+build as above; turbo off (the power plan's maximum processor state at 99%).
+
+**The head's width per stage.** Each stage's one-worker scan at one to five words, two runs each (median ms; in
+parentheses, the candidates tested in full when over 1 M; from 2 words on most stages are at the floor of about 19,500
+true near-pairs):
+
+| Stage | W = 1 | W = 2 | W = 3 | W = 4 | W = 5 | Chosen |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 2,441 (152.9 M) | 1,942 (57.6 M) | 312 | 335 | 360 | 3 |
+| 1 | 2,948 (149.1 M) | 1,678 (31.4 M) | 289 | 333 | 335 | 3 |
+| 2 | 2,598 (151.7 M) | 1,207 (14.8 M) | 289 | 334 | 349 | 3 |
+| 3 | 2,944 (148.0 M) | 779 (5.5 M) | 284 | 308 | 340 | 3 |
+| 4 | 2,701 (147.1 M) | 457 (1.7 M) | 378 | 321 | 340 | 3 |
+| 5 | 3,069 (140.6 M) | 340 | 272 | 316 | 367 | 3 |
+| 6 | 2,525 (123.3 M) | 286 | 289 | 333 | 350 | 2 |
+| 7 | 2,539 (88.3 M) | 258 | 275 | 367 | 345 | 2 |
+| 8 | 1,800 (48.4 M) | 270 | 341 | 316 | 360 | 2 |
+| 9 | 1,284 (18.3 M) | 266 | 324 | 313 | 343 | 2 |
+| 10 | 611 (4.6 M) | 382 | 294 | 324 | 343 | 2 |
+| 11 | 328 | 275 | 288 | 308 | 394 | 2 |
+| 12 | 231 | 270 | 304 | 339 | 343 | 1 |
+| 13 | 230 | 258 | 313 | 312 | 348 | 1 |
+| 14 | 221 | 330 | 319 | 328 | 356 | 1 |
+| 15 | 214 | 276 | 291 | 332 | 340 | 1 |
+
+A stage scans about 150 M lanes. One more word costs about 24 ms a stage (0.16 ns a lane; the columns at 3 - 5 words,
+where the candidates are at the floor). A false candidate costs from 14 ns, when nearly every lane is one and the
+store's lines are reused (stage 0 at one word: 152.9 M for 2.1 s over its 3-word time), to about 100 ns when they are
+few and each misses the cache (stage 3 at two words, 5.5 M for 0.49 s; stage 4, 1.7 M for 0.17 s). A width is decided
+where the candidates are few, so the rule takes the 100 ns. The rule (`FULL_TEST_COST`, `widths()` in
+`crates/dedup/src/join.rs`) takes, per stage, the `W` that minimises `W + 600 x P(Bin(32 W, 1/2) <= bound(c, W))`, a
+false candidate's chance of passing a head of uniformly random bits. It gives 3 words for stages 0 - 5, 2 for 6 - 11
+and 1 for 12 - 15, the fastest column of each row bar noise. The same table comes out for any cost ratio from about
+500 to past 1,200. Whole passes on that table against uniform widths (one worker, scan ms): 3,860 at the table, 4,316 at
+3 words everywhere, 4,636 at 4 and 8,582 at 2. With the final kernel, all owed: one worker 3,513 - 3,547 at the table,
+3,831 - 3,865 at 3 words, 3,898 - 3,911 at 4 - 4 - 3 - 2 (stages in sixes, sixes, fours); 12 workers 558 - 568, 590 -
+593 and 689 - 693.
+
+**The plan's flat list, measured and dropped.** The plan had each run write (stored entry, eight queries) slots into a
+list that fits in L1, and the kernel loop over the list, removing the loop exit of every (stored entry, probe), the
+mispredict that dominated the old kernel. It did remove them, but every stored entry then costs about 78 instructions
+to build its slots (the suffix, its conversions, the list's bounds and pointers reloaded from the stack) on top of
+about 40 per slot. Counters on context switches, the whole pass, all owed:
+
+| Kernel | Workers | Cycles | Instructions | Mispredicts | Scan (ms) |
+|---|---:|---:|---:|---:|---:|
+| step 2 (4 lanes, 128-bit head) | 1 | 18.87 G | 34.3 G | 131 M | 4,411 |
+| flat list | 1 | 17.57 G | 43.8 G | 67 M | 3,994 |
+| each stored entry's slots in a loop | 1 | **16.36 G** | 33.9 G | 95 M | **3,605** |
+| step 2 | 12 | 25.15 G | 34.4 G | 134 M | 676 |
+| flat list | 12 | 27.03 G | 43.9 G | 73 M | 709 |
+| each stored entry's slots in a loop | 12 | **22.40 G** | 34.0 G | 97 M | **570** |
+
+On one worker the list's fewer stalls outweighed its extra instructions; on 12, two threads to a core, the sibling
+already filled those stalls and the instructions are what cost, as the one-worker section above foresaw for fixed trip
+counts (at 6 workers, one to a core, the two were level). Testing every slot of the bucket for every stored entry, the
+ordering rule as a lane mask, with no list and no suffix, was worse again (50.1 G instructions): the lanes before the
+suffix are half the work in a pass where every picture is owed.
+
+**Small buckets.** A query bucket of at most eight entries (most of them when a slice is 50,000 pictures, and nearly
+all with 3,000 owed) is loaded once: its heads and pictures, and its lanes before the end. Each stored entry is then
+one straight-line test, the ordering rule a mask of those lanes. Before that, these buckets took the list's or the
+suffix's overhead per stored entry: four slices of 50,000 on one worker went from 9.5 s of scan to 6.3 s. The
+few-owed path tests a hit on the full hash, kept beside the query's code: the few query pictures stay in cache, so a
+head saves nothing there.
+
+**Kept** (6 pairs per workload against step 2, alternating, a fresh catalog copy per run; medians in ms, cycles in M;
+the change's Hodges-Lehmann estimate on cycles with its 95% interval):
+
+| Workload | Pass | Cycles | Sort wait | Scan | Cycles, estimate |
+|---|---:|---:|---:|---:|---|
+| all owed, 1 worker | 5,808 -> 4,974 | 18,312 -> 15,728 | 708 -> 764 | 4,410 -> 3,540 | -14.0% [-15.5, -10.2] |
+| all owed, 12 workers | 1,476 -> 1,476 | 25,168 -> 21,438 | 130 -> 272 | 670 -> 542 | -14.9% [-15.3, -14.4] |
+| 300 owed, 1 | 566 -> 577 | 1,773 -> 1,814 | 228 -> 242 | 68 -> 64 | +4.9% [-3.6, +27.5] |
+| 300 owed, 12 | 338 -> 344 | 3,300 -> 3,314 | 7 -> 6 | 70 -> 77 | +1.1% [-1.0, +2.0] |
+| 3,000 owed, 1 | 896 -> 873 | 2,793 -> 2,754 | 234 -> 248 | 360 -> 342 | -1.6% [-3.6, +21.5] |
+| 3,000 owed, 12 | 602 -> 582 | 3,966 -> 3,782 | 204 -> 212 | 82 -> 75 | -4.8% [-8.6, +0.7] |
+| four slices of 50,000, 12 | 2,300 -> 2,025 | 51,278 -> 39,215 | 330 -> 466 | 1,478 -> 1,046 | -23.3% [-24.2, -22.6] |
+
+No workload's interval lies above zero, and three are real gains. On 12 workers the full pass's wall clock does not
+move: its scan is 19% shorter, and the time moves into the sort wait (130 -> 272 ms). The two sorters do not keep up
+with the faster scan, and the columns cost the sort about 8% more on one worker. Step 5's thread team is what removes
+that wait. The pairs are the oracle's 5,277, identical on all seven paths of the check.
+
 ---
 
 ## Where the other results are

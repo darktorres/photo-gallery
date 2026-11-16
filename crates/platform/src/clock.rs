@@ -74,6 +74,24 @@ pub fn process_age_ms() -> f64 {
     pg_model::num::size(ticks(now).saturating_sub(ticks(created))) / 1e4
 }
 
+/// The CPU cycles this process's threads have run, user and kernel (on Windows; `None` elsewhere). Unlike the wall
+/// clock, it does not count the time other processes take the cores, so the profiling probes compare work with it.
+#[cfg(windows)]
+pub fn process_cycles() -> Option<u64> {
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    use windows_sys::Win32::System::WindowsProgramming::QueryProcessCycleTime;
+    let mut cycles = 0u64;
+    // SAFETY: QueryProcessCycleTime only writes the u64 it is given; the pseudo-handle of this process needs no closing.
+    let ok = unsafe { QueryProcessCycleTime(GetCurrentProcess(), &mut cycles) };
+    (ok != 0).then_some(cycles)
+}
+
+/// Not counted elsewhere.
+#[cfg(not(windows))]
+pub fn process_cycles() -> Option<u64> {
+    None
+}
+
 /// Elsewhere, since the first call (see above).
 #[cfg(not(windows))]
 pub fn process_age_ms() -> f64 {

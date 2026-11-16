@@ -24,10 +24,16 @@
 //! one pointer per probe that only moves forward. The output is the least distance per pair, sorted by `(a, b)`, `a < b`.
 //!
 //! **Layout.** The [`Joiner`] holds the permuted stored orientations of every picture (32 bytes each), built once per
-//! pass; each slice's join adds the permuted transposed orientations of its query pictures. A stage (one chunk) sorts
-//! both sides into three arrays per side, 20 bytes per entry: the first two words (what the kernels filter on) and the
-//! code (`picture << 4 | owed << 3 | orientation`). The full hash of a candidate that passes the filter is read back from
-//! the store by its code.
+//! pass; each slice's join adds the permuted transposed orientations of its query pictures, a renaming of the stored
+//! ones' chunks (`permuted`). A stage (one chunk) sorts both sides into 256 regions per side, one per high byte of the
+//! chunk. Each region holds its entries' codes (`picture << 4 | owed << 3 | orientation`) and heads: the stage's `w`
+//! words of the chunks after its own (`head_words`), what the kernels filter on, against a bound exact for the pairs
+//! the stage reports (`bound`); the stored side's heads in rows, the query side's in columns. The full hash of a
+//! candidate that passes the filter is read back from the store by its code.
+//!
+//! **The scan.** A query bucket's 17 probes are ten runs: stored buckets of one region at one bound. Each stored entry of
+//! a run is tested against its suffix of the query bucket eight entries at a time; a bucket of at most eight entries is
+//! loaded once, and the ordering rule is a mask of its lanes (`scan_runs`). Every kernel tests the same candidates.
 //!
 //! **Two paths, one set of candidates.** The sorted path sorts the next stage on 1 - 2 sorter threads while the workers
 //! scan this one (a ring of two stage sets; [`Tuning::sorters`]). A slice with few query entries ([`Tuning::few_entries`])
@@ -55,8 +61,110 @@ const QUERY_ORIENTATIONS: usize = 2 * ORIENTATIONS;
 pub const MAX_PICTURES: u32 = u32::MAX >> 4;
 /// The code's owed bit.
 const OWED: u32 = 1 << 3;
-/// The zeros after a sorted side's codes: [`suffix_avx2`] reads eight codes from any position up to the side's length.
+/// The values after a region's codes: [`suffix_avx2`] reads eight codes from any position up to the region's length.
 const CODE_PADDING: usize = 8;
+/// The query entries the kernels test at a time: one 256-bit register of `u32` lanes.
+const LANES: usize = 8;
+/// The most head words: two chunks to a word, of the 15 other than the stage's own.
+const MAX_HEAD_WORDS: usize = 7;
+
+/// What a full test of a candidate costs at the margin, in head words per lane: about 100 ns for a test whose two
+/// hashes miss the cache (the stored side is 32 bytes a picture's orientation, past L3), against 0.16 ns for one more
+/// head word per lane (24 ms a stage over its 150 M lanes). Measured on the i7-8700 at one to five words at every stage
+/// (docs/reference/PROFILING.md, "The scan kernel"); the widths it gives ([`WIDTHS`]) are the same from about 500 to
+/// past 1,200, and are those the measurements found fastest.
+const FULL_TEST_COST: f64 = 600.0;
+
+/// `P(Bin(n, 1/2) <= t)`: the share of unrelated hashes (whose bits differ by coin flips) within `t` bits over `n`. The
+/// counts kept in floats, as `f64::from` is not const.
+const fn tail(n: u32, t: u32) -> f64 {
+    let (mut term, mut k) = (1.0f64, 0);
+    while k < n {
+        term *= 0.5;
+        k += 1;
+    }
+    let (mut sum, mut i, mut fi, mut fnn) = (0.0, 0, 0.0, 0.0);
+    k = 0;
+    while k < n {
+        fnn += 1.0;
+        k += 1;
+    }
+    while i <= t && i <= n {
+        sum += term;
+        term *= (fnn - fi) / (fi + 1.0);
+        i += 1;
+        fi += 1.0;
+    }
+    sum
+}
+
+/// Each stage's head words: the fewest for which one word more costs more than the false candidates it removes. A word
+/// costs one per lane; the candidates that pass the head test without being pairs are the unrelated ones within the
+/// bound ([`tail`] of the head's bits, at the bound of the probes that flip a bit, 16 of the 17), each a full test
+/// ([`FULL_TEST_COST`]). The pairs within the radius pass at every width, so they do not choose it.
+#[expect(clippy::indexing_slicing, reason = "built at compile time, `c` below the array's 16")]
+const fn widths() -> [usize; CHUNKS] {
+    let mut out = [1; CHUNKS];
+    // Each count in the types it is used as, kept side by side (a const fn has no conversions between them).
+    let (mut c, mut cu) = (0usize, 0u32);
+    while c < CHUNKS {
+        let (mut best, mut best_cost) = (1, f64::MAX);
+        let (mut w, mut wu, mut wf) = (1usize, 1u32, 1.0f64);
+        while w <= MAX_HEAD_WORDS {
+            let cost = wf + FULL_TEST_COST * tail(32 * wu, bound(cu, wu, true));
+            if cost < best_cost {
+                (best, best_cost) = (w, cost);
+            }
+            (w, wu, wf) = (w + 1, wu + 1, wf + 1.0);
+        }
+        out[c] = best;
+        (c, cu) = (c + 1, cu + 1);
+    }
+    out
+}
+
+/// The head words of each stage by default ([`widths`]).
+const WIDTHS: [usize; CHUNKS] = widths();
+
+/// The last chunk, the one before chunk 0 in a head that wraps ([`earlier_outside`]).
+const LAST_CHUNK: u32 = 15;
+
+/// The chunks before stage `c` that a head of `w` words leaves out. The head is chunks `c + 1 ..= c + 2w` (mod 16), of
+/// which `c + 2w - 15` wrap around to the chunks before `c` (at most `c`, as `2w <= 15`).
+const fn earlier_outside(c: u32, w: u32) -> u32 {
+    c - (c + 2 * w).saturating_sub(LAST_CHUNK)
+}
+
+/// The bound of a stage's head test, exact for the pairs the stage reports. A pair is reported at the first chunk within
+/// one bit (`matched_earlier`), so at stage `c` each chunk before `c` is at distance 2 or more, and chunk `c` itself at 1
+/// when the probe flipped a bit (`flipped`), at 0 when not. Of the radius, the head may then take what those leave:
+/// `31 - [flipped] - 2 * earlier_outside(c, w)`. A pair over it is not this stage's to report (it is over the radius, or
+/// an earlier chunk reports it), and every pair under it is tested in full, so the pairs and their distances are those
+/// of the full test.
+const fn bound(c: u32, w: u32, flipped: bool) -> u32 {
+    MATCH_DISTANCE - 2 * earlier_outside(c, w) - if flipped { 1 } else { 0 }
+}
+
+// No bound is negative: what the chunks before a stage and its own flipped bit take is within the radius, at every
+// stage and width (the least is 4: one word, from stage 13). Evaluating `bound` here would fail the build on overflow.
+const _: () = {
+    let mut c = 0;
+    while c <= LAST_CHUNK {
+        let mut w = 1;
+        while w <= 7 {
+            assert!(2 * earlier_outside(c, w) < MATCH_DISTANCE && bound(c, w, true) >= 4);
+            w += 1;
+        }
+        c += 1;
+    }
+    assert!(MAX_HEAD_WORDS == 7 && CHUNKS == 16);
+};
+
+/// The bounds of stage `c` at `w` head words: of probe 0, and of the probes that flip a bit.
+fn bounds(c: usize, w: usize) -> [u32; 2] {
+    let (c, w) = (u32::try_from(c).unwrap_or(LAST_CHUNK), u32::try_from(w).unwrap_or(1));
+    [bound(c, w, false), bound(c, w, true)]
+}
 
 /// A pair of pictures by their index (`a < b`), and the least distance over their orientations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -81,17 +189,41 @@ impl std::error::Error for TooManyPictures {}
 /// The hash as the join compares it: its bits permuted so that chunk `c` (16 bits, [`chunk`]) is the wrapped diagonal
 /// `column - row = c` of the 16x16 grid. Each row is rotated left by its index (bit `15 - col` goes to `15 - (col - row)`,
 /// mod 16), the grid is transposed, and the rows are packed four to a word, little-endian, as [`chunk`] reads them.
+///
+/// Within a chunk, the bits of diagonals 0 - 8 are in row order (bit `15 - row` is the cell of that row) and those of
+/// diagonals 9 - 15 in column order (bit `15 - column`). The transpose maps diagonal `d` to `16 - d`, and with this
+/// order it maps the cell at bit `b` of one to bit `b` of the other: the transposed hash is a renaming of chunks
+/// ([`transposed`]), not a transpose of bits. The order within a chunk changes no distance and no neighbour.
 pub(crate) fn permuted(h: &Hash) -> [u64; 4] {
     let mut rows = h.rows();
     for (r, row) in (0u32..).zip(rows.iter_mut()) {
         *row = row.rotate_left(r);
     }
-    let diagonals = transpose_rows(rows);
+    let mut diagonals = transpose_rows(rows);
+    // Diagonal d's cell of row r is at bit 15 - r; of column r + d at bit 15 - (r + d): a rotation right by d.
+    for (d, diagonal) in diagonals.iter_mut().enumerate().skip(CHUNKS / 2 + 1) {
+        *diagonal = diagonal.rotate_right(u32::try_from(d).unwrap_or(0));
+    }
     let mut words = [0u64; 4];
     for (word, four) in words.iter_mut().zip(diagonals.as_chunks::<4>().0) {
         *word = four.iter().rev().fold(0, |w, &d| (w << 16) | u64::from(d));
     }
     words
+}
+
+/// The permuted hash ([`permuted`]) of `h`'s transpose, from `h`'s: chunk `c` is chunk `16 - c` (`0` stays), and chunk
+/// 8, which the transpose maps to itself with each cell's partner eight rows on, has its two bytes swapped.
+fn transposed(words: &[u64; 4]) -> [u64; 4] {
+    let mut out = [0u64; 4];
+    for c in 0..CHUNKS {
+        let from = (CHUNKS - c) % CHUNKS;
+        let v = words.get(from >> 2).map_or(0, |w| (w >> ((from & 3) * 16)) & 0xFFFF);
+        let v = if c == CHUNKS / 2 { ((v & 0xFF) << 8) | (v >> 8) } else { v };
+        if let Some(o) = out.get_mut(c >> 2) {
+            *o |= v << ((c & 3) * 16);
+        }
+    }
+    out
 }
 
 /// Chunk `c` of a permuted hash: 16 bits.
@@ -146,6 +278,9 @@ pub struct Tuning {
     pub sorters: Option<usize>,
     /// The most query entries the few-owed path takes. `None`: [`FEW_ENTRIES_PER_THREAD`] for each of the join's threads.
     pub few_entries: Option<usize>,
+    /// Each stage's head words, 1 - 7 (others are clamped to them). `None`: by the cost of a word against the false
+    /// candidates it removes (`widths`).
+    pub widths: Option<[usize; CHUNKS]>,
 }
 
 impl Tuning {
@@ -224,6 +359,12 @@ impl<'a> Joiner<'a> {
         Ok(Joiner { hashes, owed, stored, kernel: best_kernel(), tuning: Tuning::default() })
     }
 
+    /// Stage `c`'s head words ([`Tuning::widths`]).
+    fn width(&self, c: usize) -> usize {
+        let widths = self.tuning.widths.unwrap_or(WIDTHS);
+        widths.get(c).copied().unwrap_or(MAX_HEAD_WORDS).clamp(1, MAX_HEAD_WORDS)
+    }
+
     /// The same join with `tuning`.
     #[must_use]
     pub fn tuned(mut self, tuning: Tuning) -> Joiner<'a> {
@@ -265,9 +406,13 @@ impl<'a> Joiner<'a> {
                 *r = k;
             }
         }
+        // From the stored orientations: the transpose is a renaming of their chunks.
         let transposed: Vec<[u64; 4]> = pictures
             .iter()
-            .flat_map(|&p| self.hashes.get(index(p)).into_iter().flatten().map(|h| permuted(&h.transpose())))
+            .flat_map(|&p| {
+                let at = index(p) * ORIENTATIONS;
+                self.stored.get(at..at + ORIENTATIONS).into_iter().flatten().map(transposed)
+            })
             .collect();
         let sides = Sides { joiner: self, pictures: &pictures, transposed: &transposed, rank: &rank };
         let mut times = JoinTimes { prepare: preparing.elapsed(), ..JoinTimes::default() };
@@ -305,10 +450,10 @@ impl<'a> Joiner<'a> {
                     return None;
                 }
                 let sorting = Instant::now();
-                set.sort(c, sides, stored, queries, &mut scratch, false, start);
+                set.sort(c, self.width(c), sides, stored, queries, &mut scratch, false, start);
                 times.sort += sorting.elapsed();
                 let scanning = Instant::now();
-                let stage = Stage { c, stored: &set.stored, query: &set.query, sides };
+                let stage = Stage::new(c, self.width(c), &set, sides);
                 found.append(&mut run_stage(self.kernel, &stage, workers, start, control)?);
                 times.scan += scanning.elapsed();
             }
@@ -332,7 +477,7 @@ impl<'a> Joiner<'a> {
                         stopped.store(true, Relaxed);
                         return;
                     }
-                    set.sort(c, sides, stored, queries, &mut scratch, sorters == 2, start);
+                    set.sort(c, self.width(c), sides, stored, queries, &mut scratch, sorters == 2, start);
                     // Never blocks: the channel holds every set there is.
                     if full_tx.send((c, set)).is_err() {
                         return;
@@ -345,7 +490,7 @@ impl<'a> Joiner<'a> {
                 let Ok((c, set)) = full_rx.recv() else { break };
                 times.sort += waiting.elapsed();
                 let scanning = Instant::now();
-                let stage = Stage { c, stored: &set.stored, query: &set.query, sides };
+                let stage = Stage::new(c, self.width(c), &set, sides);
                 let scanned = run_stage(self.kernel, &stage, workers, start, control);
                 times.scan += scanning.elapsed();
                 let Some(mut pairs) = scanned else {
@@ -378,9 +523,10 @@ impl<'a> Joiner<'a> {
         times: &mut JoinTimes,
     ) -> Option<Vec<Pair>> {
         let sorting = Instant::now();
-        let mut scratch = Vec::new();
-        let chunks: Vec<FewChunk> = (0..CHUNKS).map(|c| FewChunk::new(sides, queries, c, &mut scratch)).collect();
-        drop(scratch);
+        let (mut sorted, mut scratch) = (Sorted::default(), SortScratch::default());
+        let chunks: Vec<FewChunk> =
+            (0..CHUNKS).map(|c| FewChunk::new(sides, queries, c, &mut sorted, &mut scratch)).collect();
+        drop((sorted, scratch));
         times.sort += sorting.elapsed();
         let scanning = Instant::now();
         let blocks = self.stored.len().div_ceil(FEW_BLOCK);
@@ -396,11 +542,16 @@ impl<'a> Joiner<'a> {
 }
 
 /// One chunk's query entries for the few-owed path: sorted by that chunk as a stage's are, and the values they take as a
-/// bitmap of the 65,536 (8 KB, where a stage's offsets are 256 KB): the pass over the store tests the bitmap, and looks
-/// at the offsets only on a hit.
+/// bitmap of the 65,536 (8 KB, where the offsets are 256 KB): the pass over the store tests the bitmap, and looks at the
+/// offsets only on a hit. The entries are few, so they are kept in one table (`offsets[v]..offsets[v + 1]` hold value
+/// `v`'s codes and full hashes, side by side), copied from a sort into regions that the chunks share
+/// ([`FewChunk::new`]). A hit is tested on the whole hash, read in order from the table: no head, and no reads of the
+/// query side's arrays, whose transposed entries go through their picture's rank.
 struct FewChunk {
     bits: Vec<u64>,
-    sorted: Sorted,
+    offsets: Vec<u32>,
+    code: Vec<u32>,
+    words: Vec<[u64; 4]>,
 }
 
 /// For a chunk value's low six bits `l`: the bits of its bitmap word that are the value itself and its six neighbours
@@ -423,18 +574,46 @@ const NEAR: [u64; 64] = {
 };
 
 impl FewChunk {
-    fn new(sides: &Sides<'_, '_>, queries: usize, c: usize, scratch: &mut Vec<Rec>) -> FewChunk {
-        let mut sorted = Sorted::default();
-        sort_into(&mut sorted, scratch, queries, |e| sides.query_entry(e), c);
-        let mut bits = vec![0u64; VALUES / 64];
-        for (v, pair) in sorted.offsets.windows(2).enumerate() {
-            if let ([lo, hi], Some(word)) = (pair, bits.get_mut(v >> 6))
-                && hi > lo
-            {
-                *word |= 1 << (v & 63);
+    /// Chunk `c` of the `queries` query entries, sorted in `sorted` (reused from chunk to chunk; its heads, of the
+    /// fewest words, unused) and copied out.
+    fn new(
+        sides: &Sides<'_, '_>,
+        queries: usize,
+        c: usize,
+        sorted: &mut Sorted,
+        scratch: &mut SortScratch,
+    ) -> FewChunk {
+        sort_into(sorted, scratch, queries, |e| sides.query_entry(e), c, 1, Layout::Rows);
+        let mut few = FewChunk {
+            bits: vec![0u64; VALUES / 64],
+            offsets: Vec::with_capacity(VALUES + 1),
+            code: Vec::with_capacity(queries),
+            words: Vec::with_capacity(queries),
+        };
+        for (h, region) in sorted.regions.iter().enumerate() {
+            let at = u32::try_from(few.code.len()).unwrap_or(u32::MAX);
+            for (l, pair) in region.offsets.windows(2).enumerate() {
+                let v = (h << 8) | l;
+                if let ([lo, hi], Some(word)) = (pair, few.bits.get_mut(v >> 6))
+                    && hi > lo
+                {
+                    *word |= 1 << (v & 63);
+                }
+                few.offsets.push(at + pair.first().copied().unwrap_or(0));
             }
+            let len = index(region.offsets.last().copied().unwrap_or(0));
+            few.code.extend(region.code.iter().take(len));
+            few.words.extend(region.code.iter().take(len).map(|&yc| sides.words(yc)));
         }
-        FewChunk { bits, sorted }
+        few.offsets.push(u32::try_from(few.code.len()).unwrap_or(u32::MAX));
+        few
+    }
+
+    /// The entries of value `v`.
+    #[inline(always)]
+    fn bucket(&self, v: usize) -> (usize, usize) {
+        let at = |v: usize| index(self.offsets.get(v).copied().unwrap_or(0));
+        (at(v), at(v + 1))
     }
 
     /// The bitmap's word of value `v`.
@@ -458,40 +637,43 @@ fn few_entry(sides: &Sides<'_, '_>, chunks: &[FewChunk], x: usize, out: &mut Vec
             for p in 0..7 {
                 let u = probe(v, p);
                 if (word >> (u & 63)) & 1 != 0 {
-                    few_hits(sides, few, &xw, xc, u, c, out);
+                    few_hits(few, &xw, xc, u, c, out);
                 }
             }
         }
         for k in 6..16 {
             let u = v ^ (1 << k);
             if (few.word(u) >> low) & 1 != 0 {
-                few_hits(sides, few, &xw, xc, u, c, out);
+                few_hits(few, &xw, xc, u, c, out);
             }
         }
     }
 }
 
-/// Stored entry `xw` (code `xc`) against the query entries of value `u` in chunk `c`: as the sorted path's [`consider`]
-/// does, the ordering rule, then the first two words' distance, then the full one and the first chunk that matches.
+/// Stored entry `xw` (code `xc`) against the query entries of value `u` in chunk `c`: the full distance on the table's
+/// hashes, then the ordering rule and the first chunk that matches.
 #[inline(always)]
-fn few_hits(sides: &Sides<'_, '_>, few: &FewChunk, xw: &[u64; 4], xc: u32, u: usize, c: usize, out: &mut Vec<Pair>) {
-    let q = &few.sorted;
-    let (lo, hi) = q.bucket(u);
-    for y in lo..hi {
-        let (Some(&yc), Some(&y0), Some(&y1)) = (q.code.get(y), q.head0.get(y), q.head1.get(y)) else { return };
-        if !owed(xc, yc) {
-            continue;
-        }
-        let head = (xw[0] ^ y0).count_ones() + (xw[1] ^ y1).count_ones();
-        if head > MATCH_DISTANCE {
-            continue;
-        }
-        let yw = sides.words(yc);
-        let distance = head + (xw[2] ^ yw[2]).count_ones() + (xw[3] ^ yw[3]).count_ones();
-        if distance <= MATCH_DISTANCE && !matched_earlier(xw, &yw, c) {
+fn few_hits(few: &FewChunk, xw: &[u64; 4], xc: u32, u: usize, c: usize, out: &mut Vec<Pair>) {
+    let (lo, hi) = few.bucket(u);
+    let (Some(codes), Some(words)) = (few.code.get(lo..hi), few.words.get(lo..hi)) else { return };
+    for (&yc, yw) in codes.iter().zip(words) {
+        let distance: u32 = xw.iter().zip(yw).map(|(a, b)| (a ^ b).count_ones()).sum();
+        if distance <= MATCH_DISTANCE && owed(xc, yc) && !matched_earlier(xw, yw, c) {
             let (xp, yp) = (xc >> 4, yc >> 4);
             out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
         }
+    }
+}
+
+/// The candidate stored entry `xc` (hash `xw`), query entry `yc` at stage `c`, past the head test: the pair recorded if
+/// it is within the radius and first found in this chunk.
+#[inline(always)]
+fn report(sides: &Sides<'_, '_>, c: usize, xc: u32, xw: &[u64; 4], yc: u32, out: &mut Vec<Pair>) {
+    let yw = sides.words(yc);
+    let distance: u32 = xw.iter().zip(&yw).map(|(a, b)| (a ^ b).count_ones()).sum();
+    if distance <= MATCH_DISTANCE && !matched_earlier(xw, &yw, c) {
+        let (xp, yp) = (xc >> 4, yc >> 4);
+        out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
     }
 }
 
@@ -505,17 +687,19 @@ struct StageSet {
 /// The radix sort's scratch of each side, reused from stage to stage.
 #[derive(Default)]
 struct Scratch {
-    stored: Vec<Rec>,
-    query: Vec<Rec>,
+    stored: SortScratch,
+    query: SortScratch,
 }
 
 impl StageSet {
-    /// Both sides sorted by chunk `c`: the `stored` entries and the `queries` entries; with `side_by_side`, the stored
-    /// side on a thread of its own (which runs `start` first) while this one sorts the queries.
+    /// Both sides sorted by chunk `c` with `w` head words: the `stored` entries as rows (a kernel reads one entry's head
+    /// at a time) and the `queries` entries as columns (it reads eight entries' word at a time); with `side_by_side`,
+    /// the stored side on a thread of its own (which runs `start` first) while this one sorts the queries.
     #[expect(clippy::too_many_arguments, reason = "one stage's sort: its sides, sizes, scratch and how to run it")]
     fn sort(
         &mut self,
         c: usize,
+        w: usize,
         sides: &Sides<'_, '_>,
         stored: usize,
         queries: usize,
@@ -525,20 +709,26 @@ impl StageSet {
     ) {
         let StageSet { stored: stored_out, query: query_out } = self;
         let Scratch { stored: stored_scratch, query: query_scratch } = scratch;
+        let sort_stored = |out: &mut Sorted, scratch: &mut SortScratch| {
+            sort_into(out, scratch, stored, |e| sides.stored_entry(e), c, w, Layout::Rows);
+        };
+        let sort_queries = |out: &mut Sorted, scratch: &mut SortScratch| {
+            sort_into(out, scratch, queries, |e| sides.query_entry(e), c, w, Layout::Columns);
+        };
         if side_by_side {
             std::thread::scope(|scope| {
                 let other = scope.spawn(|| {
                     start();
-                    sort_into(stored_out, stored_scratch, stored, |e| sides.stored_entry(e), c);
+                    sort_stored(stored_out, stored_scratch);
                 });
-                sort_into(query_out, query_scratch, queries, |e| sides.query_entry(e), c);
+                sort_queries(query_out, query_scratch);
                 if let Err(panic) = other.join() {
                     std::panic::resume_unwind(panic);
                 }
             });
         } else {
-            sort_into(stored_out, stored_scratch, stored, |e| sides.stored_entry(e), c);
-            sort_into(query_out, query_scratch, queries, |e| sides.query_entry(e), c);
+            sort_stored(stored_out, stored_scratch);
+            sort_queries(query_out, query_scratch);
         }
     }
 }
@@ -589,83 +779,296 @@ impl Sides<'_, '_> {
     }
 }
 
-/// Entries sorted by one chunk, in three arrays: entry `j` has the first two words `head0[j]`, `head1[j]` (with four
-/// zeros of padding, for the vector kernel's loads) and `code[j]` (with eight, for [`suffix_avx2`]'s);
-/// `offsets[v]..offsets[v + 1]` are the entries whose chunk is `v`, in the order the entries were given (the sort is
-/// stable).
+/// How a region holds its entries' heads ([`head_words`], `w` words each).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Layout {
+    /// Entry `j`'s words at `head[j * w..][..w]`: the stored side, whose kernels read one entry's head at a time.
+    Rows,
+    /// Word `k` of entry `j` at `head[k * stride + j]`, `stride` the region's entries and [`LANES`] more: the query
+    /// side, whose kernels read eight entries' word `k` at a time, from any entry of the region.
+    Columns,
+}
+
+/// The entries of one stage side whose chunk has one high byte: entry `j`'s head (by the side's [`Layout`]) and its
+/// code `code[j]` (with [`CODE_PADDING`] more values, for [`suffix_avx2`]'s reads); `offsets[l]..offsets[l + 1]` are
+/// the entries whose chunk's low byte is `l`, in the order the entries were given (the sort is stable). The padding
+/// holds any value: what reads it stops at the bucket's end, or drops the lanes past it.
+#[derive(Default)]
+struct Region {
+    offsets: Vec<u32>,
+    head: Vec<u32>,
+    code: Vec<u32>,
+    /// The head's step from one word to the next: `w` in rows, a column's length in columns.
+    stride: usize,
+}
+
+/// The region of a side that has none yet (a set not sorted): every bucket empty.
+static NO_REGION: Region = Region { offsets: Vec::new(), head: Vec::new(), code: Vec::new(), stride: 0 };
+
+/// One side of a stage, sorted by its chunk: the region of each high byte (`regions[v >> 8]` holds chunk value `v`).
+/// Each region's arrays are its own, so a region is filled, kept and reused on its own.
 #[derive(Default)]
 struct Sorted {
-    offsets: Vec<u32>,
-    head0: Vec<u64>,
-    head1: Vec<u64>,
-    code: Vec<u32>,
+    regions: Vec<Region>,
 }
 
 impl Sorted {
+    /// The region of high byte `h`.
     #[inline(always)]
-    fn bucket(&self, v: usize) -> (usize, usize) {
-        let at = |v: usize| index(self.offsets.get(v).copied().unwrap_or(0));
-        (at(v), at(v + 1))
+    fn region(&self, h: usize) -> &Region {
+        self.regions.get(h).unwrap_or(&NO_REGION)
+    }
+
+    /// The bucket of chunk value `v`: its region, and its entries' positions in it.
+    #[cfg(test)]
+    fn bucket(&self, v: usize) -> (&Region, usize, usize) {
+        let (lo, hi) = View::of(self.region(v >> 8)).bucket(v & 0xFF);
+        (self.region(v >> 8), lo, hi)
     }
 }
 
-/// An entry between the radix sort's two passes.
-#[derive(Clone, Copy, Default)]
-struct Rec {
-    h0: u64,
-    h1: u64,
-    code: u32,
-    key: u16,
+/// A region's arrays as slices: what the kernels read, resolved once for the buckets of one high byte.
+#[derive(Clone, Copy)]
+struct View<'a> {
+    offsets: &'a [u32],
+    head: &'a [u32],
+    code: &'a [u32],
+    stride: usize,
 }
 
-/// The `n` entries `entry(0..n)` sorted by their chunk `c` into `out`, stably: a two-pass LSD radix sort (the low byte
-/// into `scratch`, then the high byte into `out`'s arrays), with `out` and `scratch` reused from stage to stage. The
-/// full chunk's counts give the offsets.
+impl<'a> View<'a> {
+    const EMPTY: View<'static> = View { offsets: &[], head: &[], code: &[], stride: 0 };
+
+    fn of(region: &'a Region) -> View<'a> {
+        View { offsets: &region.offsets, head: &region.head, code: &region.code, stride: region.stride }
+    }
+
+    /// The entries of low byte `l`.
+    #[inline(always)]
+    fn bucket(&self, l: usize) -> (usize, usize) {
+        let at = |l: usize| index(self.offsets.get(l).copied().unwrap_or(0));
+        (at(l), at(l + 1))
+    }
+}
+
+/// The 17 probes of a query bucket `v = h << 8 | l` ([`probe`]), by the stored region each is in: probe 0 and probes
+/// 1 - 8 (a low bit flipped) are in region `h`, at the low bytes [`low_probes`] gives; probe `9 + k` is in region
+/// `h ^ 1 << k`, at low byte `l`. The kernels walk them in that order, which is [`probe`]'s.
+struct Probed<'a> {
+    own: View<'a>,
+    others: [View<'a>; 8],
+}
+
+impl<'a> Probed<'a> {
+    const EMPTY: Probed<'static> = Probed { own: View::EMPTY, others: [View::EMPTY; 8] };
+
+    fn of(stored: &'a Sorted, h: usize) -> Probed<'a> {
+        Probed {
+            own: View::of(stored.region(h)),
+            others: std::array::from_fn(|k| View::of(stored.region(h ^ (1 << k)))),
+        }
+    }
+}
+
+/// The low bytes of probes 0 - 8 of a query bucket with low byte `l`: `l`, then `l` with each bit flipped.
+#[inline(always)]
+fn low_probes(l: usize) -> [usize; 9] {
+    std::array::from_fn(|p| if p == 0 { l } else { l ^ (1 << (p - 1)) })
+}
+
+/// A core's L2 cache when the CPU does not report it: the i7-8700's, 256 KiB.
+const L2_FALLBACK: usize = 256 * 1024;
+
+/// A core's L2 cache, as the CPU reports it, or the fallback. Intel and AMD (from Zen) describe their caches in the same
+/// form, CPUID leaf 4 and leaf 0x8000_001D: per subleaf a cache's type (EAX bits 4 - 0, 1 data, 3 unified, 0 the end),
+/// level (bits 7 - 5) and size, ways x partitions x line x sets (EBX bits 31 - 22, 21 - 12, 11 - 0 and ECX, each less
+/// one). Read once.
+fn l2_cache() -> usize {
+    static L2: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *L2.get_or_init(|| {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::{__cpuid, __cpuid_count};
+            let vendor = __cpuid(0);
+            // "AuthenticAMD" in EBX, EDX, ECX: its leaf is 0x8000_001D, if the extended leaves reach it.
+            let leaf = if vendor.ebx == 0x6874_7541 { 0x8000_001D } else { 4 };
+            let top = if leaf == 4 { vendor.eax } else { __cpuid(0x8000_0000).eax };
+            if top >= leaf {
+                for sub in 0..16 {
+                    let r = __cpuid_count(leaf, sub);
+                    let kind = r.eax & 0x1F;
+                    if kind == 0 {
+                        break;
+                    }
+                    if (r.eax >> 5) & 0x7 == 2 && matches!(kind, 1 | 3) {
+                        return index((r.ebx >> 22) + 1)
+                            * index(((r.ebx >> 12) & 0x3FF) + 1)
+                            * index((r.ebx & 0xFFF) + 1)
+                            * index(r.ecx.saturating_add(1));
+                    }
+                }
+            }
+        }
+        L2_FALLBACK
+    })
+}
+
+/// The entries of one block of the sort's first pass at `w` head words: the block's records (`w` words, the code and
+/// the `u16` key) as read and as scattered, both in L2.
+fn sort_block(w: usize) -> usize {
+    (l2_cache() / (2 * (4 * (w + 1) + 2))).max(1)
+}
+
+/// The radix sort's scratch for one side, reused from stage to stage: the records after the first pass (heads, codes
+/// and keys), one block's records as read, and each block's runs (`runs[b][h]..runs[b][h + 1]`, the block's records of
+/// high byte `h`).
+#[derive(Default)]
+struct SortScratch {
+    heads: Vec<u32>,
+    codes: Vec<u32>,
+    keys: Vec<u16>,
+    block_heads: Vec<u32>,
+    block_codes: Vec<u32>,
+    block_keys: Vec<u16>,
+    runs: Vec<[u32; 257]>,
+}
+
+/// The `n` entries `entry(0..n)` sorted by their chunk `c` into `out`, stably, MSD by bytes, each with its head of `w`
+/// words ([`head_words`]) in `layout`. The first pass reads each block of [`sort_block`] entries once and scatters it by
+/// the high byte within the block's own part of the records, so its writes stay in L2; the second fills each region
+/// from its run in every block, in block order, by the low byte, so its writes stay in the region. `out` and `scratch`
+/// are reused from stage to stage without being cleared: every slot an entry needs is written, and the padding may hold
+/// anything. Monomorphized by the head words, as the kernels are, so a head is copied as a fixed-size array.
+fn sort_into(
+    out: &mut Sorted,
+    scratch: &mut SortScratch,
+    n: usize,
+    entry: impl Fn(usize) -> ([u64; 4], u32),
+    c: usize,
+    w: usize,
+    layout: Layout,
+) {
+    match w {
+        1 => sort_width::<1>(out, scratch, n, entry, c, layout),
+        2 => sort_width::<2>(out, scratch, n, entry, c, layout),
+        3 => sort_width::<3>(out, scratch, n, entry, c, layout),
+        4 => sort_width::<4>(out, scratch, n, entry, c, layout),
+        5 => sort_width::<5>(out, scratch, n, entry, c, layout),
+        6 => sort_width::<6>(out, scratch, n, entry, c, layout),
+        _ => sort_width::<MAX_HEAD_WORDS>(out, scratch, n, entry, c, layout),
+    }
+}
+
+/// The head of a permuted hash at stage `c`, `W` words: chunks `c + 1, c + 2, ...` (mod 16), two to a word (the first
+/// in the low half), read from its 16 chunks at once. The kernels test it against the stage's [`bound`].
+#[inline(always)]
+fn head_words<const W: usize>(words: &[u64; 4], c: usize) -> [u32; W] {
+    let mut chunks = [0u16; CHUNKS];
+    for (four, &word) in chunks.as_chunks_mut::<4>().0.iter_mut().zip(words) {
+        for (k, slot) in four.iter_mut().enumerate() {
+            *slot = u16::try_from((word >> (16 * k)) & 0xFFFF).unwrap_or(0);
+        }
+    }
+    let at = |i: usize| u32::from(chunks.get(i % CHUNKS).copied().unwrap_or(0));
+    std::array::from_fn(|j| at(c + 1 + 2 * j) | (at(c + 2 + 2 * j) << 16))
+}
+
+/// [`sort_into`] at `W` head words.
 #[expect(
     clippy::indexing_slicing,
-    reason = "a chunk is below VALUES (the offsets' length less one) and a byte below 256; each position is a running \
-              sum of the counts, below the n entries the arrays are sized to"
+    reason = "a byte is below 256 (the counts' length; the runs' and offsets' less one); each position is a running sum \
+              of the counts, below the block's end, the n records or the region's entries, which the arrays are sized to"
 )]
-fn sort_into(out: &mut Sorted, scratch: &mut Vec<Rec>, n: usize, entry: impl Fn(usize) -> ([u64; 4], u32), c: usize) {
-    let (mut lo, mut hi) = ([0u32; 256], [0u32; 256]);
-    out.offsets.clear();
-    out.offsets.resize(VALUES + 1, 0);
-    for e in 0..n {
-        let key = chunk(&entry(e).0, c);
-        lo[key & 0xFF] += 1;
-        hi[key >> 8] += 1;
-        out.offsets[key + 1] += 1;
+fn sort_width<const W: usize>(
+    out: &mut Sorted,
+    scratch: &mut SortScratch,
+    n: usize,
+    entry: impl Fn(usize) -> ([u64; 4], u32),
+    c: usize,
+    layout: Layout,
+) {
+    let SortScratch { heads, codes, keys, block_heads, block_codes, block_keys, runs } = scratch;
+    let size = sort_block(W);
+    heads.resize(n * W, 0);
+    codes.resize(n, 0);
+    keys.resize(n, 0);
+    runs.resize(n.div_ceil(size), [0; 257]);
+    for (b, run) in runs.iter_mut().enumerate() {
+        let lo = b * size;
+        let len = (lo + size).min(n) - lo;
+        block_heads.resize(len * W, 0);
+        block_codes.resize(len, 0);
+        block_keys.resize(len, 0);
+        let mut counts = [0u32; 256];
+        for (i, head) in block_heads.as_chunks_mut::<W>().0.iter_mut().enumerate() {
+            let (words, code) = entry(lo + i);
+            let key = chunk(&words, c);
+            counts[key >> 8] += 1;
+            *head = head_words::<W>(&words, c);
+            block_codes[i] = code;
+            block_keys[i] = u16::try_from(key).unwrap_or(0);
+        }
+        let mut at = u32::try_from(lo).unwrap_or(u32::MAX);
+        for (start, count) in run.iter_mut().zip(counts) {
+            (*start, at) = (at, at + count);
+        }
+        run[256] = at;
+        let mut next = *run;
+        for (i, head) in block_heads.as_chunks::<W>().0.iter().enumerate() {
+            let key = block_keys[i];
+            let slot = &mut next[usize::from(key >> 8)];
+            let j = index(*slot);
+            heads[j * W..(j + 1) * W].copy_from_slice(head);
+            codes[j] = block_codes[i];
+            keys[j] = key;
+            *slot += 1;
+        }
     }
-    let (mut at_lo, mut at_hi) = (0u32, 0u32);
-    for (l, h) in lo.iter_mut().zip(hi.iter_mut()) {
-        (*l, at_lo) = (at_lo, at_lo + *l);
-        (*h, at_hi) = (at_hi, at_hi + *h);
-    }
-    for v in 0..VALUES {
-        out.offsets[v + 1] += out.offsets[v];
-    }
-    scratch.clear();
-    scratch.resize(n, Rec::default());
-    for e in 0..n {
-        let (words, code) = entry(e);
-        let key = chunk(&words, c);
-        let slot = &mut lo[key & 0xFF];
-        scratch[index(*slot)] = Rec { h0: words[0], h1: words[1], code, key: u16::try_from(key).unwrap_or(0) };
-        *slot += 1;
-    }
-    out.head0.clear();
-    out.head0.resize(n + 4, 0);
-    out.head1.clear();
-    out.head1.resize(n + 4, 0);
-    out.code.clear();
-    out.code.resize(n + CODE_PADDING, 0);
-    for r in scratch.iter() {
-        let slot = &mut hi[usize::from(r.key >> 8)];
-        let at = index(*slot);
-        out.head0[at] = r.h0;
-        out.head1[at] = r.h1;
-        out.code[at] = r.code;
-        *slot += 1;
+    out.regions.resize_with(256, Region::default);
+    for (h, region) in out.regions.iter_mut().enumerate() {
+        let mut counts = [0u32; 256];
+        for run in runs.iter() {
+            for &key in &keys[index(run[h])..index(run[h + 1])] {
+                counts[usize::from(key & 0xFF)] += 1;
+            }
+        }
+        region.offsets.resize(257, 0);
+        let mut at = 0u32;
+        for (l, count) in counts.iter_mut().enumerate() {
+            region.offsets[l] = at;
+            (*count, at) = (at, at + *count);
+        }
+        region.offsets[256] = at;
+        let len = index(at);
+        region.code.resize(len + CODE_PADDING, 0);
+        let entries = runs.iter().flat_map(|run| index(run[h])..index(run[h + 1]));
+        match layout {
+            Layout::Rows => {
+                region.stride = W;
+                region.head.resize(len * W, 0);
+                for i in entries {
+                    let slot = &mut counts[usize::from(keys[i] & 0xFF)];
+                    let j = index(*slot);
+                    region.head[j * W..(j + 1) * W].copy_from_slice(&heads[i * W..(i + 1) * W]);
+                    region.code[j] = codes[i];
+                    *slot += 1;
+                }
+            }
+            Layout::Columns => {
+                let stride = len + LANES;
+                region.stride = stride;
+                region.head.resize(W * stride, 0);
+                for i in entries {
+                    let slot = &mut counts[usize::from(keys[i] & 0xFF)];
+                    let j = index(*slot);
+                    for (k, &word) in heads[i * W..(i + 1) * W].iter().enumerate() {
+                        region.head[k * stride + j] = word;
+                    }
+                    region.code[j] = codes[i];
+                    *slot += 1;
+                }
+            }
+        }
     }
 }
 
@@ -683,34 +1086,30 @@ fn owed(x: u32, y: u32) -> bool {
     xp != yp && (x & OWED == 0 || xp < yp)
 }
 
-/// One chunk's stage: the stored and query sides sorted by it, and where the full hashes are.
+/// One chunk's stage: the stored and query sides sorted by it, its entries' head words and the head test's bounds, and
+/// where the full hashes are.
 struct Stage<'a, 's, 'j> {
     c: usize,
+    w: usize,
+    /// The bound of probe 0, and of the probes that flip a bit ([`bound`]).
+    bounds: [u32; 2],
     stored: &'a Sorted,
     query: &'a Sorted,
     sides: &'a Sides<'s, 'j>,
 }
 
-/// Tests stored entry `x` against query entry `y` (positions in their sorted sides), and records the pair if it is owed,
-/// within the radius and first found in this chunk.
+impl<'a, 's, 'j> Stage<'a, 's, 'j> {
+    /// Stage `c` of `set`, sorted with `w` head words.
+    fn new(c: usize, w: usize, set: &'a StageSet, sides: &'a Sides<'s, 'j>) -> Stage<'a, 's, 'j> {
+        Stage { c, w, bounds: bounds(c, w), stored: &set.stored, query: &set.query, sides }
+    }
+}
+
+/// Stored entry `xc` against query entry `yc`, past the head test: [`report`]ed if the stored one is compared with it.
 #[inline(always)]
-fn consider(st: &Stage<'_, '_, '_>, x: usize, y: usize, out: &mut Vec<Pair>) {
-    let (Some(&xc), Some(&yc)) = (st.stored.code.get(x), st.query.code.get(y)) else { return };
-    if !owed(xc, yc) {
-        return;
-    }
-    let word =
-        |side: &Sorted, j: usize| (side.head0.get(j).copied().unwrap_or(0), side.head1.get(j).copied().unwrap_or(0));
-    let ((x0, x1), (y0, y1)) = (word(st.stored, x), word(st.query, y));
-    let head = (x0 ^ y0).count_ones() + (x1 ^ y1).count_ones();
-    if head > MATCH_DISTANCE {
-        return;
-    }
-    let (xw, yw) = (st.sides.words(xc), st.sides.words(yc));
-    let distance = head + (xw[2] ^ yw[2]).count_ones() + (xw[3] ^ yw[3]).count_ones();
-    if distance <= MATCH_DISTANCE && !matched_earlier(&xw, &yw, st.c) {
-        let (xp, yp) = (xc >> 4, yc >> 4);
-        out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
+fn consider(st: &Stage<'_, '_, '_>, xc: u32, yc: u32, out: &mut Vec<Pair>) {
+    if owed(xc, yc) {
+        report(st.sides, st.c, xc, &st.sides.words(xc), yc, out);
     }
 }
 
@@ -769,100 +1168,288 @@ fn probe(v: usize, p: usize) -> usize {
     if p == 0 { v } else { v ^ (1 << (p - 1)) }
 }
 
-/// The buckets `v` of the query side, and the 17 probes of each: the stored side's bucket of the same value, and of
-/// each one-bit neighbour.
+/// One run of a query bucket's probes: stored buckets of one region (`sr`, its heads as `rows`), tested against the
+/// query bucket `[qlo, qhi)` of `qr` at one bound. A bucket has ten: probe 0; probes 1 - 8, which flip a low bit, in
+/// its own region; and each of probes 9 - 16 in a region of its own. With them, the query region's `W` columns of
+/// heads ([`Columns`]); the regions are resolved once for the buckets of one high byte.
+struct Run<'v, 'a, const W: usize> {
+    sr: &'v View<'a>,
+    rows: &'a [[u32; W]],
+    qr: &'v View<'a>,
+    columns: &'v Columns<'a, W>,
+    qlo: usize,
+    qhi: usize,
+    bound: u32,
+}
+
+/// A query region's heads as its `W` columns (word `k` of entry `j` at `columns[k][j]`, each the region's entries and
+/// [`LANES`] more), and the offsets a load of eight may start at, `0..starts` (none when the region holds no heads).
+struct Columns<'a, const W: usize> {
+    columns: [&'a [u32]; W],
+    starts: usize,
+}
+
+impl<'a, const W: usize> Columns<'a, W> {
+    const EMPTY: Columns<'static, W> = Columns { columns: [&[]; W], starts: 0 };
+
+    fn of(qr: &View<'a>) -> Columns<'a, W> {
+        let stride = qr.stride;
+        let columns: [&[u32]; W] = std::array::from_fn(|k| qr.head.get(k * stride..(k + 1) * stride).unwrap_or(&[]));
+        let whole = columns.iter().all(|column| column.len() == stride);
+        Columns { columns, starts: if whole { (stride + 1).saturating_sub(LANES) } else { 0 } }
+    }
+}
+
+/// The buckets `v` of the query side, each probed by its ten runs ([`Run`]), in one of two ways by the bucket's size.
+///
+/// - **More than eight entries:** each stored entry of a run takes its suffix of the query bucket ([`suffix`], by the
+///   kernel's `suffix`), and `test` tests it eight entries at a time.
+/// - **At most eight** (one load of the columns): `load` reads the bucket's heads and codes once, and `direct` tests
+///   each stored entry against them, the ordering rule as a mask of the lanes rather than a suffix. Each stored entry is
+///   then one pass through straight-line code.
+///
+/// The kernels' parts are closures, so that they are compiled with the kernel's target features ([`scan_avx2`]).
 #[inline(always)]
-fn scan_block(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
+fn scan_runs<const W: usize, B>(
+    st: &Stage<'_, '_, '_>,
+    buckets: Range<usize>,
+    out: &mut Vec<Pair>,
+    suffix: impl Fn(u32, &[u32], usize, usize, &mut usize) -> usize,
+    test: impl Fn(&Run<'_, '_, W>, usize, usize, &mut Vec<Pair>),
+    load: impl Fn(&Columns<'_, W>, &[u32], usize, usize) -> B,
+    direct: impl Fn(&Run<'_, '_, W>, &B, usize, u32, &mut Vec<Pair>),
+) {
+    let [bound0, bound1] = st.bounds;
+    let (mut h, mut qr, mut probed, mut columns) = (usize::MAX, View::EMPTY, Probed::EMPTY, Columns::EMPTY);
+    let (mut own_rows, mut other_rows): (&[[u32; W]], [&[[u32; W]]; 8]) = (&[], [&[]; 8]);
     for v in buckets {
-        let (qlo, qhi) = st.query.bucket(v);
+        // The regions this bucket and its probes are in, resolved when the high byte changes: once per block.
+        if v >> 8 != h {
+            h = v >> 8;
+            qr = View::of(st.query.region(h));
+            probed = Probed::of(st.stored, h);
+            columns = Columns::of(&qr);
+            own_rows = probed.own.head.as_chunks::<W>().0;
+            other_rows = probed.others.map(|sr| sr.head.as_chunks::<W>().0);
+        }
+        let l = v & 0xFF;
+        let (qlo, qhi) = qr.bucket(l);
         if qlo == qhi {
             continue;
         }
-        for p in 0..17 {
-            let (slo, shi) = st.stored.bucket(probe(v, p));
-            let mut from = qlo;
-            for x in slo..shi {
-                let xc = st.stored.code.get(x).copied().unwrap_or(0);
-                for y in suffix(xc, &st.query.code, qlo, qhi, &mut from)..qhi {
-                    consider(st, x, y, out);
+        let lows = low_probes(l);
+        let (own, flipped) = lows.split_at(1);
+        // The runs as data, walked by one loop here: a closure would be compiled without the kernel's target features
+        // (a closure has its defining function's), and so would the kernel's parts, called from it, not inlined.
+        let runs = [(&probed.own, own_rows, own, bound0), (&probed.own, own_rows, flipped, bound1)]
+            .into_iter()
+            .chain(probed.others.iter().zip(other_rows).map(|(sr, rows)| (sr, rows, own, bound1)));
+        if qhi - qlo <= LANES {
+            let bucket = load(&columns, qr.code, qlo, qhi);
+            for (sr, rows, lows, bound) in runs {
+                let r = Run { sr, rows, qr: &qr, columns: &columns, qlo, qhi, bound };
+                for &u in lows {
+                    let (slo, shi) = sr.bucket(u);
+                    let Some(codes) = sr.code.get(slo..shi) else { continue };
+                    for (x, &xc) in (slo..).zip(codes) {
+                        direct(&r, &bucket, x, xc, out);
+                    }
+                }
+            }
+            continue;
+        }
+        for (sr, rows, lows, bound) in runs {
+            let r = Run { sr, rows, qr: &qr, columns: &columns, qlo, qhi, bound };
+            for &u in lows {
+                let (slo, shi) = sr.bucket(u);
+                let Some(codes) = sr.code.get(slo..shi) else { continue };
+                let mut from = qlo;
+                for (x, &xc) in (slo..).zip(codes) {
+                    let s = suffix(xc, qr.code, qlo, qhi, &mut from);
+                    test(&r, x, s, out);
                 }
             }
         }
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "popcnt")]
-unsafe fn scan_popcnt(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
-    scan_block(st, buckets, out);
+/// The lanes before a bucket's end, of a slot `left` entries before it: `LANE_MASKS[left]`, all eight from 8 on.
+const LANE_MASKS: [u32; LANES] = [0, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F];
+
+/// The lanes of the slot at `off` before the bucket's end `qhi`, a bit each.
+#[inline(always)]
+fn lanes_before(qhi: usize, off: usize) -> u32 {
+    LANE_MASKS.get(qhi.saturating_sub(off)).copied().unwrap_or(0xFF)
 }
 
-/// The vector kernel: four query entries at a time, their first two words' distance in one register, and only the
-/// lanes within the radius checked in full.
+/// The lanes of stored entry `x` against the eight query entries from `off` past the head test (`lanes`, a bit each),
+/// tested in full: those before the bucket's end (`r.qhi`), as the lanes past it are the next bucket's entries, or the
+/// padding. Out of the kernels' loop: hits are rare, and inlined there they would take registers the loop needs.
+#[cold]
+#[inline(never)]
+fn hits<const W: usize>(
+    st: &Stage<'_, '_, '_>,
+    r: &Run<'_, '_, W>,
+    x: usize,
+    off: usize,
+    lanes: u32,
+    out: &mut Vec<Pair>,
+) {
+    let Some(&xc) = r.sr.code.get(x) else { return };
+    let mut lanes = lanes & lanes_before(r.qhi, off);
+    while lanes != 0 {
+        let lane = index(lanes.trailing_zeros());
+        lanes &= lanes - 1;
+        if let Some(&yc) = r.qr.code.get(off + lane) {
+            consider(st, xc, yc, out);
+        }
+    }
+}
+
+/// The scalar kernel's test of stored entry `x` against the query entries `[s, qhi)`: one at a time, in eights.
+#[inline(always)]
+fn entry_scalar<const W: usize>(st: &Stage<'_, '_, '_>, r: &Run<'_, '_, W>, x: usize, s: usize, out: &mut Vec<Pair>) {
+    let Some(xh) = r.rows.get(x) else { return };
+    for off in (s..r.qhi).step_by(LANES) {
+        let mut lanes = 0u32;
+        for lane in 0..(r.qhi - off).min(LANES) {
+            let y = off + lane;
+            let distance: u32 = r
+                .columns
+                .columns
+                .iter()
+                .zip(xh)
+                .map(|(column, &word)| column.get(y).map_or(u32::BITS, |&q| (q ^ word).count_ones()))
+                .sum();
+            if distance <= r.bound {
+                lanes |= 1 << lane;
+            }
+        }
+        if lanes != 0 {
+            hits(st, r, x, off, lanes, out);
+        }
+    }
+}
+
+/// The scalar kernel over a block of query buckets, at `W` head words: each stored entry against its suffix, in a small
+/// bucket as in a large one.
+#[inline(always)]
+fn scan_scalar<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
+    scan_runs::<W, ()>(
+        st,
+        buckets,
+        out,
+        suffix,
+        |r, x, s, out| entry_scalar(st, r, x, s, out),
+        |_, _, _, _| (),
+        |r, _, x, xc, out| {
+            let mut from = r.qlo;
+            let s = suffix(xc, r.qr.code, r.qlo, r.qhi, &mut from);
+            entry_scalar(st, r, x, s, out);
+        },
+    );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "popcnt")]
+unsafe fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
+    scan_scalar::<W>(st, buckets, out);
+}
+
+/// The vector kernel: eight query entries at a time. Per head word, the stored entry's word broadcast against eight
+/// query entries' (from the query side's column), the bits that differ counted by nibble lookups and added up per byte;
+/// then the bytes summed per lane and compared with the run's bound, and only the lanes within it tested in full
+/// ([`hits`]). A large bucket's words are loaded per eight entries of each stored entry's suffix, and its lanes past
+/// the bucket's end dropped on a hit; a small bucket's are loaded once, with its pictures, and the ordering rule and
+/// the bucket's end are a lane mask.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,popcnt")]
-unsafe fn scan_avx2(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
+unsafe fn scan_avx2<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
     use std::arch::x86_64::{
-        __m256i, _mm256_add_epi8, _mm256_and_si256, _mm256_castsi256_pd, _mm256_cmpgt_epi64, _mm256_loadu_si256,
-        _mm256_movemask_pd, _mm256_sad_epu8, _mm256_set1_epi8, _mm256_set1_epi64x, _mm256_setr_epi8,
-        _mm256_setzero_si256, _mm256_shuffle_epi8, _mm256_srli_epi16, _mm256_xor_si256,
+        __m256i, _mm256_add_epi8, _mm256_and_si256, _mm256_castsi256_ps, _mm256_cmpgt_epi32, _mm256_loadu_si256,
+        _mm256_madd_epi16, _mm256_maddubs_epi16, _mm256_movemask_ps, _mm256_set1_epi8, _mm256_set1_epi16,
+        _mm256_set1_epi32, _mm256_setr_epi8, _mm256_setzero_si256, _mm256_shuffle_epi8, _mm256_srli_epi16,
+        _mm256_srli_epi32, _mm256_xor_si256,
     };
     let lut = _mm256_setr_epi8(
         0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
     );
     let low = _mm256_set1_epi8(0x0f);
-    let thr = _mm256_set1_epi64x(i64::from(MATCH_DISTANCE));
-    let zero = _mm256_setzero_si256();
-    let popcount_bytes = |v: __m256i| -> __m256i {
+    let (ones8, ones16) = (_mm256_set1_epi8(1), _mm256_set1_epi16(1));
+    let broadcast = |value: u32| _mm256_set1_epi32(i32::from_ne_bytes(value.to_ne_bytes()));
+    // The bits of `q ^ word` counted per byte, added to `bytes`: at most 8 W (56) per byte, so no byte overflows.
+    let add_word = |bytes: __m256i, q: __m256i, word: __m256i| -> __m256i {
+        let v = _mm256_xor_si256(q, word);
         let lo = _mm256_and_si256(v, low);
         let hi = _mm256_and_si256(_mm256_srli_epi16(v, 4), low);
-        _mm256_add_epi8(_mm256_shuffle_epi8(lut, lo), _mm256_shuffle_epi8(lut, hi))
+        _mm256_add_epi8(bytes, _mm256_add_epi8(_mm256_shuffle_epi8(lut, lo), _mm256_shuffle_epi8(lut, hi)))
     };
-    let (head0, head1) = (st.query.head0.as_slice(), st.query.head1.as_slice());
-    for v in buckets {
-        let (qlo, qhi) = st.query.bucket(v);
-        if qlo == qhi {
-            continue;
-        }
-        for p in 0..17 {
-            let (slo, shi) = st.stored.bucket(probe(v, p));
-            let mut from = qlo;
-            for x in slo..shi {
-                let xc = st.stored.code.get(x).copied().unwrap_or(0);
-                let mut y = suffix_avx2(xc, &st.query.code, qlo, qhi, &mut from);
-                let (x0, x1) =
-                    (st.stored.head0.get(x).copied().unwrap_or(0), st.stored.head1.get(x).copied().unwrap_or(0));
-                let vx0 = _mm256_set1_epi64x(i64::from_ne_bytes(x0.to_ne_bytes()));
-                let vx1 = _mm256_set1_epi64x(i64::from_ne_bytes(x1.to_ne_bytes()));
-                while y < qhi {
-                    // SAFETY: `y < qhi <= n`, and head0/head1 hold n + 4 values (four zeros of padding), so the four
-                    // lanes at `y` are in bounds.
-                    let (a0, a1) = unsafe {
-                        (
-                            _mm256_loadu_si256(head0.as_ptr().add(y).cast::<__m256i>()),
-                            _mm256_loadu_si256(head1.as_ptr().add(y).cast::<__m256i>()),
-                        )
-                    };
-                    let bytes = _mm256_add_epi8(
-                        popcount_bytes(_mm256_xor_si256(a0, vx0)),
-                        popcount_bytes(_mm256_xor_si256(a1, vx1)),
-                    );
-                    // Per 64-bit lane, the sum of its eight byte counts: the distance over the first two words.
-                    let head = _mm256_sad_epu8(bytes, zero);
-                    let over = _mm256_movemask_pd(_mm256_castsi256_pd(_mm256_cmpgt_epi64(head, thr)));
-                    let mut lanes = u32::try_from(!over & 0xF).unwrap_or(0);
-                    while lanes != 0 {
-                        let lane = usize::try_from(lanes.trailing_zeros()).unwrap_or(0);
-                        lanes &= lanes - 1;
-                        if y + lane < qhi {
-                            consider(st, x, y + lane, out);
-                        }
-                    }
-                    y += 4;
-                }
+    // The lanes whose head distance (their four byte counts summed) is within `bound`.
+    let within = |bytes: __m256i, bound: u32| -> u32 {
+        let distance = _mm256_madd_epi16(_mm256_maddubs_epi16(bytes, ones8), ones16);
+        let over = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(distance, broadcast(bound))));
+        !u32::try_from(over).unwrap_or(0) & 0xFF
+    };
+    let test = |r: &Run<'_, '_, W>, x: usize, s: usize, out: &mut Vec<Pair>| {
+        let Some(xh) = r.rows.get(x) else { return };
+        let Columns { columns, starts } = r.columns;
+        let words: [__m256i; W] = xh.map(broadcast);
+        let mut off = s;
+        while off < r.qhi && off < *starts {
+            let mut bytes = _mm256_setzero_si256();
+            for (column, &word) in columns.iter().zip(&words) {
+                // SAFETY: `off < starts`: each column holds the region's entries and LANES more, and the eight u32
+                // from `off` are in it (`Columns::of`).
+                let q = unsafe { _mm256_loadu_si256(column.as_ptr().add(off).cast::<__m256i>()) };
+                bytes = add_word(bytes, q, word);
             }
+            let lanes = within(bytes, r.bound);
+            if lanes != 0 {
+                hits(st, r, x, off, lanes, out);
+            }
+            off += LANES;
         }
-    }
+    };
+    // A small bucket's query words, its entries' pictures, and its lanes (none if it cannot be loaded, which a region
+    // with heads does not do: a bucket starts before its region's end, so its eight entries are in the columns).
+    let load = |columns: &Columns<'_, W>, codes: &[u32], qlo: usize, qhi: usize| {
+        let mut heads = [_mm256_setzero_si256(); W];
+        let codes = codes.get(qlo..qlo + CODE_PADDING).filter(|_| qlo < columns.starts);
+        let Some(codes) = codes else { return (heads, _mm256_setzero_si256(), 0) };
+        for (q, column) in heads.iter_mut().zip(&columns.columns) {
+            // SAFETY: `qlo < starts` (above), so the eight u32 from `qlo` are in the column (`Columns::of`).
+            *q = unsafe { _mm256_loadu_si256(column.as_ptr().add(qlo).cast::<__m256i>()) };
+        }
+        // SAFETY: `codes` is CODE_PADDING (8) u32s, the 32 bytes the unaligned load reads.
+        let codes = unsafe { _mm256_loadu_si256(codes.as_ptr().cast::<__m256i>()) };
+        (heads, _mm256_srli_epi32::<4>(codes), lanes_before(qhi, qlo))
+    };
+    let direct = |r: &Run<'_, '_, W>, bucket: &([__m256i; W], __m256i, u32), x: usize, xc: u32, out: &mut Vec<Pair>| {
+        let (heads, pictures, end) = bucket;
+        let Some(xh) = r.rows.get(x) else { return };
+        let mut bytes = _mm256_setzero_si256();
+        for (&q, &word) in heads.iter().zip(xh) {
+            bytes = add_word(bytes, q, broadcast(word));
+        }
+        // The ordering rule's lanes, as `suffix` takes them: all when the stored picture owes nothing, else those of
+        // later pictures (a picture is below MAX_PICTURES, 28 bits, so these compare as non-negative i32).
+        let later = _mm256_cmpgt_epi32(*pictures, broadcast(xc >> 4));
+        let later = u32::try_from(_mm256_movemask_ps(_mm256_castsi256_ps(later))).unwrap_or(0);
+        let all = u32::from(xc & OWED == 0) * 0xFF;
+        let lanes = within(bytes, r.bound) & (later | all) & end;
+        if lanes != 0 {
+            hits(st, r, x, r.qlo, lanes, out);
+        }
+    };
+    scan_runs::<W, _>(
+        st,
+        buckets,
+        out,
+        |xc, codes, lo, hi, from| suffix_avx2(xc, codes, lo, hi, from),
+        test,
+        load,
+        direct,
+    );
 }
 
 /// Runs one chunk's stage on `kernel`, over the buckets in blocks, on `threads` workers. The pairs found, compacted; or
@@ -928,18 +1515,31 @@ fn parallel(
     Some(all)
 }
 
-/// Dispatches one block to the kernel.
+/// Dispatches one block to the kernel at the stage's head words.
 fn scan(kernel: Kernel, st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
+    match st.w {
+        1 => scan_width::<1>(kernel, st, buckets, out),
+        2 => scan_width::<2>(kernel, st, buckets, out),
+        3 => scan_width::<3>(kernel, st, buckets, out),
+        4 => scan_width::<4>(kernel, st, buckets, out),
+        5 => scan_width::<5>(kernel, st, buckets, out),
+        6 => scan_width::<6>(kernel, st, buckets, out),
+        _ => scan_width::<MAX_HEAD_WORDS>(kernel, st, buckets, out),
+    }
+}
+
+/// Dispatches one block to the kernel at `W` head words.
+fn scan_width<const W: usize>(kernel: Kernel, st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
     match kernel {
-        Kernel::Scalar => scan_block(st, buckets, out),
+        Kernel::Scalar => scan_scalar::<W>(st, buckets, out),
         #[cfg(target_arch = "x86_64")]
         // SAFETY: `Popcnt` is chosen only when `best_kernel` detected POPCNT.
-        Kernel::Popcnt => unsafe { scan_popcnt(st, buckets, out) },
+        Kernel::Popcnt => unsafe { scan_popcnt::<W>(st, buckets, out) },
         #[cfg(target_arch = "x86_64")]
         // SAFETY: `Avx2` is chosen only when `best_kernel` detected AVX2 and POPCNT.
-        Kernel::Avx2 => unsafe { scan_avx2(st, buckets, out) },
+        Kernel::Avx2 => unsafe { scan_avx2::<W>(st, buckets, out) },
         #[cfg(not(target_arch = "x86_64"))]
-        _ => scan_block(st, buckets, out),
+        _ => scan_scalar::<W>(st, buckets, out),
     }
 }
 
@@ -1071,7 +1671,7 @@ mod tests {
         let mut all = Vec::new();
         for sorters in [Some(0), Some(1), Some(2)] {
             for few_entries in [Some(0), Some(usize::MAX)] {
-                all.push(Tuning { sorters, few_entries });
+                all.push(Tuning { sorters, few_entries, widths: None });
             }
         }
         all
@@ -1116,30 +1716,257 @@ mod tests {
     }
 
     #[test]
+    fn the_transpose_of_a_permuted_hash_is_a_renaming_of_its_chunks() {
+        let mut rng = Rng(11);
+        let mut hashes: Vec<Hash> = (0..2000).map(|_| rng.hash()).collect();
+        hashes.extend([Hash([0; 32]), Hash([0xFF; 32])]);
+        // Each single bit, so every cell's place is checked on its own.
+        for k in 0..256 {
+            let mut bytes = [0u8; 32];
+            bytes[k / 8] = 1 << (7 - k % 8);
+            hashes.push(Hash(bytes));
+        }
+        for h in &hashes {
+            assert_eq!(transposed(&permuted(h)), permuted(&h.transpose()), "{h:?}");
+        }
+    }
+
+    /// A sorted side read back in value order: each entry's head (`w` words, held in `layout`) and code, and each
+    /// region's lengths checked.
+    fn read_back(out: &Sorted, w: usize, layout: Layout) -> Vec<(Vec<u32>, u32)> {
+        let mut all = Vec::new();
+        for v in 0..VALUES {
+            let (r, lo, hi) = out.bucket(v);
+            for j in lo..hi {
+                let head = match layout {
+                    Layout::Rows => r.head[j * w..(j + 1) * w].to_vec(),
+                    Layout::Columns => (0..w).map(|k| r.head[k * r.stride + j]).collect(),
+                };
+                all.push((head, r.code[j]));
+            }
+        }
+        for r in &out.regions {
+            let len = index(r.offsets[256]);
+            let (head, stride) = match layout {
+                Layout::Rows => (len * w, w),
+                Layout::Columns => (w * (len + LANES), len + LANES),
+            };
+            assert_eq!((r.head.len(), r.stride, r.code.len()), (head, stride, len + CODE_PADDING));
+        }
+        all
+    }
+
+    /// The head of `words` at stage `c`, `w` words, by its definition: chunks `c + 1, c + 2, ...` (mod 16), two to a word.
+    fn head_of(words: &[u64; 4], c: usize, w: usize) -> Vec<u32> {
+        (0..w)
+            .map(|j| {
+                let (a, b) = (chunk(words, (c + 1 + 2 * j) % 16), chunk(words, (c + 2 + 2 * j) % 16));
+                u32::try_from(a + 65536 * b).unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
     fn the_radix_sort_is_a_stable_sort_by_the_chunk() {
         let mut rng = Rng(99);
-        // Few distinct chunk values, so the buckets are long and stability shows.
-        let entries: Vec<([u64; 4], u32)> = (0..5000u32)
-            .map(|i| {
-                let w =
-                    [rng.draw() & 0x0303_0303_0303_0303, rng.draw(), rng.draw(), rng.draw() & 0x0101_0101_0101_0101];
-                (w, i)
-            })
-            .collect();
-        let (mut out, mut scratch) = (Sorted::default(), Vec::new());
-        for c in [0, 3, 7, 12, 15] {
-            sort_into(&mut out, &mut scratch, entries.len(), |e| entries[e], c);
-            let mut want = entries.clone();
-            want.sort_by_key(|(w, _)| chunk(w, c));
-            assert_eq!(out.code[..entries.len()], want.iter().map(|(_, i)| *i).collect::<Vec<_>>()[..], "chunk {c}");
-            assert_eq!(out.code.len(), entries.len() + CODE_PADDING);
-            assert_eq!(out.head0[..entries.len()], want.iter().map(|(w, _)| w[0]).collect::<Vec<_>>()[..]);
-            assert_eq!(out.head1[..entries.len()], want.iter().map(|(w, _)| w[1]).collect::<Vec<_>>()[..]);
-            assert_eq!(out.head0.len(), entries.len() + 4);
-            for v in [0usize, 1, 0x0101, 0x0303, 0xFFFF] {
-                let (lo, hi) = out.bucket(v);
-                assert!(out.code[lo..hi].iter().all(|&i| chunk(&entries[index(i)].0, c) == v));
-                assert_eq!(hi - lo, want.iter().filter(|(w, _)| chunk(w, c) == v).count());
+        // Few distinct chunk values, so the buckets are long and stability shows; more entries than a block of the
+        // first pass, so the runs of several blocks are merged.
+        let crowded = |rng: &mut Rng, n: u32| -> Vec<([u64; 4], u32)> {
+            (0..n)
+                .map(|i| {
+                    let w = [
+                        rng.draw() & 0x0303_0303_0303_0303,
+                        rng.draw(),
+                        rng.draw(),
+                        rng.draw() & 0x0101_0101_0101_0101,
+                    ];
+                    (w, i)
+                })
+                .collect()
+        };
+        let random = |rng: &mut Rng, n: u32| -> Vec<([u64; 4], u32)> {
+            (0..n).map(|i| ([rng.draw(), rng.draw(), rng.draw(), rng.draw()], i)).collect()
+        };
+        // One output and scratch per layout through every case: a set is reused from stage to stage without being
+        // cleared, with more entries and then fewer, and wider heads and then narrower, so stale values sit in every
+        // array.
+        for layout in [Layout::Rows, Layout::Columns] {
+            let (mut out, mut scratch) = (Sorted::default(), SortScratch::default());
+            for w in [1, 4, 7, 2] {
+                let big = u32::try_from(3 * sort_block(w) + 17).unwrap();
+                for entries in [
+                    crowded(&mut rng, 5000),
+                    random(&mut rng, big),
+                    crowded(&mut rng, big),
+                    random(&mut rng, 40),
+                    Vec::new(),
+                ] {
+                    for c in [0, 3, 7, 8, 12, 15] {
+                        sort_into(&mut out, &mut scratch, entries.len(), |e| entries[e], c, w, layout);
+                        let mut want = entries.clone();
+                        want.sort_by_key(|(words, _)| chunk(words, c));
+                        let want: Vec<(Vec<u32>, u32)> =
+                            want.iter().map(|(words, i)| (head_of(words, c, w), *i)).collect();
+                        let n = entries.len();
+                        assert_eq!(read_back(&out, w, layout), want, "{n} entries, chunk {c}, {w} words, {layout:?}");
+                        for v in [0usize, 1, 0x0101, 0x0303, 0xFFFF] {
+                            let (r, lo, hi) = out.bucket(v);
+                            assert!(r.code[lo..hi].iter().all(|&i| chunk(&entries[index(i)].0, c) == v));
+                            assert_eq!(hi - lo, entries.iter().filter(|(words, _)| chunk(words, c) == v).count());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The head test's bound is exact: a pair at the radius whose first chunk within one bit is stage `c`, with every
+    /// bit it may spend placed in the head (so the head is at the bound), is found at every stage, every width, every
+    /// kind of probe (the value itself, a low bit flipped in the bucket's own region, a high bit flipped in another),
+    /// on every kernel and path; one bit more is over the radius.
+    #[test]
+    fn the_head_test_is_exact_at_every_stage_width_and_probe() {
+        // Where each bit of a hash lands: chunk and bit of the chunk's value.
+        let mut place = [[0usize; 16]; 16];
+        for k in 0..256 {
+            let mut bytes = [0u8; 32];
+            bytes[k / 8] = 1 << (7 - k % 8);
+            let words = permuted(&Hash(bytes));
+            let c = (0..CHUNKS).find(|&c| chunk(&words, c) != 0).unwrap();
+            place[c][index(chunk(&words, c).trailing_zeros())] = k;
+        }
+        let mut rng = Rng(23);
+        for w in 1..=MAX_HEAD_WORDS {
+            let mut lib = Library { hashes: Vec::new(), owed: Vec::new() };
+            for c in 0..CHUNKS {
+                // The bit flipped in chunk c: none, the value's bit 0 (low byte), its bit 15 (high byte).
+                for flip_at in [None, Some(0), Some(15)] {
+                    for over in [false, true] {
+                        let x = rng.four();
+                        let mut flips: Vec<(usize, usize)> = (0..c).flat_map(|e| [(e, 0), (e, 1)]).collect();
+                        flips.extend(flip_at.map(|b| (c, b)));
+                        // The rest of the radius, all in the head: its chunks after c first, then those that wrap.
+                        let mut rest = 31 - flips.len() + usize::from(over);
+                        let head: Vec<usize> = (1..=2 * w).map(|i| (c + i) % 16).collect();
+                        for &e in head.iter().filter(|&&e| e > c).chain(head.iter().filter(|&&e| e < c)) {
+                            let from = if e < c { 2 } else { 0 };
+                            for b in from..16 {
+                                if rest == 0 {
+                                    break;
+                                }
+                                flips.push((e, b));
+                                rest -= 1;
+                            }
+                        }
+                        assert_eq!(rest, 0, "the head holds the radius: stage {c}, {w} words");
+                        let mut y = x[0];
+                        for (e, b) in flips {
+                            y = flip(&y, place[e][b]);
+                        }
+                        assert_eq!(x[0].distance(&y), 31 + u32::from(over));
+                        lib.hashes.push(x);
+                        lib.hashes.push([y, rng.hash(), rng.hash(), rng.hash()]);
+                        lib.owed.extend([true, true]);
+                    }
+                }
+            }
+            let want = brute(&lib, 0..lib.hashes.len());
+            assert_eq!(want.len(), 16 * 3, "the pairs at the radius, and only those");
+            for kernel in kernels() {
+                for few_entries in [Some(0), Some(usize::MAX)] {
+                    let tuning = Tuning { sorters: Some(0), few_entries, widths: Some([w; CHUNKS]) };
+                    let got = Joiner::new(&lib.hashes, &lib.owed)
+                        .unwrap()
+                        .with_kernel(kernel)
+                        .tuned(tuning)
+                        .join(0..lib.hashes.len(), 2, &|| {}, &|| true)
+                        .unwrap()
+                        .pairs;
+                    assert_eq!(got, want, "{kernel:?}, {w} words, {tuning:?}");
+                }
+            }
+        }
+    }
+
+    /// The binomial tail against exact counts, and the widths it chooses: those the measurements found fastest (stage
+    /// 10's best was 3 by a margin within the noise, at the same full tests as 2).
+    #[test]
+    fn the_widths_are_the_fewest_words_worth_their_cost() {
+        // Exact counts (each product in u128, the sums below 2^63), their f64 within 2^-52 of them.
+        for (n, ts) in [(32u32, vec![0, 4, 16, 31, 32]), (64, vec![0, 4, 16, 31])] {
+            let total = 2f64.powi(i32::try_from(n).unwrap());
+            for t in ts {
+                let exact: u64 = (0..=t)
+                    .map(|i| {
+                        u64::try_from((0..i).fold(1u128, |c, k| c * u128::from(n - k) / u128::from(k + 1))).unwrap()
+                    })
+                    .sum();
+                let want = pg_model::num::size(exact) / total;
+                assert!((tail(n, t) - want).abs() <= want * 1e-12, "tail({n}, {t}) {} against {want}", tail(n, t));
+            }
+        }
+        assert_eq!(WIDTHS, [3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1]);
+    }
+    /// Every head width, the same at every stage and mixed, finds the pairs brute force does, on every kernel and path.
+    #[test]
+    fn every_head_width_matches_brute_force() {
+        let mut rng = Rng(0xC0FF_EE00_D15E_A5E5);
+        let lib = corpus(&mut rng, 300, 4);
+        let want = brute(&lib, 0..lib.hashes.len());
+        assert!(want.len() > 10, "the corpus must have pairs to find");
+        let mut widths: Vec<[usize; CHUNKS]> = (1..=MAX_HEAD_WORDS).map(|w| [w; CHUNKS]).collect();
+        widths.push(std::array::from_fn(|c| 1 + c % MAX_HEAD_WORDS));
+        widths.push(std::array::from_fn(|c| MAX_HEAD_WORDS - c % MAX_HEAD_WORDS));
+        for w in widths {
+            for kernel in kernels() {
+                for few_entries in [Some(0), Some(usize::MAX)] {
+                    let tuning = Tuning { sorters: Some(1), few_entries, widths: Some(w) };
+                    let got = Joiner::new(&lib.hashes, &lib.owed)
+                        .unwrap()
+                        .with_kernel(kernel)
+                        .tuned(tuning)
+                        .join(0..lib.hashes.len(), 3, &|| {}, &|| true)
+                        .unwrap()
+                        .pairs;
+                    assert_eq!(got, want, "{kernel:?} {w:?} {tuning:?}");
+                }
+            }
+        }
+    }
+
+    /// Buckets of hundreds of entries: hundreds of copies of one picture, owed and not, so a query bucket spans a low
+    /// byte's worth of entries and many loads of eight, and the stored entries' suffixes start anywhere in it.
+    #[test]
+    fn buckets_of_hundreds_of_entries_match_brute_force() {
+        let mut rng = Rng(77);
+        let base = rng.four();
+        let mut lib = Library { hashes: Vec::new(), owed: Vec::new() };
+        for i in 0..500 {
+            let mut four = base;
+            for h in &mut four {
+                for _ in 0..rng.below(4) {
+                    *h = flip(h, rng.below(256));
+                }
+            }
+            lib.hashes.push(four);
+            lib.owed.push(i % 3 != 1);
+        }
+        let want = brute(&lib, 0..lib.hashes.len());
+        // Most chunks of an orientation's copies agree, so a bucket holds about all 500 of them on the stored side and the
+        // 333 owed ones on the query side: over 256, and over forty loads of eight.
+        let queries = 500 * 2 / 3;
+        assert!(queries > 40 * LANES, "past 256 and 40 loads: {queries}");
+        assert!(want.len() > 100_000, "the copies pair with each other: {}", want.len());
+        for kernel in kernels() {
+            for w in [1, 4] {
+                let got = Joiner::new(&lib.hashes, &lib.owed)
+                    .unwrap()
+                    .with_kernel(kernel)
+                    .tuned(Tuning { sorters: Some(0), few_entries: Some(0), widths: Some([w; CHUNKS]) })
+                    .join(0..lib.hashes.len(), 2, &|| {}, &|| true)
+                    .unwrap()
+                    .pairs;
+                assert_eq!(got, want, "{kernel:?}, {w} words");
             }
         }
     }

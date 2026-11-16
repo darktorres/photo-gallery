@@ -13,8 +13,9 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 2, the radix sort by regions | Done: `7ab62e7` |
 | 3, the scan kernel | Done: `7ab62e7` |
 | 4, the few-owed path | Done: `07d832a` |
-| 5, one thread team | Done: the team sorts a stage, then scans it (no ring) |
-| 6 - 10 | Not started |
+| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring) |
+| 6, the pair-loss fix | Done: the stored side is every analysis of a file with an identity |
+| 7 - 10 | Not started |
 
 ## Context
 
@@ -412,6 +413,24 @@ The caller's thread does no join work. Today it runs prepare, the sorts below 4 
 - blocks cover every entry once.
 
 ## Step 6: fix the pair-loss bug
+
+**Status: done** (a correctness fix, not gated). Built as below:
+
+- **The load.** `PAIRING_WORK` reads every analysis of a reliable quality of a file with an identity
+  (`f.volume IS NOT NULL`). `owed` is the `pairs_owed` row and the file present and not pending, `OWED`'s rule.
+  `legacy` counts present, non-pending files only.
+- **What it adds on the oracle's catalog: nothing.** The scratch copy has no missing, pending or displaced picture
+  (187,804 pictures before and after), so the oracle's 5,277 pairs are unchanged on all seven paths.
+- **Its cost.** The load reads the same rows, and `f.volume` from the same `files` row it already reads, so the join and
+  the write are unchanged. The oracle runs' loads (207 - 238 ms) are in the range of step 5's (194 - 228 ms); they
+  were not taken under the keep rule. Step 8 times the load against this commit.
+- **Tests:**
+  - six end-to-end cases (`crates/library/tests/pairs.rs`): the file moved away and back (the upsert), its volume
+    renumbered (a tier-1 rebind, and a tier-2 rebind under another name), a catalog turn undone, the mtime put back,
+    and an older build's import version;
+  - the load's test (`writers.rs`) covers a missing, a pending and a displaced row, and legacy rows of missing and
+    pending files;
+  - "no duplicates" waits exactly while `has_owed_pairs` is true (`browse/read/tests.rs`).
 
 **The bug, in today's code.** The load excludes missing and pending files from both sides (`work.rs:95`). A picture
 paired while file Y is excluded is marked done without Y. Y can then come back without a re-analysis:

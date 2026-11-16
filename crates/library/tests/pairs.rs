@@ -1,13 +1,18 @@
 //! The pairing pass on real files: the import leaves the pictures' pairs owed (`pairs_owed`), the pass makes them,
 //! a stop leaves what is owed owed, and a write that fails stores none of its batch, so the next pass makes them all.
+//! A pair is made with a partner whose file is away (missing or pending), so it is there when the file is back
+//! without a new analysis, however it comes back.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
+use pg_catalog::queue::WriteEffect;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_model::turns::Turns;
 use pg_platform::priority::Priority;
 
 /// Held by each test: the fault is a trigger in a catalog, and the file ids of two catalogs are the same numbers.
@@ -40,6 +45,212 @@ fn imported(prefix: &str) -> (Catalog, Control, PathBuf) {
 
 fn opts() -> Options {
     Options::new(Priority::Normal)
+}
+
+/// A scan of the run folder's `images`, as [`imported`] made it.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn scan(c: &mut Catalog, dir: &Path, ctl: &Control) {
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    pg_scan::scan(c, &root, ctl).unwrap();
+}
+
+/// The catalog of the run folder, opened again by a build of import version `import` (the others this build's).
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn reopened(c: Catalog, dir: &Path, import: i64) -> Catalog {
+    drop(c);
+    let versions = pg_catalog::Versions { import, ..pg_library::versions() };
+    Catalog::prepare(&dir.join("catalog.sqlite"), versions, pg_platform::native::PATH_RULES).unwrap()
+}
+
+/// `a.png` analysed again (made due, then imported): it owes its pairs, and the ones it had are gone.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn analysed_again(c: &mut Catalog, ctl: &Control) {
+    let a = state::file_id(c, "a.png").unwrap();
+    assert_eq!(c.mark_pending(&[a]).unwrap(), 1);
+    pg_import::import(c, &opts(), false, ctl).unwrap();
+}
+
+/// Whether the import would analyse the file called `name` now (`files.pending`, of a present file).
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn due(c: &Catalog, name: &str) -> bool {
+    let id = state::file_id(c, name).unwrap();
+    c.pending_import(false).unwrap().items.iter().any(|i| i.id == id)
+}
+
+/// Whether the file called `name` is present (not found missing).
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn present(c: &Catalog, name: &str) -> bool {
+    state::present_files(c).unwrap().iter().any(|(_, n)| n == name)
+}
+
+/// `b.png` turned `turns` quarter turns, as the writer leaves a turn the file can't hold: kept in the catalog.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn turned(c: &Catalog, turns: u8) {
+    c.queue_rotation(state::file_id(c, "b.png").unwrap(), Turns::new(turns)).unwrap();
+    let job = c.next_write(0).unwrap().unwrap();
+    c.write_done(&job, WriteEffect::KeptInCatalog(Turns::new(turns))).unwrap();
+}
+
+/// `b.png`'s file time, set to `mtime`.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn touched(dir: &Path, mtime: std::time::SystemTime) {
+    std::fs::File::options().write(true).open(dir.join("images").join("b.png")).unwrap().set_modified(mtime).unwrap();
+}
+
+/// What a test does to the catalog of a run folder and the files in it, under the run's control.
+type Step<'a> = &'a dyn Fn(Catalog, &Path, &Control) -> Catalog;
+
+/// `a.png` and `b.png` (the same picture) paired; then `away`: `a.png` analysed again (it owes its pairs, and their
+/// pair is gone) and `b.png` out of the pass (its file missing or pending) with its analysis kept, and not owing
+/// anything; then the pass; then `back`: `b.png` back as it was analysed. A pair is a fact about two stored analyses,
+/// so the pass made it with `b.png` away: shown again once `b.png` is back, with nothing owed and nothing to analyse.
+/// Had the pass left `b.png` out, nothing would ever owe the pair again.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn the_pair_is_made_while_its_partner_is_away(prefix: &str, away: Step, back: Step) {
+    let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (mut c, ctl, dir) = imported(prefix);
+    pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
+    let (lo, hi) = the_twins(&c);
+    let (a, b) = (state::file_id(&c, "a.png").unwrap(), state::file_id(&c, "b.png").unwrap());
+    assert!(state::shown_pairs(&c).unwrap().contains(&(lo, hi, 0)));
+
+    let mut c = away(c, &dir, &ctl);
+    assert!(!state::pairs(&c).unwrap().contains(&(lo, hi, 0)), "a.png's new analysis dropped its pairs");
+    let work = c.pairing_work().unwrap();
+    let side = |id| work.ids.iter().position(|&i| i == id).and_then(|i| work.owed.get(i).copied());
+    assert_eq!(side(a), Some(true), "a.png owes its pairs");
+    assert_eq!(side(b), Some(false), "b.png is a partner, and owes nothing");
+    let stats = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
+    assert!(stats.complete);
+    assert!(state::pairs(&c).unwrap().contains(&(lo, hi, 0)), "made with b.png away");
+
+    let mut c = back(c, &dir, &ctl);
+    assert!(state::shown_pairs(&c).unwrap().contains(&(lo, hi, 0)), "shown, with b.png back");
+    assert!(c.pending_import(false).unwrap().is_empty(), "b.png is back as it was analysed");
+    assert_eq!(c.owed_pairs().unwrap(), 0);
+    let again = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
+    assert_eq!(again.files, 0, "nothing for a pass to make");
+}
+
+/// A volume no scan of the tests sees: the old volume of a file whose volume came back renumbered.
+const LOST_VOLUME: i64 = 0x0105_7000;
+
+#[test]
+fn a_pair_made_while_its_file_was_missing_is_there_when_a_rescan_finds_it() {
+    let outside = |dir: &Path| dir.join("b.png");
+    the_pair_is_made_while_its_partner_is_away(
+        "away-missing",
+        &|mut c, dir, ctl| {
+            analysed_again(&mut c, ctl);
+            std::fs::rename(dir.join("images").join("b.png"), outside(dir)).unwrap();
+            scan(&mut c, dir, ctl);
+            assert!(!present(&c, "b.png"));
+            c
+        },
+        // The same file under the same identity: the scan's upsert finds the row and marks it present.
+        &|mut c, dir, ctl| {
+            std::fs::rename(outside(dir), dir.join("images").join("b.png")).unwrap();
+            scan(&mut c, dir, ctl);
+            assert!(present(&c, "b.png"));
+            c
+        },
+    );
+}
+
+#[test]
+fn a_pair_made_while_its_volume_was_away_is_there_when_a_rebind_finds_it_by_name() {
+    the_pair_is_made_while_its_partner_is_away(
+        "away-rebind-name",
+        &|mut c, _, ctl| {
+            analysed_again(&mut c, ctl);
+            state::on_lost_volume(&c, state::file_id(&c, "b.png").unwrap(), LOST_VOLUME, "b.png").unwrap();
+            c
+        },
+        // The file under a new identity, in the same folder under the same name: tier 1 rebinds its row.
+        &|mut c, dir, ctl| {
+            scan(&mut c, dir, ctl);
+            assert!(present(&c, "b.png"));
+            c
+        },
+    );
+}
+
+#[test]
+fn a_pair_made_while_its_volume_was_away_is_there_when_a_rebind_finds_it_by_file_id() {
+    the_pair_is_made_while_its_partner_is_away(
+        "away-rebind-id",
+        &|mut c, _, ctl| {
+            analysed_again(&mut c, ctl);
+            state::on_lost_volume(&c, state::file_id(&c, "b.png").unwrap(), LOST_VOLUME, "lost.png").unwrap();
+            c
+        },
+        // The file under a new identity and another name than its row's: tier 2 rebinds the row by its file ID, on a
+        // volume the scan did not see.
+        &|mut c, dir, ctl| {
+            scan(&mut c, dir, ctl);
+            assert!(present(&c, "b.png"));
+            c
+        },
+    );
+}
+
+#[test]
+fn a_pair_made_while_its_file_was_turned_is_there_when_the_turn_is_undone() {
+    the_pair_is_made_while_its_partner_is_away(
+        "away-turned",
+        &|mut c, _, ctl| {
+            analysed_again(&mut c, ctl);
+            turned(&c, 1);
+            assert!(due(&c, "b.png"), "a turn makes its analysis stale");
+            c
+        },
+        &|c, _, _| {
+            turned(&c, 3);
+            c
+        },
+    );
+}
+
+#[test]
+fn a_pair_made_while_its_file_had_another_time_is_there_when_the_time_is_put_back() {
+    let mtime = |dir: &Path| std::fs::metadata(dir.join("images").join("b.png")).unwrap().modified().unwrap();
+    // The time the file had when it was analysed, kept across the steps.
+    let before = std::sync::OnceLock::new();
+    the_pair_is_made_while_its_partner_is_away(
+        "away-touched",
+        &|mut c, dir, ctl| {
+            analysed_again(&mut c, ctl);
+            let was = *before.get_or_init(|| mtime(dir));
+            touched(dir, was + Duration::from_secs(3600));
+            scan(&mut c, dir, ctl);
+            assert!(due(&c, "b.png"), "another time makes its analysis stale");
+            c
+        },
+        &|mut c, dir, ctl| {
+            touched(dir, *before.get().unwrap());
+            scan(&mut c, dir, ctl);
+            c
+        },
+    );
+}
+
+#[test]
+fn a_pair_made_while_another_build_found_its_analysis_stale_is_there_when_the_first_opens_the_catalog() {
+    let ours = pg_library::versions().import;
+    the_pair_is_made_while_its_partner_is_away(
+        "away-import-version",
+        // b.png analysed by an older build, which opens the catalog last; then this build opens it again, for which
+        // that analysis is stale.
+        &|mut c, dir, ctl| {
+            analysed_again(&mut c, ctl);
+            state::set_analysis_version(&c, state::file_id(&c, "b.png").unwrap(), ours - 1).unwrap();
+            let c = reopened(reopened(c, dir, ours - 1), dir, ours);
+            assert!(due(&c, "b.png") && !due(&c, "a.png"));
+            c
+        },
+        // The older build opens it again: b.png's analysis is current for it.
+        &|c, dir, _| reopened(c, dir, ours - 1),
+    );
 }
 
 /// The pass's pairs of `a.png` and `b.png` (the same picture), in the order of their ids, as the pass stores them.

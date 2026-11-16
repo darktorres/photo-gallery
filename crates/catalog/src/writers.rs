@@ -1297,7 +1297,7 @@ mod tests {
 
     /// In memory, and on a file, where the pass reads on a connection of its own (`Catalog::reader`): the same rows,
     /// including the commits made just before it opened.
-    fn pairing_work_lists_the_present_hashed_files_in_one_read(rules: PathRules) {
+    fn pairing_work_lists_the_hashed_files_with_an_identity_in_one_read(rules: PathRules) {
         for on_file in [false, true] {
             let dir = on_file.then(|| {
                 pg_testkit::run_folder("scratch_catalog", &format!("pairing-work-{}", crate::types::rules_name(rules)))
@@ -1318,6 +1318,9 @@ mod tests {
         add_file(&c, 4, "d.jpg");
         add_file(&c, 5, "e.jpg");
         add_file(&c, 6, "f.jpg");
+        add_file(&c, 7, "g.jpg");
+        add_file(&c, 8, "h.jpg");
+        add_file(&c, 9, "i.jpg");
         store_for(&mut c, 1, &picture([1; 32], 100));
         store_for(&mut c, 2, &picture([2; 32], 100));
         c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 2", []).unwrap();
@@ -1329,33 +1332,49 @@ mod tests {
         store_for(&mut c, 4, &picture([4; 32], 100));
         c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL WHERE file_id = 4", []).unwrap();
         c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 4", []).unwrap();
-        // Missing, and pending: neither is paired.
+        // Missing, and pending: partners like any other (their analyses are stored), though they owe their pairs too.
         store_for(&mut c, 5, &picture([5; 32], 100));
         c.conn.execute("UPDATE files SET missing = 1 WHERE id = 5", []).unwrap();
         store_for(&mut c, 6, &picture([6; 32], 100));
         c.mark_pending(&[FileId::new(6)]).unwrap();
+        // Displaced (no identity, as `ScanWriter::upsert_file` leaves a row whose identity is another file's): left out.
+        store_for(&mut c, 7, &picture([7; 32], 100));
+        c.conn
+            .execute("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = 7", [])
+            .unwrap();
+        // Legacy rows of a missing and a pending file: not counted, as `gallery import --again` does not reach them.
+        for id in [8, 9] {
+            store_for(&mut c, id, &picture([8; 32], 100));
+            c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL WHERE file_id = ?1", [id]).unwrap();
+            c.conn.execute("DELETE FROM pairs_owed WHERE file_id = ?1", [id]).unwrap();
+        }
+        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 8", []).unwrap();
+        c.mark_pending(&[FileId::new(9)]).unwrap();
         let work = c.pairing_work().unwrap();
         let read = c.reader(1024).unwrap().pairing_work().unwrap();
         assert_eq!(columns(&read), columns(&work), "the reader reads what the catalog's connection does");
         let ids: Vec<i64> = work.ids.iter().map(|id| id.get()).collect();
-        assert_eq!(ids, vec![1, 2]);
-        assert_eq!(work.owed, vec![true, false]);
-        assert_eq!(work.hashes, vec![[pg_model::pdq::Hash([1; 32]); 4], [pg_model::pdq::Hash([2; 32]); 4]]);
+        assert_eq!(ids, vec![1, 2, 5, 6]);
+        // Files 5 and 6 owe theirs, but one is missing and the other pending: only partners until they are back.
+        assert_eq!(work.owed, vec![true, false, false, false]);
+        let hashes = [1, 2, 5, 6].map(|b| [pg_model::pdq::Hash([b; 32]); 4]);
+        assert_eq!(work.hashes, hashes);
         assert_eq!(work.legacy, 1);
+        // Only the owed pictures the pass can make (those `owed` marks) are counted and open the pass; the others' rows
+        // stay for their return.
+        assert_eq!(c.owed_pairs().unwrap(), work.owed.iter().filter(|&&o| o).count());
         assert_eq!(c.owed_pairs().unwrap(), 1);
         assert!(c.has_owed_pairs().unwrap());
-        // Files 5 and 6 owe theirs too, but one is missing and the other pending: not counted, and not something the
-        // pass can make.
-        assert_eq!(state_owed(&c), vec![1, 5, 6]);
+        assert_eq!(state_owed(&c), vec![1, 5, 6, 7]);
         c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 1", []).unwrap();
         assert_eq!(c.owed_pairs().unwrap(), 0);
         assert!(!c.has_owed_pairs().unwrap());
     }
 
     under_both_rules!(
-        pairing_work_lists_the_present_hashed_files_in_one_read,
-        pairing_work_lists_the_present_hashed_files_in_one_read_windows,
-        pairing_work_lists_the_present_hashed_files_in_one_read_posix
+        pairing_work_lists_the_hashed_files_with_an_identity_in_one_read,
+        pairing_work_lists_the_hashed_files_with_an_identity_in_one_read_windows,
+        pairing_work_lists_the_hashed_files_with_an_identity_in_one_read_posix
     );
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {

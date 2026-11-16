@@ -1,5 +1,6 @@
-//! The pairing pass: the tier-1 pairs of the pictures that owe them (a `pairs_owed` row, set by the import), against
-//! every picture with stored hashes. The join (`pg_dedup::join::Joiner`) holds every picture's stored orientations,
+//! The pairing pass: the tier-1 pairs of the pictures that owe them (a `pairs_owed` row, set by the import, of a file
+//! present and not pending), against every picture with stored hashes, whatever its file's state
+//! (`Catalog::pairing_work`). The join (`pg_dedup::join::Joiner`) holds every picture's stored orientations,
 //! built once, and finds the pairs in slices of the owed pictures; each slice is written in short transactions: a pair
 //! with its guards (`PairsWriter`), then the picture marked done. A stop or a crash keeps what was written; what is
 //! left stays owed, and the next pass makes it. With several slices (a library above [`SLICE`] owed pictures), the next

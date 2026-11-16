@@ -126,6 +126,28 @@ pub fn pairs(c: &Catalog) -> Result<Vec<(i64, i64, i64)>> {
     Ok(stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?)
 }
 
+/// The pairs shown (`present_pdq_pairs`: both files present), as [`pairs`] lists them.
+pub fn shown_pairs(c: &Catalog) -> Result<Vec<(i64, i64, i64)>> {
+    let mut stmt = c.conn.prepare("SELECT a, b, distance FROM present_pdq_pairs ORDER BY a, b")?;
+    Ok(stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?)
+}
+
+/// The file's volume went away and came back renumbered, and it was not there meanwhile: its row is missing, on the
+/// volume `volume` (one no scan sees), under the name `name`, as a scan of the old volume left it.
+pub fn on_lost_volume(c: &Catalog, id: FileId, volume: i64, name: &str) -> Result<()> {
+    c.conn.execute(
+        "UPDATE files SET volume = ?2, name = ?3, missing = 1 WHERE id = ?1",
+        params![id.get(), volume, name.as_bytes()],
+    )?;
+    Ok(())
+}
+
+/// The file's analysis was made by a build of import version `version` (an older one, say).
+pub fn set_analysis_version(c: &Catalog, id: FileId, version: i64) -> Result<()> {
+    c.conn.execute("UPDATE analysis SET version = ?2 WHERE file_id = ?1", params![id.get(), version])?;
+    Ok(())
+}
+
 /// Makes every pair write fail, until [`allow_pair_writes`]: a pass that writes a pair then fails as a write does.
 pub fn fail_pair_writes(c: &Catalog) -> Result<()> {
     Ok(c.conn.execute_batch(

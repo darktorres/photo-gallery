@@ -75,24 +75,37 @@ fn max_folder_id(conn: &Connection) -> Result<i64> {
 /// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]`. The join takes the columns as they are.
 pub struct PairingWork {
     pub ids: Vec<FileId>,
-    /// Its pairs are owed (a `pairs_owed` row): the pass pairs it with the pictures before and after it.
+    /// Its pairs are owed (a `pairs_owed` row) and the pass can make them (its file is present and not pending, as
+    /// [`Catalog::owed_pairs`] counts): the pass pairs it with the pictures before and after it. An owed picture whose
+    /// file is missing or pending is only a partner here; its own pairs are made by the first pass after it is back.
     pub owed: Vec<bool>,
     /// Its kept orientations' hashes (`pg_model::pdq::ORIENTATIONS`, in `pg_analysis::pdq`'s order): what the pairs are
     /// made from, and, as `pg_model::pdq::to_blob` stores them, the guard of `PairsWriter`.
     pub hashes: Vec<[pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS]>,
     /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
-    /// orientation hashes, or whose hashes failed the check of migration 13): not paired, and reported. Re-importing
-    /// them (`gallery import --again`) makes them pictures.
+    /// orientation hashes, or whose hashes failed the check of migration 13), of present, non-pending files: not
+    /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
+    /// files, so only they are counted.
     pub legacy: usize,
 }
 
-/// The statement [`Catalog::pairing_work`] reads: every present, non-pending file's analysis of a reliable quality, by
-/// file id. `analysis` is the outer loop (`CROSS JOIN`), read in its own rowid order, so the `ORDER BY` costs no sort;
-/// each file is a lookup by key, and so is the `pairs_owed` row. The rows without stored hashes are the legacy ones,
-/// counted in the same scan.
-const PAIRING_WORK: &str = "SELECT a.file_id, o.file_id IS NOT NULL, a.pdq_dihedral
+/// The statement [`Catalog::pairing_work`] reads: the analysis of a reliable quality of every file with an identity, by
+/// file id, with whether it owes its pairs and its file is present and not pending ([`OWED`]'s rule), and whether that
+/// file is present and not pending (for the legacy count). `analysis` is the outer loop (`CROSS JOIN`), read in its own
+/// rowid order, so the `ORDER BY` costs no sort; each file is a lookup by key, and so is the `pairs_owed` row. The rows
+/// without stored hashes are the legacy ones, counted in the same scan.
+///
+/// A pair is a fact about two stored analyses, so a missing or pending file's analysis is a partner like any other: a
+/// picture paired while its partner's file was away is never owed again when the file comes back without a new
+/// analysis (a rescan that finds it, a rebind, a turn undone, an mtime put back, an older build's import version), and
+/// a pair the pass left out then would never be made. A pair with a missing file is hidden where pairs are shown
+/// (`present_pdq_pairs`), and every new analysis drops its file's pairs and owes them again. A displaced row (no
+/// identity, `volume IS NULL`) is left out: its analysis stays only until a replacement deletes it, its pairs could
+/// never be shown, and the file's new row would pair with it.
+const PAIRING_WORK: &str = "SELECT a.file_id, o.file_id IS NOT NULL AND f.missing = 0 AND f.pending = 0, a.pdq_dihedral,
+         f.missing = 0 AND f.pending = 0
      FROM analysis a CROSS JOIN files f LEFT JOIN pairs_owed o ON o.file_id = a.file_id
-     WHERE f.id = a.file_id AND f.missing = 0 AND f.pending = 0 AND a.pdq_quality >= ?1
+     WHERE f.id = a.file_id AND f.volume IS NOT NULL AND a.pdq_quality >= ?1
      ORDER BY a.file_id";
 
 /// [`Catalog::pairing_work`], read on `conn` in one transaction (its one snapshot).
@@ -110,7 +123,9 @@ fn pairing_work_on(conn: &Connection) -> Result<PairingWork> {
     while let Some(r) = rows.next()? {
         let id = FileId::new(r.get(0)?);
         let Some(blob) = r.get_ref(2)?.as_blob_or_null()? else {
-            work.legacy += 1;
+            if r.get(3)? {
+                work.legacy += 1;
+            }
             continue;
         };
         let hashes = pg_model::pdq::from_blob(blob)
@@ -132,7 +147,8 @@ impl crate::Reader<'_> {
     }
 }
 
-/// The owed pictures the pairing pass can make: those of present, non-pending files.
+/// The owed pictures the pairing pass can make: those of present, non-pending files (`PairingWork::owed`). A missing
+/// or pending one stays owed, and the first pass after its file is back makes its pairs.
 const OWED: &str = "FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND f.missing = 0 AND f.pending = 0";
 
 impl Catalog {
@@ -172,8 +188,9 @@ impl Catalog {
         Ok(list)
     }
 
-    /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is a present, non-pending
-    /// file whose analysis has stored hashes and a reliable quality. The owed ones (a `pairs_owed` row) are among them,
+    /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is an analysis with stored
+    /// hashes and a reliable quality, of a file with an identity (missing and pending ones too: `PAIRING_WORK` says
+    /// why). The owed ones the pass can make (a `pairs_owed` row, the file present and not pending) are among them,
     /// with the others (the stored side). One snapshot, because a file that changed between two reads could be owed a
     /// pair that its partner's read never sees. The columns are sized from the analyses' count first, so they never
     /// grow (an upper bound: every analysis), and each row's hashes are read from the blob in place. The pass reads it

@@ -724,19 +724,30 @@ fn facets_filter(rules: PathRules) {
 
 under_both_rules!(facets_filter, facets_filter_windows, facets_filter_posix);
 
-/// "No duplicates" lists nothing while a present file owes its pairs (the pairing pass has yet to pair it, so no file is
-/// known to have none), and lists the same again once nothing is owed.
+/// "No duplicates" lists nothing while a present, non-pending file owes its pairs (the pairing pass has yet to pair it,
+/// so no file is known to have none), and lists the same again once nothing is owed: it waits exactly while the pass has
+/// work (`Catalog::has_owed_pairs`).
 fn no_duplicates_waits_for_the_pairing_pass(rules: PathRules) {
     let c = mixed_library(rules);
     let no_duplicates =
         |c: &crate::Catalog| ids(c, "", true, &Query { duplicates: Some(false), ..Query::default() }, Sort::default());
+    let waits = |c: &crate::Catalog| {
+        let waits = no_duplicates(c).is_empty();
+        assert_eq!(waits, c.has_owed_pairs().unwrap(), "the list waits while the pass has work");
+        waits
+    };
     assert_eq!(no_duplicates(&c), [6, 5]);
+    assert!(!waits(&c));
     c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (2)", []).unwrap();
-    assert!(no_duplicates(&c).is_empty());
-    // Owed by a missing file: the pass can't pair it, so it does not hold the list back.
+    assert!(waits(&c));
+    // Owed by a missing file, or a pending one: the pass can't pair it yet, so it does not hold the list back.
     c.conn.execute("UPDATE files SET missing = 1 WHERE id = 2", []).unwrap();
-    assert!(!no_duplicates(&c).is_empty());
+    assert!(!waits(&c));
     c.conn.execute("UPDATE files SET missing = 0 WHERE id = 2", []).unwrap();
+    c.mark_pending(&[pg_model::ids::FileId::new(2)]).unwrap();
+    assert!(!waits(&c));
+    c.conn.execute("UPDATE files SET pending = 0 WHERE id = 2", []).unwrap();
+    assert!(waits(&c));
     c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 2", []).unwrap();
     assert_eq!(no_duplicates(&c), [6, 5]);
 }

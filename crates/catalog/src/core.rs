@@ -212,14 +212,15 @@ impl Catalog {
     /// check of the schema (this connection's open made it), and this catalog's shared hold on the file keeps a rebuild
     /// out. An in-memory catalog (the tests') has no file another connection could open: its reads run on this one.
     pub fn reader(&self, cache_kib: u32) -> Result<Reader<'_>> {
-        let Some(file) = self.conn.path().filter(|f| !f.is_empty()) else {
-            return Ok(Reader { catalog: self, own: None });
+        let Some(file) = self.file() else {
+            return Ok(Reader { catalog: self, own: None, cache_kib });
         };
-        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-        let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}"))?;
-        conn.busy_timeout(Duration::from_secs(5))?;
-        conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
-        Ok(Reader { catalog: self, own: Some(conn) })
+        Ok(Reader { catalog: self, own: Some(read_only(file, cache_kib)?), cache_kib })
+    }
+
+    /// The catalog's file, `None` in memory.
+    fn file(&self) -> Option<&str> {
+        self.conn.path().filter(|f| !f.is_empty())
     }
 
     /// Bound this connection's page cache to `kib` KiB until the guard is dropped, which restores the cache's size and
@@ -241,17 +242,48 @@ fn register(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s.
+fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}"))?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
+    Ok(conn)
+}
+
 /// A read of the catalog on a connection of its own ([`Catalog::reader`]), or on the catalog's when it is in memory.
 pub struct Reader<'c> {
     catalog: &'c Catalog,
     /// The read-only connection; `None` for an in-memory catalog, whose reads run on its own connection.
     own: Option<Connection>,
+    /// Its cache, in KiB: the budget a read on several connections shares ([`Reader::opener`]).
+    cache_kib: u32,
 }
 
 impl Reader<'_> {
     /// The connection the reads run on.
     pub(crate) fn conn(&self) -> &Connection {
         self.own.as_ref().unwrap_or(&self.catalog.conn)
+    }
+
+    /// What opens more read-only connections to the file, for a read split over `n`: each gets an `n`th of this
+    /// reader's cache, so the read's connections share its budget. `None` in memory, where there is one connection.
+    pub(crate) fn opener(&self, n: usize) -> Option<ReadOnly> {
+        let file = self.own.as_ref().and(self.catalog.file())?;
+        let share = self.cache_kib / u32::try_from(n.max(1)).unwrap_or(u32::MAX);
+        Some(ReadOnly { file: file.to_owned(), cache_kib: share.max(1) })
+    }
+}
+
+/// Opens read-only connections to a catalog's file ([`Reader::opener`]), on any thread.
+pub(crate) struct ReadOnly {
+    file: String,
+    cache_kib: u32,
+}
+
+impl ReadOnly {
+    pub(crate) fn open(&self) -> Result<Connection> {
+        read_only(&self.file, self.cache_kib)
     }
 }
 

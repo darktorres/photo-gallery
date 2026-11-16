@@ -9,6 +9,8 @@
 //!
 //! - `today`: the pass's load as built (`Catalog::reader` and `Reader::pairing_work`), the reader's open and close
 //!   included;
+//! - `split`: the same with `analysis` read in parts on connections of their own (`Reader::pairing_work_split`), as
+//!   many as `PG_PROBE_WORKERS` (default: the logical cores);
 //! - `open`: a reader's connection opened and closed, no read;
 //! - `count`: the load's first read, `count(*)` of `analysis`;
 //! - `step`: the statement the load read before step 8 (`PAIRING_WORK`), each row stepped and no column read;
@@ -50,8 +52,9 @@ const PRESENT: &str = "SELECT id FROM files INDEXED BY files_present WHERE missi
 const PENDING: &str = "SELECT id FROM files INDEXED BY files_to_import WHERE missing = 0 AND pending = 1";
 const OWED: &str = "SELECT file_id FROM pairs_owed ORDER BY file_id";
 
-const VARIANTS: [&str; 11] = [
+const VARIANTS: [&str; 12] = [
     "today",
+    "split",
     "open",
     "count",
     "step",
@@ -145,6 +148,15 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
     let rows = match variant {
         "today" => {
             let work = catalog.reader(u32::try_from(CACHE_KIB)?)?.pairing_work()?;
+            work.ids.len() + work.legacy
+        }
+        "split" => {
+            let threads = std::env::var("PG_PROBE_WORKERS")
+                .ok()
+                .and_then(|w| w.parse().ok())
+                .or_else(|| std::thread::available_parallelism().ok().map(std::num::NonZero::get))
+                .unwrap_or(1);
+            let work = catalog.reader(u32::try_from(CACHE_KIB)?)?.pairing_work_split(threads, &|| {})?;
             work.ids.len() + work.legacy
         }
         "open" => {

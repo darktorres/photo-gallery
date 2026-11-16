@@ -16,7 +16,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring) |
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
-| 8, the load | The lookup-free load done; the parallel load next |
+| 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
 | 9 - 10 | Not started |
 
 ## Context
@@ -574,7 +574,7 @@ so the epoch was built (migration 14). Departures:
 
 ## Step 8: the load
 
-**Status: the lookup-free load done, kept** (6 pairs against `459c8e0`: load −19 to −35% on every workload, real
+**Status: done, kept** (the lookup-free load, 6 pairs against `459c8e0`: load −19 to −35% on every workload, real
 gains; pass −1.55% on all owed at 1 worker, −10 to −23% on a few owed; `PROFILING.md`, "The load"). Item 1 found the
 lookups ~85 ms of the 212 ms load and fetching pages about half of every statement. Departures:
 
@@ -584,8 +584,15 @@ lookups ~85 ms of the 212 ms load and fetching pages about half of every stateme
   row stays excluded" needs the set of files that exist. The foreign key's cascade leaves no such row, so this costs
   ~20 ms for a row the schema cannot hold; it is kept, as the item says.
 - **`count(*)` goes:** the identity set's size bounds the columns.
-- **Mixed snapshots and the epoch** (for item 3): a parallel load is safe only if the marks are read in a snapshot no
-  later than every range's, so a change after them moves the epoch and the writes guard.
+- **Mixed snapshots and the epoch** (item 3): a split load is safe only if the marks are read in a snapshot no later
+  than every part's, so a change after them moves the epoch and the writes guard; the reader reads them first.
+- **The split load (item 3): done, kept** against `bed9346` (pass −8.3% on all owed at 12 workers, −30.0% on 300 owed,
+  −21.8% on 3,000; load −44 to −49% at 12; one worker level). It needed SQLite's memory statistics off (`bed9346`):
+  their global mutex serialized the parts' connections (an open took 28 - 37 ms with 12 at once, 2 ms alone). The
+  parts are cut at equal counts of the identity set, which the reader reads first, and the other sets are read beside
+  them; the parts fill slices of the columns, moved together after (one copy of the hashes). One part (one worker, in
+  memory) is the lookup-free load as it was. The parts' count is the join's threads: from 3 parts the wall is the
+  reader's own reads (87 - 98 ms) and more parts add cycles (+40% on 300 owed at 12), which step 9 tunes.
 
 1. **Time its parts first,** with cycle samples on the load's thread.
 2. **No per-row lookups:** one connection, one read transaction (`work.rs:100`).

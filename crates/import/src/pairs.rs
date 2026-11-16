@@ -119,9 +119,11 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     }
     // The catalog's cache is bounded until the pass returns, however it leaves.
     let mut catalog = catalog.bounded_cache(settings.cache_kib)?;
+    let start = || priority::set_current_thread(opts.priority);
     let loading = Instant::now();
-    // Read on a connection of its own, closed (its cache freed) as soon as the pictures are read.
-    let mut work = catalog.reader(settings.cache_kib)?.pairing_work()?;
+    // Read on connections of their own, `analysis` in as many parts as the join has threads, closed (their caches
+    // freed) as soon as the pictures are read.
+    let mut work = catalog.reader(settings.cache_kib)?.pairing_work_split(opts.workers, &start)?;
     if settings.guard {
         // An epoch no catalog has: every write finds another.
         work.marks.epoch = -1;
@@ -147,7 +149,6 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
 
     // The phase ends when this is dropped, however the pass leaves. Its progress is the owed pictures paired so far.
     let _phase = ctl.begin(Phase::Pairing, u64::try_from(owed.len()).unwrap_or(u64::MAX));
-    let start = || priority::set_current_thread(opts.priority);
     // The joins stop for the user's stop and pause, and for the pass's own stop (`AbortOnDrop`).
     let abort = AtomicBool::new(false);
     let control = || ctl.checkpoint_until(&abort);

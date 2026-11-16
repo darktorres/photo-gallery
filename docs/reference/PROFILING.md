@@ -1069,6 +1069,55 @@ The oracle's pairs are identical on all seven paths. A differential test checks 
 statement on random catalogs (sparse ids, two far past the others, every file state, owed rows of analyses that are no
 picture, an analysis with no file), and fails with either the identity or the pending check taken out.
 
+**The split load** (item 3). `analysis` is scanned in as many parts as the join has threads, each on a read-only
+connection and a thread of its own, cut at equal counts of files with an identity, while the catalog's reader reads
+the other id sets. The parts fill their own slices of the columns, which are then moved together in id order (one
+copy of the hashes throughout). The reader reads the pairing marks first, so every part's snapshot is the marks' or
+later: a change between them moves the epoch, and the writes guard. A load in one part (one worker, or in memory) is
+the lookup-free load as before.
+
+Its first build, timed by phase at 4 and 12 parts, was held up by something global: a connection's open took 8 - 10
+ms with 4 at once and 28 - 37 ms with 12, against 2 ms alone, and the parts' scans and the sets' read each took about
+twice as long as alone. The bundled SQLite kept its process-wide memory statistics, so every allocation took one
+global mutex. Without them (`.cargo/config.toml`, `SQLITE_DEFAULT_MEMSTATUS=0`, one of SQLite's recommended options):
+
+| Parts | Statistics on | Off |
+|---|---:|---:|
+| 4 | 101 ms | 85 ms |
+| 12 | 117 ms, 2,122 M cycles | 99 ms, 1,308 M cycles |
+
+On its own the flag is level on the pass (`bed9346` against `c5ee017`, kept everywhere). The import flush bench went
+from 148,321,771 instructions to **128,931,175 (−13.1%)**, below its count before the epoch (145,131,705), and the
+catalog's test suite, whose tests run on parallel threads with connections of their own, from 70 - 76 s to 19 s.
+
+The split load by parts (the probe, every picture owed, medians of 6):
+
+| Parts | 1 | 2 | 3 | 4 | 5 | 6 | 8 | 12 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Wall, ms | 166 | 125 | 89 | 87 | 103 | 90 | 96 | 98 |
+| Cycles, M | 529 | 746 | 682 | 754 | 922 | 876 | 1,121 | 1,313 |
+
+From 3 parts on, the wall is the reader's own reads: the identity set before the cut (about 26 ms) and the other three
+sets beside the parts. More parts only add cycles. The parts' count is the join's threads for now; step 9 tunes it.
+
+Kept (6 pairs against `bed9346`; the one-part load first lost 4 ms to filling and moving the columns, which a load in
+one part now skips):
+
+| Workload | Load, ms (A → B) | Load | Pass | Cycles |
+|---|---|---|---|---|
+| all owed, 1 worker | 167 → 168 | +1.16% [−1.79, +4.79] | −0.24% [−1.29, +1.51] | −0.17% |
+| all owed, 12 | 168 → 94 | −44.31% [−45.40, −42.86] | −8.34% [−12.81, −5.03] | +3.97% [+2.97, +4.88] |
+| 300 owed, 1 | 151 → 152 | −8.20% [−22.56, +3.38] | −2.29% [−6.98, +1.27] | +0.77% |
+| 300 owed, 12 | 154 → 80 | −45.23% [−49.36, −38.56] | −29.96% [−34.00, −25.51] | +40.00% [+37.25, +46.52] |
+| 3,000 owed, 1 | 154 → 154 | +2.31% [−18.03, +26.62] | −1.92% [−6.87, +0.49] | −2.88% |
+| 3,000 owed, 12 | 154 → 78 | −48.84% [−50.97, −46.05] | −21.81% [−22.67, −20.19] | +18.33% [+15.55, +19.84] |
+| four slices, 12 | 166 → 94 | −43.68% [−47.19, −31.52] | −3.75% [−8.66, +0.65] | +2.00% |
+
+The cycles a split load adds at 12 workers are the parts past the three the wall needs. Peak commit +2 - 4 MiB (75 - 77
+→ 78 - 79 with 1 or 300 owed, 179 → 182 - 183 with all). The oracle's pairs are identical on all seven paths, with
+every write guarded too, and the differential test runs the split load on a file at 1, 2, 3, 5 and 64 parts (failing
+with either part boundary off by one).
+
 ---
 
 ## Where the other results are

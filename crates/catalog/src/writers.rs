@@ -1763,11 +1763,36 @@ mod tests {
     /// not by the largest id); analyses that are pictures, below the quality, failures, legacy rows, or none; files
     /// present, missing, pending (present or missing) or displaced; owed rows kept or not, some of them of analyses
     /// that are no picture; and an analysis with no file at all (made with the foreign keys off), which neither
-    /// read includes.
+    /// read includes. In memory, and on a file, where the reader's load is also split into parts on connections of
+    /// their own (`Reader::pairing_work_split`): one part, a few, and more than there are pictures.
     fn the_load_reads_what_the_joined_statement_did(rules: PathRules) {
         for seed in 0..32 {
+            let (c, nofile) = random_catalog(rules, seed, std::path::Path::new(":memory:"));
+            let work = c.pairing_work().unwrap();
+            assert_eq!(loaded(&work), joined(&c), "seed {seed}");
+            assert!(!work.ids.contains(&FileId::new(nofile)), "seed {seed}: an analysis with no file is no picture");
+        }
+        let dir = pg_testkit::run_folder("scratch_catalog", &format!("load-split-{}", crate::types::rules_name(rules)))
+            .unwrap();
+        for seed in 0..8 {
+            let path = dir.join(format!("catalog-{seed}.sqlite"));
+            let (c, _) = random_catalog(rules, seed, &path);
+            let expected = joined(&c);
+            for threads in [1, 2, 3, 5, 64] {
+                let work = c.reader(1024).unwrap().pairing_work_split(threads, &|| {}).unwrap();
+                assert_eq!(loaded(&work), expected, "seed {seed}, {threads} threads");
+            }
+            drop(c);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A random catalog of [`the_load_reads_what_the_joined_statement_did`] at `path`, and the id of its analysis with no
+    /// file.
+    fn random_catalog(rules: PathRules, seed: u64, path: &std::path::Path) -> (Catalog, i64) {
+        {
             let mut mix = Mix(seed);
-            let (mut c, first) = one_file(rules);
+            let (mut c, first) = crate::test_support::one_file_at(rules, path);
             let mut ids = vec![first];
             let mut next = first;
             for _ in 0..40 {
@@ -1822,9 +1847,7 @@ mod tests {
                 .unwrap();
             c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (?1)", [next + 1]).unwrap();
             c.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
-            let work = c.pairing_work().unwrap();
-            assert_eq!(loaded(&work), joined(&c), "seed {seed}");
-            assert!(!work.ids.contains(&FileId::new(next + 1)), "seed {seed}: an analysis with no file is no picture");
+            (c, next + 1)
         }
     }
 

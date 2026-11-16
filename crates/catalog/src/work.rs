@@ -8,7 +8,7 @@ use pg_model::path::WorkList;
 use pg_model::turns::Turns;
 use rusqlite::Connection;
 
-use crate::core::Catalog;
+use crate::core::{Catalog, ReadOnly};
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, WorkItem, folder_path};
@@ -114,8 +114,8 @@ pub(crate) fn pairing_marks(conn: &Connection) -> Result<PairingMarks> {
     Ok(stmt.query_row([], |r| Ok(PairingMarks { version: r.get(0)?, epoch: r.get(1)? }))?)
 }
 
-/// What [`Catalog::pairing_work`] reads: the analyses of a reliable quality, scanned in file-id order (`analysis`'s rowid
-/// order, so the `ORDER BY` costs no sort). Which of them are pictures, and which owe their pairs, comes from four id
+/// What [`Catalog::pairing_work`] reads: the analyses of a reliable quality in a range of file ids (all of them, or one
+/// part of a split read), scanned in file-id order (`analysis`'s rowid order, so the `ORDER BY` costs no sort). Which of them are pictures, and which owe their pairs, comes from four id
 /// sets read before it in the same snapshot, each from an index alone ([`WITH_IDENTITY`], [`PRESENT`],
 /// [`PRESENT_PENDING`], [`OWED_IDS`]), and walked beside the scan: no lookup per row. A row with no stored hashes is a
 /// legacy one, counted in the same scan.
@@ -128,8 +128,8 @@ pub(crate) fn pairing_marks(conn: &Connection) -> Result<PairingMarks> {
 /// pairs and owes them again. A displaced row (no identity, `volume IS NULL`) is left out: its analysis stays only until
 /// a replacement deletes it, its pairs could never be shown, and the file's new row would pair with it. So is an
 /// analysis with no `files` row at all, which the foreign key's cascade leaves none of.
-const PICTURES: &str =
-    "SELECT file_id, pdq_dihedral, pdq_quality FROM analysis WHERE pdq_quality >= ?1 ORDER BY file_id";
+pub(crate) const PICTURES: &str = "SELECT file_id, pdq_dihedral, pdq_quality FROM analysis
+     WHERE file_id BETWEEN ?2 AND ?3 AND pdq_quality >= ?1 ORDER BY file_id";
 /// The files with an identity, from `UNIQUE(volume, file_ref)`'s index alone (NULLs sort first, so this is one range).
 pub(crate) const WITH_IDENTITY: &str = "SELECT id FROM files WHERE volume IS NOT NULL";
 /// The present files, and the present ones the import has yet to analyze: those of the first and not the second make
@@ -155,6 +155,11 @@ impl IdSet {
     fn walk(&self) -> IdWalk<'_> {
         IdWalk { rest: &self.0 }
     }
+
+    /// A walk of the set's ids from `id` on.
+    fn walk_from(&self, id: i64) -> IdWalk<'_> {
+        IdWalk { rest: self.0.get(self.0.partition_point(|&x| x < id)..).unwrap_or_default() }
+    }
 }
 
 /// [`IdSet::walk`]: each question skips the ids below the one asked, so a walk beside a scan costs one step a member.
@@ -174,59 +179,208 @@ impl IdWalk<'_> {
     }
 }
 
-/// [`Catalog::pairing_work`], read on `conn` in one transaction (its one snapshot).
-fn pairing_work_on(conn: &Connection) -> Result<PairingWork> {
-    let tx = conn.unchecked_transaction()?;
-    let marks = pairing_marks(&tx)?;
-    let identity = IdSet::read(&tx, WITH_IDENTITY)?;
-    let present = IdSet::read(&tx, PRESENT)?;
-    let pending = IdSet::read(&tx, PRESENT_PENDING)?;
-    let owed = IdSet::read(&tx, OWED_IDS)?;
-    // Each picture is a file with an identity: the columns never grow.
-    let bound = identity.0.len();
-    let mut work = PairingWork {
-        ids: Vec::with_capacity(bound),
-        owed: Vec::with_capacity(bound),
-        hashes: Vec::with_capacity(bound),
-        quality: Vec::with_capacity(bound),
-        legacy: 0,
-        marks,
-    };
-    let (mut identity, mut present, mut pending, mut owed) =
-        (identity.walk(), present.walk(), pending.walk(), owed.walk());
-    let mut stmt = tx.prepare(PICTURES)?;
-    let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
+/// A picture's stored hashes, as the load's column holds them.
+type Hashes = [pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS];
+
+/// Where a part of the load's scan puts its pictures, in id order.
+trait Columns {
+    fn put(&mut self, id: i64, hashes: Hashes, quality: u8);
+}
+
+/// The load's columns, grown by each picture: a load in one part, with nothing to fill first or move after.
+struct Grown {
+    ids: Vec<i64>,
+    hashes: Vec<Hashes>,
+    quality: Vec<u8>,
+}
+
+impl Grown {
+    fn with_capacity(n: usize) -> Grown {
+        Grown { ids: Vec::with_capacity(n), hashes: Vec::with_capacity(n), quality: Vec::with_capacity(n) }
+    }
+}
+
+impl Columns for Grown {
+    fn put(&mut self, id: i64, hashes: Hashes, quality: u8) {
+        self.ids.push(id);
+        self.hashes.push(hashes);
+        self.quality.push(quality);
+    }
+}
+
+/// A part's own slices of the load's columns (a split load, each part on a thread of its own), as long as its files
+/// with an identity are many (the most pictures it can hold); `filled` slots are its pictures.
+struct Slots<'w> {
+    ids: &'w mut [i64],
+    hashes: &'w mut [Hashes],
+    quality: &'w mut [u8],
+    filled: usize,
+}
+
+impl Columns for Slots<'_> {
+    fn put(&mut self, id: i64, hashes: Hashes, quality: u8) {
+        let at = self.filled;
+        let (Some(i), Some(h), Some(q)) = (self.ids.get_mut(at), self.hashes.get_mut(at), self.quality.get_mut(at))
+        else {
+            unreachable!("a part has a slot for each of its files with an identity, and each picture is one");
+        };
+        (*i, *h, *q) = (id, hashes, quality);
+        self.filled += 1;
+    }
+}
+
+/// Scans the file ids `lo..=hi` of `analysis` on `conn` (one statement, so one snapshot), putting the analyses of the
+/// files in `identity` in `out`; returns the legacy rows' ids, in order.
+fn scan_part(conn: &Connection, identity: &IdSet, lo: i64, hi: i64, out: &mut impl Columns) -> Result<Vec<i64>> {
+    let mut identity = identity.walk_from(lo);
+    let mut stmt = conn.prepare(PICTURES)?;
+    let mut rows = stmt.query(rusqlite::params![pg_model::pdq::MIN_QUALITY, lo, hi])?;
+    let mut legacy = Vec::new();
     while let Some(r) = rows.next()? {
         let raw: i64 = r.get(0)?;
         if !identity.has(raw) {
             continue;
         }
-        let id = FileId::new(raw);
-        // Present and not pending: the pass can make its pairs.
-        let makes = present.has(raw) && !pending.has(raw);
         let Some(blob) = r.get_ref(1)?.as_blob_or_null()? else {
-            if makes {
-                work.legacy += 1;
-            }
+            legacy.push(raw);
             continue;
         };
         let hashes = pg_model::pdq::from_blob(blob)
             .ok_or_else(|| Error::Other(anyhow!("file {raw} has malformed stored hashes")))?;
-        work.ids.push(id);
-        work.owed.push(owed.has(raw) && makes);
-        work.hashes.push(hashes);
-        work.quality.push(r.get(2)?);
+        out.put(raw, hashes, r.get(2)?);
     }
-    drop(rows);
-    drop(stmt);
+    Ok(legacy)
+}
+
+/// [`Catalog::pairing_work`], read on `conn` in one transaction, with `analysis` scanned on `opener`'s connections in
+/// up to `threads` parts at once (each thread started by `start`), or in `conn`'s transaction alone without one.
+///
+/// The parts are cut at equal counts of files with an identity. `conn` reads the pairing marks first, so every part's
+/// snapshot is that one's or a later one: a change to an analysis between them moves the epoch, and the pass's writes
+/// then guard every pair (`PairsWriter::write`), which is what makes pictures read in several snapshots safe. The other
+/// id sets are read on `conn` while the parts scan.
+fn pairing_work_on(
+    conn: &Connection,
+    opener: Option<ReadOnly>,
+    threads: usize,
+    start: &(dyn Fn() + Sync),
+) -> Result<PairingWork> {
+    let tx = conn.unchecked_transaction()?;
+    let marks = pairing_marks(&tx)?;
+    let identity = IdSet::read(&tx, WITH_IDENTITY)?;
+    let read_sets = || -> Result<[IdSet; 3]> {
+        Ok([IdSet::read(&tx, PRESENT)?, IdSet::read(&tx, PRESENT_PENDING)?, IdSet::read(&tx, OWED_IDS)?])
+    };
+    // Each picture is a file with an identity: the columns never grow.
+    let bound = identity.0.len();
+    let parts = threads.clamp(1, bound.max(1));
+    let (columns, legacy, sets) = match opener {
+        Some(opener) if parts > 1 => split_scan(&opener, &identity, parts, start, &read_sets)?,
+        _ => {
+            let mut columns = Grown::with_capacity(bound);
+            let legacy = scan_part(&tx, &identity, i64::MIN, i64::MAX, &mut columns)?;
+            (columns, legacy, read_sets()?)
+        }
+    };
+    let [present, pending, owed] = sets;
+    // Present and not pending: the pass can make its pairs, and only then is a legacy row counted.
+    let (mut present_w, mut pending_w, mut owed_w) = (present.walk(), pending.walk(), owed.walk());
+    let owes: Vec<bool> =
+        columns.ids.iter().map(|&id| present_w.has(id) && !pending_w.has(id) && owed_w.has(id)).collect();
+    let (mut present_w, mut pending_w) = (present.walk(), pending.walk());
+    let legacy = legacy.iter().filter(|&&id| present_w.has(id) && !pending_w.has(id)).count();
     tx.commit()?;
-    Ok(work)
+    let Grown { ids, hashes, quality } = columns;
+    Ok(PairingWork { ids: ids.into_iter().map(FileId::new).collect(), owed: owes, hashes, quality, legacy, marks })
+}
+
+/// The scan of [`pairing_work_on`] in `parts` parts at once, each on a connection of `opener`'s and a thread of its own,
+/// while `read_sets` reads the other id sets on the caller's: the columns, the legacy rows' ids and those sets. The
+/// columns are filled first and each part writes a slice of its own, then the parts are moved together in id order: the
+/// columns are never copied whole.
+fn split_scan(
+    opener: &ReadOnly,
+    identity: &IdSet,
+    parts: usize,
+    start: &(dyn Fn() + Sync),
+    read_sets: &dyn Fn() -> Result<[IdSet; 3]>,
+) -> Result<(Grown, Vec<i64>, [IdSet; 3])> {
+    let bound = identity.0.len();
+    // Part k holds the identity ids cuts[k]..cuts[k + 1].
+    let cuts: Vec<usize> = (0..=parts).map(|k| k * bound / parts).collect();
+    let mut columns = Grown {
+        ids: vec![0; bound],
+        hashes: vec![[pg_model::pdq::Hash([0; 32]); pg_model::pdq::ORIENTATIONS]; bound],
+        quality: vec![0; bound],
+    };
+    let (sets, scanned) = {
+        let mut split = Vec::with_capacity(parts);
+        let (mut ids, mut hashes, mut quality) =
+            (&mut columns.ids[..], &mut columns.hashes[..], &mut columns.quality[..]);
+        for (k, pair) in cuts.windows(2).enumerate() {
+            let &[from, to] = pair else { unreachable!("windows of two") };
+            let lo = if k == 0 { i64::MIN } else { identity.0.get(from).copied().unwrap_or(i64::MAX) };
+            let hi = match identity.0.get(to) {
+                Some(&next) if k + 1 < parts => next - 1,
+                _ => i64::MAX,
+            };
+            let (part_ids, more_ids) = std::mem::take(&mut ids).split_at_mut(to - from);
+            let (part_hashes, more_hashes) = std::mem::take(&mut hashes).split_at_mut(to - from);
+            let (part_quality, more_quality) = std::mem::take(&mut quality).split_at_mut(to - from);
+            (ids, hashes, quality) = (more_ids, more_hashes, more_quality);
+            split.push((lo, hi, Slots { ids: part_ids, hashes: part_hashes, quality: part_quality, filled: 0 }));
+        }
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = split
+                .into_iter()
+                .map(|(lo, hi, mut slots)| {
+                    scope.spawn(move || -> Result<(usize, Vec<i64>)> {
+                        start();
+                        let legacy = scan_part(&opener.open()?, identity, lo, hi, &mut slots)?;
+                        Ok((slots.filled, legacy))
+                    })
+                })
+                .collect();
+            let sets = read_sets();
+            let scanned: Vec<Result<(usize, Vec<i64>)>> = handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+                .collect();
+            (sets, scanned)
+        })
+    };
+    let sets = sets?;
+    let scanned = scanned.into_iter().collect::<Result<Vec<_>>>()?;
+    let mut filled = 0;
+    let mut legacy = Vec::new();
+    for ((part, part_legacy), &from) in scanned.into_iter().zip(&cuts) {
+        // The first part is where it belongs already.
+        if from != filled {
+            columns.ids.copy_within(from..from + part, filled);
+            columns.hashes.copy_within(from..from + part, filled);
+            columns.quality.copy_within(from..from + part, filled);
+        }
+        filled += part;
+        legacy.extend(part_legacy);
+    }
+    columns.ids.truncate(filled);
+    columns.hashes.truncate(filled);
+    columns.quality.truncate(filled);
+    Ok((columns, legacy, sets))
 }
 
 impl crate::Reader<'_> {
     /// [`Catalog::pairing_work`], on this reader's connection.
     pub fn pairing_work(&self) -> Result<PairingWork> {
-        pairing_work_on(self.conn())
+        self.pairing_work_split(1, &|| {})
+    }
+
+    /// [`Reader::pairing_work`] with `analysis` scanned in up to `threads` parts at once, each on a connection of its own
+    /// that shares this reader's cache budget, and on a thread started by `start` (the pass's priority). The parts read
+    /// in snapshots no older than the pairing marks' (`pairing_work_on` says why that is safe). In memory, one part.
+    pub fn pairing_work_split(&self, threads: usize, start: &(dyn Fn() + Sync)) -> Result<PairingWork> {
+        let opener = if threads > 1 { self.opener(threads) } else { None };
+        pairing_work_on(self.conn(), opener, threads, start)
     }
 }
 
@@ -279,7 +433,7 @@ impl Catalog {
     /// never grow, and each row's hashes are read from the blob in place. The pass reads it
     /// on a [`Reader`](crate::Reader) of its own ([`Reader::pairing_work`](crate::Reader::pairing_work)).
     pub fn pairing_work(&self) -> Result<PairingWork> {
-        pairing_work_on(&self.conn)
+        pairing_work_on(&self.conn, None, 1, &|| {})
     }
 
     /// Owe every eligible picture its pairs again, and drop the pairs (`gallery pair --again`): what the pairing pass

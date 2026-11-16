@@ -303,18 +303,23 @@ pub(crate) fn best_kernel() -> Kernel {
     Kernel::Scalar
 }
 
-/// The most query entries (`QUERY_ORIENTATIONS` per owed picture of a slice) the few-owed path takes by default, per
-/// thread of the join ([`Tuning::few_entries`]); a larger slice takes the sorted path. Gate G6 (docs/reference/
-/// PROFILING.md, "The pairing pass"): the few-owed path's work is spread over every thread, while the sorted path's
-/// floor, sorting the stored side, is not, so the crossover grows with the threads: near 240 entries on one thread and
-/// near 16,000 on twelve.
-pub const FEW_ENTRIES_PER_THREAD: usize = 1_000;
+/// The most owed pictures of a slice the few-owed path takes by default, on a join of `T` threads: `FEW_BASE +
+/// FEW_PER_THREAD * T` ([`Tuning::few_entries_on`]); a larger slice takes the sorted path. Both are the least-squares
+/// line through the two paths' measured crossovers on 1, 2, 4, 6, 8 and 12 threads (253, 309, 357, 415, 585 and 652
+/// owed pictures; docs/reference/PROFILING.md, "The settings again"). The few-owed path's work spreads over every
+/// thread; the sorted path's floor, sorting the stored side, gains little past the physical cores, so the crossover
+/// grows with the threads, though slower than in proportion to them. Both paths' costs grow with the stored side, so
+/// the crossover in owed pictures does not depend on the library's size to first order.
+pub const FEW_BASE: usize = 221;
+/// See [`FEW_BASE`].
+pub const FEW_PER_THREAD: usize = 38;
 /// The stored entries a thread of the few-owed path takes at a time (its unit of work, and of control).
 const FEW_BLOCK: usize = 4096;
 /// What a join may be tuned by (the gates of docs/plans/PAIRING_PASS_PLAN.md set the defaults, which `None` takes).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tuning {
-    /// The most query entries the few-owed path takes. `None`: [`FEW_ENTRIES_PER_THREAD`] for each of the join's threads.
+    /// The most query entries (`QUERY_ORIENTATIONS` per owed picture) the few-owed path takes. `None`: [`FEW_BASE`]
+    /// and [`FEW_PER_THREAD`] for each of the join's threads, in owed pictures.
     pub few_entries: Option<usize>,
     /// Each stage's head words, 1 - 7 (others are clamped to them). `None`: by the cost of a word against the false
     /// candidates it removes (`widths`).
@@ -323,9 +328,11 @@ pub struct Tuning {
 
 impl Tuning {
     /// The most query entries the few-owed path takes in a join on `threads` threads: [`Tuning::few_entries`], or
-    /// [`FEW_ENTRIES_PER_THREAD`] for each thread.
+    /// [`FEW_BASE`] and [`FEW_PER_THREAD`] for each thread, in owed pictures.
     pub fn few_entries_on(&self, threads: usize) -> usize {
-        self.few_entries.unwrap_or_else(|| FEW_ENTRIES_PER_THREAD.saturating_mul(threads))
+        self.few_entries.unwrap_or_else(|| {
+            FEW_PER_THREAD.saturating_mul(threads).saturating_add(FEW_BASE).saturating_mul(QUERY_ORIENTATIONS)
+        })
     }
 }
 

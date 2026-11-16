@@ -1151,6 +1151,29 @@ one-worker 300 owed, whose code is unchanged, kept at its third run after two wi
 
 The one-worker workloads are level, as their code is.
 
+**The few-owed threshold: a line through the crossovers.** `few_sweep.ps1` times the join with each path forced at
+owed counts around the crossover, alternately, 6 runs each (medians; the background CPU 9 - 36%, one point at 48%):
+
+| Threads | 1 | 2 | 4 | 6 | 8 | 12 |
+|---|---:|---:|---:|---:|---:|---:|
+| Crossover (owed pictures, interpolated) | 253 | 309 | 357 | 415 | 585 | 652 |
+| The old rule (125 a thread) | 125 | 250 | 500 | 750 | 1,000 | 1,500 |
+| The least-squares line, 221 + 38 a thread | 259 | 297 | 373 | 449 | 525 | 677 |
+
+The sorted path gains little past the physical cores (its join near 90 - 100 ms from 6 threads to 12), while the
+few-owed path's keeps falling, so the crossover is no multiple of the threads: the old rule was 2.3x too high at 12
+threads and half too low at 1. Near the line the two paths are within about 5%. `FEW_BASE` and `FEW_PER_THREAD`
+replace `FEW_ENTRIES_PER_THREAD`. Kept, on the owed counts where the two rules choose differently (6 pairs):
+
+| Workload | Join, ms (old → new) | Join | Pass |
+|---|---|---|---|
+| 200 owed, 1 thread (sorted → few) | 296 → 242 | −16.53% [−25.08, −7.00] | −9.50% [−17.28, −0.66] |
+| 400 owed, 4 (few → sorted) | 152 → 102 | −31.38% [−58.68, +0.91] | −20.43% [−36.72, +0.52] |
+| 600 owed, 6 (few → sorted) | 123 → 97 | −21.28% [−37.32, −9.84] | −12.49% [−32.44, +11.82] |
+| 1,000 owed, 12 (few → sorted) | 118 → 98 | −18.30% [−30.56, −6.54] | −6.86% [−19.83, +4.67] |
+
+The usual workloads take the same path under both (300 owed: few at 12, sorted at 1; 3,000: sorted).
+
 ---
 
 ## Where the other results are

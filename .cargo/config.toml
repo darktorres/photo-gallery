@@ -1,0 +1,7 @@
+[env]
+# The bundled SQLite (libsqlite3-sys's build script reads this) without its process-wide memory statistics, one of
+# SQLite's recommended compile-time options (sqlite.org/compile.html): with them on, every allocation takes one global
+# mutex, which serializes connections working on separate threads (the pairing pass's load reads `analysis` in parts on
+# connections of their own: docs/reference/PROFILING.md, "The load"). Nothing here reads sqlite3_memory_used or sets a
+# soft heap limit, which are what the statistics serve.
+LIBSQLITE3_FLAGS = "SQLITE_DEFAULT_MEMSTATUS=0"

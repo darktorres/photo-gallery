@@ -24,12 +24,13 @@
 //! one pointer per probe that only moves forward. The output is the least distance per pair, sorted by `(a, b)`, `a < b`.
 //!
 //! **Layout.** The [`Joiner`] holds the permuted stored orientations of every picture (32 bytes each), built once per
-//! pass; each slice's join adds the permuted transposed orientations of its query pictures, a renaming of the stored
-//! ones' chunks (`permuted`). A stage (one chunk) sorts both sides into 256 regions per side, one per high byte of the
-//! chunk. Each region holds its entries' codes (`picture << 4 | owed << 3 | orientation`) and heads: the stage's `w`
-//! words of the chunks after its own (`head_words`), what the kernels filter on, against a bound exact for the pairs
-//! the stage reports (`bound`); the stored side's heads in rows, the query side's in columns. The full hash of a
-//! candidate that passes the filter is read back from the store by its code.
+//! pass; a slice's query pictures add their transposed orientations, renamings of the stored ones' chunks
+//! (`permuted`), made where they are read: in the sort, and on a hit. A stage (one chunk) sorts both sides into 256
+//! regions per side, one per high byte of the chunk. Each region holds its entries' codes (`picture << 4 | owed << 3 |
+//! orientation`) and heads: the stage's `w` words of the chunks after its own (`head_words`), what the kernels filter
+//! on, against a bound exact for the pairs the
+//! stage reports (`bound`); the stored side's heads in rows, the query side's in columns. The full hash of a candidate
+//! that passes the filter is read back from the store by its code.
 //!
 //! **The scan.** A query bucket's 17 probes are ten runs: stored buckets of one region at one bound. Each stored entry of
 //! a run is tested against its suffix of the query bucket eight entries at a time; a bucket of at most eight entries is
@@ -211,17 +212,36 @@ pub(crate) fn permuted(h: &Hash) -> [u64; 4] {
     words
 }
 
-/// The permuted hash ([`permuted`]) of `h`'s transpose, from `h`'s: chunk `c` is chunk `16 - c` (`0` stays), and chunk
-/// 8, which the transpose maps to itself with each cell's partner eight rows on, has its two bytes swapped.
-fn transposed(words: &[u64; 4]) -> [u64; 4] {
-    let mut out = [0u64; 4];
-    for c in 0..CHUNKS {
-        let from = (CHUNKS - c) % CHUNKS;
-        let v = words.get(from >> 2).map_or(0, |w| (w >> ((from & 3) * 16)) & 0xFFFF);
-        let v = if c == CHUNKS / 2 { ((v & 0xFF) << 8) | (v >> 8) } else { v };
-        if let Some(o) = out.get_mut(c >> 2) {
-            *o |= v << ((c & 3) * 16);
+/// A permuted hash's 16 chunks ([`chunk`] of each), in order.
+#[inline(always)]
+fn chunks(words: &[u64; 4]) -> [u16; CHUNKS] {
+    let mut chunks = [0u16; CHUNKS];
+    for (four, &word) in chunks.as_chunks_mut::<4>().0.iter_mut().zip(words) {
+        for (k, slot) in four.iter_mut().enumerate() {
+            *slot = u16::try_from((word >> (16 * k)) & 0xFFFF).unwrap_or(0);
         }
+    }
+    chunks
+}
+
+/// The chunks of the permuted hash ([`permuted`]) of a picture's transpose, from the chunks of its own: chunk `c` is
+/// chunk `16 - c` (`0` stays), and chunk 8, which the transpose maps to itself with each cell's partner eight rows on,
+/// has its two bytes swapped.
+#[inline(always)]
+fn transposed_chunks(chunks: &[u16; CHUNKS]) -> [u16; CHUNKS] {
+    std::array::from_fn(|c| {
+        let v = chunks.get((CHUNKS - c) % CHUNKS).copied().unwrap_or(0);
+        if c == CHUNKS / 2 { v.swap_bytes() } else { v }
+    })
+}
+
+/// The permuted hash of a picture's transpose, from its own ([`transposed_chunks`]).
+#[inline(always)]
+fn transposed(words: &[u64; 4]) -> [u64; 4] {
+    let renamed = transposed_chunks(&chunks(words));
+    let mut out = [0u64; 4];
+    for (word, four) in out.iter_mut().zip(renamed.as_chunks::<4>().0) {
+        *word = four.iter().rev().fold(0, |w, &v| (w << 16) | u64::from(v));
     }
     out
 }
@@ -311,7 +331,7 @@ pub fn default_sorters(threads: usize) -> usize {
 /// Where a join's time went (wall clock, on the thread that runs it).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct JoinTimes {
-    /// The slice's query side: its pictures, their ranks and their transposed orientations, permuted.
+    /// The slice's query side: its owed pictures.
     pub prepare: Duration,
     /// Waiting for the stages' sorts: all of them when the sorts run between the scans, the part the scans did not
     /// cover when sorters run ahead. The few-owed path's lists of its query entries' probes.
@@ -339,11 +359,9 @@ pub struct Joined {
 /// The pass's join: every picture's stored orientations, permuted, built once; [`Joiner::join`] then pairs one slice of
 /// the queries at a time against them.
 pub struct Joiner<'a> {
-    /// Each picture's kept orientations, in file-id order (the pairs are by index).
-    hashes: &'a [[Hash; ORIENTATIONS]],
     /// Whether each picture owes its pairs (missing entries owe nothing).
     owed: &'a [bool],
-    /// Orientation `o` of picture `i`, permuted, at `ORIENTATIONS * i + o`.
+    /// Orientation `o` of picture `i` (in file-id order: the pairs are by index), permuted, at `ORIENTATIONS * i + o`.
     stored: Vec<[u64; 4]>,
     kernel: Kernel,
     tuning: Tuning,
@@ -351,12 +369,12 @@ pub struct Joiner<'a> {
 
 impl<'a> Joiner<'a> {
     /// The join over `hashes` (every picture, in file-id order) where picture `i` owes its pairs when `owed[i]`.
-    pub fn new(hashes: &'a [[Hash; ORIENTATIONS]], owed: &'a [bool]) -> Result<Joiner<'a>, TooManyPictures> {
+    pub fn new(hashes: &[[Hash; ORIENTATIONS]], owed: &'a [bool]) -> Result<Joiner<'a>, TooManyPictures> {
         if !u32::try_from(hashes.len()).is_ok_and(|n| n <= MAX_PICTURES) {
             return Err(TooManyPictures(hashes.len()));
         }
         let stored = hashes.iter().flat_map(|h| h.iter().map(permuted)).collect();
-        Ok(Joiner { hashes, owed, stored, kernel: best_kernel(), tuning: Tuning::default() })
+        Ok(Joiner { owed, stored, kernel: best_kernel(), tuning: Tuning::default() })
     }
 
     /// Stage `c`'s head words ([`Tuning::widths`]).
@@ -400,21 +418,7 @@ impl<'a> Joiner<'a> {
         let threads = threads.max(1);
         let preparing = Instant::now();
         let pictures: Vec<u32> = queries.filter(|&i| self.owes(i)).filter_map(|i| u32::try_from(i).ok()).collect();
-        let mut rank = vec![0u32; self.hashes.len()];
-        for (k, &p) in (0u32..).zip(&pictures) {
-            if let Some(r) = rank.get_mut(index(p)) {
-                *r = k;
-            }
-        }
-        // From the stored orientations: the transpose is a renaming of their chunks.
-        let transposed: Vec<[u64; 4]> = pictures
-            .iter()
-            .flat_map(|&p| {
-                let at = index(p) * ORIENTATIONS;
-                self.stored.get(at..at + ORIENTATIONS).into_iter().flatten().map(transposed)
-            })
-            .collect();
-        let sides = Sides { joiner: self, pictures: &pictures, transposed: &transposed, rank: &rank };
+        let sides = Sides { joiner: self, pictures: &pictures };
         let mut times = JoinTimes { prepare: preparing.elapsed(), ..JoinTimes::default() };
         let queries = pictures.len() * QUERY_ORIENTATIONS;
         let few = self.tuning.few_entries_on(threads);
@@ -708,10 +712,10 @@ impl StageSet {
         let StageSet { stored: stored_out, query: query_out } = self;
         let Scratch { stored: stored_scratch, query: query_scratch } = scratch;
         let sort_stored = |out: &mut Sorted, scratch: &mut SortScratch| {
-            sort_into(out, scratch, stored, |e| sides.stored_entry(e), c, w, Layout::Rows);
+            sort_into(out, scratch, stored, |e| sides.stored_chunks(e), c, w, Layout::Rows);
         };
         let sort_queries = |out: &mut Sorted, scratch: &mut SortScratch| {
-            sort_into(out, scratch, queries, |e| sides.query_entry(e), c, w, Layout::Columns);
+            sort_into(out, scratch, queries, |e| sides.query_chunks(e), c, w, Layout::Columns);
         };
         if side_by_side {
             std::thread::scope(|scope| {
@@ -731,13 +735,12 @@ impl StageSet {
     }
 }
 
-/// What one slice's join reads the entries' hashes from: the stored orientations of every picture, and the transposed
-/// orientations of the slice's query pictures (`pictures`, in order; `rank[p]` is picture `p`'s place among them).
+/// What one slice's join reads the entries' hashes from: the stored orientations of every picture, and the slice's
+/// query pictures (`pictures`, in order), whose transposed orientations are renamings of their stored ones
+/// ([`transposed`]), made where they are read.
 struct Sides<'a, 'j> {
     joiner: &'a Joiner<'j>,
     pictures: &'a [u32],
-    transposed: &'a [[u64; 4]],
-    rank: &'a [u32],
 }
 
 impl Sides<'_, '_> {
@@ -755,25 +758,36 @@ impl Sides<'_, '_> {
     fn query_entry(&self, e: usize) -> ([u64; 4], u32) {
         let (k, o) = (e / QUERY_ORIENTATIONS, e % QUERY_ORIENTATIONS);
         let picture = self.pictures.get(k).copied().unwrap_or(0);
-        let words = if o < ORIENTATIONS {
-            self.joiner.stored.get(index(picture) * ORIENTATIONS + o)
-        } else {
-            self.transposed.get(k * ORIENTATIONS + o - ORIENTATIONS)
-        };
-        (words.copied().unwrap_or_default(), (picture << 4) | OWED | u32::try_from(o).unwrap_or(0))
+        let code = (picture << 4) | OWED | u32::try_from(o).unwrap_or(0);
+        (self.words(code), code)
+    }
+
+    /// Stored entry `e` as its chunks ([`chunks`]), with its code: what the sort reads.
+    #[inline(always)]
+    fn stored_chunks(&self, e: usize) -> ([u16; CHUNKS], u32) {
+        let (words, code) = self.stored_entry(e);
+        (chunks(&words), code)
+    }
+
+    /// Query entry `e` as its chunks, with its code: a transposed orientation's renamed from the stored one's
+    /// ([`transposed_chunks`]), as the sort reads it, with no hash built.
+    #[inline(always)]
+    fn query_chunks(&self, e: usize) -> ([u16; CHUNKS], u32) {
+        let (k, o) = (e / QUERY_ORIENTATIONS, e % QUERY_ORIENTATIONS);
+        let picture = self.pictures.get(k).copied().unwrap_or(0);
+        let code = (picture << 4) | OWED | u32::try_from(o).unwrap_or(0);
+        let words =
+            self.joiner.stored.get(index(picture) * ORIENTATIONS + o % ORIENTATIONS).copied().unwrap_or_default();
+        let own = chunks(&words);
+        (if o < ORIENTATIONS { own } else { transposed_chunks(&own) }, code)
     }
 
     /// The full permuted hash of the entry with `code`.
     #[inline(always)]
     fn words(&self, code: u32) -> [u64; 4] {
         let (picture, o) = (index(code >> 4), index(code & 7));
-        let words = if o < ORIENTATIONS {
-            self.joiner.stored.get(picture * ORIENTATIONS + o)
-        } else {
-            let k = index(self.rank.get(picture).copied().unwrap_or(0));
-            self.transposed.get(k * ORIENTATIONS + o - ORIENTATIONS)
-        };
-        words.copied().unwrap_or_default()
+        let words = self.joiner.stored.get(picture * ORIENTATIONS + o % ORIENTATIONS).copied().unwrap_or_default();
+        if o < ORIENTATIONS { words } else { transposed(&words) }
     }
 }
 
@@ -941,7 +955,7 @@ fn sort_into(
     out: &mut Sorted,
     scratch: &mut SortScratch,
     n: usize,
-    entry: impl Fn(usize) -> ([u64; 4], u32),
+    entry: impl Fn(usize) -> ([u16; CHUNKS], u32),
     c: usize,
     w: usize,
     layout: Layout,
@@ -957,16 +971,10 @@ fn sort_into(
     }
 }
 
-/// The head of a permuted hash at stage `c`, `W` words: chunks `c + 1, c + 2, ...` (mod 16), two to a word (the first
-/// in the low half), read from its 16 chunks at once. The kernels test it against the stage's [`bound`].
+/// The head of a permuted hash at stage `c`, `W` words, from its 16 chunks ([`chunks`]): chunks `c + 1, c + 2, ...`
+/// (mod 16), two to a word (the first in the low half). The kernels test it against the stage's [`bound`].
 #[inline(always)]
-fn head_words<const W: usize>(words: &[u64; 4], c: usize) -> [u32; W] {
-    let mut chunks = [0u16; CHUNKS];
-    for (four, &word) in chunks.as_chunks_mut::<4>().0.iter_mut().zip(words) {
-        for (k, slot) in four.iter_mut().enumerate() {
-            *slot = u16::try_from((word >> (16 * k)) & 0xFFFF).unwrap_or(0);
-        }
-    }
+fn head_words<const W: usize>(chunks: &[u16; CHUNKS], c: usize) -> [u32; W] {
     let at = |i: usize| u32::from(chunks.get(i % CHUNKS).copied().unwrap_or(0));
     std::array::from_fn(|j| at(c + 1 + 2 * j) | (at(c + 2 + 2 * j) << 16))
 }
@@ -981,7 +989,7 @@ fn sort_width<const W: usize>(
     out: &mut Sorted,
     scratch: &mut SortScratch,
     n: usize,
-    entry: impl Fn(usize) -> ([u64; 4], u32),
+    entry: impl Fn(usize) -> ([u16; CHUNKS], u32),
     c: usize,
     layout: Layout,
 ) {
@@ -999,12 +1007,12 @@ fn sort_width<const W: usize>(
         block_keys.resize(len, 0);
         let mut counts = [0u32; 256];
         for (i, head) in block_heads.as_chunks_mut::<W>().0.iter_mut().enumerate() {
-            let (words, code) = entry(lo + i);
-            let key = chunk(&words, c);
-            counts[key >> 8] += 1;
-            *head = head_words::<W>(&words, c);
+            let (chunks, code) = entry(lo + i);
+            let key = chunks.get(c).copied().unwrap_or(0);
+            counts[usize::from(key >> 8)] += 1;
+            *head = head_words::<W>(&chunks, c);
             block_codes[i] = code;
-            block_keys[i] = u16::try_from(key).unwrap_or(0);
+            block_keys[i] = key;
         }
         let mut at = u32::try_from(lo).unwrap_or(u32::MAX);
         for (start, count) in run.iter_mut().zip(counts) {
@@ -1800,7 +1808,8 @@ mod tests {
                     Vec::new(),
                 ] {
                     for c in [0, 3, 7, 8, 12, 15] {
-                        sort_into(&mut out, &mut scratch, entries.len(), |e| entries[e], c, w, layout);
+                        let of = |e: usize| (chunks(&entries[e].0), entries[e].1);
+                        sort_into(&mut out, &mut scratch, entries.len(), of, c, w, layout);
                         let mut want = entries.clone();
                         want.sort_by_key(|(words, _)| chunk(words, c));
                         let want: Vec<(Vec<u32>, u32)> =

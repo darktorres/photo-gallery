@@ -895,6 +895,16 @@ threshold allows on 12 workers), two runs each: join 250 - 262 ms before, 219 - 
 path. The sorted path takes fewer cycles there (2.8 G against 6.1 G), which step 9's re-tuning of the threshold
 weighs.
 
+#### No per-slice transposes (pairing plan, second round, step 1's remainder)
+
+A slice no longer builds its query pictures' transposed orientations (32 bytes each, up to 25.6 MB for a slice of
+200,000) or the rank of each picture among them. The sort reads a transposed entry as the stored orientation's 16
+chunks renamed (`transposed_chunks`), and a hit renames the full hash. A first version that renamed the full hash for
+every entry the sort read cost the one-worker sort about 150 ms. Kept (6 pairs against step 4): prepare 50 -> 1 ms on
+every slice; cycles -1.7% [-3.5, -0.3] all owed on one worker and -3.0% [-7.8, -0.8] at 3,000 owed on one, the others
+level. The scan of four slices on 12 workers is +3.6% [+0.6, +19.7] by the clock with its cycles level (+0.1%): the
+renaming on a hit, the cold path.
+
 ---
 
 ## Where the other results are

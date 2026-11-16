@@ -59,7 +59,7 @@ use pg_model::pdq::{Hash, MATCH_DISTANCE, ORIENTATIONS, transpose_rows};
 const CHUNKS: usize = 16;
 /// The values a chunk takes.
 const VALUES: usize = 1 << 16;
-/// The buckets a thread takes at a time (its unit of work, and of control).
+/// The query buckets a scan task takes by default ([`Tuning::block`]; its unit of work, and of control).
 const BLOCK: usize = 128;
 /// A query's orientations: the kept ones and their transposes.
 const QUERY_ORIENTATIONS: usize = 2 * ORIENTATIONS;
@@ -324,6 +324,8 @@ pub struct Tuning {
     /// Each stage's head words, 1 - 7 (others are clamped to them). `None`: by the cost of a word against the false
     /// candidates it removes (`widths`).
     pub widths: Option<[usize; CHUNKS]>,
+    /// The query buckets a scan task takes (at least 1). `None`: [`BLOCK`].
+    pub block: Option<usize>,
 }
 
 impl Tuning {
@@ -431,6 +433,11 @@ impl<'a> Joiner<'a> {
         })
     }
 
+    /// The query buckets a scan task takes ([`Tuning::block`]).
+    fn block(&self) -> usize {
+        self.tuning.block.unwrap_or(BLOCK).clamp(1, VALUES)
+    }
+
     /// Stage `c`'s head words ([`Tuning::widths`]).
     fn width(&self, c: usize) -> usize {
         let widths = self.tuning.widths.unwrap_or(WIDTHS);
@@ -499,7 +506,7 @@ impl<'a> Joiner<'a> {
             run_team(threads, start, control, abort, FewSchedule::new(self.stored.len()), &work)?
         } else {
             let widths = std::array::from_fn(|c| self.width(c));
-            let schedule = SortedSchedule::new(widths, [self.stored.len(), queries]);
+            let schedule = SortedSchedule::new(widths, [self.stored.len(), queries], VALUES.div_ceil(self.block()));
             let work = |task: SortedTask, out: &mut Vec<Pair>, read: &mut ReadBuffers| {
                 self.sorted_task(&sides, task, out, read)
             };
@@ -540,8 +547,8 @@ impl<'a> Joiner<'a> {
                     return (Kind::Scan, SortedReport::Scan);
                 };
                 let stage = Stage::new(sorts.c, sorts.w, stored, query, sides);
-                let lo = block * BLOCK;
-                scan(self.kernel, &stage, lo..(lo + BLOCK).min(VALUES), out);
+                let lo = block * self.block();
+                scan(self.kernel, &stage, lo..(lo + self.block()).min(VALUES), out);
                 (Kind::Scan, SortedReport::Scan)
             }
         }
@@ -1652,8 +1659,6 @@ fn member<S: Schedule>(
 /// The stored side of a stage, and its query side.
 const STORED: usize = 0;
 const QUERY: usize = 1;
-/// The scan's blocks of a stage: [`BLOCK`] buckets each.
-const SCAN_BLOCKS: usize = VALUES.div_ceil(BLOCK);
 /// A side's regions: one per high byte of the chunk.
 const REGIONS: usize = 256;
 
@@ -1711,6 +1716,8 @@ struct ScanState {
 /// wait at the tail, but its sorts cost more than that wait, as the two sets' memory is twice one's.
 struct SortedSchedule {
     widths: [usize; CHUNKS],
+    /// A stage's scan tasks (`Joiner::block` buckets each).
+    scan_blocks: usize,
     /// The stored side's entries and the query side's.
     entries: [usize; 2],
     next_stage: usize,
@@ -1737,8 +1744,16 @@ enum SortedReport {
 
 impl SortedSchedule {
     /// The stages at `widths` head words, of `entries` stored and query entries.
-    fn new(widths: [usize; CHUNKS], entries: [usize; 2]) -> SortedSchedule {
-        SortedSchedule { widths, entries, next_stage: 0, stage: None, sides: Default::default(), scan: None }
+    fn new(widths: [usize; CHUNKS], entries: [usize; 2], scan_blocks: usize) -> SortedSchedule {
+        SortedSchedule {
+            widths,
+            entries,
+            scan_blocks,
+            next_stage: 0,
+            stage: None,
+            sides: Default::default(),
+            scan: None,
+        }
     }
 
     /// Begins the next stage, if there is one and the buffers are free.
@@ -1773,7 +1788,7 @@ impl Schedule for SortedSchedule {
         let Some(c) = self.stage else { return Claim::Done };
         let Some(&w) = self.widths.get(c) else { return Claim::Done };
         if let Some(scan) = self.scan.as_mut() {
-            if scan.next < SCAN_BLOCKS {
+            if scan.next < self.scan_blocks {
                 let block = scan.next;
                 scan.next += 1;
                 return Claim::Task(SortedTask::Scan { sorts: Arc::clone(&scan.sorts), block });
@@ -1842,7 +1857,7 @@ impl Schedule for SortedSchedule {
             SortedReport::Scan => {
                 let Some(scan) = self.scan.as_mut() else { return true };
                 scan.done += 1;
-                if scan.done < SCAN_BLOCKS {
+                if scan.done < self.scan_blocks {
                     return false;
                 }
                 // Every task of the scan has reported, and dropped its handle first: the sides come back.
@@ -2115,9 +2130,15 @@ mod tests {
             .pairs
     }
 
-    /// Every way a join can run: the few-owed path never and always.
+    /// Every way a join can run: the few-owed path never and always, and the sorted path's scan cut in blocks of an odd
+    /// count (97: the last block holds the 61 left) and of the whole stage.
     fn tunings() -> Vec<Tuning> {
-        [Some(0), Some(usize::MAX)].into_iter().map(|few_entries| Tuning { few_entries, widths: None }).collect()
+        let mut tunings: Vec<Tuning> = [Some(0), Some(usize::MAX)]
+            .into_iter()
+            .map(|few_entries| Tuning { few_entries, widths: None, block: None })
+            .collect();
+        tunings.extend([97, VALUES].map(|b| Tuning { few_entries: Some(0), widths: None, block: Some(b) }));
+        tunings
     }
 
     fn kernels() -> Vec<Kernel> {
@@ -2345,7 +2366,7 @@ mod tests {
             assert_eq!(want.len(), 16 * 3, "the pairs at the radius, and only those");
             for kernel in kernels() {
                 for few_entries in [Some(0), Some(usize::MAX)] {
-                    let tuning = Tuning { few_entries, widths: Some([w; CHUNKS]) };
+                    let tuning = Tuning { few_entries, widths: Some([w; CHUNKS]), block: None };
                     let got = Joiner::new(&lib.hashes, &lib.owed)
                         .unwrap()
                         .with_kernel(kernel)
@@ -2391,7 +2412,7 @@ mod tests {
         for w in widths {
             for kernel in kernels() {
                 for few_entries in [Some(0), Some(usize::MAX)] {
-                    let tuning = Tuning { few_entries, widths: Some(w) };
+                    let tuning = Tuning { few_entries, widths: Some(w), block: None };
                     let got = Joiner::new(&lib.hashes, &lib.owed)
                         .unwrap()
                         .with_kernel(kernel)
@@ -2433,7 +2454,7 @@ mod tests {
                 let got = Joiner::new(&lib.hashes, &lib.owed)
                     .unwrap()
                     .with_kernel(kernel)
-                    .tuned(Tuning { few_entries: Some(0), widths: Some([w; CHUNKS]) })
+                    .tuned(Tuning { few_entries: Some(0), widths: Some([w; CHUNKS]), block: None })
                     .join(0..lib.hashes.len(), 2, &|| {}, &|| true, &|| {})
                     .unwrap()
                     .pairs;

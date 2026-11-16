@@ -8,7 +8,8 @@
 //! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_WRITE`, `PG_PROBE_LOAD_PARTS` and `PG_PROBE_FEW` set the
 //!   pass's `Settings` (default `pairs::SLICE`, `pairs::CACHE_KIB`, `pairs::WRITE`, the load in as many parts as the
 //!   join has threads, the join's few-owed threshold by thread count).
-//! - `PG_PROBE_WIDTHS` sets the join's head words per stage, as 16 comma-separated counts (`Tuning::widths`).
+//! - `PG_PROBE_WIDTHS` sets the join's head words per stage, as 16 comma-separated counts (`Tuning::widths`), and
+//!   `PG_PROBE_BLOCK` the query buckets of a scan task (`Tuning::block`).
 //! - `PG_PROBE_GUARD` set: every write reads its pictures' analyses (`Settings::guard`), as after a change since the
 //!   load; `guarded` in the line counts the writes that did.
 //!
@@ -42,6 +43,7 @@ fn main() -> Result<()> {
     settings.write = env("PG_PROBE_WRITE").unwrap_or(settings.write);
     settings.load_parts = env("PG_PROBE_LOAD_PARTS").or(settings.load_parts);
     settings.join.few_entries = env("PG_PROBE_FEW").or(settings.join.few_entries);
+    settings.join.block = env("PG_PROBE_BLOCK").or(settings.join.block);
     settings.guard = std::env::var_os("PG_PROBE_GUARD").is_some();
     // Each stage's head words, as 16 comma-separated counts.
     if let Ok(list) = std::env::var("PG_PROBE_WIDTHS") {

@@ -1192,6 +1192,20 @@ owed at 1 worker, −57.36% [−67.39, −44.23] at 12, −33.97% [−50.00, −
 transactions take ~3.0 ms each ((127 + 15) ms over 47). Fewer commits is part of it; where the WAL's one
 auto-checkpoint falls is the rest, which depends on the library's size. 3,000 showed no gain (commit −11%, kept).
 
+**`BLOCK`: 128 stays.** The team's starved time is ~5% of the join's thread time on all owed at 12 workers (411 - 440
+ms of 12 x ~700), ~6% on four slices (622 - 1,019 of 12 x ~1,230). `Tuning::block` (`PG_PROBE_BLOCK`) sets a scan task's
+query buckets at run time, and the brute-force tests now also cut the scan in blocks of 97 and of the whole stage.
+Against 128, 6 pairs, join:
+
+| Block | All owed, 1 worker | All owed, 12 | Four slices, 12 |
+|---|---|---|---|
+| 32 | +1.43% [−0.28, +17.18] | −5.50% [−43.20, +15.83]; again +6.75% [−5.28, +20.03] | −6.31% [−20.03, +23.16]; again +0.82% [−15.29, +9.39] |
+| 64 | +0.62% [−1.96, +7.66] | +3.81% [−8.15, +25.79] | +0.01% [−24.56, +16.93] |
+| 256 | −0.95% [−8.43, +3.47] | −6.75% [−26.69, +10.09]; again +4.77% [−0.58, +10.78] | −6.72% [−28.90, +13.27]; again −2.28% [−7.76, +3.53] |
+
+No real gain anywhere, and the first runs' estimates turned over when run again: the starved time is the stages'
+tails (a block is ~0.1 ms at 12 threads), not the block's size.
+
 ---
 
 ## Where the other results are

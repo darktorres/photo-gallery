@@ -36,7 +36,7 @@ pdqhash = "0.1"
 png = "0.18"
 proptest = "1"
 quick-xml = "0.42"
-rusqlite = { version = "0.41", features = ["bundled", "collation", "fallible_uint", "functions", "hooks"] }
+rusqlite = { version = "0.41", features = ["array", "bundled", "collation", "fallible_uint", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 specta = { version = "=2.0.0-rc.28", features = ["derive"] } # exact: a release candidate; the web client's types (pg-model)

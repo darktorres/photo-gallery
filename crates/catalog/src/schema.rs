@@ -61,6 +61,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     TO_11_NOTIFY_FIXES,
     &[Step::Sql(TO_12_PAIRING_PASS)],
     TO_13_PAIRS_OWED,
+    &[Step::Sql(TO_14_PAIRING_EPOCH)],
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -447,6 +448,46 @@ const TO_13_DROP_COLUMNS: &str = "DROP INDEX analysis_dups_due;
 ALTER TABLE analysis DROP COLUMN dups_state;
 ALTER TABLE analysis DROP COLUMN pdq;
 ";
+
+/// Version 14: **`meta.pairing_epoch`**, a count that moves on whenever an analysis the pairing pass's writes are
+/// guarded by may have changed, so a write that finds it where the pass's load read it needs no guard
+/// (`PairsWriter::write`): the guard reads every owner's and partner's analysis, which was over half the write
+/// (docs/reference/PROFILING.md, "The write"). A picture passes the guard while its analysis is there with the hashes
+/// and quality the load read, so the count moves:
+/// - on every insert into `analysis`, whatever the row: a REPLACE's own delete fires no delete trigger (recursive
+///   triggers are off), so a new analysis over an old one is seen only here;
+/// - on a delete from `analysis` of a row with hashes: one without was no picture of any load. A file's delete reaches
+///   here through its cascade;
+/// - on an update that changes a row's `file_id`, `pdq_dihedral` or `pdq_quality`.
+///
+/// Owed rows move nothing: the guard never read them. A row owed again since the load (`owe_pairs_again`, which also
+/// drops every pair) is marked done by a write that made its picture's pairs from the analysis it still holds, guarded
+/// or not, and the pictures the pass does not mark done stay owed. Another build's pairing is `meta.pairing_version`,
+/// which every write checks. A trigger on `pairs_owed` would also move the count once per row of `owe_pairs_again`,
+/// doubling its 137 ms on 187,804 pictures.
+///
+/// The count only grows, so a write that finds another keeps guarding to the pass's end.
+const TO_14_PAIRING_EPOCH: &str = concat!(
+    "INSERT INTO meta(key, value) VALUES ('pairing_epoch', 0);
+CREATE TRIGGER analysis_pairing_added AFTER INSERT ON analysis BEGIN
+    ",
+    next_pairing_epoch!(),
+    ";
+END;
+CREATE TRIGGER analysis_pairing_removed AFTER DELETE ON analysis WHEN old.pdq_dihedral IS NOT NULL BEGIN
+    ",
+    next_pairing_epoch!(),
+    ";
+END;
+CREATE TRIGGER analysis_pairing_changed AFTER UPDATE OF file_id, pdq_dihedral, pdq_quality ON analysis
+WHEN old.file_id IS NOT new.file_id OR old.pdq_dihedral IS NOT new.pdq_dihedral OR old.pdq_quality IS NOT new.pdq_quality
+BEGIN
+    ",
+    next_pairing_epoch!(),
+    ";
+END;
+"
+);
 
 /// [`TO_11_NOTIFY_FIXES`]' trigger: the import's ledger row is made hidden when its file is missing or pending, and a
 /// conflict updates `hidden` as well as `error`.
@@ -954,6 +995,9 @@ mod tests {
         ),
         ("analysis_import_removed", "ledger::the_imports_ledger_mirrors_its_failed_analyses"),
         ("folder_failures_stamp", "roots::a_new_folder_failure_is_stamped_past_the_older_ones"),
+        ("analysis_pairing_added", "writers::the_pairing_epoch_moves_with_what_the_pairs_are_made_from"),
+        ("analysis_pairing_removed", "writers::the_pairing_epoch_moves_with_what_the_pairs_are_made_from"),
+        ("analysis_pairing_changed", "writers::the_pairing_epoch_moves_with_what_the_pairs_are_made_from"),
     ];
 
     /// The schema's triggers are exactly the ones [`TRIGGER_TESTS`] names: a trigger added without a row there fails here.

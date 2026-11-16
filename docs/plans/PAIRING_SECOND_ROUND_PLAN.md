@@ -14,8 +14,9 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 3, the scan kernel | Done: `7ab62e7` |
 | 4, the few-owed path | Done: `07d832a` |
 | 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring) |
-| 6, the pair-loss fix | Done: the stored side is every analysis of a file with an identity |
-| 7 - 10 | Not started |
+| 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
+| 7, the write | The set-based guard and the epoch done; the single copy of the hashes next |
+| 8 - 10 | Not started |
 
 ## Context
 
@@ -475,6 +476,25 @@ pairs (`writers.rs:309`, `354`) and owes them again (`writers.rs:340`).
 - `writers.rs:1332-1352`, which asserts the old exclusion, is rewritten.
 
 ## Step 7: the write
+
+**Status: the guard and the epoch done, kept** (6 pairs against step 6: write −52 to −84% on every workload; pass
+−3.96% on all owed at 1 worker, −14.98% at 12, −9.07% on 3,000 owed at 12, the rest level; `PROFILING.md`, "The
+write"). Item 1 found the guard's reads over half the write (~190 of ~340 ms), and the set-based guard alone saves 7%,
+so the epoch was built (migration 14). Departures:
+
+- **No trigger on `pairs_owed`.** The guard reads only analyses, so an equal epoch needs only "no analysis changed"; a
+  row owed again since the load is marked done by a write whose pairs were made from the analysis it still holds,
+  guarded or not (the old per-row guard did the same), and another build's pairing is `pairing_version`'s check. A
+  per-row trigger there doubled `owe_pairs_again` (137 → 280 ms on 187,804 pictures). `set_import_version` and the
+  scan's new-file path write `files` only, which no epoch trigger watches.
+- **The analysis triggers:** every INSERT (a REPLACE's own delete fires no trigger), a DELETE of a row with hashes
+  (a file's cascade reaches it, tested), and an UPDATE changing `file_id`, `pdq_dihedral` or `pdq_quality`.
+- **The pairing version** is also checked after the load: a pass whose catalog is another build's pairing writes nothing.
+- **The statements** are prepared through the connection's cache, once per pass.
+- **`WRITE`** (item 4) is left at 2,000 pictures: a batch now holds the lock less than half as long (121 ms over 94
+  batches against 291). Step 9 tunes it within that bound.
+- **Not yet done:** the single copy of the hashes and `Joiner::original` (the guard takes the hashes through a
+  closure, so the pass can hand them from either), measured against this commit.
 
 1. **Find where the 243 ms goes, first:**
    - statement overhead;

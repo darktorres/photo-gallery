@@ -947,6 +947,57 @@ Kept (6 pairs against step 1's remainder, gated on time; cycles beside):
 - **The tails.** On four slices of 50,000 at 12 workers the threads wait 0.8 - 1.8 s of their time at phase tails
   (`starved`), 70 - 150 ms of the joins by the clock: step 9's tuning of the tasks' sizes.
 
+#### The write (pairing plan, second round, step 7)
+
+**Where it went.** `crates/catalog/examples/pairs_write_probe.rs` replays the pass's write of all 187,804 pictures
+and 5,277 pairs on a copy of the catalog: transactions of 2,000 owed pictures, the catalog's settings and the pass's
+16 MB cache, a fresh connection, every picture owed and no pair stored before each run. Each variant changes one part
+(medians of 6 runs, ms):
+
+| Variant | Statements | Commits | Total | WAL after |
+|---|---:|---:|---:|---:|
+| today's `PairsWriter` (each pair and done guarded by the stored hashes) | 293 | 45 | 340 | 4.0 MB |
+| the same, `wal_autocheckpoint = 0` | 285 | 23 | 308 | 4.9 MB |
+| the same writes, unguarded | 106 | 45 | 151 | 4.0 MB |
+| the guards' reads alone | 172 | 1 | 173 | - |
+| the guards' reads, every `analysis` page cached | 117 | 1 | 117 | - |
+| a `SELECT` of each statement's parameters | 35 | 1 | 36 | - |
+| the transactions alone | 1 | 0 | 1 | - |
+| the set-based guard (one `rarray` read, one `rarray` delete a batch) | 271 | 43 | 315 | 4.0 MB |
+| its read alone / its delete alone | 151 / 94 | 1 / 16 | 152 / 109 | - / 3.3 MB |
+
+- **The guard's reads are over half of it** (~190 ms): ~55 ms fetching the `analysis` pages (the cached variant's
+  difference), the rest the seeks and the row decodes of ~198,000 reads (each statement ~0.18 µs).
+- **The writes** (the `pairs_owed` deletes and the pair inserts) are ~105 ms, the commits ~45 ms, of which ~22 ms is
+  the one auto-checkpoint the pass's 4.9 MB of WAL makes.
+- **The set-based guard alone saves 7%:** it does the same seeks, in fewer statements.
+
+**What was built.** The set-based guard (one read of a batch's owners and partners by exact ids, bound as one array;
+a picture passes when its analysis is there with the load's hashes and quality; one delete of the passing owners),
+and `meta.pairing_epoch` (migration 14): triggers move it on what the pairs depend on, and a write whose epoch is
+the load's skips the read. `meta.pairing_version` is checked by every write transaction.
+
+Kept (6 pairs against step 6, `0c8401e`; build B on the catalog already at version 14). The time gate (join; the pass
+on four slices) is level everywhere: all workloads kept, median −0.09%. Where the change is:
+
+| Workload | Pass | Write | Write, ms (A → B) |
+|---|---|---|---|
+| all owed, 1 worker | −3.96% [−4.71, −3.22] | −61.2% [−63.8, −56.7] | 316 → 119 |
+| all owed, 12 | −14.98% [−37.59, −12.33] | −59.1% [−69.8, −54.8] | 291 → 121 |
+| 300 owed, 1 | +0.00% [−6.37, +2.74] | −66.7% | 3 → 1 |
+| 300 owed, 12 | −2.69% [−9.06, +3.61] | −71.1% | 3 → 1 |
+| 3,000 owed, 1 | −0.46% [−1.53, +1.84] | −83.8% | 19 → 3 |
+| 3,000 owed, 12 | −9.07% [−22.87, −3.60] | −76.5% | 19 → 4.5 |
+| four slices, 12 | −1.27% [−9.63, +0.70] | −51.9% [−60.9, −40.9] | 581 → 275 |
+
+- **The load** reads each picture's quality and the two marks too: level (estimates −1.9 to +3.5%; two intervals wide
+  with one noisy pair each).
+- **On four slices** the write overlaps the next join, so its 300 ms come off the pass only where the write was the
+  longer of the two.
+- **The triggers' cost elsewhere.** `owe_pairs_again`'s insert of every owed row (`gallery pair --again`, a new
+  pairing version), 6 alternating runs on copies: 137 ms with no epoch trigger, 280 ms with one on `pairs_owed`, which
+  was therefore not built. The analysis triggers fire once per stored analysis (the import flush bench, below).
+
 ---
 
 ## Where the other results are

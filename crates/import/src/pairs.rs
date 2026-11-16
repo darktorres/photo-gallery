@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use pg_catalog::{Catalog, PairingWork};
+use pg_catalog::{Catalog, PairingWork, PairsBatch};
 use pg_dedup::join::{JoinTimes, Joined, Joiner, Pair, Tuning};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
@@ -63,7 +63,11 @@ pub struct PairStats {
     pub pairs: usize,
     /// The analyses left out for having no stored hashes (`PairingWork::legacy`).
     pub legacy: usize,
-    /// Whether every owed picture was paired (false: the pass was stopped).
+    /// The write transactions that read their pictures' analyses (`PairsWritten::guarded`): something the pairs depend
+    /// on changed after the load.
+    pub guarded: usize,
+    /// Whether every owed picture was paired (false: the pass was stopped, or the catalog's pairing became another
+    /// build's).
     pub complete: bool,
     /// Where the pass's time went.
     pub timings: Timings,
@@ -117,6 +121,11 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     let work = catalog.reader(settings.cache_kib)?.pairing_work()?;
     let mut stats = PairStats { legacy: work.legacy, complete: true, ..PairStats::default() };
     stats.timings.load = loading.elapsed();
+    // Another build prepared the catalog since this one did: its pairing owes the pairs, and these would not be its.
+    if work.marks.version != pg_model::pdq::PAIRING_VERSION {
+        stats.complete = false;
+        return Ok(stats);
+    }
     let owed: Vec<usize> = work.owed.iter().enumerate().filter(|&(_, &o)| o).map(|(i, _)| i).collect();
     if owed.is_empty() {
         return Ok(stats);
@@ -174,7 +183,8 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
 }
 
 /// Writes one slice's pairs and marks its pictures done, in transactions of [`WRITE`] pictures. False when a stop came
-/// between two transactions: what was written stays, and the rest stays owed.
+/// between two transactions, or the catalog's pairing became another build's: what was written stays, and the rest
+/// stays owed.
 fn write_slice(
     catalog: &mut Catalog,
     work: &PairingWork,
@@ -184,39 +194,34 @@ fn write_slice(
     stats: &mut PairStats,
 ) -> Result<bool> {
     pairs.sort_unstable_by_key(|p| owner(p, &work.owed));
-    // The stored hashes as the guards compare them (`analysis.pdq_dihedral`).
-    let blob = |i: usize| work.hashes.get(i).map(pg_model::pdq::to_blob);
+    // The stored hashes as the guard compares them (`analysis.pdq_dihedral`).
+    let hashes = |i: usize| work.hashes.get(i).map(pg_model::pdq::to_blob);
     let mut at = 0;
-    for batch in slice.chunks(WRITE) {
+    let mut owned: Vec<(usize, usize, u32)> = Vec::new();
+    for owners in slice.chunks(WRITE) {
         if !ctl.checkpoint() {
             return Ok(false);
         }
+        // The pairs the batch's owners own: the slice's pairs are sorted by owner, and its owners ascend, so they are the
+        // next run. Every pair a picture owns is in its transaction, so a picture done has all its pairs written.
+        let last = owners.last().copied().unwrap_or(0);
+        let end = at + pairs.get(at..).map_or(0, |rest| rest.partition_point(|p| owner(p, &work.owed) <= last));
+        owned.clear();
+        owned.extend(pairs.get(at..end).unwrap_or(&[]).iter().map(|p| (index(p.a), index(p.b), p.distance)));
+        at = end;
         let writing = Instant::now();
         let tx = catalog.tx()?;
-        let mut writer = tx.pairs_writer()?;
-        for &i in batch {
-            while let Some(pair) = pairs.get(at).filter(|p| owner(p, &work.owed) == i) {
-                let (a, b) = (index(pair.a), index(pair.b));
-                if let (Some(&ia), Some(&ib), Some(ha), Some(hb)) = (work.ids.get(a), work.ids.get(b), blob(a), blob(b))
-                    && writer.pair(ia, ib, pair.distance, &ha, &hb)?
-                {
-                    stats.pairs += 1;
-                }
-                at += 1;
-            }
-            // Every pair the picture owns is in its transaction: the picture is done, if it still holds the hashes they
-            // were made from.
-            if let (Some(&id), Some(hashes)) = (work.ids.get(i), blob(i))
-                && writer.done(id, &hashes)?
-            {
-                stats.files += 1;
-            }
-        }
-        drop(writer);
+        let Some(written) = tx.pairs_writer()?.write(work, PairsBatch { owners, pairs: &owned }, &hashes)? else {
+            // The pairing version is another build's: nothing of this batch was written (the transaction rolls back).
+            return Ok(false);
+        };
         let committing = Instant::now();
         tx.commit()?;
         stats.timings.commit += committing.elapsed();
         stats.timings.write += committing.duration_since(writing);
+        stats.pairs += written.pairs;
+        stats.files += written.done;
+        stats.guarded += usize::from(written.guarded);
         ctl.set_done(u64::try_from(stats.files).unwrap_or(u64::MAX));
     }
     Ok(true)

@@ -76,14 +76,15 @@ fn main() -> Result<()> {
     writeln!(
         std::io::stdout(),
         "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, slice {}, cache {} KiB, \
-         few {}, complete {}) | load {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} starved {:.0} paused {:.0} \
-         write {:.0} commit {:.0} ms | cycles {cycles} M",
+         few {}, complete {}, guarded {}) | load {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} starved {:.0} \
+         paused {:.0} write {:.0} commit {:.0} ms | cycles {cycles} M",
         stats.files,
         stats.pairs,
         settings.slice,
         settings.cache_kib,
         few,
         stats.complete,
+        stats.guarded,
         ms(t.load),
         ms(t.join),
         ms(t.joins.prepare),

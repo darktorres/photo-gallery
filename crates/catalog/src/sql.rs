@@ -19,6 +19,13 @@ macro_rules! next_seq {
         "UPDATE meta SET value = value + 1 WHERE key = 'seq'"
     };
 }
+
+/// The pairing pass's writes may need their guard from here on (`meta.pairing_epoch`, migration 14).
+macro_rules! next_pairing_epoch {
+    () => {
+        "UPDATE meta SET value = value + 1 WHERE key = 'pairing_epoch'"
+    };
+}
 /// A trigger that stamps a file's `changed` (`files.changed`, the next `seq`) when a row of `table` that names it
 /// (by `file_id`, of the `new` or `old` row) changes: `name`, after `event`, optionally only `when` the condition holds.
 /// The text is the one the triggers were written with, piece by piece.

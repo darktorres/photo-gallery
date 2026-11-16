@@ -132,7 +132,7 @@ impl Catalog {
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
         conn.execute_batch(SETTINGS)?;
         conn.release_memory()?;
-        pg_query::register_functions(&conn)?;
+        register(&conn)?;
         // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
         // come in meanwhile, since the preparer's lock is still held).
         drop(exclusive);
@@ -165,7 +165,7 @@ impl Catalog {
             return Err(Error::Other(anyhow!("catalog {}: {why}: it changed after it was prepared", path.display())));
         }
         check_rules(&conn, path, rules)?;
-        pg_query::register_functions(&conn)?;
+        register(&conn)?;
         Ok(Catalog { conn, rules, rebuilt: None, _live: live })
     }
 
@@ -231,6 +231,14 @@ impl Catalog {
         self.conn.pragma_update(None, "cache_size", -i64::from(kib))?;
         Ok(BoundedCache { catalog: self, app })
     }
+}
+
+/// What every connection of a catalog has besides its settings: the SQL functions the queries call, and `rarray`, which
+/// binds a list of ids as one parameter (the pairing pass's writes, `PairsWriter`).
+fn register(conn: &Connection) -> Result<()> {
+    pg_query::register_functions(conn)?;
+    rusqlite::vtab::array::load_module(conn)?;
+    Ok(())
 }
 
 /// A read of the catalog on a connection of its own ([`Catalog::reader`]), or on the catalog's when it is in memory.
@@ -318,7 +326,7 @@ impl Tx<'_> {
 
     /// The writer of the pairing pass, in this transaction.
     pub fn pairs_writer(&self) -> Result<PairsWriter<'_>> {
-        PairsWriter::new(&self.inner)
+        Ok(PairsWriter::new(&self.inner))
     }
 
     /// Commit what was written through this transaction's writers.

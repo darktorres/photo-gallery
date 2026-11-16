@@ -72,7 +72,8 @@ fn max_folder_id(conn: &Connection) -> Result<i64> {
 }
 
 /// The pictures of the pairing pass, in file-id order, as columns (`Catalog::pairing_work`): picture `i` is file
-/// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]`. The join takes the columns as they are.
+/// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]` and quality `quality[i]`. The join takes
+/// the columns as they are.
 pub struct PairingWork {
     pub ids: Vec<FileId>,
     /// Its pairs are owed (a `pairs_owed` row) and the pass can make them (its file is present and not pending, as
@@ -82,11 +83,34 @@ pub struct PairingWork {
     /// Its kept orientations' hashes (`pg_model::pdq::ORIENTATIONS`, in `pg_analysis::pdq`'s order): what the pairs are
     /// made from, and, as `pg_model::pdq::to_blob` stores them, the guard of `PairsWriter`.
     pub hashes: Vec<[pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS]>,
+    /// Its `pdq_quality`: with the hashes, what `PairsWriter`'s guard compares.
+    pub quality: Vec<u8>,
     /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
     /// orientation hashes, or whose hashes failed the check of migration 13), of present, non-pending files: not
     /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
     /// files, so only they are counted.
     pub legacy: usize,
+    /// The catalog's pairing marks in the load's snapshot, which the writes compare theirs with (`PairsWriter::write`).
+    pub marks: PairingMarks,
+}
+
+/// What the pairing pass's pairs depend on beyond the pictures: `meta.pairing_version`, the pairing the pairs are made by
+/// (another build's `Catalog::prepare` changes it and owes every pair again), and `meta.pairing_epoch`, which moves on
+/// whenever an analysis or an owed row that the pairs could have been made from changes (migration 14). A write whose
+/// marks are the load's needs no guard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PairingMarks {
+    pub version: i64,
+    pub epoch: i64,
+}
+
+/// The pairing marks as `conn`'s transaction sees them.
+pub(crate) fn pairing_marks(conn: &Connection) -> Result<PairingMarks> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT (SELECT value FROM meta WHERE key = 'pairing_version'),
+             (SELECT value FROM meta WHERE key = 'pairing_epoch')",
+    )?;
+    Ok(stmt.query_row([], |r| Ok(PairingMarks { version: r.get(0)?, epoch: r.get(1)? }))?)
 }
 
 /// The statement [`Catalog::pairing_work`] reads: the analysis of a reliable quality of every file with an identity, by
@@ -102,8 +126,9 @@ pub struct PairingWork {
 /// (`present_pdq_pairs`), and every new analysis drops its file's pairs and owes them again. A displaced row (no
 /// identity, `volume IS NULL`) is left out: its analysis stays only until a replacement deletes it, its pairs could
 /// never be shown, and the file's new row would pair with it.
-const PAIRING_WORK: &str = "SELECT a.file_id, o.file_id IS NOT NULL AND f.missing = 0 AND f.pending = 0, a.pdq_dihedral,
-         f.missing = 0 AND f.pending = 0
+const PAIRING_WORK: &str =
+    "SELECT a.file_id, o.file_id IS NOT NULL AND f.missing = 0 AND f.pending = 0, a.pdq_dihedral,
+         f.missing = 0 AND f.pending = 0, a.pdq_quality
      FROM analysis a CROSS JOIN files f LEFT JOIN pairs_owed o ON o.file_id = a.file_id
      WHERE f.id = a.file_id AND f.volume IS NOT NULL AND a.pdq_quality >= ?1
      ORDER BY a.file_id";
@@ -116,7 +141,9 @@ fn pairing_work_on(conn: &Connection) -> Result<PairingWork> {
         ids: Vec::with_capacity(bound),
         owed: Vec::with_capacity(bound),
         hashes: Vec::with_capacity(bound),
+        quality: Vec::with_capacity(bound),
         legacy: 0,
+        marks: pairing_marks(&tx)?,
     };
     let mut stmt = tx.prepare(PAIRING_WORK)?;
     let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
@@ -133,6 +160,7 @@ fn pairing_work_on(conn: &Connection) -> Result<PairingWork> {
         work.ids.push(id);
         work.owed.push(r.get(1)?);
         work.hashes.push(hashes);
+        work.quality.push(r.get(4)?);
     }
     drop(rows);
     drop(stmt);

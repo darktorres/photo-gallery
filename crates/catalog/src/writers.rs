@@ -5,6 +5,9 @@
 //! caller's. Uses `types`, `ledger::failure` and `error`; its SQL macros are from `sql`.
 
 use anyhow::{Context, anyhow};
+use std::rc::Rc;
+
+use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Statement, Transaction, params};
 
 use pg_model::analysis::Analysis;
@@ -20,6 +23,7 @@ use crate::types::{
     DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, FolderFailure, Hit, Recorded,
     SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, covering_root, under_params,
 };
+use crate::work::PairingWork;
 
 // The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
 // rusqlite's statement cache per row (16 entries, which the import's statements alone would crowd). A writer
@@ -389,43 +393,121 @@ impl<'tx> AnalysisWriter<'tx> {
     }
 }
 
-/// The pairing pass's writes. A pair is stored only while both files still hold the hashes it was computed from: a
-/// file re-analyzed in between (by an import, here or in another process) has its own pairs owed again (its pass makes
-/// them), and a stale pair must never be stored beside them. A file is marked done only while it holds the hash its
-/// pairs were made from, so its owed state is kept by a change in the meantime.
+/// The pairing pass's writes: one batch per write transaction ([`PairsWriter::write`]). A pair is stored only while both
+/// pictures still hold the analyses it was made from (their stored hashes and quality): a file analyzed again in
+/// between (by an import, here or in another process) owes its own pairs again (its pass makes them), and a stale pair
+/// must never be stored beside them. A picture is marked done only while it holds the analysis its pairs were made
+/// from, so its owed state is kept by a change in the meantime. Its statements are prepared once per pass (the
+/// connection's statement cache: the pass's connection runs only these while it writes).
 pub struct PairsWriter<'tx> {
-    pair: Statement<'tx>,
-    done: Statement<'tx>,
+    conn: &'tx Connection,
 }
 
+/// One batch of the pairing pass's writes, in pictures of its load (indices into [`PairingWork`]'s columns).
+#[derive(Clone, Copy, Debug)]
+pub struct PairsBatch<'a> {
+    /// The pictures marked done: every pair each one owns is in `pairs`.
+    pub owners: &'a [usize],
+    /// The pairs, `(a, b, distance)`, each once.
+    pub pairs: &'a [(usize, usize, u32)],
+}
+
+/// What [`PairsWriter::write`] wrote.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PairsWritten {
+    /// The pairs stored or lowered (one already stored at a lower distance stays).
+    pub pairs: usize,
+    /// The owners marked done.
+    pub done: usize,
+    /// Whether the guard read the batch's analyses: something they depend on changed since the load
+    /// (`meta.pairing_epoch`).
+    pub guarded: bool,
+}
+
+/// [`PairsWriter`]'s statements.
+const PAIR: &str = "INSERT INTO pdq_pairs(a, b, distance) VALUES (?1, ?2, ?3)
+     ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance WHERE excluded.distance < pdq_pairs.distance";
+const DONE: &str = "DELETE FROM pairs_owed WHERE file_id IN rarray(?1)";
+const GUARD: &str = "SELECT file_id, pdq_dihedral, pdq_quality FROM analysis WHERE file_id IN rarray(?1)";
+
 impl<'tx> PairsWriter<'tx> {
-    pub(crate) fn new(tx: &'tx Transaction) -> Result<PairsWriter<'tx>> {
-        Ok(PairsWriter {
-            pair: tx.prepare(
-                "INSERT INTO pdq_pairs(a, b, distance)
-                 SELECT ?1, ?2, ?3
-                 WHERE (SELECT pdq_dihedral FROM analysis WHERE file_id = ?1) IS ?4
-                   AND (SELECT pdq_dihedral FROM analysis WHERE file_id = ?2) IS ?5
-                 ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance WHERE excluded.distance < pdq_pairs.distance",
-            )?,
-            done: tx.prepare(
-                "DELETE FROM pairs_owed
-                 WHERE file_id = ?1 AND (SELECT pdq_dihedral FROM analysis WHERE file_id = ?1) IS ?2",
-            )?,
-        })
+    pub(crate) fn new(tx: &'tx Transaction) -> PairsWriter<'tx> {
+        PairsWriter { conn: tx }
     }
 
-    /// Store the pair `a`, `b` at `distance`, found from the stored hashes `hashes_a` and `hashes_b` (the analyses'
-    /// `pdq_dihedral`, as `pg_model::pdq::to_blob` makes it), if both files still hold them. Whether it was stored.
-    pub fn pair(&mut self, a: FileId, b: FileId, distance: u32, hashes_a: &[u8], hashes_b: &[u8]) -> Result<bool> {
-        let (a, b, hashes_a, hashes_b) = if a < b { (a, b, hashes_a, hashes_b) } else { (b, a, hashes_b, hashes_a) };
-        Ok(self.pair.execute(params![a.get(), b.get(), distance, hashes_a, hashes_b])? > 0)
+    /// Write `batch`, paired from `work`: its pairs whose two pictures pass, and its owners that pass marked done. A
+    /// picture passes while its analysis is the one the load read: it is there, with the stored hashes `hashes(i)`
+    /// returns (as `pg_model::pdq::to_blob` stores them) and the load's quality. When the catalog's pairing epoch is the
+    /// load's, nothing they depend on changed, and every picture passes unread; otherwise the batch's analyses are read,
+    /// once each, by exact ids (`hashes` is asked only then). `None`, and nothing written, when the catalog's pairing
+    /// version is not the load's: another build's pairing owes every pair again, and these are not its pairs.
+    pub fn write(
+        &mut self,
+        work: &PairingWork,
+        batch: PairsBatch<'_>,
+        hashes: &dyn Fn(usize) -> Option<[u8; pg_model::pdq::BLOB_BYTES]>,
+    ) -> Result<Option<PairsWritten>> {
+        let marks = crate::work::pairing_marks(self.conn)?;
+        if marks.version != work.marks.version {
+            return Ok(None);
+        }
+        let guarded = marks.epoch != work.marks.epoch;
+        // Picture indices, sorted: those that pass, when the guard ran.
+        let passing = if guarded { Some(self.passing(work, batch, hashes)?) } else { None };
+        let passes = |i: usize| passing.as_ref().is_none_or(|p: &Vec<usize>| p.binary_search(&i).is_ok());
+        let id = |i: usize| work.ids.get(i).map(|id| id.get());
+        let mut written = PairsWritten { guarded, ..PairsWritten::default() };
+        let mut pair = self.conn.prepare_cached(PAIR)?;
+        for &(a, b, distance) in batch.pairs {
+            if let (true, Some(ia), Some(ib)) = (passes(a) && passes(b), id(a), id(b)) {
+                written.pairs += pair.execute(params![ia.min(ib), ia.max(ib), distance])?;
+            }
+        }
+        let owners: Vec<Value> =
+            batch.owners.iter().filter(|&&i| passes(i)).filter_map(|&i| id(i)).map(Value::Integer).collect();
+        written.done = self.conn.prepare_cached(DONE)?.execute([Rc::new(owners)])?;
+        Ok(Some(written))
     }
 
-    /// Mark the file's pairs made (its `pairs_owed` row goes), if it still holds `hashes` (the stored hashes they were
-    /// made from). Whether it was marked.
-    pub fn done(&mut self, file: FileId, hashes: &[u8]) -> Result<bool> {
-        Ok(self.done.execute(params![file.get(), hashes])? > 0)
+    /// The batch's pictures (owners and partners) whose analysis is the one the load read, by index, sorted. An
+    /// analysis that is gone (its file rebound or replaced), a failure in its place (no hashes), other hashes or another
+    /// quality do not pass.
+    fn passing(
+        &self,
+        work: &PairingWork,
+        batch: PairsBatch<'_>,
+        hashes: &dyn Fn(usize) -> Option<[u8; pg_model::pdq::BLOB_BYTES]>,
+    ) -> Result<Vec<usize>> {
+        let mut pictures: Vec<usize> = batch.owners.to_vec();
+        pictures.extend(batch.pairs.iter().flat_map(|&(a, b, _)| [a, b]));
+        pictures.sort_unstable();
+        pictures.dedup();
+        let ids: Vec<Value> =
+            pictures.iter().filter_map(|&i| work.ids.get(i)).map(|id| Value::Integer(id.get())).collect();
+        let mut guard = self.conn.prepare_cached(GUARD)?;
+        let mut rows = guard.query([Rc::new(ids)])?;
+        let mut passing = Vec::with_capacity(pictures.len());
+        while let Some(r) = rows.next()? {
+            let id = FileId::new(r.get(0)?);
+            // The ids are the pictures' (in file-id order, as the indices are), so each row is one of them.
+            let Some(&i) = pictures
+                .binary_search_by_key(&Some(id), |&i| work.ids.get(i).copied())
+                .ok()
+                .and_then(|at| pictures.get(at))
+            else {
+                continue;
+            };
+            let stored = r.get_ref(1)?.as_blob_or_null()?;
+            let quality: Option<u8> = r.get(2)?;
+            if stored.is_some()
+                && stored == hashes(i).as_ref().map(|h| &h[..])
+                && quality == work.quality.get(i).copied()
+            {
+                passing.push(i);
+            }
+        }
+        passing.sort_unstable();
+        Ok(passing)
     }
 }
 
@@ -605,7 +687,7 @@ mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
     use crate::test_support::*;
-    use crate::{Catalog, Recorded, ScannedFile, WorkItem, queue};
+    use crate::{Catalog, PairingWork, PairsBatch, PairsWritten, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::{Analysis, FileHash, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
     use pg_model::detection::Detection;
@@ -617,6 +699,7 @@ mod tests {
     use pg_model::rating::Rating;
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
+    use rusqlite::params;
     use std::path::Path;
 
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed(rules: PathRules) {
@@ -1130,7 +1213,7 @@ mod tests {
     }
 
     /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all four kept orientations (the
-    /// writer does not check them), so its stored hashes are [`blob`]`(hash[0])`.
+    /// writer does not check them).
     fn picture(hash: [u8; 32], quality: u8) -> Analysis {
         let pdq =
             pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash(hash); pg_model::pdq::ORIENTATIONS], quality };
@@ -1146,11 +1229,6 @@ mod tests {
             taken: None,
             media: Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels }),
         }
-    }
-
-    /// The stored hashes of [`picture`]`([byte; 32], _)`: what the pairs' guards compare.
-    fn blob(byte: u8) -> [u8; pg_model::pdq::BLOB_BYTES] {
-        [byte; pg_model::pdq::BLOB_BYTES]
     }
 
     /// File `id`'s work item as the work lists give it now, pending or not.
@@ -1211,52 +1289,109 @@ mod tests {
         an_analysis_owes_its_pairs_only_with_hashes_of_a_reliable_quality_posix
     );
 
-    fn a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from(rules: PathRules) {
-        let mut c = two_files(rules);
-        store_for(&mut c, 1, &picture([1; 32], 100));
-        store_for(&mut c, 2, &picture([2; 32], 100));
-        let (one, two) = (blob(1), blob(2));
+    /// One batch through [`PairsWriter::write`], in a transaction of its own, guarded by the load's hashes.
+    fn write_batch(
+        c: &mut Catalog,
+        work: &PairingWork,
+        owners: &[usize],
+        pairs: &[(usize, usize, u32)],
+    ) -> Option<PairsWritten> {
         let tx = c.tx().unwrap();
-        let mut pairs = tx.pairs_writer().unwrap();
-        // Made from file 2's old hashes (it was analyzed again since): refused, whatever the distance.
-        assert!(!pairs.pair(FileId::new(1), FileId::new(2), 3, &one, &blob(9)).unwrap());
-        // A blob that holds only the first hash (the old `pdq` column's 32 bytes) is not the stored hashes.
-        assert!(!pairs.pair(FileId::new(1), FileId::new(2), 3, &one, &[2; 32]).unwrap());
-        // Made from the hashes both hold: stored; the order of the files does not matter.
-        assert!(pairs.pair(FileId::new(2), FileId::new(1), 5, &two, &one).unwrap());
-        assert!(
-            !pairs.pair(FileId::new(1), FileId::new(2), 9, &one, &two).unwrap(),
-            "a higher distance does not replace"
-        );
-        assert!(pairs.pair(FileId::new(1), FileId::new(2), 4, &one, &two).unwrap(), "a lower one does");
-        // A file is marked done only while it holds the hashes its pairs were made from.
-        assert!(!pairs.done(FileId::new(2), &blob(9)).unwrap());
-        assert!(pairs.done(FileId::new(1), &one).unwrap());
-        assert!(!pairs.done(FileId::new(1), &one).unwrap(), "done once");
-        drop(pairs);
+        let hashes = |i: usize| work.hashes.get(i).map(pg_model::pdq::to_blob);
+        let written = tx.pairs_writer().unwrap().write(work, PairsBatch { owners, pairs }, &hashes).unwrap();
         tx.commit().unwrap();
+        written
+    }
+
+    /// The catalog's pairing marks now.
+    fn marks(c: &Catalog) -> crate::PairingMarks {
+        crate::work::pairing_marks(&c.conn).unwrap()
+    }
+
+    /// The names of [`pictures`]' files.
+    const NAMES: [&str; 13] = [
+        "a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg", "f.jpg", "g.jpg", "h.jpg", "i.jpg", "j.jpg", "k.jpg", "l.jpg",
+        "m.jpg",
+    ];
+
+    /// Files 1 to `n` (at most 12) in D:\x, each analysed as [`picture`]`([id; 32], 100)`: picture `id - 1` of the load.
+    fn pictures(rules: PathRules, n: u8) -> Catalog {
+        let (mut c, _) = one_file(rules);
+        for (id, name) in (2..=i64::from(n)).zip(NAMES.iter().skip(1)) {
+            add_file(&c, id, name);
+        }
+        for id in 1..=n {
+            store_for(&mut c, i64::from(id), &picture([id; 32], 100));
+        }
+        c
+    }
+
+    fn a_pair_is_stored_only_while_both_pictures_hold_the_analyses_it_was_made_from(rules: PathRules) {
+        let mut c = pictures(rules, 6);
+        let work = c.pairing_work().unwrap();
+        // Nothing changed since the load: written unread.
+        assert_eq!(
+            write_batch(&mut c, &work, &[1], &[(1, 0, 5)]),
+            Some(PairsWritten { pairs: 1, done: 1, guarded: false }),
+            "either order of the pair's pictures"
+        );
+        assert_eq!(write_batch(&mut c, &work, &[], &[(0, 1, 9)]).unwrap().pairs, 0, "a higher distance stays out");
+        assert_eq!(write_batch(&mut c, &work, &[], &[(0, 1, 4)]).unwrap().pairs, 1, "a lower one replaces it");
         assert_eq!(pair_distance(&c, 1, 2), Some(4));
-        assert_eq!((owes(&c, 1), owes(&c, 2)), (false, true));
+        // Since the load: file 3 analysed again with other hashes, 4 with the same ones, 5 at another quality; 6 failed.
+        store_for(&mut c, 3, &picture([9; 32], 100));
+        store_for(&mut c, 4, &picture([4; 32], 100));
+        store_for(&mut c, 5, &picture([5; 32], 90));
+        let failed = item_of(&c, 6);
+        analyzed(&mut c, &failed);
+        let pairs = [(0, 2, 1), (0, 3, 1), (0, 4, 1), (0, 5, 1)];
+        assert_eq!(
+            write_batch(&mut c, &work, &[0, 2, 3, 4, 5], &pairs),
+            Some(PairsWritten { pairs: 1, done: 2, guarded: true }),
+            "only files 1 and 4 hold the analyses the load read"
+        );
+        assert_eq!(pair_distance(&c, 1, 4), Some(1));
+        for b in [3, 5, 6] {
+            assert_eq!(pair_distance(&c, 1, b), None);
+        }
+        // 3 and 5 owe their new analyses' pairs; 6 failed, and owes none.
+        assert_eq!(state_owed(&c), vec![3, 5]);
+        // An analysis that is gone (a rebind or a replacement deletes it), with its file or alone: its pairs are left
+        // out, with no foreign-key failure.
+        c.conn.execute("DELETE FROM analysis WHERE file_id = 2", []).unwrap();
+        c.conn.execute("DELETE FROM files WHERE id = 6", []).unwrap();
+        assert_eq!(write_batch(&mut c, &work, &[], &[(1, 3, 2), (3, 5, 2)]).unwrap().pairs, 0);
     }
 
     under_both_rules!(
-        a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from,
-        a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from_windows,
-        a_pair_is_stored_only_while_both_files_hold_the_hashes_it_was_made_from_posix
+        a_pair_is_stored_only_while_both_pictures_hold_the_analyses_it_was_made_from,
+        a_pair_is_stored_only_while_both_pictures_hold_the_analyses_it_was_made_from_windows,
+        a_pair_is_stored_only_while_both_pictures_hold_the_analyses_it_was_made_from_posix
+    );
+
+    /// Another build's `Catalog::prepare` changed the pairing since the load: the batch writes nothing, and what was owed
+    /// stays owed.
+    fn a_batch_under_another_pairing_version_writes_nothing(rules: PathRules) {
+        let mut c = pictures(rules, 2);
+        let work = c.pairing_work().unwrap();
+        crate::lifecycle::set_pairing_version(&c.conn, pg_model::pdq::PAIRING_VERSION + 1).unwrap();
+        assert_eq!(write_batch(&mut c, &work, &[0, 1], &[(0, 1, 3)]), None);
+        assert_eq!(pair_distance(&c, 1, 2), None);
+        assert_eq!(state_owed(&c), vec![1, 2]);
+    }
+
+    under_both_rules!(
+        a_batch_under_another_pairing_version_writes_nothing,
+        a_batch_under_another_pairing_version_writes_nothing_windows,
+        a_batch_under_another_pairing_version_writes_nothing_posix
     );
 
     fn a_new_analysis_drops_the_pairs_it_made_and_owes_them_again(rules: PathRules) {
-        let mut c = two_files(rules);
-        store_for(&mut c, 1, &picture([1; 32], 100));
-        store_for(&mut c, 2, &picture([2; 32], 100));
-        let tx = c.tx().unwrap();
-        let mut pairs = tx.pairs_writer().unwrap();
-        assert!(pairs.pair(FileId::new(1), FileId::new(2), 5, &blob(1), &blob(2)).unwrap());
-        assert!(pairs.done(FileId::new(1), &blob(1)).unwrap());
-        assert!(pairs.done(FileId::new(2), &blob(2)).unwrap());
-        drop(pairs);
-        tx.commit().unwrap();
+        let mut c = pictures(rules, 2);
+        let work = c.pairing_work().unwrap();
+        assert_eq!(write_batch(&mut c, &work, &[0, 1], &[(0, 1, 5)]).unwrap().pairs, 1);
         assert_eq!(pair_distance(&c, 1, 2), Some(5));
+        assert!(state_owed(&c).is_empty());
         // File 2 changed: its pairs go with the old analysis, and it owes them again.
         store_for(&mut c, 2, &picture([3; 32], 100));
         assert_eq!(pair_distance(&c, 1, 2), None);
@@ -1267,6 +1402,218 @@ mod tests {
         a_new_analysis_drops_the_pairs_it_made_and_owes_them_again,
         a_new_analysis_drops_the_pairs_it_made_and_owes_them_again_windows,
         a_new_analysis_drops_the_pairs_it_made_and_owes_them_again_posix
+    );
+
+    /// Whether `change` moves the catalog's pairing epoch on (which only grows).
+    fn moves(c: &mut Catalog, change: &dyn Fn(&mut Catalog)) -> bool {
+        let before = marks(c).epoch;
+        change(c);
+        let after = marks(c).epoch;
+        assert!(after >= before, "the epoch only grows");
+        after > before
+    }
+
+    /// A change that is one statement.
+    fn sql(statement: &'static str) -> impl Fn(&mut Catalog) {
+        move |c: &mut Catalog| {
+            c.conn.execute(statement, []).unwrap();
+        }
+    }
+
+    /// Migration 14's triggers: `meta.pairing_epoch` moves on each change to an analysis the pairs are guarded by, and on
+    /// nothing else: not on owed rows, nor on the pass's own writes.
+    fn the_pairing_epoch_moves_with_what_the_pairs_are_made_from(rules: PathRules) {
+        let mut c = pictures(rules, 4);
+        add_file(&c, 5, "e.jpg");
+        let failed = item_of(&c, 5);
+        analyzed(&mut c, &failed);
+        // A new analysis over a picture (a REPLACE, whose own delete fires no trigger), with hashes or failed.
+        assert!(moves(&mut c, &|c| store_for(c, 1, &picture([7; 32], 100))));
+        assert!(moves(&mut c, &|c| {
+            let item = item_of(c, 1);
+            analyzed(c, &item);
+        }));
+        // An analysis's hashes or quality changed in place; the same values written again move nothing.
+        assert!(moves(&mut c, &sql("UPDATE analysis SET pdq_quality = 80 WHERE file_id = 2")));
+        assert!(moves(&mut c, &sql("UPDATE analysis SET pdq_dihedral = zeroblob(128) WHERE file_id = 2")));
+        assert!(!moves(&mut c, &sql("UPDATE analysis SET pdq_quality = 80 WHERE file_id = 2")));
+        // An analysis moved to another file (no writer does it; the guard would find the row gone).
+        c.conn.execute("DELETE FROM pairs_owed WHERE file_id = 4", []).unwrap();
+        add_file(&c, 6, "f.jpg");
+        assert!(moves(&mut c, &sql("UPDATE analysis SET file_id = 6 WHERE file_id = 4")));
+        assert!(moves(&mut c, &sql("UPDATE analysis SET file_id = 4 WHERE file_id = 6")));
+        // A picture's analysis deleted, alone or with its file (the cascade's delete fires the trigger); a failure's
+        // moves nothing (no pair could hold it).
+        assert!(moves(&mut c, &sql("DELETE FROM analysis WHERE file_id = 2")));
+        assert!(moves(&mut c, &sql("DELETE FROM files WHERE id = 3")));
+        assert!(!moves(&mut c, &sql("DELETE FROM analysis WHERE file_id = 5")));
+        // A picture owed again (`owe_pairs_again`), or done (the pass's delete): the guard never reads owed rows.
+        assert!(!moves(&mut c, &sql("INSERT INTO pairs_owed(file_id) VALUES (4)")));
+        assert!(!moves(&mut c, &sql("DELETE FROM pairs_owed WHERE file_id = 4")));
+        // What the pairs are not made from: the analysis's borders and turn, the file's state, a rating.
+        assert!(!moves(&mut c, &sql("UPDATE analysis SET borders_due = 1, rotation = 1, width = 7 WHERE file_id = 4")));
+        assert!(!moves(&mut c, &sql("UPDATE files SET missing = 1, mtime = mtime + 1 WHERE id = 4")));
+        assert!(!moves(&mut c, &|c| c.set_rating(FileId::new(4), Rating::new(3), false).unwrap()));
+        // The pass's own writes.
+        let mut c = pictures(rules, 2);
+        let work = c.pairing_work().unwrap();
+        assert!(!moves(&mut c, &|c| assert!(write_batch(c, &work, &[0, 1], &[(0, 1, 2)]).is_some())));
+    }
+
+    under_both_rules!(
+        the_pairing_epoch_moves_with_what_the_pairs_are_made_from,
+        the_pairing_epoch_moves_with_what_the_pairs_are_made_from_windows,
+        the_pairing_epoch_moves_with_what_the_pairs_are_made_from_posix
+    );
+
+    /// A small deterministic generator for the differential test (SplitMix64).
+    struct Mix(u64);
+
+    impl Mix {
+        fn below(&mut self, n: usize) -> usize {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            usize::try_from((z ^ (z >> 31)) % u64::try_from(n.max(1)).unwrap()).unwrap()
+        }
+    }
+
+    /// `PairsWriter`'s writes before the set-based guard, as the oracle: each pair and each done one statement, guarded
+    /// by the stored hashes of its analyses alone.
+    fn oracle_write(c: &mut Catalog, work: &PairingWork, owners: &[usize], pairs: &[(usize, usize, u32)]) {
+        let tx = crate::transaction::write_transaction(&c.conn).unwrap();
+        let mut pair = tx
+            .prepare(
+                "INSERT INTO pdq_pairs(a, b, distance)
+                 SELECT ?1, ?2, ?3
+                 WHERE (SELECT pdq_dihedral FROM analysis WHERE file_id = ?1) IS ?4
+                   AND (SELECT pdq_dihedral FROM analysis WHERE file_id = ?2) IS ?5
+                 ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance WHERE excluded.distance < pdq_pairs.distance",
+            )
+            .unwrap();
+        let mut done = tx
+            .prepare(
+                "DELETE FROM pairs_owed
+                 WHERE file_id = ?1 AND (SELECT pdq_dihedral FROM analysis WHERE file_id = ?1) IS ?2",
+            )
+            .unwrap();
+        let id = |i: usize| work.ids.get(i).unwrap().get();
+        let blob = |i: usize| pg_model::pdq::to_blob(work.hashes.get(i).unwrap());
+        for &(a, b, distance) in pairs {
+            let (lo, hi) = if id(a) < id(b) { (a, b) } else { (b, a) };
+            pair.execute(params![id(lo), id(hi), distance, &blob(lo)[..], &blob(hi)[..]]).unwrap();
+        }
+        for &i in owners {
+            done.execute(params![id(i), &blob(i)[..]]).unwrap();
+        }
+        drop((pair, done));
+        tx.commit().unwrap();
+    }
+
+    /// The changes a picture's file and analysis go through between the load and the write, as the differential test
+    /// makes them ([`change`]).
+    const CHANGES: usize = 9;
+
+    /// Change `which` (below [`CHANGES`]) to file `id`, if it is still there.
+    fn change(c: &mut Catalog, id: i64, which: usize) {
+        let exists = |c: &Catalog, sql: &str| -> bool { c.conn.query_row(sql, [id], |r| r.get(0)).unwrap() };
+        if !exists(c, "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1)") {
+            return;
+        }
+        match which {
+            // Analysed again: other hashes; the same hashes at the same quality.
+            0 => store_for(c, id, &picture([200; 32], 100)),
+            1 => store_for(c, id, &picture([u8::try_from(id).unwrap(); 32], 100)),
+            // Failed.
+            2 => {
+                let item = item_of(c, id);
+                analyzed(c, &item);
+            }
+            // Its analysis gone, alone or with its file.
+            3 => {
+                c.conn.execute("DELETE FROM analysis WHERE file_id = ?1", [id]).unwrap();
+            }
+            4 => {
+                c.conn.execute("DELETE FROM files WHERE id = ?1", [id]).unwrap();
+            }
+            // Its file missing, or pending.
+            5 => {
+                c.conn.execute("UPDATE files SET missing = 1 WHERE id = ?1", [id]).unwrap();
+            }
+            6 => {
+                c.mark_pending(&[FileId::new(id)]).unwrap();
+            }
+            // Owed again (a row needs its analysis).
+            7 => {
+                if exists(c, "SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1)") {
+                    c.conn.execute("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)", [id]).unwrap();
+                }
+            }
+            // Something the pairs are not made from: its rating.
+            _ => c.set_rating(FileId::new(id), Rating::new(2), false).unwrap(),
+        }
+    }
+
+    /// The batch writer stores and marks done what the row-by-row guard did (the oracle, [`oracle_write`]), whatever
+    /// changed between the load and the write: on 64 random batches and changes, each written both ways on two copies
+    /// of one catalog. Half the rounds move the epoch by hand, so the guard also runs where nothing changed. (A change of
+    /// quality alone, which no writer makes, is the one the oracle let through: the test above has it.)
+    fn the_batch_writer_writes_what_the_row_by_row_guard_did(rules: PathRules) {
+        for seed in 0..64 {
+            let mut mix = Mix(seed);
+            let made = || {
+                let mut c = pictures(rules, 12);
+                // Half the pictures owe nothing (they are partners), and 13's analysis is below the quality and owed (a
+                // malformed row: no picture's, so no batch's).
+                for id in (2..=12).step_by(2) {
+                    c.conn.execute("DELETE FROM pairs_owed WHERE file_id = ?1", [id]).unwrap();
+                }
+                add_file(&c, 13, "m.jpg");
+                store_for(&mut c, 13, &picture([13; 32], pg_model::pdq::MIN_QUALITY - 1));
+                c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (13)", []).unwrap();
+                c
+            };
+            let (mut new, mut old) = (made(), made());
+            let work = new.pairing_work().unwrap();
+            let owners: Vec<usize> = (0..work.owed.len()).filter(|&i| work.owed.get(i) == Some(&true)).collect();
+            // Repeated partners, partners that are owners, repeated pairs at other distances.
+            let n = work.ids.len();
+            let pairs: Vec<(usize, usize, u32)> = (0..mix.below(24))
+                .map(|_| {
+                    let a = mix.below(n);
+                    let b = (a + 1 + mix.below(n - 1)) % n;
+                    (a, b, u32::try_from(mix.below(32)).unwrap())
+                })
+                .collect();
+            let changes: Vec<(i64, usize)> =
+                (0..mix.below(5)).map(|_| (i64::try_from(mix.below(13) + 1).unwrap(), mix.below(CHANGES))).collect();
+            let by_hand = mix.below(2) == 0;
+            for c in [&mut new, &mut old] {
+                for &(id, which) in &changes {
+                    change(c, id, which);
+                }
+                if by_hand {
+                    c.conn.execute("UPDATE meta SET value = value + 1 WHERE key = 'pairing_epoch'", []).unwrap();
+                }
+            }
+            write_batch(&mut new, &work, &owners, &pairs).unwrap();
+            oracle_write(&mut old, &work, &owners, &pairs);
+            let all_pairs = |c: &Catalog| -> Vec<(i64, i64, i64)> {
+                raw::rows_of(c, "SELECT a, b, distance FROM pdq_pairs ORDER BY a, b", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
+            };
+            let context = format!("seed {seed}: changes {changes:?}, pairs {pairs:?}");
+            assert_eq!(all_pairs(&new), all_pairs(&old), "{context}");
+            assert_eq!(state_owed(&new), state_owed(&old), "{context}");
+        }
+    }
+
+    under_both_rules!(
+        the_batch_writer_writes_what_the_row_by_row_guard_did,
+        the_batch_writer_writes_what_the_row_by_row_guard_did_windows,
+        the_batch_writer_writes_what_the_row_by_row_guard_did_posix
     );
 
     fn a_new_pairing_version_owes_the_eligible_analyses_again_and_drops_the_pairs(rules: PathRules) {

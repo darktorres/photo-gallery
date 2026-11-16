@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory)] [string] $A,
     [Parameter(Mandatory)] [string] $B,
     [Parameter(Mandatory)] [string] $Catalog,
+    [string] $CatalogB = '',
     [Parameter(Mandatory)] [string] $Out,
     [int] $Pairs = 6,
     [int] $Repeat = 1,
@@ -15,7 +16,9 @@ param(
 # builds, one after the other, the order alternating, each on a fresh copy of the catalog (a scratch copy: the probe
 # rewrites what is owed). The background CPU load is logged before each run. $EnvA / $EnvB set probe-only switches, to
 # compare two designs inside one binary ($A and $B the same file). With $Repeat above 1, each build runs that many
-# times in its turn and each measure keeps its least value (another process can only add to a run's time).
+# times in its turn and each measure keeps its least value (another process can only add to a run's time). $CatalogB,
+# when B's schema is newer than A's (a migration), is the same catalog already at B's version, which B then runs on, so
+# neither build's runs include a migration.
 #
 # The gate is time (keep.py --part time: the join's, the pass's on slices4), under $Rule: 'bounded' (the default, for
 # the 6 pairs the plan runs: no proven loss and an upper bound of at most +10%, else no verdict), 'no-loss', or
@@ -37,19 +40,22 @@ $drop = "import sqlite3, sys`nc = sqlite3.connect(sys.argv[1])`nc.execute('PRAGM
     "c.commit()"
 $dropPy = Join-Path $base 'drop.py'
 Set-Content -LiteralPath $dropPy -Value $drop
-# One template catalog per owed count, made once.
+$catalogs = @{ A = $Catalog; B = if ($CatalogB) { $CatalogB } else { $Catalog } }
+# One template catalog per build and owed count, made once.
 $templates = @{}
 foreach ($w in $Workloads) {
     if ($w -match '^few(\d+)-') {
         $k = $Matches[1]
-        if (-not $templates.ContainsKey($k)) {
-            $dir = Join-Path $base "owed$k"
-            New-Item -ItemType Directory $dir | Out-Null
-            $db = Join-Path $dir 'catalog.sqlite'
-            Copy-Item -LiteralPath $Catalog $db
-            python -I (Join-Path $here 'set_owed.py') $db $k | Out-Null
-            python -I $dropPy $db
-            $templates[$k] = $db
+        foreach ($build in 'A', 'B') {
+            if (-not $templates.ContainsKey("$build$k")) {
+                $dir = Join-Path $base "owed$k$build"
+                New-Item -ItemType Directory $dir | Out-Null
+                $db = Join-Path $dir 'catalog.sqlite'
+                Copy-Item -LiteralPath $catalogs[$build] $db
+                python -I (Join-Path $here 'set_owed.py') $db $k | Out-Null
+                python -I $dropPy $db
+                $templates["$build$k"] = $db
+            }
         }
     }
 }
@@ -80,7 +86,7 @@ for ($p = 0; $p -lt $Pairs; $p++) {
             for ($k = 0; $k -lt $Repeat; $k++) {
                 if (Test-Path $run) { Remove-Item -LiteralPath $run -Recurse -Force }
                 New-Item -ItemType Directory $run | Out-Null
-                $source = if ($owed) { $templates[$owed] } else { $Catalog }
+                $source = if ($owed) { $templates["$build$owed"] } else { $catalogs[$build] }
                 Copy-Item -LiteralPath $source (Join-Path $run 'catalog.sqlite')
                 Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_SLICE -ErrorAction SilentlyContinue
                 if ($owed) { $env:PG_PROBE_KEEP_OWED = '1' }

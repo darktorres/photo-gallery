@@ -36,14 +36,20 @@
 //! a run is tested against its suffix of the query bucket eight entries at a time; a bucket of at most eight entries is
 //! loaded once, and the ordering rule is a mask of its lanes (`scan_runs`). Every kernel tests the same candidates.
 //!
-//! **Two paths, one set of candidates.** The sorted path sorts the next stage on 1 - 2 sorter threads while the workers
-//! scan this one (a ring of two stage sets; [`Tuning::sorters`]). A slice with few query entries ([`Tuning::few_entries`])
-//! sorts nothing of the stored side: each chunk's query values go in a bitmap, and one pass over the store tests every
-//! stored entry's values and their one-bit neighbours against them. Both test the same (stored, query, chunk) candidates
-//! with the same rules, so they return the same pairs.
+//! **Two paths, one set of candidates.** The sorted path sorts each stage's sides and scans them, a stage at a time. A
+//! slice with few query entries ([`Tuning::few_entries`]) sorts nothing of the stored side: each chunk lists the query
+//! entries under their values' probes, and one pass over the store looks up every stored entry's values. Both test the
+//! same (stored, query, chunk) candidates with the same rules, so they return the same pairs.
+//!
+//! **One team.** A join's threads are one team, which does all of its work: the sorts' passes by blocks and regions,
+//! the scans by blocks of buckets, the few-owed path's lists and pass, claimed from one schedule (`run_team`). The whole
+//! team sorts a stage, then scans it; a thread waits only when its phase has no task left to claim and the next phase
+//! has not begun (the phase's tail).
 
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_model::num::index;
@@ -284,18 +290,11 @@ pub(crate) fn best_kernel() -> Kernel {
 /// floor, sorting the stored side, is not, so the crossover grows with the threads: near 240 entries on one thread and
 /// near 16,000 on twelve.
 pub const FEW_ENTRIES_PER_THREAD: usize = 1_000;
-/// The stored entries a worker of the few-owed path takes at a time (its unit of work, and of control).
+/// The stored entries a thread of the few-owed path takes at a time (its unit of work, and of control).
 const FEW_BLOCK: usize = 4096;
-/// The stage sets in the sorted path's ring: the one the workers scan, and the one the sorters fill.
-const RING: usize = 2;
-
 /// What a join may be tuned by (the gates of docs/plans/PAIRING_PASS_PLAN.md set the defaults, which `None` takes).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tuning {
-    /// The threads that sort the next stage while the workers scan this one, out of the join's threads: 0 sorts on
-    /// the workers' thread between the stages, 1 sorts both sides of a stage in turn, 2 sorts them side by side.
-    /// `None`: by the thread count ([`default_sorters`]).
-    pub sorters: Option<usize>,
     /// The most query entries the few-owed path takes. `None`: [`FEW_ENTRIES_PER_THREAD`] for each of the join's threads.
     pub few_entries: Option<usize>,
     /// Each stage's head words, 1 - 7 (others are clamped to them). `None`: by the cost of a word against the false
@@ -304,12 +303,6 @@ pub struct Tuning {
 }
 
 impl Tuning {
-    /// The sorter threads a join on `threads` threads runs: [`Tuning::sorters`], or by the thread count, and two at
-    /// most (side by side is the most there is).
-    pub fn sorters_on(&self, threads: usize) -> usize {
-        self.sorters.unwrap_or_else(|| default_sorters(threads)).min(2)
-    }
-
     /// The most query entries the few-owed path takes in a join on `threads` threads: [`Tuning::few_entries`], or
     /// [`FEW_ENTRIES_PER_THREAD`] for each thread.
     pub fn few_entries_on(&self, threads: usize) -> usize {
@@ -317,27 +310,20 @@ impl Tuning {
     }
 }
 
-/// The sorter threads of a join on `threads` threads: the workers are the rest. Gate G3 (docs/reference/PROFILING.md,
-/// "The pairing pass"): below 4 threads a sorter costs a worker the scan needs more; from 4 one sorter keeps ahead of
-/// the scan; from 10 the scan is fast enough that one sorter falls behind, and two side by side keep up.
-pub fn default_sorters(threads: usize) -> usize {
-    match threads {
-        0..=3 => 0,
-        4..=9 => 1,
-        _ => 2,
-    }
-}
-
-/// Where a join's time went (wall clock, on the thread that runs it).
+/// Where a join's time went: the slice's preparation on the thread that runs the join, and the rest as the team's
+/// threads' time, summed over them (on `n` threads, about `n` times the wall clock in all).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct JoinTimes {
-    /// The slice's query side: its owed pictures.
+    /// The slice's query side: its owed pictures (wall clock).
     pub prepare: Duration,
-    /// Waiting for the stages' sorts: all of them when the sorts run between the scans, the part the scans did not
-    /// cover when sorters run ahead. The few-owed path's lists of its query entries' probes.
+    /// In the sorts' passes, or the few-owed path's table and lists.
     pub sort: Duration,
-    /// The scans of the stages, or the few-owed path's pass over the store.
+    /// In the scans' blocks, or the few-owed path's pass over the store.
     pub scan: Duration,
+    /// Waiting with nothing to take: a sort's pass not done yet, or a stage's last blocks on other threads.
+    pub starved: Duration,
+    /// In the caller's `control`: a pause, mostly.
+    pub paused: Duration,
 }
 
 impl std::ops::AddAssign for JoinTimes {
@@ -345,6 +331,8 @@ impl std::ops::AddAssign for JoinTimes {
         self.prepare += other.prepare;
         self.sort += other.sort;
         self.scan += other.scan;
+        self.starved += other.starved;
+        self.paused += other.paused;
     }
 }
 
@@ -365,6 +353,9 @@ pub struct Joiner<'a> {
     stored: Vec<[u64; 4]>,
     kernel: Kernel,
     tuning: Tuning,
+    /// The tests' injected panic: in the task of this kind that brings the count to zero.
+    #[cfg(test)]
+    fault: Option<(Kind, AtomicUsize)>,
 }
 
 impl<'a> Joiner<'a> {
@@ -374,7 +365,14 @@ impl<'a> Joiner<'a> {
             return Err(TooManyPictures(hashes.len()));
         }
         let stored = hashes.iter().flat_map(|h| h.iter().map(permuted)).collect();
-        Ok(Joiner { owed, stored, kernel: best_kernel(), tuning: Tuning::default() })
+        Ok(Joiner {
+            owed,
+            stored,
+            kernel: best_kernel(),
+            tuning: Tuning::default(),
+            #[cfg(test)]
+            fault: None,
+        })
     }
 
     /// Stage `c`'s head words ([`Tuning::widths`]).
@@ -397,16 +395,25 @@ impl<'a> Joiner<'a> {
         self
     }
 
+    /// The same join, panicking in its `nth` task of `kind` (the tests' injected fault).
+    #[cfg(test)]
+    fn with_fault(mut self, kind: Kind, nth: usize) -> Joiner<'a> {
+        self.fault = Some((kind, AtomicUsize::new(nth)));
+        self
+    }
+
     fn owes(&self, i: usize) -> bool {
         self.owed.get(i).copied().unwrap_or(false)
     }
 
     /// The pairs in which the query side is one of `queries` (a range of indices; the owed ones in it query).
     ///
-    /// `threads` threads in all (at least one): the sorters ([`Tuning::sorters`]) and the workers. `start` runs once in
-    /// each thread before it works (the caller sets its priority there); `control` is asked before each block of work,
-    /// by the workers and the sorters, returns false to stop, and may block (a pause). `None` when it stopped the join:
-    /// nothing is returned then. Not inlined, so a profiler can toggle on it.
+    /// On a team of `threads` threads (at least one), which do all of the join's work but finding the slice's owed
+    /// pictures ([`run_team`]). `start` runs once in each thread before it works (the caller sets its priority there).
+    /// `control` is asked before each task, returns false to stop, and may block (a pause). `abort` is called when a
+    /// thread panics, after the team is told to stop: it should wake a `control` that is blocked, and make it return
+    /// false. `None` when `control` stopped the join: nothing is returned then. Not inlined, so a profiler can toggle on
+    /// it.
     #[inline(never)]
     pub fn join(
         &self,
@@ -414,145 +421,122 @@ impl<'a> Joiner<'a> {
         threads: usize,
         start: &(dyn Fn() + Sync),
         control: &(dyn Fn() -> bool + Sync),
+        abort: &(dyn Fn() + Sync),
     ) -> Option<Joined> {
         let threads = threads.max(1);
         let preparing = Instant::now();
         let pictures: Vec<u32> = queries.filter(|&i| self.owes(i)).filter_map(|i| u32::try_from(i).ok()).collect();
         let sides = Sides { joiner: self, pictures: &pictures };
-        let mut times = JoinTimes { prepare: preparing.elapsed(), ..JoinTimes::default() };
+        let prepare = preparing.elapsed();
         let queries = pictures.len() * QUERY_ORIENTATIONS;
-        let few = self.tuning.few_entries_on(threads);
-        let mut pairs = if queries <= few {
-            self.few_owed(&sides, queries, threads, start, control, &mut times)?
+        let (pairs, spent) = if queries <= self.tuning.few_entries_on(threads) {
+            let work =
+                |task: FewTask, out: &mut Vec<Pair>, _: &mut ReadBuffers| self.few_task(&sides, queries, task, out);
+            run_team(threads, start, control, abort, FewSchedule::new(self.stored.len()), &work)?
         } else {
-            self.sorted(&sides, queries, threads, start, control, &mut times)?
+            let widths = std::array::from_fn(|c| self.width(c));
+            let schedule = SortedSchedule::new(widths, [self.stored.len(), queries]);
+            let work = |task: SortedTask, out: &mut Vec<Pair>, read: &mut ReadBuffers| {
+                self.sorted_task(&sides, task, out, read)
+            };
+            run_team(threads, start, control, abort, schedule, &work)?
         };
-        compact(&mut pairs);
+        let times =
+            JoinTimes { prepare, sort: spent.sort, scan: spent.scan, starved: spent.starved, paused: spent.paused };
         Some(Joined { pairs, times })
     }
 
-    /// The sorted path: per chunk, both sides sorted into buckets and the buckets probed. The sorts of a stage run on
-    /// the sorter threads while the workers scan the one before (a ring of [`RING`] stage sets), or between the scans
-    /// with no sorter.
-    fn sorted(
+    /// One task of the sorted path: a pass of a side's sort, or a block of a stage's scan.
+    fn sorted_task(
         &self,
         sides: &Sides<'_, '_>,
-        queries: usize,
-        threads: usize,
-        start: &(dyn Fn() + Sync),
-        control: &(dyn Fn() -> bool + Sync),
-        times: &mut JoinTimes,
-    ) -> Option<Vec<Pair>> {
-        let sorters = self.tuning.sorters_on(threads);
-        let workers = threads.saturating_sub(sorters).max(1);
-        let stored = self.stored.len();
-        let mut found = Vec::new();
-        if sorters == 0 {
-            let (mut set, mut scratch) = (StageSet::default(), Scratch::default());
-            for c in 0..CHUNKS {
-                if !control() {
-                    return None;
+        task: SortedTask,
+        out: &mut Vec<Pair>,
+        read: &mut ReadBuffers,
+    ) -> (Kind, SortedReport) {
+        match task {
+            SortedTask::First { side, b, mut block, entries, c, w } => {
+                self.fault(Kind::Sort);
+                if side == STORED {
+                    first_pass(&mut block, read, entries, &|e| sides.stored_chunks(e), c, w);
+                } else {
+                    first_pass(&mut block, read, entries, &|e| sides.query_chunks(e), c, w);
                 }
-                let sorting = Instant::now();
-                set.sort(c, self.width(c), sides, stored, queries, &mut scratch, false, start);
-                times.sort += sorting.elapsed();
-                let scanning = Instant::now();
-                let stage = Stage::new(c, self.width(c), &set, sides);
-                found.append(&mut run_stage(self.kernel, &stage, workers, start, control)?);
-                times.scan += scanning.elapsed();
+                (Kind::Sort, SortedReport::First { side, b, block })
             }
-            return Some(found);
-        }
-        let stopped = AtomicBool::new(false);
-        std::thread::scope(|scope| {
-            let (full_tx, full_rx) = std::sync::mpsc::sync_channel::<(usize, StageSet)>(RING);
-            let (free_tx, free_rx) = std::sync::mpsc::sync_channel::<StageSet>(RING);
-            for _ in 0..RING {
-                let _ = free_tx.send(StageSet::default());
+            SortedTask::Second { side, h, mut region, blocks, count, w } => {
+                self.fault(Kind::Sort);
+                let layout = if side == STORED { Layout::Rows } else { Layout::Columns };
+                second_pass(&mut region, blocks.get(..count).unwrap_or_default(), h, w, layout);
+                (Kind::Sort, SortedReport::Second { side, h, region })
             }
-            let stopped = &stopped;
-            let sorter = scope.spawn(move || {
-                start();
-                let mut scratch = Scratch::default();
-                for c in 0..CHUNKS {
-                    // The workers dropped their end: they stopped, or are done.
-                    let Ok(mut set) = free_rx.recv() else { return };
-                    if stopped.load(Relaxed) || !control() {
-                        stopped.store(true, Relaxed);
-                        return;
-                    }
-                    set.sort(c, self.width(c), sides, stored, queries, &mut scratch, sorters == 2, start);
-                    // Never blocks: the channel holds every set there is.
-                    if full_tx.send((c, set)).is_err() {
-                        return;
-                    }
-                }
-            });
-            for _ in 0..CHUNKS {
-                let waiting = Instant::now();
-                // The sorter stopped (a stop, or its panic, which the join below resumes).
-                let Ok((c, set)) = full_rx.recv() else { break };
-                times.sort += waiting.elapsed();
-                let scanning = Instant::now();
-                let stage = Stage::new(c, self.width(c), &set, sides);
-                let scanned = run_stage(self.kernel, &stage, workers, start, control);
-                times.scan += scanning.elapsed();
-                let Some(mut pairs) = scanned else {
-                    stopped.store(true, Relaxed);
-                    break;
+            SortedTask::Scan { sorts, block } => {
+                self.fault(Kind::Scan);
+                let Some([stored, query]) = sorts.sides.get(..2).and_then(|s| <&[Sorted; 2]>::try_from(s).ok()) else {
+                    return (Kind::Scan, SortedReport::Scan);
                 };
-                found.append(&mut pairs);
-                let _ = free_tx.send(set);
+                let stage = Stage::new(sorts.c, sorts.w, stored, query, sides);
+                let lo = block * BLOCK;
+                scan(self.kernel, &stage, lo..(lo + BLOCK).min(VALUES), out);
+                (Kind::Scan, SortedReport::Scan)
             }
-            // Releases a sorter waiting for a set.
-            drop(free_tx);
-            if let Err(panic) = sorter.join() {
-                std::panic::resume_unwind(panic);
-            }
-        });
-        (!stopped.load(Relaxed)).then_some(found)
+        }
     }
 
-    /// The few-owed path: the query side is small, so the stored side is not sorted. Each chunk lists every query entry
-    /// under its value's 17 probes ([`FewChunk`]), and one pass over the store tests each stored entry's value in every
-    /// chunk against those lists. A listed entry is the candidate the sorted path's probe finds, tested by the same
-    /// rules ([`few_entry`]), so the pairs are the same.
-    fn few_owed(
-        &self,
-        sides: &Sides<'_, '_>,
-        queries: usize,
-        threads: usize,
-        start: &(dyn Fn() + Sync),
-        control: &(dyn Fn() -> bool + Sync),
-        times: &mut JoinTimes,
-    ) -> Option<Vec<Pair>> {
-        let sorting = Instant::now();
-        let few = Few::new(sides, queries, threads, start);
-        times.sort += sorting.elapsed();
-        let scanning = Instant::now();
-        let blocks = self.stored.len().div_ceil(FEW_BLOCK);
-        let found = parallel(threads, blocks, start, control, |block, out| {
-            let lo = block * FEW_BLOCK;
-            for x in lo..(lo + FEW_BLOCK).min(self.stored.len()) {
-                few_entry(sides, &few, x, out);
+    /// One task of the few-owed path: the query side's table, a chunk's lists, or a block of the pass over the store.
+    fn few_task(&self, sides: &Sides<'_, '_>, queries: usize, task: FewTask, out: &mut Vec<Pair>) -> (Kind, FewReport) {
+        match task {
+            FewTask::Table => {
+                self.fault(Kind::Sort);
+                let (words, codes) = (0..queries).map(|e| sides.query_entry(e)).unzip();
+                (Kind::Sort, FewReport::Table(FewTable { codes, words }))
             }
-        });
-        times.scan += scanning.elapsed();
-        found
+            FewTask::Chunk { c, table } => {
+                self.fault(Kind::Sort);
+                (Kind::Sort, FewReport::Chunk { c, chunk: FewChunk::new(&table.words, c) })
+            }
+            FewTask::Scan { few, block } => {
+                self.fault(Kind::Scan);
+                let lo = block * FEW_BLOCK;
+                for x in lo..(lo + FEW_BLOCK).min(self.stored.len()) {
+                    few_entry(sides, &few, x, out);
+                }
+                (Kind::Scan, FewReport::Scan)
+            }
+        }
     }
+
+    /// The tests' injected panic: at the task of `kind` they name, counted over the join.
+    #[cfg(test)]
+    fn fault(&self, kind: Kind) {
+        if let Some((at, nth)) = &self.fault
+            && *at == kind
+            && nth.fetch_sub(1, Relaxed) == 1
+        {
+            panic!("the injected fault, in a {kind:?} task");
+        }
+    }
+
+    #[cfg(not(test))]
+    #[inline(always)]
+    fn fault(&self, _: Kind) {}
 }
 
-/// The few-owed path's query side: its entries' codes and hashes once (`codes[j]`, `words[j]`), and per chunk their
-/// neighbourhoods ([`FewChunk`]).
-struct Few {
+/// The few-owed path's query side: its entries' codes and hashes, in entry order (`codes[j]`, `words[j]`).
+struct FewTable {
     codes: Vec<u32>,
     words: Vec<[u64; 4]>,
+}
+
+/// The few-owed path's query side as its pass reads it: the table, and each chunk's lists of its entries ([`FewChunk`]).
+struct Few {
+    table: Arc<FewTable>,
     chunks: Vec<FewChunk>,
 }
 
 /// One chunk's query entries, each under its own value and that value's 16 one-bit neighbours, so a stored entry whose
 /// value is `v` meets exactly the query entries its 17 probes would (`entries[offsets[v]..offsets[v + 1]]`, indices
-/// into [`Few`]'s table): the value `u` is in `v`'s probes exactly when `v` is in `u`'s, and a value's 17 probes are
+/// into [`FewTable`]): the value `u` is in `v`'s probes exactly when `v` is in `u`'s, and a value's 17 probes are
 /// distinct, so each candidate is listed once. `bits` marks the values with entries: 8 KB a chunk, 128 KB for all 16,
 /// which stay in L2 while the pass streams the store; the offsets are read only on a hit.
 struct FewChunk {
@@ -563,39 +547,6 @@ struct FewChunk {
 
 /// The probes of a value: itself and its 16 one-bit neighbours.
 const PROBES: usize = 1 + 16;
-
-impl Few {
-    /// The `queries` query entries of `sides`, and their neighbourhoods in every chunk, the chunks built on up to
-    /// `threads` threads (each running `start` first). A chunk's build is a few random passes over 256 KB, so it is not
-    /// asked to stop: the scan is.
-    fn new(sides: &Sides<'_, '_>, queries: usize, threads: usize, start: &(dyn Fn() + Sync)) -> Few {
-        let (words, codes): (Vec<[u64; 4]>, Vec<u32>) = (0..queries).map(|e| sides.query_entry(e)).unzip();
-        let next = AtomicUsize::new(0);
-        let mut built: Vec<(usize, FewChunk)> = std::thread::scope(|scope| {
-            let workers: Vec<_> = (0..threads.clamp(1, CHUNKS))
-                .map(|_| {
-                    scope.spawn(|| {
-                        start();
-                        let mut mine = Vec::new();
-                        loop {
-                            let c = next.fetch_add(1, Relaxed);
-                            if c >= CHUNKS {
-                                return mine;
-                            }
-                            mine.push((c, FewChunk::new(&words, c)));
-                        }
-                    })
-                })
-                .collect();
-            workers
-                .into_iter()
-                .flat_map(|worker| worker.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
-                .collect()
-        });
-        built.sort_unstable_by_key(|&(c, _)| c);
-        Few { codes, words, chunks: built.into_iter().map(|(_, chunk)| chunk).collect() }
-    }
-}
 
 impl FewChunk {
     /// Chunk `c` of the query entries `words`, by a counting sort of their (probe value, entry) pairs: each value's
@@ -657,7 +608,9 @@ fn few_entry(sides: &Sides<'_, '_>, few: &Few, x: usize, out: &mut Vec<Pair>) {
     let (xw, xc) = sides.stored_entry(x);
     for (c, chunk_of) in few.chunks.iter().enumerate() {
         for &j in chunk_of.met(chunk(&xw, c)) {
-            let (Some(&yc), Some(yw)) = (few.codes.get(index(j)), few.words.get(index(j))) else { continue };
+            let (Some(&yc), Some(yw)) = (few.table.codes.get(index(j)), few.table.words.get(index(j))) else {
+                continue;
+            };
             let distance: u32 = xw.iter().zip(yw).map(|(a, b)| (a ^ b).count_ones()).sum();
             if distance <= MATCH_DISTANCE && owed(xc, yc) && !matched_earlier(&xw, yw, c) {
                 let (xp, yp) = (xc >> 4, yc >> 4);
@@ -676,62 +629,6 @@ fn report(sides: &Sides<'_, '_>, c: usize, xc: u32, xw: &[u64; 4], yc: u32, out:
     if distance <= MATCH_DISTANCE && !matched_earlier(xw, &yw, c) {
         let (xp, yp) = (xc >> 4, yc >> 4);
         out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
-    }
-}
-
-/// One stage's two sorted sides.
-#[derive(Default)]
-struct StageSet {
-    stored: Sorted,
-    query: Sorted,
-}
-
-/// The radix sort's scratch of each side, reused from stage to stage.
-#[derive(Default)]
-struct Scratch {
-    stored: SortScratch,
-    query: SortScratch,
-}
-
-impl StageSet {
-    /// Both sides sorted by chunk `c` with `w` head words: the `stored` entries as rows (a kernel reads one entry's head
-    /// at a time) and the `queries` entries as columns (it reads eight entries' word at a time); with `side_by_side`,
-    /// the stored side on a thread of its own (which runs `start` first) while this one sorts the queries.
-    #[expect(clippy::too_many_arguments, reason = "one stage's sort: its sides, sizes, scratch and how to run it")]
-    fn sort(
-        &mut self,
-        c: usize,
-        w: usize,
-        sides: &Sides<'_, '_>,
-        stored: usize,
-        queries: usize,
-        scratch: &mut Scratch,
-        side_by_side: bool,
-        start: &(dyn Fn() + Sync),
-    ) {
-        let StageSet { stored: stored_out, query: query_out } = self;
-        let Scratch { stored: stored_scratch, query: query_scratch } = scratch;
-        let sort_stored = |out: &mut Sorted, scratch: &mut SortScratch| {
-            sort_into(out, scratch, stored, |e| sides.stored_chunks(e), c, w, Layout::Rows);
-        };
-        let sort_queries = |out: &mut Sorted, scratch: &mut SortScratch| {
-            sort_into(out, scratch, queries, |e| sides.query_chunks(e), c, w, Layout::Columns);
-        };
-        if side_by_side {
-            std::thread::scope(|scope| {
-                let other = scope.spawn(|| {
-                    start();
-                    sort_stored(stored_out, stored_scratch);
-                });
-                sort_queries(query_out, query_scratch);
-                if let Err(panic) = other.join() {
-                    std::panic::resume_unwind(panic);
-                }
-            });
-        } else {
-            sort_stored(stored_out, stored_scratch);
-            sort_queries(query_out, query_scratch);
-        }
     }
 }
 
@@ -931,43 +828,59 @@ fn sort_block(w: usize) -> usize {
     (l2_cache() / (2 * (4 * (w + 1) + 2))).max(1)
 }
 
-/// The radix sort's scratch for one side, reused from stage to stage: the records after the first pass (heads, codes
-/// and keys), one block's records as read, and each block's runs (`runs[b][h]..runs[b][h + 1]`, the block's records of
-/// high byte `h`).
+/// One block of a side's first pass: its records scattered by their chunk's high byte (`run[h]..run[h + 1]` are those
+/// of high byte `h`, in the order read), each its head (`w` words), code and chunk value. Reused from stage to stage.
 #[derive(Default)]
-struct SortScratch {
+struct Block {
     heads: Vec<u32>,
     codes: Vec<u32>,
     keys: Vec<u16>,
-    block_heads: Vec<u32>,
-    block_codes: Vec<u32>,
-    block_keys: Vec<u16>,
-    runs: Vec<[u32; 257]>,
+    run: Vec<u32>,
 }
 
-/// The `n` entries `entry(0..n)` sorted by their chunk `c` into `out`, stably, MSD by bytes, each with its head of `w`
-/// words ([`head_words`]) in `layout`. The first pass reads each block of [`sort_block`] entries once and scatters it by
-/// the high byte within the block's own part of the records, so its writes stay in L2; the second fills each region
-/// from its run in every block, in block order, by the low byte, so its writes stay in the region. `out` and `scratch`
-/// are reused from stage to stage without being cleared: every slot an entry needs is written, and the padding may hold
-/// anything. Monomorphized by the head words, as the kernels are, so a head is copied as a fixed-size array.
-fn sort_into(
-    out: &mut Sorted,
-    scratch: &mut SortScratch,
-    n: usize,
-    entry: impl Fn(usize) -> ([u16; CHUNKS], u32),
+/// A thread's buffers for the first pass: one block's records as read, before they are scattered (in L2 with the block).
+#[derive(Default)]
+struct ReadBuffers {
+    heads: Vec<u32>,
+    codes: Vec<u32>,
+    keys: Vec<u16>,
+}
+
+/// The first pass of the sort of a side by its chunk `c`, over one block of its entries (`entry(entries)`, at most
+/// [`sort_block`]): each entry's key and head of `w` words ([`head_words`]) read into `read`, then scattered into
+/// `block` by the key's high byte. The block's records are written whole, so its buffers need no clearing.
+/// Monomorphized by the head words, as the kernels are, so a head is copied as a fixed-size array.
+fn first_pass(
+    block: &mut Block,
+    read: &mut ReadBuffers,
+    entries: Range<usize>,
+    entry: &impl Fn(usize) -> ([u16; CHUNKS], u32),
     c: usize,
     w: usize,
-    layout: Layout,
 ) {
     match w {
-        1 => sort_width::<1>(out, scratch, n, entry, c, layout),
-        2 => sort_width::<2>(out, scratch, n, entry, c, layout),
-        3 => sort_width::<3>(out, scratch, n, entry, c, layout),
-        4 => sort_width::<4>(out, scratch, n, entry, c, layout),
-        5 => sort_width::<5>(out, scratch, n, entry, c, layout),
-        6 => sort_width::<6>(out, scratch, n, entry, c, layout),
-        _ => sort_width::<MAX_HEAD_WORDS>(out, scratch, n, entry, c, layout),
+        1 => first_pass_width::<1>(block, read, entries, entry, c),
+        2 => first_pass_width::<2>(block, read, entries, entry, c),
+        3 => first_pass_width::<3>(block, read, entries, entry, c),
+        4 => first_pass_width::<4>(block, read, entries, entry, c),
+        5 => first_pass_width::<5>(block, read, entries, entry, c),
+        6 => first_pass_width::<6>(block, read, entries, entry, c),
+        _ => first_pass_width::<MAX_HEAD_WORDS>(block, read, entries, entry, c),
+    }
+}
+
+/// The second pass into region `h`: the records of high byte `h` from each of the first pass's `blocks`, in block
+/// order (so the sort is stable), placed by the key's low byte, with heads of `w` words in `layout`. Every slot an
+/// entry needs is written, and the padding may hold anything, so the region's buffers need no clearing.
+fn second_pass(region: &mut Region, blocks: &[Block], h: usize, w: usize, layout: Layout) {
+    match w {
+        1 => second_pass_width::<1>(region, blocks, h, layout),
+        2 => second_pass_width::<2>(region, blocks, h, layout),
+        3 => second_pass_width::<3>(region, blocks, h, layout),
+        4 => second_pass_width::<4>(region, blocks, h, layout),
+        5 => second_pass_width::<5>(region, blocks, h, layout),
+        6 => second_pass_width::<6>(region, blocks, h, layout),
+        _ => second_pass_width::<MAX_HEAD_WORDS>(region, blocks, h, layout),
     }
 }
 
@@ -979,102 +892,134 @@ fn head_words<const W: usize>(chunks: &[u16; CHUNKS], c: usize) -> [u32; W] {
     std::array::from_fn(|j| at(c + 1 + 2 * j) | (at(c + 2 + 2 * j) << 16))
 }
 
-/// [`sort_into`] at `W` head words.
+/// [`first_pass`] at `W` head words.
 #[expect(
     clippy::indexing_slicing,
-    reason = "a byte is below 256 (the counts' length; the runs' and offsets' less one); each position is a running sum \
-              of the counts, below the block's end, the n records or the region's entries, which the arrays are sized to"
+    reason = "a byte is below 256 (the counts' length, the run's less one); each position is a running sum of the \
+              counts, below the block's records, which the arrays are sized to"
 )]
-fn sort_width<const W: usize>(
-    out: &mut Sorted,
-    scratch: &mut SortScratch,
-    n: usize,
-    entry: impl Fn(usize) -> ([u16; CHUNKS], u32),
+fn first_pass_width<const W: usize>(
+    block: &mut Block,
+    read: &mut ReadBuffers,
+    entries: Range<usize>,
+    entry: &impl Fn(usize) -> ([u16; CHUNKS], u32),
     c: usize,
-    layout: Layout,
 ) {
-    let SortScratch { heads, codes, keys, block_heads, block_codes, block_keys, runs } = scratch;
-    let size = sort_block(W);
-    heads.resize(n * W, 0);
-    codes.resize(n, 0);
-    keys.resize(n, 0);
-    runs.resize(n.div_ceil(size), [0; 257]);
-    for (b, run) in runs.iter_mut().enumerate() {
-        let lo = b * size;
-        let len = (lo + size).min(n) - lo;
-        block_heads.resize(len * W, 0);
-        block_codes.resize(len, 0);
-        block_keys.resize(len, 0);
-        let mut counts = [0u32; 256];
-        for (i, head) in block_heads.as_chunks_mut::<W>().0.iter_mut().enumerate() {
-            let (chunks, code) = entry(lo + i);
-            let key = chunks.get(c).copied().unwrap_or(0);
-            counts[usize::from(key >> 8)] += 1;
-            *head = head_words::<W>(&chunks, c);
-            block_codes[i] = code;
-            block_keys[i] = key;
+    let len = entries.len();
+    read.heads.resize(len * W, 0);
+    read.codes.resize(len, 0);
+    read.keys.resize(len, 0);
+    // Each buffer as its own slice, so a store through one does not make the loop read the others' bounds again.
+    let (read_heads, read_codes, read_keys) = (&mut read.heads[..], &mut read.codes[..], &mut read.keys[..]);
+    let mut counts = [0u32; 256];
+    for (((head, code), key), e) in
+        read_heads.as_chunks_mut::<W>().0.iter_mut().zip(read_codes.iter_mut()).zip(read_keys.iter_mut()).zip(entries)
+    {
+        let (chunks, entry_code) = entry(e);
+        let value = chunks.get(c).copied().unwrap_or(0);
+        counts[usize::from(value >> 8)] += 1;
+        *head = head_words::<W>(&chunks, c);
+        *code = entry_code;
+        *key = value;
+    }
+    block.run.resize(257, 0);
+    let mut at = 0u32;
+    for (start, count) in block.run.iter_mut().zip(&mut counts) {
+        (*start, at) = (at, at + *count);
+        *count = *start;
+    }
+    block.run[256] = at;
+    block.heads.resize(len * W, 0);
+    block.codes.resize(len, 0);
+    block.keys.resize(len, 0);
+    let (heads, codes, keys) = (&mut block.heads[..], &mut block.codes[..], &mut block.keys[..]);
+    // `counts` now holds each high byte's next position.
+    for ((head, &code), &key) in read_heads.as_chunks::<W>().0.iter().zip(read_codes.iter()).zip(read_keys.iter()) {
+        let slot = &mut counts[usize::from(key >> 8)];
+        let j = index(*slot);
+        heads[j * W..(j + 1) * W].copy_from_slice(head);
+        codes[j] = code;
+        keys[j] = key;
+        *slot += 1;
+    }
+}
+
+/// [`second_pass`] at `W` head words.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "a byte is below 256 (the counts' length; the run's and offsets' less one); each position is a running sum \
+              of the counts, below the region's entries, which the arrays are sized to; a block's runs are within it"
+)]
+fn second_pass_width<const W: usize>(region: &mut Region, blocks: &[Block], h: usize, layout: Layout) {
+    let mut counts = [0u32; 256];
+    for block in blocks {
+        for &key in &block.keys[index(block.run[h])..index(block.run[h + 1])] {
+            counts[usize::from(key & 0xFF)] += 1;
         }
-        let mut at = u32::try_from(lo).unwrap_or(u32::MAX);
-        for (start, count) in run.iter_mut().zip(counts) {
-            (*start, at) = (at, at + count);
-        }
-        run[256] = at;
-        let mut next = *run;
-        for (i, head) in block_heads.as_chunks::<W>().0.iter().enumerate() {
-            let key = block_keys[i];
-            let slot = &mut next[usize::from(key >> 8)];
+    }
+    region.offsets.resize(257, 0);
+    let mut at = 0u32;
+    for (l, count) in counts.iter_mut().enumerate() {
+        region.offsets[l] = at;
+        (*count, at) = (at, at + *count);
+    }
+    region.offsets[256] = at;
+    let len = index(at);
+    region.code.resize(len + CODE_PADDING, 0);
+    let stride = match layout {
+        Layout::Rows => W,
+        Layout::Columns => len + LANES,
+    };
+    region.stride = stride;
+    region.head.resize(W * if layout == Layout::Rows { len } else { stride }, 0);
+    // The region's buffers as their own slices, and block by block each run's slices taken once, so a store does not
+    // make the loop read any buffer's bounds again.
+    let (out_head, out_code) = (&mut region.head[..], &mut region.code[..]);
+    for block in blocks {
+        let run = index(block.run[h])..index(block.run[h + 1]);
+        let keys = &block.keys[run.clone()];
+        let codes = &block.codes[run.clone()];
+        let (heads, _) = block.heads[run.start * W..run.end * W].as_chunks::<W>();
+        for ((&key, &code), head) in keys.iter().zip(codes).zip(heads) {
+            let slot = &mut counts[usize::from(key & 0xFF)];
             let j = index(*slot);
-            heads[j * W..(j + 1) * W].copy_from_slice(head);
-            codes[j] = block_codes[i];
-            keys[j] = key;
+            match layout {
+                Layout::Rows => out_head[j * W..(j + 1) * W].copy_from_slice(head),
+                Layout::Columns => {
+                    for (k, &word) in head.iter().enumerate() {
+                        out_head[k * stride + j] = word;
+                    }
+                }
+            }
+            out_code[j] = code;
             *slot += 1;
         }
     }
-    out.regions.resize_with(256, Region::default);
+}
+
+/// The `n` entries `entry(0..n)` sorted by their chunk `c` into `out` as the team sorts a side, on one thread: the first
+/// pass by blocks of [`sort_block`] entries, then the second by regions.
+#[cfg(test)]
+fn sort_into(
+    out: &mut Sorted,
+    n: usize,
+    entry: impl Fn(usize) -> ([u16; CHUNKS], u32),
+    c: usize,
+    w: usize,
+    layout: Layout,
+) {
+    let size = sort_block(w);
+    let mut read = ReadBuffers::default();
+    let blocks: Vec<Block> = (0..n.div_ceil(size))
+        .map(|b| {
+            let mut block = Block::default();
+            first_pass(&mut block, &mut read, b * size..((b + 1) * size).min(n), &entry, c, w);
+            block
+        })
+        .collect();
+    out.regions.resize_with(REGIONS, Region::default);
     for (h, region) in out.regions.iter_mut().enumerate() {
-        let mut counts = [0u32; 256];
-        for run in runs.iter() {
-            for &key in &keys[index(run[h])..index(run[h + 1])] {
-                counts[usize::from(key & 0xFF)] += 1;
-            }
-        }
-        region.offsets.resize(257, 0);
-        let mut at = 0u32;
-        for (l, count) in counts.iter_mut().enumerate() {
-            region.offsets[l] = at;
-            (*count, at) = (at, at + *count);
-        }
-        region.offsets[256] = at;
-        let len = index(at);
-        region.code.resize(len + CODE_PADDING, 0);
-        let entries = runs.iter().flat_map(|run| index(run[h])..index(run[h + 1]));
-        match layout {
-            Layout::Rows => {
-                region.stride = W;
-                region.head.resize(len * W, 0);
-                for i in entries {
-                    let slot = &mut counts[usize::from(keys[i] & 0xFF)];
-                    let j = index(*slot);
-                    region.head[j * W..(j + 1) * W].copy_from_slice(&heads[i * W..(i + 1) * W]);
-                    region.code[j] = codes[i];
-                    *slot += 1;
-                }
-            }
-            Layout::Columns => {
-                let stride = len + LANES;
-                region.stride = stride;
-                region.head.resize(W * stride, 0);
-                for i in entries {
-                    let slot = &mut counts[usize::from(keys[i] & 0xFF)];
-                    let j = index(*slot);
-                    for (k, &word) in heads[i * W..(i + 1) * W].iter().enumerate() {
-                        region.head[k * stride + j] = word;
-                    }
-                    region.code[j] = codes[i];
-                    *slot += 1;
-                }
-            }
-        }
+        second_pass(region, &blocks, h, w, layout);
     }
 }
 
@@ -1105,9 +1050,9 @@ struct Stage<'a, 's, 'j> {
 }
 
 impl<'a, 's, 'j> Stage<'a, 's, 'j> {
-    /// Stage `c` of `set`, sorted with `w` head words.
-    fn new(c: usize, w: usize, set: &'a StageSet, sides: &'a Sides<'s, 'j>) -> Stage<'a, 's, 'j> {
-        Stage { c, w, bounds: bounds(c, w), stored: &set.stored, query: &set.query, sides }
+    /// Stage `c`, its sides `stored` and `query` sorted with `w` head words.
+    fn new(c: usize, w: usize, stored: &'a Sorted, query: &'a Sorted, sides: &'a Sides<'s, 'j>) -> Stage<'a, 's, 'j> {
+        Stage { c, w, bounds: bounds(c, w), stored, query, sides }
     }
 }
 
@@ -1458,67 +1403,500 @@ unsafe fn scan_avx2<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize
     );
 }
 
-/// Runs one chunk's stage on `kernel`, over the buckets in blocks, on `threads` workers. The pairs found, compacted; or
-/// `None` when `control` stopped it.
-fn run_stage(
-    kernel: Kernel,
-    st: &Stage<'_, '_, '_>,
-    threads: usize,
-    start: &(dyn Fn() + Sync),
-    control: &(dyn Fn() -> bool + Sync),
-) -> Option<Vec<Pair>> {
-    parallel(threads, VALUES.div_ceil(BLOCK), start, control, |block, out| {
-        let lo = block * BLOCK;
-        scan(kernel, st, lo..(lo + BLOCK).min(VALUES), out);
-    })
+/// The kind of a team's task, for the join's timings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// A sort's pass, or a few-owed path's lists.
+    Sort,
+    /// A block of a scan.
+    Scan,
 }
 
-/// Runs `work` on the blocks `0..blocks`, each once, on `threads` workers that take the next block as they finish one
-/// and ask `control` before each. The pairs found, compacted; or `None` when `control` stopped it.
-fn parallel(
+/// What a thread of a join's team is given: a task, nothing for now (it waits until the schedule changes), or nothing
+/// more (it leaves).
+enum Claim<T> {
+    Task(T),
+    Wait,
+    Done,
+}
+
+/// A join's schedule, kept under its team's lock: the tasks there are to claim, in order of priority, and what a
+/// finished one changes. A task owns what it writes (its buffers are taken out of the schedule and come back in its
+/// report) and shares what it reads (an `Arc` it drops before it reports), so no two tasks write one buffer, and a
+/// buffer comes back to the schedule only when no task holds it.
+trait Schedule: Send {
+    type Task: Send;
+    type Report: Send;
+    fn claim(&mut self) -> Claim<Self::Task>;
+    /// A task's result back: true when it made tasks claimable that were not, or finished the schedule, so the
+    /// waiting threads are woken.
+    fn report(&mut self, report: Self::Report) -> bool;
+}
+
+/// Where a join's threads spent their time, summed over them.
+#[derive(Clone, Copy, Default)]
+struct Spent {
+    sort: Duration,
+    scan: Duration,
+    starved: Duration,
+    paused: Duration,
+}
+
+/// A join's team: its schedule and whether it stopped, under one lock, and the condition its waiting threads wait on.
+struct Team<S> {
+    shared: Mutex<Shared<S>>,
+    changed: Condvar,
+}
+
+struct Shared<S> {
+    schedule: S,
+    stopped: bool,
+}
+
+impl<S> Team<S> {
+    /// The shared state. A thread that panicked holding the lock leaves it poisoned; the team is then stopping, and the
+    /// state is still what it was, so the others take it as it is.
+    fn lock(&self) -> MutexGuard<'_, Shared<S>> {
+        self.shared.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Stops the team: no thread claims again, and the waiting ones are woken to leave.
+    fn stop(&self) {
+        self.lock().stopped = true;
+        self.changed.notify_all();
+    }
+}
+
+/// Stops the team and calls the caller's `abort` when its thread panics: the others leave instead of waiting for what
+/// the panicked thread held, and a thread paused in the caller's `control` is woken to see the stop.
+struct PanicGuard<'t, S> {
+    team: &'t Team<S>,
+    abort: &'t (dyn Fn() + Sync),
+}
+
+impl<S> Drop for PanicGuard<'_, S> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.team.stop();
+            (self.abort)();
+        }
+    }
+}
+
+/// The work of a task, as [`run_team`] calls it: the task, the thread's pairs and first-pass buffers; the task's kind
+/// (for the timings) and its report back to the schedule.
+type Work<'w, S> =
+    dyn Fn(<S as Schedule>::Task, &mut Vec<Pair>, &mut ReadBuffers) -> (Kind, <S as Schedule>::Report) + Sync + 'w;
+
+/// Runs `schedule` on `threads` scoped threads, each `work`ing the tasks it claims (with its pairs and its first-pass
+/// buffers), until the schedule is done or the team stops. The pairs found, compacted, and where the threads' time
+/// went; `None` when `control` stopped it. Each thread runs `start` first, and asks `control` before each claim, never
+/// while it holds a task; it waits only when it can claim nothing, and asks `control` again when woken. Every thread is
+/// joined, and the first panic resumes on the caller.
+fn run_team<S: Schedule>(
     threads: usize,
-    blocks: usize,
     start: &(dyn Fn() + Sync),
     control: &(dyn Fn() -> bool + Sync),
-    work: impl Fn(usize, &mut Vec<Pair>) + Sync,
-) -> Option<Vec<Pair>> {
-    let next = AtomicUsize::new(0);
-    let stopped = AtomicBool::new(false);
-    let mut all = Vec::new();
-    std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads.max(1))
-            .map(|_| {
-                scope.spawn(|| {
-                    start();
-                    let mut out = Vec::new();
-                    loop {
-                        if stopped.load(Relaxed) || !control() {
-                            stopped.store(true, Relaxed);
-                            break;
-                        }
-                        let block = next.fetch_add(1, Relaxed);
-                        if block >= blocks {
-                            break;
-                        }
-                        work(block, &mut out);
-                    }
-                    compact(&mut out);
-                    out
-                })
-            })
-            .collect();
-        for worker in workers {
-            match worker.join() {
-                Ok(pairs) => all.extend(pairs),
-                Err(panic) => std::panic::resume_unwind(panic),
+    abort: &(dyn Fn() + Sync),
+    schedule: S,
+    work: &Work<'_, S>,
+) -> Option<(Vec<Pair>, Spent)> {
+    let team = Team { shared: Mutex::new(Shared { schedule, stopped: false }), changed: Condvar::new() };
+    let results: Vec<(Vec<Pair>, Spent)> = std::thread::scope(|scope| {
+        let members: Vec<_> =
+            (0..threads.max(1)).map(|_| scope.spawn(|| member(&team, start, control, abort, work))).collect();
+        let mut done = Vec::new();
+        let mut panic = None;
+        for member in members {
+            match member.join() {
+                Ok(result) => done.push(result),
+                Err(payload) => {
+                    panic.get_or_insert(payload);
+                }
             }
         }
+        if let Some(payload) = panic {
+            std::panic::resume_unwind(payload);
+        }
+        done
     });
-    if stopped.load(Relaxed) {
+    if team.lock().stopped {
         return None;
     }
-    compact(&mut all);
-    Some(all)
+    let mut pairs = Vec::new();
+    let mut spent = Spent::default();
+    for (mine, theirs) in results {
+        pairs.extend(mine);
+        spent.sort += theirs.sort;
+        spent.scan += theirs.scan;
+        spent.starved += theirs.starved;
+        spent.paused += theirs.paused;
+    }
+    compact(&mut pairs);
+    Some((pairs, spent))
+}
+
+/// One thread of [`run_team`].
+fn member<S: Schedule>(
+    team: &Team<S>,
+    start: &(dyn Fn() + Sync),
+    control: &(dyn Fn() -> bool + Sync),
+    abort: &(dyn Fn() + Sync),
+    work: &Work<'_, S>,
+) -> (Vec<Pair>, Spent) {
+    let _guard = PanicGuard { team, abort };
+    start();
+    let (mut out, mut read, mut spent) = (Vec::new(), ReadBuffers::default(), Spent::default());
+    loop {
+        let asking = Instant::now();
+        let go = control();
+        spent.paused += asking.elapsed();
+        if !go {
+            team.stop();
+            break;
+        }
+        let mut shared = team.lock();
+        if shared.stopped {
+            break;
+        }
+        let task = match shared.schedule.claim() {
+            Claim::Task(task) => task,
+            Claim::Done => break,
+            Claim::Wait => {
+                let waiting = Instant::now();
+                shared = team.changed.wait(shared).unwrap_or_else(PoisonError::into_inner);
+                drop(shared);
+                spent.starved += waiting.elapsed();
+                continue;
+            }
+        };
+        drop(shared);
+        let working = Instant::now();
+        let (kind, report) = work(task, &mut out, &mut read);
+        match kind {
+            Kind::Sort => spent.sort += working.elapsed(),
+            Kind::Scan => spent.scan += working.elapsed(),
+        }
+        if team.lock().schedule.report(report) {
+            team.changed.notify_all();
+        }
+    }
+    compact(&mut out);
+    (out, spent)
+}
+
+/// The stored side of a stage, and its query side.
+const STORED: usize = 0;
+const QUERY: usize = 1;
+/// The scan's blocks of a stage: [`BLOCK`] buckets each.
+const SCAN_BLOCKS: usize = VALUES.div_ceil(BLOCK);
+/// A side's regions: one per high byte of the chunk.
+const REGIONS: usize = 256;
+
+/// One side of the stage's sort, as it goes: the first pass's blocks (those not lent to a task; once all are back,
+/// frozen into an `Arc` the second pass's tasks share), the regions (those not lent), and how far each pass is. The
+/// buffers are kept from stage to stage, so a stage writes over the last one's and allocates only what grows.
+#[derive(Default)]
+struct SideSort {
+    blocks: Vec<Option<Block>>,
+    frozen: Option<Arc<Vec<Block>>>,
+    regions: Vec<Option<Region>>,
+    /// The first pass's blocks of this stage.
+    count: usize,
+    next_block: usize,
+    done_blocks: usize,
+    next_region: usize,
+    done_regions: usize,
+}
+
+impl SideSort {
+    /// Freezes the blocks for the second pass, once the first pass has given them all back.
+    fn freeze(&mut self) {
+        let blocks = self.blocks.iter_mut().take(self.count).map(|block| block.take().unwrap_or_default()).collect();
+        self.frozen = Some(Arc::new(blocks));
+    }
+
+    /// Takes the blocks back once the second pass is done (no task holds them then).
+    fn thaw(&mut self) {
+        if let Some(blocks) = self.frozen.take().and_then(Arc::into_inner) {
+            for (slot, block) in self.blocks.iter_mut().zip(blocks) {
+                *slot = Some(block);
+            }
+        }
+    }
+}
+
+/// A stage's two sides, sorted: what its scan's tasks share.
+struct Sorts {
+    c: usize,
+    w: usize,
+    sides: [Sorted; 2],
+}
+
+/// A stage's scan: the sorted sides its tasks share, the next block to claim, and the blocks done.
+struct ScanState {
+    sorts: Arc<Sorts>,
+    next: usize,
+    done: usize,
+}
+
+/// The sorted path's schedule: the stages in order, each sorted by the whole team (both sides: the first pass by
+/// blocks, the second by regions) and then scanned (by blocks of buckets), in one set of buffers. The next stage begins
+/// when this one's scan is done. A second set, so the next stage's sorts could fill the scan's tail, was measured
+/// against this at 2 - 12 threads and was no faster at any (PROFILING.md, "One thread team"): it removes the threads'
+/// wait at the tail, but its sorts cost more than that wait, as the two sets' memory is twice one's.
+struct SortedSchedule {
+    widths: [usize; CHUNKS],
+    /// The stored side's entries and the query side's.
+    entries: [usize; 2],
+    next_stage: usize,
+    /// The stage in the buffers (none: between stages), its sides' sorts, and its scan once both sides are sorted.
+    stage: Option<usize>,
+    sides: [SideSort; 2],
+    scan: Option<ScanState>,
+}
+
+enum SortedTask {
+    /// The first pass of `entries`, block `b` of a side, into `block`.
+    First { side: usize, b: usize, block: Block, entries: Range<usize>, c: usize, w: usize },
+    /// The second pass of a side into region `h`, from the first pass's `count` blocks.
+    Second { side: usize, h: usize, region: Region, blocks: Arc<Vec<Block>>, count: usize, w: usize },
+    /// The scan of one block of buckets.
+    Scan { sorts: Arc<Sorts>, block: usize },
+}
+
+enum SortedReport {
+    First { side: usize, b: usize, block: Block },
+    Second { side: usize, h: usize, region: Region },
+    Scan,
+}
+
+impl SortedSchedule {
+    /// The stages at `widths` head words, of `entries` stored and query entries.
+    fn new(widths: [usize; CHUNKS], entries: [usize; 2]) -> SortedSchedule {
+        SortedSchedule { widths, entries, next_stage: 0, stage: None, sides: Default::default(), scan: None }
+    }
+
+    /// Begins the next stage, if there is one and the buffers are free.
+    fn begin(&mut self) {
+        if self.stage.is_some() {
+            return;
+        }
+        let c = self.next_stage;
+        let Some(&w) = self.widths.get(c) else { return };
+        self.next_stage += 1;
+        self.stage = Some(c);
+        for (side, &n) in self.sides.iter_mut().zip(&self.entries) {
+            side.count = n.div_ceil(sort_block(w));
+            if side.blocks.len() < side.count {
+                side.blocks.resize_with(side.count, || Some(Block::default()));
+            }
+            side.regions.resize_with(REGIONS, || Some(Region::default()));
+            (side.next_block, side.done_blocks, side.next_region, side.done_regions) = (0, 0, 0, 0);
+            if side.count == 0 {
+                side.freeze();
+            }
+        }
+    }
+}
+
+impl Schedule for SortedSchedule {
+    type Task = SortedTask;
+    type Report = SortedReport;
+
+    fn claim(&mut self) -> Claim<SortedTask> {
+        self.begin();
+        let Some(c) = self.stage else { return Claim::Done };
+        let Some(&w) = self.widths.get(c) else { return Claim::Done };
+        if let Some(scan) = self.scan.as_mut() {
+            if scan.next < SCAN_BLOCKS {
+                let block = scan.next;
+                scan.next += 1;
+                return Claim::Task(SortedTask::Scan { sorts: Arc::clone(&scan.sorts), block });
+            }
+            return Claim::Wait;
+        }
+        for side in [QUERY, STORED] {
+            let (Some(sort), Some(&n)) = (self.sides.get_mut(side), self.entries.get(side)) else { continue };
+            if sort.next_block < sort.count {
+                let b = sort.next_block;
+                sort.next_block += 1;
+                let block = sort.blocks.get_mut(b).and_then(Option::take).unwrap_or_default();
+                let size = sort_block(w);
+                let entries = b * size..((b + 1) * size).min(n);
+                return Claim::Task(SortedTask::First { side, b, block, entries, c, w });
+            }
+            if let Some(blocks) = &sort.frozen
+                && sort.next_region < REGIONS
+            {
+                let h = sort.next_region;
+                sort.next_region += 1;
+                let region = sort.regions.get_mut(h).and_then(Option::take).unwrap_or_default();
+                let (blocks, count) = (Arc::clone(blocks), sort.count);
+                return Claim::Task(SortedTask::Second { side, h, region, blocks, count, w });
+            }
+        }
+        Claim::Wait
+    }
+
+    fn report(&mut self, report: SortedReport) -> bool {
+        match report {
+            SortedReport::First { side, b, block } => {
+                let Some(sort) = self.sides.get_mut(side) else { return true };
+                if let Some(slot) = sort.blocks.get_mut(b) {
+                    *slot = Some(block);
+                }
+                sort.done_blocks += 1;
+                let all = sort.done_blocks == sort.count;
+                if all {
+                    sort.freeze();
+                }
+                all
+            }
+            SortedReport::Second { side, h, region } => {
+                let Some(sort) = self.sides.get_mut(side) else { return true };
+                if let Some(slot) = sort.regions.get_mut(h) {
+                    *slot = Some(region);
+                }
+                sort.done_regions += 1;
+                if sort.done_regions < REGIONS {
+                    return false;
+                }
+                sort.thaw();
+                if self.sides.iter().any(|sort| sort.done_regions < REGIONS) {
+                    return false;
+                }
+                let (Some(c), Some(w)) = (self.stage, self.stage.and_then(|c| self.widths.get(c).copied())) else {
+                    return true;
+                };
+                let sides = self.sides.each_mut().map(|sort| Sorted {
+                    regions: sort.regions.iter_mut().map(|region| region.take().unwrap_or_default()).collect(),
+                });
+                self.scan = Some(ScanState { sorts: Arc::new(Sorts { c, w, sides }), next: 0, done: 0 });
+                true
+            }
+            SortedReport::Scan => {
+                let Some(scan) = self.scan.as_mut() else { return true };
+                scan.done += 1;
+                if scan.done < SCAN_BLOCKS {
+                    return false;
+                }
+                // Every task of the scan has reported, and dropped its handle first: the sides come back.
+                if let Some(sorts) = self.scan.take().and_then(|scan| Arc::into_inner(scan.sorts)) {
+                    for (sort, sorted) in self.sides.iter_mut().zip(sorts.sides) {
+                        for (slot, region) in sort.regions.iter_mut().zip(sorted.regions) {
+                            *slot = Some(region);
+                        }
+                    }
+                }
+                self.stage = None;
+                true
+            }
+        }
+    }
+}
+
+/// The few-owed path's schedule: the query side's table, then each chunk's lists ([`FewChunk`]), then the pass over the
+/// store by blocks of [`FEW_BLOCK`] entries.
+struct FewSchedule {
+    /// The store's blocks.
+    blocks: usize,
+    table_claimed: bool,
+    table: Option<Arc<FewTable>>,
+    chunks: Vec<Option<FewChunk>>,
+    next_chunk: usize,
+    done_chunks: usize,
+    few: Option<Arc<Few>>,
+    next_block: usize,
+    done_blocks: usize,
+}
+
+enum FewTask {
+    Table,
+    Chunk { c: usize, table: Arc<FewTable> },
+    Scan { few: Arc<Few>, block: usize },
+}
+
+enum FewReport {
+    Table(FewTable),
+    Chunk { c: usize, chunk: FewChunk },
+    Scan,
+}
+
+impl FewSchedule {
+    /// The schedule over a store of `stored` entries.
+    fn new(stored: usize) -> FewSchedule {
+        FewSchedule {
+            blocks: stored.div_ceil(FEW_BLOCK),
+            table_claimed: false,
+            table: None,
+            chunks: (0..CHUNKS).map(|_| None).collect(),
+            next_chunk: 0,
+            done_chunks: 0,
+            few: None,
+            next_block: 0,
+            done_blocks: 0,
+        }
+    }
+}
+
+impl Schedule for FewSchedule {
+    type Task = FewTask;
+    type Report = FewReport;
+
+    fn claim(&mut self) -> Claim<FewTask> {
+        if !self.table_claimed {
+            self.table_claimed = true;
+            return Claim::Task(FewTask::Table);
+        }
+        if let Some(table) = &self.table
+            && self.next_chunk < CHUNKS
+        {
+            let c = self.next_chunk;
+            self.next_chunk += 1;
+            return Claim::Task(FewTask::Chunk { c, table: Arc::clone(table) });
+        }
+        if let Some(few) = &self.few {
+            if self.next_block < self.blocks {
+                let block = self.next_block;
+                self.next_block += 1;
+                return Claim::Task(FewTask::Scan { few: Arc::clone(few), block });
+            }
+            if self.done_blocks >= self.blocks {
+                return Claim::Done;
+            }
+        }
+        Claim::Wait
+    }
+
+    fn report(&mut self, report: FewReport) -> bool {
+        match report {
+            FewReport::Table(table) => {
+                self.table = Some(Arc::new(table));
+                true
+            }
+            FewReport::Chunk { c, chunk } => {
+                if let Some(slot) = self.chunks.get_mut(c) {
+                    *slot = Some(chunk);
+                }
+                self.done_chunks += 1;
+                if self.done_chunks < CHUNKS {
+                    return false;
+                }
+                let (Some(table), Some(chunks)) =
+                    (self.table.clone(), self.chunks.iter_mut().map(Option::take).collect::<Option<Vec<_>>>())
+                else {
+                    return true;
+                };
+                self.few = Some(Arc::new(Few { table, chunks }));
+                true
+            }
+            FewReport::Scan => {
+                self.done_blocks += 1;
+                self.done_blocks >= self.blocks
+            }
+        }
+    }
 }
 
 /// Dispatches one block to the kernel at the stage's head words.
@@ -1558,6 +1936,7 @@ fn compact(pairs: &mut Vec<Pair>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     fn flip(h: &Hash, k: usize) -> Hash {
         let mut out = *h;
@@ -1667,20 +2046,14 @@ mod tests {
             .unwrap()
             .with_kernel(kernel)
             .tuned(tuning)
-            .join(queries, threads, &|| {}, &|| true)
+            .join(queries, threads, &|| {}, &|| true, &|| {})
             .unwrap()
             .pairs
     }
 
-    /// Every way a join can run: no sorter, one, two side by side; and the few-owed path never and always.
+    /// Every way a join can run: the few-owed path never and always.
     fn tunings() -> Vec<Tuning> {
-        let mut all = Vec::new();
-        for sorters in [Some(0), Some(1), Some(2)] {
-            for few_entries in [Some(0), Some(usize::MAX)] {
-                all.push(Tuning { sorters, few_entries, widths: None });
-            }
-        }
-        all
+        [Some(0), Some(usize::MAX)].into_iter().map(|few_entries| Tuning { few_entries, widths: None }).collect()
     }
 
     fn kernels() -> Vec<Kernel> {
@@ -1793,11 +2166,10 @@ mod tests {
         let random = |rng: &mut Rng, n: u32| -> Vec<([u64; 4], u32)> {
             (0..n).map(|i| ([rng.draw(), rng.draw(), rng.draw(), rng.draw()], i)).collect()
         };
-        // One output and scratch per layout through every case: a set is reused from stage to stage without being
-        // cleared, with more entries and then fewer, and wider heads and then narrower, so stale values sit in every
-        // array.
+        // One output per layout through every case: a side is reused from stage to stage without being cleared, with
+        // more entries and then fewer, and wider heads and then narrower, so stale values sit in every array.
         for layout in [Layout::Rows, Layout::Columns] {
-            let (mut out, mut scratch) = (Sorted::default(), SortScratch::default());
+            let mut out = Sorted::default();
             for w in [1, 4, 7, 2] {
                 let big = u32::try_from(3 * sort_block(w) + 17).unwrap();
                 for entries in [
@@ -1809,7 +2181,7 @@ mod tests {
                 ] {
                     for c in [0, 3, 7, 8, 12, 15] {
                         let of = |e: usize| (chunks(&entries[e].0), entries[e].1);
-                        sort_into(&mut out, &mut scratch, entries.len(), of, c, w, layout);
+                        sort_into(&mut out, entries.len(), of, c, w, layout);
                         let mut want = entries.clone();
                         want.sort_by_key(|(words, _)| chunk(words, c));
                         let want: Vec<(Vec<u32>, u32)> =
@@ -1881,12 +2253,12 @@ mod tests {
             assert_eq!(want.len(), 16 * 3, "the pairs at the radius, and only those");
             for kernel in kernels() {
                 for few_entries in [Some(0), Some(usize::MAX)] {
-                    let tuning = Tuning { sorters: Some(0), few_entries, widths: Some([w; CHUNKS]) };
+                    let tuning = Tuning { few_entries, widths: Some([w; CHUNKS]) };
                     let got = Joiner::new(&lib.hashes, &lib.owed)
                         .unwrap()
                         .with_kernel(kernel)
                         .tuned(tuning)
-                        .join(0..lib.hashes.len(), 2, &|| {}, &|| true)
+                        .join(0..lib.hashes.len(), 2, &|| {}, &|| true, &|| {})
                         .unwrap()
                         .pairs;
                     assert_eq!(got, want, "{kernel:?}, {w} words, {tuning:?}");
@@ -1927,12 +2299,12 @@ mod tests {
         for w in widths {
             for kernel in kernels() {
                 for few_entries in [Some(0), Some(usize::MAX)] {
-                    let tuning = Tuning { sorters: Some(1), few_entries, widths: Some(w) };
+                    let tuning = Tuning { few_entries, widths: Some(w) };
                     let got = Joiner::new(&lib.hashes, &lib.owed)
                         .unwrap()
                         .with_kernel(kernel)
                         .tuned(tuning)
-                        .join(0..lib.hashes.len(), 3, &|| {}, &|| true)
+                        .join(0..lib.hashes.len(), 3, &|| {}, &|| true, &|| {})
                         .unwrap()
                         .pairs;
                     assert_eq!(got, want, "{kernel:?} {w:?} {tuning:?}");
@@ -1969,8 +2341,8 @@ mod tests {
                 let got = Joiner::new(&lib.hashes, &lib.owed)
                     .unwrap()
                     .with_kernel(kernel)
-                    .tuned(Tuning { sorters: Some(0), few_entries: Some(0), widths: Some([w; CHUNKS]) })
-                    .join(0..lib.hashes.len(), 2, &|| {}, &|| true)
+                    .tuned(Tuning { few_entries: Some(0), widths: Some([w; CHUNKS]) })
+                    .join(0..lib.hashes.len(), 2, &|| {}, &|| true, &|| {})
                     .unwrap()
                     .pairs;
                 assert_eq!(got, want, "{kernel:?}, {w} words");
@@ -2103,7 +2475,7 @@ mod tests {
         let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap();
         let mut parts = Vec::new();
         for slice in [0..77, 77..150, 150..300] {
-            let got = joiner.join(slice.clone(), 2, &|| {}, &|| true).unwrap().pairs;
+            let got = joiner.join(slice.clone(), 2, &|| {}, &|| true, &|| {}).unwrap().pairs;
             assert_eq!(got, brute(&lib, slice));
             parts.extend(got);
         }
@@ -2164,18 +2536,18 @@ mod tests {
         let lib = corpus(&mut rng, 50, 10);
         for tuning in tunings() {
             let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
-            assert!(joiner.join(0..50, 4, &|| {}, &|| false).is_none(), "{tuning:?}");
+            assert!(joiner.join(0..50, 4, &|| {}, &|| false, &|| {}).is_none(), "{tuning:?}");
         }
     }
 
-    /// A stop that comes while the sorter is ahead of the scan (or mid-pass over the store) ends the join, with every
-    /// thread joined: the call returns, with nothing.
+    /// A stop at any point (before the first task, mid-sort, mid-scan, mid-pass over the store) ends the join, with
+    /// every thread joined: the call returns, with nothing.
     #[test]
-    fn a_stop_in_the_middle_returns_none_with_the_sorters_running() {
+    fn a_stop_at_any_point_returns_none() {
         let mut rng = Rng(23);
         let lib = corpus(&mut rng, 600, 8);
         for tuning in tunings() {
-            for after in [1, 5, 40, 300] {
+            for after in [1, 5, 40, 300, 3000] {
                 let (asked, refused) = (AtomicUsize::new(0), AtomicBool::new(false));
                 let control = || {
                     let go = asked.fetch_add(1, Relaxed) < after;
@@ -2183,17 +2555,131 @@ mod tests {
                     go
                 };
                 let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
-                let joined = joiner.join(0..600, 4, &|| {}, &control);
-                // A join with fewer blocks of work than `after` finishes before the stop: it returns its pairs then.
+                let joined = joiner.join(0..600, 4, &|| {}, &control, &|| {});
+                // A join with fewer tasks than `after` finishes before the stop: it returns its pairs then.
                 assert_eq!(joined.is_none(), refused.load(Relaxed), "{tuning:?}, stopped after {after}");
             }
-            let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
-            let asked = AtomicUsize::new(0);
-            assert!(joiner.join(0..600, 4, &|| {}, &|| asked.fetch_add(1, Relaxed) < 2).is_none(), "{tuning:?}");
         }
     }
 
-    /// The sorted path with each number of sorters, and the few-owed path, find the same pairs as brute force, on every
+    /// A thread paused in `control` while the others take the work, and while they wait at the end for nothing: the
+    /// join's pairs are the same.
+    #[test]
+    fn a_pause_while_the_others_wait_changes_nothing() {
+        let mut rng = Rng(29);
+        let lib = corpus(&mut rng, 400, 5);
+        let want = brute(&lib, 0..400);
+        for tuning in tunings() {
+            for pause_at in [0, 7, 200] {
+                let asked = AtomicUsize::new(0);
+                let control = || {
+                    if asked.fetch_add(1, Relaxed) == pause_at {
+                        std::thread::sleep(Duration::from_millis(30));
+                    }
+                    true
+                };
+                let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
+                let joined = joiner.join(0..400, 4, &|| {}, &control, &|| {}).unwrap();
+                assert_eq!(joined.pairs, want, "{tuning:?}, paused at {pause_at}");
+                // A schedule with fewer tasks than `pause_at` (the few-owed path's) ends before the pause.
+                if asked.load(Relaxed) > pause_at {
+                    assert!(joined.times.paused >= Duration::from_millis(30), "{tuning:?}: {:?}", joined.times);
+                }
+            }
+        }
+    }
+
+    /// A panic in a task of either kind, in `start` or in `control` resumes on the caller once every thread is joined,
+    /// and a task's panic calls `abort`: no thread is left waiting for what the panicked one held. Also with another
+    /// thread paused in `control` until `abort` wakes it.
+    #[test]
+    fn a_panic_anywhere_resumes_on_the_caller() {
+        let mut rng = Rng(31);
+        let lib = corpus(&mut rng, 300, 5);
+        for tuning in tunings() {
+            for (kind, nth) in [(Kind::Sort, 1), (Kind::Sort, 40), (Kind::Scan, 1), (Kind::Scan, 30)] {
+                // Paused only where the fault is sure to fire (every schedule has a first task of each kind): with
+                // no fault, nothing would wake the paused thread.
+                for paused in [false, nth == 1] {
+                    let aborted = AtomicBool::new(false);
+                    let asked = AtomicUsize::new(0);
+                    // The first ask blocks until `abort` is called: that thread holds nothing meanwhile.
+                    let control = || {
+                        if paused && asked.fetch_add(1, Relaxed) == 0 {
+                            while !aborted.load(Relaxed) {
+                                std::thread::sleep(Duration::from_millis(1));
+                            }
+                            return false;
+                        }
+                        true
+                    };
+                    let abort = || aborted.store(true, Relaxed);
+                    let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning).with_fault(kind, nth);
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        joiner.join(0..300, 4, &|| {}, &control, &abort)
+                    }));
+                    // A schedule with fewer tasks of the kind than `nth` finishes without the fault.
+                    if let Err(payload) = result {
+                        let message = payload.downcast_ref::<String>().cloned().unwrap_or_default();
+                        assert!(message.contains("injected fault"), "{tuning:?} {kind:?} {nth}: {message}");
+                        assert!(aborted.load(Relaxed), "{tuning:?} {kind:?} {nth}: abort was not called");
+                    } else {
+                        assert!(nth > 1, "{tuning:?} {kind:?} {nth}: the fault did not fire");
+                    }
+                }
+            }
+            let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
+            let started = AtomicUsize::new(0);
+            let start = || {
+                if started.fetch_add(1, Relaxed) == 2 {
+                    panic!("in start");
+                }
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                joiner.join(0..300, 4, &start, &|| true, &|| {})
+            }));
+            assert!(result.is_err(), "{tuning:?}: a panic in start");
+            let asked = AtomicUsize::new(0);
+            let control = || {
+                assert!(asked.fetch_add(1, Relaxed) != 9, "in control");
+                true
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                joiner.join(0..300, 4, &|| {}, &control, &|| {})
+            }));
+            assert!(result.is_err(), "{tuning:?}: a panic in control");
+        }
+    }
+
+    /// Many threads on tiny stages, again and again: most of them wait for nothing most of the time, and the join
+    /// still ends, with the same pairs. And `start` runs on every thread before it asks for work.
+    #[test]
+    fn many_threads_on_tiny_stages_end_with_the_same_pairs() {
+        let mut rng = Rng(37);
+        let lib = corpus(&mut rng, 40, 5);
+        let want = brute(&lib, 0..40);
+        for tuning in tunings() {
+            for _ in 0..20 {
+                // Each thread of a team is new, so its flag is set only by its own `start`.
+                thread_local!(static STARTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
+                let started = AtomicUsize::new(0);
+                let start = || {
+                    STARTED.set(true);
+                    started.fetch_add(1, Relaxed);
+                };
+                let control = || {
+                    assert!(STARTED.get(), "control before start");
+                    true
+                };
+                let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
+                let joined = joiner.join(0..40, 16, &start, &control, &|| {}).unwrap();
+                assert_eq!(joined.pairs, want, "{tuning:?}");
+                assert_eq!(started.load(Relaxed), 16, "{tuning:?}: start on every thread");
+            }
+        }
+    }
+
+    /// The sorted path and the few-owed path find the same pairs as brute force, on every
     /// kernel and at every owed share (the few-owed path forced on and off by its threshold).
     #[test]
     fn every_path_matches_brute_force() {

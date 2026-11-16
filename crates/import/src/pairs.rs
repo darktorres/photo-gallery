@@ -130,10 +130,16 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     // The joins stop for the user's stop and pause, and for the pass's own stop (`AbortOnDrop`).
     let abort = AtomicBool::new(false);
     let control = || ctl.checkpoint_until(&abort);
+    // A join's thread panicked: the pass stops (the panic resumes on it), and a thread paused in `control` is woken to
+    // see the stop.
+    let stop = || {
+        abort.store(true, Ordering::SeqCst);
+        ctl.wake();
+    };
     let join = |slice: &[usize]| -> (Option<Joined>, Duration) {
         let joining = Instant::now();
         let joined = match (slice.first(), slice.last()) {
-            (Some(&first), Some(&last)) => joiner.join(first..last + 1, opts.workers, &start, &control),
+            (Some(&first), Some(&last)) => joiner.join(first..last + 1, opts.workers, &start, &control, &stop),
             _ => Some(Joined { pairs: Vec::new(), times: JoinTimes::default() }),
         };
         (joined, joining.elapsed())

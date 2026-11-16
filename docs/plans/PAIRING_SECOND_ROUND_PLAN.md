@@ -13,7 +13,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 2, the radix sort by regions | Done: `7ab62e7` |
 | 3, the scan kernel | Done: `7ab62e7` |
 | 4, the few-owed path | Done: `07d832a` |
-| 5, one thread team | Built, all paths identical to the oracle; its A/B, gated on time, is running |
+| 5, one thread team | Done: the team sorts a stage, then scans it (no ring) |
 | 6 - 10 | Not started |
 
 ## Context
@@ -313,6 +313,27 @@ symmetric orientations.
 
 ## Step 5: one thread team for the join
 
+**Status: done, kept** (6 pairs against step 1's remainder, gated on time: join −14.3% at 2 workers, −11.3% at 4, −20.7%
+at 8, −48.9% at 3,000 owed on 12, −14.7% (pass) on four slices, all real gains; all owed level on 1 worker and kept
+at 6 and 12; `PROFILING.md`, "One thread team"). Built as below, with these departures, each measured:
+
+- **No ring.** The whole team sorts a stage, then scans it, in one set of buffers. The ring (item 3), with sorts
+  first, and then with scans first, was compared with one set at 2, 4, 6, 8 and 12 workers inside one binary and was
+  never faster: +0.4 to +4.7% on the join, a proven loss at 8. It removes the threads' wait at a phase's tail, but its
+  sorts cost more than that wait, as two sets' memory is twice one's. So the pacing rule (item 6) is: sort, then scan.
+- **The sort's buffers as slices.** The first pass scatters into each block's buffers, and the second reads them
+  block by block; each buffer is taken as a slice once. Through the block's `Vec`s, every store made the loop read
+  the others' bounds again, and the one-worker sort was 10 - 13% slower than step 1's.
+- **The thread budget during an overlapped write** (item 10): all of the pass's threads. With one fewer, four slices
+  are level (pass +0.3% [−5.8, +5.8]); the write is faster, the join slower by as much.
+- **Not done here:** the single copy of the hashes and `original(i)` (item (a) and step 1), with their user, step 7's
+  guard; scan blocks of equal work (item 4), the blocks are 128 buckets each, as before; the build in `Joiner::new`
+  timed on its own (item 11). The tests cover a stop at any point, a pause while the others wait, a panic in any
+  task, and many threads on tiny stages; not `start()`'s priority on every task.
+- **Cycles.** On several workers the team uses more cycles than the old split for the same instructions (all owed on
+  12: 32.6 G instructions both, cycles +8%): it keeps each core's second thread busy. That is why the keep rule is now
+  gated on time.
+
 The team replaces three things:
 
 - the sorter threads (`Tuning::sorters`, `default_sorters`, `PG_PROBE_SORTERS`);
@@ -541,7 +562,10 @@ Each setting takes the simplest value within +1% of the best, with peak commit r
 - `SLICE`, on the synthetic 500,000-picture corpus;
 - `CACHE_KIB`, now including 2, 4 and 8 MB, since only 16 MB and up was measured (`pairs.rs:31-32`);
 - `WRITE`, within step 7's bound;
-- the thread count: logical against physical cores.
+- the thread count: logical against physical cores;
+- `BLOCK`, the scan's buckets a task, and the sort's tasks per phase: since step 5 a phase's tail is the team's
+  only wait, and on four slices of 50,000 at 12 workers the threads wait 0.8 - 1.8 s of their time (`starved`, about
+  70 - 150 ms of each pass's joins by the clock).
 
 ## Step 10: docs and benches
 

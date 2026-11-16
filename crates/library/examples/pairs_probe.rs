@@ -5,12 +5,13 @@
 //! - `PG_PROBE_KEEP_OWED` set: the pass pairs what the catalog owes (`tools/profiling/pairing/set_owed.py` sets it).
 //!   Unset: every eligible picture owes its pairs again first (`pairs_again`), the pass over the whole library; the
 //!   catalog is then closed and opened again, so the pass does not merge that write's WAL or read its cached pages.
-//! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_SORTERS` and `PG_PROBE_FEW` set the pass's `Settings` (default
-//!   `pairs::SLICE`, `pairs::CACHE_KIB`, the join's sorters and few-owed threshold by thread count).
+//! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB` and `PG_PROBE_FEW` set the pass's `Settings` (default `pairs::SLICE`,
+//!   `pairs::CACHE_KIB`, the join's few-owed threshold by thread count).
 //! - `PG_PROBE_WIDTHS` sets the join's head words per stage, as 16 comma-separated counts (`Tuning::widths`).
 //!
-//! One line: what was owed, what was paired, the wall clock, where it went (`PairStats::timings`), and the pass's CPU
-//! cycles over all its threads (`cycles`, millions; 0 where the platform does not count them).
+//! One line: what was owed, what was paired, the wall clock, where it went (`PairStats::timings`: `prepare` on one
+//! thread; `sort`, `scan`, `starved` and `paused` the join's threads' time, summed), and the pass's CPU cycles over all
+//! its threads (`cycles`, millions; 0 where the platform does not count them).
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -35,7 +36,6 @@ fn main() -> Result<()> {
     let mut settings = pg_import::pairs::Settings::default();
     settings.slice = env("PG_PROBE_SLICE").unwrap_or(settings.slice);
     settings.cache_kib = env("PG_PROBE_CACHE_KIB").unwrap_or(settings.cache_kib);
-    settings.join.sorters = env("PG_PROBE_SORTERS").or(settings.join.sorters);
     settings.join.few_entries = env("PG_PROBE_FEW").or(settings.join.few_entries);
     // Each stage's head words, as 16 comma-separated counts.
     if let Ok(list) = std::env::var("PG_PROBE_WIDTHS") {
@@ -72,12 +72,12 @@ fn main() -> Result<()> {
     let t = stats.timings;
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
     // What the join ran with: its tuning resolved for the pass's threads, as the join resolves it.
-    let (sorters, few) = (settings.join.sorters_on(workers), settings.join.few_entries_on(workers));
+    let few = settings.join.few_entries_on(workers);
     writeln!(
         std::io::stdout(),
-        "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, sorters {sorters}, slice \
-         {}, cache {} KiB, few {}, complete {}) | load {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} write {:.0} \
-         commit {:.0} ms | cycles {cycles} M",
+        "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, slice {}, cache {} KiB, \
+         few {}, complete {}) | load {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} starved {:.0} paused {:.0} \
+         write {:.0} commit {:.0} ms | cycles {cycles} M",
         stats.files,
         stats.pairs,
         settings.slice,
@@ -89,6 +89,8 @@ fn main() -> Result<()> {
         ms(t.joins.prepare),
         ms(t.joins.sort),
         ms(t.joins.scan),
+        ms(t.joins.starved),
+        ms(t.joins.paused),
         ms(t.write),
         ms(t.commit),
     )?;

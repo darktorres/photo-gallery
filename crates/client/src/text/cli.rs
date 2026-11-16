@@ -550,7 +550,7 @@ mod tests {
         };
         assert_eq!(
             line(&timings),
-            "load 0.21 s, join 0.62 s (sorts waited for 0.10 s, scans 0.48 s), writes 0.33 s, commits 0.08 s"
+            "load 0.21 s, join 0.62 s (threads' time: sorts 0.10 s, scans 0.48 s), writes 0.33 s, commits 0.08 s"
         );
         let tier = Line::DupsIdentical { tier: Tier::Pixels, groups: "2".into(), files: "5".into() };
         assert_eq!(line(&tier), "tier 0b identical pixels: 2 groups, 5 files");

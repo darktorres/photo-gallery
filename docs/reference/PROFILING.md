@@ -905,6 +905,48 @@ every slice; cycles -1.7% [-3.5, -0.3] all owed on one worker and -3.0% [-7.8, -
 level. The scan of four slices on 12 workers is +3.6% [+0.6, +19.7] by the clock with its cycles level (+0.1%): the
 renaming on a hit, the cold path.
 
+#### One thread team (pairing plan, second round, step 5)
+
+A join's threads are one team that does all of its work, claimed from one schedule: each stage's sorts (the first
+pass by blocks, the second by regions), then its scan by blocks of 128 buckets; on the few-owed path, the table, the
+16 chunks' lists and the pass over the store. The sorter threads, the per-stage spawns (about 160 threads a pass) and
+the caller's own sorts below 4 threads are gone. `sort` and `scan` in the timings are now the team's thread time,
+summed, with `starved` (a thread waiting at a phase's tail) and `paused` beside them.
+
+Kept (6 pairs against step 1's remainder, gated on time; cycles beside):
+
+| Workload | Join (pass on four slices) | Cycles |
+|---|---|---|
+| all owed, 1 worker | +0.15% [−1.44, +1.77] | +0.6% |
+| all owed, 2 | −14.25% [−16.92, −10.28] | −0.2% |
+| all owed, 4 | −11.26% [−15.68, −6.72] | +1.2% |
+| all owed, 6 | −5.92% [−12.41, +4.59] | +3.7% |
+| all owed, 8 | −20.70% [−22.03, −18.65] | +5.4% |
+| all owed, 12 | −16.96% [−25.00, +3.74] | +8.3% |
+| 300 owed, 1 | −3.69% [−5.36, −1.23] | −1.3% |
+| 300 owed, 12 | −2.38% [−7.06, +2.53] | −0.8% |
+| 3,000 owed, 1 | −2.37% [−3.58, −0.66] | −0.5% |
+| 3,000 owed, 12 | −48.86% [−50.00, −48.08] | +24.9% |
+| four slices, 12 | −14.67% [−18.24, −11.20] | +6.7% |
+
+- **Cycles against time.** On 12 workers the team runs the same instructions as before (all owed: 32.6 G against
+  32.7 G) and its cycles rise with the threads: about +3% at 6 workers (one a core), +8 - 13% at 12 (two). The old
+  split left scan threads idle while the sorters ran; the team keeps each core's second thread busy, which runs
+  slower. That is why the keep rule's gate moved from cycles to time.
+- **No ring of stage sets.** Sorting the next stage while this one scans (two sets of buffers), with sorts first,
+  was never faster than one set at 2 - 12 workers (join +0.4 to +4.7%, a proven loss at 8), nor with scans first. The
+  ring ends the wait at a phase's tail (`starved` 2 - 23 ms against 22 - 384 ms of thread time), but its sorts cost
+  60 - 360 ms more thread time: two sets' memory is twice one's. On one worker, where nothing runs beside the task in
+  hand, the second set made the join about 6% slower (300 owed: 352 against 332.5 ms, medians of 8).
+- **The sort's buffers as slices.** With each block's buffers its own, the first pass's scatter (through the block's
+  `Vec`s) and the second pass's flattened walk over (block, record) reread the buffers' bounds after every store: the
+  one-worker sort was 10 - 13% slower than step 1's (stored side, 300 owed: 227 → 256 ms). A slice taken once per
+  buffer, and the second pass block by block, brought it to 231 ms.
+- **The thread budget during an overlapped write.** Four slices at 11 workers against 12: pass +0.3% [−5.8, +5.8],
+  the write faster (−13.8%) and the join slower by as much. The join keeps every thread.
+- **The tails.** On four slices of 50,000 at 12 workers the threads wait 0.8 - 1.8 s of their time at phase tails
+  (`starved`), 70 - 150 ms of the joins by the clock: step 9's tuning of the tasks' sizes.
+
 ---
 
 ## Where the other results are

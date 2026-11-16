@@ -1174,6 +1174,24 @@ replace `FEW_ENTRIES_PER_THREAD`. Kept, on the owed counts where the two rules c
 
 The usual workloads take the same path under both (300 owed: few at 12, sorted at 1; 3,000: sorted).
 
+**The cache: 16 MB stays.** 2, 4 and 8 MB against 16 (6 pairs each, all owed at 1 and 12 workers, 300 owed at 12, four
+slices): no real gain anywhere. At 2 MB the 12-worker load took 117 ms against 94 (each of its 12 parts' connections
+gets a twelfth), and at 2 and 8 MB the four slices' write 55 - 62 ms more (it reads pages again for each slice).
+Peak commit (MiB, 2 runs each; recorded, not a target):
+
+| Cache | 2 MB | 4 MB | 8 MB | 16 MB |
+|---|---:|---:|---:|---:|
+| 300 owed | 59 - 60 | 61 | 61 - 62 | 63 |
+| 187,804 owed | 156 - 157 | 159 | 163 - 165 | 172 - 174 |
+
+**`WRITE`: 4,000.** Step 7's bound is the write lock held no longer than a 2,000-picture transaction did before it:
+~3.6 ms ((291 + 44) ms over 94 transactions at 12 workers). A picture's statements and commit now take ~0.88 µs
+((121 + 44) ms over 187,804), so ~4,050 fit. 4,000 against 2,000, 6 pairs: commit −62.22% [−67.39, −55.32] on all
+owed at 1 worker, −57.36% [−67.39, −44.23] at 12, −33.97% [−50.00, −22.22] on four slices (real gains); the pass at
+12 workers had no verdict at first and was −13.22% [−21.63, −6.21] run again (a real gain), the rest kept. The
+transactions take ~3.0 ms each ((127 + 15) ms over 47). Fewer commits is part of it; where the WAL's one
+auto-checkpoint falls is the rest, which depends on the library's size. 3,000 showed no gain (commit −11%, kept).
+
 ---
 
 ## Where the other results are

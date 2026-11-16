@@ -32,8 +32,11 @@ pub const SLICE: usize = 200_000;
 /// neither needs the app's 256 MB. Measured on 187,804 pictures (docs/reference/PROFILING.md, "The pairing pass"): 16,
 /// 32, 64 and 256 MB gave a peak commit of 131, 150, 184 and 214 MB, the load and the writes no faster above 16.
 pub const CACHE_KIB: u32 = 16 * 1024;
-/// The owed pictures per write transaction.
-pub const WRITE: usize = 2_000;
+/// The owed pictures per write transaction: the most whose write holds the catalog's write lock no longer than a
+/// transaction of 2,000 did before the pairing plan's second round, step 7 (with its guard read row by row, ~3.6 ms;
+/// one picture's statements and commit now take ~0.88 µs, so ~4,050 fit; docs/reference/PROFILING.md, "The settings
+/// again"). A stop lands between two transactions, so it waits no longer either.
+pub const WRITE: usize = 4_000;
 
 /// What a pass may be tuned by: the defaults are [`SLICE`], [`CACHE_KIB`], [`WRITE`], the join's own ([`Tuning`]), a
 /// load in as many parts as the join has threads, and no forced guard. The tests and the probe (`PG_PROBE_SLICE`,

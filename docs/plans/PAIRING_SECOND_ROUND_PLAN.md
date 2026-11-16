@@ -655,7 +655,10 @@ what the second replaced (the sorter threads and G3's rule, the 330 MB cap, `FEW
 scan what is left. `PAIRING_PASS_PLAN.md`'s status gives both rounds' results. `gallery pair`'s timings line gives
 the team's idle and paused time beside its sorts and scans (`cli.ftl`, `cli-pair-timings`), and `crates/README.md` names
 `pairs_owed`. The callgrind bench `ir::pairing::join` (`crates/bench/benches/ir/pairing.rs`) counts the store's build
-and a one-thread join on a synthetic 20,000-picture library, `all` owed (the sorted path) and `few` (100 owed); no
+and a one-thread join on a synthetic 20,000-picture library, `all` owed (the sorted path, 2,572 M instructions) and
+`few` (100 owed, 100 M), its team's thread counted through a second callgrind toggle on `join::member` (callgrind
+writes a file per thread, so the baseline has two entries per case: the store's build, 31 M and 30 M, on `t1`, the
+join on `t2`); no
 `pairing.write` bench, as the import flush bench counts the catalog's write path. The scripts are in
 `tools/profiling/pairing/`: `keep.ps1` and `keep.py` (the keep rule), `medians.py`, `oracle.ps1` (the seven paths
 against the oracle), `few_sweep.ps1`, `peak_mem.ps1`, `set_owed.py`, `grow_catalog.py`. The loop-count replay

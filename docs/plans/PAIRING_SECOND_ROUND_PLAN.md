@@ -10,15 +10,22 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 |---|---|
 | 0, the baseline | Done: the vector start, `d949748` |
 | 1, transposes as a chunk renaming | Done: `7ab62e7` (the renaming), `f8fa6e9` (no per-slice transposes). The single copy of the hashes and `Joiner::original` move to steps 5 and 7 |
-| 2, the radix sort by regions | Done: `7ab62e7` |
-| 3, the scan kernel | Done: `7ab62e7` |
+| 2, the radix sort by regions | Done: `7ab62e7`. **Not built:** the scan's work prefix (item 5) and the write-combined first pass (item 6); `FewChunk::new` keeps a sort of its own (item 7) |
+| 3, the scan kernel | Done: `7ab62e7`. **Not done:** the 16-lane x 16-bit kernel and the loop-count replay |
 | 4, the few-owed path | Done: `07d832a` |
-| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring) |
+| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring). **Not built:** scan blocks of equal work (item 4), the store's build timed on its own (item 11); **not tested:** `start()`'s priority on every task |
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
 | 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
 | 9, re-tuning | Done: the store's permute on the team; the few-owed threshold refitted; `WRITE` 4,000; the threads, the load's parts, the cache, `BLOCK` and `SLICE` kept |
 | 10, docs and benches | Done |
+
+**Open.** The round's steps are done but for the items marked above, and its aim is not met: the one-worker pass is
+4.6 - 4.7 s, 2.3x the pass before the first round's rebuild, against the first round's 3.5x (P-13 in
+[PROFILING_PLAN.md](PROFILING_PLAN.md), open; the scan, 3.5 s, is what is left). Of the items not built, the 16-bit
+kernel and the write-combined first pass are the ones aimed at the one-worker scan and sort; the equal-work blocks
+and the work prefix they need would act mostly on 12 workers, where the team's starved time is about 5% of the
+join's thread time (step 9, `BLOCK`).
 
 ## Context
 
@@ -188,6 +195,30 @@ Each stage sorts both sides by that stage's 16-bit chunk value.
    - This runs while the previous stage scans.
 6. **A variant under the keep rule:** a write-combined pass 1, one cache line per high byte.
 7. **`FewChunk::new`** uses the same sort.
+
+**Status: done, with items 5 - 7 not as written** (`7ab62e7`, with steps 1 and 3). Built: pass 1 by blocks sized
+from the L2 that CPUID reports (`l2_cache`, `sort_block`: a block's records read and scattered both fit), the store
+read once per stage; pass 2 per high-byte region, in block order, so the sort is stable; the sorted side two-level
+(`Sorted::regions`); the buffers kept from stage to stage and only grown, each written whole, so the per-stage
+zeroing is gone. Departures:
+
+- **The buffers are held by the schedule, not a `Mutex` each** (item 4): since step 5 a block or region is lent to the
+  task that fills it and handed back in its report, under the team's one lock (`SideSort`), so no buffer is shared.
+- **Not built: the scan's work prefix** (item 5). The scan's blocks are 128 query buckets each (`BLOCK`; a run-time
+  `Tuning::block` since step 9, where 32, 64 and 256 gained nothing). The prefix is what step 5's equal-work blocks
+  (item 4) would cut by, and neither was built.
+- **Not tried: the write-combined first pass** (item 6).
+- **`FewChunk::new` keeps a sort of its own** (item 7): step 4 lists each chunk's query entries under their 17 probe
+  values by one counting sort over the values, which the regions' two passes do not fit.
+- **The sort's cost per record byte** was not measured here for step 3's model: step 3 chose its widths from each
+  stage's measured scan at one to five words instead (about 24 ms a stage for a word; `PROFILING.md`, "The scan
+  kernel").
+- **Not measured on its own:** step 2 shipped with steps 1 and 3, and no comparison of it with step 1 is recorded.
+  Step 3 was kept against a build of step 2 (one worker, all owed: scan 4,411 ms, 18.87 G cycles at step 2).
+- **Tests:** the sort against a stable sort by the chunk (`the_radix_sort_is_a_stable_sort_by_the_chunk`), on crowded
+  and random keys, more entries than a block and none, at 1, 2, 4 and 7 words, in both layouts, with one output
+  reused through every case so stale values sit in every array and its padding; a probe into another region by a high
+  bit flipped, in `the_head_test_is_exact_at_every_stage_width_and_probe`, not the plan's crafted 0x00FF against 0x01FF.
 
 **Interim kernel.** In this step today's 4-lane kernel reads the regions. Its head is the chunks after `c` at a fixed
 `W = 4` (today's 128 bits). The sort's cost per record byte is measured here, for step 3's model.

@@ -3,7 +3,8 @@
 ## Status (2026-11-16)
 
 Blocks A - D are done: `d3d307a` (A and B), `b7d13a6` (C), `98c6973` (D). The second round,
-[PAIRING_SECOND_ROUND_PLAN.md](PAIRING_SECOND_ROUND_PLAN.md) (steps 0 - 10, done), rebuilt the join's sort, scan
+[PAIRING_SECOND_ROUND_PLAN.md](PAIRING_SECOND_ROUND_PLAN.md) (steps 0 - 10 done, with the items its status lists
+as not built), rebuilt the join's sort, scan
 kernel, few-owed path and threads, fixed a pair loss, and re-tuned what that made stale. It changed three things this
 plan set: **the sorter threads and G3's rule are gone** (one thread team sorts and scans; a thread takes a sort's task
 while the sort is behind, so no count is tuned); **the 330 MB cap is removed** (peak commit is recorded with each

@@ -8,10 +8,10 @@ use pg_model::path::WorkList;
 use pg_model::turns::Turns;
 use rusqlite::Connection;
 
-use crate::core::{Catalog, ReadOnly};
+use crate::core::{Catalog, ReadOnly, Reader};
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
-use crate::types::{FOLDER_PATH, WorkItem, folder_path};
+use crate::types::{FOLDER_PATH, PairingWork, WorkItem, folder_path, pairing_marks};
 
 /// `Catalog::pending_import`'s query.
 pub(crate) fn pending_import_sql(retry_errors: bool) -> &'static str {
@@ -69,49 +69,6 @@ pub(crate) fn work_item(conn: &Connection, id: FileId) -> Result<Option<WorkItem
 /// the same through the `thumb_folders` view.
 fn max_folder_id(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT coalesce(max(id), -1) FROM folders", [], |r| r.get(0))?)
-}
-
-/// The pictures of the pairing pass, in file-id order, as columns (`Catalog::pairing_work`): picture `i` is file
-/// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]` and quality `quality[i]`. The join takes
-/// the columns as they are.
-pub struct PairingWork {
-    pub ids: Vec<FileId>,
-    /// Its pairs are owed (a `pairs_owed` row) and the pass can make them (its file is present and not pending, as
-    /// [`Catalog::owed_pairs`] counts): the pass pairs it with the pictures before and after it. An owed picture whose
-    /// file is missing or pending is only a partner here; its own pairs are made by the first pass after it is back.
-    pub owed: Vec<bool>,
-    /// Its kept orientations' hashes (`pg_model::pdq::ORIENTATIONS`, in `pg_analysis::pdq`'s order): what the pairs are
-    /// made from, and, as `pg_model::pdq::to_blob` stores them, what `PairsWriter`'s guard compares (the pass takes them
-    /// into its join, which keeps the one copy).
-    pub hashes: Vec<[pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS]>,
-    /// Its `pdq_quality`: with the hashes, what `PairsWriter`'s guard compares.
-    pub quality: Vec<u8>,
-    /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
-    /// orientation hashes, or whose hashes failed the check of migration 13), of present, non-pending files: not
-    /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
-    /// files, so only they are counted.
-    pub legacy: usize,
-    /// The catalog's pairing marks in the load's snapshot, which the writes compare theirs with (`PairsWriter::write`).
-    pub marks: PairingMarks,
-}
-
-/// What the pairing pass's pairs depend on beyond the pictures: `meta.pairing_version`, the pairing the pairs are made by
-/// (another build's `Catalog::prepare` changes it and owes every pair again), and `meta.pairing_epoch`, which moves on
-/// whenever an analysis or an owed row that the pairs could have been made from changes (migration 14). A write whose
-/// marks are the load's needs no guard.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PairingMarks {
-    pub version: i64,
-    pub epoch: i64,
-}
-
-/// The pairing marks as `conn`'s transaction sees them.
-pub(crate) fn pairing_marks(conn: &Connection) -> Result<PairingMarks> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT (SELECT value FROM meta WHERE key = 'pairing_version'),
-             (SELECT value FROM meta WHERE key = 'pairing_epoch')",
-    )?;
-    Ok(stmt.query_row([], |r| Ok(PairingMarks { version: r.get(0)?, epoch: r.get(1)? }))?)
 }
 
 /// What [`Catalog::pairing_work`] reads: the analyses of a reliable quality in a range of file ids (all of them, or one
@@ -369,13 +326,13 @@ fn split_scan(
     Ok((columns, legacy, sets))
 }
 
-impl crate::Reader<'_> {
+impl Reader<'_> {
     /// [`Catalog::pairing_work`], on this reader's connection.
     pub fn pairing_work(&self) -> Result<PairingWork> {
         self.pairing_work_split(1, &|| {})
     }
 
-    /// [`Reader::pairing_work`] with `analysis` scanned in up to `threads` parts at once, each on a connection of its own
+    /// [`Self::pairing_work`] with `analysis` scanned in up to `threads` parts at once, each on a connection of its own
     /// that shares this reader's cache budget, and on a thread started by `start` (the pass's priority). The parts read
     /// in snapshots no older than the pairing marks' (`pairing_work_on` says why that is safe). In memory, one part.
     pub fn pairing_work_split(&self, threads: usize, start: &(dyn Fn() + Sync)) -> Result<PairingWork> {
@@ -431,7 +388,7 @@ impl Catalog {
     /// with the others (the stored side). One snapshot, because a file that changed between two reads could be owed a
     /// pair that its partner's read never sees. The columns are sized from the files with an identity first, so they
     /// never grow, and each row's hashes are read from the blob in place. The pass reads it
-    /// on a [`Reader`](crate::Reader) of its own ([`Reader::pairing_work`](crate::Reader::pairing_work)).
+    /// on a [`Reader`] of its own ([`Reader::pairing_work`]).
     pub fn pairing_work(&self) -> Result<PairingWork> {
         pairing_work_on(&self.conn, None, 1, &|| {})
     }

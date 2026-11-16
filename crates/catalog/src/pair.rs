@@ -31,8 +31,9 @@ use pg_model::media::{Ext, Kind};
 use pg_model::rules::{Path as RulePath, PathRules};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::core::{HeldLease, ScanLease};
+use crate::core::ScanLease;
 use crate::error::Result;
+use crate::lease::HeldLease;
 use crate::transaction::write_transaction;
 use crate::types::{WRITE_BATCH, skipped_folders, under_params};
 

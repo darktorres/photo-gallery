@@ -1,5 +1,5 @@
-//! The types and functions the catalog's modules share: the rows and values `core`, `lifecycle` and `writers` pass
-//! between them, the SQL constants they share, and the helpers for a folder's subtree. A leaf: it uses no module of
+//! The types and functions the catalog's modules share: the rows and values `core`, `lifecycle`, `work` and `writers`
+//! pass between them (the pairing pass's load, which its writer takes), the SQL constants they share, and the helpers for a folder's subtree. A leaf: it uses no module of
 //! the crate but `error`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -380,4 +380,47 @@ pub(crate) struct Hit {
     pub(crate) created: Option<i64>,
     /// The row is missing: its file was not found where it was.
     pub(crate) missing: bool,
+}
+
+/// The pictures of the pairing pass, in file-id order, as columns (`Catalog::pairing_work`): picture `i` is file
+/// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]` and quality `quality[i]`. The join takes
+/// the columns as they are.
+pub struct PairingWork {
+    pub ids: Vec<FileId>,
+    /// Its pairs are owed (a `pairs_owed` row) and the pass can make them (its file is present and not pending, as
+    /// `Catalog::owed_pairs` counts): the pass pairs it with the pictures before and after it. An owed picture whose
+    /// file is missing or pending is only a partner here; its own pairs are made by the first pass after it is back.
+    pub owed: Vec<bool>,
+    /// Its kept orientations' hashes (`pg_model::pdq::ORIENTATIONS`, in `pg_analysis::pdq`'s order): what the pairs are
+    /// made from, and, as `pg_model::pdq::to_blob` stores them, what `PairsWriter`'s guard compares (the pass takes them
+    /// into its join, which keeps the one copy).
+    pub hashes: Vec<[pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS]>,
+    /// Its `pdq_quality`: with the hashes, what `PairsWriter`'s guard compares.
+    pub quality: Vec<u8>,
+    /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
+    /// orientation hashes, or whose hashes failed the check of migration 13), of present, non-pending files: not
+    /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
+    /// files, so only they are counted.
+    pub legacy: usize,
+    /// The catalog's pairing marks in the load's snapshot, which the writes compare theirs with (`PairsWriter::write`).
+    pub marks: PairingMarks,
+}
+
+/// What the pairing pass's pairs depend on beyond the pictures: `meta.pairing_version`, the pairing the pairs are made by
+/// (another build's `Catalog::prepare` changes it and owes every pair again), and `meta.pairing_epoch`, which moves on
+/// whenever an analysis or an owed row that the pairs could have been made from changes (migration 14). A write whose
+/// marks are the load's needs no guard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PairingMarks {
+    pub version: i64,
+    pub epoch: i64,
+}
+
+/// The pairing marks as `conn`'s transaction sees them.
+pub(crate) fn pairing_marks(conn: &Connection) -> Result<PairingMarks> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT (SELECT value FROM meta WHERE key = 'pairing_version'),
+             (SELECT value FROM meta WHERE key = 'pairing_epoch')",
+    )?;
+    Ok(stmt.query_row([], |r| Ok(PairingMarks { version: r.get(0)?, epoch: r.get(1)? }))?)
 }

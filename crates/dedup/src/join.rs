@@ -60,7 +60,7 @@ const CHUNKS: usize = 16;
 /// The values a chunk takes.
 const VALUES: usize = 1 << 16;
 /// The query buckets a scan task takes by default ([`Tuning::block`]; its unit of work, and of control).
-const BLOCK: usize = 128;
+pub const BLOCK: usize = 128;
 /// A query's orientations: the kept ones and their transposes.
 const QUERY_ORIENTATIONS: usize = 2 * ORIENTATIONS;
 /// The most pictures the join holds: an entry's code is the picture's index, an owed bit and an orientation (3 bits) in
@@ -480,7 +480,7 @@ impl<'a> Joiner<'a> {
     /// The pairs in which the query side is one of `queries` (a range of indices; the owed ones in it query).
     ///
     /// On a team of `threads` threads (at least one), which do all of the join's work but finding the slice's owed
-    /// pictures ([`run_team`]). `start` runs once in each thread before it works (the caller sets its priority there).
+    /// pictures (`run_team`). `start` runs once in each thread before it works (the caller sets its priority there).
     /// `control` is asked before each task, returns false to stop, and may block (a pause). `abort` is called when a
     /// thread panics, after the team is told to stop: it should wake a `control` that is blocked, and make it return
     /// false. `None` when `control` stopped the join: nothing is returned then. Not inlined, so a profiler can toggle on

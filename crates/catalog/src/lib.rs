@@ -29,6 +29,7 @@ mod borders;
 mod convert;
 mod core;
 mod current;
+mod lease;
 mod lifecycle;
 mod listing;
 mod lookup;
@@ -45,10 +46,9 @@ mod schema;
 
 pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};
 pub use types::{
-    CropSource, Folder, FolderFailure, FolderRows, Listed, Prior, Rebuilt, Recorded, Root, SCAN_LEASE_SECS,
-    ScannedFile, Skip, SkipReason, Status, Versions, WorkItem, WriteTarget,
+    CropSource, Folder, FolderFailure, FolderRows, Listed, PairingMarks, PairingWork, Prior, Rebuilt, Recorded, Root,
+    SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Status, Versions, WorkItem, WriteTarget,
 };
-pub use work::{PairingMarks, PairingWork};
 pub use writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsBatch, PairsWriter, PairsWritten, ScanWriter};
 
 #[cfg(test)]

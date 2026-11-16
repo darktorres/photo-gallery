@@ -19,11 +19,11 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::{Error, Result};
 use crate::ledger::failure::{Failure, tidy};
+use crate::types::PairingWork;
 use crate::types::{
     DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, FolderFailure, Hit, Recorded,
     SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, covering_root, under_params,
 };
-use crate::work::PairingWork;
 
 // The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
 // rusqlite's statement cache per row (16 entries, which the import's statements alone would crowd). A writer
@@ -87,7 +87,7 @@ impl<'tx> ScanWriter<'tx> {
         rules: PathRules,
         root: &RulePath,
     ) -> Result<ScanWriter<'tx>> {
-        crate::core::HeldLease { scan, rules, root }.hold(tx)?;
+        crate::lease::HeldLease { scan, rules, root }.hold(tx)?;
         crate::lifecycle::stamp_held_exts(tx)?;
         let covering = covering_root(tx, rules, root)?.map(|r| (r.id.get(), rules.join(&r.path)));
         Ok(ScanWriter {
@@ -447,7 +447,7 @@ impl<'tx> PairsWriter<'tx> {
         batch: PairsBatch<'_>,
         hashes: &dyn Fn(usize) -> Option<[u8; pg_model::pdq::BLOB_BYTES]>,
     ) -> Result<Option<PairsWritten>> {
-        let marks = crate::work::pairing_marks(self.conn)?;
+        let marks = crate::types::pairing_marks(self.conn)?;
         if marks.version != work.marks.version {
             return Ok(None);
         }
@@ -1305,7 +1305,7 @@ mod tests {
 
     /// The catalog's pairing marks now.
     fn marks(c: &Catalog) -> crate::PairingMarks {
-        crate::work::pairing_marks(&c.conn).unwrap()
+        crate::types::pairing_marks(&c.conn).unwrap()
     }
 
     /// The names of [`pictures`]' files.

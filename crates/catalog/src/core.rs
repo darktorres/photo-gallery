@@ -1,6 +1,6 @@
 //! The catalog's lifecycle: `Catalog` prepared, opened and closed, its transaction `Tx` and the writers it hands out,
 //! and a walk's lease (`ScanLease`, which `Catalog::begin_scan` takes). Uses `lifecycle`, `rebuild`, `writers`,
-//! `schema`, `transaction`, `types` and `error`. Every other concern's methods are in its own module's `impl Catalog`
+//! `lease`, `schema`, `transaction`, `types` and `error`. Every other concern's methods are in its own module's `impl Catalog`
 //! (`roots`, `lookup`, `work`, `borders`, `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); this calls none of
 //! them.
 
@@ -17,6 +17,7 @@ use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::{Error, Result};
+use crate::lease::HeldLease;
 use crate::lifecycle::{
     check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, set_borders_version, set_import_version,
     set_pairing_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, vacuum_if_owed,
@@ -442,35 +443,6 @@ impl Drop for ScanLease<'_> {
 
 /// Give back the lease of walk `scan`, on `conn`; nothing is written when it is gone already (a complete walk gave it
 /// back in its last transaction).
-/// A walk's lease, as its write transactions check it: its scan, and the folder it walks, under `rules`.
-#[derive(Clone, Copy)]
-pub(crate) struct HeldLease<'a> {
-    pub(crate) scan: ScanId,
-    pub(crate) rules: PathRules,
-    pub(crate) root: &'a RulePath,
-}
-
-impl HeldLease<'_> {
-    /// The lease is still the walk's: its heartbeat is now, written on `conn` (in its transaction, when one is open: the
-    /// first statement of each of the walk's write transactions, so what the transaction writes commits only with the
-    /// lease held). A lease that is gone writes nothing: [`Error::RootRemoved`] when no library folder holds the walked
-    /// folder any more (its removal took the lease), [`Error::LeaseLost`] otherwise (it expired, and another walk may
-    /// have begun).
-    pub(crate) fn hold(&self, conn: &Connection) -> Result<()> {
-        let held = conn
-            .prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?
-            .execute([self.scan.get()])?;
-        if held > 0 {
-            return Ok(());
-        }
-        let root = self.rules.display(self.root);
-        Err(match crate::types::covering_root(conn, self.rules, self.root)? {
-            None => Error::RootRemoved { root },
-            Some(_) => Error::LeaseLost { root },
-        })
-    }
-}
-
 pub(crate) fn release_lease(conn: &Connection, scan: ScanId) -> Result<()> {
     let held: bool = conn
         .prepare_cached("SELECT EXISTS(SELECT 1 FROM scan_leases WHERE id = ?1)")?

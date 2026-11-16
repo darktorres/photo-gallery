@@ -1,0 +1,138 @@
+{
+  "commit": "914c44ca3c2baf79579206add32644d822353367",
+  "recorded": "2026-11-16",
+  "fixtures": {
+    "default": "A4EDDE8589B4970B2FA6F33DBD1ABF9B93F471A508B4A9E07A5A7EF7669B7E44",
+    "broken": "E69B00C2661C4C6A614F3DEEC9D68F94206FD9FCB6DD077450D7C232A88C1F84",
+    "shot.log": "600CEA29203CF3E75C1444FE000A079184030DE95D28625549C2A6905E8B5D99"
+  },
+  "qt": "C:\\Qt\\6.12.0\\msvc2022_64\\bin\\qmake.exe",
+  "wait": 10.0,
+  "scenarios": [
+    {
+      "scenario": "default",
+      "crops": "",
+      "settle": "settled after 569 ms (445 ms since ready, quiet for 302 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "size120",
+      "crops": "",
+      "settle": "settled after 621 ms (499 ms since ready, quiet for 340 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "select5",
+      "crops": "",
+      "settle": "settled after 1124 ms (1005 ms since ready, quiet for 846 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "view0",
+      "crops": "",
+      "settle": "settled after 3130 ms (2992 ms since ready, quiet for 307 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "viewer-zoom",
+      "crops": "",
+      "settle": "settled after 4179 ms (3992 ms since ready, quiet for 307 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "viewer-loupe-borders",
+      "crops": "",
+      "settle": "settled after 3553 ms (3415 ms since ready, quiet for 310 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "viewer-zen",
+      "crops": "",
+      "settle": "settled after 4492 ms (4255 ms since ready, quiet for 350 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "viewer-one-to-one",
+      "crops": "",
+      "settle": "settled after 3870 ms (3724 ms since ready, quiet for 329 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "viewer-turn",
+      "crops": "",
+      "settle": "settled after 8190 ms (8054 ms since ready, quiet for 307 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "viewer-rate",
+      "crops": "",
+      "settle": "settled after 9619 ms (9438 ms since ready, quiet for 336 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "filters",
+      "crops": "",
+      "settle": "settled after 746 ms (630 ms since ready, quiet for 303 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "query",
+      "crops": "",
+      "settle": "settled after 625 ms (498 ms since ready, quiet for 341 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "sort",
+      "crops": "",
+      "settle": "settled after 611 ms (498 ms since ready, quiet for 324 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "menu-views",
+      "crops": "",
+      "settle": "settled after 620 ms (498 ms since ready, quiet for 337 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "library",
+      "crops": "",
+      "settle": "settled after 1116 ms (1000 ms since ready, quiet for 308 ms); 17 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "apply-view",
+      "crops": "",
+      "settle": "settled after 800 ms (616 ms since ready, quiet for 336 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "save-view",
+      "crops": "",
+      "settle": "settled after 630 ms (502 ms since ready, quiet for 349 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "borders",
+      "crops": "",
+      "settle": "settled after 627 ms (501 ms since ready, quiet for 344 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "find-similar",
+      "crops": "",
+      "settle": "settled after 806 ms (620 ms since ready, quiet for 353 ms); 15 image(s) seen, 0 loading; 4 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "save-crops",
+      "crops": "",
+      "settle": "settled after 622 ms (507 ms since ready, quiet for 352 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "filters-view0",
+      "crops": "",
+      "settle": "settled after 4006 ms (3858 ms since ready, quiet for 335 ms); 18 image(s) seen, 0 loading; 5 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "inbox",
+      "crops": "",
+      "settle": "settled after 626 ms (498 ms since ready, quiet for 349 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "inbox-expanded",
+      "crops": "",
+      "settle": "settled after 806 ms (626 ms since ready, quiet for 356 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "dev-mode",
+      "crops": "",
+      "settle": "settled after 749 ms (625 ms since ready, quiet for 321 ms); 14 image(s) seen, 0 loading; 3 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    },
+    {
+      "scenario": "log",
+      "crops": "",
+      "settle": "settled after 625 ms (490 ms since ready, quiet for 344 ms); 14 image(s) seen, 0 loading; 4 timer(s) seen, 0 pending; 0 animating; library job running: 0, writes pending: 0; core pauses pending: 0"
+    }
+  ]
+}

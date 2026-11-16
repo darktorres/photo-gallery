@@ -1,6 +1,7 @@
-// The benches of ../ir.rs, included there on Linux only: the per-file work here, the catalog's in catalog.rs. Setup
-// (reading the file, creating the analyzer and the thumbnail maker, copying and opening the catalog) runs outside the
-// measured function. Their buffers start empty, so each bench measures a worker's first file.
+// The benches of ../ir.rs, included there on Linux only: the per-file work here, the catalog's in catalog.rs, the pairing
+// join's in pairing.rs. Setup (reading the file, creating the analyzer and the thumbnail maker, copying and opening the
+// catalog, making the pairing's library) runs outside the measured function. Their buffers start empty, so each bench
+// measures a worker's first file.
 
 use std::hint::black_box;
 
@@ -103,5 +104,6 @@ library_benchmark_group!(name = per_file, benchmarks = [analyze_jpeg, thumb_jpeg
 library_benchmark_group!(name = viewer, benchmarks = [viewer_still, viewer_poster]);
 
 include!("catalog.rs");
+include!("pairing.rs");
 
-main!(library_benchmark_groups = per_file, viewer, catalog, scan);
+main!(library_benchmark_groups = per_file, viewer, catalog, scan, pairing);

@@ -105,13 +105,15 @@ pub enum Line {
         pairs: String,
         seconds: String,
     },
-    /// Where the pairing pass's time went, in seconds: reading the pictures, the joins (of which waiting for their sorts,
-    /// and their scans), the write statements, the commits.
+    /// Where the pairing pass's time went, in seconds: reading the pictures, the joins (wall clock; then their threads'
+    /// time in the sorts, in the scans, with nothing to take, and paused), the write statements, the commits.
     PairTimings {
         load: String,
         join: String,
         sort: String,
         scan: String,
+        idle: String,
+        paused: String,
         write: String,
         commit: String,
     },
@@ -332,12 +334,14 @@ impl Line {
                 vec![("files", files), ("failed", failed), ("changed", changed), ("seconds", seconds)]
             }
             Line::PairDone { files, pairs, seconds } => vec![("files", files), ("pairs", pairs), ("seconds", seconds)],
-            Line::PairTimings { load, join, sort, scan, write, commit } => {
+            Line::PairTimings { load, join, sort, scan, idle, paused, write, commit } => {
                 vec![
                     ("load", load),
                     ("join", join),
                     ("sort", sort),
                     ("scan", scan),
+                    ("idle", idle),
+                    ("paused", paused),
                     ("write", write),
                     ("commit", commit),
                 ]
@@ -443,7 +447,16 @@ impl Line {
             Line::ImportPending { pending: s() },
             Line::ImportDone { files: s(), failed: s(), changed: s(), seconds: s() },
             Line::PairDone { files: s(), pairs: s(), seconds: s() },
-            Line::PairTimings { load: s(), join: s(), sort: s(), scan: s(), write: s(), commit: s() },
+            Line::PairTimings {
+                load: s(),
+                join: s(),
+                sort: s(),
+                scan: s(),
+                idle: s(),
+                paused: s(),
+                write: s(),
+                commit: s(),
+            },
             Line::PairsAgain { count: s() },
             Line::PairsLegacy { count: s() },
             Line::PairsOwed { count: s() },
@@ -545,12 +558,15 @@ mod tests {
             join: "0.62".into(),
             sort: "0.10".into(),
             scan: "0.48".into(),
+            idle: "0.03".into(),
+            paused: "0.00".into(),
             write: "0.33".into(),
             commit: "0.08".into(),
         };
         assert_eq!(
             line(&timings),
-            "load 0.21 s, join 0.62 s (threads' time: sorts 0.10 s, scans 0.48 s), writes 0.33 s, commits 0.08 s"
+            "load 0.21 s, join 0.62 s (threads' time: sorts 0.10 s, scans 0.48 s, idle 0.03 s, paused 0.00 s), \
+             writes 0.33 s, commits 0.08 s"
         );
         let tier = Line::DupsIdentical { tier: Tier::Pixels, groups: "2".into(), files: "5".into() };
         assert_eq!(line(&tier), "tier 0b identical pixels: 2 groups, 5 files");

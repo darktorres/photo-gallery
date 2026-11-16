@@ -335,7 +335,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   to ≥ 512 × 320), and stores the BLAKE3 file hash, the pixel hash, PDQ, dimensions and a ThumbHash, plus the
   frame count (from the GIF, APNG or WebP container) and the date taken (EXIF DateTimeOriginal, else XMP). Each new
   PDQ hash is stored with its 8 orientations, and a picture of reliable quality owes its tier-1 pairs
-  (`analysis.dups_state = 'due'`): the pairing pass after the import finds them (d ≤ 31), so the import only hashes
+  (a row of `pairs_owed`): the pairing pass after the import finds them (d ≤ 31), so the import only hashes
   and stores. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
   creation date come from the container: the rotation matrix, and Apple's local creation date before the UTC
   `creation_time`. Its ThumbHash comes from the poster frame, at 10% of the duration (at most 10 s). Videos get

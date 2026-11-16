@@ -1,24 +1,30 @@
 # Pairing pass plan: rebuilt for speed and memory
 
-## Status (2026-11-15)
+## Status (2026-11-16)
 
-Blocks A - D are done: `d3d307a` (A and B), `b7d13a6` (C), `98c6973` (D). The measurements and each gate's result are
-in [PROFILING.md](../reference/PROFILING.md), "The pairing pass". Against the targets below:
+Blocks A - D are done: `d3d307a` (A and B), `b7d13a6` (C), `98c6973` (D). The second round,
+[PAIRING_SECOND_ROUND_PLAN.md](PAIRING_SECOND_ROUND_PLAN.md) (steps 0 - 10, done), rebuilt the join's sort, scan
+kernel, few-owed path and threads, fixed a pair loss, and re-tuned what that made stale. It changed three things this
+plan set: **the sorter threads and G3's rule are gone** (one thread team sorts and scans; a thread takes a sort's task
+while the sort is behind, so no count is tuned); **the 330 MB cap is removed** (peak commit is recorded with each
+change, not held to a target); and **G5 was run** on a grown 500,000-picture catalog. The measurements and each gate's
+result are in [PROFILING.md](../reference/PROFILING.md), "The pairing pass" and after. Against the targets below:
 
-| Target | Result |
-|---|---|
-| Same pairs | Met: the oracle's 5,277 exactly, in one slice, four slices, and partial passes on both paths |
-| 12 workers, 5x or better | Met: 6.56 -> 1.27 s (5.2x) |
-| 1 worker, 3.5x or better | **Not met**: 10.63 -> 5.15 s (2.1x); the scan is 3.9 s of it. Tracked as P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md) |
-| A pass for a few files, about 0.35 s | Met: 0.24 s for one owed picture |
-| Peak commit at most 330 MB | Met: 254 MiB all owed, 75 MiB one owed |
-| `prepare` at every start, about 30 ms | 42 ms for the probe's whole process with nothing owed (111 - 126 ms when the extension check runs) |
+| Target | After block D | After the second round |
+|---|---|---|
+| Same pairs | Met: the oracle's 5,277 exactly, in one slice, four slices, and partial passes on both paths | Met, on the same seven paths |
+| 12 workers, 5x or better | Met: 6.56 -> 1.27 s (5.2x) | 0.94 - 1.0 s (6.6 - 7.0x) |
+| 1 worker, 3.5x or better | **Not met**: 10.63 -> 5.15 s (2.1x); the scan is 3.9 s of it | **Not met**: 4.6 - 4.7 s (2.3x). Tracked as P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md) |
+| A pass for a few files, about 0.35 s | Met: 0.24 s for one owed picture | 0.13 - 0.14 s for 300 owed at 12 workers |
+| Peak commit at most 330 MB | Met: 254 MiB all owed, 75 MiB one owed | The cap is removed; 172 - 174 MiB all owed, 63 MiB 300 owed |
+| `prepare` at every start, about 30 ms | 42 ms for the probe's whole process with nothing owed (111 - 126 ms when the extension check runs) | Not re-measured |
 
-Gates: G1, G2, G2b, G3, G5, G6 and the cache size are measured and set. **G4 (the kernel's loop nest) was not run**:
-at one 200,000 slice the query buckets are the longer side, which the current kernel already vectorizes; the other
-candidates are left to P-13. **G5's 400,000 slice on a synthetic 500,000-picture corpus was not run** (this library is
-one slice at 200,000). Not tested: a failed write while the overlapped join is paused (the unpaused case is).
-**Left: block E** (the benches `pairing.join` and `pairing.write`, and the docs list under Docs).
+Gates: G1, G2, G2b, G5, G6 and the cache size are measured and set; G3 is replaced by the team. **G4 (the kernel's
+loop nest) was not run**: at one 200,000 slice the query buckets are the longer side, which the current kernel
+already vectorizes; the second round's step 3 built a new kernel instead. Not tested: a failed write while the
+overlapped join is paused (the unpaused case is). Block E: the `pairing.join` bench is in `crates/bench`
+(`ir::pairing::join`, both paths); `pairing.write` was not made, as the import flush bench already counts the
+catalog's write path and the pass's write is timed by `pairs_probe`.
 
 ## Context
 
@@ -62,7 +68,8 @@ under the existing dispatch and safety contract, and the free-space query (Part 
 better (about 1.3 - 1.5 s)**: preparation 0.1 + the sort/scan pipeline about 0.5 (sorts 0.45 on two sorter threads against a
 scan of 0.35) + load 0.2 + writes 0.45. **On one worker 3.5x or better (about 2.6 - 3.2 s).** **A pass for a few files about
 0.35 s** (load 0.2 + prepare 0.1 + a linear bit-test pass, from 1.3 s). **Peak commit at most 330 MB at every setting
-(today 415 MB)**, lower with a smaller slice. The `prepare` cost at every start falls from 130 to about 30 ms.
+(today 415 MB)**, lower with a smaller slice (the cap was removed in the second round: peak commit is recorded, not a
+target). The `prepare` cost at every start falls from 130 to about 30 ms.
 
 ## Part 1: the data (migration TO_13, on top of draft TO_12)
 
@@ -235,15 +242,17 @@ Option<Space { total, free }>`, the same `GetDiskFreeSpaceExW` call (its first o
      pause is short, and dropping and rebuilding the join on resume would cost more than it saves.
 
    Libraries above 200,000 pictures run several slices (item 6 and Part 3 item 2 keep them fast). The final value comes
-   from G5 under the memory cap.
+   from G5 under the memory cap (the cap since removed; the second round kept 200,000, PROFILING.md "The settings
+   again").
 6. **The sort/scan pipeline.** The scan (about 0.35 s at 12 workers) is shorter than the sorts (0.45 s), so the join is
    sort-bound and the sorting runs **ahead of the scan on 1 - 2 sorter threads** (scoped; measured 1.4x for two), filling a
    ring of stage buffer sets (stored 15 MB + queries 30 MB = 45 MB per set at one slice) while the workers scan the current
    stage; the permuted store is built over all workers. Sorters and workers share the thread budget. A sorter runs the same
    `start` closure first, so it takes the pass's `BelowNormal` priority (`runner.rs:596`); otherwise sorting at normal
    priority would compete with the GUI. It obeys the same `control` closure as the workers (never a flag of its own), so a
-   stop or pause reaches it. Ring depth and sorter count are
-   chosen by G3 under the memory cap (each extra set is 45 MB; each sorter's scratch is one buffer of the larger side,
+   stop or pause reaches it. (Superseded by the second round's step 5: one thread team sorts and scans, a thread taking
+   a sort's task while the sort is behind, in one set of buffers; no sorter count is tuned.) Ring depth and sorter count
+   were chosen by G3 under the memory cap (each extra set is 45 MB; each sorter's scratch is one buffer of the larger side,
    30 MB). Per-stage thread spawn is kept: 0.48 ms per stage, 30.8 ms over 64 stages (3.5% of the scan), not worth
    persistent workers.
 
@@ -259,14 +268,15 @@ Option<Space { total, free }>`, the same `GetDiskFreeSpaceExW` call (its first o
    | **Rust heap** | **about 195 - 225 MB** |
 
    Add the binary, the stacks and a bounded page cache (Part 3 item 1): **peak commit about 260 - 290 MB**, against the
-   330 MB cap. The plan as first written (40-byte base arrays, side-by-side 24-byte records) came to a 260 - 296 MB heap
+   330 MB cap (removed in the second round; measured after it: 172 - 174 MiB). The plan as first written (40-byte base arrays, side-by-side 24-byte records) came to a 260 - 296 MB heap
    and 330 - 363 MB of commit, over the cap; that is why item 1 has one permuted store. A ring of 3 sets or a 400,000
    slice is admitted only if G3 and G5 show it inside the cap.
 
-   **How the budget grows with the library.** The cap is this library's. The stored side grows with every picture
+   **How the budget grows with the library.** The cap was this library's. The stored side grows with every picture
    whatever the slice: about 128 B loaded + 128 B permuted + 2 x 80 B in the ring (4 entries x 20 B) + up to 80 B of
    scratch, so about 0.45 - 0.5 KB per picture. The query side is bounded by the slice. A 1,000,000-picture library
-   therefore needs about 0.5 GB at the default settings; today's design needs more (it grows the same way, plus the
+   therefore needs about 0.5 GB at the default settings (measured after the second round on a grown 1,000,000-picture
+   catalog: 462 MiB); today's design needs more (it grows the same way, plus the
    copies item 1 removes). That is stated in `BOUNDED_MEMORY_PLAN.md` (Docs), not hidden; bounding the stored side
    would take a chunk-partitioned stored sort, its own plan if a library that size appears.
 
@@ -375,7 +385,8 @@ measurement, Linux container only for `just perf`.
   5 - 8) and the write overlap (Part 3 item 2)**, **E. benches and docs.** In B, the radix sort writing three separate
   arrays is timed against the prototype's 309 ms (side-by-side records) before the kernel work.
 - **Gates (each result is written into `docs/reference/PROFILING.md`, nothing is "estimated").** G1 and G2 are done (above). A
-  gate sets a tuning value, not a go/no-go: **G3** sorter threads (1 - 2) and ring depth under the memory cap; **G4** the loop
+  gate sets a tuning value, not a go/no-go: **G3** sorter threads (1 - 2) and ring depth under the memory cap (replaced
+  in the second round by one thread team, which tunes no count); **G4** the loop
   nest (Ir per owed candidate under callgrind, wall at 1 and 12 workers, synthetic corpus and real data); **G5** `SLICE` of
   50,000, 100,000 and 200,000 on this library (the prototype predicts 25.3 -> 21.2 -> 19.0 G Ir and one stored sort at
   200,000), with 400,000 tried on a synthetic 500,000-picture corpus (the real hashes plus bit-noised copies, from the
@@ -443,7 +454,7 @@ measurement, Linux container only for `just perf`.
 - **Real data end to end (scratch copies only):** `gallery pair --again` on a copy reproduces `after_pairs.txt` exactly; timings
   at 1, 2, 4, 6, 12 workers against the "before" table; callgrind per-join Ir: symmetry < 0.3 G (17.7 G), sorts < 1 G (2.6 G),
   scan <= 20 G (54.6 G; 19.0 G predicted), SQL writes < 1 G (2.8 G), `prepare` < 0.15 G (0.41 G), load < 0.8 G (1.49 G); the
-  small pass (target 0.35 s) and peak commit (cap 330 MB) against A's baselines; one fresh scan + import + pair of the
+  small pass (target 0.35 s) and peak commit (cap 330 MB, removed in the second round) against A's baselines; one fresh scan + import + pair of the
   pinterest root.
 - Benches (`crates/bench`, gungraun, `just perf`): `pairing.join` (a deterministic synthetic corpus of about 20 k hashes with
   clusters, from a `pg-dedup` `bench` feature like `pg-scan`'s) and `pairing.write`; baselines with `just perf --update`, budgets

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-The few-owed path against the sorted path, by owed count: where the join's two paths cross (`FEW_ENTRIES_PER_THREAD`).
+The few-owed path against the sorted path, by owed count: where the join's two paths cross (`FEW_BASE`, `FEW_PER_THREAD`).
 
 .DESCRIPTION
 For each -Workers count and each -Owed count, on fresh copies of -Catalog with that many pictures owed (`set_owed.py`),

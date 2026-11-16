@@ -13,6 +13,8 @@ workspace = true
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }
 pg-codec = { path = "../codec" }
+# The pairing pass's join, over synthetic hashes (benches/ir/pairing.rs).
+pg-dedup = { path = "../dedup" }
 # The scan's walk over a synthetic tree (`scan_with`, `synthetic`), and the job's control it runs under.
 pg-jobs = { path = "../jobs" }
 pg-scan = { path = "../scan", features = ["bench"] }

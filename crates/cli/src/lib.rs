@@ -108,6 +108,8 @@ fn pair_and_report(
         join: part(t.join),
         sort: part(t.joins.sort),
         scan: part(t.joins.scan),
+        idle: part(t.joins.starved),
+        paused: part(t.joins.paused),
         write: part(t.write),
         commit: part(t.commit),
     });

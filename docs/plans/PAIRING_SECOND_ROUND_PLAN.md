@@ -18,7 +18,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
 | 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
 | 9, re-tuning | Done: the store's permute on the team; the few-owed threshold refitted; `WRITE` 4,000; the threads, the load's parts, the cache, `BLOCK` and `SLICE` kept |
-| 10 | Not started |
+| 10, docs and benches | Done |
 
 ## Context
 
@@ -649,6 +649,18 @@ Each setting takes the simplest value within +1% of the best, with peak commit r
 
 ## Step 10: docs and benches
 
+**Status: done.** `PROFILING.md` holds each step's results with their intervals, and the first round's records say
+what the second replaced (the sorter threads and G3's rule, the 330 MB cap, `FEW_ENTRIES_PER_THREAD`, the recipe's
+`PG_PROBE_SORTERS`). P-13 is updated and stays open: one worker is 4.6 - 4.7 s, 2.3x against the 3.5x target, the
+scan what is left. `PAIRING_PASS_PLAN.md`'s status gives both rounds' results. `gallery pair`'s timings line gives
+the team's idle and paused time beside its sorts and scans (`cli.ftl`, `cli-pair-timings`), and `crates/README.md` names
+`pairs_owed`. The callgrind bench `ir::pairing::join` (`crates/bench/benches/ir/pairing.rs`) counts the store's build
+and a one-thread join on a synthetic 20,000-picture library, `all` owed (the sorted path) and `few` (100 owed); no
+`pairing.write` bench, as the import flush bench counts the catalog's write path. The scripts are in
+`tools/profiling/pairing/`: `keep.ps1` and `keep.py` (the keep rule), `medians.py`, `oracle.ps1` (the seven paths
+against the oracle), `few_sweep.ps1`, `peak_mem.ps1`, `set_owed.py`, `grow_catalog.py`. The loop-count replay
+(`scan_replay.py`) stays out: it models the kernel step 3 replaced.
+
 - **`PROFILING.md`:** each result with its interval.
 - **P-13:** updated or closed.
 - **`PAIRING_PASS_PLAN.md`:**
@@ -682,7 +694,7 @@ Each setting takes the simplest value within +1% of the best, with peak commit r
   workspace lints. A step is not done until its tests above and the existing brute-force tests pass: every owed share,
   every kernel, every thread count, both paths.
 - **Real data,** on scratch copies:
-  - `oracle_d.ps1` on all seven paths: identical pairs, and after step 6, only the listed additions;
+  - `oracle.ps1` (`tools/profiling/pairing/`) on all seven paths: identical pairs, and after step 6, only the listed additions;
   - the keep rule per step;
   - cycle samples by region, and the mispredict count before and after step 3;
   - peak commit recorded;

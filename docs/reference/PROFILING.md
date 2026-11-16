@@ -646,7 +646,8 @@ join's parts: `prepare` (the slice's query side), `sort` (the time the scan wait
 The plan's targets: at 12 workers 5x or better, met (5.2x). On one worker 3.5x, **not met** (2.1x): what is left there is
 the scan itself, 3.9 s on one thread. A pass for a few files, 0.35 s, met (below).
 
-**Correctness on the real data** (`oracle_d.ps1` in the scratch folder; every case gives the oracle's 5,277 pairs
+**Correctness on the real data** (`oracle_d.ps1` in the scratch folder, now `tools/profiling/pairing/oracle.ps1`;
+every case gives the oracle's 5,277 pairs
 exactly, nothing left owed): all owed in one slice at 12 workers and at 1; all owed in four slices of 50,000, with the
 write overlap; and 300, 3,000 and 30,000 owed, with those pictures' pairs deleted first (14, 143 and 1,553 of them), on
 the few-owed path (300) and the sorted path (3,000 and 30,000, and 3,000 on one worker).
@@ -662,7 +663,9 @@ the few-owed path (300) and the sorted path (3,000 and 30,000, and 3,000 on one 
 | 12 | 1.80 s | 1.51 s | **1.22 s** |
 
 Below 4 threads a sorter costs a worker the scan needs more; from 10 the scan is fast enough that one sorter falls
-behind (it waited 0.33 s at 12). `join::default_sorters`: 0 up to 3 threads, 1 from 4 to 9, 2 from 10.
+behind (it waited 0.33 s at 12). `join::default_sorters`: 0 up to 3 threads, 1 from 4 to 9, 2 from 10. (Since the
+second round's step 5 one thread team sorts and scans, and a thread takes a sort's task while the sort is behind; the
+sorter threads, this rule and `PG_PROBE_SORTERS` are gone: "One thread team" below.)
 
 **G5, the slice** (total, 2 runs each, the machine busier than for the table above):
 
@@ -673,8 +676,9 @@ behind (it waited 0.33 s at 12). `join::default_sorters`: 0 up to 3 threads, 1 f
 | 200,000 (1 slice, kept) | 5.08 s | 1.57 s | 1.44 s |
 
 Every slice sorts the whole stored side again and sets up every probe again, so one slice is cheapest. The plan's
-400,000 on a synthetic 500,000-picture corpus was not run: this library is one slice at 200,000, and a larger slice is a
-question for a larger library, whose stored side alone already passes the cap (about 0.5 KB per picture).
+400,000 on a synthetic 500,000-picture corpus was not run here: this library is one slice at 200,000. The second
+round's step 9 ran it, on a grown catalog ("The settings again", `SLICE`): one slice is faster there, and a slice bounds
+only the query side.
 
 **G6, the few-owed path against the sorted path** (join, 2 runs each; the few-owed path forced on with `PG_PROBE_FEW`,
 the sorted path forced with 0):
@@ -688,7 +692,9 @@ the sorted path forced with 0):
 | 2,500 | 308 ms | 280 ms | 2,228 ms | 508 ms |
 
 The few-owed path's work is spread over every thread; the sorted path's floor (sorting the stored side, about 0.2 s) is
-not. So the threshold is per thread: 1,000 query entries (125 owed pictures) per thread, `FEW_ENTRIES_PER_THREAD`. A
+not. So the threshold is per thread: 1,000 query entries (125 owed pictures) per thread, `FEW_ENTRIES_PER_THREAD`
+(since the second round's step 9, 221 + 38 owed pictures a thread, the line through the measured crossovers: "The
+settings again"). A
 first version, which looked each hit up by binary search and read the query's full hash, was 2 - 3x slower per hit
 (1,000 owed: 324 ms on 12 workers, 2,862 ms on 1); the kept one sorts each chunk's queries as a stage does and tests a
 value and its six low-bit neighbours with one bitmap word.
@@ -710,13 +716,14 @@ scan, 3.9 s, is where a better kernel would show.
 | 30,000 | 148 MiB | 393 ms | sorted |
 | 187,804 | 254 MiB | 822 ms | sorted |
 
-The cap was 330 MB at every setting; before the rebuild these were 366 MB (one owed) and 415 MB (all owed). A pass with
+These met the plan's 330 MB cap, since removed: peak commit is recorded with each change, not held to a target. Before
+the rebuild these were 366 MB (one owed) and 415 MB (all owed). A pass with
 one owed picture takes 0.24 s in all (0.15 s of it the load), against 1.3 - 1.6 s before.
 
 #### One join under callgrind, one worker (P-13, `98c6973`)
 
-`pairs_probe` built in the pg-tools container, on the migrated copy, all 187,804 owed, `PG_PROBE_WORKERS=1`,
-`PG_PROBE_SORTERS=0`: `valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes --zero-before='<pg_dedup::join::Joiner>::join'
+`pairs_probe` built in the pg-tools container, on the migrated copy, all 187,804 owed, `PG_PROBE_WORKERS=1` (at
+`98c6973` also `PG_PROBE_SORTERS=0`, a switch gone with the sorter threads): `valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes --zero-before='<pg_dedup::join::Joiner>::join'
 --dump-after='<pg_dedup::join::Joiner>::join'`. The join: **36.7 G instructions, 452 M mispredicted branches** (8.8%
 of 5.1 G conditional branches), 120 M D1 read misses, 128 M D1 write misses. The prototype had predicted 19 G for the
 scan; it counted the iterations right (670 M vector iterations, 204 M (stored entry x probe) setups, both as predicted)
@@ -739,7 +746,7 @@ hashes the candidates read from the 48 MB store (`Sides::words`) do not show: so
 
 #### The one-worker scan on the hardware (P-13, `98c6973`)
 
-Same pass (all owed, `PG_PROBE_WORKERS=1`, `PG_PROBE_SORTERS=0`), the Windows release build, i7-8700, VBS on. Two WPR
+Same pass (all owed, `PG_PROBE_WORKERS=1`), the Windows release build, i7-8700, VBS on. Two WPR
 traces: counters read at every context switch (`HardwareCounter` with `InstructionRetired`, `BranchMispredictsRetired`,
 `UnhaltedCoreCycles` on `CSwitch`; deltas charged to the thread switched out), and `UnhaltedCoreCycles` sampled every
 65,536 cycles (keyword `PmcProfile`, `SampledCounter`), the samples mapped to the probe's image through the loader

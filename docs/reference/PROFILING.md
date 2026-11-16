@@ -1206,6 +1206,29 @@ Against 128, 6 pairs, join:
 No real gain anywhere, and the first runs' estimates turned over when run again: the starved time is the stages'
 tails (a block is ~0.1 ms at 12 threads), not the block's size.
 
+**`SLICE`: 200,000 stays, and what slicing can bound.** `tools/profiling/pairing/grow_catalog.py` grows a catalog with
+copies of its pictures, each copy's hashes XOR one mask that is the same in every orientation (one bit per orbit of the
+grid under the eight dihedral maps): a copy holds the library's pairs again, exactly, and none with another copy. On
+500,000 pictures (187,808 and 312,192 copied) the pass made the predicted 11,608 pairs (5,277 x 2 + the partial copy's
+1,054); on 1,000,000, 22,076. One slice against 200,000 on 500,000 (3 slices), 6 pairs: pass −25.94% [−28.30,
+−22.41] at 12 workers (4,458 → 3,330 ms, cycles −32%), −34.50% [−35.98, −33.53] at 1 (25.9 → 16.9 s); 250,000 (2
+slices) −12.05% [−17.99, −3.86]: each slice sorts the whole stored side again. Peak commit (MiB, 12 workers, every
+picture owed through `set_owed.py`, one run each):
+
+| Library | One slice | 500,000 | 250,000 | 200,000 | 125,000 |
+|---|---:|---:|---:|---:|---:|
+| 187,808 | 173 | | | 173 | 120 (47,000) |
+| 500,000 | 413 | 413 | 311 | 291 | 259 |
+| 1,000,000 | 779 | 582 | 483 | 462 | 432 |
+
+About 37 MiB fixed, 0.35 KB per picture of the library and 0.41 KB per owed picture of a slice (one worker against 12:
+−8 MiB). So a slice bounds the query side only: the stored side, every picture in all its orientations, is in memory in
+every slice, and the pass grows with the library whatever the slice (about 0.35 GB a million pictures; past
+`MAX_PICTURES`, 268,435,455, the join refuses). A slice sized by memory was weighed and not built: bounding the pass
+itself is `docs/plans/BOUNDED_MEMORY_PLAN.md`'s (Phase 5, the on-disk tier-1 index in a budget `W`), which replaces this
+join. Until then 200,000 is kept: this library is one slice, and a larger one pays 26 - 35% for a query side bounded
+at ~80 MiB.
+
 ---
 
 ## Where the other results are

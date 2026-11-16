@@ -17,7 +17,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
 | 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
-| 9, re-tuning | The threads, the load's parts, the store's permute, the few-owed threshold, the cache, `WRITE` and `BLOCK` done; `SLICE` next |
+| 9, re-tuning | Done: the store's permute on the team; the few-owed threshold refitted; `WRITE` 4,000; the threads, the load's parts, the cache, `BLOCK` and `SLICE` kept |
 | 10 | Not started |
 
 ## Context
@@ -623,14 +623,17 @@ lookups ~85 ms of the 212 ms load and fetching pages about half of every stateme
 
 ## Step 9: re-tune what the changes made stale
 
-**Status: in progress.** The join keeps every logical core (6 workers lose 21 - 23%); the load keeps one part a
+**Status: done.** The join keeps every logical core (6 workers lose 21 - 23%); the load keeps one part a
 join thread (fewer than 6 loses time, 6 gains none). Fitting the few-owed crossover found `Joiner::new`'s permute
 on one thread (50 - 66 ms at every count, the plan's step 1 item left undone): now on the join's threads,
 -37% on the join for 300 owed at 12 workers. The few-owed threshold is now the line through the measured crossovers, 221 + 38 owed pictures a thread
 (`FEW_BASE`, `FEW_PER_THREAD`): the old 125 a thread was 2.3x too high at 12 threads (joins −17 to −31% where the
 two rules differ). The cache stays at 16 MB (2 - 8 MB gain nothing, and 2 MB slows the split load). `WRITE` is 4,000,
 the most within step 7's lock-hold bound (commit −57 to −67%). `BLOCK` stays at 128 (32, 64 and 256 gain nothing; the
-starved time, ~5%, is the stages' tails), now a run-time `Tuning::block`. Settings switches: `PG_PROBE_LOAD_PARTS`, `PG_PROBE_WRITE`; the
+starved time, ~5%, is the stages' tails), now a run-time `Tuning::block`. `SLICE` stays at 200,000: on a grown
+500,000-picture catalog (`tools/profiling/pairing/grow_catalog.py`) one slice is −26% at 12 workers and −35% at 1, but a
+slice bounds only the query side, and bounding the pass at a larger library is `BOUNDED_MEMORY_PLAN.md`'s (Phase 5),
+so a memory-sized slice was not built (the user's call). Settings switches: `PG_PROBE_LOAD_PARTS`, `PG_PROBE_WRITE`; the
 crossover sweep is `tools/profiling/pairing/few_sweep.ps1`.
 
 Each setting takes the simplest value within +1% of the best, with peak commit recorded:

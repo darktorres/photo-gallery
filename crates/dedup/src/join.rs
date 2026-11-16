@@ -218,6 +218,25 @@ pub(crate) fn permuted(h: &Hash) -> [u64; 4] {
     words
 }
 
+/// The hash a permuted one was made from ([`permuted`]'s inverse): the diagonals unpacked and turned back, the grid
+/// transposed again (a transpose is its own inverse), and each row rotated back.
+pub(crate) fn unpermuted(words: &[u64; 4]) -> Hash {
+    let mut diagonals = [0u16; CHUNKS];
+    for (four, &word) in diagonals.as_chunks_mut::<4>().0.iter_mut().zip(words) {
+        for (k, diagonal) in four.iter_mut().enumerate() {
+            *diagonal = u16::try_from((word >> (16 * k)) & 0xFFFF).unwrap_or(0);
+        }
+    }
+    for (d, diagonal) in diagonals.iter_mut().enumerate().skip(CHUNKS / 2 + 1) {
+        *diagonal = diagonal.rotate_left(u32::try_from(d).unwrap_or(0));
+    }
+    let mut rows = transpose_rows(diagonals);
+    for (r, row) in (0u32..).zip(rows.iter_mut()) {
+        *row = row.rotate_right(r);
+    }
+    Hash::from_rows(&rows)
+}
+
 /// A permuted hash's 16 chunks ([`chunk`] of each), in order.
 #[inline(always)]
 fn chunks(words: &[u64; 4]) -> [u16; CHUNKS] {
@@ -404,6 +423,14 @@ impl<'a> Joiner<'a> {
 
     fn owes(&self, i: usize) -> bool {
         self.owed.get(i).copied().unwrap_or(false)
+    }
+
+    /// Picture `i`'s hashes as they were given to [`Joiner::new`] (the store's permutation undone), `None` past the
+    /// last: the join keeps the only copy, so the caller can drop its own once the join is made.
+    pub fn original(&self, i: usize) -> Option<[Hash; ORIENTATIONS]> {
+        let stored = self.stored.get(ORIENTATIONS * i..ORIENTATIONS * (i + 1))?;
+        let stored = <[[u64; 4]; ORIENTATIONS]>::try_from(stored).ok()?;
+        Some(stored.map(|words| unpermuted(&words)))
     }
 
     /// The pairs in which the query side is one of `queries` (a range of indices; the owed ones in it query).
@@ -2108,6 +2135,29 @@ mod tests {
         for h in &hashes {
             assert_eq!(transposed(&permuted(h)), permuted(&h.transpose()), "{h:?}");
         }
+    }
+
+    /// The store's permutation undone gives back every hash, and `Joiner::original` every picture's orientations.
+    #[test]
+    fn the_original_hashes_come_back_from_the_store() {
+        let mut rng = Rng(12);
+        let mut hashes: Vec<Hash> = (0..2000).map(|_| rng.hash()).collect();
+        hashes.extend([Hash([0; 32]), Hash([0xFF; 32])]);
+        for k in 0..256 {
+            let mut bytes = [0u8; 32];
+            bytes[k / 8] = 1 << (7 - k % 8);
+            hashes.push(Hash(bytes));
+        }
+        for h in &hashes {
+            assert_eq!(unpermuted(&permuted(h)), *h, "{h:?}");
+        }
+        let pictures: Vec<[Hash; ORIENTATIONS]> = hashes.as_chunks::<ORIENTATIONS>().0.to_vec();
+        let owed = vec![true; pictures.len()];
+        let joiner = Joiner::new(&pictures, &owed).unwrap();
+        for (i, picture) in pictures.iter().enumerate() {
+            assert_eq!(joiner.original(i), Some(*picture));
+        }
+        assert_eq!(joiner.original(pictures.len()), None);
     }
 
     /// A sorted side read back in value order: each entry's head (`w` words, held in `layout`) and code, and each

@@ -85,6 +85,9 @@ impl Hash {
     clippy::indexing_slicing,
     reason = "k + j < 16 at every step: k runs over the rows whose bit j is clear, and j <= 8"
 )]
+// Always: the join's store permutes every stored hash through it (751,216 on 187,804 pictures). With a second caller in
+// pg-dedup (`unpermuted`) LLVM stopped inlining it there, even under `#[inline]`, and `Joiner::new` took 14 ms longer.
+#[inline(always)]
 pub fn transpose_rows(mut a: [u16; 16]) -> [u16; 16] {
     let (mut j, mut m): (usize, u16) = (8, 0x00FF);
     while j != 0 {

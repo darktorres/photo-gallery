@@ -996,7 +996,30 @@ on four slices) is level everywhere: all workloads kept, median −0.09%. Where 
   longer of the two.
 - **The triggers' cost elsewhere.** `owe_pairs_again`'s insert of every owed row (`gallery pair --again`, a new
   pairing version), 6 alternating runs on copies: 137 ms with no epoch trigger, 280 ms with one on `pairs_owed`, which
-  was therefore not built. The analysis triggers fire once per stored analysis (the import flush bench, below).
+  was therefore not built. The analysis triggers fire once per stored analysis or failure: the import flush bench
+  (`ir::catalog::import_flush::batch`, 500 stores in one transaction, callgrind) went from 145,131,705 instructions at
+  `0c8401e` to 148,321,771 at `57bda80`, **+2.20%** (estimated cycles +2.13%), about 6,400 instructions a store for
+  the trigger's `UPDATE meta`, against about 290,000 for the store itself.
+
+**The single copy of the hashes** (the rest of step 7). The pass hands the load's hashes to the join and frees them
+once its store is made; the guard takes a picture's from the store (`Joiner::original`, the permutation undone). Kept
+(6 pairs against `57bda80`; the three workloads with no verdict at first, each from one or two runs slow in wall time
+alone with cycles level, kept when run again): no workload's time or cycles changed (estimates −1.6 to +3.2%, median
+−0.25%). The oracle's pairs are identical on all seven paths, with every write guarded too (`PG_PROBE_GUARD`).
+
+| Owed | Peak commit, A → B (MiB, 2 runs each) |
+|---|---|
+| 1 | 75 → 75 |
+| 300 | 76 - 77 → 76 - 77 |
+| 30,000 | 137 - 138 → 114 |
+| 187,804 | 202 - 203 → 179 - 180 |
+
+- **Two losses found on the way, both measured and removed.** The first build lost 14 - 21 ms on every join
+  (+17% on 300 owed at 12 workers): timing the join's parts put all of it in `Joiner::new`, and the assembly showed
+  `permuted` calling `pg_model::pdq::transpose_rows` out of line once `unpermuted` became its second caller in
+  pg-dedup (73 instructions and a call, against 343 inlined; `#[inline]` did not change LLVM's choice, so it is
+  `#[inline(always)]`). Then freeing the 24 MB copy took 1.9 ms on the pass's thread, a proven +1.1% on a one-worker
+  join for 300 owed, so it is freed on a thread of its own beside the first join.
 
 ---
 

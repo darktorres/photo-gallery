@@ -321,6 +321,27 @@ fn slices_of_one_make_the_pairs_one_slice_makes() {
     assert_eq!(state::cache_kib(&c).unwrap(), 262_144, "the app's cache, after the pass");
 }
 
+/// The guard's path (every write reads its pictures' analyses, `Settings::guard`, with the hashes it compares taken from
+/// the join's store) makes what the unguarded path does, on one slice and on slices of one picture.
+#[test]
+fn a_guarded_pass_makes_the_pairs_an_unguarded_one_does() {
+    let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+    let (mut c, ctl, _dir) = imported("guarded");
+    let plain = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
+    assert_eq!(plain.guarded, 0, "nothing changed since the load");
+    let pairs = state::pairs(&c).unwrap();
+    for slice in [pg_import::pairs::SLICE, 1] {
+        c.pairs_again().unwrap();
+        let settings = pg_import::pairs::Settings { slice, guard: true, ..pg_import::pairs::Settings::default() };
+        let guarded = pg_import::pairs::pair_with(&mut c, &opts(), settings, &ctl).unwrap();
+        assert!(guarded.complete);
+        assert!(guarded.guarded > 0);
+        assert_eq!((guarded.files, guarded.pairs), (plain.files, plain.pairs));
+        assert_eq!(state::pairs(&c).unwrap(), pairs);
+        assert_eq!(c.owed_pairs().unwrap(), 0);
+    }
+}
+
 /// A write that fails while the next slice's join runs (slices of one picture, so every write overlaps a join) is the
 /// pass's error: the join is stopped and joined, nothing of the batch is stored, and the next pass makes it all.
 #[test]

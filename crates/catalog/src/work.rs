@@ -81,7 +81,8 @@ pub struct PairingWork {
     /// file is missing or pending is only a partner here; its own pairs are made by the first pass after it is back.
     pub owed: Vec<bool>,
     /// Its kept orientations' hashes (`pg_model::pdq::ORIENTATIONS`, in `pg_analysis::pdq`'s order): what the pairs are
-    /// made from, and, as `pg_model::pdq::to_blob` stores them, the guard of `PairsWriter`.
+    /// made from, and, as `pg_model::pdq::to_blob` stores them, what `PairsWriter`'s guard compares (the pass takes them
+    /// into its join, which keeps the one copy).
     pub hashes: Vec<[pg_model::pdq::Hash; pg_model::pdq::ORIENTATIONS]>,
     /// Its `pdq_quality`: with the hashes, what `PairsWriter`'s guard compares.
     pub quality: Vec<u8>,

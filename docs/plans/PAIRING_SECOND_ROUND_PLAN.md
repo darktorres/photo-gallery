@@ -15,7 +15,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 4, the few-owed path | Done: `07d832a` |
 | 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring) |
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
-| 7, the write | The set-based guard and the epoch done; the single copy of the hashes next |
+| 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes after it; the import flush's +2.20% to you |
 | 8 - 10 | Not started |
 
 ## Context
@@ -477,7 +477,7 @@ pairs (`writers.rs:309`, `354`) and owes them again (`writers.rs:340`).
 
 ## Step 7: the write
 
-**Status: the guard and the epoch done, kept** (6 pairs against step 6: write −52 to −84% on every workload; pass
+**Status: done, kept** (the guard and the epoch, 6 pairs against step 6: write −52 to −84% on every workload; pass
 −3.96% on all owed at 1 worker, −14.98% at 12, −9.07% on 3,000 owed at 12, the rest level; `PROFILING.md`, "The
 write"). Item 1 found the guard's reads over half the write (~190 of ~340 ms), and the set-based guard alone saves 7%,
 so the epoch was built (migration 14). Departures:
@@ -493,8 +493,14 @@ so the epoch was built (migration 14). Departures:
 - **The statements** are prepared through the connection's cache, once per pass.
 - **`WRITE`** (item 4) is left at 2,000 pictures: a batch now holds the lock less than half as long (121 ms over 94
   batches against 291). Step 9 tunes it within that bound.
-- **Not yet done:** the single copy of the hashes and `Joiner::original` (the guard takes the hashes through a
-  closure, so the pass can hand them from either), measured against this commit.
+- **The import flush** (`ir::catalog::import_flush::batch`, 500 stores): +2.20% instructions, about 6,400 a store
+  for the insert trigger. The pass gains and the import loses, so the two numbers went to you, as this step says.
+- **The single copy of the hashes:** done, kept against `57bda80` on every workload; peak commit −23 MiB on all owed
+  (202 - 203 → 179 - 180) and on 30,000 (137 - 138 → 114). `Joiner::original` undoes the store's permutation
+  (`unpermuted`, tested to round-trip every single-bit hash and 2,000 random ones). `Settings::guard`
+  (`PG_PROBE_GUARD`) forces every write through the guard, so the pass-level test and the oracle run that path on a
+  catalog nothing changes. `transpose_rows` is `#[inline(always)]` (its second caller made LLVM stop inlining it into
+  `permuted`: +14 ms a join), and the load's copy is freed on a thread of its own (1.9 ms on the pass's thread).
 
 1. **Find where the 243 ms goes, first:**
    - statement overhead;

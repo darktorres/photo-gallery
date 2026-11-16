@@ -8,6 +8,8 @@
 //! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB` and `PG_PROBE_FEW` set the pass's `Settings` (default `pairs::SLICE`,
 //!   `pairs::CACHE_KIB`, the join's few-owed threshold by thread count).
 //! - `PG_PROBE_WIDTHS` sets the join's head words per stage, as 16 comma-separated counts (`Tuning::widths`).
+//! - `PG_PROBE_GUARD` set: every write reads its pictures' analyses (`Settings::guard`), as after a change since the
+//!   load; `guarded` in the line counts the writes that did.
 //!
 //! One line: what was owed, what was paired, the wall clock, where it went (`PairStats::timings`: `prepare` on one
 //! thread; `sort`, `scan`, `starved` and `paused` the join's threads' time, summed), and the pass's CPU cycles over all
@@ -37,6 +39,7 @@ fn main() -> Result<()> {
     settings.slice = env("PG_PROBE_SLICE").unwrap_or(settings.slice);
     settings.cache_kib = env("PG_PROBE_CACHE_KIB").unwrap_or(settings.cache_kib);
     settings.join.few_entries = env("PG_PROBE_FEW").or(settings.join.few_entries);
+    settings.guard = std::env::var_os("PG_PROBE_GUARD").is_some();
     // Each stage's head words, as 16 comma-separated counts.
     if let Ok(list) = std::env::var("PG_PROBE_WIDTHS") {
         let widths: Vec<usize> = list.split(',').map(|w| w.trim().parse()).collect::<Result<_, _>>()?;

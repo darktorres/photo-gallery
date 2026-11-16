@@ -314,7 +314,7 @@ pub struct JoinTimes {
     /// The slice's query side: its pictures, their ranks and their transposed orientations, permuted.
     pub prepare: Duration,
     /// Waiting for the stages' sorts: all of them when the sorts run between the scans, the part the scans did not
-    /// cover when sorters run ahead. The few-owed path's small sorts.
+    /// cover when sorters run ahead. The few-owed path's lists of its query entries' probes.
     pub sort: Duration,
     /// The scans of the stages, or the few-owed path's pass over the store.
     pub scan: Duration,
@@ -509,10 +509,10 @@ impl<'a> Joiner<'a> {
         (!stopped.load(Relaxed)).then_some(found)
     }
 
-    /// The few-owed path: the query side is small, so the stored side is not sorted. Each chunk's query entries are
-    /// sorted as a stage's are ([`Sorted`]), with a bitmap of the values they take, and one pass over the store tests
-    /// each stored entry's value in every chunk, and its one-bit neighbours, against the bitmaps. A hit is the same
-    /// candidate the sorted path's probe finds, tested by the same rules ([`few_hits`]), so the pairs are the same.
+    /// The few-owed path: the query side is small, so the stored side is not sorted. Each chunk lists every query entry
+    /// under its value's 17 probes ([`FewChunk`]), and one pass over the store tests each stored entry's value in every
+    /// chunk against those lists. A listed entry is the candidate the sorted path's probe finds, tested by the same
+    /// rules ([`few_entry`]), so the pairs are the same.
     fn few_owed(
         &self,
         sides: &Sides<'_, '_>,
@@ -523,17 +523,14 @@ impl<'a> Joiner<'a> {
         times: &mut JoinTimes,
     ) -> Option<Vec<Pair>> {
         let sorting = Instant::now();
-        let (mut sorted, mut scratch) = (Sorted::default(), SortScratch::default());
-        let chunks: Vec<FewChunk> =
-            (0..CHUNKS).map(|c| FewChunk::new(sides, queries, c, &mut sorted, &mut scratch)).collect();
-        drop((sorted, scratch));
+        let few = Few::new(sides, queries, threads, start);
         times.sort += sorting.elapsed();
         let scanning = Instant::now();
         let blocks = self.stored.len().div_ceil(FEW_BLOCK);
         let found = parallel(threads, blocks, start, control, |block, out| {
             let lo = block * FEW_BLOCK;
             for x in lo..(lo + FEW_BLOCK).min(self.stored.len()) {
-                few_entry(sides, &chunks, x, out);
+                few_entry(sides, &few, x, out);
             }
         });
         times.scan += scanning.elapsed();
@@ -541,126 +538,127 @@ impl<'a> Joiner<'a> {
     }
 }
 
-/// One chunk's query entries for the few-owed path: sorted by that chunk as a stage's are, and the values they take as a
-/// bitmap of the 65,536 (8 KB, where the offsets are 256 KB): the pass over the store tests the bitmap, and looks at the
-/// offsets only on a hit. The entries are few, so they are kept in one table (`offsets[v]..offsets[v + 1]` hold value
-/// `v`'s codes and full hashes, side by side), copied from a sort into regions that the chunks share
-/// ([`FewChunk::new`]). A hit is tested on the whole hash, read in order from the table: no head, and no reads of the
-/// query side's arrays, whose transposed entries go through their picture's rank.
+/// The few-owed path's query side: its entries' codes and hashes once (`codes[j]`, `words[j]`), and per chunk their
+/// neighbourhoods ([`FewChunk`]).
+struct Few {
+    codes: Vec<u32>,
+    words: Vec<[u64; 4]>,
+    chunks: Vec<FewChunk>,
+}
+
+/// One chunk's query entries, each under its own value and that value's 16 one-bit neighbours, so a stored entry whose
+/// value is `v` meets exactly the query entries its 17 probes would (`entries[offsets[v]..offsets[v + 1]]`, indices
+/// into [`Few`]'s table): the value `u` is in `v`'s probes exactly when `v` is in `u`'s, and a value's 17 probes are
+/// distinct, so each candidate is listed once. `bits` marks the values with entries: 8 KB a chunk, 128 KB for all 16,
+/// which stay in L2 while the pass streams the store; the offsets are read only on a hit.
 struct FewChunk {
     bits: Vec<u64>,
     offsets: Vec<u32>,
-    code: Vec<u32>,
-    words: Vec<[u64; 4]>,
+    entries: Vec<u32>,
 }
 
-/// For a chunk value's low six bits `l`: the bits of its bitmap word that are the value itself and its six neighbours
-/// in the low six bits (`l ^ 1 << k`, `k < 6`), which lie in the same word. The other ten neighbours are in other words.
-#[expect(clippy::indexing_slicing, reason = "built at compile time, `l` below the array's 64")]
-const NEAR: [u64; 64] = {
-    let mut near = [0u64; 64];
-    let mut l = 0;
-    while l < 64 {
-        let mut mask = 1u64 << l;
-        let mut k = 0;
-        while k < 6 {
-            mask |= 1u64 << (l ^ (1 << k));
-            k += 1;
-        }
-        near[l] = mask;
-        l += 1;
+/// The probes of a value: itself and its 16 one-bit neighbours.
+const PROBES: usize = 1 + 16;
+
+impl Few {
+    /// The `queries` query entries of `sides`, and their neighbourhoods in every chunk, the chunks built on up to
+    /// `threads` threads (each running `start` first). A chunk's build is a few random passes over 256 KB, so it is not
+    /// asked to stop: the scan is.
+    fn new(sides: &Sides<'_, '_>, queries: usize, threads: usize, start: &(dyn Fn() + Sync)) -> Few {
+        let (words, codes): (Vec<[u64; 4]>, Vec<u32>) = (0..queries).map(|e| sides.query_entry(e)).unzip();
+        let next = AtomicUsize::new(0);
+        let mut built: Vec<(usize, FewChunk)> = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..threads.clamp(1, CHUNKS))
+                .map(|_| {
+                    scope.spawn(|| {
+                        start();
+                        let mut mine = Vec::new();
+                        loop {
+                            let c = next.fetch_add(1, Relaxed);
+                            if c >= CHUNKS {
+                                return mine;
+                            }
+                            mine.push((c, FewChunk::new(&words, c)));
+                        }
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .flat_map(|worker| worker.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+                .collect()
+        });
+        built.sort_unstable_by_key(|&(c, _)| c);
+        Few { codes, words, chunks: built.into_iter().map(|(_, chunk)| chunk).collect() }
     }
-    near
-};
+}
 
 impl FewChunk {
-    /// Chunk `c` of the `queries` query entries, sorted in `sorted` (reused from chunk to chunk; its heads, of the
-    /// fewest words, unused) and copied out.
-    fn new(
-        sides: &Sides<'_, '_>,
-        queries: usize,
-        c: usize,
-        sorted: &mut Sorted,
-        scratch: &mut SortScratch,
-    ) -> FewChunk {
-        sort_into(sorted, scratch, queries, |e| sides.query_entry(e), c, 1, Layout::Rows);
-        let mut few = FewChunk {
-            bits: vec![0u64; VALUES / 64],
-            offsets: Vec::with_capacity(VALUES + 1),
-            code: Vec::with_capacity(queries),
-            words: Vec::with_capacity(queries),
-        };
-        for (h, region) in sorted.regions.iter().enumerate() {
-            let at = u32::try_from(few.code.len()).unwrap_or(u32::MAX);
-            for (l, pair) in region.offsets.windows(2).enumerate() {
-                let v = (h << 8) | l;
-                if let ([lo, hi], Some(word)) = (pair, few.bits.get_mut(v >> 6))
-                    && hi > lo
-                {
-                    *word |= 1 << (v & 63);
+    /// Chunk `c` of the query entries `words`, by a counting sort of their (probe value, entry) pairs: each value's
+    /// count, then its end, then the entries placed from the end down (so in entry order, the last first), which leaves
+    /// each value's offset at its start.
+    fn new(words: &[[u64; 4]], c: usize) -> FewChunk {
+        let mut offsets = vec![0u32; VALUES + 1];
+        for w in words {
+            let v = chunk(w, c);
+            for p in 0..PROBES {
+                if let Some(count) = offsets.get_mut(probe(v, p)) {
+                    *count += 1;
                 }
-                few.offsets.push(at + pair.first().copied().unwrap_or(0));
             }
-            let len = index(region.offsets.last().copied().unwrap_or(0));
-            few.code.extend(region.code.iter().take(len));
-            few.words.extend(region.code.iter().take(len).map(|&yc| sides.words(yc)));
         }
-        few.offsets.push(u32::try_from(few.code.len()).unwrap_or(u32::MAX));
-        few
+        let mut bits = vec![0u64; VALUES / 64];
+        let mut end = 0u32;
+        for (v, slot) in offsets.iter_mut().enumerate() {
+            if *slot > 0
+                && let Some(word) = bits.get_mut(v >> 6)
+            {
+                *word |= 1 << (v & 63);
+            }
+            end += *slot;
+            *slot = end;
+        }
+        let mut entries = vec![0u32; index(end)];
+        let n = u32::try_from(words.len()).unwrap_or(u32::MAX);
+        for (j, w) in (0..n).zip(words).rev() {
+            let v = chunk(w, c);
+            for p in 0..PROBES {
+                if let Some(cursor) = offsets.get_mut(probe(v, p)) {
+                    *cursor -= 1;
+                    if let Some(entry) = entries.get_mut(index(*cursor)) {
+                        *entry = j;
+                    }
+                }
+            }
+        }
+        FewChunk { bits, offsets, entries }
     }
 
-    /// The entries of value `v`.
+    /// The query entries a stored entry of value `v` meets, if any.
     #[inline(always)]
-    fn bucket(&self, v: usize) -> (usize, usize) {
-        let at = |v: usize| index(self.offsets.get(v).copied().unwrap_or(0));
-        (at(v), at(v + 1))
-    }
-
-    /// The bitmap's word of value `v`.
-    #[inline(always)]
-    fn word(&self, v: usize) -> u64 {
-        self.bits.get(v >> 6).copied().unwrap_or(0)
+    fn met(&self, v: usize) -> &[u32] {
+        if self.bits.get(v >> 6).is_some_and(|word| (word >> (v & 63)) & 1 != 0) {
+            let at = |v: usize| index(self.offsets.get(v).copied().unwrap_or(0));
+            self.entries.get(at(v)..at(v + 1)).unwrap_or_default()
+        } else {
+            &[]
+        }
     }
 }
 
-/// The few-owed path's work for stored entry `x`: in each chunk, its value and the value's 16 one-bit neighbours tested
-/// against that chunk's bitmap (the value and its six low-bit neighbours with one word, [`NEAR`]), and the query entries
-/// of each value that is set tested in full.
+/// The few-owed path's work for stored entry `x`: in each chunk, the query entries its value meets ([`FewChunk`]),
+/// each tested in full on the table's hash, then by the ordering rule and the first chunk that matches.
 #[inline(always)]
-fn few_entry(sides: &Sides<'_, '_>, chunks: &[FewChunk], x: usize, out: &mut Vec<Pair>) {
+fn few_entry(sides: &Sides<'_, '_>, few: &Few, x: usize, out: &mut Vec<Pair>) {
     let (xw, xc) = sides.stored_entry(x);
-    for (c, few) in chunks.iter().enumerate() {
-        let v = chunk(&xw, c);
-        let low = v & 63;
-        let word = few.word(v);
-        if word & NEAR.get(low).copied().unwrap_or(0) != 0 {
-            for p in 0..7 {
-                let u = probe(v, p);
-                if (word >> (u & 63)) & 1 != 0 {
-                    few_hits(few, &xw, xc, u, c, out);
-                }
+    for (c, chunk_of) in few.chunks.iter().enumerate() {
+        for &j in chunk_of.met(chunk(&xw, c)) {
+            let (Some(&yc), Some(yw)) = (few.codes.get(index(j)), few.words.get(index(j))) else { continue };
+            let distance: u32 = xw.iter().zip(yw).map(|(a, b)| (a ^ b).count_ones()).sum();
+            if distance <= MATCH_DISTANCE && owed(xc, yc) && !matched_earlier(&xw, yw, c) {
+                let (xp, yp) = (xc >> 4, yc >> 4);
+                out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
             }
-        }
-        for k in 6..16 {
-            let u = v ^ (1 << k);
-            if (few.word(u) >> low) & 1 != 0 {
-                few_hits(few, &xw, xc, u, c, out);
-            }
-        }
-    }
-}
-
-/// Stored entry `xw` (code `xc`) against the query entries of value `u` in chunk `c`: the full distance on the table's
-/// hashes, then the ordering rule and the first chunk that matches.
-#[inline(always)]
-fn few_hits(few: &FewChunk, xw: &[u64; 4], xc: u32, u: usize, c: usize, out: &mut Vec<Pair>) {
-    let (lo, hi) = few.bucket(u);
-    let (Some(codes), Some(words)) = (few.code.get(lo..hi), few.words.get(lo..hi)) else { return };
-    for (&yc, yw) in codes.iter().zip(words) {
-        let distance: u32 = xw.iter().zip(yw).map(|(a, b)| (a ^ b).count_ones()).sum();
-        if distance <= MATCH_DISTANCE && owed(xc, yc) && !matched_earlier(xw, yw, c) {
-            let (xp, yp) = (xc >> 4, yc >> 4);
-            out.push(Pair { a: xp.min(yp), b: xp.max(yp), distance });
         }
     }
 }
@@ -1967,6 +1965,32 @@ mod tests {
                     .unwrap()
                     .pairs;
                 assert_eq!(got, want, "{kernel:?}, {w} words");
+            }
+        }
+    }
+
+    /// The few-owed path's lists are the probes: for every chunk value, the query entries listed under it are exactly
+    /// those whose own value is it or one bit from it, each once. With queries whose values are one bit apart (each in
+    /// the other's probes), two bits apart (sharing neighbours), and equal (two entries of one value).
+    #[test]
+    fn the_few_owed_lists_are_the_probes() {
+        let mut rng = Rng(41);
+        let mut words: Vec<[u64; 4]> = (0..40).map(|_| [rng.draw(), rng.draw(), rng.draw(), rng.draw()]).collect();
+        let base = words[0];
+        for k in [0, 5, 6, 15] {
+            // Chunk 0 is the low 16 bits of the first word: one bit, then two bits, from the first entry's.
+            words.push([base[0] ^ (1 << k), base[1], base[2], base[3]]);
+            words.push([base[0] ^ (1 << k) ^ (1 << ((k + 3) % 16)), base[1], base[2], base[3]]);
+        }
+        words.push(base);
+        for c in [0, 7, 15] {
+            let few = FewChunk::new(&words, c);
+            for v in 0..VALUES {
+                let mut got = few.met(v).to_vec();
+                got.sort_unstable();
+                let want: Vec<u32> =
+                    (0u32..).zip(&words).filter(|(_, w)| (chunk(w, c) ^ v).count_ones() <= 1).map(|(j, _)| j).collect();
+                assert_eq!(got, want, "chunk {c}, value {v:#06x}");
             }
         }
     }

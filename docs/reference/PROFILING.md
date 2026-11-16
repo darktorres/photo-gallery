@@ -879,6 +879,22 @@ move: its scan is 19% shorter, and the time moves into the sort wait (130 -> 272
 with the faster scan, and the columns cost the sort about 8% more on one worker. Step 5's thread team is what removes
 that wait. The pairs are the oracle's 5,277, identical on all seven paths of the check.
 
+#### The few-owed path's lists (pairing plan, second round, step 4)
+
+The few-owed path tested, for each stored entry and chunk, its value and its 16 one-bit neighbours against a bitmap of
+the query values: 11 bitmap words a chunk (the value and its six low-bit neighbours share one). Now each chunk lists
+every query entry under its value's 17 probes, built by a counting sort on the join's threads. A stored entry tests
+one bit per chunk, and on a hit reads that value's list: the same candidates, each once, because a value's probes are
+distinct and `u` is among `v`'s probes exactly when `v` is among `u`'s. The query entries' codes and hashes are kept
+once, shared by the chunks' lists.
+
+Kept (6 pairs against step 3, all seven workloads; only 300 owed on 12 workers takes the few-owed path at the
+default threshold of 1,000 entries a thread): cycles -32.9% [-35.7, -32.2], scan -41.4% [-45.6, -36.8], the lists'
+build 6 -> 2 ms. The other workloads' estimates are within noise. At 1,400 owed (11,200 entries, near the 12,000 the
+threshold allows on 12 workers), two runs each: join 250 - 262 ms before, 219 - 227 after, and 305 - 329 on the sorted
+path. The sorted path takes fewer cycles there (2.8 G against 6.1 G), which step 9's re-tuning of the threshold
+weighs.
+
 ---
 
 ## Where the other results are

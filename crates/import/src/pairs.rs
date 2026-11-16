@@ -33,17 +33,22 @@ pub const SLICE: usize = 200_000;
 /// 32, 64 and 256 MB gave a peak commit of 131, 150, 184 and 214 MB, the load and the writes no faster above 16.
 pub const CACHE_KIB: u32 = 16 * 1024;
 /// The owed pictures per write transaction.
-const WRITE: usize = 2_000;
+pub const WRITE: usize = 2_000;
 
-/// What a pass may be tuned by: the defaults are [`SLICE`], [`CACHE_KIB`], the join's own ([`Tuning`]) and no forced
-/// guard. The tests and the probe (`PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_FEW`, `PG_PROBE_WIDTHS`,
-/// `PG_PROBE_GUARD`) set others: a small slice runs the multi-slice path, with its write overlap, on a small library.
+/// What a pass may be tuned by: the defaults are [`SLICE`], [`CACHE_KIB`], [`WRITE`], the join's own ([`Tuning`]), a
+/// load in as many parts as the join has threads, and no forced guard. The tests and the probe (`PG_PROBE_SLICE`,
+/// `PG_PROBE_CACHE_KIB`, `PG_PROBE_WRITE`, `PG_PROBE_LOAD_PARTS`, `PG_PROBE_FEW`, `PG_PROBE_WIDTHS`, `PG_PROBE_GUARD`)
+/// set others: a small slice runs the multi-slice path, with its write overlap, on a small library.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     /// The owed pictures per slice (at least 1).
     pub slice: usize,
     /// The page cache of the pass's connections, in KiB.
     pub cache_kib: u32,
+    /// The owed pictures per write transaction (at least 1).
+    pub write: usize,
+    /// The parts the load reads `analysis` in (`Reader::pairing_work_split`); `None`: the join's threads.
+    pub load_parts: Option<usize>,
     /// The join's few-owed threshold and head widths.
     pub join: Tuning,
     /// Every write reads its pictures' analyses (`PairsWritten::guarded`), as when the catalog changed after the load:
@@ -53,7 +58,14 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Settings {
-        Settings { slice: SLICE, cache_kib: CACHE_KIB, join: Tuning::default(), guard: false }
+        Settings {
+            slice: SLICE,
+            cache_kib: CACHE_KIB,
+            write: WRITE,
+            load_parts: None,
+            join: Tuning::default(),
+            guard: false,
+        }
     }
 }
 
@@ -123,7 +135,8 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     let loading = Instant::now();
     // Read on connections of their own, `analysis` in as many parts as the join has threads, closed (their caches
     // freed) as soon as the pictures are read.
-    let mut work = catalog.reader(settings.cache_kib)?.pairing_work_split(opts.workers, &start)?;
+    let parts = settings.load_parts.unwrap_or(opts.workers);
+    let mut work = catalog.reader(settings.cache_kib)?.pairing_work_split(parts, &start)?;
     if settings.guard {
         // An epoch no catalog has: every write finds another.
         work.marks.epoch = -1;
@@ -144,7 +157,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     // as the store is made, freed on a thread of its own beside the first join (on the pass's thread it took 1.9 ms, a
     // proven 1% of a one-worker join for 300 owed), and the guard asks the join for a picture's (`Joiner::original`).
     let hashes = std::mem::take(&mut work.hashes);
-    let joiner = Joiner::new(&hashes, &work.owed)?.tuned(settings.join);
+    let joiner = Joiner::new_on(&hashes, &work.owed, opts.workers, &start)?.tuned(settings.join);
     stats.timings.join += building.elapsed();
 
     // The phase ends when this is dropped, however the pass leaves. Its progress is the owed pictures paired so far.
@@ -188,7 +201,8 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
             // The next slice's join runs while this one's pairs are written (a pair can come from any chunk, so no
             // picture is done before its slice's join ends).
             next = slices.get(k + 1).map(|&slice| scope.spawn(move || join(slice)));
-            if !write_slice(&mut catalog, &work, &joiner, slice, joined.pairs, ctl, &mut stats)? {
+            let batches = slice.chunks(settings.write.max(1));
+            if !write_slice(&mut catalog, &work, &joiner, batches, joined.pairs, ctl, &mut stats)? {
                 stats.complete = false;
                 break;
             }
@@ -198,14 +212,14 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     Ok(stats)
 }
 
-/// Writes one slice's pairs and marks its pictures done, in transactions of [`WRITE`] pictures. False when a stop came
-/// between two transactions, or the catalog's pairing became another build's: what was written stays, and the rest
-/// stays owed.
+/// Writes one slice's pairs and marks its pictures done, one transaction for each of `batches` (the slice's owed
+/// pictures, ascending, in runs of `Settings::write`). False when a stop came between two transactions, or the catalog's
+/// pairing became another build's: what was written stays, and the rest stays owed.
 fn write_slice(
     catalog: &mut Catalog,
     work: &PairingWork,
     joiner: &Joiner<'_>,
-    slice: &[usize],
+    batches: std::slice::Chunks<'_, usize>,
     mut pairs: Vec<Pair>,
     ctl: &Control,
     stats: &mut PairStats,
@@ -215,7 +229,7 @@ fn write_slice(
     let hashes = |i: usize| joiner.original(i).map(|h| pg_model::pdq::to_blob(&h));
     let mut at = 0;
     let mut owned: Vec<(usize, usize, u32)> = Vec::new();
-    for owners in slice.chunks(WRITE) {
+    for owners in batches {
         if !ctl.checkpoint() {
             return Ok(false);
         }

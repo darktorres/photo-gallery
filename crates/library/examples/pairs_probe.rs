@@ -5,8 +5,9 @@
 //! - `PG_PROBE_KEEP_OWED` set: the pass pairs what the catalog owes (`tools/profiling/pairing/set_owed.py` sets it).
 //!   Unset: every eligible picture owes its pairs again first (`pairs_again`), the pass over the whole library; the
 //!   catalog is then closed and opened again, so the pass does not merge that write's WAL or read its cached pages.
-//! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB` and `PG_PROBE_FEW` set the pass's `Settings` (default `pairs::SLICE`,
-//!   `pairs::CACHE_KIB`, the join's few-owed threshold by thread count).
+//! - `PG_PROBE_SLICE`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_WRITE`, `PG_PROBE_LOAD_PARTS` and `PG_PROBE_FEW` set the
+//!   pass's `Settings` (default `pairs::SLICE`, `pairs::CACHE_KIB`, `pairs::WRITE`, the load in as many parts as the
+//!   join has threads, the join's few-owed threshold by thread count).
 //! - `PG_PROBE_WIDTHS` sets the join's head words per stage, as 16 comma-separated counts (`Tuning::widths`).
 //! - `PG_PROBE_GUARD` set: every write reads its pictures' analyses (`Settings::guard`), as after a change since the
 //!   load; `guarded` in the line counts the writes that did.
@@ -38,6 +39,8 @@ fn main() -> Result<()> {
     let mut settings = pg_import::pairs::Settings::default();
     settings.slice = env("PG_PROBE_SLICE").unwrap_or(settings.slice);
     settings.cache_kib = env("PG_PROBE_CACHE_KIB").unwrap_or(settings.cache_kib);
+    settings.write = env("PG_PROBE_WRITE").unwrap_or(settings.write);
+    settings.load_parts = env("PG_PROBE_LOAD_PARTS").or(settings.load_parts);
     settings.join.few_entries = env("PG_PROBE_FEW").or(settings.join.few_entries);
     settings.guard = std::env::var_os("PG_PROBE_GUARD").is_some();
     // Each stage's head words, as 16 comma-separated counts.

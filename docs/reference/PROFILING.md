@@ -1118,6 +1118,39 @@ The cycles a split load adds at 12 workers are the parts past the three the wall
 every write guarded too, and the differential test runs the split load on a file at 1, 2, 3, 5 and 64 parts (failing
 with either part boundary off by one).
 
+#### The settings again (pairing plan, second round, step 9)
+
+Each setting is compared inside one binary, through the probe's switches (`PG_PROBE_LOAD_PARTS`, `PG_PROBE_WRITE`,
+`PG_PROBE_WORKERS`, `PG_PROBE_FEW`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_SLICE`), 6 pairs against the default.
+
+**The threads: logical cores.** 6 workers (this CPU's physical cores) against 12: pass +20.87% [+2.62, +25.30] on all
+owed, +22.64% [+18.29, +23.94] on four slices (proven losses), cycles −22 to −34%. The join keeps every logical core.
+
+**The load's parts: the join's threads.** 12 parts against fewer, at 12 workers:
+
+| Parts | All owed, pass | 300 owed, pass | 3,000 owed, pass | Cycles, 300 owed |
+|---|---|---|---|---|
+| 3 | −1.23% [−9.52, +11.50] | +3.41% [+1.16, +6.55], a loss | +3.97% [+1.98, +6.00], a loss | 2,808 → 2,122 M |
+| 4 | −2.31% [−14.95, +8.98] | −13.87% [−52.08, +2.38] | +2.31% [+0.39, +6.25], a loss | 2,790 → 2,148 M |
+| 6 | −0.22% [−11.48, +22.14] | −6.30% [−41.78, +7.82] | −4.87% [−19.37, +3.69] | 2,806 → 2,306 M |
+
+Fewer than 6 loses time; 6 gains none anywhere, so the simplest rule stays (no number of its own). The parts past 6
+cost cycles only (about 500 M on 300 owed), which the gate, on time, does not weigh.
+
+**The store, permuted on the join's threads** (`Joiner::new_on`: each thread an equal run of the pictures, into its
+own part of the store). Fitting the two paths' join times by owed count showed a fixed cost of 50 - 66 ms at every
+thread count, outside the team's time: `Joiner::new`, permuting 751,216 hashes on one thread. Kept (6 pairs; the
+one-worker 300 owed, whose code is unchanged, kept at its third run after two with one disturbed pair each):
+
+| Workload | Join, ms (A → B) | Join | Pass |
+|---|---|---|---|
+| all owed, 12 | 674 → 652 | −4.81% [−8.07, +1.93] | −3.96% [−12.48, +0.74] |
+| 300 owed, 12 | 80 → 50 | −37.25% [−43.75, −30.00]; −45.12% run again | −10.15% [−19.76, +0.60] |
+| 3,000 owed, 12 | 160 → 130 | −19.72% [−25.00, −6.87] | −9.88% [−14.74, +14.73] |
+| four slices, 12 | 1,241 → 1,241 | (pass) −0.08% [−10.44, +2.86] | |
+
+The one-worker workloads are level, as their code is.
+
 ---
 
 ## Where the other results are

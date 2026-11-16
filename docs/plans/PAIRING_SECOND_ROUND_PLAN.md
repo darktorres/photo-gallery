@@ -17,7 +17,8 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
 | 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
-| 9 - 10 | Not started |
+| 9, re-tuning | The threads, the load's parts and the store's permute done; the few-owed threshold next |
+| 10 | Not started |
 
 ## Context
 
@@ -621,6 +622,12 @@ lookups ~85 ms of the 212 ms load and fetching pages about half of every stateme
 - a malformed blob.
 
 ## Step 9: re-tune what the changes made stale
+
+**Status: in progress.** The join keeps every logical core (6 workers lose 21 - 23%); the load keeps one part a
+join thread (fewer than 6 loses time, 6 gains none). Fitting the few-owed crossover found `Joiner::new`'s permute
+on one thread (50 - 66 ms at every count, the plan's step 1 item left undone): now on the join's threads,
+-37% on the join for 300 owed at 12 workers. Settings switches: `PG_PROBE_LOAD_PARTS`, `PG_PROBE_WRITE`; the
+crossover sweep is `tools/profiling/pairing/few_sweep.ps1`.
 
 Each setting takes the simplest value within +1% of the best, with peak commit recorded:
 

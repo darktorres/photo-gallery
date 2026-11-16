@@ -380,10 +380,40 @@ pub struct Joiner<'a> {
 impl<'a> Joiner<'a> {
     /// The join over `hashes` (every picture, in file-id order) where picture `i` owes its pairs when `owed[i]`.
     pub fn new(hashes: &[[Hash; ORIENTATIONS]], owed: &'a [bool]) -> Result<Joiner<'a>, TooManyPictures> {
+        Joiner::new_on(hashes, owed, 1, &|| {})
+    }
+
+    /// [`Joiner::new`] with the store permuted on `threads` threads, each started by `start` (the pass's priority):
+    /// each permutes an equal run of the pictures into its own part of the store.
+    pub fn new_on(
+        hashes: &[[Hash; ORIENTATIONS]],
+        owed: &'a [bool],
+        threads: usize,
+        start: &(dyn Fn() + Sync),
+    ) -> Result<Joiner<'a>, TooManyPictures> {
         if !u32::try_from(hashes.len()).is_ok_and(|n| n <= MAX_PICTURES) {
             return Err(TooManyPictures(hashes.len()));
         }
-        let stored = hashes.iter().flat_map(|h| h.iter().map(permuted)).collect();
+        let mut stored = vec![[0u64; 4]; ORIENTATIONS * hashes.len()];
+        let permute = |from: &[[Hash; ORIENTATIONS]], to: &mut [[[u64; 4]; ORIENTATIONS]]| {
+            for (h, s) in from.iter().zip(to) {
+                *s = h.each_ref().map(permuted);
+            }
+        };
+        let (store, _) = stored.as_chunks_mut::<ORIENTATIONS>();
+        let run = hashes.len().div_ceil(threads.max(1)).max(1);
+        if threads <= 1 {
+            permute(hashes, store);
+        } else {
+            std::thread::scope(|scope| {
+                for (from, to) in hashes.chunks(run).zip(store.chunks_mut(run)) {
+                    scope.spawn(move || {
+                        start();
+                        permute(from, to);
+                    });
+                }
+            });
+        }
         Ok(Joiner {
             owed,
             stored,
@@ -2158,6 +2188,11 @@ mod tests {
             assert_eq!(joiner.original(i), Some(*picture));
         }
         assert_eq!(joiner.original(pictures.len()), None);
+        // The store permuted on several threads is the same, however the pictures divide among them.
+        for threads in [2, 3, 7, pictures.len() + 1] {
+            let on = Joiner::new_on(&pictures, &owed, threads, &|| {}).unwrap();
+            assert_eq!(on.stored, joiner.stored, "{threads} threads");
+        }
     }
 
     /// A sorted side read back in value order: each entry's head (`w` words, held in `layout`) and code, and each

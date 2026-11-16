@@ -3,10 +3,10 @@ param(
     [Parameter(Mandatory)] [string] $B,
     [Parameter(Mandatory)] [string] $Catalog,
     [Parameter(Mandatory)] [string] $Out,
-    [int] $Pairs = 20,
+    [int] $Pairs = 6,
     [int] $Repeat = 1,
     [switch] $KeepTurbo,
-    [ValidateSet('no-loss', 'margin')] [string] $Rule = 'no-loss',
+    [ValidateSet('bounded', 'no-loss', 'margin')] [string] $Rule = 'bounded',
     [string[]] $Workloads = @('all-w1', 'all-w12', 'few300-w1', 'few300-w12', 'few3000-w1', 'few3000-w12', 'slices4-w12'),
     [hashtable] $EnvA = @{},
     [hashtable] $EnvB = @{}
@@ -17,10 +17,13 @@ param(
 # compare two designs inside one binary ($A and $B the same file). With $Repeat above 1, each build runs that many
 # times in its turn and each measure keeps its least value (another process can only add to a run's time).
 #
-# $Rule is keep.py's: 'no-loss' (the default, for the 6 pairs the plan runs) or 'margin' (+1%, for about 60 pairs).
+# The gate is time (keep.py --part time: the join's, the pass's on slices4), under $Rule: 'bounded' (the default, for
+# the 6 pairs the plan runs: no proven loss and an upper bound of at most +10%, else no verdict), 'no-loss', or
+# 'margin' (+1%, for about 60 pairs).
 #
 # The measures: the pass's wall clock and its parts (ms), and `cycles`, its CPU cycles over all threads (millions),
-# which other processes do not inflate.
+# which other processes do not inflate, but which count work moved onto a core's idle second thread as a loss: they
+# explain a result and do not gate it.
 #
 # Workloads: all-wN (every picture owed, N threads), fewK-wN (K owed, their pairs dropped first, the few-owed or the
 # sorted path as N decides), slices4-w12 (all owed in four slices of 50,000, so writes overlap joins).
@@ -117,5 +120,5 @@ for ($p = 0; $p -lt $Pairs; $p++) {
 }
 Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_SLICE, Env:PG_PROBE_WORKERS -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $base -Recurse -Force
-python -I (Join-Path $here 'keep.py') $Out --part pass --rule $Rule
-python -I (Join-Path $here 'keep.py') $Out --part cycles --rule $Rule
+$margin = if ($Rule -eq 'margin') { '0.01' } else { '0.10' }
+python -I (Join-Path $here 'keep.py') $Out --part time --rule $Rule --margin $margin

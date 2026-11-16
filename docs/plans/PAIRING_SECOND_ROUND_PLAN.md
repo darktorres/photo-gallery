@@ -1,6 +1,6 @@
 # Plan: the pairing pass, second round
 
-## Status (2026-11-15)
+## Status (2026-11-16)
 
 The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round works on P-13 in
 [PROFILING_PLAN.md](PROFILING_PLAN.md). Each step's measurements are in [PROFILING.md](../reference/PROFILING.md),
@@ -13,7 +13,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 2, the radix sort by regions | Done: `7ab62e7` |
 | 3, the scan kernel | Done: `7ab62e7` |
 | 4, the few-owed path | Done: `07d832a` |
-| 5, one thread team | Built, all paths identical to the oracle; its A/B is running |
+| 5, one thread team | Built, all paths identical to the oracle; its A/B, gated on time, is running |
 | 6 - 10 | Not started |
 
 ## Context
@@ -90,9 +90,18 @@ user's brief is "churn is not a concern, I want MOST proper", which sets these r
   - four slices of 50,000, to exercise the overlapped write;
   - for schema or writer changes, the import flush bench (`crates/bench/benches/ir/catalog.rs`).
 - **Decision.**
-  - **Kept, at 6 pairs (no proven loss):** on `cycles`, no workload the change touches has its interval wholly above
-    zero, and the estimates are not worse overall. Wall time and the parts are reported alongside, to locate a loss.
-    (The plan's first rule, an upper bound of at most +1% everywhere, needs about 60 pairs.)
+  - **Gated on time** (`keep.py --part time --rule bounded --margin 0.10`): the join's time, and on four slices the
+    pass's, since there the write overlaps the next slice's join and a cost can move between them. The load and the
+    last write only add the disk's noise.
+  - **Kept, at 6 pairs:** no workload the change touches has its interval wholly above zero (a proven loss), each
+    interval's upper bound is at most +10%, and the estimates are not worse overall. A workload whose interval is
+    neither is **no verdict**: it is rerun, with more or quieter pairs, not kept. Cycles and the parts are reported
+    alongside, to explain a result. (The plan's first rule, an upper bound of at most +1% everywhere, needs about 60
+    pairs.)
+  - **Why not cycles** (the gate until step 5): with the clock fixed, one worker's cycles are its running time, but on
+    several workers they sum the threads. Step 5's team ran the same instructions as before and finished the join
+    12 - 50% sooner on 12 workers, yet used 9 - 41% more cycles: it fills each core's second thread, which runs
+    slower. At 6 workers (one per core) the excess fell to about +3%.
   - **Real gain:** the interval lies wholly below zero. A variant is built only if it shows a real gain somewhere,
     and kept only if it is also kept everywhere.
   - **Choosing between values** (step 9): the simplest value within +1% of the best wins.

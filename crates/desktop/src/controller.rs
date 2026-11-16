@@ -105,12 +105,18 @@ pub(crate) fn start_state(
     if let Some(view) = applied {
         listing = view.listing;
     }
+    // With border detection off, the listing starts without what it would give (its border facets, the sort by border
+    // depth), and the borders are not shown: nothing is left behind a control that does nothing.
+    let features = prefs.features();
+    if !features.borders {
+        listing = pg_client::features::without_borders(listing);
+    }
     Start {
         listing,
         row: options.size.unwrap_or(prefs.row_height),
         saved_row: prefs.row_height,
         filters_open: options.filters_open.unwrap_or(false),
-        show_borders: options.show_borders.unwrap_or(prefs.show_borders),
+        show_borders: options.show_borders.unwrap_or(prefs.show_borders) && features.borders,
         dev_mode: options.dev_mode.unwrap_or(prefs.dev_mode),
         last_file: prefs.last_file,
         apply_view,

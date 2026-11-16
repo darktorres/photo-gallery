@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pg_model::features::Features;
 use pg_model::ids::FileId;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::RowHeight;
@@ -38,6 +39,18 @@ pub struct Prefs {
     /// Dev mode: the window's log view (Ctrl+Shift+D turns it on and off). A start's `--dev=1` or `PG_DEV=1` turns it on
     /// for that run without saving it.
     pub dev_mode: bool,
+    /// Detect the borders of the files, in the background (on by default). Off: the pass waits; what it found stays.
+    pub detect_borders: bool,
+    /// Detect the duplicates (on by default): the import hashes the files, and the pairing pass pairs them. Off: the
+    /// import leaves the hashes out (the Hashes pass makes them when it is back on), and the pairing waits.
+    pub detect_duplicates: bool,
+}
+
+impl Prefs {
+    /// The background features these preferences turn on (`pg_model::features`).
+    pub fn features(&self) -> Features {
+        Features { borders: self.detect_borders, duplicates: self.detect_duplicates }
+    }
 }
 
 /// `yandex_folder` as the file holds it: the folder's path as a name (`Name`: its text when that is UTF-8, `{"b": hex}`
@@ -105,6 +118,8 @@ impl Default for Prefs {
             row_height: RowHeight::DEFAULT,
             last_file: None,
             dev_mode: false,
+            detect_borders: true,
+            detect_duplicates: true,
         }
     }
 }
@@ -169,7 +184,9 @@ mod tests {
   "show_borders": false,
   "row_height": 220,
   "last_file": -1,
-  "dev_mode": false
+  "dev_mode": false,
+  "detect_borders": true,
+  "detect_duplicates": true
 }"#;
 
     #[test]
@@ -203,7 +220,7 @@ mod tests {
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true}"#
+            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true}"#
         );
     }
 

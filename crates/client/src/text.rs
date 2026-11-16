@@ -233,6 +233,7 @@ pub fn pass_name(phase: &Phase, rules: PathRules) -> String {
         Phase::Idle => String::new(),
         Phase::Scan { root } => render(&Message::PassScan { root: rules.display(root) }),
         Phase::Import => render(&Message::PassImport),
+        Phase::Hashes => render(&Message::PassHashes),
         Phase::Pairing => render(&Message::PassPairing),
         Phase::Borders => render(&Message::PassBorders),
         Phase::Crop => render(&Message::PassCrop),

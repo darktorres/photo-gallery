@@ -30,6 +30,11 @@ Pane {
     // Listed files with borders to crop off (GalleryModel.croppable), and the user asking to save them cropped.
     property int croppable: 0
     signal saveCropsRequested()
+    // Border detection is on: the borders controls act only then. Used while it is off, they say so (bordersBlocked),
+    // and the crop and cut buttons with nothing to cut say so too (nothingToCrop).
+    property bool bordersOn: true
+    signal bordersBlocked()
+    signal nothingToCrop()
     // The user asking to cut the borders off the listed originals (the window asks first: CutBordersDialog).
     signal cutBordersRequested()
 
@@ -126,6 +131,7 @@ Pane {
                 FacetChoices { id: borderChoices; facet: bar.facetBorders }
 
                 function refreshChoices() {
+                    reviewBox.currentIndex = filters.borderMarkedIndex
                     typeChoices.refresh()
                     ratingChoices.refresh()
                     extChoices.refresh()
@@ -240,31 +246,47 @@ Pane {
                         model: borderChoices
                         delegate: Chip {
                             text: label + "  " + bar.count(count)
-                            onClicked: filters.toggle(bar.facetBorders, key)
+                            onClicked: bar.bordersOn ? filters.toggle(bar.facetBorders, key) : bar.bordersBlocked()
                         }
                     }
                     Caption { text: words.text("ui-review") }
                     ComboBox {
+                        id: reviewBox
                         model: bar.reviewChoices
                         currentIndex: filters.borderMarkedIndex
-                        onActivated: (i) => filters.chooseBorderMarked(i)
+                        onActivated: (i) => {
+                            // Index 0 is "any", which needs no borders. Any other choice is refused while they are off:
+                            // the box shows the review in force again (refreshChoices keeps it in step with the query).
+                            if (i === 0 || bar.bordersOn) {
+                                filters.chooseBorderMarked(i)
+                            } else {
+                                bar.bordersBlocked()
+                                currentIndex = filters.borderMarkedIndex
+                            }
+                        }
                         font.pixelSize: 12
                         Layout.preferredWidth: 170
                     }
                     Button {
                         text: words.phrase("ui-save-crops", 0, bar.count(bar.croppable), "")
-                        enabled: bar.croppable > 0
                         font.pixelSize: 12
-                        onClicked: bar.saveCropsRequested()
+                        onClicked: {
+                            if (!bar.bordersOn) bar.bordersBlocked()
+                            else if (bar.croppable > 0) bar.saveCropsRequested()
+                            else bar.nothingToCrop()
+                        }
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
                         ToolTip.text: words.text("ui-crop-tooltip")
                     }
                     Button {
                         text: words.text("ui-cut-originals")
-                        enabled: bar.croppable > 0
                         font.pixelSize: 12
-                        onClicked: bar.cutBordersRequested()
+                        onClicked: {
+                            if (!bar.bordersOn) bar.bordersBlocked()
+                            else if (bar.croppable > 0) bar.cutBordersRequested()
+                            else bar.nothingToCrop()
+                        }
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
                         ToolTip.text: words.text("ui-cut-tooltip")

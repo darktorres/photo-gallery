@@ -188,6 +188,19 @@ pub fn run(
     opts: &Options,
     ctl: &Control,
 ) -> Result<ThumbStats> {
+    run_while(cache, catalog_path, thumb, opts, &|| true, ctl)
+}
+
+/// [`run`], which ends after the batch in which `still_wanted` turns false: the files it had not made stay changed (no
+/// `checked` row is written), so the next pass lists them again. The grid's height changing is such a reason.
+pub fn run_while(
+    cache: &ThumbCache,
+    catalog_path: &Path,
+    thumb: ThumbHeight,
+    opts: &Options,
+    still_wanted: &(dyn Fn() -> bool + Sync),
+    ctl: &Control,
+) -> Result<ThumbStats> {
     let Pending { work, snapshot } = cache.pending(catalog_path, thumb)?;
     let items = &work.items;
     let mut stats = ThumbStats {
@@ -284,7 +297,7 @@ pub fn run(
             unwritten.write(catalog, first_failed, &mut stats.ledger, ctl);
         }
         if thumbs.is_empty() {
-            return Ok(true);
+            return Ok(still_wanted());
         }
         let n = thumbs.len();
         let made_known: Vec<FileId> = thumbs.iter().map(|t| t.file_id).filter(|id| known.contains(id)).collect();
@@ -306,7 +319,7 @@ pub fn run(
         } else {
             stats.cache_full = true;
         }
-        Ok(stored)
+        Ok(stored && still_wanted())
     };
 
     let (writing, ran) = pipeline::batched(

@@ -139,6 +139,7 @@ pub(crate) const CARRIED: &[&str] = &[
     "analysis",
     // After `analysis`: its rows are keyed by the analyses'.
     "pairs_owed",
+    "hashes_owed",
     "border_sides",
     "border_marks",
     "pdq_pairs",

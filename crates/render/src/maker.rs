@@ -202,9 +202,9 @@ mod tests {
     }
 
     fn summary(r: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
-        let px = &r.image().unwrap().pixels;
+        let px = &r.image().unwrap().hashes.as_ref().unwrap().pixels;
         let hashes = (px.pixel_hash, px.pdq);
-        (r.file_hash, r.format(), r.orientation, r.width, r.height, r.thumbhash, r.frames, hashes)
+        (r.file_hash(), r.format(), r.orientation, r.width, r.height, r.thumbhash, r.frames, hashes)
     }
 
     /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a
@@ -224,8 +224,8 @@ mod tests {
             for (bytes, turns) in &files {
                 let new = || Analyzer::new().unwrap();
                 assert_eq!(
-                    summary(&kept.analyze(bytes, *turns).unwrap()),
-                    summary(&new().analyze(bytes, *turns).unwrap())
+                    summary(&kept.analyze(bytes, *turns, pg_model::features::Hashing::Compute).unwrap()),
+                    summary(&new().analyze(bytes, *turns, pg_model::features::Hashing::Compute).unwrap())
                 );
                 let (a, b) = (kept.borders(bytes, *turns).unwrap(), new().borders(bytes, *turns).unwrap());
                 assert_eq!((a.width, a.height, a.borders), (b.width, b.height, b.borders));

@@ -16,17 +16,22 @@ ModalOverlay {
     required property var roots
     required property bool hasRoots
     required property bool writeBack
+    // Whether the borders and the duplicates are detected (the preferences; on by default).
+    required property bool detectBorders
+    required property bool detectDuplicates
 
     // Add a folder (Main asks the picker, then the library takes what it chose).
     signal addRequested()
     signal removeRequested(int row)
     signal rescanRequested()
     signal writeBackToggled(bool on)
+    signal detectBordersToggled(bool on)
+    signal detectDuplicatesToggled(bool on)
 
     Pane {
         anchors.centerIn: parent
         width: 680
-        height: 440
+        height: 540
         padding: 16
         MouseArea { anchors.fill: parent }
         ColumnLayout {
@@ -70,6 +75,20 @@ ModalOverlay {
                 onToggled: panel.writeBackToggled(checked)
                 ToolTip.visible: hovered
                 ToolTip.text: words.text("ui-write-files-tooltip")
+            }
+            CheckBox {
+                text: words.text("ui-detect-borders")
+                checked: panel.detectBorders
+                onToggled: panel.detectBordersToggled(checked)
+                ToolTip.visible: hovered
+                ToolTip.text: words.text("ui-detect-borders-tooltip")
+            }
+            CheckBox {
+                text: words.text("ui-detect-duplicates")
+                checked: panel.detectDuplicates
+                onToggled: panel.detectDuplicatesToggled(checked)
+                ToolTip.visible: hovered
+                ToolTip.text: words.text("ui-detect-duplicates-tooltip")
             }
             RowLayout {
                 Button { text: words.text("ui-add-folder"); onClicked: panel.addRequested() }

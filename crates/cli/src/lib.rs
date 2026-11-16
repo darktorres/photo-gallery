@@ -16,6 +16,7 @@ mod report;
 use pg_client::text::cli::{Line, line};
 use pg_client::text::{self, Message};
 use pg_library::folders::AddError;
+use pg_model::features::Hashing;
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
@@ -87,6 +88,27 @@ fn say(l: &Line) {
 }
 
 /// Seconds as the command line shows them: one decimal.
+/// The Hashes pass, and its report: the files stored without their duplicate hashes, made now (`hashes::hash`), and how
+/// many of them stored.
+fn hash_and_report(
+    catalog: &mut Catalog,
+    opts: &pg_jobs::pipeline::Options,
+    ctl: &Control,
+    start: Instant,
+) -> Result<()> {
+    let s = pg_import::hashes::hash(catalog, opts, &|| true, ctl)?;
+    if s.files > 0 {
+        say(&Line::HashesDone {
+            files: s.files.to_string(),
+            stored: s.stored.to_string(),
+            failed: s.failed.to_string(),
+            unreadable: s.unreadable.to_string(),
+            seconds: secs(start.elapsed().as_secs_f64()),
+        });
+    }
+    Ok(())
+}
+
 /// The pairing pass, and its report: the files paired, the pairs stored, and the analyses that have no orientation
 /// hashes and so are left out (made by an older build).
 fn pair_and_report(
@@ -95,6 +117,8 @@ fn pair_and_report(
     ctl: &Control,
     start: Instant,
 ) -> Result<()> {
+    // The duplicate hashes an import without them left out come first: the pairs need them.
+    hash_and_report(catalog, opts, ctl, start)?;
     let s = pg_import::pairs::pair(catalog, opts, ctl)?;
     say(&Line::PairDone {
         files: s.files.to_string(),
@@ -258,13 +282,14 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 None => bail!(line(&Line::NotInLibrary { root: name })),
             }
         }
-        Command::Import { pipeline, retry_errors, again, no_pair } => {
+        Command::Import { pipeline, retry_errors, again, no_pair, no_dups } => {
             if !again.is_empty() {
                 let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
                 say(&Line::MarkedAgain { count: marked.to_string() });
             }
             let opts = pipeline.options(Priority::Normal);
-            let s = pg_import::import(&mut catalog, &opts, retry_errors, ctl)?;
+            let hashing = if no_dups { Hashing::Skip } else { Hashing::Compute };
+            let s = pg_import::import_while(&mut catalog, &opts, hashing, retry_errors, &|| true, ctl)?;
             say(&Line::ImportPending { pending: s.pending.to_string() });
             say(&Line::ImportDone {
                 files: s.files.to_string(),
@@ -272,9 +297,13 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 changed: changed_while_read(s.changed),
                 seconds: secs(start.elapsed().as_secs_f64()),
             });
-            if !no_pair {
+            // The pairs need the hashes: a run without them pairs nothing.
+            if !no_pair && !no_dups {
                 pair_and_report(&mut catalog, &opts, ctl, start)?;
             }
+        }
+        Command::Hash { pipeline } => {
+            hash_and_report(&mut catalog, &pipeline.options(Priority::Normal), ctl, start)?;
         }
         Command::Pair { pipeline, again } => {
             if again {
@@ -345,6 +374,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 pending: s.pending.to_string(),
                 pairs: s.pdq_pairs.to_string(),
             });
+            let unhashed = catalog.owed_hashes()?;
+            if unhashed > 0 {
+                say(&Line::HashesOwed { count: unhashed.to_string() });
+            }
             let owed = catalog.owed_pairs()?;
             if owed > 0 {
                 say(&Line::PairsOwed { count: owed.to_string() });

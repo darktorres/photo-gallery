@@ -332,8 +332,12 @@ fn file_rewritten(tx: &Transaction, file_id: FileId, rewrite: Rewrite) -> Result
     let Rewrite { before, after, metadata_only } = rewrite;
     tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
     if let (Some(file_hash), Some(before)) = (metadata_only, before) {
+        // An analysis stored without its duplicate hashes (`hashes_owed`) follows the file's size and mtime, but takes no
+        // hash here: a file hash alone would make it look hashed while its pixel hashes are missing. The Hashes pass makes
+        // all of them, from the file as it now is.
         tx.execute(
-            "UPDATE analysis SET size = ?2, mtime = ?3, file_hash = ?4
+            "UPDATE analysis SET size = ?2, mtime = ?3,
+                file_hash = CASE WHEN EXISTS (SELECT 1 FROM hashes_owed WHERE file_id = ?1) THEN file_hash ELSE ?4 END
              WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
             params![file_id.get(), after.0, after.1, &file_hash.0[..], before.0, before.1],
         )?;

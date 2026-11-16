@@ -1,14 +1,17 @@
-//! The import pass: every pending file is read once, in on-disk order, and analyzed (tiers 0a/0b/1, dimensions,
-//! ThumbHash). Results are committed in batches: stopping at any point loses at most the current batch, and the next
-//! run picks up the rest from the catalog. The tier-1 pairs are not found here: an analysis with orientation hashes
-//! owes them (a `pairs_owed` row), and the pairing pass (`pairs`) makes them after the import.
+//! The import pass: every pending file is read once, in on-disk order, and analyzed (ThumbHash, dimensions, and, when
+//! duplicates detection is on, the tier-0a/0b/1 hashes). Results are committed in batches: stopping at any point loses at
+//! most the current batch, and the next run picks up the rest from the catalog. The tier-1 pairs are not found here: an
+//! analysis with orientation hashes owes them (a `pairs_owed` row), and the pairing pass (`pairs`) makes them after the
+//! import. An analysis made without the hashes owes them (`hashes_owed`), and the Hashes pass (`hashes`) makes them.
 
+pub mod hashes;
 pub mod pairs;
 
 use anyhow::{Context, Result};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, WorkItem};
 use pg_model::analysis::Analysis;
+use pg_model::features::Hashing;
 use pg_model::media::Kind;
 
 use pg_jobs::control::Control;
@@ -34,7 +37,22 @@ struct Counts {
     changed: usize,
 }
 
+/// The pending files analyzed, with the duplicate hashes, and never stopped but by `ctl`.
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
+    import_while(catalog, opts, Hashing::Compute, retry_errors, &|| true, ctl)
+}
+
+/// Analyzes the pending files. `hashing` says whether the duplicate hashes are computed too (`Hashing::Skip`: a file is
+/// stored owing them, `hashes_owed`, for the Hashes pass). `still_wanted` is asked after each batch: false ends the pass
+/// there, and the rest stays pending for the next round, which reads the features again.
+pub fn import_while(
+    catalog: &mut Catalog,
+    opts: &Options,
+    hashing: Hashing,
+    retry_errors: bool,
+    still_wanted: &(dyn Fn() -> bool + Sync),
+    ctl: &Control,
+) -> Result<ImportStats> {
     let work = catalog.pending_import(retry_errors)?;
     let items = &work.items;
     let sep = catalog.rules().sep_byte();
@@ -66,14 +84,14 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                 // FFmpeg and the hash open the file by its disk path: the plain one would lose a trailing dot or space
                 // in a folder's name, and open a sibling's file.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                analyzer.video(&disk, item.rotation)
+                analyzer.video(&disk, item.rotation, hashing)
             } else {
-                analyzer.analyze(bytes, item.rotation)
+                analyzer.analyze(bytes, item.rotation, hashing)
             }
         },
         Batch { size: BATCH, every: None },
         (catalog, Counts::default()),
-        |(catalog, counts), batch| store(catalog, counts, items, batch, ctl),
+        |(catalog, counts), batch| store(catalog, counts, items, batch, ctl).map(|()| still_wanted()),
     );
     result?;
     let (_, counts) = state;
@@ -91,7 +109,7 @@ fn store(
     items: &[WorkItem],
     batch: &mut Vec<(usize, Result<Analysis>)>,
     ctl: &Control,
-) -> Result<bool> {
+) -> Result<()> {
     let tx = catalog.tx()?;
     let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
     for (i, result) in batch.drain(..) {
@@ -119,5 +137,5 @@ fn store(
     // statement's count: every batch committed may have moved it, so whoever shows it reads it again (cheap, and
     // the reads coalesce).
     ctl.ledger_changed();
-    Ok(true)
+    Ok(())
 }

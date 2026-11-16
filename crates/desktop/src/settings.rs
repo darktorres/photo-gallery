@@ -39,4 +39,30 @@ impl qobject::Settings {
             self.real_size_changed();
         }
     }
+
+    pub(crate) fn read_detect_borders(&self) -> bool {
+        app::get().prefs().get().detect_borders
+    }
+
+    pub(crate) fn read_detect_duplicates(&self) -> bool {
+        app::get().prefs().get().detect_duplicates
+    }
+
+    /// Saves the choice and tells the job, which ends the pass that it turns off (after its batch).
+    pub(crate) fn set_detect_borders_saved(self: Pin<&mut Self>, value: bool) {
+        if app::get().prefs().get().detect_borders != value {
+            change_prefs(|p| p.detect_borders = value);
+            app::get().library().set_features(app::get().prefs().get().features());
+            self.detect_borders_changed();
+        }
+    }
+
+    /// Saves the choice and tells the job, which ends the pass that it turns off (after its batch).
+    pub(crate) fn set_detect_duplicates_saved(self: Pin<&mut Self>, value: bool) {
+        if app::get().prefs().get().detect_duplicates != value {
+            change_prefs(|p| p.detect_duplicates = value);
+            app::get().library().set_features(app::get().prefs().get().features());
+            self.detect_duplicates_changed();
+        }
+    }
 }

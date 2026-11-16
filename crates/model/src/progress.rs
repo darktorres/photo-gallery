@@ -18,6 +18,8 @@ pub enum Phase {
         root: RulePath,
     },
     Import,
+    /// The duplicate hashes the import left out (the Hashes pass, `pg_import::hashes`).
+    Hashes,
     /// The tier-1 pairs of the pictures analyzed (the pairing pass, `pg_import::pairs`).
     Pairing,
     Borders,

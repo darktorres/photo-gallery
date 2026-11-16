@@ -31,8 +31,6 @@ impl FileHash {
 pub struct Analysis {
     /// The version of the producer that made it (pg-analysis's `analyze::IMPORT_VERSION`); an older one's are redone.
     pub version: i64,
-    /// BLAKE3 of the file bytes (tier 0a).
-    pub file_hash: FileHash,
     /// EXIF orientation (1–8) the file asks for (a video's display matrix).
     pub orientation: Orientation,
     /// Upright full-size dimensions.
@@ -75,12 +73,21 @@ pub enum Media {
     Video(VideoFacts),
 }
 
-/// A still image's facts: its format, the rating the file itself holds, and its hashes (tiers 0b and 1).
+/// A still image's facts: its format, the rating the file itself holds, and its duplicate hashes, `None` when they were
+/// not computed (duplicates detection is off, `Hashing::Skip`).
 #[derive(Clone)]
 pub struct ImageFacts {
     pub format: Format,
     /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
     pub file_rating: Option<crate::rating::Rating>,
+    pub hashes: Option<ImageHashes>,
+}
+
+/// A still image's duplicate hashes: the file's (tier 0a) and the pixels' (tiers 0b and 1).
+#[derive(Clone)]
+pub struct ImageHashes {
+    /// BLAKE3 of the file bytes (tier 0a).
+    pub file: FileHash,
     pub pixels: PixelHashes,
 }
 
@@ -92,15 +99,30 @@ pub struct PixelHashes {
     pub pdq: pdq::Pdq,
 }
 
-/// A video's facts: its codec, its length, and where the frame its ThumbHash and thumbnails come from is.
+/// A video's facts: its codec, its length, where the frame its ThumbHash and thumbnails come from is, and its file hash
+/// (tier 0a), `None` when not computed.
 #[derive(Clone)]
 pub struct VideoFacts {
     pub codec: &'static str,
     pub duration_ms: i64,
     pub poster_ms: i64,
+    pub file_hash: Option<FileHash>,
 }
 
 impl Analysis {
+    /// The file's BLAKE3 (tier 0a), when it was computed.
+    pub fn file_hash(&self) -> Option<FileHash> {
+        match &self.media {
+            Media::Image(image) => image.hashes.as_ref().map(|h| h.file),
+            Media::Video(video) => video.file_hash,
+        }
+    }
+
+    /// Whether the duplicate hashes were computed: an analysis that is not hashed owes them (`hashes_owed`).
+    pub fn hashed(&self) -> bool {
+        self.file_hash().is_some()
+    }
+
     /// The format's name for an image, or the codec for a video (the catalog's `format` column).
     pub fn format(&self) -> &'static str {
         match &self.media {

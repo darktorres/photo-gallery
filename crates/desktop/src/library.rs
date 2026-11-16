@@ -184,7 +184,8 @@ impl qobject::Library {
         let pass = match p.phase {
             Phase::Thumbs { .. } => Some(FilePass::Thumbs),
             Phase::Borders => Some(FilePass::Borders),
-            Phase::Import => Some(FilePass::Import),
+            // The hashes' failures are the import's: a file that doesn't decode is an import failure.
+            Phase::Import | Phase::Hashes => Some(FilePass::Import),
             Phase::Idle | Phase::Scan { .. } | Phase::Crop | Phase::Pairing => None,
         };
         self.as_mut().set_failed_pass(crate::ledgers::kind_code(pass.map(LedgerKind::File)));

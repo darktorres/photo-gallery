@@ -49,7 +49,7 @@ fn for_thumb() -> (Vec<u8>, Maker) {
 #[library_benchmark]
 #[bench::sample(setup = for_analyze)]
 fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analysis {
-    black_box(or_stop(analyzer.analyze(black_box(&bytes), Turns::NONE), "analyze"))
+    black_box(or_stop(analyzer.analyze(black_box(&bytes), Turns::NONE, pg_model::features::Hashing::Compute), "analyze"))
 }
 
 #[library_benchmark]

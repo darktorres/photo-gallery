@@ -192,6 +192,18 @@ pub fn set_analysis_rotation(c: &Catalog, id: FileId, turns: u8) -> Result<()> {
 /// duration and the poster time in milliseconds, and whether the pixel hash is missing (1) or present (0).
 pub type MediaRow = (String, String, i64, i64, i64, i64, Option<i64>);
 
+/// A present file's stored hashes: its name, its file hash and its pixel hash (`None` while not made).
+pub type StoredHashes = (String, Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// Every present file's stored hashes, by name.
+pub fn stored_hashes(c: &Catalog) -> Result<Vec<StoredHashes>> {
+    let mut stmt = c.conn.prepare(
+        "SELECT CAST(f.name AS TEXT), a.file_hash, a.pixel_hash
+             FROM files f JOIN analysis a ON a.file_id = f.id ORDER BY f.name",
+    )?;
+    Ok(stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?)
+}
+
 /// The media rows of the present files (see [`MediaRow`]).
 pub fn media_rows(c: &Catalog) -> Result<Vec<MediaRow>> {
     let mut stmt = c.conn.prepare(

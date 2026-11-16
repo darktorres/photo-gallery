@@ -49,6 +49,8 @@ ApplicationWindow {
     // B: the grid and the viewer show what cropping the borders would cut. The window starts with the prefs' (or
     // --borders), and the controller saves the user's toggles.
     readonly property bool showBorders: shell.showBorders
+    // Border detection is on (the Library panel's choice): the borders controls act only then.
+    readonly property bool bordersOn: appSettings.detectBorders
     // The library panel is shown; made the first time (libraryLoader).
     property bool libraryOpen: false
     onLibraryOpenChanged: if (libraryOpen) libraryLoader.active = true
@@ -476,6 +478,13 @@ ApplicationWindow {
                 win.followListedRow()
             }
             onSortActivated: (i) => {
+                // The last sort is by border depth: with border detection off it is not applied, and the box shows the
+                // sort that is in force again.
+                if (i === topBar.sortNames.length - 1 && !win.bordersOn) {
+                    featurePopup.show(words.text("ui-borders-disabled"))
+                    topBar.sortIndex = shell.sortIndex()
+                    return
+                }
                 shell.sortBy(i)
                 grid.takeFocus()
             }
@@ -526,6 +535,9 @@ ApplicationWindow {
             id: filterBar
             onEdited: shell.queryEdited()
             croppable: galleryModel.croppable
+            bordersOn: win.bordersOn
+            onBordersBlocked: featurePopup.show(words.text("ui-borders-disabled"))
+            onNothingToCrop: featurePopup.show(words.text("ui-nothing-to-crop"))
             onSaveCropsRequested: win.askSaveCrops()
             onCutBordersRequested: win.askCutBorders()
             anchors.left: parent.left
@@ -574,7 +586,7 @@ ApplicationWindow {
                 gallery: galleryModel
                 gap: win.gap
                 current: win.current
-                showBorders: win.showBorders
+                showBorders: win.showBorders && win.bordersOn
                 noFolders: library.roots.length === 0
                 filtering: filterBar.active > 0
                 importing: library.busy
@@ -609,8 +621,14 @@ ApplicationWindow {
             }
             onRated: (i, r) => shell.rate(i, r)
             onTurned: (i, d) => shell.turn(i, d)
-            onBordersToggled: shell.toggleBorders()
-            onBorderMarkToggled: (i, m) => shell.setBorderMark(i, m)
+            onBordersToggled: {
+                if (win.bordersOn) shell.toggleBorders()
+                else featurePopup.show(words.text("ui-borders-disabled"))
+            }
+            onBorderMarkToggled: (i, m) => {
+                if (win.bordersOn) shell.setBorderMark(i, m)
+                else featurePopup.show(words.text("ui-borders-disabled"))
+            }
             // The file the viewer is on is the one a session remembers (the shell reads it, `gallery::shown_file`).
             onIndexChanged: if (index >= 0) shell.currentChanged(index)
             onFindSimilar: (fileId) => win.findSimilar(fileId)
@@ -629,6 +647,8 @@ ApplicationWindow {
                     roots: library.roots
                     hasRoots: library.roots.length > 0
                     writeBack: appSettings.writeBack
+                    detectBorders: appSettings.detectBorders
+                    detectDuplicates: appSettings.detectDuplicates
                     onDismissed: {
                         win.libraryOpen = false
                     }
@@ -640,8 +660,48 @@ ApplicationWindow {
                     onWriteBackToggled: (on) => {
                         appSettings.writeBack = on
                     }
+                    onDetectBordersToggled: (on) => {
+                        appSettings.detectBorders = on
+                    }
+                    onDetectDuplicatesToggled: (on) => {
+                        appSettings.detectDuplicates = on
+                    }
                 }
             }
+        }
+
+        // Border detection is off and a control that needs it was used: the text says why. Not modal: a press outside closes
+        // it, and reaches the control under it.
+        Popup {
+            id: featurePopup
+            property string message: ""
+            modal: false
+            focus: false
+            padding: 12
+            closePolicy: Popup.CloseOnPressOutside
+            x: Math.round((win.width - width) / 2)
+            y: win.height - height - 64
+            Label {
+                text: featurePopup.message
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                width: Math.min(360, win.width - 48)
+            }
+            Timer {
+                id: featurePopupTimer
+                interval: 4000
+                onTriggered: featurePopup.close()
+            }
+            function show(text: string) {
+                message = text
+                open()
+                featurePopupTimer.restart()
+            }
+        }
+        Connections {
+            target: shell
+            function onBordersRefused() { featurePopup.show(words.text("ui-borders-disabled")) }
+            function onOptionsRefused() { featurePopup.show(words.text("ui-view-borders-disabled")) }
         }
 
         // Reverse image search for the viewer's photo (over the viewer, so it comes after it). Made with the first

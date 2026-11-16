@@ -190,7 +190,7 @@ fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analysis) {
     let mut items = or_stop(catalog.pending_import(false), "the import's work").items;
     items.truncate(IMPORT_BATCH);
     let mut analyzer = or_stop(Analyzer::new(), "the analyzer");
-    let analyzed = or_stop(analyzer.analyze(&read_sample(), Turns::NONE), "the sample's analysis");
+    let analyzed = or_stop(analyzer.analyze(&read_sample(), Turns::NONE, pg_model::features::Hashing::Compute), "the sample's analysis");
     (catalog, items, analyzed)
 }
 

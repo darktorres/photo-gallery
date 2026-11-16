@@ -62,6 +62,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_12_PAIRING_PASS)],
     TO_13_PAIRS_OWED,
     &[Step::Sql(TO_14_PAIRING_EPOCH)],
+    &[Step::Sql(TO_15_HASHES_OWED)],
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -488,6 +489,15 @@ BEGIN
 END;
 "
 );
+
+/// Version 15: **`hashes_owed`**, one row per analysis that the import stored without its duplicate hashes (duplicates
+/// detection was off: `Hashing::Skip`). The Hashes pass (`pg_import::hashes`) makes them, and each row goes with its
+/// analysis (`ON DELETE CASCADE`), so a re-analysis or a failure takes it. Shaped like `pairs_owed` (version 13): a narrow
+/// queue, not a flag on the wide `analysis` row. Every analysis that exists was made with its hashes, so it starts empty.
+const TO_15_HASHES_OWED: &str = "CREATE TABLE hashes_owed(
+    file_id INTEGER PRIMARY KEY REFERENCES analysis(file_id) ON DELETE CASCADE
+);
+";
 
 /// [`TO_11_NOTIFY_FIXES`]' trigger: the import's ledger row is made hidden when its file is missing or pending, and a
 /// conflict updates `hidden` as well as `error`.
@@ -1278,6 +1288,28 @@ mod tests {
         let seeded: i64 =
             conn.query_row("SELECT value FROM meta WHERE key = 'pairing_version'", [], |r| r.get(0)).unwrap();
         assert_eq!(seeded, pg_model::pdq::PAIRING_VERSION);
+    }
+
+    /// Version 15 (`TO_15_HASHES_OWED`): the queue starts empty (an analysis an older catalog holds has its hashes), and a
+    /// row goes with its analysis: a delete of the analysis takes it (`ON DELETE CASCADE`), as a re-analysis's REPLACE does.
+    #[test]
+    fn the_hashes_owed_queue_starts_empty_and_goes_with_its_analysis() {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 14).unwrap();
+        // The row names a file this test does not make: only the migration's effect on it is tested.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        conn.execute_batch(
+            "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, pdq_quality, pdq_dihedral)
+             VALUES (1, 2, 10, 100, 0, 'image', 0, 100, zeroblob(128));",
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 15).unwrap();
+        let owed: i64 = conn.query_row("SELECT count(*) FROM hashes_owed", [], |r| r.get(0)).unwrap();
+        assert_eq!(owed, 0);
+        conn.execute_batch("PRAGMA foreign_keys = ON; INSERT INTO hashes_owed(file_id) VALUES (1);").unwrap();
+        conn.execute("DELETE FROM analysis WHERE file_id = 1", []).unwrap();
+        let owed: i64 = conn.query_row("SELECT count(*) FROM hashes_owed", [], |r| r.get(0)).unwrap();
+        assert_eq!(owed, 0, "the row went with its analysis");
     }
 
     /// The stamps of a rating, a border mark and a queued write are triggers of their own on delete and on update as

@@ -14,9 +14,10 @@ use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::analysis::{
-    Analysis, FileHash, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts,
+    Analysis, FileHash, ImageFacts, ImageHashes, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts,
 };
 use pg_model::detection::{self, Detection};
+use pg_model::features::Hashing;
 use pg_model::format::Format;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
@@ -81,23 +82,36 @@ impl Analyzer {
     }
 
     /// The import's analysis of an image. `turns`: the file's catalog rotation (quarter turns clockwise), part of
-    /// what "upright" means.
-    pub fn analyze(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
-        let result = self.analyze_image(bytes, turns);
+    /// what "upright" means. `hashing`: whether the duplicate hashes are computed too (`Hashing::Skip` leaves them out).
+    pub fn analyze(&mut self, bytes: &[u8], turns: Turns, hashing: Hashing) -> Result<Analysis> {
+        let result = self.analyze_image(bytes, turns, hashing);
         self.trim();
         result
     }
 
-    /// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
-    /// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
-    pub fn video(&mut self, path: &Path, turns: Turns) -> Result<Analysis> {
-        let result = analyze_video(path, turns, self);
+    /// The import's analysis of a video: upright size, duration, codec, recording date, and the ThumbHash of the poster
+    /// frame (decoded into the worker's buffers), with its file hash (tier 0a) when `hashing` computes it. `turns` is
+    /// the catalog rotation.
+    pub fn video(&mut self, path: &Path, turns: Turns, hashing: Hashing) -> Result<Analysis> {
+        let result = analyze_video(path, turns, hashing, self);
         self.trim();
         result
     }
 
-    fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
-        let file_hash = FileHash::of(bytes);
+    /// The duplicate hashes of an image, made from the same decode as the import's (`analyze`), for the Hashes pass: the
+    /// values are the import's own.
+    pub fn hash_image(&mut self, bytes: &[u8], turns: Turns) -> Result<ImageHashes> {
+        let result = self.hash_decoded(bytes, turns);
+        self.trim();
+        result
+    }
+
+    /// The file hash (tier 0a) of a video, streamed from `path`, for the Hashes pass.
+    pub fn video_file_hash(&self, path: &Path) -> Result<FileHash> {
+        file_hash_of(path).with_context(|| format!("reading {}", path.display()))
+    }
+
+    fn analyze_image(&mut self, bytes: &[u8], turns: Turns, hashing: Hashing) -> Result<Analysis> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let meta = Meta::read(bytes, format, &mut self.meta);
         let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
@@ -105,25 +119,33 @@ impl Analyzer {
         let info = self.decoder.decode_into(bytes, format, meta.orientation, min, turns, image, spare)?;
         let img = &self.image;
 
-        let pdq_img = if self.resizer.fit_within(img, PDQ_SIDE, &mut self.pdq_in)? { &self.pdq_in } else { img };
-        let pdq = self.hasher.hash_rgb_dihedral(&pdq_img.pixels, pdq_img.width, pdq_img.height);
-
+        let hashes = match hashing {
+            Hashing::Compute => {
+                Some(image_hashes(FileHash::of(bytes), img, &mut self.resizer, &mut self.pdq_in, &mut self.hasher)?)
+            }
+            Hashing::Skip => None,
+        };
         let record = Analysis {
             version: IMPORT_VERSION,
-            file_hash,
             orientation: info.orientation,
             width: info.full_width,
             height: info.full_height,
             thumbhash: thumbhash(img, &mut self.resizer, &mut self.small, &mut self.thumbhasher)?,
             frames: meta.frames,
             taken: meta.taken.map(Taken::Wall),
-            media: Media::Image(ImageFacts {
-                format: info.format,
-                file_rating: meta.rating,
-                pixels: PixelHashes { pixel_hash: pixel_hash(img)?, pdq },
-            }),
+            media: Media::Image(ImageFacts { format: info.format, file_rating: meta.rating, hashes }),
         };
         Ok(record)
+    }
+
+    /// Decodes an image as the import does, and hashes it (`hash_image`).
+    fn hash_decoded(&mut self, bytes: &[u8], turns: Turns) -> Result<ImageHashes> {
+        let format = Format::sniff(bytes).context("unknown image format")?;
+        let meta = Meta::read(bytes, format, &mut self.meta);
+        let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
+        let (image, spare) = (&mut self.image, &mut self.spare);
+        self.decoder.decode_into(bytes, format, meta.orientation, min, turns, image, spare)?;
+        image_hashes(FileHash::of(bytes), &self.image, &mut self.resizer, &mut self.pdq_in, &mut self.hasher)
     }
 
     /// The ThumbHash of the image in [`Analyzer::image`] (a video's frame).
@@ -171,6 +193,20 @@ pub struct FileBorders {
     pub borders: Option<Detection>,
 }
 
+/// The duplicate hashes of an upright decoded image and of its file's bytes (`file`): the one definition the import and
+/// the Hashes pass share. The PDQ input is the image fitted into [`PDQ_SIDE`] (`pdq_in` is its buffer).
+fn image_hashes(
+    file: FileHash,
+    img: &Rgb,
+    resizer: &mut Resizer,
+    pdq_in: &mut Rgb,
+    hasher: &mut pdq::Hasher,
+) -> Result<ImageHashes> {
+    let pdq_img = if resizer.fit_within(img, PDQ_SIDE, pdq_in)? { &*pdq_in } else { img };
+    let pdq = hasher.hash_rgb_dihedral(&pdq_img.pixels, pdq_img.width, pdq_img.height);
+    Ok(ImageHashes { file, pixels: PixelHashes { pixel_hash: pixel_hash(img)?, pdq } })
+}
+
 /// Hash of the upright pixels at the decode scale. The scale depends only on the stored size, so two files with
 /// the same image data (re-saved metadata, a different container, lossless re-wraps like progressive ↔ baseline)
 /// hash equal. The same pixels in a different codec (JPEG vs PNG) usually decode at a different scale and don't;
@@ -192,15 +228,17 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
     Ok(ThumbHash::encoded(bytes, len))
 }
 
-fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis> {
-    let file_hash = file_hash_of(path).with_context(|| format!("reading {}", path.display()))?;
+fn analyze_video(path: &Path, turns: Turns, hashing: Hashing, a: &mut Analyzer) -> Result<Analysis> {
+    let file_hash = match hashing {
+        Hashing::Compute => Some(a.video_file_hash(path)?),
+        Hashing::Skip => None,
+    };
     let p = pg_video::probe(path)?;
     let poster = pg_video::poster_ms(p.duration_ms);
     pg_video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
     let (width, height) = if turns.swaps_axes() { (p.height, p.width) } else { (p.width, p.height) };
     let record = Analysis {
         version: IMPORT_VERSION,
-        file_hash,
         // The stills' orientation includes the catalog turn (`decode_into`); the video's must too, or its stored
         // size and its shown orientation disagree. `width`/`height` above already carry the display matrix.
         orientation: p.orientation.compose(turns),
@@ -209,7 +247,7 @@ fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis
         thumbhash: a.thumbhash_of_image()?,
         frames: p.frames,
         taken: p.taken,
-        media: Media::Video(VideoFacts { codec: p.codec, duration_ms: p.duration_ms, poster_ms: poster }),
+        media: Media::Video(VideoFacts { codec: p.codec, duration_ms: p.duration_ms, poster_ms: poster, file_hash }),
     };
     Ok(record)
 }
@@ -228,6 +266,28 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
         assert_eq!(file_hash_of(&path).unwrap(), FileHash::of(&bytes));
         assert!(file_hash_of(&dir.join("missing.bin")).is_err());
+    }
+
+    /// The hashes the Hashes pass makes are the import's own: an image analyzed without them, then hashed, has the values an
+    /// import with them stores; the rest of its analysis is the same either way.
+    #[test]
+    fn the_hashes_made_later_are_the_imports_own() {
+        let bytes = pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap();
+        let mut analyzer = Analyzer::new().unwrap();
+        let turns = pg_model::turns::Turns::NONE;
+        let with = analyzer.analyze(&bytes, turns, Hashing::Compute).unwrap();
+        let without = analyzer.analyze(&bytes, turns, Hashing::Skip).unwrap();
+        assert!(with.hashed() && !without.hashed());
+        assert_eq!(with.thumbhash, without.thumbhash, "the rest of the analysis is the same");
+        let later = analyzer.hash_image(&bytes, turns).unwrap();
+        let made = with.image().unwrap().hashes.as_ref().unwrap();
+        assert_eq!(later.file, made.file);
+        assert_eq!(later.pixels.pixel_hash, made.pixels.pixel_hash);
+        assert_eq!(later.pixels.pdq.quality, made.pixels.pdq.quality);
+        assert_eq!(
+            pg_model::pdq::to_blob(&later.pixels.pdq.orientations),
+            pg_model::pdq::to_blob(&made.pixels.pdq.orientations)
+        );
     }
 
     /// The model writes the longest ThumbHash as a literal; it must be the encoder's own length.

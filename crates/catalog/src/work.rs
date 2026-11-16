@@ -382,6 +382,35 @@ impl Catalog {
         Ok(list)
     }
 
+    /// The analyses the import stored without their duplicate hashes (`hashes_owed`), of present, non-pending files, in
+    /// on-disk order: the Hashes pass's work.
+    pub fn pending_hashes(&self) -> Result<WorkList<WorkItem>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let bound: usize = tx.query_row("SELECT count(*) FROM hashes_owed", [], |r| r.get(0))?;
+        let mut stmt = tx.prepare(concat!(
+            "SELECT ",
+            work_columns!(),
+            " FROM hashes_owed h CROSS JOIN analysis a CROSS JOIN files f
+             WHERE h.file_id = a.file_id AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+        ))?;
+        let list = work_list(&tx, &mut stmt, bound)?;
+        drop(stmt);
+        tx.commit()?;
+        Ok(list)
+    }
+
+    /// How many present, non-pending files are stored without their duplicate hashes (`hashes_owed`): the status's count
+    /// of what duplicates detection, while it was off, left for the Hashes pass.
+    pub fn owed_hashes(&self) -> Result<usize> {
+        Ok(self.conn.query_row(
+            "SELECT count(*) FROM hashes_owed h CROSS JOIN files f
+             WHERE f.id = h.file_id AND f.missing = 0 AND f.pending = 0",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
     /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is an analysis with stored
     /// hashes and a reliable quality, of a file with an identity (missing and pending ones too: `PICTURES` says
     /// why). The owed ones the pass can make (a `pairs_owed` row, the file present and not pending) are among them,

@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
         let _ = hasher.hash_rgb_dihedral(&img.pixels, img.width, img.height);
         t[5] += s.elapsed();
         let s = Instant::now();
-        let _ = analyzer.analyze(b, Turns::NONE)?;
+        let _ = analyzer.analyze(b, Turns::NONE, pg_model::features::Hashing::Compute)?;
         t[6] += s.elapsed();
     }
     for (name, d) in ["blake3", "metadata", "decode", "pixel hash", "resize 512", "pdq", "analyze total"].iter().zip(t)

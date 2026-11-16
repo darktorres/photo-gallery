@@ -48,6 +48,16 @@ fn unix_now() -> i64 {
 /// they go with (`Tx::ledger_writer`): a batch stores both or neither, so a failure to write the ledger stores
 /// nothing, leaves the batch's files due, and fails the pass.
 pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stats> {
+    find_while(catalog, opts, &|| true, ctl)
+}
+
+/// [`find`], which ends after the batch in which `still_wanted` turns false: the files it had not looked at stay due.
+pub fn find_while(
+    catalog: &mut Catalog,
+    opts: &Options,
+    still_wanted: &(dyn Fn() -> bool + Sync),
+    ctl: &Control,
+) -> Result<Stats> {
     let work = catalog.pending_borders()?;
     let items = &work.items;
     let stats = Stats { files: 0, failed: 0, unreadable: 0, stored: 0, complete: true };
@@ -134,7 +144,7 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
-        |(catalog, stats), batch| flush(catalog, batch, stats).map(|()| true),
+        |(catalog, stats), batch| flush(catalog, batch, stats).map(|()| still_wanted()),
     );
     result?;
     let (_, mut stats) = state;

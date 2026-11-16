@@ -1,12 +1,14 @@
 //! The app's background job: one thread that saves the cropped copies asked for, scans the folders
-//! asked for, imports whatever is pending, looks for the borders of what it imported (and of everything after a
-//! new detector), then makes thumbnails at the grid's current height, and sleeps until there is something new to
-//! do.
+//! asked for, imports whatever is pending, makes thumbnails at the grid's current height, makes the duplicate hashes the
+//! import left out, pairs the duplicates, and looks for the borders of what it imported (and of everything after a new
+//! detector), then sleeps until there is something new to do. The round's order is that one; the thumbnails come before
+//! the duplicates and the borders, which are the long ones.
 //!
 //! The thread is a `pg_jobs::service::Service`, and a round is a schedule of passes over the queue of requests. A new
-//! request (a folder added, a rescan, a new thumbnail height) stops the pass in progress at the next file; it commits
-//! what it has and the next round starts with the new work. Every pass is resumable from the catalog, so stopping
-//! costs nothing but the batch in flight.
+//! request (a folder added, a rescan) stops the pass in progress at the next file; a new thumbnail height or a feature
+//! turned on or off does not stop a round, but the pass it concerns ends after its batch (each watches the value it
+//! runs for). It commits what it has and the next round starts with the new work. Every pass is resumable from the
+//! catalog, so stopping costs nothing but the batch in flight.
 
 use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
@@ -24,6 +26,7 @@ use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
+use pg_model::features::Features;
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Op, Trigger, tidy};
 use pg_model::progress::Progress;
@@ -43,9 +46,57 @@ const BUSY_RETRY: Duration = Duration::from_secs(5);
 
 /// The thumbnail height the grid asks for. It is held here, not given to the job at its start, so the height may be set
 /// before the job starts (the window's scale arrives after the library is made). The thumbnail pass makes thumbnails only
-/// once a height is set, and a change stops the pass in progress and wakes the job.
+/// once a height is set. A change wakes the job, and the thumbnail pass in progress ends after its batch (it watches the
+/// height it runs for, `run`); a round is not stopped.
 #[derive(Clone, Default)]
 pub struct HeightCell(Arc<Mutex<HeightState>>);
+
+/// The background features the owner has on (`Features`, from the preferences), held here so a change reaches the job
+/// without a restart. A change wakes the job; it stops nothing. Each pass a feature gates reads it when it starts, and
+/// ends after its batch when its feature is turned off (`still` in each pass).
+#[derive(Clone)]
+pub struct FeatureCell(Arc<Mutex<FeatureState>>);
+
+struct FeatureState {
+    features: Features,
+    /// Run on a change, once a job listens (`FeatureCell::listen`).
+    wake: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+impl FeatureCell {
+    pub fn new(features: Features) -> FeatureCell {
+        FeatureCell(Arc::new(Mutex::new(FeatureState { features, wake: None })))
+    }
+
+    /// The features, as they are now.
+    pub fn get(&self) -> Features {
+        self.state().features
+    }
+
+    /// Set the features. A change wakes the job, if one listens.
+    pub fn set(&self, features: Features) {
+        let wake = {
+            let mut state = self.state();
+            if state.features == features {
+                return;
+            }
+            state.features = features;
+            state.wake.clone()
+        };
+        if let Some(wake) = wake {
+            wake();
+        }
+    }
+
+    /// Run `wake` on each change from now on (the job's own, installed at its start).
+    fn listen(&self, wake: impl Fn() + Send + Sync + 'static) {
+        self.state().wake = Some(Arc::new(wake));
+    }
+
+    fn state(&self) -> MutexGuard<'_, FeatureState> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
 
 #[derive(Default)]
 struct HeightState {
@@ -106,6 +157,7 @@ struct Inner {
     /// round, which comes by [`BUSY_RETRY`] at the latest.
     busy: Mutex<Vec<RulePath>>,
     heights: HeightCell,
+    features: FeatureCell,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
     /// Rounds finished, however they ended: the app marks each one as a stage for measuring.
@@ -147,13 +199,15 @@ pub struct Runner {
 
 impl Runner {
     /// Start the job thread. It begins by importing whatever is pending, and makes the thumbnails still missing at the
-    /// height `heights` holds (none until one is set). What it changes is published on `changes` (`Change`), and what it
-    /// tells the user goes to `notices`, which is poked whenever a pass changes the failure ledger
-    /// (`Control::ledger_changed`). An error if the thread can't be spawned.
+    /// height `heights` holds (none until one is set). `features` says which background work is on (the borders, the
+    /// duplicates). What it changes is published on `changes` (`Change`), and what it tells the user goes to `notices`,
+    /// which is poked whenever a pass changes the failure ledger (`Control::ledger_changed`). An error if the thread
+    /// can't be spawned.
     pub fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
         heights: HeightCell,
+        features: FeatureCell,
         changes: Arc<Bus<Change>>,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Runner> {
@@ -165,6 +219,7 @@ impl Runner {
             scanning: Mutex::new(None),
             busy: Mutex::new(Vec::new()),
             heights: heights.clone(),
+            features: features.clone(),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
@@ -180,14 +235,16 @@ impl Runner {
         let service = Arc::new(
             Service::start("background job", move |waker| job.run(waker)).context("start the background job")?,
         );
-        // A new height stops the thumbnail pass in progress (it makes the rest at the new height) and wakes the job. Weak
-        // references: the cell (held by the library) must not keep the job alive.
-        let (inner_weak, service_weak): (Weak<Inner>, Weak<Service>) =
-            (Arc::downgrade(&inner), Arc::downgrade(&service));
+        // A new height or a change of features wakes the job; the passes they concern end after their batch, and the next
+        // round reads the new values. Weak references: the cells (held by the library) must not keep the job alive.
+        let service_weak: Weak<Service> = Arc::downgrade(&service);
+        let wake_service = service_weak.clone();
         heights.listen(move || {
-            if let Some(inner) = inner_weak.upgrade() {
-                inner.ctl.request_stop();
+            if let Some(service) = wake_service.upgrade() {
+                service.wake();
             }
+        });
+        features.listen(move || {
             if let Some(service) = service_weak.upgrade() {
                 service.wake();
             }
@@ -429,7 +486,16 @@ impl Inner {
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
             schedule::round(
-                &mut [&mut Crops, &mut Cuts, &mut Scans, &mut Import, &mut Pairing, &mut Borders, &mut Thumbs],
+                &mut [
+                    &mut Crops,
+                    &mut Cuts,
+                    &mut Scans,
+                    &mut Import,
+                    &mut Thumbs,
+                    &mut Hashes,
+                    &mut Pairing,
+                    &mut Borders,
+                ],
                 &mut cx,
                 |cx| cx.inner.ctl.stop_requested(),
             )?
@@ -577,12 +643,22 @@ impl Pass<Cx<'_>> for Scans {
     }
 }
 
-/// Analyzes what the scans found.
+/// Analyzes what the scans found, with the duplicate hashes while duplicates detection is on. The pass ends after a batch
+/// when that changes: the next round imports the rest the other way (the files it didn't reach stay pending).
 struct Import;
 
 impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let s = pg_import::import(cx.catalog, &Options::new(Priority::BelowNormal), false, &cx.inner.ctl)?;
+        let features = cx.inner.features.clone();
+        let hashing = features.get().hashing();
+        let s = pg_import::import_while(
+            cx.catalog,
+            &Options::new(Priority::BelowNormal),
+            hashing,
+            false,
+            &|| features.get().hashing() == hashing,
+            &cx.inner.ctl,
+        )?;
         if s.files > 0 {
             cx.inner.imported();
         }
@@ -590,13 +666,43 @@ impl Pass<Cx<'_>> for Import {
     }
 }
 
-/// Pairs what the import left owed (`pg_import::pairs`): the pictures analyzed since the last pass, against every
-/// picture hashed. Right after the import, so that a later pass skipped by a preempt or a stop leaves the duplicates owed
-/// for no longer than it takes to pair them (seconds for a few thousand pictures).
+/// Makes the duplicate hashes the import stored without them, while duplicates detection was off (`pg_import::hashes`).
+/// Its pass ends after a batch when duplicates detection is turned off; what is left stays owed (`hashes_owed`).
+struct Hashes;
+
+impl Pass<Cx<'_>> for Hashes {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+        if !cx.inner.features.get().duplicates {
+            return Ok(Step::Done);
+        }
+        let features = cx.inner.features.clone();
+        let s = pg_import::hashes::hash(
+            cx.catalog,
+            &Options::new(Priority::BelowNormal),
+            &|| features.get().duplicates,
+            &cx.inner.ctl,
+        )?;
+        // Its stored hashes are new pictures for the pairing pass, and the views list the duplicates again.
+        if s.stored > 0 {
+            cx.inner.imported();
+        }
+        // A file that couldn't be read is said, as the borders' are; one that didn't decode is an import failure, which
+        // the import's ledger holds.
+        cx.inner.files_read(FilePass::Import, s.unreadable, s.complete);
+        Ok(Step::Done)
+    }
+}
+
+/// Pairs what the import and the hashes left owed (`pg_import::pairs`): the pictures analyzed since the last pass, against
+/// every picture hashed. Skipped while duplicates detection is off: the owed pairs wait (`pairs_owed`) for it to come
+/// back on. Its join runs to the end once started, as a pass of seconds to minutes.
 struct Pairing;
 
 impl Pass<Cx<'_>> for Pairing {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+        if !cx.inner.features.get().duplicates {
+            return Ok(Step::Done);
+        }
         let s = pg_import::pairs::pair(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
         // The duplicates the views list change with the pairs stored.
         if s.pairs > 0 || s.files > 0 {
@@ -607,12 +713,24 @@ impl Pass<Cx<'_>> for Pairing {
 }
 
 /// Looks for the borders of what was imported. Its own pass, after the import: the import's decode is reduced, the
-/// detector wants full size.
+/// detector wants full size. Skipped while border detection is off, and its due files stay due (`borders_due`), so
+/// turning it back on finds them; it ends after a batch when it is turned off.
 struct Borders;
 
 impl Pass<Cx<'_>> for Borders {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let s = pg_borders::find(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
+        let features = cx.inner.features.clone();
+        if !features.get().borders {
+            // Nothing is looked for, so nothing is unreadable: a notice from an earlier pass is no longer true.
+            cx.inner.files_read(FilePass::Borders, 0, true);
+            return Ok(Step::Done);
+        }
+        let s = pg_borders::find_while(
+            cx.catalog,
+            &Options::new(Priority::BelowNormal),
+            &|| features.get().borders,
+            &cx.inner.ctl,
+        )?;
         // Only what went into the catalog changes what the app shows: files that couldn't be read stored nothing.
         if s.stored > 0 {
             cx.inner.imported();
@@ -624,7 +742,8 @@ impl Pass<Cx<'_>> for Borders {
     }
 }
 
-/// Makes the thumbnails still missing at the grid's current height.
+/// Makes the thumbnails still missing at the grid's current height. It runs before the duplicates and the borders: the
+/// grid shows them first. It ends after a batch when the grid asks for another height; the next round makes that one.
 struct Thumbs;
 
 impl Pass<Cx<'_>> for Thumbs {
@@ -633,8 +752,23 @@ impl Pass<Cx<'_>> for Thumbs {
         let Some(height) = cx.inner.heights.get() else {
             return Ok(Step::Done);
         };
+        let heights = cx.inner.heights.clone();
         let opts = Options::new(Priority::Idle);
-        let s = pg_thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
+        let s = match pg_thumbs::run_while(
+            cx.inner.thumbs,
+            &cx.inner.catalog_path,
+            height,
+            &opts,
+            &|| heights.get() == Some(height),
+            &cx.inner.ctl,
+        ) {
+            Ok(s) => s,
+            // A pass that fails is said, and the round goes on to the duplicates and the borders, which are after it.
+            Err(e) => {
+                cx.inner.notify(Notice::CacheNotStored { error: error_text(&e) });
+                return Ok(Step::Done);
+            }
+        };
         if s.cache_full {
             cx.inner.notify(Notice::CacheFull { height, made: count(s.made) });
         } else if s.complete {
@@ -683,6 +817,24 @@ mod tests {
         assert_eq!(woke.load(Ordering::Relaxed), 2);
     }
 
+    /// The features are held as they were set, and each change to other features wakes the job once; the same features
+    /// again wake nothing.
+    #[test]
+    fn features_are_held_and_each_change_wakes_the_job_once() {
+        let features = FeatureCell::new(Features::ALL);
+        let woke = Arc::new(AtomicU64::new(0));
+        let counter = woke.clone();
+        features.listen(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+        let no_duplicates = Features { borders: true, duplicates: false };
+        features.set(Features::ALL);
+        features.set(no_duplicates);
+        features.set(no_duplicates);
+        assert_eq!(features.get(), no_duplicates);
+        assert_eq!(woke.load(Ordering::Relaxed), 1);
+    }
+
     /// A library folder `images` in a run folder, holding `names` (small PNGs), scanned and imported into the catalog
     /// beside it: the run folder, the catalog's path, and the library folder.
     fn library(prefix: &str, names: &[&str]) -> (PathBuf, PathBuf, RulePath) {
@@ -719,6 +871,7 @@ mod tests {
             scanning: Mutex::new(None),
             busy: Mutex::new(Vec::new()),
             heights: height_64(),
+            features: FeatureCell::new(Features::ALL),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
@@ -790,8 +943,15 @@ mod tests {
         let aside = dir.join("aside.sqlite");
         std::fs::rename(&catalog_path, &aside).unwrap();
         let sink = RecordingSink::new();
-        let runner =
-            Runner::start(catalog_path.clone(), cache, height_64(), Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let runner = Runner::start(
+            catalog_path.clone(),
+            cache,
+            height_64(),
+            FeatureCell::new(Features::ALL),
+            Arc::new(Bus::new(16)),
+            sink.clone(),
+        )
+        .unwrap();
         wait_for("the round's failure", || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })));
         std::fs::rename(&aside, &catalog_path).unwrap();
         runner.wake();
@@ -883,8 +1043,15 @@ mod tests {
         let (dir, catalog_path, _root) = library("runner-poke", &[]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let runner =
-            Runner::start(catalog_path.clone(), cache, height_64(), Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let runner = Runner::start(
+            catalog_path.clone(),
+            cache,
+            height_64(),
+            FeatureCell::new(Features::ALL),
+            Arc::new(Bus::new(16)),
+            sink.clone(),
+        )
+        .unwrap();
         let before = sink.pokes();
         runner.inner.ctl.ledger_changed();
         assert_eq!(sink.pokes(), before + 1);
@@ -898,8 +1065,15 @@ mod tests {
         let (dir, catalog_path, _root) = library("runner-cut", &["a.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let runner =
-            Runner::start(catalog_path.clone(), cache, height_64(), Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let runner = Runner::start(
+            catalog_path.clone(),
+            cache,
+            height_64(),
+            FeatureCell::new(Features::ALL),
+            Arc::new(Bus::new(16)),
+            sink.clone(),
+        )
+        .unwrap();
         let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
         let id = pg_catalog::fixture::state::present_files(&c).unwrap()[0].0;
         runner.cut_borders(vec![id], false);

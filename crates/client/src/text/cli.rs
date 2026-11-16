@@ -99,6 +99,18 @@ pub enum Line {
         changed: String,
         seconds: String,
     },
+    /// The Hashes pass: the files looked at, the hashes stored, the files that failed (and of them, those unreadable).
+    HashesDone {
+        files: String,
+        stored: String,
+        failed: String,
+        unreadable: String,
+        seconds: String,
+    },
+    /// Files stored without their duplicate hashes (`gallery status`): made by `gallery hash`.
+    HashesOwed {
+        count: String,
+    },
     /// The pairing pass: the files paired, the pairs stored.
     PairDone {
         files: String,
@@ -258,6 +270,8 @@ impl Line {
             Line::MarkedAgain { .. } => "cli-marked-again",
             Line::ImportPending { .. } => "cli-import-pending",
             Line::ImportDone { .. } => "cli-import-done",
+            Line::HashesDone { .. } => "cli-hashes-done",
+            Line::HashesOwed { .. } => "cli-hashes-owed",
             Line::PairDone { .. } => "cli-pair-done",
             Line::PairTimings { .. } => "cli-pair-timings",
             Line::PairsAgain { .. } => "cli-pairs-again",
@@ -333,6 +347,14 @@ impl Line {
             Line::ImportDone { files, failed, changed, seconds } => {
                 vec![("files", files), ("failed", failed), ("changed", changed), ("seconds", seconds)]
             }
+            Line::HashesDone { files, stored, failed, unreadable, seconds } => vec![
+                ("files", files),
+                ("stored", stored),
+                ("failed", failed),
+                ("unreadable", unreadable),
+                ("seconds", seconds),
+            ],
+            Line::HashesOwed { count } => vec![("count", count)],
             Line::PairDone { files, pairs, seconds } => vec![("files", files), ("pairs", pairs), ("seconds", seconds)],
             Line::PairTimings { load, join, sort, scan, idle, paused, write, commit } => {
                 vec![
@@ -446,6 +468,8 @@ impl Line {
             Line::MarkedAgain { count: s() },
             Line::ImportPending { pending: s() },
             Line::ImportDone { files: s(), failed: s(), changed: s(), seconds: s() },
+            Line::HashesDone { files: s(), stored: s(), failed: s(), unreadable: s(), seconds: s() },
+            Line::HashesOwed { count: s() },
             Line::PairDone { files: s(), pairs: s(), seconds: s() },
             Line::PairTimings {
                 load: s(),

@@ -351,7 +351,7 @@ const DUPLICATES: &str = duplicates!();
 /// the owed files the pass can pair count (present, not pending), as in `Catalog::has_owed_pairs`. The subquery names
 /// nothing of the outer row, so it runs once per query: a walk of the queue, a lookup of each file.
 const NOT_DUPLICATES: &str = concat!(
-    "a.file_id IS NOT NULL AND NOT ",
+    "a.file_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM hashes_owed h WHERE h.file_id = a.file_id) AND NOT ",
     duplicates!(),
     " AND NOT EXISTS (SELECT 1 FROM pairs_owed owed CROSS JOIN files owed_file
         WHERE owed_file.id = owed.file_id AND owed_file.missing = 0 AND owed_file.pending = 0)"

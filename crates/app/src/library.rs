@@ -14,7 +14,8 @@ use pg_catalog::Root;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Change};
 use pg_library::folders::AddError;
-use pg_library::runner::{Generation, HeightCell, Runner};
+use pg_library::runner::{FeatureCell, Generation, HeightCell, Runner};
+use pg_model::features::Features;
 use pg_model::ids::{FileId, RootId};
 use pg_model::notice::{Notice, Trigger};
 use pg_model::progress::Progress;
@@ -92,12 +93,13 @@ impl Library {
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
         heights: HeightCell,
+        features: FeatureCell,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Library> {
         notices.resolve(Trigger::Status);
         let changes = Arc::new(Bus::new(256));
-        let runner =
-            Runner::start(catalog_path.clone(), thumbs, heights, changes.clone(), notices.clone()).map_err(failed)?;
+        let runner = Runner::start(catalog_path.clone(), thumbs, heights, features, changes.clone(), notices.clone())
+            .map_err(failed)?;
         let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone(), notices.clone()).map_err(failed)?;
         let slot = WriterSlot {
             writer,
@@ -237,6 +239,9 @@ pub struct LibraryService {
     inbox: Arc<Inbox>,
     /// The thumbnail height the grid asks for. Held from the start, so it may be set before the job starts.
     heights: HeightCell,
+    /// Which background work is on (the borders, the duplicates), from the preferences. Held from the start, as the
+    /// height is.
+    features: FeatureCell,
     /// The started job and writer; set once, by the first [`LibraryService::start`].
     cell: OnceLock<Library>,
 }
@@ -247,14 +252,29 @@ impl LibraryService {
         catalogs: Arc<Catalogs>,
         thumbs: &'static ThumbCache,
         inbox: Arc<Inbox>,
+        features: Features,
     ) -> LibraryService {
-        LibraryService { catalog_path, catalogs, thumbs, inbox, heights: HeightCell::default(), cell: OnceLock::new() }
+        LibraryService {
+            catalog_path,
+            catalogs,
+            thumbs,
+            inbox,
+            heights: HeightCell::default(),
+            features: FeatureCell::new(features),
+            cell: OnceLock::new(),
+        }
     }
 
-    /// The grid's thumbnail height: the thumbnails are made at it. Set before or after the job starts; a change stops
-    /// the pass in progress.
+    /// The grid's thumbnail height: the thumbnails are made at it. Set before or after the job starts; a change ends the
+    /// thumbnail pass in progress after its batch.
     pub fn set_thumb_height(&self, height: ThumbHeight) {
         self.heights.set(height);
+    }
+
+    /// Which background work is on: a change applies from the job's next batch (or round, for a pass not yet started).
+    /// Set before or after the job starts.
+    pub fn set_features(&self, features: Features) {
+        self.features.set(features);
     }
 
     /// The library, started on first use. Fails when a thread can't start; the next call tries again.
@@ -262,7 +282,13 @@ impl LibraryService {
         if let Some(library) = self.cell.get() {
             return Ok(library);
         }
-        let library = Library::start(self.catalog_path.clone(), self.thumbs, self.heights.clone(), self.inbox.clone())?;
+        let library = Library::start(
+            self.catalog_path.clone(),
+            self.thumbs,
+            self.heights.clone(),
+            self.features.clone(),
+            self.inbox.clone(),
+        )?;
         Ok(self.cell.get_or_init(|| library))
     }
 
@@ -402,7 +428,9 @@ mod tests {
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();
         heights.set(ThumbHeight::new(100).expect("a height in range"));
-        let library = Library::start(layout.catalog_path(), thumbs, heights, sink.clone()).unwrap();
+        let library =
+            Library::start(layout.catalog_path(), thumbs, heights, FeatureCell::new(Features::ALL), sink.clone())
+                .unwrap();
         (library, sink, dir)
     }
 
@@ -500,7 +528,9 @@ mod tests {
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();
         heights.set(ThumbHeight::new(100).expect("a height in range"));
-        let second = Library::start(layout.catalog_path(), thumbs, heights, sink.clone()).unwrap();
+        let second =
+            Library::start(layout.catalog_path(), thumbs, heights, FeatureCell::new(Features::ALL), sink.clone())
+                .unwrap();
         assert_eq!(sink.calls()[..1], ["resolve Status"]);
         assert!(!second.status().writer_stopped, "the new run's writer is not given up");
         assert!(!sink.calls().iter().any(|c| c == "post write-stopped"), "{:?}", sink.calls());

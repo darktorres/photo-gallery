@@ -10,7 +10,7 @@ use std::rc::Rc;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Statement, Transaction, params};
 
-use pg_model::analysis::Analysis;
+use pg_model::analysis::{Analysis, FileHash, ImageHashes};
 use pg_model::detection::Detection;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::notice::FilePass;
@@ -235,6 +235,13 @@ impl<'tx> ScanWriter<'tx> {
     }
 }
 
+/// The duplicate hashes the Hashes pass makes for a file the import stored without them (`hashes_owed`): an image's
+/// hashes, or a video's file hash (its only duplicate hash).
+pub enum OwedHashes {
+    Image(ImageHashes),
+    Video(FileHash),
+}
+
 /// The import's writes: analyses, failures, and the file ratings they carry. The pairs are the pairing pass's
 /// ([`PairsWriter`]); an analysis that owes them has a `pairs_owed` row.
 pub struct AnalysisWriter<'tx> {
@@ -247,6 +254,10 @@ pub struct AnalysisWriter<'tx> {
     borders_due: Statement<'tx>,
     delete_sides: Statement<'tx>,
     owe_pairs: Statement<'tx>,
+    owe_hashes: Statement<'tx>,
+    set_image_hashes: Statement<'tx>,
+    set_video_hash: Statement<'tx>,
+    clear_owed_hashes: Statement<'tx>,
     known_rating: Statement<'tx>,
     queued_rating: Statement<'tx>,
     set_rating: Statement<'tx>,
@@ -270,6 +281,13 @@ impl<'tx> AnalysisWriter<'tx> {
                          CASE WHEN ?16 THEN ?15 END, ?17, ?18, 0)",
             )?,
             owe_pairs: tx.prepare("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
+            owe_hashes: tx.prepare("INSERT OR IGNORE INTO hashes_owed(file_id) VALUES (?1)")?,
+            set_image_hashes: tx.prepare(
+                "UPDATE analysis SET file_hash = ?2, pixel_hash = ?3, pdq_dihedral = ?4, pdq_quality = ?5
+                 WHERE file_id = ?1",
+            )?,
+            set_video_hash: tx.prepare("UPDATE analysis SET file_hash = ?2 WHERE file_id = ?1")?,
+            clear_owed_hashes: tx.prepare("DELETE FROM hashes_owed WHERE file_id = ?1")?,
             failure: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     borders_due)
@@ -316,21 +334,24 @@ impl<'tx> AnalysisWriter<'tx> {
             (Some(seconds), utc)
         });
         let (image, video) = (a.image(), a.video());
+        // The duplicate hashes, when they were computed: none when duplicates detection was off (the import then owes them).
+        let file_hash = a.file_hash().map(|h| h.0);
+        let pixels = image.and_then(|i| i.hashes.as_ref()).map(|h| &h.pixels);
         // A picture of a reliable quality owes its pairs (what the pass pairs, `pairs.rs`).
-        let owes_pairs = image.is_some_and(|i| i.pixels.pdq.quality >= pg_model::pdq::MIN_QUALITY);
+        let owes_pairs = pixels.is_some_and(|p| p.pdq.quality >= pg_model::pdq::MIN_QUALITY);
         self.analysis.execute(params![
             item.id.get(),
             a.version,
             item.size,
             item.mtime,
-            &a.file_hash.0[..],
-            image.map(|i| &i.pixels.pixel_hash[..]),
+            file_hash.as_ref().map(|h| &h[..]),
+            pixels.map(|p| &p.pixel_hash[..]),
             a.format(),
             a.orientation.get(),
             a.width,
             a.height,
-            image.map(|i| pg_model::pdq::to_blob(&i.pixels.pdq.orientations)),
-            image.map(|i| i.pixels.pdq.quality),
+            pixels.map(|p| pg_model::pdq::to_blob(&p.pdq.orientations)),
+            pixels.map(|p| p.pdq.quality),
             a.thumbhash.as_slice(),
             a.frames,
             taken,
@@ -343,10 +364,43 @@ impl<'tx> AnalysisWriter<'tx> {
         if owes_pairs {
             self.owe_pairs.execute([item.id.get()])?;
         }
+        // Stored without its duplicate hashes (duplicates detection was off): the Hashes pass makes them.
+        if !a.hashed() {
+            self.owe_hashes.execute([item.id.get()])?;
+        }
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id.get()])?;
         self.delete_sides.execute([item.id.get()])?;
         self.sync_file_rating(item.id, image.and_then(|i| i.file_rating))?;
+        Ok(true)
+    }
+
+    /// Store the duplicate hashes of an analysis the import stored without them (`hashes_owed`), and the pairs they owe
+    /// (`pairs_owed`, for a picture of a reliable quality), unless the file changed since it was listed (see `current`).
+    /// Whether it was stored. The owed row is cleared with the hashes; no pairs existed for the file (they need hashes).
+    pub fn store_hashes(&mut self, item: &WorkItem, hashes: &OwedHashes) -> Result<bool> {
+        if !self.current(item)? {
+            return Ok(false);
+        }
+        let id = item.id.get();
+        match hashes {
+            OwedHashes::Image(h) => {
+                self.set_image_hashes.execute(params![
+                    id,
+                    &h.file.0[..],
+                    &h.pixels.pixel_hash[..],
+                    pg_model::pdq::to_blob(&h.pixels.pdq.orientations),
+                    h.pixels.pdq.quality,
+                ])?;
+                if h.pixels.pdq.quality >= pg_model::pdq::MIN_QUALITY {
+                    self.owe_pairs.execute([id])?;
+                }
+            }
+            OwedHashes::Video(file) => {
+                self.set_video_hash.execute(params![id, &file.0[..]])?;
+            }
+        }
+        self.clear_owed_hashes.execute([id])?;
         Ok(true)
     }
 
@@ -689,7 +743,7 @@ mod tests {
     use crate::test_support::*;
     use crate::{Catalog, PairingWork, PairsBatch, PairsWritten, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
-    use pg_model::analysis::{Analysis, FileHash, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
+    use pg_model::analysis::{Analysis, FileHash, ImageFacts, ImageHashes, Media, PixelHashes, Taken, ThumbHash};
     use pg_model::detection::Detection;
     use pg_model::format::Format;
     use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
@@ -949,7 +1003,6 @@ mod tests {
         };
         let analysis = Analysis {
             version: IMPORT_VERSION,
-            file_hash: pg_model::analysis::FileHash([1; 32]),
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
@@ -1041,7 +1094,6 @@ mod tests {
         let item = next_work(&c);
         let analysis = Analysis {
             version: IMPORT_VERSION,
-            file_hash: pg_model::analysis::FileHash([1; 32]),
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
@@ -1139,14 +1191,13 @@ mod tests {
             let (width, height) = if Orientation::from_tag(orientation).swaps_axes() { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
                 version: IMPORT_VERSION,
-                file_hash: pg_model::analysis::FileHash([u8::try_from(n).unwrap(); 32]),
                 orientation: Orientation::from_tag(orientation),
                 width,
                 height,
                 thumbhash: ThumbHash::default(),
                 frames: 1,
                 taken: None,
-                media: a_jpeg(),
+                media: a_jpeg_with_file([u8::try_from(n).unwrap(); 32]),
             };
             let tx = c.tx().unwrap();
             tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
@@ -1218,16 +1269,16 @@ mod tests {
         let pdq =
             pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash(hash); pg_model::pdq::ORIENTATIONS], quality };
         let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
+        let hashes = Some(ImageHashes { file: FileHash([1; 32]), pixels });
         Analysis {
             version: IMPORT_VERSION,
-            file_hash: FileHash([1; 32]),
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
             thumbhash: ThumbHash::default(),
             frames: 1,
             taken: None,
-            media: Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels }),
+            media: Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, hashes }),
         }
     }
 

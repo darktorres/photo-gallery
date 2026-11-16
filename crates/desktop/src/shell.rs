@@ -145,7 +145,7 @@ impl qobject::Shell {
         self.dispatch(Event::CurrentChanged(usize::try_from(index).ok()));
     }
 
-    pub(crate) fn key_pressed(self: Pin<&mut Self>, key: i32, modifiers: i32) -> bool {
+    pub(crate) fn key_pressed(mut self: Pin<&mut Self>, key: i32, modifiers: i32) -> bool {
         // While the viewer is open, its keys are its own: the grid leaves them.
         if controller::with(|c| c.panels().viewer_open()) {
             return false;
@@ -154,8 +154,18 @@ impl qobject::Shell {
         let Some(grid) = keymap::grid_key(key, modifiers, has_current) else {
             return false;
         };
+        // Border detection off: B and N do nothing, and the window says why (the borders' popup).
+        if matches!(grid, pg_client::keys::Grid::Borders | pg_client::keys::Grid::MarkBorder) && !self.borders_on() {
+            self.as_mut().borders_refused();
+            return true;
+        }
         self.dispatch(Event::Key(grid));
         true
+    }
+
+    /// Whether border detection is on (the preferences'): the window's borders controls act only then.
+    pub(crate) fn borders_on(&self) -> bool {
+        app::get().prefs().get().detect_borders
     }
 
     pub(crate) fn viewer_step(&self, from: i32, d: i32) -> i32 {
@@ -357,10 +367,15 @@ impl qobject::Shell {
         self.dispatch(Event::Listing(ListingEvent::FailedImports));
     }
 
-    pub(crate) fn apply_view(self: Pin<&mut Self>, name: &QString) -> bool {
+    pub(crate) fn apply_view(mut self: Pin<&mut Self>, name: &QString) -> bool {
         let Some(v) = app::get().views().view(&name.to_string()).ok().flatten() else {
             return false;
         };
+        // A view that uses borders is not applied as a whole while border detection is off: nothing of it is shown.
+        if !self.borders_on() && pg_client::features::uses_borders(&v.listing) {
+            self.as_mut().options_refused();
+            return false;
+        }
         self.dispatch(Event::Listing(ListingEvent::ViewApplied(v)));
         true
     }

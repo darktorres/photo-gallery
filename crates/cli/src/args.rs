@@ -84,6 +84,16 @@ pub(crate) enum Command {
         /// Leave the duplicates unpaired: `pair` does it later (until then "No duplicates" stays empty).
         #[arg(long)]
         no_pair: bool,
+        /// Analyze without the duplicate hashes, and so without pairing: `hash` makes them later. The app's Library
+        /// panel has the same choice ("Find duplicates in the background").
+        #[arg(long)]
+        no_dups: bool,
+    },
+    /// Make the duplicate hashes the import left out (`import --no-dups`), in the files the library holds. `pair` pairs
+    /// them; the app does both in the background.
+    Hash {
+        #[command(flatten)]
+        pipeline: PipelineArgs,
     },
     /// Pair the duplicates: every picture owed its pairs (the import leaves them owed) against every picture hashed. The
     /// import does it too, unless --no-pair; the app does it in the background.

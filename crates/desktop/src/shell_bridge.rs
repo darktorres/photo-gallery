@@ -69,6 +69,16 @@ pub mod qobject {
         #[qsignal]
         fn started(self: Pin<&mut Shell>);
 
+        /// A borders control was used while border detection is off: nothing is done, and the window says why.
+        #[qsignal]
+        #[cxx_name = "bordersRefused"]
+        fn borders_refused(self: Pin<&mut Shell>);
+
+        /// A view that uses borders was chosen while border detection is off: it is not applied, and the window says why.
+        #[qsignal]
+        #[cxx_name = "optionsRefused"]
+        fn options_refused(self: Pin<&mut Shell>);
+
         /// The current item changed (-1: none).
         #[qinvokable]
         #[cxx_name = "currentChanged"]

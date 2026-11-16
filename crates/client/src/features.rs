@@ -1,14 +1,17 @@
 //! Border detection's gate, as data: what a listing uses from it, and the listing without it. The desktop asks these
 //! where it reads the preferences (`Prefs::features`); the controller and the keys stay pure.
 
-use pg_model::query::SortKey;
+use pg_model::query::{Query, Sort, SortKey};
 use pg_model::view::Listing;
 
-/// Whether a listing uses border detection: a border facet, the review of the borders, or the sort by border depth.
+/// Whether a query and a sort use border detection: a border facet, the review of the borders, or the sort by border depth.
+pub fn uses_borders_in(query: &Query, sort: &Sort) -> bool {
+    !query.borders.is_empty() || query.border_marked.is_some() || matches!(sort.key, SortKey::Borders)
+}
+
+/// Whether a listing uses border detection (see [`uses_borders_in`]).
 pub fn uses_borders(listing: &Listing) -> bool {
-    !listing.query.borders.is_empty()
-        || listing.query.border_marked.is_some()
-        || matches!(listing.sort.key, SortKey::Borders)
+    uses_borders_in(&listing.query, &listing.sort)
 }
 
 /// The listing without what border detection gives: its border facets and review are dropped, and a sort by border depth
@@ -44,5 +47,14 @@ mod tests {
         let plain = Listing::default();
         assert!(!uses_borders(&plain));
         assert!(matches!(without_borders(plain).sort.key, SortKey::Name));
+    }
+
+    #[test]
+    fn a_border_facet_or_review_is_a_border_use_and_the_name_sort_is_not() {
+        let facet = Query { borders: vec![pg_model::query::BorderFacet::Black], ..Query::default() };
+        assert!(uses_borders_in(&facet, &Sort::default()));
+        let review = Query { border_marked: Some(true), ..Query::default() };
+        assert!(uses_borders_in(&review, &Sort::default()));
+        assert!(!uses_borders_in(&Query::default(), &Sort::default()));
     }
 }

@@ -336,7 +336,9 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   frame count (from the GIF, APNG or WebP container) and the date taken (EXIF DateTimeOriginal, else XMP). Each new
   PDQ hash is stored with its 8 orientations, and a picture of reliable quality owes its tier-1 pairs
   (a row of `pairs_owed`): the pairing pass after the import finds them (d ≤ 31), so the import only hashes
-  and stores. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
+  and stores. With duplicates detection off (the Library panel, or `gallery import --no-dups`) the import stores no
+  hashes: the file owes them (a row of `hashes_owed`), and the Hashes pass makes them later, from the same decode, with
+  the same values, before the pairing pass pairs them. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
   creation date come from the container: the rotation matrix, and Apple's local creation date before the UTC
   `creation_time`. Its ThumbHash comes from the poster frame, at 10% of the duration (at most 10 s). Videos get
   no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
@@ -371,7 +373,8 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 - **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, which is not in this repo; BORDERS.md
   "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
   the stored pixels at full size.
-  A pass of its own after the import (`gallery borders`, or the background job before the thumbnails) reads and
+  A pass of its own after the import (`gallery borders`, or the background job after the thumbnails, the hashes and the
+  pairs; with border detection off in the Library panel the pass does not run and the files stay due) reads and
   decodes each still image the import analyzed at full size: the import's decode is reduced, and the detector
   is calibrated on every pixel. The import marks the file due (`analysis.borders_due`); a re-analysis drops its
   old borders. Every side found is kept (`border_sides`), the rejected candidates too with why; the cut is in

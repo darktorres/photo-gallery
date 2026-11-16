@@ -8,6 +8,7 @@ use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::features::Hashing;
+use pg_model::notice::FilePass;
 use pg_platform::priority::Priority;
 
 /// A run folder with `images/a.png` and `images/b.png` (the same textured picture) and `images/c.png` (another one),
@@ -60,4 +61,22 @@ fn the_hashes_pass_makes_what_an_import_with_them_would_have() {
     let pairs = state::pairs(&with).unwrap();
     assert!(!pairs.is_empty(), "the same picture twice is a pair");
     assert_eq!(state::pairs(&without).unwrap(), pairs);
+}
+
+/// A file the hashes can't be read from stays owed, and is said (`unreadable`), not recorded in the failures; a file that
+/// is read but isn't a picture becomes an import failure at once, and its owed row goes with it.
+#[test]
+fn an_unreadable_file_stays_owed_and_an_undecodable_one_fails_at_once() {
+    let (mut c, ctl, dir) = scanned("failures");
+    pg_import::import_while(&mut c, &opts(), Hashing::Skip, false, &|| true, &ctl).unwrap();
+    // a.png is gone from the disk (the catalog does not know yet): it can't be read, so it stays owed.
+    std::fs::remove_file(dir.join("images").join("a.png")).unwrap();
+    // b.png is read, but it is no picture: its hashes fail, and it is an import failure at once.
+    std::fs::write(dir.join("images").join("b.png"), b"not a picture").unwrap();
+    let stats = pg_import::hashes::hash(&mut c, &opts(), &|| true, &ctl).unwrap();
+    // `failed` counts the unreadable file too (`Stats`: `unreadable` is the part of `failed` that couldn't be read).
+    assert_eq!((stats.stored, stats.unreadable, stats.failed), (1, 1, 2));
+    assert_eq!(c.owed_hashes().unwrap(), 1, "only the unreadable file is owed");
+    let failures = c.failed_files(FilePass::Import, 10).unwrap();
+    assert_eq!(failures.len(), 1, "the undecodable file is an import failure; the unreadable one is in no ledger");
 }

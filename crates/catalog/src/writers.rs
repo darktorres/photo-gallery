@@ -1517,6 +1517,37 @@ mod tests {
         the_pairing_epoch_moves_with_what_the_pairs_are_made_from_posix
     );
 
+    /// The hashes an analysis stored without them gets (`store_hashes`) move the pairing epoch: a picture hashed now is one
+    /// the pairs must see. Stored again with the same values, they move nothing.
+    fn the_hashes_stored_later_move_the_pairing_epoch(rules: PathRules) {
+        let mut c = pictures(rules, 1);
+        let mut unhashed = picture([7; 32], 100);
+        if let Media::Image(facts) = &mut unhashed.media {
+            facts.hashes = None;
+        }
+        store_for(&mut c, 1, &unhashed);
+        assert_eq!(c.owed_hashes().unwrap(), 1, "stored without its hashes, it owes them");
+        let hashes = || match picture([7; 32], 100).media {
+            Media::Image(facts) => crate::OwedHashes::Image(facts.hashes.expect("a picture with hashes")),
+            _ => unreachable!("a picture is an image"),
+        };
+        let stored = |c: &mut Catalog| {
+            let item = item_of(c, 1);
+            let tx = c.tx().unwrap();
+            assert!(tx.analysis_writer(versions().import).unwrap().store_hashes(&item, &hashes()).unwrap());
+            tx.commit().unwrap();
+        };
+        assert!(moves(&mut c, &stored));
+        assert_eq!(c.owed_hashes().unwrap(), 0);
+        assert!(!moves(&mut c, &stored));
+    }
+
+    under_both_rules!(
+        the_hashes_stored_later_move_the_pairing_epoch,
+        the_hashes_stored_later_move_the_pairing_epoch_windows,
+        the_hashes_stored_later_move_the_pairing_epoch_posix
+    );
+
     /// A small deterministic generator for the differential test (SplitMix64).
     struct Mix(u64);
 

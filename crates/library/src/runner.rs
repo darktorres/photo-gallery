@@ -838,6 +838,15 @@ mod tests {
     /// A library folder `images` in a run folder, holding `names` (small PNGs), scanned and imported into the catalog
     /// beside it: the run folder, the catalog's path, and the library folder.
     fn library(prefix: &str, names: &[&str]) -> (PathBuf, PathBuf, RulePath) {
+        library_with(prefix, names, pg_model::features::Hashing::Compute)
+    }
+
+    /// [`library`], importing with `hashing` (`Skip` leaves the duplicate hashes owed).
+    fn library_with(
+        prefix: &str,
+        names: &[&str],
+        hashing: pg_model::features::Hashing,
+    ) -> (PathBuf, PathBuf, RulePath) {
         let dir = pg_testkit::run_folder_with("scratch_runner", prefix, &["images"]).unwrap();
         for name in names {
             std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
@@ -847,8 +856,32 @@ mod tests {
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         assert!(c.add_root(&root).unwrap());
         pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
-        pg_import::import(&mut c, &Options::new(Priority::Normal), false, &Control::new()).unwrap();
+        pg_import::import_while(&mut c, &Options::new(Priority::Normal), hashing, false, &|| true, &Control::new())
+            .unwrap();
         (dir, catalog_path, root)
+    }
+
+    /// With a feature off, its passes do nothing and what they owe stays owed: the Hashes and Pairing passes while
+    /// duplicates is off, the Borders pass while borders is off. Turned back on, the Hashes pass makes the hashes owed.
+    #[test]
+    fn a_pass_whose_feature_is_off_does_nothing_and_its_work_stays_owed() {
+        let (dir, catalog_path, _root) = library_with("runner-off", &["a.png"], pg_model::features::Hashing::Skip);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        inner.features.set(Features { borders: false, duplicates: false });
+        let due = pg_catalog::fixture::state::borders_due(&Catalog::open(&catalog_path, PATH_RULES).unwrap(), "a.png")
+            .unwrap();
+        assert_eq!(run(&mut Hashes, &inner), Step::Done);
+        assert_eq!(run(&mut Pairing, &inner), Step::Done);
+        assert_eq!(run(&mut Borders, &inner), Step::Done);
+        let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        assert_eq!(c.owed_hashes().unwrap(), 1, "the hashes stay owed while duplicates is off");
+        assert_eq!(pg_catalog::fixture::state::borders_due(&c, "a.png").unwrap(), due, "the borders are not touched");
+
+        inner.features.set(Features { borders: false, duplicates: true });
+        assert_eq!(run(&mut Hashes, &inner), Step::Done);
+        assert_eq!(c.owed_hashes().unwrap(), 0, "turned on, the pass makes them");
     }
 
     /// The thumbnail cache beside the catalog, holding at most `cap` bytes (`None`: the default), leaked as the job's

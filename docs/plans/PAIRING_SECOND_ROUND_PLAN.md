@@ -1,5 +1,9 @@
 # Plan: the pairing pass, second round
 
+> Note 2026-11-16 (commit aeb7d2c): the round order is now `Crops, Cuts, Scans, Import, Thumbs, Hashes, Pairing, Borders`,
+> so the pairing pass runs after the thumbnails. A grid zoom no longer stops the round; the Pairing pass is gated only at its
+> start, because its join is not interruptible by a toggle.
+
 ## Status (2026-11-16)
 
 The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round works on P-13 in

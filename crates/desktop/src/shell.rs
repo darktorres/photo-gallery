@@ -367,6 +367,11 @@ impl qobject::Shell {
         self.dispatch(Event::Listing(ListingEvent::FailedImports));
     }
 
+    /// Border detection was turned off: the listing is rid of what it gives (its border facets, the sort by border depth).
+    pub(crate) fn borders_turned_off(self: Pin<&mut Self>) {
+        self.dispatch(Event::Listing(ListingEvent::BordersTurnedOff));
+    }
+
     pub(crate) fn apply_view(mut self: Pin<&mut Self>, name: &QString) -> bool {
         let Some(v) = app::get().views().view(&name.to_string()).ok().flatten() else {
             return false;
@@ -453,7 +458,16 @@ impl qobject::Shell {
                     }
                 });
             }
-            Command::Started => self.as_mut().later(|shell| shell.started()),
+            Command::Started => {
+                // The start left out what it was given for border detection: said first, once the window is up.
+                let refused = controller::options_refused();
+                self.as_mut().later(move |mut shell| {
+                    if refused {
+                        shell.as_mut().options_refused();
+                    }
+                    shell.started();
+                });
+            }
             // The neighbour is the grid's (its layout is the model's). It is found and set on the model's lane, so a
             // step queued behind this one starts from it; only the scroll goes back to the shell.
             Command::Step { dx, dy } => {

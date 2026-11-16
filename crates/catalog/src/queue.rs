@@ -418,6 +418,34 @@ mod tests {
         assert!(c.next_write(0).unwrap().is_none());
     }
 
+    /// A file rewritten in place whose analysis is owed its duplicate hashes (`hashes_owed`) takes its new size and mtime,
+    /// and no file hash: a hash alone would make the analysis look hashed while its pixel hashes are missing.
+    #[test]
+    fn a_rewrite_of_an_unhashed_file_follows_its_size_and_takes_no_hash() {
+        let c = library(PathRules::Windows);
+        // The analysis was made from the file as it was before the write: its size and mtime are the rewrite's `before`.
+        c.conn
+            .execute(
+                "UPDATE analysis SET file_hash = NULL, pixel_hash = NULL, size = 10, mtime = 1 WHERE file_id = 1",
+                [],
+            )
+            .unwrap();
+        c.conn.execute("INSERT INTO hashes_owed(file_id) VALUES (1)", []).unwrap();
+        c.set_rating(FileId::new(1), Rating::new(3), true).unwrap();
+        let job = c.next_write(0).unwrap().unwrap();
+        let after = (11, 101);
+        let rewrite =
+            Rewrite { before: Some((10, 1)), after, metadata_only: Some(pg_model::analysis::FileHash([7; 32])) };
+        c.write_done(&job, WriteEffect::FileRating { rewrite, rating: Rating::new(3).unwrap() }).unwrap();
+        assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
+        let (size, file_hash): (i64, Option<Vec<u8>>) = c
+            .conn
+            .query_row("SELECT size, file_hash FROM analysis WHERE file_id = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((size, file_hash), (11, None));
+        assert_eq!(c.owed_hashes().unwrap(), 1, "still owed: the Hashes pass makes them from the file as it is");
+    }
+
     #[test]
     fn a_failure_waits_longer_and_an_offline_drive_does_not_count() {
         let c = library(PathRules::Windows);

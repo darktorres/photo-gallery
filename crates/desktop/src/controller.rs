@@ -16,15 +16,18 @@ use pg_app::Prefs;
 use pg_client::controller::replay::{self, Record};
 use pg_client::controller::{Command, Controller, Event, Start};
 use pg_client::facets::Counts;
+use pg_model::query::{Query, Sort};
 use pg_model::view::{Listing, SavedView};
 
 use crate::{app, command_line, deadline};
 
-/// The controller, the filter bar's counts, and the recorder (`None` unless `PG_RECORD` names a file).
+/// The controller, the filter bar's counts, the recorder (`None` unless `PG_RECORD` names a file), and whether the start
+/// left out what it was given for border detection (`start_refused`).
 struct Core {
     controller: Controller,
     counts: Counts,
     recorder: Option<std::fs::File>,
+    options_refused: bool,
 }
 
 thread_local! {
@@ -52,6 +55,7 @@ impl Core {
             app::post(pg_model::notice::Notice::SessionNotRead { error: app::error_text(&e) });
             Listing::default()
         });
+        let options_refused = start_refused(&app::get().prefs().get(), &options, applied.as_ref());
         let start = start_state(&app::get().prefs().get(), &options, session, applied);
         let controller = Controller::new(start);
         let recorder = std::env::var_os("PG_RECORD").and_then(|path| match std::fs::File::create(&path) {
@@ -61,7 +65,7 @@ impl Core {
                 None
             }
         });
-        let mut core = Core { controller, counts: Counts::default(), recorder };
+        let mut core = Core { controller, counts: Counts::default(), recorder, options_refused };
         let init = replay::init(&core.controller);
         core.write(&init);
         core
@@ -101,13 +105,16 @@ pub(crate) fn start_state(
     if let Some(sort) = options.sort {
         listing.sort = sort;
     }
+    let features = prefs.features();
+    // A saved view that uses borders is not applied while border detection is off (`start_refused` says so).
+    let applied = applied.filter(|view| features.borders || !pg_client::features::uses_borders(&view.listing));
     let apply_view = applied.is_some();
     if let Some(view) = applied {
         listing = view.listing;
     }
     // With border detection off, the listing starts without what it would give (its border facets, the sort by border
-    // depth), and the borders are not shown: nothing is left behind a control that does nothing.
-    let features = prefs.features();
+    // depth), and the borders are not shown: nothing is left behind a control that does nothing. The session's own
+    // borders go silently; the options' are said (`start_refused`).
     if !features.borders {
         listing = pg_client::features::without_borders(listing);
     }
@@ -121,6 +128,18 @@ pub(crate) fn start_state(
         last_file: prefs.last_file,
         apply_view,
     }
+}
+
+/// Whether a start left out something it was given because border detection is off: an option's border query or sort, or
+/// a saved view that uses borders (`start_state` keeps the view out). The window says so once the start is over.
+pub(crate) fn start_refused(prefs: &Prefs, options: &command_line::StartOptions, applied: Option<&SavedView>) -> bool {
+    if prefs.features().borders {
+        return false;
+    }
+    let by_query = options.query.as_ref().is_some_and(|q| pg_client::features::uses_borders_in(q, &Sort::default()));
+    let by_sort = options.sort.as_ref().is_some_and(|s| pg_client::features::uses_borders_in(&Query::default(), s));
+    let by_view = applied.is_some_and(|view| pg_client::features::uses_borders(&view.listing));
+    by_query || by_sort || by_view
 }
 
 /// Report `event` at the current time, and return the commands it gives, in order. The caller carries them out after
@@ -144,6 +163,12 @@ pub(crate) fn with<T>(read: impl FnOnce(&Controller) -> T) -> T {
 }
 
 /// The listing as it is now.
+/// Whether the start left out what it was given because border detection is off (`start_refused`): the window says so
+/// once the start is over.
+pub(crate) fn options_refused() -> bool {
+    CORE.with(|core| core.borrow().options_refused)
+}
+
 pub(crate) fn listing() -> Listing {
     with(|c| c.listing().clone())
 }
@@ -247,5 +272,44 @@ mod tests {
         let view = SavedView { name: "view".into(), listing: listing("view") };
         let start = start_state(&saved, &options(None, None, None), listing(""), Some(view));
         assert!(start.apply_view);
+    }
+
+    /// With border detection off, a saved view that uses borders is left out and an option's border sort is said; the
+    /// session's own borders are dropped without a word, and nothing is refused for a listing that uses none.
+    #[test]
+    fn a_border_use_is_refused_when_borders_are_off_and_the_session_drops_it_silently() {
+        let mut off = prefs(row(220));
+        off.detect_borders = false;
+        let by_depth = Sort { key: pg_model::query::SortKey::Borders, descending: false };
+        let mut by_option = options(None, None, None);
+        by_option.sort = Some(by_depth);
+        let session = Listing { sort: by_depth, ..listing("session") };
+        let view = || SavedView {
+            name: "view".into(),
+            listing: Listing { query: Query { border_marked: Some(true), ..Query::default() }, ..listing("view") },
+        };
+
+        // The option's border sort is refused: the start shows the name order instead.
+        assert!(start_refused(&off, &by_option, None));
+        let start = start_state(&off, &by_option, session, None);
+        assert!(matches!(start.listing.sort.key, pg_model::query::SortKey::Name));
+        assert!(!start.apply_view);
+
+        // A saved view that uses borders is not applied at all, and is refused; the session's listing stays.
+        assert!(start_refused(&off, &options(None, None, None), Some(&view())));
+        let start = start_state(&off, &options(None, None, None), listing("session"), Some(view()));
+        assert!(!start.apply_view);
+        assert_eq!(start.listing.query.name, "session");
+
+        // The session's own border sort alone is dropped silently: nothing was given, so nothing is refused.
+        let session = Listing { sort: by_depth, ..listing("session") };
+        assert!(!start_refused(&off, &options(None, None, None), None));
+        assert!(matches!(
+            start_state(&off, &options(None, None, None), session, None).listing.sort.key,
+            pg_model::query::SortKey::Name
+        ));
+
+        // With borders on, nothing is refused.
+        assert!(!start_refused(&prefs(row(220)), &by_option, Some(&view())));
     }
 }

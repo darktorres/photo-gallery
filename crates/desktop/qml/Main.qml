@@ -662,6 +662,8 @@ ApplicationWindow {
                     }
                     onDetectBordersToggled: (on) => {
                         appSettings.detectBorders = on
+                        // Off: the listing drops what borders give, as it would have had them never been used.
+                        if (!on) shell.bordersTurnedOff()
                     }
                     onDetectDuplicatesToggled: (on) => {
                         appSettings.detectDuplicates = on
@@ -701,7 +703,7 @@ ApplicationWindow {
         Connections {
             target: shell
             function onBordersRefused() { featurePopup.show(words.text("ui-borders-disabled")) }
-            function onOptionsRefused() { featurePopup.show(words.text("ui-view-borders-disabled")) }
+            function onOptionsRefused() { featurePopup.show(words.text("ui-options-borders-disabled")) }
         }
 
         // Reverse image search for the viewer's photo (over the viewer, so it comes after it). Made with the first

@@ -1,5 +1,10 @@
 # Pairing pass plan: rebuilt for speed and memory
 
+> Note 2026-11-16 (commit aeb7d2c): the pairing pass does not run while duplicates detection is off (Library panel, or
+> `gallery import --no-dups`). Its owed pairs wait in `pairs_owed`. Files the import left without hashes owe them in
+> `hashes_owed`; the Hashes pass makes those hashes from the same decode, before the pairing pass, and the "not a duplicate"
+> view leaves owed files out.
+
 ## Status (2026-11-16)
 
 Blocks A - D are done: `d3d307a` (A and B), `b7d13a6` (C), `98c6973` (D). The second round,

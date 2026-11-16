@@ -33,6 +33,9 @@ pub enum Event {
     Reveal(Merged),
     /// Show the files the import failed on, in every folder (the inbox's "Show the failed files").
     FailedImports,
+    /// Border detection was turned off: the listing without what it gives (`features::without_borders`). Nothing changes
+    /// when the listing uses none.
+    BordersTurnedOff,
 }
 
 /// What follows a change.
@@ -63,6 +66,12 @@ pub fn update(listing: &mut Listing, event: Event) -> Vec<Command> {
             listing.folder = Merged::default();
             listing.recursive = true;
             listing.query = Query { status: vec![Status::Failed], ..Query::default() };
+        }
+        Event::BordersTurnedOff => {
+            if !crate::features::uses_borders(listing) {
+                return Vec::new();
+            }
+            *listing = crate::features::without_borders(listing.clone());
         }
     }
     vec![Command::OpenList, Command::SaveSession]

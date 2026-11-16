@@ -74,10 +74,15 @@ pub mod qobject {
         #[cxx_name = "bordersRefused"]
         fn borders_refused(self: Pin<&mut Shell>);
 
-        /// A view that uses borders was chosen while border detection is off: it is not applied, and the window says why.
+        /// A view or a start option that uses borders was left out while border detection is off, and the window says why.
         #[qsignal]
         #[cxx_name = "optionsRefused"]
         fn options_refused(self: Pin<&mut Shell>);
+
+        /// Border detection was turned off: the listing drops what it gives (its border facets, the sort by border depth).
+        #[qinvokable]
+        #[cxx_name = "bordersTurnedOff"]
+        fn borders_turned_off(self: Pin<&mut Shell>);
 
         /// The current item changed (-1: none).
         #[qinvokable]

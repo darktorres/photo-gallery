@@ -758,6 +758,25 @@ under_both_rules!(
     no_duplicates_waits_for_the_pairing_pass_posix
 );
 
+/// A picture whose duplicate hashes are owed (`hashes_owed`, stored while duplicates detection was off) is not "not a
+/// duplicate": it is not hashed yet, so the list would say what it does not know. It is listed once the hashes are made.
+fn owed_hashes_are_not_listed_as_not_duplicates(rules: PathRules) {
+    let c = mixed_library(rules);
+    let no_duplicates =
+        |c: &crate::Catalog| ids(c, "", true, &Query { duplicates: Some(false), ..Query::default() }, Sort::default());
+    assert_eq!(no_duplicates(&c), [6, 5]);
+    c.conn.execute("INSERT INTO hashes_owed(file_id) VALUES (5)", []).unwrap();
+    assert_eq!(no_duplicates(&c), [6], "an owed picture is not known to be unique");
+    c.conn.execute("DELETE FROM hashes_owed WHERE file_id = 5", []).unwrap();
+    assert_eq!(no_duplicates(&c), [6, 5]);
+}
+
+under_both_rules!(
+    owed_hashes_are_not_listed_as_not_duplicates,
+    owed_hashes_are_not_listed_as_not_duplicates_windows,
+    owed_hashes_are_not_listed_as_not_duplicates_posix
+);
+
 fn sorts_put_missing_values_last(rules: PathRules) {
     let c = mixed_library(rules);
     let all = Query::default();

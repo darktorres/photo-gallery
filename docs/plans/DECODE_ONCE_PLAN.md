@@ -265,6 +265,8 @@ Desktop: `crates/desktop/src/library.rs` `Changes` (`:41-50`) gains `counts: boo
 
 ### 2.9 Round order, height changes, and Thumbs errors
 
+> Superseded 2026-11-16 (commit aeb7d2c): the round is `Crops, Cuts, Scans, Import, Thumbs, Hashes, Pairing, Borders`. The three changes below are implemented as written, and the duplicate passes are now the Hashes pass and the Pairing pass, with borders last.
+
 Round order: `Crops, Scans, Import, Thumbs, Borders` (Phase 3 adds `Dups` last). Three changes make this order safe:
 
 - **A height change does not stop the round.** `HeightCell::set` (`runner.rs:64-76`) wakes the job and no longer stops it: the listener at `runner.rs:185-190` drops `request_stop` (`:187`) and keeps `service.wake()`. The wake is sticky (`crates/jobs/src/service.rs:65, :98-100`), so the job runs another round after the current one. Without this, every zoom step restarts the round from Import, and each height's full Thumbs pass gates Borders (`reader.rs:37` lists the whole catalog when no `checked` row exists for the height).
@@ -514,7 +516,7 @@ It returns `Ok(rows == 1)`. `owed` is `true` when duplicate detection is off.
 
 - **Location: a module of `pg-import`**, `crates/import/src/duplicates.rs`, exposed as `pg_import::duplicates`. The Dups pass shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs (`analysis`, `catalog`, `dedup`, `jobs`, `model`, `platform`). So no new crate, no new layer line and no manifest change. The name `pg-duplicates` is dropped.
 - **Names.** The pass is `Dups` (`Phase::Dups` in `model/src/progress.rs`; the words `pass-dups` in `text.ftl`, read through `pg_client::text::pass_name`; `Message::PassDups` in `client/src/text/message.rs`). Its ledger code is `FilePass::Duplicates` (`model/src/notice.rs:281-288`). `file_failures.pass` has no `CHECK` (`schema.rs:114` is only a comment, and it is stale: it lists 'thumbs' and 'borders' alone), so the duplicates pass needs only its Rust code. The old migration's comment is left as it is.
-- **Round order:** `Crops, Scans, Import, Thumbs, Borders, Dups`. Dups runs last and is reached on every round, because Thumbs no longer stops a round (2.9). Priority `BelowNormal` (5.10).
+- **Round order:** `Crops, Scans, Import, Thumbs, Borders, Dups`. Dups runs last and is reached on every round, because Thumbs no longer stops a round (2.9). Priority `BelowNormal` (5.10). Superseded 2026-11-16 (commit aeb7d2c): the order is `Crops, Cuts, Scans, Import, Thumbs, Hashes, Pairing, Borders`; Hashes and Pairing are skipped while duplicates detection is off, and Borders while border detection is off.
 
 **Worklists** (`crates/catalog/src/work.rs`, beside `pending_borders`, `:84-99`). Both are over `analysis a JOIN files f` with `a.dups_state = 'due' AND f.missing = 0 AND f.pending = 0`, in the order of the other passes (`ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF`):
 

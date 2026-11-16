@@ -152,8 +152,9 @@ def main() -> None:
         elif a.rule == "no-loss":
             kept, verdict = lo <= 0, "kept" if lo <= 0 else "proven loss"
         else:
-            kept = hi <= bound
-            verdict = "kept" if kept else "proven loss" if lo > 0 else f"no verdict (could be over +{100 * a.margin:g}%)"
+            # A proven loss first: an interval wholly above zero can still lie under the margin.
+            kept = lo <= 0 and hi <= bound
+            verdict = "proven loss" if lo > 0 else "kept" if kept else f"no verdict (could be over +{100 * a.margin:g}%)"
         verdict = "real gain" if gain else verdict
         verdicts.append(kept)
         estimates.append(est)

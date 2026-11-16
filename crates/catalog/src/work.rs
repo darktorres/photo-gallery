@@ -114,54 +114,108 @@ pub(crate) fn pairing_marks(conn: &Connection) -> Result<PairingMarks> {
     Ok(stmt.query_row([], |r| Ok(PairingMarks { version: r.get(0)?, epoch: r.get(1)? }))?)
 }
 
-/// The statement [`Catalog::pairing_work`] reads: the analysis of a reliable quality of every file with an identity, by
-/// file id, with whether it owes its pairs and its file is present and not pending ([`OWED`]'s rule), and whether that
-/// file is present and not pending (for the legacy count). `analysis` is the outer loop (`CROSS JOIN`), read in its own
-/// rowid order, so the `ORDER BY` costs no sort; each file is a lookup by key, and so is the `pairs_owed` row. The rows
-/// without stored hashes are the legacy ones, counted in the same scan.
+/// What [`Catalog::pairing_work`] reads: the analyses of a reliable quality, scanned in file-id order (`analysis`'s rowid
+/// order, so the `ORDER BY` costs no sort). Which of them are pictures, and which owe their pairs, comes from four id
+/// sets read before it in the same snapshot, each from an index alone ([`WITH_IDENTITY`], [`PRESENT`],
+/// [`PRESENT_PENDING`], [`OWED_IDS`]), and walked beside the scan: no lookup per row. A row with no stored hashes is a
+/// legacy one, counted in the same scan.
 ///
-/// A pair is a fact about two stored analyses, so a missing or pending file's analysis is a partner like any other: a
-/// picture paired while its partner's file was away is never owed again when the file comes back without a new
-/// analysis (a rescan that finds it, a rebind, a turn undone, an mtime put back, an older build's import version), and
-/// a pair the pass left out then would never be made. A pair with a missing file is hidden where pairs are shown
-/// (`present_pdq_pairs`), and every new analysis drops its file's pairs and owes them again. A displaced row (no
-/// identity, `volume IS NULL`) is left out: its analysis stays only until a replacement deletes it, its pairs could
-/// never be shown, and the file's new row would pair with it.
-const PAIRING_WORK: &str =
-    "SELECT a.file_id, o.file_id IS NOT NULL AND f.missing = 0 AND f.pending = 0, a.pdq_dihedral,
-         f.missing = 0 AND f.pending = 0, a.pdq_quality
-     FROM analysis a CROSS JOIN files f LEFT JOIN pairs_owed o ON o.file_id = a.file_id
-     WHERE f.id = a.file_id AND f.volume IS NOT NULL AND a.pdq_quality >= ?1
-     ORDER BY a.file_id";
+/// A picture is the analysis of a file with an identity. A pair is a fact about two stored analyses, so a missing or
+/// pending file's analysis is a partner like any other: a picture paired while its partner's file was away is never
+/// owed again when the file comes back without a new analysis (a rescan that finds it, a rebind, a turn undone, an
+/// mtime put back, an older build's import version), and a pair the pass left out then would never be made. A pair
+/// with a missing file is hidden where pairs are shown (`present_pdq_pairs`), and every new analysis drops its file's
+/// pairs and owes them again. A displaced row (no identity, `volume IS NULL`) is left out: its analysis stays only until
+/// a replacement deletes it, its pairs could never be shown, and the file's new row would pair with it. So is an
+/// analysis with no `files` row at all, which the foreign key's cascade leaves none of.
+const PICTURES: &str =
+    "SELECT file_id, pdq_dihedral, pdq_quality FROM analysis WHERE pdq_quality >= ?1 ORDER BY file_id";
+/// The files with an identity, from `UNIQUE(volume, file_ref)`'s index alone (NULLs sort first, so this is one range).
+pub(crate) const WITH_IDENTITY: &str = "SELECT id FROM files WHERE volume IS NOT NULL";
+/// The present files, and the present ones the import has yet to analyze: those of the first and not the second make
+/// their pairs ([`OWED`]'s rule), and only they count as legacy.
+pub(crate) const PRESENT: &str = "SELECT id FROM files INDEXED BY files_present WHERE missing = 0";
+pub(crate) const PRESENT_PENDING: &str =
+    "SELECT id FROM files INDEXED BY files_to_import WHERE missing = 0 AND pending = 1";
+/// The pictures that owe their pairs.
+const OWED_IDS: &str = "SELECT file_id FROM pairs_owed ORDER BY file_id";
+
+/// A set of file ids read by one statement, sorted: a sorted list rather than a bitmap, so a catalog's largest id does
+/// not size it.
+struct IdSet(Vec<i64>);
+
+impl IdSet {
+    fn read(tx: &Connection, sql: &str) -> Result<IdSet> {
+        let mut ids: Vec<i64> = tx.prepare(sql)?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        ids.sort_unstable();
+        Ok(IdSet(ids))
+    }
+
+    /// A walk of the set, asked about ids that never decrease.
+    fn walk(&self) -> IdWalk<'_> {
+        IdWalk { rest: &self.0 }
+    }
+}
+
+/// [`IdSet::walk`]: each question skips the ids below the one asked, so a walk beside a scan costs one step a member.
+struct IdWalk<'s> {
+    rest: &'s [i64],
+}
+
+impl IdWalk<'_> {
+    /// Whether `id` is in the set: `id` is at least every id asked before.
+    fn has(&mut self, id: i64) -> bool {
+        while let Some((&first, rest)) = self.rest.split_first()
+            && first < id
+        {
+            self.rest = rest;
+        }
+        self.rest.first() == Some(&id)
+    }
+}
 
 /// [`Catalog::pairing_work`], read on `conn` in one transaction (its one snapshot).
 fn pairing_work_on(conn: &Connection) -> Result<PairingWork> {
     let tx = conn.unchecked_transaction()?;
-    let bound: usize = tx.query_row("SELECT count(*) FROM analysis", [], |r| r.get(0))?;
+    let marks = pairing_marks(&tx)?;
+    let identity = IdSet::read(&tx, WITH_IDENTITY)?;
+    let present = IdSet::read(&tx, PRESENT)?;
+    let pending = IdSet::read(&tx, PRESENT_PENDING)?;
+    let owed = IdSet::read(&tx, OWED_IDS)?;
+    // Each picture is a file with an identity: the columns never grow.
+    let bound = identity.0.len();
     let mut work = PairingWork {
         ids: Vec::with_capacity(bound),
         owed: Vec::with_capacity(bound),
         hashes: Vec::with_capacity(bound),
         quality: Vec::with_capacity(bound),
         legacy: 0,
-        marks: pairing_marks(&tx)?,
+        marks,
     };
-    let mut stmt = tx.prepare(PAIRING_WORK)?;
+    let (mut identity, mut present, mut pending, mut owed) =
+        (identity.walk(), present.walk(), pending.walk(), owed.walk());
+    let mut stmt = tx.prepare(PICTURES)?;
     let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
     while let Some(r) = rows.next()? {
-        let id = FileId::new(r.get(0)?);
-        let Some(blob) = r.get_ref(2)?.as_blob_or_null()? else {
-            if r.get(3)? {
+        let raw: i64 = r.get(0)?;
+        if !identity.has(raw) {
+            continue;
+        }
+        let id = FileId::new(raw);
+        // Present and not pending: the pass can make its pairs.
+        let makes = present.has(raw) && !pending.has(raw);
+        let Some(blob) = r.get_ref(1)?.as_blob_or_null()? else {
+            if makes {
                 work.legacy += 1;
             }
             continue;
         };
         let hashes = pg_model::pdq::from_blob(blob)
-            .ok_or_else(|| Error::Other(anyhow!("file {} has malformed stored hashes", id.get())))?;
+            .ok_or_else(|| Error::Other(anyhow!("file {raw} has malformed stored hashes")))?;
         work.ids.push(id);
-        work.owed.push(r.get(1)?);
+        work.owed.push(owed.has(raw) && makes);
         work.hashes.push(hashes);
-        work.quality.push(r.get(4)?);
+        work.quality.push(r.get(2)?);
     }
     drop(rows);
     drop(stmt);
@@ -218,11 +272,11 @@ impl Catalog {
     }
 
     /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is an analysis with stored
-    /// hashes and a reliable quality, of a file with an identity (missing and pending ones too: `PAIRING_WORK` says
+    /// hashes and a reliable quality, of a file with an identity (missing and pending ones too: `PICTURES` says
     /// why). The owed ones the pass can make (a `pairs_owed` row, the file present and not pending) are among them,
     /// with the others (the stored side). One snapshot, because a file that changed between two reads could be owed a
-    /// pair that its partner's read never sees. The columns are sized from the analyses' count first, so they never
-    /// grow (an upper bound: every analysis), and each row's hashes are read from the blob in place. The pass reads it
+    /// pair that its partner's read never sees. The columns are sized from the files with an identity first, so they
+    /// never grow, and each row's hashes are read from the blob in place. The pass reads it
     /// on a [`Reader`](crate::Reader) of its own ([`Reader::pairing_work`](crate::Reader::pairing_work)).
     pub fn pairing_work(&self) -> Result<PairingWork> {
         pairing_work_on(&self.conn)

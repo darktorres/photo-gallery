@@ -1724,6 +1724,138 @@ mod tests {
         pairing_work_lists_the_hashed_files_with_an_identity_in_one_read_posix
     );
 
+    /// The load as it was before it read its id sets (the pairing plan's second round, step 8): one statement joining
+    /// each analysis to its file and its owed row. The load must read what this does.
+    const JOINED: &str = "SELECT a.file_id, o.file_id IS NOT NULL AND f.missing = 0 AND f.pending = 0, a.pdq_dihedral,
+             f.missing = 0 AND f.pending = 0, a.pdq_quality
+         FROM analysis a CROSS JOIN files f LEFT JOIN pairs_owed o ON o.file_id = a.file_id
+         WHERE f.id = a.file_id AND f.volume IS NOT NULL AND a.pdq_quality >= ?1
+         ORDER BY a.file_id";
+
+    /// The load's columns, its qualities and its legacy count.
+    type Loaded = (Vec<FileId>, Vec<bool>, Vec<[pg_model::pdq::Hash; 4]>, Vec<u8>, usize);
+
+    fn loaded(w: &PairingWork) -> Loaded {
+        (w.ids.clone(), w.owed.clone(), w.hashes.clone(), w.quality.clone(), w.legacy)
+    }
+
+    /// [`JOINED`]'s rows as the load makes its columns of them.
+    fn joined(c: &Catalog) -> Loaded {
+        let mut out: Loaded = Default::default();
+        let mut stmt = c.conn.prepare(JOINED).unwrap();
+        let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY]).unwrap();
+        while let Some(r) = rows.next().unwrap() {
+            let Some(blob) = r.get_ref(2).unwrap().as_blob_or_null().unwrap() else {
+                if r.get::<_, bool>(3).unwrap() {
+                    out.4 += 1;
+                }
+                continue;
+            };
+            out.0.push(FileId::new(r.get(0).unwrap()));
+            out.1.push(r.get(1).unwrap());
+            out.2.push(pg_model::pdq::from_blob(blob).unwrap());
+            out.3.push(r.get(4).unwrap());
+        }
+        out
+    }
+
+    /// Random catalogs: sparse ids and two far past the others (the id sets are sorted lists, sized by their rows and
+    /// not by the largest id); analyses that are pictures, below the quality, failures, legacy rows, or none; files
+    /// present, missing, pending (present or missing) or displaced; owed rows kept or not, some of them of analyses
+    /// that are no picture; and an analysis with no file at all (made with the foreign keys off), which neither
+    /// read includes.
+    fn the_load_reads_what_the_joined_statement_did(rules: PathRules) {
+        for seed in 0..32 {
+            let mut mix = Mix(seed);
+            let (mut c, first) = one_file(rules);
+            let mut ids = vec![first];
+            let mut next = first;
+            for _ in 0..40 {
+                next += 1 + i64::try_from(mix.below(4)).unwrap();
+                ids.push(next);
+            }
+            ids.extend([1 << 40, (1 << 62) + 3]);
+            for &id in ids.iter().skip(1) {
+                add_file(&c, id, "x.jpg");
+            }
+            for (k, &id) in ids.iter().enumerate() {
+                let hash = [u8::try_from(k % 250).unwrap() + 1; 32];
+                match mix.below(6) {
+                    0 | 1 => store_for(&mut c, id, &picture(hash, 100)),
+                    2 => store_for(&mut c, id, &picture(hash, pg_model::pdq::MIN_QUALITY - 1)),
+                    3 => {
+                        let item = item_of(&c, id);
+                        analyzed(&mut c, &item);
+                    }
+                    4 => {
+                        store_for(&mut c, id, &picture(hash, 100));
+                        c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL WHERE file_id = ?1", [id]).unwrap();
+                    }
+                    _ => {}
+                }
+                let state = match mix.below(6) {
+                    0 => Some("UPDATE files SET missing = 1 WHERE id = ?1"),
+                    1 => Some("UPDATE files SET pending = 1 WHERE id = ?1"),
+                    2 => Some("UPDATE files SET missing = 1, pending = 1 WHERE id = ?1"),
+                    3 => {
+                        Some("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")
+                    }
+                    _ => None,
+                };
+                if let Some(sql) = state {
+                    c.conn.execute(sql, [id]).unwrap();
+                }
+                let owed = if mix.below(3) == 0 {
+                    "DELETE FROM pairs_owed WHERE file_id = ?1"
+                } else {
+                    "INSERT OR IGNORE INTO pairs_owed(file_id) SELECT file_id FROM analysis WHERE file_id = ?1"
+                };
+                c.conn.execute(owed, [id]).unwrap();
+            }
+            c.conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+            c.conn
+                .execute(
+                    "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, pdq_quality, pdq_dihedral)
+                     VALUES (?1, 1, 10, 100, 0, 'image', 0, 100, zeroblob(128))",
+                    [next + 1],
+                )
+                .unwrap();
+            c.conn.execute("INSERT INTO pairs_owed(file_id) VALUES (?1)", [next + 1]).unwrap();
+            c.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+            let work = c.pairing_work().unwrap();
+            assert_eq!(loaded(&work), joined(&c), "seed {seed}");
+            assert!(!work.ids.contains(&FileId::new(next + 1)), "seed {seed}: an analysis with no file is no picture");
+        }
+    }
+
+    under_both_rules!(
+        the_load_reads_what_the_joined_statement_did,
+        the_load_reads_what_the_joined_statement_did_windows,
+        the_load_reads_what_the_joined_statement_did_posix
+    );
+
+    /// Each of the load's id sets is read from an index alone, never from `files`' rows.
+    #[test]
+    fn the_loads_id_sets_are_read_from_indexes_alone() {
+        let (c, _) = one_file(PathRules::Windows);
+        for sql in [crate::work::WITH_IDENTITY, crate::work::PRESENT, crate::work::PRESENT_PENDING] {
+            let plan: Vec<String> =
+                raw::rows_of(&c, &format!("EXPLAIN QUERY PLAN {sql}"), [], |r| r.get::<_, String>(3));
+            assert!(plan.len() == 1 && plan.iter().all(|p| p.contains("COVERING INDEX")), "{sql}: {plan:?}");
+        }
+    }
+
+    /// A picture whose stored hashes are not 4 orientations' (`pg_model::pdq::from_blob`) fails the load, naming the
+    /// file, rather than pairing what it can.
+    #[test]
+    fn a_malformed_blob_fails_the_load() {
+        let (mut c, id) = one_file(PathRules::Windows);
+        store_for(&mut c, id, &picture([1; 32], 100));
+        c.conn.execute("UPDATE analysis SET pdq_dihedral = zeroblob(100) WHERE file_id = ?1", [id]).unwrap();
+        let error = c.pairing_work().map(|_| ()).unwrap_err().to_string();
+        assert!(error.contains(&format!("file {id} has malformed stored hashes")), "{error}");
+    }
+
     fn set_rating(c: &Catalog, id: i64, n: u8) {
         let stars = Rating::new(n).filter(|r| r.get() > 0);
         c.set_rating(FileId::new(id), stars, false).unwrap();

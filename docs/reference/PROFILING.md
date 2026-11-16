@@ -1021,6 +1021,54 @@ alone with cycles level, kept when run again): no workload's time or cycles chan
   `#[inline(always)]`). Then freeing the 24 MB copy took 1.9 ms on the pass's thread, a proven +1.1% on a one-worker
   join for 300 owed, so it is freed on a thread of its own beside the first join.
 
+#### The load (pairing plan, second round, step 8)
+
+**Where it went.** `crates/catalog/examples/pairs_load_probe.rs` times the load's parts on a copy of the catalog with
+every picture owed, each on a fresh read-only connection with the pass's 16 MB cache, as `Catalog::reader` opens it
+(the pages come from the OS's file cache, as after an import). Medians of 6 runs; the probe is one thread, so its
+cycles are the load's:
+
+| Variant | Wall | Cycles | What |
+|---|---:|---:|---|
+| the load (`459c8e0`) | 211.9 ms | 674 M | open, `count(*)`, the joined statement, the hashes decoded and kept |
+| the connection opened and closed | 2.0 ms | 7 M | |
+| `count(*)` of `analysis` | 8.3 ms | 27 M | the columns' capacity |
+| the joined statement, stepped | 178.1 ms | 565 M | `analysis`, a `files` lookup and a `pairs_owed` lookup per row |
+| the same, every column read | 198.9 ms | 632 M | |
+| the same, every page cached first | 104.9 ms | 334 M | |
+| `analysis` alone, scanned | 93.8 ms | 298 M | |
+| `analysis` alone, cached | 43.0 ms | 137 M | |
+| the files with an identity | 21.6 ms | 69 M | `UNIQUE(volume, file_ref)`'s index alone |
+| the displaced, present, and present pending files | 17.1 ms | 54 M | three indexes alone |
+| `pairs_owed`, in order | 14.9 ms | 47 M | |
+
+- **The lookups cost about 85 ms** (the joined statement against `analysis` alone), and fetching pages is about half
+  of every statement (cached against not).
+- **The id sets read from indexes** cost less than the lookups they replace.
+
+**What was built.** The load reads four id sets first, each from an index alone (the files with an identity, the
+present files, the present pending ones, the owed pictures), sorted, and then scans `analysis` with the quality floor
+in file-id order, walking each set beside the scan. The sets are sorted lists, not bitmaps, so a catalog's largest
+id does not size them. The columns' capacity is the identity set's size, so `count(*)` goes. An analysis with no
+`files` row stays out, as the inner join left it (the identity set, not the displaced ids, is what keeps it out).
+
+The new load in the probe: **170.5 ms, 542 M cycles** (from 211.9 ms and 674 M). Kept (6 pairs against `459c8e0`; the
+join's gate on 300 owed at 12 workers, on the bound at first, kept when run again):
+
+| Workload | Load, ms (A → B) | Load | Pass |
+|---|---|---|---|
+| all owed, 1 worker | 208 → 168 | −19.23% [−22.22, −17.48] | −1.55% [−2.35, −1.00] |
+| all owed, 12 | 216 → 168 | −19.56% [−30.13, −2.37] | −2.73% [−9.67, +5.97] |
+| 300 owed, 1 | 220 → 154 | −28.65% [−39.84, −7.17] | −10.30% [−17.31, −3.26] |
+| 300 owed, 12 | 224 → 151 | −33.12% [−40.16, −26.15] | −22.97% [−28.16, −17.41] |
+| 3,000 owed, 1 | 227 → 152 | −35.04% [−43.77, −28.83] | −11.58% [−15.78, −6.12] |
+| 3,000 owed, 12 | 228 → 154 | −32.91% [−36.36, −29.60] | −18.41% [−21.48, +19.70] |
+| four slices, 12 | 210 → 166 | −20.57% [−22.54, −18.22] | −4.03% [−8.07, +3.39] |
+
+The oracle's pairs are identical on all seven paths. A differential test checks the load against the joined
+statement on random catalogs (sparse ids, two far past the others, every file state, owed rows of analyses that are no
+picture, an analysis with no file), and fails with either the identity or the pending check taken out.
+
 ---
 
 ## Where the other results are

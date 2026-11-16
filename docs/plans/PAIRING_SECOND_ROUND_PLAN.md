@@ -16,7 +16,8 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring) |
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
-| 8 - 10 | Not started |
+| 8, the load | The lookup-free load done; the parallel load next |
+| 9 - 10 | Not started |
 
 ## Context
 
@@ -572,6 +573,19 @@ so the epoch was built (migration 14). Departures:
   - `TRIGGER_TESTS`.
 
 ## Step 8: the load
+
+**Status: the lookup-free load done, kept** (6 pairs against `459c8e0`: load −19 to −35% on every workload, real
+gains; pass −1.55% on all owed at 1 worker, −10 to −23% on a few owed; `PROFILING.md`, "The load"). Item 1 found the
+lookups ~85 ms of the 212 ms load and fetching pages about half of every statement. Departures:
+
+- **The id sets are sorted lists, not bitmaps.** A bitmap sized by `max(id)` has no bound (one large id), and the
+  tests' sparse and large ids are what this item asked for; a sorted list's walk costs one step a member.
+- **The files with an identity, not the displaced ids,** are read (21.6 ms against ~0): "an analysis with no `files`
+  row stays excluded" needs the set of files that exist. The foreign key's cascade leaves no such row, so this costs
+  ~20 ms for a row the schema cannot hold; it is kept, as the item says.
+- **`count(*)` goes:** the identity set's size bounds the columns.
+- **Mixed snapshots and the epoch** (for item 3): a parallel load is safe only if the marks are read in a snapshot no
+  later than every range's, so a change after them moves the epoch and the writes guard.
 
 1. **Time its parts first,** with cycle samples on the load's thread.
 2. **No per-row lookups:** one connection, one read transaction (`work.rs:100`).

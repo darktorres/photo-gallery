@@ -21,6 +21,7 @@ use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::names::{NormalizeError, shown};
 use pg_scan::ScanStats;
+use serde_json::json;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -55,6 +56,78 @@ pub fn wants_cli(args: &[OsString]) -> bool {
 /// Run a command. `args` includes the program name.
 pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     let cli = Cli::parse_from(args);
+    // The table of a perf log: no catalog, and no log of its own.
+    if let Command::Perf { file } = &cli.command {
+        print!("{}", pg_perf::summarize(file)?);
+        return Ok(());
+    }
+    // `PG_PERF_LOG`, read before anything else runs, so the whole command is in the log. The command is the root span.
+    let perf_file = open_perf_log(&cli);
+    let name = command_name(&cli.command);
+    let outcome = {
+        let _root = pg_perf::span(name);
+        run(cli)
+    };
+    if let Some(file) = perf_file {
+        let dropped = pg_perf::dropped();
+        if dropped > 0 {
+            eprintln!("perf log: {dropped} record(s) could not be written to {}", file.display());
+        }
+        match pg_perf::summarize_session(&file, pg_perf::session_id()) {
+            Ok(table) => print!("{table}"),
+            Err(e) => eprintln!("perf log: can't read {}: {e}", file.display()),
+        }
+    }
+    outcome
+}
+
+/// The command as the perf log names its root span: `cmd.` and the subcommand's name.
+fn command_name(command: &Command) -> &'static str {
+    match command {
+        Command::Scan { .. } => "cmd.scan",
+        Command::Remove { .. } => "cmd.remove",
+        Command::Import { .. } => "cmd.import",
+        Command::Hash { .. } => "cmd.hash",
+        Command::Pair { .. } => "cmd.pair",
+        Command::Thumbs { .. } => "cmd.thumbs",
+        Command::Borders { .. } => "cmd.borders",
+        Command::Write => "cmd.write",
+        Command::Status => "cmd.status",
+        Command::Dups { .. } => "cmd.dups",
+        Command::Perf { .. } => "cmd.perf",
+    }
+}
+
+/// Opens the perf log `PG_PERF_LOG` names, for this run. `-` echoes each top-level step to stderr as it ends; any other
+/// value is a file to append to, whose table is printed when the run ends. Unset (or a file that can't be opened, which
+/// is said), nothing is recorded. Returns the file, when there is one to summarize.
+fn open_perf_log(cli: &Cli) -> Option<std::path::PathBuf> {
+    let target = std::env::var_os("PG_PERF_LOG").filter(|v| !v.is_empty())?;
+    let meta = json!({
+        "program": "gallery",
+        "version": env!("CARGO_PKG_VERSION"),
+        "command": command_name(&cli.command),
+        "cores": std::thread::available_parallelism().map_or(0, std::num::NonZero::get),
+        "catalog_dir": cli.layout().ok().map(|l| l.catalog_dir().display().to_string()),
+    });
+    if target.to_str() == Some("-") {
+        if let Err(e) = pg_perf::open_echo(|line| eprintln!("{line}"), meta) {
+            eprintln!("perf log: {e}");
+        }
+        return None;
+    }
+    let path = std::path::PathBuf::from(target);
+    match pg_perf::open(&path, meta) {
+        Ok(()) => Some(path),
+        Err(e) => {
+            eprintln!("perf log: can't open {}: {e}; not recording", path.display());
+            None
+        }
+    }
+}
+
+/// The command, run: the borders of pixels or of files outside the library need no catalog, and the rest run with one.
+fn run(cli: Cli) -> Result<()> {
     // Borders of pixels piped in, or of files outside the library: no catalog.
     if let Command::Borders { paths, csv, stdin, pipeline, .. } = &cli.command
         && (*stdin || !paths.is_empty())
@@ -193,7 +266,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     // The catalog folder as SQLite opens it (an alias in the home for a folder it can't name).
     let layout = cli.layout()?.for_sqlite()?;
     let catalog_path = layout.catalog_path();
+    // The catalog as it opens (its file made or migrated, its checks): timed apart, or it is the command's own time.
+    let open = pg_perf::span("cmd.open");
     let mut catalog = pg_library::open_catalog(&layout)?;
+    drop(open);
     report_rebuilt(&catalog);
     let rules = catalog.rules();
     let start = Instant::now();
@@ -300,10 +376,6 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 changed: changed_while_read(s.changed),
                 seconds: secs(start.elapsed().as_secs_f64()),
             });
-            // The import's stage times, when `PG_PIPELINE_STATS` is set (a diagnostic, not a message).
-            if let Some(report) = pg_jobs::pipeline::last_report() {
-                eprint!("{report}");
-            }
             // The duplicates are the hashes and the pairs: none with `--no-dups`, no pairs with `--no-pair`.
             if !no_dups {
                 pair_and_report(&mut catalog, &opts, ctl, start, !no_pair)?;
@@ -437,6 +509,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             });
         }
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
+        // `main` reads the perf log itself, before any command runs.
+        Command::Perf { .. } => {}
     }
     Ok(())
 }

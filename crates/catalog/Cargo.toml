@@ -21,6 +21,7 @@ pg-query = { path = "../query" }
 pg-platform = { path = "../platform" }
 pg-dbfile = { path = "../dbfile" }
 pg-log = { path = "../log" }
+pg-perf = { path = "../perf" }
 rusqlite.workspace = true
 serde_json.workspace = true
 strum.workspace = true

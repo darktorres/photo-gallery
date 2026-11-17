@@ -69,7 +69,15 @@ pub fn run_while(
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<PlaceholderStats> {
+    // The pass's span in the perf log: the pending query before its phase, the phase, and the transaction time it caused.
+    let mut pass = pg_perf::span("pass.placeholders");
+    let tx_at = pg_catalog::tx_mark();
+    // The maker's steps the workers run for this pass (process-wide tallies, as the thumbnails pass attaches them).
+    let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::THUMBHASH];
+    let step_marks = steps.map(|step| step.mark());
+    let pending = pg_perf::span("pending.placeholders");
     let work = catalog.pending_placeholders()?;
+    drop(pending);
     let items = &work.items;
     let sep = catalog.rules().sep_byte();
     let stats = PlaceholderStats {
@@ -133,6 +141,12 @@ pub fn run_while(
     result?;
     let (_, mut stats) = state;
     stats.complete = stats.files == items.len();
+    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
+    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    for (step, mark) in steps.iter().zip(step_marks) {
+        pass.attach_since(step, mark);
+    }
+    pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }
 

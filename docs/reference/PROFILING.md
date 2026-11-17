@@ -1324,6 +1324,26 @@ Sort times at 12 workers are the team's thread time. The oracle's pairs are iden
 
 ---
 
+## Reading the perf log
+
+`PG_PERF_LOG` turns on the perf log (`crates/perf`, `pg-perf`). Unset, nothing is recorded and a span costs one flag test.
+
+- `PG_PERF_LOG=<file>`: the command line appends each run's records to the file and prints the run's table when the command ends. The app (`gallery`'s window) appends its background job's rounds to the same kind of file as they end. The file is rotated at 16 MiB, keeping two older files beside it (`pg_log::LogFile`).
+- `PG_PERF_LOG=-`: the command line echoes each top-level step to stderr as it ends, and writes no file.
+- `gallery perf <file>`: prints the table for every run in a file (the app's too). Lines that aren't records are skipped.
+
+Each record is one JSON line: `session` (the process's start, epoch ms, and `pid`), `name` (`cmd.import`, `round`, `pass.scan`, `phase.scan`, `pipeline`, `scan.walk`, `pending.import`, `pair.tier1`, `mark_missing.write`, ...), `parent`, `dur_ms` (wall), `self_ms` (wall less the time of the spans inside it on the same thread), `items`, `bytes`, `failed`, `paused_ms` where it applies, and `fields`. A tally in `fields` (`scan.write_batch`, `catalog.tx.wait`, `catalog.tx.hold`, `catalog.tx.commit`) is thread time: the sum over the threads that ran the step, so it can exceed the wall time of the step it is on.
+
+The table has, per session: the steps by name (count, total and self seconds, share of the top-level time, items and items per second, bytes per second), the scan's post-walk time (its phase less its walk loop), and a verdict for each pipeline:
+
+- `paused`: the user paused it for more than a fifth of its wall time.
+- `CPU-bound`: the workers were busy for at least 60% of the pass.
+- `read-bound`: the readers were busy for at least 60%.
+- `writer-bound`: the sink or the writer was busy for at least 60%.
+- `waiting`: no stage was busy that much; look at the catalog's `catalog.tx.wait` for a lock.
+
+Every pass writes its span, including one with nothing pending (zero items), so an app left open writes a few records per round and the file rotates. The pass spans are the places to start: their `dur_ms` less the `phase.*` inside them is the work outside the progress phase, which the status line doesn't show.
+
 ## Where the other results are
 
 - [START_PROFILE.md](START_PROFILE.md): where the start goes, thread by thread, and the startup before and after the

@@ -16,6 +16,14 @@ use pg_codec::resize::Resizer;
 
 use crate::display::{self, DECODE_MARGIN, Shown};
 
+// The steps a worker's picture takes, each a tally of its thread time, over every worker (process-wide: a pass that runs
+// them attaches the tallies it caused to its span). The decode is a thumbnail's and a placeholder's alike; the resize and
+// the encode are a thumbnail's, the resize and the hash a placeholder's.
+pub static DECODE: pg_perf::Tally = pg_perf::Tally::new("render.decode");
+pub static RESIZE: pg_perf::Tally = pg_perf::Tally::new("render.resize");
+pub static ENCODE: pg_perf::Tally = pg_perf::Tally::new("render.encode");
+pub static THUMBHASH: pg_perf::Tally = pg_perf::Tally::new("render.thumbhash");
+
 /// The image a placeholder is encoded from is fitted into this many px on its long side (the encoder's blur is at its
 /// 100 px).
 pub const THUMBHASH_SIDE: usize = 100;
@@ -140,7 +148,10 @@ impl Maker {
 
     fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
-        display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)?;
+        {
+            let _decode = DECODE.timer();
+            display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)?;
+        }
         self.encode_image(height, out)
     }
 
@@ -148,8 +159,11 @@ impl Maker {
     /// [`PLACEHOLDER_DECODE_SIDE`] px on the long side, fitted to [`THUMBHASH_SIDE`] and encoded.
     pub fn placeholder(&mut self, bytes: &[u8], turns: Turns) -> Result<ThumbHash, MakeError> {
         let min = MinSize::Sides(PLACEHOLDER_DECODE_SIDE, 0);
-        let result = display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)
-            .and_then(|_| self.thumbhash_of_image());
+        let decoded = {
+            let _decode = DECODE.timer();
+            display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)
+        };
+        let result = decoded.and_then(|_| self.thumbhash_of_image());
         self.trim();
         result.map_err(MakeError::Undecodable)
     }
@@ -157,9 +171,11 @@ impl Maker {
     /// The placeholder of a thumbnail the cache holds (`jpeg`: upright already, so no turns), decoded whole: the same
     /// picture as [`Maker::placeholder`] of the file, at the thumbnail's size.
     pub fn placeholder_of_thumbnail(&mut self, jpeg: &[u8]) -> Result<ThumbHash, MakeError> {
-        let result =
+        let decoded = {
+            let _decode = DECODE.timer();
             display::decode_into(&mut self.decoder, jpeg, MinSize::Full, Turns::NONE, &mut self.image, &mut self.spare)
-                .and_then(|_| self.thumbhash_of_image());
+        };
+        let result = decoded.and_then(|_| self.thumbhash_of_image());
         self.trim();
         result.map_err(MakeError::Undecodable)
     }
@@ -176,13 +192,19 @@ impl Maker {
     /// The ThumbHash of the decoded image (`self.image`), fitted to [`THUMBHASH_SIDE`] through `small`. The encoder reads
     /// the RGB as it is: the hash of the same pixels as opaque RGBA.
     fn thumbhash_of_image(&mut self) -> Result<ThumbHash> {
-        let img = if self.resizer.fit_within(&self.image, THUMBHASH_SIDE, &mut self.small)? {
-            &self.small
-        } else {
-            &self.image
+        let img = {
+            let _resize = RESIZE.timer();
+            if self.resizer.fit_within(&self.image, THUMBHASH_SIDE, &mut self.small)? {
+                &self.small
+            } else {
+                &self.image
+            }
         };
         let mut bytes = [0; THUMBHASH_MAX];
-        let len = self.thumbhasher.rgb_to_thumb_hash_into(img.width, img.height, &img.pixels, &mut bytes);
+        let len = {
+            let _hash = THUMBHASH.timer();
+            self.thumbhasher.rgb_to_thumb_hash_into(img.width, img.height, &img.pixels, &mut bytes)
+        };
         Ok(ThumbHash::encoded(bytes, len))
     }
 
@@ -210,7 +232,11 @@ impl Maker {
 
     /// The thumbnail of `image`: scaled to `height`, then encoded into `out`.
     fn encode_image(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
-        let img = if self.resizer.to_height(&self.image, height, &mut self.small)? { &self.small } else { &self.image };
+        let img = {
+            let _resize = RESIZE.timer();
+            if self.resizer.to_height(&self.image, height, &mut self.small)? { &self.small } else { &self.image }
+        };
+        let _encode = ENCODE.timer();
         self.encoder.encode_into(img, out)
     }
 

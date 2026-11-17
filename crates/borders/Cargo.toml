@@ -18,5 +18,6 @@ pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
+pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true

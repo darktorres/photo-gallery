@@ -32,7 +32,7 @@ pub const FILES: usize = 3;
 type Rename = Box<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
 
 /// The log's file at `path`, rotated past `cap` bytes.
-pub(crate) struct LogFile {
+pub struct LogFile {
     path: PathBuf,
     cap: u64,
     /// The seam a test makes a rename fail through.
@@ -40,17 +40,18 @@ pub(crate) struct LogFile {
 }
 
 impl LogFile {
-    pub(crate) fn new(path: PathBuf, cap: u64) -> LogFile {
+    /// The file at `path`, rotated past `cap` bytes.
+    pub fn new(path: PathBuf, cap: u64) -> LogFile {
         LogFile { path, cap, rename: Box::new(rename) }
     }
 
-    pub(crate) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
     /// Append `line`, rotating the file first if it would pass its cap (or finishing a rotation a crash left). The
     /// caller serialises the calls of this process; the lock file serialises the rotations of every process.
-    pub(crate) fn append(&self, line: &str) -> io::Result<()> {
+    pub fn append(&self, line: &str) -> io::Result<()> {
         let line_len = u64::try_from(line.len()).unwrap_or(u64::MAX);
         if self.due(line_len) || aside(&self.path).exists() {
             self.rotate(line_len);

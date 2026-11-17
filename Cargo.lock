@@ -1680,6 +1680,7 @@ dependencies = [
  "pg-catalog",
  "pg-jobs",
  "pg-model",
+ "pg-perf",
  "pg-platform",
 ]
 
@@ -1692,6 +1693,7 @@ dependencies = [
  "pg-dbfile",
  "pg-log",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-query",
  "pg-render",
@@ -1720,6 +1722,7 @@ dependencies = [
  "pg-jobs-testkit",
  "pg-library",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-scan",
  "pg-testkit",
@@ -1781,6 +1784,7 @@ dependencies = [
  "pg-exiftool",
  "pg-jobs",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-testkit",
  "pg-writeback",
@@ -1815,6 +1819,7 @@ dependencies = [
  "pg-client",
  "pg-log",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-render",
  "pg-testkit",
@@ -1872,6 +1877,7 @@ dependencies = [
  "pg-dedup",
  "pg-jobs",
  "pg-model",
+ "pg-perf",
  "pg-platform",
 ]
 
@@ -1882,8 +1888,10 @@ dependencies = [
  "anyhow",
  "crossbeam-channel",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-testkit",
+ "serde_json",
 ]
 
 [[package]]
@@ -1910,6 +1918,7 @@ dependencies = [
  "pg-jobs-testkit",
  "pg-metadata",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-render",
  "pg-scan",
@@ -1957,6 +1966,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-perf"
+version = "0.1.0"
+dependencies = [
+ "pg-log",
+ "pg-model",
+ "pg-platform",
+ "serde_json",
+]
+
+[[package]]
 name = "pg-platform"
 version = "0.1.0"
 dependencies = [
@@ -1987,6 +2006,7 @@ dependencies = [
  "pg-codec",
  "pg-metadata",
  "pg-model",
+ "pg-perf",
  "pg-testkit",
  "pg-video",
  "thiserror 2.0.21",
@@ -2001,6 +2021,7 @@ dependencies = [
  "pg-catalog",
  "pg-jobs",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-testkit",
 ]
@@ -2042,6 +2063,7 @@ dependencies = [
  "pg-jobs",
  "pg-jobs-testkit",
  "pg-model",
+ "pg-perf",
  "pg-platform",
  "pg-render",
  "pg-scan",

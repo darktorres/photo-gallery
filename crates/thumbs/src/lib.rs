@@ -204,7 +204,15 @@ pub fn run_while(
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<ThumbStats> {
+    // The pass's span in the perf log: the pending query and the setup before its phase, the phase, and the finish after.
+    let mut pass = pg_perf::span("pass.thumbs");
+    let tx_at = pg_catalog::tx_mark();
+    // The maker's steps the workers run for this pass: process-wide tallies, so the pass attaches what they grew by.
+    let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::ENCODE];
+    let step_marks = steps.map(|step| step.mark());
+    let pending = pg_perf::span("thumbs.pending");
     let Pending { work, snapshot } = cache.pending(catalog_path, thumb)?;
+    drop(pending);
     let items = &work.items;
     let mut stats = ThumbStats {
         needed: items.len(),
@@ -226,11 +234,13 @@ pub fn run_while(
     }
     stats.cache_bytes = u64::try_from(cache.totals()?.0)?;
     // To check each file against before its thumbnail is kept, and for the failure ledger.
+    let setup = pg_perf::span("thumbs.setup");
     let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
     let sep = catalog.rules().sep_byte();
     // The files the ledger holds: only those leave it when they are made (a clear of every file made would take the
     // catalog's write lock at every batch).
     let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Thumbs)?;
+    drop(setup);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
     let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
@@ -375,10 +385,18 @@ pub fn run_while(
     ran?;
     drop(phase);
     stats.complete = !stats.cache_full && tried == items.len();
+    let finish = pg_perf::span("thumbs.finish");
     if stats.complete {
         cache.checked(&snapshot, first_failed)?;
     }
     cache.shrink()?;
+    drop(finish);
+    pass.items(u64::try_from(stats.made).unwrap_or(u64::MAX));
+    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    for (step, mark) in steps.iter().zip(step_marks) {
+        pass.attach_since(step, mark);
+    }
+    pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }
 #[cfg(test)]

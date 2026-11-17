@@ -5,14 +5,41 @@
 
 use std::ops::Deref;
 
+use pg_perf::{Mark, Tally, Timer};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
+
+/// The write transactions' time, process-wide, for the perf log: the wait for the write lock (`BEGIN IMMEDIATE`), the
+/// hold from the begin to the end of the commit (or the rollback), and the commit alone. A pass's span takes the share it
+/// caused as the difference of [`tx_mark`] (see [`attach_tx`]).
+static TX_WAIT: Tally = Tally::new("catalog.tx.wait");
+static TX_HOLD: Tally = Tally::new("catalog.tx.hold");
+static TX_COMMIT: Tally = Tally::new("catalog.tx.commit");
+
+/// The write transactions' totals now (see [`attach_tx`]).
+#[derive(Clone, Copy, Default)]
+pub struct TxMark([Mark; 3]);
+
+/// The write transactions' totals now, for [`attach_tx`].
+pub fn tx_mark() -> TxMark {
+    TxMark([TX_WAIT.mark(), TX_HOLD.mark(), TX_COMMIT.mark()])
+}
+
+/// Puts the write transactions' time since `since` (a [`tx_mark`]) on `span`: the lock waits, holds and commits the
+/// span's work caused. Process-wide, so a pass that runs alongside another writer also counts that writer's share.
+pub fn attach_tx(span: &mut pg_perf::Span, since: TxMark) {
+    span.attach_since(&TX_WAIT, since.0[0]);
+    span.attach_since(&TX_HOLD, since.0[1]);
+    span.attach_since(&TX_COMMIT, since.0[2]);
+}
 
 /// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited
 /// for (`busy_timeout`) before anything is read. A deferred one that reads first and then writes can instead fail at
 /// once when another connection has committed in between (SQLITE_BUSY_SNAPSHOT), which no wait fixes.
 pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<WriteTx<'_>> {
+    let wait = TX_WAIT.timer();
     let inner = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    Ok(WriteTx { inner, _hold: Hold::begin() })
+    drop(wait);
+    Ok(WriteTx { inner, _hold: Hold::begin(), perf_hold: TX_HOLD.timer() })
 }
 
 /// A write transaction ([`write_transaction`]): a `rusqlite::Transaction` that also times its hold of the write lock,
@@ -21,6 +48,8 @@ pub(crate) struct WriteTx<'c> {
     inner: Transaction<'c>,
     /// Dropped after `inner` ends (fields drop in order, and `commit` drops it last).
     _hold: Hold,
+    /// The hold for the perf log (the same interval, timed whether or not the tests watch it).
+    perf_hold: Timer<'static>,
 }
 
 impl<'c> Deref for WriteTx<'c> {
@@ -34,8 +63,12 @@ impl<'c> Deref for WriteTx<'c> {
 impl WriteTx<'_> {
     /// Commit, and end the hold: `_hold` is dropped at the end of the body, after the commit it times.
     pub(crate) fn commit(self) -> rusqlite::Result<()> {
-        let WriteTx { inner, _hold } = self;
-        inner.commit()
+        let WriteTx { inner, _hold, perf_hold } = self;
+        let commit = TX_COMMIT.timer();
+        let result = inner.commit();
+        drop(commit);
+        drop(perf_hold);
+        result
     }
 }
 

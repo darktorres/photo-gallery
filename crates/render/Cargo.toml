@@ -15,6 +15,7 @@ anyhow.workspace = true
 pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
+pg-perf = { path = "../perf" }
 pg-video = { path = "../video" }
 thiserror.workspace = true
 thumbhash.workspace = true

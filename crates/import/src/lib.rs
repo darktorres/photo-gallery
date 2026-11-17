@@ -67,7 +67,13 @@ pub fn import_while(
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<ImportStats> {
+    // The pass's span in the perf log: the pending query before its phase, the phase, and the store's share.
+    let mut pass = pg_perf::span("pass.import");
+    let tx_at = pg_catalog::tx_mark();
+    let pending = pg_perf::span("pending.import");
     let work = catalog.pending_import(retry_errors)?;
+    drop(pending);
+    let stored_at = STORE.mark();
     let items = &work.items;
     let sep = catalog.rules().sep_byte();
     let mut stats = ImportStats { pending: items.len(), files: 0, failed: 0, changed: 0 };
@@ -119,8 +125,17 @@ pub fn import_while(
     stats.files = counts.files;
     stats.failed = counts.failed;
     stats.changed = counts.changed;
+    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
+    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    pass.field("pending", stats.pending);
+    pass.field("changed", stats.changed);
+    pass.attach_since(&STORE, stored_at);
+    pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }
+
+/// The analyses stored, batch by batch: each is one write transaction of the writer's thread.
+static STORE: pg_perf::Tally = pg_perf::Tally::new("import.store");
 
 /// Whether a file's name ends in one of `exts` (ASCII, in any case). The read is chosen by name: another format under a
 /// JPEG's or a PNG's name is gathered as one too, and then read whole, as the gather finds no header of that format.
@@ -139,6 +154,8 @@ fn store(
     batch: &mut Vec<(usize, Result<Analysis>)>,
     ctl: &Control,
 ) -> Result<()> {
+    let mut store = STORE.timer();
+    store.items(u64::try_from(batch.len()).unwrap_or(u64::MAX));
     let tx = catalog.tx()?;
     let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
     for (i, result) in batch.drain(..) {

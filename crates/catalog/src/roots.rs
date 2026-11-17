@@ -173,9 +173,12 @@ impl ScanLease<'_> {
     pub fn mark_missing(&self, skipped: &[Skip]) -> Result<usize> {
         let (rules, root, scan) = (self.rules, self.root(), self.id());
         let held = self.held();
+        let mut pass = pg_perf::span("mark_missing");
+        let tx_at = crate::transaction::tx_mark();
         // The present rows the walk did not see, read once outside any write transaction: the lease keeps any other walk
         // of these folders out. Only the rows left are written, by id, in batches of `WRITE_BATCH`, and each write repeats
         // the read's predicate, so a row that became seen or missing since is left alone.
+        let read = pg_perf::span("mark_missing.read");
         let unseen: Vec<(i64, i64)> = {
             let snapshot = self.conn.unchecked_transaction()?;
             let skipped = skipped_folders(&snapshot, rules, skipped)?;
@@ -196,6 +199,8 @@ impl ScanLease<'_> {
             snapshot.commit()?;
             out
         };
+        drop(read);
+        let mut write = pg_perf::span("mark_missing.write");
         let mut marked = 0;
         for batch in unseen.chunks(WRITE_BATCH) {
             let tx = write_transaction(&self.conn)?;
@@ -211,12 +216,18 @@ impl ScanLease<'_> {
             }
             tx.commit()?;
         }
+        write.items(u64::try_from(marked).unwrap_or(u64::MAX));
+        drop(write);
+        let sweep = pg_perf::span("mark_missing.sweep");
         let tx = write_transaction(&self.conn)?;
         held.hold(&tx)?;
         sweep_folder_failures(&tx, rules, root, scan, skipped)?;
         tx.execute("DELETE FROM scan_leases WHERE id = ?1", [scan.get()])?;
         tx.execute("DELETE FROM temp.scan_seen", [])?;
         tx.commit()?;
+        drop(sweep);
+        pass.items(u64::try_from(marked).unwrap_or(u64::MAX));
+        crate::transaction::attach_tx(&mut pass, tx_at);
         Ok(marked)
     }
 }

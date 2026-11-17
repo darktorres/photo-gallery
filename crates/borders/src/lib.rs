@@ -58,7 +58,11 @@ pub fn find_while(
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<Stats> {
+    let mut pass = pg_perf::span("pass.borders");
+    let tx_at = pg_catalog::tx_mark();
+    let pending = pg_perf::span("pending.borders");
     let work = catalog.pending_borders()?;
+    drop(pending);
     let items = &work.items;
     let stats = Stats { files: 0, failed: 0, unreadable: 0, stored: 0, complete: true };
     if items.is_empty() {
@@ -150,5 +154,7 @@ pub fn find_while(
     result?;
     let (_, mut stats) = state;
     stats.complete = stats.files == items.len();
+    pass.items(u64::try_from(stats.stored).unwrap_or(u64::MAX));
+    pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }

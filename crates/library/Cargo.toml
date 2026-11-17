@@ -21,6 +21,7 @@ pg-crop = { path = "../crop" }
 pg-import = { path = "../import" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
+pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
 pg-render = { path = "../render" }
 pg-scan = { path = "../scan" }

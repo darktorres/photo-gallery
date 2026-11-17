@@ -21,6 +21,7 @@ use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
 use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
+use serde_json::json;
 
 use crate::control::Control;
 use crate::panics::{self, Panicked};
@@ -133,52 +134,35 @@ impl Clock {
     }
 }
 
-/// The report of the last pass that ran with `PG_PIPELINE_STATS` set. The command line prints it; the library prints
-/// nothing.
-static LAST_REPORT: Mutex<Option<String>> = Mutex::new(None);
-
-/// The timing report of the last pass that ran with `PG_PIPELINE_STATS` set (each stage's busy and waiting time), if any.
-pub fn last_report() -> Option<String> {
-    LAST_REPORT.lock().unwrap_or_else(PoisonError::into_inner).clone()
-}
-
 impl Timing {
-    /// Keeps the report of a pass of `items` items that took `wall`, when `PG_PIPELINE_STATS` is set. A pass with a
-    /// writer also reports the writer's stage.
-    fn report(&self, items: usize, wall: Duration, opts: &Options, writer: bool) {
-        if std::env::var_os("PG_PIPELINE_STATS").is_none() {
+    /// Records the pass's stage times in the perf log, as a `pipeline` record under the span the pass runs in (inert
+    /// without a sink): each stage's busy and waiting shares of the pass's wall time, and the time the user paused it.
+    /// A pass with a writer also reports the writer's stage.
+    fn report(&self, items: usize, wall: Duration, paused: Duration, opts: &Options, writer: bool) {
+        if !pg_perf::enabled() {
             return;
         }
-        let wall = wall.as_secs_f64().max(1e-9);
+        let secs = wall.as_secs_f64().max(1e-9);
         let count = |n: usize| f64::from(u32::try_from(n).unwrap_or(u32::MAX));
-        let share = |c: &Clock, threads: usize| 100.0 * c.secs() / (count(threads.max(1)) * wall);
-        let mut text = format!("{items} items in {wall:.2} s ({:.0}/s)\n", count(items) / wall);
-        text += &format!(
-            "  readers x{}: reading {:.0}%, handing on {:.0}%\n",
-            opts.readers,
-            share(&self.read, opts.readers),
-            share(&self.read_send, opts.readers)
-        );
-        text += &format!(
-            "  workers x{}: processing {:.0}%, waiting for reads {:.0}%, handing on {:.0}%\n",
-            opts.workers,
-            share(&self.work, opts.workers),
-            share(&self.work_wait, opts.workers),
-            share(&self.work_send, opts.workers)
-        );
-        text += &format!(
-            "  sink: working {:.0}%, waiting for results {:.0}%\n",
-            share(&self.sink, 1),
-            share(&self.sink_wait, 1)
-        );
+        let pct = |c: &Clock, threads: usize| 100.0 * c.secs() / (count(threads.max(1)) * secs);
+        let mut fields = vec![
+            ("items", json!(items)),
+            ("readers", json!(opts.readers)),
+            ("workers", json!(opts.workers)),
+            ("readers_busy_pct", json!(pct(&self.read, opts.readers))),
+            ("readers_handing_pct", json!(pct(&self.read_send, opts.readers))),
+            ("workers_busy_pct", json!(pct(&self.work, opts.workers))),
+            ("workers_wait_reads_pct", json!(pct(&self.work_wait, opts.workers))),
+            ("workers_handing_pct", json!(pct(&self.work_send, opts.workers))),
+            ("sink_busy_pct", json!(pct(&self.sink, 1))),
+            ("sink_wait_pct", json!(pct(&self.sink_wait, 1))),
+            ("paused_ms", json!(paused.as_secs_f64() * 1e3)),
+        ];
         if writer {
-            text += &format!(
-                "  writer: flushing {:.0}%, waiting for batches {:.0}%\n",
-                share(&self.write, 1),
-                share(&self.write_wait, 1)
-            );
+            fields.push(("writer_busy_pct", json!(pct(&self.write, 1))));
+            fields.push(("writer_wait_pct", json!(pct(&self.write_wait, 1))));
         }
-        *LAST_REPORT.lock().unwrap_or_else(PoisonError::into_inner) = Some(text);
+        pg_perf::record("pipeline", wall, &fields);
     }
 }
 
@@ -207,8 +191,9 @@ where
 {
     let timing = Timing::default();
     let started = Instant::now();
+    let paused_before = ctl.paused_total();
     let result = run_timed(items, read, opts, ctl, init, process, sink, &timing);
-    timing.report(items.len(), started.elapsed(), opts, false);
+    timing.report(items.len(), started.elapsed(), ctl.paused_total().saturating_sub(paused_before), opts, false);
     result
 }
 
@@ -411,6 +396,7 @@ where
     let timing = Timing::default();
     let timing = &timing;
     let started = Instant::now();
+    let paused_before = ctl.paused_total();
 
     let out = std::thread::scope(|s| {
         let writing = s.spawn(move || {
@@ -488,7 +474,7 @@ where
         };
         (writer, result)
     });
-    timing.report(items.len(), started.elapsed(), opts, true);
+    timing.report(items.len(), started.elapsed(), ctl.paused_total().saturating_sub(paused_before), opts, true);
     out
 }
 

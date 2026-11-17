@@ -131,7 +131,15 @@ impl Drop for AbortOnDrop<'_> {
 
 /// [`pair`] with `settings`.
 pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl: &Control) -> Result<PairStats> {
-    if !catalog.has_owed_pairs()? {
+    // The pass's span in the perf log. Its stages are timed already (`PairStats::timings`), and are recorded from those
+    // at the end, as its children.
+    let mut pass = pg_perf::span("pass.pairing");
+    let tx_at = pg_catalog::tx_mark();
+    let paused_before = ctl.paused_total();
+    let probe = pg_perf::span("pairs.probe");
+    let owed = catalog.has_owed_pairs()?;
+    drop(probe);
+    if !owed {
         return Ok(PairStats { complete: true, ..PairStats::default() });
     }
     // The catalog's cache is bounded until the pass returns, however it leaves.
@@ -216,6 +224,16 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
         }
         Ok(())
     })?;
+    let t = &stats.timings;
+    pg_perf::record("pairs.load", t.load, &[]);
+    pg_perf::record("pairs.store", t.store, &[]);
+    pg_perf::record("pairs.join", t.join, &[]);
+    pg_perf::record("pairs.write", t.write, &[]);
+    pg_perf::record("pairs.commit", t.commit, &[]);
+    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
+    pass.field("pairs", u64::try_from(stats.pairs).unwrap_or(u64::MAX));
+    pass.paused(ctl.paused_total().saturating_sub(paused_before));
+    pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }
 

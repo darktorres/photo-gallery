@@ -21,29 +21,30 @@ yandex: model
 # A database file's lifecycle, the catalog, the codecs' users and the job layer.
 dbfile: platform
 log: model platform
-catalog: dbfile log model platform query
+perf: log model platform
+catalog: dbfile log model perf platform query
 edit: codec container metadata model
 exiftool: platform
-jobs: model platform
+jobs: model perf platform
 trace: platform
 video: codec model platform
 analysis: codec metadata model video
 jobs-testkit: jobs model
-render: codec metadata model video
+render: codec metadata model perf video
 
 # The passes, each its own crate.
-scan: catalog jobs model platform
+scan: catalog jobs model perf platform
 thumbcache: dbfile jobs model platform
 bench: analysis catalog codec dedup jobs model render scan thumbcache
-borders: analysis catalog jobs model platform
-import: analysis catalog container dedup jobs model platform
-thumbs: catalog jobs model platform render thumbcache
+borders: analysis catalog jobs model perf platform
+import: analysis catalog container dedup jobs model perf platform
+thumbs: catalog jobs model perf platform render thumbcache
 writeback: catalog edit exiftool jobs metadata model platform thumbcache
-crop: catalog edit exiftool jobs model platform writeback
+crop: catalog edit exiftool jobs model perf platform writeback
 
 # The runner, the application layer, the front ends and the one program.
-library: analysis borders catalog crop import jobs model platform render scan thumbcache thumbs writeback
+library: analysis borders catalog crop import jobs model perf platform render scan thumbcache thumbs writeback
 app: catalog jobs library log model platform query render thumbcache writeback yandex
-cli: analysis borders catalog client codec dedup import jobs library model platform scan thumbcache thumbs writeback
-desktop: app client log model platform render trace
+cli: analysis borders catalog client codec dedup import jobs library model perf platform scan thumbcache thumbs writeback
+desktop: app client log model perf platform render trace
 gallery: cli desktop platform

@@ -83,12 +83,16 @@ impl ScanLease<'_> {
     /// or [`crate::Error::LeaseLost`]. A rebind or a replacement would otherwise bring a removed folder's rows back as
     /// present.
     pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> Result<Pairing> {
+        // The pass's span in the perf log: its tiers are its children; the transaction time it caused goes on it too.
+        let mut pass = pg_perf::span("pair.after_scan");
+        let tx_at = crate::transaction::tx_mark();
         let held = self.held();
         let rules = self.rules;
         let conn = &self.conn;
         let under = under_params(rules, self.root());
         // A row this scan saw was upserted in a folder it listed; one in a skipped folder is left out all the same.
         let skipped = {
+            let _setup = pg_perf::span("pair.setup");
             let snapshot = conn.unchecked_transaction()?;
             let skipped = skipped_folders(&snapshot, rules, coverage.skipped)?;
             snapshot.commit()?;
@@ -98,8 +102,13 @@ impl ScanLease<'_> {
         // The fresh rows some tier found several candidates for; counted at the end, once each.
         let mut ambiguous = BTreeSet::new();
 
-        // Tier 1: the same folder and name, on another volume.
-        in_batches(conn, held, &under, &skipped, |tx, fresh| {
+        // Tier 1: the same folder and name, on another volume. Each tier has its own steps and its own span, which carries
+        // the rows it found and changed and its transactions.
+        let steps1 = Steps::new();
+        let mut found1 = 0usize;
+        let (rebound1, tx1) = (out.rebound, crate::transaction::tx_mark());
+        let tier1 = pg_perf::span("pair.tier1");
+        in_batches(conn, held, &under, &skipped, &steps1, |tx, fresh| {
             let mut same_name = tx.prepare_cached(concat!(
                 "SELECT id FROM files WHERE volume IS NOT NULL AND volume <> ?1 AND file_ref = ?2 AND folder_id = ?3
                  AND name = ?4 AND size = ?5 AND mtime = ?6 AND (created IS NULL OR ?7 IS NULL OR created = ?7)
@@ -108,33 +117,45 @@ impl ScanLease<'_> {
                 " AND id <> ?8 ORDER BY id"
             ))?;
             for f in fresh {
-                let ids: Vec<i64> = same_name
-                    .query_map(
-                        params![f.volume, f.file_ref, f.folder_id, f.name, f.size, f.mtime, f.created, f.id],
-                        |r| r.get(0),
-                    )?
-                    .collect::<rusqlite::Result<_>>()?;
+                let ids: Vec<i64> = {
+                    let _query = steps1.query.timer();
+                    same_name
+                        .query_map(
+                            params![f.volume, f.file_ref, f.folder_id, f.name, f.size, f.mtime, f.created, f.id],
+                            |r| r.get(0),
+                        )?
+                        .collect::<rusqlite::Result<_>>()?
+                };
                 match ids.as_slice() {
                     [] => {}
                     [only] => {
+                        let _write = steps1.write.timer();
                         rebind(tx, *only, f)?;
                         out.rebound += 1;
                     }
                     _ => {
+                        found1 += 1;
                         ambiguous.insert(f.id);
                     }
                 }
             }
             Ok(())
         })?;
+        steps1.close(tier1, tx1, &[("rebound", out.rebound.saturating_sub(rebound1)), ("ambiguous_found", found1)]);
 
         if coverage.complete {
             // Tier 2: the same file ID, size, mtime and extension, on a volume none of whose files this scan saw, in a
             // folder it did not skip. The volumes are read once, at the tier's first batch, not per candidate (a
             // volume's rows, per candidate, was a quadratic scan).
             let mut seen: Option<BTreeSet<i64>> = None;
-            in_batches(conn, held, &under, &skipped, |tx, fresh| {
+            let steps2 = Steps::new();
+            let volumes = pg_perf::Tally::new("volumes");
+            let mut found2 = 0usize;
+            let (rebound2, tx2) = (out.rebound, crate::transaction::tx_mark());
+            let mut tier2 = pg_perf::span("pair.tier2");
+            in_batches(conn, held, &under, &skipped, &steps2, |tx, fresh| {
                 if seen.is_none() {
+                    let _volumes = volumes.timer();
                     seen = Some(seen_volumes(tx)?);
                 }
                 let Some(seen) = seen.as_mut() else { return Ok(()) };
@@ -151,6 +172,7 @@ impl ScanLease<'_> {
                     // Each fresh row is unpaired when it is read (`fresh_rows`), and no rebind in the batch takes a
                     // fresh row: a candidate is an old row (the walk did not see it), and a rebind deletes only
                     // its own fresh row.
+                    let query = steps2.query.timer();
                     let candidates: Vec<(i64, i64, i64)> = moved
                         .query_map(
                             params![
@@ -168,6 +190,7 @@ impl ScanLease<'_> {
                             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                         )?
                         .collect::<rusqlite::Result<_>>()?;
+                    drop(query);
                     let ids: Vec<i64> = candidates
                         .into_iter()
                         .filter(|(_, volume, folder)| !seen.contains(volume) && !skipped.contains(folder))
@@ -176,18 +199,22 @@ impl ScanLease<'_> {
                     match ids.as_slice() {
                         [] => {}
                         [only] => {
+                            let _write = steps2.write.timer();
                             rebind(tx, *only, f)?;
                             // The rebound row is on this scan's volume now: seen, as a row this scan saw would be.
                             seen.insert(f.volume);
                             out.rebound += 1;
                         }
                         _ => {
+                            found2 += 1;
                             ambiguous.insert(f.id);
                         }
                     }
                 }
                 Ok(())
             })?;
+            tier2.attach(&volumes);
+            steps2.close(tier2, tx2, &[("rebound", out.rebound.saturating_sub(rebound2)), ("ambiguous_found", found2)]);
 
             // Replacement: the file that took a name, in the same folder, with a changed or unknown creation time.
             // Candidates are rows displaced or still unpaired, or live rows this scan did not see. They are in the
@@ -201,7 +228,11 @@ impl ScanLease<'_> {
             // saw are cleared: an unpaired row it did not see is a file that is gone for now, and stays unpaired, so
             // the file coming back under its identity is paired with its row (and its data) rather than taken for a
             // new file. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
-            in_batches(conn, held, &under, &skipped, |tx, fresh| {
+            let steps_r = Steps::new();
+            let mut found_r = 0usize;
+            let (replaced0, txr) = (out.replaced, crate::transaction::tx_mark());
+            let replace_clear = pg_perf::span("pair.replace_clear");
+            in_batches(conn, held, &under, &skipped, &steps_r, |tx, fresh| {
                 let mut replaced_by = tx.prepare_cached(concat!(
                     "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
                      AND ((unpaired = 1 AND (volume IS NULL OR ",
@@ -216,17 +247,22 @@ impl ScanLease<'_> {
                 // not among them. The clearing is one statement for the batch, after the matches.
                 let mut to_clear: Vec<i64> = Vec::new();
                 for f in fresh {
-                    let ids: Vec<i64> = replaced_by
-                        .query_map(params![f.folder_id, f.name, f.id, f.created], |r| r.get(0))?
-                        .collect::<rusqlite::Result<_>>()?;
+                    let ids: Vec<i64> = {
+                        let _query = steps_r.query.timer();
+                        replaced_by
+                            .query_map(params![f.folder_id, f.name, f.id, f.created], |r| r.get(0))?
+                            .collect::<rusqlite::Result<_>>()?
+                    };
                     match ids.as_slice() {
                         [] => to_clear.push(f.id),
                         [only] => {
+                            let _write = steps_r.write.timer();
                             replace(tx, rules, *only, f, &mut out.temps)?;
                             out.replaced += 1;
                             out.replaced_ids.push(FileId::new(*only));
                         }
                         _ => {
+                            found_r += 1;
                             ambiguous.insert(f.id);
                             to_clear.push(f.id);
                         }
@@ -234,6 +270,7 @@ impl ScanLease<'_> {
                 }
                 let json = serde_json::to_string(&to_clear).map_err(anyhow::Error::from)?;
                 // An ambiguous row is counted as it is cleared (while it is still unpaired): the rows this returns.
+                let clear = steps_r.clear.timer();
                 let cleared: Vec<i64> = tx
                     .prepare_cached(
                         "UPDATE files SET unpaired = 0 WHERE unpaired = 1 AND id IN (SELECT value FROM json_each(?1))
@@ -241,6 +278,7 @@ impl ScanLease<'_> {
                     )?
                     .query_map([json], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?;
+                drop(clear);
                 for id in cleared {
                     if ambiguous.remove(&id) {
                         out.ambiguous += 1;
@@ -248,11 +286,17 @@ impl ScanLease<'_> {
                 }
                 Ok(())
             })?;
+            steps_r.close(
+                replace_clear,
+                txr,
+                &[("replaced", out.replaced.saturating_sub(replaced0)), ("ambiguous_found", found_r)],
+            );
         }
 
         // The ambiguous rows not counted as they were cleared: all of them on a scan that was not complete, which
         // clears nothing; on a complete one, those that stopped being fresh between the tiers (a rating given
         // meanwhile, say), still unpaired.
+        let mut tail = pg_perf::span("pair.ambiguous");
         {
             let snapshot = conn.unchecked_transaction()?;
             let mut stmt = snapshot.prepare_cached("SELECT unpaired FROM files WHERE id = ?1")?;
@@ -265,7 +309,10 @@ impl ScanLease<'_> {
             drop(stmt);
             snapshot.commit()?;
         }
+        tail.items(u64::try_from(ambiguous.len()).unwrap_or(u64::MAX));
+        drop(tail);
 
+        let close = pg_perf::span("pair.close");
         out.unpaired_with_data = conn.query_row(
             concat!(
                 "SELECT count(*) FROM files WHERE unpaired = 1 AND folder_id IN (",
@@ -276,7 +323,53 @@ impl ScanLease<'_> {
             params![under[0], under[1], under[2]],
             |r| r.get::<_, usize>(0),
         )?;
+        drop(close);
+        pass.field("unpaired_with_data", out.unpaired_with_data);
+        pass.field("ambiguous", out.ambiguous);
+        pass.field("replaced", out.replaced);
+        pass.field("rebound", out.rebound);
+        pass.items(u64::try_from(out.rebound.saturating_add(out.replaced)).unwrap_or(u64::MAX));
+        crate::transaction::attach_tx(&mut pass, tx_at);
         Ok(out)
+    }
+}
+
+/// The steps of one tier's batches, each a tally of its thread time: the probe that starts a batch outside any write
+/// transaction, the batch's read (its count is the batches, its items the rows), the extension stamp, the candidate
+/// queries, the rebinds and replacements, and the clearing. [`Steps::close`] puts them on the tier's span.
+struct Steps {
+    probe: pg_perf::Tally,
+    read: pg_perf::Tally,
+    stamp: pg_perf::Tally,
+    query: pg_perf::Tally,
+    write: pg_perf::Tally,
+    clear: pg_perf::Tally,
+}
+
+impl Steps {
+    fn new() -> Steps {
+        Steps {
+            probe: pg_perf::Tally::new("probe"),
+            read: pg_perf::Tally::new("read"),
+            stamp: pg_perf::Tally::new("stamp"),
+            query: pg_perf::Tally::new("query"),
+            write: pg_perf::Tally::new("write"),
+            clear: pg_perf::Tally::new("clear"),
+        }
+    }
+
+    /// Closes a tier's span: the rows it read (its items), its batches, its steps, its transactions, and `counts`.
+    fn close(&self, mut span: pg_perf::Span, tx: crate::transaction::TxMark, counts: &[(&str, usize)]) {
+        let (batches, rows) = self.read.totals();
+        span.items(rows);
+        span.field("batches", batches);
+        for (key, n) in counts {
+            span.field(key, *n);
+        }
+        for tally in [&self.probe, &self.read, &self.stamp, &self.query, &self.write, &self.clear] {
+            span.attach(tally);
+        }
+        crate::transaction::attach_tx(&mut span, tx);
     }
 }
 
@@ -290,20 +383,33 @@ fn in_batches(
     held: HeldLease<'_>,
     under: &[Vec<u8>; 3],
     skipped: &BTreeSet<i64>,
+    steps: &Steps,
     mut tier: impl FnMut(&Transaction<'_>, &[Fresh]) -> Result<()>,
 ) -> Result<()> {
     let mut after = i64::MIN;
     loop {
         // A probe outside any write transaction: a root with no fresh row past `after` takes no write lock.
-        if fresh_rows(conn, under, after, 1)?.is_empty() {
+        let more = {
+            let _probe = steps.probe.timer();
+            !fresh_rows(conn, under, after, 1)?.is_empty()
+        };
+        if !more {
             return Ok(());
         }
         let tx = write_transaction(conn)?;
         held.hold(&tx)?;
-        let batch = fresh_rows(&tx, under, after, WRITE_BATCH)?;
+        let batch = {
+            let mut read = steps.read.timer();
+            let rows = fresh_rows(&tx, under, after, WRITE_BATCH)?;
+            read.items(u64::try_from(rows.len()).unwrap_or(u64::MAX));
+            rows
+        };
         let Some(last) = batch.last().map(|f| f.id) else { return Ok(()) };
         // A rebind or a replacement revives a row with the fresh row's extension, which this build holds.
-        crate::lifecycle::stamp_held_exts(&tx)?;
+        {
+            let _stamp = steps.stamp.timer();
+            crate::lifecycle::stamp_held_exts(&tx)?;
+        }
         let batch: Vec<Fresh> = batch.into_iter().filter(|f| !skipped.contains(&f.folder_id)).collect();
         tier(&tx, &batch)?;
         tx.commit()?;

@@ -737,7 +737,10 @@ fn list_here<L: Listing>(
                 }
             }
         };
-        let rows = |folder: &RulePath| -> anyhow::Result<FolderRows> { Ok(lease.folder_rows(folder)?) };
+        let rows = |folder: &RulePath| -> anyhow::Result<FolderRows> {
+            let _step = FOLDER_ROWS.timer();
+            Ok(lease.folder_rows(folder)?)
+        };
         unit(lister, rules, job, dir, &rows, &mut beat)
     };
     if let Some(e) = lost {
@@ -814,6 +817,11 @@ fn walk_paced<L: Listing>(
     lister: &mut L,
     pacing: Pacing,
 ) -> Result<ScanStats, ScanError> {
+    // The scan's span in the perf log: its setup, its walk and its post-walk work (pairing, missing marks) are its
+    // children, and the transaction time it caused goes on it.
+    let mut pass = pg_perf::span("pass.scan");
+    let tx_at = pg_catalog::tx_mark();
+    let setup = pg_perf::span("scan.setup");
     let rules = catalog.rules();
     let root_dir = open_folder(lister, rules, root).with_context(|| format!("can't open {}", rules.display(root)))?;
     let root_device = lister.device(&root_dir);
@@ -822,15 +830,44 @@ fn walk_paced<L: Listing>(
         pg_catalog::Error::ScanBusy { root, holder } => ScanError::Busy { root, holder },
         e => ScanError::Failed(e.into()),
     })?;
+    drop(setup);
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    walk_leased(&mut lease, root, ctl, lister, root_dir, root_device, root_volume, pacing).map_err(|e| {
-        match removed(&e) {
-            Some(root) => ScanError::Removed { root },
-            None => ScanError::Failed(e),
-        }
-    })
+    let walked =
+        walk_leased(&mut lease, root, ctl, lister, root_dir, root_device, root_volume, pacing).map_err(
+            |e| match removed(&e) {
+                Some(root) => ScanError::Removed { root },
+                None => ScanError::Failed(e),
+            },
+        );
+    if let Ok(stats) = &walked {
+        pass.items(stats.files);
+        pass.field("changed", stats.changed);
+        pass.field("missing", stats.missing);
+        pass.field("folders", stats.folders);
+        pass.field("errors", stats.errors);
+    }
+    pg_catalog::attach_tx(&mut pass, tx_at);
+    walked
 }
+
+/// The time the walk's batch writes take (thread time: each is one write transaction of the walk's thread).
+static WRITE_BATCH: pg_perf::Tally = pg_perf::Tally::new("scan.write_batch");
+// The walk thread's steps (see `walk_leased`): the time the walk spent in each, thread time, the walk's own thread only
+// (a worker's listing is its own thread's, not here).
+static CHECKPOINT: pg_perf::Tally = pg_perf::Tally::new("scan.checkpoint");
+static WAIT_LISTING: pg_perf::Tally = pg_perf::Tally::new("scan.wait_listing");
+static LIST_HERE: pg_perf::Tally = pg_perf::Tally::new("scan.list_here");
+static CONSUME: pg_perf::Tally = pg_perf::Tally::new("scan.consume");
+static UNCHANGED: pg_perf::Tally = pg_perf::Tally::new("scan.unchanged");
+static MARK_SEEN: pg_perf::Tally = pg_perf::Tally::new("scan.mark_seen");
+static PRIOR_STATES: pg_perf::Tally = pg_perf::Tally::new("scan.prior_states");
+static SPAWN: pg_perf::Tally = pg_perf::Tally::new("scan.spawn");
+// Nested in those: the volume probe and the folder's rows (inside `LIST_HERE` and `CONSUME`), and the renewals (inside
+// any of them). They are reported beside the steps, not summed with them.
+static VOLUME_PROBE: pg_perf::Tally = pg_perf::Tally::new("scan.volume_probe");
+static FOLDER_ROWS: pg_perf::Tally = pg_perf::Tally::new("scan.folder_rows");
+static RENEW: pg_perf::Tally = pg_perf::Tally::new("scan.renew");
 
 /// The folder whose removal from the library ended the walk with `e` (`pg_catalog::Error::RootRemoved`, anywhere in its
 /// chain), if that is what ended it.
@@ -889,18 +926,45 @@ fn walk_leased<L: Listing>(
             Job { key: Vec::new(), path: root.clone(), device: root_device, volume: root_volume, chain: Vec::new() };
         let mut stack: Vec<Frame<L::Dir>> = vec![Frame { job: root_job, dir: Some(root_dir), pooled: false }];
 
+        // The steps that sum to the walk's time (`steps`), and those nested in them (`nested`). A write made during a pause
+        // is inside both `CHECKPOINT` and `WRITE_BATCH`, so the unaccounted time is understated by it.
+        let steps = [
+            &CHECKPOINT,
+            &WAIT_LISTING,
+            &LIST_HERE,
+            &CONSUME,
+            &UNCHANGED,
+            &MARK_SEEN,
+            &PRIOR_STATES,
+            &SPAWN,
+            &WRITE_BATCH,
+        ];
+        let nested = [&VOLUME_PROBE, &FOLDER_ROWS, &RENEW];
+        let marks = steps.map(|step| step.mark());
+        let nested_marks = nested.map(|step| step.mark());
+        let walk_began = Instant::now();
+        let mut walk = pg_perf::span("scan.walk");
         while let Some(frame) = stack.pop() {
             // A stop ends the walk here: nothing is marked missing and the scan's `finished` stays NULL. The pairing
             // still runs, on what was seen (tier 1 only: it needs no whole tree).
-            if !checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed, pacing.renew_every, &pool)? {
+            let go = {
+                let _step = CHECKPOINT.timer();
+                checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed, pacing.renew_every, &pool)?
+            };
+            if !go {
                 complete = false;
                 break;
             }
             let Frame { job, dir, pooled } = frame;
             let outcome = if pooled {
-                match take(&pool, &job.key, ctl, lease, &mut renewed, pacing.renew_every)? {
+                let taken = {
+                    let _wait = WAIT_LISTING.timer();
+                    take(&pool, &job.key, ctl, lease, &mut renewed, pacing.renew_every)?
+                };
+                match taken {
                     Taken::Listed(outcome) => outcome,
                     Taken::Inline => {
+                        let _listing = LIST_HERE.timer();
                         list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, None)?
                     }
                     Taken::Stopped => {
@@ -909,6 +973,7 @@ fn walk_leased<L: Listing>(
                     }
                 }
             } else {
+                let _listing = LIST_HERE.timer();
                 list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, dir)?
             };
             let listed = match outcome {
@@ -924,6 +989,8 @@ fn walk_leased<L: Listing>(
             stats.folders += 1;
             let mut files: Vec<ListedFile> = Vec::new();
             let n = entries.len();
+            let mut consume = CONSUME.timer();
+            consume.items(u64::try_from(n).unwrap_or(u64::MAX));
             // The entries are the walk's now: a file's name moves into its batch entry, not cloned.
             for (i, e) in entries.into_iter().enumerate() {
                 // The identity of an entry on another device is the walk's to find, here, in walk order: the same
@@ -932,6 +999,7 @@ fn walk_leased<L: Listing>(
                 let volume = match (e.device, job.device) {
                     (Some(device), Some(own)) if device != own => {
                         let probe = units_of(&rules.join(&job.path.child(&e.name)));
+                        let _probe = VOLUME_PROBE.timer();
                         lister.volume_of_device(device, &probe)
                     }
                     _ => job.volume,
@@ -1000,11 +1068,14 @@ fn walk_leased<L: Listing>(
                     prior: None,
                 });
             }
+            drop(consume);
             // A file whose row the folder's read already has as it is listed needs nothing written: it is only marked seen,
             // here, in the walk's set. The others go to the batch.
             let mut key = Vec::new();
             let mut unchanged = Vec::new();
             let mut changed: Vec<ListedFile> = Vec::with_capacity(files.len());
+            let mut compare = UNCHANGED.timer();
+            compare.items(u64::try_from(files.len()).unwrap_or(u64::MAX));
             for f in files {
                 let row = {
                     let listed = ScannedFile {
@@ -1023,13 +1094,22 @@ fn walk_leased<L: Listing>(
                     None => changed.push(f),
                 }
             }
-            lease.mark_seen(&unchanged)?;
+            drop(compare);
+            {
+                let mut mark = MARK_SEEN.timer();
+                mark.items(u64::try_from(unchanged.len()).unwrap_or(u64::MAX));
+                lease.mark_seen(&unchanged)?;
+            }
             if !changed.is_empty() {
                 // The rows the batch compares with: the folder's, read before the listing, and the others' by identity, read
                 // now but none changed since the listing began (`Catalog::prior_states`). The batch, written later, changes
                 // only those still so, so a write-back from the folder's listing on is kept.
                 let identities: Vec<FileIdentity> = changed.iter().map(|f| f.identity).collect();
-                let priors = lease.prior_states(&rows, &identities)?;
+                let priors = {
+                    let mut prior = PRIOR_STATES.timer();
+                    prior.items(u64::try_from(identities.len()).unwrap_or(u64::MAX));
+                    lease.prior_states(&rows, &identities)?
+                };
                 ensure!(
                     priors.len() == changed.len(),
                     "the catalog gave {} rows for {} files",
@@ -1052,6 +1132,7 @@ fn walk_leased<L: Listing>(
                 && let Some(file) = &file
             {
                 spawned += 1;
+                let _spawn_step = SPAWN.timer();
                 spawn_worker(scope, &pool, ctl, file.as_str(), rules, lister.fresh());
             }
         }
@@ -1059,6 +1140,17 @@ fn walk_leased<L: Listing>(
         pool.stop();
         // What is built is written, however the walk ended (a stop commits what it has).
         write_batch(lease, root, &mut batch, &mut stats, ctl)?;
+        walk.items(stats.files);
+        for (step, mark) in steps.iter().zip(marks) {
+            walk.attach_since(step, mark);
+        }
+        for (step, mark) in nested.iter().zip(nested_marks) {
+            walk.attach_since(step, mark);
+        }
+        // The walk's time that no step covers: the walk's wall time less the steps that sum to it.
+        let covered: Duration = steps.iter().zip(marks).map(|(step, mark)| step.spent_since(mark)).sum();
+        walk.field("unaccounted_ms", walk_began.elapsed().saturating_sub(covered).as_secs_f64() * 1e3);
+        drop(walk);
         // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
         // and outside the folders it skipped. Each of its transactions, and the missing marks', holds the lease first, as
         // the batches do: after the folder's removal, none of them writes.
@@ -1136,6 +1228,7 @@ fn checkpoint(
 /// (`pg_catalog::Error::RootRemoved`, [`ScanError::Removed`]), or it expired while the walk was held up, and another
 /// walk may have begun (`pg_catalog::Error::LeaseLost`): the walk can no longer tell that it is alone.
 fn renew(lease: &ScanLease<'_>) -> Result<()> {
+    let _step = RENEW.timer();
     Ok(lease.renew()?)
 }
 
@@ -1152,6 +1245,8 @@ fn write_batch(
     if batch.is_empty() {
         return Ok(());
     }
+    let mut timer = WRITE_BATCH.timer();
+    timer.items(u64::try_from(batch.entries).unwrap_or(u64::MAX));
     let scan_id = lease.id();
     // Renewed just before the batch's transaction: a walk whose lease was taken (it expired while the walk was held up)
     // writes nothing beside the other walk's writes.
@@ -2128,6 +2223,18 @@ mod tests {
         let stats = walk_paced(&mut c, &fake_root(), &Control::new(), &mut lister, paced(workers)).unwrap();
         let status = c.status().unwrap();
         (stats, status.files, status.missing)
+    }
+
+    #[test]
+    fn the_walk_record_names_its_steps_and_what_no_step_covers() {
+        let ((_, files, _), records) = pg_perf::capture(|| walk_of_tree("walk-steps", &judged_tree(), 0));
+        assert!(files > 0, "the walk saw files");
+        let walk = records.iter().find(|r| r["name"] == "scan.walk").expect("the walk's record");
+        let fields = &walk["fields"];
+        assert!(fields["unaccounted_ms"].as_f64().is_some_and(|ms| ms >= 0.0), "{walk}");
+        assert!(fields["scan.consume"]["count"].as_u64().is_some_and(|n| n > 0), "{walk}");
+        assert!(fields["scan.mark_seen"]["count"].as_u64().is_some_and(|n| n > 0), "{walk}");
+        assert!(fields["scan.write_batch"]["count"].as_u64().is_some_and(|n| n > 0), "{walk}");
     }
 
     #[test]

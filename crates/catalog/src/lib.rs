@@ -36,6 +36,7 @@ mod lookup;
 mod rebuild;
 mod roots;
 mod transaction;
+pub use transaction::{TxMark, attach_tx, tx_mark};
 mod types;
 mod work;
 mod writers;

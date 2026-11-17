@@ -156,6 +156,12 @@ pub(crate) enum Command {
         #[arg(long, default_value_t = 0)]
         show: usize,
     },
+    /// The table of a perf log: each step's time, its share, what it processed, and where each pipeline was bound. The
+    /// log is the file `PG_PERF_LOG` named when a command ran.
+    Perf {
+        /// The perf log file.
+        file: PathBuf,
+    },
 }
 
 /// `--cap-gb`: a number of GB above zero, as the thumbnail cache's cap.

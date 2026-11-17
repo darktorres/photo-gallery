@@ -71,6 +71,8 @@ fn real_folder(folder: &Path) -> Result<RulePath> {
 
 /// Save cropped copies of `ids` under `folder`.
 pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
+    // The pass's span in the perf log: its phase is its child, and the phase records what it did.
+    let _pass = pg_perf::span("pass.crop");
     let rules = catalog.rules();
     // The folder is chosen by the user. It is taken as the disk spells it, not as text: a lossy text form would write
     // the copies into a different folder from the one named.
@@ -224,6 +226,8 @@ struct CutWorker {
 /// copy leaves the original as it was. A file that fails is counted and the rest go on; a file whose catalog row can't be
 /// updated after its cut counts as failed, though its original is cut.
 pub fn cut(catalog: &Catalog, ids: &[FileId], confirmed: bool, opts: &Options, ctl: &Control) -> Result<CutStats> {
+    // The pass's span in the perf log: its phase is its child, and the phase records what it did.
+    let _pass = pg_perf::span("pass.cut");
     ensure!(confirmed, "the originals are changed only once the user has confirmed it");
     let rules = catalog.rules();
     let mut stats = CutStats::default();

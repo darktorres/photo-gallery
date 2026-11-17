@@ -11,9 +11,11 @@ workspace = true
 # the front ends word.
 [dependencies]
 pg-model = { path = "../model" }
+pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true
 crossbeam-channel.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 pg-testkit = { path = "../testkit" }

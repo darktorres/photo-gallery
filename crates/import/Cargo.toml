@@ -15,5 +15,6 @@ pg-container = { path = "../container" }
 pg-dedup = { path = "../dedup" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
+pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true

@@ -479,10 +479,14 @@ impl Inner {
 
     /// One round: the passes in order, on the connection the job keeps between rounds.
     fn round(&self, conn: &mut Option<Catalog>) -> Result<Step> {
+        // The round's span in the perf log: the passes it runs are its children, and the catalog's open is timed apart.
+        let _round = pg_perf::span("round");
+        let open = pg_perf::span("round.open");
         let mut catalog = match conn.take() {
             Some(c) => c,
             None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES)?,
         };
+        drop(open);
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
             schedule::round(
@@ -589,6 +593,9 @@ impl Pass<Cx<'_>> for Scans {
             *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
             let scanned = pg_scan::scan(cx.catalog, &path, &cx.inner.ctl);
             *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            // What a scan leaves to the runner after the scan's phase has closed: the replaced thumbnails, the temp files, the
+            // notices.
+            let _after = pg_perf::span("scan.after");
             match scanned {
                 Ok(s) => {
                     // A scan stopped early has committed what it recorded so far.

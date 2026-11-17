@@ -129,6 +129,44 @@ pub struct Control {
     on_ledger: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// When the last progress event went out.
     last_event: Mutex<Instant>,
+    /// The pauses since the job started, for the perf log's pass records (a pass's pauses outside its phases count too).
+    pauses: Mutex<PauseClock>,
+}
+
+/// The time the job has been paused: the pauses ended, and the pause in progress since when it began.
+#[derive(Default)]
+struct PauseClock {
+    total: Duration,
+    since: Option<Instant>,
+}
+
+impl PauseClock {
+    /// Starts or ends a pause at `now`. A repeat changes nothing.
+    fn set(&mut self, paused: bool, now: Instant) {
+        match (paused, self.since) {
+            (true, None) => self.since = Some(now),
+            (false, Some(since)) => {
+                self.total = self.total.saturating_add(now.saturating_duration_since(since));
+                self.since = None;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The perf log's name of a phase's span (`phase.scan`, `phase.import`, ...).
+fn span_name(phase: &Phase) -> &'static str {
+    match phase {
+        Phase::Idle => "phase.idle",
+        Phase::Crop => "phase.crop",
+        Phase::Scan { .. } => "phase.scan",
+        Phase::Import => "phase.import",
+        Phase::Hashes => "phase.hashes",
+        Phase::Pairing => "phase.pairing",
+        Phase::Borders => "phase.borders",
+        Phase::Thumbs { .. } => "phase.thumbs",
+        Phase::Placeholders => "phase.placeholders",
+    }
 }
 
 /// What a bounded checkpoint ([`Control::checkpoint_within`]) found.
@@ -154,7 +192,15 @@ impl Control {
             hook: OnceLock::new(),
             on_ledger: OnceLock::new(),
             last_event: Mutex::new(Instant::now()),
+            pauses: Mutex::new(PauseClock::default()),
         }
+    }
+
+    /// The time the job has been paused, up to now (a pause in progress counts).
+    pub fn paused_total(&self) -> Duration {
+        let clock = self.pauses.lock().unwrap_or_else(PoisonError::into_inner);
+        let open = clock.since.map_or(Duration::ZERO, |since| Instant::now().saturating_duration_since(since));
+        clock.total.saturating_add(open)
     }
 
     /// Ask the running pass to stop at the next file; it commits what it has.
@@ -177,7 +223,9 @@ impl Control {
         {
             let mut guard = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
             *guard = paused;
-            self.progress.update(|running| running.set_paused(paused, Instant::now()));
+            let now = Instant::now();
+            self.progress.update(|running| running.set_paused(paused, now));
+            self.pauses.lock().unwrap_or_else(PoisonError::into_inner).set(paused, now);
             self.resumed.notify_all();
         }
         self.changed();
@@ -264,6 +312,8 @@ impl Control {
     pub fn begin(&self, phase: Phase, total: u64) -> PhaseGuard<'_> {
         let now = Instant::now();
         *self.last_event.lock().unwrap_or_else(PoisonError::into_inner) = now;
+        // The phase's span in the perf log: opened here, closed with the guard (inert without a perf sink).
+        let span = pg_perf::span(span_name(&phase));
         let progress = Progress { phase, total, ..Progress::idle() };
         {
             // The pause flag outlives phases: a phase that begins while paused starts with its clock stopped.
@@ -273,7 +323,7 @@ impl Control {
             self.progress.set(running);
         }
         self.changed();
-        PhaseGuard { ctl: self }
+        PhaseGuard { ctl: self, span }
     }
 
     /// One file done.
@@ -305,10 +355,18 @@ impl Control {
     }
 
     /// The phase ended: its final progress goes out as an event, and the phase is idle. Called by [`PhaseGuard`]'s drop.
-    fn finish(&self) {
-        let ended = self.progress.update(|running| std::mem::replace(running, Running::idle()).read(Instant::now()));
-        self.events.publish(Event::Finished(ended));
+    /// Returns that progress, and the time the phase was paused (its wall time less its working time).
+    fn finish(&self) -> (Progress, Duration) {
+        let (ended, paused) = self.progress.update(|running| {
+            let now = Instant::now();
+            let wall = now.saturating_duration_since(running.started);
+            let ended = std::mem::replace(running, Running::idle()).read(now);
+            let paused = wall.saturating_sub(ended.elapsed);
+            (ended, paused)
+        });
+        self.events.publish(Event::Finished(ended.clone()));
         self.changed();
+        (ended, paused)
     }
 
     /// The progress now, with the time its phase has run.
@@ -332,11 +390,18 @@ impl Default for Control {
 #[must_use = "the phase ends when the guard is dropped: bind it (`let _phase = ctl.begin(..)`) for the pass's length"]
 pub struct PhaseGuard<'a> {
     ctl: &'a Control,
+    /// The phase's span in the perf log: what the phase did, and its pauses, go on it when the guard drops.
+    span: pg_perf::Span,
 }
 
 impl Drop for PhaseGuard<'_> {
     fn drop(&mut self) {
-        self.ctl.finish();
+        let (ended, paused) = self.ctl.finish();
+        self.span.items(ended.done);
+        self.span.failed(ended.failed);
+        self.span.bytes(ended.bytes);
+        self.span.field("total", ended.total);
+        self.span.paused(paused);
     }
 }
 

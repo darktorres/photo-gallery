@@ -1,0 +1,16 @@
+[package]
+name = "pg-perf"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The perf log (see `src/lib.rs`): timed spans of the background job and the import, written as JSON lines to the file
+# `PG_PERF_LOG` names. Off unless a sink is opened; the file's rotation is the app log's (`pg_log::LogFile`).
+[dependencies]
+pg-log = { path = "../log" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+serde_json.workspace = true

@@ -70,8 +70,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use file::LogFile;
-pub use file::{FILE_CAP, FILES};
+pub use file::{FILE_CAP, FILES, LogFile};
 use pg_model::notice::Level;
 pub use record::{DETAIL_CAP, MESSAGE_CAP, Record, parse};
 

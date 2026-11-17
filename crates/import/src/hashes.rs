@@ -39,7 +39,11 @@ pub fn hash(
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<Stats> {
+    let mut pass = pg_perf::span("pass.hashes");
+    let tx_at = pg_catalog::tx_mark();
+    let pending = pg_perf::span("pending.hashes");
     let work = catalog.pending_hashes()?;
+    drop(pending);
     let items = &work.items;
     let stats = Stats { files: 0, failed: 0, unreadable: 0, stored: 0, complete: true };
     if items.is_empty() {
@@ -79,6 +83,9 @@ pub fn hash(
     result?;
     let (_, mut stats) = state;
     stats.complete = stats.files == items.len();
+    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
+    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }
 

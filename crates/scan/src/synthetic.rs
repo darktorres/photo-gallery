@@ -2,8 +2,8 @@
 //! system under it, the same tree on every run, so a walk's instruction count is the walk's own.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::io;
+use std::sync::Arc;
 
 use pg_model::name::Name;
 use pg_model::refusal::RefusedReason;

@@ -418,7 +418,6 @@ pub enum Recorded {
 /// The row a file's identity has, as the scan needs it.
 pub(crate) struct Hit {
     pub(crate) id: i64,
-    pub(crate) folder_id: i64,
     /// The same folder, name, kind, size, mtime, order key, and not missing: nothing to write but the scan's mark.
     pub(crate) same: bool,
     pub(crate) created: Option<i64>,

@@ -5,7 +5,7 @@
 //! caller's. Uses `types`, `ledger::failure` and `error`; its SQL macros are from `sql`.
 
 use anyhow::{Context, anyhow};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use rusqlite::types::Value;
@@ -32,13 +32,7 @@ use crate::types::{
 
 /// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
 /// change number ([`change_number`]). These are the columns the `files_added` trigger set, before migration 16.
-fn write_new(
-    new_file: &mut Statement<'_>,
-    f: &ScannedFile,
-    folder: &Folder,
-    key: &[u8],
-    change: i64,
-) -> Result<usize> {
+fn write_new(new_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, key: &[u8], change: i64) -> Result<usize> {
     let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
     let size = i64::try_from(f.size).context("a file's size")?;
     let (ext, kind) = (f.ext.name(), f.ext.kind().key());
@@ -123,7 +117,7 @@ pub struct ScanWriter<'tx> {
     folder_failed: CachedStatement<'tx>,
     /// The id of each folder this writer has resolved, by its stored path: a folder's files are written after its
     /// lookup once, not once per file (`folder`).
-    folder_ids: HashMap<Vec<u8>, i64>,
+    folder_ids: BTreeMap<Vec<u8>, i64>,
     /// The order key of the file being recorded.
     key: Vec<u8>,
 }
@@ -143,7 +137,7 @@ impl<'tx> ScanWriter<'tx> {
         crate::lifecycle::stamp_held_exts(tx)?;
         let covering = covering_root(tx, rules, root)?.map(|r| (r.id.get(), rules.join(&r.path)));
         Ok(ScanWriter {
-            folder_ids: HashMap::new(),
+            folder_ids: BTreeMap::new(),
             scan: scan.get(),
             rules,
             under: under_params(rules, root),
@@ -161,16 +155,17 @@ impl<'tx> ScanWriter<'tx> {
             insert_seen: tx.prepare_cached("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)")?,
             last_id: tx.prepare_cached("SELECT last_insert_rowid()")?,
             backfill: tx.prepare_cached("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
-            displace: tx
-                .prepare_cached("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
+            displace: tx.prepare_cached(
+                "UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1",
+            )?,
             // A new row is unpaired: the pairing at the end of the scan decides what it is. It is pending, and changed at
             // the batch's number, which the insert sets itself (no trigger does, since migration 16). The row is not
             // known to the writer, so the insert cannot conflict: the identity was looked up in this transaction.
-            new_file: tx.prepare_cached(concat!(
+            new_file: tx.prepare_cached(
                 "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime,
                     order_key, unpaired, pending, seq, changed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 1, ?11, ?11)"
-            ))?,
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 1, ?11, ?11)",
+            )?,
             // A known row is updated only while it is as the walk read it when it listed the folder (`?11`, `?12`: NULL
             // for none), and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule
             // (a listing has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and
@@ -264,7 +259,6 @@ impl<'tx> ScanWriter<'tx> {
                     && r.get_ref(8)?.as_blob()? == &key[..];
                 Ok(Hit {
                     id: r.get(0)?,
-                    folder_id: r.get(1)?,
                     same,
                     created: r.get(9)?,
                     missing: r.get::<_, i64>(7)? != 0,
@@ -306,10 +300,9 @@ impl<'tx> ScanWriter<'tx> {
     pub fn seen_identity(&mut self, identity: FileIdentity) -> Result<()> {
         let row: Option<(i64, i64)> = self
             .identity_row
-            .query_row(
-                params![identity.volume.cast_signed(), identity.file_index.cast_signed()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            .query_row(params![identity.volume.cast_signed(), identity.file_index.cast_signed()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .optional()?;
         if let Some((id, unpaired)) = row {
             self.insert_seen.execute(params![id, unpaired])?;

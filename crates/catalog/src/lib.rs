@@ -45,11 +45,11 @@ pub use error::{Error, Result};
 mod schema;
 
 pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};
+pub use roots::FolderRowReader;
 pub use types::{
     CropSource, Folder, FolderFailure, FolderRows, Listed, PairingMarks, PairingWork, Prior, Rebuilt, Recorded, Root,
     SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Status, Versions, WorkItem, WriteTarget,
 };
-pub use roots::FolderRowReader;
 pub use writers::{
     AnalysisWriter, BordersWriter, LedgerWriter, OwedHashes, PairsBatch, PairsWriter, PairsWritten, ScanWriter,
 };

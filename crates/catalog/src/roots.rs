@@ -359,7 +359,7 @@ impl FolderRowReader {
 pub(crate) fn ensure_seen(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS scan_seen(id INTEGER PRIMARY KEY, unpaired INTEGER NOT NULL);
-         CREATE TEMP INDEX IF NOT EXISTS scan_seen_unpaired ON scan_seen(id) WHERE unpaired = 1;",
+         CREATE INDEX IF NOT EXISTS temp.scan_seen_unpaired ON scan_seen(id) WHERE unpaired = 1;",
     )?;
     Ok(())
 }
@@ -429,7 +429,9 @@ mod tests {
     use crate::ledger::Failure;
     use crate::test_support::{begin, lease, listed, p, versions};
     use crate::types::rules_name;
-    use crate::{Catalog, Error, FolderFailure, Prior, Recorded, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason};
+    use crate::{
+        Catalog, Error, FolderFailure, Prior, Recorded, SCAN_LEASE_SECS, ScanLease, ScannedFile, Skip, SkipReason,
+    };
     use pg_model::ids::{FileIdentity, ScanId};
     use pg_model::media::Ext;
     use pg_model::name::Name;
@@ -904,11 +906,12 @@ mod tests {
         // About 1 000 files a batch (a folder's files are marked together): 25 batches, then the sweep.
         assert!((25..=27).contains(&held.len()), "{} holds", held.len());
         assert_eq!(raw::missing_count(&c), FILES);
-        // Nothing left to mark: 1 000 folders a batch, then the sweep.
+        // Nothing left to mark: no batch of marks, so the write lock is taken only by the last transaction, which gives the
+        // lease back (Phase 3: `mark_missing` reads first and writes only when a row is to be marked).
         let scan = begin(&mut c, &root);
         let holds = WriteHolds::watch();
         assert_eq!(lease(&mut c, scan, &root).mark_missing(&[]).unwrap(), 0);
-        assert_eq!(holds.take().len(), 3);
+        assert_eq!(holds.take().len(), 1);
     }
 
     // The folder's read recognises a listing that matches its row, which the walk then only marks seen; a listing that
@@ -951,9 +954,8 @@ mod tests {
         let mut c = library(rules);
         let root = p(rules, r"D:\r");
         let scan = begin(&mut c, &root);
-        let seen = |c: &Catalog| -> i64 {
-            c.conn.query_row("SELECT count(*) FROM temp.scan_seen", [], |r| r.get(0)).unwrap()
-        };
+        let seen =
+            |c: &Catalog| -> i64 { c.conn.query_row("SELECT count(*) FROM temp.scan_seen", [], |r| r.get(0)).unwrap() };
         {
             let lease = ScanLease::new(&mut c, scan, root.clone());
             lease.mark_seen(&[(1, false), (2, true)]).unwrap();

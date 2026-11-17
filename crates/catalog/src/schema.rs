@@ -949,10 +949,9 @@ mod tests {
     use super::*;
     use crate::browse::fixtures::library;
     use crate::browse::fixtures::under_both_rules;
-    use crate::fixture::{self, raw};
     use crate::test_support::changed_since;
     use pg_dbfile::Difference;
-    use pg_model::ids::{FileId, FolderId};
+    use pg_model::ids::FileId;
     use pg_model::rating::Rating;
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;

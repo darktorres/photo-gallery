@@ -71,6 +71,8 @@ pub(crate) fn state(c: &Catalog, id: FileId) -> (bool, i64) {
 pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> ScanId {
     let bytes = c.rules().join(root);
     crate::roots::ensure_seen(&c.conn).unwrap();
+    // As `begin_scan` does: a walk starts with no rows seen (the previous walk's set went with its lease).
+    c.conn.execute("DELETE FROM temp.scan_seen", []).unwrap();
     c.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [&bytes]).unwrap();
     let scan = ScanId::new(c.conn.last_insert_rowid());
     c.conn

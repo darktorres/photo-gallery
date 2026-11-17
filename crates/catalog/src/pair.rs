@@ -84,7 +84,6 @@ impl ScanLease<'_> {
     /// present.
     pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> Result<Pairing> {
         let held = self.held();
-        let scan = self.id().get();
         let rules = self.rules;
         let conn = &self.conn;
         let under = under_params(rules, self.root());
@@ -417,13 +416,7 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh) -> Result<(
 /// The rotation and its queued turns, the analysis and what hangs off it, the file's own rating. The
 /// queued ratings stay, without their temp files, which hold the old file's bytes; the rating row's `value` is written
 /// again from the new file. The temp files to delete go to `temps`.
-fn replace(
-    tx: &Transaction,
-    rules: PathRules,
-    id: i64,
-    from: &Fresh,
-    temps: &mut Vec<RulePath>,
-) -> Result<()> {
+fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mut Vec<RulePath>) -> Result<()> {
     {
         let mut stmt = tx.prepare("SELECT temp FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL")?;
         for bytes in stmt.query_map([id], |r| r.get::<_, Vec<u8>>(0))? {

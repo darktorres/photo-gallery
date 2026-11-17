@@ -56,7 +56,7 @@
 //!
 //! So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -65,7 +65,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use pg_catalog::pair::{Coverage, Pairing};
-use pg_catalog::{Catalog, FolderFailure, FolderRowReader, FolderRows, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason};
+use pg_catalog::{
+    Catalog, FolderFailure, FolderRowReader, FolderRows, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason,
+};
 use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_model::name::Name;
@@ -781,7 +783,12 @@ fn spawn_worker<'scope, 'env, L: Listing + 'scope>(
 }
 
 /// The walk, over any listing: [`scan`] after its check. The root is opened and the lease taken; then the walk itself.
-fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, lister: &mut L) -> Result<ScanStats, ScanError> {
+fn walk<L: Listing>(
+    catalog: &mut Catalog,
+    root: &RulePath,
+    ctl: &Control,
+    lister: &mut L,
+) -> Result<ScanStats, ScanError> {
     walk_in_batches(catalog, root, ctl, lister, BATCH, RENEW_EVERY)
 }
 
@@ -817,9 +824,11 @@ fn walk_paced<L: Listing>(
     })?;
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    walk_leased(&mut lease, root, ctl, lister, root_dir, root_device, root_volume, pacing).map_err(|e| match removed(&e) {
-        Some(root) => ScanError::Removed { root },
-        None => ScanError::Failed(e),
+    walk_leased(&mut lease, root, ctl, lister, root_dir, root_device, root_volume, pacing).map_err(|e| {
+        match removed(&e) {
+            Some(root) => ScanError::Removed { root },
+            None => ScanError::Failed(e),
+        }
     })
 }
 
@@ -867,8 +876,8 @@ fn walk_leased<L: Listing>(
         // per mount, not per folder.
         let mut mounts: BTreeMap<u64, Result<(), RefusedReason>> = BTreeMap::new();
         // Each identity recorded or seen this scan: the second path to a file is skipped.
-        // (Only queried for membership, so a hash set: the walk's own order is the listing's, not the set's.)
-        let mut seen: HashSet<FileIdentity> = HashSet::new();
+        // (A B-tree set: the project bans std's randomly seeded hash sets, and the walk never iterates this one.)
+        let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
         let mut batch = Batch::default();
         // When the lease was last renewed (a batch's write renews it too).
         let mut renewed = Instant::now();
@@ -876,7 +885,8 @@ fn walk_leased<L: Listing>(
         let mut spawned = 0usize;
         // The phase ends when this is dropped, however the walk leaves.
         let _phase = ctl.begin(Phase::Scan { root: root.clone() }, 0);
-        let root_job = Job { key: Vec::new(), path: root.clone(), device: root_device, volume: root_volume, chain: Vec::new() };
+        let root_job =
+            Job { key: Vec::new(), path: root.clone(), device: root_device, volume: root_volume, chain: Vec::new() };
         let mut stack: Vec<Frame<L::Dir>> = vec![Frame { job: root_job, dir: Some(root_dir), pooled: false }];
 
         while let Some(frame) = stack.pop() {
@@ -890,7 +900,9 @@ fn walk_leased<L: Listing>(
             let outcome = if pooled {
                 match take(&pool, &job.key, ctl, lease, &mut renewed, pacing.renew_every)? {
                     Taken::Listed(outcome) => outcome,
-                    Taken::Inline => list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, None)?,
+                    Taken::Inline => {
+                        list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, None)?
+                    }
                     Taken::Stopped => {
                         complete = false;
                         break;
@@ -1018,7 +1030,12 @@ fn walk_leased<L: Listing>(
                 // only those still so, so a write-back from the folder's listing on is kept.
                 let identities: Vec<FileIdentity> = changed.iter().map(|f| f.identity).collect();
                 let priors = lease.prior_states(&rows, &identities)?;
-                ensure!(priors.len() == changed.len(), "the catalog gave {} rows for {} files", priors.len(), changed.len());
+                ensure!(
+                    priors.len() == changed.len(),
+                    "the catalog gave {} rows for {} files",
+                    priors.len(),
+                    changed.len()
+                );
                 for (file, prior) in changed.iter_mut().zip(priors) {
                     file.prior = prior;
                 }
@@ -1223,9 +1240,12 @@ mod tests {
 
     /// Folders by their units, as the walk opens them: each one's path under the fake root, and its entries. A clone lists
     /// the same tree, with the same hooks: a worker's lister is one.
+    /// A fake tree: each folder by its units, its path under the fake root, and its entries.
+    type Tree = Vec<(Vec<Unit>, String, Vec<FakeEntry>)>;
+
     #[derive(Clone)]
     struct FakeListing {
-        tree: Arc<Vec<(Vec<Unit>, String, Vec<FakeEntry>)>>,
+        tree: Arc<Tree>,
         root_volume: u64,
         /// Folders (by their units) whose mount is refused.
         refused: Vec<Vec<Unit>>,
@@ -1249,13 +1269,7 @@ mod tests {
                     (units_of(fake_path(rules, rel).as_bytes()), rel.to_string(), entries.clone())
                 })
                 .collect();
-            FakeListing {
-                tree: Arc::new(tree),
-                root_volume,
-                refused: Vec::new(),
-                hooks: Vec::new(),
-                after: Vec::new(),
-            }
+            FakeListing { tree: Arc::new(tree), root_volume, refused: Vec::new(), hooks: Vec::new(), after: Vec::new() }
         }
 
         /// The same tree, with the mount at `rel` (spelled under `rules`) refused by its file system.

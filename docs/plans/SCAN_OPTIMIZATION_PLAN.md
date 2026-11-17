@@ -1041,6 +1041,13 @@ From the report's item verdicts, with the reason:
 
 ## Measurement protocol
 
+**Validated, 2026-11-17 (tests and lint, not the measurements).** Phases 1 to 5 build and pass the workspace's tests
+(1,241 passed, none failed), `cargo clippy --workspace --all-targets -- -D warnings`, and `tools/lint.py`. The fixes
+that validation needed: the temp index's `CREATE INDEX temp.…` (Phase 3's `ensure_seen` was not valid SQL), the
+test helper that starts a walk with an empty seen set (as `begin_scan` does), the `mark_missing` expectation (the
+write lock is taken only by the last transaction when nothing is left to mark), and the lint points (`BTreeMap` and
+`BTreeSet` in place of the hash types the project bans, one doc link). The measurements below are not run yet.
+
 After each phase, repeat what the report measured:
 
 - **Callgrind**, in the `pg-dev` container (the justfile's perf recipe runs the benches there):

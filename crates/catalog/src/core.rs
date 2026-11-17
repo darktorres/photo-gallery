@@ -219,7 +219,7 @@ impl Catalog {
         Ok(Reader { catalog: self, own: Some(read_only(file, cache_kib)?), cache_kib })
     }
 
-    /// The catalog's file, `None` in memory: what a [`roots::FolderRowReader`] opens.
+    /// The catalog's file, `None` in memory: what a [`crate::FolderRowReader`] opens.
     pub fn file(&self) -> Option<&str> {
         self.conn.path().filter(|f| !f.is_empty())
     }

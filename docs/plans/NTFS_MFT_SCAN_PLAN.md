@@ -294,10 +294,11 @@ path, except for the OneDrive folder itself, which the tag can't see.
 ### Catalog
 
 Schema changes are migrations (`crates/catalog/src/schema.rs:43–64`). The baseline stays frozen at version 1, and
-`MIGRATIONS` reaches version 13 (`TO_13_PAIRS_OWED`, committed in `d3d307a`).
+`MIGRATIONS` reaches version 15 (`TO_13_PAIRS_OWED`, committed in `d3d307a`; `TO_14_PAIRING_EPOCH` and
+`TO_15_HASHES_OWED` after it).
 
 **Migrations.** Every schema change below is a migration after those of `docs/plans/SCAN_OPTIMIZATION_PLAN.md`, which
-lands first (its decision D5, 2026-11-15), in one transaction with its version. The pairing work took version 13, and
+lands first (its decision D5, 2026-11-15), in one transaction with its version. The pairing work took versions 13 to 15, and
 the scan plan takes the next one. A migration converts the rows whose meaning changes, with Rust steps:
 
 - `links`: one per old file row;

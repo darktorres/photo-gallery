@@ -1,6 +1,7 @@
 # Scan step: optimization plan
 
-Date: 2026-11-15, at HEAD `a8a7eac`, with the working tree's uncommitted work.
+Date: 2026-11-15, at HEAD `a8a7eac`, with the working tree's uncommitted work. Reevaluated 2026-11-17 at HEAD `b4515c7`:
+see **Reevaluation** below, which says what changed and what it does to each phase.
 
 The validation report's "shipped" numbers came from the main working tree at the time of its commit (`4d898d8`). The
 report names no commit, and the scan code has moved since: `ScanWriter::new` now stamps `held_exts` on every batch
@@ -42,13 +43,84 @@ The evidence is in `docs/temp/scan-optimizations-validation.md` (**the report**)
 files, the variant probe, the build-option builds, and warm, flushed and cold wall-clock runs on Windows. Where a figure
 here comes from the probe, or wasn't measured, it says so.
 
+## Reevaluation, 2026-11-17 (at HEAD `b4515c7`)
+
+Thirty-seven commits landed since `a8a7eac`. The design holds. The status, the numbering, the baseline and several
+premises changed, and each is taken in below. This is one pass against the code, not an adversarial validation.
+
+**What changed under the plan:**
+
+- **Phase F is in, and the perf baseline was re-measured with it.** `5aa9961` has F1 and F2. `f036825` re-measured
+  `docs/perf/baseline.json` at `0d44547`, which contains F. Its scan entries are `scan_walk.first` 2,032,603,262 and
+  `scan_walk.again` 341,125,554 (they were 1,961,442,750 and 364,267,992). That commit also carries the pairing and
+  import changes, so F's own cost is not isolated, and it is not measured.
+- **Migrations 14 and 15 belong to the pairing work:** `TO_14_PAIRING_EPOCH` (`meta.pairing_epoch`, with triggers on
+  `analysis` only) and `TO_15_HASHES_OWED`. `MIGRATIONS` ends at 15, so this plan's migration is 16. The MFT plan's
+  "reaches version 13" was stale; its text is fixed.
+- **Memory statistics are off, by another route.** `bed9346` sets `LIBSQLITE3_FLAGS = "SQLITE_DEFAULT_MEMSTATUS=0"` in
+  `.cargo/config.toml`. Phase 2 had rejected that route. See Phase 2.
+- **`rarray` is loaded on every catalog connection** (`core.rs:240`, `register`), and `rusqlite`'s `array` feature is on
+  (`Cargo.toml:39`). The precondition of Phase 5's items 6 and 8 holds for the catalog. The walk's workers don't have it.
+- **A read-only connection opener exists:** `read_only(file, cache_kib)` (`core.rs:247`), which `Catalog::reader`
+  (`core.rs:215`) uses. `Reader` still borrows the `Catalog`, so Phase 4's reason for a new owned type stands.
+- **`HeldLease` moved** to `lease.rs`. `ScanLease::held()` is at `core.rs:413`.
+- **The pairing's cost figures are stale.** "13.97G of 28.15G" was measured before the pairing commits.
+
+**Verdict by part:**
+
+| Part | Verdict | Reason |
+|---|---|---|
+| F1, F2 | Done; keep | The code and tests match "As built". The baseline includes F |
+| 1 | Valid; migration 16 | `files_added` (`schema.rs:859`) is still the only INSERT trigger on `files`, so the plain INSERT is single-write once it goes. Change 3's `placeholder` flag belongs to an unbuilt design (`OPEN_ITEMS.md`, S-17.7), so that part is conditional |
+| 2 | Revised | Memory statistics landed (`bed9346`). Lookaside is open. The route is revised (see Phase 2) |
+| 3 | Valid; larger than written | `folder_rows` returns only `(volume, file_ref)` with `(size, mtime)` (`roots.rs:242`). `last_scan` is still read by `pair.rs`, and `seen_volumes` is still a whole-table scan (`pair.rs:307`), as written |
+| 4 | Valid | `read_only` is the worker connection's opener. The `Reader` borrowing argument stands |
+| 5 | Valid; catalog precondition met | `rarray` is loaded on the catalog's connections; the workers need it for items 6 and 8. Nothing calls `set_prepared_statement_cache_capacity`, so item 4 stands |
+| Allocator | Valid | `mimalloc` is not in `Cargo.lock`, so the trial adds the crate |
+| Not doing; D1, D5, D6 | Hold | D5's MFT text is updated (see that plan) |
+| D2 | Decided; route to confirm | Open item 1 |
+| D3 | Superseded | The scan gate is live (±1%). See D3 |
+
+**Anchors (2026-11-17).** The body's line numbers are as of `a8a7eac`. Recount by the named symbol before each phase.
+The main anchors now:
+
+| Anchor | Now |
+|---|---|
+| `files_added` trigger; `files` table; `files_fresh` index | `schema.rs:859`; `schema.rs:653`; `schema.rs:372` |
+| `SETTINGS` (`temp_store = MEMORY`) | `schema.rs:529` |
+| `ScanWriter::new` (`stamp_held_exts` at line 91) | `writers.rs:84` |
+| `ScanWriter::upsert_file`; `seen_identity` | `writers.rs:169`; `writers.rs:228` |
+| `remove_root`; `begin_scan`; `mark_missing` | `roots.rs:91`; `roots.rs:124`; `roots.rs:170` |
+| `folder_rows`; `prior_states` | `roots.rs:242`; `roots.rs:273` |
+| `HeldLease::hold` | `lease.rs:26` |
+| `ScanLease`; `held`; `renew` | `core.rs:383`; `core.rs:413`; `core.rs:408` |
+| `Catalog::reader`; `register`; `read_only` | `core.rs:215`; `core.rs:240`; `core.rs:247` |
+| `pair_after_scan`; `in_batches`; `seen_volumes`; `fresh_rows` | `pair.rs:85`; `pair.rs:283`; `pair.rs:307`; `pair.rs:320` |
+| The stamp in each pairing batch | `pair.rs:298` |
+| `stamp_held_exts`; `mark_unheld_missing` | `lifecycle.rs:215`; `lifecycle.rs:197` |
+| Walk: `Listing`; `RENEW_EVERY`; `walk_leased` | `scan/src/lib.rs:83`; `:175`; `:458` |
+| Walk: `folder_rows` and `prior_states` calls | `scan/src/lib.rs:508`; `:605` |
+| Walk: `seen_identity` and `upsert_file` calls | `scan/src/lib.rs:719`; `:733` |
+| Walk: `pair_after_scan` and `mark_missing` calls | `scan/src/lib.rs:624`; `:627` |
+| `LIBSQLITE3_FLAGS` | `.cargo/config.toml:7` |
+| `rusqlite` `array` feature; fork rev | `Cargo.toml:39`; `Cargo.toml:137` |
+
+**Open for you:**
+
+1. **Resolved (2026-11-17): the fork route.** Both flags are the fork's `photo-gallery-defaults` feature (`8ec47c7`
+   on the pinned branch `photo-gallery-0.41.1`, pushed). `bed9346`'s `.cargo/config.toml` is removed.
+2. **A conflict with the bounded-memory plan.** `docs/plans/BOUNDED_MEMORY_PLAN.md:167` would set
+   `LIBSQLITE3_FLAGS = "SQLITE_TEMP_STORE=0 SQLITE_DEFAULT_MEMSTATUS=1"`. That reverts `bed9346`'s `MEMSTATUS=0`.
+   Whichever lands must keep one value.
+3. **The Linux container.** Confirm that the pg-dev run sees `.cargo/config.toml`. The Linux pass was not run here.
+
 ## Summary
 
 | Phase | Change | Evidence |
 |---|---|---|
 | F | **Bug fixes, first.** F1: read a folder's rows before listing it, and keep the identity read safe for hard links. F2: removing a library folder ends the scans under it | **Done** (2026-11-15). Each bug's test failed before its fix, as the reading said |
 | 1 | New files: a plain INSERT that sets `pending`, `seq` and `changed`; `files_added` dropped. Changed files: an UPDATE by id | Measured in the app: first scan −42% Ir; at 200k, −47% flushed-warm and −37% cold wall time, −55% user CPU (−51% user and kernel) |
-| 2 | SQLite built with memory statistics off and lookaside `1200,200`, through a feature of the fork | −10% Ir (statistics, measured in the app); −51% of the fixed write on Windows (lookaside, probe) |
+| 2 | SQLite built with memory statistics off (**landed** in the fork, `8ec47c7`, as its `photo-gallery-defaults` feature) and lookaside `1200,200` (**landed**, the same feature) | −10% Ir (statistics, measured in the app); −51% of the fixed write on Windows (lookaside, probe) |
 | 3 | A rescan that changes nothing writes nothing: unchanged files are decided at listing time and skip the batch; "seen by this scan" moves into a temporary set; `last_scan` and `files_fresh` go; the root check folds into the known lookup; `mark_missing` and the pairing take the write lock only when they have something to write | The work it removes cost 30.9k of a rescan's 41k Ir per file (`seen`, `known`, `in_root`: measured costs). The saving is not measured |
 | 4 | Parallel listing in the walker: workers read each folder's rows and list it ahead of the walk, in walk order; the walk consumes in its own order; the worker count measured per kind of device | Up to 28% of a cold rescan, measured on the lister alone, unordered, flat, on one NVMe drive. The ordered design must be measured itself, nested and on the HDD too |
 | 5 | The small items: folder ids, statement reuse, name buffers, hash set, ASCII extensions; two gated by a probe run (per-folder known lookup, batched identity fallback); the allocator, gated | 0.2 to 2% each (measured costs; item 11 not measured) |
@@ -69,8 +141,8 @@ Each phase is written in full, then built and tested once (no build between its 
   The table-rebuild step this plan had as its Phase 0 moves to the MFT plan, with the review's corrections, since its
   `files`/`links` split rebuilds `files` anyway. The MFT plan says all of this: its Catalog section, its `ScanWriter`
   rules and its steps' preconditions (updated 2026-11-15).
-- **Migrations.** The working tree's pairing work takes migration 13 (`TO_13_PAIRS_OWED`). This plan's schema changes
-  are one migration, the next free number (14 today).
+- **Migrations.** The pairing work took migrations 13 to 15 (`TO_13_PAIRS_OWED`, `TO_14_PAIRING_EPOCH`,
+  `TO_15_HASHES_OWED`). This plan's schema changes are one migration, the next free number (16).
   - Phase 1 adds it, and Phase 3 extends it in place.
   - No real catalog runs the builds in between. A scratch catalog made by one of them differs from the final schema at
     its version, so `Catalog::prepare` rebuilds it with its rows, as it rebuilds any mismatched catalog.
@@ -332,12 +404,25 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
    - `NOTIFICATIONS_PLAN.md`, row N-13: its open part is a test of `files_added`. It becomes the writer tests of
      step 5.
    - `OPEN_ITEMS.md`, the placeholder design: its `placeholder` flag is written by `new_file` and by `changed_file`, and
-     is one of Phase 3's compared columns. Otherwise a placeholder hydrated back with the same size and mtime would be
+     is one of Phase 3's compared columns (conditional: the placeholder design is not built, `OPEN_ITEMS.md`, S-17.7).
+     Otherwise a placeholder hydrated back with the same size and mtime would be
      classified unchanged, and its flag would never clear.
    - `NOTIFICATIONS_PLAN.md`, N-13 has a second open part, the guard in `carried_is_every_table_of_the_current_schema`.
      This plan doesn't close it.
 
 ## Phase 2: SQLite build flags
+
+### Phase 2: status (2026-11-17)
+
+- **Memory statistics: landed** in `bed9346`, through `.cargo/config.toml`. The commit measured the flag on the pairing
+  load (cycles 2,122 to 1,308 M at 4 and 12 threads) and found it level on its own elsewhere. The scan's −10% was
+  measured with the same flag, so that part is in.
+- **Lookaside: landed** with memory statistics, through the fork's `photo-gallery-defaults` feature (`8ec47c7`). The
+  probe's numbers stand (`1200,200`, −51% of the fixed write on Windows).
+- **The route is the fork's, by the rule that dependency changes go there.** `bed9346` had put the memory-statistics
+  flag in `.cargo/config.toml`, where Cargo finds it from the working directory only, so a build started elsewhere lost
+  it silently. That file is removed. The compile-options test (change 2, in `crates/catalog/src/core.rs`) checks both
+  flags in the built SQLite.
 
 ### Phase 2: why
 
@@ -374,7 +459,10 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
 
 ### Phase 2: changes
 
-1. **In the fork:**
+1. **Done (2026-11-17):** the fork's `photo-gallery-defaults` feature (`libsqlite3-sys`, forwarded by `rusqlite`) sets
+   both flags for the bundled build, before `LIBSQLITE3_FLAGS`, which can still override them. The workspace takes
+   the rev `8ec47c7`. Built and checked: the fork's `libsqlite3.a` has both options.
+   **The fork feature, as built:**
    - the feature in `libsqlite3-sys`, adding `-DSQLITE_DEFAULT_MEMSTATUS=0` and `-DSQLITE_DEFAULT_LOOKASIDE=1200,200`
      to the bundled build;
    - the forwarding feature in `rusqlite`;
@@ -543,6 +631,8 @@ A 200k rescan costs 41k instructions per file. `write_batch` is 32k of that:
 ### Phase 3: changes
 
 0. **`folder_rows` and `prior_states`** (Phase F1's split, `roots.rs`):
+   - Today the statement returns only `volume`, `file_ref`, `size` and `mtime` (`roots.rs:242`). So this change is most
+     of Phase 3's code, not a detail.
    - The folder statement returns `id`, `volume`, `file_ref`, `name`, `ext`, `kind`, `size`, `mtime`, `missing`,
      `order_key`, `created` and `unpaired`, with the change mark. `volume` and `file_ref` match the listed identities, as
      today (`roots.rs:225`).
@@ -673,7 +763,8 @@ lister**).
   - **Not `Catalog::reader`** (`core.rs:214`), though it opens the same kind of connection. Its `Reader` borrows the
     `Catalog`, which the walk holds mutably for its batches, so it can't be on another thread. And for an in-memory
     catalog it reuses the catalog's own connection.
-  - **A new owned type instead**, for example `CatalogReadOnly::open(path, cache_kib)`. It uses the same flags as
+  - **A new owned type instead**, for example `CatalogReadOnly::open(path, cache_kib)`. `read_only` (`core.rs:247`,
+    which `Catalog::reader` already calls) opens its connection with the same flags as
     `reader` (`SQLITE_OPEN_READ_ONLY`, `NO_MUTEX`, a busy timeout and the given cache), is `Send`, borrows nothing, and
     has the folder-row and identity reads. `ScanLease` makes one per worker from the catalog's path. The reads need no
     collations or SQL functions. If Phase 5's items 6 or 8 are adopted, they need `rarray`, and so
@@ -776,7 +867,8 @@ Their costs were measured in the app, except item 11.
   c's 197.9M.
 - So:
   - the list goes in as a bound array, with rusqlite's `array` feature (`rarray`), not JSON. It needs
-    `vtab::array::load_module` on each connection that runs it: the catalog's, and Phase 4's workers';
+    `vtab::array::load_module` on each connection that runs it: the catalog's (loaded by `register()` since the pairing
+    work, `core.rs:240`), and Phase 4's workers';
   - each is added to the variant probe first, against today's per-file statement;
   - each is adopted only if it is faster in both instruction counts and Windows time. The rule is fixed now, and the
     measurement only applies it.
@@ -796,7 +888,8 @@ The rest are the right code regardless of their size.
 Item 17 (skipping `mark_missing` on folders with nothing missing) is covered by Phase 3: `mark_missing` reads first,
 and takes the write lock only when there are rows to mark.
 
-**The allocator (item 20), gated.**
+**The allocator (item 20), gated.** (Reevaluated 2026-11-17: `mimalloc` is not in `Cargo.lock`, so the trial adds the
+crate. Nothing else here changed.)
 
 - glibc's malloc and free are 14% of the process. Phases 1 and 2 remove most of the SQLite allocations behind that.
 - A Rust `#[global_allocator]` doesn't reach SQLite, which calls the system `malloc`. So the trial is mimalloc for both:
@@ -836,7 +929,11 @@ From the report's item verdicts, with the reason:
   production reader yet. It is for a client's resync, which is a planned reader, so it stays. (`files_fresh` goes in
   Phase 3 for another reason: its only column goes.)
 - **D2. Lookaside for every connection. Decided (2026-11-15)** (Phase 2).
-- **D3. The perf baseline. Decided (2026-11-15): on hold.**
+- **D3. The perf baseline. Superseded (2026-11-17).**
+  - The user re-measured the baseline at `0d44547` (`f036825`), which contains Phase F. The scan gate is live (±1%,
+    `tools/perf-compare.py`).
+  - Each phase now re-baselines its own scan entries in its commit, from its callgrind archive, as `f036825` did.
+  - The decision as first written, kept for its reasons:
   - Phases 1 to 3 move `scan_walk.first` and `scan_walk.again` (`docs/perf/baseline.json`) far outside ±1%. Phase 4
     doesn't move them, since the bench's catalog is in memory and runs with no workers. Phase 5's small items may not
     either.
@@ -862,7 +959,7 @@ From the report's item verdicts, with the reason:
 
 After each phase, repeat what the report measured:
 
-- **Callgrind**, in the `pg-tools` container:
+- **Callgrind**, in the `pg-dev` container (the justfile's perf recipe runs the benches there):
   - the scan probe on `target/scan-probe/lib` (4k) and on the `pg-scan-large` volume (200k), first scan and rescan
     (`target/scan-probe/app_level.sh`);
   - then `just perf`.
@@ -889,7 +986,7 @@ After each phase, repeat what the report measured:
 
 ## After this plan
 
-- **The identity pairing** (`pair_after_scan`) is half of a 200k first scan once Phase 1 is in (13.97G of 28.15G). It
+- **The identity pairing** (`pair_after_scan`) is half of a 200k first scan once Phase 1 is in (13.97G of 28.15G, measured before the pairing commits: re-measure). It
   needs a probe and a report of its own.
 - **Cleanup**, once the measurements are done:
   - the probe data: `target/scan-probe/large` (about 0.3 GB) and the docker volume `pg-scan-large`;

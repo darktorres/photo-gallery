@@ -469,6 +469,23 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    /// The bundled SQLite is built with the photo gallery's defaults (the fork's `photo-gallery-defaults` feature): no
+    /// process-wide memory statistics, and a lookaside of 200 slots of 1200 bytes.
+    #[test]
+    fn sqlite_is_built_with_the_photo_gallery_defaults() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let options: Vec<String> = conn
+            .prepare("PRAGMA compile_options")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(options.iter().any(|o| o == "DEFAULT_MEMSTATUS=0"), "{options:?}");
+        // SQLite prints this option's value with a trailing comma (its `CTIMEOPT_VAL` for a value with a comma).
+        assert!(options.iter().any(|o| o.trim_end_matches(',') == "DEFAULT_LOOKASIDE=1200,200"), "{options:?}");
+    }
+
     fn roots_never_nest(rules: PathRules) {
         let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         assert!(c.add_root(&p(rules, r"D:\a\b")).unwrap());

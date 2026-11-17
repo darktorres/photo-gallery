@@ -36,7 +36,7 @@ pdqhash = "0.1"
 png = "0.18"
 proptest = "1"
 quick-xml = "0.42"
-rusqlite = { version = "0.41", features = ["array", "bundled", "collation", "fallible_uint", "functions", "hooks"] }
+rusqlite = { version = "0.41", features = ["array", "bundled", "collation", "fallible_uint", "functions", "hooks", "photo-gallery-defaults"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 specta = { version = "=2.0.0-rc.28", features = ["derive"] } # exact: a release candidate; the web client's types (pg-model)
@@ -121,7 +121,8 @@ lto = false
 incremental = true
 
 # turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app; qt-build-utils that gives the QML
-# compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit; thumbhash with a
+# compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit, and whose bundled SQLite
+# has the photo-gallery-defaults feature; thumbhash with a
 # reusable encoder that reads RGB; fast_image_resize whose resizer keeps its coefficients; quick-xml whose reader
 # reuses its buffers; png, fdeflate, image-webp, gif and zune-jpeg whose decoders keep their buffers and tables; tiff
 # and zune-core that read small values without allocating.
@@ -134,7 +135,7 @@ png = { git = "https://github.com/darktorres/image-png", rev = "2f176edb0a07b488
 cxx-qt-build = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
 qt-build-utils = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
 quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
-rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "9d76035b8f1b069bf1c7d98b420e70f3a8369e51" }
+rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "8ec47c7e9ee929d013c5945b4d244ec9762dd4d8" }
 thumbhash = { git = "https://github.com/darktorres/thumbhash", rev = "a7bc11b868583c513ab3a5f0a1a37b93668adcbf" }
 tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
 turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }

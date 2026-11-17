@@ -1211,7 +1211,8 @@ Against 128, 6 pairs, join:
 | 256 | −0.95% [−8.43, +3.47] | −6.75% [−26.69, +10.09]; again +4.77% [−0.58, +10.78] | −6.72% [−28.90, +13.27]; again −2.28% [−7.76, +3.53] |
 
 No real gain anywhere, and the first runs' estimates turned over when run again: the starved time is the stages'
-tails (a block is ~0.1 ms at 12 threads), not the block's size.
+tails, not the block's size (a block is ~0.74 ms of a thread at 12 workers, from the trace in "What the round
+left, measured"; this paragraph first said ~0.1 ms).
 
 **`SLICE`: 200,000 stays, and what slicing can bound.** `tools/profiling/pairing/grow_catalog.py` grows a catalog with
 copies of its pictures, each copy's hashes XOR one mask that is the same in every orientation (one bit per orbit of the
@@ -1235,6 +1236,73 @@ every slice, and the pass grows with the library whatever the slice (about 0.35 
 itself is `docs/plans/BOUNDED_MEMORY_PLAN.md`'s (Phase 5, the on-disk tier-1 index in a budget `W`), which replaces this
 join. Until then 200,000 is kept: this library is one slice, and a larger one pays 26 - 35% for a query side bounded
 at ~80 MiB.
+
+#### What the round left, measured (after step 10)
+
+The items the round's record listed as not built (`PAIRING_SECOND_ROUND_PLAN.md`, "Status"). The traces and counts
+come from a throwaway build of `f036825` with counters added, every picture owed; the kept change from 6 pairs under
+the keep rule.
+
+**Equal-work scan blocks (step 5, item 4) and the work prefix (step 2, item 5): not built.** A trace of every task of
+the team, two runs at 12 workers: the threads were busy ~8,100 ms and waited 256 - 401 ms (3 - 5%), at three
+boundaries:
+
+| Where the threads waited | Run 1 | Run 2 |
+|---|---:|---:|
+| A stage's scan ending (its last blocks on other threads) | 82 ms | 84 ms |
+| The second pass's last regions, before the scan | 155 ms | 73 ms |
+| The first pass's last blocks, before the second | 28 ms | 27 ms |
+
+A scan block takes 0.74 ms of a thread on average at 12 workers (6.09 s over 8,192), not the ~0.1 ms step 9 assumed.
+Per block, the lesser of its two runs (the work, without most interference): median 625 µs, p99 985 µs, p999 1.3 ms;
+one block heavy in both runs (stage 2, 4.6 ms). The two runs' block times are uncorrelated (0.02): what makes a block
+slow in one run is the machine, not its buckets. The scan's end is what 12 threads finishing at random within a block
+of that size cost, about 4 - 6 ms of thread time a stage. With the blocks' work as measured, 12 threads claiming them
+in order over the 16 stages take 438.5 ms; blocks of equal work would take 435.6 ms, the work spread perfectly 432.2
+ms. Equal-work blocks would save 2.9 ms a pass (about 0.4% of the join), below what 6 pairs resolve and likely less
+than computing the prefix (17 bucket lookups per query bucket a stage), so neither was built. On one worker there is no
+tail.
+
+**The 16-lane x 16-bit kernel (step 3): not built, by the replay.** The scan's loop counts on the real hashes, one
+worker (202.7 M setups, each a stored entry's suffix of a query bucket; the suffixes 11.8 entries on average):
+
+| | 8 lanes of 32 bits (built) | 16 lanes of 16 bits |
+|---|---:|---:|
+| Iterations | 384.9 M | 247.7 M |
+| Lane slots tested | 3.08 G (77% used) | 3.96 G (60% used) |
+
+A lane's head bits cost the same either way (one load, xor and nibble count per 256 bits), so 16 lanes test 29% more
+of them on these short suffixes; counting uops per iteration, 16 lanes lose at 3 and 2 head words (stages 0 - 11) and
+gain about 7% only at 1 (stages 12 - 15). Of the setups, 14.6% (29.6 M) meet a query bucket of 9 - 16 entries, which
+a 16-lane kernel would test in one straight-line step: too few to repay the rest. The plan chose the width by this
+replay and built only the chosen one: 8 lanes, as they are.
+
+**The first pass's scatter in fewer streams (step 2, item 6): kept.** Timed apart on one worker (all owed, 36.1 M
+records), the first pass was 270 ms reading the entries and 185 - 194 ms scattering them by the chunk's high byte. The
+scatter wrote heads, codes and keys to three arrays at 256 places each, 768 lines open against the L1's 512. Two
+layouts, 4 runs each (ms):
+
+| Layout | Scatter | Second pass: count | Place | Sort |
+|---|---:|---:|---:|---:|
+| heads, codes, keys apart (before) | 184 - 194 | 56 - 60 | 206 - 217 | 722 - 756 |
+| one record (head, code, key) | 146 - 159 | 88 - 95 | 186 - 197 | 686 - 738 |
+| one record (head, code), the key's low byte apart (kept) | 141 - 145 | 56 - 57 | 201 - 207 | 666 - 691 |
+
+One record cut the scatter, but the second pass then counted a region's entries by reading whole records; the key's
+low byte alone (what the second pass places by) in an array of its own keeps the count's dense read. The plan's
+software buffers, a line per high byte, would add nothing here: the block is in L2 by its size, and 512 open lines
+already fit the L1. Kept (6 pairs against `669716b`; four slices, no verdict at first, kept when run again):
+
+| Workload | Sort, ms (A → B) | Sort | Join (pass on four slices) |
+|---|---|---|---|
+| all owed, 1 worker | 737 → 681 | −7.10% [−13.13, −0.28] | −1.35% [−5.32, +5.89] |
+| all owed, 12 | 1,944 → 1,808 | −6.81% [−12.18, −4.35] | −2.02% [−22.56, +7.04] |
+| 300 owed, 1 | 218 → 205 | −6.59% [−26.47, +5.14] | −5.53% [−25.21, +9.54] |
+| 3,000 owed, 1 | 228 → 208 | −10.33% [−16.26, −6.31] | −5.02% [−14.64, −0.70] |
+| 3,000 owed, 12 | 650 → 606 | −7.42% [−16.78, −3.81] | −14.29% [−26.42, +3.20] |
+| four slices, 12 | 3,796 → 3,502 | −9.00% [−12.88, −1.90] | −2.91% [−7.51, +8.73] |
+
+Sort times at 12 workers are the team's thread time. The oracle's pairs are identical on all seven paths.
 
 ---
 

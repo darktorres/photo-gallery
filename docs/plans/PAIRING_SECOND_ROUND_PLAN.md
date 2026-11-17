@@ -14,22 +14,21 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 |---|---|
 | 0, the baseline | Done: the vector start, `d949748` |
 | 1, transposes as a chunk renaming | Done: `7ab62e7` (the renaming), `f8fa6e9` (no per-slice transposes). The single copy of the hashes and `Joiner::original` move to steps 5 and 7 |
-| 2, the radix sort by regions | Done: `7ab62e7`. **Not built:** the scan's work prefix (item 5) and the write-combined first pass (item 6); `FewChunk::new` keeps a sort of its own (item 7) |
-| 3, the scan kernel | Done: `7ab62e7`. **Not done:** the 16-lane x 16-bit kernel and the loop-count replay |
+| 2, the radix sort by regions | Done: `7ab62e7`; the first pass's scatter in fewer streams (item 6) after the round, kept (sort −7 to −10%). **Not built:** the scan's work prefix (item 5), measured not worth it; `FewChunk::new` keeps a sort of its own (item 7) |
+| 3, the scan kernel | Done: `7ab62e7`. The loop-count replay after the round chose 8 lanes of 32 bits: the 16-lane x 16-bit kernel not built |
 | 4, the few-owed path | Done: `07d832a` |
-| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring); the store's build timed on its own and `start()`'s priority tested on every task, after the round. **Not built:** scan blocks of equal work (item 4) |
+| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring); the store's build timed on its own and `start()`'s priority tested on every task, after the round. **Not built:** scan blocks of equal work (item 4), measured not worth it (about 0.4% of the join at 12 workers) |
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
 | 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
 | 9, re-tuning | Done: the store's permute on the team; the few-owed threshold refitted; `WRITE` 4,000; the threads, the load's parts, the cache, `BLOCK` and `SLICE` kept |
 | 10, docs and benches | Done |
 
-**Open.** The round's steps are done but for the items marked above, and its aim is not met: the one-worker pass is
-4.6 - 4.7 s, 2.3x the pass before the first round's rebuild, against the first round's 3.5x (P-13 in
-[PROFILING_PLAN.md](PROFILING_PLAN.md), open; the scan, 3.5 s, is what is left). Of the items not built, the 16-bit
-kernel and the write-combined first pass are the ones aimed at the one-worker scan and sort; the equal-work blocks
-and the work prefix they need would act mostly on 12 workers, where the team's starved time is about 5% of the
-join's thread time (step 9, `BLOCK`).
+**Open.** The round's steps are done, and what its record left is measured (`PROFILING.md`, "What the round left,
+measured"): the first pass's scatter in fewer streams was kept; the equal-work blocks with their work prefix, and the
+16-lane kernel, were measured and not built. Its aim is not met: the one-worker pass is 4.6 - 4.8 s, 2.3x the pass
+before the first round's rebuild, against the first round's 3.5x (P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md),
+open; the scan, 3.6 s, is what is left, and none of the round's leads remains for it).
 
 ## Context
 
@@ -210,8 +209,12 @@ zeroing is gone. Departures:
   task that fills it and handed back in its report, under the team's one lock (`SideSort`), so no buffer is shared.
 - **Not built: the scan's work prefix** (item 5). The scan's blocks are 128 query buckets each (`BLOCK`; a run-time
   `Tuning::block` since step 9, where 32, 64 and 256 gained nothing). The prefix is what step 5's equal-work blocks
-  (item 4) would cut by, and neither was built.
-- **Not tried: the write-combined first pass** (item 6).
+  (item 4) would cut by. After the round a trace of the team measured what they could gain: about 2.9 ms a pass
+  (0.4% of the join at 12 workers; the blocks' work is already even), so neither was built.
+- **The write-combined first pass** (item 6), after the round: a block's records hold the head and the code together,
+  and the key's low byte apart, so the scatter keeps 512 lines open, within L1, against 768 (software buffers would
+  add nothing: the block is in L2). Kept: sort −6.6 to −10.3% on every workload, the join −5.0% at 3,000 owed on one
+  worker, the rest level.
 - **`FewChunk::new` keeps a sort of its own** (item 7): step 4 lists each chunk's query entries under their 17 probe
   values by one counting sort over the values, which the regions' two passes do not fit.
 - **The sort's cost per record byte** was not measured here for step 3's model: step 3 chose its widths from each
@@ -246,8 +249,9 @@ measured:
 - **Buckets of at most 8 entries** load their heads and pictures once, and test each stored entry in straight-line
   code, with the ordering rule as a lane mask.
 - **The few-owed path** tests hits on full hashes kept beside the query codes, with no head.
-- **Not done:** the 16 × 16-bit lane alternative and the replay. The widths were chosen from per-stage measurements
-  (`FULL_TEST_COST`) instead.
+- **The 16 × 16-bit lane alternative: not built, by the replay** (after the round). On the real hashes 16 lanes test
+  3.96 G lane slots against 3.08 G at 8 (the suffixes are 11.8 entries on average), and lose at 3 and 2 head words.
+  The widths were chosen from per-stage measurements (`FULL_TEST_COST`).
 - **New cost:** the sort wait on 12 workers doubled (130 → 272 ms), because the sorters no longer keep up. Step 5 is
   what removes it.
 

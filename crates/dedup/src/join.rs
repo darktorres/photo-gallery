@@ -931,19 +931,24 @@ fn l2_cache() -> usize {
     })
 }
 
-/// The entries of one block of the sort's first pass at `w` head words: the block's records (`w` words, the code and
-/// the `u16` key) as read and as scattered, both in L2.
+/// The entries of one block of the sort's first pass at `w` head words: the block's records as read (`w` words, the
+/// code and the `u16` key: [`ReadBuffers`]) and as scattered (`w` words and the code, and the key's low byte:
+/// [`Block`]), both in L2.
 fn sort_block(w: usize) -> usize {
-    (l2_cache() / (2 * (4 * (w + 1) + 2))).max(1)
+    let (read, scattered) = (4 * (w + 1) + 2, 4 * (w + 1) + 1);
+    (l2_cache() / (read + scattered)).max(1)
 }
 
 /// One block of a side's first pass: its records scattered by their chunk's high byte (`run[h]..run[h + 1]` are those
-/// of high byte `h`, in the order read), each its head (`w` words), code and chunk value. Reused from stage to stage.
+/// of high byte `h`, in the order read). Record `j` is its head (`w` words) and code together, at `records[j * (w +
+/// 1)..]`, and its chunk's low byte, `lows[j]`, what the second pass places it by. So the scatter writes two streams
+/// per high byte, the records' and the low bytes', 512 lines open at a time where a core's L1 holds 512 (with heads,
+/// codes and keys apart it was 768, and its stores missed L1); and the second pass counts a region's entries from the
+/// low bytes alone. Reused from stage to stage.
 #[derive(Default)]
 struct Block {
-    heads: Vec<u32>,
-    codes: Vec<u32>,
-    keys: Vec<u16>,
+    records: Vec<u32>,
+    lows: Vec<u8>,
     run: Vec<u32>,
 }
 
@@ -1038,17 +1043,18 @@ fn first_pass_width<const W: usize>(
         *count = *start;
     }
     block.run[256] = at;
-    block.heads.resize(len * W, 0);
-    block.codes.resize(len, 0);
-    block.keys.resize(len, 0);
-    let (heads, codes, keys) = (&mut block.heads[..], &mut block.codes[..], &mut block.keys[..]);
+    let stride = W + 1;
+    block.records.resize(len * stride, 0);
+    block.lows.resize(len, 0);
+    let (records, lows) = (&mut block.records[..], &mut block.lows[..]);
     // `counts` now holds each high byte's next position.
     for ((head, &code), &key) in read_heads.as_chunks::<W>().0.iter().zip(read_codes.iter()).zip(read_keys.iter()) {
         let slot = &mut counts[usize::from(key >> 8)];
         let j = index(*slot);
-        heads[j * W..(j + 1) * W].copy_from_slice(head);
-        codes[j] = code;
-        keys[j] = key;
+        records[j * stride..j * stride + W].copy_from_slice(head);
+        records[j * stride + W] = code;
+        let [low, _] = key.to_le_bytes();
+        lows[j] = low;
         *slot += 1;
     }
 }
@@ -1062,8 +1068,8 @@ fn first_pass_width<const W: usize>(
 fn second_pass_width<const W: usize>(region: &mut Region, blocks: &[Block], h: usize, layout: Layout) {
     let mut counts = [0u32; 256];
     for block in blocks {
-        for &key in &block.keys[index(block.run[h])..index(block.run[h + 1])] {
-            counts[usize::from(key & 0xFF)] += 1;
+        for &low in &block.lows[index(block.run[h])..index(block.run[h + 1])] {
+            counts[usize::from(low)] += 1;
         }
     }
     region.offsets.resize(257, 0);
@@ -1084,13 +1090,15 @@ fn second_pass_width<const W: usize>(region: &mut Region, blocks: &[Block], h: u
     // The region's buffers as their own slices, and block by block each run's slices taken once, so a store does not
     // make the loop read any buffer's bounds again.
     let (out_head, out_code) = (&mut region.head[..], &mut region.code[..]);
+    let record = W + 1;
     for block in blocks {
         let run = index(block.run[h])..index(block.run[h + 1]);
-        let keys = &block.keys[run.clone()];
-        let codes = &block.codes[run.clone()];
-        let (heads, _) = block.heads[run.start * W..run.end * W].as_chunks::<W>();
-        for ((&key, &code), head) in keys.iter().zip(codes).zip(heads) {
-            let slot = &mut counts[usize::from(key & 0xFF)];
+        let lows = &block.lows[run.clone()];
+        let records = block.records[run.start * record..run.end * record].chunks_exact(record);
+        for (&low, entry) in lows.iter().zip(records) {
+            let (head, code) = entry.split_at(W);
+            let code = code[0];
+            let slot = &mut counts[usize::from(low)];
             let j = index(*slot);
             match layout {
                 Layout::Rows => out_head[j * W..(j + 1) * W].copy_from_slice(head),

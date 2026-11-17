@@ -129,6 +129,7 @@ fn pair_and_report(
     let (t, part) = (s.timings, |d: std::time::Duration| format!("{:.2}", d.as_secs_f64()));
     say(&Line::PairTimings {
         load: part(t.load),
+        store: part(t.store),
         join: part(t.join),
         sort: part(t.joins.sort),
         scan: part(t.joins.scan),

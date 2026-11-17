@@ -97,7 +97,9 @@ pub struct PairStats {
 pub struct Timings {
     /// Reading the pictures (`Catalog::pairing_work`).
     pub load: Duration,
-    /// Building the join's store, and the joins.
+    /// Building the join's store (`Joiner::new_on`: every picture's hashes permuted, on the join's threads).
+    pub store: Duration,
+    /// The joins.
     pub join: Duration,
     /// The joins' parts, summed over the slices.
     pub joins: JoinTimes,
@@ -161,7 +163,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     // proven 1% of a one-worker join for 300 owed), and the guard asks the join for a picture's (`Joiner::original`).
     let hashes = std::mem::take(&mut work.hashes);
     let joiner = Joiner::new_on(&hashes, &work.owed, opts.workers, &start)?.tuned(settings.join);
-    stats.timings.join += building.elapsed();
+    stats.timings.store = building.elapsed();
 
     // The phase ends when this is dropped, however the pass leaves. Its progress is the owed pictures paired so far.
     let _phase = ctl.begin(Phase::Pairing, u64::try_from(owed.len()).unwrap_or(u64::MAX));
@@ -174,7 +176,9 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
         abort.store(true, Ordering::SeqCst);
         ctl.wake();
     };
+    // On a thread of its own at the pass's priority: the join's preparation (the slice's owed pictures) runs there.
     let join = |slice: &[usize]| -> (Option<Joined>, Duration) {
+        start();
         let joining = Instant::now();
         let joined = match (slice.first(), slice.last()) {
             (Some(&first), Some(&last)) => joiner.join(first..last + 1, opts.workers, &start, &control, &stop),

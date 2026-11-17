@@ -46,6 +46,8 @@
 //! team sorts a stage, then scans it; a thread waits only when its phase has no task left to claim and the next phase
 //! has not begun (the phase's tail).
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::ops::Range;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -384,44 +386,76 @@ pub struct Joiner<'a> {
     /// The tests' injected panic: in the task of this kind that brings the count to zero.
     #[cfg(test)]
     fault: Option<(Kind, AtomicUsize)>,
+    /// The tests' check that every task runs on a thread that ran `start` ([`CHECK_START`] on the building thread).
+    #[cfg(test)]
+    checks_start: bool,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The tests' check that the caller's `start` runs before all of a join's work: set on the thread that builds a
+    /// [`Joiner`], the store's build on the join's threads and every task of its joins assert [`STARTED`] on their own
+    /// thread.
+    static CHECK_START: Cell<bool> = const { Cell::new(false) };
+    /// Set by the tests' `start` on the thread it runs on.
+    static STARTED: Cell<bool> = const { Cell::new(false) };
 }
 
 impl<'a> Joiner<'a> {
     /// The join over `hashes` (every picture, in file-id order) where picture `i` owes its pairs when `owed[i]`.
+    /// The store is permuted on the caller's thread.
     pub fn new(hashes: &[[Hash; ORIENTATIONS]], owed: &'a [bool]) -> Result<Joiner<'a>, TooManyPictures> {
-        Joiner::new_on(hashes, owed, 1, &|| {})
+        Joiner::build(hashes, owed, None)
     }
 
-    /// [`Joiner::new`] with the store permuted on `threads` threads, each started by `start` (the pass's priority):
-    /// each permutes an equal run of the pictures into its own part of the store.
+    /// [`Joiner::new`] with the store permuted on `threads` threads of its own (at least one), each started by `start`
+    /// (the pass's priority): each permutes an equal run of the pictures into its own part of the store. The caller's
+    /// thread permutes nothing, so all of it runs at `start`'s priority, and the caller's is never changed.
     pub fn new_on(
         hashes: &[[Hash; ORIENTATIONS]],
         owed: &'a [bool],
         threads: usize,
         start: &(dyn Fn() + Sync),
     ) -> Result<Joiner<'a>, TooManyPictures> {
+        Joiner::build(hashes, owed, Some((threads, start)))
+    }
+
+    /// The store permuted on the caller's thread (`team` none), or on a team's threads.
+    fn build(
+        hashes: &[[Hash; ORIENTATIONS]],
+        owed: &'a [bool],
+        team: Option<(usize, &(dyn Fn() + Sync))>,
+    ) -> Result<Joiner<'a>, TooManyPictures> {
         if !u32::try_from(hashes.len()).is_ok_and(|n| n <= MAX_PICTURES) {
             return Err(TooManyPictures(hashes.len()));
         }
         let mut stored = vec![[0u64; 4]; ORIENTATIONS * hashes.len()];
+        #[cfg(test)]
+        let (checks_start, on_team) = (CHECK_START.get(), team.is_some());
         let permute = |from: &[[Hash; ORIENTATIONS]], to: &mut [[[u64; 4]; ORIENTATIONS]]| {
+            #[cfg(test)]
+            assert!(
+                !(checks_start && on_team) || STARTED.get(),
+                "the store permuted on a thread that did not run start"
+            );
             for (h, s) in from.iter().zip(to) {
                 *s = h.each_ref().map(permuted);
             }
         };
         let (store, _) = stored.as_chunks_mut::<ORIENTATIONS>();
-        let run = hashes.len().div_ceil(threads.max(1)).max(1);
-        if threads <= 1 {
-            permute(hashes, store);
-        } else {
-            std::thread::scope(|scope| {
-                for (from, to) in hashes.chunks(run).zip(store.chunks_mut(run)) {
-                    scope.spawn(move || {
-                        start();
-                        permute(from, to);
-                    });
-                }
-            });
+        match team {
+            None => permute(hashes, store),
+            Some((threads, start)) => {
+                let run = hashes.len().div_ceil(threads.max(1)).max(1);
+                std::thread::scope(|scope| {
+                    for (from, to) in hashes.chunks(run).zip(store.chunks_mut(run)) {
+                        scope.spawn(move || {
+                            start();
+                            permute(from, to);
+                        });
+                    }
+                });
+            }
         }
         Ok(Joiner {
             owed,
@@ -430,6 +464,8 @@ impl<'a> Joiner<'a> {
             tuning: Tuning::default(),
             #[cfg(test)]
             fault: None,
+            #[cfg(test)]
+            checks_start,
         })
     }
 
@@ -577,9 +613,11 @@ impl<'a> Joiner<'a> {
         }
     }
 
-    /// The tests' injected panic: at the task of `kind` they name, counted over the join.
+    /// The tests' injected panic: at the task of `kind` they name, counted over the join. Every task begins here, so
+    /// it also checks that its thread ran `start` (`checks_start`).
     #[cfg(test)]
     fn fault(&self, kind: Kind) {
+        assert!(!self.checks_start || STARTED.get(), "a {kind:?} task on a thread that did not run start");
         if let Some((at, nth)) = &self.fault
             && *at == kind
             && nth.fetch_sub(1, Relaxed) == 1
@@ -2792,6 +2830,32 @@ mod tests {
                 assert_eq!(started.load(Relaxed), 16, "{tuning:?}: start on every thread");
             }
         }
+    }
+
+    /// All of a join's work runs at the caller's priority: the store's build on one thread or several, and every task
+    /// of every path, each on a thread that ran `start` first (with `CHECK_START` on, the build and each task assert
+    /// it). Without a `start` that marks its thread, the build and the join fail: the check is live.
+    #[test]
+    fn start_runs_before_the_build_and_every_task() {
+        let mut rng = Rng(41);
+        let lib = corpus(&mut rng, 300, 5);
+        let want = brute(&lib, 0..300);
+        CHECK_START.set(true);
+        let start = || STARTED.set(true);
+        for threads in [1, 4] {
+            for tuning in tunings() {
+                let joiner = Joiner::new_on(&lib.hashes, &lib.owed, threads, &start).unwrap().tuned(tuning);
+                let joined = joiner.join(0..300, threads, &start, &|| true, &|| {}).unwrap();
+                assert_eq!(joined.pairs, want, "{tuning:?} on {threads}");
+                let unmarked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    joiner.join(0..300, threads, &|| {}, &|| true, &|| {})
+                }));
+                assert!(unmarked.is_err(), "{tuning:?} on {threads}: a join whose threads did not run start");
+            }
+            let unmarked = std::panic::catch_unwind(|| Joiner::new_on(&lib.hashes, &lib.owed, threads, &|| {}).is_ok());
+            assert!(unmarked.is_err(), "{threads} threads: a build whose threads did not run start");
+        }
+        CHECK_START.set(false);
     }
 
     /// The sorted path and the few-owed path find the same pairs as brute force, on every

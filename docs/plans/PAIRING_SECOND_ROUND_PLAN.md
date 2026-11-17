@@ -17,7 +17,7 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 | 2, the radix sort by regions | Done: `7ab62e7`. **Not built:** the scan's work prefix (item 5) and the write-combined first pass (item 6); `FewChunk::new` keeps a sort of its own (item 7) |
 | 3, the scan kernel | Done: `7ab62e7`. **Not done:** the 16-lane x 16-bit kernel and the loop-count replay |
 | 4, the few-owed path | Done: `07d832a` |
-| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring). **Not built:** scan blocks of equal work (item 4), the store's build timed on its own (item 11); **not tested:** `start()`'s priority on every task |
+| 5, one thread team | Done: `ede61b5`, the team sorts a stage, then scans it (no ring); the store's build timed on its own and `start()`'s priority tested on every task, after the round. **Not built:** scan blocks of equal work (item 4) |
 | 6, the pair-loss fix | Done: `0c8401e`, the stored side is every analysis of a file with an identity |
 | 7, the write | Done: the set-based guard and the epoch `57bda80`, the single copy of the hashes `b51e6ae`; the epoch kept by you at +2.20% on the import flush |
 | 8, the load | Done: the lookup-free load `c5ee017`, SQLite without memory statistics `bed9346`, the split load after it |
@@ -369,6 +369,14 @@ at 6 and 12; `PROFILING.md`, "One thread team"). Built as below, with these depa
   guard; scan blocks of equal work (item 4), the blocks are 128 buckets each, as before; the build in `Joiner::new`
   timed on its own (item 11). The tests cover a stop at any point, a pause while the others wait, a panic in any
   task, and many threads on tiny stages; not `start()`'s priority on every task.
+- **After the round: the build timed, and the priority tested.** The pass times the store's build apart from the
+  joins (`Timings::store`: 33 - 36 ms on one worker, 6 - 10 ms on 12; the probe's `store`, the CLI's line). The test
+  (`start_runs_before_the_build_and_every_task`) has the build and every task of both paths assert that their thread
+  ran `start` first, and fails without such a `start`. It found the one-thread build permuting on the caller's thread,
+  at the caller's priority: `Joiner::new_on` now permutes on threads of its own however many, and the pass's join
+  thread, where a slice is prepared, runs `start` too. Not gated, a correctness fix: 6 pairs against `f036825` on the
+  one-worker workloads and 300 owed at 12, store and join together level (all owed −0.3% [−2.4, +1.8], 300 owed +0.3
+  to +2.9%, intervals within −15 and +8% bar one noisy run at 12 workers).
 - **Cycles.** On several workers the team uses more cycles than the old split for the same instructions (all owed on
   12: 32.6 G instructions both, cycles +8%): it keeps each core's second thread busy. That is why the keep rule is now
   gated on time.

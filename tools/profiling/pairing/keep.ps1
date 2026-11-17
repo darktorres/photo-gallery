@@ -60,7 +60,7 @@ foreach ($w in $Workloads) {
     }
 }
 $run = Join-Path $base 'run'
-$parts = 'load', 'join', 'prepare', 'sort', 'scan', 'write', 'commit', 'cycles'
+$parts = 'load', 'store', 'join', 'prepare', 'sort', 'scan', 'write', 'commit', 'cycles'
 $rows = [System.Collections.Generic.List[object]]::new()
 # Turbo off while measuring: the power plan's maximum processor state at 99% (from its own value, restored however the
 # runs end), so the clock does not move with the load of other processes. -KeepTurbo leaves it.

@@ -117,10 +117,12 @@ pub enum Line {
         pairs: String,
         seconds: String,
     },
-    /// Where the pairing pass's time went, in seconds: reading the pictures, the joins (wall clock; then their threads'
-    /// time in the sorts, in the scans, with nothing to take, and paused), the write statements, the commits.
+    /// Where the pairing pass's time went, in seconds: reading the pictures, building the join's store, the joins (wall
+    /// clock; then their threads' time in the sorts, in the scans, with nothing to take, and paused), the write
+    /// statements, the commits.
     PairTimings {
         load: String,
+        store: String,
         join: String,
         sort: String,
         scan: String,
@@ -356,9 +358,10 @@ impl Line {
             ],
             Line::HashesOwed { count } => vec![("count", count)],
             Line::PairDone { files, pairs, seconds } => vec![("files", files), ("pairs", pairs), ("seconds", seconds)],
-            Line::PairTimings { load, join, sort, scan, idle, paused, write, commit } => {
+            Line::PairTimings { load, store, join, sort, scan, idle, paused, write, commit } => {
                 vec![
                     ("load", load),
+                    ("store", store),
                     ("join", join),
                     ("sort", sort),
                     ("scan", scan),
@@ -473,6 +476,7 @@ impl Line {
             Line::PairDone { files: s(), pairs: s(), seconds: s() },
             Line::PairTimings {
                 load: s(),
+                store: s(),
                 join: s(),
                 sort: s(),
                 scan: s(),
@@ -579,6 +583,7 @@ mod tests {
         assert_eq!(line(&paired), "paired 12 files: 3 PDQ pairs, 0.5 s");
         let timings = Line::PairTimings {
             load: "0.21".into(),
+            store: "0.04".into(),
             join: "0.62".into(),
             sort: "0.10".into(),
             scan: "0.48".into(),
@@ -589,8 +594,8 @@ mod tests {
         };
         assert_eq!(
             line(&timings),
-            "load 0.21 s, join 0.62 s (threads' time: sorts 0.10 s, scans 0.48 s, idle 0.03 s, paused 0.00 s), \
-             writes 0.33 s, commits 0.08 s"
+            "load 0.21 s, store 0.04 s, join 0.62 s (threads' time: sorts 0.10 s, scans 0.48 s, idle 0.03 s, \
+             paused 0.00 s), writes 0.33 s, commits 0.08 s"
         );
         let tier = Line::DupsIdentical { tier: Tier::Pixels, groups: "2".into(), files: "5".into() };
         assert_eq!(line(&tier), "tier 0b identical pixels: 2 groups, 5 files");

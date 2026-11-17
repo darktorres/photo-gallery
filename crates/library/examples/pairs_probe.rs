@@ -13,9 +13,10 @@
 //! - `PG_PROBE_GUARD` set: every write reads its pictures' analyses (`Settings::guard`), as after a change since the
 //!   load; `guarded` in the line counts the writes that did.
 //!
-//! One line: what was owed, what was paired, the wall clock, where it went (`PairStats::timings`: `prepare` on one
-//! thread; `sort`, `scan`, `starved` and `paused` the join's threads' time, summed), and the pass's CPU cycles over all
-//! its threads (`cycles`, millions; 0 where the platform does not count them).
+//! One line: what was owed, what was paired, the wall clock, where it went (`PairStats::timings`: `store` building the
+//! join's store, `join` the joins after it, `prepare` on one thread; `sort`, `scan`, `starved` and `paused` the join's
+//! threads' time, summed), and the pass's CPU cycles over all its threads (`cycles`, millions; 0 where the platform
+//! does not count them).
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -84,8 +85,8 @@ fn main() -> Result<()> {
     writeln!(
         std::io::stdout(),
         "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, slice {}, cache {} KiB, \
-         few {}, complete {}, guarded {}) | load {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} starved {:.0} \
-         paused {:.0} write {:.0} commit {:.0} ms | cycles {cycles} M",
+         few {}, complete {}, guarded {}) | load {:.0} store {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} \
+         starved {:.0} paused {:.0} write {:.0} commit {:.0} ms | cycles {cycles} M",
         stats.files,
         stats.pairs,
         settings.slice,
@@ -94,6 +95,7 @@ fn main() -> Result<()> {
         stats.complete,
         stats.guarded,
         ms(t.load),
+        ms(t.store),
         ms(t.join),
         ms(t.joins.prepare),
         ms(t.joins.sort),

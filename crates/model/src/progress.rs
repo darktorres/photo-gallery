@@ -32,7 +32,9 @@ pub enum Phase {
 /// The count at a time into a phase: where a rate's window starts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mark {
+    /// The phase's working time at the mark: the time it ran, not counting its pauses.
     pub at: Duration,
+    /// The count the window starts from; files finished while paused are left out of the window.
     pub done: u64,
 }
 
@@ -45,7 +47,7 @@ pub struct Progress {
     pub total: u64,
     pub failed: u64,
     pub bytes: u64,
-    /// How long the phase had run when this was read.
+    /// How long the phase had run when this was read, not counting the time it was paused.
     pub elapsed: Duration,
     /// Where the window the rate is taken over starts: the phase's start, or a mark a window back.
     pub since: Mark,

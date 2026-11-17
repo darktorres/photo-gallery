@@ -21,37 +21,81 @@ const MARK_EVERY: Duration = Duration::from_millis(500);
 struct Running {
     progress: Progress,
     started: Instant,
-    /// (when, count), oldest first. The front one is where the window starts: the latest mark at least a window
-    /// old, or the phase's start.
-    marks: VecDeque<(Instant, u64)>,
+    /// The time the pass has spent paused, up to the latest resume.
+    paused_total: Duration,
+    /// When the current pause began, while paused.
+    paused_since: Option<Instant>,
+    /// Files that finished while paused. They took no working time, so the rate leaves them out.
+    drained: u64,
+    /// (working time, count without the drained files), oldest first. The front one is where the window starts: the
+    /// latest mark at least a window old, or the phase's start.
+    marks: VecDeque<(Duration, u64)>,
 }
 
 impl Running {
     fn begun(progress: Progress, started: Instant) -> Running {
-        Running { progress, started, marks: VecDeque::from([(started, 0)]) }
+        Running {
+            progress,
+            started,
+            paused_total: Duration::ZERO,
+            paused_since: None,
+            drained: 0,
+            marks: VecDeque::from([(Duration::ZERO, 0)]),
+        }
     }
 
     fn idle() -> Running {
         Running::begun(Progress::idle(), Instant::now())
     }
 
+    /// The time the phase has run at `now`, not counting its pauses.
+    fn active(&self, now: Instant) -> Duration {
+        let paused = self.paused_since.map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
+        now.saturating_duration_since(self.started).saturating_sub(self.paused_total.saturating_add(paused))
+    }
+
+    /// Pauses or resumes the clock at `now`. A repeat changes nothing.
+    fn set_paused(&mut self, paused: bool, now: Instant) {
+        match (paused, self.paused_since) {
+            (true, None) => self.paused_since = Some(now),
+            (false, Some(since)) => {
+                self.paused_total = self.paused_total.saturating_add(now.saturating_duration_since(since));
+                self.paused_since = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// Applies a change of the progress at `now`. A file finished while paused is drained, not counted in the window.
+    fn change(&mut self, now: Instant, change: impl FnOnce(&mut Progress)) {
+        let before = self.progress.done;
+        change(&mut self.progress);
+        if self.paused_since.is_some() {
+            self.drained += self.progress.done.saturating_sub(before);
+        }
+        self.mark(now);
+    }
+
     /// Notes the count at `now` (when it is due), and forgets the marks the window no longer starts from.
     fn mark(&mut self, now: Instant) {
-        let due = self.marks.back().is_none_or(|&(at, _)| now.saturating_duration_since(at) >= MARK_EVERY);
+        let active = self.active(now);
+        let counted = self.progress.done.saturating_sub(self.drained);
+        let due = self.marks.back().is_none_or(|&(at, _)| active.saturating_sub(at) >= MARK_EVERY);
         if due {
-            self.marks.push_back((now, self.progress.done));
+            self.marks.push_back((active, counted));
         }
-        while self.marks.get(1).is_some_and(|&(at, _)| at + RATE_WINDOW <= now) {
+        while self.marks.get(1).is_some_and(|&(at, _)| at + RATE_WINDOW <= active) {
             self.marks.pop_front();
         }
     }
 
-    /// The progress as it is at `now`, with the time the phase has run and the window's start.
+    /// The progress as it is at `now`, with the working time the phase has run and the window's start. `since.done` is
+    /// set so that `done - since.done` is the files finished in the window, drained ones left out.
     fn read(&self, now: Instant) -> Progress {
-        let (at, done) = self.marks.front().copied().unwrap_or((self.started, 0));
+        let (at, counted) = self.marks.front().copied().unwrap_or((Duration::ZERO, 0));
         Progress {
-            elapsed: now.saturating_duration_since(self.started),
-            since: Mark { at: at.saturating_duration_since(self.started), done },
+            elapsed: self.active(now),
+            since: Mark { at, done: counted.saturating_add(self.drained) },
             ..self.progress.clone()
         }
     }
@@ -133,6 +177,7 @@ impl Control {
         {
             let mut guard = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
             *guard = paused;
+            self.progress.update(|running| running.set_paused(paused, Instant::now()));
             self.resumed.notify_all();
         }
         self.changed();
@@ -220,7 +265,13 @@ impl Control {
         let now = Instant::now();
         *self.last_event.lock().unwrap_or_else(PoisonError::into_inner) = now;
         let progress = Progress { phase, total, ..Progress::idle() };
-        self.progress.set(Running::begun(progress, now));
+        {
+            // The pause flag outlives phases: a phase that begins while paused starts with its clock stopped.
+            let paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut running = Running::begun(progress, now);
+            running.set_paused(*paused, now);
+            self.progress.set(running);
+        }
         self.changed();
         PhaseGuard { ctl: self }
     }
@@ -241,10 +292,9 @@ impl Control {
 
     fn update(&self, change: impl FnOnce(&mut Progress)) {
         let mut last = self.last_event.lock().unwrap_or_else(PoisonError::into_inner);
-        let now = Instant::now();
         let due = self.progress.update(|running| {
-            change(&mut running.progress);
-            running.mark(now);
+            let now = Instant::now();
+            running.change(now, change);
             (now.saturating_duration_since(*last) >= EVENT_INTERVAL).then(|| running.read(now))
         });
         if let Some(progress) = due {
@@ -331,6 +381,73 @@ mod tests {
         running.progress.done = 50;
         running.mark(t0 + Duration::from_secs(5));
         assert_eq!(running.read(t0 + Duration::from_secs(5)).rate(), 10.0);
+    }
+
+    #[test]
+    fn a_pause_stops_the_clock_and_the_rate_is_the_same_after_it() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut running = Running::begun(Progress { total: 1000, ..Progress::idle() }, t0);
+        // 10 files a second for 10 s, then paused for 10 minutes with nothing finished.
+        for s in 1..=10 {
+            running.change(at(s), |p| p.done += 10);
+        }
+        let before = running.read(at(10));
+        running.set_paused(true, at(10));
+        let during = running.read(at(610));
+        assert_eq!(during.elapsed, Duration::from_secs(10), "the clock stands still");
+        assert_eq!(during.eta(), before.eta(), "the time left doesn't climb during a pause");
+        running.set_paused(false, at(610));
+        // 10 files a second for 5 s after the pause.
+        for s in 1..=5 {
+            running.change(at(610 + s), |p| p.done += 10);
+        }
+        let after = running.read(at(615));
+        assert_eq!(after.elapsed, Duration::from_secs(15));
+        assert_eq!(after.rate(), 10.0, "the pause took no working time");
+    }
+
+    #[test]
+    fn files_that_finish_while_paused_are_not_in_the_rate() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut running = Running::begun(Progress { total: 1000, ..Progress::idle() }, t0);
+        for s in 1..=10 {
+            running.change(at(s), |p| p.done += 10);
+        }
+        running.set_paused(true, at(10));
+        // Files already past their checkpoint still finish while paused.
+        for _ in 0..40 {
+            running.change(at(10), |p| p.done += 1);
+        }
+        running.set_paused(false, at(610));
+        let read = running.read(at(610));
+        assert_eq!(read.done, 140);
+        assert_eq!(read.rate(), 10.0, "100 files in 10 s of working time, not 140");
+    }
+
+    #[test]
+    fn a_repeated_pause_or_resume_changes_nothing() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut running = Running::begun(Progress::idle(), t0);
+        running.set_paused(true, at(5));
+        running.set_paused(true, at(7));
+        running.set_paused(false, at(10));
+        running.set_paused(false, at(20));
+        assert_eq!(running.active(at(20)), Duration::from_secs(15), "only the first pause counts");
+    }
+
+    #[test]
+    fn a_phase_that_begins_while_paused_starts_its_clock_at_the_resume() {
+        let ctl = Control::new();
+        ctl.set_paused(true);
+        let _phase = ctl.begin(Phase::Import, 4);
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(ctl.snapshot().elapsed, Duration::ZERO);
+        ctl.set_paused(false);
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(ctl.snapshot().elapsed >= Duration::from_millis(20));
     }
 
     #[test]

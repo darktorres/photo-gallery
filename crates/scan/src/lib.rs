@@ -597,18 +597,42 @@ fn walk_leased<L: Listing>(
                 prior: None,
             });
         }
-        if !files.is_empty() {
+        // A file whose row the folder's read already has as it is listed needs nothing written: it is only marked seen,
+        // here, in the walk's set. The others go to the batch.
+        let mut key = Vec::new();
+        let mut unchanged = Vec::new();
+        let mut changed: Vec<ListedFile> = Vec::with_capacity(files.len());
+        for f in files {
+            let row = {
+                let listed = ScannedFile {
+                    identity: f.identity,
+                    name: &f.name,
+                    ext: f.ext,
+                    size: f.size,
+                    mtime: f.mtime,
+                    created: f.created,
+                    prior: None,
+                };
+                rows.unchanged(&listed, &mut key)
+            };
+            match row {
+                Some(row) => unchanged.push(row),
+                None => changed.push(f),
+            }
+        }
+        lease.mark_seen(&unchanged)?;
+        if !changed.is_empty() {
             // The rows the batch compares with: the folder's, read before the listing, and the others' by identity, read
             // now but none changed since the listing began (`Catalog::prior_states`). The batch, written later, changes
             // only those still so, so a write-back from the folder's listing on is kept.
-            let identities: Vec<FileIdentity> = files.iter().map(|f| f.identity).collect();
+            let identities: Vec<FileIdentity> = changed.iter().map(|f| f.identity).collect();
             let priors = lease.prior_states(&rows, &identities)?;
-            ensure!(priors.len() == files.len(), "the catalog gave {} rows for {} files", priors.len(), files.len());
-            for (file, prior) in files.iter_mut().zip(priors) {
+            ensure!(priors.len() == changed.len(), "the catalog gave {} rows for {} files", priors.len(), changed.len());
+            for (file, prior) in changed.iter_mut().zip(priors) {
                 file.prior = prior;
             }
-            batch.entries += files.len();
-            batch.folders.push(ListedFolder { path: frame.path, files });
+            batch.entries += changed.len();
+            batch.folders.push(ListedFolder { path: frame.path, files: changed });
         }
         if batch.entries >= batch_size {
             write_batch(lease, root, &mut batch, &mut stats, ctl)?;

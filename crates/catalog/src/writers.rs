@@ -35,7 +35,6 @@ fn write_new(
     new_file: &mut Statement<'_>,
     f: &ScannedFile,
     folder: &Folder,
-    scan: i64,
     key: &[u8],
     change: i64,
 ) -> Result<usize> {
@@ -52,7 +51,6 @@ fn write_new(
         kind,
         size,
         f.mtime,
-        scan,
         key,
         change
     ])?)
@@ -64,7 +62,6 @@ fn write_changed(
     changed_file: &mut Statement<'_>,
     f: &ScannedFile,
     folder: &Folder,
-    scan: i64,
     key: &[u8],
     id: i64,
 ) -> Result<usize> {
@@ -78,7 +75,6 @@ fn write_changed(
         kind,
         size,
         f.mtime,
-        scan,
         key,
         f.created,
         f.prior.map(|p| p.size),
@@ -110,9 +106,11 @@ pub struct ScanWriter<'tx> {
     folder_id: Statement<'tx>,
     new_folder: Statement<'tx>,
     known: Statement<'tx>,
-    in_root: Statement<'tx>,
-    seen: Statement<'tx>,
-    seen_identity: Statement<'tx>,
+    identity_row: Statement<'tx>,
+    /// Marks a row seen by this walk (`temp.scan_seen`), with whether it is unpaired.
+    insert_seen: Statement<'tx>,
+    /// The id of the row the last insert made.
+    last_id: Statement<'tx>,
     backfill: Statement<'tx>,
     displace: Statement<'tx>,
     /// A new file's row (`write_new`), and a known file's changed fields (`write_changed`).
@@ -147,15 +145,16 @@ impl<'tx> ScanWriter<'tx> {
             covering,
             folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
             new_folder: tx.prepare("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
+            // The row of the identity, and whether its folder is under the root (`?3`..`?5`: `under_params`).
             known: tx.prepare(
-                "SELECT id, folder_id, name, ext, kind, size, mtime, missing, order_key, created FROM files
-                 WHERE volume = ?1 AND file_ref = ?2",
+                "SELECT f.id, f.folder_id, f.name, f.ext, f.kind, f.size, f.mtime, f.missing, f.order_key, f.created,
+                    f.unpaired, (d.path = ?3 OR (d.path >= ?4 AND d.path < ?5))
+                 FROM files f JOIN folders d ON d.id = f.folder_id
+                 WHERE f.volume = ?1 AND f.file_ref = ?2",
             )?,
-            in_root: tx.prepare(
-                "SELECT EXISTS(SELECT 1 FROM folders WHERE id = ?4 AND (path = ?1 OR (path >= ?2 AND path < ?3)))",
-            )?,
-            seen: tx.prepare("UPDATE files SET last_scan = ?2 WHERE id = ?1")?,
-            seen_identity: tx.prepare("UPDATE files SET last_scan = ?3 WHERE volume = ?1 AND file_ref = ?2")?,
+            identity_row: tx.prepare("SELECT id, unpaired FROM files WHERE volume = ?1 AND file_ref = ?2")?,
+            insert_seen: tx.prepare("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)")?,
+            last_id: tx.prepare("SELECT last_insert_rowid()")?,
             backfill: tx.prepare("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
             displace: tx
                 .prepare("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
@@ -163,9 +162,9 @@ impl<'tx> ScanWriter<'tx> {
             // the batch's number, which the insert sets itself (no trigger does, since migration 16). The row is not
             // known to the writer, so the insert cannot conflict: the identity was looked up in this transaction.
             new_file: tx.prepare(concat!(
-                "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime, last_scan,
+                "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime,
                     order_key, unpaired, pending, seq, changed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, 1, ?12, ?12)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 1, ?11, ?11)"
             ))?,
             // A known row is updated only while it is as the walk read it when it listed the folder (`?11`, `?12`: NULL
             // for none), and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule
@@ -174,8 +173,8 @@ impl<'tx> ScanWriter<'tx> {
             // file's pending and change numbers, whoever writes them.
             changed_file: tx.prepare(concat!(
                 "UPDATE files SET folder_id = ?2, name = ?3, ext = ?4, kind = ?5, size = ?6, mtime = ?7,
-                    last_scan = ?8, missing = 0, order_key = ?9, created = coalesce(created, ?10)
-                 WHERE id = ?1 AND size IS ?11 AND mtime IS ?12 AND ",
+                    missing = 0, order_key = ?8, created = coalesce(created, ?9)
+                 WHERE id = ?1 AND size IS ?10 AND mtime IS ?11 AND ",
                 not_being_written!(files)
             ))?,
             bump: tx.prepare(concat!(next_seq!(), " RETURNING value"))?,
@@ -223,11 +222,10 @@ impl<'tx> ScanWriter<'tx> {
     /// ([`Recorded::Same`]): the listing is older than the row.
     pub fn record_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<Recorded> {
         let ScanWriter {
-            scan,
             under,
             known,
-            in_root,
-            seen,
+            insert_seen,
+            last_id,
             backfill,
             displace,
             new_file,
@@ -243,7 +241,7 @@ impl<'tx> ScanWriter<'tx> {
         let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
         let (ext, kind, size) = (f.ext.name(), f.ext.kind().key(), i64::try_from(f.size).context("a file's size")?);
         let hit = known
-            .query_row(params![volume, file_ref], |r| {
+            .query_row(params![volume, file_ref, under[0], under[1], under[2]], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
                     && r.get_ref(2)?.as_blob()? == f.name.as_bytes()
                     && r.get_ref(3)?.as_str()? == ext
@@ -258,50 +256,61 @@ impl<'tx> ScanWriter<'tx> {
                     same,
                     created: r.get(9)?,
                     missing: r.get::<_, i64>(7)? != 0,
+                    unpaired: r.get::<_, i64>(10)? != 0,
+                    in_root: r.get::<_, i64>(11)? != 0,
                 })
             })
             .optional()?;
         let Some(hit) = hit else {
-            write_new(new_file, f, folder, *scan, &key[..], change_number(bump, change)?)?;
+            write_new(new_file, f, folder, &key[..], change_number(bump, change)?)?;
+            mark_new_seen(last_id, insert_seen)?;
             return Ok(Recorded::Changed);
         };
         // A present row of another root is that root's (a second path to its file). A missing one does not keep the
         // identity from this root: its file is here now, so the row is this root's hit, moved here with its data as a
         // move within the root would be (or displaced, if the creation times say it is another file).
-        if !hit.missing
-            && !in_root.query_row(params![under[0], under[1], under[2], hit.folder_id], |r| r.get::<_, bool>(0))?
-        {
+        if !hit.missing && !hit.in_root {
             return Ok(Recorded::Foreign);
         }
         if matches!((hit.created, f.created), (Some(a), Some(b)) if a != b) {
             displace.execute(params![hit.id])?;
-            write_new(new_file, f, folder, *scan, &key[..], change_number(bump, change)?)?;
+            write_new(new_file, f, folder, &key[..], change_number(bump, change)?)?;
+            mark_new_seen(last_id, insert_seen)?;
             return Ok(Recorded::Changed);
         }
         if hit.created.is_none() && f.created.is_some() {
             backfill.execute(params![hit.id, f.created])?;
         }
-        if hit.same {
-            seen.execute(params![hit.id, *scan])?;
+        if hit.same || write_changed(changed_file, f, folder, &key[..], hit.id)? == 0 {
+            insert_seen.execute(params![hit.id, hit.unpaired])?;
             return Ok(Recorded::Same);
         }
-        if write_changed(changed_file, f, folder, *scan, &key[..], hit.id)? == 0 {
-            seen.execute(params![hit.id, *scan])?;
-            return Ok(Recorded::Same);
-        }
+        insert_seen.execute(params![hit.id, hit.unpaired])?;
         Ok(Recorded::Changed)
     }
 
-    /// Mark the row with this identity as seen by this scan, changing nothing else. A reparse point is recorded this
+    /// Mark the row with this identity as seen by this walk, changing nothing else. A reparse point is recorded this
     /// way: its listing gives no content to analyze, and a row that is there is kept.
     pub fn seen_identity(&mut self, identity: FileIdentity) -> Result<()> {
-        self.seen_identity.execute(params![
-            identity.volume.cast_signed(),
-            identity.file_index.cast_signed(),
-            self.scan
-        ])?;
+        let row: Option<(i64, i64)> = self
+            .identity_row
+            .query_row(
+                params![identity.volume.cast_signed(), identity.file_index.cast_signed()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        if let Some((id, unpaired)) = row {
+            self.insert_seen.execute(params![id, unpaired])?;
+        }
         Ok(())
     }
+}
+
+/// Marks the row the last insert made as seen by the walk. A new row is unpaired, as the insert made it.
+fn mark_new_seen(last_id: &mut Statement<'_>, insert_seen: &mut Statement<'_>) -> Result<()> {
+    let id: i64 = last_id.query_row([], |r| r.get(0))?;
+    insert_seen.execute(params![id, 1])?;
+    Ok(())
 }
 
 /// The duplicate hashes the Hashes pass makes for a file the import stored without them (`hashes_owed`): an image's
@@ -836,7 +845,7 @@ mod tests {
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
-        assert_eq!(raw::file_row(&c), (scans[1].get(), "a.jpg".into(), 10, 100, 0, key("a.jpg")));
+        assert_eq!(raw::file_row(&c), ("a.jpg".into(), 10, 100, 0, key("a.jpg")));
         for (scan, name, size, mtime) in [
             (scans[2], "A.jpg", 10, 100),
             (scans[3], "b.jpg", 10, 100),
@@ -844,16 +853,16 @@ mod tests {
             (scans[5], "b.jpg", 11, 101),
         ] {
             assert!(scanned(&mut c, scan, name, size, mtime), "{name} {size} {mtime}");
-            assert_eq!(raw::file_row(&c), (scan.get(), name.into(), i64::try_from(size).unwrap(), mtime, 0, key(name)));
+            assert_eq!(raw::file_row(&c), (name.into(), i64::try_from(size).unwrap(), mtime, 0, key(name)));
         }
         // Back from missing.
         raw::set_missing(&c, FileId::new(1));
         assert!(scanned(&mut c, scans[6], "b.jpg", 11, 101));
-        assert_eq!(raw::file_row(&c).4, 0);
+        assert_eq!(raw::file_row(&c).3, 0);
         // An order key made by an earlier rule is made again.
         raw::set_order_key(&c, FileId::new(1), &[0]);
         assert!(scanned(&mut c, scans[7], "b.jpg", 11, 101));
-        assert_eq!(raw::file_row(&c).5, key("b.jpg"));
+        assert_eq!(raw::file_row(&c).4, key("b.jpg"));
         assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
     }
 

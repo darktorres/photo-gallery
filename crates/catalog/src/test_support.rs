@@ -70,6 +70,7 @@ pub(crate) fn state(c: &Catalog, id: FileId) -> (bool, i64) {
 /// tested through `begin_scan`).
 pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> ScanId {
     let bytes = c.rules().join(root);
+    crate::roots::ensure_seen(&c.conn).unwrap();
     c.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [&bytes]).unwrap();
     let scan = ScanId::new(c.conn.last_insert_rowid());
     c.conn

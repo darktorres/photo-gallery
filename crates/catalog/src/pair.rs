@@ -11,7 +11,7 @@
 //!
 //! The folders the scan did not list (unreadable ones, and the reparse folders it does not follow, with what is below
 //! them) are out of every tier: their rows were not seen, so a row there is neither a candidate nor cleared, and the
-//! rows paired are only those this scan saw (`last_scan`), which are in folders it listed. The rest of the root is
+//! rows paired are only those this scan saw (the walk's set, `temp.scan_seen`), which are in folders it listed. The rest of the root is
 //! paired in full on a complete scan.
 //!
 //! A candidate counts when it matches exactly one row, every row counted (missing or not); several bind nothing and
@@ -20,7 +20,7 @@
 //! Each tier runs over the fresh rows in batches of at most `WRITE_BATCH` by id, each in a short write transaction of
 //! its own, which reads its batch and runs the tier's queries inside it, so a decision sees the rows as they are (an
 //! edit committed between two batches is part of that state), and no other writer waits behind the whole pass. The
-//! last tier's batches also clear the rows nothing paired. A batch is a seek on the `files_fresh` index, so each pass
+//! last tier's batches also clear the rows nothing paired. A batch is a seek on the set's unpaired index, so each pass
 //! reads each fresh row once, and a scan with nothing fresh reads nothing. The walk's lease keeps any other walk of the
 //! root out meanwhile.
 
@@ -100,23 +100,25 @@ impl ScanLease<'_> {
         let mut ambiguous = BTreeSet::new();
 
         // Tier 1: the same folder and name, on another volume.
-        in_batches(conn, held, &under, scan, &skipped, |tx, fresh| {
-            let mut same_name = tx.prepare_cached(
+        in_batches(conn, held, &under, &skipped, |tx, fresh| {
+            let mut same_name = tx.prepare_cached(concat!(
                 "SELECT id FROM files WHERE volume IS NOT NULL AND volume <> ?1 AND file_ref = ?2 AND folder_id = ?3
                  AND name = ?4 AND size = ?5 AND mtime = ?6 AND (created IS NULL OR ?7 IS NULL OR created = ?7)
-                 AND last_scan < ?8 AND id <> ?9 ORDER BY id",
-            )?;
+                 AND ",
+                not_seen!(),
+                " AND id <> ?8 ORDER BY id"
+            ))?;
             for f in fresh {
                 let ids: Vec<i64> = same_name
                     .query_map(
-                        params![f.volume, f.file_ref, f.folder_id, f.name, f.size, f.mtime, f.created, scan, f.id],
+                        params![f.volume, f.file_ref, f.folder_id, f.name, f.size, f.mtime, f.created, f.id],
                         |r| r.get(0),
                     )?
                     .collect::<rusqlite::Result<_>>()?;
                 match ids.as_slice() {
                     [] => {}
                     [only] => {
-                        rebind(tx, *only, f, scan)?;
+                        rebind(tx, *only, f)?;
                         out.rebound += 1;
                     }
                     _ => {
@@ -132,21 +134,23 @@ impl ScanLease<'_> {
             // folder it did not skip. The volumes are read once, at the tier's first batch, not per candidate (a
             // volume's rows, per candidate, was a quadratic scan).
             let mut seen: Option<BTreeSet<i64>> = None;
-            in_batches(conn, held, &under, scan, &skipped, |tx, fresh| {
+            in_batches(conn, held, &under, &skipped, |tx, fresh| {
                 if seen.is_none() {
-                    seen = Some(seen_volumes(tx, scan)?);
+                    seen = Some(seen_volumes(tx)?);
                 }
                 let Some(seen) = seen.as_mut() else { return Ok(()) };
                 let mut moved = tx.prepare_cached(concat!(
                     "SELECT id, volume, folder_id FROM files WHERE volume IS NOT NULL AND volume <> ?4 AND file_ref = ?5
                      AND size = ?6 AND mtime = ?7 AND ext = ?8 AND (created IS NULL OR ?9 IS NULL OR created = ?9)
-                     AND last_scan < ?10 AND id <> ?11 AND folder_id IN (",
+                     AND ",
+                    not_seen!(),
+                    " AND id <> ?10 AND folder_id IN (",
                     under_root!(),
                     ") ORDER BY id"
                 ))?;
                 for f in fresh {
                     // Each fresh row is unpaired when it is read (`fresh_rows`), and no rebind in the batch takes a
-                    // fresh row: a candidate is an old row (its `last_scan` is before the scan), and a rebind deletes only
+                    // fresh row: a candidate is an old row (the walk did not see it), and a rebind deletes only
                     // its own fresh row.
                     let candidates: Vec<(i64, i64, i64)> = moved
                         .query_map(
@@ -160,7 +164,6 @@ impl ScanLease<'_> {
                                 f.mtime,
                                 f.ext.name(),
                                 f.created,
-                                scan,
                                 f.id
                             ],
                             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -174,7 +177,7 @@ impl ScanLease<'_> {
                     match ids.as_slice() {
                         [] => {}
                         [only] => {
-                            rebind(tx, *only, f, scan)?;
+                            rebind(tx, *only, f)?;
                             // The rebound row is on this scan's volume now: seen, as a row this scan saw would be.
                             seen.insert(f.volume);
                             out.rebound += 1;
@@ -194,30 +197,33 @@ impl ScanLease<'_> {
             // Then, in the same batch, the clearing: the fresh rows nothing paired, which have no children, are
             // genuinely new files, and stop being unpaired (outside the skipped folders, which no batch has). A fresh
             // row's fate is settled once this tier has looked at it, since no tier takes a row this scan saw as a
-            // candidate (each asks for `last_scan` before the scan), so clearing it here is clearing it after every
+            // candidate (each asks for the rows the walk did not see), so clearing it here is clearing it after every
             // tier; an ambiguous row is counted as it is cleared, while it is still unpaired. Only the rows this scan
             // saw are cleared: an unpaired row it did not see is a file that is gone for now, and stays unpaired, so
             // the file coming back under its identity is paired with its row (and its data) rather than taken for a
             // new file. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
-            in_batches(conn, held, &under, scan, &skipped, |tx, fresh| {
-                let mut replaced_by = tx.prepare_cached(
+            in_batches(conn, held, &under, &skipped, |tx, fresh| {
+                let mut replaced_by = tx.prepare_cached(concat!(
                     "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
-                     AND ((unpaired = 1 AND (volume IS NULL OR last_scan < ?4))
-                          OR (missing = 0 AND volume IS NOT NULL AND last_scan < ?4))
-                     AND (created IS NULL OR ?5 IS NULL OR created <> ?5)
-                     ORDER BY id",
-                )?;
+                     AND ((unpaired = 1 AND (volume IS NULL OR ",
+                    not_seen!(),
+                    ")) OR (missing = 0 AND volume IS NOT NULL AND ",
+                    not_seen!(),
+                    "))
+                     AND (created IS NULL OR ?4 IS NULL OR created <> ?4)
+                     ORDER BY id"
+                ))?;
                 // The fresh rows this batch leaves unpaired. A replaced row is gone (its row took the file), so it is
                 // not among them. The clearing is one statement for the batch, after the matches.
                 let mut to_clear: Vec<i64> = Vec::new();
                 for f in fresh {
                     let ids: Vec<i64> = replaced_by
-                        .query_map(params![f.folder_id, f.name, f.id, scan, f.created], |r| r.get(0))?
+                        .query_map(params![f.folder_id, f.name, f.id, f.created], |r| r.get(0))?
                         .collect::<rusqlite::Result<_>>()?;
                     match ids.as_slice() {
                         [] => to_clear.push(f.id),
                         [only] => {
-                            replace(tx, rules, *only, f, scan, &mut out.temps)?;
+                            replace(tx, rules, *only, f, &mut out.temps)?;
                             out.replaced += 1;
                             out.replaced_ids.push(FileId::new(*only));
                         }
@@ -284,15 +290,18 @@ fn in_batches(
     conn: &Connection,
     held: HeldLease<'_>,
     under: &[Vec<u8>; 3],
-    scan: i64,
     skipped: &BTreeSet<i64>,
     mut tier: impl FnMut(&Transaction<'_>, &[Fresh]) -> Result<()>,
 ) -> Result<()> {
     let mut after = i64::MIN;
     loop {
+        // A probe outside any write transaction: a root with no fresh row past `after` takes no write lock.
+        if fresh_rows(conn, under, after, 1)?.is_empty() {
+            return Ok(());
+        }
         let tx = write_transaction(conn)?;
         held.hold(&tx)?;
-        let batch = fresh_rows(&tx, under, scan, after)?;
+        let batch = fresh_rows(&tx, under, after, WRITE_BATCH)?;
         let Some(last) = batch.last().map(|f| f.id) else { return Ok(()) };
         // A rebind or a replacement revives a row with the fresh row's extension, which this build holds.
         crate::lifecycle::stamp_held_exts(&tx)?;
@@ -303,33 +312,37 @@ fn in_batches(
     }
 }
 
-/// The volumes of the files this scan saw (a row's `last_scan` is the scan's number).
-fn seen_volumes(tx: &Transaction, scan: i64) -> Result<std::collections::BTreeSet<i64>> {
-    let mut stmt = tx.prepare("SELECT DISTINCT volume FROM files WHERE last_scan = ?1 AND volume IS NOT NULL")?;
-    Ok(stmt.query_map([scan], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+/// The volumes of the files this scan saw: those of the rows in the walk's set.
+fn seen_volumes(tx: &Transaction) -> Result<std::collections::BTreeSet<i64>> {
+    let mut stmt = tx.prepare(
+        "SELECT DISTINCT files.volume FROM temp.scan_seen s JOIN files ON files.id = s.id WHERE files.volume IS NOT NULL",
+    )?;
+    Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
-/// The fresh rows of the root that this scan saw (`last_scan`), with an identity and no children: the rows to pair, the
-/// next batch of them, at most [`WRITE_BATCH`] with an id after `after`, by id. A row with children is counted by
-/// [`ScanLease::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list, so
-/// it is not paired until a scan sees it.
+/// The fresh rows of the root that this scan saw (the walk's set, unpaired), with an identity and no children: the rows to
+/// pair, the next batch of them, at most [`WRITE_BATCH`] with an id after `after`, by id. A row with children is counted
+/// by [`ScanLease::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list,
+/// so it is not paired until a scan sees it.
 ///
-/// Read through `files_fresh` (`INDEXED BY`: the plan is the point, and a schema without the index fails here rather
-/// than reading another way): the scan's fresh rows in id order, so a batch is a seek from `after` that stops at
-/// [`WRITE_BATCH`] rows, and a scan's batches read each fresh row once. The root's folders filter what it finds.
-fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3], scan: i64, after: i64) -> Result<Vec<Fresh>> {
-    let mut stmt = tx.prepare_cached(concat!(
-        "SELECT id, volume, file_ref, created, folder_id, name, ext, kind, size, mtime, order_key FROM files
-         INDEXED BY files_fresh
-         WHERE volume IS NOT NULL AND unpaired = 1 AND last_scan = ?4 AND id > ?5 AND folder_id IN (",
+/// Read from the set's unpaired index (`scan_seen_unpaired`): the scan's fresh rows in id order, so a batch is a seek from
+/// `after` that stops at `limit` rows, and a scan's batches read each fresh row once. The root's folders filter what it
+/// finds. The reads take no write lock, so a probe with a limit of one can run before a write transaction is opened.
+fn fresh_rows(conn: &Connection, under: &[Vec<u8>; 3], after: i64, limit: usize) -> Result<Vec<Fresh>> {
+    let mut stmt = conn.prepare_cached(concat!(
+        "SELECT files.id, files.volume, files.file_ref, files.created, files.folder_id, files.name, files.ext,
+                files.kind, files.size, files.mtime, files.order_key
+         FROM temp.scan_seen s JOIN files ON files.id = s.id
+         WHERE s.unpaired = 1 AND files.unpaired = 1 AND files.volume IS NOT NULL AND s.id > ?4
+           AND files.folder_id IN (",
         under_root!(),
         ") AND NOT ",
         has_children!(),
-        " ORDER BY id LIMIT ?6"
+        " ORDER BY s.id LIMIT ?5"
     ))?;
-    let limit = i64::try_from(WRITE_BATCH).unwrap_or(i64::MAX);
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let rows = stmt
-        .query_map(params![under[0], under[1], under[2], scan, after, limit], |r| {
+        .query_map(params![under[0], under[1], under[2], after, limit], |r| {
             Ok(Fresh {
                 id: r.get(0)?,
                 volume: r.get(1)?,
@@ -350,9 +363,10 @@ fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3], scan: i64, after: i64) -> 
 
 /// Give the old row `id` the identity and the place of the fresh row `from`, which is deleted: the old row keeps its
 /// id, ratings, rotation, analysis and content.
-fn rebind(tx: &Transaction, id: i64, from: &Fresh, scan: i64) -> Result<()> {
+fn rebind(tx: &Transaction, id: i64, from: &Fresh) -> Result<()> {
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
-    take_identity(tx, REBIND, id, from, scan)
+    tx.execute("DELETE FROM temp.scan_seen WHERE id = ?1", [from.id])?;
+    take_identity(tx, REBIND, id, from)
 }
 
 /// The row `?1` takes the identity and the place of a new file: its volume, reference, creation time (`created`: kept
@@ -363,10 +377,10 @@ macro_rules! take_identity {
         concat!(
             "UPDATE files SET volume = ?2, file_ref = ?3, created = ",
             $created,
-            ", folder_id = ?5, name = ?6, ext = ?7, kind = ?8, size = ?9, mtime = ?10, last_scan = ?11, missing = 0,
+            ", folder_id = ?5, name = ?6, ext = ?7, kind = ?8, size = ?9, mtime = ?10, missing = 0,
             unpaired = 0",
             $reset,
-            ", order_key = ?12 WHERE id = ?1"
+            ", order_key = ?11 WHERE id = ?1"
         )
     };
 }
@@ -376,8 +390,9 @@ const REBIND: &str = take_identity!("coalesce(?4, created)", "");
 /// [`replace`]'s take: the new file's creation time, and no rotation (the old file's turns are not the new one's).
 const REPLACE: &str = take_identity!("?4", ", rotation = 0");
 
-/// Runs `sql` (a take of [`take_identity!`]) for the row `id` and the fresh row `from`, in the scan `scan`.
-fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh, scan: i64) -> Result<()> {
+/// Runs `sql` (a take of [`take_identity!`]) for the row `id` and the fresh row `from`. The taken row is seen by the walk,
+/// and paired (`unpaired = 0`), so it joins the walk's set as paired.
+fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh) -> Result<()> {
     tx.execute(
         sql,
         params![
@@ -391,10 +406,10 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh, scan: i64) 
             from.kind.key(),
             from.size,
             from.mtime,
-            scan,
             from.order_key
         ],
     )?;
+    tx.execute("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, 0)", [id])?;
     Ok(())
 }
 
@@ -407,7 +422,6 @@ fn replace(
     rules: PathRules,
     id: i64,
     from: &Fresh,
-    scan: i64,
     temps: &mut Vec<RulePath>,
 ) -> Result<()> {
     {
@@ -441,7 +455,8 @@ fn replace(
     // replacement with the same size, time and turn).
     tx.execute("DELETE FROM file_failures WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
-    take_identity(tx, REPLACE, id, from, scan)
+    tx.execute("DELETE FROM temp.scan_seen WHERE id = ?1", [from.id])?;
+    take_identity(tx, REPLACE, id, from)
 }
 
 #[cfg(test)]
@@ -547,14 +562,16 @@ mod tests {
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
                                    rotation, order_key, unpaired)
-                 SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, ?2, 0, 0,
+                 SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
                         CAST(printf('%08d', i) AS BLOB), 1
                  FROM n",
-                params![FILES, scan.get()],
+                params![FILES],
             )
             .unwrap();
+        // The walk saw every row (its set), as a walk that listed the folder would have.
+        c.conn.execute("INSERT INTO temp.scan_seen(id, unpaired) SELECT id, 1 FROM files", []).unwrap();
         let holds = crate::fixture::WriteHolds::watch();
         pair(&mut c, scan, true);
         let held = holds.take();
@@ -805,7 +822,7 @@ mod tests {
     );
 
     /// A stopped scan leaves a new file unpaired in a folder it listed, and a later complete scan does not see that
-    /// file. The later scan pairs only the fresh rows it saw (`fresh_rows`' `last_scan`), so the unseen row is no
+    /// file. The later scan pairs only the fresh rows it saw (`fresh_rows`, the walk's set), so the unseen row is no
     /// candidate: the live row on another volume with the same file ID and facts (a moved-while-closed candidate, on a
     /// volume the later scan did not see) is not rebound to it. Without that filter, tier 2 would rebind it.
     fn a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired(rules: PathRules) {

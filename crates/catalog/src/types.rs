@@ -275,15 +275,59 @@ pub struct Prior {
     pub mtime: i64,
 }
 
-/// A folder's rows as a walk reads them just before it lists the folder (`Catalog::folder_rows`): each one's size and
-/// mtime by its identity, and the catalog's change number then (`meta.seq`), the mark. A write-back that rewrites a file
-/// commits its new size and mtime, which bumps the row's change number (`files.changed`) past the mark; so a row read
-/// later, by identity, whose change number is past the mark, changed after the listing began, and the listing may be
-/// older than it.
+/// A folder's rows as a walk reads them just before it lists the folder (`Catalog::folder_rows`): each one by its
+/// identity, and the catalog's change number then (`meta.seq`), the mark. A write-back that rewrites a file commits its
+/// new size and mtime, which bumps the row's change number (`files.changed`) past the mark; so a row read later, by
+/// identity, whose change number is past the mark, changed after the listing began, and the listing may be older than it.
 #[derive(Debug, Default)]
 pub struct FolderRows {
     pub(crate) mark: i64,
-    pub(crate) rows: BTreeMap<(i64, i64), Prior>,
+    /// The folder's part of a file's order key (`PathRules::folder_key`).
+    pub(crate) key: Vec<u8>,
+    pub(crate) rows: BTreeMap<(i64, i64), FolderRow>,
+}
+
+/// One of a folder's rows, as the folder's read saw it.
+#[derive(Debug, Clone)]
+pub(crate) struct FolderRow {
+    pub(crate) id: i64,
+    pub(crate) unpaired: bool,
+    pub(crate) missing: bool,
+    pub(crate) name: Vec<u8>,
+    pub(crate) ext: String,
+    pub(crate) kind: String,
+    pub(crate) size: i64,
+    pub(crate) mtime: i64,
+    pub(crate) order_key: Vec<u8>,
+    pub(crate) created: Option<i64>,
+}
+
+impl FolderRows {
+    /// The row of a file the walk listed in this folder, when the batch would only mark it seen: a present row with the
+    /// listing's name, extension, kind, size, mtime and order key, and a creation time that needs neither a displacement
+    /// nor a backfill (`ScanWriter::record_file`). Its id, and whether it is unpaired. `key` is a buffer for the order key.
+    pub fn unchanged(&self, f: &ScannedFile, key: &mut Vec<u8>) -> Option<(i64, bool)> {
+        let row = self.rows.get(&(f.identity.volume.cast_signed(), f.identity.file_index.cast_signed()))?;
+        let created = match (row.created, f.created) {
+            (Some(a), Some(b)) => a == b,
+            (None, Some(_)) => false,
+            _ => true,
+        };
+        if row.missing || !created {
+            return None;
+        }
+        key.clear();
+        key.extend_from_slice(&self.key);
+        f.name.push_name_key(key);
+        let size = i64::try_from(f.size).ok()?;
+        let same = row.name == f.name.as_bytes()
+            && row.ext == f.ext.name()
+            && row.kind == f.ext.kind().key()
+            && row.size == size
+            && row.mtime == f.mtime
+            && row.order_key == *key;
+        same.then_some((row.id, row.unpaired))
+    }
 }
 
 /// A folder's row, with its part of its files' order key (`PathRules::folder_key`).
@@ -380,6 +424,10 @@ pub(crate) struct Hit {
     pub(crate) created: Option<i64>,
     /// The row is missing: its file was not found where it was.
     pub(crate) missing: bool,
+    /// The row is unpaired (a new or displaced row the pairing has not settled).
+    pub(crate) unpaired: bool,
+    /// The row's folder is under the scanned root, so the row is this root's to write.
+    pub(crate) in_root: bool,
 }
 
 /// The pictures of the pairing pass, in file-id order, as columns (`Catalog::pairing_work`): picture `i` is file

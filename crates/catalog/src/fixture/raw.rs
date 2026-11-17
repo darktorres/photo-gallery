@@ -89,11 +89,11 @@ pub(crate) fn rotation_and_width(c: &Catalog, id: FileId) -> (i64, i64) {
         .unwrap()
 }
 
-/// The only file's row as the scan leaves it: last scan, name, size, mtime, missing and order key.
-pub(crate) fn file_row(c: &Catalog) -> (i64, String, i64, i64, i64, Vec<u8>) {
+/// The only file's row as the scan leaves it: name, size, mtime, missing and order key.
+pub(crate) fn file_row(c: &Catalog) -> (String, i64, i64, i64, Vec<u8>) {
     c.conn
-        .query_row("SELECT last_scan, CAST(name AS TEXT), size, mtime, missing, order_key FROM files", [], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+        .query_row("SELECT CAST(name AS TEXT), size, mtime, missing, order_key FROM files", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
         })
         .unwrap()
 }

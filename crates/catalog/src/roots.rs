@@ -44,7 +44,7 @@ use crate::error::{Error, Result};
 use crate::ledger::failure::tidy;
 use crate::transaction::write_transaction;
 use crate::types::{
-    FOLDER_FAILED, FolderFailure, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH,
+    FOLDER_FAILED, FolderFailure, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH,
     covering_root, folders_under, roots_on, skipped_folders, under_params,
 };
 
@@ -124,6 +124,7 @@ impl Catalog {
     pub fn begin_scan(&mut self, root: &RulePath) -> Result<ScanLease<'_>> {
         let rules = self.rules;
         let bytes = rules.join(root);
+        ensure_seen(&self.conn)?;
         let tx = write_transaction(&self.conn)?;
         tx.execute("DELETE FROM scan_leases WHERE heartbeat < unixepoch() - ?1", [SCAN_LEASE_SECS])?;
         let held: Vec<(Vec<u8>, String)> = tx
@@ -142,6 +143,8 @@ impl Catalog {
             "INSERT INTO scan_leases(id, root, holder, heartbeat) VALUES (?1, ?2, ?3, unixepoch())",
             params![scan.get(), bytes, lease_holder()],
         )?;
+        // A walk starts with no rows seen (the set is the walk's, and a walk that ended emptied it already).
+        tx.execute("DELETE FROM temp.scan_seen", [])?;
         tx.commit()?;
         Ok(ScanLease::new(self, scan, root.clone()))
     }
@@ -170,40 +173,49 @@ impl ScanLease<'_> {
     pub fn mark_missing(&self, skipped: &[Skip]) -> Result<usize> {
         let (rules, root, scan) = (self.rules, self.root(), self.id());
         let held = self.held();
-        // Read once: the lease keeps any other walk of these folders out.
-        let folders: Vec<i64> = {
+        // The present rows the walk did not see, read once outside any write transaction: the lease keeps any other walk
+        // of these folders out. Only the rows left are written, by id, in batches of `WRITE_BATCH`, and each write repeats
+        // the read's predicate, so a row that became seen or missing since is left alone.
+        let unseen: Vec<(i64, i64)> = {
             let snapshot = self.conn.unchecked_transaction()?;
             let skipped = skipped_folders(&snapshot, rules, skipped)?;
-            let folders = folders_under(&snapshot, rules, root)?.into_iter().filter(|f| !skipped.contains(f)).collect();
-            snapshot.commit()?;
-            folders
-        };
-        let mut marked = 0;
-        let mut pending = folders.as_slice();
-        while !pending.is_empty() {
-            let tx = write_transaction(&self.conn)?;
-            held.hold(&tx)?;
-            let (mut done, mut rows) = (0, 0);
+            let folders: Vec<i64> =
+                folders_under(&snapshot, rules, root)?.into_iter().filter(|f| !skipped.contains(f)).collect();
+            let mut out = Vec::new();
             {
-                let mut mark = tx.prepare_cached(
-                    "UPDATE files SET missing = 1 WHERE folder_id = ?1 AND missing = 0 AND last_scan < ?2",
+                let mut read = snapshot.prepare_cached(
+                    "SELECT id FROM files WHERE folder_id = ?1 AND missing = 0
+                     AND NOT EXISTS (SELECT 1 FROM temp.scan_seen s WHERE s.id = files.id)",
                 )?;
-                for folder in pending {
-                    rows += mark.execute(params![folder, scan.get()])?;
-                    done += 1;
-                    if done >= WRITE_BATCH || rows >= WRITE_BATCH {
-                        break;
+                for folder in &folders {
+                    for id in read.query_map([folder], |r| r.get::<_, i64>(0))? {
+                        out.push((id?, *folder));
                     }
                 }
             }
+            snapshot.commit()?;
+            out
+        };
+        let mut marked = 0;
+        for batch in unseen.chunks(WRITE_BATCH) {
+            let tx = write_transaction(&self.conn)?;
+            held.hold(&tx)?;
+            {
+                let mut mark = tx.prepare_cached(
+                    "UPDATE files SET missing = 1 WHERE id = ?1 AND folder_id = ?2 AND missing = 0
+                     AND NOT EXISTS (SELECT 1 FROM temp.scan_seen s WHERE s.id = files.id)",
+                )?;
+                for &(id, folder) in batch {
+                    marked += mark.execute(params![id, folder])?;
+                }
+            }
             tx.commit()?;
-            marked += rows;
-            pending = pending.get(done..).unwrap_or_default();
         }
         let tx = write_transaction(&self.conn)?;
         held.hold(&tx)?;
         sweep_folder_failures(&tx, rules, root, scan, skipped)?;
         tx.execute("DELETE FROM scan_leases WHERE id = ?1", [scan.get()])?;
+        tx.execute("DELETE FROM temp.scan_seen", [])?;
         tx.commit()?;
         Ok(marked)
     }
@@ -246,14 +258,26 @@ impl Catalog {
                 snapshot.prepare_cached("SELECT value FROM meta WHERE key = 'seq'")?.query_row([], |r| r.get(0))?;
             let rows = snapshot
                 .prepare_cached(
-                    "SELECT volume, file_ref, size, mtime FROM files
-                     WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
+                    "SELECT volume, file_ref, id, unpaired, missing, name, ext, kind, size, mtime, order_key, created
+                     FROM files WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
                 )?
                 .query_map([self.rules.join(folder)], |r| {
-                    Ok(((r.get(0)?, r.get(1)?), Prior { size: r.get(2)?, mtime: r.get(3)? }))
+                    let row = FolderRow {
+                        id: r.get(2)?,
+                        unpaired: r.get::<_, i64>(3)? != 0,
+                        missing: r.get::<_, i64>(4)? != 0,
+                        name: r.get(5)?,
+                        ext: r.get(6)?,
+                        kind: r.get(7)?,
+                        size: r.get(8)?,
+                        mtime: r.get(9)?,
+                        order_key: r.get(10)?,
+                        created: r.get(11)?,
+                    };
+                    Ok(((r.get(0)?, r.get(1)?), row))
                 })?
                 .collect::<rusqlite::Result<_>>()?;
-            FolderRows { mark, rows }
+            FolderRows { mark, key: self.rules.folder_key(&folder.parts), rows }
         };
         snapshot.commit()?;
         Ok(rows)
@@ -272,7 +296,8 @@ impl Catalog {
     /// window bumps the number as well, and recording the file's move waits for the next walk; nothing is lost.
     pub fn prior_states(&self, rows: &FolderRows, identities: &[FileIdentity]) -> Result<Vec<Option<Prior>>> {
         let key = |identity: &FileIdentity| (identity.volume.cast_signed(), identity.file_index.cast_signed());
-        let mut out: Vec<Option<Prior>> = identities.iter().map(|i| rows.rows.get(&key(i)).copied()).collect();
+        let mut out: Vec<Option<Prior>> =
+            identities.iter().map(|i| rows.rows.get(&key(i)).map(|r| Prior { size: r.size, mtime: r.mtime })).collect();
         if out.iter().all(Option::is_some) {
             return Ok(out);
         }
@@ -292,6 +317,36 @@ impl Catalog {
         }
         snapshot.commit()?;
         Ok(out)
+    }
+}
+
+/// The walk's set of the rows it has seen (`temp.scan_seen`): a temporary table of this connection, made by the first walk
+/// on it and kept. Its partial index holds the unpaired rows, which the pairing reads. Emptied when a walk begins and when
+/// its lease is given back.
+pub(crate) fn ensure_seen(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS scan_seen(id INTEGER PRIMARY KEY, unpaired INTEGER NOT NULL);
+         CREATE TEMP INDEX IF NOT EXISTS scan_seen_unpaired ON scan_seen(id) WHERE unpaired = 1;",
+    )?;
+    Ok(())
+}
+
+impl ScanLease<'_> {
+    /// Records rows as seen by this walk, in the set (`(id, unpaired)`), in one deferred transaction that touches only the
+    /// temporary database: it neither waits for nor holds the catalog's write lock.
+    pub fn mark_seen(&self, rows: &[(i64, bool)]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut insert = tx.prepare_cached("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)")?;
+            for &(id, unpaired) in rows {
+                insert.execute(params![id, unpaired])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
     }
 }
 
@@ -750,7 +805,7 @@ mod tests {
         c.conn.execute("UPDATE files SET mtime = 101 WHERE id = ?1", [id.get()]).unwrap();
         assert_eq!(c.prior_states(&rows, &[identity]).unwrap(), [None]);
         assert_eq!(found(&mut c, scan, 10, 100, None), Recorded::Same);
-        assert_eq!(raw::file_row(&c).3, 101, "the write-back's row is kept");
+        assert_eq!(raw::file_row(&c).2, 101, "the write-back's row is kept");
         // A row of the folder itself was read before the listing, so it is as it was then, whatever changed since.
         let rows = c.folder_rows(&root).unwrap();
         c.conn.execute("UPDATE files SET mtime = 100 WHERE id = ?1", [id.get()]).unwrap();
@@ -800,9 +855,9 @@ mod tests {
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
                                    rotation, order_key)
-                 SELECT i, 1, i, i % ?2 + 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 1, 0, 0,
+                 SELECT i, 1, i, i % ?2 + 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
                         CAST(printf('%08d', i) AS BLOB)
                  FROM n",
                 [FILES, FOLDERS],
@@ -822,6 +877,62 @@ mod tests {
         assert_eq!(lease(&mut c, scan, &root).mark_missing(&[]).unwrap(), 0);
         assert_eq!(holds.take().len(), 3);
     }
+
+    // The folder's read recognises a listing that matches its row, which the walk then only marks seen; a listing that
+    // differs in any compared column is for the batch.
+    fn the_folder_read_recognises_a_listing_that_matches_its_row(rules: PathRules) {
+        let mut c = library(rules);
+        let root = p(rules, r"D:\r");
+        let scan = begin(&mut c, &root);
+        let name = Name::from("a.jpg");
+        let ext = Ext::of_name("a.jpg").unwrap();
+        let file = |size: u64| ScannedFile {
+            identity: FileIdentity::new(1, 7),
+            name: &name,
+            ext,
+            size,
+            mtime: 100,
+            created: None,
+            prior: None,
+        };
+        let tx = c.tx().unwrap();
+        let mut writer = tx.scan_writer(scan, &root).unwrap();
+        let folder = writer.folder(&root).unwrap();
+        writer.record_file(&folder, &file(10)).unwrap();
+        drop(writer);
+        tx.commit().unwrap();
+        let rows = c.folder_rows(&root).unwrap();
+        let mut key = Vec::new();
+        assert!(rows.unchanged(&file(10), &mut key).is_some(), "the listing matches the row");
+        assert!(rows.unchanged(&file(11), &mut key).is_none(), "a size change is for the batch");
+    }
+
+    under_both_rules!(
+        the_folder_read_recognises_a_listing_that_matches_its_row,
+        the_folder_read_recognises_a_listing_that_matches_its_row_windows,
+        the_folder_read_recognises_a_listing_that_matches_its_row_posix
+    );
+
+    // A walk's set of seen rows goes with its lease: giving the lease back (here, its drop) empties it.
+    fn a_lease_given_back_empties_the_walks_set(rules: PathRules) {
+        let mut c = library(rules);
+        let root = p(rules, r"D:\r");
+        let scan = begin(&mut c, &root);
+        let seen = |c: &Catalog| -> i64 {
+            c.conn.query_row("SELECT count(*) FROM temp.scan_seen", [], |r| r.get(0)).unwrap()
+        };
+        {
+            let lease = ScanLease::new(&mut c, scan, root.clone());
+            lease.mark_seen(&[(1, false), (2, true)]).unwrap();
+        }
+        assert_eq!(seen(&c), 0, "the set went with the lease");
+    }
+
+    under_both_rules!(
+        a_lease_given_back_empties_the_walks_set,
+        a_lease_given_back_empties_the_walks_set_windows,
+        a_lease_given_back_empties_the_walks_set_posix
+    );
 
     // A connection waits for a locked catalog only as long as its busy timeout, and the error says it was busy.
     #[test]

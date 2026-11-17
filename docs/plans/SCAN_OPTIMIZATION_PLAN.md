@@ -490,6 +490,35 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
 
 ## Phase 3: a rescan that changes nothing writes nothing
 
+**Built, not tested (2026-11-17).** The changes below are in, with these differences from the text:
+
+- **The set's reads use `NOT EXISTS` and `EXISTS`, correlated on `files.id`, not `NOT IN (SELECT id FROM temp.scan_seen)`.**
+  A `NOT IN` over the set is materialised again for each statement a batch runs, which is quadratic over the batches.
+  The shared fragments are `not_seen!()` and the correlated lookup in `sql.rs`.
+- **Fresh rows come from the set's unpaired partial index,** joined to `files` (`fresh_rows`), with no `INDEXED BY`.
+  The probe with `LIMIT 1` runs on the catalog connection before the write transaction opens (`in_batches`).
+- **`seen_volumes` reads the set joined to `files`,** not a collection from the walk. It reads the set's rows, not the table.
+- **The folder read keeps every compared column** (`FolderRow`), and `FolderRows::unchanged` makes the listing-time
+  decision. It compares the row as `record_file` does, including the creation-time rules, so an unchanged file is one
+  `record_file` would only mark seen.
+- **Walk:** unchanged files are marked seen in one deferred transaction per folder (`ScanLease::mark_seen`). Only the rest
+  go to the batch, with their priors.
+- **`known` returns `unpaired` and `in_root`,** the folder's membership, and `record_file` marks the row it writes or
+  keeps. A new row's id comes from `last_insert_rowid()`, as the plan says.
+- **Migration 16 is extended in place** (`DROP INDEX files_fresh`, `DROP COLUMN last_scan`), as the plan says for a
+  migration no real catalog has run.
+- **The set is emptied** when a walk begins (`begin_scan`), in `mark_missing`'s last transaction, and when the lease is
+  released (`release_lease`, so on drop too).
+- **`mark_missing`** reads the unseen present rows outside a write transaction, then marks them by id in batches of
+  `WRITE_BATCH`, repeating the predicate in each write.
+- **Tests:** `the_folder_read_recognises_a_listing_that_matches_its_row` and `a_lease_given_back_empties_the_walks_set`
+  (roots), and the writer tests from Phase 1. Not written: the plan's test list in change 6 beyond these (the
+  two-transaction count with `WriteHolds`, the temp-only transaction against a held catalog, the Busy begin, and the
+  pairing and mark-missing cases with unpaired children and refused mounts). Existing tests were updated for `last_scan`'s
+  removal and the set (raw inserts, `raw::file_row`, the pairing's batch test, which fills the set).
+- **The probe** (`stmt_journal_probe.rs`) still names `last_scan` and `files_fresh` in its own statements. It no longer
+  runs against the current schema, and the before numbers come from a worktree at the parent commit, as Phase 1 says.
+
 ### Phase 3: why
 
 A 200k rescan costs 41k instructions per file. `write_batch` is 32k of that:

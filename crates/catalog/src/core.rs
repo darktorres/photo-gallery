@@ -444,6 +444,8 @@ impl Drop for ScanLease<'_> {
 /// Give back the lease of walk `scan`, on `conn`; nothing is written when it is gone already (a complete walk gave it
 /// back in its last transaction).
 pub(crate) fn release_lease(conn: &Connection, scan: ScanId) -> Result<()> {
+    // The walk's rows seen go with its lease: the next walk starts with none.
+    conn.execute("DELETE FROM temp.scan_seen", [])?;
     let held: bool = conn
         .prepare_cached("SELECT EXISTS(SELECT 1 FROM scan_leases WHERE id = ?1)")?
         .query_row([scan.get()], |r| r.get(0))?;

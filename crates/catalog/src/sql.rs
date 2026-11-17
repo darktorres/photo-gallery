@@ -155,6 +155,14 @@ macro_rules! not_being_written {
     };
 }
 
+/// The row of `files` that the walk has not seen: `files.id` is not in its set (`temp.scan_seen`). A correlated lookup of
+/// the set's key: a `NOT IN` over the set would be materialised again for each statement a batch runs.
+macro_rules! not_seen {
+    () => {
+        "NOT EXISTS (SELECT 1 FROM temp.scan_seen s WHERE s.id = files.id)"
+    };
+}
+
 /// The most Events (keyless notices) the inbox keeps: past it, the `notices_uid` trigger deletes the oldest, read ones
 /// first, at each insert (`TO_8_NOTIFY`). One source for the trigger's text and `inbox::KEPT_EVENTS`.
 macro_rules! kept_events {

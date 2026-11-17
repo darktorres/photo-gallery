@@ -1050,9 +1050,9 @@ mod tests {
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
                                    rotation, order_key)
-                 SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 1, 0, 0,
+                 SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
                         CAST(printf('%08d', i) AS BLOB)
                  FROM n",
                 [N],

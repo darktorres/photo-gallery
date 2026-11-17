@@ -1,5 +1,5 @@
 //! Pairing, at the end of every scan of a root. The scan writes each file it finds by its
-//! identity ([`crate::ScanWriter::upsert_file`]); a file the catalog has no row for gets a fresh row, `unpaired`, and a row
+//! identity ([`crate::ScanWriter::record_file`]); a file the catalog has no row for gets a fresh row, `unpaired`, and a row
 //! whose identity is another file's is displaced, `unpaired`. This module decides what those rows are, in tiers:
 //!
 //! 1. **Same folder and name** on another volume: the file came back under a new identity (a renumbered volume), so
@@ -509,7 +509,7 @@ mod tests {
         let ext = Ext::of_name(name).unwrap();
         let name = Name::from(name);
         let file = ScannedFile { identity, name: &name, ext, size, mtime: 100, created, prior };
-        let recorded = writer.upsert_file(&folder, &file).unwrap();
+        let recorded = writer.record_file(&folder, &file).unwrap();
         drop(writer);
         tx.commit().unwrap();
         recorded

@@ -728,7 +728,7 @@ mod tests {
             let name = Name::from("a.jpg");
             let ext = Ext::of_name("a.jpg").unwrap();
             let file = ScannedFile { identity, name: &name, ext, size, mtime, created: None, prior };
-            let recorded = writer.upsert_file(&folder, &file).unwrap();
+            let recorded = writer.record_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
             recorded

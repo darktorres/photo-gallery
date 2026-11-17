@@ -98,10 +98,13 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
         let order_key = rules.order_key(&rules.folder_key(&folder_parts.parts), &name);
         let ext = pg_model::media::Ext::of_name_bytes(f.name)
             .ok_or_else(|| anyhow!("{} is not a media file", name.display()))?;
+        // A new row's change number, as the scan's writer takes it: one `meta.seq` a file, as the trigger it replaces took.
+        let change: i64 =
+            conn.query_row("UPDATE meta SET value = value + 1 WHERE key = 'seq' RETURNING value", [], |r| r.get(0))?;
         conn.execute(
             "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
-                               rotation, order_key)
-             VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?11)",
+                               rotation, order_key, pending, seq, changed)
+             VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?11, 1, ?12, ?12)",
             params![
                 f.id.get(),
                 f.file_ref,
@@ -113,7 +116,8 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
                 f.mtime,
                 f.missing,
                 f.rotation.get(),
-                order_key
+                order_key,
+                change
             ],
         )
         .with_context(|| format!("insert {}", name.display()))?;

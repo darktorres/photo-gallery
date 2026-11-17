@@ -63,6 +63,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     TO_13_PAIRS_OWED,
     &[Step::Sql(TO_14_PAIRING_EPOCH)],
     &[Step::Sql(TO_15_HASHES_OWED)],
+    &[Step::Sql(TO_16_NEW_FILES)],
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -501,6 +502,12 @@ const TO_15_HASHES_OWED: &str = "CREATE TABLE hashes_owed(
 
 /// [`TO_11_NOTIFY_FIXES`]' trigger: the import's ledger row is made hidden when its file is missing or pending, and a
 /// conflict updates `hidden` as well as `error`.
+/// Version 16: **`files_added` goes.** Whoever inserts a `files` row sets its `pending`, `seq` and `changed` itself: the
+/// scan's writer does (`ScanWriter::record_file`, one change number per batch) and so does the fixture. The trigger
+/// made each insert a multi-write statement with a statement journal, for three columns the insert can set itself: the
+/// first scan of 200,000 files spent 42% of its instructions there (docs/temp/scan-optimizations-validation.md).
+const TO_16_NEW_FILES: &str = "DROP TRIGGER files_added;\n";
+
 const TO_11_IMPORT_HIDDEN: &str = "DROP TRIGGER analysis_import;
 CREATE TRIGGER analysis_import AFTER INSERT ON analysis
 WHEN new.error IS NOT NULL OR EXISTS (SELECT 1 FROM file_failures WHERE file_id = new.file_id AND pass = 'import')
@@ -976,7 +983,6 @@ mod tests {
     /// named by its base name). [`every_trigger_names_the_test_that_covers_it`] fails on a trigger this list does not
     /// name, and on a name the schema does not have.
     const TRIGGER_TESTS: &[(&str, &str)] = &[
-        ("files_added", "schema::a_new_file_is_pending_and_takes_the_next_seq"),
         ("files_changed", "core::pending_follows_what_the_analysis_was_made_from"),
         ("files_source_changed", "writers::a_size_change_alone_moves_the_file_in_the_thumbnail_source"),
         ("analysis_added", "core::pending_follows_what_the_analysis_was_made_from"),
@@ -1379,20 +1385,19 @@ mod tests {
         assert_eq!(changed_since(&c, after), (vec![], after));
     }
 
-    /// `files_added`: a new file is pending (it has no analysis, so it is due), and takes the next change number for its
-    /// `seq` and its `changed` alike: the newest change, for the thumbnails and the change list.
+    /// Version 16 (`TO_16_NEW_FILES`) dropped `files_added`: no trigger on a `files` insert. A new row's `pending`, `seq`
+    /// and `changed` are set by the insert itself (`writers::a_scans_new_files_are_pending_and_unpaired_under_one_change_number`).
     #[test]
-    fn a_new_file_is_pending_and_takes_the_next_seq() {
+    fn no_trigger_on_files_inserts() {
         let c = library(PathRules::Windows);
-        let before = raw::meta_seq(&c);
-        fixture::insert(&c, &[fixture::File::new(FileId::new(5), FolderId::new(1), "e.jpg", 50, 7)]).unwrap();
-        assert_eq!(raw::meta_seq(&c), before + 1, "the insert takes one number");
-        let (pending, seq, changed): (i64, i64, i64) = c
+        let inserts: i64 = c
             .conn
-            .query_row("SELECT pending, seq, changed FROM files WHERE id = 5", [], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = 'files' AND sql LIKE '%AFTER INSERT%'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!((pending, seq, changed), (1, before + 1, before + 1));
+        assert_eq!(inserts, 0);
     }
 }

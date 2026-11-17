@@ -29,14 +29,20 @@ use crate::types::{
 // rusqlite's statement cache per row (16 entries, which the import's statements alone would crowd). A writer
 // borrows its transaction, so it is dropped before the transaction commits.
 
-/// Write a file as a new row (or, on its identity, the same file's changed fields, while the row is as the walk read it
-/// when it listed the folder: `f.prior`): unpaired, as `ScanWriter::file` says. The rows written: 0 when the row
-/// changed since the listing.
-fn write_file(file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, scan: i64, key: &[u8]) -> Result<usize> {
+/// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
+/// change number ([`change_number`]). These are the columns the `files_added` trigger set, before migration 16.
+fn write_new(
+    new_file: &mut Statement<'_>,
+    f: &ScannedFile,
+    folder: &Folder,
+    scan: i64,
+    key: &[u8],
+    change: i64,
+) -> Result<usize> {
     let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
     let size = i64::try_from(f.size).context("a file's size")?;
     let (ext, kind) = (f.ext.name(), f.ext.kind().key());
-    Ok(file.execute(params![
+    Ok(new_file.execute(params![
         volume,
         file_ref,
         f.created,
@@ -48,9 +54,48 @@ fn write_file(file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, scan: 
         f.mtime,
         scan,
         key,
+        change
+    ])?)
+}
+
+/// Write the changed fields of the known row `id`, while it is as the walk read it when it listed the folder (`f.prior`;
+/// see `changed_file`'s guard). The rows written: 0 when the row changed since the listing.
+fn write_changed(
+    changed_file: &mut Statement<'_>,
+    f: &ScannedFile,
+    folder: &Folder,
+    scan: i64,
+    key: &[u8],
+    id: i64,
+) -> Result<usize> {
+    let size = i64::try_from(f.size).context("a file's size")?;
+    let (ext, kind) = (f.ext.name(), f.ext.kind().key());
+    Ok(changed_file.execute(params![
+        id,
+        folder.id.get(),
+        f.name.as_bytes(),
+        ext,
+        kind,
+        size,
+        f.mtime,
+        scan,
+        key,
+        f.created,
         f.prior.map(|p| p.size),
         f.prior.map(|p| p.mtime)
     ])?)
+}
+
+/// The batch's change number: the next `meta.seq`, taken by the batch's first new row and kept for the rest of the
+/// batch (`ScanWriter::bump`). One number per batch: its rows become visible in one commit, and the readers compare
+/// change numbers, never count them.
+fn change_number(bump: &mut Statement<'_>, change: &mut Option<i64>) -> Result<i64> {
+    if let Some(n) = *change {
+        return Ok(n);
+    }
+    let n: i64 = bump.query_row([], |r| r.get(0))?;
+    *change = Some(n);
+    Ok(n)
 }
 
 /// The scan's writes.
@@ -70,7 +115,12 @@ pub struct ScanWriter<'tx> {
     seen_identity: Statement<'tx>,
     backfill: Statement<'tx>,
     displace: Statement<'tx>,
-    file: Statement<'tx>,
+    /// A new file's row (`write_new`), and a known file's changed fields (`write_changed`).
+    new_file: Statement<'tx>,
+    changed_file: Statement<'tx>,
+    /// The next change number (`change_number`), and this batch's once taken.
+    bump: Statement<'tx>,
+    change: Option<i64>,
     folder_failed: Statement<'tx>,
     /// The order key of the file being recorded.
     key: Vec<u8>,
@@ -109,23 +159,28 @@ impl<'tx> ScanWriter<'tx> {
             backfill: tx.prepare("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
             displace: tx
                 .prepare("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
-            // A new row is unpaired: the pairing at the end of the scan decides what it is. A row
-            // is updated only while it is as the walk read it when it listed the folder (`?12`, `?13`: NULL for none),
-            // and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule (a listing
-            // has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and retries,
-            // which change nothing on disk.
-            file: tx.prepare(concat!(
+            // A new row is unpaired: the pairing at the end of the scan decides what it is. It is pending, and changed at
+            // the batch's number, which the insert sets itself (no trigger does, since migration 16). The row is not
+            // known to the writer, so the insert cannot conflict: the identity was looked up in this transaction.
+            new_file: tx.prepare(concat!(
                 "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime, last_scan,
-                    order_key, unpaired)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)
-                 ON CONFLICT(volume, file_ref) DO UPDATE SET
-                    folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
-                    size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
-                    order_key = excluded.order_key, created = coalesce(files.created, excluded.created)
-                 WHERE files.size IS ?12 AND files.mtime IS ?13 AND ",
+                    order_key, unpaired, pending, seq, changed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, 1, ?12, ?12)"
+            ))?,
+            // A known row is updated only while it is as the walk read it when it listed the folder (`?11`, `?12`: NULL
+            // for none), and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule
+            // (a listing has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and
+            // retries, which change nothing on disk. The triggers that depend on size, mtime and missing keep the
+            // file's pending and change numbers, whoever writes them.
+            changed_file: tx.prepare(concat!(
+                "UPDATE files SET folder_id = ?2, name = ?3, ext = ?4, kind = ?5, size = ?6, mtime = ?7,
+                    last_scan = ?8, missing = 0, order_key = ?9, created = coalesce(created, ?10)
+                 WHERE id = ?1 AND size IS ?11 AND mtime IS ?12 AND ",
                 not_being_written!(files)
             ))?,
+            bump: tx.prepare(concat!(next_seq!(), " RETURNING value"))?,
             folder_failed: tx.prepare(FOLDER_FAILED)?,
+            change: None,
             key: Vec::new(),
         })
     }
@@ -166,8 +221,22 @@ impl<'tx> ScanWriter<'tx> {
     /// made for the identity. A new row is `unpaired` until the pairing at the end of the scan. A row that changed
     /// since the folder was listed (`f.prior`), or that the app is writing into, is only marked seen
     /// ([`Recorded::Same`]): the listing is older than the row.
-    pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<Recorded> {
-        let ScanWriter { scan, under, known, in_root, seen, backfill, displace, file, key, .. } = self;
+    pub fn record_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<Recorded> {
+        let ScanWriter {
+            scan,
+            under,
+            known,
+            in_root,
+            seen,
+            backfill,
+            displace,
+            new_file,
+            changed_file,
+            bump,
+            change,
+            key,
+            ..
+        } = self;
         key.clear();
         key.extend_from_slice(&folder.key);
         f.name.push_name_key(key);
@@ -193,7 +262,7 @@ impl<'tx> ScanWriter<'tx> {
             })
             .optional()?;
         let Some(hit) = hit else {
-            write_file(file, f, folder, *scan, &key[..])?;
+            write_new(new_file, f, folder, *scan, &key[..], change_number(bump, change)?)?;
             return Ok(Recorded::Changed);
         };
         // A present row of another root is that root's (a second path to its file). A missing one does not keep the
@@ -206,7 +275,7 @@ impl<'tx> ScanWriter<'tx> {
         }
         if matches!((hit.created, f.created), (Some(a), Some(b)) if a != b) {
             displace.execute(params![hit.id])?;
-            write_file(file, f, folder, *scan, &key[..])?;
+            write_new(new_file, f, folder, *scan, &key[..], change_number(bump, change)?)?;
             return Ok(Recorded::Changed);
         }
         if hit.created.is_none() && f.created.is_some() {
@@ -216,7 +285,7 @@ impl<'tx> ScanWriter<'tx> {
             seen.execute(params![hit.id, *scan])?;
             return Ok(Recorded::Same);
         }
-        if write_file(file, f, folder, *scan, &key[..])? == 0 {
+        if write_changed(changed_file, f, folder, *scan, &key[..], hit.id)? == 0 {
             seen.execute(params![hit.id, *scan])?;
             return Ok(Recorded::Same);
         }
@@ -810,7 +879,7 @@ mod tests {
             created,
             prior,
         };
-        let recorded = writer.upsert_file(&folder, &file).unwrap();
+        let recorded = writer.record_file(&folder, &file).unwrap();
         drop(writer);
         tx.commit().unwrap();
         recorded
@@ -923,6 +992,94 @@ mod tests {
         a_size_change_alone_moves_the_file_in_the_thumbnail_source,
         a_size_change_alone_moves_the_file_in_the_thumbnail_source_windows,
         a_size_change_alone_moves_the_file_in_the_thumbnail_source_posix
+    );
+
+    /// One batch of the walk `scan` of `root`: each `(file index, name, creation time)` is recorded as the walk records it.
+    fn record_batch(c: &mut Catalog, scan: ScanId, root: &pg_model::rules::Path, files: &[(u64, &str, Option<i64>)]) {
+        let tx = c.tx().unwrap();
+        let mut writer = tx.scan_writer(scan, root).unwrap();
+        let folder = writer.folder(root).unwrap();
+        for &(index, text, created) in files {
+            let name = Name::from(text);
+            let ext = Ext::of_name(text).unwrap();
+            let file = crate::ScannedFile {
+                identity: FileIdentity::new(1, index),
+                name: &name,
+                ext,
+                size: 10,
+                mtime: 100,
+                created,
+                prior: None,
+            };
+            writer.record_file(&folder, &file).unwrap();
+        }
+        drop(writer);
+        tx.commit().unwrap();
+    }
+
+    /// The `(pending, unpaired, seq, changed)` of every file, by id.
+    fn new_row_columns(c: &Catalog) -> Vec<(i64, i64, i64, i64)> {
+        c.conn
+            .prepare("SELECT pending, unpaired, seq, changed FROM files ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    /// A walk's batch records its new files pending (they have no analysis) and unpaired, all changed at one change
+    /// number: the one past `meta.seq` before the batch. The next batch takes the next number. (The `files_added` trigger
+    /// that did this is gone, migration 16.)
+    fn a_scans_new_files_are_pending_and_unpaired_under_one_change_number(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let root = p(rules, &spelled(rules, r"D:\x"));
+        let scan = begin(&mut c, &root);
+        let before = raw::meta_seq(&c);
+        record_batch(&mut c, scan, &root, &[(1, "a.jpg", None), (2, "b.jpg", None)]);
+        assert_eq!(raw::meta_seq(&c), before + 1, "the batch takes one number");
+        assert_eq!(new_row_columns(&c), vec![(1, 1, before + 1, before + 1); 2]);
+        record_batch(&mut c, scan, &root, &[(3, "c.jpg", None)]);
+        assert_eq!(raw::meta_seq(&c), before + 2, "the next batch takes the next");
+        assert_eq!(new_row_columns(&c)[2], (1, 1, before + 2, before + 2));
+    }
+
+    under_both_rules!(
+        a_scans_new_files_are_pending_and_unpaired_under_one_change_number,
+        a_scans_new_files_are_pending_and_unpaired_under_one_change_number_windows,
+        a_scans_new_files_are_pending_and_unpaired_under_one_change_number_posix
+    );
+
+    /// The same identity with another creation time is another file: its row is displaced (it keeps its id and loses
+    /// its identity, and that is a change of its `missing`), and a new row is made for the identity. The new row takes
+    /// the batch's number, the newest, as any new row of the batch does.
+    fn a_displaced_files_new_row_takes_the_batch_number(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let root = p(rules, &spelled(rules, r"D:\x"));
+        let scan = begin(&mut c, &root);
+        record_batch(&mut c, scan, &root, &[(1, "a.jpg", Some(5))]);
+        let before = raw::meta_seq(&c);
+        record_batch(&mut c, scan, &root, &[(1, "a.jpg", Some(6))]);
+        let displaced: (Option<i64>, i64) = c
+            .conn
+            .query_row("SELECT volume, unpaired FROM files WHERE id = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(displaced, (None, 1), "the old row lost its identity");
+        let (pending, unpaired, seq, changed): (i64, i64, i64, i64) = c
+            .conn
+            .query_row("SELECT pending, unpaired, seq, changed FROM files WHERE id = 2", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap();
+        assert_eq!((pending, unpaired), (1, 1));
+        assert!(seq > before, "past the displacement's own number");
+        assert_eq!((seq, changed), (raw::meta_seq(&c), raw::meta_seq(&c)));
+    }
+
+    under_both_rules!(
+        a_displaced_files_new_row_takes_the_batch_number,
+        a_displaced_files_new_row_takes_the_batch_number_windows,
+        a_displaced_files_new_row_takes_the_batch_number_posix
     );
 
     fn thumb_sources_is_the_analysed_files_with_their_folders(rules: PathRules) {
@@ -1181,7 +1338,7 @@ mod tests {
                 created: None,
                 prior: None,
             };
-            writer.upsert_file(&folder, &file).unwrap();
+            writer.record_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
             let item = c.pending_import(false).unwrap().items.remove(0);
@@ -1766,7 +1923,7 @@ mod tests {
         c.conn.execute("UPDATE files SET missing = 1 WHERE id = 5", []).unwrap();
         store_for(&mut c, 6, &picture([6; 32], 100));
         c.mark_pending(&[FileId::new(6)]).unwrap();
-        // Displaced (no identity, as `ScanWriter::upsert_file` leaves a row whose identity is another file's): left out.
+        // Displaced (no identity, as `ScanWriter::record_file` leaves a row whose identity is another file's): left out.
         store_for(&mut c, 7, &picture([7; 32], 100));
         c.conn
             .execute("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = 7", [])

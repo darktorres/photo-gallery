@@ -730,7 +730,7 @@ fn write_batch(
                     created: f.created,
                     prior: f.prior,
                 };
-                match writer.upsert_file(&folder, &file)? {
+                match writer.record_file(&folder, &file)? {
                     Recorded::Same => {}
                     Recorded::Changed => stats.changed += 1,
                     Recorded::Foreign => stats.duplicates += 1,

@@ -301,6 +301,17 @@ Both are bugs in the shipped code, and both are independent of the optimizations
 
 ## Phase 1: the scan's writes of new and changed files
 
+**Built, not tested (2026-11-17).** The changes below are in, as written, with these differences:
+
+- The batch's change number is one per batch, taken by its first new row (`change_number`, `ScanWriter::bump`).
+  The plan's design says the same. The writer's `record_file` doesn't return the new row's id yet: Phase 3 is the
+  first to need it, so it is left for then.
+- The fixture's insert takes one number per file, as the trigger it replaces did.
+- The probe's trigger variants install the old `files_added` text (`FILES_ADDED`). Its upsert variants are still the
+  pre-Phase-1 statements; the plan's before numbers come from a worktree build at the parent commit.
+- Not run: the test build of `pg-catalog`, `pg-scan` and `pg-library` (stopped by the user). The measurement protocol
+  and the scan benchmark's re-baseline are not done.
+
 ### Phase 1: why
 
 On a first scan, each new file pays for two things together (the report, **Mechanisms**):

@@ -92,7 +92,20 @@ enum Removed {
     AddedPart(usize),
     /// `files_added`, and this index.
     AddedAndIndex(&'static str),
+    /// `files_added` as it was up to migration 16, installed: a fresh catalog no longer has it.
+    Kept,
 }
+
+/// `files_added` as it was up to migration 16 (its macros expanded). The variants that keep, split or drop it install
+/// it first, so they measure what they measured before the trigger was removed.
+const FILES_ADDED: &str = "CREATE TRIGGER files_added AFTER INSERT ON files BEGIN
+    UPDATE meta SET value = value + 1 WHERE key = 'seq';
+    UPDATE files SET pending = NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
+        AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind),
+        seq = (SELECT value FROM meta WHERE key = 'seq'), changed = (SELECT value FROM meta WHERE key = 'seq')
+        WHERE id = new.id;
+END;";
 
 /// The timed part.
 #[derive(Clone, Copy)]
@@ -138,7 +151,7 @@ fn variants() -> Vec<Variant> {
     };
     let mut all = vec![
         v("a", "upsert (the app's)", true, Removed::Nothing, false, Action::Upsert),
-        v("b", "plain insert, trigger kept", true, Removed::Nothing, false, Action::Plain { folded: false }),
+        v("b", "plain insert, trigger kept", true, Removed::Kept, false, Action::Plain { folded: false }),
         v("c", "plain insert, trigger folded", true, Removed::Added, false, Action::Plain { folded: true }),
         v("d", "upsert, files_added dropped", true, Removed::Added, false, Action::Upsert),
         v("f", "upsert, files_added dropped, foreign keys off", false, Removed::Added, false, Action::Upsert),
@@ -146,7 +159,7 @@ fn variants() -> Vec<Variant> {
         v("h", "upsert, no files trigger, foreign keys off", false, Removed::AllOnFiles, false, Action::Upsert),
         v("t1", "upsert, files_added with its meta bump only", true, Removed::AddedPart(0), false, Action::Upsert),
         v("t2", "upsert, files_added with its files update only", true, Removed::AddedPart(1), false, Action::Upsert),
-        v("k", "one upsert for the batch, trigger kept", true, Removed::Nothing, false, Action::SetUpsert),
+        v("k", "one upsert for the batch, trigger kept", true, Removed::Kept, false, Action::SetUpsert),
         v("k2", "one folded insert for the batch, trigger dropped", true, Removed::Added, false, Action::SetFolded),
         v("i", "changed files, upsert", true, Removed::Nothing, true, Action::ChangedUpsert),
         v("j", "changed files, plain update of the known row", true, Removed::Nothing, true, Action::ChangedUpdate),
@@ -259,10 +272,11 @@ fn versions() -> Versions {
 fn remove(conn: &Connection, removed: Removed) -> Result<()> {
     match removed {
         Removed::Nothing => {}
-        Removed::Added => conn.execute_batch("DROP TRIGGER files_added")?,
+        Removed::Added => conn.execute_batch("DROP TRIGGER IF EXISTS files_added")?,
         Removed::AddedAndIndex(index) => {
-            conn.execute_batch(&format!("DROP TRIGGER files_added; DROP INDEX {index}"))?
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS files_added; DROP INDEX {index}"))?
         }
+        Removed::Kept => conn.execute_batch(&format!("DROP TRIGGER IF EXISTS files_added; {FILES_ADDED}"))?,
         Removed::AllOnFiles => {
             let names: Vec<String> = conn
                 .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = 'files'")?
@@ -273,9 +287,7 @@ fn remove(conn: &Connection, removed: Removed) -> Result<()> {
             }
         }
         Removed::AddedPart(part) => {
-            let sql: String =
-                conn.query_row("SELECT sql FROM sqlite_schema WHERE name = 'files_added'", [], |r| r.get(0))?;
-            let body = sql
+            let body = FILES_ADDED
                 .split_once("BEGIN")
                 .and_then(|(_, rest)| rest.rsplit_once("END"))
                 .map(|(body, _)| body)
@@ -284,7 +296,7 @@ fn remove(conn: &Connection, removed: Removed) -> Result<()> {
             ensure!(statements.len() == 2, "files_added has {} statements", statements.len());
             let kept = statements.get(part).context("the statement kept")?;
             conn.execute_batch(&format!(
-                "DROP TRIGGER files_added; CREATE TRIGGER files_added AFTER INSERT ON files BEGIN {kept}; END;"
+                "DROP TRIGGER IF EXISTS files_added; CREATE TRIGGER files_added AFTER INSERT ON files BEGIN {kept}; END;"
             ))?;
         }
     }

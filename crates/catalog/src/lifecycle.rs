@@ -945,7 +945,7 @@ mod tests {
                     created: None,
                     prior: None,
                 };
-                writer.upsert_file(&folder, &file).unwrap();
+                writer.record_file(&folder, &file).unwrap();
                 drop(writer);
                 tx.commit().unwrap();
             }
@@ -1013,7 +1013,7 @@ mod tests {
                 created: None,
                 prior: None,
             };
-            writer.upsert_file(&folder, &file).unwrap();
+            writer.record_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
             assert_eq!(mark(&c), pg_model::media::held_exts(), "the scan's writer stamps the mark");

@@ -105,7 +105,7 @@ pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, 
     let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
     let ext = Ext::of_name(name).unwrap();
     let file = ScannedFile { identity, name: &Name::from(name), ext, size, mtime, created: None, prior };
-    let changed = writer.upsert_file(&folder, &file).unwrap() == Recorded::Changed;
+    let changed = writer.record_file(&folder, &file).unwrap() == Recorded::Changed;
     drop(writer);
     tx.commit().unwrap();
     changed

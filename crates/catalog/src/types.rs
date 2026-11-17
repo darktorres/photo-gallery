@@ -359,7 +359,7 @@ pub(crate) const SET_FILE_RATING: &str = "INSERT INTO file_ratings(file_id, valu
      ON CONFLICT(file_id) DO UPDATE SET value = excluded.value";
 pub(crate) const DELETE_FILE_RATING: &str = "DELETE FROM file_ratings WHERE file_id = ?1";
 
-/// What recording a file did (`ScanWriter::upsert_file`).
+/// What recording a file did (`ScanWriter::record_file`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Recorded {
     /// Recorded as it was, or the row changed since the folder was listed (its listing is older than the row): only

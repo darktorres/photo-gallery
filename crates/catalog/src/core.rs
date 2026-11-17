@@ -605,7 +605,7 @@ mod tests {
             let folder = writer.folder(&p(rules, folder)).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let file = ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1, created: None, prior };
-            writer.upsert_file(&folder, &file).unwrap();
+            writer.record_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
         };

@@ -63,7 +63,8 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
   hashes. Only the empty index is free now. Measure an import into a copy of the pinterest catalog (190k files) before
   deciding. The rebuild's `(i64, Hash)` list (about 7.6 MB, an estimate) is not measured either.
 - Resizer buffers are never trimmed (from the import profile). **Open.** `Analyzer::trim` (`crates/analysis/src/analyze.rs:156-162`)
-  frees the image, the spare, the PDQ and ThumbHash buffers, the decoder and the detector, but not the resizer. Its `src` and
+  frees the image, the spare, the PDQ buffers, the decoder and the detector, but not the resizer (the import's ThumbHash
+  buffers went with the import's decode, 2026-11-17). Its `src` and
   `dst` (`crates/codec/src/resize.rs:22-23`, 12 bytes a pixel) are kept at full size per worker. A 24 MP non-JPEG file could
   leave about 290 MB held per worker (an estimate from the decode size, not measured).
 - Windows path copies per file (from the import profile). **Open.** `set_file` (`crates/platform/src/names.rs:27-46`) builds
@@ -77,7 +78,8 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
   borders and thumbnail passes, and the app's start. The app's on-demand thumbnail requests and viewer reads were checked
   by screenshots and the cached bytes only.
 - Grid thumbhash shows when scrolling up, never when scrolling down (opened 2026-11-15). **Open, not measured.** Seen while
-  fast-scrolling the grid. From the code: a cell shows its thumbhash until its thumb is `Ready` and has faded in
+  fast-scrolling the grid. (2026-11-17: the ThumbHash is now made by the Placeholders pass after the thumbnails, so a file
+  shows one only after that pass has made it; the question of the direction is unchanged.) From the code: a cell shows its thumbhash until its thumb is `Ready` and has faded in
   (`crates/desktop/qml/GridCell.qml`); cells and their requests are made 1500 px ahead of the view (`GalleryGrid.qml`,
   `cacheBuffer`); thumb requests run on a LIFO pool whose comment assumes the newest requests are the ones on screen
   (`crates/desktop/cpp/providers.cpp:4-5`). Nothing has shown which of these gives the direction difference. Plan: thumbnail

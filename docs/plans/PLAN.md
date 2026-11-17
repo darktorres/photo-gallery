@@ -84,6 +84,9 @@ overhead across 70M files, it is more like **1–3 days**. A second pass costs t
 
 - **Every analysis of the original pixels is produced in the same pass:** file hash, pixel hash, PDQ, dimensions,
   ThumbHash placeholder and EXIF. Embeddings join this pass when M3 is built; the import does not compute them yet.
+  *Superseded 2026-11-17:* the import reads headers only (format, dimensions, EXIF, frames, dates); the duplicate hashes
+  are the Hashes pass's, and the ThumbHash placeholder is the Placeholders pass's, made right after the thumbnails
+  (`crates/README.md`, "Import" and "Placeholders").
 - **Thumbnails are not part of the import** (user decision, 2026-10-30): the import stays fast, and a
   background task makes them afterwards (§6).
 - **Neither are borders** (user decision, 2026-11-01): the detector needs full-size pixels and the import's decode
@@ -103,7 +106,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
         │             → EXIF orientation applied → sRGB
         ├─► XXH3 of decoded pixels                                   (tier 0b: metadata-only differences)
         ├─► PDQ, 256 bits + 8 dihedral variants (rotations and mirrors) (tier 1)
-        ├─► dimensions + ThumbHash placeholder (the grid lays out before any thumbnail exists)
+        ├─► ThumbHash placeholder (superseded 2026-11-17: made after the thumbnails by the Placeholders pass; the import reads dimensions from the header, without a decode)
         └─► model input (frozen, antialiased resize) ─► [GPU batcher] ─► embeddings (tier 2, not built)
                                                      │
   [catalog writer]   one SQLite transaction per batch → crash-safe, resumable
@@ -197,12 +200,13 @@ plain connected components (`pg-dedup`'s `UnionFind`). Tiers 2 and 3 are not in 
 | ANN index | USearch or FAISS file | 3–30 GB |
 | PDQ multi-index | Rebuilt in RAM at startup from the catalog | (RAM) |
 | Thumbnail cache | **One SQLite file**, `thumbs.sqlite` (WAL): entries and JPEGs in separate tables, keyed by (file, height) | Byte cap, default 50 GB; least recently used evicted |
-| ThumbHash placeholders | Column in the catalog | ~2 GB |
+| ThumbHash placeholders | Table `placeholders` in the catalog | ~2 GB |
 
 **Thumbnails (user decision, 2026-10-30):** made by a **background task after the import**, never during it,
 at the size the grid currently uses. The size is **adjustable at runtime**: changing it queues new
-thumbnails, and visible items are made first, on demand. Placeholders (ThumbHash) and the dimensions come from
-the import, so the grid lays out instantly while thumbnails fill in. Thumbnails are display-only (THUMBNAILS.md
+thumbnails, and visible items are made first, on demand. The dimensions come from the import's headers, so the grid lays
+out instantly while thumbnails fill in. Placeholders (ThumbHash) are made right after the thumbnails (2026-11-17), so
+they serve a file's later views, not its first. Thumbnails are display-only (THUMBNAILS.md
 "Thumbnails": compression moves embeddings too much to re-analyse them), so the cache can be evicted and rebuilt
 at any time. It costs a second read of the originals, in the background and in on-disk order.
 
@@ -231,7 +235,7 @@ Shape:
   instead of through WASM. QML only positions the delegates. Built in `crates/client/src/layout.rs`.
 - **Thumbnail provider:** a `QQuickAsyncImageProvider`, built as a thin C++ class (`crates/desktop/cpp/providers.cpp`)
   in front of the Rust loaders. It reads the cache at the current grid size, or asks the thumbnail task for it
-  first. ThumbHash placeholders show instantly, and images fade in (Wallhaven-style).
+  first. A ThumbHash placeholder shows where one has been made, and images fade in (Wallhaven-style).
 - **Viewer:**
   - Original via a fast decode path.
   - An antialiased downscale for fit-to-screen.

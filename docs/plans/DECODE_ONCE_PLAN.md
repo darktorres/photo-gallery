@@ -14,6 +14,7 @@ The plan makes one full decode per new file (Phase 3 moves the import to the ful
 - Tests are written with each phase and run in Phase 6. Golden values are captured in Phase 6, never between phases (3.11).
 - A phase that changes a manifest or adds a crate edge commits `Cargo.lock` with it: `justfile:70` runs `cargo test --workspace --locked`, and `Cargo.lock` is tracked. Phase 5 does (the new `import` and `bench` edges). Phase 3 changes no manifest: the Dups pass is a module of `pg-import` (3.7).
 - **Stored values have one definition.** Every value written to `analysis` is computed by one function from one decode of the file, independent of the toggles, the grid height and the path that ran first: the duplicate hashes and ThumbHash come from the full stored decode F (`analysis::hashes`, 3.1), and the borders from the stored pixels. The duplicate hashes are computed in every mode (the toggle gates the pairing, 3.6). Borders are the one stored value a toggle can leave out: their columns are NULL while border detection is off. A test checks that every stored analysis value is identical in all eight toggle combinations, comparing the border columns only where both catalogs ran borders (5.12, 6.6). Thumbnails are display artifacts, never inputs to a stored value, and every thumbnail is downscaled from the same full decode F (5.1), so the path that made it does not change its pixels. Superseded 2026-11-16 (commit aeb7d2c): with duplicates detection off the import stores no hashes, and the Hashes pass completes them with the same functions (`analyze::image_hashes`); `the_hashes_pass_makes_what_an_import_with_them_would_have` pins identical values.
+  - Superseded 2026-11-17 (commit 5fcff8bb): the import decodes nothing and makes no hashes. Its ThumbHash moved to a Placeholders pass right after Thumbs, made from the cached thumbnail or a DCT-scaled decode of the original (`crates/README.md`, "Placeholders"). The DCT-scaled decoding is unchanged; the duplicate hashes are made by the Hashes pass from their own decode.
 - Process: **wait for the Modularity work to land** (the user will say when; git already has review 4's steps 1 to 9 at `04ff156`, `37b8e9b` and `e6cdf16`, though `MODULARITY_REVIEW_4.md:3` still says "all open"). Then implement **one phase at a time: implement, commit on `main`, next phase. No cargo, tests, benches or other validation between phases; validation happens once, at the end (Phase 6).** Fixes found in validation go in a closing commit. No new branches; commit only the phase's files, never the user's other work.
 - **Transactions are short.** The sink commits at most 100 files or 250 ms of work per transaction (Phase 5), because the app's writers wait only 100 ms for the write lock (`crates/app/src/inbox.rs:73`).
 
@@ -362,6 +363,8 @@ Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplic
 
 ## Phase 3: duplicate hashes on the full decode, and the duplicate toggle (a migration)
 
+> Superseded in part 2026-11-17 (commit 5fcff8bb): the duplicate hashes are made by the Hashes pass, not stored at import, and the ThumbHash moved to the Placeholders pass. The definitions in 3.1 are unchanged; the import-time parts of 3.4 to 3.7 are not what the code does now.
+
 > Superseded 2026-11-16 (commit aeb7d2c): the duplicate catch-up is the Hashes pass over `hashes_owed` (migration 15, `TO_15_HASHES_OWED`) and the pairing pass over `pairs_owed`; there is no Dups pass.
 
 ### 3.1 The hash definition (decided by the user)
@@ -623,6 +626,7 @@ A `DUPS_VERSION` bump run by another process's `prepare` (`catalog/tests/other_p
 - **Goldens.** The literal `pixel_hash`, PDQ, quality, dihedral and ThumbHash values for four fixtures (a PNG, a WebP, a denom-1 JPEG and a denom-2 JPEG, committed and small) are **captured in Phase 6** (Phase 6, step 3) from a worktree at the commit before Phase 3 (the pre-change build), and written into these tests in the closing commit. The rule: PNG, WebP and denom-1 JPEG must equal the old build's values; the denom-2 JPEG must differ (the expected change), and its new literal comes from the new build. No build runs between phases. There are no literal hash assertions in the tree today, so `Analyzer::hashes == analyze` would compare a function with itself, and it is not used.
 - Duplicates off: the import stores `'due'` and the hashes, and no pairs. Duplicates on: the Dups pass pairs. Turning detection on pairs the owed rows from their stored hashes, with **zero decode calls** (a call counter on `Decoder`, `cfg(test)`, per instance).
 - A version bump re-arms JPEG rows only (not PNG), resets the hashes and ThumbHash of the JPEG rows, clears the pairs of every reset row, and leaves `'skipped'` rows alone.
+  - Superseded 2026-11-17 (commit 5fcff8bb): a version bump no longer resets a ThumbHash, which lives in `placeholders` and is keyed to `PLACEHOLDER_VERSION`; the rest of this bullet stands for the hashes.
 - The invariant: `pixel_hash`, `pdq`, `pdq_quality` and `pdq_dihedral` are NULL together; every `'done'` row with a hash has all four and a ThumbHash.
 - The three listings partition the image rows: every image row with `error IS NULL` is in exactly one of Duplicates, No duplicates, Not checked.
 - The over-cap JPEG (a synthetic header above the cap, no pixel allocation) is `'skipped'`, listed as Not checked, and makes zero decode calls. The test asserts that the header read needs no scan data, so the synthetic header (no scan data) is enough.
@@ -940,9 +944,13 @@ The layout test in 4.12 checks that the incremental result equals `justify_into`
 
 ## Phase 5: first-import merge (one decode per new file)
 
+> Superseded 2026-11-17 (commit 5fcff8bb): the import no longer decodes, so the one-decode-per-new-file merge described here does not apply to the import. The Thumbs, Placeholders and Hashes passes each decode their own input, and sharing one decode among them is the open work of this phase. Sections 5.1 to 5.13 are kept as the record of the 2026-11-13 decision.
+
 For files whose analysis is due, one decode feeds every enabled stage. The catch-up passes (Thumbs, Borders, Dups) stay separate and unchanged. A unified catch-up worklist was rejected: an OR join scans every file each round, depends on a healthy cache and needs watermark rework.
 
 ### 5.1 The decode policy and the thumbnail definitions (decided 2026-11-13)
+
+> Superseded 2026-11-17 (commit 5fcff8bb): the "one full stored decode F" of this section is not what the code does. The import reads headers only; the ThumbHash is the Placeholders pass's (fitted to 100 px of an upright image at least 200 px on its long side, from the cached thumbnail or a DCT-scaled decode); the hashes are the Hashes pass's DCT-scaled decode, as before the 2026-11-13 decision.
 
 **Decided by the user (2026-11-13).** Every analysis-due file gets **one full stored decode F**, whatever the toggles. The hashes, ThumbHash, borders and dimensions come from F, so they are the same in every mode. A decode choice that depended on the toggles would make ThumbHash depend on them, which the single-definition rule forbids.
 
@@ -976,6 +984,8 @@ The budget is built in Phase 3 (3.7) and used here by the merged pass: a worker 
 Tests: those of 3.7.
 
 ### 5.4 The stages on a worker (fixed order)
+
+> Superseded 2026-11-17 (commit 5fcff8bb): step 7 (ThumbHash) moved to the Placeholders pass. Steps 1 to 6 and 8 describe a decode the import no longer does.
 
 For each file, on one worker, in this order:
 

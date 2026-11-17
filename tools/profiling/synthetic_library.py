@@ -8,7 +8,7 @@ orientation and a capture date), plus PNGs (some with alpha), animated GIFs and 
 with a little noise, so the files compress like photographs rather than to nothing.
 
 --broken FRACTION makes that share of the files broken JPEGs (`broken_jpeg`: a valid SOI and JFIF APP0, then bytes
-that are no JPEG), which the import fails, each with the same error every time. The broken files are drawn from their
+that are no JPEG), which the import fails at its header (there is no frame), each with the same error every time. The broken files are drawn from their
 own generator, after the master draw, so the files that are not broken are the ones the same arguments write without
 --broken (only the broken ones are replaced, each by a `.jpg` of the same stem).
 

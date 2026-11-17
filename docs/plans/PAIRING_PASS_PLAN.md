@@ -2,8 +2,9 @@
 
 > Note 2026-11-16 (commit aeb7d2c): the pairing pass does not run while duplicates detection is off (Library panel, or
 > `gallery import --no-dups`). Its owed pairs wait in `pairs_owed`. Files the import left without hashes owe them in
-> `hashes_owed`; the Hashes pass makes those hashes from the same decode, before the pairing pass, and the "not a duplicate"
-> view leaves owed files out.
+> `hashes_owed`; the Hashes pass makes those hashes from the same decode, before the pairing pass. The "not a duplicate"
+> view lists nothing while any hash is owed (2026-11-17, commit 5fcff8bb: it waits, as the pairs rule does, rather than
+> leaving owed files out).
 
 ## Status (2026-11-16)
 

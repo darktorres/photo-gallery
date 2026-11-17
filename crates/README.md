@@ -47,8 +47,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   metadata, and which program it is (`program`: `PG_EXIFTOOL`, else `exiftool` on `PATH`).
 - `edit` (`pg-edit`): the lossless edits of a file in its own bytes: the turns and the crops (`rotate.rs`, `crop.rs`,
   `rewrite.rs`).
-- `analysis` (`pg-analysis`): the import's analysis of a file: its hashes (BLAKE3, XXH3, PDQ, ThumbHash) and the border
-  detector (`BORDERS_VERSION`).
+- `analysis` (`pg-analysis`): the import's analysis of a file, from its header and container alone (format, dimensions,
+  orientation, frames, dates, rating; a video's probe), so no pixel is decoded. It also makes the duplicate hashes (BLAKE3,
+  XXH3, PDQ) when the Hashes pass asks, and holds the border detector (`BORDERS_VERSION`).
 - `dedup` (`pg-dedup`): the tier-1 duplicates: the all-pairs join (`join`, which the pairing pass runs), and the
   union-find that groups pairs.
 - `render` (`pg-render`): the display images made from the files, upright (the one reader of the EXIF orientation for
@@ -331,18 +332,20 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 - **Scan** lists folders by directory handle, which yields each file's NTFS file ID: a moved or renamed file
   keeps its row and its analysis. It records the files whose extension is a supported format (`crates/model/src/media.rs`), with
   their extension and kind.
-- **Import** reads files in MFT-record order with 8 reads in flight, decodes once (libjpeg-turbo, DCT-scaled
-  to ≥ 512 × 320), and stores the BLAKE3 file hash, the pixel hash, PDQ, dimensions and a ThumbHash, plus the
-  frame count (from the GIF, APNG or WebP container) and the date taken (EXIF DateTimeOriginal, else XMP). Each new
-  PDQ hash is stored with its 8 orientations, and a picture of reliable quality owes its tier-1 pairs
-  (a row of `pairs_owed`): the pairing pass after the import finds them (d ≤ 31), so the import only hashes
-  and stores. With duplicates detection off (the Library panel, or `gallery import --no-dups`) the import stores no
-  hashes: the file owes them (a row of `hashes_owed`), and the Hashes pass makes them later, from the same decode, with
-  the same values, before the pairing pass pairs them. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
-  creation date come from the container: the rotation matrix, and Apple's local creation date before the UTC
-  `creation_time`. Its ThumbHash comes from the poster frame, at 10% of the duration (at most 10 s). Videos get
-  no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
-  where the last one stopped, and redoes files whose size or mtime changed.
+- **Import** reads each file's header and container only, in MFT-record order with 8 reads in flight: the format, the
+  dimensions (from the codec's header, with the EXIF orientation applied), the frame count (from the GIF, APNG or WebP
+  container), and the date taken (EXIF DateTimeOriginal, else XMP). No pixel is decoded and no hash is made. A JPEG over
+  256 KiB is read by its first 256 KiB when that holds its whole header (`pg_analysis::jpeg_header_complete`), and whole
+  otherwise. The import owes the duplicate hashes: a row of `hashes_owed` for each picture. The Hashes pass makes them,
+  from a DCT-scaled decode (libjpeg-turbo, to ≥ 512 × 320), with each PDQ hash stored with its 8 orientations; a
+  picture of reliable quality then owes its tier-1 pairs (a row of `pairs_owed`), and the pairing pass finds them
+  (d ≤ 31). With duplicates detection off (the Library panel, or `gallery import --no-dups`) the hashes stay owed until a
+  later Hashes pass makes them. A video (`crates/video/src/lib.rs`) is probed by its container at import, and hashed by
+  streaming in the Hashes pass, never read whole. Its upright size, duration, codec and creation date come from the
+  container: the rotation matrix, and Apple's local creation date before the UTC `creation_time`. Videos get no pixel
+  hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues where the last
+  one stopped, and redoes files whose size or mtime changed. A file whose header is valid but whose pixels don't decode
+  fails in the first pass that decodes it (the Thumbs or Placeholders pass, or the Hashes pass).
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped. The cap is kept
   in the cache, so the app and `gallery thumbs` keep to the same one: a twentieth of its drive (1 to 50 GB) for a new cache, changed by
@@ -413,9 +416,16 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
   and borders choice shows how many files choosing it would show, given the other facets. Filtering and sorting are
   SQL (values bound, not spliced); a change applies 0.3 s after the last edit. The list re-filters when it is
   reopened or the filters change, not under you: a picture rated out of "Unrated" stays until then.
+- **Placeholders** makes each file's ThumbHash after the thumbnails, for every file that owes one. It reads the cached
+  thumbnail when the cache holds one at least 200 px high (about a millisecond), and otherwise decodes the original
+  DCT-scaled (at least 200 px on its long side). The hash is encoded from at most 100 px and stored in the
+  `placeholders` table, with the file's identity (size, mtime, rotation) and `PLACEHOLDER_VERSION`: it is made again
+  when the file changes or the definition does. It doesn't depend on the grid's height, and runs with the cache disabled
+  or full. A file whose original doesn't decode is recorded in the Thumbs ledger (`retry = false`), and tried again when
+  it changes or the user retries it. `gallery thumbs` runs this pass after the thumbnails.
 - **Grid**: justified rows. The **size slider**, Ctrl+wheel or Ctrl +/− change the row height at runtime; the
   layout follows at once, thumbnails at the new size follow a moment later (the old ones are scaled meanwhile,
-  and the ThumbHash placeholder shows until the first one arrives). Arrows move, 0–5 rates, **R** / **Shift+R**
+  and the ThumbHash placeholder, where one has been made, shows until the first one arrives). Arrows move, 0–5 rates, **R** / **Shift+R**
   turn left / right, Enter or double-click opens the viewer. A badge shows each rating's symbol, another a
   video's length (▶ 1:23) or the format of an animated image (GIF, APNG, WEBP), and ▭ borders found (struck out
   when marked not a border). **B** shows on every thumbnail what cropping the borders would cut (remembered,

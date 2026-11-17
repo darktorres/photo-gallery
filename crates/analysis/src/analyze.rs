@@ -22,15 +22,16 @@ use pg_model::format::Format;
 /// in place, which keeps the library, ratings and views. Not a schema version (a change to the tables is a migration
 /// of the catalog's schema, `MIGRATIONS` in `pg_catalog`'s `schema.rs`, whose baseline is frozen). Bumped when what is
 /// stored changes. Version 2: the resize is linear-light MKS2021 (`pg_codec::resize`), which changes the PDQ inputs and
-/// so their hashes and the pairs made from them. Not bumped by the header-only import: the stored facts are the same
+/// so their hashes and the pairs made from them. Version 3: the resize is MKS2021 on the sRGB bytes, with no linear
+/// light, which changes the PDQ inputs again. Not bumped by the header-only import: the stored facts are the same
 /// values, read from the header instead of a decode.
-pub const IMPORT_VERSION: i64 = 2;
+pub const IMPORT_VERSION: i64 = 3;
 
 /// The hashing decode keeps at least this many pixels on the upright long side…
 const DECODE_MIN_LONG: usize = 512;
 /// …and on the short side, so the later SSCD input (320 px, tier 2) can come from the same decode rule.
 const DECODE_MIN_SHORT: usize = 320;
-/// PDQ input: fitted into 512 px by the resizer (linear-light MKS2021, sRGB bytes out), which PDQ's luminance step
+/// PDQ input: fitted into 512 px by the resizer (MKS2021 on sRGB bytes, sRGB bytes out), which PDQ's luminance step
 /// reads as its spec says (hashing.pdf pp. 10-11).
 const PDQ_SIDE: usize = 512;
 

@@ -130,8 +130,9 @@ impl Analysis {
 
 /// The version of a placeholder's definition (`pg_render::thumbhash_of`): a placeholder made at another version is owed
 /// again. Version 1 is the first definition: the ThumbHashes the import made, moved to `placeholders` by the migration
-/// that makes that table (`pg_catalog`'s `placeholders_from_thumbhashes`), and the Placeholders pass's own.
-pub const PLACEHOLDER_VERSION: i64 = 1;
+/// that makes that table (`pg_catalog`'s `placeholders_from_thumbhashes`), and the Placeholders pass's own. Version 2: the fit into the placeholder's size is MKS2021 on sRGB bytes, not in
+/// linear light, which changes the ThumbHash of every picture that is resized to fit.
+pub const PLACEHOLDER_VERSION: i64 = 2;
 
 /// The longest ThumbHash: 25 bytes with alpha, 24 opaque. It is the vendored encoder's `MAX_LEN` as a literal (the
 /// model has no dependencies); the `analyze` tests in pg-analysis check the two are equal.

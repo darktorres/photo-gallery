@@ -13,7 +13,6 @@ pub mod encode;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod fixtures;
 mod kernel;
-mod linear;
 pub mod pixels;
 pub mod resize;
 

@@ -158,10 +158,15 @@ pub(crate) fn convert_notify(tx: &Transaction<'_>, source: Source, _rules: PathR
     recompute_hidden(tx)
 }
 
+/// The placeholder version of the ThumbHashes the import made before version 17: the first definition, with the resize
+/// in linear light (`pg_model::analysis::PLACEHOLDER_VERSION` is version 2 now, with the resize on sRGB bytes).
+const THUMBHASH_DEFINITION: i64 = 1;
+
 /// Version 17's data step: each file's ThumbHash (`analysis.thumbhash`, of a file analyzed without an error) becomes its
-/// placeholder, at the identity the analysis was made at (size, mtime, the catalog rotation) and version 1
-/// (`PLACEHOLDER_VERSION`). It reads the old shape: `main`'s analysis in a migration, where the column is still there
-/// (the drop comes after this step), and `carried`'s in a rebuild, where the copy has left the column out.
+/// placeholder, at the identity the analysis was made at (size, mtime, the catalog rotation) and the definition they
+/// were made with: [`THUMBHASH_DEFINITION`], not the current `PLACEHOLDER_VERSION`, so that the hashes made under the
+/// linear-light fit are owed again. It reads the old shape: `main`'s analysis in a migration, where the column is still
+/// there (the drop comes after this step), and `carried`'s in a rebuild, where the copy has left the column out.
 pub(crate) fn placeholders_from_thumbhashes(tx: &Transaction<'_>, source: Source, _rules: PathRules) -> Result<()> {
     let from = source.schema();
     if column_type(tx, from, "analysis", "thumbhash")?.is_none() {
@@ -174,7 +179,7 @@ pub(crate) fn placeholders_from_thumbhashes(tx: &Transaction<'_>, source: Source
              FROM {from}.analysis a JOIN main.files f ON f.id = a.file_id
              WHERE a.error IS NULL AND length(a.thumbhash) > 0"
         ),
-        [pg_model::analysis::PLACEHOLDER_VERSION],
+        [THUMBHASH_DEFINITION],
     )?;
     Ok(())
 }

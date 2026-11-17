@@ -1,26 +1,21 @@
-//! Resizing in linear light with Magic Kernel Sharp 2021 (`kernel`), the one resize for every pipeline: the grid's and
-//! the viewer's pixels, PDQ's and ThumbHash's input. An 8-bit sRGB image is decoded to linear light (`linear`), resized
-//! in floating point, and encoded back to 8-bit sRGB once. The resize is part of the model: PDQ and
-//! ThumbHash take the sRGB bytes it returns, as their specs do.
+//! Resizing 8-bit sRGB with Magic Kernel Sharp 2021 (`kernel`), the one resize for every pipeline: the grid's and the
+//! viewer's pixels, PDQ's and ThumbHash's input. The kernel runs on the sRGB bytes as they are, with no conversion to
+//! linear light. The resize is part of the model: PDQ and ThumbHash take the bytes it returns.
 
 use anyhow::{Context, Result};
 use fast_image_resize::images::{TypedImage, TypedImageRef};
-use fast_image_resize::pixels::F32x3;
+use fast_image_resize::pixels::U8x3;
 use fast_image_resize::{ResizeAlg, ResizeOptions};
 
 use crate::kernel::mks2021;
-use crate::linear;
 use crate::pixels::Rgb;
 
-/// A resizer and its buffers, kept by a worker from image to image. Each method writes into a caller's image,
-/// whose buffer keeps its capacity. They fail as `fast_image_resize` does: when the image's pixels are fewer than its
-/// size needs, or (for [`Resizer::resize_region`]) when the region is not inside the image.
+/// A resizer, kept by a worker from image to image. Each method writes into a caller's image, whose buffer keeps its
+/// capacity. They fail as `fast_image_resize` does: when the image's pixels are fewer than its size needs, or (for
+/// [`Resizer::resize_region`]) when the region is not inside the image.
 #[derive(Default)]
 pub struct Resizer {
     inner: fast_image_resize::Resizer,
-    /// The source in linear light, and the resize's output, kept from image to image.
-    src: Vec<F32x3>,
-    dst: Vec<F32x3>,
 }
 
 impl Resizer {
@@ -92,33 +87,19 @@ impl Resizer {
         let n_src = img.width.checked_mul(img.height).context("image size overflows")?;
         let src_bytes = img.pixels.get(..n_src.checked_mul(3).context("image size overflows")?);
         let src_bytes = src_bytes.context("image pixels shorter than its size")?;
-        decode_into(&mut self.src, src_bytes);
         let n_dst = width.checked_mul(height).context("output size overflows")?;
-        self.dst.clear();
-        self.dst.resize(n_dst, F32x3::new([0.0; 3]));
-        let src = TypedImageRef::new(src_w, src_h, &self.src).context("image pixels shorter than its size")?;
-        let mut dst = TypedImage::from_pixels_slice(dst_w, dst_h, &mut self.dst).context("resize target buffer")?;
-        self.inner.resize_typed(&src, &mut dst, options).context("resizing")?;
-        // Every output byte is written by the encode below: a grown buffer only zeroes what it grew by.
+        // Every output byte is written by the resize: a grown buffer only zeroes what it grew by.
         out.pixels.resize(n_dst.checked_mul(3).context("output size overflows")?, 0);
-        (out.width, out.height) = (width, height);
-        let (out_px, _) = out.pixels.as_chunks_mut::<3>();
-        let t = linear::tables();
-        for (bytes, px) in out_px.iter_mut().zip(&self.dst) {
-            let [x, y, z] = px.0;
-            let [r, g, b] = bytes;
-            (*r, *g, *b) = (t.encode(x), t.encode(y), t.encode(z));
+        let src = TypedImageRef::<U8x3>::from_buffer(src_w, src_h, src_bytes)
+            .context("image pixels shorter than its size")?;
+        {
+            let mut dst =
+                TypedImage::<U8x3>::from_buffer(dst_w, dst_h, &mut out.pixels).context("resize target buffer")?;
+            self.inner.resize_typed(&src, &mut dst, options).context("resizing")?;
         }
+        (out.width, out.height) = (width, height);
         Ok(())
     }
-}
-
-/// The sRGB bytes of an image as linear light, into `src`, which keeps its capacity.
-fn decode_into(src: &mut Vec<F32x3>, bytes: &[u8]) {
-    let t = linear::tables();
-    src.clear();
-    let (pixels, _) = bytes.as_chunks::<3>();
-    src.extend(pixels.iter().map(|&[r, g, b]| F32x3::new([t.decode(r), t.decode(g), t.decode(b)])));
 }
 
 /// A side in pixels as `fast_image_resize` takes it.
@@ -157,13 +138,13 @@ mod tests {
     }
 
     #[test]
-    fn a_black_and_white_pair_averages_in_linear_light() {
-        // Two pixels, black and white, averaged to one: linear 0.5 is sRGB 188. Averaging the encoded 0 and 255
-        // would give 128, the darker result this resize avoids.
+    fn a_black_and_white_pair_averages_the_srgb_bytes() {
+        // Two pixels, black and white, averaged to one: the bytes 0 and 255 average to about 128 (the resize is on
+        // sRGB bytes, not linear light, where the same pair gives about 188).
         let pair = Rgb { width: 2, height: 1, pixels: vec![0, 0, 0, 255, 255, 255] };
         let mut out = Rgb::default();
         Resizer::new().resize(&pair, 1, 1, &mut out).unwrap();
         let v = out.pixels.first().copied().unwrap_or_default();
-        assert!((186..=190).contains(&v), "the average of black and white is {v}, expected about 188");
+        assert!((126..=130).contains(&v), "the average of black and white is {v}, expected about 128");
     }
 }

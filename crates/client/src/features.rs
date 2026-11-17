@@ -1,8 +1,16 @@
 //! Border detection's gate, as data: what a listing uses from it, and the listing without it. The desktop asks these
 //! where it reads the preferences (`Prefs::features`); the controller and the keys stay pure.
 
+use pg_model::features::Features;
 use pg_model::query::{Query, Sort, SortKey};
 use pg_model::view::Listing;
+
+use crate::keys::Grid;
+
+/// Whether a grid action is refused: the borders' B and N, while border detection is off. Every other action is allowed.
+pub fn grid_refusal(grid: Grid, features: Features) -> bool {
+    !features.borders && matches!(grid, Grid::Borders | Grid::MarkBorder)
+}
 
 /// Whether a query and a sort use border detection: a border facet, the review of the borders, or the sort by border depth.
 pub fn uses_borders_in(query: &Query, sort: &Sort) -> bool {
@@ -56,5 +64,18 @@ mod tests {
         let review = Query { border_marked: Some(true), ..Query::default() };
         assert!(uses_borders_in(&review, &Sort::default()));
         assert!(!uses_borders_in(&Query::default(), &Sort::default()));
+    }
+
+    #[test]
+    fn the_borders_keys_are_refused_only_while_borders_are_off() {
+        let off = Features { borders: false, duplicates: true };
+        let on = Features::ALL;
+        assert!(grid_refusal(Grid::Borders, off));
+        assert!(grid_refusal(Grid::MarkBorder, off));
+        assert!(!grid_refusal(Grid::Borders, on));
+        assert!(!grid_refusal(Grid::MarkBorder, on));
+        for grid in [Grid::Filters, Grid::Rate(3), Grid::Step { dx: 1, dy: 0 }, Grid::Open] {
+            assert!(!grid_refusal(grid, off), "{grid:?} is not a borders key");
+        }
     }
 }

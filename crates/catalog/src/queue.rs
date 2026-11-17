@@ -443,6 +443,10 @@ mod tests {
             .query_row("SELECT size, file_hash FROM analysis WHERE file_id = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap();
         assert_eq!((size, file_hash), (11, None));
+        // The file is not pending: a guarded size and mtime would leave the analysis stale, and every rating write would
+        // then force a full re-import.
+        let pending: i64 = c.conn.query_row("SELECT pending FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(pending, 0);
         assert_eq!(c.owed_hashes().unwrap(), 1, "still owed: the Hashes pass makes them from the file as it is");
     }
 

@@ -44,3 +44,5 @@ pg-video = { path = "../video" }
 pg-writeback = { path = "../writeback", features = ["fault"] }
 # The detector's fault, for the test that a panic on a file is recorded in the ledger.
 pg-borders = { path = "../borders", features = ["fault"] }
+# The cache's refused stores, for the test that a cache error is said and the round goes on.
+pg-thumbs = { path = "../thumbs", features = ["fault"] }

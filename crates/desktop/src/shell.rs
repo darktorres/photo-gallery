@@ -155,7 +155,7 @@ impl qobject::Shell {
             return false;
         };
         // Border detection off: B and N do nothing, and the window says why (the borders' popup).
-        if matches!(grid, pg_client::keys::Grid::Borders | pg_client::keys::Grid::MarkBorder) && !self.borders_on() {
+        if pg_client::features::grid_refusal(grid, app::get().prefs().get().features()) {
             self.as_mut().borders_refused();
             return true;
         }

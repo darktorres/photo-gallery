@@ -13,7 +13,7 @@ The plan makes one full decode per new file (Phase 3 moves the import to the ful
 - Docs and strings are updated inside the phase that changes behaviour. The callgrind baseline is refreshed in Phase 6 (see step 2 there).
 - Tests are written with each phase and run in Phase 6. Golden values are captured in Phase 6, never between phases (3.11).
 - A phase that changes a manifest or adds a crate edge commits `Cargo.lock` with it: `justfile:70` runs `cargo test --workspace --locked`, and `Cargo.lock` is tracked. Phase 5 does (the new `import` and `bench` edges). Phase 3 changes no manifest: the Dups pass is a module of `pg-import` (3.7).
-- **Stored values have one definition.** Every value written to `analysis` is computed by one function from one decode of the file, independent of the toggles, the grid height and the path that ran first: the duplicate hashes and ThumbHash come from the full stored decode F (`analysis::hashes`, 3.1), and the borders from the stored pixels. The duplicate hashes are computed in every mode (the toggle gates the pairing, 3.6). Borders are the one stored value a toggle can leave out: their columns are NULL while border detection is off. A test checks that every stored analysis value is identical in all eight toggle combinations, comparing the border columns only where both catalogs ran borders (5.12, 6.6). Thumbnails are display artifacts, never inputs to a stored value, and every thumbnail is downscaled from the same full decode F (5.1), so the path that made it does not change its pixels.
+- **Stored values have one definition.** Every value written to `analysis` is computed by one function from one decode of the file, independent of the toggles, the grid height and the path that ran first: the duplicate hashes and ThumbHash come from the full stored decode F (`analysis::hashes`, 3.1), and the borders from the stored pixels. The duplicate hashes are computed in every mode (the toggle gates the pairing, 3.6). Borders are the one stored value a toggle can leave out: their columns are NULL while border detection is off. A test checks that every stored analysis value is identical in all eight toggle combinations, comparing the border columns only where both catalogs ran borders (5.12, 6.6). Thumbnails are display artifacts, never inputs to a stored value, and every thumbnail is downscaled from the same full decode F (5.1), so the path that made it does not change its pixels. Superseded 2026-11-16 (commit aeb7d2c): with duplicates detection off the import stores no hashes, and the Hashes pass completes them with the same functions (`analyze::image_hashes`); `the_hashes_pass_makes_what_an_import_with_them_would_have` pins identical values.
 - Process: **wait for the Modularity work to land** (the user will say when; git already has review 4's steps 1 to 9 at `04ff156`, `37b8e9b` and `e6cdf16`, though `MODULARITY_REVIEW_4.md:3` still says "all open"). Then implement **one phase at a time: implement, commit on `main`, next phase. No cargo, tests, benches or other validation between phases; validation happens once, at the end (Phase 6).** Fixes found in validation go in a closing commit. No new branches; commit only the phase's files, never the user's other work.
 - **Transactions are short.** The sink commits at most 100 files or 250 ms of work per transaction (Phase 5), because the app's writers wait only 100 ms for the write lock (`crates/app/src/inbox.rs:73`).
 
@@ -39,6 +39,8 @@ Grep afterwards, and every hit must be a Superseded note or a line that stays tr
 ## Phase 2: reorder, the features, disabled-feature messages, UI/render priority (no schema change)
 
 ### 2.1 The features values
+
+> Superseded 2026-11-16 (commit aeb7d2c): `Features { borders, duplicates }` only (no `thumbnails`, no `Need`); the import takes `Hashing` (`Compute` or `Skip`) from it.
 
 `pg_model::features` (new `crates/model/src/features.rs`, `pub mod features;` in `crates/model/src/lib.rs`) holds `Features` and `Need`. The model is the bottom layer (`tools/crate-layers.txt:9`), and the library, app and client all name these types, so the types live there. One value, one source of truth: the prefs (`crates/app/src/prefs.rs`), read at start-up and written by the Settings setters.
 
@@ -69,6 +71,8 @@ No `Default` derive: a derived default would be all off, and the prefs default i
 
 ### 2.2 Storage and the job
 
+> Superseded 2026-11-16 (commit aeb7d2c): `FeatureCell` holds the value and wakes the job; there is no `Cx` snapshot. Each pass takes a `still_wanted` closure (`import_while`, `run_while`, `find_while`, `hashes::hash`) that reads the cell after each batch.
+
 `FeatureCell` lives in `pg_library` (`crates/library/src/runner.rs`), beside `HeightCell` (`:48-80`). The job's `Inner` and `Cx` need it, and `app` depends on `library` (`tools/crate-layers.txt:45-46`), so it cannot live in `app`.
 
 ```rust
@@ -89,6 +93,8 @@ Wiring: `Library::start` (`runner.rs:151`) takes `features: FeatureCell` after t
 A change **wakes but does not stop** a round: a feature switched off ends its pass as `Done` (2.9), and a switched-on feature is caught up on the next round.
 
 ### 2.3 Prefs, the settings bridge, and the Library panel
+
+> Superseded 2026-11-16 (commit aeb7d2c): the prefs are `detect_borders` and `detect_duplicates`, and the panel has those two checkboxes.
 
 Prefs (`crates/app/src/prefs.rs`; struct `:21-40`, `Default` impl `:98-108`). The struct-level `#[serde(default)]` (`:21`) reads an old file as on:
 
@@ -130,6 +136,8 @@ CheckBox { text: words.text("ui-pregenerate-thumbnails"); checked: panel.pregene
 `Main.qml` LibraryPanel (`:611-620`) binds `detectBorders: appSettings.detectBorders`, `pregenerateThumbnails: appSettings.pregenerateThumbnails`, `bordersUnchecked: library.bordersUnchecked`, and writes back with `onDetectBordersToggled: (on) => appSettings.detectBorders = on` and the pregenerate counterpart.
 
 ### 2.4 One gate for feature-dependent actions
+
+> Superseded 2026-11-16 (commit aeb7d2c): for §2.4 to 2.7 the gate is borders-only. The pure rules are in `pg_client::features` (`uses_borders`, `uses_borders_in`, `without_borders`, `grid_refusal`); the start is in `desktop/src/controller.rs` (`start_state`, `start_refused`); one popup is in `Main.qml`; the strings are `ui-borders-disabled`, `ui-options-borders-disabled` and `ui-nothing-to-crop`.
 
 `pg_model::features::Need` names the features (2.1). The pure functions live in `crates/client/src/features.rs` (new):
 
@@ -353,6 +361,8 @@ Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplic
 - The viewer N guard is removed (`keys.rs:138`, decided 2026-11-13). The `keys.rs` test at `:303-305` changes to expect `MarkBorder` for a still.
 
 ## Phase 3: duplicate hashes on the full decode, and the duplicate toggle (a migration)
+
+> Superseded 2026-11-16 (commit aeb7d2c): the duplicate catch-up is the Hashes pass over `hashes_owed` (migration 15, `TO_15_HASHES_OWED`) and the pairing pass over `pairs_owed`; there is no Dups pass.
 
 ### 3.1 The hash definition (decided by the user)
 

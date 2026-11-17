@@ -909,9 +909,13 @@ mod tests {
         let inner = job(&catalog_path, cache, sink.clone());
         let ended = inner.ctl.subscribe();
         inner.round(&mut None).unwrap();
-        let order: Vec<&str> = ended
-            .take()
-            .items
+        assert_eq!(finished_order(ended.take().items), ["thumbs", "hashes", "pairs", "borders"]);
+    }
+
+    /// The passes that ended, in the order they ended, among the four the round's order is about (a pass that ends with
+    /// nothing to do ends too, and says so as the others do).
+    fn finished_order(events: Vec<pg_jobs::control::Event>) -> Vec<&'static str> {
+        events
             .into_iter()
             .filter_map(|event| match event {
                 pg_jobs::control::Event::Finished(progress) => match progress.phase {
@@ -923,8 +927,27 @@ mod tests {
                 },
                 pg_jobs::control::Event::Progress(_) => None,
             })
-            .collect();
-        assert_eq!(order, ["thumbs", "hashes", "pairs", "borders"]);
+            .collect()
+    }
+
+    /// A thumbnail cache that refuses its batch is said (`CacheNotStored`), and the round goes on: the hashes, the pairs
+    /// and the borders still run after the thumbnails. (Before this, the error ended the round, and they never ran.)
+    #[test]
+    fn a_thumbnail_cache_error_is_said_and_the_round_goes_on() {
+        let (dir, catalog_path, _root) =
+            library_sized("runner-cache-error", &["a.png"], pg_model::features::Hashing::Skip, 300);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        pg_thumbs::fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        let ended = inner.ctl.subscribe();
+        inner.round(&mut None).unwrap();
+        let posted = sink.posted();
+        assert!(
+            posted.iter().any(|n| matches!(n, Notice::CacheNotStored { error } if error.contains("refuses"))),
+            "{posted:?}"
+        );
+        assert_eq!(finished_order(ended.take().items), ["thumbs", "hashes", "pairs", "borders"]);
     }
 
     /// The thumbnail cache beside the catalog, holding at most `cap` bytes (`None`: the default), leaked as the job's

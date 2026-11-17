@@ -24,6 +24,9 @@ use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
 
+#[cfg(any(test, feature = "fault"))]
+pub mod fault;
+
 const BATCH: usize = 200;
 
 /// The failures found are written to the ledger at least this often, so the inbox follows a long pass.
@@ -511,6 +514,29 @@ mod tests {
         (dir, catalog_path, c, cache, quiet)
     }
 
+    /// A pass stopped after its batch (`still_wanted` false, as a zoom makes it) writes no `checked` row: the files it did
+    /// not make are listed again, and the pass that runs through writes the row and leaves nothing listed.
+    #[test]
+    fn a_stopped_pass_writes_no_checked_row_and_the_next_one_makes_the_rest() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        // More files than one batch (`BATCH`), so the stop leaves some.
+        let names: Vec<String> = (0..=BATCH).map(|i| format!("{i:03}.png")).collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let (_dir, catalog_path, _c, cache, _quiet) = imported("thumbs-stop", &refs, 1 << 30);
+        let opts = Options::new(Priority::Normal);
+        let stopped = run_while(&cache, &catalog_path, h(64), &opts, &|| false, &Control::new()).unwrap();
+        assert!(!stopped.complete, "a stopped pass is not complete");
+        assert!(stopped.made > 0 && stopped.made < stopped.needed, "one batch was made: {}", stopped.made);
+        let listed = cache.pending(&catalog_path, h(64)).unwrap();
+        assert!(!listed.snapshot.since_checked, "no checked row: the pass is not done");
+        assert_eq!(listed.work.items.len(), stopped.needed - stopped.made, "the files not made are listed again");
+        let done = run_while(&cache, &catalog_path, h(64), &opts, &|| true, &Control::new()).unwrap();
+        assert!(done.complete);
+        let after = cache.pending(&catalog_path, h(64)).unwrap();
+        assert!(after.snapshot.since_checked, "the complete pass wrote the checked row");
+        assert!(after.work.items.is_empty(), "nothing is listed after it");
+    }
+
     /// A ledger that can't be written (its writes fail, as an aborted statement would) is `Failed`; the pass goes on,
     /// and the file it would have recorded holds the pass's checkpoint back, so the next pass lists it again (here, one
     /// that panics, which a recorded failure would keep out of the next pass).
@@ -576,18 +602,12 @@ mod tests {
         let a = state::file_id(&c, "a.png").unwrap();
         *PANIC_ON.lock().unwrap() = Some(a);
         // The cache's data table refuses every thumbnail: the store's error comes back to the pass.
-        let refusing = rusqlite::Connection::open(dir.join("thumbs.sqlite")).unwrap();
-        refusing
-            .execute_batch(
-                "CREATE TRIGGER refuse_data BEFORE INSERT ON data
-                 BEGIN SELECT RAISE(ABORT, 'the cache refuses the thumbnail'); END;",
-            )
-            .unwrap();
+        fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
         let opts = Options::new(Priority::Normal);
         let err = run(&cache, &catalog_path, h(64), &opts, &Control::new())
             .err()
             .expect("the pass returns the store's error");
-        refusing.execute_batch("DROP TRIGGER refuse_data").unwrap();
+        fault::allow_stores(&dir.join("thumbs.sqlite")).unwrap();
         assert!(format!("{err:#}").contains("the cache refuses the thumbnail"), "{err:#}");
         // The failure was written before the error was returned, and it is the one that panicked.
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure recorded") };

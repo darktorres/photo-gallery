@@ -103,6 +103,97 @@ pub fn jpeg_exif(s: &Segment) -> Option<std::ops::Range<usize>> {
     (s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0")).then(|| s.start + 6..s.start + s.data.len())
 }
 
+/// Most bytes [`jpeg_import_bytes`] and [`png_import_bytes`] read of a file: past them, the file is read whole.
+pub const GATHER_CAP: u64 = 16 << 20;
+
+/// The bytes the import's reads take at a time: a JPEG's first read (its header, as a rule), a PNG's head and tail.
+/// Measured, cold: about as fast as 4 or 32 KiB on an NVMe disk, and as 64 KiB on a hard disk.
+const READ_BLOCK: usize = 16 << 10;
+
+/// What a JPEG's first bytes tell of its header: its marker segments up to and through the scan header, all that the
+/// metadata reader and the decoders' header reads look at (nothing past the scan), so the file's first bytes up to the
+/// header's end give the whole file's facts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JpegHeader {
+    /// The header ends here (with the scan header).
+    Ends(usize),
+    /// The bytes say no more until there are this many of them.
+    Needs(usize),
+    /// Not a JPEG, or not one whose header ends in a scan: a marker byte that isn't 0xFF, a segment length under 2, the
+    /// end marker before a scan, no frame header before the scan, or a scan header under 8 bytes.
+    Unread,
+}
+
+/// Where the JPEG header in `bytes` ends: an undamaged marker walk from the start of image that reaches the start of
+/// scan, a frame header before it, and the whole scan header (its length counts itself and at least one component: 8
+/// or more).
+pub fn jpeg_header_end(bytes: &[u8]) -> JpegHeader {
+    match bytes_at::<3>(bytes, 0) {
+        None => return JpegHeader::Needs(3),
+        Some([0xFF, 0xD8, 0xFF]) => {}
+        Some(_) => return JpegHeader::Unread,
+    }
+    let mut i = 2;
+    let mut frame = false;
+    loop {
+        let Some([ff, marker, hi, lo]) = bytes_at::<4>(bytes, i) else { return JpegHeader::Needs(i + 4) };
+        if ff != 0xFF {
+            return JpegHeader::Unread;
+        }
+        match marker {
+            0xFF => {
+                i += 1; // fill byte
+                continue;
+            }
+            0xD9 => return JpegHeader::Unread,
+            0xD0..=0xD7 | 0x01 => {
+                i += 2;
+                continue;
+            }
+            _ => {}
+        }
+        let len = usize::from(u16::from_be_bytes([hi, lo]));
+        if len < 2 {
+            return JpegHeader::Unread;
+        }
+        let end = i + 2 + len;
+        if marker == 0xDA {
+            if !frame || len < 8 {
+                return JpegHeader::Unread;
+            }
+            return if end <= bytes.len() { JpegHeader::Ends(end) } else { JpegHeader::Needs(end) };
+        }
+        // A start-of-frame marker: C0..=CF, but not C4 (DHT), C8 (JPG) or CC (DAC).
+        frame |= matches!(marker, 0xC0..=0xCF) && !matches!(marker, 0xC4 | 0xC8 | 0xCC);
+        i = end;
+    }
+}
+
+/// The JPEG's bytes that the import reads: the file's first bytes, through at least the end of its header
+/// ([`jpeg_header_end`]), so its image data needn't be read. A 16 KiB block first, then on to where the header's
+/// segment lengths say it goes (a large metadata segment is read through), a block at a time past each. Measured, cold,
+/// on 2,852 wallpaper JPEGs: 11,264 files/s against 1,725 for a fixed 256 KiB prefix (8 reads in flight on an NVMe disk).
+///
+/// `None` when the file is not a JPEG or its header doesn't end in a scan ([`JpegHeader::Unread`]), or the header runs
+/// past the file or [`GATHER_CAP`]: the whole file is then read.
+pub fn jpeg_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u8>>> {
+    let size = usize::try_from(file.seek(SeekFrom::End(0))?).unwrap_or(usize::MAX);
+    let cap = usize::try_from(GATHER_CAP).unwrap_or(usize::MAX);
+    let mut file = Positioned { file, size };
+    let mut bytes = file.read(0, size.min(READ_BLOCK))?;
+    loop {
+        match jpeg_header_end(&bytes) {
+            JpegHeader::Ends(_) => return Ok(Some(bytes)),
+            JpegHeader::Needs(n) if n <= size && n <= cap => {
+                let to = n.saturating_add(READ_BLOCK).min(size);
+                let more = file.read(bytes.len(), to - bytes.len())?;
+                bytes.extend_from_slice(&more);
+            }
+            JpegHeader::Needs(_) | JpegHeader::Unread => return Ok(None),
+        }
+    }
+}
+
 /// A chunk of an extended XMP packet (Adobe XMP Part 3, 1.1.3.1), as found in a JPEG.
 pub struct ExtendedChunk {
     /// Its packet's GUID, in the file.
@@ -157,15 +248,9 @@ pub fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
     })
 }
 
-/// Most bytes [`png_import_bytes`] gathers. A PNG whose gathered chunks would be more is read whole.
-pub const PNG_GATHER_CAP: u64 = 16 << 20;
-
 const PNG_SIGNATURE: [u8; 8] = *b"\x89PNG\r\n\x1a\n";
 /// An `IEND` chunk: no data, and its CRC.
 const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82];
-/// The bytes [`png_import_bytes`] reads first at each end of the file: the head (the chunks before the image data are
-/// in it) and the tail (the chunks after it, as a rule).
-const PNG_BLOCK: usize = 16 << 10;
 /// Room for the chunks after the image data when the tail is read again, wider.
 const PNG_SLACK: usize = 64 << 10;
 /// The widest tail read.
@@ -189,15 +274,15 @@ const PNG_RUNS: usize = 16;
 /// 16 KiB blocks at the two ends, and chunk headers.
 ///
 /// `None` when the file is not a PNG, has no image data, is animated, its image data chunks are not of one length, a
-/// chunk runs past the end, or the gathered bytes would pass [`PNG_GATHER_CAP`]: the whole file is then read.
+/// chunk runs past the end, or the gathered bytes would pass [`GATHER_CAP`]: the whole file is then read.
 pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u8>>> {
     let size = usize::try_from(file.seek(SeekFrom::End(0))?).unwrap_or(usize::MAX);
-    let cap = usize::try_from(PNG_GATHER_CAP).unwrap_or(usize::MAX);
+    let cap = usize::try_from(GATHER_CAP).unwrap_or(usize::MAX);
     let mut file = Positioned { file, size };
     if size < PNG_SIGNATURE.len() {
         return Ok(None);
     }
-    let mut head = file.read(0, size.min(PNG_BLOCK))?;
+    let mut head = file.read(0, size.min(READ_BLOCK))?;
     if head.get(..PNG_SIGNATURE.len()) != Some(PNG_SIGNATURE.as_slice()) {
         return Ok(None);
     }
@@ -209,7 +294,7 @@ pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u
             if header_end > size || header_end > cap {
                 return Ok(None);
             }
-            let to = header_end.saturating_add(PNG_BLOCK).min(size);
+            let to = header_end.saturating_add(READ_BLOCK).min(size);
             let more = file.read(head.len(), to - head.len())?;
             head.extend_from_slice(&more);
         }
@@ -230,7 +315,7 @@ pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u
         return Ok(None);
     };
     // The second chunk's header gives the grid: in the head, read on its own when it is before the tail, or in the tail.
-    let tail_at = size.saturating_sub(PNG_BLOCK).max(first_end);
+    let tail_at = size.saturating_sub(READ_BLOCK).max(first_end);
     let mut second = png_header_in(&head, first_end);
     if second.is_none() && first_end.saturating_add(8) <= tail_at {
         second = file.header(first_end)?;
@@ -263,12 +348,12 @@ pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u
 /// data, as they are; a zero-length `IDAT` in the image data's place; and the chunks after the image data up to `IEND`,
 /// without the image data (`IDAT`, and an animation's `fdAT`), as [`png_chunks`] walks them (a chunk that runs past the
 /// end ends the walk). `None` when the bytes are not a PNG, have no image data, or the gathered bytes would pass
-/// [`PNG_GATHER_CAP`]. [`png_import_bytes`] gives these bytes, or none, from the file.
+/// [`GATHER_CAP`]. [`png_import_bytes`] gives these bytes, or none, from the file.
 pub fn png_import_bytes_of(bytes: &[u8]) -> Option<Vec<u8>> {
     if bytes.get(..PNG_SIGNATURE.len()) != Some(PNG_SIGNATURE.as_slice()) {
         return None;
     }
-    let cap = usize::try_from(PNG_GATHER_CAP).unwrap_or(usize::MAX);
+    let cap = usize::try_from(GATHER_CAP).unwrap_or(usize::MAX);
     let mut out = PNG_SIGNATURE.to_vec();
     let mut image_data = false;
     for chunk in png_chunks(bytes) {
@@ -990,6 +1075,94 @@ mod tests {
         assert_eq!(jpeg_is_progressive(&jpeg(&[(0xE0, &[0; 4]), (0xC2, &frame)])), Some(true));
     }
 
+    /// A JPEG header with these segments (marker, payload length) before a frame header and a scan header, then
+    /// `entropy` bytes of image data and the end marker.
+    fn jpeg_of(segments: &[(u8, usize)], entropy: usize) -> Vec<u8> {
+        let frame = [8, 0, 8, 0, 8, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+        let mut out = vec![0xFF, 0xD8];
+        let mut add = |marker: u8, payload: &[u8]| {
+            out.extend([0xFF, marker]);
+            out.extend(u16::try_from(payload.len() + 2).unwrap().to_be_bytes());
+            out.extend(payload);
+        };
+        for &(marker, len) in segments {
+            add(marker, &noise(len, u64::from(marker)));
+        }
+        add(0xC0, &frame);
+        add(0xDA, &[3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3F, 0]);
+        out.extend(noise(entropy, 7).into_iter().map(|b| if b == 0xFF { 0 } else { b }));
+        out.extend([0xFF, 0xD9]);
+        out
+    }
+
+    /// Where `bytes`' scan header ends (the walk, by hand: the frame and scan headers are the last two segments).
+    fn header_len(bytes: &[u8], entropy: usize) -> usize {
+        bytes.len() - entropy - 2
+    }
+
+    #[test]
+    fn a_jpeg_header_ends_with_its_scan_header() {
+        let file = jpeg_of(&[(0xE0, 14), (0xE1, 5000)], 100_000);
+        let end = header_len(&file, 100_000);
+        assert_eq!(jpeg_header_end(&file), JpegHeader::Ends(end));
+        assert_eq!(jpeg_header_end(&file[..end]), JpegHeader::Ends(end), "the header alone is all of it");
+        assert_eq!(jpeg_header_end(&file[..end - 1]), JpegHeader::Needs(end));
+        // The start of image, the APP0 segment (18 bytes), the APP1 segment (5004), and the next marker's 4 bytes.
+        assert_eq!(jpeg_header_end(&file[..100]), JpegHeader::Needs(2 + 18 + 5004 + 4));
+        assert_eq!(jpeg_header_end(&file[..2]), JpegHeader::Needs(3));
+        // Fill bytes before a marker are passed over.
+        let mut filled = file.clone();
+        filled.splice(2..2, [0xFF, 0xFF, 0xFF]);
+        assert_eq!(jpeg_header_end(&filled), JpegHeader::Ends(end + 3));
+    }
+
+    #[test]
+    fn a_jpeg_header_that_does_not_end_in_a_scan_is_unread() {
+        assert_eq!(jpeg_header_end(b"\x89PNG\r\n\x1a\n"), JpegHeader::Unread);
+        // A marker byte that isn't 0xFF; a length under 2; the end marker before a scan.
+        assert_eq!(jpeg_header_end(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 1, 2, 0x00, 0xDA, 0, 8]), JpegHeader::Unread);
+        assert_eq!(jpeg_header_end(&[0xFF, 0xD8, 0xFF, 0xE1, 0, 1, 0, 0]), JpegHeader::Unread);
+        assert_eq!(jpeg_header_end(&[0xFF, 0xD8, 0xFF, 0xD9, 0, 0]), JpegHeader::Unread);
+        // No frame header before the scan; a scan header under 8 bytes.
+        let no_frame = [0xFF, 0xD8, 0xFF, 0xDA, 0, 8, 1, 1, 0, 0, 0x3F, 0];
+        assert_eq!(jpeg_header_end(&no_frame), JpegHeader::Unread);
+        let mut short_scan = jpeg_of(&[], 10);
+        let sos = short_scan.windows(2).position(|w| w == [0xFF, 0xDA]).unwrap();
+        short_scan.splice(sos + 2..sos + 4, [0, 6]);
+        assert_eq!(jpeg_header_end(&short_scan), JpegHeader::Unread);
+    }
+
+    fn jpeg_gather(bytes: &[u8]) -> Option<Vec<u8>> {
+        jpeg_import_bytes(&mut std::io::Cursor::new(bytes)).unwrap()
+    }
+
+    #[test]
+    fn a_jpeg_is_read_to_the_end_of_its_header() {
+        // A small header (one block); a long metadata segment past the first block; a header past 256 KiB.
+        for segments in [vec![(0xE0, 14)], vec![(0xE1, 60_000), (0xE2, 3000)], vec![(0xE1, 65_000); 5]] {
+            let file = jpeg_of(&segments, 500_000);
+            let end = header_len(&file, 500_000);
+            let read = jpeg_gather(&file).unwrap();
+            assert!(read.len() >= end, "the whole header is read");
+            assert!(read.len() < end + 2 * READ_BLOCK, "and no more than a block past it");
+            assert_eq!(read, file[..read.len()], "the file's first bytes, as they are");
+        }
+        // A file shorter than a block is read whole.
+        let small = jpeg_of(&[], 100);
+        assert_eq!(jpeg_gather(&small), Some(small.clone()));
+    }
+
+    #[test]
+    fn a_jpeg_whose_header_does_not_end_in_a_scan_is_read_whole() {
+        assert_eq!(jpeg_gather(b"GIF89a\x01\x00\x01\x00"), None);
+        assert_eq!(jpeg_gather(b""), None);
+        // A header cut short: the scan header runs past the end of the file.
+        let file = jpeg_of(&[(0xE1, 40_000)], 0);
+        assert_eq!(jpeg_gather(&file[..30_000]), None);
+        // The end marker before any scan.
+        assert_eq!(jpeg_gather(&[0xFF, 0xD8, 0xFF, 0xD9]), None);
+    }
+
     #[test]
     fn a_damaged_jpeg_is_not_classified() {
         // A segment whose length runs past the file.
@@ -1114,7 +1287,7 @@ mod tests {
         let mut cut = png_of(&[], &[8192; 10], &[(b"tEXt", 5000)]);
         cut.truncate(cut.len() - 2000);
         assert_eq!(gather(&cut), None);
-        let big = usize::try_from(PNG_GATHER_CAP).unwrap();
+        let big = usize::try_from(GATHER_CAP).unwrap();
         assert_eq!(gather(&png_of(&[], &[10], &[(b"eXIf", big)])), None);
     }
 

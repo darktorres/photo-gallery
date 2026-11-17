@@ -4,8 +4,8 @@
 //! and thumbnails are the thumbnail crate's, and the tier-1 pairs are the pairing pass's (`pairs`). Results are committed in
 //! batches: stopping at any point loses at most the current batch, and the next run picks up the rest from the catalog.
 //!
-//! A JPEG is read by its first [`PREFIX_BYTES`] when that holds its whole header (`pg_analysis::jpeg_header_complete`), so a
-//! large camera file is not read whole for its facts. A PNG is read at its two ends instead (`pg_container::png_import_bytes`):
+//! A JPEG is read up to the end of its header (`pg_container::jpeg_import_bytes`: a block, then on as its segment lengths
+//! say), so a camera file is not read whole for its facts. A PNG is read at its two ends (`pg_container::png_import_bytes`):
 //! the chunks before its image data and those after it, without the image data; so a large PNG is not read whole either.
 
 pub mod hashes;
@@ -23,13 +23,18 @@ use pg_model::progress::Phase;
 
 const BATCH: usize = 500;
 
-/// The first bytes of a JPEG the import reads before it knows the header is whole (256 KiB: the header of a camera
-/// file, with its metadata, is in it; a larger one is read again, whole, from the start of the rest).
-pub const PREFIX_BYTES: usize = 256 * 1024;
+/// The admission a JPEG takes before it is read: its header's first block (`pg_container::jpeg_import_bytes` reads 16 KiB,
+/// then on to the header's end; the median header of a wallpaper set is under 1 KiB, the 99th percentile under 100). A
+/// JPEG no longer than this is read whole.
+const JPEG_HINT: usize = 16 << 10;
 
 /// The bytes a PNG's gather is expected to need (its chunks before the image data, and the metadata after it): the
-/// admission a PNG takes before it is read. A PNG longer than this is read at its ends, not whole.
-const GATHER_HINT_BYTES: usize = 64 * 1024;
+/// admission a PNG takes before it is read.
+const PNG_HINT: usize = 64 << 10;
+
+/// A PNG no longer than this is read whole: one read, where its gather makes two (the file's head and tail). The gather
+/// is measured on larger files only.
+const PNG_GATHER_FROM: usize = 256 << 10;
 
 pub struct ImportStats {
     /// The files the pass had to import.
@@ -82,16 +87,12 @@ pub fn import_while(
             }
             let [folder, name] = work.parts(item.path);
             pg_platform::names::set_file(wide, folder, name);
-            if usize::try_from(item.size).is_ok_and(|size| size > PREFIX_BYTES) {
-                if is_named(name, &[b".jpg", b".jpeg", b".jfif"]) {
-                    return Read::Prefix { len: PREFIX_BYTES, complete: pg_analysis::jpeg_header_complete };
-                }
-                if is_named(name, &[b".png"]) {
-                    return Read::Gather {
-                        hint: GATHER_HINT_BYTES,
-                        gather: |file| pg_container::png_import_bytes(file),
-                    };
-                }
+            let size = usize::try_from(item.size).unwrap_or(usize::MAX);
+            if size > JPEG_HINT && is_named(name, &[b".jpg", b".jpeg", b".jfif"]) {
+                return Read::Gather { hint: JPEG_HINT, gather: |file| pg_container::jpeg_import_bytes(file) };
+            }
+            if size > PNG_GATHER_FROM && is_named(name, &[b".png"]) {
+                return Read::Gather { hint: PNG_HINT, gather: |file| pg_container::png_import_bytes(file) };
             }
             Read::File
         },
@@ -122,7 +123,7 @@ pub fn import_while(
 }
 
 /// Whether a file's name ends in one of `exts` (ASCII, in any case). The read is chosen by name: another format under a
-/// JPEG's name is read by its prefix too, and then whole, as its header is not complete to the JPEG reader.
+/// JPEG's or a PNG's name is gathered as one too, and then read whole, as the gather finds no header of that format.
 fn is_named(name: &[u8], exts: &[&[u8]]) -> bool {
     exts.iter().any(|ext| {
         name.len() >= ext.len() && name.get(name.len() - ext.len()..).is_some_and(|tail| tail.eq_ignore_ascii_case(ext))

@@ -334,9 +334,10 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   their extension and kind.
 - **Import** reads each file's header and container only, in MFT-record order with 8 reads in flight: the format, the
   dimensions (from the codec's header, with the EXIF orientation applied), the frame count (from the GIF, APNG or WebP
-  container), and the date taken (EXIF DateTimeOriginal, else XMP). No pixel is decoded and no hash is made. A JPEG over
-  256 KiB is read by its first 256 KiB when that holds its whole header (`pg_analysis::jpeg_header_complete`), and whole
-  otherwise. The import owes the duplicate hashes: a row of `hashes_owed` for each picture. The Hashes pass makes them,
+  container), and the date taken (EXIF DateTimeOriginal, else XMP). No pixel is decoded and no hash is made. A JPEG is
+  read up to the end of its header (`pg_container::jpeg_import_bytes`: 16 KiB, then on as its segments say), and a PNG
+  over 256 KiB at its two ends, without its image data (`pg_container::png_import_bytes`); each is read whole when its
+  header is not as those reads expect. Both open the file for random access (no read-ahead). The import owes the duplicate hashes: a row of `hashes_owed` for each picture. The Hashes pass makes them,
   from a DCT-scaled decode (libjpeg-turbo, to ≥ 512 × 320), with each PDQ hash stored with its 8 orientations; a
   picture of reliable quality then owes its tier-1 pairs (a row of `pairs_owed`), and the pairing pass finds them
   (d ≤ 31). With duplicates detection off (the Library panel, or `gallery import --no-dups`) the hashes stay owed until a

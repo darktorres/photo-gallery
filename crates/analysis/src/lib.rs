@@ -8,9 +8,3 @@
 pub mod analyze;
 pub mod borders;
 pub mod pdq;
-
-/// Whether `bytes` (a prefix of a file, or the file) holds a JPEG's whole header, so the import can read it from a
-/// prefix ([`pg_metadata::jpeg_header_complete`]). The import reads through this crate, not the metadata one.
-pub fn jpeg_header_complete(bytes: &[u8]) -> bool {
-    pg_metadata::jpeg_header_complete(bytes)
-}

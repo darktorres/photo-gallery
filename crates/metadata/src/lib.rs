@@ -98,29 +98,6 @@ impl Meta {
     }
 }
 
-/// Whether `bytes` (a prefix of a file, or the file) holds all of a JPEG's header: an undamaged marker walk that stops
-/// at the start of scan, with the whole scan header inside the bytes, and a frame header seen before it. What
-/// [`Meta::read`] and the decoders' header reads need, so a prefix that passes gives the same [`Meta`] as the whole
-/// file (`Meta::read` reads nothing past the scan). False for anything that is not a JPEG.
-pub fn jpeg_header_complete(bytes: &[u8]) -> bool {
-    if Format::sniff(bytes) != Some(Format::Jpeg) {
-        return false;
-    }
-    let mut walk = pg_container::jpeg_segments(bytes);
-    let mut frame = false;
-    for s in walk.by_ref() {
-        // A start-of-frame marker: C0..=CF, but not C4 (DHT), C8 (JPG) or CC (DAC).
-        frame |= matches!(s.marker, 0xC0..=0xCF) && !matches!(s.marker, 0xC4 | 0xC8 | 0xCC);
-    }
-    let Some(at) = walk.scan_at() else { return false };
-    // The scan header's length field (it counts itself, and at least one component): 6 + 2 × components, so 8 or more.
-    let Some([hi, lo]) = bytes.get(at + 2..at + 4).and_then(|b| <[u8; 2]>::try_from(b).ok()) else {
-        return false;
-    };
-    let len = usize::from(u16::from_be_bytes([hi, lo]));
-    frame && len >= 8 && at + 2 + len <= bytes.len()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

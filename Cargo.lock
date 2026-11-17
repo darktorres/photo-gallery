@@ -1868,6 +1868,7 @@ dependencies = [
  "anyhow",
  "pg-analysis",
  "pg-catalog",
+ "pg-container",
  "pg-dedup",
  "pg-jobs",
  "pg-model",

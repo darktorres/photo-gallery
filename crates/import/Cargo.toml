@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }
+pg-container = { path = "../container" }
 pg-dedup = { path = "../dedup" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }

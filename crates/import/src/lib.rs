@@ -5,7 +5,8 @@
 //! batches: stopping at any point loses at most the current batch, and the next run picks up the rest from the catalog.
 //!
 //! A JPEG is read by its first [`PREFIX_BYTES`] when that holds its whole header (`pg_analysis::jpeg_header_complete`), so a
-//! large camera file is not read whole for its facts.
+//! large camera file is not read whole for its facts. A PNG is read at its two ends instead (`pg_container::png_import_bytes`):
+//! the chunks before its image data and those after it, without the image data; so a large PNG is not read whole either.
 
 pub mod hashes;
 pub mod pairs;
@@ -25,6 +26,10 @@ const BATCH: usize = 500;
 /// The first bytes of a JPEG the import reads before it knows the header is whole (256 KiB: the header of a camera
 /// file, with its metadata, is in it; a larger one is read again, whole, from the start of the rest).
 pub const PREFIX_BYTES: usize = 256 * 1024;
+
+/// The bytes a PNG's gather is expected to need (its chunks before the image data, and the metadata after it): the
+/// admission a PNG takes before it is read. A PNG longer than this is read at its ends, not whole.
+const GATHER_HINT_BYTES: usize = 64 * 1024;
 
 pub struct ImportStats {
     /// The files the pass had to import.
@@ -77,8 +82,16 @@ pub fn import_while(
             }
             let [folder, name] = work.parts(item.path);
             pg_platform::names::set_file(wide, folder, name);
-            if usize::try_from(item.size).is_ok_and(|size| size > PREFIX_BYTES) && is_jpeg_name(name) {
-                return Read::Prefix { len: PREFIX_BYTES, complete: pg_analysis::jpeg_header_complete };
+            if usize::try_from(item.size).is_ok_and(|size| size > PREFIX_BYTES) {
+                if is_named(name, &[b".jpg", b".jpeg", b".jfif"]) {
+                    return Read::Prefix { len: PREFIX_BYTES, complete: pg_analysis::jpeg_header_complete };
+                }
+                if is_named(name, &[b".png"]) {
+                    return Read::Gather {
+                        hint: GATHER_HINT_BYTES,
+                        gather: |file| pg_container::png_import_bytes(file),
+                    };
+                }
             }
             Read::File
         },
@@ -108,10 +121,10 @@ pub fn import_while(
     Ok(stats)
 }
 
-/// Whether a file's name is a JPEG's by extension (`.jpg`, `.jpeg`, `.jfif`, in any case): the ones read by prefix. Another
-/// format under such a name is read by its prefix too, and then whole, as its header is not complete to the JPEG reader.
-fn is_jpeg_name(name: &[u8]) -> bool {
-    [&b".jpg"[..], b".jpeg", b".jfif"].into_iter().any(|ext| {
+/// Whether a file's name ends in one of `exts` (ASCII, in any case). The read is chosen by name: another format under a
+/// JPEG's name is read by its prefix too, and then whole, as its header is not complete to the JPEG reader.
+fn is_named(name: &[u8], exts: &[&[u8]]) -> bool {
+    exts.iter().any(|ext| {
         name.len() >= ext.len() && name.get(name.len() - ext.len()..).is_some_and(|tail| tail.eq_ignore_ascii_case(ext))
     })
 }

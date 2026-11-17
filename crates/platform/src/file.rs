@@ -10,6 +10,18 @@ use crate::native::NativePath;
 /// conversion of the path into a new buffer for each file.
 #[cfg(windows)]
 pub fn open_read(path: &NativePath) -> io::Result<File> {
+    open_read_with(path, 0)
+}
+
+/// [`open_read`] for reads here and there in the file: the system reads no further ahead than each read asks
+/// (`FILE_FLAG_RANDOM_ACCESS`), so a read of a file's two ends doesn't pull in the bytes after each.
+#[cfg(windows)]
+pub fn open_read_random(path: &NativePath) -> io::Result<File> {
+    open_read_with(path, windows_sys::Win32::Storage::FileSystem::FILE_FLAG_RANDOM_ACCESS)
+}
+
+#[cfg(windows)]
+fn open_read_with(path: &NativePath, flags: u32) -> io::Result<File> {
     use std::os::windows::io::FromRawHandle;
     use windows_sys::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{
@@ -25,7 +37,7 @@ pub fn open_read(path: &NativePath) -> io::Result<File> {
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             std::ptr::null(),
             OPEN_EXISTING,
-            0,
+            flags,
             std::ptr::null_mut(),
         )
     };
@@ -41,6 +53,20 @@ pub fn open_read(path: &NativePath) -> io::Result<File> {
 pub fn open_read(path: &NativePath) -> io::Result<File> {
     use std::os::unix::ffi::OsStrExt;
     File::open(std::ffi::OsStr::from_bytes(path.units()))
+}
+
+/// [`open_read`] for reads here and there in the file: on Linux the kernel is told so (`POSIX_FADV_RANDOM`), and reads
+/// no further ahead than each read asks; elsewhere the plain open.
+#[cfg(unix)]
+pub fn open_read_random(path: &NativePath) -> io::Result<File> {
+    let file = open_read(path)?;
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        // SAFETY: the descriptor is open for the call; the advice is a hint, and its failure is not an error.
+        let _ = unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+    }
+    Ok(file)
 }
 
 /// Open the file at `path` to write it in place (the writer's copy of a new content into the original), while denying

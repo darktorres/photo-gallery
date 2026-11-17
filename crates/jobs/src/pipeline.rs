@@ -11,9 +11,9 @@
 //! the workers, a folder of large files holds no more than one of small files, and the buffers are reused from file
 //! to file: a pass makes about `slots` of them, whatever its length.
 
-use std::io::Read as _;
+use std::io::{Read as _, Seek as _, SeekFrom};
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -84,6 +84,11 @@ pub enum Read {
     /// The rest is read one file at a time, after the pass's other reads in flight have their buffers (the budget is
     /// for the prefixes; a rest is one file past it, as an oversize file is). A `complete` that panics is not complete.
     Prefix { len: usize, complete: fn(&[u8]) -> bool },
+    /// What `gather` makes of the file, read by it (it seeks where it needs to, and returns the bytes `process` gets).
+    /// `hint` is how many bytes it is expected to need: the admission a file takes before `gather` runs. A file no longer
+    /// than `hint` is read whole, and so is one `gather` gives nothing for (`None`, or a panic); the whole read is then as
+    /// [`Read::Prefix`]'s rest, one at a time. An error of `gather` is the file's read error.
+    Gather { hint: usize, gather: fn(&mut std::fs::File) -> std::io::Result<Option<Vec<u8>>> },
 }
 
 /// What a worker sends back: an item's result with the bytes it counts as read, or the error of a setup that failed
@@ -91,6 +96,93 @@ pub enum Read {
 enum Outcome<R> {
     Done { index: usize, result: Result<R>, read: usize },
     SetupFailed(anyhow::Error),
+}
+
+/// Where a pass's threads spend their time: nanoseconds per stage, summed over the threads of the stage.
+#[derive(Default)]
+struct Timing {
+    /// Readers: reading a file, including its turn in the pool.
+    read: Clock,
+    /// Readers: handing a read file on, which waits while the workers are behind.
+    read_send: Clock,
+    /// Workers: waiting for a read file.
+    work_wait: Clock,
+    /// Workers: processing a file.
+    work: Clock,
+    /// Workers: handing a result on, which waits while the sink is behind.
+    work_send: Clock,
+    /// The sink: waiting for a result.
+    sink_wait: Clock,
+    /// The sink: its own work per result (for [`batched`], counting and handing batches over).
+    sink: Clock,
+    /// The writer of [`batched`]: waiting for a batch.
+    write_wait: Clock,
+    /// The writer of [`batched`]: flushing a batch.
+    write: Clock,
+}
+
+#[derive(Default)]
+struct Clock(AtomicU64);
+
+impl Clock {
+    /// Adds the time since `since`.
+    fn add(&self, since: Instant) {
+        let nanos = u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.0.fetch_add(nanos, Ordering::Relaxed);
+    }
+
+    fn secs(&self) -> f64 {
+        Duration::from_nanos(self.0.load(Ordering::Relaxed)).as_secs_f64()
+    }
+}
+
+/// The report of the last pass that ran with `PG_PIPELINE_STATS` set. The command line prints it; the library prints
+/// nothing.
+static LAST_REPORT: Mutex<Option<String>> = Mutex::new(None);
+
+/// The timing report of the last pass that ran with `PG_PIPELINE_STATS` set (each stage's busy and waiting time), if any.
+pub fn last_report() -> Option<String> {
+    LAST_REPORT.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
+impl Timing {
+    /// Keeps the report of a pass of `items` items that took `wall`, when `PG_PIPELINE_STATS` is set. A pass with a
+    /// writer also reports the writer's stage.
+    fn report(&self, items: usize, wall: Duration, opts: &Options, writer: bool) {
+        if std::env::var_os("PG_PIPELINE_STATS").is_none() {
+            return;
+        }
+        let wall = wall.as_secs_f64().max(1e-9);
+        let count = |n: usize| f64::from(u32::try_from(n).unwrap_or(u32::MAX));
+        let share = |c: &Clock, threads: usize| 100.0 * c.secs() / (count(threads.max(1)) * wall);
+        let mut text = format!("{items} items in {wall:.2} s ({:.0}/s)\n", count(items) / wall);
+        text += &format!(
+            "  readers x{}: reading {:.0}%, handing on {:.0}%\n",
+            opts.readers,
+            share(&self.read, opts.readers),
+            share(&self.read_send, opts.readers)
+        );
+        text += &format!(
+            "  workers x{}: processing {:.0}%, waiting for reads {:.0}%, handing on {:.0}%\n",
+            opts.workers,
+            share(&self.work, opts.workers),
+            share(&self.work_wait, opts.workers),
+            share(&self.work_send, opts.workers)
+        );
+        text += &format!(
+            "  sink: working {:.0}%, waiting for results {:.0}%\n",
+            share(&self.sink, 1),
+            share(&self.sink_wait, 1)
+        );
+        if writer {
+            text += &format!(
+                "  writer: flushing {:.0}%, waiting for batches {:.0}%\n",
+                share(&self.write, 1),
+                share(&self.write_wait, 1)
+            );
+        }
+        *LAST_REPORT.lock().unwrap_or_else(PoisonError::into_inner) = Some(text);
+    }
 }
 
 /// Read each item's file, run `process(state, i, bytes)` (with per-worker state from `init`), and call
@@ -110,7 +202,30 @@ pub fn run<T, S, R>(
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
     process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
+    sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
+) -> Result<()>
+where
+    T: Sync,
+    R: Send,
+{
+    let timing = Timing::default();
+    let started = Instant::now();
+    let result = run_timed(items, read, opts, ctl, init, process, sink, &timing);
+    timing.report(items.len(), started.elapsed(), opts, false);
+    result
+}
+
+/// [`run`], keeping each stage's time in `timing`.
+#[expect(clippy::too_many_arguments, reason = "run's parts, and the timing its stages keep")]
+fn run_timed<T, S, R>(
+    items: &[T],
+    read: impl Fn(&T, &mut NativePath) -> Read + Sync,
+    opts: &Options,
+    ctl: &Control,
+    init: impl Fn() -> Result<S> + Sync,
+    process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
     mut sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
+    timing: &Timing,
 ) -> Result<()>
 where
     T: Sync,
@@ -131,19 +246,24 @@ where
         let _stop = StopOnDrop(&stop, &pool, ctl);
         for _ in 0..opts.readers {
             let raw_tx = raw_tx.clone();
-            let (next, sent, stop, read, pool) = (&next, &sent, &stop, &read, &pool);
+            let (next, sent, stop, read, pool, timing) = (&next, &sent, &stop, &read, &pool, timing);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
                 let mut wide = NativePath::default();
                 while ctl.checkpoint_until(stop) {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { break };
+                    let started = Instant::now();
                     let (bytes, streamed) = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
                         Ok(Read::File) => match read_whole(pool, i, &wide) {
                             Some(bytes) => (bytes, 0),
                             None => break, // stopped
                         },
                         Ok(Read::Prefix { len, complete }) => match read_prefix(pool, i, &wide, len, complete) {
+                            Some(bytes) => (bytes, 0),
+                            None => break, // stopped
+                        },
+                        Ok(Read::Gather { hint, gather }) => match read_gather(pool, i, &wide, hint, gather) {
                             Some(bytes) => (bytes, 0),
                             None => break, // stopped
                         },
@@ -159,9 +279,12 @@ where
                             (Err(std::io::Error::other(Panicked(panics::message(&*payload).to_string()))), 0)
                         }
                     };
+                    timing.read.add(started);
+                    let handing = Instant::now();
                     if raw_tx.send((i, bytes, streamed)).is_err() {
                         break;
                     }
+                    timing.read_send.add(handing);
                     sent.fetch_add(1, Ordering::SeqCst);
                 }
             });
@@ -170,7 +293,7 @@ where
 
         for _ in 0..opts.workers {
             let (raw_rx, res_tx) = (raw_rx.clone(), res_tx.clone());
-            let (init, process) = (&init, &process);
+            let (init, process, timing) = (&init, &process, timing);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
                 // A worker whose setup failed (or panicked) sends its error, and stops.
@@ -182,11 +305,16 @@ where
                     }
                 };
                 let Some(mut state) = setup() else { return };
-                for (i, read, streamed) in raw_rx {
+                loop {
+                    let waiting = Instant::now();
+                    let Ok((i, read, streamed)) = raw_rx.recv() else { break };
+                    timing.work_wait.add(waiting);
                     let (out, len, rebuild) = match read {
                         Ok(lease) => {
                             let len = lease.bytes.len().saturating_add(streamed);
+                            let working = Instant::now();
                             let out = panics::guard(AssertUnwindSafe(|| process(&mut state, i, &lease.bytes)));
+                            timing.work.add(working);
                             // The buffer goes back to the pool before the result is sent.
                             drop(lease);
                             // A panic may have left the state half-changed: it is made again.
@@ -195,9 +323,11 @@ where
                         }
                         Err(e) => (Err(read_error(e)), 0, false),
                     };
+                    let handing = Instant::now();
                     if res_tx.send(Outcome::Done { index: i, result: out, read: len }).is_err() {
                         break;
                     }
+                    timing.work_send.add(handing);
                     if rebuild {
                         match setup() {
                             Some(st) => state = st,
@@ -210,14 +340,22 @@ where
         drop((raw_rx, res_tx));
 
         // Leaving this closure drops `res_rx`, which unblocks and ends the workers, then the readers.
+        // The receiver is this closure's: an early return drops it, which ends the workers' waits before the scope joins them.
+        let results = res_rx;
         let mut received = 0usize;
-        for outcome in res_rx {
+        loop {
+            let waiting = Instant::now();
+            let Ok(outcome) = results.recv() else { break };
+            timing.sink_wait.add(waiting);
             let (i, out, len) = match outcome {
                 Outcome::Done { index, result, read } => (index, result, read),
                 Outcome::SetupFailed(error) => return Err(error.context("worker setup")),
             };
             received += 1;
-            if !sink(i, out, len)? || ctl.stop_requested() {
+            let working = Instant::now();
+            let go_on = sink(i, out, len)?;
+            timing.sink.add(working);
+            if !go_on || ctl.stop_requested() {
                 return Ok(());
             }
         }
@@ -277,15 +415,22 @@ where
     // Set when the writer failed or stopped: the pass ends, and nothing more is handed over.
     let failed = AtomicBool::new(false);
     let failed = &failed;
+    let timing = Timing::default();
+    let timing = &timing;
+    let started = Instant::now();
 
-    std::thread::scope(|s| {
+    let out = std::thread::scope(|s| {
         let writing = s.spawn(move || {
             let mut writer = writer;
             let mut flush = flush;
             let mut outcome: Result<()> = Ok(());
             let mut stopped = false;
-            for mut kept in from_sink {
+            loop {
+                let waiting = Instant::now();
+                let Ok(mut kept) = from_sink.recv() else { break };
+                timing.write_wait.add(waiting);
                 if !stopped {
+                    let flushing = Instant::now();
                     match panics::guard(AssertUnwindSafe(|| flush(&mut writer, &mut kept))) {
                         Ok(true) => {}
                         Ok(false) => stopped = true,
@@ -294,6 +439,7 @@ where
                             stopped = true;
                         }
                     }
+                    timing.write.add(flushing);
                     if stopped {
                         failed.store(true, Ordering::SeqCst);
                     }
@@ -307,23 +453,32 @@ where
 
         let mut kept: Vec<(usize, Result<R>)> = Vec::with_capacity(size);
         let mut since = Instant::now();
-        let ran = run(items, read, opts, ctl, init, process, |i, result, len| {
-            ctl.add(len, result.is_err());
-            kept.push((i, result));
-            if failed.load(Ordering::SeqCst) {
-                return Ok(false);
-            }
-            let every = batch.every.is_some_and(|every| since.elapsed() >= every);
-            if kept.len() >= size || every {
-                let wait = kept.len() >= 2 * size;
-                if !hand_over(&to_writer, &recycled_rx, &mut kept, size, wait) {
-                    failed.store(true, Ordering::SeqCst);
+        let ran = run_timed(
+            items,
+            read,
+            opts,
+            ctl,
+            init,
+            process,
+            |i, result, len| {
+                ctl.add(len, result.is_err());
+                kept.push((i, result));
+                if failed.load(Ordering::SeqCst) {
                     return Ok(false);
                 }
-                since = Instant::now();
-            }
-            Ok(!failed.load(Ordering::SeqCst))
-        });
+                let every = batch.every.is_some_and(|every| since.elapsed() >= every);
+                if kept.len() >= size || every {
+                    let wait = kept.len() >= 2 * size;
+                    if !hand_over(&to_writer, &recycled_rx, &mut kept, size, wait) {
+                        failed.store(true, Ordering::SeqCst);
+                        return Ok(false);
+                    }
+                    since = Instant::now();
+                }
+                Ok(!failed.load(Ordering::SeqCst))
+            },
+            timing,
+        );
         // The results counted and not yet handed over are the last batch: written, unless the pass failed.
         if ran.is_ok() && !failed.load(Ordering::SeqCst) && !kept.is_empty() {
             let _ = hand_over(&to_writer, &recycled_rx, &mut kept, size, true);
@@ -339,7 +494,9 @@ where
             (Err(e), Err(w)) => Err(e.context(format!("and the writer ended with: {w:#}"))),
         };
         (writer, result)
-    })
+    });
+    timing.report(items.len(), started.elapsed(), opts, true);
+    out
 }
 
 /// Hands the kept results to the writer, and keeps the vector the writer returns (or a new one) in their place. A
@@ -397,7 +554,10 @@ fn read_error(e: std::io::Error) -> anyhow::Error {
 
 /// The file at `path`, open for reading, and its size.
 fn open_sized(path: &NativePath) -> std::io::Result<(std::fs::File, usize)> {
-    let file = pg_platform::file::open_read(path)?;
+    sized(pg_platform::file::open_read(path)?)
+}
+
+fn sized(file: std::fs::File) -> std::io::Result<(std::fs::File, usize)> {
     let size = usize::try_from(file.metadata()?.len())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::FileTooLarge, e))?;
     Ok((file, size))
@@ -447,7 +607,61 @@ fn read_prefix<'p>(
     if let Ok(true) = panics::catch(AssertUnwindSafe(|| complete(&lease.bytes))) {
         return Some(Ok(lease));
     }
-    // One oversize read at a time: the others wait here, holding their prefixes.
+    read_the_rest(pool, lease, &mut file, size)
+}
+
+/// [`Read::Gather`] of the file at `path` (item `i`): what `gather` makes of it, read from the reader's thread in its turn.
+/// A file no longer than `hint` is read whole. Whatever `gather` doesn't give (`None`, or a panic) is the whole file,
+/// read from its start as [`read_prefix`]'s rest is. The file is opened for reads here and there: the system reads no
+/// further ahead than each read asks (measured on an NVMe disk, its read-ahead after each end of a PNG cost a fifth of
+/// the rate). `None` once the pass stops.
+fn read_gather<'p>(
+    pool: &'p Pool,
+    i: usize,
+    path: &NativePath,
+    hint: usize,
+    gather: fn(&mut std::fs::File) -> std::io::Result<Option<Vec<u8>>>,
+) -> Option<std::io::Result<Lease<'p>>> {
+    let (mut file, size) = match pg_platform::file::open_read_random(path).and_then(sized) {
+        Ok(opened) => opened,
+        Err(e) => {
+            pool.pass(i);
+            return Some(Err(e));
+        }
+    };
+    if size <= hint {
+        let mut lease = pool.take(i, size)?;
+        return Some(file.read_to_end(&mut lease.bytes).map(|_| lease));
+    }
+    let mut lease = pool.take(i, hint)?;
+    match panics::catch(AssertUnwindSafe(|| gather(&mut file))) {
+        Ok(Ok(Some(bytes))) => {
+            if let Err(e) = lease.grow_to(bytes.len()) {
+                return Some(Err(e));
+            }
+            lease.bytes.extend_from_slice(&bytes);
+            return Some(Ok(lease));
+        }
+        Ok(Err(e)) => return Some(Err(e)),
+        Ok(Ok(None)) | Err(_) => {}
+    }
+    // Not gathered: the whole file, from its start (the gather may have moved the file's position).
+    if let Err(e) = file.seek(SeekFrom::Start(0)) {
+        return Some(Err(e));
+    }
+    lease.bytes.clear();
+    read_the_rest(pool, lease, &mut file, size)
+}
+
+/// The rest of a file read whole, after `lease` holds the first bytes of it (`file` is at their end, or at the start of
+/// the file when `lease` is empty): one oversize read at a time, so the others wait here holding their prefixes. `None`
+/// once the pass stops.
+fn read_the_rest<'p>(
+    pool: &'p Pool,
+    mut lease: Lease<'p>,
+    file: &mut std::fs::File,
+    size: usize,
+) -> Option<std::io::Result<Lease<'p>>> {
     let _one = pool.oversize.lock().unwrap_or_else(PoisonError::into_inner);
     if pool.is_stopped() {
         return None;
@@ -995,6 +1209,53 @@ mod tests {
         .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         lengths
+    }
+
+    /// Three files of 5000, 6000 and 7000 bytes, each read by [`Read::Gather`] with a hint of 1000: the length each gives
+    /// `process`. The gather gives 10 bytes for the first, nothing for the second, and panics for the third.
+    fn a_gather_pass() -> Vec<usize> {
+        let dir = pg_testkit::run_folder("scratch_rate", "pipeline-gather").unwrap();
+        let items: Vec<(usize, String)> = [5000usize, 6000, 7000]
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let path = dir.join(format!("{i}.bin"));
+                std::fs::write(&path, vec![u8::try_from(i).unwrap(); n]).unwrap();
+                (i, path.to_str().unwrap().to_string())
+            })
+            .collect();
+        let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+        let mut lengths = vec![0; items.len()];
+        run(
+            &items,
+            |(_, p), wide| {
+                wide.set(&[&units(p)]);
+                Read::Gather {
+                    hint: 1000,
+                    gather: |file| match file.metadata().unwrap().len() {
+                        5000 => Ok(Some(vec![9; 10])),
+                        6000 => Ok(None),
+                        _ => panic!("a gather that panics"),
+                    },
+                }
+            },
+            &opts,
+            &Control::new(),
+            || Ok(()),
+            |_, _, bytes| Ok(bytes.len()),
+            |i, out, _| {
+                lengths[i] = out.unwrap();
+                Ok(true)
+            },
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        lengths
+    }
+
+    #[test]
+    fn a_gather_gives_its_bytes_and_a_file_it_gives_nothing_for_is_read_whole() {
+        assert_eq!(within_timeout(a_gather_pass), [10, 6000, 7000]);
     }
 
     fn whole_header(_: &[u8]) -> bool {

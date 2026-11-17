@@ -8,6 +8,7 @@
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
+use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
 
 /// The signature of an APP1 segment that holds a chunk of an extended XMP packet.
@@ -154,6 +155,434 @@ pub fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
         i = if &kind == b"IEND" { bytes.len() } else { end };
         Some(chunk)
     })
+}
+
+/// Most bytes [`png_import_bytes`] gathers. A PNG whose gathered chunks would be more is read whole.
+pub const PNG_GATHER_CAP: u64 = 16 << 20;
+
+const PNG_SIGNATURE: [u8; 8] = *b"\x89PNG\r\n\x1a\n";
+/// An `IEND` chunk: no data, and its CRC.
+const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82];
+/// The bytes [`png_import_bytes`] reads first at each end of the file: the head (the chunks before the image data are
+/// in it) and the tail (the chunks after it, as a rule).
+const PNG_BLOCK: usize = 16 << 10;
+/// Room for the chunks after the image data when the tail is read again, wider.
+const PNG_SLACK: usize = 64 << 10;
+/// The widest tail read.
+const PNG_TAIL_CAP: usize = 4 << 20;
+/// The most runs of image data chunks of one length [`png_import_bytes`] searches through.
+const PNG_RUNS: usize = 16;
+
+/// The PNG's bytes that the import reads, as [`png_import_bytes_of`] makes them of the whole file, read from the file
+/// at its two ends, so an image's data needn't be read: the signature; the chunks before the first image data, as they
+/// are; a zero-length `IDAT` in the image data's place (a decoder's header read stops there, as it does in the whole
+/// file); and the chunks after the image data up to the first `IEND`, as they are. The chunks metadata reads come in the
+/// order the whole file has them, so the import's facts are the whole file's.
+///
+/// An encoder writes the image data as consecutive `IDAT` chunks of one length (the first and the last ones may be
+/// shorter), so the chunks start on a grid that the first two give. The chunks after the image data are found back from
+/// the `IEND` at the end of the file, each checked by its CRC, until the last `IDAT`; where the image data ends is
+/// checked on the grid (a chunk's header read there), which ties it to this image's data rather than to image data
+/// appended after the file's first `IEND` (unless that data's chunks happen to fall on the same grid).
+/// When the tail doesn't tell, a binary search of the grid's headers finds the image data's end, and the chunks after it
+/// are read on to the first `IEND`. A head and a tail read for most files, a few more for the rest: the reads are
+/// 16 KiB blocks at the two ends, and chunk headers.
+///
+/// `None` when the file is not a PNG, has no image data, is animated, its image data chunks are not of one length, a
+/// chunk runs past the end, or the gathered bytes would pass [`PNG_GATHER_CAP`]: the whole file is then read.
+pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u8>>> {
+    let size = usize::try_from(file.seek(SeekFrom::End(0))?).unwrap_or(usize::MAX);
+    let cap = usize::try_from(PNG_GATHER_CAP).unwrap_or(usize::MAX);
+    let mut file = Positioned { file, size };
+    if size < PNG_SIGNATURE.len() {
+        return Ok(None);
+    }
+    let mut head = file.read(0, size.min(PNG_BLOCK))?;
+    if head.get(..PNG_SIGNATURE.len()) != Some(PNG_SIGNATURE.as_slice()) {
+        return Ok(None);
+    }
+    // The chunks before the image data, the head read on when they pass it.
+    let mut at = PNG_SIGNATURE.len();
+    let (idat_at, idat_len) = loop {
+        let header_end = at.saturating_add(8);
+        if header_end > head.len() {
+            if header_end > size || header_end > cap {
+                return Ok(None);
+            }
+            let to = header_end.saturating_add(PNG_BLOCK).min(size);
+            let more = file.read(head.len(), to - head.len())?;
+            head.extend_from_slice(&more);
+        }
+        let Some((len, kind)) = png_header_in(&head, at) else { return Ok(None) };
+        match &kind {
+            b"IDAT" => break (at, len),
+            b"IEND" | b"acTL" | b"fdAT" => return Ok(None),
+            _ => {}
+        }
+        at = match png_chunk_end(at, len) {
+            Some(end) if end <= size => end,
+            _ => return Ok(None),
+        };
+    };
+    let mut out = head.get(..idat_at).unwrap_or_default().to_vec();
+    png_zero_idat(&mut out);
+    let Some(first_end) = png_chunk_end(idat_at, idat_len).filter(|&end| end.saturating_add(12) <= size) else {
+        return Ok(None);
+    };
+    // The second chunk's header gives the grid: in the head, read on its own when it is before the tail, or in the tail.
+    let tail_at = size.saturating_sub(PNG_BLOCK).max(first_end);
+    let mut second = png_header_in(&head, first_end);
+    if second.is_none() && first_end.saturating_add(8) <= tail_at {
+        second = file.header(first_end)?;
+    }
+    let tail = file.read(tail_at, size - tail_at)?;
+    let mut known = Known { head, tail, tail_at };
+    let second = match second.or_else(|| known.header(first_end)) {
+        Some(header) => Some(header),
+        None => file.header(first_end)?,
+    };
+    let grid = match second {
+        Some((len, kind)) if &kind == b"IDAT" => Grid { first_end, at: first_end, len },
+        _ => Grid { first_end, at: idat_at, len: idat_len },
+    };
+    let after = match png_tail_chunks(&mut file, &mut known, &grid, idat_len)? {
+        Some(after) => after,
+        None => match png_grid_search(&mut file, &grid, cap)? {
+            Some(after) => after,
+            None => return Ok(None),
+        },
+    };
+    if out.len().saturating_add(after.len()) > cap {
+        return Ok(None);
+    }
+    out.extend_from_slice(&after);
+    Ok(Some(out))
+}
+
+/// The PNG's bytes that the import reads, of the whole file in memory: the signature; the chunks before the first image
+/// data, as they are; a zero-length `IDAT` in the image data's place; and the chunks after the image data up to `IEND`,
+/// without the image data (`IDAT`, and an animation's `fdAT`), as [`png_chunks`] walks them (a chunk that runs past the
+/// end ends the walk). `None` when the bytes are not a PNG, have no image data, or the gathered bytes would pass
+/// [`PNG_GATHER_CAP`]. [`png_import_bytes`] gives these bytes, or none, from the file.
+pub fn png_import_bytes_of(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.get(..PNG_SIGNATURE.len()) != Some(PNG_SIGNATURE.as_slice()) {
+        return None;
+    }
+    let cap = usize::try_from(PNG_GATHER_CAP).unwrap_or(usize::MAX);
+    let mut out = PNG_SIGNATURE.to_vec();
+    let mut image_data = false;
+    for chunk in png_chunks(bytes) {
+        match &chunk.kind {
+            b"IDAT" if !image_data => {
+                image_data = true;
+                png_zero_idat(&mut out);
+            }
+            b"IDAT" | b"fdAT" => {}
+            _ => {
+                if out.len().saturating_add(chunk.len) > cap {
+                    return None;
+                }
+                out.extend_from_slice(bytes.get(chunk.at..chunk.at + chunk.len)?);
+            }
+        }
+    }
+    image_data.then_some(out)
+}
+
+fn png_zero_idat(out: &mut Vec<u8>) {
+    out.extend_from_slice(&0u32.to_be_bytes());
+    out.extend_from_slice(b"IDAT");
+    out.extend_from_slice(&crc32fast::hash(b"IDAT").to_be_bytes());
+}
+
+/// The end of the chunk at `at` with `len` bytes of data (its length, type and CRC around them).
+fn png_chunk_end(at: usize, len: usize) -> Option<usize> {
+    at.checked_add(12)?.checked_add(len)
+}
+
+/// The length and type of the chunk at `at` of `bytes`, when its header is in them.
+fn png_header_in(bytes: &[u8], at: usize) -> Option<(usize, [u8; 4])> {
+    let len = usize::try_from(u32::from_be_bytes(bytes_at::<4>(bytes, at)?)).unwrap_or(usize::MAX);
+    Some((len, bytes_at::<4>(bytes, at.checked_add(4)?)?))
+}
+
+/// A file read at offsets.
+struct Positioned<'a, R> {
+    file: &'a mut R,
+    size: usize,
+}
+
+impl<R: Read + Seek> Positioned<'_, R> {
+    fn read(&mut self, at: usize, len: usize) -> io::Result<Vec<u8>> {
+        self.file.seek(SeekFrom::Start(u64::try_from(at).unwrap_or(u64::MAX)))?;
+        let mut bytes = vec![0; len];
+        self.file.read_exact(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// The chunk header at `at`, by a read of it; `None` past the end.
+    fn header(&mut self, at: usize) -> io::Result<Option<(usize, [u8; 4])>> {
+        if at.saturating_add(8) > self.size {
+            return Ok(None);
+        }
+        Ok(png_header_in(&self.read(at, 8)?, 0))
+    }
+}
+
+/// What the gather has read of a file: its head (from the start) and its tail (from `tail_at` to the end).
+struct Known {
+    head: Vec<u8>,
+    tail: Vec<u8>,
+    tail_at: usize,
+}
+
+impl Known {
+    fn header(&self, at: usize) -> Option<(usize, [u8; 4])> {
+        png_header_in(&self.head, at).or_else(|| png_header_in(&self.tail, at.checked_sub(self.tail_at)?))
+    }
+
+    /// The chunk header at `at`, from what is read, else by a read of it.
+    fn header_or_read<R: Read + Seek>(
+        &self,
+        file: &mut Positioned<'_, R>,
+        at: usize,
+    ) -> io::Result<Option<(usize, [u8; 4])>> {
+        match self.header(at) {
+            Some(header) => Ok(Some(header)),
+            None => file.header(at),
+        }
+    }
+}
+
+/// Where a PNG's image data chunks are: the first one's end, and the grid of the others (where the first of them starts,
+/// and their length; for one chunk, the first one's).
+struct Grid {
+    first_end: usize,
+    at: usize,
+    len: usize,
+}
+
+impl Grid {
+    fn step(&self) -> usize {
+        self.len.saturating_add(12)
+    }
+
+    fn on(&self, at: usize) -> bool {
+        at >= self.at && (at - self.at).is_multiple_of(self.step())
+    }
+}
+
+/// What a tail tells of the chunks after the image data.
+enum AfterImage {
+    /// Their ranges in the tail, in order, up to the first `IEND`.
+    Found(Vec<Range<usize>>),
+    /// The tail does not reach back to where the image data ends: the chunks found back from `IEND` (the last first),
+    /// and where the earliest of them (or of the short `IDAT`s before them) starts in the tail.
+    Short(Vec<Range<usize>>, usize),
+    /// Not as the gather reads a PNG: the whole file is read.
+    Unread,
+}
+
+/// The chunks after the image data in `tail`, the file's bytes from `start` to its end. When the tail starts right after
+/// the first `IDAT`, they are walked forward; else they are found back from the `IEND` at the end, each chunk ending
+/// where the next starts and its CRC holding, until an `IDAT` on the grid (the last full chunk, or the short last one
+/// after them; short ones off the grid before it are passed over).
+fn after_image(tail: &[u8], start: usize, grid: &Grid) -> AfterImage {
+    let mut chunks = Vec::new();
+    if start == grid.first_end {
+        let mut i = 0;
+        loop {
+            let Some((len, kind)) = png_header_in(tail, i) else { return AfterImage::Unread };
+            let Some(end) = png_chunk_end(i, len).filter(|&end| end <= tail.len()) else { return AfterImage::Unread };
+            match &kind {
+                b"IDAT" => {}
+                b"fdAT" => return AfterImage::Unread,
+                _ => {
+                    chunks.push(i..end);
+                    if &kind == b"IEND" {
+                        return AfterImage::Found(chunks);
+                    }
+                }
+            }
+            i = end;
+        }
+    }
+    let Some(iend_at) = tail.len().checked_sub(PNG_IEND.len()) else { return AfterImage::Unread };
+    if tail.get(iend_at..) != Some(PNG_IEND.as_slice()) {
+        return AfterImage::Unread;
+    }
+    chunks.push(iend_at..tail.len());
+    let mut next = iend_at;
+    let mut in_image_data = false;
+    loop {
+        let Some(p) = png_chunk_ending_at(tail, next) else { return AfterImage::Short(chunks, next) };
+        let Some((len, kind)) = png_header_in(tail, p) else { return AfterImage::Unread };
+        match &kind {
+            b"IDAT" => {
+                let at = start + p;
+                if len > grid.len || at < grid.at {
+                    return AfterImage::Unread;
+                }
+                if grid.on(at) {
+                    chunks.reverse();
+                    return AfterImage::Found(chunks);
+                }
+                if len == grid.len {
+                    return AfterImage::Unread;
+                }
+                in_image_data = true;
+                next = p;
+                continue;
+            }
+            // A chunk between image data chunks, or an animation's.
+            _ if in_image_data => return AfterImage::Unread,
+            b"fdAT" => return AfterImage::Unread,
+            // The walk ends at the first `IEND`: what follows it is not the image's.
+            b"IEND" => chunks.clear(),
+            _ => {}
+        }
+        chunks.push(p..next);
+        next = p;
+    }
+}
+
+/// Where the chunk that ends at `end` of `tail` starts: its length reaches `end`, its type is letters and its CRC holds.
+fn png_chunk_ending_at(tail: &[u8], end: usize) -> Option<usize> {
+    let crc = u32::from_be_bytes(bytes_at::<4>(tail, end.checked_sub(4)?)?);
+    (0..=end.checked_sub(12)?).rev().find(|&p| {
+        png_header_in(tail, p).is_some_and(|(len, kind)| {
+            png_chunk_end(p, len) == Some(end)
+                && kind.iter().all(u8::is_ascii_alphabetic)
+                && tail.get(p + 4..end - 4).is_some_and(|typed| crc32fast::hash(typed) == crc)
+        })
+    })
+}
+
+/// Whether the image data ends at `end` (a file offset), by the grid: its last chunk starts on the grid point before
+/// `end` (the chunks before it are full), or is a short one after a short one there.
+fn png_ends_on_grid<R: Read + Seek>(
+    file: &mut Positioned<'_, R>,
+    known: &Known,
+    grid: &Grid,
+    end: usize,
+) -> io::Result<bool> {
+    let step = grid.step();
+    let Some(before) = end.checked_sub(12).and_then(|e| e.checked_sub(grid.at)) else { return Ok(false) };
+    let point = grid.at + before / step * step;
+    let Some((len, kind)) = known.header_or_read(file, point)? else { return Ok(false) };
+    if &kind != b"IDAT" || len > grid.len {
+        return Ok(false);
+    }
+    let Some(next) = png_chunk_end(point, len) else { return Ok(false) };
+    if next == end {
+        return Ok(true);
+    }
+    if len == grid.len || next.saturating_add(12) > end {
+        return Ok(false);
+    }
+    Ok(known
+        .header_or_read(file, next)?
+        .is_some_and(|(len, kind)| &kind == b"IDAT" && len < grid.len && png_chunk_end(next, len) == Some(end)))
+}
+
+/// The chunks after the image data, from the tail (read wider once when it is short); `None` when the tail doesn't tell.
+fn png_tail_chunks<R: Read + Seek>(
+    file: &mut Positioned<'_, R>,
+    known: &mut Known,
+    grid: &Grid,
+    idat_len: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    // Room for the chunks after the image data, short chunks at its end, and the last full one.
+    let wide = idat_len.max(grid.len).saturating_mul(2).saturating_add(24 + PNG_SLACK).min(PNG_TAIL_CAP);
+    let wide_at = file.size.saturating_sub(wide).max(grid.first_end).min(known.tail_at);
+    loop {
+        let found = match after_image(&known.tail, known.tail_at, grid) {
+            AfterImage::Found(chunks) => chunks,
+            AfterImage::Unread => return Ok(None),
+            AfterImage::Short(mut chunks, next) => {
+                if png_ends_on_grid(file, known, grid, known.tail_at + next)? {
+                    chunks.reverse();
+                    chunks
+                } else if known.tail_at > wide_at {
+                    let mut wider = file.read(wide_at, known.tail_at - wide_at)?;
+                    wider.extend_from_slice(&known.tail);
+                    known.tail = wider;
+                    known.tail_at = wide_at;
+                    continue;
+                } else {
+                    return Ok(None);
+                }
+            }
+        };
+        let mut after = Vec::new();
+        for range in found {
+            after.extend_from_slice(known.tail.get(range).unwrap_or_default());
+        }
+        return Ok(Some(after));
+    }
+}
+
+/// The chunks after the image data, found forward through the grid: the last full chunk of a run of them by a binary
+/// search of their headers, the short chunks after it (a full one after them starts a new run), then the chunks up to
+/// the first `IEND`, read as they are. `None` when the image data's chunks are not of one length, or a chunk runs past
+/// the end or the cap.
+fn png_grid_search<R: Read + Seek>(
+    file: &mut Positioned<'_, R>,
+    grid: &Grid,
+    cap: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    let (full, step) = (grid.len, grid.step());
+    let mut run_at = grid.at;
+    let mut at;
+    let mut runs = 0;
+    'runs: loop {
+        // The run's chunks are full up to some index, and not after it.
+        let (mut lo, mut hi) = (0usize, (file.size - run_at) / step + 1);
+        while hi - lo > 1 {
+            let mid = lo + (hi - lo) / 2;
+            if file.header(run_at + mid * step)?.is_some_and(|(len, kind)| &kind == b"IDAT" && len == full) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        at = run_at + (lo + 1) * step;
+        loop {
+            let Some((len, kind)) = file.header(at)? else { return Ok(None) };
+            if &kind != b"IDAT" {
+                break 'runs;
+            }
+            if len > full {
+                return Ok(None);
+            }
+            if len == full {
+                break;
+            }
+            let Some(end) = png_chunk_end(at, len) else { return Ok(None) };
+            at = end;
+        }
+        runs += 1;
+        if runs > PNG_RUNS {
+            return Ok(None);
+        }
+        run_at = at;
+    }
+    let mut after = Vec::new();
+    loop {
+        let Some((len, kind)) = file.header(at)? else { return Ok(None) };
+        if &kind == b"IDAT" || &kind == b"fdAT" {
+            return Ok(None);
+        }
+        let Some(end) = png_chunk_end(at, len).filter(|&end| end <= file.size) else { return Ok(None) };
+        if after.len().saturating_add(end - at) > cap {
+            return Ok(None);
+        }
+        after.extend_from_slice(&file.read(at, end - at)?);
+        if &kind == b"IEND" {
+            return Ok(Some(after));
+        }
+        at = end;
+    }
 }
 
 /// WebP (RIFF) chunks after the `WEBP` form type.
@@ -569,5 +998,167 @@ mod tests {
         assert_eq!(jpeg_is_progressive(&[0xFF, 0xD8, 0x00, 0x00, 0x00, 0x02]), None);
         // The file ends before the scan.
         assert_eq!(jpeg_is_progressive(&[0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x02]), None);
+    }
+
+    #[test]
+    fn the_import_bytes_of_a_png_are_its_chunks_in_order_without_the_image_data() {
+        let image = vec![7u8; 8000];
+        let whole = png(&[
+            (b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 3, 8, 2, 0, 0, 0]),
+            (b"acTL", &[0, 0, 0, 2, 0, 0, 0, 0]),
+            (b"eXIf", b"MM\0*"),
+            (b"IDAT", image.as_slice()),
+            (b"IDAT", image.as_slice()),
+            (b"tEXt", b"Comment\0hello"),
+            (b"fdAT", image.as_slice()),
+            (b"eXIf", b"after"),
+            (b"IEND", b""),
+        ]);
+        let gathered = png_import_bytes_of(&whole).unwrap();
+        let kinds = |bytes: &[u8]| -> Vec<[u8; 4]> { png_chunks(bytes).map(|c| c.kind).collect() };
+        // The image data is gone (one zero-length IDAT stands for it); every other chunk is there, in the file's order.
+        let expected = [*b"IHDR", *b"acTL", *b"eXIf", *b"IDAT", *b"tEXt", *b"eXIf", *b"IEND"];
+        assert_eq!(kinds(&gathered), expected);
+        let first_exif = png_chunks(&gathered).find(|c| &c.kind == b"eXIf").unwrap();
+        assert_eq!(first_exif.data, b"MM\0*");
+        assert!(png_chunks(&gathered).find(|c| &c.kind == b"IDAT").unwrap().data.is_empty());
+    }
+
+    /// Bytes that look like compressed data (no chunk headers in them, but for the odd chance).
+    fn noise(len: usize, seed: u64) -> Vec<u8> {
+        let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x.to_le_bytes()[0]
+            })
+            .collect()
+    }
+
+    /// A PNG laid out as an encoder writes one: chunks before the image data, the image data's chunks of these lengths,
+    /// the chunks after it, and `IEND`.
+    fn png_of(before: &[(&[u8; 4], usize)], image: &[usize], after: &[(&[u8; 4], usize)]) -> Vec<u8> {
+        let mut chunks: Vec<(&[u8; 4], Vec<u8>)> = vec![(b"IHDR", vec![0, 0, 1, 0, 0, 0, 1, 0, 8, 2, 0, 0, 0])];
+        let mut seed = 1;
+        let mut add = |kind, len| {
+            seed += 1;
+            chunks.push((kind, noise(len, seed)));
+        };
+        before.iter().for_each(|&(kind, len)| add(kind, len));
+        image.iter().for_each(|&len| add(b"IDAT", len));
+        after.iter().for_each(|&(kind, len)| add(kind, len));
+        add(b"IEND", 0);
+        let parts: Vec<(&[u8; 4], &[u8])> = chunks.iter().map(|(kind, data)| (*kind, data.as_slice())).collect();
+        png(&parts)
+    }
+
+    fn gather(bytes: &[u8]) -> Option<Vec<u8>> {
+        png_import_bytes(&mut std::io::Cursor::new(bytes)).unwrap()
+    }
+
+    /// The gather of `bytes`, which must be made and be what the whole file gives.
+    fn gathered_as_the_whole(bytes: &[u8]) {
+        let whole = png_import_bytes_of(bytes).expect("the whole file gathers");
+        assert_eq!(gather(bytes), Some(whole));
+    }
+
+    #[test]
+    fn a_png_is_gathered_as_the_whole_file_gives_it() {
+        let text = [(b"tEXt", 40), (b"eXIf", 900)];
+        // One chunk of image data; a few small ones (the tail holds them all).
+        gathered_as_the_whole(&png_of(&[], &[300_000], &text));
+        gathered_as_the_whole(&png_of(&text, &[3000, 3000, 1200], &text));
+        // Chunks of one length, the last shorter; the first shorter (as some encoders write it); short ones at the end.
+        gathered_as_the_whole(&png_of(&[(b"pHYs", 9)], &[[8192; 300].as_slice(), &[5000]].concat(), &text));
+        gathered_as_the_whole(&png_of(&[], &[[65_243].as_slice(), &[65_524; 40], &[12_000]].concat(), &[]));
+        gathered_as_the_whole(&png_of(&[], &[[4096; 500].as_slice(), &[3398, 6]].concat(), &text));
+        // The last chunk full, or the chunks large (the last one's header is before the tail).
+        gathered_as_the_whole(&png_of(&[], &[1 << 20; 4], &text));
+        gathered_as_the_whole(&png_of(&[], &[[1 << 20; 4].as_slice(), &[300_000]].concat(), &[]));
+        // A long chunk before the image data (past the head), and after it (past the tail).
+        gathered_as_the_whole(&png_of(&[(b"iCCP", 600_000)], &[8192; 100], &[(b"iTXt", 200_000)]));
+        // The grid starting again after a short chunk.
+        gathered_as_the_whole(&png_of(
+            &[],
+            &[[16_384; 384].as_slice(), &[15_340], &[16_384; 382], &[10_577]].concat(),
+            &text,
+        ));
+    }
+
+    #[test]
+    fn a_png_with_bytes_after_its_iend_is_gathered_to_that_iend() {
+        let image = [[32_768; 60].as_slice(), &[15_755]].concat();
+        let file = png_of(&[], &image, &[(b"tEXt", 30)]);
+        // A second IEND; bytes that are not a chunk; another image appended (its chunks off this one's grid).
+        let mut twice = file.clone();
+        twice.extend(PNG_IEND);
+        gathered_as_the_whole(&twice);
+        let mut junk = file.clone();
+        junk.extend(noise(700_000, 9));
+        gathered_as_the_whole(&junk);
+        let mut appended = file.clone();
+        appended.extend(png_of(&[(b"eXIf", 100)], &[[30_000; 20].as_slice(), &[777]].concat(), &[(b"eXIf", 50)]));
+        gathered_as_the_whole(&appended);
+    }
+
+    #[test]
+    fn a_png_the_gather_cannot_read_by_its_ends_is_read_whole() {
+        // Not a PNG, no image data, animated, image data of many lengths, cut short, or more than the cap.
+        assert_eq!(gather(b"GIF89a\x01\x00\x01\x00"), None);
+        assert_eq!(gather(b""), None);
+        assert_eq!(gather(&png_of(&[], &[], &[])), None);
+        assert_eq!(gather(&png_of(&[(b"acTL", 8)], &[8192; 10], &[])), None);
+        assert_eq!(gather(&png_of(&[], &[120_000, 118_000, 123_000, 101_000, 99_000], &[])), None);
+        let mut cut = png_of(&[], &[8192; 10], &[(b"tEXt", 5000)]);
+        cut.truncate(cut.len() - 2000);
+        assert_eq!(gather(&cut), None);
+        let big = usize::try_from(PNG_GATHER_CAP).unwrap();
+        assert_eq!(gather(&png_of(&[], &[10], &[(b"eXIf", big)])), None);
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(200))]
+
+        // Whatever the layout, the gather is the whole file's bytes, or none (the file is then read whole); and a file
+        // laid out as an encoder writes it is gathered.
+        #[test]
+        fn a_gather_is_the_whole_files_or_none(
+            before in proptest::collection::vec(0usize..40_000, 0..3),
+            first in 1usize..70_000,
+            len in 1usize..70_000,
+            count in 0usize..12,
+            ends in proptest::collection::vec(1usize..70_000, 0..3),
+            after in proptest::collection::vec(0usize..40_000, 0..3),
+            restart in proptest::option::of((1usize..70_000, 1usize..6)),
+            trailer in 0usize..4,
+        ) {
+            let before: Vec<(&[u8; 4], usize)> = before.into_iter().map(|n| (b"tEXt", n)).collect();
+            let after: Vec<(&[u8; 4], usize)> = after.into_iter().map(|n| (b"eXIf", n)).collect();
+            let shorts: Vec<usize> = ends.iter().map(|&n| n % len + 1).collect();
+            let mut image = vec![first];
+            image.extend(std::iter::repeat_n(len, count));
+            if let Some((short, more)) = restart {
+                image.push(short % len + 1);
+                image.extend(std::iter::repeat_n(len, more));
+            }
+            image.extend(&shorts);
+            let mut file = png_of(&before, &image, &after);
+            match trailer {
+                1 => file.extend(PNG_IEND),
+                2 => file.extend(noise(50_000, 3)),
+                3 => file.extend(noise(30_000, 4).into_iter().chain(PNG_IEND)),
+                _ => {}
+            }
+            let whole = png_import_bytes_of(&file);
+            let gathered = gather(&file);
+            proptest::prop_assert!(gathered.is_none() || gathered == whole);
+            // One length after the first, the last ones shorter (the first short one at most a chunk), no restart.
+            let regular = count >= 1 && restart.is_none() && shorts.len() <= 2 && shorts.iter().sum::<usize>() <= len;
+            if regular && first <= len {
+                proptest::prop_assert!(gathered.is_some(), "a regular layout is gathered");
+            }
+        }
     }
 }

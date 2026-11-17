@@ -300,6 +300,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 changed: changed_while_read(s.changed),
                 seconds: secs(start.elapsed().as_secs_f64()),
             });
+            // The import's stage times, when `PG_PIPELINE_STATS` is set (a diagnostic, not a message).
+            if let Some(report) = pg_jobs::pipeline::last_report() {
+                eprint!("{report}");
+            }
             // The duplicates are the hashes and the pairs: none with `--no-dups`, no pairs with `--no-pair`.
             if !no_dups {
                 pair_and_report(&mut catalog, &opts, ctl, start, !no_pair)?;

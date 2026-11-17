@@ -364,7 +364,7 @@ Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplic
 ## Phase 3: duplicate hashes on the full decode, and the duplicate toggle (a migration)
 
 > Superseded in part 2026-11-17 (commit 5fcff8bb): the duplicate hashes are made by the Hashes pass, not stored at import, and the ThumbHash moved to the Placeholders pass. The definitions in 3.1 are unchanged; the import-time parts of 3.4 to 3.7 are not what the code does now.
-
+>
 > Superseded 2026-11-16 (commit aeb7d2c): the duplicate catch-up is the Hashes pass over `hashes_owed` (migration 15, `TO_15_HASHES_OWED`) and the pairing pass over `pairs_owed`; there is no Dups pass.
 
 ### 3.1 The hash definition (decided by the user)

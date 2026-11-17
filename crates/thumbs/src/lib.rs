@@ -26,6 +26,7 @@ use pg_model::size::ThumbHeight;
 
 #[cfg(any(test, feature = "fault"))]
 pub mod fault;
+pub mod placeholders;
 
 const BATCH: usize = 200;
 
@@ -89,8 +90,8 @@ enum Failed {
     /// It panicked: recorded, and tried again only once the file changes (it would panic again, and log its backtrace
     /// at every pass), or the user retries it, or a new thumbnailer comes.
     Panicked,
-    /// It doesn't decode: recorded, and tried again by the next pass (the import decoded it, so it may be a file changed
-    /// since).
+    /// It doesn't decode: recorded, and tried again only once the file changes (or the user retries it), as a panic is: a
+    /// file whose header the import read may still not decode, and it would fail again at every pass.
     Undecodable,
     /// It couldn't be read (an offline drive, a file in use): tried again by the next pass, not recorded.
     Unreadable,
@@ -119,15 +120,14 @@ impl Failed {
     /// file's).
     fn recorded(&self) -> Option<bool> {
         match self {
-            Failed::Panicked => Some(false),
-            Failed::Undecodable => Some(true),
+            Failed::Panicked | Failed::Undecodable => Some(false),
             Failed::Unreadable | Failed::Other => None,
         }
     }
 }
 
 /// Unix seconds now.
-fn unix_now() -> i64 {
+pub(crate) fn unix_now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
@@ -276,7 +276,8 @@ pub fn run_while(
                     if matches!(failed, Failed::Unreadable) {
                         stats.unreadable += 1;
                     }
-                    if !matches!(failed, Failed::Panicked) {
+                    // A file tried again only once it changes is not held back: the next pass starts after it.
+                    if !matches!(failed, Failed::Panicked | Failed::Undecodable) {
                         fold(first_failed, item.seq);
                     }
                     let path = rules.display_stored(&work.path(item.path, sep));
@@ -630,7 +631,7 @@ mod tests {
         // A truncated file: an I/O error at its root, under the decoder's context, is no read failure.
         let truncated =
             anyhow::Error::from(MakeError::Undecodable(eof().context("decoding the JPEG"))).context("a.jpg");
-        assert_eq!((Failed::of(&truncated), Failed::of(&truncated).recorded()), (Failed::Undecodable, Some(true)));
+        assert_eq!((Failed::of(&truncated), Failed::of(&truncated).recorded()), (Failed::Undecodable, Some(false)));
         let unreadable = anyhow::Error::from(MakeError::Unreadable(IoError::new(ErrorKind::NotFound, "gone")));
         assert_eq!((Failed::of(&unreadable), Failed::of(&unreadable).recorded()), (Failed::Unreadable, None));
         let panicked = anyhow::Error::new(panics::Panicked("boom".into()));
@@ -653,8 +654,9 @@ mod tests {
         assert_eq!(outcome, LedgerOutcome::Failed("busy".into()));
     }
 
-    /// A file that doesn't decode is recorded and tried again by the next pass; once it decodes (it changed) it is made,
-    /// and its row is gone. A file that can't be read (gone since the listing) is counted apart, and not recorded.
+    /// A file that doesn't decode is recorded, and not tried again until it changes (or Retry clears its row, as a panic
+    /// does); once it decodes it is made, and its row is gone. A file that can't be read (gone since the listing) is
+    /// counted apart, and not recorded.
     #[test]
     fn a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -693,18 +695,67 @@ mod tests {
         let first = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
         assert_eq!((first.needed, first.made, first.failed, first.unreadable), (3, 1, 2, 1));
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
-        assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "a.png").unwrap(), true));
-        // Both are tried again, and the recorded one is not news again.
+        assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "a.png").unwrap(), false));
+        // Not tried again (its row holds it); the file that could not be read is, and the recorded one is not news again.
         let summary = c.ledger_entries(false).unwrap();
         let second = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
-        assert_eq!((second.needed, second.failed), (2, 2));
+        assert_eq!((second.needed, second.failed), (1, 1));
         assert_eq!(c.ledger_entries(false).unwrap(), summary);
-        // Mended in place (as a restored backup would be): it is made, and leaves the ledger.
+        // Mended in place, and the user's Retry: it is made, and leaves the ledger.
         std::fs::write(&a, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         std::fs::File::options().write(true).open(&a).unwrap().set_modified(mtime).unwrap();
+        c.retry_failures(FilePass::Thumbs).unwrap();
         let third = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
         assert_eq!((third.made, third.unreadable), (1, 1));
         assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());
+    }
+
+    /// The placeholders follow the thumbnails: a file whose thumbnail is made gets its placeholder from its original (these
+    /// thumbnails are too small to serve one), and a file the thumbnails record as undecodable owes none (its row in the
+    /// Thumbs ledger holds it, as the owed query has it), so the owed count is what is left.
+    #[test]
+    fn placeholders_follow_the_thumbnails_and_an_undecodable_file_owes_none() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let dir = pg_testkit::run_folder_with("scratch_rate", "thumbs-placeholders", &["images"]).unwrap();
+        let images = dir.join("images");
+        for name in ["a.png", "b.png"] {
+            std::fs::write(images.join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        }
+        let catalog_path = dir.join("catalog.sqlite");
+        let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        let ctl = Control::new();
+        let root = pg_platform::names::normalize_path(&images).unwrap();
+        pg_scan::scan(&mut c, &root, &ctl).unwrap();
+        let opts = Options::new(Priority::Normal);
+        pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+        // Damaged after the import, at the same size and time: the import's analysis is what the catalog has.
+        let b = images.join("b.png");
+        let (len, mtime) = {
+            let meta = std::fs::metadata(&b).unwrap();
+            (meta.len(), meta.modified().unwrap())
+        };
+        std::fs::write(&b, vec![0u8; usize::try_from(len).unwrap()]).unwrap();
+        std::fs::File::options().write(true).open(&b).unwrap().set_modified(mtime).unwrap();
+
+        let (events, _quiet) = Quiet::bus();
+        let cache = ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(1 << 30),
+            1,
+            events,
+        )
+        .unwrap();
+        assert_eq!(c.owed_placeholders().unwrap(), 2, "both are owed before the thumbnails");
+        let thumbs = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
+        assert_eq!((thumbs.made, thumbs.failed), (1, 1));
+        assert_eq!(c.owed_placeholders().unwrap(), 1, "the undecodable file is held by its ledger row");
+        let placed = crate::placeholders::run_while(&mut c, &cache, &opts, &|| true, &ctl).unwrap();
+        assert_eq!((placed.needed, placed.made, placed.from_cache, placed.failed), (1, 1, 0, 0));
+        assert!(placed.complete);
+        assert_eq!(c.owed_placeholders().unwrap(), 0);
+        let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
+        assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "b.png").unwrap(), false));
     }
 
     fn versions() -> pg_catalog::Versions {

@@ -1625,7 +1625,6 @@ dependencies = [
  "pg-model",
  "pg-testkit",
  "pg-video",
- "thumbhash",
  "xxhash-rust",
 ]
 

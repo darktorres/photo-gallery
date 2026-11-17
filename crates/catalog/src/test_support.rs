@@ -6,7 +6,7 @@ use crate::fixture::{self, raw};
 use crate::{Catalog, Prior, Recorded, ScanLease, ScannedFile, Versions, WorkItem, queue};
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
-use pg_model::analysis::{Analysis, FileHash, ImageFacts, ImageHashes, Media, PixelHashes, Taken, ThumbHash};
+use pg_model::analysis::{Analysis, ImageFacts, Media, Taken};
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::media::Ext;
@@ -114,18 +114,10 @@ pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, 
     changed
 }
 
-/// The facts of a JPEG with no rating and stand-in hashes, for the analyses the tests store.
+/// The facts of a JPEG with no rating, for the analyses the tests store (the hashes are the Hashes pass's: a test stores
+/// them with `store_hashes`).
 pub(crate) fn a_jpeg() -> Media {
-    a_jpeg_with_file([1; 32])
-}
-
-/// [`a_jpeg`] with the file hash `file`, for the tests that need the files to differ.
-pub(crate) fn a_jpeg_with_file(file: [u8; 32]) -> Media {
-    let pdq =
-        pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash([0; 32]); pg_model::pdq::ORIENTATIONS], quality: 0 };
-    let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
-    let hashes = Some(ImageHashes { file: FileHash(file), pixels });
-    Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, hashes })
+    Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None })
 }
 
 /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
@@ -148,7 +140,6 @@ pub(crate) fn store_taken(c: &mut Catalog, item: &WorkItem, taken: Option<Taken>
         orientation: Orientation::UPRIGHT,
         width: 400,
         height: 300,
-        thumbhash: ThumbHash::default(),
         frames: 1,
         taken,
         media: a_jpeg(),

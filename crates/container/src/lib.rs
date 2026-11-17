@@ -52,6 +52,13 @@ impl JpegSegments<'_> {
     pub fn damaged(&self) -> bool {
         self.damaged
     }
+
+    /// Where the walk stopped at a start-of-scan marker (its 0xFF byte), once the walk is over and undamaged. `None`
+    /// at the end marker, at damage, or when the file ends before any scan.
+    pub fn scan_at(&self) -> Option<usize> {
+        let at = self.i;
+        (!self.damaged && bytes_at::<2>(self.bytes, at) == Some([0xFF, 0xDA])).then_some(at)
+    }
 }
 
 impl<'a> Iterator for JpegSegments<'a> {

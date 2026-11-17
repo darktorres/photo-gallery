@@ -70,7 +70,8 @@ pub(crate) enum Command {
     },
     /// Take a folder out of the library (its files are hidden, not deleted from the catalog).
     Remove { root: PathBuf },
-    /// Analyze every new or changed file: hashes, PDQ, dimensions, ThumbHash; then pair the duplicates (`pair`).
+    /// Read every new or changed file's header (format, size, orientation, dates: no pixels); then hash and pair the
+    /// duplicates (`hash`, `pair`).
     Import {
         #[command(flatten)]
         pipeline: PipelineArgs,
@@ -84,8 +85,8 @@ pub(crate) enum Command {
         /// Leave the duplicates unpaired: `pair` does it later (until then "No duplicates" stays empty).
         #[arg(long)]
         no_pair: bool,
-        /// Analyze without the duplicate hashes, and so without pairing: `hash` makes them later. The app's Library
-        /// panel has the same choice ("Find duplicates in the background").
+        /// Leave the duplicates out: no hashes and no pairs, `hash` and `pair` make them later. The app's Library panel
+        /// has the same choice ("Find duplicates in the background").
         #[arg(long)]
         no_dups: bool,
     },
@@ -104,7 +105,8 @@ pub(crate) enum Command {
         #[arg(long)]
         again: bool,
     },
-    /// Thumbnails at the given grid height for every imported file (the app does this in the background).
+    /// Thumbnails at the given grid height for every imported file, then the placeholders (ThumbHash) they left owing (the
+    /// app does this in the background).
     Thumbs {
         /// Grid row height in device pixels: the thumbnail cache's heights, 16 to 2048.
         #[arg(long, value_parser = thumb_height)]

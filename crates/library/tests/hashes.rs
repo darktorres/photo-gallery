@@ -7,7 +7,6 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_model::features::Hashing;
 use pg_model::notice::FilePass;
 use pg_platform::priority::Priority;
 
@@ -43,10 +42,11 @@ fn opts() -> Options {
 fn the_hashes_pass_makes_what_an_import_with_them_would_have() {
     let (mut with, ctl, _with_dir) = scanned("with");
     pg_import::import(&mut with, &opts(), false, &ctl).unwrap();
+    pg_import::hashes::hash(&mut with, &opts(), &|| true, &ctl).unwrap();
     pg_import::pairs::pair(&mut with, &opts(), &ctl).unwrap();
 
     let (mut without, ctl, _without_dir) = scanned("without");
-    pg_import::import_while(&mut without, &opts(), Hashing::Skip, false, &|| true, &ctl).unwrap();
+    pg_import::import_while(&mut without, &opts(), false, &|| true, &ctl).unwrap();
     assert_eq!(without.owed_hashes().unwrap(), 3, "every picture owes its hashes");
     assert!(state::stored_hashes(&without).unwrap().iter().all(|(_, file, pixel)| file.is_none() && pixel.is_none()));
     assert!(state::pairs(&without).unwrap().is_empty(), "no hashes, no pairs");
@@ -68,7 +68,7 @@ fn the_hashes_pass_makes_what_an_import_with_them_would_have() {
 #[test]
 fn an_unreadable_file_stays_owed_and_an_undecodable_one_fails_at_once() {
     let (mut c, ctl, dir) = scanned("failures");
-    pg_import::import_while(&mut c, &opts(), Hashing::Skip, false, &|| true, &ctl).unwrap();
+    pg_import::import_while(&mut c, &opts(), false, &|| true, &ctl).unwrap();
     // a.png is gone from the disk (the catalog does not know yet): it can't be read, so it stays owed.
     std::fs::remove_file(dir.join("images").join("a.png")).unwrap();
     // b.png is read, but it is no picture: its hashes fail, and it is an import failure at once.

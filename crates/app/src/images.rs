@@ -127,7 +127,8 @@ impl Images {
                     size: state.size,
                     rotation: state.rotation,
                     error: text.clone(),
-                    retry: true,
+                    // Tried again once the file changes, as the Thumbs pass records an undecodable file.
+                    retry: false,
                 });
             }
         }
@@ -265,11 +266,14 @@ impl Images {
         self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.rgba(View::Full))
     }
 
-    /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now.
+    /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now. A file with none yet (the
+    /// Placeholders pass owes it) is a transparent square, not an error: the cell shows nothing until it is made.
     pub fn placeholder(&self, file_id: FileId) -> Result<Rgba> {
         let p = self.catalogs.with_catalog(|c| c.placeholder(file_id))?.ok_or(Error::UnknownFile(file_id))?;
-        let hash = p.hash.ok_or(Error::NotImported)?;
-        display::placeholder(hash.as_slice(), p.turns).map_err(failed)
+        match p.hash {
+            Some(hash) => display::placeholder(hash.as_slice(), p.turns).map_err(failed),
+            None => Ok(Rgba::transparent()),
+        }
     }
 
     /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as the

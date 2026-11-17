@@ -69,6 +69,7 @@ pass-pairing = Pairing
 pass-borders = Finding borders
 pass-crop = Saving cropped copies
 pass-thumbs = Thumbnails at { $height } px
+pass-placeholders = Preparing previews
 pass-working = { $what } { $done } of { $total } · { $rate }/s · { $eta }
 # The status bar's link to the pass's failed files, beside its line
 pass-failed = { $count } failed

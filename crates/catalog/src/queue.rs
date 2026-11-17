@@ -341,16 +341,27 @@ fn file_rewritten(tx: &Transaction, file_id: FileId, rewrite: Rewrite) -> Result
              WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
             params![file_id.get(), after.0, after.1, &file_hash.0[..], before.0, before.1],
         )?;
+        // The placeholder of the same pixels follows the file too: a rating written into the file is not a reason to
+        // make it again (its identity is the file's size and mtime, `placeholders`).
+        tx.execute(
+            "UPDATE placeholders SET size = ?2, mtime = ?3 WHERE file_id = ?1 AND size = ?4 AND mtime = ?5",
+            params![file_id.get(), after.0, after.1, before.0, before.1],
+        )?;
     }
     Ok(())
 }
 
-/// A turn written into the file (its pixels or its orientation tag): the analysis made before is of the file as it is
-/// now turned back by them, so it is recorded as made at the catalog rotation that many turns back. It is stale
-/// anyway (the mtime changed); until the import redoes it, the placeholder made from it shows the file as it is now.
+/// A turn written into the file (its pixels or its orientation tag): the analysis, and the placeholder, made before are of
+/// the file as it is now turned back by them, so they are recorded as made at the catalog rotation that many turns back.
+/// Both are stale anyway (the mtime changed): until the import redoes the analysis and the Placeholders pass redoes the
+/// placeholder (the identity no longer matches), the placeholder shows the file as it is now.
 fn analysis_turned_back(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
     tx.execute(
         "UPDATE analysis SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
+        params![file_id.get(), turns.get()],
+    )?;
+    tx.execute(
+        "UPDATE placeholders SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
         params![file_id.get(), turns.get()],
     )?;
     Ok(())

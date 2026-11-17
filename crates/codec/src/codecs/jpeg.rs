@@ -12,6 +12,26 @@ use super::convert::{finish, target};
 use super::limits::reserve;
 use crate::pixels::Rgb;
 
+/// The stored size of a JPEG libjpeg-turbo's header read rejects, from zune-jpeg's headers (what [`decode`] would then
+/// decode from). No pixels: the headers only.
+pub(super) fn dimensions(scratch: &mut zune_jpeg::Scratch, bytes: &[u8]) -> ImageResult<(u32, u32)> {
+    let options =
+        || DecoderOptions::default().set_strict_mode(false).set_max_width(usize::MAX).set_max_height(usize::MAX);
+    let mut headers = JpegDecoder::new_with_scratch(ZCursor::new(bytes), options(), std::mem::take(scratch));
+    headers.set_skip_metadata(true);
+    let read = headers.decode_headers();
+    let size = headers.dimensions();
+    *scratch = headers.into_scratch();
+    read.map_err(jpeg_error)?;
+    let (w, h) = size.ok_or_else(|| {
+        ImageError::Decoding(DecodingError::new(ImageFormat::Jpeg.into(), "the headers gave no size".to_string()))
+    })?;
+    Ok((
+        u32::try_from(w).map_err(|_| ImageError::Limits(LimitError::from_kind(LimitErrorKind::DimensionError)))?,
+        u32::try_from(h).map_err(|_| ImageError::Limits(LimitError::from_kind(LimitErrorKind::DimensionError)))?,
+    ))
+}
+
 /// `image`'s `JpegDecoder` (zune-jpeg), for the JPEGs libjpeg-turbo rejects. As there, one decoder reads the
 /// headers and another, set up from them, decodes: the colour conversion zune-jpeg uses is chosen as it reads
 /// the headers, from the output colour space it was given. Both decode in the buffers of the JPEG before

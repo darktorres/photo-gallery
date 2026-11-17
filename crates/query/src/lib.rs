@@ -346,14 +346,17 @@ macro_rules! duplicates {
     };
 }
 const DUPLICATES: &str = duplicates!();
-/// An imported file without one, while no pair is owed: a file's pairs are unknown until the pairing pass has paired
-/// every owed file (the import leaves them owed, `pairs_owed`), so none is listed as not a duplicate before then. Only
-/// the owed files the pass can pair count (present, not pending), as in `Catalog::has_owed_pairs`. The subquery names
-/// nothing of the outer row, so it runs once per query: a walk of the queue, a lookup of each file.
+/// An imported file without one, while nothing is owed: a file's duplicate status is unknown until every file that can
+/// be hashed has been hashed (the Hashes pass's `hashes_owed`, the files present and not pending, as in
+/// `Catalog::has_owed_hashes`), and until the pairing pass has paired every owed file (`pairs_owed`, the same rule),
+/// so none is listed as not a duplicate before then. The subqueries name nothing of the outer row, so each runs once per
+/// query: a walk of the queue, a lookup of each file.
 const NOT_DUPLICATES: &str = concat!(
     "a.file_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM hashes_owed h WHERE h.file_id = a.file_id) AND NOT ",
     duplicates!(),
-    " AND NOT EXISTS (SELECT 1 FROM pairs_owed owed CROSS JOIN files owed_file
+    " AND NOT EXISTS (SELECT 1 FROM hashes_owed owed_hash CROSS JOIN files hashed_file
+        WHERE hashed_file.id = owed_hash.file_id AND hashed_file.missing = 0 AND hashed_file.pending = 0)
+      AND NOT EXISTS (SELECT 1 FROM pairs_owed owed CROSS JOIN files owed_file
         WHERE owed_file.id = owed.file_id AND owed_file.missing = 0 AND owed_file.pending = 0)"
 );
 

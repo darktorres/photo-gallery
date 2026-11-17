@@ -16,7 +16,6 @@ mod report;
 use pg_client::text::cli::{Line, line};
 use pg_client::text::{self, Message};
 use pg_library::folders::AddError;
-use pg_model::features::Hashing;
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
@@ -109,16 +108,20 @@ fn hash_and_report(
     Ok(())
 }
 
-/// The pairing pass, and its report: the files paired, the pairs stored, and the analyses that have no orientation
-/// hashes and so are left out (made by an older build).
+/// The duplicate hashes, then (`pair`) the pairing pass, and its report: the files paired, the pairs stored, and the
+/// analyses that have no orientation hashes and so are left out (made by an older build).
 fn pair_and_report(
     catalog: &mut Catalog,
     opts: &pg_jobs::pipeline::Options,
     ctl: &Control,
     start: Instant,
+    pair: bool,
 ) -> Result<()> {
     // The duplicate hashes an import without them left out come first: the pairs need them.
     hash_and_report(catalog, opts, ctl, start)?;
+    if !pair {
+        return Ok(());
+    }
     let s = pg_import::pairs::pair(catalog, opts, ctl)?;
     say(&Line::PairDone {
         files: s.files.to_string(),
@@ -289,8 +292,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 say(&Line::MarkedAgain { count: marked.to_string() });
             }
             let opts = pipeline.options(Priority::Normal);
-            let hashing = if no_dups { Hashing::Skip } else { Hashing::Compute };
-            let s = pg_import::import_while(&mut catalog, &opts, hashing, retry_errors, &|| true, ctl)?;
+            let s = pg_import::import_while(&mut catalog, &opts, retry_errors, &|| true, ctl)?;
             say(&Line::ImportPending { pending: s.pending.to_string() });
             say(&Line::ImportDone {
                 files: s.files.to_string(),
@@ -298,9 +300,9 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 changed: changed_while_read(s.changed),
                 seconds: secs(start.elapsed().as_secs_f64()),
             });
-            // The pairs need the hashes: a run without them pairs nothing.
-            if !no_pair && !no_dups {
-                pair_and_report(&mut catalog, &opts, ctl, start)?;
+            // The duplicates are the hashes and the pairs: none with `--no-dups`, no pairs with `--no-pair`.
+            if !no_dups {
+                pair_and_report(&mut catalog, &opts, ctl, start, !no_pair)?;
             }
         }
         Command::Hash { pipeline } => {
@@ -311,7 +313,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let count = catalog.pairs_again()?;
                 say(&Line::PairsAgain { count: count.to_string() });
             }
-            pair_and_report(&mut catalog, &pipeline.options(Priority::Normal), ctl, start)?;
+            pair_and_report(&mut catalog, &pipeline.options(Priority::Normal), ctl, start, true)?;
         }
         Command::Thumbs { height, cap, pipeline, foreground } => {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
@@ -342,6 +344,13 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 pg_thumbs::LedgerOutcome::Untouched | pg_thumbs::LedgerOutcome::Written => None,
             };
             report_pass(FilePass::Thumbs, s.unreadable, ledger_error);
+            // The placeholders the thumbnails left owing: after them, as the app's rounds run them.
+            let placed = pg_thumbs::placeholders::run_while(&mut catalog, &cache, &opts, &|| true, ctl)?;
+            say(&Line::PlaceholdersDone {
+                made: placed.made.to_string(),
+                failed: placed.failed.to_string(),
+                seconds: secs(start.elapsed().as_secs_f64()),
+            });
             drop(cache);
             let _ = printer.join();
         }
@@ -382,6 +391,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let owed = catalog.owed_pairs()?;
             if owed > 0 {
                 say(&Line::PairsOwed { count: owed.to_string() });
+            }
+            let placeholders = catalog.owed_placeholders()?;
+            if placeholders > 0 {
+                say(&Line::PlaceholdersOwed { count: placeholders.to_string() });
             }
             say(&Line::StatusWrites { queued: s.queued_writes.to_string(), failing: s.failed_writes.to_string() });
             match ThumbCache::read_usage(&layout.thumbs_path())? {

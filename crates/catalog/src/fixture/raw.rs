@@ -11,6 +11,7 @@ use crate::lifecycle::{set_borders_version, set_import_version, set_thumbs_versi
 use crate::queue;
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
+use pg_model::analysis::PLACEHOLDER_VERSION;
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
 use pg_model::rules::PathRules;
@@ -137,8 +138,15 @@ pub(crate) fn border_marks(c: &Catalog) -> i64 {
     c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap()
 }
 
-pub(crate) fn set_thumbhash(c: &Catalog, id: FileId, bytes: &[u8]) {
-    c.conn.execute("UPDATE analysis SET thumbhash = ?2 WHERE file_id = ?1", params![id.get(), bytes]).unwrap();
+/// A placeholder for file uid=197609(Torres) gid=197121 groups=197121, made at its identity and the current version, as the Placeholders pass stores it.
+pub(crate) fn set_placeholder(c: &Catalog, id: FileId, bytes: &[u8]) {
+    c.conn
+        .execute(
+            "INSERT OR REPLACE INTO placeholders(file_id, size, mtime, rotation, version, hash)
+             SELECT id, size, mtime, rotation, ?2, ?3 FROM files WHERE id = ?1",
+            params![id.get(), PLACEHOLDER_VERSION, bytes],
+        )
+        .unwrap();
 }
 
 pub(crate) fn set_file_hash(c: &Catalog, ids: &[i64], bytes: &[u8]) {

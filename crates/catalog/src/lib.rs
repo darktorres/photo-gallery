@@ -50,8 +50,10 @@ pub use types::{
     CropSource, Folder, FolderFailure, FolderRows, Listed, PairingMarks, PairingWork, Prior, Rebuilt, Recorded, Root,
     SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Status, Versions, WorkItem, WriteTarget,
 };
+pub use work::PlaceholderWork;
 pub use writers::{
-    AnalysisWriter, BordersWriter, LedgerWriter, OwedHashes, PairsBatch, PairsWriter, PairsWritten, ScanWriter,
+    AnalysisWriter, BordersWriter, LedgerWriter, OwedHashes, PairsBatch, PairsWriter, PairsWritten, PlaceholderWriter,
+    ScanWriter,
 };
 
 #[cfg(test)]

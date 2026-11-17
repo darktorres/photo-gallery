@@ -492,6 +492,7 @@ impl Inner {
                     &mut Scans,
                     &mut Import,
                     &mut Thumbs,
+                    &mut Placeholders,
                     &mut Hashes,
                     &mut Pairing,
                     &mut Borders,
@@ -643,22 +644,14 @@ impl Pass<Cx<'_>> for Scans {
     }
 }
 
-/// Analyzes what the scans found, with the duplicate hashes while duplicates detection is on. The pass ends after a batch
-/// when that changes: the next round imports the rest the other way (the files it didn't reach stay pending).
+/// Analyzes what the scans found, from each file's header alone (`pg_import::import_while`): no hash, no pixel. The
+/// duplicates are the Hashes pass's, after the thumbnails.
 struct Import;
 
 impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let features = cx.inner.features.clone();
-        let hashing = features.get().hashing();
-        let s = pg_import::import_while(
-            cx.catalog,
-            &Options::new(Priority::BelowNormal),
-            hashing,
-            false,
-            &|| features.get().hashing() == hashing,
-            &cx.inner.ctl,
-        )?;
+        let s =
+            pg_import::import_while(cx.catalog, &Options::new(Priority::BelowNormal), false, &|| true, &cx.inner.ctl)?;
         if s.files > 0 {
             cx.inner.imported();
         }
@@ -780,6 +773,24 @@ impl Pass<Cx<'_>> for Thumbs {
     }
 }
 
+/// Makes the ThumbHash placeholders the thumbnails left owing (`pg_thumbs::placeholders`), after them. It is not tied to
+/// the grid's height: a placeholder is read from a cached thumbnail or from the original, whatever the grid shows.
+struct Placeholders;
+
+impl Pass<Cx<'_>> for Placeholders {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+        // Its failures (the files that don't decode) are the Thumbs ledger's rows, which the pass writes in its batches.
+        pg_thumbs::placeholders::run_while(
+            cx.catalog,
+            cx.inner.thumbs,
+            &Options::new(Priority::Idle),
+            &|| true,
+            &cx.inner.ctl,
+        )?;
+        Ok(Step::Done)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -838,25 +849,11 @@ mod tests {
     /// A library folder `images` in a run folder, holding `names` (small PNGs), scanned and imported into the catalog
     /// beside it: the run folder, the catalog's path, and the library folder.
     fn library(prefix: &str, names: &[&str]) -> (PathBuf, PathBuf, RulePath) {
-        library_with(prefix, names, pg_model::features::Hashing::Compute)
+        library_sized(prefix, names, 8)
     }
 
-    /// [`library`], importing with `hashing` (`Skip` leaves the duplicate hashes owed).
-    fn library_with(
-        prefix: &str,
-        names: &[&str],
-        hashing: pg_model::features::Hashing,
-    ) -> (PathBuf, PathBuf, RulePath) {
-        library_sized(prefix, names, hashing, 8)
-    }
-
-    /// [`library_with`], with square pictures of `side` pixels (the border detector looks at those of 64 or more).
-    fn library_sized(
-        prefix: &str,
-        names: &[&str],
-        hashing: pg_model::features::Hashing,
-        side: u32,
-    ) -> (PathBuf, PathBuf, RulePath) {
+    /// [`library`], with square pictures of `side` pixels (the border detector looks at those of 64 or more).
+    fn library_sized(prefix: &str, names: &[&str], side: u32) -> (PathBuf, PathBuf, RulePath) {
         let dir = pg_testkit::run_folder_with("scratch_runner", prefix, &["images"]).unwrap();
         // A pattern, not a flat colour: a flat picture has too little PDQ quality to owe its pairs.
         let pixels: Vec<u8> =
@@ -869,8 +866,7 @@ mod tests {
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         assert!(c.add_root(&root).unwrap());
         pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
-        pg_import::import_while(&mut c, &Options::new(Priority::Normal), hashing, false, &|| true, &Control::new())
-            .unwrap();
+        pg_import::import_while(&mut c, &Options::new(Priority::Normal), false, &|| true, &Control::new()).unwrap();
         (dir, catalog_path, root)
     }
 
@@ -878,7 +874,7 @@ mod tests {
     /// duplicates is off, the Borders pass while borders is off. Turned back on, the Hashes pass makes the hashes owed.
     #[test]
     fn a_pass_whose_feature_is_off_does_nothing_and_its_work_stays_owed() {
-        let (dir, catalog_path, _root) = library_with("runner-off", &["a.png"], pg_model::features::Hashing::Skip);
+        let (dir, catalog_path, _root) = library("runner-off", &["a.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
@@ -897,19 +893,18 @@ mod tests {
         assert_eq!(c.owed_hashes().unwrap(), 0, "turned on, the pass makes them");
     }
 
-    /// One round makes the thumbnails, then the hashes, then the pairs, then the borders: each pass ends its phase
+    /// One round makes the thumbnails, then the placeholders, then the hashes, then the pairs, then the borders: each pass ends its phase
     /// (`Finished`) in that order. A picture imported without its hashes owes all four, at a 300-pixel size the borders
     /// look at.
     #[test]
     fn a_round_makes_the_thumbnails_then_the_hashes_then_the_pairs_then_the_borders() {
-        let (dir, catalog_path, _root) =
-            library_sized("runner-order", &["a.png"], pg_model::features::Hashing::Skip, 300);
+        let (dir, catalog_path, _root) = library_sized("runner-order", &["a.png"], 300);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
         let ended = inner.ctl.subscribe();
         inner.round(&mut None).unwrap();
-        assert_eq!(finished_order(ended.take().items), ["thumbs", "hashes", "pairs", "borders"]);
+        assert_eq!(finished_order(ended.take().items), ["thumbs", "placeholders", "hashes", "pairs", "borders"]);
     }
 
     /// The passes that ended, in the order they ended, among the four the round's order is about (a pass that ends with
@@ -920,6 +915,7 @@ mod tests {
             .filter_map(|event| match event {
                 pg_jobs::control::Event::Finished(progress) => match progress.phase {
                     pg_model::progress::Phase::Thumbs { .. } => Some("thumbs"),
+                    pg_model::progress::Phase::Placeholders => Some("placeholders"),
                     pg_model::progress::Phase::Hashes => Some("hashes"),
                     pg_model::progress::Phase::Pairing => Some("pairs"),
                     pg_model::progress::Phase::Borders => Some("borders"),
@@ -934,8 +930,7 @@ mod tests {
     /// and the borders still run after the thumbnails. (Before this, the error ended the round, and they never ran.)
     #[test]
     fn a_thumbnail_cache_error_is_said_and_the_round_goes_on() {
-        let (dir, catalog_path, _root) =
-            library_sized("runner-cache-error", &["a.png"], pg_model::features::Hashing::Skip, 300);
+        let (dir, catalog_path, _root) = library_sized("runner-cache-error", &["a.png"], 300);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         pg_thumbs::fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
         let sink = RecordingSink::new();
@@ -947,7 +942,7 @@ mod tests {
             posted.iter().any(|n| matches!(n, Notice::CacheNotStored { error } if error.contains("refuses"))),
             "{posted:?}"
         );
-        assert_eq!(finished_order(ended.take().items), ["thumbs", "hashes", "pairs", "borders"]);
+        assert_eq!(finished_order(ended.take().items), ["thumbs", "placeholders", "hashes", "pairs", "borders"]);
     }
 
     /// The thumbnail cache beside the catalog, holding at most `cap` bytes (`None`: the default), leaked as the job's

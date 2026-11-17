@@ -12,6 +12,7 @@ use crate::core::{Catalog, ReadOnly, Reader};
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, PairingWork, WorkItem, folder_path, pairing_marks};
+use pg_model::analysis::PLACEHOLDER_VERSION;
 
 /// `Catalog::pending_import`'s query.
 pub(crate) fn pending_import_sql(retry_errors: bool) -> &'static str {
@@ -37,7 +38,18 @@ pub(crate) fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound
 }
 
 /// [`work_list`] of the rows a statement gave (`rows`, from its parameters or none).
-fn work_list_of(conn: &Connection, mut rows: rusqlite::Rows<'_>, bound: usize) -> Result<WorkList<WorkItem>> {
+fn work_list_of(conn: &Connection, rows: rusqlite::Rows<'_>, bound: usize) -> Result<WorkList<WorkItem>> {
+    work_list_mapped(conn, rows, bound, |item, _| Ok(item))
+}
+
+/// [`work_list`]'s rows, each made into the item `make` gives from its work item and its row (`make` reads the columns
+/// after `work_columns!()` by index: the list reads the first seven).
+pub(crate) fn work_list_mapped<T>(
+    conn: &Connection,
+    mut rows: rusqlite::Rows<'_>,
+    bound: usize,
+    make: impl Fn(WorkItem, &rusqlite::Row<'_>) -> Result<T>,
+) -> Result<WorkList<T>> {
     let (mut list, mut folder) = (WorkList::default(), None);
     while let Some(r) = rows.next()? {
         if folder.is_none() {
@@ -47,17 +59,38 @@ fn work_list_of(conn: &Connection, mut rows: rusqlite::Rows<'_>, bound: usize) -
         }
         let Some(folder) = folder.as_mut() else { unreachable!("made above") };
         let path = list.file(r.get(1)?, r.get_ref(2)?.as_blob()?, |arena| folder_path(folder, r, arena))?;
-        list.items.push(WorkItem {
+        let item = WorkItem {
             id: FileId::new(r.get(0)?),
             path,
             size: r.get(3)?,
             mtime: r.get(4)?,
             rotation: Turns::new(r.get(5)?),
             kind: crate::types::kind_at(r, 6)?,
-        });
+        };
+        list.items.push(make(item, r)?);
     }
     Ok(list)
 }
+
+/// A file the Placeholders pass makes a placeholder for: its work item, and the time of a video's poster frame (0
+/// where its analysis has none; an image's, unused).
+pub struct PlaceholderWork {
+    pub item: WorkItem,
+    pub poster_ms: i64,
+}
+
+/// The placeholder work (`Catalog::pending_placeholders`, `Catalog::owed_placeholders`): the present, non-pending files
+/// whose analysis is good and whose placeholder is not at their identity and the current version (`?1`). A file the app
+/// is writing is left out until the write is done, and a file the Thumbs pass failed at its identity is left out until
+/// it changes or Retry clears its row.
+const OWED_PLACEHOLDERS: &str = "FROM files f
+     JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
+     LEFT JOIN placeholders p ON p.file_id = f.id AND p.size = f.size AND p.mtime = f.mtime
+         AND p.rotation = f.rotation AND p.version = ?1
+     WHERE f.missing = 0 AND f.pending = 0 AND p.file_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM file_writes w WHERE w.file_id = f.id AND w.temp IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
+           AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)";
 
 /// The item of file `id` as the work lists have it (`work_columns!`), or `None` when it isn't in the catalog.
 pub(crate) fn work_item(conn: &Connection, id: FileId) -> Result<Option<WorkItem>> {
@@ -374,6 +407,8 @@ impl Catalog {
             work_columns!(),
             " FROM analysis a CROSS JOIN files f
              WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
+               AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
+                   AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)
              ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
         ))?;
         let list = work_list(&tx, &mut stmt, bound)?;
@@ -398,6 +433,31 @@ impl Catalog {
         drop(stmt);
         tx.commit()?;
         Ok(list)
+    }
+
+    /// The files the Placeholders pass has to make a placeholder for (`OWED_PLACEHOLDERS`), in on-disk order.
+    pub fn pending_placeholders(&self) -> Result<WorkList<PlaceholderWork>> {
+        let tx = self.conn.unchecked_transaction()?;
+        // An upper bound: the present, non-pending files.
+        let bound: usize =
+            tx.query_row("SELECT count(*) FROM files WHERE missing = 0 AND pending = 0", [], |r| r.get(0))?;
+        let mut stmt = tx.prepare(&format!(
+            "SELECT {}, CASE WHEN f.kind = '{}' THEN coalesce(a.poster_ms, 0) END AS poster_ms {OWED_PLACEHOLDERS}
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
+            work_columns!(),
+            pg_model::kind_video!(),
+        ))?;
+        let list = work_list_mapped(&tx, stmt.query([PLACEHOLDER_VERSION])?, bound, |item, r| {
+            Ok(PlaceholderWork { item, poster_ms: r.get::<_, Option<i64>>(7)?.unwrap_or(0) })
+        })?;
+        drop(stmt);
+        tx.commit()?;
+        Ok(list)
+    }
+
+    /// How many files the Placeholders pass still owes a placeholder (the rows `pending_placeholders` gives).
+    pub fn owed_placeholders(&self) -> Result<usize> {
+        Ok(self.conn.query_row(&format!("SELECT count(*) {OWED_PLACEHOLDERS}"), [PLACEHOLDER_VERSION], |r| r.get(0))?)
     }
 
     /// How many present, non-pending files are stored without their duplicate hashes (`hashes_owed`): the status's count
@@ -434,6 +494,17 @@ impl Catalog {
     /// How many pictures owe their pairs: the files the pairing pass has yet to pair (present and not pending).
     pub fn owed_pairs(&self) -> Result<usize> {
         Ok(self.conn.query_row(&format!("SELECT count(*) {OWED}"), [], |r| r.get(0))?)
+    }
+
+    /// Whether any file owes its duplicate hashes (`hashes_owed`, present and not pending): one probe. The duplicate
+    /// list waits while one does (`NOT_DUPLICATES`).
+    pub fn has_owed_hashes(&self) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM hashes_owed h JOIN files ff ON ff.id = h.file_id
+             WHERE ff.missing = 0 AND ff.pending = 0)",
+            [],
+            |r| r.get(0),
+        )?)
     }
 
     /// Whether any picture owes its pairs ([`Catalog::owed_pairs`] above zero): the pairing pass's "nothing to do",

@@ -27,6 +27,8 @@ pub enum Phase {
     Thumbs {
         height: ThumbHeight,
     },
+    /// The ThumbHash placeholders the thumbnails left owing (the Placeholders pass, ).
+    Placeholders,
 }
 
 /// The count at a time into a phase: where a rate's window starts.

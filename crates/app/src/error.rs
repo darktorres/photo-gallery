@@ -12,9 +12,6 @@ pub enum Error {
     /// A write of the app's into the file was still in progress when the wait for it ended.
     #[error("file {} is being rewritten", .0.get())]
     Rewriting(pg_model::ids::FileId),
-    /// The file has no placeholder yet: it isn't imported.
-    #[error("not imported yet")]
-    NotImported,
     /// The original can't be read (offline, gone): why.
     #[error("original unavailable: {0}")]
     Original(String),

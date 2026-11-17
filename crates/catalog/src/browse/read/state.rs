@@ -82,9 +82,9 @@ impl Catalog {
         let conn = &self.conn;
         Ok(conn
             .prepare_cached(concat!(
-                "SELECT a.thumbhash, (f.rotation - coalesce(a.rotation, f.rotation) + 4) % 4, ",
+                "SELECT p.hash, (f.rotation - coalesce(p.rotation, f.rotation) + 4) % 4, ",
                 file_state_columns!(),
-                " FROM files f LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1"
+                " FROM files f LEFT JOIN placeholders p ON p.file_id = f.id WHERE f.id = ?1"
             ))?
             .query_row([file_id.get()], |r| {
                 let kept: u8 = r.get(1)?;

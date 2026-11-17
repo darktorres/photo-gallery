@@ -11,7 +11,7 @@ use std::rc::Rc;
 use rusqlite::types::Value;
 use rusqlite::{CachedStatement, Connection, OptionalExtension, Statement, Transaction, params};
 
-use pg_model::analysis::{Analysis, FileHash, ImageHashes};
+use pg_model::analysis::{Analysis, FileHash, ImageHashes, PLACEHOLDER_VERSION, ThumbHash};
 use pg_model::detection::Detection;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::notice::FilePass;
@@ -347,6 +347,7 @@ pub struct AnalysisWriter<'tx> {
     delete_rating: Statement<'tx>,
     set_file_rating: Statement<'tx>,
     delete_file_rating: Statement<'tx>,
+    delete_thumbs_failure: Statement<'tx>,
 }
 
 impl<'tx> AnalysisWriter<'tx> {
@@ -357,11 +358,10 @@ impl<'tx> AnalysisWriter<'tx> {
             delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
-                    file_hash, pixel_hash, format, orientation, width, height, pdq_dihedral, pdq_quality, thumbhash,
-                    frames, taken, taken_utc, duration_ms, poster_ms, borders_due)
-                 VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                         CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END,
-                         CASE WHEN ?16 THEN ?15 END, ?17, ?18, 0)",
+                    format, orientation, width, height, frames, taken, taken_utc, duration_ms, poster_ms, borders_due)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), NULL, ?7, ?8, ?9, ?10, ?11,
+                         CASE WHEN ?13 THEN unixepoch(?12, 'unixepoch', 'localtime') ELSE ?12 END,
+                         CASE WHEN ?13 THEN ?12 END, ?14, ?15, 0)",
             )?,
             owe_pairs: tx.prepare("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
             owe_hashes: tx.prepare("INSERT OR IGNORE INTO hashes_owed(file_id) VALUES (?1)")?,
@@ -392,6 +392,7 @@ impl<'tx> AnalysisWriter<'tx> {
             delete_rating: tx.prepare(DELETE_RATING)?,
             set_file_rating: tx.prepare(SET_FILE_RATING)?,
             delete_file_rating: tx.prepare(DELETE_FILE_RATING)?,
+            delete_thumbs_failure: tx.prepare("DELETE FROM file_failures WHERE file_id = ?1 AND pass = 'thumbs'")?,
         })
     }
 
@@ -402,55 +403,40 @@ impl<'tx> AnalysisWriter<'tx> {
         crate::current::query_current(&mut self.current, item.id, &item.listed())
     }
 
-    /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
+    /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored. The
+    /// duplicate hashes are not in it: the import stores none, and the file owes them (`hashes_owed`) until the Hashes
+    /// pass stores them. Its placeholder is not in it either: `placeholders` is keyed to the file, and outlives this row.
     pub fn store_analysis(&mut self, item: &WorkItem, analyzed: &Analysis) -> Result<bool> {
         if !self.current(item)? {
             return Ok(false);
         }
         let a = analyzed;
-        // A re-analysis invalidates the file's tier-1 pairs: it owes new ones (`pairs_owed`), which the pairing pass
-        // makes. The REPLACE below deletes the old analysis and, through the foreign key, its `pairs_owed` row, so a
-        // picture owes its pairs exactly when the row is put back below.
+        // A re-analysis invalidates the file's tier-1 pairs and its hashes: the REPLACE below deletes the old analysis and,
+        // through the foreign key, its `pairs_owed` and `hashes_owed` rows, so the new row owes both again.
         self.delete_pairs.execute([item.id.get()])?;
         let (taken, taken_utc) = a.taken.map_or((None, false), |t| {
             let (seconds, utc) = t.parts();
             (Some(seconds), utc)
         });
         let (image, video) = (a.image(), a.video());
-        // The duplicate hashes, when they were computed: none when duplicates detection was off (the import then owes them).
-        let file_hash = a.file_hash().map(|h| h.0);
-        let pixels = image.and_then(|i| i.hashes.as_ref()).map(|h| &h.pixels);
-        // A picture of a reliable quality owes its pairs (what the pass pairs, `pairs.rs`).
-        let owes_pairs = pixels.is_some_and(|p| p.pdq.quality >= pg_model::pdq::MIN_QUALITY);
         self.analysis.execute(params![
             item.id.get(),
             a.version,
             item.size,
             item.mtime,
-            file_hash.as_ref().map(|h| &h[..]),
-            pixels.map(|p| &p.pixel_hash[..]),
+            item.rotation.get(),
+            item.kind.key(),
             a.format(),
             a.orientation.get(),
             a.width,
             a.height,
-            pixels.map(|p| pg_model::pdq::to_blob(&p.pdq.orientations)),
-            pixels.map(|p| p.pdq.quality),
-            a.thumbhash.as_slice(),
             a.frames,
             taken,
             taken_utc,
             video.map(|v| v.duration_ms),
             video.map(|v| v.poster_ms),
-            item.rotation.get(),
-            item.kind.key(),
         ])?;
-        if owes_pairs {
-            self.owe_pairs.execute([item.id.get()])?;
-        }
-        // Stored without its duplicate hashes (duplicates detection was off): the Hashes pass makes them.
-        if !a.hashed() {
-            self.owe_hashes.execute([item.id.get()])?;
-        }
+        self.owe_hashes.execute([item.id.get()])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id.get()])?;
         self.delete_sides.execute([item.id.get()])?;
@@ -493,6 +479,8 @@ impl<'tx> AnalysisWriter<'tx> {
             return Ok(false);
         }
         self.delete_pairs.execute([item.id.get()])?;
+        // A failed analysis is the file's failure now: a row the Thumbs or Placeholders pass left for it is stale.
+        self.delete_thumbs_failure.execute([item.id.get()])?;
         self.failure.execute(params![
             item.id.get(),
             self.import,
@@ -648,6 +636,43 @@ impl<'tx> PairsWriter<'tx> {
     }
 }
 
+/// The Placeholders pass's write: a file's placeholder at the identity it was made at, replacing one made at another
+/// identity or version. Guarded as `IS_CURRENT` is: the file as it was listed, and no write of the app's into it in
+/// progress. A narrow upsert (`placeholders` is keyed to the file, so an analysis's REPLACE never touches it).
+const SET_PLACEHOLDER: &str = concat!(
+    "INSERT INTO placeholders(file_id, size, mtime, rotation, version, hash)
+     SELECT files.id, files.size, files.mtime, files.rotation, ?5, ?6 FROM files
+     WHERE files.id = ?1 AND files.size = ?2 AND files.mtime = ?3 AND files.rotation = ?4 AND ",
+    not_being_written!(files),
+    " ON CONFLICT(file_id) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
+         rotation = excluded.rotation, version = excluded.version, hash = excluded.hash"
+);
+
+/// The Placeholders pass's writes, in one transaction of the caller's.
+pub struct PlaceholderWriter<'tx> {
+    set: Statement<'tx>,
+}
+
+impl<'tx> PlaceholderWriter<'tx> {
+    pub(crate) fn new(tx: &'tx Transaction) -> Result<PlaceholderWriter<'tx>> {
+        Ok(PlaceholderWriter { set: tx.prepare(SET_PLACEHOLDER)? })
+    }
+
+    /// Store `hash` as the file's placeholder, made at `item`'s identity. Whether it was stored: not when the file has
+    /// changed since it was listed or a write of the app's into it is in progress (it then stays owed).
+    pub fn store(&mut self, item: &WorkItem, hash: &ThumbHash) -> Result<bool> {
+        let stored = self.set.execute(params![
+            item.id.get(),
+            item.size,
+            item.mtime,
+            item.rotation.get(),
+            PLACEHOLDER_VERSION,
+            hash.as_slice(),
+        ])?;
+        Ok(stored > 0)
+    }
+}
+
 /// The borders pass's writes.
 pub struct BordersWriter<'tx> {
     current: Statement<'tx>,
@@ -661,7 +686,8 @@ impl<'tx> BordersWriter<'tx> {
         Ok(BordersWriter {
             current: tx.prepare(crate::current::IS_CURRENT)?,
             cut: tx.prepare(
-                "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
+                "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0,
+                    width = coalesce(?6, width), height = coalesce(?7, height)
                  WHERE file_id = ?1",
             )?,
             delete_sides: tx.prepare(DELETE_SIDES)?,
@@ -673,10 +699,17 @@ impl<'tx> BordersWriter<'tx> {
         })
     }
 
-    /// Record borders looked for (`Catalog::pending_borders`; `None`: not looked
-    /// for), replacing what was there, unless the file changed meanwhile (the import then analyzes it again, and the
-    /// borders are due again) or a write of the app's into it is in progress (they stay due).
-    pub fn store_borders(&mut self, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
+    /// Record borders looked for (`Catalog::pending_borders`; `None`: not looked for), replacing what was there. `size`
+    /// is the stored size the decode found, upright: the import's header read is corrected to it in the same write, so
+    /// the cut and the size a crop of it keeps are one fact (`analysis_cut_stamp` marks the change); `None` keeps the
+    /// stored size. Unless the file changed meanwhile (the import then analyzes it again, and the borders are due again)
+    /// or a write of the app's into it is in progress (they stay due).
+    pub fn store_borders(
+        &mut self,
+        item: &WorkItem,
+        size: Option<(u32, u32)>,
+        borders: Option<&Detection>,
+    ) -> Result<()> {
         if !crate::current::query_current(&mut self.current, item.id, &item.listed())? {
             return Ok(());
         }
@@ -686,7 +719,9 @@ impl<'tx> BordersWriter<'tx> {
             cut.map(|c| c[0]),
             cut.map(|c| c[1]),
             cut.map(|c| c[2]),
-            cut.map(|c| c[3])
+            cut.map(|c| c[3]),
+            size.map(|s| s.0),
+            size.map(|s| s.1),
         ])?;
         self.delete_sides.execute([item.id.get()])?;
         for s in borders.map_or(&[][..], |b| &b.sides) {
@@ -826,9 +861,8 @@ mod tests {
     use crate::test_support::*;
     use crate::{Catalog, PairingWork, PairsBatch, PairsWritten, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
-    use pg_model::analysis::{Analysis, FileHash, ImageFacts, ImageHashes, Media, PixelHashes, Taken, ThumbHash};
+    use pg_model::analysis::{Analysis, FileHash, ImageHashes, PixelHashes, Taken};
     use pg_model::detection::Detection;
-    use pg_model::format::Format;
     use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
     use pg_model::media::Ext;
     use pg_model::name::Name;
@@ -1177,7 +1211,6 @@ mod tests {
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
-            thumbhash: ThumbHash::default(),
             frames: 1,
             taken: None,
             media: a_jpeg(),
@@ -1191,7 +1224,7 @@ mod tests {
         assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
         let (_, since) = changed_since(&c, 0);
         let tx = c.tx().unwrap();
-        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some((400, 300)), Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [Some(0), Some(41), Some(0), Some(41)]);
         // The cut and its sides (`analysis_cut_stamp`, `border_sides_stamp_insert`) name the file to a client that keeps
@@ -1229,7 +1262,10 @@ mod tests {
         let due = c.pending_borders().unwrap();
         assert_eq!(due.len(), 1);
         let tx = c.tx().unwrap();
-        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
+        tx.borders_writer()
+            .unwrap()
+            .store_borders(&due.items[0], Some((400, 300)), Some(&Detection::none(400, 300)))
+            .unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [Some(0); 4]);
         assert!(c.border_sides(item.id).unwrap().is_empty());
@@ -1239,7 +1275,7 @@ mod tests {
 
         // Analyzed again (the file changed): the old borders go, the new ones are due.
         let tx = c.tx().unwrap();
-        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some((400, 300)), Some(&found)).unwrap();
         tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [None; 4]);
@@ -1268,7 +1304,6 @@ mod tests {
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
-            thumbhash: ThumbHash::default(),
             frames: 1,
             taken: None,
             media: a_jpeg(),
@@ -1303,7 +1338,7 @@ mod tests {
         let sides = [top].into_iter().collect();
         let found = Detection { width: 400, height: 300, content: [0, 41, 400, 300], sides };
         let tx = c.tx().unwrap();
-        tx.borders_writer().unwrap().store_borders(&item, Some(&found)).unwrap();
+        tx.borders_writer().unwrap().store_borders(&item, Some((400, 300)), Some(&found)).unwrap();
         tx.commit().unwrap();
         let now = stamped(&c, before);
 
@@ -1365,14 +1400,13 @@ mod tests {
                 orientation: Orientation::from_tag(orientation),
                 width,
                 height,
-                thumbhash: ThumbHash::default(),
                 frames: 1,
                 taken: None,
-                media: a_jpeg_with_file([u8::try_from(n).unwrap(); 32]),
+                media: a_jpeg(),
             };
             let tx = c.tx().unwrap();
             tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
-            tx.borders_writer().unwrap().store_borders(&item, Some(&borders)).unwrap();
+            tx.borders_writer().unwrap().store_borders(&item, Some((400, 300)), Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {
                 c.set_border_mark(item.id, true).unwrap();
@@ -1436,20 +1470,28 @@ mod tests {
 
     /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all four kept orientations (the
     /// writer does not check them).
-    fn picture(hash: [u8; 32], quality: u8) -> Analysis {
+    /// A picture as the import and the Hashes pass store it: its analysis, and its duplicate hashes (which the import
+    /// no longer makes: `store_for` stores them after the analysis, as the Hashes pass does).
+    struct Picture {
+        analysis: Analysis,
+        hashes: ImageHashes,
+    }
+
+    fn picture(hash: [u8; 32], quality: u8) -> Picture {
         let pdq =
             pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash(hash); pg_model::pdq::ORIENTATIONS], quality };
         let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
-        let hashes = Some(ImageHashes { file: FileHash([1; 32]), pixels });
-        Analysis {
-            version: IMPORT_VERSION,
-            orientation: Orientation::UPRIGHT,
-            width: 400,
-            height: 300,
-            thumbhash: ThumbHash::default(),
-            frames: 1,
-            taken: None,
-            media: Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, hashes }),
+        Picture {
+            analysis: Analysis {
+                version: IMPORT_VERSION,
+                orientation: Orientation::UPRIGHT,
+                width: 400,
+                height: 300,
+                frames: 1,
+                taken: None,
+                media: a_jpeg(),
+            },
+            hashes: ImageHashes { file: FileHash([1; 32]), pixels },
         }
     }
 
@@ -1458,11 +1500,25 @@ mod tests {
         crate::work::work_item(&c.conn, FileId::new(id)).unwrap().unwrap()
     }
 
-    /// Stores `stored` as the import of file `id` stores it.
-    fn store_for(c: &mut Catalog, id: i64, stored: &Analysis) {
+    /// Stores the analysis of `stored` as the import of file `id` stores it (no hashes: they are owed).
+    fn store_analysis_for(c: &mut Catalog, id: i64, stored: &Analysis) {
         let item = item_of(c, id);
         let tx = c.tx().unwrap();
         assert!(tx.analysis_writer(versions().import).unwrap().store_analysis(&item, stored).unwrap());
+        tx.commit().unwrap();
+    }
+
+    /// Stores `stored` as the import and then the Hashes pass store it.
+    fn store_for(c: &mut Catalog, id: i64, stored: &Picture) {
+        store_analysis_for(c, id, &stored.analysis);
+        let item = item_of(c, id);
+        let tx = c.tx().unwrap();
+        assert!(
+            tx.analysis_writer(versions().import)
+                .unwrap()
+                .store_hashes(&item, &crate::OwedHashes::Image(stored.hashes.clone()))
+                .unwrap()
+        );
         tx.commit().unwrap();
     }
 
@@ -1692,16 +1748,9 @@ mod tests {
     /// the pairs must see. Stored again with the same values, they move nothing.
     fn the_hashes_stored_later_move_the_pairing_epoch(rules: PathRules) {
         let mut c = pictures(rules, 1);
-        let mut unhashed = picture([7; 32], 100);
-        if let Media::Image(facts) = &mut unhashed.media {
-            facts.hashes = None;
-        }
-        store_for(&mut c, 1, &unhashed);
+        store_analysis_for(&mut c, 1, &picture([7; 32], 100).analysis);
         assert_eq!(c.owed_hashes().unwrap(), 1, "stored without its hashes, it owes them");
-        let hashes = || match picture([7; 32], 100).media {
-            Media::Image(facts) => crate::OwedHashes::Image(facts.hashes.expect("a picture with hashes")),
-            _ => unreachable!("a picture is an image"),
-        };
+        let hashes = || crate::OwedHashes::Image(picture([7; 32], 100).hashes);
         let stored = |c: &mut Catalog| {
             let item = item_of(c, 1);
             let tx = c.tx().unwrap();

@@ -107,7 +107,7 @@ fn merged_folders_drop_the_anchor() {
 
 fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rules: PathRules) {
     let c = library(rules);
-    raw::set_thumbhash(&c, FileId::new(1), &[1]);
+    raw::set_placeholder(&c, FileId::new(1), &[1]);
     let state = || c.file_state(FileId::new(1)).unwrap().unwrap();
     let turns = || c.placeholder(FileId::new(1)).unwrap().unwrap().turns;
     let size = raw::file_size(&c, FileId::new(1));
@@ -759,14 +759,15 @@ under_both_rules!(
 );
 
 /// A picture whose duplicate hashes are owed (`hashes_owed`, stored while duplicates detection was off) is not "not a
-/// duplicate": it is not hashed yet, so the list would say what it does not know. It is listed once the hashes are made.
+/// duplicate": it is not hashed yet, and no picture is known to be unique while any is owed (the pairs' rule: the list
+/// waits for the Hashes pass, and is listed once the hashes are made).
 fn owed_hashes_are_not_listed_as_not_duplicates(rules: PathRules) {
     let c = mixed_library(rules);
     let no_duplicates =
         |c: &crate::Catalog| ids(c, "", true, &Query { duplicates: Some(false), ..Query::default() }, Sort::default());
     assert_eq!(no_duplicates(&c), [6, 5]);
     c.conn.execute("INSERT INTO hashes_owed(file_id) VALUES (5)", []).unwrap();
-    assert_eq!(no_duplicates(&c), [6], "an owed picture is not known to be unique");
+    assert!(no_duplicates(&c).is_empty(), "an owed picture is not known to be unique, so none is");
     c.conn.execute("DELETE FROM hashes_owed WHERE file_id = 5", []).unwrap();
     assert_eq!(no_duplicates(&c), [6, 5]);
 }

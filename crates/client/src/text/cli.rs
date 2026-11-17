@@ -111,6 +111,16 @@ pub enum Line {
     HashesOwed {
         count: String,
     },
+    /// The Placeholders pass: the placeholders made, the files whose couldn't be made.
+    PlaceholdersDone {
+        made: String,
+        failed: String,
+        seconds: String,
+    },
+    /// Files without a placeholder yet (`gallery status`): made by `gallery thumbs`.
+    PlaceholdersOwed {
+        count: String,
+    },
     /// The pairing pass: the files paired, the pairs stored.
     PairDone {
         files: String,
@@ -274,6 +284,8 @@ impl Line {
             Line::ImportDone { .. } => "cli-import-done",
             Line::HashesDone { .. } => "cli-hashes-done",
             Line::HashesOwed { .. } => "cli-hashes-owed",
+            Line::PlaceholdersDone { .. } => "cli-placeholders-done",
+            Line::PlaceholdersOwed { .. } => "cli-placeholders-owed",
             Line::PairDone { .. } => "cli-pair-done",
             Line::PairTimings { .. } => "cli-pair-timings",
             Line::PairsAgain { .. } => "cli-pairs-again",
@@ -357,6 +369,10 @@ impl Line {
                 ("seconds", seconds),
             ],
             Line::HashesOwed { count } => vec![("count", count)],
+            Line::PlaceholdersDone { made, failed, seconds } => {
+                vec![("made", made), ("failed", failed), ("seconds", seconds)]
+            }
+            Line::PlaceholdersOwed { count } => vec![("count", count)],
             Line::PairDone { files, pairs, seconds } => vec![("files", files), ("pairs", pairs), ("seconds", seconds)],
             Line::PairTimings { load, store, join, sort, scan, idle, paused, write, commit } => {
                 vec![
@@ -473,6 +489,8 @@ impl Line {
             Line::ImportDone { files: s(), failed: s(), changed: s(), seconds: s() },
             Line::HashesDone { files: s(), stored: s(), failed: s(), unreadable: s(), seconds: s() },
             Line::HashesOwed { count: s() },
+            Line::PlaceholdersDone { made: s(), failed: s(), seconds: s() },
+            Line::PlaceholdersOwed { count: s() },
             Line::PairDone { files: s(), pairs: s(), seconds: s() },
             Line::PairTimings {
                 load: s(),

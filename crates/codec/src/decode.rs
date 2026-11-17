@@ -40,6 +40,15 @@ impl Info {
     }
 }
 
+/// A file's upright size and its orientation, from its header alone: what [`Decoder::decode_into`] reports for it, with
+/// no pixels read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Dims {
+    pub width: u32,
+    pub height: u32,
+    pub orientation: Orientation,
+}
+
 /// An image decoded upright (`pg_render::display::decode`, which reads the file's orientation).
 pub struct Decoded {
     pub image: Rgb,
@@ -143,6 +152,25 @@ impl Decoder {
             }
         };
         Ok(Info { format, orientation, full_width, full_height, scale_denom })
+    }
+
+    /// The upright size and orientation of a file, from its header alone (no pixels): the same sizes
+    /// [`Decoder::decode_into`] reports. A JPEG takes libjpeg-turbo's header read, and zune-jpeg's where that rejects
+    /// it, as the decode does.
+    pub fn dimensions(&mut self, bytes: &[u8], format: Format, exif: Orientation, turns: Turns) -> Result<Dims> {
+        let orientation = exif.compose(turns);
+        let (width, height) = match format {
+            Format::Jpeg => match self.jpeg.read_header(bytes) {
+                Ok(header) => (
+                    u32::try_from(header.width).context("JPEG width over u32")?,
+                    u32::try_from(header.height).context("JPEG height over u32")?,
+                ),
+                Err(_) => self.codecs.dimensions(bytes, format)?,
+            },
+            _ => self.codecs.dimensions(bytes, format)?,
+        };
+        let info = Info { format, orientation, full_width: width, full_height: height, scale_denom: 1 }.upright();
+        Ok(Dims { width: info.full_width, height: info.full_height, orientation })
     }
 
     /// The stored (not yet oriented) image into `out`; the scale denominator and the full stored size.

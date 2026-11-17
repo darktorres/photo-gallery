@@ -136,6 +136,8 @@ pub(crate) const CARRIED: &[&str] = &[
     "scans",
     "folders",
     "files",
+    // Keyed to `files` alone: its rows (each file's placeholder) are its own, and outlive a re-analysis.
+    "placeholders",
     "analysis",
     // After `analysis`: its rows are keyed by the analyses'.
     "pairs_owed",

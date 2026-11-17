@@ -72,13 +72,18 @@ impl Options {
 }
 
 /// How an item is read, as `read` says.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub enum Read {
     /// Whole, from the path `read` wrote into the reader's buffer ([`NativePath::set`]): `process` gets its bytes.
     File,
     /// Not by the pipeline: `process` gets no bytes and opens the file itself (a video, which is streamed, not
     /// loaded). `bytes` is what it counts as read (the file's size, or 0 for a part of it).
     Streamed { bytes: u64 },
+    /// The first `len` bytes of the file, and the rest only when `complete` says those are not enough (it is given the
+    /// prefix as read: a JPEG whose header is whole in it needs no more). A file no longer than `len` is read whole.
+    /// The rest is read one file at a time, after the pass's other reads in flight have their buffers (the budget is
+    /// for the prefixes; a rest is one file past it, as an oversize file is). A `complete` that panics is not complete.
+    Prefix { len: usize, complete: fn(&[u8]) -> bool },
 }
 
 /// What a worker sends back: an item's result with the bytes it counts as read, or the error of a setup that failed
@@ -135,6 +140,10 @@ where
                     let Some(item) = items.get(i) else { break };
                     let (bytes, streamed) = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
                         Ok(Read::File) => match read_whole(pool, i, &wide) {
+                            Some(bytes) => (bytes, 0),
+                            None => break, // stopped
+                        },
+                        Ok(Read::Prefix { len, complete }) => match read_prefix(pool, i, &wide, len, complete) {
                             Some(bytes) => (bytes, 0),
                             None => break, // stopped
                         },
@@ -386,23 +395,67 @@ fn read_error(e: std::io::Error) -> anyhow::Error {
     }
 }
 
+/// The file at `path`, open for reading, and its size.
+fn open_sized(path: &NativePath) -> std::io::Result<(std::fs::File, usize)> {
+    let file = pg_platform::file::open_read(path)?;
+    let size = usize::try_from(file.metadata()?.len())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::FileTooLarge, e))?;
+    Ok((file, size))
+}
+
 /// Read the file at `path` (item `i`) into a buffer from the pool, its size reserved in list
 /// order. `None` once the pass stops.
 fn read_whole<'p>(pool: &'p Pool, i: usize, path: &NativePath) -> Option<std::io::Result<Lease<'p>>> {
-    let sized = |f: std::fs::File| -> std::io::Result<(usize, std::fs::File)> {
-        let size = usize::try_from(f.metadata()?.len())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::FileTooLarge, e))?;
-        Ok((size, f))
-    };
-    let mut file = match pg_platform::file::open_read(path).and_then(sized) {
-        Ok((size, file)) => (file, size),
+    let (mut file, size) = match open_sized(path) {
+        Ok(opened) => opened,
         Err(e) => {
             pool.pass(i);
             return Some(Err(e));
         }
     };
-    let mut lease = pool.take(i, file.1)?;
-    Some(file.0.read_to_end(&mut lease.bytes).map(|_| lease))
+    let mut lease = pool.take(i, size)?;
+    Some(file.read_to_end(&mut lease.bytes).map(|_| lease))
+}
+
+/// [`read_whole`] of the first `len` bytes of the file at `path` (item `i`), and of the rest when `complete` says the
+/// prefix is not enough ([`Read::Prefix`]). The admission is the whole read's: the item's turn in the pool comes before
+/// the read, so the reads in flight stay in list order. `None` once the pass stops.
+fn read_prefix<'p>(
+    pool: &'p Pool,
+    i: usize,
+    path: &NativePath,
+    len: usize,
+    complete: fn(&[u8]) -> bool,
+) -> Option<std::io::Result<Lease<'p>>> {
+    let (mut file, size) = match open_sized(path) {
+        Ok(opened) => opened,
+        Err(e) => {
+            pool.pass(i);
+            return Some(Err(e));
+        }
+    };
+    if size <= len {
+        let mut lease = pool.take(i, size)?;
+        return Some(file.read_to_end(&mut lease.bytes).map(|_| lease));
+    }
+    let mut lease = pool.take(i, len)?;
+    let prefix = u64::try_from(len).unwrap_or(u64::MAX);
+    if let Err(e) = (&mut file).take(prefix).read_to_end(&mut lease.bytes) {
+        return Some(Err(e));
+    }
+    // A panic in `complete` is the prefix not being complete: the file is read whole, as the rest of this file would be.
+    if let Ok(true) = panics::catch(AssertUnwindSafe(|| complete(&lease.bytes))) {
+        return Some(Ok(lease));
+    }
+    // One oversize read at a time: the others wait here, holding their prefixes.
+    let _one = pool.oversize.lock().unwrap_or_else(PoisonError::into_inner);
+    if pool.is_stopped() {
+        return None;
+    }
+    if let Err(e) = lease.grow_to(size) {
+        return Some(Err(e));
+    }
+    Some(file.read_to_end(&mut lease.bytes).map(|_| lease))
 }
 
 /// Ends the pass: tells the readers, the pool, and the readers paused at a checkpoint (which look at the stop under
@@ -425,6 +478,8 @@ struct Pool {
     slots: usize,
     state: Mutex<PoolState>,
     changed: Condvar,
+    /// Held by the one prefix read that reads its rest ([`read_prefix`]).
+    oversize: Mutex<()>,
 }
 
 struct PoolState {
@@ -452,6 +507,21 @@ impl Lease<'_> {
     fn empty() -> Self {
         Lease { pool: None, bytes: Vec::new(), counted: 0 }
     }
+
+    /// Makes room for `size` bytes in the buffer (a prefix read's rest). The pool counts the growth as it counts the
+    /// buffer (`counted` moves with `held`), so the buffer's capacity is accounted once, whenever it grew.
+    fn grow_to(&mut self, size: usize) -> std::io::Result<()> {
+        let additional = size.saturating_sub(self.bytes.len());
+        self.bytes
+            .try_reserve_exact(additional)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::OutOfMemory, e))?;
+        if let Some(pool) = self.pool {
+            let capacity = self.bytes.capacity();
+            pool.grew(capacity - self.counted);
+            self.counted = capacity;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for Lease<'_> {
@@ -466,7 +536,13 @@ impl Pool {
     fn new(budget: usize, slots: usize) -> Pool {
         let slots = slots.max(1);
         let state = PoolState { serving: 0, held: 0, lent: 0, idle: Vec::with_capacity(slots), stopped: false };
-        Pool { budget: budget.max(1), slots, state: Mutex::new(state), changed: Condvar::new() }
+        Pool {
+            budget: budget.max(1),
+            slots,
+            state: Mutex::new(state),
+            changed: Condvar::new(),
+            oversize: Mutex::new(()),
+        }
     }
 
     /// A buffer that holds `size` bytes for item `i`, once the items before it have theirs, a slot is free, and the
@@ -544,6 +620,15 @@ impl Pool {
         st.lent -= 1;
         st.idle.push(bytes);
         self.changed.notify_all();
+    }
+
+    /// A lease's buffer grew by `bytes` ([`Lease::grow_to`]): held, as the lease counts it.
+    fn grew(&self, bytes: usize) {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner).held += bytes;
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner).stopped
     }
 
     fn stop(&self) {
@@ -876,6 +961,76 @@ mod tests {
         let std = File::open(dir.join("missing.jpg")).unwrap_err();
         assert_eq!((ours.kind(), ours.raw_os_error()), (std.kind(), std.raw_os_error()));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+    /// Each item of three files (5000, 300 and 5000 bytes) read as a prefix of 1000 bytes with `complete`: the length of
+    /// each as `process` got it.
+    fn a_prefix_pass(name: &str, complete: fn(&[u8]) -> bool) -> Vec<usize> {
+        let dir = pg_testkit::run_folder("scratch_rate", name).unwrap();
+        let items: Vec<(usize, String)> = [5000usize, 300, 5000]
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let path = dir.join(format!("{i}.bin"));
+                std::fs::write(&path, vec![u8::try_from(i).unwrap(); n]).unwrap();
+                (i, path.to_str().unwrap().to_string())
+            })
+            .collect();
+        let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+        let mut lengths = vec![0; items.len()];
+        run(
+            &items,
+            |(_, p), wide| {
+                wide.set(&[&units(p)]);
+                Read::Prefix { len: 1000, complete }
+            },
+            &opts,
+            &Control::new(),
+            || Ok(()),
+            |_, _, bytes| Ok(bytes.len()),
+            |i, out, _| {
+                lengths[i] = out.unwrap();
+                Ok(true)
+            },
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        lengths
+    }
+
+    fn whole_header(_: &[u8]) -> bool {
+        true
+    }
+
+    fn partial_header(_: &[u8]) -> bool {
+        false
+    }
+
+    fn a_check_that_panics(_: &[u8]) -> bool {
+        panic!("a header check that panics");
+    }
+
+    /// A complete prefix is all that is read of a large file; an incomplete one reads the rest; a file no longer than the
+    /// prefix is read whole either way; a check that panics is an incomplete prefix.
+    #[test]
+    fn a_prefix_reads_the_rest_only_when_the_prefix_is_not_complete() {
+        assert_eq!(within_timeout(|| a_prefix_pass("pg-pipeline-prefix-whole", whole_header)), [1000, 300, 1000]);
+        assert_eq!(within_timeout(|| a_prefix_pass("pg-pipeline-prefix-partial", partial_header)), [5000, 300, 5000]);
+        assert_eq!(
+            within_timeout(|| a_prefix_pass("pg-pipeline-prefix-panic", a_check_that_panics)),
+            [5000, 300, 5000]
+        );
+    }
+
+    /// A lease grown past its prefix is counted by the pool as it grew, and given back as one buffer.
+    #[test]
+    fn a_grown_lease_is_counted_once() {
+        let pool = Pool::new(1 << 20, 4);
+        let mut lease = pool.take(0, 100).unwrap();
+        lease.grow_to(5000).unwrap();
+        assert!(lease.bytes.capacity() >= 5000);
+        check(&pool, &[&lease]);
+        drop(lease);
+        check(&pool, &[]);
     }
 }
 

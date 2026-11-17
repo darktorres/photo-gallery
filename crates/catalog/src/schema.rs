@@ -64,6 +64,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_14_PAIRING_EPOCH)],
     &[Step::Sql(TO_15_HASHES_OWED)],
     &[Step::Sql(TO_16_NEW_FILES)],
+    TO_17_PLACEHOLDERS,
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -510,6 +511,60 @@ const TO_16_NEW_FILES: &str = "DROP TRIGGER files_added;
 DROP INDEX files_fresh;
 ALTER TABLE files DROP COLUMN last_scan;
 ";
+
+/// Version 17: **`placeholders`**, the ThumbHash of each file (`pg_thumbs::placeholders`), kept in its own table, keyed to
+/// the file and carrying the identity it was made at (size, mtime, catalog rotation) and the version of its definition
+/// (`pg_model::analysis::PLACEHOLDER_VERSION`). A file owes one exactly when no row matches its identity and version, so
+/// staleness is the row's own: an analysis's REPLACE (a re-import) cannot wipe a placeholder, a write is a narrow insert
+/// (not an update of the wide `analysis` row: migration 13's 98.7 MB against 3.4 MB), and nothing is queued.
+///
+/// The import no longer makes ThumbHashes, so `analysis.thumbhash` goes, and the existing ones move here (the data step,
+/// `convert::placeholders_from_thumbhashes`, which runs on the old shape in a migration and on the carried rows in a
+/// rebuild). Their `placeholders` rows are stamped `changed` like the borders are, and a turn or a size change does not
+/// move them (the placeholder is shown until the pass replaces it). `analysis.width`/`height` are stamped with the cut:
+/// the borders pass writes the decode's own size, so a corrected size is a change a client shows.
+const TO_17_PLACEHOLDERS: &[Step] = &[
+    Step::Sql(TO_17_CREATE),
+    Step::Rust(crate::convert::placeholders_from_thumbhashes),
+    Step::Sql(TO_17_DROP_THUMBHASH),
+];
+
+const TO_17_CREATE: &str = "CREATE TABLE placeholders(
+    file_id  INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    size     INTEGER NOT NULL,
+    mtime    INTEGER NOT NULL,
+    rotation INTEGER NOT NULL,
+    version  INTEGER NOT NULL,
+    hash     BLOB NOT NULL
+);
+";
+
+/// The `analysis.thumbhash` column goes (after its data moved), and the stamps are made: the placeholders' own, and the
+/// cut's, which now names the width and height too. The triggers are made after the data step, so that step's inserts
+/// stamp nothing.
+const TO_17_DROP_THUMBHASH: &str = concat!(
+    "ALTER TABLE analysis DROP COLUMN thumbhash;
+DROP TRIGGER analysis_cut_stamp;
+",
+    stamp!("placeholders_stamp_insert", "INSERT", "placeholders", new),
+    stamp!(
+        "placeholders_stamp_update",
+        "UPDATE OF hash, size, mtime, rotation, version",
+        "placeholders",
+        new,
+        when "old.hash IS NOT new.hash OR old.size IS NOT new.size OR old.mtime IS NOT new.mtime
+    OR old.rotation IS NOT new.rotation OR old.version IS NOT new.version"
+    ),
+    stamp!("placeholders_stamp_delete", "DELETE", "placeholders", old),
+    stamp!(
+        "analysis_cut_stamp",
+        "UPDATE OF cut_left, cut_top, cut_right, cut_bottom, width, height",
+        "analysis",
+        new,
+        when "old.cut_left IS NOT new.cut_left OR old.cut_top IS NOT new.cut_top OR old.cut_right IS NOT new.cut_right
+    OR old.cut_bottom IS NOT new.cut_bottom OR old.width IS NOT new.width OR old.height IS NOT new.height"
+    ),
+);
 
 const TO_11_IMPORT_HIDDEN: &str = "DROP TRIGGER analysis_import;
 CREATE TRIGGER analysis_import AFTER INSERT ON analysis
@@ -998,6 +1053,9 @@ mod tests {
         ("file_writes_stamp_insert", "schema::each_user_visible_change_names_its_file"),
         ("file_writes_stamp_update", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
         ("file_writes_stamp_delete", "schema::each_stamp_trigger_names_its_file_on_delete_and_update"),
+        ("placeholders_stamp_insert", "schema::a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails"),
+        ("placeholders_stamp_update", "schema::a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails"),
+        ("placeholders_stamp_delete", "schema::a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails"),
         ("analysis_cut_stamp", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
         ("analysis_removed_stamp", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
         ("border_sides_stamp_insert", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
@@ -1151,6 +1209,91 @@ mod tests {
         a_write_out_of_its_kinds_range_is_dropped_and_refused,
         a_write_out_of_its_kinds_range_is_dropped_and_refused_windows,
         a_write_out_of_its_kinds_range_is_dropped_and_refused_posix
+    );
+
+    /// Version 17 moves each ThumbHash the import stored to `placeholders`, at its analysis's identity and version 1, and
+    /// drops the column: the placeholder the grid shows is the one the catalog had, with no pass to make it again.
+    fn version_17_moves_the_thumbhashes_to_placeholders(rules: PathRules) {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 15).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 7, 9, x'61');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                 VALUES (2, 1, 2, 1, x'62', 'jpg', 'image', 7, 9, x'62');
+             INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, thumbhash)
+                 VALUES (1, 2, 7, 9, 0, 'image', 0, x'0102'), (2, 2, 7, 9, 0, 'image', 0, x'');",
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        let moved: Vec<(i64, i64, i64, Vec<u8>)> = conn
+            .prepare("SELECT file_id, size, version, hash FROM placeholders ORDER BY file_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        // The one with a hash moves, at the analysis's size; the empty one has none to move.
+        assert_eq!(moved, [(1, 7, 1, vec![1, 2])]);
+        let has_column: bool = conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('analysis') WHERE name = 'thumbhash')", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!has_column, "analysis.thumbhash is dropped");
+    }
+
+    under_both_rules!(
+        version_17_moves_the_thumbhashes_to_placeholders,
+        version_17_moves_the_thumbhashes_to_placeholders_windows,
+        version_17_moves_the_thumbhashes_to_placeholders_posix
+    );
+
+    /// A placeholder is a change of its file (`files.changed`, the change a client that keeps its list fetches again by),
+    /// and not of its thumbnails (`files.seq`): stored, replaced and removed, each one stamps the file, and only that.
+    fn a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61');",
+        )
+        .unwrap();
+        let state = || -> (i64, i64) {
+            conn.query_row("SELECT changed, seq FROM files WHERE id = 1", [], |r| {
+                Ok((r.get(0).unwrap(), r.get(1).unwrap()))
+            })
+            .unwrap()
+        };
+        let meta_seq =
+            || -> i64 { conn.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0)).unwrap() };
+        let (changed, seq) = state();
+        conn.execute(
+            "INSERT INTO placeholders(file_id, size, mtime, rotation, version, hash) VALUES (1, 1, 1, 0, 1, x'0102')",
+            [],
+        )
+        .unwrap();
+        let (stored, thumbs) = state();
+        assert_eq!((stored, thumbs), (meta_seq(), seq), "stored: the file is changed, its thumbnails are not");
+        assert!(stored > changed);
+        conn.execute("UPDATE placeholders SET hash = x'0304' WHERE file_id = 1", []).unwrap();
+        let (replaced, thumbs) = state();
+        assert_eq!((replaced, thumbs), (meta_seq(), seq), "replaced: the same");
+        assert!(replaced > stored);
+        conn.execute("DELETE FROM placeholders WHERE file_id = 1", []).unwrap();
+        let (removed, thumbs) = state();
+        assert_eq!((removed, thumbs), (meta_seq(), seq), "removed: the same");
+        assert!(removed > replaced);
+    }
+
+    under_both_rules!(
+        a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails,
+        a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails_windows,
+        a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails_posix
     );
 
     /// Version 11 makes a pending file's failed import row hidden, and drops the retired kinds, on a catalog at version 9

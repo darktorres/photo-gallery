@@ -36,7 +36,6 @@ pub struct Analysis {
     /// Upright full-size dimensions.
     pub width: u32,
     pub height: u32,
-    pub thumbhash: ThumbHash,
     /// Frames in the file (more than one: animated); an image's analysis is of the first.
     pub frames: u32,
     /// When the file says it was taken, if it does.
@@ -65,25 +64,23 @@ impl Taken {
 }
 
 /// The facts of a file's kind.
-// The image's hashes are held inline on purpose: an import allocates nothing per file, and a video's facts are the
-// small case.
 #[derive(Clone)]
 pub enum Media {
     Image(ImageFacts),
     Video(VideoFacts),
 }
 
-/// A still image's facts: its format, the rating the file itself holds, and its duplicate hashes, `None` when they were
-/// not computed (duplicates detection is off, `Hashing::Skip`).
+/// A still image's facts: its format and the rating the file itself holds. Its duplicate hashes are the Hashes pass's
+/// ([`ImageHashes`]), not the import's.
 #[derive(Clone)]
 pub struct ImageFacts {
     pub format: Format,
     /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
     pub file_rating: Option<crate::rating::Rating>,
-    pub hashes: Option<ImageHashes>,
 }
 
-/// A still image's duplicate hashes: the file's (tier 0a) and the pixels' (tiers 0b and 1).
+/// A still image's duplicate hashes: the file's (tier 0a) and the pixels' (tiers 0b and 1). The Hashes pass makes them
+/// (`pg_import::hashes`); the import does not.
 #[derive(Clone)]
 pub struct ImageHashes {
     /// BLAKE3 of the file bytes (tier 0a).
@@ -99,30 +96,15 @@ pub struct PixelHashes {
     pub pdq: pdq::Pdq,
 }
 
-/// A video's facts: its codec, its length, where the frame its ThumbHash and thumbnails come from is, and its file hash
-/// (tier 0a), `None` when not computed.
+/// A video's facts: its codec, its length, and where the frame its thumbnails and placeholder come from is.
 #[derive(Clone)]
 pub struct VideoFacts {
     pub codec: &'static str,
     pub duration_ms: i64,
     pub poster_ms: i64,
-    pub file_hash: Option<FileHash>,
 }
 
 impl Analysis {
-    /// The file's BLAKE3 (tier 0a), when it was computed.
-    pub fn file_hash(&self) -> Option<FileHash> {
-        match &self.media {
-            Media::Image(image) => image.hashes.as_ref().map(|h| h.file),
-            Media::Video(video) => video.file_hash,
-        }
-    }
-
-    /// Whether the duplicate hashes were computed: an analysis that is not hashed owes them (`hashes_owed`).
-    pub fn hashed(&self) -> bool {
-        self.file_hash().is_some()
-    }
-
     /// The format's name for an image, or the codec for a video (the catalog's `format` column).
     pub fn format(&self) -> &'static str {
         match &self.media {
@@ -146,11 +128,16 @@ impl Analysis {
     }
 }
 
+/// The version of a placeholder's definition (`pg_render::thumbhash_of`): a placeholder made at another version is owed
+/// again. Version 1 is the first definition: the ThumbHashes the import made, moved to `placeholders` by the migration
+/// that makes that table (`pg_catalog`'s `placeholders_from_thumbhashes`), and the Placeholders pass's own.
+pub const PLACEHOLDER_VERSION: i64 = 1;
+
 /// The longest ThumbHash: 25 bytes with alpha, 24 opaque. It is the vendored encoder's `MAX_LEN` as a literal (the
 /// model has no dependencies); the `analyze` tests in pg-analysis check the two are equal.
 pub const THUMBHASH_MAX: usize = 25;
 
-/// A ThumbHash (`analysis.thumbhash`), held inline: the import's result, and the grid's placeholder.
+/// A ThumbHash (a placeholder's `hash`, `placeholders`), held inline: the grid's placeholder.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct ThumbHash {
     bytes: [u8; THUMBHASH_MAX],

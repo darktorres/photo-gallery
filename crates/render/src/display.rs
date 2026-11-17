@@ -135,6 +135,13 @@ pub fn placeholder(hash: &[u8], turns: Turns) -> Result<Rgba> {
     Ok(Rgba::premultiply(w, h, rgba))
 }
 
+impl Rgba {
+    /// A transparent square, 1 px: what a placeholder not made yet is shown as.
+    pub fn transparent() -> Rgba {
+        Rgba { width: 1, height: 1, pixels: vec![0; 4], opaque: false }
+    }
+}
+
 /// An image as RGBA rows premultiplied by alpha, 4 bytes a pixel: what the viewer shows. `opaque` says every alpha is
 /// 255 (an image with no transparency), so a front end may take the fourth byte as padding.
 pub struct Rgba {

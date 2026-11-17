@@ -40,6 +40,8 @@ fn imported(prefix: &str) -> (Catalog, Control, PathBuf) {
     let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &opts(), false, &ctl).unwrap();
+    // The Hashes pass makes the hashes the import leaves owed: the pairs are made from them.
+    pg_import::hashes::hash(&mut c, &opts(), &|| true, &ctl).unwrap();
     (c, ctl, dir)
 }
 
@@ -68,6 +70,7 @@ fn analysed_again(c: &mut Catalog, ctl: &Control) {
     let a = state::file_id(c, "a.png").unwrap();
     assert_eq!(c.mark_pending(&[a]).unwrap(), 1);
     pg_import::import(c, &opts(), false, ctl).unwrap();
+    pg_import::hashes::hash(c, &opts(), &|| true, ctl).unwrap();
 }
 
 /// Whether the import would analyse the file called `name` now (`files.pending`, of a present file).

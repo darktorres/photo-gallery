@@ -28,7 +28,7 @@ use crate::schema::{
 };
 use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{Rebuilt, Versions};
-use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, ScanWriter};
+use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
 
 /// The page cache of [`Catalog::prepare`]'s own work, in KiB: the copy aside, a migration and its `VACUUM` read and write
 /// each page once or twice, so a larger cache would only hold the whole file.
@@ -356,6 +356,11 @@ impl Tx<'_> {
     /// which the failures it stores are made against.
     pub fn analysis_writer(&self, import: i64) -> Result<AnalysisWriter<'_>> {
         AnalysisWriter::new(&self.inner, import)
+    }
+
+    /// The writer of the placeholders, in this transaction.
+    pub fn placeholder_writer(&self) -> Result<PlaceholderWriter<'_>> {
+        PlaceholderWriter::new(&self.inner)
     }
 
     /// The writer of the borders, in this transaction.

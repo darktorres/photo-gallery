@@ -182,7 +182,8 @@ impl qobject::Library {
             self.as_mut().set_failed(failed);
         }
         let pass = match p.phase {
-            Phase::Thumbs { .. } => Some(FilePass::Thumbs),
+            // The placeholders' failures are the Thumbs pass's: a file that doesn't decode is recorded there.
+            Phase::Thumbs { .. } | Phase::Placeholders => Some(FilePass::Thumbs),
             Phase::Borders => Some(FilePass::Borders),
             // The hashes' failures are the import's: a file that doesn't decode is an import failure.
             Phase::Import | Phase::Hashes => Some(FilePass::Import),

@@ -36,7 +36,7 @@ impl Catalog {
         if !query_current(&mut tx.prepare(IS_CURRENT)?, file_id, &item.listed())? {
             return Err(Error::Other(anyhow!("file {} is being written: its cut is not recorded", file_id.get())));
         }
-        BordersWriter::new(&tx)?.store_borders(&item, Some(&Detection::none(width, height)))?;
+        BordersWriter::new(&tx)?.store_borders(&item, None, Some(&Detection::none(width, height)))?;
         tx.commit()?;
         Ok(())
     }

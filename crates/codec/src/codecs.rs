@@ -67,6 +67,19 @@ impl Codecs {
         }
     }
 
+    /// The stored size of `bytes` (of `format`), from its header alone: the size the decoders above would decode. For a
+    /// JPEG libjpeg-turbo's header read is the caller's; this is what it falls back to.
+    pub(crate) fn dimensions(&mut self, bytes: &[u8], format: Format) -> ImageResult<(u32, u32)> {
+        match format {
+            Format::Jpeg => jpeg::dimensions(&mut self.jpeg, bytes),
+            Format::Png => image_size(bytes, image::ImageFormat::Png),
+            Format::Gif => image_size(bytes, image::ImageFormat::Gif),
+            Format::Webp => image_size(bytes, image::ImageFormat::WebP),
+            Format::Bmp => image_size(bytes, image::ImageFormat::Bmp),
+            Format::Tiff => image_size(bytes, image::ImageFormat::Tiff),
+        }
+    }
+
     /// Free what one oversize file grew.
     pub(crate) fn trim(&mut self, bytes: usize) {
         release_over(&mut self.raw, bytes);
@@ -76,6 +89,12 @@ impl Codecs {
         self.jpeg.trim(bytes);
         self.tiff.trim(bytes);
     }
+}
+
+/// The size of an image in `format`, read from its header by `image`'s decoder for it (no pixels, no limits: the
+/// decode that follows applies the 512 MiB cap).
+fn image_size(bytes: &[u8], format: image::ImageFormat) -> ImageResult<(u32, u32)> {
+    image::ImageReader::with_format(Cursor::new(bytes), format).into_dimensions()
 }
 
 #[cfg(test)]

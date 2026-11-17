@@ -1,7 +1,8 @@
-//! A worker's thumbnail pipeline: the decode (DCT-scaled, so a thumbnail never decodes more than it needs), the
-//! resize and the JPEG encode, with the buffers a worker keeps from file to file. What a thumbnail is made of;
-//! where thumbnails are kept is `pg_thumbcache`.
+//! A worker's thumbnail and placeholder pipeline: the decode (DCT-scaled, so a thumbnail never decodes more than it
+//! needs), the resize and the JPEG encode, and the ThumbHash placeholder of a picture, with the buffers a worker keeps
+//! from file to file. What a thumbnail and a placeholder are made of; where thumbnails are kept is `pg_thumbcache`.
 
+use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::image::View;
 use pg_model::turns::Turns;
 use std::path::Path;
@@ -14,6 +15,13 @@ use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 
 use crate::display::{self, DECODE_MARGIN, Shown};
+
+/// The image a placeholder is encoded from is fitted into this many px on its long side (the encoder's blur is at its
+/// 100 px).
+pub const THUMBHASH_SIDE: usize = 100;
+/// The decode a placeholder of a file takes keeps at least this many px on the long side: the fit to [`THUMBHASH_SIDE`]
+/// is then a resize of a picture at least twice its size, not of a scaled-down one.
+pub const PLACEHOLDER_DECODE_SIDE: usize = 200;
 
 /// libjpeg-turbo q85, 4:2:0 (SSIMULACRA2 ~82). The cache format is still open:
 /// JPEG is the fastest to make on demand (~1 ms) and to show (~0.6 ms).
@@ -57,6 +65,7 @@ pub struct Maker {
     small: Rgb,
     /// The file a request read (the app's: a thumbnail made on a miss, the viewer's decode).
     file: Vec<u8>,
+    thumbhasher: thumbhash::Encoder,
 }
 
 /// Threads for the viewer's full-size decodes (`Maker::decode_file` and `Maker::turn_jpeg`), through parajpeg. Six
@@ -74,6 +83,7 @@ impl Maker {
             spare: Vec::new(),
             small: Rgb::default(),
             file: Vec::new(),
+            thumbhasher: thumbhash::Encoder::default(),
         })
     }
 
@@ -132,6 +142,48 @@ impl Maker {
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
         display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)?;
         self.encode_image(height, out)
+    }
+
+    /// The placeholder (ThumbHash) of the image `bytes`, upright as `turns` makes it: a DCT-scaled decode keeping
+    /// [`PLACEHOLDER_DECODE_SIDE`] px on the long side, fitted to [`THUMBHASH_SIDE`] and encoded.
+    pub fn placeholder(&mut self, bytes: &[u8], turns: Turns) -> Result<ThumbHash, MakeError> {
+        let min = MinSize::Sides(PLACEHOLDER_DECODE_SIDE, 0);
+        let result = display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)
+            .and_then(|_| self.thumbhash_of_image());
+        self.trim();
+        result.map_err(MakeError::Undecodable)
+    }
+
+    /// The placeholder of a thumbnail the cache holds (`jpeg`: upright already, so no turns), decoded whole: the same
+    /// picture as [`Maker::placeholder`] of the file, at the thumbnail's size.
+    pub fn placeholder_of_thumbnail(&mut self, jpeg: &[u8]) -> Result<ThumbHash, MakeError> {
+        let result =
+            display::decode_into(&mut self.decoder, jpeg, MinSize::Full, Turns::NONE, &mut self.image, &mut self.spare)
+                .and_then(|_| self.thumbhash_of_image());
+        self.trim();
+        result.map_err(MakeError::Undecodable)
+    }
+
+    /// The placeholder of a video's frame at `at_ms` (its poster, `turns` the file's rotation), as [`Maker::load_frame`]
+    /// decodes it.
+    pub fn placeholder_of_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<ThumbHash, MakeError> {
+        self.load_frame(path, at_ms, turns)?;
+        let result = self.thumbhash_of_image();
+        self.trim();
+        result.map_err(MakeError::Undecodable)
+    }
+
+    /// The ThumbHash of the decoded image (`self.image`), fitted to [`THUMBHASH_SIDE`] through `small`. The encoder reads
+    /// the RGB as it is: the hash of the same pixels as opaque RGBA.
+    fn thumbhash_of_image(&mut self) -> Result<ThumbHash> {
+        let img = if self.resizer.fit_within(&self.image, THUMBHASH_SIDE, &mut self.small)? {
+            &self.small
+        } else {
+            &self.image
+        };
+        let mut bytes = [0; THUMBHASH_MAX];
+        let len = self.thumbhasher.rgb_to_thumb_hash_into(img.width, img.height, &img.pixels, &mut bytes);
+        Ok(ThumbHash::encoded(bytes, len))
     }
 
     /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
@@ -202,9 +254,7 @@ mod tests {
     }
 
     fn summary(r: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
-        let px = &r.image().unwrap().hashes.as_ref().unwrap().pixels;
-        let hashes = (px.pixel_hash, px.pdq);
-        (r.file_hash(), r.format(), r.orientation, r.width, r.height, r.thumbhash, r.frames, hashes)
+        (r.format(), r.orientation, r.width, r.height, r.frames)
     }
 
     /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a
@@ -224,15 +274,43 @@ mod tests {
             for (bytes, turns) in &files {
                 let new = || Analyzer::new().unwrap();
                 assert_eq!(
-                    summary(&kept.analyze(bytes, *turns, pg_model::features::Hashing::Compute).unwrap()),
-                    summary(&new().analyze(bytes, *turns, pg_model::features::Hashing::Compute).unwrap())
+                    summary(&kept.analyze(bytes, *turns).unwrap()),
+                    summary(&new().analyze(bytes, *turns).unwrap())
                 );
+                let (a, b) = (kept.hash_image(bytes, *turns).unwrap(), new().hash_image(bytes, *turns).unwrap());
+                assert_eq!((a.file, a.pixels.pixel_hash), (b.file, b.pixels.pixel_hash));
                 let (a, b) = (kept.borders(bytes, *turns).unwrap(), new().borders(bytes, *turns).unwrap());
                 assert_eq!((a.width, a.height, a.borders), (b.width, b.height, b.borders));
                 let thumb = maker.make(bytes, 64, *turns).unwrap();
                 assert_eq!(thumb, Maker::new().unwrap().make(bytes, 64, *turns).unwrap());
+                let placeholder = maker.placeholder(bytes, *turns).unwrap();
+                assert_eq!(placeholder, Maker::new().unwrap().placeholder(bytes, *turns).unwrap());
             }
         }
+    }
+
+    /// The model's longest ThumbHash is the encoder's own: the literal the model writes must be the encoder's length.
+    #[test]
+    fn thumbhash_max_is_the_encoders_longest() {
+        assert_eq!(THUMBHASH_MAX, thumbhash::MAX_LEN);
+    }
+
+    /// The placeholder of a file and of the thumbnail the cache keeps of it are both ThumbHashes of the same picture:
+    /// each decodes to the same size, and to the same mean colour within a few levels.
+    #[test]
+    fn a_placeholder_of_the_file_and_of_its_thumbnail_are_the_same_picture() {
+        let bytes = jpeg(1200, 800, 1);
+        let mut maker = Maker::new().unwrap();
+        let of_file = maker.placeholder(&bytes, Turns::NONE).unwrap();
+        let thumb = maker.make(&bytes, 256, Turns::NONE).unwrap();
+        let of_thumb = maker.placeholder_of_thumbnail(&thumb).unwrap();
+        let (w1, h1, p1) =
+            thumbhash::thumb_hash_to_rgba(of_file.as_slice()).ok().unwrap_or_else(|| panic!("a ThumbHash"));
+        let (w2, h2, p2) =
+            thumbhash::thumb_hash_to_rgba(of_thumb.as_slice()).ok().unwrap_or_else(|| panic!("a ThumbHash"));
+        assert_eq!((w1, h1), (w2, h2));
+        let mean = |p: &[u8]| p.iter().map(|&b| u64::from(b)).sum::<u64>() / u64::try_from(p.len()).unwrap();
+        assert!(mean(&p1).abs_diff(mean(&p2)) < 4, "{} and {}", mean(&p1), mean(&p2));
     }
 
     const SCRATCH: &str = "scratch_maker";

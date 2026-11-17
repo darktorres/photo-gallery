@@ -77,12 +77,13 @@ pub fn find_while(
                 for (i, result) in batch.drain(..) {
                     done.files += 1;
                     let item = items.get(i).context("an item outside the pass")?;
-                    let found = match result {
+                    let (size, found) = match result {
                         Ok(b) => {
                             if known.contains(&item.id) {
                                 found_known.push(item.id);
                             }
-                            b.borders
+                            // The decode's own size: the header's, corrected to it (`store_borders`).
+                            (Some((b.width, b.height)), b.borders)
                         }
                         // Couldn't be read (a locked file, an offline drive): nothing is stored, so the file stays due and
                         // the next pass tries it again. Storing "no borders" here would hide it until BORDERS_VERSION
@@ -104,10 +105,10 @@ pub fn find_while(
                                 error: format!("{e:#}"),
                                 retry: false,
                             });
-                            None
+                            (None, None)
                         }
                     };
-                    writer.store_borders(item, found.as_ref())?;
+                    writer.store_borders(item, size, found.as_ref())?;
                     done.stored += 1;
                 }
                 drop(writer);

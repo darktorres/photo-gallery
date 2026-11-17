@@ -140,6 +140,8 @@ fn ratings_and_turns_reach_the_files() {
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    // The placeholders the grid shows, made from the originals (no cache): their turns are what the turns below check.
+    pg_thumbs::placeholders::run_while(&mut c, &ThumbCache::disabled(), &opts, &|| true, &ctl).unwrap();
     let before = ids(&c).unwrap();
     assert_eq!(before.len(), files.len());
 
@@ -214,7 +216,10 @@ fn ratings_and_turns_reach_the_files() {
     assert_eq!(ids(&c).unwrap(), before);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "re-imported upright sizes: {:?}", dims(&c));
-    assert!(placeholder_turns(&c).iter().all(|&t| t == 0), "re-imported placeholders: {:?}", placeholder_turns(&c));
+    // Until the Placeholders pass makes them again, the placeholders show the pixels they were made from, turned.
+    assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "before the pass: {:?}", placeholder_turns(&c));
+    pg_thumbs::placeholders::run_while(&mut c, &ThumbCache::disabled(), &opts, &|| true, &ctl).unwrap();
+    assert!(placeholder_turns(&c).iter().all(|&t| t == 0), "re-made placeholders: {:?}", placeholder_turns(&c));
 
     // Another program rates the JPEG: the next scan and import adopt it.
     let jpg = &files[0].0;

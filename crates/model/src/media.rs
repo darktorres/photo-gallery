@@ -113,7 +113,17 @@ impl Ext {
     /// unpaired surrogate, a byte no valid sequence holds) is none the library holds, so it is `None`.
     pub fn of_name_bytes(name: &[u8]) -> Option<Ext> {
         let dot = name.iter().rposition(|&b| b == b'.')?;
-        Ext::matching(std::str::from_utf8(name.get(dot + 1..)?).ok()?.chars())
+        let ext = name.get(dot + 1..)?;
+        // An ASCII extension (nearly all) is compared as bytes, without decoding: the lists are lower-case ASCII, which is
+        // what `char::to_lowercase` gives an ASCII character, so the two comparisons agree.
+        if ext.is_ascii() {
+            return IMAGE_EXTENSIONS
+                .iter()
+                .chain(VIDEO_EXTENSIONS)
+                .position(|e| e.as_bytes().eq_ignore_ascii_case(ext))
+                .and_then(Ext::at);
+        }
+        Ext::matching(std::str::from_utf8(ext).ok()?.chars())
     }
 
     /// The extension whose name is `ext` in lower case, without making it: lowercased character by character, as

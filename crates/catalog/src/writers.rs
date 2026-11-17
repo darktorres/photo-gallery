@@ -5,10 +5,11 @@
 //! caller's. Uses `types`, `ledger::failure` and `error`; its SQL macros are from `sql`.
 
 use anyhow::{Context, anyhow};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, OptionalExtension, Statement, Transaction, params};
+use rusqlite::{CachedStatement, Connection, OptionalExtension, Statement, Transaction, params};
 
 use pg_model::analysis::{Analysis, FileHash, ImageHashes};
 use pg_model::detection::Detection;
@@ -25,9 +26,9 @@ use crate::types::{
     SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, covering_root, under_params,
 };
 
-// The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
-// rusqlite's statement cache per row (16 entries, which the import's statements alone would crowd). A writer
-// borrows its transaction, so it is dropped before the transaction commits.
+// The passes' writes: one writer per transaction. The statements are cached on the connection (`prepare_cached`; the
+// connection's cache is sized to hold them all, `core::register`), so a writer made for each batch reuses them rather
+// than preparing them again. A writer borrows its transaction, so it is dropped before the transaction commits.
 
 /// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
 /// change number ([`change_number`]). These are the columns the `files_added` trigger set, before migration 16.
@@ -103,23 +104,26 @@ pub struct ScanWriter<'tx> {
     /// The library folder that holds the walked one (its id and its stored path), resolved once when the writer is
     /// made; `None` when no library folder holds it (the folder ledger then records nothing).
     covering: Option<(i64, Vec<u8>)>,
-    folder_id: Statement<'tx>,
-    new_folder: Statement<'tx>,
-    known: Statement<'tx>,
-    identity_row: Statement<'tx>,
+    folder_id: CachedStatement<'tx>,
+    new_folder: CachedStatement<'tx>,
+    known: CachedStatement<'tx>,
+    identity_row: CachedStatement<'tx>,
     /// Marks a row seen by this walk (`temp.scan_seen`), with whether it is unpaired.
-    insert_seen: Statement<'tx>,
+    insert_seen: CachedStatement<'tx>,
     /// The id of the row the last insert made.
-    last_id: Statement<'tx>,
-    backfill: Statement<'tx>,
-    displace: Statement<'tx>,
+    last_id: CachedStatement<'tx>,
+    backfill: CachedStatement<'tx>,
+    displace: CachedStatement<'tx>,
     /// A new file's row (`write_new`), and a known file's changed fields (`write_changed`).
-    new_file: Statement<'tx>,
-    changed_file: Statement<'tx>,
+    new_file: CachedStatement<'tx>,
+    changed_file: CachedStatement<'tx>,
     /// The next change number (`change_number`), and this batch's once taken.
-    bump: Statement<'tx>,
+    bump: CachedStatement<'tx>,
     change: Option<i64>,
-    folder_failed: Statement<'tx>,
+    folder_failed: CachedStatement<'tx>,
+    /// The id of each folder this writer has resolved, by its stored path: a folder's files are written after its
+    /// lookup once, not once per file (`folder`).
+    folder_ids: HashMap<Vec<u8>, i64>,
     /// The order key of the file being recorded.
     key: Vec<u8>,
 }
@@ -139,29 +143,30 @@ impl<'tx> ScanWriter<'tx> {
         crate::lifecycle::stamp_held_exts(tx)?;
         let covering = covering_root(tx, rules, root)?.map(|r| (r.id.get(), rules.join(&r.path)));
         Ok(ScanWriter {
+            folder_ids: HashMap::new(),
             scan: scan.get(),
             rules,
             under: under_params(rules, root),
             covering,
-            folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
-            new_folder: tx.prepare("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
+            folder_id: tx.prepare_cached("SELECT id FROM folders WHERE path = ?1")?,
+            new_folder: tx.prepare_cached("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
             // The row of the identity, and whether its folder is under the root (`?3`..`?5`: `under_params`).
-            known: tx.prepare(
+            known: tx.prepare_cached(
                 "SELECT f.id, f.folder_id, f.name, f.ext, f.kind, f.size, f.mtime, f.missing, f.order_key, f.created,
                     f.unpaired, (d.path = ?3 OR (d.path >= ?4 AND d.path < ?5))
                  FROM files f JOIN folders d ON d.id = f.folder_id
                  WHERE f.volume = ?1 AND f.file_ref = ?2",
             )?,
-            identity_row: tx.prepare("SELECT id, unpaired FROM files WHERE volume = ?1 AND file_ref = ?2")?,
-            insert_seen: tx.prepare("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)")?,
-            last_id: tx.prepare("SELECT last_insert_rowid()")?,
-            backfill: tx.prepare("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
+            identity_row: tx.prepare_cached("SELECT id, unpaired FROM files WHERE volume = ?1 AND file_ref = ?2")?,
+            insert_seen: tx.prepare_cached("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)")?,
+            last_id: tx.prepare_cached("SELECT last_insert_rowid()")?,
+            backfill: tx.prepare_cached("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
             displace: tx
-                .prepare("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
+                .prepare_cached("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
             // A new row is unpaired: the pairing at the end of the scan decides what it is. It is pending, and changed at
             // the batch's number, which the insert sets itself (no trigger does, since migration 16). The row is not
             // known to the writer, so the insert cannot conflict: the identity was looked up in this transaction.
-            new_file: tx.prepare(concat!(
+            new_file: tx.prepare_cached(concat!(
                 "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime,
                     order_key, unpaired, pending, seq, changed)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 1, ?11, ?11)"
@@ -171,14 +176,14 @@ impl<'tx> ScanWriter<'tx> {
             // (a listing has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and
             // retries, which change nothing on disk. The triggers that depend on size, mtime and missing keep the
             // file's pending and change numbers, whoever writes them.
-            changed_file: tx.prepare(concat!(
+            changed_file: tx.prepare_cached(concat!(
                 "UPDATE files SET folder_id = ?2, name = ?3, ext = ?4, kind = ?5, size = ?6, mtime = ?7,
                     missing = 0, order_key = ?8, created = coalesce(created, ?9)
                  WHERE id = ?1 AND size IS ?10 AND mtime IS ?11 AND ",
                 not_being_written!(files)
             ))?,
-            bump: tx.prepare(concat!(next_seq!(), " RETURNING value"))?,
-            folder_failed: tx.prepare(FOLDER_FAILED)?,
+            bump: tx.prepare_cached(concat!(next_seq!(), " RETURNING value"))?,
+            folder_failed: tx.prepare_cached(FOLDER_FAILED)?,
             change: None,
             key: Vec::new(),
         })
@@ -206,9 +211,16 @@ impl<'tx> ScanWriter<'tx> {
     pub fn folder(&mut self, path: &RulePath) -> Result<Folder> {
         let key = self.rules.folder_key(&path.parts);
         let bytes = self.rules.join(path);
-        let id: i64 = match self.folder_id.query_row([&bytes], |r| r.get(0)).optional()? {
-            Some(id) => id,
-            None => self.new_folder.query_row(params![bytes, key], |r| r.get(0))?,
+        let id = match self.folder_ids.get(&bytes) {
+            Some(id) => *id,
+            None => {
+                let id: i64 = match self.folder_id.query_row([&bytes], |r| r.get(0)).optional()? {
+                    Some(id) => id,
+                    None => self.new_folder.query_row(params![bytes, key], |r| r.get(0))?,
+                };
+                self.folder_ids.insert(bytes, id);
+                id
+            }
         };
         Ok(Folder { id: FolderId::new(id), key })
     }

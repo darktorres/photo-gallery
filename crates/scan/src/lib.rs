@@ -46,6 +46,8 @@
 //!   crashed process's, and expires. It is given back in `mark_missing`'s last transaction, or when the `ScanLease` is
 //!   dropped (a stop, an error, a panic). A refused walk is `ScanError::Busy`: the job puts it back on its queue and tries
 //!   again after 5 s (`BUSY_RETRY`); `gallery scan` says another process is scanning and fails, or waits with `--wait`.
+//! - Workers list folders ahead of the walk (`worker`), each with a read-only connection of its own that reads a folder's
+//!   rows and nothing else: they hold no lock, and their listings are consumed by the walk in walk order.
 //! - **Every write transaction of a walk holds the lease first**: the batches', the pairing's and the missing marks'.
 //!   Removing the library folder takes the leases of the walks under it, in the transaction that marks its files missing
 //!   (`Catalog::remove_root`), in any process; the walk's next write then writes nothing, and the walk ends as
@@ -54,7 +56,7 @@
 //!
 //! So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -865,7 +867,8 @@ fn walk_leased<L: Listing>(
         // per mount, not per folder.
         let mut mounts: BTreeMap<u64, Result<(), RefusedReason>> = BTreeMap::new();
         // Each identity recorded or seen this scan: the second path to a file is skipped.
-        let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
+        // (Only queried for membership, so a hash set: the walk's own order is the listing's, not the set's.)
+        let mut seen: HashSet<FileIdentity> = HashSet::new();
         let mut batch = Batch::default();
         // When the lease was last renewed (a batch's write renews it too).
         let mut renewed = Instant::now();
@@ -908,10 +911,12 @@ fn walk_leased<L: Listing>(
             let Listed { rows, entries, jobs: _ } = listed;
             stats.folders += 1;
             let mut files: Vec<ListedFile> = Vec::new();
-            for (i, e) in entries.iter().enumerate() {
+            let n = entries.len();
+            // The entries are the walk's now: a file's name moves into its batch entry, not cloned.
+            for (i, e) in entries.into_iter().enumerate() {
                 // The identity of an entry on another device is the walk's to find, here, in walk order: the same
                 // probes and the same claims a walk with no workers makes.
-                let other = other_device(e, job.device);
+                let other = other_device(&e, job.device);
                 let volume = match (e.device, job.device) {
                     (Some(device), Some(own)) if device != own => {
                         let probe = units_of(&rules.join(&job.path.child(&e.name)));
@@ -963,7 +968,7 @@ fn walk_leased<L: Listing>(
                             continue;
                         }
                     }
-                    let next = child_job(&job, e, i, entries.len(), volume);
+                    let next = child_job(&job, &e, i, n, volume);
                     // A folder on the folder's device was handed to the workers with this listing: it is in the pool.
                     stack.push(Frame { job: next, dir: None, pooled: !other });
                     continue;
@@ -975,7 +980,7 @@ fn walk_leased<L: Listing>(
                 }
                 files.push(ListedFile {
                     identity,
-                    name: e.name.clone(),
+                    name: e.name,
                     ext,
                     size: e.size,
                     mtime: e.mtime,

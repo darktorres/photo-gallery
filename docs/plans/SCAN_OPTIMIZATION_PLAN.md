@@ -953,6 +953,25 @@ The rest are the right code regardless of their size.
 Item 17 (skipping `mark_missing` on folders with nothing missing) is covered by Phase 3: `mark_missing` reads first,
 and takes the write lock only when there are rows to mark.
 
+**Built, not tested (2026-11-17).** Items 4, 9, 10, 11 and 13 are in:
+
+- **4:** the scan writer's statements are `prepare_cached`, and `core::register` sets the connection's cache to 64
+  (`STATEMENT_CACHE`). The import's writers still `prepare` per transaction: their change waits with the measurement.
+- **9:** `ScanWriter::folder` memoises each folder's id for the writer (one batch), so a folder is looked up once per batch.
+- **10:** `Ext::of_name_bytes` compares an ASCII extension byte by byte, without decoding (`eq_ignore_ascii_case` against the
+  lower-case lists).
+- **11:** a listed file's name moves into its batch entry (`ListedFile::name`); the walk owns the listing.
+- **13:** the walk's seen set is a `HashSet`; it is only queried for membership.
+
+**Not built, and why:**
+
+- **6 and 8 (the `rarray` lookups).** Their rule is to add each to the variant probe against today's per-file statement
+  first, then adopt it only if the measurement says so. The probe variants are the measurement's work, so they wait for
+  it. Item 8's lookup would go in `prior_states` (`roots.rs`), where the list is a bound array on the walk's connection;
+  item 6 changes `record_file`'s control flow, which is the larger edit.
+- **The allocator (item 20).** The trial adds `mimalloc` to the workspace and needs the crate fetched, so it is a
+  measurement step, not a code change to make before it.
+
 **The allocator (item 20), gated.** (Reevaluated 2026-11-17: `mimalloc` is not in `Cargo.lock`, so the trial adds the
 crate. Nothing else here changed.)
 

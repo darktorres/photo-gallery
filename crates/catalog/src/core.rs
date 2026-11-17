@@ -240,8 +240,14 @@ impl Catalog {
 fn register(conn: &Connection) -> Result<()> {
     pg_query::register_functions(conn)?;
     rusqlite::vtab::array::load_module(conn)?;
+    // The scan's writer and the import's statements are prepared once and reused across batches (`prepare_cached`), so
+    // the cache holds all of them with room to spare (rusqlite's default is 16).
+    conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
     Ok(())
 }
+
+/// The prepared statements a connection keeps for reuse (`prepare_cached`).
+const STATEMENT_CACHE: usize = 64;
 
 /// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s.
 pub(crate) fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {

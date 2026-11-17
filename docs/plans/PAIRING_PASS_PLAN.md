@@ -19,8 +19,8 @@ result are in [PROFILING.md](../reference/PROFILING.md), "The pairing pass" and 
 | Target | After block D | After the second round |
 |---|---|---|
 | Same pairs | Met: the oracle's 5,277 exactly, in one slice, four slices, and partial passes on both paths | Met, on the same seven paths |
-| 12 workers, 5x or better | Met: 6.56 -> 1.27 s (5.2x) | 0.94 - 1.0 s (6.6 - 7.0x) |
-| 1 worker, 3.5x or better | **Not met**: 10.63 -> 5.15 s (2.1x); the scan is 3.9 s of it | **Not met**: 4.6 - 4.7 s (2.3x). Tracked as P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md) |
+| 12 workers, 5x or better | Met: 6.56 -> 1.27 s (5.2x) | Met: 8.60 -> 0.92 s (9.3x), both timed with turbo off |
+| 1 worker, 3.5x or better | **Not met**: 10.63 -> 5.15 s (2.1x); the scan is 3.9 s of it | **Not met**: 14.80 -> 4.69 s (3.2x), both timed with turbo off (the first column's baseline was timed with turbo, its result without). Tracked as P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md) |
 | A pass for a few files, about 0.35 s | Met: 0.24 s for one owed picture | 0.13 - 0.14 s for 300 owed at 12 workers |
 | Peak commit at most 330 MB | Met: 254 MiB all owed, 75 MiB one owed | The cap is removed; 172 - 174 MiB all owed, 63 MiB 300 owed |
 | `prepare` at every start, about 30 ms | 42 ms for the probe's whole process with nothing owed (111 - 126 ms when the extension check runs) | Not re-measured |

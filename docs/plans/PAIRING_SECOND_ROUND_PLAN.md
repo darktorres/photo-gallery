@@ -26,8 +26,9 @@ The first round is [PAIRING_PASS_PLAN.md](PAIRING_PASS_PLAN.md); this round work
 
 **Open.** The round's steps are done, and what its record left is measured (`PROFILING.md`, "What the round left,
 measured"): the first pass's scatter in fewer streams was kept; the equal-work blocks with their work prefix, and the
-16-lane kernel, were measured and not built. Its aim is not met: the one-worker pass is 4.6 - 4.8 s, 2.3x the pass
-before the first round's rebuild, against the first round's 3.5x (P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md),
+16-lane kernel, were measured and not built. Its aim is not met: the one-worker pass is 4.7 s, 3.2x the pass
+before the first round's rebuild (14.8 s, timed again alike, turbo off; the 2.3x first given here set a turbo-off
+pass against a baseline timed with turbo), against the first round's 3.5x (P-13 in [PROFILING_PLAN.md](PROFILING_PLAN.md),
 open; the scan, 3.6 s, is what is left, and none of the round's leads remains for it).
 
 ## Context
@@ -698,8 +699,8 @@ Each setting takes the simplest value within +1% of the best, with peak commit r
 
 **Status: done.** `PROFILING.md` holds each step's results with their intervals, and the first round's records say
 what the second replaced (the sorter threads and G3's rule, the 330 MB cap, `FEW_ENTRIES_PER_THREAD`, the recipe's
-`PG_PROBE_SORTERS`). P-13 is updated and stays open: one worker is 4.6 - 4.7 s, 2.3x against the 3.5x target, the
-scan what is left. `PAIRING_PASS_PLAN.md`'s status gives both rounds' results. `gallery pair`'s timings line gives
+`PG_PROBE_SORTERS`). P-13 is updated and stays open: one worker is 4.6 - 4.7 s, 3.2x against the 3.5x target (2.3x as first
+given, against a baseline timed with turbo), the scan what is left. `PAIRING_PASS_PLAN.md`'s status gives both rounds' results. `gallery pair`'s timings line gives
 the team's idle and paused time beside its sorts and scans (`cli.ftl`, `cli-pair-timings`), and `crates/README.md` names
 `pairs_owed`. The callgrind bench `ir::pairing::join` (`crates/bench/benches/ir/pairing.rs`) counts the store's build
 and a one-thread join on a synthetic 20,000-picture library, `all` owed (the sorted path, 2,572 M instructions) and

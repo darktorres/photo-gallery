@@ -643,7 +643,8 @@ join's parts: `prepare` (the slice's query side), `sort` (the time the scan wait
 | 6 | 1 | 1.50 s | 0.15 s | 1.09 s | 0.05 s | 0.93 s | 0.23 s | 0.04 s |
 | 12 | 2 | 1.27 s (6.56) | 0.14 s | 0.83 s | 0.06 s | 0.68 s | 0.24 s | 0.04 s |
 
-The plan's targets: at 12 workers 5x or better, met (5.2x). On one worker 3.5x, **not met** (2.1x): what is left there is
+The plan's targets: at 12 workers 5x or better, met (5.2x). On one worker 3.5x, **not met** (2.1x; these baselines were
+timed with turbo, the results without: "Both rounds against the pass before them" times both alike): what is left there is
 the scan itself, 3.9 s on one thread. A pass for a few files, 0.35 s, met (below).
 
 **Correctness on the real data** (`oracle_d.ps1` in the scratch folder, now `tools/profiling/pairing/oracle.ps1`;
@@ -1236,6 +1237,23 @@ every slice, and the pass grows with the library whatever the slice (about 0.35 
 itself is `docs/plans/BOUNDED_MEMORY_PLAN.md`'s (Phase 5, the on-disk tier-1 index in a budget `W`), which replaces this
 join. Until then 200,000 is kept: this library is one slice, and a larger one pays 26 - 35% for a query side bounded
 at ~80 MiB.
+
+#### Both rounds against the pass before them, measured again
+
+The first round's ratios were against the pass before its rebuild as timed then (10.63 s on one worker, 6.56 s on
+12: 3 runs, before the keep rule set the power plan's maximum processor state to 99%, so with turbo). Every later
+result is with turbo off, so "2.3x" set a turbo-off pass against a turbo-on baseline. The pass before the first round
+(`cfece55`, its own `pairs_probe`, every picture owed by `pairs_again`, only the pass timed) against `fc7b1cf`, each on
+a copy of the same library at its own schema version (12 and 15), 6 alternating pairs, turbo off:
+
+| Workers | `cfece55`, ms | `fc7b1cf`, ms | Speedup |
+|---:|---|---|---:|
+| 1 | 14,798 (14,695 - 15,081) | 4,686 (4,667 - 4,859) | **3.16x** |
+| 12 | 8,600 (8,414 - 8,706) | 920 (899 - 977) | **9.34x** |
+
+Medians, with the six runs' range. Both builds make the oracle's 5,277 pairs. Against the first round's targets: 12
+workers 5x or better, met (9.3x); one worker 3.5x or better, not met (3.2x: 4.2 s or less would meet it, and the scan
+is 3.6 s of the 4.7).
 
 #### What the round left, measured (after step 10)
 

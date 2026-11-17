@@ -8,6 +8,13 @@ The harness and scripts are in `eval/jpeg-decoders`.
 
 ## Verdict: keep libjpeg-turbo
 
+**Update, 2026-11-17:** the app's own Windows build of libjpeg-turbo was unoptimized (the cmake crate's `/Od`
+replaced CMake's `/O2`). With the fork's optimized build (`vendor/README.md`), one decode at the thumbnail minimum on
+the 300-file Pinterest sample went from 7.48 to 4.30 ms per call, with identical decoded pixels. The tables below were
+measured with the eval harness and the Linux container, which build libjpeg-turbo with their own scripts
+(`win_build.py` on Windows; its flags were not checked for this note), so this change does not touch them. The app's
+Windows decode is the 4.30 ms figure.
+
 - **Fewest instructions:** with its default or fast options, it uses the fewest instructions of any CPU decoder on
   every input except two, both FFmpeg's: the progressive file, and the phone photo at 1/4, by 1.5%.
 - **Fastest scaled decode:** its DCT-scaled decode, which `analyze` uses, is the fastest decode on every file

@@ -327,11 +327,15 @@ fn seen_volumes(tx: &Transaction) -> Result<std::collections::BTreeSet<i64>> {
 /// Read from the set's unpaired index (`scan_seen_unpaired`): the scan's fresh rows in id order, so a batch is a seek from
 /// `after` that stops at `limit` rows, and a scan's batches read each fresh row once. The root's folders filter what it
 /// finds. The reads take no write lock, so a probe with a limit of one can run before a write transaction is opened.
+///
+/// `CROSS JOIN` keeps the set as the outer loop. With a plain `JOIN` the planner drove the query from the folder's
+/// files and sorted every match for each batch: the cost grew with the square of the library (12.9 s for 85,071 rows
+/// in 172 batches, against 0.27 s with the set outside).
 fn fresh_rows(conn: &Connection, under: &[Vec<u8>; 3], after: i64, limit: usize) -> Result<Vec<Fresh>> {
     let mut stmt = conn.prepare_cached(concat!(
         "SELECT files.id, files.volume, files.file_ref, files.created, files.folder_id, files.name, files.ext,
                 files.kind, files.size, files.mtime, files.order_key
-         FROM temp.scan_seen s JOIN files ON files.id = s.id
+         FROM temp.scan_seen s CROSS JOIN files ON files.id = s.id
          WHERE s.unpaired = 1 AND files.unpaired = 1 AND files.volume IS NOT NULL AND s.id > ?4
            AND files.folder_id IN (",
         under_root!(),

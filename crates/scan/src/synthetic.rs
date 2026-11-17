@@ -2,6 +2,7 @@
 //! system under it, the same tree on every run, so a walk's instruction count is the walk's own.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::io;
 
 use pg_model::name::Name;
@@ -27,9 +28,9 @@ struct SyntheticEntry {
 /// time are fixed by its place in the tree.
 pub struct SyntheticTree {
     /// Each folder that can be opened, by its units as the walk opens it: its listing's index in `listings`.
-    folders: BTreeMap<Vec<Unit>, usize>,
+    folders: Arc<BTreeMap<Vec<Unit>, usize>>,
     /// The entries of each folder that can be opened, the root's first.
-    listings: Vec<Vec<SyntheticEntry>>,
+    listings: Arc<Vec<Vec<SyntheticEntry>>>,
 }
 
 impl SyntheticTree {
@@ -74,7 +75,7 @@ impl SyntheticTree {
             listings.push(entries);
         }
         listings.insert(0, top);
-        SyntheticTree { folders: map, listings }
+        SyntheticTree { folders: Arc::new(map), listings: Arc::new(listings) }
     }
 }
 
@@ -85,8 +86,21 @@ impl Listing for SyntheticTree {
         self.folders.get(path).copied().ok_or_else(|| io::Error::new(io::ErrorKind::PermissionDenied, "unreadable"))
     }
 
+    fn device(&self, _dir: &usize) -> Option<u64> {
+        None
+    }
+
     fn volume(&mut self, _dir: &usize) -> io::Result<u64> {
         Ok(1)
+    }
+
+    /// No entry of the tree is on another device: never called.
+    fn volume_of_device(&mut self, device: u64, _probe: &[Unit]) -> u64 {
+        device
+    }
+
+    fn fresh(&self) -> SyntheticTree {
+        SyntheticTree { folders: Arc::clone(&self.folders), listings: Arc::clone(&self.listings) }
     }
 
     fn each(&mut self, dir: &usize, mut each: impl FnMut(Entry<'_>)) -> io::Result<()> {
@@ -99,7 +113,7 @@ impl Listing for SyntheticTree {
                 file_id: e.file_id,
                 size: e.size,
                 mtime: e.mtime,
-                volume: None,
+                device: None,
                 created: None,
             });
         }

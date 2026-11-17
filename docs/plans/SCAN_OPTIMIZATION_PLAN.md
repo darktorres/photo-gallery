@@ -895,6 +895,31 @@ lister**).
    - `just perf` never runs this path: its scan bench is in memory (`bench/benches/ir/catalog.rs:256`), so it has no
      workers.
 
+**Built, not tested (2026-11-17).** The walk lists ahead with workers, as the design says, with these differences:
+
+- **No admission rule and no eviction.** The walk never waits on a folder no worker has taken: it lists that folder
+  itself (`take` returns `Inline`). That keeps the walk from waiting on a folder nobody lists, so the rule that grants
+  the next folder isn't needed. Held results are not dropped: `AHEAD` (entries listed and not consumed) only stops the
+  workers taking more folders.
+- **The identity reads are the walk's.** `prior_states` runs on the walk's connection for every changed file, not only
+  for files on another device. The worker reads only the folder's rows (`FolderRowReader::folder_rows`, before the
+  listing), so the seen set, mounts, loops and the batch stay on the walk's thread.
+- **Devices are mapped by the walk, in walk order.** The platform's `Entry` carries the raw device (`Entry::device`).
+  `Lister::map_device` is called by the walk for each entry on another device, in the order a single thread would
+  meet them. The Linux lister no longer maps while it lists, so workers hold no identity state. A worker's lister is
+  `Listing::fresh`.
+- **The lease is renewed while the walk waits** on a worker's listing, only when that listing has moved since the last
+  renewal (`take`, every `RENEW_EVERY`). A hung listing lets the lease expire.
+- **Workers:** `WORKERS = 4` on every device. The device-kind query (`volume.rs`) and the count per kind are not built;
+  they wait for the measurement this phase asks for.
+- **Panics** are caught on the worker, delivered with the payload, and raised again on the walk
+  (`Outcome::Panicked`, `resume_unwind`).
+- **Tests added:** a walk with 4 workers gives the same judgments and rows as one with none (`judged_tree`); a panic
+  in a listing reaches the walk with its payload; a stop with workers listing marks nothing missing. Not written yet:
+  the write-back between a worker's listing and the batch, a pause with workers parked, a walk that fails during a
+  pause, and the two cloned devices on Linux. The rewrites of the prefetch-sensitive tests (change 3) are not done; the
+  tests on an in-memory catalog have no workers and run as before.
+
 ## Phase 5: the small items
 
 Their costs were measured in the app, except item 11.

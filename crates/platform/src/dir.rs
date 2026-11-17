@@ -341,6 +341,18 @@ mod windows {
             dir.volume()
         }
 
+        /// The device a folder is on, as a listing numbers it: none here, where each entry is on the folder's volume.
+        pub fn device(&self, dir: &Dir) -> Option<u64> {
+            let _ = dir;
+            None
+        }
+
+        /// The identity of device `device`, from a path on it. Never called: no entry here carries a device.
+        pub fn map_device(&mut self, device: u64, probe: &[Unit]) -> u64 {
+            let _ = probe;
+            device
+        }
+
         /// Open the folder `path` for listing. A drive root (`D:`) names the drive's current folder, so the path is
         /// opened with its trailing backslash, and in its verbatim form (`native`), which reaches a folder whose name
         /// ends in a dot and lifts the 260-character limit.
@@ -399,7 +411,7 @@ mod windows {
                         file_id: info.FileId.cast_unsigned(),
                         size,
                         mtime: info.LastWriteTime,
-                        volume: None,
+                        device: None,
                         created: Some(info.CreationTime),
                     });
                     if info.NextEntryOffset == 0 {
@@ -422,8 +434,11 @@ mod unix {
     use std::os::unix::fs::MetadataExt;
     use std::path::{Path, PathBuf};
 
-    /// An open folder: on Unix, its path (listed by `std::fs::read_dir` when asked).
-    pub struct Dir(PathBuf);
+    /// An open folder: on Unix, its path (listed by `std::fs::read_dir` when asked) and its device number.
+    pub struct Dir {
+        path: PathBuf,
+        dev: u64,
+    }
 
     /// What listing a folder needs, kept from one folder to the next: the volume identities found so far
     /// (`std::fs::read_dir` holds its own buffer).
@@ -447,20 +462,31 @@ mod unix {
             self.fallbacks
         }
 
-        /// The volume a folder is on: its stable identity (see `Lister::volume_of_device`).
-        pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
-            let dev = std::fs::metadata(&dir.0)?.dev();
-            Ok(self.volume_of_device(dev, &dir.0, OsStr::new("")))
+        /// The device a folder is on, as a listing numbers it (`Entry::device`).
+        pub fn device(&self, dir: &Dir) -> Option<u64> {
+            Some(dir.dev)
         }
 
-        /// The stable identity of the volume device `dev` is, found from the path `folder/name` (a probe on that volume) and
-        /// kept for the listing. A device whose identity an earlier one holds (a clone of its disk) keeps its device number,
-        /// and is counted, so its files stay apart from the other's.
-        fn volume_of_device(&mut self, dev: u64, folder: &Path, name: &OsStr) -> u64 {
+        /// The volume a folder is on: its stable identity (see `Lister::identify`).
+        pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
+            Ok(self.identify(dir.dev, &dir.path.join("")))
+        }
+
+        /// The stable identity of device `device`, from a path on it (a probe: an entry's path, or the folder's). A walk
+        /// calls it on its own thread, in the order it lists, so that two devices with one identity are told apart as
+        /// the walk meets them (`identify`).
+        pub fn map_device(&mut self, device: u64, probe: &[Unit]) -> u64 {
+            self.identify(device, Path::new(OsStr::from_bytes(probe)))
+        }
+
+        /// The stable identity of the volume device `dev` is, found from `probe` (a path on the volume) and kept for the
+        /// listing. A device whose identity an earlier one holds (a clone of its disk) keeps its device number, and is
+        /// counted, so its files stay apart from the other's.
+        fn identify(&mut self, dev: u64, probe: &Path) -> u64 {
             if let Some(id) = self.volumes.get(&dev) {
                 return *id;
             }
-            let id = match volume_id(dev, &folder.join(name)) {
+            let id = match volume_id(dev, probe) {
                 Some(id) if !self.claimed.contains_key(&id) => {
                     self.claimed.insert(id, dev);
                     id
@@ -476,16 +502,19 @@ mod unix {
 
         pub fn open(&mut self, path: &[Unit]) -> io::Result<Dir> {
             let path = PathBuf::from(OsStr::from_bytes(path));
-            if !std::fs::metadata(&path)?.is_dir() {
+            let meta = std::fs::metadata(&path)?;
+            if !meta.is_dir() {
                 return Err(io::Error::other(format!("{} is not a folder", path.display())));
             }
-            Ok(Dir(path))
+            Ok(Dir { path, dev: meta.dev() })
         }
 
-        /// Each entry of the folder, until the listing ends. An entry that vanishes while listed is skipped, as a
-        /// listing that doesn't see it would; any other metadata error fails the listing (the folder is unreadable).
+        /// Each entry of the folder, until the listing ends, with its device as the platform gives it: no identity is
+        /// looked up here, so a listing needs no state of the lister's and may run on any thread (see `map_device`). An
+        /// entry that vanishes while listed is skipped, as a listing that doesn't see it would; any other metadata error
+        /// fails the listing (the folder is unreadable).
         pub fn each(&mut self, dir: &Dir, mut each: impl FnMut(Entry<'_>)) -> io::Result<()> {
-            for entry in std::fs::read_dir(&dir.0)? {
+            for entry in std::fs::read_dir(&dir.path)? {
                 let entry = entry?;
                 let meta = match entry.metadata() {
                     Ok(meta) => meta,
@@ -500,7 +529,7 @@ mod unix {
                     file_id: meta.ino(),
                     size: meta.len(),
                     mtime: crate::file::last_write_time(&meta),
-                    volume: Some(self.volume_of_device(meta.dev(), &dir.0, &name)),
+                    device: Some(meta.dev()),
                     created: crate::file::created_time(&meta),
                 });
             }
@@ -710,21 +739,25 @@ mod listing_tests {
         // The crate's own folder: read, never written.
         let mut lister = Lister::new();
         let dir = lister.open(&units_of(env!("CARGO_MANIFEST_DIR").as_bytes())).unwrap();
-        let folder_volume = lister.folder_volume(&dir).unwrap();
+        assert_ne!(lister.folder_volume(&dir).unwrap(), 0, "the folder's volume has an identity");
         let wanted = units_of(b"Cargo.toml");
         let mut found = None;
         lister
             .each(&dir, |e| {
                 if e.name == wanted.as_slice() {
-                    found = Some((e.folder, e.file_id, e.volume, e.created));
+                    found = Some((e.folder, e.file_id, e.device, e.created));
                 }
             })
             .unwrap();
-        let (folder, file_id, volume, created) = found.expect("Cargo.toml is in the crate's folder");
+        let (folder, file_id, device, created) = found.expect("Cargo.toml is in the crate's folder");
         assert!(!folder);
         assert_ne!(file_id, 0, "a file has an identity");
-        // Windows gives the folder's volume once, with `volume()`; Unix gives each entry's device.
-        assert_eq!(volume.unwrap_or(folder_volume), folder_volume);
+        // Windows gives the folder's volume once, with `volume()`, so no entry carries a device; Unix gives each entry's.
+        #[cfg(windows)]
+        assert_eq!(device, None);
+        #[cfg(not(windows))]
+        assert!(device.is_some(), "Unix gives each entry its device");
+        let _ = device;
         #[cfg(windows)]
         assert!(created.is_some(), "NTFS gives the creation time");
         #[cfg(not(windows))]
@@ -750,13 +783,16 @@ mod listing_tests {
         assert_ne!(lister.folder_volume(&root).unwrap(), proc_volume);
         let proc_dev = std::fs::metadata("/proc").unwrap().dev();
         let mut seen = Vec::new();
-        lister.each(&proc, |e| seen.push((e.name.to_vec(), e.volume))).unwrap();
+        lister.each(&proc, |e| seen.push((e.name.to_vec(), e.device))).unwrap();
         assert!(!seen.is_empty());
         let mut by_device = BTreeMap::new();
-        for (name, volume) in &seen {
+        for (name, device) in &seen {
             let shown = OsStr::from_bytes(name);
-            let own = std::fs::symlink_metadata(std::path::Path::new("/proc").join(shown)).unwrap().dev();
-            let volume = volume.unwrap_or_else(|| panic!("the entry {shown:?} of /proc has no volume"));
+            let probe = std::path::Path::new("/proc").join(shown);
+            let own = std::fs::symlink_metadata(&probe).unwrap().dev();
+            let device = device.unwrap_or_else(|| panic!("the entry {shown:?} of /proc has no device"));
+            assert_eq!(device, own, "the entry {shown:?} of /proc gives its own device");
+            let volume = lister.map_device(device, probe.as_os_str().as_bytes());
             assert_eq!(*by_device.entry(own).or_insert(volume), volume, "the entry {shown:?} of /proc");
             if own == proc_dev {
                 assert_eq!(volume, proc_volume, "the entry {shown:?} of /proc");

@@ -56,11 +56,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use pg_catalog::pair::{Coverage, Pairing};
-use pg_catalog::{Catalog, FolderFailure, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason};
+use pg_catalog::{Catalog, FolderFailure, FolderRowReader, FolderRows, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason};
 use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_model::name::Name;
@@ -70,27 +73,38 @@ use pg_platform::native::Unit;
 
 use pg_jobs::control::{Checkpoint, Control};
 use pg_jobs::failure::{FAILURES_KEPT, keep_failure};
+use pg_jobs::panics;
 use pg_model::notice::FileFailure;
 use pg_model::progress::Phase;
 use pg_model::refusal::RefusedReason;
 use pg_platform::names::{name_from_native, units_of};
+use pg_platform::priority::{self, Priority};
 
 mod refusal;
 #[cfg(feature = "bench")]
 pub mod synthetic;
 
-/// The folder listing a scan reads with: the platform's [`Lister`], or a fake in the tests.
-pub trait Listing {
+/// The folder listing a scan reads with: the platform's [`Lister`], or a fake in the tests. A listing runs on the walk's
+/// thread, and on the worker threads that list folders ahead of it, each with a lister of its own ([`Listing::fresh`]).
+pub trait Listing: Send {
     type Dir;
     fn open(&mut self, path: &[Unit]) -> io::Result<Self::Dir>;
-    /// The volume the folder is on: the one its entries are on, where the platform has one volume per folder
-    /// (Windows). An entry that carries its own volume (Unix) uses that instead.
+    /// The device the folder is on, as its entries number theirs (`Entry::device`): none where every folder is on one
+    /// volume (Windows).
+    fn device(&self, dir: &Self::Dir) -> Option<u64>;
+    /// The volume the folder is on: the root's. A folder below it has its volume from its entry (`volume_of_device`).
     fn volume(&mut self, dir: &Self::Dir) -> io::Result<u64>;
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()>;
+    /// The identity of device `device`, from `probe`, a path on it. Kept, so that a second device with the same identity
+    /// is told apart. The walk calls it on its own thread, in the order it lists the folders: the identities are the
+    /// same as a walk with no workers gives.
+    fn volume_of_device(&mut self, device: u64, probe: &[Unit]) -> u64;
     /// Whether the folder at `path`, on a device other than the root's, may be walked into: the reason it may not, if not.
     fn check_mount(&mut self, path: &[Unit]) -> Result<(), RefusedReason>;
     /// How many devices were given their device number as their identity (no UUID, or the UUID of another device).
     fn fallback_volumes(&self) -> u64;
+    /// A lister of its own for a worker thread. A worker only lists, so it starts with no device identities.
+    fn fresh(&self) -> Self;
 }
 
 impl Listing for Lister {
@@ -98,6 +112,10 @@ impl Listing for Lister {
 
     fn open(&mut self, path: &[Unit]) -> io::Result<Self::Dir> {
         Lister::open(self, path)
+    }
+
+    fn device(&self, dir: &Self::Dir) -> Option<u64> {
+        Lister::device(self, dir)
     }
 
     fn volume(&mut self, dir: &Self::Dir) -> io::Result<u64> {
@@ -108,12 +126,20 @@ impl Listing for Lister {
         Lister::each(self, dir, each)
     }
 
+    fn volume_of_device(&mut self, device: u64, probe: &[Unit]) -> u64 {
+        Lister::map_device(self, device, probe)
+    }
+
     fn check_mount(&mut self, path: &[Unit]) -> Result<(), RefusedReason> {
         refusal::check_mount(path)
     }
 
     fn fallback_volumes(&self) -> u64 {
         Lister::fallback_volumes(self)
+    }
+
+    fn fresh(&self) -> Lister {
+        Lister::new()
     }
 }
 
@@ -184,23 +210,17 @@ struct DirEntry {
     mtime: i64,
     /// A reparse point (a junction, a symlink, or a cloud placeholder's reparse data): never followed.
     reparse: bool,
-    /// The volume the entry is on (its own, or the folder's).
-    volume: u64,
+    /// The device the entry is on as its listing numbers it (`Entry::device`); `None` on the folder's own volume.
+    device: Option<u64>,
     created: Option<i64>,
 }
 
-/// Lists a folder's media files and subfolders into `entries`, reusing the first ones: returns how many. The
-/// platform gives the records; the choices are here: a record needs its file ID, the dot folders are skipped, and
-/// only files the library holds and folders are kept. Reparse points are kept, marked, so the walk can index them
-/// without following them. `beat` runs before each record, so a listing that takes long can renew the walk's lease.
-fn list<L: Listing>(
-    lister: &mut L,
-    dir: &L::Dir,
-    root_volume: u64,
-    entries: &mut Vec<DirEntry>,
-    beat: &mut dyn FnMut(),
-) -> io::Result<usize> {
-    let mut n = 0;
+/// Lists a folder's media files and subfolders. The platform gives the records; the choices are here: a record needs its
+/// file ID, the dot folders are skipped, and only files the library holds and folders are kept. Reparse points are kept,
+/// marked, so the walk can index them without following them. `beat` runs before each record, so a listing that takes
+/// long can renew the walk's lease (or show that a worker's listing is moving).
+fn list<L: Listing>(lister: &mut L, dir: &L::Dir, beat: &mut dyn FnMut()) -> io::Result<Vec<DirEntry>> {
+    let mut entries = Vec::new();
     let mut no_id = false;
     lister.each(dir, |e| {
         beat();
@@ -214,27 +234,28 @@ fn list<L: Listing>(
         let ext = if e.folder { None } else { Ext::of_name_bytes(name.as_bytes()) };
         let kept = (e.folder && !name.is_dot()) || ext.is_some();
         if kept {
-            let entry = DirEntry {
+            entries.push(DirEntry {
                 name,
                 ext,
                 file_id: e.file_id,
                 size: e.size,
                 mtime: e.mtime,
                 reparse: e.reparse,
-                volume: e.volume.unwrap_or(root_volume),
+                device: e.device,
                 created: e.created,
-            };
-            match entries.get_mut(n) {
-                Some(slot) => *slot = entry,
-                None => entries.push(entry),
-            }
-            n += 1;
+            });
         }
     })?;
     if no_id {
         return Err(io::Error::other("an entry has no file ID, so the folder's identities can't be read"));
     }
-    Ok(n)
+    Ok(entries)
+}
+
+/// Whether an entry is on a device other than its folder's: both devices are known, and they differ. Where the platform
+/// has one volume per folder (no devices), none is.
+fn other_device(e: &DirEntry, folder: Option<u64>) -> bool {
+    matches!((e.device, folder), (Some(device), Some(own)) if device != own)
 }
 
 /// The folder at `path`, opened for listing: by its units, as the system takes them.
@@ -359,15 +380,23 @@ pub fn scan_with<L: Listing>(
     walk(catalog, root, ctl, lister)
 }
 
-/// The folder being walked: its path, the folders it is under (with itself last) as `(volume, file ID)`, which a
-/// folder met again is looked for in (a cycle), and its listing when it is already open.
-struct Frame<D> {
+/// A folder to list: its place in the walk, its path, its device and volume as the walk has them, and the folders it is
+/// under (with itself last), as `(volume, file ID)`, which a folder met again is looked for in (a cycle).
+///
+/// The key orders the walk's folders in the order it consumes them. A folder's children are consumed after it and before
+/// its earlier siblings, so comparing keys compares walk orders: a child's key is its parent's, then its place among the
+/// parent's entries counted from the last (`child_job`).
+struct Job {
+    key: Key,
     path: RulePath,
-    chain: Vec<(u64, u64)>,
-    dir: Option<D>,
-    /// The device the folder is on: a folder on another one is a mount, checked before it is walked into.
+    /// The folder's device as its listing numbers it (`None` where there is one volume per folder).
+    device: Option<u64>,
     volume: u64,
+    chain: Vec<(u64, u64)>,
 }
+
+/// A folder's place in the walk (see [`Job`]).
+type Key = Vec<u64>;
 
 /// A media file as a listing gave it, with the catalog's row for its identity as it was then (`prior`).
 struct ListedFile {
@@ -404,13 +433,353 @@ impl Batch {
     }
 }
 
-/// The walk, over any listing: [`scan`] after its check. The root is opened and the lease taken; then the walk itself.
-fn walk<L: Listing>(
-    catalog: &mut Catalog,
-    root: &RulePath,
+/// A folder's listing: its entries in listing order, and the rows of its files read before the listing. `jobs` are the
+/// folders below it on its own device, which the walk hands to the workers ([`descents`]).
+struct Listed {
+    rows: FolderRows,
+    entries: Vec<DirEntry>,
+    jobs: Vec<Job>,
+}
+
+/// What listing a folder gave: the listing, or how it failed.
+enum Outcome {
+    Listed(Listed),
+    /// The folder can't be opened or listed: it is unreadable, and the walk records it.
+    Unreadable(io::Error),
+    /// The catalog couldn't be read for the folder: the walk fails.
+    Failed(anyhow::Error),
+    /// The listing panicked: the walk raises the panic again, with its payload.
+    Panicked(Box<dyn std::any::Any + Send>),
+}
+
+impl Outcome {
+    /// How much of the bound on the listing ahead a delivered outcome holds: its entries.
+    fn weight(&self) -> usize {
+        match self {
+            Outcome::Listed(listed) => listed.entries.len() + 1,
+            _ => 1,
+        }
+    }
+}
+
+/// A folder the walk has yet to consume: its job, its listing when it is already open (the root's), and whether a worker
+/// lists it. A folder on its parent's device is handed out with the parent's listing; one on another device is listed by
+/// the walk, once its mount is checked.
+struct Frame<D> {
+    job: Job,
+    dir: Option<D>,
+    pooled: bool,
+}
+
+/// The entries listed ahead of the walk, past which the workers take no more folders. A folder the walk needs that no
+/// worker has taken, it lists itself ([`take`]).
+const AHEAD: usize = 50_000;
+
+/// How often the walk, waiting for a worker's listing, looks at its progress.
+const POLL: Duration = Duration::from_millis(100);
+
+/// The workers that list folders ahead of the walk, on a catalog that is a file (`walk_paced`).
+const WORKERS: usize = 4;
+
+/// The walk's pacing: its batch size, how often its lease is renewed, and how many workers list ahead of it.
+#[derive(Clone, Copy)]
+struct Pacing {
+    batch: usize,
+    renew_every: Duration,
+    workers: usize,
+}
+
+/// The folders the workers list ahead of the walk, and what they have listed. Only the pool's own state is under its
+/// lock: no catalog read or write is made under it.
+struct Pool {
+    state: Mutex<PoolState>,
+    /// Signalled when a folder is added, a listing is delivered, the walk resumes, or the pool stops.
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct PoolState {
+    /// The folders no worker has taken, in walk order.
+    pending: BTreeMap<Key, Job>,
+    /// The folders a worker is listing, with its progress (the entries it has listed).
+    taken: BTreeMap<Key, Arc<AtomicU64>>,
+    /// The listings delivered and not yet consumed by the walk.
+    results: BTreeMap<Key, Outcome>,
+    /// The weight of `results`.
+    held: usize,
+    stopped: bool,
+}
+
+impl Pool {
+    fn new() -> Pool {
+        Pool { state: Mutex::new(PoolState::default()), changed: Condvar::new() }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, PoolState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Folders the workers may take, added by the walk.
+    fn add(&self, jobs: Vec<Job>) {
+        if jobs.is_empty() {
+            return;
+        }
+        let mut st = self.lock();
+        for job in jobs {
+            st.pending.insert(job.key.clone(), job);
+        }
+        drop(st);
+        self.changed.notify_all();
+    }
+
+    fn pending_len(&self) -> usize {
+        self.lock().pending.len()
+    }
+
+    /// The next folder for a worker: the first in walk order that no worker has taken, once the walk isn't paused and
+    /// the listings held are under [`AHEAD`]. Waits for that. `None` once the pool or the walk has stopped.
+    fn claim(&self, ctl: &Control) -> Option<(Job, Arc<AtomicU64>)> {
+        let mut st = self.lock();
+        loop {
+            if st.stopped || ctl.stop_requested() {
+                return None;
+            }
+            if !ctl.is_paused()
+                && st.held < AHEAD
+                && let Some((key, job)) = st.pending.pop_first()
+            {
+                let progress = Arc::new(AtomicU64::new(0));
+                st.taken.insert(key, Arc::clone(&progress));
+                return Some((job, progress));
+            }
+            st = self.changed.wait(st).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// A worker's listing of `key`, for the walk. The folders below it join the pending set. Dropped once the pool stopped.
+    fn deliver(&self, key: &Key, mut outcome: Outcome) {
+        let mut st = self.lock();
+        st.taken.remove(key);
+        if st.stopped {
+            return;
+        }
+        if let Outcome::Listed(listed) = &mut outcome {
+            for job in listed.jobs.drain(..) {
+                st.pending.insert(job.key.clone(), job);
+            }
+        }
+        st.held += outcome.weight();
+        st.results.insert(key.clone(), outcome);
+        drop(st);
+        self.changed.notify_all();
+    }
+
+    /// Wakes the workers: the walk resumed, so they may take folders again.
+    fn kick(&self) {
+        self.changed.notify_all();
+    }
+
+    fn stop(&self) {
+        self.lock().stopped = true;
+        self.changed.notify_all();
+    }
+}
+
+/// Stops the pool however the walk leaves (its end, an error, a panic): no worker takes another folder.
+struct PoolStop<'a>(&'a Pool);
+
+impl Drop for PoolStop<'_> {
+    fn drop(&mut self) {
+        self.0.stop();
+    }
+}
+
+/// What the walk gets from the pool for a folder it comes to.
+enum Taken {
+    Listed(Outcome),
+    /// No worker has taken the folder: the walk lists it itself.
+    Inline,
+    /// The walk was stopped while it waited.
+    Stopped,
+}
+
+/// The listing of folder `key` as a worker makes it, waited for; or `Inline`, when no worker has taken it. While the walk
+/// waits, the lease is renewed each `renew_every` in which the listing moved, so a listing that hangs lets the lease
+/// expire, as the walk's own listing would (`list_here`).
+fn take(
+    pool: &Pool,
+    key: &Key,
     ctl: &Control,
+    lease: &ScanLease<'_>,
+    renewed: &mut Instant,
+    renew_every: Duration,
+) -> Result<Taken> {
+    let mut st = pool.lock();
+    let mut renewed_at: Option<u64> = None;
+    let mut checked = Instant::now();
+    loop {
+        if let Some(outcome) = st.results.remove(key) {
+            st.held -= outcome.weight();
+            return Ok(Taken::Listed(outcome));
+        }
+        if st.pending.remove(key).is_some() {
+            return Ok(Taken::Inline);
+        }
+        let Some(progress) = st.taken.get(key).map(|p| p.load(Ordering::Relaxed)) else {
+            bail!("a folder the walk needs was neither listed nor being listed");
+        };
+        if ctl.stop_requested() {
+            return Ok(Taken::Stopped);
+        }
+        if checked.elapsed() >= renew_every {
+            if renewed_at != Some(progress) {
+                drop(st);
+                renew(lease)?;
+                *renewed = Instant::now();
+                st = pool.lock();
+                renewed_at = Some(progress);
+            }
+            checked = Instant::now();
+        }
+        st = pool.changed.wait_timeout(st, POLL).unwrap_or_else(PoisonError::into_inner).0;
+    }
+}
+
+/// The job of child `e` (entry `i` of `n`) of folder `job`, on `volume`: its key (the parent's, then its place counted from
+/// the last entry), its path, its device and its chain.
+fn child_job(job: &Job, e: &DirEntry, i: usize, n: usize, volume: u64) -> Job {
+    let mut key = job.key.clone();
+    key.push(u64::try_from(n - 1 - i).unwrap_or(u64::MAX));
+    let mut chain = job.chain.clone();
+    chain.push((volume, e.file_id));
+    Job { key, path: job.path.child(&e.name), device: e.device.or(job.device), volume, chain }
+}
+
+/// The folders of a listing a worker may list ahead of the walk: those on the folder's own device that the walk will
+/// descend into. The walk makes the same choice when it consumes the listing (`walk_leased`), so each one is consumed.
+fn descents(rules: PathRules, job: &Job, entries: &[DirEntry]) -> Vec<Job> {
+    let n = entries.len();
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            e.ext.is_none()
+                && !e.reparse
+                && !other_device(e, job.device)
+                && !skipped_name(rules, e.name.as_bytes())
+                && !job.chain.contains(&(job.volume, e.file_id))
+        })
+        .map(|(i, e)| child_job(job, e, i, n, job.volume))
+        .collect()
+}
+
+/// Lists folder `job`, opened already as `dir` or opened here: its rows, read before the listing, and its entries. `beat`
+/// runs with each entry. What the walk consumes.
+fn unit<L: Listing>(
     lister: &mut L,
-) -> Result<ScanStats, ScanError> {
+    rules: PathRules,
+    job: &Job,
+    dir: Option<L::Dir>,
+    rows: &dyn Fn(&RulePath) -> anyhow::Result<FolderRows>,
+    beat: &mut dyn FnMut(),
+) -> Outcome {
+    let dir = match dir {
+        Some(dir) => dir,
+        None => match open_folder(lister, rules, &job.path) {
+            Ok(dir) => dir,
+            Err(e) => return Outcome::Unreadable(e),
+        },
+    };
+    let rows = match rows(&job.path) {
+        Ok(rows) => rows,
+        Err(e) => return Outcome::Failed(e),
+    };
+    match list(lister, &dir, beat) {
+        Ok(entries) => {
+            let jobs = descents(rules, job, &entries);
+            Outcome::Listed(Listed { rows, entries, jobs })
+        }
+        Err(e) => Outcome::Unreadable(e),
+    }
+}
+
+/// Hands the folders a listing holds below it to the pool, for the workers.
+fn publish(pool: &Pool, outcome: &mut Outcome) {
+    if let Outcome::Listed(listed) = outcome {
+        pool.add(std::mem::take(&mut listed.jobs));
+    }
+}
+
+/// The walk lists folder `job` itself, because no worker has taken it: renewing the lease as its entries come, and
+/// publishing the folders below it. A lease that can't be renewed is the error.
+#[expect(clippy::too_many_arguments, reason = "the walk's own state, passed beside the folder to list")]
+fn list_here<L: Listing>(
+    lease: &ScanLease<'_>,
+    renewed: &mut Instant,
+    renew_every: Duration,
+    lister: &mut L,
+    rules: PathRules,
+    pool: &Pool,
+    job: &Job,
+    dir: Option<L::Dir>,
+) -> Result<Outcome> {
+    let mut lost = None;
+    let mut outcome = {
+        let mut beat = || {
+            if lost.is_none() && renewed.elapsed() >= renew_every {
+                match renew(lease) {
+                    Ok(()) => *renewed = Instant::now(),
+                    Err(e) => lost = Some(e),
+                }
+            }
+        };
+        let rows = |folder: &RulePath| -> anyhow::Result<FolderRows> { Ok(lease.folder_rows(folder)?) };
+        unit(lister, rules, job, dir, &rows, &mut beat)
+    };
+    if let Some(e) = lost {
+        return Err(e);
+    }
+    publish(pool, &mut outcome);
+    Ok(outcome)
+}
+
+/// A worker thread's loop: it lists the folders the pool gives it, each with its rows read first, until the pool stops. A
+/// listing that panics is delivered as such, for the walk to raise. A worker that can't open the catalog's file takes no
+/// folders: the walk lists them itself.
+fn worker<L: Listing>(lister: &mut L, pool: &Pool, ctl: &Control, file: &str, rules: PathRules) {
+    priority::set_current_thread(Priority::BelowNormal);
+    let Ok(reader) = FolderRowReader::open(file, rules) else {
+        return;
+    };
+    while let Some((job, progress)) = pool.claim(ctl) {
+        let key = job.key.clone();
+        let rows = |folder: &RulePath| reader.folder_rows(folder).map_err(anyhow::Error::from);
+        let mut beat = || {
+            progress.fetch_add(1, Ordering::Relaxed);
+        };
+        let run = panics::catch(AssertUnwindSafe(|| unit(lister, rules, &job, None, &rows, &mut beat)));
+        let outcome = match run {
+            Ok(outcome) => outcome,
+            Err(payload) => Outcome::Panicked(payload),
+        };
+        pool.deliver(&key, outcome);
+    }
+}
+
+/// Starts a worker on the walk's scope, with its own lister.
+fn spawn_worker<'scope, 'env, L: Listing + 'scope>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    pool: &'env Pool,
+    ctl: &'env Control,
+    file: &'env str,
+    rules: PathRules,
+    mut lister: L,
+) {
+    scope.spawn(move || worker(&mut lister, pool, ctl, file, rules));
+}
+
+/// The walk, over any listing: [`scan`] after its check. The root is opened and the lease taken; then the walk itself.
+fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, lister: &mut L) -> Result<ScanStats, ScanError> {
     walk_in_batches(catalog, root, ctl, lister, BATCH, RENEW_EVERY)
 }
 
@@ -424,8 +793,21 @@ fn walk_in_batches<L: Listing>(
     batch_size: usize,
     renew_every: Duration,
 ) -> Result<ScanStats, ScanError> {
+    walk_paced(catalog, root, ctl, lister, Pacing { batch: batch_size, renew_every, workers: WORKERS })
+}
+
+/// [`walk_in_batches`] with its pacing given whole: `pacing.workers` workers list folders ahead of the walk, each on a
+/// read-only connection of its own. A catalog in memory has no file another connection can open, so its walk has none.
+fn walk_paced<L: Listing>(
+    catalog: &mut Catalog,
+    root: &RulePath,
+    ctl: &Control,
+    lister: &mut L,
+    pacing: Pacing,
+) -> Result<ScanStats, ScanError> {
     let rules = catalog.rules();
     let root_dir = open_folder(lister, rules, root).with_context(|| format!("can't open {}", rules.display(root)))?;
+    let root_device = lister.device(&root_dir);
     let root_volume = lister.volume(&root_dir).with_context(|| format!("the volume of {}", rules.display(root)))?;
     let mut lease = catalog.begin_scan(root).map_err(|e| match e {
         pg_catalog::Error::ScanBusy { root, holder } => ScanError::Busy { root, holder },
@@ -433,12 +815,10 @@ fn walk_in_batches<L: Listing>(
     })?;
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    walk_leased(&mut lease, root, ctl, lister, root_dir, root_volume, batch_size, renew_every).map_err(
-        |e| match removed(&e) {
-            Some(root) => ScanError::Removed { root },
-            None => ScanError::Failed(e),
-        },
-    )
+    walk_leased(&mut lease, root, ctl, lister, root_dir, root_device, root_volume, pacing).map_err(|e| match removed(&e) {
+        Some(root) => ScanError::Removed { root },
+        None => ScanError::Failed(e),
+    })
 }
 
 /// The folder whose removal from the library ended the walk with `e` (`pg_catalog::Error::RootRemoved`, anywhere in its
@@ -450,211 +830,227 @@ fn removed(e: &anyhow::Error) -> Option<String> {
     })
 }
 
-/// The walk of `root` under its lease: each folder listed outside any transaction into the batch, each full batch
-/// written in a transaction of its own; at the end, the pairing, and for a complete walk the missing marks and the
-/// folder ledger's sweep. The lease is renewed at each checkpoint, while a folder is listed (each record, once
-/// `renew_every` has passed), and with each batch: a walk that can't renew it has lost it, and ends with the error.
-#[expect(clippy::too_many_arguments, reason = "the walk's pacing is passed beside its batch size, for the tests")]
+/// The walk of `root` under its lease. Folders are consumed in walk order, depth first, as a single thread lists them.
+/// The listings are made ahead by the workers (`worker`), and by this thread where none has taken a folder yet. This
+/// thread alone does what is kept across folders: the identities seen, the mounts, the skipped folders, the batch, the
+/// lease. Each folder's listing is consumed when it comes to the top of the stack, so the walk's result is the same
+/// whatever the workers do. The lease is renewed at each checkpoint, while this thread lists a folder (each record, once
+/// `renew_every` has passed), while it waits for a worker's listing (once that listing has moved), and with each batch.
+/// A walk that can't renew it has lost it, and ends with the error.
+#[expect(clippy::too_many_arguments, reason = "the walk's state comes from the caller: its root, listing and pacing")]
 fn walk_leased<L: Listing>(
     lease: &mut ScanLease<'_>,
     root: &RulePath,
     ctl: &Control,
     lister: &mut L,
     root_dir: L::Dir,
+    root_device: Option<u64>,
     root_volume: u64,
-    batch_size: usize,
-    renew_every: Duration,
+    pacing: Pacing,
 ) -> Result<ScanStats> {
     let rules = lease.rules();
     let scan_id = lease.id();
-    let mut stats = ScanStats::default();
-    let mut stack = vec![Frame { path: root.clone(), chain: Vec::new(), dir: Some(root_dir), volume: root_volume }];
-    // The folders this scan didn't list, and why: those it couldn't read, the reparse folders it doesn't follow, and
-    // the mounts it refuses. The files under them weren't seen, so they aren't marked missing, and the pairing leaves
-    // them out.
-    let mut skipped: Vec<Skip> = Vec::new();
-    // The verdict on each device a folder under the root is on, by its first folder (the reason, if refused): one check
-    // per mount, not per folder.
-    let mut mounts: BTreeMap<u64, Result<(), RefusedReason>> = BTreeMap::new();
-    // Each identity recorded or seen this scan: the second path to a file is skipped.
-    let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
-    let mut entries: Vec<DirEntry> = Vec::new();
-    let mut batch = Batch::default();
-    // When the lease was last renewed (a batch's write renews it too).
-    let mut renewed = Instant::now();
-    let mut complete = true;
-    // The phase ends when this is dropped, however the walk leaves.
-    let _phase = ctl.begin(Phase::Scan { root: root.clone() }, 0);
+    let file = lease.file().map(str::to_owned);
+    let pool = Pool::new();
+    std::thread::scope(|scope| -> Result<ScanStats> {
+        // However the walk leaves, no worker takes another folder, and a listing still running is dropped when it's
+        // delivered.
+        let _stop = PoolStop(&pool);
+        let mut stats = ScanStats::default();
+        // The folders this scan didn't list, and why: those it couldn't read, the reparse folders it doesn't follow, and
+        // the mounts it refuses. The files under them weren't seen, so they aren't marked missing, and the pairing leaves
+        // them out.
+        let mut skipped: Vec<Skip> = Vec::new();
+        // The verdict on each device a folder under the root is on, by its identity (the reason, if refused): one check
+        // per mount, not per folder.
+        let mut mounts: BTreeMap<u64, Result<(), RefusedReason>> = BTreeMap::new();
+        // Each identity recorded or seen this scan: the second path to a file is skipped.
+        let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
+        let mut batch = Batch::default();
+        // When the lease was last renewed (a batch's write renews it too).
+        let mut renewed = Instant::now();
+        let mut complete = true;
+        let mut spawned = 0usize;
+        // The phase ends when this is dropped, however the walk leaves.
+        let _phase = ctl.begin(Phase::Scan { root: root.clone() }, 0);
+        let root_job = Job { key: Vec::new(), path: root.clone(), device: root_device, volume: root_volume, chain: Vec::new() };
+        let mut stack: Vec<Frame<L::Dir>> = vec![Frame { job: root_job, dir: Some(root_dir), pooled: false }];
 
-    while let Some(frame) = stack.pop() {
-        // A stop ends the walk here: nothing is marked missing and the scan's `finished` stays NULL. The pairing
-        // still runs, on what was seen (tier 1 only: it needs no whole tree).
-        if !checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed, renew_every)? {
-            complete = false;
-            break;
-        }
-        let dir = match frame.dir {
-            Some(dir) => dir,
-            None => match open_folder(lister, rules, &frame.path) {
-                Ok(dir) => dir,
-                Err(e) => {
-                    unreadable(&mut stats, &mut skipped, &mut batch, rules, frame.path, &e);
-                    continue;
-                }
-            },
-        };
-        // The folder's rows as they are before it is listed: a write-back that commits while it is listed, or later,
-        // leaves a row that no longer equals them, and the batch keeps it (`Catalog::folder_rows`).
-        let rows = lease.folder_rows(&frame.path)?;
-        // The records renew the lease as they come (a listing can outlast it, and another walk take it then).
-        let mut lost = None;
-        let listed = {
-            let mut beat = || {
-                if lost.is_none() && renewed.elapsed() >= renew_every {
-                    match renew(&*lease) {
-                        Ok(()) => renewed = Instant::now(),
-                        Err(e) => lost = Some(e),
+        while let Some(frame) = stack.pop() {
+            // A stop ends the walk here: nothing is marked missing and the scan's `finished` stays NULL. The pairing
+            // still runs, on what was seen (tier 1 only: it needs no whole tree).
+            if !checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed, pacing.renew_every, &pool)? {
+                complete = false;
+                break;
+            }
+            let Frame { job, dir, pooled } = frame;
+            let outcome = if pooled {
+                match take(&pool, &job.key, ctl, lease, &mut renewed, pacing.renew_every)? {
+                    Taken::Listed(outcome) => outcome,
+                    Taken::Inline => list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, None)?,
+                    Taken::Stopped => {
+                        complete = false;
+                        break;
                     }
                 }
+            } else {
+                list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, dir)?
             };
-            list(lister, &dir, root_volume, &mut entries, &mut beat)
-        };
-        if let Some(e) = lost {
-            return Err(e);
-        }
-        let listed = match listed {
-            Ok(n) => n,
-            Err(e) => {
-                unreadable(&mut stats, &mut skipped, &mut batch, rules, frame.path, &e);
-                continue;
-            }
-        };
-        stats.folders += 1;
-        let mut files: Vec<ListedFile> = Vec::new();
-        for e in entries.iter().take(listed) {
-            let identity = FileIdentity::new(e.volume, e.file_id);
-            if e.reparse {
-                stats.skipped_reparse += 1;
-                match e.ext {
-                    // A reparse folder is not descended into (it may lead anywhere, and its listing may be a download).
-                    None => skipped.push(Skip { path: frame.path.child(&e.name), reason: SkipReason::Reparse }),
-                    // A reparse file keeps its row if it has one: its listing gives no content, so none is queued.
-                    Some(_) => {
-                        batch.reparse.push(identity);
-                        batch.entries += 1;
+            let listed = match outcome {
+                Outcome::Listed(listed) => listed,
+                Outcome::Unreadable(e) => {
+                    unreadable(&mut stats, &mut skipped, &mut batch, rules, job.path, &e);
+                    continue;
+                }
+                Outcome::Failed(e) => return Err(e),
+                Outcome::Panicked(payload) => std::panic::resume_unwind(payload),
+            };
+            let Listed { rows, entries, jobs: _ } = listed;
+            stats.folders += 1;
+            let mut files: Vec<ListedFile> = Vec::new();
+            for (i, e) in entries.iter().enumerate() {
+                // The identity of an entry on another device is the walk's to find, here, in walk order: the same
+                // probes and the same claims a walk with no workers makes.
+                let other = other_device(e, job.device);
+                let volume = match (e.device, job.device) {
+                    (Some(device), Some(own)) if device != own => {
+                        let probe = units_of(&rules.join(&job.path.child(&e.name)));
+                        lister.volume_of_device(device, &probe)
                     }
-                }
-                continue;
-            }
-            let Some(ext) = e.ext else {
-                if skipped_name(rules, e.name.as_bytes()) {
+                    _ => job.volume,
+                };
+                let identity = FileIdentity::new(volume, e.file_id);
+                if e.reparse {
+                    stats.skipped_reparse += 1;
+                    match e.ext {
+                        // A reparse folder is not descended into (it may lead anywhere, and its listing may be a download).
+                        None => skipped.push(Skip { path: job.path.child(&e.name), reason: SkipReason::Reparse }),
+                        // A reparse file keeps its row if it has one: its listing gives no content, so none is queued.
+                        Some(_) => {
+                            batch.reparse.push(identity);
+                            batch.entries += 1;
+                        }
+                    }
                     continue;
                 }
-                let key = (e.volume, e.file_id);
-                if frame.chain.contains(&key) {
-                    stats.loops += 1;
-                    continue;
-                }
-                let child = frame.path.child(&e.name);
-                if e.volume != frame.volume {
-                    let verdict = match mounts.get(&e.volume) {
-                        Some(verdict) => verdict.clone(),
-                        None => {
-                            let verdict = lister.check_mount(&units_of(&rules.join(&child)));
-                            mounts.insert(e.volume, verdict.clone());
-                            verdict
-                        }
-                    };
-                    if let Err(reason) = verdict {
-                        stats.refused_mounts += 1;
-                        if stats.refused_mount_list.len() < FAILURES_KEPT {
-                            stats
-                                .refused_mount_list
-                                .push(RefusedMount { mount: child.clone(), reason: reason.clone() });
-                        }
-                        batch.failed.push((child.clone(), FolderFailure::MountRefused, reason.to_string()));
-                        skipped.push(Skip { path: child, reason: SkipReason::RefusedMount });
+                let Some(ext) = e.ext else {
+                    if skipped_name(rules, e.name.as_bytes()) {
                         continue;
                     }
-                }
-                let mut chain = frame.chain.clone();
-                chain.push(key);
-                stack.push(Frame { path: child, chain, dir: None, volume: e.volume });
-                continue;
-            };
-            stats.files += 1;
-            if !seen.insert(identity) {
-                stats.duplicates += 1;
-                continue;
-            }
-            files.push(ListedFile {
-                identity,
-                name: e.name.clone(),
-                ext,
-                size: e.size,
-                mtime: e.mtime,
-                created: e.created,
-                prior: None,
-            });
-        }
-        // A file whose row the folder's read already has as it is listed needs nothing written: it is only marked seen,
-        // here, in the walk's set. The others go to the batch.
-        let mut key = Vec::new();
-        let mut unchanged = Vec::new();
-        let mut changed: Vec<ListedFile> = Vec::with_capacity(files.len());
-        for f in files {
-            let row = {
-                let listed = ScannedFile {
-                    identity: f.identity,
-                    name: &f.name,
-                    ext: f.ext,
-                    size: f.size,
-                    mtime: f.mtime,
-                    created: f.created,
-                    prior: None,
+                    if job.chain.contains(&(volume, e.file_id)) {
+                        stats.loops += 1;
+                        continue;
+                    }
+                    let child = job.path.child(&e.name);
+                    if other {
+                        let verdict = match mounts.get(&volume) {
+                            Some(verdict) => verdict.clone(),
+                            None => {
+                                let verdict = lister.check_mount(&units_of(&rules.join(&child)));
+                                mounts.insert(volume, verdict.clone());
+                                verdict
+                            }
+                        };
+                        if let Err(reason) = verdict {
+                            stats.refused_mounts += 1;
+                            if stats.refused_mount_list.len() < FAILURES_KEPT {
+                                stats
+                                    .refused_mount_list
+                                    .push(RefusedMount { mount: child.clone(), reason: reason.clone() });
+                            }
+                            batch.failed.push((child.clone(), FolderFailure::MountRefused, reason.to_string()));
+                            skipped.push(Skip { path: child, reason: SkipReason::RefusedMount });
+                            continue;
+                        }
+                    }
+                    let next = child_job(&job, e, i, entries.len(), volume);
+                    // A folder on the folder's device was handed to the workers with this listing: it is in the pool.
+                    stack.push(Frame { job: next, dir: None, pooled: !other });
+                    continue;
                 };
-                rows.unchanged(&listed, &mut key)
-            };
-            match row {
-                Some(row) => unchanged.push(row),
-                None => changed.push(f),
+                stats.files += 1;
+                if !seen.insert(identity) {
+                    stats.duplicates += 1;
+                    continue;
+                }
+                files.push(ListedFile {
+                    identity,
+                    name: e.name.clone(),
+                    ext,
+                    size: e.size,
+                    mtime: e.mtime,
+                    created: e.created,
+                    prior: None,
+                });
+            }
+            // A file whose row the folder's read already has as it is listed needs nothing written: it is only marked seen,
+            // here, in the walk's set. The others go to the batch.
+            let mut key = Vec::new();
+            let mut unchanged = Vec::new();
+            let mut changed: Vec<ListedFile> = Vec::with_capacity(files.len());
+            for f in files {
+                let row = {
+                    let listed = ScannedFile {
+                        identity: f.identity,
+                        name: &f.name,
+                        ext: f.ext,
+                        size: f.size,
+                        mtime: f.mtime,
+                        created: f.created,
+                        prior: None,
+                    };
+                    rows.unchanged(&listed, &mut key)
+                };
+                match row {
+                    Some(row) => unchanged.push(row),
+                    None => changed.push(f),
+                }
+            }
+            lease.mark_seen(&unchanged)?;
+            if !changed.is_empty() {
+                // The rows the batch compares with: the folder's, read before the listing, and the others' by identity, read
+                // now but none changed since the listing began (`Catalog::prior_states`). The batch, written later, changes
+                // only those still so, so a write-back from the folder's listing on is kept.
+                let identities: Vec<FileIdentity> = changed.iter().map(|f| f.identity).collect();
+                let priors = lease.prior_states(&rows, &identities)?;
+                ensure!(priors.len() == changed.len(), "the catalog gave {} rows for {} files", priors.len(), changed.len());
+                for (file, prior) in changed.iter_mut().zip(priors) {
+                    file.prior = prior;
+                }
+                batch.entries += changed.len();
+                batch.folders.push(ListedFolder { path: job.path.clone(), files: changed });
+            }
+            if batch.entries >= pacing.batch {
+                write_batch(lease, root, &mut batch, &mut stats, ctl)?;
+                renewed = Instant::now();
+            }
+            ctl.set_done(stats.files);
+            if spawned < pacing.workers
+                && pool.pending_len() > 1
+                && let Some(file) = &file
+            {
+                spawned += 1;
+                spawn_worker(scope, &pool, ctl, file.as_str(), rules, lister.fresh());
             }
         }
-        lease.mark_seen(&unchanged)?;
-        if !changed.is_empty() {
-            // The rows the batch compares with: the folder's, read before the listing, and the others' by identity, read
-            // now but none changed since the listing began (`Catalog::prior_states`). The batch, written later, changes
-            // only those still so, so a write-back from the folder's listing on is kept.
-            let identities: Vec<FileIdentity> = changed.iter().map(|f| f.identity).collect();
-            let priors = lease.prior_states(&rows, &identities)?;
-            ensure!(priors.len() == changed.len(), "the catalog gave {} rows for {} files", priors.len(), changed.len());
-            for (file, prior) in changed.iter_mut().zip(priors) {
-                file.prior = prior;
-            }
-            batch.entries += changed.len();
-            batch.folders.push(ListedFolder { path: frame.path, files: changed });
+        // The workers take no more folders: what they still list is dropped when it's delivered.
+        pool.stop();
+        // What is built is written, however the walk ended (a stop commits what it has).
+        write_batch(lease, root, &mut batch, &mut stats, ctl)?;
+        // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
+        // and outside the folders it skipped. Each of its transactions, and the missing marks', holds the lease first, as
+        // the batches do: after the folder's removal, none of them writes.
+        stats.pairing = lease.pair_after_scan(Coverage { complete, skipped: &skipped })?;
+        if complete {
+            // Its last transaction sweeps the folder ledger under `root` and gives the lease back.
+            stats.missing = lease.mark_missing(&skipped)?;
+            lease.finish_scan(scan_id)?;
+            ctl.ledger_changed();
         }
-        if batch.entries >= batch_size {
-            write_batch(lease, root, &mut batch, &mut stats, ctl)?;
-            renewed = Instant::now();
-        }
-        ctl.set_done(stats.files);
-    }
-    // What is built is written, however the walk ended (a stop commits what it has).
-    write_batch(lease, root, &mut batch, &mut stats, ctl)?;
-    // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
-    // and outside the folders it skipped. Each of its transactions, and the missing marks', holds the lease first, as
-    // the batches do: after the folder's removal, none of them writes.
-    stats.pairing = lease.pair_after_scan(Coverage { complete, skipped: &skipped })?;
-    if complete {
-        // Its last transaction sweeps the folder ledger under `root` and gives the lease back.
-        stats.missing = lease.mark_missing(&skipped)?;
-        lease.finish_scan(scan_id)?;
-        ctl.ledger_changed();
-    }
-    stats.complete = complete;
-    stats.volume_fallbacks = lister.fallback_volumes();
-    Ok(stats)
+        stats.complete = complete;
+        stats.volume_fallbacks = lister.fallback_volumes();
+        Ok(stats)
+    })
 }
 
 /// A folder the walk couldn't open or list: counted, kept for the report, skipped (its files aren't judged), and
@@ -676,7 +1072,9 @@ fn unreadable(
 
 /// The walk's checkpoint before each folder, with nothing of the catalog held across a wait: a pause or a stop first
 /// writes the batch built so far, and a pause renews the lease while it lasts (so does a walk held up anywhere, every
-/// `renew_every`, [`RENEW_EVERY`] in production). False for a stop.
+/// `renew_every`, [`RENEW_EVERY`] in production). A resumed walk wakes the workers, which wait on a pause too. False for a
+/// stop.
+#[expect(clippy::too_many_arguments, reason = "the walk's state, as the walk passes it")]
 fn checkpoint(
     lease: &mut ScanLease<'_>,
     root: &RulePath,
@@ -685,6 +1083,7 @@ fn checkpoint(
     stats: &mut ScanStats,
     renewed: &mut Instant,
     renew_every: Duration,
+    pool: &Pool,
 ) -> Result<bool> {
     if renewed.elapsed() >= renew_every {
         renew(lease)?;
@@ -696,7 +1095,10 @@ fn checkpoint(
     }
     loop {
         match ctl.checkpoint_within(RENEW_EVERY) {
-            Checkpoint::Go => return Ok(true),
+            Checkpoint::Go => {
+                pool.kick();
+                return Ok(true);
+            }
             Checkpoint::Stop => return Ok(false),
             Checkpoint::Paused => {
                 // A pause set after the look above: what is built is written now, not held over the pause.
@@ -811,12 +1213,14 @@ mod tests {
         FakeEntry { name: name.to_string(), folder: true, reparse: false, file_id, size: 0, mtime: 1, volume: None }
     }
 
-    /// What a test runs when a folder is listed (on the walk's thread).
-    type Hook = Box<dyn FnMut() + Send>;
+    /// What a test runs when a folder is listed: on the thread that lists it, a worker's or the walk's.
+    type Hook = Arc<Mutex<dyn FnMut() + Send>>;
 
-    /// Folders by their units, as the walk opens them: each one's path under the fake root, and its entries.
+    /// Folders by their units, as the walk opens them: each one's path under the fake root, and its entries. A clone lists
+    /// the same tree, with the same hooks: a worker's lister is one.
+    #[derive(Clone)]
     struct FakeListing {
-        tree: Vec<(Vec<Unit>, String, Vec<FakeEntry>)>,
+        tree: Arc<Vec<(Vec<Unit>, String, Vec<FakeEntry>)>>,
         root_volume: u64,
         /// Folders (by their units) whose mount is refused.
         refused: Vec<Vec<Unit>>,
@@ -840,7 +1244,13 @@ mod tests {
                     (units_of(fake_path(rules, rel).as_bytes()), rel.to_string(), entries.clone())
                 })
                 .collect();
-            FakeListing { tree, root_volume, refused: Vec::new(), hooks: Vec::new(), after: Vec::new() }
+            FakeListing {
+                tree: Arc::new(tree),
+                root_volume,
+                refused: Vec::new(),
+                hooks: Vec::new(),
+                after: Vec::new(),
+            }
         }
 
         /// The same tree, with the mount at `rel` (spelled under `rules`) refused by its file system.
@@ -851,14 +1261,26 @@ mod tests {
 
         /// The same tree, running `hook` each time the folder at `rel` is listed.
         fn on_listing(mut self, rel: &str, hook: impl FnMut() + Send + 'static) -> FakeListing {
-            self.hooks.push((rel.to_string(), Box::new(hook)));
+            let hook: Hook = Arc::new(Mutex::new(hook));
+            self.hooks.push((rel.to_string(), hook));
             self
         }
 
         /// The same tree, running `hook` once the folder at `rel` has been listed (all its entries given).
         fn after_listing(mut self, rel: &str, hook: impl FnMut() + Send + 'static) -> FakeListing {
-            self.after.push((rel.to_string(), Box::new(hook)));
+            let hook: Hook = Arc::new(Mutex::new(hook));
+            self.after.push((rel.to_string(), hook));
             self
+        }
+
+        /// Runs the hooks registered at `rel` in `hooks`.
+        fn run_hooks(hooks: &[(String, Hook)], rel: &str) {
+            for (at, hook) in hooks {
+                if at == rel {
+                    let mut run = hook.lock().unwrap_or_else(PoisonError::into_inner);
+                    (*run)();
+                }
+            }
         }
     }
 
@@ -872,12 +1294,25 @@ mod tests {
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such fake folder"))
         }
 
+        fn device(&self, _dir: &usize) -> Option<u64> {
+            Some(self.root_volume)
+        }
+
         fn volume(&mut self, _dir: &usize) -> io::Result<u64> {
             Ok(self.root_volume)
         }
 
+        /// The fake's devices are its identities: an entry's `volume` is its device, and its identity.
+        fn volume_of_device(&mut self, device: u64, _probe: &[Unit]) -> u64 {
+            device
+        }
+
         fn fallback_volumes(&self) -> u64 {
             0
+        }
+
+        fn fresh(&self) -> FakeListing {
+            self.clone()
         }
 
         fn check_mount(&mut self, path: &[Unit]) -> Result<(), RefusedReason> {
@@ -889,11 +1324,7 @@ mod tests {
 
         fn each(&mut self, dir: &usize, mut each: impl FnMut(Entry<'_>)) -> io::Result<()> {
             let (_, rel, entries) = &self.tree[*dir];
-            for (at, hook) in &mut self.hooks {
-                if at == rel {
-                    hook();
-                }
-            }
+            Self::run_hooks(&self.hooks, rel);
             for e in entries {
                 let units = units_of(e.name.as_bytes());
                 each(Entry {
@@ -903,15 +1334,11 @@ mod tests {
                     file_id: e.file_id,
                     size: e.size,
                     mtime: e.mtime,
-                    volume: e.volume,
+                    device: e.volume,
                     created: None,
                 });
             }
-            for (at, hook) in &mut self.after {
-                if at == rel {
-                    hook();
-                }
-            }
+            Self::run_hooks(&self.after, rel);
             Ok(())
         }
     }
@@ -957,15 +1384,13 @@ mod tests {
     fn an_entry_with_no_file_id_makes_its_folder_unreadable() {
         // The folder's other entries are not recorded either: the listing fails as a whole.
         let mut lister = FakeListing::new(1, &[("", vec![file("a.jpg", 7, 1), file("b.jpg", 0, 1)])]);
-        let mut entries = Vec::new();
-        assert!(list(&mut lister, &0, 1, &mut entries, &mut || {}).is_err());
+        assert!(list(&mut lister, &0, &mut || {}).is_err());
     }
 
     #[test]
     fn the_dot_entries_may_have_no_file_id() {
         let mut lister = FakeListing::new(1, &[("", vec![file(".", 0, 1), file("..", 0, 1), file("a.jpg", 7, 1)])]);
-        let mut entries = Vec::new();
-        assert_eq!(list(&mut lister, &0, 1, &mut entries, &mut || {}).unwrap(), 1);
+        assert_eq!(list(&mut lister, &0, &mut || {}).unwrap().len(), 1);
     }
 
     #[test]
@@ -1646,5 +2071,92 @@ mod tests {
         // Readable again: the next complete walk sweeps it.
         scan_fake(&mut c, &[("", vec![file("a.jpg", 7, 1), folder("sub", 20)]), ("sub", vec![])], 1);
         assert!(c.failed_folders(10).unwrap().is_empty());
+    }
+
+    /// The walk's pacing with `workers` workers, and batches of 4 entries so the tree crosses them.
+    fn paced(workers: usize) -> Pacing {
+        Pacing { batch: 4, renew_every: RENEW_EVERY, workers }
+    }
+
+    /// A tree with what the walk has to judge: subfolders on the root's device, a reparse folder, a refused mount on
+    /// another device, a loop back to an ancestor, a file seen twice, and a folder with more files than a batch.
+    fn judged_tree() -> Vec<(&'static str, Vec<FakeEntry>)> {
+        let mut deep: Vec<FakeEntry> = (0..9).map(|i| file(&format!("d{i}.jpg"), 100 + i, 1)).collect();
+        deep.push(folder("further", 60));
+        vec![
+            (
+                "",
+                vec![
+                    folder("a", 20),
+                    folder("b", 21),
+                    FakeEntry { reparse: true, ..folder("rp", 22) },
+                    FakeEntry { volume: Some(2), ..folder("mnt", 30) },
+                    file("top.jpg", 3, 1),
+                ],
+            ),
+            ("a", vec![file("a.jpg", 1, 1), folder("back", 20), folder("deep", 23)]),
+            ("a/deep", deep),
+            ("a/deep/further", vec![file("f.jpg", 200, 1)]),
+            ("b", vec![file("b.jpg", 2, 1), file("twin.jpg", 1, 1)]),
+        ]
+    }
+
+    /// The walk's stats and the catalog's file count and missing count after one walk of `tree` in a new catalog.
+    fn walk_of_tree(prefix: &str, tree: &[(&str, Vec<FakeEntry>)], workers: usize) -> (ScanStats, i64, i64) {
+        let path = on_disk(prefix);
+        let mut c = open(&path);
+        let mut lister = FakeListing::new(1, tree).refusing(pg_platform::native::PATH_RULES, "mnt");
+        let stats = walk_paced(&mut c, &fake_root(), &Control::new(), &mut lister, paced(workers)).unwrap();
+        let status = c.status().unwrap();
+        (stats, status.files, status.missing)
+    }
+
+    #[test]
+    fn workers_list_what_the_walk_alone_would() {
+        let alone = walk_of_tree("judged-alone", &judged_tree(), 0);
+        let with = walk_of_tree("judged-workers", &judged_tree(), 4);
+        let (a, af, am) = &alone;
+        let (w, wf, wm) = &with;
+        assert!(a.complete && w.complete, "both walks complete");
+        assert_eq!(
+            (a.folders, a.files, a.changed, a.duplicates, a.loops, a.skipped_reparse, a.refused_mounts),
+            (w.folders, w.files, w.changed, w.duplicates, w.loops, w.skipped_reparse, w.refused_mounts),
+            "the same judgments"
+        );
+        assert_eq!((af, am), (wf, wm), "the same rows");
+        assert_eq!(a.loops, 1, "the loop back to a is counted once");
+        assert_eq!(a.refused_mounts, 1, "the refused mount is counted once");
+        assert_eq!(a.duplicates, 1, "the twin is a second path to file 1");
+    }
+
+    #[test]
+    fn a_panic_in_a_listing_is_raised_by_the_walk_with_its_payload() {
+        let path = on_disk("listing-panics");
+        let mut c = open(&path);
+        let mut lister = FakeListing::new(1, &judged_tree()).on_listing("a", || panic!("a listing's own panic"));
+        let ctl = Control::new();
+        let raised = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            walk_paced(&mut c, &fake_root(), &ctl, &mut lister, paced(4))
+        }));
+        let payload = raised.expect_err("the walk raises the listing's panic");
+        assert_eq!(payload.downcast_ref::<&str>(), Some(&"a listing's own panic"));
+    }
+
+    #[test]
+    fn a_stop_with_workers_listing_marks_nothing_missing() {
+        let mut tree = three_folders();
+        let path = on_disk("stop-with-workers");
+        let mut c = open(&path);
+        let mut first = FakeListing::new(1, &tree);
+        assert!(walk_paced(&mut c, &fake_root(), &Control::new(), &mut first, paced(4)).unwrap().complete);
+        // c.jpg is gone; the walk is stopped as it lists b, with the workers listing ahead of it.
+        tree[3].1.clear();
+        let ctl = Arc::new(Control::new());
+        let stopping = ctl.clone();
+        let mut lister = FakeListing::new(1, &tree).on_listing("b", move || stopping.request_stop());
+        let stopped = walk_paced(&mut c, &fake_root(), &ctl, &mut lister, paced(4)).unwrap();
+        assert!(!stopped.complete);
+        assert_eq!(stopped.missing, 0, "a stopped walk marks nothing missing");
+        assert_eq!(c.status().unwrap().missing, 0, "c.jpg is not missing after a stopped walk");
     }
 }

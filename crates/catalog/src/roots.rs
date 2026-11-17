@@ -252,35 +252,7 @@ impl Catalog {
     /// read, and the batch only marks the file seen ([`crate::ScannedFile::prior`]). Read after the listing, they
     /// would be the write-back's, and the batch would write the older listing over them.
     pub fn folder_rows(&self, folder: &RulePath) -> Result<FolderRows> {
-        let snapshot = self.conn.unchecked_transaction()?;
-        let rows = {
-            let mark: i64 =
-                snapshot.prepare_cached("SELECT value FROM meta WHERE key = 'seq'")?.query_row([], |r| r.get(0))?;
-            let rows = snapshot
-                .prepare_cached(
-                    "SELECT volume, file_ref, id, unpaired, missing, name, ext, kind, size, mtime, order_key, created
-                     FROM files WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
-                )?
-                .query_map([self.rules.join(folder)], |r| {
-                    let row = FolderRow {
-                        id: r.get(2)?,
-                        unpaired: r.get::<_, i64>(3)? != 0,
-                        missing: r.get::<_, i64>(4)? != 0,
-                        name: r.get(5)?,
-                        ext: r.get(6)?,
-                        kind: r.get(7)?,
-                        size: r.get(8)?,
-                        mtime: r.get(9)?,
-                        order_key: r.get(10)?,
-                        created: r.get(11)?,
-                    };
-                    Ok(((r.get(0)?, r.get(1)?), row))
-                })?
-                .collect::<rusqlite::Result<_>>()?;
-            FolderRows { mark, key: self.rules.folder_key(&folder.parts), rows }
-        };
-        snapshot.commit()?;
-        Ok(rows)
+        folder_rows_on(&self.conn, self.rules, folder)
     }
 
     /// The rows of `identities`, the files a walk listed in the folder whose rows are `rows` (read before the listing,
@@ -323,6 +295,67 @@ impl Catalog {
 /// The walk's set of the rows it has seen (`temp.scan_seen`): a temporary table of this connection, made by the first walk
 /// on it and kept. Its partial index holds the unpaired rows, which the pairing reads. Emptied when a walk begins and when
 /// its lease is given back.
+/// The rows of `folder` on `conn`, read in one snapshot with the change number as their mark ([`Catalog::folder_rows`]).
+pub(crate) fn folder_rows_on(conn: &Connection, rules: PathRules, folder: &RulePath) -> Result<FolderRows> {
+    let snapshot = conn.unchecked_transaction()?;
+    let rows = {
+        let mark: i64 =
+            snapshot.prepare_cached("SELECT value FROM meta WHERE key = 'seq'")?.query_row([], |r| r.get(0))?;
+        let rows = snapshot
+            .prepare_cached(
+                "SELECT volume, file_ref, id, unpaired, missing, name, ext, kind, size, mtime, order_key, created
+                 FROM files WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
+            )?
+            .query_map([rules.join(folder)], |r| {
+                let row = FolderRow {
+                    id: r.get(2)?,
+                    unpaired: r.get::<_, i64>(3)? != 0,
+                    missing: r.get::<_, i64>(4)? != 0,
+                    name: r.get(5)?,
+                    ext: r.get(6)?,
+                    kind: r.get(7)?,
+                    size: r.get(8)?,
+                    mtime: r.get(9)?,
+                    order_key: r.get(10)?,
+                    created: r.get(11)?,
+                };
+                Ok(((r.get(0)?, r.get(1)?), row))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        FolderRows { mark, key: rules.folder_key(&folder.parts), rows }
+    };
+    snapshot.commit()?;
+    Ok(rows)
+}
+
+/// The page cache of a [`FolderRowReader`], in KiB: a folder's rows, read a folder at a time.
+const READER_CACHE_KIB: u32 = 2048;
+
+/// A read-only connection of a scan's own, for its listing workers (`pg_scan`): a folder's rows as they are, read on the
+/// worker's thread before it lists the folder ([`Catalog::folder_rows`]). It opens the catalog's file with a shared hold
+/// of its own (`take_shared`), so it does not depend on the catalog being open, and it is made on the thread that reads
+/// with it. An in-memory catalog has no file another connection could open, so its scans run without workers.
+pub struct FolderRowReader {
+    conn: Connection,
+    rules: PathRules,
+    /// Keeps the catalog's file shared while the reader lives: a rebuild of the file waits for it.
+    _hold: pg_dbfile::Live,
+}
+
+impl FolderRowReader {
+    /// A reader of the catalog at `file` (its [`Catalog::file`]). It fails while another program is changing the file.
+    pub fn open(file: &str, rules: PathRules) -> Result<FolderRowReader> {
+        let hold = crate::lifecycle::take_shared(std::path::Path::new(file))?;
+        let conn = crate::core::read_only(file, READER_CACHE_KIB)?;
+        Ok(FolderRowReader { conn, rules, _hold: hold })
+    }
+
+    /// The rows of `folder` as they are now, with their mark ([`Catalog::folder_rows`]).
+    pub fn folder_rows(&self, folder: &RulePath) -> Result<FolderRows> {
+        folder_rows_on(&self.conn, self.rules, folder)
+    }
+}
+
 pub(crate) fn ensure_seen(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS scan_seen(id INTEGER PRIMARY KEY, unpaired INTEGER NOT NULL);

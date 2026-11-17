@@ -18,10 +18,10 @@ pub struct Entry<'a> {
     pub size: u64,
     /// The last write time in FILETIME ticks: 100 ns since 1601-01-01 UTC.
     pub mtime: i64,
-    /// The file's own volume, read with the entry (Unix: the stable identity of its device's volume, see
-    /// `Lister::folder_volume`; a mount under a folder has another).
+    /// The device the entry is on, as the platform numbers it (Unix: the device number, which the walk maps to the
+    /// volume's stable identity with `Lister::map_device`, in walk order; a mount under a folder has another).
     /// `None` where every entry of the folder is on the folder's volume (Windows).
-    pub volume: Option<u64>,
+    pub device: Option<u64>,
     /// The creation time in FILETIME ticks; `None` where the file system or the platform doesn't give one (drvfs has
     /// none). Never an error: an unknown creation time is a NULL in the catalog.
     pub created: Option<i64>,

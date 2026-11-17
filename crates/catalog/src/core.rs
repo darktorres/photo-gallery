@@ -219,8 +219,8 @@ impl Catalog {
         Ok(Reader { catalog: self, own: Some(read_only(file, cache_kib)?), cache_kib })
     }
 
-    /// The catalog's file, `None` in memory.
-    fn file(&self) -> Option<&str> {
+    /// The catalog's file, `None` in memory: what a [`roots::FolderRowReader`] opens.
+    pub fn file(&self) -> Option<&str> {
         self.conn.path().filter(|f| !f.is_empty())
     }
 
@@ -244,7 +244,7 @@ fn register(conn: &Connection) -> Result<()> {
 }
 
 /// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s.
-fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
+pub(crate) fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}"))?;
     conn.busy_timeout(Duration::from_secs(5))?;

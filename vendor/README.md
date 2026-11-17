@@ -47,13 +47,18 @@ To update: rebase the commit onto the new release (`git rebase --onto <tag> 7d58
 
 ## turbojpeg-sys
 
-Fork of `honzasp/rust-turbojpeg` (`darktorres/rust-turbojpeg`, pinned at rev `945d853b`): `turbojpeg-sys` 1.2.0 with its
+Fork of `honzasp/rust-turbojpeg` (`darktorres/rust-turbojpeg`, pinned at rev `28b8b86a`): `turbojpeg-sys` 1.2.0 with its
 `libjpeg-turbo` sources, licensed `Unlicense OR MIT`. One local change, marked `photo-gallery` in `build.rs`: libjpeg-turbo
 is built with `WITH_CRT_DLL=ON`, so it uses the dynamic C runtime as the rest of the app does. Without it, its objects
 link the static runtime too and the linker warns `LNK4098` (two C runtimes in one binary).
 
+A second local change, also marked `photo-gallery` in `build.rs`: the cmake crate gives the MSVC build `/Od` (no
+optimization), which replaced CMake's `/O2`, so libjpeg-turbo's C was unoptimized on Windows. The build now defines the
+optimized `CMAKE_C_FLAGS_<CONFIG>` variables itself. Measured 2026-11-17: decode 7.48 → 4.30 ms per call on the 300-file
+Pinterest sample, identical decoded pixels. Commit `28b8b86` in the fork, on its `master`.
+
 To update: commit the new version in the fork, then change the `rev` in the root `Cargo.toml`, `eval/jpeg-decoders/Cargo.toml`
-and `fuzz/Cargo.toml`. Keep the `WITH_CRT_DLL` line in `build.rs`.
+and `fuzz/Cargo.toml`. Keep the `WITH_CRT_DLL` line and the optimized flags in `build.rs`.
 
 ## rusqlite
 

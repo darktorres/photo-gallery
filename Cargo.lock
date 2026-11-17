@@ -2858,7 +2858,7 @@ dependencies = [
 [[package]]
 name = "turbojpeg-sys"
 version = "1.2.0"
-source = "git+https://github.com/darktorres/rust-turbojpeg?rev=945d853b47a76f98fd97ac5ff43830997712caa2#945d853b47a76f98fd97ac5ff43830997712caa2"
+source = "git+https://github.com/darktorres/rust-turbojpeg?rev=28b8b86af795d5e6f1402c978e62facd61952da2#28b8b86af795d5e6f1402c978e62facd61952da2"
 dependencies = [
  "anyhow",
  "cmake",

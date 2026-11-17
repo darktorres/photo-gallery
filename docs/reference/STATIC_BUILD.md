@@ -17,7 +17,7 @@ Status as of 2026-11-14. Build order: libjpeg-turbo, then FFmpeg, then Qt, then 
 | Input | Pin | Where it is set |
 |---|---|---|
 | FFmpeg source | commit `7adfbe40dcde598f93a6963d2f7b22cd75202ccc` (`n9.0.2-39-g7adfbe40dc`), release `9.0.2` | `build_static_ffmpeg.py` |
-| libjpeg-turbo | `darktorres/rust-turbojpeg` commit `945d853b47a76f98fd97ac5ff43830997712caa2`, the same commit as `turbojpeg-sys` in the root `Cargo.toml` | `build_jpeg_turbo.py` |
+| libjpeg-turbo | `darktorres/rust-turbojpeg` commit `28b8b86af795d5e6f1402c978e62facd61952da2`, the same commit as `turbojpeg-sys` in the root `Cargo.toml` | `build_jpeg_turbo.py` |
 | Qt source | `qt-everywhere-src-6.12.0.zip`, 604,643,023 bytes, SHA-256 `a72e89c33726d742e67edf494abf7b625eaffc756673221c9823322ecd1a32d1`, MD5 `64889aee0623311cce096be5f445c7d1` | `build_static_qt.py`. Qt publishes no SHA-256 file; the SHA-256 was computed from the zip, and its MD5 matches Qt's `md5sums.txt`. |
 | MSVC toolset | `14.44.35207` (`vcvars64 -vcvars_ver`) | all three Python recipes |
 | Windows SDK | `10.0.26100.0` | `build_static_ffmpeg.py` checks for `dxva.h` |

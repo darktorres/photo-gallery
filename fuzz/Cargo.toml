@@ -81,6 +81,6 @@ image-webp = { git = "https://github.com/darktorres/image-webp", rev = "1e9023c9
 png = { git = "https://github.com/darktorres/image-png", rev = "2f176edb0a07b488d2b0236685f9ec184b91434e" }
 quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
 tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
-turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }
+turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "28b8b86af795d5e6f1402c978e62facd61952da2" }
 zune-core = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }
 zune-jpeg = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }

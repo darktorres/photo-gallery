@@ -1,42 +1,30 @@
-# Plan: thumbnail-cache setting, Yandex fixes, import-failure persistence
+# Plan: import-failure persistence (item 5)
 
 ## Status
 
-Items 1, 3, 4 and 2 are implemented, each in its own commit on `main`:
+Items 1 to 4 are done and tested by hand, so their sections are removed from this file. Their commits are on `main`:
+`d4891079` (item 1, the thumbnail-cache setting), `1e9fa5e7` (item 3, no black flash on prev/next), `df0f7d71` (item 4,
+the wheel steps through results), and `8cede668` with `5c858739` and `1799c09c` (item 2, the dead-result refresh).
 
-- Item 1, the thumbnail-cache setting: `d4891079`.
-- Item 3, no black flash on prev/next: `1e9fa5e7`.
-- Item 4, the mouse wheel steps through results: `df0f7d71`.
-- Item 2, the dead-result refresh (steps 0-4 and 6): `8cede668`, with fixes in `5c858739` and `1799c09c`.
+Item 2's pixmap cache (step 5) and its instrumentation (step 0) were not built. They were gated on measurements.
+
+**This file now holds item 5 only.** It is marked dropped below.
 
 **Item 5 (import-failure persistence) is dropped.** The progressive JPEGs were re-encoded to baseline, the errors no
-longer happen, and they cannot be reproduced. Section 5, its "What was actually found" table, and the open items about
-it are not pursued. The question "what exactly was seen" is moot.
+longer happen, and they cannot be reproduced. The question "what exactly was seen" is moot.
 
-Not done from items 1-4:
-
-- Item 2, step 5 (pixmap cache): build 2, gated on measurement.
-- Item 2, step 0 (instrumentation and counters): not built.
-- The runner tests for the cache setting, and the Yandex preview and wheel tests, are not written.
-
-Verification so far:
-
-- `cargo test` passes for `pg-thumbcache`, `pg-thumbs`, `pg-client`, `pg-app` and `pg-desktop`.
-- `cargo clippy --workspace --all-targets -- -D warnings` is clean, and `cargo check -p pg-desktop` compiles the cxx-qt bridge.
-- `just qmltest` passes (108 of 108).
-- `just lint`: fmt, clippy, wasm, metadata and docs pass. `cargo deny` could not fetch the advisory database (network
-  reset); its bans, licenses and sources checks pass when run alone. Machete, boundaries and `just lint-qml` pass.
-- Not yet done: the advisory check, and a manual run of the app (the thumbnail toggle, the Yandex preview and the wheel).
+Verification of items 1-4: `cargo test` passes for the affected crates, `cargo clippy -D warnings` is clean, and
+`just qmltest` passes (108 of 108). `just lint` passes apart from `cargo deny`'s advisory check, which needs the network.
 
 ## Context
 
-Five items. Findings come from reading the code and this machine's `D:\PhotoGallery\gallery.log` / catalog
+Originally five items; this file keeps item 5 only (items 1-4 are done, see Status). Findings come from reading the code and this machine's `D:\PhotoGallery\gallery.log` / catalog
 (read-only) and from timing queries on a scratch copy of the catalog; the app was not run, so every "cause" has a
 confirm step before its fix. Project rules: edit with Edit/Write, no new branch, native build, churn is not a concern
 (pick the proper fix), and **use the designs already recorded in `docs/plans/` instead of parallel mechanisms**.
 
-Decisions made with the user: the cache setting is a **live toggle**; the lost failures are **thumbnail /
-placeholder failures**; persistence model = **classify by cause + retry as ledger state**.
+Decisions made with the user: the lost failures are **thumbnail / placeholder failures**; persistence model =
+**classify by cause + retry as ledger state**.
 
 > **BASE: this plan is rebased onto `main` at `1150d3b6`** (the per-drive lane refactor landed in `79e3010f`, `07b78c52`,
 > `1150d3b6`; the working tree is clean). Every `file:line` below was re-read at that commit by three read-only agents;
@@ -89,8 +77,8 @@ still open):
 - **D-C. `FilePass` names (decided):** **`Duplicates`** and **`Placeholders`**.
 
 **Builds** (the "one build at the end, no cargo between steps" rule conflicts with measure-first, which needs an
-instrumented binary). **Build 1** = everything not gated by a measurement, plus the instrumentation (Yandex
-reset/delegate/provider counters, `PG_PERF_LOG` phase split for stop latency, per-class/OS-code tally of failures). Run
+instrumented binary). **Build 1** = everything not gated by a measurement, plus the instrumentation (`PG_PERF_LOG`
+phase split for stop latency, per-class/OS-code tally of failures). Run
 it once, read the numbers. **Build 2** = only what the numbers decide: the B stop-check and shutdown grace, Yandex 2.5, the
 circuit breaker. Within a build there is no cargo between steps. Every compile-gate (`just test`, `just lint` with its doc,
 wasm, machete and boundaries checks) can spend a build, so the risky edits get a **hand review before build 1** (see
@@ -98,258 +86,9 @@ Verification).
 
 **Implementation order.** Item 5 shares its change sets with AUDIT D (read errors), AUDIT C.5 (`Flusher`) and AUDIT B
 (deadline table, rescans); implement the shared pieces **once, under whichever plan lands first**, not twice. This plan's
-order: 1 -> 3, 4 -> 2 -> **5.0** (`Unreadable`, classifier) -> **5.3** (notices, new `FilePass`) -> **5.2** (observer on the
+order: **5.0** (`Unreadable`, classifier) -> **5.3** (notices, new `FilePass`) -> **5.2** (observer on the
 `Flusher` shape) -> **5.4** (`io_attempts`, views, worklist exclusions, wake) -> **5.5** (Import) -> 5.1 query fix -> 5.6
 (breaker, per-root list). Measurement-gated parts of 5.1 and 2.5 are build 2.
-
----
-
-## 1. Setting: enable thumbnail cache (live)
-
-Today the cache is always on: `ThumbCache { store: Option<Store> }` (`crates/thumbcache/src/lib.rs:74`) is opened once
-in `App::open` (`crates/app/src/app.rs:70-77`), leaked as `&'static`, shared by `Images`, the runner and writeback.
-`ThumbCache::disabled()` (store `None`) already means "could not open"; this setting is a different thing.
-
-**Design: a gate inside `ThumbCache`, not a re-open.** `suspended: AtomicBool` (default `false`) +
-`set_suspended(&self)`/`suspended()` (not `enabled`, which collides with `disabled()`; the checkbox is "on" = not
-suspended). When the open failed (`store: None`) the setting has nothing behind it; the `CacheDisabled` notice says so
-(whether the checkbox should be disabled then: open item).
-
-- Gated when suspended: `get_nearest_into` (-> `Ok(None)`), `put` (no-op), `put_batch` (-> `Ok(false)`).
-- **Not gated:** `retag`, `forget`, `forget_height`, `pending`/checkpoint writes/`shrink`. The DB stays open and
-  consistent, so re-enabling has no stale-row hazard (rows are keyed by mtime/rotation). `pending`/`pending_on`/`checked`
-  need no gate (rebase, verified): a skipped pass never calls `checked` (`thumbs/src/lib.rs:234, 393-395`), so the
-  per-(height, volume) `checkpoints` rows (`writer.rs:282-293, 393-395`) stay as they were, and the disabled-store form
-  of `pending` already returns an empty list with `volumes` filled.
-- Existing data is kept (no deletes, no growth). The CLI uses its own cache (`pg_library::open_thumbs`) and never reads
-  prefs (`crates/cli` has no `Prefs` reference), so it is never suspended; `read_usage` ignores the gate (one doc line).
-- Read from the code: writeback's `retag`/`forget` are not gated, `put` is fire-and-forget (no code treats a miss after
-  `put` as an error), `Images::undecodable` still records Content failures while suspended, and a made thumbnail still
-  clears its row. Cost while suspended: placeholders lose the `Read::Streamed` shortcut (`placeholders.rs:104`), so each
-  reads its original (the tooltip says so); after a rotate the viewer re-decodes.
-
-**Pref + UI** (the plumbing was read end to end; the touched-places list is complete). The Library panel has three
-checkboxes of two kinds: `write_back` is saved only (read on demand, `app/src/edit.rs:28`);
-`detect_borders`/`detect_duplicates` are saved and pushed to the job. (Real size is not a checkbox; it is the viewer's
-`Z` key.)
-
-- `prefs.rs`: `pub thumb_cache: bool` **after `serial_drives`** (rebase: the lane commit added that field last);
-  `Default` (l.114-127, the only `Prefs` literal) `true`; add `"thumb_cache": true` at the end of `GOLDEN` (l.184-195) and
-  of the inline JSON in `a_changed_value_is_written_as_its_own_text` (l.228; field order pinned). `#[serde(default)]`
-  makes old files read as `true`. (`Prefs::features()` and `Features { borders, duplicates, serial_drives }` are
-  unchanged by this item.)
-- **No `Features` change** (the job-only prefs `detect_*` go through `Features`/`set_features`; this one also gates
-  `Images` on the viewer path, which is not the job, so the gate lives on `ThumbCache`; the pref stays the single persisted
-  source: written by the setter, read once in `App::open`; the atomic is only its live mirror).
-  `settings_bridge.rs` (properties l.12-18, extern block l.22-31): `#[qproperty(bool, thumb_cache, cxx_name =
-  "thumbCache", READ = read_thumb_cache, WRITE = set_thumb_cache_saved, NOTIFY, FINAL)]`, `fn read_thumb_cache(self:
-  &Settings) -> bool;`, `fn set_thumb_cache_saved(self: Pin<&mut Settings>, value: bool);`. `settings.rs`, like the
-  `detect_*` setters: `read_thumb_cache` returns `app::get().prefs().get().thumb_cache`; the setter, if changed:
-  `change_prefs(|p| p.thumb_cache = value)`, `app::get().thumbs().set_suspended(!value)`,
-  `app::get().library().wake_job()` (`app/src/library.rs:194` and `LibraryService` `:324`; a no-op if the library has not
-  started, the first round reads `suspended`; otherwise `Runner::wake` (`runner.rs:120-122`) -> `Lanes::wake_all(true)`
-  (`coordinator.rs:286-294`), which still calls `request_stop` on every lane before waking it: accepted (a stop is
-  redundant when turning the cache off, and harmless when turning it on); the height/feature cells already use the
-  non-stopping `wake_all(false)` (`runner.rs:72-82`) and AUDIT B.3 would make `wake()` do the same, which only improves
-  this), then
-  `self.thumb_cache_changed()`. The runner and `still_wanted` read `thumbs.suspended()` directly.
-- `App`: add `pub fn thumbs(&self) -> &ThumbCache` beside `images()` (`app.rs:116`; the field is at l.40). In
-  `App::open`, between `PrefStore::open` (l.78) and `LibraryService::new` (l.81):
-  `thumbs.set_suspended(!prefs.get().thumb_cache)`.
-- `LibraryPanel.qml` (required property `thumbCache`, signal `thumbCacheToggled(bool on)`, CheckBox + tooltip, like
-  l.78-92); `Main.qml` l.651 `thumbCache: appSettings.thumbCache` and l.668 `onThumbCacheToggled: (on) =>
-  { appSettings.thumbCache = on }`; `ui.ftl` `ui-thumb-cache`, `ui-thumb-cache-tooltip` beside l.72-73 (the lints only
-  check parse, unique ids and the `ui-` prefix). The tooltip warns that with the cache off every thumbnail (and every
-  placeholder) is decoded from its original each time. No pane-height bump (fixed 540 with a fill-height list); no QML
-  stub changes (no LibraryPanel test); no doc lists settings. Notice strings live in `text.ftl`; there is one locale, `en`.
-
-**Runner and thumbs pass** (rebase: pass bodies are `library/src/passes.rs`; the loop is `lane.rs`).
-
-- `Thumbs::run` (`passes.rs:254-288`) already returns `Done` at once when `heights.get()` is `None` (l.257-259). Add: when
-  `thumbs.suspended()`, skip `run_while` (before l.263) and call `files_read(FilePass::Thumbs, 0, true)` (precedent: the
-  Borders skip, `passes.rs:226-229`). **The explicit call matters after the refactor:** the tally holds counts per lane per
-  pass, and a lane that never runs a pass has no entry, so only an explicit `files_read(.., 0, true)` settles a stale
-  `UnreadableFiles` (`Tally::settle_reads`, `tally.rs:71-85`); a stale `CacheFull` is resolved by `cache_room`
-  (`tally.rs:114-119`) only for a lane that was recorded full, so the skip also calls `cx.inner.cache_room()`. It hides
-  still-true unreadable files while suspended; they re-post after: accepted.
-- **A flip while a pass runs** (no check before the call, it races): `put_batch` returns `Ok(false)` when suspended and
-  `flush`'s existing `else` branch (`thumbs/src/lib.rs:337-339`, `if !stored { stats.cache_full = true }`) becomes
-  `if cache.suspended() { stats.stopped = true } else { stats.cache_full = true }`. (Rebase, a correction of an earlier
-  claim: a **height change** does **not** reach that branch: `flush` ends `Ok(stored && still_wanted())` (l.340), so a
-  successful store followed by a false `still_wanted` stops the pipeline without setting `cache_full`, and
-  `complete` is false because `tried < len`. There is no false-`CacheFull` bug to fix there; the early return at
-  l.317-319 is `Ok(still_wanted())` and likewise never sets it.) `Ok(false)` already ends the pass (the writer stops and
-  later batches are skipped, `pipeline.rs:411-440`); `put_batch` is all-or-nothing and buffers are recycled either way,
-  so `made`/`kept` stay right. `complete` becomes `!cache_full && !stopped && tried == items.len()` (l.391) because
-  `tried` is incremented per item (l.270), `put_batch` returns `Ok(false)` after the last item is counted, and a flip
-  during the last batch would otherwise advance every volume's checkpoint over thumbnails that were never stored.
-  `ThumbStats` gains `stopped` (one literal, l.221; the CLI reads only `cache_full`). `CacheFull` is posted only for
-  `cache_full`. `still_wanted` (`&|| heights.get() == Some(height)`, the call at `passes.rs:263-271`) gets `&& !thumbs.suspended()`
-  (shared borrows only). AUDIT E.2 also has `put_batch` `Err` record `cache_error` and end production without aborting the
-  ledger flush: the same `flush` branch.
-- Turning it **on**: `wake_job()` runs a round; `Thumbs` resumes from the checkpoint, which the suspended period never
-  advanced; files changed meanwhile have `seq` above it (traced through off/quit/relaunch/on). Prerequisite:
-  `heights.get()` is `Some` (existing).
-- While suspended the Thumbs pass does not run, so Content failures are not discovered by it (placeholders and the
-  on-demand path still record undecodable files). Acceptable.
-
-**Tests:** thumbcache gate (get/put/put_batch no-ops; retag/forget still act; re-enable serves old rows; default not
-suspended); prefs golden; runner (`runner.rs` tests, e.g. beside `a_full_cache_is_said_and_a_complete_pass_clears_it`,
-l.415-430): suspended runs no pass, posts no `CacheFull`, settles a stale `CacheFull` and a stale `UnreadableFiles`;
-**flip during the last batch leaves every volume's checkpoint unchanged** (a lane with two volumes); flip mid-pass posts
-no `CacheFull`; a height change posts no `CacheFull` (pins today's behaviour).
-
----
-
-## 2. Yandex screen keeps refreshing thumbnails
-
-Pipeline: `Images::prefetch` (`app/src/yandex/images.rs:96`) fetches in 4 threads, each settle publishes a change; the
-pump (`desktop/src/yandex.rs:~120`) coalesces and calls `poll()`; thumbs load as `image://yandex/<id>` (stable URL,
-`cache` default true) in `ResultTile.qml:38-45`.
-
-**Confirmed:** `drop_dead` (`desktop/src/yandex.rs:187-196`) resets the model per poll that reports dead results;
-`QQuickRepeater` regenerates every delegate on reset (`qquickrepeater.cpp:573-575`); the log shows a steady stream of
-dead results per search. **Not proven:** that this is the *visible* refresh: Qt destroys old delegates later
-(`destroyObjectLater`) so their `Image`s keep the pixmaps referenced while the new ones request the same URLs (cache
-hits; the 2 MB unreferenced limit is probably irrelevant here), and removal reflows the justified layout either way.
-
-**Step 0 (build 1):** the fixes below and the counters ship together (there is no pre-fix baseline); the counters (model
-resets, delegate creations, provider requests/decodes per search) are read after the fix and decide only 2.5. A remaining
-visible refresh with zero resets means the cause is elsewhere (provider re-decodes).
-
-**Re-entrancy rule** (corrected: today's re-entry writes, not only reads: `poll()` -> `set_busy` (l.275) emits
-`busyChanged` -> `YandexPanel.qml:56-64` `onBusyChanged` -> `preview.open` -> the `Binding` -> `set_preview_item` ->
-`refresh_preview`). cxx-qt does not guard it; what makes it survivable is: **never hold a Rust borrow of a field across a
-signal-emitting call, and set fields before emitting** (as `set_preview_item` does, l.239-240). Every change below follows
-it.
-
-**Fixes:**
-
-1. **Compute inside the reset, emit after.** `show()` resets, then `groups_changed()` sets the counts
-   (`yandex.rs:146-151`), so on the first `found` the second Repeater has `otherCount == 0` and every tile requests its
-   thumbnail until the counts flip, and `data()` reads stale or empty `frames` (`yandex.rs:285`). Callers of `relayout`:
-   `groups_changed` (only `show` and `drop_dead` call it), `set_layout_width` (l.169), `set_gap` (l.179); each ends in
-   `data_changed` for the four frame roles. Split: `compute_layout` (l.199-208: frames, `set_other_height`,
-   `set_similar_height`), `emit_frames` (l.209-214), `relayout = compute + emit`; `set_group_counts`
-   (`set_other_count`/`set_similar_count` from `results`). New `show`: `begin_reset_model; rust_mut().results = results;
-   set_group_counts; compute_layout; end_reset_model; picks_changed` (`picks_changed`, l.218-233, emits `picked` over all
-   rows, sets the counts and calls `refresh_preview`: harmless after a reset; the frame `data_changed` is redundant and
-   dropped). `groups_changed = set_group_counts; relayout; picks_changed`. NOTIFYs emitted inside the reset only feed plain
-   bindings (`Layout.preferredHeight`, `GroupHeader.count`); do not "set silently, emit later" (generated setters skip the
-   notify when equal). `data()` during `end_reset_model` reads final fields: fine.
-2. **`isOther` role:** `const ROLE_IS_OTHER: i32 = 264`; `data()` arm `i < self.results.first().len()`; `(ROLE_IS_OTHER,
-   "isOther")` in `role_names()` (`yandex.rs:299-314`, names must match exactly: with `required property` a mismatch
-   makes the delegate fail); `required property bool isOther` in `ResultTile.qml`; the Repeaters
-   (`YandexPanel.qml:220,240`) use `visible: isOther` / `visible: !isOther`. No `data_changed` needed for it (a survivor
-   never changes group). No keyboard navigation, cached selection index or `Flow` depends on `index < otherCount`; the
-   only index users are `YandexPreview.item`, the one-shot `previewWhenFound` and click-time `tile.index`. No QML test or
-   stub references `ResultTile`.
-3. **Row removal instead of reset.** `beginRemoveRows` asserts `last < rowCount` (`qabstractitemmodel.cpp:3018`), so the
-   state changes *between* begin and end. Bridge (copy `folders_bridge.rs:68-74`, next to `dataChanged`, l.96-103):
-   `#[inherit] #[cxx_name = "beginRemoveRows"] fn begin_remove_rows(self: Pin<&mut YandexSearch>, parent: &QModelIndex,
-   first: i32, last: i32);` and `endRemoveRows`; `QModelIndex::default()` is already used (l.210); borrow pattern as
-   `gallery/model.rs:192-194`. Draft:
-
-   ```rust
-   // Picks
-   pub fn remove(&mut self, r: Range<usize>) {
-       let end = r.end.min(self.picked.len()); let r = r.start.min(end)..end;
-       self.picked.drain(r.clone());
-       self.anchor = match self.anchor {
-           Some(a) if r.contains(&a) => None,
-           Some(a) if a >= r.end => Some(a - r.len()),
-           a => a };
-   }
-   // Results<T>
-   pub fn remove_range(&mut self, r: Range<usize>) {
-       let end = r.end.min(self.items.len()); let start = r.start.min(end);
-       self.items.drain(start..end);
-       self.first -= end.min(self.first) - start.min(self.first);   // right for a run spanning the boundary
-       self.picks.remove(start..end);
-   }
-   ```
-
-   `drop_dead` first computes `Vec<Range<usize>>` of dead runs (no `&` borrow of `results` may live across
-   `end_remove_rows`), then per run, highest first: `begin_remove_rows(&root, a, b-1)`, `rust_mut().results.remove_range`,
-   **`frames.drain(run)`** (`data()` indexes `frames[i]` by row, so survivors would read dead rows' frames until
-   `relayout`), `end_remove_rows`; then one `groups_changed()`. `drop_where` today calls `picks.reset`, which clears the
-   anchor; keeping it is an improvement; it stays `pub`. Fix the doc at `results.rs:60` (mentions a `retain` that does not
-   exist and says `drop_where` is the only mutator). `show()` keeps the reset.
-4. **Preview index after a removal: Rust adjusts it, once** (a QML `onRowsRemoved` handler runs N times inside the loop
-   while Rust's `preview_item` is stale, so `refresh_preview` can fetch a shifted result's URL; QML's `preview.item` is
-   the source of truth, the `Binding` at `YandexPanel.qml:272-276` only pushes it to Rust). **Capture the previewed hit's
-   id before the removals** (guard `preview_item < 0` first: `row_of(-1)` is `None`, `rows.rs:5`); after the removals and
-   before `groups_changed()`: `next = items().iter().position(|h| h.id == id).map_or(-1, qt_int)` (handles dead runs,
-   group boundaries and clamping with no arithmetic; as a pure function over `(&[id], Option<id>)` for the test), then
-   `self.as_mut().set_preview_item(next)` (no-op if equal; sets the field, emits, then `refresh_preview`). QML follows
-   with one `Connections { target: yandex; function onPreviewItemChanged() { if (yandex.previewItem < 0) { if
-   (preview.visible) preview.close() } else if (preview.item !== yandex.previewItem) preview.item = yandex.previewItem } }`
-   (`previewItemChanged` is the generated NOTIFY, `yandex_bridge.rs:45`). Traced orders are safe: the `Binding` has no
-   `when`/`restoreMode`, evaluates synchronously (`qqmlbind.cpp:785-811`) only when its own `value` changes, so a
-   Rust-side write does not re-run it; the handler's `preview.item = new` makes it write the same value and
-   `set_preview_item` returns early; `close()` sets `visible` first and the Binding writes -1 (equal); Escape closes via the
-   same Binding path and the handler then sees `visible == false`. `close()` (`YandexPreview.qml:55-59`) restores panel
-   focus via `onClosed` (`YandexPanel.qml:269`). In `poll()`, `drop_dead` runs before `set_busy` (l.265-275), so
-   `previewWhenFound` indexes the post-drop results. Side effect: a dead previewed result closes the preview without the
-   "cannot decode" flash (better). Do not use `Qt.callLater` (widens the wrong-URL window).
-5. **Build 2, only if Step 0 shows re-decodes:** raise Qt's pixmap cache limit or cache decoded thumbnails in
-   `yandex_picture` (`desktop/src/providers.rs:~100`). `Images::get` already returns `Err` at once for `Dead`
-   (`images.rs:199`); what blocks a provider thread is `Fetching` (condvar, l.200-204); a `Queued` result is fetched
-   inline on the pool thread (l.201-210); the 4-thread pool (`providers.cpp:128`) is shared by thumbnails and originals.
-6. Move the doc comment above `drop_dead` (`yandex.rs:182-186`) to `relayout`.
-
-Tests: `Results`/`Picks` remove-range (first/picks/anchor, a run spanning the group boundary, anchor above/inside,
-clamping); the preview-index function. No proptests exist for either type.
-
----
-
-## 3. Yandex full-screen preview goes black on prev/next
-
-**Cause (read from `YandexPreview.qml:161-184`):** `full` is an async `Image` without `retainWhileLoading`; `step()` changes
-the source, the pixmap is cleared, `sourceSize` -> 0 and `width/height` collapse to the empty `Theme.previewFill`;
-neighbours are never loaded ahead.
-
-**Fix** (mirror `ImageLayers.qml:62-76,102`, `Viewer.qml:395-405`):
-
-1. `retainWhileLoading: true` on `full` (Qt 6.12, `qquickimage.cpp:988`). No `lastSize` latch: `sourceSize` stays the
-   retained image's size until `requestFinished` swaps (`qquickimagebase.cpp:331-347`); A->B->C switches are safe. On
-   `Error` the retained picture is cleared and "cannot decode" shows (accepted).
-2. Neighbour prefetch: `previewPrevUrl`/`previewNextUrl` in `yandex/state.rs` + `yandex_bridge.rs`, set in
-   `refresh_preview` **after** `preview_url` (`yandex.rs:256-259`) so `full` acquires the pixmap first:
-   `original_url(results[(i ± 1) mod len].id)`, empty only when `len < 2` (dead results are dropped from `results` in the
-   same `poll()` that reports them, so no dead handling is needed). Two hidden
-   `Image { visible: false; asynchronous: true; cache: true }` with `sourceSize` unset (same cache key as `full`; they
-   load while hidden). About three decoded originals in memory; no extra network. After a step the old current pixmap is
-   unreferenced until `prev` takes it, so stepping back may re-decode; `retainWhileLoading` hides it; do not order for it.
-   The neighbours share the 4 provider threads with grid thumbnails (2.5).
-
-## 4. Yandex preview: mouse wheel = next/prev
-
-Pattern: `Viewer.qml:299-315` (its accumulator is inline in the handler; `wheelBy` is `WheelListView.qml:37`, a ListView
-smooth-scroll helper, unrelated: the notch function is **new**).
-
-- **Decided with the user: the wheel always steps and no longer scrolls the image.** Today the wheel only scrolls the
-  `Flickable` `previewView` (`YandexPreview.qml:148`), and only when the image is bigger than the view (1:1 or a huge
-  image); the `MouseArea` at l.96-99 just swallows wheel events so the grid below does not move. A 1:1 image is still
-  panned by dragging and by its two `ScrollBar`s (unchanged).
-- **Placement: a `WheelHandler` declared as a child of `previewView`** (the Flickable), exactly as `WheelListView.qml:60`
-  replaces a ListView's wheel scrolling. Traced in Qt: a handler declared inside a Flickable is reparented to its
-  `contentItem` (`QQuickFlickablePrivate::addPointerHandler`, `qquickflickable.cpp:3015-3021`), items are visited
-  children-first, and a handler gets the event before its item's own `wheelEvent`; `WheelHandler.blocking` is `true` by
-  default (`qquickwheelhandler.cpp:323-329, 385-386`: it accepts the point), so the Flickable never scrolls. The content
-  item is at least as large as the view (`contentWidth/Height = Math.max(width, full.width)`, l.156-157), so it covers the
-  whole viewport in fit mode too. **No guard is needed** (the earlier "step only when the image fits" guard and its
-  under-1-px tolerance are dropped). Keep the swallowing `MouseArea` (it still covers the preview bar, where the wheel
-  should do nothing). Default `acceptedDevices` (mouse-sourced wheel events), as the Viewer's own handler
-  (`Viewer.qml:302`); a device whose wheel events Qt flags as touchpad keeps its Flickable scroll, which matches the Viewer.
-- Draft: `property real wheelNotches: 0`; `function notchesFor(angleY: real): int { wheelNotches += angleY / 120; const n
-  = Math.trunc(wheelNotches); wheelNotches -= n; return n }`; in the handler `onWheel: (ev) => { const n =
-  preview.notchesFor(ev.angleDelta.y); if (n !== 0) preview.step(-n) }`; reset `wheelNotches = 0` in `open()` (l.48).
-- **Fix `step`** (`YandexPreview.qml:63`): `item = ((item + by) % total + total) % total` (`total = otherCount +
-  similarCount`; handles multi-notch `by`).
-- Test: QtTest's `mouseWheel` does not reach a `WheelHandler` (`WheelListView.qml:35`), so test `notchesFor` directly. No
-  Yandex QML test infrastructure exists (no `Theme` singleton in `stubs/pg/gallery/qmldir`; `KeyMap` is stubbed): a
-  `tst_yandex_preview.qml` needs the `Theme` stub.
 
 ---
 
@@ -842,7 +581,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 
 ## Open items to settle during implementation
 
-- The two points to confirm (placeholders get no observer; what exactly was seen as "lost on exit").
+- Placeholders get no observer (point 1 above). The "what exactly was seen" question is moot (see Status).
 - Whether `Control` can hand the sink an `Arc<AtomicBool>` for `wait_for_writers(Patience { stop, until })` (5.2), and the
   `until` bound.
 - The trace of the F1 flake (`thumbs` test at `lib.rs:687`) before the `Unwritten`/`fold` rewrite.
@@ -850,17 +589,11 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 - Which setup phase holds the stop (build-1 numbers) and the shutdown grace/skip rule; whether a slow open on a dead share
   is the cause of "still running at exit" (then the breaker moves up).
 - Spacing values (60/600 s counted, 60 s NotFound, 300 s Offline) and whether Offline should ever go terminal.
-- Whether the cache checkbox is disabled when the cache failed to open, and the `CacheDisabled` text.
 - Peak memory of the `+f.volume` sorter on 190k rows; re-measure all query timings on the landed per-volume code.
 - Whether the audit's migration slice (which would own `io_attempts`) lands before this change, and who owns `Flusher`.
 
 ## Critical files
 
-- Cache setting: `crates/thumbcache/src/lib.rs`, `crates/app/src/{app,prefs,library}.rs`, `crates/library/src/{passes,runner,coordinator}.rs`,
-  `crates/thumbs/src/lib.rs`, `crates/desktop/src/{settings,settings_bridge}.rs`,
-  `crates/desktop/qml/{LibraryPanel,Main}.qml`, `crates/client/locales/en/ui.ftl`
-- Yandex: `crates/desktop/src/{yandex,yandex_bridge}.rs`, `yandex/state.rs`, `crates/client/src/{results,picks}.rs`,
-  `crates/desktop/qml/{YandexPanel,YandexPreview,ResultTile}.qml`
 - Failures: `crates/platform/src/{unreadable,errors,drive}.rs` (new/changed), `crates/model/src/{retry.rs (new),notice.rs}`,
   `crates/jobs/src/{pipeline,service,control}.rs`, `crates/thumbs/src/{lib,placeholders}.rs`,
   `crates/thumbcache/src/{reader,lib,writer,schema}.rs`, `crates/library/src/{passes,lane,inner,tally,coordinator}.rs`,
@@ -877,22 +610,17 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 
 ## Verification
 
-- **Before build 1, hand-review the five riskiest edits:** (1) `Event`/`batched_observed`/`recv_timeout` in `pipeline.rs`
+- **Before build 1, hand-review the four riskiest edits:** (1) `Event`/`batched_observed`/`recv_timeout` in `pipeline.rs`
   (explicit types, `None::<Duration>`, wrapper first as a mechanical copy; coordinate with the lane refactor's edits to the
   same file); (2) the `thumbs::run_while` Sink/Writing split (declare `Sink` first, move it back out after the call; grep
   every doc link to `first_failed`, `fold`, `Failed`); (3) migration/`io_attempts`/views/`pending_sql` (validate in sqlite3 on
-  the scratch catalog first); (4) the Yandex cxx-qt changes (copy `folders_bridge.rs:68-74` exactly; re-check the role name
-  against the QML); (5) the `Unreadable` marker plumbing across `pipeline`/`video`/`analysis` and the new `FilePass` matches.
+  the scratch catalog first); (4) the `Unreadable` marker plumbing across `pipeline`/`video`/`analysis` and the new `FilePass` matches.
 - Build 1: instrumentation + everything not gated; run and read the numbers; build 2 only for what they decide.
   `just test`, `just qmltest`, `just lint` (including the doc and wasm checks above) on the final tree.
 - New Rust tests as listed per item; the edited tests listed in 5.0/5.4; the `EXPLAIN QUERY PLAN` pins must stay green
   (incremental keeps `SEARCH f USING INDEX files_seq`; the full form stays off `sqlite_autoindex_files_1`; the due branch
   uses `io_attempts_due`; `files_to_import` stays the driver).
-- Manual (`just run`): toggle the cache setting during a thumbnail pass (pass ends after its batch, no `CacheFull`;
-  toggling back resumes; flip during the last batch then toggle back: nothing is skipped); Yandex search by photo
-  (thumbnails stay put as dead results arrive, preview stays on its picture or closes cleanly if its result died);
-  preview Left/Right and the wheel (previous frame stays until the next is ready, no black flash, the wheel steps in fit
-  and in 1:1 mode and never scrolls the image; a 1:1 image still pans by drag and scrollbars); quit mid-import on the 190k library and relaunch (stop latency from
+- Manual (`just run`): quit mid-import on the 190k library and relaunch (stop latency from
   `PG_PERF_LOG`; the failed list holds every recorded failure, including ones seen in the last 2 s before quitting); unplug
   a drive for several rounds (the AUDIT's own check, adapted to lanes: files do not become permanent failures; an
   import run with the drive unplugged leaves the files pending; after it is back they are retried, and `io_attempts` rows

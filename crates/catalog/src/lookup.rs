@@ -30,7 +30,7 @@ impl Catalog {
         query_current(&mut stmt, id, listed)
     }
 
-    /// [`Catalog::is_current`] for each of `files`, in their order: one read per [`CURRENT_BATCH`] of them, not one per
+    /// [`Catalog::is_current`] for each of `files`, in their order: one read per `CURRENT_BATCH` of them, not one per
     /// file. The thumbnails' writer checks a batch of its results this way, on the thread that stores them.
     pub fn currents(&self, files: &[(FileId, Listed)]) -> Result<Vec<bool>> {
         let mut out = Vec::with_capacity(files.len());

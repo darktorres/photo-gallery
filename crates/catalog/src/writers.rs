@@ -327,7 +327,7 @@ pub enum OwedHashes {
 
 /// The next change number of the change sequence (`meta.seq`), and a file's `pending`, `seq` and `changed` set to a
 /// change number: what the `analysis_added` trigger did for an analysis's file (version 18 dropped it, see
-/// [`touch_analysis`]).
+/// `touch_analysis`).
 const BUMP_SEQ: &str = concat!(next_seq!(), " RETURNING value");
 const TOUCH_FILE: &str = concat!("UPDATE files SET pending = ", stale!(), ", seq = ?2, changed = ?2 WHERE id = ?1");
 

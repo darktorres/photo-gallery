@@ -1,6 +1,7 @@
 //! Pairing, at the end of every scan of a root. The scan writes each file it finds by its
-//! identity ([`crate::writers::ScanWriter::record_file`]); a file the catalog has no row for gets a fresh row, `unpaired`, and a row
-//! whose identity is another file's is displaced, `unpaired`. This module decides what those rows are, in tiers:
+//! identity (`ScanWriter::record_file`, in the private `writers` module); a file the catalog has no row for gets a
+//! fresh row, `unpaired`, and a row whose identity is another file's is displaced, `unpaired`. This module decides
+//! what those rows are, in tiers:
 //!
 //! 1. **Same folder and name** on another volume: the file came back under a new identity (a renumbered volume), so
 //!    its old row takes the new identity and keeps everything else.

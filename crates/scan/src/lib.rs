@@ -2285,4 +2285,83 @@ mod tests {
         assert_eq!(stopped.missing, 0, "a stopped walk marks nothing missing");
         assert_eq!(c.status().unwrap().missing, 0, "c.jpg is not missing after a stopped walk");
     }
+
+    #[test]
+    fn eight_workers_judge_an_unreadable_tree_as_the_walk_alone_does() {
+        let mut tree = judged_tree();
+        // A folder the lister cannot open: the walk finds it, and the workers' listing of it fails too.
+        tree[0].1.push(folder("gone", 40));
+        let alone = walk_of_tree("unreadable-alone", &tree, 0);
+        let eight = walk_of_tree("unreadable-eight", &tree, 8);
+        let (a, af, am) = &alone;
+        let (w, wf, wm) = &eight;
+        assert!(a.complete && w.complete, "both walks complete");
+        assert_eq!(
+            (a.folders, a.files, a.changed, a.duplicates, a.loops, a.skipped_reparse, a.refused_mounts, a.errors),
+            (w.folders, w.files, w.changed, w.duplicates, w.loops, w.skipped_reparse, w.refused_mounts, w.errors),
+            "the same judgments"
+        );
+        assert_eq!((af, am), (wf, wm), "the same rows");
+    }
+
+    #[test]
+    fn a_pause_with_workers_listing_holds_no_lock_and_resumes_with_the_same_judgments() {
+        let path = on_disk("pause-workers");
+        let ctl = Arc::new(Control::new());
+        let (listed, at_b) = mpsc::channel();
+        let pausing = ctl.clone();
+        let mut lister =
+            FakeListing::new(1, &judged_tree()).refusing(pg_platform::native::PATH_RULES, "mnt").on_listing("b", move || {
+                pausing.set_paused(true);
+                let _ = listed.send(());
+            });
+        let (walk_ctl, walk_path) = (ctl.clone(), path.clone());
+        let walking = std::thread::spawn(move || {
+            walk_paced(&mut open(&walk_path), &fake_root(), &walk_ctl, &mut lister, paced(4)).map_err(|e| e.to_string())
+        });
+        at_b.recv_timeout(Duration::from_secs(30)).unwrap();
+        assert!(another_can_write(&path, Duration::from_secs(2)), "a paused walk held the write lock");
+        ctl.set_paused(false);
+        let stats = walking.join().unwrap().unwrap();
+        let (alone, _, _) = walk_of_tree("pause-alone", &judged_tree(), 0);
+        assert!(stats.complete);
+        assert_eq!(
+            (stats.folders, stats.files, stats.changed, stats.duplicates, stats.loops, stats.refused_mounts),
+            (alone.folders, alone.files, alone.changed, alone.duplicates, alone.loops, alone.refused_mounts),
+            "the same judgments as the walk with no workers"
+        );
+    }
+
+    #[test]
+    fn a_stop_during_a_pause_with_workers_parked_returns_at_once() {
+        let path = on_disk("stop-paused-workers");
+        let ctl = Arc::new(Control::new());
+        let (listed, at_b) = mpsc::channel();
+        let pausing = ctl.clone();
+        let mut lister = FakeListing::new(1, &judged_tree()).on_listing("b", move || {
+            pausing.set_paused(true);
+            let _ = listed.send(());
+        });
+        let (walk_ctl, walk_path) = (ctl.clone(), path.clone());
+        let (done, returned) = mpsc::channel();
+        std::thread::spawn(move || {
+            let result = walk_paced(&mut open(&walk_path), &fake_root(), &walk_ctl, &mut lister, paced(4));
+            let _ = done.send(result.map(|s| s.complete).map_err(|e| e.to_string()));
+        });
+        at_b.recv_timeout(Duration::from_secs(30)).unwrap();
+        ctl.request_stop();
+        let complete = returned.recv_timeout(Duration::from_secs(10)).expect("the stopped walk returns");
+        assert_eq!(complete, Ok(false), "a stopped walk is not complete");
+    }
+
+    #[test]
+    fn a_full_bound_of_held_listings_still_lets_the_walk_take_its_next_folder() {
+        // One folder whose listing alone reaches the bound (AHEAD entries held), then a folder the walk takes itself.
+        let wide: Vec<FakeEntry> = (0..50_001u64).map(|i| file(&format!("w{i}.jpg"), 1000 + i, 1)).collect();
+        let tree: Vec<(&str, Vec<FakeEntry>)> =
+            vec![("", vec![folder("wide", 20), folder("b", 21)]), ("wide", wide), ("b", vec![file("b.jpg", 2, 1)])];
+        let (stats, files, _) = walk_of_tree("bound-held", &tree, 4);
+        assert!(stats.complete);
+        assert_eq!((stats.files, files), (50_002, 50_002), "every file of the wide folder and of b");
+    }
 }

@@ -26,3 +26,5 @@ aqtinstall.log
 # The lint tools at their pins (`just lint-tools-setup`): ruff in a venv, markdownlint in tools/lint's node_modules.
 /.venv/
 /tools/lint/node_modules/
+# The batched GPU JPEG encoder's test build (eval/jpeg-encoder/build.ps1): the executable and the build script it writes.
+/eval/jpeg-encoder/build/

@@ -32,6 +32,9 @@ Rectangle {
     required property string imageUrl
     required property string sizeText
     required property bool picked
+    // The pictures of the previous and the next result ("" for none), loaded hidden so a step shows its picture at once.
+    required property string prevUrl
+    required property string nextUrl
 
     // The user asked to pick or unpick an item (`-1` for none).
     signal pickRequested(int item)
@@ -171,6 +174,8 @@ Rectangle {
 
             source: preview.imageUrl
             asynchronous: true
+            // Across a step the previous picture stays until the next one is decoded (no black flash while it loads).
+            retainWhileLoading: true
             smooth: true
             mipmap: true
             width: naturalWidth * zoom
@@ -187,5 +192,18 @@ Rectangle {
         anchors.centerIn: previewView
         running: full.status === Image.Loading
         visible: running
+    }
+    // The neighbours, decoded while hidden: the same URL and cache entry as `full` (no sourceSize), so a step finds it ready.
+    Image {
+        visible: false
+        asynchronous: true
+        cache: true
+        source: preview.prevUrl
+    }
+    Image {
+        visible: false
+        asynchronous: true
+        cache: true
+        source: preview.nextUrl
     }
 }

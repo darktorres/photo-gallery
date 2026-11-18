@@ -263,6 +263,8 @@ Rectangle {
         otherCount: yandex.otherCount
         similarCount: yandex.similarCount
         imageUrl: yandex.previewUrl
+        prevUrl: yandex.previewPrevUrl
+        nextUrl: yandex.previewNextUrl
         sizeText: yandex.previewWidth > 0 ? yandex.previewWidth + "×" + yandex.previewHeight : ""
         picked: yandex.previewPicked
         onPickRequested: (chosen) => yandex.togglePick(chosen)

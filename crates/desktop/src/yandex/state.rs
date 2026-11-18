@@ -20,6 +20,8 @@ pub struct YandexSearchRust {
     pub(crate) similar_picked: i32,
     pub(crate) preview_item: i32,
     pub(crate) preview_url: QString,
+    pub(crate) preview_prev_url: QString,
+    pub(crate) preview_next_url: QString,
     pub(crate) preview_width: i32,
     pub(crate) preview_height: i32,
     pub(crate) preview_picked: bool,

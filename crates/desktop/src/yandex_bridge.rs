@@ -46,6 +46,10 @@ pub mod qobject {
         /// What the preview shows of its item: its picture's URL (`""` for none), its size in pixels as Yandex gives
         /// it (0 when it doesn't), and whether it is picked.
         #[qproperty(QString, preview_url, cxx_name = "previewUrl", READ, WRITE, NOTIFY, FINAL)]
+        /// The pictures of the previous and the next result (`""` when there is no other one): the preview loads them
+        /// hidden, so a step shows its picture at once.
+        #[qproperty(QString, preview_prev_url, cxx_name = "previewPrevUrl", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QString, preview_next_url, cxx_name = "previewNextUrl", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, preview_width, cxx_name = "previewWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, preview_height, cxx_name = "previewHeight", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, preview_picked, cxx_name = "previewPicked", READ, WRITE, NOTIFY, FINAL)]

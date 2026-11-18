@@ -241,19 +241,36 @@ impl qobject::YandexSearch {
         self.refresh_preview();
     }
 
-    /// The preview's values for its item: the picture's URL, its size and its pick (empty for no item).
+    /// The preview's values for its item: the picture's URL, its size and its pick (empty for no item), and the URLs of
+    /// the previous and the next result, which the preview loads ahead (empty when there is no other result). The
+    /// neighbours are set after the item's own URL, so the preview's picture is the first one requested.
     fn refresh_preview(mut self: Pin<&mut Self>) {
         let shown = crate::rows::row_of(self.preview_item).and_then(|i| self.results.get(i).map(|hit| (i, hit)));
-        let (url, width, height, picked) = match shown {
-            Some((i, hit)) => (
-                QString::from(&original_url(hit.id)),
-                qt_side(hit.width),
-                qt_side(hit.height),
-                self.results.picks().is_picked(i),
-            ),
-            None => (QString::default(), 0, 0, false),
+        let len = self.results.len();
+        let (url, width, height, picked, prev, next) = match shown {
+            Some((i, hit)) => {
+                // The result `k` steps from the shown one, wrapping as the preview's ←/→ do.
+                let around = |k: usize| {
+                    if len < 2 {
+                        String::new()
+                    } else {
+                        self.results.get(k % len).map_or_else(String::new, |h| original_url(h.id))
+                    }
+                };
+                (
+                    QString::from(&original_url(hit.id)),
+                    qt_side(hit.width),
+                    qt_side(hit.height),
+                    self.results.picks().is_picked(i),
+                    QString::from(&around(i + len - 1)),
+                    QString::from(&around(i + 1)),
+                )
+            }
+            None => (QString::default(), 0, 0, false, QString::default(), QString::default()),
         };
         self.as_mut().set_preview_url(url);
+        self.as_mut().set_preview_prev_url(prev);
+        self.as_mut().set_preview_next_url(next);
         self.as_mut().set_preview_width(width);
         self.as_mut().set_preview_height(height);
         self.as_mut().set_preview_picked(picked);

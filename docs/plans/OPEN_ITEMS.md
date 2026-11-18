@@ -153,3 +153,10 @@ Found while reading the background job's round (`crates/library/src/runner.rs`).
 ## UI: the inbox button shows a bell icon, not text (added 2026-11-17)
 
 - **Bell icon in place of the inbox's text.** **Open.** The status bar's inbox button (`crates/desktop/qml/StatusBar.qml`, the `Button` at line 133) shows the text from `ui-inbox` (`crates/client/locales/en/ui.ftl:82`): "Inbox", or "Inbox (N)" with the unread count. Plan: a bell icon, with the unread count beside it (or as a badge), in place of the text. The button's accessible name is its text today (`Accessible.name: text`, line 135), so it must move to a string such as `ui-inbox-title` (already "Inbox") before the text goes. Open decisions: where the bell comes from. The UI has no icon set: the only image in the desktop crate is the app icon (`crates/desktop/resources/app-icon.png`), so the bell needs an SVG or a Qt icon added to the resources. It also needs to work in the dark theme and at the status bar's height. The `ui-inbox` string stays for the tooltip.
+
+## UI: progress on the taskbar (added 2026-11-18)
+
+- **Progress bar on the taskbar button.** **Open, not started.** Show the background job's progress on the app's taskbar
+  button, using the Windows taskbar progress indicator (`ITaskbarList3::SetProgressValue` / `SetProgressState`). Nothing in
+  the code sets it yet: `crates/desktop/cpp/app_icon.cpp` only sets the window icon. Open decisions: which job progress to
+  show (the background job's round as a whole, or the current pass), and the states to show (paused, error, indeterminate).

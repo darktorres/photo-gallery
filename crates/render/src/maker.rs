@@ -9,10 +9,11 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::decode::{Decoder, MinSize, transform_into};
 use pg_codec::encode::{Chroma, JpegEncoder};
 use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
+use pg_model::orientation::Orientation;
 
 use crate::display::{self, DECODE_MARGIN, Shown};
 
@@ -42,7 +43,7 @@ pub const KEEP_BYTES: usize = 3072 * 2048 * 3;
 #[derive(Debug, thiserror::Error)]
 pub enum MakeError {
     /// The file couldn't be read: an I/O failure (an offline drive, a file in use, a file gone), which the next try may
-    /// not have. Only a video's open is read here; an image's bytes are read before ([`Maker::read_file`]).
+    /// not have. Only a video's open is read here; an image's bytes are read before ([`Maker::make_of_file`]).
     #[error(transparent)]
     Unreadable(std::io::Error),
     /// The file was read and doesn't decode (damaged, truncated, a format the decoder can't take), or the encoder failed:
@@ -76,7 +77,7 @@ pub struct Maker {
     thumbhasher: thumbhash::Encoder,
 }
 
-/// Threads for the viewer's full-size decodes (`Maker::decode_file` and `Maker::turn_jpeg`), through parajpeg. Six
+/// Threads for the viewer's full-size decodes (`Maker::decode_of_file`), through parajpeg. Six
 /// of the i7-8700's twelve: on a 7.5 MP camera JPEG a decode takes 30 ms against libjpeg-turbo's 57 ms (19 ms with all
 /// twelve), at about twice the CPU time, which leaves the import's workers some of the cores while a photo is shown.
 pub const VIEWER_THREADS: usize = 6;
@@ -100,10 +101,31 @@ impl Maker {
         &mut self.decoder
     }
 
+    /// The resizer, for the viewer's resizes on this thread: its coefficients and buffers are kept from one resize to the
+    /// next.
+    pub fn resizer(&mut self) -> &mut Resizer {
+        &mut self.resizer
+    }
+
+    /// A thumbnail `height` px high of the file at `path`, turned by `turns` (its catalog rotation). The file is read
+    /// and made in this one call, so the buffer holds this file's bytes for all of it. A file that can't be read is
+    /// [`MakeError::Unreadable`].
+    pub fn make_of_file(&mut self, path: &Path, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
+        self.read_file(path).map_err(MakeError::Unreadable)?;
+        self.make_from_file(height, turns)
+    }
+
+    /// A one-off decode of the file at `path` for the viewer's `view` ([`display::min_size`]), read and decoded in this
+    /// one call as [`Maker::make_of_file`] reads it. Its pixels go to new buffers.
+    pub fn decode_of_file(&mut self, path: &Path, view: View, turns: Turns) -> Result<Shown, MakeError> {
+        self.read_file(path).map_err(MakeError::Unreadable)?;
+        self.decode_file(view, turns)
+    }
+
     /// Read the file at `path` whole into the maker's buffer, as `std::fs::read` reads it (the same errors), for
     /// [`Maker::make_from_file`] or [`Maker::decode_file`]. The buffer is kept for the next file, up to
     /// [`KEEP_BYTES`].
-    pub fn read_file(&mut self, path: &Path) -> std::io::Result<()> {
+    fn read_file(&mut self, path: &Path) -> std::io::Result<()> {
         use std::io::Read;
         self.file.clear();
         let result = std::fs::File::open(path).and_then(|mut f| f.read_to_end(&mut self.file)).map(drop);
@@ -114,7 +136,7 @@ impl Maker {
     }
 
     /// [`Maker::make`] of the file [`Maker::read_file`] read.
-    pub fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
+    fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
         let file = std::mem::take(&mut self.file);
         let mut out = Vec::new();
         let result = self.make_image(&file, height, turns, &mut out);
@@ -125,7 +147,7 @@ impl Maker {
 
     /// A one-off decode of the file [`Maker::read_file`] read, for the viewer's `view` ([`display::min_size`]): its
     /// pixels go to new buffers.
-    pub fn decode_file(&mut self, view: View, turns: Turns) -> Result<Shown, MakeError> {
+    fn decode_file(&mut self, view: View, turns: Turns) -> Result<Shown, MakeError> {
         let result = display::decode(&mut self.decoder, &self.file, display::min_size(view), turns);
         release_over(&mut self.file, KEEP_BYTES);
         result.map(Shown::from).map_err(MakeError::Undecodable)
@@ -148,11 +170,13 @@ impl Maker {
 
     fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
-        {
+        // The decode is left as stored: the thumbnail's scale comes before its turn, so the turn touches the thumbnail
+        // and not the decoded image, which is several times its size.
+        let orientation = {
             let _decode = DECODE.timer();
-            display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)?;
-        }
-        self.encode_image(height, out)
+            display::decode_stored_into(&mut self.decoder, bytes, min, turns, &mut self.image)?.orientation
+        };
+        self.encode_turned(orientation, height, out)
     }
 
     /// The placeholder (ThumbHash) of the image `bytes`, upright as `turns` makes it: a DCT-scaled decode keeping
@@ -183,7 +207,7 @@ impl Maker {
     /// The placeholder of a video's frame at `at_ms` (its poster, `turns` the file's rotation), as [`Maker::load_frame`]
     /// decodes it.
     pub fn placeholder_of_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<ThumbHash, MakeError> {
-        self.load_frame(path, at_ms, turns)?;
+        self.decode_frame(path, at_ms, turns, MinSize::Sides(PLACEHOLDER_DECODE_SIDE, 0))?;
         let result = self.thumbhash_of_image();
         self.trim();
         result.map_err(MakeError::Undecodable)
@@ -208,9 +232,15 @@ impl Maker {
         Ok(ThumbHash::encoded(bytes, len))
     }
 
-    /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
-    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<(), MakeError> {
-        let result = pg_video::frame_into(path, at_ms, turns, &mut self.image, &mut self.spare);
+    /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`]: at the size a `height`-px
+    /// thumbnail of it is made from, as [`Maker::make`] decodes a still (the frame is scaled while it is converted).
+    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: Turns, height: usize) -> Result<(), MakeError> {
+        self.decode_frame(path, at_ms, turns, MinSize::Upright(0, height * DECODE_MARGIN))
+    }
+
+    /// [`Maker::load_frame`] at the size `min` asks for.
+    fn decode_frame(&mut self, path: &Path, at_ms: i64, turns: Turns, min: MinSize) -> Result<(), MakeError> {
+        let result = pg_video::frame_into(path, at_ms, turns, min, &mut self.image, &mut self.spare);
         if result.is_err() {
             self.trim();
         }
@@ -232,10 +262,27 @@ impl Maker {
 
     /// The thumbnail of `image`: scaled to `height`, then encoded into `out`.
     fn encode_image(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
-        let img = {
+        self.encode_turned(Orientation::UPRIGHT, height, out)
+    }
+
+    /// The thumbnail of the decoded image (`self.image`, as stored) shown turned by `orientation`: scaled to `height`
+    /// px high once turned, then turned, then encoded into `out`. The scale comes first, on the stored pixels, so the
+    /// turn moves the thumbnail's pixels and not the decode's.
+    fn encode_turned(&mut self, orientation: Orientation, height: usize, out: &mut Vec<u8>) -> Result<()> {
+        let scaled = {
             let _resize = RESIZE.timer();
-            if self.resizer.to_height(&self.image, height, &mut self.small)? { &self.small } else { &self.image }
+            if orientation.swaps_axes() {
+                self.resizer.to_width(&self.image, height, &mut self.small)?
+            } else {
+                self.resizer.to_height(&self.image, height, &mut self.small)?
+            }
         };
+        let img = if scaled { &mut self.small } else { &mut self.image };
+        if orientation != Orientation::UPRIGHT {
+            let (w, h) = transform_into(&img.pixels, img.width, img.height, 3, orientation, &mut self.spare);
+            (img.width, img.height) = (w, h);
+            std::mem::swap(&mut img.pixels, &mut self.spare);
+        }
         let _encode = ENCODE.timer();
         self.encoder.encode_into(img, out)
     }
@@ -383,7 +430,7 @@ mod tests {
     fn a_file_that_cant_be_opened_is_unreadable_and_a_damaged_one_undecodable() {
         let dir = run_folder(SCRATCH, "make-errors").unwrap();
         let mut maker = Maker::new().unwrap();
-        let gone = maker.load_frame(&dir.join("gone.mp4"), 0, Turns::NONE);
+        let gone = maker.load_frame(&dir.join("gone.mp4"), 0, Turns::NONE, 64);
         assert!(
             matches!(gone, Err(MakeError::Unreadable(ref e)) if e.kind() == std::io::ErrorKind::NotFound),
             "{gone:?}"

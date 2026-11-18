@@ -21,14 +21,28 @@ pub(crate) fn png_animated(bytes: &[u8]) -> bool {
     animation.animated()
 }
 
-/// Whether a WebP is an animation ([`WebpAnimation`]: the `VP8X` chunk's flag).
-pub(crate) fn webp_animated(bytes: &[u8]) -> bool {
-    let mut animation = WebpAnimation::default();
-    webp_chunks(bytes).for_each(|c| animation.see(&c));
-    animation.animated()
+/// What a WebP is, by its chunks: an animation (the `VP8X` chunk's flag, [`WebpAnimation`]), or a still image, lossless
+/// (`VP8L`) or lossy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WebpKind {
+    Animated,
+    Lossless,
+    Lossy,
 }
 
-/// Whether a WebP's image is lossless (`VP8L`).
-pub(crate) fn webp_is_lossless(bytes: &[u8]) -> bool {
-    webp_chunks(bytes).any(|c| webp_lossless(&c))
+/// The kind of a WebP, from one walk of its chunks.
+pub(crate) fn webp_kind(bytes: &[u8]) -> WebpKind {
+    let mut animation = WebpAnimation::default();
+    let mut lossless = false;
+    for c in webp_chunks(bytes) {
+        animation.see(&c);
+        lossless |= webp_lossless(&c);
+    }
+    if animation.animated() {
+        WebpKind::Animated
+    } else if lossless {
+        WebpKind::Lossless
+    } else {
+        WebpKind::Lossy
+    }
 }

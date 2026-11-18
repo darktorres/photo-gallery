@@ -238,7 +238,7 @@ fn videos() {
         &dir.join("thumbs.sqlite"),
         &catalog.catalog_id().unwrap(),
         pg_thumbcache::Cap::from_bytes(1 << 30),
-        1,
+        pg_render::THUMBS_VERSION,
         events,
     )
     .unwrap();

@@ -172,7 +172,8 @@ impl Library {
         {
             let mut slot = self.writer();
             slot.stopping = true;
-            slot.writer.stop();
+            // A writer still in a copy is finished from its temp at the next start: its wait isn't in the result.
+            slot.writer.stop(JOB_STOP_WAIT);
         }
         self.runner.stop(JOB_STOP_WAIT)
     }
@@ -465,7 +466,7 @@ mod tests {
         let (library, sink, dir) = library("library-given-up");
         {
             let mut slot = library.writer();
-            slot.writer.stop();
+            slot.writer.stop(JOB_STOP_WAIT);
             slot.restarts = MAX_RESTARTS;
             library.tend(&mut slot);
             assert!(slot.given_up);
@@ -489,7 +490,7 @@ mod tests {
         let before = posts(&sink);
         {
             let mut slot = library.writer();
-            slot.writer.stop();
+            slot.writer.stop(JOB_STOP_WAIT);
             // Its wait is over: the restart is due now.
             slot.retry_at = Some(Instant::now());
             library.tend(&mut slot);
@@ -532,7 +533,7 @@ mod tests {
         let (first, first_sink, dir) = library("library-restart-given-up");
         {
             let mut slot = first.writer();
-            slot.writer.stop();
+            slot.writer.stop(JOB_STOP_WAIT);
             slot.restarts = MAX_RESTARTS;
             first.tend(&mut slot);
             assert!(slot.given_up);

@@ -91,6 +91,7 @@ mod viewport_bridge;
 mod words;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod words_bridge;
+mod worker;
 
 mod yandex;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
@@ -164,6 +165,10 @@ pub fn run(args: &[OsString]) -> i32 {
     if let Err(e) = app::open(config) {
         fatal(&pg_client::text::render(&pg_client::text::Message::CatalogUnopened { error: format!("{e:#}") }));
     }
+    // The writes the window makes off its thread (`worker`); without the thread they are made where they are asked for.
+    if let Err(e) = worker::start() {
+        pg_log::warn("window", &format!("the window's writes stay on the Qt thread: {e}"));
+    }
     pg_trace::pg_stage_init_done();
 
     // The controls style is Fusion, imported by name in the QML (`QtQuick.Controls.Fusion`): it follows the
@@ -206,9 +211,11 @@ pub fn run(args: &[OsString]) -> i32 {
         screenshot::schedule(engine);
     }
     let status = app.as_mut().map_or(1, |app| app.exec());
-    // The background work stops first (the reader, then the library). Then the engine ends the image providers, and
-    // Qt joins their thread pools as they end: the connections those threads hold close with them, before the app
-    // closes its own (`app::shutdown`).
+    // The window's writes come first: the session and the preferences its close saves are written, then the background
+    // work stops (the reader, then the library). Then the engine ends the image providers, and Qt joins their thread
+    // pools as they end: the connections those threads hold close with them, before the app closes its own
+    // (`app::shutdown`).
+    worker::stop();
     app::stop();
     drop(engine);
     app::shutdown();

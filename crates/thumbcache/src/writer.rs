@@ -22,6 +22,10 @@ use crate::types::{Event, FORMAT_JPEG, Snapshot, Thumb};
 /// every batch.
 const EVICT_SLACK_MAX: i64 = 64 << 20;
 
+/// How many thumbnails made on demand (`Op::PutOne`) one transaction stores. A grid that fills with misses queues one
+/// op each: a transaction (and its commit) per thumbnail was the writer's overhead.
+const PUT_ONES_MAX: usize = 32;
+
 /// No transaction evicts much more than this: a cache far over its cap (the cap lowered) is brought down in slices,
 /// each its own transaction, so the file is never locked for long (another process waits 5 s at most).
 const EVICT_SLICE: i64 = if cfg!(test) { 1000 } else { 256 << 20 };
@@ -62,6 +66,18 @@ impl Inbox {
 
     fn next(&self) -> Option<Op> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner).ops.pop_front()
+    }
+
+    /// Pops the `PutOne`s at the front of the queue, up to `max`: the batch the writer stores in one transaction.
+    fn next_puts(&self, max: usize) -> Vec<Thumb> {
+        let mut queue = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut out = Vec::new();
+        while out.len() < max && matches!(queue.ops.front(), Some(Op::PutOne(_))) {
+            if let Some(Op::PutOne(thumb)) = queue.ops.pop_front() {
+                out.push(thumb);
+            }
+        }
+        out
     }
 
     /// Stops taking ops; those queued are still done.
@@ -221,6 +237,12 @@ pub(crate) fn write_loop(mut conn: Connection, inbox: &Inbox, events: &Bus<Event
         // will be queued, and an empty queue after it is the end.
         let quitting = waker.quitting();
         match inbox.next() {
+            // The thumbnails made on demand queued behind this one are stored with it, in one transaction.
+            Some(Op::PutOne(thumb)) => {
+                let mut thumbs = vec![thumb];
+                thumbs.extend(inbox.next_puts(PUT_ONES_MAX - 1));
+                put_ones(&mut conn, &thumbs, &mut touches, &mut failing, events);
+            }
             Some(op) => apply(op, &mut conn, &mut touches, &mut failing, events),
             None if quitting => break,
             None => {
@@ -252,12 +274,7 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
             }
             let _ = reply.send((stored, thumbs));
         }
-        Op::PutOne(thumb) => match put(conn, std::slice::from_ref(&thumb), None, touches) {
-            // Stored, or no room for it (a full cache is no failure to store).
-            Ok(true) => failing.stored(events),
-            Ok(false) => {}
-            Err(e) => failing.not_stored(&e, events),
-        },
+        Op::PutOne(thumb) => put_ones(conn, std::slice::from_ref(&thumb), touches, failing, events),
         Op::Retag { file_id, old_mtime, new_mtime, reply } => {
             let done = conn
                 .execute(
@@ -301,6 +318,28 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
     }
 }
 
+/// Store one thumbnail made on demand, or several together (`PutOne`s in a row): as one batch when they fit, and each
+/// alone when they don't, since a single one may still have room. A failure is one notice for the batch.
+fn put_ones(
+    conn: &mut Connection,
+    thumbs: &[Thumb],
+    touches: &mut Touches,
+    failing: &mut Failing,
+    events: &Bus<Event>,
+) {
+    match put(conn, thumbs, None, touches) {
+        // Stored, or no room for it (a full cache is no failure to store).
+        Ok(true) => failing.stored(events),
+        Ok(false) if thumbs.len() > 1 => {
+            for thumb in thumbs {
+                put_ones(conn, std::slice::from_ref(thumb), touches, failing, events);
+            }
+        }
+        Ok(false) => {}
+        Err(e) => failing.not_stored(&e, events),
+    }
+}
+
 /// Store `thumbs` in one IMMEDIATE transaction: drop the entries they replace, read the total and the cap, evict
 /// what's needed, then write. Reading and writing in one write transaction is what keeps two writers (the app and
 /// `gallery thumbs`) from both seeing room for their batch, and from failing with SQLITE_BUSY_SNAPSHOT. Dropping
@@ -312,13 +351,15 @@ fn put(
     touches: &mut Touches,
 ) -> Result<bool> {
     let incoming: i64 = thumbs.iter().map(|t| i64::try_from(t.data.len()).unwrap_or(i64::MAX)).sum();
-    // Far over the cap: down to a slice of it first, a slice per transaction.
+    // The cap is read inside the write transaction, the one the batch is written in, so the check and the write see the
+    // same cache. Far over the cap: down to a slice of it first, a slice per transaction (each commits, and the next
+    // one is begun and read again).
+    let mut tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     loop {
-        let (total, cap_bytes) = total_and_cap(conn)?;
+        let (total, cap_bytes) = total_and_cap(&tx)?;
         if total + incoming - cap_bytes <= EVICT_SLICE {
             break;
         }
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         touches.write(&tx)?;
         let freed = evict(&tx, EVICT_SLICE, keep_height)?;
         tx.commit()?;
@@ -326,8 +367,8 @@ fn put(
         if freed == 0 {
             return Ok(false);
         }
+        tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     }
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     {
         let mut replaced = tx.prepare_cached("DELETE FROM entries WHERE file_id = ?1 AND height = ?2")?;
         for t in thumbs {

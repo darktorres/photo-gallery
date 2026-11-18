@@ -57,7 +57,7 @@
 //! | `controller.rs` `Core` (3) | `record`, warning | `PG_RECORD` couldn't be written | log |
 //! | `pg_app` `yandex::Yandex::new` (from `--yandex-fixture`) | `yandex`, info | A recording answers the searches | log |
 //! | `pg_app` `App::stop` | `yandex`, warning | A search, a save or a fetch still ran at the stop | log |
-//! | `gallery/state.rs` `with_details` | `gallery`, warning | A file's row couldn't be read | `RowReadFailed` |
+//! | `gallery/state.rs` `read_details` | `gallery`, warning | A file's row couldn't be read | `RowReadFailed` |
 //! | `gallery/state.rs` `fresh_entry` | `gallery`, warning | A file's row couldn't be read again | `ReloadFailed` |
 //! | `gallery/model.rs` `open_listing` | `gallery`, warning | The list couldn't be read | `ListingFailed` |
 //! | `gallery/edits.rs` `rotate`, `set_rating`, `set_border_marked` | `edit`, warning | An edit couldn't be saved | `EditFailed` |

@@ -4,12 +4,12 @@
 
 use pg_model::orientation::Orientation;
 
-use crate::decode::orient_pixels;
+use crate::decode::transform;
 use crate::pixels::Rgb;
 
 /// Apply an EXIF orientation, giving the upright image.
 pub fn orient(img: Rgb, orientation: Orientation) -> Rgb {
-    let (pixels, width, height) = orient_pixels(img.pixels, img.width, img.height, 3, orientation);
+    let (pixels, width, height) = transform(&img.pixels, img.width, img.height, 3, orientation);
     Rgb { width, height, pixels }
 }
 

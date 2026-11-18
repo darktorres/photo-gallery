@@ -124,3 +124,13 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+/// A file's size and mtime as a scan that found it changed records them: the state the thumbnail and failure keys name,
+/// so a file rewritten on disk is seen as changed only once this has run (the `files_changed` trigger fires as it would).
+pub fn set_state(catalog: &Catalog, id: FileId, size: i64, mtime: i64) -> anyhow::Result<()> {
+    catalog
+        .conn
+        .execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![id.get(), size, mtime])
+        .with_context(|| format!("set the state of file {}", id.get()))?;
+    Ok(())
+}

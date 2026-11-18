@@ -266,6 +266,19 @@ pub fn run_while(
     let flush = |writing: &mut Writing, batch: &mut Vec<(usize, Result<Vec<u8>>)>| -> Result<bool> {
         let Writing { catalog, thumbs, unwritten, first_failed, tried, stats } = writing;
         let rules = catalog.rules();
+        // The made thumbnails' files are checked together, in one read per few hundred (`Catalog::currents`), in the
+        // order of the results that are `Ok`: the loop takes one answer for each.
+        let checks: Vec<(FileId, Listed)> = batch
+            .iter()
+            .filter_map(|(i, result)| {
+                let item = items.get(*i)?;
+                result.is_ok().then_some((
+                    item.id,
+                    Listed { size: item.size, mtime: item.source.mtime, rotation: item.source.rotation },
+                ))
+            })
+            .collect();
+        let mut current = catalog.currents(&checks)?.into_iter();
         for (i, result) in batch.drain(..) {
             *tried += 1;
             let item = items.get(i).context("a thumbnail result for no work item")?;
@@ -274,8 +287,7 @@ pub fn run_while(
                 // decides), nor being rewritten by the app (`Catalog::is_current`). Otherwise tried again by the next
                 // pass, from its change number on.
                 Ok(data) => {
-                    let listed = Listed { size: item.size, mtime: item.source.mtime, rotation: item.source.rotation };
-                    if catalog.is_current(item.id, &listed)? {
+                    if current.next().unwrap_or(false) {
                         thumbs.push(Thumb { file_id: item.id, height: thumb, source: item.source, data });
                     } else {
                         spare.lock().unwrap_or_else(PoisonError::into_inner).push(data);
@@ -364,9 +376,10 @@ pub fn run_while(
                 Some(at) => {
                     // FFmpeg opens the file by its disk path, as in import.
                     let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
+                    let height = pg_model::num::index(thumb.get());
                     maker
-                        .load_frame(&disk, at, item.source.rotation)
-                        .and_then(|()| maker.encode_frame_into(pg_model::num::index(thumb.get()), &mut out))
+                        .load_frame(&disk, at, item.source.rotation, height)
+                        .and_then(|()| maker.encode_frame_into(height, &mut out))
                 }
                 None => maker.make_into(bytes, pg_model::num::index(thumb.get()), item.source.rotation, &mut out),
             };
@@ -455,7 +468,7 @@ mod tests {
             pg_catalog::Versions {
                 import: pg_analysis::analyze::IMPORT_VERSION,
                 borders: pg_analysis::borders::BORDERS_VERSION,
-                thumbs: 1,
+                thumbs: pg_render::THUMBS_VERSION,
                 pairing: pg_model::pdq::PAIRING_VERSION,
             },
             pg_platform::native::PATH_RULES,
@@ -480,7 +493,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap();
@@ -530,7 +543,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(cap),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap();
@@ -620,8 +633,8 @@ mod tests {
 
     /// A pass that ends with an error (here, the cache refuses the batch it stores) writes the failures it has before
     /// it returns the error, so the ledger holds the file that panicked, and the pass's checkpoint is not moved. The
-    /// next pass, the cache working, makes the file that was refused and lists the panicked one again, as it is still
-    /// failing; the ledger holds it once.
+    /// next pass, the cache working, makes the file that was refused; the one that panicked is held by its row (not
+    /// tried again until it changes), so the ledger holds it once.
     #[test]
     fn a_pass_that_errors_writes_its_failures_before_it_returns_the_error() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -640,11 +653,11 @@ mod tests {
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure recorded") };
         assert_eq!((failed.file_id, failed.retry), (a, false));
         assert!(failed.error.contains("a fault"), "{}", failed.error);
-        // The next pass, with the cache working: the refused file is made, the one that panics fails again, and the
-        // ledger still holds it once.
+        // The next pass, with the cache working: the refused file is made, the one that panicked is not listed (its row
+        // holds it), and the ledger still holds it once.
         let second = run(&cache, &catalog_path, h(64), &opts, &Control::new()).unwrap();
         *PANIC_ON.lock().unwrap() = None;
-        assert_eq!((second.needed, second.made, second.failed, second.complete), (2, 1, 1, true));
+        assert_eq!((second.needed, second.made, second.failed, second.complete), (1, 1, 0, true));
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
     }
 
@@ -714,7 +727,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap();
@@ -768,7 +781,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap();
@@ -789,7 +802,7 @@ mod tests {
         pg_catalog::Versions {
             import: pg_analysis::analyze::IMPORT_VERSION,
             borders: pg_analysis::borders::BORDERS_VERSION,
-            thumbs: 1,
+            thumbs: pg_render::THUMBS_VERSION,
             pairing: pg_model::pdq::PAIRING_VERSION,
         }
     }

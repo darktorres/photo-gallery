@@ -230,6 +230,7 @@ pub(crate) fn insert_analysis(c: &Catalog, row: &AnalysisRow) {
             ],
         )
         .unwrap();
+    crate::writers::touch_analysis(&c.conn, row.file).unwrap();
 }
 
 /// The import version as an older build left it: the stored version and the analyses made by it.

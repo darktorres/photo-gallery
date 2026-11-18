@@ -19,7 +19,9 @@ pub(super) fn read_with(mut decoder: impl ImageDecoder, raw: &mut Vec<u8>, out: 
 }
 
 /// The buffer a decoder writes a `color` image into: `out`'s own when it is 8-bit RGB or RGBA, else `raw`. Zeroed,
-/// as `decoder_to_vec`'s new buffer is, so that what a decoder leaves unwritten is zero whatever the buffer held.
+/// as `decoder_to_vec`'s new buffer is, so that what a decoder leaves unwritten is zero whatever the buffer held. The
+/// PNG, WebP and GIF decoders take this too: an APNG's first frame and an animated WebP's canvas are composed, and their
+/// paths are not all proven to write every byte, so the zeros stay.
 pub(super) fn target<'a>(color: ColorType, w: u32, h: u32, out: &'a mut Rgb, raw: &'a mut Vec<u8>) -> &'a mut [u8] {
     let len = num::index(w) * num::index(h) * usize::from(color.bytes_per_pixel());
     match color {
@@ -35,25 +37,25 @@ pub(super) fn zeroed(buf: &mut Vec<u8>, len: usize) -> &mut [u8] {
     buf
 }
 
-/// The decoded image into 8-bit RGB in `out`: as it is, flattened in place, or converted from `raw`.
-pub(super) fn finish(color: ColorType, w: u32, h: u32, out: &mut Rgb, raw: &[u8]) -> ImageResult<()> {
+/// `buf` resized to `len` bytes, its bytes kept up to `len` (only what it grows by is zero): for a buffer the caller
+/// writes all of.
+pub(super) fn sized(buf: &mut Vec<u8>, len: usize) -> &mut [u8] {
+    buf.resize(len, 0);
+    buf
+}
+
+/// The decoded image into 8-bit RGB in `out`: as it is, or converted from `raw`, or (RGBA) flattened from `out`.
+pub(super) fn finish(color: ColorType, w: u32, h: u32, out: &mut Rgb, raw: &mut Vec<u8>) -> ImageResult<()> {
     let pixels = num::index(w) * num::index(h);
     match color {
         ColorType::Rgb8 => {}
         ColorType::Rgba8 => {
-            // Each pixel is flattened in its own four bytes, then the alpha bytes are dropped, in place.
-            let px = &mut out.pixels;
-            check_len(px.len(), pixels * 4)?;
-            for p in px.as_chunks_mut::<4>().0 {
-                let [r, g, b, a] = *p;
-                *p = [over_white(r, a), over_white(g, a), over_white(b, a), a];
-            }
-            let mut at = 0usize;
-            px.retain(|_| {
-                at += 1;
-                !at.is_multiple_of(4)
-            });
-            px.truncate(pixels * 3);
+            // The colours are flattened from the RGBA into `raw`, in one pass, and `raw` then takes the RGBA's place: no
+            // byte is moved twice, and the RGB is not zeroed first.
+            let mut flat = Rgb { width: 0, height: 0, pixels: std::mem::take(raw) };
+            convert(&out.pixels, color, None, pixels, &mut flat)?;
+            std::mem::swap(&mut out.pixels, &mut flat.pixels);
+            *raw = flat.pixels;
         }
         _ => convert(raw, color, None, pixels, out)?,
     }
@@ -107,7 +109,8 @@ fn to_rgb<const CH: usize, const N: usize>(
             check_len(src.len(), stride * CH)?;
         }
     }
-    let out = zeroed(px, pixels * 3).as_chunks_mut::<3>().0;
+    // Every pixel is written below, from the samples `check_len` has counted.
+    let out = sized(px, pixels * 3).as_chunks_mut::<3>().0;
     match plane_stride {
         None => {
             for (rgb, samples) in out.iter_mut().zip(src.as_chunks::<N>().0.as_chunks::<CH>().0) {

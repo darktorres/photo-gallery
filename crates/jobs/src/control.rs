@@ -137,6 +137,9 @@ pub struct Tagged {
 
 /// Progress events come at most this often while a phase runs.
 const EVENT_INTERVAL: Duration = Duration::from_secs(5);
+/// A change of the count reaches the hook at most this often, across the run's lanes (about 10 a second): a pass with
+/// fast files would otherwise call it for every file.
+const NOTICE_INTERVAL: Duration = Duration::from_millis(100);
 /// Events a subscriber can fall behind by before the oldest are dropped.
 const EVENT_CAP: usize = 64;
 
@@ -147,8 +150,10 @@ struct Family {
     /// The root's stop: every lane stops.
     root_stop: AtomicBool,
     /// Called whenever what `snapshot` or `is_paused` says changes (progress, the pause), for an owner that reads them on
-    /// its own thread instead of polling.
+    /// its own thread instead of polling. A change of the count is throttled to [`NOTICE_INTERVAL`]; the others are not.
     hook: OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// When the hook last ran for a change of the count, across the run's lanes.
+    last_notice: Mutex<Option<Instant>>,
     /// Called when a lane changed the failure ledger ([`Control::ledger_changed`]).
     on_ledger: OnceLock<Box<dyn Fn() + Send + Sync>>,
     next_lane: AtomicU32,
@@ -166,6 +171,7 @@ impl Family {
             global_paused: AtomicBool::new(false),
             root_stop: AtomicBool::new(false),
             hook: OnceLock::new(),
+            last_notice: Mutex::new(None),
             on_ledger: OnceLock::new(),
             next_lane: AtomicU32::new(0),
             cpu: OnceLock::new(),
@@ -385,6 +391,21 @@ impl Control {
         }
     }
 
+    /// The hook for a change of the count: at most one call per [`NOTICE_INTERVAL`] across the run's lanes. A change the
+    /// throttle holds back is told by the next call that passes it, or by the phase's end. The phase's begin and end,
+    /// the pauses and the holds call the hook without the throttle.
+    fn progress_changed(&self) {
+        {
+            let mut last = self.family.last_notice.lock().unwrap_or_else(PoisonError::into_inner);
+            let now = Instant::now();
+            if last.is_some_and(|at| now.saturating_duration_since(at) < NOTICE_INTERVAL) {
+                return;
+            }
+            *last = Some(now);
+        }
+        self.changed();
+    }
+
     /// The hook [`Control::ledger_changed`] calls from now on (set once: a second one is ignored). Shared by the run's lanes.
     pub fn on_ledger_change(&self, hook: impl Fn() + Send + Sync + 'static) {
         let _ = self.family.on_ledger.set(Box::new(hook));
@@ -526,7 +547,7 @@ impl Control {
             *last = Instant::now();
             self.publish(Event::Progress(progress));
         }
-        self.changed();
+        self.progress_changed();
     }
 
     /// Sends an event to this lane's subscribers and to the run's tagged bus.
@@ -823,6 +844,25 @@ mod tests {
         ctl.ledger_changed();
         ctl.ledger_changed();
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_burst_of_file_changes_reaches_the_hook_a_few_times_and_the_phase_edges_always_do() {
+        let ctl = Control::new();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = calls.clone();
+        ctl.on_change(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
+        let phase = ctl.begin(Phase::Import, 1000);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "the phase's begin always reaches the hook");
+        for _ in 0..1000 {
+            ctl.add(1, false);
+        }
+        let during = calls.load(Ordering::SeqCst);
+        assert!(during <= 3, "a burst within the notice interval is a notice or two, not {during}");
+        drop(phase);
+        assert_eq!(calls.load(Ordering::SeqCst), during + 1, "the phase's end always reaches the hook");
     }
 
     #[test]

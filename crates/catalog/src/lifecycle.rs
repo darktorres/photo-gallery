@@ -209,7 +209,7 @@ pub(crate) fn mark_unheld_missing(conn: &Connection) -> Result<()> {
 }
 
 /// Stamp `meta.held_exts` with this build's set, in the transaction of a write that records or revives files (the
-/// scan's [`crate::ScanWriter`], the pairing after a scan): the rows it writes are of the extensions this build holds,
+/// scan's [`crate::writers::ScanWriter`], the pairing after a scan): the rows it writes are of the extensions this build holds,
 /// so a build that holds fewer looks for them at its next start ([`mark_unheld_missing`]). Writes nothing when the set
 /// is this build's already.
 pub(crate) fn stamp_held_exts(tx: &Connection) -> Result<()> {

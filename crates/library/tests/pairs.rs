@@ -310,7 +310,7 @@ fn a_stop_before_the_pass_writes_nothing_and_the_pairs_stay_owed() {
 }
 
 /// The pass on a slice of one owed picture (a pass of several slices on this small library) makes the pairs one slice
-/// makes, and a catalog's page cache is the app's again after the pass, which bounded it while it ran.
+/// makes, and a catalog's page cache is its own again after the pass, which bounded it while it ran.
 #[test]
 fn slices_of_one_make_the_pairs_one_slice_makes() {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -324,7 +324,7 @@ fn slices_of_one_make_the_pairs_one_slice_makes() {
     assert_eq!((sliced.files, sliced.pairs), (whole.files, whole.pairs));
     assert_eq!(state::pairs(&c).unwrap(), pairs);
     assert_eq!(c.owed_pairs().unwrap(), 0);
-    assert_eq!(state::cache_kib(&c).unwrap(), 262_144, "the app's cache, after the pass");
+    assert_eq!(state::cache_kib(&c).unwrap(), 8_192, "the catalog's own cache, after the pass");
 }
 
 /// The guard's path (every write reads its pictures' analyses, `Settings::guard`, with the hashes it compares taken from
@@ -360,7 +360,7 @@ fn a_write_that_fails_while_the_next_join_runs_stops_it_and_is_the_error() {
     state::fail_pair_writes(&c).unwrap();
     assert!(pg_import::pairs::pair_with(&mut c, &opts(), settings, &ctl).is_err());
     assert!(state::pairs(&c).unwrap().is_empty());
-    assert_eq!(state::cache_kib(&c).unwrap(), 262_144, "the app's cache, after a failed pass");
+    assert_eq!(state::cache_kib(&c).unwrap(), 8_192, "the catalog's own cache, after a failed pass");
     state::allow_pair_writes(&c).unwrap();
     let made = pg_import::pairs::pair_with(&mut c, &opts(), settings, &ctl).unwrap();
     assert!(made.complete);

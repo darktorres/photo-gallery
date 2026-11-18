@@ -12,6 +12,7 @@ use pg_platform::file::beside;
 use rusqlite::Connection;
 
 use crate::convert::{Source, column_type, table_columns};
+use crate::core::PREPARE_CACHE_KIB;
 use crate::error::{Error, Result};
 use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, Step, bring_to, current_version};
 use crate::types::Rebuilt;
@@ -104,6 +105,8 @@ pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
 fn make_replacement(path: &Path, rules: PathRules, from: Option<&Path>) -> Result<(i64, i64)> {
     let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
     conn.execute_batch(SETTINGS)?;
+    // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
+    conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
     bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version()?)
         .with_context(|| format!("catalog {}", path.display()))?;
     let counts = match from {

@@ -99,7 +99,7 @@ fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(&'static ThumbCache, Quiet
         &dir.join("thumbs.sqlite"),
         &c.catalog_id()?,
         pg_thumbcache::Cap::from_bytes(1 << 30),
-        1,
+        pg_render::THUMBS_VERSION,
         events,
     )?));
     Ok((thumbs, quiet))
@@ -165,7 +165,7 @@ fn ratings_and_turns_reach_the_files() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -304,7 +304,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -923,7 +923,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -1011,7 +1011,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -1066,7 +1066,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -1132,7 +1132,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            1,
+            pg_render::THUMBS_VERSION,
             events,
         )
         .unwrap(),

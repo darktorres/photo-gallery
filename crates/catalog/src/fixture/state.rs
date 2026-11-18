@@ -29,6 +29,11 @@ pub fn stub_analysis_of_all(c: &Catalog) -> Result<()> {
         "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed)
              SELECT id, 1, size, mtime, rotation, kind, 0 FROM files;",
     )?;
+    let ids: Vec<i64> =
+        c.conn.prepare("SELECT id FROM files")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    for id in ids {
+        crate::writers::touch_analysis(&c.conn, id)?;
+    }
     Ok(())
 }
 

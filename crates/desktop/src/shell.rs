@@ -31,7 +31,7 @@ use pg_model::rules::Path as RulePath;
 use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
 use pg_model::view::SavedView;
 
-use crate::{app, controller, deadline, folders, gallery, keymap, library};
+use crate::{app, controller, deadline, folders, gallery, keymap, library, worker};
 
 impl Default for ShellRust {
     /// The controller's start, mirrored: the listing the window starts with, and the size's defaults (the window sets
@@ -87,25 +87,28 @@ fn row_event(kind: folders::RowKind) -> ListingEvent {
 fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
     match command {
         // Dev mode the user turned on or off (a start's value is not saved).
-        Command::SaveDevMode(on) => {
-            let _ = prefs.update(|p| p.dev_mode = *on);
-        }
+        Command::SaveDevMode(on) => save_prefs(prefs, |p| p.dev_mode = *on),
         // The borders the user toggled (a start's `--borders` is not saved).
-        Command::SaveShowBorders(on) => {
-            let _ = prefs.update(|p| p.show_borders = *on);
-        }
+        Command::SaveShowBorders(on) => save_prefs(prefs, |p| p.show_borders = *on),
         // The file the window shows now (none: none is remembered), once the start is over. Read here, on the window's
         // thread, so a save at shutdown (`flush`) sees the same file the window does.
         Command::SaveLastFile => {
             let file = gallery::shown_file();
-            let _ = prefs.update(|p| p.last_file = file);
+            save_prefs(prefs, |p| p.last_file = file);
         }
         // The row height, settled after a pause.
-        Command::Size(size::Change::SaveRowHeight(row)) => {
-            let _ = prefs.update(|p| p.row_height = *row);
-        }
+        Command::Size(size::Change::SaveRowHeight(row)) => save_prefs(prefs, |p| p.row_height = *row),
         _ => {}
     }
+}
+
+/// Changes the preferences: the change is in memory at once, and the file is written on the window's writes (`worker`),
+/// off the Qt thread.
+fn save_prefs(prefs: &pg_app::PrefStore, change: impl FnOnce(&mut pg_app::Prefs)) {
+    let save = prefs.change(change);
+    worker::run(move || {
+        let _ = save.write();
+    });
 }
 
 /// The outcome of the change `op` to the saved views: a failure is posted, and a success clears what its failure kept.
@@ -508,8 +511,10 @@ impl qobject::Shell {
             }
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
             Command::SaveSession(listing) => {
-                app::observe(Op::Session, app::get().views().save_listing(&listing), |e| Notice::SessionNotSaved {
-                    error: app::error_text(&format!("{e:#}")),
+                worker::run(move || {
+                    app::observe(Op::Session, app::get().views().save_listing(&listing), |e| Notice::SessionNotSaved {
+                        error: app::error_text(&format!("{e:#}")),
+                    });
                 });
             }
             // Saved by `prefs_effect`, above, from the file the window shows now.

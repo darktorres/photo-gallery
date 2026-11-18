@@ -105,6 +105,22 @@ impl Catalog {
             .optional()?)
     }
 
+    /// Read these files' entries again, in one read (after their files were turned): the ones the catalog still has,
+    /// in no particular order (each entry names its file).
+    pub fn grid_entries(&self, file_ids: &[FileId]) -> Result<Vec<Entry>> {
+        let ids: Vec<i64> = file_ids.iter().map(|id| id.get()).collect();
+        let json = serde_json::to_string(&ids).map_err(anyhow::Error::from)?;
+        let conn = &self.conn;
+        let mut stmt = conn.prepare_cached(concat!(
+            "SELECT ",
+            entry_columns!(),
+            " FROM files f ",
+            file_joins!(),
+            " WHERE f.id IN (SELECT value FROM json_each(?1))"
+        ))?;
+        Ok(stmt.query_map([json], entry_from_row)?.collect::<rusqlite::Result<Vec<Entry>>>()?)
+    }
+
     /// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
     ///
     /// They are read in name order from the `files_order` index, so SQLite never sorts. Another order is a stable

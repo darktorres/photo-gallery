@@ -16,7 +16,7 @@
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::io;
 use std::marker::PhantomData;
@@ -40,8 +40,6 @@ enum Sink {
 static SINK: OnceLock<Sink> = OnceLock::new();
 /// Whether a span records anything: a sink is open, or a capture is running.
 static ENABLED: AtomicBool = AtomicBool::new(false);
-/// Whether [`capture`] takes the records (instead of the sink).
-static CAPTURING: AtomicBool = AtomicBool::new(false);
 /// The records a capture took, in the order they closed.
 static CAPTURED: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 /// Serialises captures: a capture's records are its own only while it runs alone.
@@ -56,6 +54,9 @@ static SESSION: OnceLock<(u64, u32)> = OnceLock::new();
 thread_local! {
     /// The spans open on this thread, innermost last, each with the time its closed children took.
     static OPEN: RefCell<Vec<Frame>> = const { RefCell::new(Vec::new()) };
+    /// Whether this thread's records go to the running [`capture`] (set on the thread that called it, only): another
+    /// thread's records go to the sink, so a capture holds its own thread's records and no other test's.
+    static CAPTURE_HERE: Cell<bool> = const { Cell::new(false) };
 }
 
 struct Frame {
@@ -126,7 +127,7 @@ pub fn dropped() -> u64 {
 
 /// Gives a record to the sink, or to the capture. Never panics; a failed write is counted.
 fn emit(record: Value, top: bool) {
-    if CAPTURING.load(Ordering::Relaxed) {
+    if CAPTURE_HERE.with(Cell::get) {
         lock(&CAPTURED).push(record);
         return;
     }
@@ -442,16 +443,17 @@ impl Drop for Timer<'_> {
     }
 }
 
-/// Runs `f` with the records it makes taken into memory instead of the sink: they are returned in the order they closed.
-/// Captures run one at a time, so a test's records are its own (the sink itself is set once per process, so a test
-/// captures instead of opening one).
+/// Runs `f` with the records the calling thread makes taken into memory instead of the sink: they are returned in the
+/// order they closed. Other threads' records (other tests', running at the same time) go to the sink as usual, so a
+/// capture holds its own thread's records and nothing else. Captures run one at a time (the sink itself is set once per
+/// process, so a test captures instead of opening one).
 pub fn capture<T>(f: impl FnOnce() -> T) -> (T, Vec<Value>) {
     let _alone = lock(&CAPTURE_LOCK);
     lock(&CAPTURED).clear();
     let was_enabled = ENABLED.swap(true, Ordering::Relaxed);
-    let was_capturing = CAPTURING.swap(true, Ordering::Relaxed);
+    let was_here = CAPTURE_HERE.with(|here| here.replace(true));
     let out = f();
-    CAPTURING.store(was_capturing, Ordering::Relaxed);
+    CAPTURE_HERE.with(|here| here.set(was_here));
     ENABLED.store(was_enabled, Ordering::Relaxed);
     let records = std::mem::take(&mut *lock(&CAPTURED));
     (out, records)

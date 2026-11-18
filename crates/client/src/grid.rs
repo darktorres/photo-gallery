@@ -5,6 +5,7 @@
 //! The list session (which list is current, which waits for the viewer, which files were edited while it loaded)
 //! is here too; where a file has to be read again, the caller gives the read as a closure.
 
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 use pg_model::grid::{Borders, Entry};
@@ -59,6 +60,8 @@ pub struct Plan {
     change: RowChange,
     updates: Vec<(Range<usize>, RowUpdate)>,
     reset: bool,
+    /// The size the rows are laid out at (width, row height, spacing).
+    size: (f64, f64, f64),
 }
 
 impl Plan {
@@ -126,6 +129,15 @@ pub struct Grid {
     /// How many entries are bordered (`is_bordered`), kept as the entries change (`swap_entries`, `edit`,
     /// `refresh_turned`), so the bar's count is not a scan per change.
     bordered: usize,
+    /// The size the rows (`rows`) are laid out at: a plan at another size is a resize.
+    laid: (f64, f64, f64),
+    /// The items whose turns wait to be written (their entries have `pending_turns`), by file, with the item's index.
+    /// Kept as the list is shown (`swap_entries`) and as the entries change (`edit`, `refresh_turned`), so a refresh
+    /// reads only these.
+    pending: BTreeMap<FileId, usize>,
+    /// Counts the changes to the entries (a list shown, an item edited): a read of the entries made at an earlier count
+    /// predates them (`turned_request`, `refresh_turned`).
+    revision: u64,
 }
 
 /// Whether an entry counts as bordered: its borders are found and not marked as not a border (what cropping cuts).
@@ -193,8 +205,9 @@ impl Grid {
     /// them in.
     pub fn plan(&mut self, changed: Changed) -> Plan {
         let mut rows = std::mem::take(&mut self.spare_rows);
+        let size = (self.width, self.row_height, self.spacing);
         if self.width > 0.0 && self.row_height > 0.0 {
-            let (width, height, spacing) = (self.width, self.row_height, self.spacing);
+            let (width, height, spacing) = size;
             layout::justify_into(&mut rows, self.entries.iter().map(Entry::aspect), width, height, spacing);
         } else {
             rows.clear();
@@ -203,6 +216,13 @@ impl Grid {
         let reset = matches!(changed, Changed::All);
         let updates = if reset {
             Vec::new()
+        } else if size != self.laid && matches!(changed, Changed::Nothing) {
+            // A new size: the rows are all laid out again, so one update names them all, rather than each row being
+            // compared with the one before it.
+            match rows.len() {
+                0 => Vec::new(),
+                n => vec![(0..n, RowUpdate { span: true, items: false, height: true })],
+            }
         } else {
             change.updates(&self.rows, &rows, |span| match changed {
                 Changed::Nothing | Changed::All => false,
@@ -210,14 +230,15 @@ impl Grid {
                 Changed::List(shown) => shown.get(span.clone()) != self.entries.get(span),
             })
         };
-        Plan { rows, change, updates, reset }
+        Plan { rows, change, updates, reset, size }
     }
 
     /// Puts a plan in: the new rows. Returns the rows that changed in place, for the view to be told about; a reset or
     /// an insert or remove has none beyond its own.
     pub fn commit(&mut self, plan: Plan) -> Vec<Update> {
-        let Plan { rows, change: _, updates, reset } = plan;
+        let Plan { rows, change: _, updates, reset, size } = plan;
         self.spare_rows = std::mem::replace(&mut self.rows, rows);
+        self.laid = size;
         if reset {
             return Vec::new();
         }
@@ -310,6 +331,13 @@ impl Grid {
     /// Puts a list in as the items, and returns the ones it replaces (the layout compares them, `Changed::List`).
     pub fn swap_entries(&mut self, entries: Vec<Entry>) -> Vec<Entry> {
         self.bordered = entries.iter().filter(|e| is_bordered(e)).count();
+        self.pending = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.pending_turns != Turns::NONE)
+            .map(|(i, e)| (e.id, i))
+            .collect();
+        self.revision += 1;
         std::mem::replace(&mut self.entries, entries)
     }
 
@@ -326,7 +354,10 @@ impl Grid {
         let before = is_bordered(e);
         change(&mut *e);
         let after = is_bordered(e);
+        let waiting = e.pending_turns != Turns::NONE;
         self.count_bordered(before, after);
+        self.note_pending(id, item, waiting);
+        self.revision += 1;
         if loading {
             self.edited.push(id);
         }
@@ -338,6 +369,15 @@ impl Grid {
             (false, true) => self.bordered += 1,
             (true, false) => self.bordered -= 1,
             _ => {}
+        }
+    }
+
+    /// The file of item `item` is in the pending set when its turns wait (`waiting`), and out of it when they don't.
+    fn note_pending(&mut self, id: FileId, item: usize, waiting: bool) {
+        if waiting {
+            self.pending.insert(id, item);
+        } else {
+            self.pending.remove(&id);
         }
     }
 
@@ -353,30 +393,41 @@ impl Grid {
         std::mem::take(&mut self.turned)
     }
 
-    /// The items still waiting for a turn (their rotation is queued, not yet written) are read again, by `reload`
-    /// (the file's entry now, `None` when it is gone or unreadable). Only the ones whose entries changed are
-    /// reported.
-    pub fn refresh_turned(&mut self, mut reload: impl FnMut(FileId) -> Option<Entry>) -> Turned {
+    /// The files whose turns still wait to be written (their rotation is queued, not yet written), to be read again
+    /// (`refresh_turned`), with the revision the read is made at. `None` when no turn waits.
+    pub fn turned_request(&self) -> Option<(Vec<FileId>, u64)> {
+        (!self.pending.is_empty()).then(|| (self.pending.keys().copied().collect(), self.revision))
+    }
+
+    /// The entries read again for the files `turned_request` named (`fresh`: the ones the catalog still has, the rest
+    /// are gone or unreadable). Applied only when nothing changed the entries since the read was made at `revision`:
+    /// otherwise `None`, and the read is made again. Only the entries that changed are reported.
+    pub fn refresh_turned(&mut self, revision: u64, fresh: Vec<Entry>) -> Option<Turned> {
+        if revision != self.revision {
+            return None;
+        }
         let mut turned = Turned::default();
         // Each changed entry's bordered state, before and after, counted once the entries are let go.
         let mut bordered = Vec::new();
-        for (i, entry) in self.entries.iter_mut().enumerate() {
-            if entry.pending_turns == Turns::NONE {
-                continue;
-            }
-            let Some(fresh) = reload(entry.id) else { continue };
+        for fresh in fresh {
+            let Some(&i) = self.pending.get(&fresh.id) else { continue };
+            let Some(entry) = self.entries.get_mut(i) else { continue };
             if fresh == *entry {
                 continue;
             }
             turned.reshaped |= fresh.aspect() != entry.aspect();
             bordered.push((is_bordered(entry), is_bordered(&fresh)));
+            if fresh.pending_turns == Turns::NONE {
+                self.pending.remove(&fresh.id);
+            }
             *entry = fresh;
             turned.changed.push(i);
         }
         for (before, after) in bordered {
             self.count_bordered(before, after);
         }
-        turned
+        turned.changed.sort_unstable();
+        Some(turned)
     }
 
     /// Where the selection goes once the list `self` holds is shown: the file that was current, or what took its
@@ -578,21 +629,52 @@ mod tests {
         waiting.pending_turns = Turns::new(1);
         let mut g = Grid::default();
         g.swap_entries(vec![entry(9, 1, 1), waiting, entry(3, 1, 1)]);
+        // Only the file that waits is asked for.
+        let (ids, revision) = g.turned_request().expect("one turn waits");
+        assert_eq!(ids, vec![FileId::new(1)]);
         // The turn is written: the file is stored turned, so it shows the same shape and no row changes.
-        let turned = g.refresh_turned(|id| {
-            assert_eq!(id, FileId::new(1));
-            Some(Entry { rotation: Turns::new(1), ..entry(1, 50, 100) })
-        });
-        assert_eq!(turned, Turned { changed: vec![1], reshaped: false });
+        let fresh = Entry { rotation: Turns::new(1), ..entry(1, 50, 100) };
+        assert_eq!(g.refresh_turned(revision, vec![fresh]), Some(Turned { changed: vec![1], reshaped: false }));
         // Nothing waits any more, so nothing is read.
-        assert_eq!(g.refresh_turned(|_| None), Turned::default());
+        assert_eq!(g.turned_request(), None);
 
         // Another turn that stores the file unturned shows it as 100 × 50 instead: its row changes.
         let mut waiting = entry(2, 100, 50);
         waiting.pending_turns = Turns::new(1);
         g.swap_entries(vec![waiting]);
-        let turned = g.refresh_turned(|_| Some(entry(2, 100, 50)));
-        assert_eq!(turned, Turned { changed: vec![0], reshaped: true });
+        let (_, revision) = g.turned_request().expect("the turn waits");
+        let turned = g.refresh_turned(revision, vec![entry(2, 100, 50)]);
+        assert_eq!(turned, Some(Turned { changed: vec![0], reshaped: true }));
+    }
+
+    #[test]
+    fn a_refresh_read_before_an_edit_of_the_entries_is_not_applied() {
+        let mut waiting = entry(1, 100, 50);
+        waiting.pending_turns = Turns::new(1);
+        let mut g = Grid::default();
+        g.swap_entries(vec![waiting]);
+        let (_, revision) = g.turned_request().expect("the turn waits");
+        // Rated while the read was on its way: the read predates the rating, so it is not applied, and the read is made
+        // again.
+        g.edit(0, false, |e| e.rating = Rating::new(4));
+        assert_eq!(g.refresh_turned(revision, vec![entry(1, 100, 50)]), None);
+        let (_, revision) = g.turned_request().expect("the turn still waits");
+        // The turn is stored as well: the file is turned, so it shows the shape the grid already has.
+        let fresh = Entry { rating: Rating::new(4), rotation: Turns::new(1), ..entry(1, 50, 100) };
+        assert_eq!(g.refresh_turned(revision, vec![fresh]), Some(Turned { changed: vec![0], reshaped: false }));
+        assert_eq!(g.turned_request(), None);
+    }
+
+    #[test]
+    fn a_new_size_is_one_update_for_every_row() {
+        // Four squares: three to a row at 300 px, two at 200 px.
+        let mut g = square_grid((1..=4).map(|i| entry(i, 100, 100)).collect());
+        assert_eq!(g.rows().len(), 2);
+        g.set_size(200.0, 100.0, 0.0);
+        let plan = g.plan(Changed::Nothing);
+        assert_eq!(plan.shape(), Shape::Same);
+        assert_eq!(g.commit(plan), vec![Update { rows: 0..2, span: true, items: false, height: true }]);
+        assert_eq!(g.rows().iter().map(|r| r.count).collect::<Vec<_>>(), vec![2, 2]);
     }
 
     #[test]

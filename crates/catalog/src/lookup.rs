@@ -1,8 +1,11 @@
 //! A file looked up: by id (its path, its folder, whether it is gone, what a queued write or a crop needs of it), by
 //! path, or under a folder; and the catalog's counts (`status`). Methods of `Catalog`.
 
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
 use anyhow::anyhow;
-use rusqlite::types::Type;
+use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params};
 
 use pg_model::format::Format;
@@ -14,7 +17,7 @@ use pg_model::path::PathArena;
 use pg_model::rules::Path as RulePath;
 
 use crate::core::Catalog;
-use crate::current::{IS_CURRENT, query_current};
+use crate::current::{CURRENT_BATCH, CURRENT_ROWS, IS_CURRENT, query_current};
 use crate::error::Result;
 use crate::types::{CropSource, Listed, Status, WriteTarget, under_params};
 
@@ -25,6 +28,25 @@ impl Catalog {
     pub fn is_current(&self, id: FileId, listed: &Listed) -> Result<bool> {
         let mut stmt = self.conn.prepare_cached(IS_CURRENT)?;
         query_current(&mut stmt, id, listed)
+    }
+
+    /// [`Catalog::is_current`] for each of `files`, in their order: one read per [`CURRENT_BATCH`] of them, not one per
+    /// file. The thumbnails' writer checks a batch of its results this way, on the thread that stores them.
+    pub fn currents(&self, files: &[(FileId, Listed)]) -> Result<Vec<bool>> {
+        let mut out = Vec::with_capacity(files.len());
+        let mut stmt = self.conn.prepare_cached(CURRENT_ROWS)?;
+        for batch in files.chunks(CURRENT_BATCH) {
+            let ids: Vec<Value> = batch.iter().map(|(id, _)| Value::Integer(id.get())).collect();
+            let rows: BTreeMap<i64, (i64, i64, i64)> = stmt
+                .query_map([Rc::new(ids)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))?
+                .collect::<rusqlite::Result<_>>()?;
+            out.extend(batch.iter().map(|(id, listed)| {
+                rows.get(&id.get()).is_some_and(|&(size, mtime, rotation)| {
+                    size == listed.size && mtime == listed.mtime && rotation == i64::from(listed.rotation.get())
+                })
+            }));
+        }
+        Ok(out)
     }
 
     /// Whether the file can't be written: it is missing from the catalog, or no longer listed.
@@ -191,5 +213,42 @@ impl Catalog {
             queued_writes: one("SELECT count(*) FROM file_writes")?,
             failed_writes: one("SELECT count(*) FROM file_writes WHERE error IS NOT NULL")?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::one_file;
+    use pg_model::rules::PathRules;
+    use pg_model::turns::Turns;
+
+    /// `currents` is `is_current` over a batch, in order: as listed, another size, another rotation, an absent file, and
+    /// a batch longer than a read. A write in progress makes a file not current, whatever its listing.
+    #[test]
+    fn currents_is_is_current_over_a_batch() {
+        let (c, _) = one_file(PathRules::Windows);
+        let id = FileId::new(1);
+        let listed = |size: i64, rotation: u8| Listed { size, mtime: 100, rotation: Turns::new(rotation) };
+        let files = [(id, listed(10, 0)), (id, listed(11, 0)), (id, listed(10, 1)), (FileId::new(9), listed(10, 0))];
+        let want: Vec<bool> = files.iter().map(|(f, l)| c.is_current(*f, l).unwrap()).collect();
+        assert_eq!(c.currents(&files).unwrap(), want);
+        assert_eq!(want, [true, false, false, false]);
+
+        let long: Vec<(FileId, Listed)> =
+            (0..2 * CURRENT_BATCH + 1).map(|i| (id, listed(if i % 2 == 0 { 10 } else { 11 }, 0))).collect();
+        let answers = c.currents(&long).unwrap();
+        assert_eq!(answers.len(), long.len());
+        assert!(answers.iter().enumerate().all(|(i, &current)| current == (i % 2 == 0)), "{answers:?}");
+
+        c.conn
+            .execute(
+                "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
+                 VALUES (1, 'rotation', 1, 0, x'00', 1)",
+                [],
+            )
+            .unwrap();
+        assert_eq!(c.currents(&files[..1]).unwrap(), [false]);
+        assert!(!c.is_current(id, &listed(10, 0)).unwrap());
     }
 }

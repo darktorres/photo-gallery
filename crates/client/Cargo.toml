@@ -8,7 +8,7 @@ publish.workspace = true
 workspace = true
 
 # The front end's logic, Qt-free and WASM-safe: the desktop wraps it, and the web client shares it. It takes
-# the layout now; the rest of the desktop's logic is moving in, module by module.
+# the grid and its layout, the filter bar's input, the picks, the folder tree and the controller.
 [dependencies]
 pg-model = { path = "../model" }
 serde.workspace = true
@@ -16,6 +16,6 @@ serde_json.workspace = true
 fluent-bundle.workspace = true
 unic-langid.workspace = true
 
-# The laws of the layout (tests/laws.rs), generated.
+# The laws of the layout (layout.rs's tests) and of the clamp (tests/laws.rs), generated.
 [dev-dependencies]
 proptest.workspace = true

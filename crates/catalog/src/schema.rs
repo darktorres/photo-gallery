@@ -65,6 +65,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_15_HASHES_OWED)],
     &[Step::Sql(TO_16_NEW_FILES)],
     TO_17_PLACEHOLDERS,
+    &[Step::Sql(TO_18_ANALYSIS_TOUCHES)],
 ];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
@@ -566,6 +567,14 @@ DROP TRIGGER analysis_cut_stamp;
     ),
 );
 
+/// Version 18: **`analysis_added` goes.** An analysis's insert no longer updates its file's `pending`, `seq` and
+/// `changed` in a trigger. The writers that insert an analysis make that update themselves, after the insert, with the
+/// same `meta.seq` bump and the same values the trigger set (`AnalysisWriter::touch_file`; `writers::touch_analysis`
+/// for the tests and fixtures). The trigger made each insert a multi-write statement with a statement journal, as
+/// `files_added` did (version 16). Every writer of an analysis row is one of those, and the fixtures call
+/// `touch_analysis` too.
+const TO_18_ANALYSIS_TOUCHES: &str = "DROP TRIGGER analysis_added;\n";
+
 const TO_11_IMPORT_HIDDEN: &str = "DROP TRIGGER analysis_import;
 CREATE TRIGGER analysis_import AFTER INSERT ON analysis
 WHEN new.error IS NOT NULL OR EXISTS (SELECT 1 FROM file_failures WHERE file_id = new.file_id AND pass = 'import')
@@ -591,8 +600,10 @@ const SEEDS: &[(&str, &str)] = &[("meta", "key")];
 
 /// Every connection's settings. `busy_timeout`: a statement that finds the catalog locked by another connection (the
 /// background job's writer, a scan) waits up to this long for it, instead of failing at once with "database is locked".
+/// `cache_size` (8 MB) is the writers' and the thumbs' cache: the writes touch a batch's rows and their index pages, and
+/// keep no more. The grid reader raises its own (`Catalog::set_cache_kib`), since its reads touch most of the catalog.
 pub(crate) const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
-     PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
+     PRAGMA cache_size = -8192; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
 
 /// The version this build's catalogs are at: the baseline, then each migration.
 pub(crate) fn current_version() -> Result<i64> {
@@ -920,7 +931,8 @@ INSERT INTO meta(key, value) VALUES
     ('taken_zone', '');
 
 -- files.pending and files.seq, kept in the statements that change what they depend on, whoever writes them. The
--- WHEN clauses keep a rescan that changes nothing from writing anything.
+-- WHEN clauses keep a rescan that changes nothing from writing anything. (Version 16 drops `files_added` and version 18
+-- drops `analysis_added`: a new row's pending and seq are then set by its insert, an analysis's by its writer.)
 CREATE TRIGGER files_added AFTER INSERT ON files BEGIN
     ",
     next_seq!(),
@@ -1042,7 +1054,6 @@ mod tests {
     const TRIGGER_TESTS: &[(&str, &str)] = &[
         ("files_changed", "core::pending_follows_what_the_analysis_was_made_from"),
         ("files_source_changed", "writers::a_size_change_alone_moves_the_file_in_the_thumbnail_source"),
-        ("analysis_added", "core::pending_follows_what_the_analysis_was_made_from"),
         ("analysis_changed", "core::pending_follows_what_the_analysis_was_made_from"),
         ("analysis_removed", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
         ("ratings_stamp_insert", "schema::each_user_visible_change_names_its_file"),

@@ -17,7 +17,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::rewrite::chunk::{png_animated, webp_animated, webp_is_lossless};
+use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
 use crate::rewrite::{self, op::Op};
 use pg_model::{format::Format, num};
 
@@ -51,8 +51,10 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
         }
         Format::Png if png_animated(bytes) => bail!("an animated PNG isn't cropped"),
         Format::Png => kept(rewrite::png::rewrite(bytes, exact(l, t))?),
-        Format::Webp if webp_animated(bytes) => bail!("an animated WebP isn't cropped"),
-        Format::Webp => kept(rewrite::webp::rewrite(bytes, exact(l, t))?),
+        Format::Webp => match webp_kind(bytes) {
+            WebpKind::Animated => bail!("an animated WebP isn't cropped"),
+            WebpKind::Lossless | WebpKind::Lossy => kept(rewrite::webp::rewrite(bytes, exact(l, t))?),
+        },
         Format::Gif => match rewrite::gif::rewrite(bytes, exact(l, t))? {
             Some(out) => kept(out),
             None => bail!("an animated GIF isn't cropped"),
@@ -81,7 +83,7 @@ pub fn cut(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4])
             let bytes = pg_codec::encode::jpeg_cropped(bytes, rect, i32::from(quality))?;
             Ok(Cropped { bytes, cut, metadata: false })
         }
-        Format::Webp if !webp_animated(bytes) && !webp_is_lossless(bytes) => {
+        Format::Webp if webp_kind(bytes) == WebpKind::Lossy => {
             let bytes = pg_codec::encode::webp_lossy_cropped(bytes, rect, pg_codec::encode::WEBP_LOSSY_QUALITY)?;
             Ok(Cropped { bytes, cut, metadata: false })
         }

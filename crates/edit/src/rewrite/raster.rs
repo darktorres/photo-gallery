@@ -1,6 +1,8 @@
 //! Decoded rasters: their size held to the decoders' cap, allocated fallibly, and their rows packed, unpacked and
 //! turned or cropped.
 
+use std::borrow::Cow;
+
 use anyhow::{Context, Result, bail, ensure};
 
 use super::op::Op;
@@ -73,14 +75,26 @@ pub(super) fn apply_rows(
         return Ok((pack(&values, s, nw, nh, bits), nw, nh));
     }
     let unit = bits / 8;
-    // (`max`: only a raster no pixel wide has a zero stride, and it reads nothing.)
-    let mut packed = Vec::with_capacity(w * h * unit);
-    for row in rows.chunks(stride.max(1)).take(h) {
-        packed.extend_from_slice(row.get(..w * unit).context("the image data is short")?);
-    }
+    let row_len = w * unit;
+    // The pixels packed, one row after the other: the rows themselves when they have no padding (a copy is made only
+    // when they do).
+    let packed: Cow<'_, [u8]> = if stride == row_len {
+        Cow::Borrowed(rows.get(..w * h * unit).context("the image data is short")?)
+    } else {
+        // (`max`: only a raster no pixel wide has a zero stride, and it reads nothing.)
+        let mut packed = Vec::with_capacity(w * h * unit);
+        for row in rows.chunks(stride.max(1)).take(h) {
+            packed.extend_from_slice(row.get(..row_len).context("the image data is short")?);
+        }
+        Cow::Owned(packed)
+    };
     ensure!(packed.len() == w * h * unit, "the image data is short");
     let (pixels, nw, nh) = op.apply(&packed, w, h, unit)?;
     let s = new_stride(nw);
+    // The result's rows are unpadded: it is the result as it is.
+    if s == nw * unit {
+        return Ok((pixels, nw, nh));
+    }
     let mut out = vec![0u8; s * nh];
     for (line, row) in out.chunks_mut(s.max(1)).zip(pixels.chunks_exact((nw * unit).max(1))) {
         line.get_mut(..row.len()).context("a row wider than its stride")?.copy_from_slice(row);

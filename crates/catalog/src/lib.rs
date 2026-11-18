@@ -52,10 +52,8 @@ pub use types::{
     CropSource, Folder, FolderFailure, FolderRows, Listed, PairingMarks, PairingWork, PlaceholderWork, Prior, Rebuilt,
     Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Status, Versions, VolumeSet, WorkItem, WriteTarget,
 };
-pub use writers::{
-    AnalysisWriter, BordersWriter, LedgerWriter, OwedHashes, PairsBatch, PairsWriter, PairsWritten, PlaceholderWriter,
-    ScanWriter,
-};
+// The writers are reached through `Tx`'s accessors, which name them in their signatures; no other crate names one.
+pub use writers::{OwedHashes, PairsBatch};
 
 #[cfg(test)]
 mod test_support;

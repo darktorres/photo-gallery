@@ -845,7 +845,7 @@ mod tests {
                 &dir.join("thumbs.sqlite"),
                 &catalog.catalog_id().unwrap(),
                 pg_thumbcache::Cap::from_bytes(1 << 30),
-                1,
+                pg_library::versions().thumbs,
                 events,
             )
             .unwrap(),

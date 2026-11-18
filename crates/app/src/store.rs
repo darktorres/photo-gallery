@@ -4,7 +4,7 @@
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use pg_platform::file::beside;
 use serde::Serialize;
@@ -20,7 +20,25 @@ pub struct Unreadable {
 
 pub struct JsonStore<T> {
     path: PathBuf,
-    current: Mutex<T>,
+    current: Mutex<Current<T>>,
+    /// The number of the last change the file holds (`Save::write`).
+    written: Arc<Mutex<u64>>,
+}
+
+/// The value, and how many changes it has had since the file was read.
+struct Current<T> {
+    value: T,
+    changes: u64,
+}
+
+/// A change made to a `JsonStore`'s value, and the file's content it leaves. [`Save::write`] puts that content in the
+/// file, on any thread: the change is in memory from the moment it is made, the file follows when the save is written.
+/// A save that a later change's save has already overtaken is not written, so the file always holds the latest change.
+pub struct Save<T> {
+    path: PathBuf,
+    value: T,
+    changes: u64,
+    written: Arc<Mutex<u64>>,
 }
 
 impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
@@ -35,7 +53,8 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
             Err(e) if e.kind() == io::ErrorKind::NotFound => (T::default(), None),
             Err(e) => (T::default(), Some(quarantine(&path, e.to_string()))),
         };
-        (JsonStore { path, current: Mutex::new(value) }, unreadable)
+        let current = Current { value, changes: 0 };
+        (JsonStore { path, current: Mutex::new(current), written: Arc::new(Mutex::new(0)) }, unreadable)
     }
 
     /// A copy of the value as it is now.
@@ -43,16 +62,46 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
     where
         T: Clone,
     {
-        self.current.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        self.current.lock().unwrap_or_else(PoisonError::into_inner).value.clone()
+    }
+
+    /// Change the value in memory, and return the save of the file. The value is not written until the save is: the
+    /// lock is not held across the write, so a `get` never waits for the disk.
+    pub fn change(&self, change: impl FnOnce(&mut T)) -> Save<T>
+    where
+        T: Clone,
+    {
+        let (value, changes) = {
+            let mut current = self.current.lock().unwrap_or_else(PoisonError::into_inner);
+            change(&mut current.value);
+            current.changes += 1;
+            (current.value.clone(), current.changes)
+        };
+        Save { path: self.path.clone(), value, changes, written: self.written.clone() }
     }
 
     /// Change the value and write the file. The change is kept in memory even when the write fails; the error says why
     /// the file wasn't written.
-    pub fn update(&self, change: impl FnOnce(&mut T)) -> io::Result<()> {
-        let mut current = self.current.lock().unwrap_or_else(PoisonError::into_inner);
-        change(&mut current);
-        let json = serde_json::to_vec_pretty(&*current).map_err(io::Error::other)?;
-        write_atomically(&self.path, &json)
+    pub fn update(&self, change: impl FnOnce(&mut T)) -> io::Result<()>
+    where
+        T: Clone,
+    {
+        self.change(change).write()
+    }
+}
+
+impl<T: Serialize> Save<T> {
+    /// Write the file with this change, unless a later change has been written already. The file is replaced
+    /// atomically (`write_atomically`).
+    pub fn write(self) -> io::Result<()> {
+        let mut written = self.written.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.changes <= *written {
+            return Ok(());
+        }
+        let json = serde_json::to_vec_pretty(&self.value).map_err(io::Error::other)?;
+        write_atomically(&self.path, &json)?;
+        *written = self.changes;
+        Ok(())
     }
 }
 
@@ -109,6 +158,22 @@ mod tests {
         let (reopened, unreadable) = JsonStore::<Sample>::open(path);
         assert!(unreadable.is_none());
         assert_eq!(reopened.get(), Sample { name: "kept".into(), count: 7 });
+    }
+
+    /// Saves written out of order leave the file with the latest change: an earlier save written after a later one is
+    /// not written, and the value in memory is the latest change either way.
+    #[test]
+    fn a_save_overtaken_by_a_later_one_is_not_written() {
+        let dir = scratch("overtaken");
+        let path = dir.join("sample.json");
+        let (store, _) = JsonStore::<Sample>::open(path.clone());
+        let first = store.change(|s| s.count = 1);
+        let second = store.change(|s| s.count = 2);
+        second.write().unwrap();
+        first.write().unwrap();
+        assert_eq!(store.get().count, 2);
+        let (reopened, _) = JsonStore::<Sample>::open(path);
+        assert_eq!(reopened.get().count, 2, "the file holds the later change");
     }
 
     #[test]

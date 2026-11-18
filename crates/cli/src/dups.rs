@@ -2,8 +2,6 @@
 //! they form together), and printed. Grouping here is plain connected components, enough to inspect tiers 0–1. The real
 //! grouping is multicut over verified tier-2 edges.
 
-use std::collections::BTreeMap;
-
 use anyhow::{Result, anyhow};
 use pg_catalog::Catalog;
 use pg_catalog::dups::Identity;
@@ -78,25 +76,11 @@ fn find(catalog: &Catalog, group_distance: u32) -> Result<Found> {
     let counts = catalog.pdq_pairs_in_bands(&PDQ_BANDS)?;
     let pdq_bands = PDQ_BANDS.iter().zip(counts).map(|(&(lo, hi), pairs)| (lo, hi, pairs)).collect();
 
-    let mut uf = UnionFind::default();
+    let mut edges = Vec::new();
     for by in IDENTITIES {
-        for (a, b) in catalog.identical_edges(by)? {
-            uf.union(a, b);
-        }
+        edges.extend(catalog.identical_edges(by)?);
     }
-    for (a, b) in catalog.pdq_edges(group_distance)? {
-        uf.union(a, b);
-    }
-    // Members in id order; groups by size, then by their smallest id: the first member of each group seen.
-    let mut smallest: BTreeMap<FileId, FileId> = BTreeMap::new();
-    let mut by_first: BTreeMap<FileId, Vec<FileId>> = BTreeMap::new();
-    let ids: Vec<FileId> = uf.members().collect();
-    for id in ids {
-        let root = uf.find(id);
-        let first = *smallest.entry(root).or_insert(id);
-        by_first.entry(first).or_default().push(id);
-    }
-    let mut groups: Vec<Vec<FileId>> = by_first.into_values().filter(|g| g.len() > 1).collect();
-    groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
+    edges.extend(catalog.pdq_edges(group_distance)?);
+    let groups = UnionFind::from_edges(&edges).groups();
     Ok(Found { identical, pdq_bands, groups })
 }

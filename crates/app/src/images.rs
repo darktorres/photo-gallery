@@ -30,12 +30,29 @@ use crate::makers::Makers;
 const WRITE_WAIT: Duration = Duration::from_secs(10);
 
 /// How many of the thumbnails that failed lately are remembered, so one asked for again (at every scroll past it) is not
-/// sent to the ledger again.
+/// decoded, nor sent to the ledger, again.
 const RECENT_FAILURES: usize = 256;
+
+/// How many full-size decodes are kept, each of its own file: the image on screen and the one before it or after it.
+const DECODES_KEPT: usize = 2;
 
 /// The thumbnail cache's source of a key's version: the file as the grid showed it when the key was made.
 fn source_of(v: Version) -> thumbs::Source {
     thumbs::Source { mtime: v.mtime, rotation: v.rotation }
+}
+
+/// The state a file's failure is remembered by: its id, mtime, size and turns.
+type FailureKey = (i64, i64, i64, u8);
+
+/// The state of `src`'s file a failure is remembered by ([`Recent`]).
+fn failure_key(file_id: FileId, src: &FileSource) -> FailureKey {
+    (file_id.get(), src.state.mtime, src.state.size, src.state.rotation.get())
+}
+
+/// A thumbnail that didn't decode, as its file was then, with the error it gave.
+struct Recent {
+    key: FailureKey,
+    text: String,
 }
 
 /// What a thumbnail request found, as the catalog has the file.
@@ -68,8 +85,8 @@ pub struct Keep {
     pub source: thumbs::Source,
 }
 
-/// The last full-size decode, kept for the zoom regions that follow each other while the user zooms and pans one image.
-/// It is kept for the app, until the next decode: a 24 MP image is about 72 MB of RGB.
+/// A full-size decode, kept for the zoom regions that follow each other while the user zooms and pans one image, and for
+/// the viewer's return to it. Two are kept (`DECODES_KEPT`): a 24 MP image is about 72 MB of RGB.
 pub(crate) struct Decoded {
     file_id: FileId,
     mtime: i64,
@@ -88,12 +105,13 @@ pub struct Images {
     makers: Arc<Makers>,
     /// The thumbnail cache, leaked to a `'static` reference so the library's threads can borrow it. Closed at shutdown.
     thumbs: &'static ThumbCache,
-    /// The last full-size decode (`Images::full_image`).
-    last_decode: Mutex<Option<Decoded>>,
+    /// The full-size decodes last made (`Images::full_image`), most recent first.
+    last_decodes: Mutex<VecDeque<Decoded>>,
     /// Where a thumbnail that doesn't decode is recorded (the thumbnails' failure ledger), and one made leaves it.
     inbox: Arc<Inbox>,
-    /// The files whose thumbnail failed lately, as they were (id, mtime, size, turns): sent to the ledger once.
-    recent: Mutex<VecDeque<(i64, i64, i64, u8)>>,
+    /// The thumbnails that failed lately, as their files were, with the error: sent to the ledger once, and not decoded
+    /// again while the file is as it was.
+    recent: Mutex<VecDeque<Recent>>,
 }
 
 impl Images {
@@ -103,7 +121,14 @@ impl Images {
         thumbs: &'static ThumbCache,
         inbox: Arc<Inbox>,
     ) -> Images {
-        Images { catalogs, makers, thumbs, last_decode: Mutex::new(None), inbox, recent: Mutex::new(VecDeque::new()) }
+        Images {
+            catalogs,
+            makers,
+            thumbs,
+            last_decodes: Mutex::new(VecDeque::new()),
+            inbox,
+            recent: Mutex::new(VecDeque::new()),
+        }
     }
 
     /// A thumbnail of the file as `src` has it that doesn't decode: recorded in the thumbnails' ledger (once while it is
@@ -111,16 +136,16 @@ impl Images {
     fn undecodable(&self, file_id: FileId, src: &FileSource, e: MakeError, kept: Option<ThumbHeight>) -> Found {
         let error = made_error(e);
         if let Error::Undecodable(text) = &error {
-            let state = &src.state;
-            let key = (file_id.get(), state.mtime, state.size, state.rotation.get());
+            let key = failure_key(file_id, src);
             let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
-            if !recent.contains(&key) {
+            if !recent.iter().any(|r| r.key == key) {
                 if recent.len() >= RECENT_FAILURES {
                     recent.pop_front();
                 }
-                recent.push_back(key);
+                recent.push_back(Recent { key, text: text.clone() });
                 drop(recent);
                 pg_log::warn("thumbs", &format!("file {}: {text}", file_id.get()));
+                let state = &src.state;
                 self.inbox.thumb_failed(Failure {
                     file_id,
                     mtime: state.mtime,
@@ -133,6 +158,13 @@ impl Images {
             }
         }
         Found::Offline(error, kept)
+    }
+
+    /// The error a thumbnail of the file as `src` has is, if it failed to decode lately as it is now.
+    fn recent_failure(&self, file_id: FileId, src: &FileSource) -> Option<String> {
+        let key = failure_key(file_id, src);
+        let recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
+        recent.iter().find(|r| r.key == key).map(|r| r.text.clone())
     }
 
     /// `read` of the file, consistent with the catalog: the file's state is read before and after it, and the result
@@ -200,6 +232,10 @@ impl Images {
                     }
                 }
             };
+            // A file that failed to decode as it is now fails the same way: it is not decoded again.
+            if let Some(text) = self.recent_failure(file_id, src) {
+                return Ok(Found::Offline(Error::Undecodable(text), kept_smaller));
+            }
             // The file's disk path, which std and FFmpeg reach exactly.
             let path = path_of(&src.path);
             // The maker's failures are the original's (gone, offline, not decodable), so the variant is made here:
@@ -207,17 +243,13 @@ impl Images {
             let made = if let Some(at) = src.poster_ms {
                 // A video: its poster frame.
                 self.makers.with_maker(|m| {
-                    Ok(m.load_frame(&path, at, current.rotation)
-                        .and_then(|()| m.encode_frame(pg_model::num::index(height.get()))))
+                    let height = pg_model::num::index(height.get());
+                    Ok(m.load_frame(&path, at, current.rotation, height).and_then(|()| m.encode_frame(height)))
                 })?
             } else {
-                // Read into the maker, which keeps the buffer for the next file.
-                match self.makers.with_maker(|m| Ok(m.read_file(&path)))? {
-                    Ok(()) => {}
-                    Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
-                }
+                // Read and made on one maker: its buffer holds this file's bytes until the thumbnail is made.
                 self.makers
-                    .with_maker(|m| Ok(m.make_from_file(pg_model::num::index(height.get()), current.rotation)))?
+                    .with_maker(|m| Ok(m.make_of_file(&path, pg_model::num::index(height.get()), current.rotation)))?
             };
             Ok(match made {
                 Ok(made) => Found::Made(made),
@@ -263,7 +295,7 @@ impl Images {
 
     /// A thumbnail (a JPEG) turned by `turns` quarter turns clockwise, for a turn not yet written into the file.
     pub fn turn_jpeg(&self, jpeg: &[u8], turns: Turns) -> Result<Rgba> {
-        self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.rgba(View::Full))
+        self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.rgba(View::Full, m.resizer()))
     }
 
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now. A file with none yet (the
@@ -279,28 +311,40 @@ impl Images {
     /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as the
     /// viewer asks for it.
     pub fn full_image(&self, file_id: FileId, view: View) -> Result<Rgba> {
-        let (_, (img, fresh)) = self.consistent(file_id, |src| self.decode(file_id, src, view))?;
+        let decoded = self.consistent(file_id, |src| self.decode(file_id, src, view));
+        // A decode that doesn't read is logged here, once per request: a viewer's request is the user's, and the front
+        // end shows nothing for it.
+        if let Err(Error::Undecodable(text)) = &decoded {
+            pg_log::warn("viewer", &format!("file {}: {text}", file_id.get()));
+        }
+        let (_, (img, fresh)) = decoded?;
         // Kept once it is known to be of the file as the catalog has it.
         if let Some(fresh) = fresh {
-            *self.last_decode.lock().unwrap_or_else(PoisonError::into_inner) = Some(fresh);
+            let mut last = self.last_decodes.lock().unwrap_or_else(PoisonError::into_inner);
+            last.retain(|d| d.file_id != fresh.file_id);
+            last.push_front(fresh);
+            last.truncate(DECODES_KEPT);
         }
-        // The decode stays shared (`last_decode`); what is shown is made from it.
-        img.rgba(view).map_err(failed)
+        // The decode stays shared (`last_decodes`); what is shown is made from it, on a worker's resizer.
+        self.makers.with_maker(|m| img.rgba(view, m.resizer()))
     }
 
-    /// Decode what `view` needs (`display::min_size`), turned as the catalog says, reusing the last decode of the file in
-    /// that state when it is big enough; a new decode comes with what to keep of it.
+    /// Decode what `view` needs (`display::min_size`), turned as the catalog says, reusing a decode of the file in that
+    /// state when it is big enough. A new decode comes with what to keep of it: only one that is of the whole picture
+    /// (`View::Full` and the zoomed regions, which are cut from it). A fit to the window is cheap to make again, and the
+    /// viewer's neighbours are preloaded as fits, so keeping those would push out the decode the image on screen zooms in
+    /// on.
     fn decode(&self, file_id: FileId, src: &FileSource, view: View) -> Result<(Arc<Shown>, Option<Decoded>)> {
         let rotation = src.state.rotation.plus(src.state.turns);
         {
-            let last = self.last_decode.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(d) = last.as_ref()
-                && d.file_id == file_id
-                && d.mtime == src.state.mtime
-                && d.size == src.state.size
-                && d.rotation == rotation
-                && d.image.covers(view)
-            {
+            let last = self.last_decodes.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(d) = last.iter().find(|d| {
+                d.file_id == file_id
+                    && d.mtime == src.state.mtime
+                    && d.size == src.state.size
+                    && d.rotation == rotation
+                    && d.image.covers(view)
+            }) {
                 return Ok((d.image.clone(), None));
             }
         }
@@ -312,15 +356,19 @@ impl Images {
             // made here: `with_maker` would make any error its closure returns an `Error::Failed`. A maker that can't
             // be made is still that.
             let path = path_of(&src.path);
-            let decoded = self.makers.with_maker(|m| {
-                Ok(match m.read_file(&path) {
-                    Ok(()) => m.decode_file(view, rotation).map_err(made_error),
-                    Err(e) => Err(original(e)),
-                })
-            })??;
+            let decoded =
+                self.makers.with_maker(|m| Ok(m.decode_of_file(&path, view, rotation).map_err(made_error)))??;
             Arc::new(decoded)
         };
-        Ok((image.clone(), Some(Decoded { file_id, mtime: src.state.mtime, size: src.state.size, rotation, image })))
+        let whole = matches!(view, View::Full | View::Region(..));
+        let kept = whole.then(|| Decoded {
+            file_id,
+            mtime: src.state.mtime,
+            size: src.state.size,
+            rotation,
+            image: Arc::clone(&image),
+        });
+        Ok((image, kept))
     }
 }
 
@@ -419,7 +467,15 @@ mod tests {
         }
         assert_eq!(ledger_until(&app, 1), [FileId::new(1)]);
         assert_eq!(app.images().recent.lock().unwrap().len(), 1, "asked twice, sent once");
-        std::fs::write(&file, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        let png = pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap();
+        std::fs::write(&file, &png).unwrap();
+        // The scan that sees the new bytes records their size and mtime. Until then the failure holds for the old state.
+        app.catalogs()
+            .with_catalog(|c| {
+                fixture::set_state(c, FileId::new(1), i64::try_from(png.len()).unwrap(), 1).unwrap();
+                Ok(())
+            })
+            .unwrap();
         assert!(app.images().thumbnail(key, hundred(), &mut Vec::new()).unwrap().made.is_some());
         assert!(ledger_until(&app, 0).is_empty());
         app.stop().unwrap();

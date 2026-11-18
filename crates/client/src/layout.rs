@@ -20,18 +20,15 @@ pub fn clamp_aspect(aspect: f64) -> f64 {
 /// Greedy justified layout of items of these aspect ratios, into `rows` (cleared, its capacity kept: relayouts at
 /// every resize and size change don't allocate). A row is closed as soon as its items, at `target_height`, fill
 /// `width`; it is then scaled to fit exactly, so rows come out at or below the target. The last row keeps the
-/// target height. When `rows` must grow, a first pass counts them, so it grows once, to its exact size.
-pub fn justify_into(
+/// target height. One pass: `rows` grows as it needs to.
+pub(crate) fn justify_into(
     rows: &mut Vec<Row>,
-    aspects: impl Iterator<Item = f64> + Clone,
+    aspects: impl Iterator<Item = f64>,
     width: f64,
     target_height: f64,
     spacing: f64,
 ) {
     rows.clear();
-    let mut count = 0;
-    greedy(aspects.clone(), width, target_height, spacing, |_| count += 1);
-    rows.reserve_exact(count);
     greedy(aspects, width, target_height, spacing, |row| rows.push(row));
 }
 
@@ -152,26 +149,26 @@ fn step(at: usize, by: i32, last: usize) -> usize {
 /// inserted or removed after them. Rows are told apart by their items' range: a row is kept when it holds the same
 /// range, whatever the items in it are now ([`RowChange::updates`] says which to read again).
 #[derive(Debug, PartialEq)]
-pub struct RowChange {
+pub(crate) struct RowChange {
     /// Rows changed in place, numbered alike in both layouts.
-    pub changed: Range<usize>,
+    pub(crate) changed: Range<usize>,
     /// Rows inserted, or removed, at `changed.end`.
-    pub inserted: usize,
-    pub removed: usize,
+    pub(crate) inserted: usize,
+    pub(crate) removed: usize,
 }
 
 /// What a row kept or changed in place needs to show the new layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RowUpdate {
+pub(crate) struct RowUpdate {
     /// It holds other items: its range changed.
-    pub span: bool,
+    pub(crate) span: bool,
     /// The same range, but its items changed.
-    pub items: bool,
-    pub height: bool,
+    pub(crate) items: bool,
+    pub(crate) height: bool,
 }
 
 impl RowChange {
-    pub fn between(old: &[Row], new: &[Row]) -> RowChange {
+    pub(crate) fn between(old: &[Row], new: &[Row]) -> RowChange {
         let same = |(a, b): &(&Row, &Row)| (a.first, a.count) == (b.first, b.count);
         let before = old.iter().zip(new).take_while(same).count();
         let after = old.iter().skip(before).rev().zip(new.iter().skip(before).rev()).take_while(same).count();
@@ -185,7 +182,7 @@ impl RowChange {
 
     /// What the rows of `new` that aren't inserted need, in runs of rows that need the same (rows that need nothing
     /// left out). `items_changed(range)`: whether the items in a range both layouts have a row for changed.
-    pub fn updates(
+    pub(crate) fn updates(
         &self,
         old: &[Row],
         new: &[Row],
@@ -221,6 +218,75 @@ impl RowChange {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// The rows of `aspects` laid out at `width`, `target` and `spacing`, as `justify_into` makes them.
+    fn rows_of(aspects: &[f64], width: f64, target: f64, spacing: f64) -> Vec<Row> {
+        let mut rows = Vec::new();
+        justify_into(&mut rows, aspects.iter().copied(), width, target, spacing);
+        rows
+    }
+
+    /// Aspect ratios as the images give them: thin strips to wide panoramas, with the odd zero or non-finite value (which
+    /// `clamp_aspect` lays out as a square or as the nearest limit).
+    fn aspects() -> impl Strategy<Value = Vec<f64>> {
+        prop::collection::vec(
+            prop_oneof![
+                18 => 0.01f64..100.0,
+                1 => Just(0.0),
+                1 => Just(f64::NAN),
+                1 => Just(f64::INFINITY),
+            ],
+            0..200,
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn rows_cover_every_item_once_and_in_order(
+            aspects in aspects(),
+            width in 1.0f64..4000.0,
+            target in 1.0f64..800.0,
+            spacing in 0.0f64..20.0,
+        ) {
+            let rows = rows_of(&aspects, width, target, spacing);
+            let mut next = 0;
+            for row in &rows {
+                prop_assert_eq!(row.first, next);
+                prop_assert!(row.count >= 1);
+                next += row.count;
+            }
+            prop_assert_eq!(next, aspects.len());
+        }
+
+        #[test]
+        fn rows_fit_the_width_and_stay_at_or_below_the_target(
+            aspects in aspects(),
+            width in 1.0f64..4000.0,
+            target in 1.0f64..800.0,
+            spacing in 0.0f64..20.0,
+        ) {
+            let rows = rows_of(&aspects, width, target, spacing);
+            for (k, row) in rows.iter().enumerate() {
+                let sum: f64 = aspects[row.first..row.first + row.count].iter().map(|&a| clamp_aspect(a)).sum();
+                let used = sum * row.height + spacing * pg_model::num::count(row.count - 1);
+                prop_assert!(row.height <= target + 1e-9, "row {k} is {} px, above the target {target}", row.height);
+                // A row is at least 1 px high (`justify_into`'s floor), and at that floor it can be wider than the width: a
+                // single item too wide for a 1 px row. Above the floor, the row fits.
+                let floored = row.height <= 1.0 + 1e-9;
+                if !floored {
+                    prop_assert!(used <= width + 1e-6 * width, "row {k} overflows: {used} > {width}");
+                }
+                // Every row but the last is closed, and a closed row is scaled to fill the width exactly.
+                if k + 1 < rows.len() && !floored {
+                    prop_assert!(
+                        (used - width).abs() <= 1e-6 * width,
+                        "closed row {k} does not fill the width: {used} vs {width}"
+                    );
+                }
+            }
+        }
+    }
 
     fn rows(spans: &[(usize, usize, f64)]) -> Vec<Row> {
         spans.iter().map(|&(first, count, height)| Row { first, count, height }).collect()
@@ -303,10 +369,9 @@ mod tests {
             assert!(r.height <= 200.0);
         }
         assert_eq!(rows.last().unwrap().height, 200.0);
-        // Grown from nothing, to exactly the rows (`reserve_exact` on an empty `Vec` gives what it asks for).
+        // Made from nothing, the same rows.
         let mut fresh = Vec::new();
         justify_into(&mut fresh, aspects.iter().copied(), width, 200.0, spacing);
-        assert_eq!((fresh.len(), fresh.capacity()), (rows.len(), rows.len()));
         assert_eq!(fresh, rows);
         justify_into(&mut fresh, std::iter::empty(), width, 200.0, spacing);
         assert!(fresh.is_empty());

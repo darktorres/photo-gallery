@@ -1,6 +1,6 @@
 //! The filter bar's typed input. The bar names its list facets by their index in `facets::ALL` and its bounds by a
 //! `Field` index (`Field::ALL`) and an `Edge` index (0 the low end, 1 the high end), so no facet name is a string
-//! inside the core. A list value comes back from the bar as the key `key_of` gave it, read here at that edge only; the
+//! inside this crate. A list value comes back from the bar as the key `key_of` gave it, read here at that edge only; the
 //! text typed for a bound is empty (an open end), or a number, or a calendar day for the day fields. The query itself
 //! is `pg_model::query`; nothing here reads the catalog.
 

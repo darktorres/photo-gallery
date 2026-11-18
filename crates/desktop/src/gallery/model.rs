@@ -7,8 +7,10 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QStringList, QVariant};
 use pg_client::grid::{Arrival, Changed, Plan, Shape};
 use pg_client::text;
+use pg_model::details::Details;
 use pg_model::detection::Edge;
 use pg_model::grid::Entry;
+use pg_model::ids::FileId;
 use pg_model::size::ThumbHeight;
 
 use super::qobject;
@@ -251,6 +253,22 @@ impl qobject::GalleryModel {
         self.as_mut().refresh_derived();
         let revision = self.revision + 1;
         self.as_mut().set_revision(revision);
+    }
+
+    /// A file's details came in (`GalleryRust::read_details`): kept, and the values that show them are read again. A
+    /// read asked for before the details were emptied is dropped.
+    pub(super) fn details_read(mut self: Pin<&mut Self>, generation: u64, file: FileId, details: Option<Details>) {
+        {
+            let mut this = self.as_mut().rust_mut();
+            if generation != this.details_generation {
+                return;
+            }
+            this.details.retain(|(id, _)| *id != file);
+            this.details.insert(0, (file, details));
+            this.details.truncate(2);
+        }
+        self.as_mut().refresh_derived();
+        self.as_mut().refresh_viewed();
     }
 
     /// The status bar's selection text and the bordered count, the values the views used to call for.

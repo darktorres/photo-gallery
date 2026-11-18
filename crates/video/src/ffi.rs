@@ -243,6 +243,28 @@ impl Stream<'_> {
         unsafe { (*(*self.ptr).codecpar).codec_id }
     }
 
+    /// Whether FFmpeg has a decoder for the stream's codec. No decoder is opened.
+    pub(crate) fn has_decoder(&self) -> bool {
+        // SAFETY: as above; `avcodec_find_decoder` takes the codec id by value and returns a static decoder or null.
+        unsafe { !(self.api.avcodec_find_decoder)((*(*self.ptr).codecpar).codec_id).is_null() }
+    }
+
+    /// The picture size the stream's parameters give, in stored pixels (zero where they say nothing). What a decoder
+    /// opened on the stream reports as its size, read without opening one.
+    pub(crate) fn picture_size(&self) -> (u32, u32) {
+        // SAFETY: as above; codecpar is set for every stream.
+        unsafe {
+            let params = (*self.ptr).codecpar;
+            (u32::try_from((*params).width).unwrap_or(0), u32::try_from((*params).height).unwrap_or(0))
+        }
+    }
+
+    /// The sample aspect ratio the stream's parameters give (what a decoder opened on it reports).
+    pub(crate) fn sample_aspect_ratio(&self) -> AVRational {
+        // SAFETY: as above; codecpar is set for every stream.
+        unsafe { (*(*self.ptr).codecpar).sample_aspect_ratio }
+    }
+
     pub(crate) fn metadata(&self, key: &str) -> Option<String> {
         // SAFETY: as above.
         dict_get(self.api, unsafe { (*self.ptr).metadata }, key)
@@ -336,27 +358,16 @@ impl Decoder {
         if ret < 0 {
             bail!("{}", error_text(ret));
         }
+        // SAFETY: `decoder.ptr` is the context made above and not yet opened, so its thread count can be set. 0 lets
+        // FFmpeg pick the threads (frame and slice threading): a seek decodes forward from its keyframe, a GOP's worth
+        // of frames, and the threads make that quicker. Set before the open, which starts them.
+        unsafe { (*decoder.ptr).thread_count = 0 };
         // SAFETY: as above; no options.
         let ret = unsafe { (api.avcodec_open2)(decoder.ptr, codec, ptr::null_mut()) };
         if ret < 0 {
             bail!("{}", error_text(ret));
         }
         Ok(decoder)
-    }
-
-    pub(crate) fn width(&self) -> u32 {
-        // SAFETY: `ptr` is open.
-        u32::try_from(unsafe { (*self.ptr).width }).unwrap_or(0)
-    }
-
-    pub(crate) fn height(&self) -> u32 {
-        // SAFETY: `ptr` is open.
-        u32::try_from(unsafe { (*self.ptr).height }).unwrap_or(0)
-    }
-
-    pub(crate) fn sample_aspect_ratio(&self) -> AVRational {
-        // SAFETY: `ptr` is open.
-        unsafe { (*self.ptr).sample_aspect_ratio }
     }
 
     /// Sends a packet to decode. False if the decoder refused it.

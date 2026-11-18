@@ -46,9 +46,9 @@
 //! - What a failure is decides what follows (`pg_render::maker::MakeError`): a file that can't be read (`Unreadable`: an
 //!   offline drive, a file in use or gone) is not recorded, only counted, and the pass tries it again; the job's
 //!   `unreadable-files` state says how many, and clears after a complete pass with none. A file that doesn't decode
-//!   (`Undecodable`) is recorded with `retry`, and the next pass tries it again. A thumbnail that panicked, and a border
-//!   search that failed or panicked, are recorded without `retry`: the pass doesn't list them again until the file changes,
-//!   or the user retries.
+//!   (`Undecodable`) and a thumbnail that panicked are recorded without `retry`: the thumbnails' pass doesn't list them again
+//!   until the file changes (its pending query leaves out a `retry = 0` row that matches the file as it is), or the user
+//!   retries. A border search that failed or panicked is recorded the same way.
 //! - **The thumbnails' pass** buffers its failures and writes them through its own connection in batches, or at least every
 //!   2 s (`LEDGER_EVERY`), whatever ends the pass. A write that fails doesn't fail the pass (its files are tried again) and
 //!   posts `ledger-not-written` (`LedgerOutcome::Failed`) until one works (`Written`; an empty pass is `Untouched` and clears
@@ -546,6 +546,7 @@ mod tests {
                 params![id, versions().import, size, mtime, error],
             )
             .unwrap();
+        crate::writers::touch_analysis(&c.conn, id).unwrap();
     }
 
     fn state(c: &Catalog, kind: LedgerKind) -> LedgerState {
@@ -789,6 +790,7 @@ mod tests {
                 (versions().import,),
             )
             .unwrap();
+        crate::writers::touch_analysis(&c.conn, 1).unwrap();
         assert_eq!(rotations(&c), [3]);
         assert_eq!(serials(&c, "import"), seen, "a retry of the same bytes is the same failure");
     }

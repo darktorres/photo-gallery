@@ -120,7 +120,15 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         ImageRequest::Yandex { id, original } => yandex_picture(id, original),
     };
     result.unwrap_or_else(|e| {
-        pg_log::warn("providers", &format!("image {kind:?} {id}: {e:#}"));
+        // An unavailable original is the catalog's offline state, and an undecodable one is logged where the image layer
+        // finds it (a thumbnail's once per file, a viewer's per request): neither is logged again for each request.
+        let logged_there = matches!(
+            e.downcast_ref::<pg_app::Error>(),
+            Some(pg_app::Error::Original(_) | pg_app::Error::Undecodable(_))
+        );
+        if !logged_there {
+            pg_log::warn("providers", &format!("image {kind:?} {id}: {e:#}"));
+        }
         failed()
     })
 }

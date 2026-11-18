@@ -363,8 +363,16 @@ impl Query {
         }
     }
 
+    /// Whether `choice` is chosen in its list facet. Tested in place: `chosen` would build the facet's list to ask.
     pub fn has(&self, choice: &Choice) -> bool {
-        self.chosen(choice.facet()).contains(choice)
+        match choice {
+            Choice::Type(t) => self.types.contains(t),
+            Choice::Ext(e) => self.exts.contains(e),
+            Choice::Rating(r) => self.ratings.contains(r),
+            Choice::Shape(s) => self.shapes.contains(s),
+            Choice::Status(s) => self.status.contains(s),
+            Choice::Border(b) => self.borders.contains(b),
+        }
     }
 
     /// Choose a value of a list facet, or unchoose it if it is chosen.

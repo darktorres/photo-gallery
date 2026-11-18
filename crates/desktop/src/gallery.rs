@@ -1,7 +1,7 @@
 //! The grid model: the files of the open folder, laid out in justified rows (`pg_client::layout`). QML sees one
 //! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index. The
 //! model holds a compact entry per file (`pg_model::grid::Entry`); a file's path and size are read when it is shown
-//! (`App::details`), for the selection and the viewer's file.
+//! (`GalleryRust::read_details`, on the reader), for the selection and the viewer's file.
 //!
 //! The files are listed off the GUI thread (the app's catalog reader): the controller's `OpenList` command asks (the
 //! listing says what), and the list arrives later (`loaded`).

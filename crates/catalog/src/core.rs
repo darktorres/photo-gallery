@@ -30,9 +30,9 @@ use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{Rebuilt, Versions};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
 
-/// The page cache of [`Catalog::prepare`]'s own work, in KiB: the copy aside, a migration and its `VACUUM` read and write
-/// each page once or twice, so a larger cache would only hold the whole file.
-const PREPARE_CACHE_KIB: i64 = 16 * 1024;
+/// The page cache of [`Catalog::prepare`]'s own work and of a rebuild's copy, in KiB: the copy aside, a migration and
+/// its `VACUUM` read and write each page once or twice, so a larger cache would only hold the whole file.
+pub(crate) const PREPARE_CACHE_KIB: i64 = 16 * 1024;
 
 pub struct Catalog {
     pub(crate) conn: Connection,
@@ -107,8 +107,8 @@ impl Catalog {
         }
         conn.execute_batch(SETTINGS)?;
         // What follows is one-off work over whole tables (the copy aside, a migration, its `VACUUM`, a mark's
-        // recompute), which reads each page once or twice: on a small cache, so it does not fill the app's 256 MB with
-        // the whole file (a migration's peak commit was 438 MiB with it). `SETTINGS` restores the app's at the end.
+        // recompute), which reads each page once or twice: on a small cache, so it does not fill the cache with the whole
+        // file (a migration's peak commit was 438 MiB with it). `SETTINGS` restores the connection's at the end.
         conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
         // A catalog of this build's schema at an earlier version is copied aside before it is migrated (a rebuilt one
         // was: the old file is kept as it was).
@@ -200,6 +200,12 @@ impl Catalog {
         Ok(self.conn.release_memory()?)
     }
 
+    /// Set this connection's page cache to `kib` KiB. Every connection starts with a small one (`SETTINGS`); the grid
+    /// reader's raises it, since its reads touch most of the catalog, and it gives the pages back after each read.
+    pub fn set_cache_kib(&self, kib: u32) -> Result<()> {
+        Ok(self.conn.pragma_update(None, "cache_size", -i64::from(kib))?)
+    }
+
     /// How long a statement on this connection waits for a lock another connection holds before it fails with
     /// `SQLITE_BUSY` ([`Error::is_busy`]). Every connection starts at 5 s (`SETTINGS`); a writer that retries on its
     /// own, and checks for a stop between tries, sets a shorter one.
@@ -209,7 +215,7 @@ impl Catalog {
 
     /// A connection of its own for one long read ([`Reader`]), whose page cache is at most `cache_kib` KiB and goes when
     /// it is dropped: a read of a whole table (the pairing pass's) leaves neither its pages in this connection's cache
-    /// (the app's 256 MB, `SETTINGS`) nor the cache in the process. It opens the same file read-only, so it needs no
+    /// (the catalog's own, `SETTINGS`) nor the cache in the process. It opens the same file read-only, so it needs no
     /// check of the schema (this connection's open made it), and this catalog's shared hold on the file keeps a rebuild
     /// out. An in-memory catalog (the tests') has no file another connection could open: its reads run on this one.
     pub fn reader(&self, cache_kib: u32) -> Result<Reader<'_>> {
@@ -226,8 +232,8 @@ impl Catalog {
 
     /// Bound this connection's page cache to `kib` KiB until the guard is dropped, which restores the cache's size and
     /// gives back the pages over it (`sqlite3_db_release_memory`), however the holder leaves (an error, a stop, a panic).
-    /// The pairing pass's writes read every owed analysis through this connection, which would otherwise fill the app's
-    /// 256 MB cache and keep it filled after the pass (the app keeps its catalog open across passes).
+    /// The pairing pass's writes read every owed analysis through this connection, which would otherwise fill its cache
+    /// and keep it filled after the pass (the app keeps its catalog open across passes).
     pub fn bounded_cache(&mut self, kib: u32) -> Result<BoundedCache<'_>> {
         let app: i64 = self.conn.query_row("PRAGMA cache_size", [], |r| r.get(0))?;
         self.conn.pragma_update(None, "cache_size", -i64::from(kib))?;
@@ -713,7 +719,9 @@ mod tests {
             reader.conn().query_row("SELECT value FROM meta WHERE key = 'taken_zone'", [], |r| r.get(0)).unwrap();
         assert_eq!(zone, "just before");
         assert_eq!(cache_kib(reader.conn()), 1024);
-        assert_eq!(cache_kib(&c.conn), 262_144, "the catalog's own cache is left as it is");
+        assert_eq!(cache_kib(&c.conn), 8_192, "the catalog's own cache is left as it is: a writer's, small");
+        c.set_cache_kib(262_144).unwrap();
+        assert_eq!(cache_kib(&c.conn), 262_144, "the grid reader's is set by the holder");
         assert!(
             reader.conn().execute("UPDATE meta SET value = 'x' WHERE key = 'taken_zone'", []).is_err(),
             "read-only"
@@ -739,12 +747,12 @@ mod tests {
             Ok(())
         };
         assert!(fails(&mut c).is_err());
-        assert_eq!(cache_kib(&c.conn), 262_144, "restored after an error");
+        assert_eq!(cache_kib(&c.conn), 8_192, "restored after an error");
         let panics = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _bounded = c.bounded_cache(2048).unwrap();
             panic!("the holder panics");
         }));
         assert!(panics.is_err());
-        assert_eq!(cache_kib(&c.conn), 262_144, "restored after a panic");
+        assert_eq!(cache_kib(&c.conn), 8_192, "restored after a panic");
     }
 }

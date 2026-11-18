@@ -7,7 +7,11 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use pg_codec::animation;
+use pg_codec::animation::{self, Frame};
+
+/// The bytes of decoded frames an animation keeps for its loops after the first: an animation whose frames fit is decoded
+/// once, and a larger one is decoded again at each loop. (A 480 × 270 GIF of 200 frames is about 100 MB, so it fits.)
+const FRAME_BUDGET: usize = 128 << 20;
 
 /// Where the frames go. `present` may be called from the player's thread; `close` once, after the last `present`,
 /// when the player stops.
@@ -72,7 +76,20 @@ fn play(path: &Path, sink: &impl Sink, control: &Shared) {
     let Ok(bytes) = std::fs::read(path) else { return };
     let bytes: Arc<[u8]> = bytes.into();
     let mut due = Instant::now();
+    // The frames of the first pass, kept for the loops after it while they fit in `FRAME_BUDGET`; `None` once they don't.
+    let mut kept: Option<Vec<Frame>> = Some(Vec::new());
+    let mut kept_bytes = 0usize;
     loop {
+        if let Some(frames) = kept.as_ref().filter(|frames| !frames.is_empty()) {
+            for frame in frames {
+                if !wait_until(control, &mut due) {
+                    return;
+                }
+                sink.present(frame.width, frame.height, &frame.rgba);
+                due = (due + Duration::from_millis(frame.delay_ms.into())).max(Instant::now());
+            }
+            continue;
+        }
         let Ok(pass) = animation::frames(bytes.clone()) else { return };
         let mut shown = false;
         // A frame that fails to decode ends the pass: what came before it still loops.
@@ -84,6 +101,13 @@ fn play(path: &Path, sink: &impl Sink, control: &Shared) {
             shown = true;
             // Late (a slow decode, a busy machine): carry on from now rather than rushing to catch up.
             due = (due + Duration::from_millis(frame.delay_ms.into())).max(Instant::now());
+            if kept_bytes + frame.rgba.len() > FRAME_BUDGET {
+                kept = None;
+            }
+            if let Some(frames) = kept.as_mut() {
+                kept_bytes += frame.rgba.len();
+                frames.push(frame);
+            }
         }
         if !shown {
             return;

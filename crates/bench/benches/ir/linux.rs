@@ -9,6 +9,7 @@ use gungraun::prelude::*;
 use pg_analysis::analyze::Analyzer;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_codec::pixels::Rgb;
+use pg_codec::resize::Resizer;
 use pg_model::analysis::Analysis;
 use pg_model::image::View;
 use pg_render::display::{self, Shown};
@@ -80,7 +81,7 @@ fn for_viewer_png() -> (Vec<u8>, Decoder) {
 
 /// The image fitted into the window, as the viewer shows it.
 fn fitted(image: &Shown) -> Option<Rgb> {
-    or_stop(image.resized(WINDOW), "fit")
+    or_stop(image.resized(WINDOW, &mut Resizer::new()), "fit")
 }
 
 // The viewer's image of a still: the decode its window asks for, then the fit. (The path import is catalog.rs's.)

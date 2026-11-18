@@ -302,10 +302,11 @@ impl Writer {
         self.inner.turned.get()
     }
 
-    /// Stop the thread after the write in progress (a queued write waits for the next start), and wait for it.
-    /// Idempotent; dropping the writer does it too.
-    pub fn stop(&self) {
-        self.service.stop();
+    /// Stop the thread after the write in progress (a queued write waits for the next start), and wait for it, for at
+    /// most `timeout`. `false` if it is still running then: it ends with the process (dropping the writer waits for
+    /// it), and a copy it was in is finished from its temp at the next start. Idempotent.
+    pub fn stop(&self, timeout: Duration) -> bool {
+        self.service.stop_within(timeout)
     }
 }
 
@@ -510,7 +511,13 @@ impl Inner {
         }
         // Taken before the read: a save by another program after it shows when the original is opened for the copy.
         let before = stat(&path)?;
-        let bytes = std::fs::read(&path).with_context(|| format!("reading {shown}"))?;
+        // The original's bytes are read only where they are used: a turn rewrites them, and a format the analysis
+        // didn't give is sniffed from them. A rating's new content is ExifTool's, made from the file on disk.
+        let bytes = if known.is_none() || job.kind() == WriteKind::Turns {
+            std::fs::read(&path).with_context(|| format!("reading {shown}"))?
+        } else {
+            Vec::new()
+        };
         let format = match known.or_else(|| Format::sniff(&bytes)) {
             // Not a format the app reads (an analysis that failed, a file that isn't what its name says), or one that
             // can't hold a rating: a rating stays in the catalog, and the write is done. A turn can't be made.

@@ -116,9 +116,8 @@ fn shape_sql(shape: Shape) -> &'static str {
 /// next), else imported or failed by its current analysis.
 fn status_sql(status: Status) -> &'static str {
     match status {
-        Status::Imported => {
-            "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NULL))"
-        }
+        // `a` is joined without an error (the module's aliases), so its presence is the analysis without one.
+        Status::Imported => "(f.pending = 0 AND a.file_id IS NOT NULL)",
         Status::Pending => "f.pending = 1",
         Status::Failed => {
             "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NOT NULL))"

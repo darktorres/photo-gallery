@@ -1,38 +1,47 @@
-//! The edits the model carries out: turns, ratings, border marks, and the cropped copies.
+//! The edits the model carries out: turns, ratings, border marks, and the cropped copies. A turn, a rating and a border
+//! mark are written off the Qt thread (`worker`), and the item shows them when the write is made; a write that fails is
+//! a notice, and the item is left as it was.
 
 use core::pin::Pin;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use pg_client::grid::Changed;
-use pg_model::grid::Borders;
+use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_model::notice::{EditOp, Notice};
+use pg_model::notice::{EditOp, Notice, Op};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
 use super::qobject;
 use super::roles::qt_int;
-use super::state::fresh_entry;
+use crate::worker;
 
 impl qobject::GalleryModel {
     /// Turn a file by quarter turns (1 = clockwise, -1 = counterclockwise), losslessly, in the background: the
-    /// controller's `Turn` command.
-    pub(crate) fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
-        let Ok(at) = usize::try_from(item) else { return };
+    /// controller's `Turn` command. The turn is queued for the file on the writes' thread, and the item shows it once
+    /// it is queued (`turn_queued`).
+    pub(crate) fn rotate(self: Pin<&mut Self>, item: i32, turns: i32) {
         let Some(id) = self.file_at(item) else { return };
         let turns = Turns::of(i64::from(turns));
         if turns == Turns::NONE {
             return;
         }
-        if edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns)).is_none() {
-            return;
-        }
+        let model = self.qt_thread();
+        worker::run(move || {
+            if edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns)).is_some() {
+                let _ = model.queue(move |model| model.turn_queued(id, turns));
+            }
+        });
+    }
+
+    /// A turn was queued for the file: the item shows it (the item's shape, when the turn swaps the axes, changes the
+    /// rows).
+    fn turn_queued(mut self: Pin<&mut Self>, id: FileId, turns: Turns) {
+        let Some(at) = self.grid.position_of(id) else { return };
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
-            if let Some(item) = crate::rows::row_of(item) {
-                this.grid.edit(item, loading, |e| e.pending_turns = e.pending_turns.plus(turns));
-            }
+            this.grid.edit(at, loading, |e| e.pending_turns = e.pending_turns.plus(turns));
             this.forget_details();
         }
         // An odd turn changes the item's shape, and so the rows.
@@ -51,9 +60,30 @@ impl qobject::GalleryModel {
         // The list on its way may have been read before these turns were written: do it again when it arrives.
         let loading = self.loading;
         self.as_mut().rust_mut().grid.note_turns_written(loading);
-        // Not the queued turns (`file_writes`): the writer deletes a turn's row once it's written, so these are
-        // exactly the entries that still show one.
-        let turned = self.as_mut().rust_mut().grid.refresh_turned(fresh_entry);
+        self.request_turned();
+    }
+
+    /// Asks the reader for the entries of the items still waiting for a turn (`Grid::turned_request`). What it reads
+    /// is put in by `turned_read`.
+    fn request_turned(&self) {
+        let Some((ids, revision)) = self.grid.turned_request() else { return };
+        crate::app::get().reading().session().entries(ids, move |read| {
+            let Some(fresh) = crate::app::observe(Op::Reload, read, |e| Notice::ReloadFailed {
+                error: crate::app::error_text(&format!("{e:#}")),
+            }) else {
+                return;
+            };
+            crate::gallery::post(move |model| model.turned_read(revision, fresh));
+        });
+    }
+
+    /// The entries read for the items waiting for a turn (`request_turned`), put in unless an edit or a new list came
+    /// since the read was made: then they are read again.
+    fn turned_read(mut self: Pin<&mut Self>, revision: u64, fresh: Vec<Entry>) {
+        let Some(turned) = self.as_mut().rust_mut().grid.refresh_turned(revision, fresh) else {
+            self.request_turned();
+            return;
+        };
         if turned.changed.is_empty() {
             return;
         }
@@ -69,14 +99,22 @@ impl qobject::GalleryModel {
     }
 
     /// Rate the item (0 takes its rating away), in the catalog and, through the writer, in its file: the controller's
-    /// `Rate` command.
-    pub(crate) fn set_rating(mut self: Pin<&mut Self>, at: usize, stars: Rating) {
+    /// `Rate` command. The write is made on the writes' thread, and the item shows the rating once it is made.
+    pub(crate) fn set_rating(self: Pin<&mut Self>, at: usize, stars: Rating) {
         let Some(id) = self.grid.id_at(at) else { return };
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Some(stars).filter(|r| r.get() > 0);
-        if edit_outcome(EditOp::Rate, crate::app::get().edit().rate(id, rating)).is_none() {
-            return;
-        }
+        let model = self.qt_thread();
+        worker::run(move || {
+            if edit_outcome(EditOp::Rate, crate::app::get().edit().rate(id, rating)).is_some() {
+                let _ = model.queue(move |model| model.rating_written(id, rating));
+            }
+        });
+    }
+
+    /// A rating was written for the file: the item shows it.
+    fn rating_written(mut self: Pin<&mut Self>, id: FileId, rating: Option<Rating>) {
+        let Some(at) = self.grid.position_of(id) else { return };
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
@@ -87,16 +125,33 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
-    /// Mark the item's borders as not a border, or take the mark back. Only items with borders found.
+    /// Mark the item's borders as not a border, or take the mark back. Only items with borders found. The mark is
+    /// written on the writes' thread, and the item shows it once it is written. A toggle reads the mark the writes
+    /// queued before it leave (`GalleryRust::mark_target`), so two quick toggles are two changes.
     pub(crate) fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
         let Some(at) = crate::rows::row_of(item) else { return };
         let Some(e) = self.grid.item(at).copied() else { return };
-        if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
+        if !matches!(e.borders, Borders::Found | Borders::Marked) {
             return;
         }
-        if edit_outcome(EditOp::MarkBorder, crate::app::get().edit().set_border_mark(e.id, marked)).is_none() {
+        if self.mark_target(e.id, e.borders) == marked {
             return;
         }
+        self.as_mut().rust_mut().queue_mark(e.id, marked);
+        let model = self.qt_thread();
+        worker::run(move || {
+            let written = edit_outcome(EditOp::MarkBorder, crate::app::get().edit().set_border_mark(e.id, marked));
+            let _ = model.queue(move |model| model.border_mark_done(e.id, marked, written.is_some()));
+        });
+    }
+
+    /// A border mark's write is done (written or not): the item shows the mark when it was written.
+    fn border_mark_done(mut self: Pin<&mut Self>, id: FileId, marked: bool, written: bool) {
+        self.as_mut().rust_mut().mark_done(id);
+        if !written {
+            return;
+        }
+        let Some(at) = self.grid.position_of(id) else { return };
         let loading = self.loading;
         self.as_mut()
             .rust_mut()

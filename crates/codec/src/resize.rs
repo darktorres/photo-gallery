@@ -60,6 +60,20 @@ impl Resizer {
         Ok(true)
     }
 
+    /// The image scaled to `width` (height from the aspect ratio) into `out`, never enlarged: `false` (and `out`
+    /// untouched) if it isn't wider.
+    pub fn to_width(&mut self, img: &Rgb, width: usize, out: &mut Rgb) -> Result<bool> {
+        if img.width <= width {
+            return Ok(false);
+        }
+        let h = to_pixels(
+            (pg_model::num::count(img.height) * pg_model::num::count(width) / pg_model::num::count(img.width)).round(),
+        )
+        .max(1);
+        self.resize(img, width, h, out)?;
+        Ok(true)
+    }
+
     /// A region of the image (in its pixels; fractional edges are exact) resampled to `width × height` into `out`:
     /// the viewer's zoom between fit and 1:1 renders only what is on screen.
     pub fn resize_region(

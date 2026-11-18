@@ -18,7 +18,7 @@
 use anyhow::{Result, ensure};
 use pg_model::turns::Turns;
 
-use crate::rewrite::chunk::{png_animated, webp_animated, webp_is_lossless};
+use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
 use crate::rewrite::{self, op::Op};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
@@ -62,7 +62,7 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
         },
         Format::Png if png_animated(bytes) => tag(),
         Format::Png => rewritten(rewrite::png::rewrite(bytes, Op::Orient(total))?)?,
-        Format::Webp if webp_is_lossless(bytes) && !webp_animated(bytes) => {
+        Format::Webp if webp_kind(bytes) == WebpKind::Lossless => {
             rewritten(rewrite::webp::rewrite(bytes, Op::Orient(total))?)?
         }
         Format::Webp | Format::Tiff => tag(),

@@ -10,11 +10,16 @@ use crate::settings_bridge::qobject;
 use core::pin::Pin;
 
 use crate::app;
+use crate::worker;
 
-/// Change the preferences and save them. A save that fails is a note on the app's bus (the window prints it), and the
-/// change holds in memory until the app closes.
+/// Change the preferences and save them. The change is in memory at once, and the file is written on the window's
+/// writes (`worker`). A save that fails is a note on the app's bus (the window prints it), and the change holds in
+/// memory until the app closes.
 fn change_prefs(change: impl FnOnce(&mut pg_app::Prefs)) {
-    let _ = app::get().prefs().update(change);
+    let save = app::get().prefs().change(change);
+    worker::run(move || {
+        let _ = save.write();
+    });
 }
 
 impl qobject::Settings {

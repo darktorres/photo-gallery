@@ -325,12 +325,32 @@ pub enum OwedHashes {
     Video(FileHash),
 }
 
+/// The next change number of the change sequence (`meta.seq`), and a file's `pending`, `seq` and `changed` set to a
+/// change number: what the `analysis_added` trigger did for an analysis's file (version 18 dropped it, see
+/// [`touch_analysis`]).
+const BUMP_SEQ: &str = concat!(next_seq!(), " RETURNING value");
+const TOUCH_FILE: &str = concat!("UPDATE files SET pending = ", stale!(), ", seq = ?2, changed = ?2 WHERE id = ?1");
+
+/// Make file `file`'s state what its new analysis row makes it: pending unless the analysis is current, and changed at
+/// the next change number. Every write of an analysis row calls this after the row's insert, the writers and the
+/// fixtures alike, since no trigger does (version 18). A failure is an analysis row too. The writers hold the statements
+/// themselves (`AnalysisWriter::touch_file`); this is for the connection-level writes of the tests and the fixtures.
+#[cfg(any(test, feature = "fixture"))]
+pub(crate) fn touch_analysis(conn: &Connection, file: i64) -> rusqlite::Result<()> {
+    let change: i64 = conn.query_row(BUMP_SEQ, [], |r| r.get(0))?;
+    conn.execute(TOUCH_FILE, params![file, change])?;
+    Ok(())
+}
+
 /// The import's writes: analyses, failures, and the file ratings they carry. The pairs are the pairing pass's
 /// ([`PairsWriter`]); an analysis that owes them has a `pairs_owed` row.
 pub struct AnalysisWriter<'tx> {
     /// The build's IMPORT_VERSION, which a stored failure is made against.
     import: i64,
     current: Statement<'tx>,
+    /// The next change number, and the file a new analysis row touches (`touch_file`).
+    bump: Statement<'tx>,
+    touch: Statement<'tx>,
     delete_pairs: Statement<'tx>,
     analysis: Statement<'tx>,
     failure: Statement<'tx>,
@@ -355,6 +375,8 @@ impl<'tx> AnalysisWriter<'tx> {
         Ok(AnalysisWriter {
             import,
             current: tx.prepare(crate::current::IS_CURRENT)?,
+            bump: tx.prepare(BUMP_SEQ)?,
+            touch: tx.prepare(TOUCH_FILE)?,
             delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
@@ -403,6 +425,13 @@ impl<'tx> AnalysisWriter<'tx> {
         crate::current::query_current(&mut self.current, item.id, &item.listed())
     }
 
+    /// The file's state after a new analysis row of it (`touch_analysis`, with the statements this writer holds).
+    fn touch_file(&mut self, file: FileId) -> Result<()> {
+        let change: i64 = self.bump.query_row([], |r| r.get(0))?;
+        self.touch.execute(params![file.get(), change])?;
+        Ok(())
+    }
+
     /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored. The
     /// duplicate hashes are not in it: the import stores none, and the file owes them (`hashes_owed`) until the Hashes
     /// pass stores them. Its placeholder is not in it either: `placeholders` is keyed to the file, and outlives this row.
@@ -436,6 +465,7 @@ impl<'tx> AnalysisWriter<'tx> {
             video.map(|v| v.duration_ms),
             video.map(|v| v.poster_ms),
         ])?;
+        self.touch_file(item.id)?;
         self.owe_hashes.execute([item.id.get()])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id.get()])?;
@@ -490,6 +520,7 @@ impl<'tx> AnalysisWriter<'tx> {
             item.kind.key(),
             error
         ])?;
+        self.touch_file(item.id)?;
         self.delete_sides.execute([item.id.get()])?;
         Ok(true)
     }
@@ -859,7 +890,8 @@ mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
     use crate::test_support::*;
-    use crate::{Catalog, PairingWork, PairsBatch, PairsWritten, Recorded, ScannedFile, WorkItem, queue};
+    use crate::writers::PairsWritten;
+    use crate::{Catalog, PairingWork, PairsBatch, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::{Analysis, FileHash, ImageHashes, PixelHashes, Taken};
     use pg_model::detection::Detection;

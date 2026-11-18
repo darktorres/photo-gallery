@@ -192,6 +192,8 @@ pub(crate) fn pending_sql(since_checked: bool, volumes: &[i64]) -> String {
          FROM cat.thumb_sources f
          LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
          WHERE {changed}{volume} IN ({}) AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
+           AND NOT EXISTS (SELECT 1 FROM cat.file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
+                           AND x.retry = 0 AND x.mtime = f.mtime AND x.size = f.size AND x.rotation = f.rotation)
          ORDER BY {volume}, f.file_ref & 0xFFFFFFFFFFFF",
         list.join(",")
     )

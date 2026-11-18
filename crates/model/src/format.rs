@@ -77,6 +77,18 @@ mod tests {
     use strum::IntoEnumIterator;
 
     #[test]
+    fn sniffs_classic_tiff_and_bigtiff() {
+        assert_eq!(Format::sniff(b"II*\0\x08\0\0\0"), Some(Format::Tiff));
+        assert_eq!(Format::sniff(b"MM\0*\0\0\0\x08"), Some(Format::Tiff));
+        assert_eq!(Format::sniff(b"II+\0\x08\0\0\0\x10\0\0\0\0\0\0\0"), Some(Format::Tiff));
+        assert_eq!(Format::sniff(b"MM\0+\0\x08\0\0\0\0\0\0\0\x10"), Some(Format::Tiff));
+        // A 43 whose offset size isn't 8, or a 43 cut short, isn't a BigTIFF header.
+        assert_eq!(Format::sniff(b"II+\0\x04\0\0\0"), None);
+        assert_eq!(Format::sniff(b"MM\0+\0\x08\0\x01"), None);
+        assert_eq!(Format::sniff(b"II+\0\x08"), None);
+    }
+
+    #[test]
     fn the_names_are_the_catalog_names() {
         assert_eq!(Format::iter().map(Format::name).collect::<Vec<_>>(), ["jpeg", "png", "gif", "webp", "bmp", "tiff"],);
         for f in Format::iter() {

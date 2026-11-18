@@ -5,6 +5,8 @@
 //! The scale is a pure function of the stored dimensions and the caller's minimum size, so the same file always
 //! decodes to the same pixels. Index and query images must go through the same decode.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use anyhow::{Context, Result};
 use pg_model::turns::Turns;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
@@ -13,6 +15,10 @@ use crate::codecs::Codecs;
 use crate::pixels::Rgb;
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
+
+/// The JPEGs libjpeg-turbo refused, which the decode took by the full-size path instead, since the process started. A
+/// camera whose files always trip libjpeg-turbo shows here, where it would otherwise show only as a slow decode.
+pub static JPEG_FALLBACKS: AtomicU64 = AtomicU64::new(0);
 
 /// What a decode found, besides its pixels.
 #[derive(Clone, Copy, Debug)]
@@ -120,7 +126,7 @@ impl Decoder {
         spare: &mut Vec<u8>,
     ) -> Result<Info> {
         let info = self.decode_stored_into(bytes, format, exif, min, turns, out)?;
-        orient_into(out, info.orientation, spare);
+        orient_in_place(out, info.orientation, spare);
         Ok(info.upright())
     }
 
@@ -137,16 +143,29 @@ impl Decoder {
     ) -> Result<Info> {
         let orientation = exif.compose(turns);
         let quarter_turn = orientation.swaps_axes();
-        let jpeg = match format {
-            Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
-            _ => None,
+        let (jpeg, refused) = match format {
+            Format::Jpeg => match self.decode_jpeg(bytes, min, quarter_turn, out) {
+                Ok(decoded) => (Some(decoded), None),
+                Err(e) => (None, Some(e)),
+            },
+            _ => (None, None),
         };
         // Non-JPEG, and JPEGs libjpeg-turbo rejects (CMYK, some damaged files): at full size, as the `image` crate
-        // decodes them.
+        // decodes them. Each such fallback is counted, and when it fails too the error says what libjpeg-turbo made of
+        // the file.
         let (scale_denom, (full_width, full_height)) = match jpeg {
             Some(r) => r,
             None => {
-                self.codecs.decode(bytes, format, out)?;
+                if refused.is_some() {
+                    JPEG_FALLBACKS.fetch_add(1, Ordering::Relaxed);
+                }
+                if let Err(e) = self.codecs.decode(bytes, format, out) {
+                    let e = anyhow::Error::from(e);
+                    return Err(match refused {
+                        Some(turbo) => e.context(format!("libjpeg-turbo refused it first: {turbo:#}")),
+                        None => e,
+                    });
+                }
                 let width = u32::try_from(out.width).context("image width over u32")?;
                 (1, (width, u32::try_from(out.height).context("image height over u32")?))
             }
@@ -241,8 +260,9 @@ fn to_pixels(x: f64) -> usize {
     pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
-/// Apply an EXIF orientation to `img` in place, through `spare` (which gets `img`'s old buffer).
-pub fn orient_into(img: &mut Rgb, orientation: Orientation, spare: &mut Vec<u8>) {
+/// Apply an EXIF orientation to `img` in place, through `spare` (which gets `img`'s old buffer). An upright image is
+/// left as it is.
+fn orient_in_place(img: &mut Rgb, orientation: Orientation, spare: &mut Vec<u8>) {
     if orientation == Orientation::UPRIGHT {
         return;
     }
@@ -250,29 +270,14 @@ pub fn orient_into(img: &mut Rgb, orientation: Orientation, spare: &mut Vec<u8>)
     std::mem::swap(&mut img.pixels, spare);
 }
 
-/// [`transform`], which leaves `pixels` as they are at orientation 1 (or none).
-pub fn orient_pixels(
-    pixels: Vec<u8>,
-    w: usize,
-    h: usize,
-    unit: usize,
-    orientation: Orientation,
-) -> (Vec<u8>, usize, usize) {
-    if orientation == Orientation::UPRIGHT {
-        return (pixels, w, h);
-    }
-    transform(&pixels, w, h, unit, orientation)
-}
+/// Pixels per side of a tile of the output [`transform_into`] writes. A quarter turn reads its source down a column of
+/// the stored picture, a row of stored pixels apart; a tile reads each of its source rows in a short run, so the lines
+/// it reads stay in the cache.
+const TILE: usize = 32;
 
-/// Apply an EXIF orientation (1–8) to a packed `w` × `h` raster of `unit`-byte pixels: the raster as it is shown.
-/// Returns it with its new width and height.
-pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: Orientation) -> (Vec<u8>, usize, usize) {
-    let mut out = Vec::new();
-    let (ow, oh) = transform_into(pixels, w, h, unit, orientation, &mut out);
-    (out, ow, oh)
-}
-
-/// [`transform`] into `out`, whose capacity is kept. Returns the new width and height.
+/// Apply an EXIF orientation (1–8) to a packed `w` × `h` raster of `unit`-byte pixels: the raster as it is shown. It is
+/// written into `out` (whose capacity is kept), and its new width and height are returned. A raster shorter than
+/// `w` × `h` pixels leaves the pixels it lacks black.
 pub fn transform_into(
     pixels: &[u8],
     w: usize,
@@ -282,21 +287,56 @@ pub fn transform_into(
     out: &mut Vec<u8>,
 ) -> (usize, usize) {
     let (ow, oh) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
-    // Every pixel is written below: a grown buffer only zeroes what it grew by.
+    // Every pixel is written by `gather`: a grown buffer only zeroes what it grew by.
     out.resize(w * h * unit, 0);
-    // (An empty side, or a zero `unit`, leaves `out` empty: there are no rows.)
-    for (y, row) in out.chunks_exact_mut((ow * unit).max(1)).enumerate() {
-        for (x, d) in row.chunks_exact_mut(unit.max(1)).enumerate() {
-            let (sx, sy) = orientation.source_pixel(x, y, w, h);
-            let s = (sy * w + sx) * unit;
-            // A raster shorter than `w` × `h` pixels leaves the pixels it lacks black.
-            match pixels.get(s..s + unit) {
-                Some(p) => d.copy_from_slice(p),
-                None => d.fill(0),
+    // The pixel sizes the codecs and the viewer use are constants, so `gather` copies them at a fixed size.
+    match unit {
+        1 => gather(pixels, w, h, 1, orientation, out),
+        3 => gather(pixels, w, h, 3, orientation, out),
+        4 => gather(pixels, w, h, 4, orientation, out),
+        _ => gather(pixels, w, h, unit, orientation, out),
+    }
+    (ow, oh)
+}
+
+/// [`transform_into`] into a new buffer: the raster as it is shown, with its new width and height.
+pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: Orientation) -> (Vec<u8>, usize, usize) {
+    let mut out = Vec::new();
+    let (ow, oh) = transform_into(pixels, w, h, unit, orientation, &mut out);
+    (out, ow, oh)
+}
+
+/// The copy of [`transform_into`], tile by tile. The stored pixel an output pixel is copied from is `first + x * step`
+/// along its output row, in `usize` with wrapping: [`Orientation::source_pixel`] is affine in the output column, so the
+/// first pixel of a row and its step give the whole row, with no match per pixel. Inlined into each `unit` above.
+#[inline(always)]
+fn gather(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: Orientation, out: &mut [u8]) {
+    let (ow, oh) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
+    for ty in (0..oh).step_by(TILE) {
+        for tx in (0..ow).step_by(TILE) {
+            for y in ty..(ty + TILE).min(oh) {
+                let first = stored_index(orientation, 0, y, w, h);
+                // The second pixel of a row is in the picture only where the row has one (`ow > 1`).
+                let step = if ow > 1 { stored_index(orientation, 1, y, w, h).wrapping_sub(first) } else { 0 };
+                for x in tx..(tx + TILE).min(ow) {
+                    let d = (y * ow + x) * unit;
+                    let s = first.wrapping_add(x.wrapping_mul(step)) * unit;
+                    if let Some(dst) = out.get_mut(d..d + unit) {
+                        match pixels.get(s..s + unit) {
+                            Some(p) => dst.copy_from_slice(p),
+                            None => dst.fill(0),
+                        }
+                    }
+                }
             }
         }
     }
-    (ow, oh)
+}
+
+/// The index of the stored pixel [`Orientation::source_pixel`] gives for the upright pixel (`x`, `y`).
+fn stored_index(orientation: Orientation, x: usize, y: usize, w: usize, h: usize) -> usize {
+    let (sx, sy) = orientation.source_pixel(x, y, w, h);
+    sy * w + sx
 }
 
 #[cfg(test)]
@@ -438,18 +478,6 @@ mod parallel_tests {
 mod tests {
     use super::*;
     use crate::fixtures::orient;
-
-    #[test]
-    fn sniffs_classic_tiff_and_bigtiff() {
-        assert_eq!(Format::sniff(b"II*\0\x08\0\0\0"), Some(Format::Tiff));
-        assert_eq!(Format::sniff(b"MM\0*\0\0\0\x08"), Some(Format::Tiff));
-        assert_eq!(Format::sniff(b"II+\0\x08\0\0\0\x10\0\0\0\0\0\0\0"), Some(Format::Tiff));
-        assert_eq!(Format::sniff(b"MM\0+\0\x08\0\0\0\0\0\0\0\x10"), Some(Format::Tiff));
-        // A 43 whose offset size isn't 8, or a 43 cut short, isn't a BigTIFF header.
-        assert_eq!(Format::sniff(b"II+\0\x04\0\0\0"), None);
-        assert_eq!(Format::sniff(b"MM\0+\0\x08\0\x01"), None);
-        assert_eq!(Format::sniff(b"II+\0\x08"), None);
-    }
 
     #[test]
     fn transparency_is_flattened_onto_white() {

@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use pg_codec::decode::{Decoded, Decoder, Info, MinSize, orient_pixels};
+use pg_codec::decode::{Decoded, Decoder, Info, MinSize, transform};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_model::format::Format;
@@ -40,6 +40,20 @@ pub fn decode_into(
     decoder.decode_into(bytes, format, exif, min, turns, image, spare)
 }
 
+/// [`decode_into`] as the file stores it: the pixels into `image`, not yet turned. The caller scales them before it turns
+/// them (a thumbnail's resize comes first), by the returned `Info::orientation`, which carries `turns` too.
+pub fn decode_stored_into(
+    decoder: &mut Decoder,
+    bytes: &[u8],
+    min: MinSize,
+    turns: Turns,
+    image: &mut Rgb,
+) -> Result<Info> {
+    let format = Format::sniff(bytes).context("unknown image format")?;
+    let exif = pg_metadata::orientation(bytes, format);
+    decoder.decode_stored_into(bytes, format, exif, min, turns, image)
+}
+
 /// [`decode_into`] into new buffers: a one-off decode.
 pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: Turns) -> Result<Decoded> {
     let mut image = Rgb::default();
@@ -52,7 +66,7 @@ pub fn min_size(view: View) -> MinSize {
     match view {
         View::Fit(w, h) => MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN),
         // A zoomed region is cut from the full decode. A scaled decode grows as the user zooms in, so it would be made
-        // again at every step, and the sharp part would trail the zoom. The full decode is kept (`Images::last_decode`),
+        // again at every step, and the sharp part would trail the zoom. The full decode is kept (`Images::last_decodes`),
         // and every later region of the picture is a resample of it.
         View::Full | View::Region(..) => MinSize::Full,
     }
@@ -93,24 +107,25 @@ impl Shown {
     }
 
     /// The image the viewer shows for `view`, resampled from this decode: fitted into the window, or the zoomed region
-    /// at the window's size. `None` for [`View::Full`], which shows the decode as it is.
-    pub fn resized(&self, view: View) -> Result<Option<Rgb>> {
+    /// at the window's size. `None` for [`View::Full`], which shows the decode as it is. `resizer` is the caller's, kept
+    /// from one resize to the next (its coefficients and buffers are the costly part of a small resize).
+    pub fn resized(&self, view: View, resizer: &mut Resizer) -> Result<Option<Rgb>> {
         let img = &self.image;
         let mut out = Rgb::default();
         match view {
-            View::Fit(w, h) => Resizer::new().fit_box(img, w, h, &mut out)?,
+            View::Fit(w, h) => resizer.fit_box(img, w, h, &mut out)?,
             View::Full => return Ok(None),
             View::Region((x, y, rw, rh), w, h) => {
                 let (iw, ih) = (count(img.width), count(img.height));
-                Resizer::new().resize_region(img, (x * iw, y * ih, rw * iw, rh * ih), w, h, &mut out)?;
+                resizer.resize_region(img, (x * iw, y * ih, rw * iw, rh * ih), w, h, &mut out)?;
             }
         }
         Ok(Some(out))
     }
 
     /// What the viewer shows for `view` ([`Shown::resized`]), as RGBA.
-    pub fn rgba(&self, view: View) -> Result<Rgba> {
-        Ok(match self.resized(view)? {
+    pub fn rgba(&self, view: View, resizer: &mut Resizer) -> Result<Rgba> {
+        Ok(match self.resized(view, resizer)? {
             Some(resized) => Rgba::opaque(&resized),
             None => Rgba::opaque(&self.image),
         })
@@ -131,7 +146,7 @@ pub fn poster(path: &Path, at_ms: i64, turns: Turns) -> Result<Shown> {
 /// The ThumbHash placeholder `hash` as a tiny image, turned by `turns`.
 pub fn placeholder(hash: &[u8], turns: Turns) -> Result<Rgba> {
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash).ok().context("bad thumbhash")?;
-    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, Orientation::UPRIGHT.compose(turns));
+    let (rgba, w, h) = transform(&rgba, w, h, 4, Orientation::UPRIGHT.compose(turns));
     Ok(Rgba::premultiply(w, h, rgba))
 }
 
@@ -154,10 +169,10 @@ pub struct Rgba {
 impl Rgba {
     /// `img` with an alpha of 255.
     pub fn opaque(img: &Rgb) -> Rgba {
-        let mut pixels = vec![255u8; img.width * img.height * 4];
-        for (out, rgb) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(img.pixels.as_chunks::<3>().0) {
-            out[..3].copy_from_slice(rgb);
-        }
+        // One pass into a buffer of its own size; a pixel the image lacks is white, as it always was.
+        let mut pixels = Vec::with_capacity(img.width * img.height * 4);
+        pixels.extend(img.pixels.as_chunks::<3>().0.iter().flat_map(|&[r, g, b]| [r, g, b, u8::MAX]));
+        pixels.resize(img.width * img.height * 4, u8::MAX);
         Rgba { width: img.width, height: img.height, pixels, opaque: true }
     }
 

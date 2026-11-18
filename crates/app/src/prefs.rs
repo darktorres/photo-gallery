@@ -13,7 +13,7 @@ use pg_model::size::RowHeight;
 use serde::{Deserialize, Serialize};
 
 use crate::inbox::Inbox;
-use crate::store::JsonStore;
+use crate::store::{JsonStore, Save};
 use pg_model::notice::{ERROR_CAP, Notice, Trigger, tidy};
 
 /// The preferences file's content. Fields missing from a file take their defaults; fields the file has that this version
@@ -164,7 +164,29 @@ impl PrefStore {
     /// Change the preferences and save them. The change is kept in memory even when the save fails; the error says why
     /// it wasn't written.
     pub fn update(&self, change: impl FnOnce(&mut Prefs)) -> std::io::Result<()> {
-        let result = self.store.update(change);
+        self.change(change).write()
+    }
+
+    /// Change the preferences now, and return the save of the file: `PrefSave::write` writes it, on any thread, so the
+    /// disk is not waited for where the change is made.
+    pub fn change(&self, change: impl FnOnce(&mut Prefs)) -> PrefSave {
+        PrefSave { save: self.store.change(change), path: self.path.clone(), inbox: self.inbox.clone() }
+    }
+}
+
+/// A change to the preferences, whose file is not written yet (`PrefStore::change`). `write` writes it and reports the
+/// outcome as `PrefStore::update` does.
+pub struct PrefSave {
+    save: Save<Prefs>,
+    path: PathBuf,
+    inbox: Arc<Inbox>,
+}
+
+impl PrefSave {
+    /// Write the preferences with this change. A failure is posted as a notice; a success clears the notice an earlier
+    /// failure kept.
+    pub fn write(self) -> std::io::Result<()> {
+        let result = self.save.write();
         match &result {
             Ok(()) => self.inbox.resolve(Trigger::Save),
             Err(e) => self.inbox.post(Notice::PrefsNotSaved {

@@ -34,6 +34,10 @@ use pg_model::tree::FolderTree;
 use crate::catalogs::Catalogs;
 use crate::error::{Error, ReadError, Result, failed};
 
+/// The page cache of the reader's connection, in KiB: its reads touch most of the catalog, so it is the one connection
+/// with a large cache. The writers' and the thumbs' connections keep the catalog's small one (`Catalog::open`).
+const GRID_CACHE_KIB: u32 = 256 * 1024;
+
 /// What a request is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
@@ -46,6 +50,10 @@ pub enum Kind {
     CopyDetails,
     /// The folder a Reveal opens ([`Session::reveal_folder`]).
     RevealFolder,
+    /// The grid entries of files whose turns are waiting to be written ([`Session::entries`]).
+    Entries,
+    /// A file's details, for the status bar and the viewer ([`Session::details`]).
+    Details,
 }
 
 /// What a ledger entry lists: a pass's failed files, or the folders the scans couldn't take.
@@ -169,6 +177,7 @@ impl Reader {
             let opened = match catalog.take() {
                 Some(c) => Ok(c),
                 None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES).and_then(|mut c| {
+                    c.set_cache_kib(GRID_CACHE_KIB)?;
                     c.cancel_when(self.cancel.clone())?;
                     Ok(c)
                 }),
@@ -316,10 +325,22 @@ impl Session {
             move |r| deliver(r.map_err(Error::from)),
         );
     }
+
+    /// The grid entries of these files, read now in one read (the turns' refresh; its kind's newest request, as with
+    /// `submit`). Each entry names its file, so the order is the catalog's.
+    pub fn entries(&self, file_ids: Vec<FileId>, deliver: impl FnOnce(Result<Vec<Entry>>) + Send + 'static) {
+        self.submit(Kind::Entries, move |c| c.grid_entries(&file_ids), move |r| deliver(r.map_err(Error::from)));
+    }
+
+    /// A file's details, read on the reader thread; `None` when the file is gone from the catalog (the status bar's
+    /// and the viewer's, which read them off the window's thread). Its kind's newest request, as with `submit`.
+    pub fn details(&self, file_id: FileId, deliver: impl FnOnce(Result<Option<Details>>) + Send + 'static) {
+        self.submit(Kind::Details, move |c| c.details(file_id), move |r| deliver(r.map_err(Error::from)));
+    }
 }
 
-/// The catalog reads: the reader thread's session (the grid, the folder tree, the filter bar's counts), and the reads a
-/// front end makes on its own thread (a file's details and its grid entry).
+/// The catalog reads: the reader thread's session (the grid, the folder tree, the filter bar's counts, a file's
+/// details), and the read a front end makes on its own thread (a file's grid entry).
 pub struct Reading {
     reader: Arc<Reader>,
     session: Session,
@@ -342,11 +363,6 @@ impl Reading {
     /// Stop the reader thread (see [`Reader::stop`]).
     pub(crate) fn stop(&self) {
         self.reader.stop();
-    }
-
-    /// A file's details, read now; `None` when the file is gone from the catalog.
-    pub fn details(&self, file_id: FileId) -> Result<Option<Details>> {
-        self.catalogs.with_catalog(|c| c.details(file_id))
     }
 
     /// A file's grid entry as the catalog has it now; `None` when it is gone.

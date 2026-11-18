@@ -34,6 +34,8 @@ const ROLE_FRAME_X: i32 = 260;
 const ROLE_FRAME_Y: i32 = 261;
 const ROLE_FRAME_WIDTH: i32 = 262;
 const ROLE_FRAME_HEIGHT: i32 = 263;
+/// Whether the row is one of the first group's (the other sizes): the panel's two groups show their own rows by it.
+const ROLE_IS_OTHER: i32 = 264;
 
 /// The height a row of results is laid out at, in px: fixed, at the size the gallery's rows start at. The search makes
 /// its grid pictures at this height.
@@ -75,6 +77,40 @@ fn qt_side(n: u32) -> i32 {
 /// A result's aspect ratio, for its frame: its size as Yandex gives it, or square when it gives none.
 fn hit_aspect(hit: &Hit) -> f64 {
     if hit.width > 0 && hit.height > 0 { f64::from(hit.width) / f64::from(hit.height) } else { 1.0 }
+}
+
+/// The runs of consecutive results whose ids are in `dead`, as row ranges, in order.
+fn dead_runs(items: &[Hit], dead: &[u64]) -> Vec<std::ops::Range<usize>> {
+    let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
+    for (i, hit) in items.iter().enumerate() {
+        if !dead.contains(&hit.id) {
+            continue;
+        }
+        match runs.last_mut() {
+            Some(run) if run.end == i => run.end = i + 1,
+            _ => runs.push(i..i + 1),
+        }
+    }
+    runs
+}
+
+/// The preview's item once the results are `ids` (in order): the position of the picture it showed (`shown`, its id),
+/// or -1 when that picture is gone or nothing was shown.
+fn preview_item_after(ids: &[u64], shown: Option<u64>) -> i32 {
+    shown.and_then(|id| ids.iter().position(|&x| x == id)).map_or(-1, qt_int)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_preview_follows_its_picture_through_removals() {
+        assert_eq!(preview_item_after(&[10, 20, 30], Some(30)), 2);
+        assert_eq!(preview_item_after(&[10, 30], Some(30)), 1, "the picture moved up over a removed one before it");
+        assert_eq!(preview_item_after(&[10, 20], Some(30)), -1, "the picture died: the preview closes");
+        assert_eq!(preview_item_after(&[10, 20], None), -1);
+    }
 }
 
 impl qobject::YandexSearch {
@@ -142,19 +178,27 @@ impl qobject::YandexSearch {
         }
     }
 
-    /// Show these results, none picked.
+    /// Show these results, none picked. The counts and the layout are set inside the reset, so that no row is ever
+    /// shown with a count or a frame that does not match the results (a delegate reads them as it is made).
     fn show(mut self: Pin<&mut Self>, results: Results<Hit>) {
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().results = results;
+        self.as_mut().set_group_counts();
+        self.as_mut().compute_layout();
         self.as_mut().end_reset_model();
-        self.as_mut().groups_changed();
+        self.picks_changed();
     }
 
-    /// After the results changed: the groups' counts, the layout and the picks.
-    fn groups_changed(mut self: Pin<&mut Self>) {
+    /// The groups' counts, from the results.
+    fn set_group_counts(mut self: Pin<&mut Self>) {
         let (other, similar) = (qt_int(self.results.first().len()), qt_int(self.results.second().len()));
         self.as_mut().set_other_count(other);
         self.as_mut().set_similar_count(similar);
+    }
+
+    /// After the results changed (not by a reset): the groups' counts, the layout and the picks.
+    fn groups_changed(mut self: Pin<&mut Self>) {
+        self.as_mut().set_group_counts();
         self.as_mut().relayout();
         self.picks_changed();
     }
@@ -179,33 +223,62 @@ impl qobject::YandexSearch {
         self.relayout();
     }
 
+    /// The results whose files died come off the grid, one run of consecutive rows at a time (the model says which rows
+    /// went). Each run goes highest first, so the rows below it keep their indices; the frames of the rows go with them,
+    /// and the layout of the rest is made once all are gone. The picks of the others stay on their results. The preview
+    /// keeps its picture where it went with the removals, and closes if the picture died.
+    fn drop_dead(mut self: Pin<&mut Self>, dead: &[u64]) {
+        let runs = dead_runs(self.results.items(), dead);
+        if runs.is_empty() {
+            return;
+        }
+        let shown = self.shown_id();
+        let root = QModelIndex::default();
+        for run in runs.into_iter().rev() {
+            self.as_mut().begin_remove_rows(&root, qt_int(run.start), qt_int(run.end) - 1);
+            let state = self.as_mut().rust_mut();
+            state.results.remove_range(run.clone());
+            let end = run.end.min(state.frames.len());
+            state.frames.drain(run.start.min(end)..end);
+            self.as_mut().end_remove_rows();
+        }
+        // Before the groups' counts and the layout are set: the preview's item is then one the results have.
+        let ids: Vec<u64> = self.results.items().iter().map(|hit| hit.id).collect();
+        self.as_mut().set_preview_item(preview_item_after(&ids, shown));
+        self.groups_changed();
+    }
+
+    /// The id of the result the preview shows, if it shows one.
+    fn shown_id(&self) -> Option<u64> {
+        let i = crate::rows::row_of(self.preview_item)?;
+        self.results.get(i).map(|hit| hit.id)
+    }
+
     /// Lay the results out in the panel's width, at `ROW_HEIGHT` and the gallery's gap, as the gallery lays its rows out:
     /// each group's rows are justified (`layout::frames`), from the top of the group's block, and the blocks' heights
     /// are set. Each result's frame is read again (its roles).
-    /// The results whose files died are taken off the grid: the layout is rebuilt without them, and the picks of the
-    /// others stay on their results.
-    fn drop_dead(mut self: Pin<&mut Self>, dead: &[u64]) {
-        // The model is reset around the change only when one goes.
-        if !self.results.items().iter().any(|hit| dead.contains(&hit.id)) {
-            return;
-        }
-        self.as_mut().begin_reset_model();
-        self.as_mut().rust_mut().results.drop_where(|hit| dead.contains(&hit.id));
-        self.as_mut().end_reset_model();
-        self.as_mut().groups_changed();
+    fn relayout(mut self: Pin<&mut Self>) {
+        self.as_mut().compute_layout();
+        self.emit_frames();
     }
 
-    fn relayout(mut self: Pin<&mut Self>) {
+    /// The frames of the results, and the two blocks' heights, from the results and the panel's width and gap. Inside a
+    /// model reset this is run before the reset ends, so `data()` reads the frames of the rows the reset makes.
+    fn compute_layout(mut self: Pin<&mut Self>) {
         let other_aspects: Vec<f64> = self.results.first().iter().map(hit_aspect).collect();
         let similar_aspects: Vec<f64> = self.results.second().iter().map(hit_aspect).collect();
         let (width, height, gap) = (self.layout_width, f64::from(ROW_HEIGHT), self.gap);
         let (mut frames, other_height) = layout::frames(&other_aspects, width, height, gap);
         let (similar, similar_height) = layout::frames(&similar_aspects, width, height, gap);
         frames.extend(similar);
-        let rows = qt_int(frames.len());
         self.as_mut().rust_mut().frames = frames;
         self.as_mut().set_other_height(other_height);
         self.as_mut().set_similar_height(similar_height);
+    }
+
+    /// Signals that the frame roles of every row changed (after `compute_layout`).
+    fn emit_frames(mut self: Pin<&mut Self>) {
+        let rows = qt_int(self.frames.len());
         if rows > 0 {
             let root = QModelIndex::default();
             let (top, bottom) = (self.index(0, 0, &root), self.index(rows - 1, 0, &root));
@@ -309,6 +382,7 @@ impl qobject::YandexSearch {
             ROLE_FRAME_Y => QVariant::from(&frame.y),
             ROLE_FRAME_WIDTH => QVariant::from(&frame.width),
             ROLE_FRAME_HEIGHT => QVariant::from(&frame.height),
+            ROLE_IS_OTHER => QVariant::from(&(i < self.results.first().len())),
             _ => QVariant::default(),
         }
     }
@@ -324,6 +398,7 @@ impl qobject::YandexSearch {
             (ROLE_FRAME_Y, "frameY"),
             (ROLE_FRAME_WIDTH, "frameWidth"),
             (ROLE_FRAME_HEIGHT, "frameHeight"),
+            (ROLE_IS_OTHER, "isOther"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }

@@ -25,6 +25,8 @@ Item {
     required property real frameY
     required property real frameWidth
     required property real frameHeight
+    // Whether it is one of the other sizes (the first group); the panel shows each group's tiles by it.
+    required property bool isOther
 
     signal toggled(int item)
     signal rangeTo(int item)

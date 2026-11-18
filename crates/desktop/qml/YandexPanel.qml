@@ -217,7 +217,7 @@ Rectangle {
                         Repeater {
                             model: yandex
                             ResultTile {
-                                visible: index < yandex.otherCount
+                                visible: isOther
                                 onToggled: (chosen) => yandex.togglePick(chosen)
                                 onRangeTo: (chosen) => yandex.pickTo(chosen)
                                 onPreviewRequested: (chosen) => preview.open(chosen)
@@ -237,7 +237,7 @@ Rectangle {
                         Repeater {
                             model: yandex
                             ResultTile {
-                                visible: index >= yandex.otherCount
+                                visible: !isOther
                                 onToggled: (chosen) => yandex.togglePick(chosen)
                                 onRangeTo: (chosen) => yandex.pickTo(chosen)
                                 onPreviewRequested: (chosen) => preview.open(chosen)
@@ -275,5 +275,17 @@ Rectangle {
         target: yandex
         property: "previewItem"
         value: preview.visible ? preview.item : -1
+    }
+    // The results changed under the preview (a dead result went, so the picture moved up or died): the search says where
+    // the picture is now. One change, not one per removed row, so the preview follows the search's index.
+    Connections {
+        target: yandex
+        function onPreviewItemChanged() {
+            if (yandex.previewItem < 0) {
+                if (preview.visible) preview.close()
+            } else if (preview.item !== yandex.previewItem) {
+                preview.item = yandex.previewItem
+            }
+        }
     }
 }

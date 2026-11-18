@@ -80,6 +80,19 @@ impl Picks {
         }
     }
 
+    /// Take the picks of the results in `range` off the list (the results are gone): the later ones move down. The anchor
+    /// follows its result, and is cleared when that one went.
+    pub fn remove(&mut self, range: Range<usize>) {
+        let end = range.end.min(self.picked.len());
+        let range = range.start.min(end)..end;
+        self.picked.drain(range.clone());
+        self.anchor = match self.anchor {
+            Some(a) if range.contains(&a) => None,
+            Some(a) if a >= range.end => Some(a - range.len()),
+            a => a,
+        };
+    }
+
     /// `first..first + count`, cut to the results that exist.
     pub fn range(&self, first: usize, count: usize) -> Range<usize> {
         self.clamp(first..first.saturating_add(count))
@@ -106,6 +119,26 @@ mod tests {
         assert_eq!(p.count(), 1);
         p.toggle(1);
         assert!(!p.is_picked(1));
+    }
+
+    #[test]
+    fn remove_moves_the_later_picks_down_and_keeps_the_anchor_on_its_result() {
+        let mut p = Picks::new(6);
+        p.set(0..6, false);
+        p.toggle(4);
+        p.remove(1..3);
+        assert_eq!(p.len(), 4);
+        assert!(p.is_picked(2), "result 4 is now at 2");
+        // The anchor (4) moved down with its result.
+        p.pick_to(0);
+        assert_eq!(p.indices().collect::<Vec<_>>(), vec![0, 1, 2]);
+        // Removing the anchor's own result clears the anchor; a range past the end is cut.
+        let mut q = Picks::new(3);
+        q.toggle(1);
+        q.remove(1..9);
+        assert_eq!(q.len(), 1);
+        q.pick_to(0);
+        assert!(q.is_picked(0), "no anchor left: pick_to toggles 0, which was unpicked");
     }
 
     #[test]

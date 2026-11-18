@@ -57,7 +57,8 @@ impl<T> Results<T> {
         self.groups().1
     }
 
-    /// The two groups: `first` is never past the end (`new` and `retain` keep it so), so the second is the rest.
+    /// The two groups: `first` is never past the end (`new`, `drop_where` and `remove_range` keep it so), so the second
+    /// is the rest.
     fn groups(&self) -> (&[T], &[T]) {
         self.items.split_at_checked(self.first).unwrap_or((&self.items, &[]))
     }
@@ -85,6 +86,18 @@ impl<T> Results<T> {
     /// The picked results, in order.
     pub fn picked(&self) -> impl Iterator<Item = &T> + '_ {
         self.picks.indices().filter_map(|i| self.items.get(i))
+    }
+
+    /// Take the results in `range` off, in place (a row removal in the model): the others keep their order, their groups
+    /// and their picks. The range is cut to the results there are. Unlike `drop_where`, which rebuilds the list, this
+    /// changes only the removed rows, so the model can say which rows went.
+    pub fn remove_range(&mut self, range: Range<usize>) {
+        let end = range.end.min(self.items.len());
+        let start = range.start.min(end);
+        self.items.drain(start..end);
+        // The removed results that were in the first group.
+        self.first -= end.min(self.first) - start.min(self.first);
+        self.picks.remove(start..end);
     }
 
     /// Take off the results `dead` says: the others keep their order, their groups and their picks. False when none was
@@ -136,6 +149,28 @@ mod tests {
         assert_eq!(results.first(), [1], "result 2 was in the first group; one of it is left");
         assert_eq!(results.second(), [3, 4]);
         assert!(!results.drop_where(|_| false), "nothing taken off, nothing changed");
+    }
+
+    /// A run that spans the boundary of the groups: the first group loses its tail, the second its head; the picks and
+    /// the anchor-free state follow the results left.
+    #[test]
+    fn remove_range_takes_a_run_across_the_groups_and_keeps_the_picks() {
+        let mut results = Results::new(vec![1, 2, 3], vec![4, 5, 6]);
+        results.picks_mut().set(0..6, false);
+        results.picks_mut().set(3..5, true);
+        results.remove_range(2..4);
+        assert_eq!(results.items(), [1, 2, 5, 6]);
+        assert_eq!(results.first(), [1, 2]);
+        assert_eq!(results.second(), [5, 6]);
+        assert_eq!(results.picked().copied().collect::<Vec<_>>(), [5]);
+        // Clamped: a range past the end takes what there is.
+        results.remove_range(3..99);
+        assert_eq!(results.items(), [1, 2, 5]);
+        assert_eq!(results.first(), [1, 2]);
+        // An empty or inverted range changes nothing.
+        results.remove_range(2..2);
+        results.remove_range(9..4);
+        assert_eq!(results.items(), [1, 2, 5]);
     }
 
     #[test]

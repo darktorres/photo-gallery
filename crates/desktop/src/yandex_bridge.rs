@@ -97,6 +97,15 @@ pub mod qobject {
         #[cxx_name = "endResetModel"]
         fn end_reset_model(self: Pin<&mut YandexSearch>);
 
+        /// Remove the rows `first..=last` (the model's own signal: the state changes between this and `endRemoveRows`).
+        #[inherit]
+        #[cxx_name = "beginRemoveRows"]
+        fn begin_remove_rows(self: Pin<&mut YandexSearch>, parent: &QModelIndex, first: i32, last: i32);
+
+        #[inherit]
+        #[cxx_name = "endRemoveRows"]
+        fn end_remove_rows(self: Pin<&mut YandexSearch>);
+
         #[inherit]
         #[cxx_name = "dataChanged"]
         fn data_changed(

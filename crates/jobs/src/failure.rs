@@ -10,9 +10,16 @@ use crate::panics::Panicked;
 pub const FAILURES_KEPT: usize = 20;
 
 /// Keeps `failure` if there is room, as a pass's stats do.
+pub fn keep_file_failure(kept: &mut Vec<FileFailure>, failure: FileFailure) {
+    if kept.len() < FAILURES_KEPT {
+        kept.push(failure);
+    }
+}
+
+/// Keeps a failure of a plain error (not a caught panic) if there is room, as a pass's stats do.
 pub fn keep_failure(kept: &mut Vec<FileFailure>, path: impl Into<String>, error: impl std::fmt::Display) {
     if kept.len() < FAILURES_KEPT {
-        kept.push(FileFailure { path: path.into(), error: error.to_string(), panicked: false });
+        keep_file_failure(kept, FileFailure { path: path.into(), error: error.to_string(), panicked: false });
     }
 }
 

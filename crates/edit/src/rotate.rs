@@ -184,7 +184,7 @@ mod tests {
             (png::ColorType::Grayscale, png::BitDepth::Two, {
                 // 2-bit gray: packed four to a byte, rows padded.
                 let values: Vec<u8> = (0..w * h).map(|i| u8::try_from(i % 4).unwrap()).collect();
-                pack(&values, (w * 2).div_ceil(8), w, h, 2)
+                pack(&values, (w * 2).div_ceil(8), w, h, 2).unwrap()
             }),
         ] {
             let mut file = Vec::new();

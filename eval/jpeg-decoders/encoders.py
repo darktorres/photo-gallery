@@ -23,6 +23,7 @@ import statistics
 import subprocess
 import sys
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -53,12 +54,13 @@ def run(cmd, **kw):
 
 
 def png_of(ppm):  # guetzli reads PNG only
-    """The PNG of a PPM, written to a temp name and renamed, so a concurrent caller never sees a half-written file."""
+    """The PNG of a PPM, written to a temp name of its own and renamed, so a concurrent caller never sees a half-written
+    file: the four guetzli jobs of one file may all miss the PNG at once."""
     png = ppm.with_suffix(".png")
     if not png.exists():
         from PIL import Image  # the eval image's venv
 
-        tmp = png.with_name(png.name + ".tmp")
+        tmp = png.with_name(f"{png.name}.{uuid.uuid4().hex}.tmp")
         Image.open(ppm).save(tmp, format="PNG", compress_level=1)
         tmp.replace(png)
     return png

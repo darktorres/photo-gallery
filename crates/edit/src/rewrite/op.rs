@@ -5,6 +5,8 @@ use anyhow::{Context, Result, ensure};
 use pg_codec::decode::transform;
 use pg_model::orientation::Orientation;
 
+use super::raster::reserved;
+
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Op {
@@ -35,7 +37,7 @@ impl Op {
         match self {
             Op::Orient(o) => Ok(transform(pixels, w, h, unit, o)),
             Op::Crop([x, y, cw, ch]) => {
-                let mut out = Vec::with_capacity(cw * ch * unit);
+                let mut out = reserved(cw * ch * unit)?;
                 // (`max`: a raster no pixel wide has no rows.)
                 for row in pixels.chunks_exact((w * unit).max(1)).skip(y).take(ch) {
                     out.extend_from_slice(row.get(x * unit..(x + cw) * unit).context("the crop is outside the image")?);

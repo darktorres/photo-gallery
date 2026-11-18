@@ -724,3 +724,12 @@ otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full
     nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
     `nvimgcodec_bench.py --ref-dir DIR FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`.
     debesheedas: `debesheedas.py --exe DECODER.exe --ref-dir DIR FILE...`.
+
+## Not run
+
+- **The venv-eval nvJPEG DLL.** Installing `nvidia-nvimgcodec` replaced the shared `nvjpeg64_13.dll` in `venv-eval`
+  (the GPU runs above used the DLL torchvision ships, 13.2.3). Pinning it back to 13.2.3 and checking the `gpu.py` and
+  `nvjpeg.py` figures again is left to the user, not done.
+- **Pillow `draft()` column.** The 2026-11-14 `gpu.py` rerun covers the two odd-sided files only. The other rows of the
+  Pillow `draft()` table predate the draft-rounding fix.
+- **The import-order check** (the `gpu.py` import order fixed for C-46) is not recorded as a run.

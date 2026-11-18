@@ -18,6 +18,7 @@ use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
 
 use pg_jobs::control::Control;
+use pg_jobs::failure::Cause;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::progress::Phase;
 
@@ -175,7 +176,7 @@ fn store(
                 }
             }
             Err(e) => {
-                if !writer.store_failure(item, &format!("{e:#}"))? {
+                if !writer.store_failure(item, &Cause::of(&e).to_string())? {
                     counts.changed += 1;
                     continue;
                 }

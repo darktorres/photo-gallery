@@ -17,7 +17,7 @@ from pathlib import Path
 
 import env
 import numpy as np
-from PIL import Image
+from reference_io import read_ppm
 
 BUDGET_S = 2.0
 MAX_BATCH_BYTES = 2.0e9  # decoded RGB per batch: the 2060 has 6 GB, ~1.5 GB taken by the desktop
@@ -44,11 +44,6 @@ def blocking_sync() -> None:
         raise RuntimeError(f"cuInit returned {rc}")
     if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
         raise RuntimeError(f"cuDevicePrimaryCtxSetFlags returned {rc} (the context is already active?)")
-
-
-def read_ppm(path):
-    """The libjpeg-turbo reference: uint8, shape (h, w, 3)."""
-    return np.ascontiguousarray(np.asarray(Image.open(path)))
 
 
 def timed(fn, per_call, budget):

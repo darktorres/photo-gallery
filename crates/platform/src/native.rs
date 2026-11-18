@@ -18,6 +18,7 @@
 //! player is given the file open (`file::player_handle`); and the shell's parse, so a folder dialog starts at the
 //! nearest folder whose names survive it ([`check_folder_names`], `picker::start_folder`).
 
+#[cfg(windows)]
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -130,29 +131,27 @@ impl std::error::Error for AlteredFolder {}
 
 /// Whether every folder of `path` (each part before its last) reaches the folder it names in the plain form: an
 /// [`AlteredFolder`] for the first that ends in a dot or a space (the parts `.` and `..` are not names, and pass).
-/// Always `Ok` off Windows, where no path is normalized.
+#[cfg(windows)]
 pub fn check_folder_names(path: &Path) -> Result<(), AlteredFolder> {
-    #[cfg(windows)]
-    {
-        let Some(parent) = path.parent() else { return Ok(()) };
-        for part in parent.components() {
-            if let std::path::Component::Normal(name) = part
-                && altered(name)
-            {
-                return Err(AlteredFolder { path: path.to_path_buf(), folder: name.to_os_string() });
-            }
+    let Some(parent) = path.parent() else { return Ok(()) };
+    for part in parent.components() {
+        if let std::path::Component::Normal(name) = part
+            && altered(name)
+        {
+            return Err(AlteredFolder { path: path.to_path_buf(), folder: name.to_os_string() });
         }
-        Ok(())
     }
-    #[cfg(unix)]
-    {
-        let _ = path;
-        Ok(())
-    }
+    Ok(())
+}
+
+/// Always `Ok` off Windows, where no path is normalized.
+#[cfg(unix)]
+pub fn check_folder_names(_path: &Path) -> Result<(), AlteredFolder> {
+    Ok(())
 }
 
 /// A name the Win32 normalization may change: one that ends in a dot or a space.
-#[cfg_attr(unix, expect(dead_code, reason = "no path is normalized off Windows"))]
+#[cfg(windows)]
 fn altered(name: &OsStr) -> bool {
     name.as_encoded_bytes().last().is_some_and(|&b| b == b'.' || b == b' ')
 }

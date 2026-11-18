@@ -15,7 +15,7 @@ use pg_render::maker::{MakeError, Maker};
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
 use pg_jobs::control::Control;
-use pg_jobs::failure::keep_failure;
+use pg_jobs::failure::{file_failure, keep_file_failure};
 use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::ids::FileId;
@@ -306,20 +306,19 @@ pub fn run_while(
                     if !matches!(failed, Failed::Panicked | Failed::Undecodable) {
                         fold(first_failed, item.seq);
                     }
-                    let path = rules.display_stored(&work.path(item.path, sep));
-                    let error = format!("{e:#}");
+                    let shown = file_failure(rules.display_stored(&work.path(item.path, sep)), &e);
                     if let Some(retry) = retry {
                         let failure = LedgerFailure {
                             file_id: item.id,
                             mtime: item.source.mtime,
                             size: item.size,
                             rotation: item.source.rotation,
-                            error: error.clone(),
+                            error: shown.error.clone(),
                             retry,
                         };
                         unwritten.failures.push((failure, item.seq));
                     }
-                    keep_failure(&mut stats.failures, path, error);
+                    keep_file_failure(&mut stats.failures, shown);
                 }
             }
         }

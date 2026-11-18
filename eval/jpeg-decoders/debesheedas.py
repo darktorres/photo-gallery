@@ -18,11 +18,7 @@ from pathlib import Path
 import env
 import numpy as np
 from PIL import Image
-
-
-def read_ppm(path):
-    """The libjpeg-turbo reference: uint8, shape (h, w, 3)."""
-    return np.ascontiguousarray(np.asarray(Image.open(path)))
+from reference_io import read_ppm
 
 
 def tiny_jpeg(path):  # a 16x16 4:4:4 baseline JPEG, for the fixed cost

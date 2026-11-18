@@ -547,6 +547,15 @@ mod tests {
             "internal error on this file: boom. It is tried again later."
         );
     }
+
+    #[test]
+    fn the_panic_words_are_exact() {
+        // The bundle's isolation is off (`words.rs`), so a panic's message is set plain.
+        assert_eq!(super::message::file_panicked("boom"), "internal error on this file: boom");
+        let (title, body) = worded(&Notice::RoundPanicked { message: "boom".into() });
+        assert_eq!(title, "Internal error in the background job");
+        assert_eq!(body, "boom. The job went on with the next request; the details are in the log.");
+    }
     #[test]
     fn a_pass_line_says_how_far_it_is() {
         let rules = PathRules::Windows;

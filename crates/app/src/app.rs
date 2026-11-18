@@ -196,7 +196,13 @@ fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox
         .spawn(move || {
             while let Some(event) = sub.recv() {
                 match event.effect() {
-                    Some(Effect::Post(notice)) => inbox.post(notice),
+                    Some(Effect::Post(notice)) => {
+                        // The notice's words are the user's; its technical account is the log's.
+                        if let Notice::CacheStartedOver { detail, .. } = &notice {
+                            pg_log::warn("thumbnails", detail);
+                        }
+                        inbox.post(notice);
+                    }
                     Some(Effect::Resolve(trigger)) => inbox.resolve(trigger),
                     None => {}
                 }

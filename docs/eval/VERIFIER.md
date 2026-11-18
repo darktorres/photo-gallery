@@ -94,7 +94,7 @@ that don't overlap say nothing about each other). 7,300 of 8,344 pairs carry evi
 
 ## Earlier verifier runs
 
-### Verifier figures below predate two fixes (C-44, C-45); the re-pick of `--max-noise` is pending
+### Verifier figures below predate two fixes (C-44, C-45)
 
 `eval/verify.py` had two defects, both now fixed in the code:
 
@@ -108,17 +108,10 @@ re-measured:** the residual percentiles and the 0.06 rule, the reruns after the 
 motion, the synthetic-edit table (including the grayscale noise 0.078), and "Verifier fixes and speed" (including the
 0.0603 → 0.0599 pair). They are kept as the record of what was run, not as the verifier's current behaviour.
 
-**No pre-fix baseline was taken for the three pair sets (`labeled`, `cross_groups`, `knn`).** The recorded labeled
-numbers (1043 pairs; duplicates 698/698; similar_folder 237 match, 108 unrelated; median-residual percentiles
-p10/50/90/99: duplicates 0.0032/0.0056/0.0093/0.0171, similar_folder 0.0101/0.0436/0.0999/0.2347) are the only
-reference, and they have no `cross_groups` or `knn` counterpart. So no before-and-after comparison exists for the fix.
-
-**`--max-noise` is still 0.06, the value picked on the box-filtered data.** The labeled set has no negatives
-(`PAIR_SETS['labeled']` is duplicates and similar_folder, and `EXPECTED` covers only duplicate and cross_group), so it
-cannot choose the threshold. The re-pick has not been done. It needs a `verify.py --rescore` sweep on the
-`cross_groups` data, with the criterion used above (cross-group p1 of the median residual against duplicate p99:
-0.092 against 0.025 in the old data), and a verifier run with the fixed code to produce that data. Until then, treat 0.06
-as unvalidated for the fixed code.
+**The pre-fix and post-fix comparison for the three pair sets, and the `--max-noise` re-pick, are in the section
+"Verifier after the resampling fix (262004b, re-pick, 2026-11-08)" above.** Its pre-fix run is the one the labeled
+baseline reproduces, and its sweep on the post-fix data keeps 0.06 (the decision there). The box-filter figures below
+are therefore not the basis of the current `--max-noise`; the re-pick this section once called pending is done.
 
 ### Verifier prototype, first run (subset, 2026-10-28)
 

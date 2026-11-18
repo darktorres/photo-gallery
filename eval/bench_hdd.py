@@ -146,6 +146,17 @@ def timed_read(paths: list[str], depth: int) -> tuple[float, int]:
     return time.perf_counter() - start, total
 
 
+def dense_samples(files: list[str], orders: list[str], dense: int) -> dict[str, list[str]]:
+    """Contiguous blocks of the path order, one per order, spread over the folder: neighboring files, as in a full
+    pass. The blocks are disjoint only if each fits in one step of len(files) // len(orders), which is what the count
+    checked here: `dense` x len(orders) files must be there."""
+    if dense * len(orders) > len(files):
+        need = dense * len(orders)
+        raise ValueError(f"--dense {dense:,} x {len(orders)} orders needs {need:,} files; {len(files):,} found")
+    step = len(files) // len(orders)
+    return {name: files[k * step : k * step + dense] for k, name in enumerate(orders)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, help="the folder to walk")
@@ -164,13 +175,10 @@ def main() -> None:
 
     orders = ["path", "mft", "lcn", "random", "path_qd8", "lcn_qd8"]
     if args.dense:
-        # Contiguous blocks of the path order, spread over the folder: neighboring files, as in a full pass. The
-        # blocks are disjoint only if each fits in one step of len(files) // len(orders).
-        if args.dense * len(orders) > len(files):
-            need = args.dense * len(orders)
-            parser.error(f"--dense {args.dense:,} x {len(orders)} orders needs {need:,} files; {len(files):,} found")
-        step = len(files) // len(orders)
-        samples = {name: files[k * step : k * step + args.dense] for k, name in enumerate(orders)}
+        try:
+            samples = dense_samples(files, orders, args.dense)
+        except ValueError as e:
+            parser.error(str(e))
     else:
         samples = {name: files[k :: args.stride] for k, name in enumerate(orders)}
     all_sampled = [p for paths in samples.values() for p in paths]

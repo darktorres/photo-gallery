@@ -19,11 +19,17 @@ pub(super) fn decoded_size(what: &str, factors: &[usize]) -> Result<usize> {
     }
 }
 
-/// A zeroed buffer of `len` bytes (a size [`decoded_size`] passed), allocated fallibly: too little memory is an
-/// error, not an abort.
-pub(super) fn zeroed(len: usize) -> Result<Vec<u8>> {
+/// An empty buffer with room for `len` bytes (a size [`decoded_size`] passed), allocated fallibly: too little memory
+/// is an error, not an abort.
+pub(super) fn reserved(len: usize) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     buf.try_reserve_exact(len).context("not enough memory to decode the image")?;
+    Ok(buf)
+}
+
+/// A zeroed buffer of `len` bytes (a size [`decoded_size`] passed), allocated fallibly.
+pub(super) fn zeroed(len: usize) -> Result<Vec<u8>> {
+    let mut buf = reserved(len)?;
     buf.resize(len, 0);
     Ok(buf)
 }
@@ -32,7 +38,7 @@ pub(super) fn zeroed(len: usize) -> Result<Vec<u8>> {
 pub(super) fn unpack(rows: &[u8], stride: usize, w: usize, h: usize, bits: usize) -> Result<Vec<u8>> {
     let per_byte = 8 / bits;
     let mask = u8::try_from((1u16 << bits) - 1)?;
-    let mut out = Vec::with_capacity(w * h);
+    let mut out = reserved(w * h)?;
     // (`max`: only a raster no pixel wide has a zero stride, and it reads nothing.)
     for row in rows.chunks(stride.max(1)).take(h) {
         let values = row.iter().flat_map(|&byte| (1..=per_byte).map(move |i| (byte >> (8 - bits * i)) & mask));
@@ -44,9 +50,9 @@ pub(super) fn unpack(rows: &[u8], stride: usize, w: usize, h: usize, bits: usize
 
 /// One byte per pixel to rows `stride` bytes apart of `bits`-per-pixel samples, MSB first: the inverse of
 /// [`unpack`]. `values` holds `w` × `h` of them.
-pub(crate) fn pack(values: &[u8], stride: usize, w: usize, h: usize, bits: usize) -> Vec<u8> {
+pub(crate) fn pack(values: &[u8], stride: usize, w: usize, h: usize, bits: usize) -> Result<Vec<u8>> {
     let per_byte = 8 / bits;
-    let mut out = vec![0u8; stride * h];
+    let mut out = zeroed(stride * h)?;
     // (`max`: a zero stride or width only comes with no pixels.)
     for (row, line) in out.chunks_exact_mut(stride.max(1)).zip(values.chunks_exact(w.max(1))) {
         for (byte, group) in row.iter_mut().zip(line.chunks(per_byte)) {
@@ -55,7 +61,7 @@ pub(crate) fn pack(values: &[u8], stride: usize, w: usize, h: usize, bits: usize
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// `op` on a raster of rows `stride` bytes apart, `bits` per pixel; the result's rows are `new_stride(w')` bytes
@@ -72,7 +78,7 @@ pub(super) fn apply_rows(
     if bits < 8 {
         let (values, nw, nh) = op.apply(&unpack(rows, stride, w, h, bits)?, w, h, 1)?;
         let s = new_stride(nw);
-        return Ok((pack(&values, s, nw, nh, bits), nw, nh));
+        return Ok((pack(&values, s, nw, nh, bits)?, nw, nh));
     }
     let unit = bits / 8;
     let row_len = w * unit;
@@ -82,7 +88,7 @@ pub(super) fn apply_rows(
         Cow::Borrowed(rows.get(..w * h * unit).context("the image data is short")?)
     } else {
         // (`max`: only a raster no pixel wide has a zero stride, and it reads nothing.)
-        let mut packed = Vec::with_capacity(w * h * unit);
+        let mut packed = reserved(w * h * unit)?;
         for row in rows.chunks(stride.max(1)).take(h) {
             packed.extend_from_slice(row.get(..row_len).context("the image data is short")?);
         }
@@ -95,7 +101,7 @@ pub(super) fn apply_rows(
     if s == nw * unit {
         return Ok((pixels, nw, nh));
     }
-    let mut out = vec![0u8; s * nh];
+    let mut out = zeroed(s * nh)?;
     for (line, row) in out.chunks_mut(s.max(1)).zip(pixels.chunks_exact((nw * unit).max(1))) {
         line.get_mut(..row.len()).context("a row wider than its stride")?.copy_from_slice(row);
     }

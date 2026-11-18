@@ -28,7 +28,8 @@ pub(crate) const TIFF_TAG_XMP: u16 = 700;
 
 /// What the import reads of an EXIF block: IFD0's orientation, rating and XMP (where a TIFF file keeps its
 /// packet), and the Exif IFD's dates. A field that doesn't fit in the block reads as absent, and the rest are still
-/// read; a tag given twice reads as the last one.
+/// read. A tag given twice reads as its last entry, and a last entry that doesn't read makes the field absent, except
+/// orientation, which keeps the last one that does.
 #[derive(Default)]
 pub(crate) struct Exif<'a> {
     orientation: Option<u32>,

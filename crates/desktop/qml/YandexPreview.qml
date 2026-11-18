@@ -51,8 +51,21 @@ Rectangle {
     function open(i: int) {
         preview.item = i
         preview.actual = false
+        preview.wheelNotches = 0
         preview.visible = true
         preview.forceActiveFocus()
+    }
+
+    // The wheel's fraction of a notch that has not made one yet (a touchpad's small deltas add up).
+    property real wheelNotches: 0
+
+    // The whole notches a wheel movement of `angleY` makes, with the rest kept for the next movement. Up is negative
+    // (the previous result), as in the viewer.
+    function notchesFor(angleY: real): int {
+        preview.wheelNotches += angleY / 120
+        const n = Math.trunc(preview.wheelNotches)
+        preview.wheelNotches -= n
+        return n
     }
 
     function close() {
@@ -63,7 +76,7 @@ Rectangle {
 
     function step(by: int) {
         if (preview.total > 0) {
-            preview.item = (preview.item + by + preview.total) % preview.total
+            preview.item = ((preview.item + by) % preview.total + preview.total) % preview.total
             preview.actual = false
         }
     }
@@ -160,6 +173,16 @@ Rectangle {
         contentHeight: Math.max(height, full.height)
         ScrollBar.vertical: ScrollBar {}
         ScrollBar.horizontal: ScrollBar {}
+
+        // The wheel steps through the results and never scrolls the picture. Declared in the Flickable, its handler takes
+        // the wheel before the Flickable scrolls (blocking by default); the content is at least the view, so it covers the
+        // whole picture area in fit mode too.
+        WheelHandler {
+            onWheel: (ev) => {
+                const n = preview.notchesFor(ev.angleDelta.y)
+                if (n !== 0) preview.step(-n)
+            }
+        }
 
         Image {
             id: full

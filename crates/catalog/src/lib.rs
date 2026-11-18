@@ -49,10 +49,9 @@ pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};
 pub use roots::FolderRowReader;
 pub use transaction::{Patience, PatienceGuard, wait_for_writers};
 pub use types::{
-    CropSource, Folder, FolderFailure, FolderRows, Listed, PairingMarks, PairingWork, Prior, Rebuilt, Recorded, Root,
-    SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Status, Versions, WorkItem, WriteTarget,
+    CropSource, Folder, FolderFailure, FolderRows, Listed, PairingMarks, PairingWork, PlaceholderWork, Prior, Rebuilt,
+    Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Status, Versions, VolumeSet, WorkItem, WriteTarget,
 };
-pub use work::{PlaceholderWork, VolumeSet};
 pub use writers::{
     AnalysisWriter, BordersWriter, LedgerWriter, OwedHashes, PairsBatch, PairsWriter, PairsWritten, PlaceholderWriter,
     ScanWriter,

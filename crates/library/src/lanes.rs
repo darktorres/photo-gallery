@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use pg_catalog::Catalog;
 use pg_model::rules::{Path as RulePath, PathRules};
-use pg_platform::drive::{Drive, DriveKey, SystemDrives, same_drive};
+use pg_platform::drive::{Drive, DriveKey, Drives, SystemDrives, same_drive, unplugged};
 use pg_platform::native::PATH_RULES;
 
 /// A root's drive, when it could be told. `None` is an unknown drive.
@@ -72,10 +72,8 @@ pub struct Group {
 /// thread. A root that is unplugged, or whose drive can't be told, is in no group (a command that is about to fail says
 /// so). With `serial`, every root is in one group.
 pub fn groups(rules: PathRules, roots: &[RulePath], serial: bool) -> Vec<Group> {
-    let probes: Vec<(RulePath, Option<Place>)> = roots
-        .iter()
-        .map(|root| (root.clone(), Some(crate::coordinator::probe_place(rules, root, &SystemDrives))))
-        .collect();
+    let probes: Vec<(RulePath, Option<Place>)> =
+        roots.iter().map(|root| (root.clone(), Some(probe_place(rules, root, &SystemDrives)))).collect();
     let planned = plan(&probes, serial);
     let single = planned.len() == 1;
     planned
@@ -170,6 +168,24 @@ pub fn assign(drives: &[RootDrive], serial: bool) -> Vec<usize> {
             *lane_of.entry(first).or_insert(next)
         })
         .collect()
+}
+
+/// Where `root` is, as the lanes need it: its volume (as the catalog stores it) and its drive, or that it is not there, or
+/// that it can't be told.
+pub(crate) fn probe_place(rules: PathRules, root: &RulePath, drives: &dyn Drives) -> Place {
+    let folder = pg_platform::names::disk_path(rules, root);
+    let volume = match pg_scan::root_volume(rules, root) {
+        Ok(volume) => volume,
+        Err(e) => return if unplugged(&e) { Place::Unplugged } else { Place::Unknown },
+    };
+    let drive = match drives.of(&folder) {
+        Ok(drive) => drive,
+        Err(e) => return if unplugged(&e) { Place::Unplugged } else { Place::Unknown },
+    };
+    match i64::try_from(volume) {
+        Ok(volume) => Place::Mounted { volume, drive },
+        Err(_) => Place::Unknown,
+    }
 }
 
 #[cfg(test)]

@@ -20,6 +20,50 @@ use pg_model::turns::Turns;
 
 use crate::error::Result;
 
+/// The volumes a work list covers: every one, or some of them, as the catalog stores them (`files.volume`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VolumeSet {
+    /// Every volume: the whole catalog.
+    All,
+    /// These volumes only.
+    Only(Vec<i64>),
+}
+
+impl VolumeSet {
+    /// The set of `volumes` (their ids as the catalog stores them), or `None` when one is above `i64::MAX`, which no stored
+    /// volume is.
+    pub fn only(volumes: &[u64]) -> Option<VolumeSet> {
+        volumes.iter().map(|&v| i64::try_from(v).ok()).collect::<Option<Vec<i64>>>().map(VolumeSet::Only)
+    }
+
+    /// Whether the set holds `volume` (as the catalog stores it): every volume is in `All`.
+    pub fn contains(&self, volume: i64) -> bool {
+        match self {
+            VolumeSet::All => true,
+            VolumeSet::Only(volumes) => volumes.contains(&volume),
+        }
+    }
+
+    /// ` AND <column> IN (…)` for the set, or nothing for every volume. The ids are integers written as literals, so a set
+    /// gives the same statement text each time.
+    pub(crate) fn and_in(&self, column: &str) -> String {
+        match self {
+            VolumeSet::All => String::new(),
+            VolumeSet::Only(volumes) => {
+                let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
+                format!(" AND {column} IN ({})", list.join(","))
+            }
+        }
+    }
+}
+
+/// A file the Placeholders pass makes a placeholder for: its work item, and the time of a video's poster frame (0
+/// where its analysis has none; an image's, unused).
+pub struct PlaceholderWork {
+    pub item: WorkItem,
+    pub poster_ms: i64,
+}
+
 /// The parameters of `under_root!` for `root` under `rules`: the root's bytes, and the bounds of its subtree. A
 /// drive's root already ends with a separator, so its subtree starts there.
 pub(crate) fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> [Vec<u8>; 3] {

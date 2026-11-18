@@ -3,7 +3,7 @@
 //! over the lane's volumes (`Inner::volume_set`), so the lanes of two drives run these passes at once, and the lanes of
 //! one drive run them in turn.
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::PoisonError;
 
 use anyhow::Result;
 use pg_catalog::Catalog;
@@ -14,9 +14,9 @@ use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
 use pg_scan::ScanError;
 
-use crate::lane::Inner;
-use crate::runner::Shared;
+use crate::inner::Inner;
 use crate::scans;
+use crate::shared::Shared;
 
 /// A lane's pass context: the lane, and its round's connection.
 pub(crate) struct Cx<'a> {
@@ -37,57 +37,6 @@ pub(crate) fn count(n: usize) -> u64 {
 /// An error's text as a notice holds it: its causes after it, on one line, capped.
 pub(crate) fn error_text(error: &anyhow::Error) -> String {
     tidy(&format!("{error:#}"), ERROR_CAP)
-}
-
-/// The pairing pass's gate: one lane runs the duplicates' join at a time, and a lane that wants one while another runs
-/// makes the runner run it once more after (the other's join may not have the rows this lane stored).
-#[derive(Default)]
-pub(crate) struct PairGate {
-    state: Mutex<PairState>,
-}
-
-#[derive(Default)]
-struct PairState {
-    /// A lane is running the join.
-    running: bool,
-    /// A join is wanted after the one running (or now).
-    wanted: bool,
-}
-
-impl PairGate {
-    fn state(&self) -> MutexGuard<'_, PairState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// A lane wants a join. `true` when it runs one (no other lane does); `false` when another lane does, and will run
-    /// the wanted one after its own.
-    pub(crate) fn begin(&self) -> bool {
-        let mut state = self.state();
-        state.wanted = true;
-        if state.running {
-            return false;
-        }
-        state.running = true;
-        true
-    }
-
-    /// The runner's next join, if one is wanted (and it takes the want); otherwise the runner is done.
-    pub(crate) fn next(&self) -> bool {
-        let mut state = self.state();
-        if state.wanted {
-            state.wanted = false;
-            return true;
-        }
-        state.running = false;
-        false
-    }
-
-    /// The runner stops before its wanted join is done (a stop, a failure): the join stays wanted for the next runner.
-    pub(crate) fn abandon(&self) {
-        let mut state = self.state();
-        state.running = false;
-        state.wanted = true;
-    }
 }
 
 /// Originals were cut in place: their thumbnails are forgotten (they show the uncut pixels), and the import that follows

@@ -13,45 +13,8 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::core::{Catalog, ReadOnly, Reader};
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
-use crate::types::{FOLDER_PATH, PairingWork, WorkItem, folder_path, pairing_marks};
+use crate::types::{FOLDER_PATH, PairingWork, PlaceholderWork, VolumeSet, WorkItem, folder_path, pairing_marks};
 use pg_model::analysis::PLACEHOLDER_VERSION;
-
-/// The volumes a work list covers: every one, or some of them, as the catalog stores them (`files.volume`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VolumeSet {
-    /// Every volume: the whole catalog.
-    All,
-    /// These volumes only.
-    Only(Vec<i64>),
-}
-
-impl VolumeSet {
-    /// The set of `volumes` (their ids as the catalog stores them), or `None` when one is above `i64::MAX`, which no stored
-    /// volume is.
-    pub fn only(volumes: &[u64]) -> Option<VolumeSet> {
-        volumes.iter().map(|&v| i64::try_from(v).ok()).collect::<Option<Vec<i64>>>().map(VolumeSet::Only)
-    }
-
-    /// Whether the set holds `volume` (as the catalog stores it): every volume is in `All`.
-    pub fn contains(&self, volume: i64) -> bool {
-        match self {
-            VolumeSet::All => true,
-            VolumeSet::Only(volumes) => volumes.contains(&volume),
-        }
-    }
-
-    /// ` AND <column> IN (…)` for the set, or nothing for every volume. The ids are integers written as literals, so a set
-    /// gives the same statement text each time.
-    fn and_in(&self, column: &str) -> String {
-        match self {
-            VolumeSet::All => String::new(),
-            VolumeSet::Only(volumes) => {
-                let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
-                format!(" AND {column} IN ({})", list.join(","))
-            }
-        }
-    }
-}
 
 /// `Catalog::volumes`' query: a loose index scan over `files`'s `(volume, file_ref)` index, one step a volume (the
 /// `min` of the volumes above the last one found), not a read of every file. A displaced row (no volume) is none. The
@@ -167,13 +130,6 @@ pub(crate) fn work_list_mapped<T>(
         list.items.push(make(item, r)?);
     }
     Ok(list)
-}
-
-/// A file the Placeholders pass makes a placeholder for: its work item, and the time of a video's poster frame (0
-/// where its analysis has none; an image's, unused).
-pub struct PlaceholderWork {
-    pub item: WorkItem,
-    pub poster_ms: i64,
 }
 
 /// The placeholder work (`Catalog::pending_placeholders`, `Catalog::owed_placeholders`): the present, non-pending files

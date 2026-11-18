@@ -300,8 +300,9 @@ mod tests {
     use crate::schema::{BASELINE, BEFORE_NOTIFY, MIGRATIONS, bring_to, current_expected, current_version, mismatch};
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
+    use crate::types::VolumeSet;
     use crate::types::rules_name;
-    use crate::work::{VolumeSet, pending_import_sql};
+    use crate::work::pending_import_sql;
     use pg_model::notice::Carried;
 
     use crate::{Catalog, Error, Result, ScannedFile};

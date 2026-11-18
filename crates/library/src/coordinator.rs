@@ -27,14 +27,14 @@ use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
 use pg_model::rules::{Path as RulePath, PathRules};
-use pg_platform::drive::{Drives, unplugged};
+use pg_platform::drive::Drives;
 use pg_platform::native::PATH_RULES;
 use pg_platform::priority::Priority;
 
-use crate::lane::Inner;
-use crate::lanes::{self, Place};
+use crate::inner::Inner;
+use crate::lanes::{self, Place, probe_place};
 use crate::passes::{count, cut_done, error_text, file_failure};
-use crate::runner::{LaneProgress, Shared};
+use crate::shared::{LaneProgress, Shared};
 
 /// How long a root's probe may run before its root is taken as unknown: the lanes collapse to one until it answers.
 const PROBE_DEADLINE: Duration = Duration::from_secs(5);
@@ -727,24 +727,6 @@ fn drive_label(roots: &[RulePath], places: &[(RulePath, Option<Place>)]) -> Stri
             })
         })
         .unwrap_or_default()
-}
-
-/// Where `root` is, as the lanes need it: its volume (as the catalog stores it) and its drive, or that it is not there, or
-/// that it can't be told.
-pub(crate) fn probe_place(rules: PathRules, root: &RulePath, drives: &dyn Drives) -> Place {
-    let folder = pg_platform::names::disk_path(rules, root);
-    let volume = match pg_scan::root_volume(rules, root) {
-        Ok(volume) => volume,
-        Err(e) => return if unplugged(&e) { Place::Unplugged } else { Place::Unknown },
-    };
-    let drive = match drives.of(&folder) {
-        Ok(drive) => drive,
-        Err(e) => return if unplugged(&e) { Place::Unplugged } else { Place::Unknown },
-    };
-    match i64::try_from(volume) {
-        Ok(volume) => Place::Mounted { volume, drive },
-        Err(_) => Place::Unknown,
-    }
 }
 
 #[cfg(test)]

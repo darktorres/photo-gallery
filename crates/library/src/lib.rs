@@ -9,12 +9,15 @@
 
 mod coordinator;
 pub mod folders;
+mod inner;
 mod lane;
 pub mod lanes;
 pub mod layout;
+mod pair_gate;
 mod passes;
 pub mod runner;
 pub mod scans;
+pub mod shared;
 mod tally;
 
 /// The catalog of `layout` (one as SQLite opens it, `Layout::for_sqlite`), prepared for this build (`Catalog::prepare`

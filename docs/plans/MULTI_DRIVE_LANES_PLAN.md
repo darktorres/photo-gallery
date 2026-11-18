@@ -359,3 +359,85 @@ Phase 1 here built it.
   (`reader.rs:66-70` orders by `file_ref & mask`, which may not be index-served); `Maker`/`Analyzer` per-worker memory (sizing a
   `CpuGate`); `thumbs.sqlite` migration mechanics; the small pre-existing window between `queue.pop_front` and setting
   `scanning` (`runner.rs:582-589`).
+
+## Ledger: open gaps after the lane commit (`79e3010f`)
+
+Everything here is either not built, built but untested, or verified but not run. Status: `open` until the work lands and
+its check passes, then `done` with the commit that closed it. Phase numbers refer to the plan above.
+
+### Not built
+
+| ID | Phase | Gap | Blocked on | Status |
+|---|---|---|---|---|
+| N1 | 3 | `Options::for_drive(kind, priority)`: readers per drive kind | Phase 0 measurements (R1) | open |
+| N2 | 3 | Scan listing workers per drive kind (`WORKERS = 4` is still fixed) | Phase 0 measurements (R1) | open |
+| N3 | 3 | Per-lane page-cache sizing (catalog and thumbs connections keep their sizes) | Governor memory numbers | open |
+| N4 | 2 | `Catalog::volumes()` loose-scan (recursive CTE over `(volume, file_ref)`) | none; needed only if a caller needs it | open |
+| N5 | 1, 4 | Linux nested mounts: a root holding another device gets its volumes' lane | none (Linux only) | open |
+| N6 | 4 | Turned-file wakes route to the lanes of their volumes; today `wake()` stops every lane. Needs `Change::Turned` to carry file ids, and the writeback crate to publish them | none | open |
+| N7 | 4 | Pairing cooldown while other lanes are busy | a measurement of `pair()` cost (R1) | open |
+| N8 | 4 | Notices name the drive: `UnreadableFiles { pass, count, drives }` as a `pg-model` change, worded by `pg_client::text` | none | open |
+| N9 | 5 | `run_once(catalog, roots, opts, ctl, passes)` entry point, so the CLI and the job share one module | none | open |
+| N10 | 5 | `report.rs` prints per-lane lines from the tagged events (today a lane gets a heading only) | none | open |
+| N11 | 6 | Per-lane rows and per-lane pause toggles in `Main.qml` (today one joined status line) | none | open |
+| N12 | 6 | `LaneInfo` in `pg-model` (decide: `LaneProgress` may serve; if so, close the item as not needed) | decision | open |
+| N13 | 6 | Screenshots of the two-line status (`just shots`) | N11 | open |
+| N14 | 7 | `docs/plans/SCAN_OPTIMIZATION_PLAN.md` Phase 4 note that Phase 1 here built the device query; `crates/README.md` check | none | open |
+
+### Built, not tested
+
+| ID | Phase | Gap | Status |
+|---|---|---|---|
+| T1 | 3 | `Pool::set_budget` under load: a shrink holds grants back, a grow admits waiters, no deadlock, a budget change is seen within `BUDGET_WAIT` | open |
+| T2 | 1 | Linux sysfs parser over a fake `/sys` tree: partition to disk, `dm` to slaves, `rotational` 0 and 1, major 0 | open |
+| T3 | 2 | Work lists: result equality of `VolumeSet::All` with the union of per-volume lists, in `(volume, record)` order | open |
+| T4 | 2 | Work-list plan assertions: the import list has no sort; the volume-filtered borders, hashes and thumbs-since-checkpoint lists drive from `files` | open |
+| T5 | 2 | `remove_root` in batches keeps its guarantees (lease deleted first; the walk ends as `Removed`) | open |
+| T6 | 2 | `volumes()` must not be a full range scan; an id above `i64::MAX` is refused | open (depends on N4) |
+
+### Lane tests the plan asked for and the tree lacks (`tests/lanes.rs`: 7 written, of 12)
+
+| ID | Plan item | Status |
+|---|---|---|
+| L1 | Two drives run concurrently: one lane's pass blocks until the other has started | open |
+| L2 | Pairing runs before Borders in each lane; the pairing cooldown | open (cooldown is N7) |
+| L3 | Two lanes' unreadable counts add up; they resolve only when both are clean (`UnreadableFiles`) | open (needs N8 for the drive label) |
+| L4 | Thumbs checkpoint: A completes, B is stopped, the next round redoes only B | open |
+| L5 | A crop on A's files parks only A; a turned file wakes only its lane | open (turned part needs N6) |
+| L6 | Two lanes' batches never exceed the busy budget; a busy `BEGIN` is retried | open |
+| L7 | Global pause and quit reach every lane; a per-lane pause only its lane; `stop` ends all threads inside one deadline, including a lane parked at the crop gate | open (per-lane pause has no runner API yet) |
+
+Written and passing: two drives make two lanes; folders on one drive share a lane; an unknown drive collapses the lanes;
+serial makes one lane; a retired drive's lane ends; a stop ends every lane; each lane reports its drive's label.
+
+### CLI tests
+
+| ID | Plan item | Status |
+|---|---|---|
+| C1 | CLI integration with two scratch roots, with `--serial` and without: `scan`, `import` and `thumbs` each | open |
+
+### Verification not run
+
+| ID | Check | Status |
+|---|---|---|
+| V1 | `just test` for the whole workspace (run so far: per-crate `cargo test`) | open |
+| V2 | `just check-linux` in the pg-dev container (the sysfs path) | open |
+| V3 | `just perf` (callgrind gate, ±1%; `pipeline.rs` and the work lists are hot paths) | open |
+| V4 | `just qmltest` | open |
+| V5 | A real two-drive run on E: and D: (two status lines; D: gets thumbnails while E: imports; both disks active; RSS with two lanes) | open |
+| V6 | Keep-rule A/B throughput against the parent commit (6 pairs, turbo off, `keep.py --part time --rule bounded --margin 0.10`) | open |
+
+### Measurements
+
+| ID | Item | Status |
+|---|---|---|
+| R1 | Phase 0 timed runs (items 1 to 3 and 5): E: and D: alone and together, D: at 8, 16 and 32 readers, the list-build timing at 2 M rows. Feeds N1, N2, N3 and N7 | open |
+
+### Claims to correct
+
+| ID | Where | What is wrong | Status |
+|---|---|---|---|
+| D1 | Status table, phase 3 | Lists the pool's live budget and the governor as built; neither has the tests in T1 | open |
+| D2 | Status table, phase 2 | Lists the work lists as index-served; T3 and T4 are what would show it | open |
+| D3 | Status table, phase 4 | Presents `tests/lanes.rs` as covering the lanes; it has 7 of the 12 planned lane tests (see L1 to L7) | open |
+| D4 | Commit `79e3010f` message | Says the lanes are built with the listed exceptions, without naming the untested items (T1 to T6, L1 to L7, C1) | open (history: correct in the ledger, not by amending) |

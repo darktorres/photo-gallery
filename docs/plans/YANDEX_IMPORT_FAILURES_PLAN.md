@@ -1,6 +1,7 @@
 # Plan: thumbnail-cache setting, Yandex fixes, import-failure persistence
 
 ## Context
+
 Five items. Findings come from reading the code and this machine's `D:\PhotoGallery\gallery.log` / catalog
 (read-only) and from timing queries on a scratch copy of the catalog; the app was not run, so every "cause" has a
 confirm step before its fix. Project rules: edit with Edit/Write, no new branch, native build, churn is not a concern
@@ -12,6 +13,7 @@ placeholder failures**; persistence model = **classify by cause + retry as ledge
 > **BASE: this plan is rebased onto `main` at `1150d3b6`** (the per-drive lane refactor landed in `79e3010f`, `07b78c52`,
 > `1150d3b6`; the working tree is clean). Every `file:line` below was re-read at that commit by three read-only agents;
 > where a plan assumption turned out wrong it is corrected in place. What the refactor changed, for orientation:
+>
 > - The runner is **per-drive lanes with a coordinator**: pass bodies in `library/src/passes.rs`, the loop in
 >   `lane.rs` (`Inner::run`, idle wait `lane.rs:42-47`), shared state in `inner.rs`/`shared.rs`, the lane registry and
 >   probes in `coordinator.rs`/`lanes.rs`, **notice aggregation in `tally.rs`** (per-pass counts per lane, summed, with a
@@ -38,6 +40,7 @@ onto `1150d3b6`. "(review)" marks what a review changed; "(recorded)" marks a de
 
 **Two points to confirm with the user** (1 is **confirmed**; 2 was answered "something else" with no description, so it is
 still open):
+
 1. Placeholders get **no observer** (confirmed; not a churn choice): they have no checkpoint, so a discarded batch loses nothing
    durable, and their batch writes in one Immediate `catalog.tx()` held across up to 200 stores, which a second
    connection would collide with. Their failures stay recorded in that same transaction, they are routed through the same
@@ -47,6 +50,7 @@ still open):
    never reach the grid's failed filter or the status bar; no item here changes that. **Question: what exactly was seen?**
 
 **Decisions settled with the user:**
+
 - **D-A. Thumbs retry list: the due branch now (decided).** AUDIT E.2 says "no retry-list query: the `fold`/`first_failed`
   mechanism is deleted by BM D35/4.7". D35 (`BOUNDED_MEMORY_PLAN.md` D35, 4.4-4.6) is the unimplemented per-height cache
   state (cursors, laps, a `todo` set, a lease) that retires `checked`; it is not built and the landed lane refactor gave
@@ -82,6 +86,7 @@ in `App::open` (`crates/app/src/app.rs:70-77`), leaked as `&'static`, shared by 
 `set_suspended(&self)`/`suspended()` (not `enabled`, which collides with `disabled()`; the checkbox is "on" = not
 suspended). When the open failed (`store: None`) the setting has nothing behind it; the `CacheDisabled` notice says so
 (whether the checkbox should be disabled then: open item).
+
 - Gated when suspended: `get_nearest_into` (-> `Ok(None)`), `put` (no-op), `put_batch` (-> `Ok(false)`).
 - **Not gated:** `retag`, `forget`, `forget_height`, `pending`/checkpoint writes/`shrink`. The DB stays open and
   consistent, so re-enabling has no stale-row hazard (rows are keyed by mtime/rotation). `pending`/`pending_on`/`checked`
@@ -99,6 +104,7 @@ suspended). When the open failed (`store: None`) the setting has nothing behind 
 checkboxes of two kinds: `write_back` is saved only (read on demand, `app/src/edit.rs:28`);
 `detect_borders`/`detect_duplicates` are saved and pushed to the job. (Real size is not a checkbox; it is the viewer's
 `Z` key.)
+
 - `prefs.rs`: `pub thumb_cache: bool` **after `serial_drives`** (rebase: the lane commit added that field last);
   `Default` (l.114-127, the only `Prefs` literal) `true`; add `"thumb_cache": true` at the end of `GOLDEN` (l.184-195) and
   of the inline JSON in `a_changed_value_is_written_as_its_own_text` (l.228; field order pinned). `#[serde(default)]`
@@ -130,6 +136,7 @@ checkboxes of two kinds: `write_back` is saved only (read on demand, `app/src/ed
   stub changes (no LibraryPanel test); no doc lists settings. Notice strings live in `text.ftl`; there is one locale, `en`.
 
 **Runner and thumbs pass** (rebase: pass bodies are `library/src/passes.rs`; the loop is `lane.rs`).
+
 - `Thumbs::run` (`passes.rs:254-288`) already returns `Done` at once when `heights.get()` is `None` (l.257-259). Add: when
   `thumbs.suspended()`, skip `run_while` (before l.263) and call `files_read(FilePass::Thumbs, 0, true)` (precedent: the
   Borders skip, `passes.rs:226-229`). **The explicit call matters after the refactor:** the tally holds counts per lane per
@@ -189,6 +196,7 @@ signal-emitting call, and set fields before emitting** (as `set_preview_item` do
 it.
 
 **Fixes:**
+
 1. **Compute inside the reset, emit after.** `show()` resets, then `groups_changed()` sets the counts
    (`yandex.rs:146-151`), so on the first `found` the second Repeater has `otherCount == 0` and every tile requests its
    thumbnail until the counts flip, and `data()` reads stale or empty `frames` (`yandex.rs:285`). Callers of `relayout`:
@@ -213,6 +221,7 @@ it.
    `#[inherit] #[cxx_name = "beginRemoveRows"] fn begin_remove_rows(self: Pin<&mut YandexSearch>, parent: &QModelIndex,
    first: i32, last: i32);` and `endRemoveRows`; `QModelIndex::default()` is already used (l.210); borrow pattern as
    `gallery/model.rs:192-194`. Draft:
+
    ```rust
    // Picks
    pub fn remove(&mut self, r: Range<usize>) {
@@ -231,6 +240,7 @@ it.
        self.picks.remove(start..end);
    }
    ```
+
    `drop_dead` first computes `Vec<Range<usize>>` of dead runs (no `&` borrow of `results` may live across
    `end_remove_rows`), then per run, highest first: `begin_remove_rows(&root, a, b-1)`, `rust_mut().results.remove_range`,
    **`frames.drain(run)`** (`data()` indexes `frames[i]` by row, so survivors would read dead rows' frames until
@@ -272,6 +282,7 @@ the source, the pixmap is cleared, `sourceSize` -> 0 and `width/height` collapse
 neighbours are never loaded ahead.
 
 **Fix** (mirror `ImageLayers.qml:62-76,102`, `Viewer.qml:395-405`):
+
 1. `retainWhileLoading: true` on `full` (Qt 6.12, `qquickimage.cpp:988`). No `lastSize` latch: `sourceSize` stays the
    retained image's size until `requestFinished` swaps (`qquickimagebase.cpp:331-347`); A->B->C switches are safe. On
    `Error` the retained picture is cleared and "cannot decode" shows (accepted).
@@ -288,6 +299,7 @@ neighbours are never loaded ahead.
 
 Pattern: `Viewer.qml:299-315` (its accumulator is inline in the handler; `wheelBy` is `WheelListView.qml:37`, a ListView
 smooth-scroll helper, unrelated: the notch function is **new**).
+
 - **Decided with the user: the wheel always steps and no longer scrolls the image.** Today the wheel only scrolls the
   `Flickable` `previewView` (`YandexPreview.qml:148`), and only when the image is bigger than the view (1:1 or a huge
   image); the `MouseArea` at l.96-99 just swallows wheel events so the grid below does not move. A 1:1 image is still
@@ -316,6 +328,7 @@ smooth-scroll helper, unrelated: the notch function is **new**).
 ## 5. Import-pipeline failures lost on exit (thumbs / placeholders / import)
 
 ### What was actually found
+
 **No code path was found where a recorded failure is lost on a normal quit**, and nothing in the log shows one. What is
 genuinely lost or hazardous: (a) the status bar's "N failed" (`Running.failed`) and everything never persisted by design
 (unreadable files are count-only); (b) a job stuck in a blocking call at exit (the process ends when `main` returns, so
@@ -340,7 +353,7 @@ anything unwritten is re-derived.
 | **B** | Job outlives the 5 s stop | **Observed** (`gallery.log:1770, 1773`, 2026-11-12: `background job still running at exit`, then `round-failed: thumbnail cache closed` 11-14 s later). **Cause unproven:** `pending_in` (`thumbcache/src/reader.rs`, no `Control`) is the leading suspect; also `Catalog::open`, `recorded_failures`, the uninterruptible `pending_placeholders` (`placeholders.rs:79`), a reader blocked in a slow open on a dead share (`read_whole` opens before `pool.take`, `pipeline.rs:547-555`; stop is checked only between items, `control.rs:270`), or the pass being in Scans/Import. **HEAD differs from the log:** `Thumbs::run` now catches a pass error and posts `CacheNotStored` (`aeb7d2cb`, `b4515c7b`; its text is misleading for non-cache errors); Placeholders still yields `RoundFailed`. After the warning, `main` returns only after the synchronous `drop(engine)` and `app::shutdown` (`thumbs.close()` -> `writer.stop()`, a WAL merge of a 2.1 GB file); `shutdown` closes the cache under the running job (`app.rs:165`) because nothing connects `Library::stop`'s result to it (`desktop/lib.rs:212-214`). |
 | **C** | Writer discards queued batches after it stops | **Confirmed**, narrower than first stated. After `flush` returns `Ok(false)` (cache full, `still_wanted` false, `lib.rs:336`) or errors, `batched` skips later batches (`pipeline.rs:411-425`) and drops the sink's last `kept` (l.462-464), failures included. Re-derived next pass because the checkpoint does not advance, so what is lost is the failure count shown and persistence on a stopped pass. Untested. A plain stop does not trigger it. |
 | **D** | Placeholders | Failures share the batch transaction (`placeholders.rs:182-233`). No checkpoint: failures are re-derived from `pending_placeholders`; nothing durable is lost. |
-| **E** | Never persisted by design | The status bar's "N failed" is `Running.failed`; the ledger holds only panicked/undecodable. Unreadable is count-only and folds `first_failed` (`lib.rs:286-292`: everything but `Panicked | Undecodable` folds, so `Unreadable` and `Other` already hold the checkpoint back today). |
+| **E** | Never persisted by design | The status bar's "N failed" is `Running.failed`; the ledger holds only panicked/undecodable. Unreadable is count-only and folds `first_failed` (`lib.rs:286-292`: everything but `Panicked \| Undecodable` folds, so `Unreadable` and `Other` already hold the checkpoint back today). |
 | **E2** | Import turns an offline drive into a permanent failure | **Confirmed by code:** any `Err` from the import pipeline goes to `writer.store_failure` (`import/lib.rs:157-194`, `writers.rs:477-495`), which writes `analysis.error` and clears `files.pending`, so an offline drive, a lock or access-denied is permanent (the inbox's `pass='import'` rows are a trigger mirror of `analysis.error`: `analysis_import`, `schema.rs:569-581`); only `import --retry`/`--again`, a file change or an import-version bump redo it. |
 | **E3** | Hashes and Borders retry forever | Hashes leaves an unreadable file owed (`hashes_owed`, `hashes.rs:114-117`) and a content failure becomes sticky; one permanently owed file suppresses the whole catalog's "not a duplicate" list (`NOT_DUPLICATES`, `query/lib.rs:355-361`; `has_owed_hashes`). Borders leaves an unreadable file due, retried every round with no give-up (`borders/src/lib.rs:97-101`). |
 | **F** | Native crash / power loss mid-pass | Loses `Unwritten`, re-derived. Both DBs are WAL `synchronous=NORMAL`, so on power loss the checkpoint could survive while the earlier ledger write does not (rare, low impact; out of scope). |
@@ -392,6 +405,7 @@ resolver-table test 1836. `import/src/lib.rs`: `ImportStats` 38-45, `batched` 94
 | Writeback's own queue | `writeback/src/queue.rs` has `MAX_ATTEMPTS`, `write_failed(job, msg, offline)` (offline = attempts +0) and `NEXT_READY` back-off | **Left alone** (its own queue table, not a worklist); only `folder_present` (`writeback/src/lib.rs:470-475`, private on `Inner`, one caller at 442, `self` unused) moves to `Catalog` and writeback calls it there |
 
 ### Step 0 (build 1 instrumentation; tests pin each path)
+
 - Stop latency: `PG_PERF_LOG` on the 190k library after wiping `thumbs.sqlite`, cold cache, to see which setup phase and
   which shutdown step (`drop(engine)` vs `writer.stop()`) holds the process. **Do not implement the B stop-check until
   this names the phase (build 2).**
@@ -411,6 +425,7 @@ resolver-table test 1836. `import/src/lib.rs`: `ImportStats` 38-45, `batched` 94
 ### Fixes
 
 **5.0 `Unreadable` and the classifier** (lands first; used by 5.2, 5.4, 5.5, the Step 0 tally).
+
 - **`pg_platform::unreadable::Unreadable(io::Error)`** (recorded, AUDIT D.1), created where a read or open fails:
   `pipeline::read_error` (`pipeline.rs:536-541`), `analysis/analyze.rs` `file_hash_of` (l.39-41; its caller adds a
   `with_context`, l.~99-100, so the marker must survive `anyhow` context), and **in place of `pg_video::Unopened`**
@@ -463,6 +478,7 @@ resolver-table test 1836. `import/src/lib.rs`: `ImportStats` 38-45, `batched` 94
   truncated JPEG does not (recorded).
 
 **5.1 B (query fix in build 1; the rest after the measurement, build 2).**
+
 - The independent query fix: `+f.volume` in the full-pass `pending_sql` (about 1,330 -> 240 ms warm, **measured on the old
   single-checkpoint form** with `ORDER BY f.volume`). The landed per-volume `pending_sql` (`thumbcache/src/reader.rs:187-198`)
   writes `WHERE f.volume IN (..) ... ORDER BY f.volume, ..` for the full pass and `f.seq > ?2 AND +f.volume IN (..) ...
@@ -489,6 +505,7 @@ discard paths are a `flush` that errors after `batch.drain(..)` and a failed `ha
 a `Flusher` in `jobs/pipeline.rs` beside `batched` (a classifier closure; systemic errors keep the batch and retry with a
 stop-aware backoff; closures consume the batch only after commit; passes take `&mut Stats`): **build the observer in the
 same restructure, not beside it.**
+
 - **`run_timed` takes one event callback** (the tick and stop events happen inside `run_timed`'s loop,
   `pipeline.rs:335-345`, which has a single `sink: FnMut(usize, Result<R>, usize) -> Result<bool>`, l.214; `batched`'s sink closure already
   captures `kept`, so a second observer closure cannot compile): `enum Event<'a, R> { Result(usize, &'a Result<R>), Tick,
@@ -599,6 +616,7 @@ against baseline + migrations, so it matches by construction; test the migration
 tests that pin version steps need the bump; `rebuild.rs` `CARRIED` (l.134-156, which already lists `placeholders` and
 `folder_failures`) gets `io_attempts` after `files`; `convert.rs` copies it; the lane refactor added nothing to the
 schema, so nothing there collides):
+
 ```sql
 CREATE TABLE io_attempts(
     file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
@@ -612,6 +630,7 @@ CREATE TRIGGER io_attempts_stale AFTER UPDATE OF mtime, size, rotation, missing 
 WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation OR old.missing IS NOT new.missing
 BEGIN DELETE FROM io_attempts WHERE file_id = new.id; END;
 ```
+
 (`next_try_at` is the audit's amendment to DO's version; the reset trigger is DO 3.3's.) **Why this beats retry rows in
 `file_failures`** (decided by the recorded plans, confirmed by the investigation): the inbox, `live_failures!`, serials,
 the `file_failures_live` index and the Import trigger mirror (`analysis_import`, `hidden`, `files_failures_stale` skipping
@@ -621,6 +640,7 @@ semantics; the reset trigger makes identity comparison unnecessary in the exclus
 
 *Behaviour* (one `Catalog::io_attempt(pass, file, class, now)` in `writers.rs`, guarded like `record_failures_on`
 (`f.mtime/size/rotation` match and `f.missing = 0`), returning `{ recorded, terminal }`):
+
 - `Transient` (counted, after `folder_present`): `attempts + 1`; at `MAX_ATTEMPTS` the row is deleted and `terminal = true`,
   and the pass writes the terminal result (below); otherwise `next_try_at = now + 60` (first) or `+ 600` (second).
 - `NotFound`: attempts unchanged, `next_try_at = now + 60`; never terminal; the stale trigger clears it when a scan marks the
@@ -760,6 +780,7 @@ at the cap becomes the DO terminal row, which also closes the `NOT_DUPLICATES` s
 sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pass exists).
 
 **5.6 Remaining item-5 change sets (in scope; after 5.4; re-evaluated against the coordinator and the recorded plans).**
+
 - **Per-root circuit breaker** (bounds N slow failed opens on a dead share the first time, which `io_attempts` spacing does
   not; also the stuck-reader stop latency); build 2, after the Step 0 numbers. **Rebase: lower value than before.** A dead
   share's reader now holds only **its own lane** (one lane per drive; other drives keep working), so the breaker no
@@ -792,6 +813,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 ---
 
 ## Open items to settle during implementation
+
 - The two points to confirm (placeholders get no observer; what exactly was seen as "lost on exit").
 - Whether `Control` can hand the sink an `Arc<AtomicBool>` for `wait_for_writers(Patience { stop, until })` (5.2), and the
   `until` bound.
@@ -805,6 +827,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 - Whether the audit's migration slice (which would own `io_attempts`) lands before this change, and who owns `Flusher`.
 
 ## Critical files
+
 - Cache setting: `crates/thumbcache/src/lib.rs`, `crates/app/src/{app,prefs,library}.rs`, `crates/library/src/{passes,runner,coordinator}.rs`,
   `crates/thumbs/src/lib.rs`, `crates/desktop/src/{settings,settings_bridge}.rs`,
   `crates/desktop/qml/{LibraryPanel,Main}.qml`, `crates/client/locales/en/ui.ftl`
@@ -825,6 +848,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
   use `BTreeMap`/`BTreeSet`), `too_many_arguments` expects carry a reason, `checked_mul`/`saturating_mul` for backoff.
 
 ## Verification
+
 - **Before build 1, hand-review the five riskiest edits:** (1) `Event`/`batched_observed`/`recv_timeout` in `pipeline.rs`
   (explicit types, `None::<Duration>`, wrapper first as a mechanical copy; coordinate with the lane refactor's edits to the
   same file); (2) the `thumbs::run_while` Sink/Writing split (declare `Sink` first, move it back out after the call; grep

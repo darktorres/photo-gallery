@@ -70,4 +70,19 @@ impl qobject::Settings {
             self.detect_duplicates_changed();
         }
     }
+
+    pub(crate) fn read_thumb_cache(&self) -> bool {
+        app::get().prefs().get().thumb_cache
+    }
+
+    /// Saves the choice and sets the cache's gate to it at once. The job runs a round: the thumbnail pass resumes from
+    /// its checkpoint when the cache is back on, and a round while it is off skips that pass.
+    pub(crate) fn set_thumb_cache_saved(self: Pin<&mut Self>, value: bool) {
+        if app::get().prefs().get().thumb_cache != value {
+            change_prefs(|p| p.thumb_cache = value);
+            app::get().thumbs().set_suspended(!value);
+            app::get().library().wake_job();
+            self.thumb_cache_changed();
+        }
+    }
 }

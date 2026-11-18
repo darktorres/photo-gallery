@@ -49,8 +49,11 @@ pub struct ThumbStats {
     /// Files changed while they were read (or being rewritten by the app): not kept, tried again.
     pub changed: usize,
     pub cache_full: bool,
-    /// Every file of the work was tried (not stopped, the cache not full): the next pass starts from this one's
-    /// snapshot (`ThumbCache::checked`).
+    /// The cache was turned off during the pass (`ThumbCache::set_suspended`): a batch it was asked to store was not
+    /// stored, so the pass ended there. Not a full cache.
+    pub stopped: bool,
+    /// Every file of the work was tried (not stopped, the cache not full, the cache not turned off during the pass):
+    /// the next pass starts from this one's snapshot (`ThumbCache::checked`).
     pub complete: bool,
     /// What the pass's writes to the failure ledger came to.
     pub ledger: LedgerOutcome,
@@ -227,6 +230,7 @@ pub fn run_while(
         failures: Vec::new(),
         changed: 0,
         cache_full: false,
+        stopped: false,
         complete: false,
         ledger: LedgerOutcome::Untouched,
     };
@@ -345,6 +349,9 @@ pub fn run_while(
                     Err(e) => stats.ledger.failed(&e.into()),
                 }
             }
+        } else if cache.suspended() {
+            // Turned off during the pass: not full, and the batch is not stored. Nothing it did not store is counted as done.
+            stats.stopped = true;
         } else {
             stats.cache_full = true;
         }
@@ -400,7 +407,7 @@ pub fn run_while(
     unwritten.write(&catalog, &mut first_failed, &mut stats.ledger, ctl);
     ran?;
     drop(phase);
-    stats.complete = !stats.cache_full && tried == items.len();
+    stats.complete = !stats.cache_full && !stats.stopped && tried == items.len();
     let finish = pg_perf::span("thumbs.finish");
     if stats.complete {
         cache.checked(&snapshot, first_failed)?;

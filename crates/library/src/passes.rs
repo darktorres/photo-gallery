@@ -257,16 +257,25 @@ impl Pass<Cx<'_>> for Thumbs {
         let Some(height) = cx.inner.shared.heights.get() else {
             return Ok(Step::Done);
         };
+        if cx.inner.shared.thumbs.suspended() {
+            // The cache is off (the Library panel): nothing is made or stored. Nothing is unreadable now, and a lane that
+            // never runs this pass has no tally entry, so the notices of the pass are settled here: a stale "cache full" or
+            // "unreadable files" would otherwise stay (they re-post when the cache is back on and the pass runs).
+            cx.inner.files_read(FilePass::Thumbs, 0, true);
+            cx.inner.cache_room();
+            return Ok(Step::Done);
+        }
         let heights = cx.inner.shared.heights.clone();
         let opts = cx.inner.options(Priority::Idle);
         let volumes = cx.inner.volume_set();
+        let thumbs = cx.inner.shared.thumbs;
         let s = match pg_thumbs::run_while(
-            cx.inner.shared.thumbs,
+            thumbs,
             &cx.inner.shared.catalog_path,
             height,
             &opts,
             &volumes,
-            &|| heights.get() == Some(height),
+            &|| heights.get() == Some(height) && !thumbs.suspended(),
             &cx.inner.ctl,
         ) {
             Ok(s) => s,

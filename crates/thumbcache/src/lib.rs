@@ -40,6 +40,7 @@ pub use reader::pending_in;
 pub use types::{Effect, Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -70,9 +71,12 @@ use pg_platform::sqlite::attach_bytes;
 use std::path::PathBuf;
 
 /// The thumbnail cache. Without a file (it couldn't be opened, `disabled`), nothing is kept: thumbnails are made
-/// every time they are shown.
+/// every time they are shown. Suspended (the user turned the cache off), it keeps nothing new and serves nothing
+/// either, but the file stays open and consistent: its rows still follow files (`retag`, `forget`), and turning it
+/// back on serves what it held.
 pub struct ThumbCache {
     store: Option<Store>,
+    suspended: AtomicBool,
 }
 
 impl ThumbCache {
@@ -107,13 +111,27 @@ impl ThumbCache {
         let body = inbox.clone();
         let writer = Service::start("thumbnail cache", move |waker| write_loop(conn, &body, &events, waker))
             .context("start the thumbnail cache writer")?;
-        Ok(ThumbCache { store: Some(Store { path: path.to_path_buf(), inbox, writer, _live: live }) })
+        Ok(ThumbCache {
+            store: Some(Store { path: path.to_path_buf(), inbox, writer, _live: live }),
+            suspended: AtomicBool::new(false),
+        })
     }
 
     /// A cache that keeps nothing, for when the file can't be opened: a cache must never keep the app from
     /// starting.
     pub fn disabled() -> ThumbCache {
-        ThumbCache { store: None }
+        ThumbCache { store: None, suspended: AtomicBool::new(false) }
+    }
+
+    /// Turn the cache off (`true`) or back on (`false`), live. While suspended, reads find nothing and writes store
+    /// nothing; see the type's documentation.
+    pub fn set_suspended(&self, suspended: bool) {
+        self.suspended.store(suspended, Ordering::Release);
+    }
+
+    /// Whether the cache is turned off (see [`ThumbCache::set_suspended`]). Not whether it could be opened.
+    pub fn suspended(&self) -> bool {
+        self.suspended.load(Ordering::Acquire)
     }
 
     fn send(&self, op: Op) -> Result<()> {
@@ -142,6 +160,9 @@ impl ThumbCache {
         source: Source,
         jpeg: &mut Vec<u8>,
     ) -> Result<Option<ThumbHeight>> {
+        if self.suspended() {
+            return Ok(None);
+        }
         let Some(store) = &self.store else { return Ok(None) };
         let found = with_reader(&store.path, |conn| {
             Ok(conn
@@ -184,19 +205,20 @@ impl ThumbCache {
     }
 
     /// Store a thumbnail made on demand, in the background, evicting the least recently used entries of any
-    /// height if needed. A failure is published as an [`Event::NotStored`]: the thumbnail was shown anyway.
+    /// height if needed. A failure is published as an [`Event::NotStored`]: the thumbnail was shown anyway. Nothing
+    /// is stored while the cache is suspended.
     pub fn put(&self, thumb: Thumb) {
-        if self.store.is_some() {
+        if self.store.is_some() && !self.suspended() {
             let _ = self.send(Op::PutOne(thumb));
         }
     }
 
     /// Store `thumbs` in one transaction, waiting for it. With `keep_height`, eviction spares that height (the
     /// background task filling the cache for the current grid); returns false, storing nothing, once it can't make
-    /// room. A disabled cache stores nothing either (false: the task stops). The batch comes back as it went, so
-    /// that its `Vec` and its thumbnails' buffers are reused rather than made anew for the next one.
+    /// room. A disabled or suspended cache stores nothing either (false: the task stops). The batch comes back as it
+    /// went, so that its `Vec` and its thumbnails' buffers are reused rather than made anew for the next one.
     pub fn put_batch(&self, thumbs: &mut Vec<Thumb>, keep_height: Option<ThumbHeight>) -> Result<bool> {
-        if self.store.is_none() {
+        if self.store.is_none() || self.suspended() {
             return Ok(false);
         }
         let (stored, back) = self.call(|reply| Op::Put { thumbs: std::mem::take(thumbs), keep_height, reply })?;
@@ -493,6 +515,29 @@ mod tests {
         assert_eq!(cache.get_nearest_into(FileId::new(4), h(100), src(5), &mut jpeg).unwrap(), None);
         assert_eq!(jpeg, vec![3u8; 30]);
         assert_eq!(cache.totals().unwrap(), (60, 3));
+    }
+
+    /// Suspended, the cache serves and stores nothing, but its rows still follow files (`retag`, `forget`), and turning
+    /// it back on serves what it held.
+    #[test]
+    fn suspended_serves_and_keeps_nothing_until_it_is_back_on() {
+        let dir = run_folder(SCRATCH, "suspended").unwrap();
+        let cache = open(&dir, 1 << 30);
+        assert!(!cache.suspended());
+        assert!(cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap());
+        cache.set_suspended(true);
+        assert!(cache.suspended());
+        assert!(cache.get_nearest(FileId::new(1), h(100), src(5)).unwrap().is_none());
+        assert!(!cache.put_batch(&mut vec![thumb(3, 100, 5, 30)], None).unwrap());
+        cache.put(thumb(4, 100, 5, 40));
+        cache.flush();
+        assert_eq!(cache.totals().unwrap(), (30, 2));
+        cache.retag(FileId::new(1), 5, 6).unwrap();
+        cache.forget(FileId::new(2)).unwrap();
+        assert_eq!(cache.totals().unwrap(), (10, 1));
+        cache.set_suspended(false);
+        assert!(!cache.suspended());
+        assert_eq!(cache.get_nearest(FileId::new(1), h(100), src(6)).unwrap().unwrap().0, h(100));
     }
 
     #[test]

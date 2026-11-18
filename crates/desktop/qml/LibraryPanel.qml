@@ -19,6 +19,8 @@ ModalOverlay {
     // Whether the borders and the duplicates are detected (the preferences; on by default).
     required property bool detectBorders
     required property bool detectDuplicates
+    // Whether the thumbnail cache is kept (the preference; on by default).
+    required property bool thumbCache
 
     // Add a folder (Main asks the picker, then the library takes what it chose).
     signal addRequested()
@@ -27,6 +29,7 @@ ModalOverlay {
     signal writeBackToggled(bool on)
     signal detectBordersToggled(bool on)
     signal detectDuplicatesToggled(bool on)
+    signal thumbCacheToggled(bool on)
 
     Pane {
         anchors.centerIn: parent
@@ -89,6 +92,13 @@ ModalOverlay {
                 onToggled: panel.detectDuplicatesToggled(checked)
                 ToolTip.visible: hovered
                 ToolTip.text: words.text("ui-detect-duplicates-tooltip")
+            }
+            CheckBox {
+                text: words.text("ui-thumb-cache")
+                checked: panel.thumbCache
+                onToggled: panel.thumbCacheToggled(checked)
+                ToolTip.visible: hovered
+                ToolTip.text: words.text("ui-thumb-cache-tooltip")
             }
             RowLayout {
                 Button { text: words.text("ui-add-folder"); onClicked: panel.addRequested() }

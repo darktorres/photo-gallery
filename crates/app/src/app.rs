@@ -76,6 +76,7 @@ impl App {
             });
         let thumbs: &'static ThumbCache = Box::leak(Box::new(thumbs));
         let prefs = Arc::new(PrefStore::open(config.layout.prefs().to_path_buf(), inbox.clone()));
+        thumbs.set_suspended(!prefs.get().thumb_cache);
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let features = prefs.get().features();
@@ -115,6 +116,11 @@ impl App {
     /// The images the front end shows: thumbnails, placeholders, and the viewer's original.
     pub fn images(&self) -> &Images {
         &self.images
+    }
+
+    /// The thumbnail cache (the Library panel's setting turns it off and on).
+    pub fn thumbs(&self) -> &ThumbCache {
+        self.thumbs
     }
 
     /// The catalog reads: the reader's session (the grid, the folder tree, the counts), and a file's details and entry.

@@ -652,6 +652,7 @@ ApplicationWindow {
                     writeBack: appSettings.writeBack
                     detectBorders: appSettings.detectBorders
                     detectDuplicates: appSettings.detectDuplicates
+                    thumbCache: appSettings.thumbCache
                     onDismissed: {
                         win.libraryOpen = false
                     }
@@ -670,6 +671,9 @@ ApplicationWindow {
                     }
                     onDetectDuplicatesToggled: (on) => {
                         appSettings.detectDuplicates = on
+                    }
+                    onThumbCacheToggled: (on) => {
+                        appSettings.thumbCache = on
                     }
                 }
             }

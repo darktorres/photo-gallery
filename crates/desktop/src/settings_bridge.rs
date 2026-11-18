@@ -16,6 +16,8 @@ pub mod qobject {
         #[qproperty(bool, detect_borders, cxx_name = "detectBorders", READ = read_detect_borders, WRITE = set_detect_borders_saved, NOTIFY, FINAL)]
         /// Detect the duplicates (on by default): the import hashes the files and the pairing pass pairs them. Off: both wait.
         #[qproperty(bool, detect_duplicates, cxx_name = "detectDuplicates", READ = read_detect_duplicates, WRITE = set_detect_duplicates_saved, NOTIFY, FINAL)]
+        /// Keep the grid's thumbnails in the thumbnail cache (on by default). Off: every thumbnail is decoded from its original.
+        #[qproperty(bool, thumb_cache, cxx_name = "thumbCache", READ = read_thumb_cache, WRITE = set_thumb_cache_saved, NOTIFY, FINAL)]
         type Settings = super::SettingsRust;
     }
 
@@ -24,9 +26,11 @@ pub mod qobject {
         fn read_real_size(self: &Settings) -> bool;
         fn read_detect_borders(self: &Settings) -> bool;
         fn read_detect_duplicates(self: &Settings) -> bool;
+        fn read_thumb_cache(self: &Settings) -> bool;
         fn set_write_back_saved(self: Pin<&mut Settings>, value: bool);
         fn set_real_size_saved(self: Pin<&mut Settings>, value: bool);
         fn set_detect_borders_saved(self: Pin<&mut Settings>, value: bool);
         fn set_detect_duplicates_saved(self: Pin<&mut Settings>, value: bool);
+        fn set_thumb_cache_saved(self: Pin<&mut Settings>, value: bool);
     }
 }

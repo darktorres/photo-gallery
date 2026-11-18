@@ -47,6 +47,10 @@ pub struct Prefs {
     /// Process the library folders one after another, even on different drives (the escape hatch of `pg_model::features`).
     /// Off: a lane per physical drive, so two drives are read and written at once.
     pub serial_drives: bool,
+    /// Keep the grid's thumbnails in the thumbnail cache (on by default). Off: nothing is kept or read from it, so every
+    /// thumbnail and placeholder is decoded from its original each time it is shown, and the background thumbnail
+    /// pass waits. What the cache holds is kept, and the setting takes effect at once.
+    pub thumb_cache: bool,
 }
 
 impl Prefs {
@@ -124,6 +128,7 @@ impl Default for Prefs {
             detect_borders: true,
             detect_duplicates: true,
             serial_drives: false,
+            thumb_cache: true,
         }
     }
 }
@@ -213,7 +218,8 @@ mod tests {
   "dev_mode": false,
   "detect_borders": true,
   "detect_duplicates": true,
-  "serial_drives": false
+  "serial_drives": false,
+  "thumb_cache": true
 }"#;
 
     #[test]
@@ -247,7 +253,7 @@ mod tests {
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false}"#
+            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false,"thumb_cache":true}"#
         );
     }
 

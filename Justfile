@@ -80,8 +80,8 @@ fmt:
 
 # The lint tools' versions. ruff and markdownlint are pinned in tools/lint (their lockfiles, which CI installs from);
 # cargo-deny and cargo-machete are pinned here, and CI's install step names the same two.
-cargo_deny_version := "0.20.2"
-cargo_machete_version := "0.9.2"
+cargo_deny_version := "0.21.0"
+cargo_machete_version := "0.10.1"
 
 # The Linux container's pins (docker/Dockerfile): the launcher reads them from here with `just --evaluate`, so each is
 # written once. CI's Linux job runs the same image, and its `just` is the one in the install step (just_version).

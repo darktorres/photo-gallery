@@ -1,5 +1,33 @@
 # Plan: thumbnail-cache setting, Yandex fixes, import-failure persistence
 
+## Status
+
+Items 1, 3, 4 and 2 are implemented, each in its own commit on `main`:
+
+- Item 1, the thumbnail-cache setting: `d4891079`.
+- Item 3, no black flash on prev/next: `1e9fa5e7`.
+- Item 4, the mouse wheel steps through results: `df0f7d71`.
+- Item 2, the dead-result refresh (steps 0-4 and 6): `8cede668`, with fixes in `5c858739` and `1799c09c`.
+
+**Item 5 (import-failure persistence) is dropped.** The progressive JPEGs were re-encoded to baseline, the errors no
+longer happen, and they cannot be reproduced. Section 5, its "What was actually found" table, and the open items about
+it are not pursued. The question "what exactly was seen" is moot.
+
+Not done from items 1-4:
+
+- Item 2, step 5 (pixmap cache): build 2, gated on measurement.
+- Item 2, step 0 (instrumentation and counters): not built.
+- The runner tests for the cache setting, and the Yandex preview and wheel tests, are not written.
+
+Verification so far:
+
+- `cargo test` passes for `pg-thumbcache`, `pg-thumbs`, `pg-client`, `pg-app` and `pg-desktop`.
+- `cargo clippy --workspace --all-targets -- -D warnings` is clean, and `cargo check -p pg-desktop` compiles the cxx-qt bridge.
+- `just qmltest` passes (108 of 108).
+- `just lint`: fmt, clippy, wasm, metadata and docs pass. `cargo deny` could not fetch the advisory database (network
+  reset); its bans, licenses and sources checks pass when run alone. Machete, boundaries and `just lint-qml` pass.
+- Not yet done: the advisory check, and a manual run of the app (the thumbnail toggle, the Yandex preview and the wheel).
+
 ## Context
 
 Five items. Findings come from reading the code and this machine's `D:\PhotoGallery\gallery.log` / catalog

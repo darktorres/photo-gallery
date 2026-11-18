@@ -404,6 +404,11 @@ impl Control {
         own || self.family.global_paused.load(Ordering::SeqCst)
     }
 
+    /// Whether this lane is paused itself (its own pause, which a per-lane toggle sets), not the run's global pause.
+    pub fn is_own_paused(&self) -> bool {
+        self.paused.lock().unwrap_or_else(PoisonError::into_inner).own
+    }
+
     /// Called before each unit of work: waits while paused. `false` means stop.
     pub fn checkpoint(&self) -> bool {
         self.checkpoint_until(&AtomicBool::new(false))

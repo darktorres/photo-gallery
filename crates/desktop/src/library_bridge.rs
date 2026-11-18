@@ -19,6 +19,11 @@ pub mod qobject {
         #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, paused, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
+        /// One row per lane that is working or paused: its status. The status bar shows a row for each when there is more than
+        /// one lane.
+        #[qproperty(QStringList, lanes, READ, WRITE, NOTIFY, FINAL)]
+        /// Each row's pause of `lanes`: `1` when that lane is paused, `0` when it runs.
+        #[qproperty(QStringList, lane_paused, cxx_name = "lanePaused", READ, WRITE, NOTIFY, FINAL)]
         /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
         #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
         /// How many files the current pass failed on ("2 failed"), empty when none: the link to the inbox's entry of its
@@ -69,5 +74,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "togglePause"]
         fn toggle_pause(self: Pin<&mut Library>);
+
+        /// Pauses or resumes the lane of row `index` of `lanes`, leaving the other drives running.
+        #[qinvokable]
+        #[cxx_name = "toggleLanePause"]
+        fn toggle_lane_pause(self: Pin<&mut Library>, index: i32);
     }
 }

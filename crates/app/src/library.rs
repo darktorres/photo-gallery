@@ -183,7 +183,13 @@ impl Library {
         slot.writer.wake();
     }
 
-    /// Wake the job, which re-analyzes files whose content changed (a turned file's analysis is stale).
+    /// Wake the job for the files the writer turned since it was last asked: the lanes of their volumes re-analyze them.
+    pub fn wake_turned(&self) {
+        let turned = self.writer().writer.take_turned();
+        self.runner.wake_files(turned);
+    }
+
+    /// Wake the job, which re-analyzes files whose content changed (a turned file's analysis is stale). Every lane.
     pub fn wake_job(&self) {
         self.runner.wake();
     }
@@ -214,6 +220,11 @@ impl Library {
 
     pub fn is_paused(&self) -> bool {
         self.runner.is_paused()
+    }
+
+    /// Pauses or resumes one lane (its number from `Status::lanes`); `false` when no lane has that number.
+    pub fn set_lane_paused(&self, number: usize, paused: bool) -> bool {
+        self.runner.set_lane_paused(number, paused)
     }
 
     /// The job's and the writer's state now.

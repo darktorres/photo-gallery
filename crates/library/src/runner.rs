@@ -137,8 +137,12 @@ pub struct Generation {
 /// progress.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LaneProgress {
+    /// The lane's number: its identity for `Runner::set_lane_paused` (numbers are not reused).
+    pub number: usize,
     pub label: String,
     pub progress: Progress,
+    /// Whether this lane is paused itself (not the run's global pause).
+    pub paused: bool,
 }
 
 pub struct Runner {
@@ -235,6 +239,12 @@ impl Runner {
         self.lanes.wake_all(true);
     }
 
+    /// Files were turned in place: only the lanes of their volumes start again, so the other drives' rounds are not
+    /// interrupted. Nothing is done for no files.
+    pub fn wake_files(&self, ids: Vec<FileId>) {
+        self.lanes.wake_files(ids);
+    }
+
     /// The lanes the job has now: one per physical drive its roots are on (`coordinator`), or one when they collapse.
     pub fn lanes(&self) -> usize {
         self.lanes.all().len()
@@ -259,6 +269,12 @@ impl Runner {
     /// (`progress`) is the first of them that works.
     pub fn lane_progress(&self) -> Vec<LaneProgress> {
         self.lanes.progress_lines()
+    }
+
+    /// Pauses or resumes one lane (by its `LaneProgress::number`), leaving the others running. `false` when no lane has
+    /// that number. The run's global pause (`set_paused`) still holds every lane.
+    pub fn set_lane_paused(&self, number: usize, paused: bool) -> bool {
+        self.lanes.set_lane_paused(number, paused)
     }
 
     pub fn progress(&self) -> Progress {
@@ -565,7 +581,7 @@ mod tests {
         let inner = job(&catalog_path, cache, sink.clone());
         std::fs::remove_file(dir.join("images").join("b.png")).unwrap();
         run(&mut Thumbs, &inner);
-        assert_eq!(sink.posted(), [Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 1 }]);
+        assert_eq!(sink.posted(), [Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 1, drives: Vec::new() }]);
         let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
         assert!(c.failed_files(FilePass::Thumbs, 10).unwrap().is_empty(), "an unreadable file is in no ledger");
         // The rescan finds it missing: the next pass has nothing to make, and is complete.

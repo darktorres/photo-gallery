@@ -145,7 +145,7 @@ impl qobject::Library {
         if taken.turned {
             // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
             if let Some(library) = running() {
-                library.wake_job();
+                library.wake_turned();
             }
             self.as_mut().files_changed();
         }
@@ -172,10 +172,27 @@ impl qobject::Library {
         let p = &status.progress;
         // One line per working lane, its drive's label first; one lane reads as it always has. A scanned folder is shown
         // under the catalog's rules, this machine's.
-        let lanes: Vec<(String, Progress)> =
+        let working: Vec<(String, Progress)> =
             status.lanes.iter().map(|lane| (lane.label.clone(), lane.progress.clone())).collect();
-        let pass = text::lanes_status(&lanes, pg_platform::native::PATH_RULES).join("\n");
+        let pass = text::lanes_status(&working, pg_platform::native::PATH_RULES).join("\n");
         let line = if status.paused { text::paused_status(&pass) } else { pass };
+        // The lanes that work or are paused: one row each, its status and its pause ("1" or "0"). Each row keeps its lane's
+        // number here, so a toggle (`toggle_lane_pause`) names the lane by its row and QML parses nothing.
+        let shown: Vec<_> =
+            status.lanes.iter().filter(|lane| lane.progress.phase != Phase::Idle || lane.paused).collect();
+        let texts: QStringList = shown
+            .iter()
+            .map(|lane| {
+                let row =
+                    text::lanes_status(&[(lane.label.clone(), lane.progress.clone())], pg_platform::native::PATH_RULES)
+                        .join(" ");
+                QString::from(&row)
+            })
+            .collect();
+        let paused: QStringList = shown.iter().map(|lane| QString::from(&u8::from(lane.paused).to_string())).collect();
+        self.as_mut().rust_mut().lane_rows = shown.iter().map(|lane| (lane.number, lane.paused)).collect();
+        self.as_mut().set_lanes(texts);
+        self.as_mut().set_lane_paused(paused);
         self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().set_paused(status.paused);
         self.as_mut().set_status(QString::from(&line));
@@ -255,6 +272,16 @@ impl qobject::Library {
     pub(crate) fn toggle_pause(mut self: Pin<&mut Self>) {
         let Some(library) = running() else { return };
         library.set_paused(!library.is_paused());
+        self.as_mut().refresh_progress();
+    }
+
+    /// Pauses or resumes the lane of row `index` in `lanes`, from the pause that row shows. A row that isn't there does nothing.
+    pub(crate) fn toggle_lane_pause(mut self: Pin<&mut Self>, index: i32) {
+        let Some(library) = running() else { return };
+        let row = usize::try_from(index).ok().and_then(|i| self.rust().lane_rows.get(i).copied());
+        if let Some((number, paused)) = row {
+            library.set_lane_paused(number, !paused);
+        }
         self.as_mut().refresh_progress();
     }
 }

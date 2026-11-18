@@ -511,6 +511,8 @@ ApplicationWindow {
             toastLevel: inboxModel.toastLevel
             unread: inboxModel.unread
             status: library.status
+            lanes: library.lanes
+            lanePaused: library.lanePaused
             failed: library.failed
             // A link only to what the inbox lists: the pass's ledger entry, or its unreadable files.
             failedLinked: library.failedPass >= 0 && (inboxModel.passes & (1 << library.failedPass)) !== 0
@@ -529,6 +531,7 @@ ApplicationWindow {
                     shell.globalAction(GlobalShortcuts.Inbox)
             }
             onPauseToggled: library.togglePause()
+            onLanePauseToggled: (index) => library.toggleLanePause(index)
         }
 
         FilterBar {

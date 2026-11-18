@@ -40,6 +40,7 @@ and 1.1–2.9 ms wall. At batch 128, 0.85 ms wall for a 1 MP file. The 24 MP fil
 that difference is acceptable, but the flag is the better choice for thumbnails.
 
 **Limits.**
+
 - Progressive files decode Huffman on the CPU. Lossless conversion to baseline, which we already have, avoids it.
 - Batch memory bounds the largest images per batch. Camera originals need smaller batches or CPU fallback.
 - The decoded output can stay in device memory (the notes say the harness copies it to pinned host). Device output
@@ -58,6 +59,7 @@ is clean.
 
 **Mechanism.** The library decodes one image per handle, and each launch shape is per image. The reports sort the
 options into two levels:
+
 - A wrapper of N handles on N streams, one sync. About 1–2 days, low risk. It runs concurrently but doesn't reduce
   launches.
 - Fused batch kernels: one launch set for N images, with per-image offset tables, per-image grid sizes, and an image
@@ -75,6 +77,7 @@ fancy upsampling and YCbCr→RGB. It supports only 4:2:0, 4:2:2 and 4:4:4 and fa
 needs extending for batches and for validation of sampling factors.
 
 **Limits.**
+
 - Progressive files are rejected. They need the lossless conversion path or a CPU fallback.
 - Each scan's entropy data is capped at 16 MiB.
 - Experimental upstream, validated only by MSE against nvJPEG.
@@ -90,6 +93,7 @@ limits or licence bite. It also works without the 50-image rule.
 means N decoders on N streams, one per thread. The wrapper currently uses the default stream.
 
 **Limits.**
+
 - GPU Huffman needs restart markers, and the decoder only uses the GPU path with 32 or more segments
   (`gpujpeg_decoder.c:268`). Unmarked files always use CPU Huffman. Adding markers is a file rewrite (lossless
   `jpegtran -restart`), which is a bulk change to the library.

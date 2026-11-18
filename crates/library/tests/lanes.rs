@@ -188,3 +188,27 @@ fn each_lane_reports_its_drive_label() {
     assert_ne!(lanes[0].label, lanes[1].label, "one drive's label is not another's");
     assert!(runner.stop(WAIT));
 }
+
+/// A pause of one lane (L7) leaves the other lanes running: only the paused lane reports itself paused, the run's global
+/// pause is not set, and a number that no lane has is refused.
+#[test]
+fn a_per_lane_pause_pauses_only_its_lane() {
+    let (dir, catalog_path, a, b) = two_folders("lane-pause");
+    let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    runner.scan(vec![a, b]);
+    wait_for("two lanes", || runner.lanes() == 2);
+    let first = runner.lane_progress()[0].number;
+    let second = runner.lane_progress()[1].number;
+    assert!(runner.set_lane_paused(first, true));
+    wait_for("the first lane to report itself paused", || {
+        let lanes = runner.lane_progress();
+        lanes.iter().any(|lane| lane.number == first && lane.paused)
+    });
+    let lanes = runner.lane_progress();
+    assert!(lanes.iter().any(|lane| lane.number == second && !lane.paused), "the other lane runs on");
+    assert!(!runner.is_paused(), "a lane's pause is not the run's pause");
+    assert!(!runner.set_lane_paused(first.wrapping_add(1_000), true), "no such lane");
+    assert!(runner.set_lane_paused(first, false));
+    assert!(runner.stop(WAIT));
+}

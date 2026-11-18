@@ -516,7 +516,8 @@ mod linux {
         use super::*;
 
         /// A fake sysfs: a disk `sda` with a partition `sda1`, a device-mapper device over the partition, a loop device,
-        /// and a USB disk. Its `dev/block` links point at each, as sysfs has them.
+        /// and a USB disk; then a solid disk `sdc` and a spinning disk `sdd`, and a device-mapper device `dm-1` over both.
+        /// Its `dev/block` links point at each, as sysfs has them.
         fn sysfs() -> std::path::PathBuf {
             let root = crate::testing::run_folder("scratch_drive", "pg-drive-sysfs").unwrap();
             let write = |rel: &str, text: &str| {
@@ -538,6 +539,19 @@ mod linux {
             write("devices/virtual/block/loop0/dev", "7:0\n");
             write("devices/pci/usb1/1-1/block/sdb/dev", "8:16\n");
             write("devices/pci/usb1/1-1/block/sdb/queue/rotational", "0\n");
+            write("devices/pci/block/sdc/dev", "8:32\n");
+            write("devices/pci/block/sdc/queue/rotational", "0\n");
+            write("devices/pci/block/sdd/dev", "8:48\n");
+            write("devices/pci/block/sdd/queue/rotational", "1\n");
+            write("devices/virtual/block/dm-1/dev", "253:1\n");
+            fs::create_dir_all(root.join("devices/virtual/block/dm-1/slaves")).unwrap();
+            for disk in ["sdc", "sdd"] {
+                std::os::unix::fs::symlink(
+                    root.join("devices/pci/block").join(disk),
+                    root.join("devices/virtual/block/dm-1/slaves").join(disk),
+                )
+                .unwrap();
+            }
             fs::create_dir_all(root.join("dev/block")).unwrap();
             for (link, target) in [
                 ("8:0", "devices/pci/block/sda"),
@@ -545,6 +559,9 @@ mod linux {
                 ("253:0", "devices/virtual/block/dm-0"),
                 ("7:0", "devices/virtual/block/loop0"),
                 ("8:16", "devices/pci/usb1/1-1/block/sdb"),
+                ("8:32", "devices/pci/block/sdc"),
+                ("8:48", "devices/pci/block/sdd"),
+                ("253:1", "devices/virtual/block/dm-1"),
             ] {
                 std::os::unix::fs::symlink(root.join(target), root.join("dev/block").join(link)).unwrap();
             }
@@ -598,6 +615,40 @@ mod linux {
         #[test]
         fn a_device_missing_from_sysfs_is_an_error() {
             assert!(drive_of_dev(&sysfs(), makedev(9, 9)).is_err());
+        }
+
+        #[test]
+        fn a_device_mapper_over_two_disks_is_on_both_in_one_key() {
+            let drive = drive_of_dev(&sysfs(), makedev(253, 1)).unwrap();
+            assert_eq!(drive.key, DriveKey::Disks([makedev(8, 32), makedev(8, 48)].into_iter().collect()));
+            assert_eq!(drive.kind, Kind::Rotational, "the spinning disk makes the volume spinning");
+            assert_eq!(drive.label, "dm-1");
+        }
+
+        #[test]
+        fn a_disk_with_no_rotation_is_solid_and_one_with_rotation_is_rotational() {
+            assert_eq!(drive_of_dev(&sysfs(), makedev(8, 32)).unwrap().kind, Kind::Solid);
+            assert_eq!(drive_of_dev(&sysfs(), makedev(8, 48)).unwrap().kind, Kind::Rotational);
+        }
+
+        #[test]
+        fn queue_rotational_is_read_as_solid_or_rotational_and_a_usb_bridge_is_unknown() {
+            assert_eq!(kind_of(Some("0\n"), false), Kind::Solid);
+            assert_eq!(kind_of(Some("1\n"), false), Kind::Rotational);
+            assert_eq!(kind_of(Some("0\n"), true), Kind::Unknown, "a bridge's no-rotation says nothing");
+            assert_eq!(kind_of(Some("1\n"), true), Kind::Rotational);
+            assert_eq!(kind_of(None, false), Kind::Unknown, "no file");
+            assert_eq!(kind_of(Some("x"), false), Kind::Unknown, "not a number");
+        }
+
+        #[test]
+        fn a_device_number_with_major_zero_has_no_block_device_whatever_its_minor() {
+            // Btrfs, overlayfs and ZFS report major 0, and a minor that can be large (anonymous devices).
+            for minor in [0, 5, 300] {
+                let error = drive_of_dev(&sysfs(), makedev(0, minor)).unwrap_err();
+                assert_eq!(error.kind(), io::ErrorKind::Unsupported, "minor {minor}");
+            }
+            assert_eq!(major(makedev(0, 300)), 0);
         }
 
         #[test]

@@ -30,8 +30,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use pg_catalog::{Catalog, VolumeSet};
-use pg_library::lanes::{self, Group};
-use pg_platform::native::PATH_RULES;
+use pg_library::lanes::{self, Group, run_each};
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
@@ -310,7 +309,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             if !unplaced.is_empty() {
                 groups.push(Group { roots: unplaced, volumes: VolumeSet::All, label: String::new() });
             }
-            let walked = run_lanes(&catalog_path, &groups, ctl, |catalog, group, lane| {
+            let walked = run_each(&catalog_path, &groups, ctl, |catalog, group, lane| {
                 Ok(group
                     .roots
                     .iter()
@@ -387,8 +386,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             }
             let opts = pipeline.options(Priority::Normal);
             // One lane per drive: each imports its volumes at once. The duplicates below are the whole library's.
-            let groups = lanes_of(&catalog, serial)?;
-            let imports = run_lanes(&catalog_path, &groups, ctl, |catalog, group, lane| {
+            let groups = lanes::command_groups(&catalog, serial)?;
+            let imports = run_each(&catalog_path, &groups, ctl, |catalog, group, lane| {
                 pg_import::import_while(catalog, &opts, retry_errors, &group.volumes, &|| true, lane)
             })?;
             for (group, s) in groups.iter().zip(&imports) {
@@ -423,8 +422,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let (events, printer) = thumb_events();
             let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, cap, events)?;
             // One lane per drive: each makes its volumes' thumbnails and placeholders, all into the one cache.
-            let groups = lanes_of(&catalog, serial)?;
-            let runs = run_lanes(&catalog_path, &groups, ctl, |catalog, group, lane| {
+            let groups = lanes::command_groups(&catalog, serial)?;
+            let runs = run_each(&catalog_path, &groups, ctl, |catalog, group, lane| {
                 let s = pg_thumbs::run_while(&cache, &catalog_path, height, &opts, &group.volumes, &|| true, lane)?;
                 // The placeholders the thumbnails left owing: after them, as the app's rounds run them.
                 let placed =
@@ -454,7 +453,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     pg_thumbs::LedgerOutcome::Failed(error) => Some(error.clone()),
                     pg_thumbs::LedgerOutcome::Untouched | pg_thumbs::LedgerOutcome::Written => None,
                 };
-                report_pass(FilePass::Thumbs, s.unreadable, ledger_error);
+                report_pass(FilePass::Thumbs, s.unreadable, lane_drives(group), ledger_error);
                 say(&Line::PlaceholdersDone {
                     made: placed.made.to_string(),
                     failed: placed.failed.to_string(),
@@ -482,7 +481,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     seconds: secs(start.elapsed().as_secs_f64()),
                 });
                 // The borders' ledger is written with the borders, in their batch: a failure to write it failed the pass.
-                report_pass(FilePass::Borders, s.unreadable, None);
+                report_pass(FilePass::Borders, s.unreadable, Vec::new(), None);
             }
         }
         Command::Status => {
@@ -556,44 +555,12 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
 
 /// Scan `root`; with `wait`, a walk refused because another process walks an overlapping folder is tried again, once a
 /// second, until that walk ends (or its lease expires), and the wait is said once on stderr.
-/// The lanes a bulk command runs: one per drive the library's folders are on (`lanes::groups`), or one under `--serial`.
-/// With no folders, one lane over every volume, as the command has always run.
-fn lanes_of(catalog: &Catalog, serial: bool) -> Result<Vec<Group>> {
-    let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
-    let groups = lanes::groups(catalog.rules(), &roots, serial);
-    if groups.is_empty() {
-        return Ok(vec![Group { roots: Vec::new(), volumes: VolumeSet::All, label: String::new() }]);
-    }
-    Ok(groups)
-}
-
-/// Runs `pass` for each group on a connection of its own and a child of `ctl` (`Control::lane`), one thread per group, so
-/// the drives are worked at once. The results are in the groups' order. A lane that panics fails the command.
-fn run_lanes<T: Send>(
-    catalog_path: &Path,
-    groups: &[Group],
-    ctl: &Control,
-    pass: impl Fn(&mut Catalog, &Group, &Control) -> Result<T> + Sync,
-) -> Result<Vec<T>> {
-    // The lanes share the cores as the app's do: their workers take CPU permits (set once for the run; a repeat is ignored).
-    ctl.share_cpu(std::thread::available_parallelism().map_or(4, |n| n.get()));
-    let lanes: Vec<(&Group, Arc<Control>)> = groups.iter().map(|group| (group, ctl.lane())).collect();
-    std::thread::scope(|scope| {
-        let pass = &pass;
-        let handles: Vec<_> = lanes
-            .iter()
-            .map(|(group, lane)| {
-                scope.spawn(move || -> Result<T> {
-                    let mut catalog = Catalog::open(catalog_path, PATH_RULES)?;
-                    pass(&mut catalog, group, lane)
-                })
-            })
-            .collect();
-        handles.into_iter().map(|handle| handle.join().unwrap_or_else(|_| Err(anyhow!("a lane panicked")))).collect()
-    })
-}
-
 /// The heading of a lane's lines when the command runs several: its drive's label. Nothing for one lane.
+/// The drive a lane's notices name: its drive's label, when the drive could be told.
+fn lane_drives(group: &Group) -> Vec<String> {
+    if group.label.is_empty() { Vec::new() } else { vec![group.label.clone()] }
+}
+
 fn lane_heading(group: &Group, lanes: usize) {
     if lanes > 1 {
         println!("{}:", group.label);
@@ -772,6 +739,46 @@ mod tests {
             refused.iter().map(|f| (&f.path, f.failure)).collect::<Vec<_>>(),
             [(&b, pg_catalog::FolderFailure::Refused)]
         );
+    }
+
+    /// C1: `scan`, `import` and `thumbs` over two roots give the same catalog with `--serial` and through the lanes. The
+    /// scratch folders share one volume, so both runs are one lane; what the test holds is that the lane path does what
+    /// the serial path does, file for file, in both catalogs.
+    #[test]
+    fn two_roots_scan_import_and_thumbs_agree_with_and_without_serial() {
+        let dir = pg_testkit::run_folder_with("scratch_cli", "cli-serial", &["a", "b", "serial", "lanes"]).unwrap();
+        for folder in ["a", "b"] {
+            for name in ["1.png", "2.png"] {
+                std::fs::write(dir.join(folder).join(name), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+            }
+        }
+        let folders: Vec<String> = ["a", "b"].iter().map(|f| dir.join(f).to_string_lossy().into_owned()).collect();
+        let run = |catalog: &str, serial: bool| {
+            let catalog_dir = dir.join(catalog).to_string_lossy().into_owned();
+            let command = |verb: Vec<String>| {
+                let mut all = vec!["gallery".to_string(), "--catalog-dir".to_string(), catalog_dir.clone()];
+                all.extend(verb);
+                if serial {
+                    all.push("--serial".to_string());
+                }
+                Cli::try_parse_from(all).unwrap()
+            };
+            let mut scan = vec!["scan".to_string()];
+            scan.extend(folders.iter().cloned());
+            run_command(command(scan), &Control::new()).unwrap();
+            run_command(command(vec!["import".to_string()]), &Control::new()).unwrap();
+            run_command(command(vec!["thumbs".into(), "--height".into(), "64".into()]), &Control::new()).unwrap();
+
+            let layout = command(vec!["scan".to_string()]).layout().unwrap();
+            let catalog = Catalog::open(&layout.catalog_path(), pg_platform::native::PATH_RULES).unwrap();
+            let s = catalog.status().unwrap();
+            (s.files, s.missing, s.analyzed, s.failed, s.pending)
+        };
+        let serial = run("serial", true);
+        let lanes = run("lanes", false);
+        assert_eq!(serial, lanes, "the lane path and --serial give the same catalog");
+        assert_eq!(serial.0, 4, "the four files of the two roots are in the catalog");
+        assert_eq!(serial.2, 4, "and each was imported");
     }
 
     /// `gallery remove` takes the folder's kept notices with it (the notices' folder is a foreign key that cascades),

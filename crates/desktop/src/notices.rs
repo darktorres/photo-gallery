@@ -616,7 +616,7 @@ mod tests {
         let row = |id| InboxEntryId::Row { id, uid: id, rev: 0 };
         let listed = [
             entry(InboxEntryId::Ledger { kind: thumbs, seen: 5 }, thumbs.notice(None)),
-            entry(row(1), Notice::UnreadableFiles { pass: FilePass::Import, count: 2 }),
+            entry(row(1), Notice::UnreadableFiles { pass: FilePass::Import, count: 2, drives: Vec::new() }),
             entry(row(2), Notice::RoundFailed { error: "x".into() }),
         ];
         assert_eq!(passes_of(&listed), (1 << kind_code(Some(thumbs))) | (1 << kind_code(Some(import))));

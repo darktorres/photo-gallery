@@ -1022,4 +1022,47 @@ mod tests {
         drop((c, holder));
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    // `remove_root` over a folder of more files than one write batch: every row under it is hidden (and kept), the
+    // root and the leases of the walks under it go, and the other library folder's files and its walk's lease stay.
+    #[test]
+    fn removing_a_root_hides_every_row_of_several_batches_and_leaves_the_others_alone() {
+        use crate::types::WRITE_BATCH;
+        use pg_model::ids::{FileId, FolderId};
+        let rules = PathRules::Posix;
+        let mut c = library(rules);
+        assert!(c.add_root(&p(rules, r"D:\s")).unwrap());
+        crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
+        for (id, path) in [(1, r"D:\r"), (2, r"D:\r\sub"), (3, r"D:\s")] {
+            crate::fixture::state::add_folder(&c, id, &spelled(rules, path)).unwrap();
+        }
+        // 2 500 files under D:\r (in it and in D:\r\sub): three batches. 30 under D:\s.
+        let under: i64 = 2_500;
+        assert!(usize::try_from(under).unwrap() > WRITE_BATCH);
+        let mut files: Vec<fixture::File> = (1..=under)
+            .map(|id| {
+                let folder = FolderId::new(if id % 5 == 0 { 2 } else { 1 });
+                fixture::File::new(FileId::new(id), folder, "a.jpg", 10, 100)
+            })
+            .collect();
+        files.extend(
+            (under + 1..=under + 30).map(|id| fixture::File::new(FileId::new(id), FolderId::new(3), "b.jpg", 10, 100)),
+        );
+        fixture::insert(&c, &files).unwrap();
+        let (r, sub, s) = (p(rules, r"D:\r"), p(rules, r"D:\r\sub"), p(rules, r"D:\s"));
+        begin(&mut c, &r);
+        begin(&mut c, &sub);
+        begin(&mut c, &s);
+        let root = c.root_id(&r).unwrap().unwrap();
+        assert_eq!(c.remove_root(root).unwrap(), Some(2_500), "every file under the root is hidden");
+        assert!(c.root_id(&r).unwrap().is_none(), "the root is gone");
+        assert!(c.root_id(&s).unwrap().is_some(), "the other root stays");
+        assert_eq!(raw::missing_count(&c), under, "hidden, not deleted: the rows are there");
+        let present: Vec<i64> =
+            crate::fixture::state::present_files(&c).unwrap().iter().map(|(id, _)| id.get()).collect();
+        assert_eq!(present.len(), 30, "the other root's files are as they were");
+        assert!(present.iter().all(|&id| id > under), "{present:?}");
+        assert!(c.begin_scan(&r).is_ok(), "the walks of the removed folder and under it lost their leases");
+        assert!(matches!(c.begin_scan(&s).err(), Some(Error::ScanBusy { .. })), "the other root's lease stays");
+    }
 }

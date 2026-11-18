@@ -1232,6 +1232,110 @@ mod tests {
         drop(lease);
         check(&pool, &[]);
     }
+
+    /// `pool.take(i, size)` on a thread of its own: the capacity granted (`None` once the pool stops), sent to the
+    /// receiver. A test waits for it with a timeout, so a take that never comes back fails the test instead of hanging it.
+    fn take_on_thread(pool: &Arc<Pool>, i: usize, size: usize) -> std::sync::mpsc::Receiver<Option<usize>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let pool = Arc::clone(pool);
+        std::thread::spawn(move || {
+            let _ = tx.send(pool.take(i, size).map(|lease| lease.bytes.capacity()));
+        });
+        rx
+    }
+
+    /// A shrink under buffers in use holds grants back: nothing in use is freed, and a take waits until enough buffers
+    /// come back, then is granted.
+    #[test]
+    fn a_shrink_with_buffers_held_waits_for_them_to_come_back() {
+        within_timeout(|| {
+            let budget = Arc::new(Budget::new(100));
+            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), 4));
+            let a = pool.take(0, 60).unwrap();
+            budget.set(40);
+            check(&pool, &[&a]);
+            let waiting = take_on_thread(&pool, 1, 30);
+            assert!(
+                matches!(waiting.recv_timeout(BUDGET_WAIT * 4), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+                "a take is granted while 60 bytes of a 40-byte budget are held"
+            );
+            check(&pool, &[&a]);
+            drop(a);
+            let granted =
+                waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("granted once a buffer is back");
+            assert!(granted.is_some_and(|capacity| capacity >= 30));
+        });
+    }
+
+    /// A grow is seen by a take already waiting on the budget, with no grant or give to wake it: the timed wait
+    /// picks the new budget up within a few of its periods.
+    #[test]
+    fn a_grow_is_seen_by_a_waiting_take_within_a_few_periods() {
+        within_timeout(|| {
+            let budget = Arc::new(Budget::new(100));
+            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), 4));
+            let a = pool.take(0, 60).unwrap();
+            let waiting = take_on_thread(&pool, 1, 50);
+            // 60 + 50 is over 100: the take is still waiting after a couple of periods.
+            assert!(
+                matches!(waiting.recv_timeout(BUDGET_WAIT * 2), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+                "a take is granted over the budget"
+            );
+            budget.set(200);
+            // From here nothing is granted or given back: only the timed wait can admit the take.
+            let granted =
+                waiting.recv_timeout(BUDGET_WAIT * 5).expect("admitted within a few BUDGET_WAIT periods of the grow");
+            assert!(granted.is_some_and(|capacity| capacity >= 50));
+            drop(a);
+        });
+    }
+
+    /// A stop ends a take that waits on the budget: it returns `None`.
+    #[test]
+    fn a_stop_ends_a_take_waiting_on_the_budget() {
+        within_timeout(|| {
+            let pool = Arc::new(Pool::new(100, 4));
+            let a = pool.take(0, 60).unwrap();
+            let waiting = take_on_thread(&pool, 1, 50);
+            assert!(
+                matches!(waiting.recv_timeout(BUDGET_WAIT * 2), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+                "a take is granted over the budget"
+            );
+            pool.stop();
+            let granted = waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("the stop ends the take");
+            assert_eq!(granted, None);
+            drop(a);
+        });
+    }
+
+    /// A budget of one byte (the least it can be) still grants a file larger than it, alone, and the files after it
+    /// are granted in turn: the pool never deadlocks at the minimum.
+    #[test]
+    fn a_budget_of_one_byte_grants_an_oversize_file_alone() {
+        within_timeout(|| {
+            let budget = Arc::new(Budget::new(0));
+            assert_eq!(budget.get(), 1, "at least one byte");
+            let pool = Arc::new(Pool::with_budget(budget, 4));
+            let big = pool.take(0, 500).unwrap();
+            assert!(big.bytes.capacity() >= 500);
+            check(&pool, &[&big]);
+            // Held alone, the next file waits for it, though it is small.
+            let waiting = take_on_thread(&pool, 1, 10);
+            assert!(
+                matches!(waiting.recv_timeout(BUDGET_WAIT * 4), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+                "a file is granted beside an oversize one"
+            );
+            drop(big);
+            let granted =
+                waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("granted once the big one is back");
+            assert!(granted.is_some_and(|capacity| capacity >= 10));
+            // Then each file in turn, each larger than the last, taken and given back before the next: none waits.
+            for i in 2..10 {
+                let lease = pool.take(i, 1000 * i).unwrap();
+                assert!(lease.bytes.capacity() >= 1000 * i);
+            }
+        });
+    }
 }
 
 #[cfg(test)]

@@ -53,6 +53,16 @@ impl VolumeSet {
     }
 }
 
+/// `Catalog::volumes`' query: a loose index scan over `files`'s `(volume, file_ref)` index, one step a volume (the
+/// `min` of the volumes above the last one found), not a read of every file. A displaced row (no volume) is none. The
+/// thumbnail cache's `catalog_volumes` is the same statement over the attached catalog.
+const VOLUMES: &str = "WITH RECURSIVE v(volume) AS (
+         SELECT min(volume) FROM files WHERE volume IS NOT NULL
+         UNION ALL
+         SELECT (SELECT min(volume) FROM files WHERE volume > v.volume) FROM v WHERE v.volume IS NOT NULL
+     )
+     SELECT volume FROM v WHERE volume IS NOT NULL";
+
 impl Catalog {
     /// The volumes the files `ids` are on, as the catalog stores them (the ids that are not in the catalog are none). A job
     /// that changes those files holds the lanes of those volumes while it does.
@@ -64,6 +74,13 @@ impl Catalog {
             volumes.extend(found);
         }
         Ok(volumes)
+    }
+
+    /// The distinct volumes the catalog holds files on, ascending (the non-NULL `files.volume`s). The cost is one index
+    /// probe a volume, whatever the number of files: a plain `SELECT DISTINCT volume` would read the whole index.
+    pub fn volumes(&self) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare_cached(VOLUMES)?;
+        Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
     }
 }
 
@@ -625,6 +642,132 @@ impl Catalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browse::fixtures::spelled;
+    use crate::fixture::{File, insert, raw};
+    use crate::test_support::{store_taken, versions};
+    use pg_model::ids::FolderId;
+    use pg_model::rules::PathRules;
+    use std::path::Path;
+
+    /// Six files on volumes 1, 3 and 7, their records out of id order: on volume 3, file 4's record is below file 3's,
+    /// and on volume 7, file 6's below file 5's. Files 1, 3 and 4 are analysed (their hashes and borders are owed, and
+    /// they are placed); files 2, 5 and 6 are pending.
+    fn three_volumes() -> Catalog {
+        let rules = PathRules::Posix;
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
+        crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\x")).unwrap();
+        let file = |id: i64, file_ref: i64, name: &'static str| File {
+            file_ref,
+            ..File::new(FileId::new(id), FolderId::new(1), name, 10, 100)
+        };
+        insert(
+            &c,
+            &[
+                file(1, 2, "a.jpg"),
+                file(2, 1, "b.jpg"),
+                file(3, 9, "c.jpg"),
+                file(4, 5, "d.jpg"),
+                file(5, 7, "e.jpg"),
+                file(6, 3, "f.jpg"),
+            ],
+        )
+        .unwrap();
+        for (id, volume) in [(1, 1), (2, 1), (3, 3), (4, 3), (5, 7), (6, 7)] {
+            raw::set_volume(&c, FileId::new(id), Some(volume));
+        }
+        for id in [1, 3, 4] {
+            let items = c.pending_import(false, &VolumeSet::All).unwrap().items;
+            let item = items.iter().find(|i| i.id == FileId::new(id)).unwrap();
+            store_taken(&mut c, item, None);
+        }
+        c
+    }
+
+    /// The ids of the import, hashes, borders and placeholder lists for `volumes`, in the order each gives them.
+    fn lists(c: &Catalog, volumes: &VolumeSet) -> [Vec<i64>; 4] {
+        [
+            c.pending_import(false, volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
+            c.pending_hashes(volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
+            c.pending_borders(volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
+            c.pending_placeholders(volumes).unwrap().items.iter().map(|p| p.item.id.get()).collect(),
+        ]
+    }
+
+    /// The statement `pending_borders` runs for `volumes`, as it is written there (its FROM clause is `borders_from`).
+    fn borders_statement(volumes: &VolumeSet) -> String {
+        format!(
+            "SELECT {} {} AND f.missing = 0 AND f.pending = 0
+               AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
+                   AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
+            work_columns!(),
+            borders_from(volumes),
+        )
+    }
+
+    /// The statement `pending_hashes` runs for `volumes`, as it is written there (its FROM clause is `hashes_from`).
+    fn hashes_statement(volumes: &VolumeSet) -> String {
+        format!(
+            "SELECT {} {} AND f.missing = 0 AND f.pending = 0 ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
+            work_columns!(),
+            hashes_from(volumes),
+        )
+    }
+
+    #[test]
+    fn the_lists_of_all_volumes_are_the_lists_of_each_volume_in_volume_then_record_order() {
+        let c = three_volumes();
+        let all = lists(&c, &VolumeSet::All);
+        assert_eq!(all, [vec![2, 6, 5], vec![1, 4, 3], vec![1, 4, 3], vec![1, 4, 3]]);
+        let mut union: [Vec<i64>; 4] = Default::default();
+        for volume in [1, 3, 7] {
+            for (acc, part) in union.iter_mut().zip(lists(&c, &VolumeSet::Only(vec![volume]))) {
+                acc.extend(part);
+            }
+        }
+        assert_eq!(union, all, "the volumes' lists, one after another, are the whole catalog's");
+        assert_eq!(
+            lists(&c, &VolumeSet::Only(vec![3])),
+            [vec![], vec![4, 3], vec![4, 3], vec![4, 3]],
+            "within a volume, by record"
+        );
+    }
+
+    #[test]
+    fn the_import_list_of_a_volume_is_a_search_of_the_volume_index_with_no_sort() {
+        let c = three_volumes();
+        let plan = raw::query_plan(&c, &pending_import_sql(false, &VolumeSet::Only(vec![1])), []);
+        assert!(plan.contains("files_to_import (volume=?)") && !plan.contains("TEMP B-TREE"), "{plan}");
+    }
+
+    #[test]
+    fn a_volume_filtered_borders_or_hashes_list_drives_from_the_files() {
+        let c = three_volumes();
+        let set = VolumeSet::Only(vec![3]);
+        for (label, sql) in [("borders", borders_statement(&set)), ("hashes", hashes_statement(&set))] {
+            let plan = raw::query_plan(&c, &sql, []);
+            assert!(plan.contains("SEARCH f USING INDEX sqlite_autoindex_files_1 (volume=?)"), "{label}: {plan}");
+            assert!(!plan.contains("SCAN a") && !plan.contains("SCAN h"), "{label}: {plan}");
+        }
+    }
+
+    #[test]
+    fn volumes_is_a_search_of_the_volume_index_not_a_scan_of_files() {
+        let c = three_volumes();
+        let plan = raw::query_plan(&c, VOLUMES, []);
+        assert!(plan.contains("sqlite_autoindex_files_1 (volume>?)") && !plan.contains("SCAN files"), "{plan}");
+    }
+
+    #[test]
+    fn volumes_are_the_distinct_volumes_in_order_and_a_displaced_row_is_none() {
+        let c = three_volumes();
+        assert_eq!(c.volumes().unwrap(), vec![1, 3, 7]);
+        raw::set_volume(&c, FileId::new(2), None);
+        assert_eq!(c.volumes().unwrap(), vec![1, 3, 7], "a NULL volume is no volume, and its file is still on 1");
+        raw::set_volume(&c, FileId::new(1), None);
+        assert_eq!(c.volumes().unwrap(), vec![3, 7], "volume 1 has no files now");
+    }
 
     #[test]
     fn a_volume_set_takes_only_ids_a_catalog_can_store() {

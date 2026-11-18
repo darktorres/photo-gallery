@@ -43,6 +43,8 @@ pub(crate) struct Inner {
     pub(crate) ctl: Arc<Control>,
     /// The lane's share of the run's file-buffer budget (the governor sets it: `pg_jobs::governor`).
     budget: Arc<Budget>,
+    /// The lane's drive for people (`E:`), empty when it can't be told (see [`Inner::label`]).
+    label: Mutex<String>,
     /// The volumes this lane's passes read.
     volumes: Mutex<VolumeSet>,
     /// The folders to walk, in order: the coordinator routes each request here.
@@ -70,6 +72,7 @@ impl Inner {
             number,
             ctl,
             budget,
+            label: Mutex::new(String::new()),
             volumes: Mutex::new(VolumeSet::All),
             scans: Mutex::new(VecDeque::new()),
             scanning: Mutex::new(None),
@@ -163,7 +166,18 @@ impl Inner {
 
     /// A pass couldn't read `unreadable` of its files, and `complete` says whether it read the rest (`Tally::files_read`).
     pub(crate) fn files_read(&self, pass: FilePass, unreadable: usize, complete: bool) {
-        self.shared.tally.files_read(self.number, pass, unreadable, complete);
+        let drive = self.label();
+        self.shared.tally.files_read(self.number, &drive, pass, unreadable, complete);
+    }
+
+    /// The lane's drive for people (`E:`), set by the coordinator when it plans the lanes; empty when it can't be told.
+    pub(crate) fn label(&self) -> String {
+        self.label.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// Sets the lane's drive label (see [`Inner::label`]).
+    pub(crate) fn set_label(&self, label: String) {
+        *self.label.lock().unwrap_or_else(PoisonError::into_inner) = label;
     }
 
     /// The thumbnail cache is full at `height`, after `made` thumbnails (`Tally::cache_full`).

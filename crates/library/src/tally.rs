@@ -7,7 +7,7 @@
 //! cache that is full, and a failure ledger that couldn't be written. The others (a crop, a scan, a panic) are not lane
 //! state, and are posted as they are.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use pg_jobs::NoticeSink;
@@ -15,11 +15,20 @@ use pg_model::notice::{ERROR_CAP, FilePass, Notice, Op, Trigger, tidy};
 use pg_model::size::ThumbHeight;
 use pg_thumbs::LedgerOutcome;
 
+/// One lane's latest report of a pass's reads: the files it couldn't read, whether the pass ran to its end, and the lane's
+/// drive for people (empty when the drive can't be told).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Reads {
+    unreadable: usize,
+    complete: bool,
+    drive: String,
+}
+
 /// What the lanes hold, by lane number. A lane's entry is its latest report: a lane that reports again replaces it.
 #[derive(Default)]
 struct State {
     /// Per pass: each lane's count of the files it couldn't read, and whether its last pass read them all.
-    reads: BTreeMap<FilePass, BTreeMap<usize, (usize, bool)>>,
+    reads: BTreeMap<FilePass, BTreeMap<usize, Reads>>,
     /// The lanes whose round failed, each with its error.
     rounds: BTreeMap<usize, String>,
     /// The lanes whose thumbnail cache is full, each with the height and the thumbnails it made.
@@ -50,18 +59,27 @@ impl Tally {
     /// Lane `lane`'s pass read its files: `unreadable` of them couldn't be (they are tried again), and `complete` says the
     /// pass ran to its end. The pass's notice is the sum of the lanes' unreadable counts; it is resolved once no lane has
     /// one and every lane that ran the pass ended it.
-    pub(crate) fn files_read(&self, lane: usize, pass: FilePass, unreadable: usize, complete: bool) {
+    pub(crate) fn files_read(&self, lane: usize, drive: &str, pass: FilePass, unreadable: usize, complete: bool) {
         let mut state = self.state();
-        state.reads.entry(pass).or_default().insert(lane, (unreadable, complete));
+        let reads = Reads { unreadable, complete, drive: drive.to_string() };
+        state.reads.entry(pass).or_default().insert(lane, reads);
         self.settle_reads(&state, pass);
     }
 
+    /// The pass's notice: the sum of the lanes' unreadable counts, named by the drives those files are on (when the lanes
+    /// have drives that can be told). Resolved once no lane has an unreadable file and every lane ended its pass.
     fn settle_reads(&self, state: &State, pass: FilePass) {
         let Some(lanes) = state.reads.get(&pass) else { return };
-        let unreadable: usize = lanes.values().map(|(n, _)| *n).sum();
+        let unreadable: usize = lanes.values().map(|reads| reads.unreadable).sum();
         if unreadable > 0 {
-            self.notices.post(Notice::UnreadableFiles { pass, count: count(unreadable) });
-        } else if lanes.values().all(|(_, complete)| *complete) {
+            let drives: BTreeSet<String> = lanes
+                .values()
+                .filter(|reads| reads.unreadable > 0 && !reads.drive.is_empty())
+                .map(|reads| reads.drive.clone())
+                .collect();
+            let drives: Vec<String> = drives.into_iter().collect();
+            self.notices.post(Notice::UnreadableFiles { pass, count: count(unreadable), drives });
+        } else if lanes.values().all(|reads| reads.complete) {
             self.notices.resolve(Trigger::Pass(pass));
         }
     }
@@ -175,23 +193,41 @@ mod tests {
     }
 
     fn unreadable(count: u64) -> String {
-        format!("post UnreadableFiles {{ pass: Import, count: {count} }}")
+        format!("post UnreadableFiles {{ pass: Import, count: {count}, drives: [] }}")
     }
 
     #[test]
     fn the_unreadable_count_of_a_pass_is_the_sum_of_the_lanes() {
         let (tally, sink) = tally();
-        tally.files_read(0, FilePass::Import, 2, false);
-        tally.files_read(1, FilePass::Import, 3, false);
+        tally.files_read(0, "", FilePass::Import, 2, false);
+        tally.files_read(1, "", FilePass::Import, 3, false);
         assert_eq!(said(&sink), vec![unreadable(2), unreadable(5)]);
+    }
+
+    /// The notice names the drives its files are on, sorted, and a lane whose drive can't be told adds to the count only
+    /// (L3, with the drive of the lanes that read it).
+    #[test]
+    fn the_unreadable_notice_names_the_drives_its_files_are_on() {
+        let (tally, sink) = tally();
+        tally.files_read(0, "E:", FilePass::Import, 2, false);
+        tally.files_read(1, "D:", FilePass::Import, 3, false);
+        tally.files_read(2, "", FilePass::Import, 1, false);
+        assert_eq!(
+            said(&sink),
+            vec![
+                "post UnreadableFiles { pass: Import, count: 2, drives: [\"E:\"] }".to_string(),
+                "post UnreadableFiles { pass: Import, count: 5, drives: [\"D:\", \"E:\"] }".to_string(),
+                "post UnreadableFiles { pass: Import, count: 6, drives: [\"D:\", \"E:\"] }".to_string(),
+            ]
+        );
     }
 
     #[test]
     fn one_lanes_clean_pass_does_not_clear_another_lanes_unreadable_files() {
         let (tally, sink) = tally();
-        tally.files_read(0, FilePass::Import, 4, true);
+        tally.files_read(0, "", FilePass::Import, 4, true);
         said(&sink);
-        tally.files_read(1, FilePass::Import, 0, true);
+        tally.files_read(1, "", FilePass::Import, 0, true);
         // Lane 0 still can't read four files: the notice stays, with the same count.
         assert_eq!(said(&sink), vec![unreadable(4)]);
     }
@@ -199,11 +235,11 @@ mod tests {
     #[test]
     fn the_unreadable_notice_resolves_once_every_lane_that_ran_the_pass_is_clean() {
         let (tally, sink) = tally();
-        tally.files_read(1, FilePass::Import, 0, false);
+        tally.files_read(1, "", FilePass::Import, 0, false);
         assert!(said(&sink).is_empty(), "lane 1 was stopped: nothing is resolved");
-        tally.files_read(0, FilePass::Import, 0, true);
+        tally.files_read(0, "", FilePass::Import, 0, true);
         assert!(said(&sink).is_empty(), "lane 1 has not ended its pass: the notice stays");
-        tally.files_read(1, FilePass::Import, 0, true);
+        tally.files_read(1, "", FilePass::Import, 0, true);
         assert_eq!(said(&sink), vec!["resolve Pass(Import)".to_string()]);
     }
 
@@ -222,8 +258,8 @@ mod tests {
     #[test]
     fn a_retired_lane_stops_holding_its_notices() {
         let (tally, sink) = tally();
-        tally.files_read(0, FilePass::Import, 2, false);
-        tally.files_read(1, FilePass::Import, 0, true);
+        tally.files_read(0, "", FilePass::Import, 2, false);
+        tally.files_read(1, "", FilePass::Import, 0, true);
         said(&sink);
         tally.lane_retired(0);
         assert_eq!(said(&sink), vec!["resolve Pass(Import)".to_string()]);

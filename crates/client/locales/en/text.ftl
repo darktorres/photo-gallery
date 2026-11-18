@@ -336,8 +336,8 @@ notice-unreadable-files-title = { $pass ->
    *[import] Files couldn't be read to be imported
 }
 notice-unreadable-files-body = { $count ->
-    [one] { $text } file couldn't be read (an offline drive, or a file in use): it is tried again by the next pass
-   *[other] { $text } files couldn't be read (an offline drive, or files in use): they are tried again by the next pass
+    [one] { $text } file{ $where } couldn't be read (an offline drive, or a file in use): it is tried again by the next pass
+   *[other] { $text } files{ $where } couldn't be read (an offline drive, or files in use): they are tried again by the next pass
 }
 notice-ledger-not-written-title = The thumbnails' failures couldn't be kept
 notice-ledger-not-written-body = The files that failed are tried again by the next pass: { $error }

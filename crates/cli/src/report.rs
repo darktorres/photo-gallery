@@ -119,11 +119,16 @@ fn progress_line(p: &Progress) -> String {
 
 /// What a pass's failures leave besides its kept list, on stderr, in the notices' words: the files it couldn't read,
 /// and a failure ledger it couldn't write.
-pub(crate) fn report_pass(pass: pg_model::notice::FilePass, unreadable: usize, ledger_error: Option<String>) {
+pub(crate) fn report_pass(
+    pass: pg_model::notice::FilePass,
+    unreadable: usize,
+    drives: Vec<String>,
+    ledger_error: Option<String>,
+) {
     let rules = pg_platform::native::PATH_RULES;
     if unreadable > 0 {
         let count = u64::try_from(unreadable).unwrap_or(u64::MAX);
-        eprintln!("{}", text::notice_line(&Notice::UnreadableFiles { pass, count }, rules));
+        eprintln!("{}", text::notice_line(&Notice::UnreadableFiles { pass, count, drives }, rules));
     }
     if let Some(error) = ledger_error {
         eprintln!("{}", text::notice_line(&Notice::LedgerNotWritten { error }, rules));

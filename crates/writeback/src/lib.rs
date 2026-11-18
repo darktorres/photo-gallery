@@ -25,7 +25,7 @@ use pg_model::turns::Turns;
 use std::fs::File;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -168,6 +168,8 @@ struct Inner {
     status: Watch<WriteStatus>,
     /// Files turned so far: their pixels changed, so the app reloads them and the job re-analyzes them.
     turned: Watch<u64>,
+    /// The files turned since the app last took them (`Writer::take_turned`): the job wakes the lanes of their volumes.
+    turned_files: Mutex<Vec<FileId>>,
     /// Told what changed (`Change::Writes`, `Change::Turned`).
     changes: Arc<Bus<Change>>,
     /// Where what the user is told goes: the latest failure, and the writes dropped.
@@ -207,7 +209,8 @@ impl Inner {
         }
     }
 
-    fn turned_once(&self) {
+    fn turned_once(&self, file: FileId) {
+        self.turned_files.lock().unwrap_or_else(PoisonError::into_inner).push(file);
         self.turned.update(|t| *t += 1);
         self.changes.publish(Change::Turned);
     }
@@ -233,6 +236,7 @@ impl Writer {
             thumbs,
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
+            turned_files: Mutex::new(Vec::new()),
             changes,
             notices,
             #[cfg(any(test, feature = "fault"))]
@@ -257,6 +261,7 @@ impl Writer {
             thumbs,
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
+            turned_files: Mutex::new(Vec::new()),
             changes,
             notices,
             fault: Some(fault),
@@ -285,6 +290,11 @@ impl Writer {
 
     pub fn status(&self) -> WriteStatus {
         self.inner.status.get()
+    }
+
+    /// The files turned since this was last called, taken: the app wakes the lanes of their volumes for them.
+    pub fn take_turned(&self) -> Vec<FileId> {
+        std::mem::take(&mut *self.inner.turned_files.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// Counts files turned so far, for the app to notice.
@@ -611,7 +621,7 @@ impl Inner {
             }
         }
         if pixels_changed {
-            self.pixels_changed();
+            self.pixels_changed(job.file_id);
         }
         Ok(())
     }
@@ -679,7 +689,7 @@ impl Inner {
         catalog.write_done(&written, Self::rewrote(&written, rewrite))?;
         let _ = std::fs::remove_file(&temp_path);
         if job.kind() == WriteKind::Turns {
-            self.pixels_changed();
+            self.pixels_changed(job.file_id);
         }
         Ok(())
     }
@@ -695,12 +705,12 @@ impl Inner {
     /// A turn the file can't hold (`turns`, the job's) is kept in the catalog instead.
     fn keep_turn_in_catalog(&self, catalog: &Catalog, job: &Job, turns: Turns) -> Result<()> {
         catalog.write_done(job, WriteEffect::KeptInCatalog(turns))?;
-        self.pixels_changed();
+        self.pixels_changed(job.file_id);
         Ok(())
     }
 
-    fn pixels_changed(&self) {
-        self.turned_once();
+    fn pixels_changed(&self, file: FileId) {
+        self.turned_once(file);
     }
 }
 
@@ -744,6 +754,7 @@ mod tests {
             thumbs: Box::leak(Box::new(cache)),
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
+            turned_files: Mutex::new(Vec::new()),
             changes: Arc::new(Bus::new(16)),
             notices: sink,
             fault: None,

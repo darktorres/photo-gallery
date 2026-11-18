@@ -11,6 +11,7 @@ encoder, but quality at a given setting must be comparable.
 ## Scope
 
 In scope:
+
 - Baseline sequential Huffman (SOF0), 8-bit, three components (YCbCr, JFIF).
 - Chroma: 4:2:0 (thumbnails) and 4:4:4 (ImageReduce's setting).
 - Quality 1–100 with libjpeg's scaling of the Annex K tables.
@@ -18,6 +19,7 @@ In scope:
 - Any image size, including sizes that aren't multiples of 8 or 16.
 
 Out of scope for this phase:
+
 - Progressive output, arithmetic coding, restart markers.
 - Optimized Huffman tables (phase 2, see below).
 - Grayscale, CMYK, ICC and EXIF output (headers are written by the host, minimal APP0 JFIF).

@@ -83,7 +83,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `borders` (`pg-borders`): the borders pass: looks for the borders due (`pg-analysis`) and stores them.
 - `crop` (`pg-crop`): the cropped copies: cuts the borders the catalog has off into copies (`pg-edit`), with the
   original's metadata (`pg-exiftool`), never writing the originals.
-- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, the data folder's
+- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, one lane per physical
+  drive (`lanes` decides the lanes from the roots' drives and `run_each` runs a command over them, `coordinator` routes
+  requests and turned files to them, `lane` is one drive's thread, and `passes` is the sequence each lane runs), the data folder's
   layout (`layout::Layout`, which names every file the app keeps: the catalog, the cache, the preferences, the log and
   SQLite's aliases), how a catalog folder is opened for the passes (`open_catalog`, `open_thumbs`, `versions`), and
   what both front ends do around them, once:

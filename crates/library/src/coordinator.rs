@@ -105,6 +105,17 @@ struct Registry {
     cuts: VecDeque<Vec<FileId>>,
     /// Each library root's probe, keyed by the root as it is displayed.
     probes: BTreeMap<String, Probe>,
+    /// The files turned since the coordinator last routed: the lanes of their volumes start again (`Lanes::wake_files`).
+    turned: Vec<FileId>,
+}
+
+/// The indexes of the lanes whose volumes include one of `volumes`: the lanes that read the files on those volumes.
+pub(crate) fn lanes_with(sets: &[VolumeSet], volumes: &BTreeSet<i64>) -> Vec<usize> {
+    sets.iter()
+        .enumerate()
+        .filter(|(_, set)| volumes.iter().any(|&volume| set.contains(volume)))
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// The volume of `root` among `volumes`, if it has one.
@@ -186,24 +197,26 @@ impl Lanes {
 
     /// Each lane's progress, with its drive's label: the probe's answer for the lane's first root.
     pub(crate) fn progress_lines(&self) -> Vec<LaneProgress> {
-        let lanes = self.all();
-        let reg = self.registry();
-        lanes
+        self.all()
             .iter()
-            .map(|lane| {
-                let label = lane
-                    .roots
-                    .first()
-                    .and_then(|root| reg.probes.get(&PATH_RULES.display(root).to_string()))
-                    .and_then(|probe| probe.answer.as_ref())
-                    .and_then(|(place, _)| match place {
-                        Place::Mounted { drive, .. } => Some(drive.label.clone()),
-                        Place::Unplugged | Place::Unknown => None,
-                    })
-                    .unwrap_or_default();
-                LaneProgress { label, progress: lane.inner.ctl.snapshot() }
+            .map(|lane| LaneProgress {
+                number: lane.inner.number,
+                label: lane.inner.label(),
+                progress: lane.inner.ctl.snapshot(),
+                paused: lane.inner.ctl.is_own_paused(),
             })
             .collect()
+    }
+
+    /// Pauses or resumes the lane numbered `number` alone. `false` when no lane has that number (it has retired).
+    pub(crate) fn set_lane_paused(&self, number: usize, paused: bool) -> bool {
+        match self.all().iter().find(|lane| lane.inner.number == number) {
+            Some(lane) => {
+                lane.inner.ctl.set_paused(paused);
+                true
+            }
+            None => false,
+        }
     }
 
     /// The controls of the crop thread and the lanes, the crop's first: each one's progress is a line of its own.
@@ -280,6 +293,16 @@ impl Lanes {
         self.wake_coordinator();
     }
 
+    /// Files were turned (their analysis is stale): the lanes of their volumes stop their rounds and start again, and the
+    /// other lanes keep theirs. A file the catalog doesn't know has no volume, so every lane is woken for it.
+    pub(crate) fn wake_files(&self, ids: Vec<FileId>) {
+        if ids.is_empty() {
+            return;
+        }
+        self.registry().turned.extend(ids);
+        self.wake_coordinator();
+    }
+
     /// The number of cuts queued and not yet begun (tests: a cut is queued only once confirmed).
     #[cfg(test)]
     pub(crate) fn cuts_queued(&self) -> usize {
@@ -319,6 +342,21 @@ impl Lanes {
         let rules = conn.rules();
         let roots: Vec<RulePath> = conn.roots()?.into_iter().map(|r| r.path).collect();
         let now = Instant::now();
+        let turned = std::mem::take(&mut self.registry().turned);
+        if !turned.is_empty() {
+            // The volumes the turned files are on. A file with no volume (not in the catalog, or the lookup failed) wakes every
+            // lane: the safe answer, since no lane can be shown to be unaffected.
+            let volumes: BTreeSet<i64> = conn.volumes_of(&turned).unwrap_or_default();
+            let reg = self.registry();
+            let sets: Vec<VolumeSet> = reg.lanes.iter().map(|lane| lane.inner.volume_set()).collect();
+            let wake = if volumes.is_empty() { (0..sets.len()).collect() } else { lanes_with(&sets, &volumes) };
+            for (index, lane) in reg.lanes.iter().enumerate() {
+                if wake.contains(&index) {
+                    lane.inner.ctl.request_stop();
+                    lane.service.wake();
+                }
+            }
+        }
         let (retiring, next) = {
             let mut reg = self.registry();
             // The probes are keyed by each root as it is displayed (a path is not ordered, so it is not a key itself).
@@ -351,6 +389,9 @@ impl Lanes {
             let serial = self.shared.features.get().serial_drives;
             let groups = lanes::plan(&places, serial);
             let retiring = self.assign_lanes(&mut reg, &groups, &volumes)?;
+            for lane in &reg.lanes {
+                lane.inner.set_label(drive_label(&lane.roots, &places));
+            }
             self.route_scans(&mut reg, &rules, &roots);
             let next = reg.probes.values().filter_map(|probe| probe.due(now)).min();
             (retiring, next.map(|due| due.saturating_duration_since(Instant::now())))
@@ -508,14 +549,10 @@ impl Lanes {
     /// Holds the lanes that own `volumes`, and waits until each has ended its round: a crop or a cut is about to change
     /// files on those volumes, which the lanes read. `None` when the crop is stopped first (the holds are given back).
     fn park(&self, volumes: &BTreeSet<i64>) -> Option<Vec<Hold>> {
-        let owners: Vec<Lane> = self
-            .all()
-            .into_iter()
-            .filter(|lane| {
-                let set = lane.inner.volume_set();
-                volumes.iter().any(|&volume| set.contains(volume))
-            })
-            .collect();
+        let all = self.all();
+        let sets: Vec<VolumeSet> = all.iter().map(|lane| lane.inner.volume_set()).collect();
+        let owners: Vec<Lane> =
+            lanes_with(&sets, volumes).into_iter().filter_map(|index| all.get(index).cloned()).collect();
         let holds: Vec<Hold> = owners
             .iter()
             .map(|lane| {
@@ -679,6 +716,19 @@ fn crop(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     }
 }
 
+/// The drive for people of a lane's roots: the drive of the first of them whose place is known (`E:`), empty when none is.
+fn drive_label(roots: &[RulePath], places: &[(RulePath, Option<Place>)]) -> String {
+    roots
+        .iter()
+        .find_map(|root| {
+            places.iter().find(|(path, _)| path == root).and_then(|(_, place)| match place {
+                Some(Place::Mounted { drive, .. }) => Some(drive.label.clone()),
+                _ => None,
+            })
+        })
+        .unwrap_or_default()
+}
+
 /// Where `root` is, as the lanes need it: its volume (as the catalog stores it) and its drive, or that it is not there, or
 /// that it can't be told.
 pub(crate) fn probe_place(rules: PathRules, root: &RulePath, drives: &dyn Drives) -> Place {
@@ -694,5 +744,35 @@ pub(crate) fn probe_place(rules: PathRules, root: &RulePath, drives: &dyn Drives
     match i64::try_from(volume) {
         Ok(volume) => Place::Mounted { volume, drive },
         Err(_) => Place::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn volumes(of: &[i64]) -> BTreeSet<i64> {
+        of.iter().copied().collect()
+    }
+
+    /// The lanes that read the files on a volume are the ones whose volumes include it: a turned file or a crop wakes or
+    /// parks only those (L5), and every other lane keeps its round.
+    #[test]
+    fn a_volume_belongs_to_the_lanes_that_read_it() {
+        let sets = [VolumeSet::Only(vec![1, 3]), VolumeSet::Only(vec![7]), VolumeSet::All];
+        assert_eq!(
+            lanes_with(&sets, &volumes(&[7])),
+            vec![1, 2],
+            "the lane of 7, and the lane that reads every volume"
+        );
+        assert_eq!(lanes_with(&sets, &volumes(&[3])), vec![0, 2]);
+        assert_eq!(lanes_with(&sets, &volumes(&[9])), vec![2], "only the lane that reads every volume reads 9");
+    }
+
+    #[test]
+    fn no_volume_is_no_lane() {
+        let sets = [VolumeSet::Only(vec![1]), VolumeSet::Only(vec![2])];
+        assert!(lanes_with(&sets, &volumes(&[])).is_empty(), "the caller decides what an unknown volume wakes");
+        assert!(lanes_with(&[], &volumes(&[1])).is_empty());
     }
 }

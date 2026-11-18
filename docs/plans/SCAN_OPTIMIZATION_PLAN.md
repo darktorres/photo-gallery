@@ -859,6 +859,9 @@ lister**).
     - An answer that can't be had falls back to the default count with a log line. Examples: btrfs, overlay or ZFS
       (major 0, no `/sys/dev/block` entry), or a spanned Windows volume.
   - The query belongs with the platform's volume facts (`crates/platform/src/volume.rs`).
+  - **Built (2026-11-18):** the device query is `crates/platform/src/drive.rs`, not `volume.rs`, as the
+    multi-drive lanes' Phase 1 (`docs/plans/MULTI_DRIVE_LANES_PLAN.md`). Its answer tunes the job's lanes; the listing
+    workers of this plan's Phase 4 still take a fixed count (`WORKERS = 4`), which the lanes' Phase 3 would set per kind.
 
 ### Phase 4: changes and tests
 

@@ -669,10 +669,14 @@ pub enum Notice {
     ScanFoldersFailed {
         counts: Option<LedgerCounts>,
     },
-    /// Files a pass couldn't read (an offline drive, a file in use), `count` of them: retried by the next pass.
+    /// Files a pass couldn't read (an offline drive, a file in use), `count` of them: retried by the next pass. `drives`
+    /// names the drives those files are on, as the job's lanes know them (`E:`), when the job has more than one; empty
+    /// otherwise, and not stored (a notice kept before drives were named reads as it did).
     UnreadableFiles {
         pass: FilePass,
         count: u64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        drives: Vec<String>,
     },
     /// The thumbnails' failures couldn't be written to their failure ledger (a catalog locked for long, a full disk): its
     /// files are tried again by the next pass. Thumbnails only: the borders and the import write their ledger rows in
@@ -1402,7 +1406,7 @@ impl Notice {
             Notice::BordersFailed { counts: Some(LedgerCounts { new: 0, earlier: 2 }) },
             Notice::ImportFailed { counts: Some(LedgerCounts { new: 3, earlier: 0 }) },
             Notice::ScanFoldersFailed { counts: Some(LedgerCounts { new: 2, earlier: 1 }) },
-            Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 7 },
+            Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 7, drives: Vec::new() },
             Notice::LedgerNotWritten { error: error() },
             Notice::NoticesLost { count: 4 },
             Notice::FileNoLongerInLibrary,
@@ -1437,8 +1441,8 @@ fn each_part(notice: Notice) -> Vec<Notice> {
         Notice::EditFailed { error, .. } => {
             EditOp::ALL.iter().map(|&op| Notice::EditFailed { op, error: error.clone() }).collect()
         }
-        Notice::UnreadableFiles { count, .. } => {
-            FilePass::ALL.iter().map(|&pass| Notice::UnreadableFiles { pass, count }).collect()
+        Notice::UnreadableFiles { count, drives, .. } => {
+            FilePass::ALL.iter().map(|&pass| Notice::UnreadableFiles { pass, count, drives: drives.clone() }).collect()
         }
         other => vec![other],
     }

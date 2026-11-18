@@ -16,7 +16,7 @@ use crate::schema::{BUSY_TIMEOUT, CONNECTION_PRAGMAS};
 use crate::types::{Pending, Snapshot, Source, ThumbWork};
 
 /// `ThumbCache::pending` on the cache file `cache` (a free function: the bench calls it without a writer), over every
-/// volume of the catalog. See [`pending_for`].
+/// volume of the catalog. See `pending_for`.
 pub fn pending_in(cache: &Path, catalog: &Path, height: ThumbHeight) -> Result<Pending> {
     pending_for(cache, catalog, height, None)
 }
@@ -138,6 +138,44 @@ mod checkpoint_tests {
         assert_eq!(checkpoint_since(&conn, 100, &[1, 7]).unwrap(), None, "a volume with none is looked at whole");
         assert_eq!(checkpoint_since(&conn, 100, &[]).unwrap(), None);
         assert_eq!(checkpoint_since(&conn, 200, &[1]).unwrap(), None, "another height has none");
+    }
+
+    /// The pass since a checkpoint, over a volume filter, still reads the change index: `+f.volume` keeps the planner on
+    /// `files_seq`, where a plain `f.volume IN` would switch it to the volume index and scan every file of the lane. A
+    /// real catalog, so the view is the one the pass reads.
+    #[test]
+    fn the_pass_since_a_checkpoint_with_a_volume_filter_reads_the_change_index() {
+        use pg_model::ids::FolderId;
+        let dir = pg_testkit::run_folder("scratch_thumbs", "checkpoint-plan").unwrap();
+        let catalog = dir.join("catalog.sqlite");
+        let versions = pg_catalog::Versions {
+            import: pg_analysis::analyze::IMPORT_VERSION,
+            borders: pg_analysis::borders::BORDERS_VERSION,
+            thumbs: 1,
+            pairing: pg_model::pdq::PAIRING_VERSION,
+        };
+        let c = pg_catalog::Catalog::prepare(&catalog, versions, pg_model::rules::PathRules::Windows).unwrap();
+        pg_catalog::fixture::state::add_scan(&c, 1, "D:\\p").unwrap();
+        pg_catalog::fixture::state::add_folder(&c, 1, "D:\\p").unwrap();
+        let a = pg_catalog::fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5);
+        pg_catalog::fixture::insert(&c, &[a]).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(&catalog).unwrap()]).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE entries(file_id INTEGER, height INTEGER, mtime INTEGER, rotation INTEGER,
+                                  PRIMARY KEY (file_id, height));",
+        )
+        .unwrap();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true, &[1])))
+            .unwrap()
+            .query_map(params![100, 0], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(plan.contains("USING INDEX files_seq"), "{plan}");
+        assert!(!plan.contains("sqlite_autoindex_files_1"), "the volume index is not the change index: {plan}");
     }
 }
 

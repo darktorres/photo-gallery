@@ -61,6 +61,12 @@ pub(crate) fn set_missing(c: &Catalog, id: FileId) {
     c.conn.execute("UPDATE files SET missing = 1 WHERE id = ?1", [id.get()]).unwrap();
 }
 
+/// A file's volume as the catalog stores it (`None` for a displaced row): the fixture inserts every file on volume 1, so
+/// a test that spreads files over volumes moves them here.
+pub(crate) fn set_volume(c: &Catalog, id: FileId, volume: Option<i64>) {
+    c.conn.execute("UPDATE files SET volume = ?2 WHERE id = ?1", params![id.get(), volume]).unwrap();
+}
+
 pub(crate) fn set_order_key(c: &Catalog, id: FileId, key: &[u8]) {
     c.conn.execute("UPDATE files SET order_key = ?2 WHERE id = ?1", params![id.get(), key]).unwrap();
 }

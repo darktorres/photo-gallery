@@ -28,6 +28,10 @@ ToolBar {
     required property int unread
     // The job's status, and whether it is running, paused, and how far.
     required property string status
+    // The lanes that work or are paused (`Library::lanes`): a row's status, and its pause ("1" or "0", `lanePaused`). Two
+    // or more lanes show a row each, with its own pause; one lane is the status line above.
+    property list<string> lanes: []
+    property list<string> lanePaused: []
     // The pass's failures ("N failed"; empty: none), and whether the inbox lists something of the pass (Notices'
     // `passes` has its bit): only then is it a link.
     required property string failed
@@ -45,6 +49,7 @@ ToolBar {
     signal inboxRequested()
     signal failedRequested()
     signal pauseToggled()
+    signal lanePauseToggled(int index)
     signal logRequested()
 
     anchors.left: parent.left
@@ -90,10 +95,35 @@ ToolBar {
             onTriggered: bar.toastExpired()
         }
         Label {
-            visible: bar.status.length > 0
+            visible: bar.status.length > 0 && bar.lanes.length < 2
             text: bar.status
             textFormat: Text.PlainText
             color: "#aaaaaa"
+        }
+        // Two or more lanes: a row for each lane that works or is paused, with its own pause beside the global one.
+        Repeater {
+            model: bar.lanes
+            delegate: RowLayout {
+                id: laneRow
+                required property int index
+                visible: bar.lanes.length > 1
+                readonly property bool lanePaused: bar.lanePaused[index] === "1"
+                spacing: 4
+                Label {
+                    objectName: "laneStatus"
+                    text: bar.lanes[laneRow.index]
+                    textFormat: Text.PlainText
+                    color: "#aaaaaa"
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 320
+                }
+                Button {
+                    objectName: "laneToggle"
+                    text: laneRow.lanePaused ? words.text("ui-resume") : words.text("ui-pause")
+                    flat: true
+                    onClicked: bar.lanePauseToggled(laneRow.index)
+                }
+            }
         }
         // A link to the pass's failed files in the inbox while it lists them; until then the count alone.
         Label {

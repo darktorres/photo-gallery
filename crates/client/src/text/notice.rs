@@ -205,9 +205,18 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             }
             None => a.set("counted", "no"),
         },
-        Notice::UnreadableFiles { pass, count } => {
+        Notice::UnreadableFiles { pass, count, drives } => {
             a.set("pass", pass.code());
             plural(a, *count);
+            // " on E:" or " on E: and D:": the drives the files are on, when the job has named them.
+            a.set(
+                "where",
+                match drives.as_slice() {
+                    [] => String::new(),
+                    [one] => format!(" on {one}"),
+                    [rest @ .., last] => format!(" on {} and {last}", rest.join(", ")),
+                },
+            );
         }
         Notice::LedgerNotWritten { error } => {
             a.set("error", error.clone());

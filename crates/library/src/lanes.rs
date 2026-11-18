@@ -7,8 +7,10 @@
 
 use std::collections::BTreeMap;
 
+use pg_catalog::Catalog;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::drive::{Drive, DriveKey, SystemDrives, same_drive};
+use pg_platform::native::PATH_RULES;
 
 /// A root's drive, when it could be told. `None` is an unknown drive.
 pub type RootDrive = Option<Drive>;
@@ -104,6 +106,47 @@ pub fn groups(rules: PathRules, roots: &[RulePath], serial: bool) -> Vec<Group> 
             Group { roots: members, volumes, label }
         })
         .collect()
+}
+
+/// The lanes a command runs over a catalog: [`groups`] of its roots, or, when it has no roots, one lane over every volume
+/// (what a command with no folders has always run). `serial` is the escape hatch (one lane).
+pub fn command_groups(catalog: &Catalog, serial: bool) -> anyhow::Result<Vec<Group>> {
+    let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
+    let groups = groups(catalog.rules(), &roots, serial);
+    if groups.is_empty() {
+        return Ok(vec![Group { roots: Vec::new(), volumes: pg_catalog::VolumeSet::All, label: String::new() }]);
+    }
+    Ok(groups)
+}
+
+/// Runs `pass` once per group, each on a connection of its own (opened at `catalog_path`) and a child of `ctl`
+/// (`Control::lane`), one thread per group, so the drives are worked at once. The results are in the groups' order. A lane
+/// that panics fails the run. The run's cores are shared among the lanes, as the job shares them (`Control::share_cpu`).
+pub fn run_each<T: Send>(
+    catalog_path: &std::path::Path,
+    groups: &[Group],
+    ctl: &pg_jobs::control::Control,
+    pass: impl Fn(&mut Catalog, &Group, &pg_jobs::control::Control) -> anyhow::Result<T> + Sync,
+) -> anyhow::Result<Vec<T>> {
+    ctl.share_cpu(std::thread::available_parallelism().map_or(4, |n| n.get()));
+    let lanes: Vec<(&Group, std::sync::Arc<pg_jobs::control::Control>)> =
+        groups.iter().map(|group| (group, ctl.lane())).collect();
+    std::thread::scope(|scope| {
+        let pass = &pass;
+        let handles: Vec<_> = lanes
+            .iter()
+            .map(|(group, lane)| {
+                scope.spawn(move || -> anyhow::Result<T> {
+                    let mut catalog = Catalog::open(catalog_path, PATH_RULES)?;
+                    pass(&mut catalog, group, lane)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap_or_else(|_| Err(anyhow::anyhow!("a lane panicked"))))
+            .collect()
+    })
 }
 
 /// The lane of each root, by index: roots on the same drive share a number, and the numbers run from 0 in the order the

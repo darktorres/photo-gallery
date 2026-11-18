@@ -347,6 +347,20 @@ mod tests {
         CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         PRAGMA user_version = 1;";
 
+    /// `pairs_again` merges the WAL it writes into the file, so the pass that follows does not merge it: the `-wal`
+    /// is empty once it returns.
+    #[test]
+    fn pairs_again_merges_its_wal_into_the_file() {
+        let dir = run_folder(SCRATCH, "pairs-again-wal").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let mut c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
+        c.pairs_again().unwrap();
+        let wal = std::fs::metadata(dir.join("catalog.sqlite-wal")).map(|m| m.len()).unwrap_or(0);
+        assert_eq!(wal, 0, "the WAL `pairs_again` wrote is still in the -wal file");
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     // The layout tests below read the file on disk through their own connection (`raw::on_disk`): what they check
     // is the layout, not the catalog's tables.
     /// A catalog that isn't there is an error to open, and opening it makes no marker beside where it would be.

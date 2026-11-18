@@ -58,8 +58,8 @@ fn main() -> Result<()> {
     let owed = if keep {
         catalog.owed_pairs()?
     } else {
-        // Closed (its WAL merged) and opened again, so the pass is timed alone: neither the WAL `pairs_again` wrote,
-        // which the pass's first commits would merge, nor the pages it read, which the pass's reads would find cached.
+        // Closed and opened again, so the pass's reads do not find the pages `pairs_again` read already cached. Its WAL
+        // is merged by `pairs_again` itself.
         let owed = catalog.pairs_again()?;
         catalog.close()?;
         catalog = Catalog::open(&path, PathRules::Windows)?;

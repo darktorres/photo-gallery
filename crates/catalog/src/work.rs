@@ -548,11 +548,14 @@ impl Catalog {
     }
 
     /// Owe every eligible picture its pairs again, and drop the pairs (`gallery pair --again`): what the pairing pass
-    /// then makes is all of them again. Returns how many are owed.
+    /// then makes is all of them again. Returns how many are owed. The WAL this write leaves is merged into the file
+    /// before returning: otherwise the pass's first commits merge it, which took about a second on the 187,804-picture
+    /// library (the pass alone takes 0.8 s after a merge).
     pub fn pairs_again(&mut self) -> Result<usize> {
         let tx = write_transaction(&self.conn)?;
         let owed = crate::lifecycle::owe_pairs_again(&tx)?;
         tx.commit()?;
+        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
         Ok(owed)
     }
 

@@ -236,7 +236,7 @@ impl qobject::YandexSearch {
         let root = QModelIndex::default();
         for run in runs.into_iter().rev() {
             self.as_mut().begin_remove_rows(&root, qt_int(run.start), qt_int(run.end) - 1);
-            let state = self.as_mut().rust_mut();
+            let mut state = self.as_mut().rust_mut();
             state.results.remove_range(run.clone());
             let end = run.end.min(state.frames.len());
             state.frames.drain(run.start.min(end)..end);

@@ -155,7 +155,7 @@ fn facets(catalog: Catalog) -> (Catalog, Facets) {
 #[library_benchmark]
 #[bench::empty(setup = open_catalog)]
 fn pending_import(catalog: Catalog) -> (Catalog, WorkList<WorkItem>) {
-    let work = or_stop(catalog.pending_import(false), "the import's check");
+    let work = or_stop(catalog.pending_import(false, &pg_catalog::VolumeSet::All), "the import's check");
     (catalog, black_box(work))
 }
 
@@ -187,7 +187,7 @@ fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analysis) {
     let mut ids = or_stop(catalog.files_under(&root.path), "the library's files");
     ids.truncate(IMPORT_BATCH);
     or_stop(catalog.mark_pending(&ids), "the files made due");
-    let mut items = or_stop(catalog.pending_import(false), "the import's work").items;
+    let mut items = or_stop(catalog.pending_import(false, &pg_catalog::VolumeSet::All), "the import's work").items;
     items.truncate(IMPORT_BATCH);
     let mut analyzer = or_stop(Analyzer::new(), "the analyzer");
     let analyzed = or_stop(analyzer.analyze(&read_sample(), Turns::NONE), "the sample's analysis");

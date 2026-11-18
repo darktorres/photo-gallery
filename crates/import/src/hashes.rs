@@ -36,13 +36,14 @@ pub struct Stats {
 pub fn hash(
     catalog: &mut Catalog,
     opts: &Options,
+    volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<Stats> {
     let mut pass = pg_perf::span("pass.hashes");
     let tx_at = pg_catalog::tx_mark();
     let pending = pg_perf::span("pending.hashes");
-    let work = catalog.pending_hashes()?;
+    let work = catalog.pending_hashes(volumes)?;
     drop(pending);
     let items = &work.items;
     let stats = Stats { files: 0, failed: 0, unreadable: 0, stored: 0, complete: true };

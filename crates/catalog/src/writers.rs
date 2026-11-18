@@ -1220,7 +1220,7 @@ mod tests {
         tx.commit().unwrap();
         // The import leaves them to the borders pass.
         assert_eq!(raw::cut_sides(&c), [None; 4]);
-        let due = c.pending_borders().unwrap();
+        let due = c.pending_borders(&crate::VolumeSet::All).unwrap();
         assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
         let (_, since) = changed_since(&c, 0);
         let tx = c.tx().unwrap();
@@ -1231,7 +1231,7 @@ mod tests {
         // its list.
         assert_eq!(changed_since(&c, since).0, [item.id], "the borders name their file");
         assert_eq!(c.border_sides(item.id).unwrap(), found.sides);
-        assert!(c.pending_borders().unwrap().is_empty());
+        assert!(c.pending_borders(&crate::VolumeSet::All).unwrap().is_empty());
 
         // The grid's entry, the filters and the sort.
         let list = |c: &Catalog, q: Query| -> Vec<pg_model::grid::Entry> {
@@ -1258,8 +1258,8 @@ mod tests {
         // A new detector: due again, without a new import; the mark stays.
         raw::older_borders_version(&c);
         raw::start_borders_version(&c);
-        assert!(c.pending_import(false).unwrap().is_empty());
-        let due = c.pending_borders().unwrap();
+        assert!(c.pending_import(false, &crate::VolumeSet::All).unwrap().is_empty());
+        let due = c.pending_borders(&crate::VolumeSet::All).unwrap();
         assert_eq!(due.len(), 1);
         let tx = c.tx().unwrap();
         tx.borders_writer()
@@ -1269,7 +1269,7 @@ mod tests {
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [Some(0); 4]);
         assert!(c.border_sides(item.id).unwrap().is_empty());
-        assert!(c.pending_borders().unwrap().is_empty());
+        assert!(c.pending_borders(&crate::VolumeSet::All).unwrap().is_empty());
         assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::None);
         assert_eq!(raw::border_marks(&c), 1);
 
@@ -1280,7 +1280,7 @@ mod tests {
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [None; 4]);
         assert!(c.border_sides(item.id).unwrap().is_empty());
-        assert_eq!(c.pending_borders().unwrap().len(), 1);
+        assert_eq!(c.pending_borders(&crate::VolumeSet::All).unwrap().len(), 1);
     }
 
     under_both_rules!(
@@ -1390,7 +1390,7 @@ mod tests {
             writer.record_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
-            let item = c.pending_import(false).unwrap().items.remove(0);
+            let item = c.pending_import(false, &crate::VolumeSet::All).unwrap().items.remove(0);
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
             let mut borders = Detection::none(400, 300);
             borders.content = [l, t, 400 - r, 300 - b];

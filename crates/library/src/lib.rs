@@ -7,10 +7,15 @@
 //! The passes report what they did as values (their stats, the failures they hit), and print nothing: whoever runs
 //! them decides what to show, and in what words.
 
+mod coordinator;
 pub mod folders;
+mod lane;
+pub mod lanes;
 pub mod layout;
+mod passes;
 pub mod runner;
 pub mod scans;
+mod tally;
 
 /// The catalog of `layout` (one as SQLite opens it, `Layout::for_sqlite`), prepared for this build (`Catalog::prepare`
 /// with [`versions`], under the native rules). A catalog this build can't use is moved aside and rebuilt;

@@ -14,7 +14,7 @@ use pg_catalog::Root;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Change};
 use pg_library::folders::AddError;
-use pg_library::runner::{FeatureCell, Generation, HeightCell, Runner};
+use pg_library::runner::{FeatureCell, Generation, HeightCell, LaneProgress, Runner};
 use pg_model::features::Features;
 use pg_model::ids::{FileId, RootId};
 use pg_model::notice::{Notice, Trigger};
@@ -71,7 +71,10 @@ struct WriterSlot {
 
 /// What the library is doing now, for the status line and the progress.
 pub struct Status {
+    /// The library's one progress: the first lane working (`lanes` has each lane's).
     pub progress: Progress,
+    /// Each lane's progress and its drive's label, in the lanes' order.
+    pub lanes: Vec<LaneProgress>,
     pub paused: bool,
     pub writes: WriteStatus,
     /// Files turned by the writer so far (their images and sizes changed).
@@ -219,6 +222,7 @@ impl Library {
         self.tend(&mut slot);
         Status {
             progress: self.runner.progress(),
+            lanes: self.runner.lane_progress(),
             paused: self.runner.is_paused(),
             writes: slot.writer.status(),
             turned: slot.writer.turned(),

@@ -259,6 +259,24 @@ pub fn pass_status(p: &Progress, rules: PathRules) -> String {
     }
 }
 
+/// The status line of each lane that is working: its drive's label, then the lane's pass (`pass_status`). With one lane
+/// working (or none), the result is that lane's [`pass_status`] alone, as it has always read. An empty label (a folder
+/// whose drive can't be told) is left off the line.
+pub fn lanes_status(lanes: &[(String, Progress)], rules: PathRules) -> Vec<String> {
+    let working: Vec<&(String, Progress)> = lanes.iter().filter(|(_, p)| p.phase != Phase::Idle).collect();
+    if working.len() <= 1 {
+        let only = working.first().map_or_else(Progress::idle, |(_, p)| p.clone());
+        return vec![pass_status(&only, rules)];
+    }
+    working
+        .iter()
+        .map(|(label, p)| {
+            let status = pass_status(p, rules);
+            if label.is_empty() { status } else { format!("{label} {status}") }
+        })
+        .collect()
+}
+
 /// How many files the pass in progress failed on ("2 failed": those it recorded, and those it couldn't read), the status
 /// bar's link to its failed files; empty when none did, or for a scan (its folders' failures are a notice of their own).
 pub fn pass_failed(p: &Progress) -> String {
@@ -547,6 +565,25 @@ mod tests {
         assert_eq!(pass_failed(&scan), "", "a scan's failures are its notice's");
         assert_eq!(pass_name(&scan.phase, rules), "Scanning D:\\Photos");
         assert_eq!(pass_status(&Progress { phase: Phase::Idle, ..p }, rules), "");
+    }
+
+    #[test]
+    fn one_working_lane_reads_as_its_pass_and_each_working_lane_gets_a_line() {
+        let rules = pg_model::rules::PathRules::Windows;
+        let working = Progress { phase: Phase::Import, done: 10, total: 40, ..Progress::idle() };
+        let idle = Progress::idle();
+        let alone = pass_status(&working, rules);
+        assert_eq!(
+            lanes_status(&[("E:".into(), working.clone()), ("D:".into(), idle.clone())], rules),
+            vec![alone.clone()]
+        );
+        assert_eq!(lanes_status(&[("E:".into(), working.clone())], rules), vec![alone.clone()]);
+        assert_eq!(lanes_status(&[("E:".into(), idle.clone())], rules), vec![pass_status(&idle, rules)]);
+        let lines = lanes_status(
+            &[("E:".into(), working.clone()), ("D:".into(), working.clone()), ("".into(), working)],
+            rules,
+        );
+        assert_eq!(lines, vec![format!("E: {alone}"), format!("D: {alone}"), alone]);
     }
 
     #[test]

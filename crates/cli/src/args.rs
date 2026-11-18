@@ -67,6 +67,10 @@ pub(crate) enum Command {
         /// scan`), wait for it to end instead of failing.
         #[arg(long)]
         wait: bool,
+        /// Walk the folders one after another, even on different drives (the app's escape hatch: one lane). Without it,
+        /// a folder on each drive is walked at once.
+        #[arg(long)]
+        serial: bool,
     },
     /// Take a folder out of the library (its files are hidden, not deleted from the catalog).
     Remove { root: PathBuf },
@@ -89,6 +93,9 @@ pub(crate) enum Command {
         /// has the same choice ("Find duplicates in the background").
         #[arg(long)]
         no_dups: bool,
+        /// Process the drives one after another, even when they differ (see `scan --serial`).
+        #[arg(long)]
+        serial: bool,
     },
     /// Make the duplicate hashes the import left out (`import --no-dups`), in the files the library holds. `pair` pairs
     /// them; the app does both in the background.
@@ -120,6 +127,9 @@ pub(crate) enum Command {
         /// Run at normal CPU priority instead of idle.
         #[arg(long)]
         foreground: bool,
+        /// Process the drives one after another, even when they differ (see `scan --serial`).
+        #[arg(long)]
+        serial: bool,
     },
     /// Borders around images. Without paths: look for those due, in what the import analyzed and after a new
     /// detector (the app does this in the background, after the import).

@@ -44,12 +44,15 @@ pub struct Prefs {
     /// Detect the duplicates (on by default): the import hashes the files, and the pairing pass pairs them. Off: the
     /// import leaves the hashes out (the Hashes pass makes them when it is back on), and the pairing waits.
     pub detect_duplicates: bool,
+    /// Process the library folders one after another, even on different drives (the escape hatch of `pg_model::features`).
+    /// Off: a lane per physical drive, so two drives are read and written at once.
+    pub serial_drives: bool,
 }
 
 impl Prefs {
     /// The background features these preferences turn on (`pg_model::features`).
     pub fn features(&self) -> Features {
-        Features { borders: self.detect_borders, duplicates: self.detect_duplicates }
+        Features { borders: self.detect_borders, duplicates: self.detect_duplicates, serial_drives: self.serial_drives }
     }
 }
 
@@ -120,6 +123,7 @@ impl Default for Prefs {
             dev_mode: false,
             detect_borders: true,
             detect_duplicates: true,
+            serial_drives: false,
         }
     }
 }
@@ -186,7 +190,8 @@ mod tests {
   "last_file": -1,
   "dev_mode": false,
   "detect_borders": true,
-  "detect_duplicates": true
+  "detect_duplicates": true,
+  "serial_drives": false
 }"#;
 
     #[test]
@@ -220,7 +225,7 @@ mod tests {
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true}"#
+            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false}"#
         );
     }
 

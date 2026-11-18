@@ -34,7 +34,7 @@ fn imported(prefix: &str) -> (std::path::PathBuf, Vec<u8>, Catalog) {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &opts(), false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     (a, good, c)
 }
 
@@ -75,7 +75,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((state::borders_due(&c, "a.png").unwrap(), state::borders_due(&c, "b.png").unwrap()), (1, 1));
 
     // a.png is held: the pass can't read it. Where the permissions don't stop this process (root), there is nothing to
@@ -84,7 +84,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
         pg_testkit::skip("the permissions don't stop this process from reading (root)");
         return;
     };
-    let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
+    let stats = pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // Both looked at; the unreadable one stored nothing, and is no failure of the file's.
     assert_eq!((stats.files, stats.failed, stats.unreadable, stats.stored), (2, 1, 1, 1));
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
@@ -93,7 +93,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
 
     // Readable again: the next pass looks at it, and it is no longer due.
     drop(lock);
-    let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
+    let stats = pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed, stats.stored), (1, 0, 1));
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 0);
 
@@ -119,7 +119,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // Damaged in place after the import, at the same size and time: the catalog has the file as it was.
     let mtime = std::fs::metadata(&a).unwrap().modified().unwrap();
     let rewrite = |bytes: &[u8]| {
@@ -127,7 +127,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
         std::fs::File::options().write(true).open(&a).unwrap().set_modified(mtime).unwrap();
     };
     rewrite(&vec![0; good.len()]);
-    let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
+    let stats = pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed, stats.unreadable, stats.stored), (1, 1, 0, 1));
     let [failed] = &c.failed_files(FilePass::Borders, 10).unwrap()[..] else { panic!("one failure") };
     assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "a.png").unwrap(), false));
@@ -135,7 +135,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     // Mended, and due again: found, and gone from the ledger.
     rewrite(&good);
     state::make_borders_due(&c, "a.png").unwrap();
-    let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
+    let stats = pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed), (1, 0));
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
     drop(c);
@@ -150,7 +150,7 @@ fn a_detector_panic_records_the_file() {
     let (_a, _good, mut c) = imported("borders-panic");
     let id = state::file_id(&c, "a.png").unwrap();
     pg_borders::fault::panic_on(Some(id));
-    let stats = pg_borders::find(&mut c, &opts(), &Control::new());
+    let stats = pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new());
     pg_borders::fault::panic_on(None);
     let stats = stats.unwrap();
     assert_eq!((stats.files, stats.failed, stats.unreadable, stats.stored), (1, 1, 0, 1));
@@ -167,11 +167,11 @@ fn a_file_that_fails_again_keeps_its_row() {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
     let (a, good, mut c) = imported("borders-again");
     damage(&a, good.len());
-    pg_borders::find(&mut c, &opts(), &Control::new()).unwrap();
+    pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new()).unwrap();
     let entries = c.ledger_entries(false).unwrap();
     assert_eq!(entries.len(), 1, "the borders' entry");
     state::make_borders_due(&c, "a.png").unwrap();
-    let stats = pg_borders::find(&mut c, &opts(), &Control::new()).unwrap();
+    let stats = pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new()).unwrap();
     assert_eq!((stats.files, stats.failed), (1, 1));
     assert_eq!(c.recorded_failures(FilePass::Borders).unwrap().len(), 1);
     assert_eq!(c.ledger_entries(false).unwrap(), entries, "the row and its serial are as they were");
@@ -185,7 +185,7 @@ fn a_batch_that_cant_be_written_stores_nothing_and_leaves_its_files_due() {
     let (a, good, mut c) = imported("borders-locked");
     damage(&a, good.len());
     let failing = pg_catalog::fixture::LedgerWritesFail::start();
-    let found = pg_borders::find(&mut c, &opts(), &Control::new());
+    let found = pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new());
     drop(failing);
     assert!(found.is_err(), "the batch couldn't be written");
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 1, "the file stays due");
@@ -208,11 +208,11 @@ fn the_ledgers_changes_are_announced() {
         counted.fetch_add(1, Ordering::SeqCst);
     });
     damage(&a, good.len());
-    pg_borders::find(&mut c, &opts(), &ctl).unwrap();
+    pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(announced.load(Ordering::SeqCst), 1);
     rewrite(&a, &good);
     state::make_borders_due(&c, "a.png").unwrap();
-    pg_borders::find(&mut c, &opts(), &ctl).unwrap();
+    pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(announced.load(Ordering::SeqCst), 2);
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
 }

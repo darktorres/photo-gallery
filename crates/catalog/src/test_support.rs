@@ -56,7 +56,7 @@ pub(crate) fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
 
 /// Whether the import would analyze file `id` now.
 pub(crate) fn due(c: &Catalog, id: FileId) -> bool {
-    c.pending_import(false).unwrap().items.iter().any(|i| i.id == id)
+    c.pending_import(false, &crate::VolumeSet::All).unwrap().items.iter().any(|i| i.id == id)
 }
 
 /// Whether file `id` is due for the import, and its change number (`files.seq`).
@@ -128,7 +128,7 @@ pub(crate) fn analyzed(c: &mut Catalog, item: &WorkItem) {
 }
 
 pub(crate) fn next_work(c: &Catalog) -> WorkItem {
-    let mut work = c.pending_import(false).unwrap();
+    let mut work = c.pending_import(false, &crate::VolumeSet::All).unwrap();
     assert_eq!(work.len(), 1);
     work.items.remove(0)
 }

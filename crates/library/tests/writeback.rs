@@ -82,7 +82,13 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images"))?;
     pg_scan::scan(&mut c, &root, &ctl)?;
-    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl)?;
+    pg_import::import(
+        &mut c,
+        &Options::new(pg_platform::priority::Priority::Normal),
+        false,
+        &pg_catalog::VolumeSet::All,
+        &ctl,
+    )?;
     Ok((dir, files, catalog_path, c))
 }
 
@@ -139,9 +145,17 @@ fn ratings_and_turns_reach_the_files() {
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // The placeholders the grid shows, made from the originals (no cache): their turns are what the turns below check.
-    pg_thumbs::placeholders::run_while(&mut c, &ThumbCache::disabled(), &opts, &|| true, &ctl).unwrap();
+    pg_thumbs::placeholders::run_while(
+        &mut c,
+        &ThumbCache::disabled(),
+        &opts,
+        &pg_catalog::VolumeSet::All,
+        &|| true,
+        &ctl,
+    )
+    .unwrap();
     let before = ids(&c).unwrap();
     assert_eq!(before.len(), files.len());
 
@@ -214,11 +228,19 @@ fn ratings_and_turns_reach_the_files() {
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
-    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "re-imported upright sizes: {:?}", dims(&c));
     // Until the Placeholders pass makes them again, the placeholders show the pixels they were made from, turned.
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "before the pass: {:?}", placeholder_turns(&c));
-    pg_thumbs::placeholders::run_while(&mut c, &ThumbCache::disabled(), &opts, &|| true, &ctl).unwrap();
+    pg_thumbs::placeholders::run_while(
+        &mut c,
+        &ThumbCache::disabled(),
+        &opts,
+        &pg_catalog::VolumeSet::All,
+        &|| true,
+        &ctl,
+    )
+    .unwrap();
     assert!(placeholder_turns(&c).iter().all(|&t| t == 0), "re-made placeholders: {:?}", placeholder_turns(&c));
 
     // Another program rates the JPEG: the next scan and import adopt it.
@@ -229,7 +251,7 @@ fn ratings_and_turns_reach_the_files() {
         .unwrap();
     assert!(out.status.success());
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(state::rating_of(&c, FileId::new(before[0].0)).unwrap(), Some(2));
 
     drop(writer);
@@ -271,7 +293,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     let before = ids(&c).unwrap();
     assert_eq!(before.len(), 2, "both imported: {before:?}");
     let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
@@ -659,7 +681,14 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    pg_import::import(
+        &mut c,
+        &Options::new(pg_platform::priority::Priority::Normal),
+        false,
+        &pg_catalog::VolumeSet::All,
+        &ctl,
+    )
+    .unwrap();
     let (bmp, jpg) = (state::file_id(&c, "f.bmp").unwrap(), state::file_id(&c, "g.jpg").unwrap());
     for id in [bmp, jpg] {
         state::queue_write(&c, id, "rating", 3).unwrap();
@@ -871,7 +900,14 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    pg_import::import(
+        &mut c,
+        &Options::new(pg_platform::priority::Priority::Normal),
+        false,
+        &pg_catalog::VolumeSet::All,
+        &ctl,
+    )
+    .unwrap();
 
     // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
     // shows the turn pending (rotation 1).
@@ -955,7 +991,14 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    pg_import::import(
+        &mut c,
+        &Options::new(pg_platform::priority::Priority::Normal),
+        false,
+        &pg_catalog::VolumeSet::All,
+        &ctl,
+    )
+    .unwrap();
     // Turns: a PNG's is rewritten without ExifTool.
     let (poisoned, healthy) = (state::file_id(&c, "a.jpg").unwrap(), state::file_id(&c, "b.png").unwrap());
     for id in [poisoned, healthy] {
@@ -1059,7 +1102,14 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    pg_import::import(
+        &mut c,
+        &Options::new(pg_platform::priority::Priority::Normal),
+        false,
+        &pg_catalog::VolumeSet::All,
+        &ctl,
+    )
+    .unwrap();
 
     // The temp a rating of b.png left: it holds a.jpg's bytes, so the copy into b.png is visible.
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();

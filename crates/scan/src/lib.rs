@@ -355,6 +355,15 @@ pub fn check_folder(rules: PathRules, root: &RulePath) -> Result<(), RefusedReas
     refusal::check_root(&units_of(&rules.join(root)))
 }
 
+/// The volume `root` (a library folder) is on, as the walk stores its files' volume (`Listing::volume` of the folder,
+/// the same identity the walk gives its files). A lane that walks `root` owns this volume. An error when the folder
+/// can't be opened.
+pub fn root_volume(rules: PathRules, root: &RulePath) -> io::Result<u64> {
+    let mut lister = pg_platform::dir::Lister::new();
+    let dir = open_folder(&mut lister, rules, root)?;
+    Listing::volume(&mut lister, &dir)
+}
+
 /// Record the media files under `root` (a folder of the catalog's rules); files it no longer holds are marked missing.
 /// A folder that [`check_folder`] refuses is [`ScanError::Refused`], before any walk: no scans row is written, nothing is
 /// marked missing, and the refusal goes in the folder ledger (`Catalog::folder_refused`), which the next complete walk
@@ -1999,7 +2008,11 @@ mod tests {
         // The stale analyses are kept, not deleted: they stay what the grid shows until the import redoes them, and the
         // import's queue holds exactly the two files.
         assert_eq!(c.status().unwrap().analyzed, 2, "both analyses are still stored, stale");
-        assert_eq!(c.pending_import(false).unwrap().items.len(), 2, "both files are due for the import");
+        assert_eq!(
+            c.pending_import(false, &pg_catalog::VolumeSet::All).unwrap().items.len(),
+            2,
+            "both files are due for the import"
+        );
     }
 
     /// A Retry (the user's, or a pass's) between a folder's listing and the batch that writes its files. It moves the
@@ -2310,8 +2323,9 @@ mod tests {
         let ctl = Arc::new(Control::new());
         let (listed, at_b) = mpsc::channel();
         let pausing = ctl.clone();
-        let mut lister =
-            FakeListing::new(1, &judged_tree()).refusing(pg_platform::native::PATH_RULES, "mnt").on_listing("b", move || {
+        let mut lister = FakeListing::new(1, &judged_tree())
+            .refusing(pg_platform::native::PATH_RULES, "mnt")
+            .on_listing("b", move || {
                 pausing.set_paused(true);
                 let _ = listed.send(());
             });

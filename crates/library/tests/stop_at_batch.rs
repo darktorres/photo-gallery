@@ -41,24 +41,27 @@ fn opts() -> Options {
 #[test]
 fn an_import_stops_after_its_batch_and_leaves_the_rest_pending() {
     let (mut c, ctl, _dir) = scanned("import");
-    let stats = pg_import::import_while(&mut c, &opts(), false, &|| false, &ctl).unwrap();
+    let stats = pg_import::import_while(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &|| false, &ctl).unwrap();
     assert!(stats.files > 0 && stats.files < N, "one batch was imported: {}", stats.files);
-    let rest = c.pending_import(false).unwrap().items.len();
+    let rest = c.pending_import(false, &pg_catalog::VolumeSet::All).unwrap().items.len();
     assert_eq!(stats.files + rest, N, "the files not reached stay pending");
-    pg_import::import_while(&mut c, &opts(), false, &|| true, &ctl).unwrap();
-    assert!(c.pending_import(false).unwrap().items.is_empty(), "the next run imports the rest");
+    pg_import::import_while(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
+    assert!(
+        c.pending_import(false, &pg_catalog::VolumeSet::All).unwrap().items.is_empty(),
+        "the next run imports the rest"
+    );
 }
 
 #[test]
 fn the_hashes_pass_stops_after_its_batch_and_keeps_the_rest_owed() {
     let (mut c, ctl, _dir) = scanned("hashes");
-    pg_import::import_while(&mut c, &opts(), false, &|| true, &ctl).unwrap();
+    pg_import::import_while(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     assert_eq!(c.owed_hashes().unwrap(), N, "every picture owes its hashes");
-    let stats = pg_import::hashes::hash(&mut c, &opts(), &|| false, &ctl).unwrap();
+    let stats = pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| false, &ctl).unwrap();
     assert!(!stats.complete, "a stopped pass is not complete");
     assert!(stats.stored > 0 && stats.stored < N, "one batch was hashed: {}", stats.stored);
     assert_eq!(c.owed_hashes().unwrap(), N - stats.stored, "the files not reached stay owed");
-    let done = pg_import::hashes::hash(&mut c, &opts(), &|| true, &ctl).unwrap();
+    let done = pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     assert!(done.complete);
     assert_eq!(c.owed_hashes().unwrap(), 0, "the next run hashes the rest");
 }
@@ -66,12 +69,16 @@ fn the_hashes_pass_stops_after_its_batch_and_keeps_the_rest_owed() {
 #[test]
 fn the_borders_pass_stops_after_its_batch_and_keeps_the_rest_due() {
     let (mut c, ctl, _dir) = scanned("borders");
-    pg_import::import_while(&mut c, &opts(), false, &|| true, &ctl).unwrap();
-    assert_eq!(c.pending_borders().unwrap().items.len(), N, "every picture is due its borders");
-    let stats = pg_borders::find_while(&mut c, &opts(), &|| false, &ctl).unwrap();
+    pg_import::import_while(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
+    assert_eq!(
+        c.pending_borders(&pg_catalog::VolumeSet::All).unwrap().items.len(),
+        N,
+        "every picture is due its borders"
+    );
+    let stats = pg_borders::find_while(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| false, &ctl).unwrap();
     assert!(!stats.complete, "a stopped pass is not complete");
-    let rest = c.pending_borders().unwrap().items.len();
+    let rest = c.pending_borders(&pg_catalog::VolumeSet::All).unwrap().items.len();
     assert!(rest > 0 && rest < N, "one batch was looked at; {rest} are still due");
-    pg_borders::find_while(&mut c, &opts(), &|| true, &ctl).unwrap();
-    assert!(c.pending_borders().unwrap().items.is_empty(), "the next run looks at the rest");
+    pg_borders::find_while(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
+    assert!(c.pending_borders(&pg_catalog::VolumeSet::All).unwrap().items.is_empty(), "the next run looks at the rest");
 }

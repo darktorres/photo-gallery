@@ -19,7 +19,7 @@ use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, WriteError};
 use pg_client::text::{self, Message};
 use pg_model::notice::{FilePass, LedgerKind, Notice};
-use pg_model::progress::Phase;
+use pg_model::progress::{Phase, Progress};
 use pg_model::size::ThumbHeight;
 
 use crate::app;
@@ -170,8 +170,11 @@ impl qobject::Library {
         let Some(library) = running() else { return };
         let status = library.status();
         let p = &status.progress;
-        // A scanned folder is shown under the catalog's rules, this machine's.
-        let pass = text::pass_status(p, pg_platform::native::PATH_RULES);
+        // One line per working lane, its drive's label first; one lane reads as it always has. A scanned folder is shown
+        // under the catalog's rules, this machine's.
+        let lanes: Vec<(String, Progress)> =
+            status.lanes.iter().map(|lane| (lane.label.clone(), lane.progress.clone())).collect();
+        let pass = text::lanes_status(&lanes, pg_platform::native::PATH_RULES).join("\n");
         let line = if status.paused { text::paused_status(&pass) } else { pass };
         self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().set_paused(status.paused);

@@ -106,3 +106,22 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
   above, as robocopy also writes).
 - **The harness embeds at only 80–117 img/s against 410 img/s of GPU capacity**, so decoding
   (PIL, Python DataLoader) is the bottleneck. The Rust decode path matters more than the model.
+
+## Drives: the spike (2026-11-17)
+
+Input to the multi-drive lanes (`docs/plans/MULTI_DRIVE_LANES_PLAN.md`, Phase 0). Run elevated, on this machine: a
+D: NVMe, a C: SATA SSD, and E:, F:, G: SATA HDDs (disks 0 to 4).
+
+- Volume GUID paths (`\\?\Volume{…}`) and drive-letter paths both open with **zero access rights** and return the same
+  disk extents for C:, D:, E:, F: and G:.
+- Bus type and seek penalty match `Get-PhysicalDisk` for all five disks: disk 0 (NVMe) and disk 1 (SATA SSD) have no
+  seek penalty; disks 2, 3 and 4 (SATA HDDs) have one.
+- Not tested: a non-admin account; a USB enclosure (its bridge can report "no seek penalty" for an HDD, so `pg_platform`
+  treats a USB disk as `Unknown` unless it spins); a Storage Spaces or VHD disk; a folder-mounted volume.
+- Work-list plans on the real schema (no `ANALYZE` runs, so these are what production gets): the import list with no
+  retry sorts nothing; the retry list uses a temp B-tree; placeholders scan the lane's rows through the volume index;
+  borders and hashes drive from `files` once the query puts it first (`CROSS JOIN`); the thumbs list since the checkpoint
+  keeps `files_seq` only with `+f.volume`. Their timing at 2 M rows is not measured yet.
+
+Not measured yet, and the lanes' tuning waits for it: readers per kind (8 is the rotational value from the earlier HDD
+bench), the listing workers, and the two-drive throughput against the single lane.

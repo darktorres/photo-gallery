@@ -33,6 +33,25 @@ either gives ~3× path order).
 | SATA SSD / NVMe | MFT order is irrelevant but free. 8 in flight is shallow for NVMe, but IO.md "I/O" already has decoding as the bottleneck above ~1,600 files/s, so an SSD runs at decode speed. A deeper queue (picked from `IOCTL_STORAGE_QUERY_PROPERTY` / `StorageDeviceSeekPenaltyProperty`) is only worth it if a measurement shows readers waiting on the disk. |
 | USB HDD | MFT order still helps. Behind a bridge without UAS (USB mass storage "bulk-only"), there's no NCQ, so the drive can't reorder the 8 reads and the queue-depth gain shrinks; the MFT order is what's left. |
 
+### How the job tells the drives apart
+
+The background job groups the library's folders by physical drive (`pg_platform::drive`): one lane per drive, the lanes
+read at once, and folders on one drive stay one stream.
+
+- **The drive** is the set of disks behind a volume (Windows: `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS`; Linux: the
+  block device under the mount, through `/sys/dev/block`). Two volumes that share a disk are one drive, and a volume
+  spanning two disks joins both. Disk numbers change at a reboot, so the drive is never stored.
+- **The kind** is read from the bus type and the seek penalty. A USB disk's bridge can say "no seek penalty" for a
+  spinning disk, so a USB answer counts only when it says the disk spins. A disk whose kind can't be told is `Unknown`,
+  which the job treats as an HDD. The kind does not decide the grouping; it tunes the reads.
+- **A disk whose backing can't be seen** (a virtual or file-backed disk, Storage Spaces, iSCSI, an unknown bus) may share
+  a spindle with another such disk, so all of them are one opaque drive, in one lane, apart from the physical drives.
+- **If any library folder's drive can't be told**, every folder goes into one lane, as before the lanes. An unplugged
+  folder has no lane, and its files wait under the offline notice until the drive returns.
+- **The escape hatch**: `serial_drives` in the preferences (or `--serial` on `gallery scan`, `import` and `thumbs`)
+  runs every folder in one lane. Use it for a setup the probe can't see through: two disk images on one spindle, or a
+  pool the system spreads over disks.
+
 ## Other file systems (unsupported)
 
 | File system | What goes wrong | Severity |

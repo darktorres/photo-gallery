@@ -6,6 +6,7 @@
 pub mod control;
 pub mod events;
 pub mod failure;
+pub mod governor;
 mod notice_sink;
 pub mod panics;
 pub mod pipeline;

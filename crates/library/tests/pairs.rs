@@ -39,9 +39,9 @@ fn imported(prefix: &str) -> (Catalog, Control, PathBuf) {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &opts(), false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // The Hashes pass makes the hashes the import leaves owed: the pairs are made from them.
-    pg_import::hashes::hash(&mut c, &opts(), &|| true, &ctl).unwrap();
+    pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     (c, ctl, dir)
 }
 
@@ -69,15 +69,15 @@ fn reopened(c: Catalog, dir: &Path, import: i64) -> Catalog {
 fn analysed_again(c: &mut Catalog, ctl: &Control) {
     let a = state::file_id(c, "a.png").unwrap();
     assert_eq!(c.mark_pending(&[a]).unwrap(), 1);
-    pg_import::import(c, &opts(), false, ctl).unwrap();
-    pg_import::hashes::hash(c, &opts(), &|| true, ctl).unwrap();
+    pg_import::import(c, &opts(), false, &pg_catalog::VolumeSet::All, ctl).unwrap();
+    pg_import::hashes::hash(c, &opts(), &pg_catalog::VolumeSet::All, &|| true, ctl).unwrap();
 }
 
 /// Whether the import would analyse the file called `name` now (`files.pending`, of a present file).
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn due(c: &Catalog, name: &str) -> bool {
     let id = state::file_id(c, name).unwrap();
-    c.pending_import(false).unwrap().items.iter().any(|i| i.id == id)
+    c.pending_import(false, &pg_catalog::VolumeSet::All).unwrap().items.iter().any(|i| i.id == id)
 }
 
 /// Whether the file called `name` is present (not found missing).
@@ -129,7 +129,10 @@ fn the_pair_is_made_while_its_partner_is_away(prefix: &str, away: Step, back: St
 
     let mut c = back(c, &dir, &ctl);
     assert!(state::shown_pairs(&c).unwrap().contains(&(lo, hi, 0)), "shown, with b.png back");
-    assert!(c.pending_import(false).unwrap().is_empty(), "b.png is back as it was analysed");
+    assert!(
+        c.pending_import(false, &pg_catalog::VolumeSet::All).unwrap().is_empty(),
+        "b.png is back as it was analysed"
+    );
     assert_eq!(c.owed_pairs().unwrap(), 0);
     let again = pg_import::pairs::pair(&mut c, &opts(), &ctl).unwrap();
     assert_eq!(again.files, 0, "nothing for a pass to make");

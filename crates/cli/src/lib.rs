@@ -29,7 +29,9 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
-use pg_catalog::Catalog;
+use pg_catalog::{Catalog, VolumeSet};
+use pg_library::lanes::{self, Group};
+use pg_platform::native::PATH_RULES;
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
@@ -168,7 +170,7 @@ fn hash_and_report(
     ctl: &Control,
     start: Instant,
 ) -> Result<()> {
-    let s = pg_import::hashes::hash(catalog, opts, &|| true, ctl)?;
+    let s = pg_import::hashes::hash(catalog, opts, &pg_catalog::VolumeSet::All, &|| true, ctl)?;
     if s.files > 0 {
         say(&Line::HashesDone {
             files: s.files.to_string(),
@@ -275,7 +277,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     let start = Instant::now();
 
     match cli.command {
-        Command::Scan { roots, wait } => {
+        Command::Scan { roots, wait, serial } => {
             let roots: Vec<RulePath> = if roots.is_empty() {
                 catalog.roots()?.into_iter().map(|r| r.path).collect()
             } else {
@@ -299,9 +301,25 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 }
                 added
             };
-            for root in roots {
+            // One lane per drive: each walks its roots, on its own connection; the results are reported in order.
+            let mut groups = lanes::groups(rules, &roots, serial);
+            // A folder the drive probe can't place (gone, or on an unplugged drive) is still walked: the walk is what says why
+            // it can't be read, and where the refusal goes. It is one group of its own, which walks no volume's files.
+            let unplaced: Vec<RulePath> =
+                roots.iter().filter(|root| !groups.iter().any(|group| group.roots.contains(root))).cloned().collect();
+            if !unplaced.is_empty() {
+                groups.push(Group { roots: unplaced, volumes: VolumeSet::All, label: String::new() });
+            }
+            let walked = run_lanes(&catalog_path, &groups, ctl, |catalog, group, lane| {
+                Ok(group
+                    .roots
+                    .iter()
+                    .map(|root| (root.clone(), scan_root(catalog, root, lane, wait)))
+                    .collect::<Vec<_>>())
+            })?;
+            for (root, result) in walked.into_iter().flatten() {
                 let name = rules.display(&root);
-                let s = match scan_root(&mut catalog, &root, ctl, wait) {
+                let s = match result {
                     Ok(s) => s,
                     // A refused folder is reported and the others are still scanned (its refusal is in the catalog's
                     // folder ledger, until a walk of it can run); any other error stops the command.
@@ -362,20 +380,27 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 None => bail!(line(&Line::NotInLibrary { root: name })),
             }
         }
-        Command::Import { pipeline, retry_errors, again, no_pair, no_dups } => {
+        Command::Import { pipeline, retry_errors, again, no_pair, no_dups, serial } => {
             if !again.is_empty() {
                 let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
                 say(&Line::MarkedAgain { count: marked.to_string() });
             }
             let opts = pipeline.options(Priority::Normal);
-            let s = pg_import::import_while(&mut catalog, &opts, retry_errors, &|| true, ctl)?;
-            say(&Line::ImportPending { pending: s.pending.to_string() });
-            say(&Line::ImportDone {
-                files: s.files.to_string(),
-                failed: s.failed.to_string(),
-                changed: changed_while_read(s.changed),
-                seconds: secs(start.elapsed().as_secs_f64()),
-            });
+            // One lane per drive: each imports its volumes at once. The duplicates below are the whole library's.
+            let groups = lanes_of(&catalog, serial)?;
+            let imports = run_lanes(&catalog_path, &groups, ctl, |catalog, group, lane| {
+                pg_import::import_while(catalog, &opts, retry_errors, &group.volumes, &|| true, lane)
+            })?;
+            for (group, s) in groups.iter().zip(&imports) {
+                lane_heading(group, groups.len());
+                say(&Line::ImportPending { pending: s.pending.to_string() });
+                say(&Line::ImportDone {
+                    files: s.files.to_string(),
+                    failed: s.failed.to_string(),
+                    changed: changed_while_read(s.changed),
+                    seconds: secs(start.elapsed().as_secs_f64()),
+                });
+            }
             // The duplicates are the hashes and the pairs: none with `--no-dups`, no pairs with `--no-pair`.
             if !no_dups {
                 pair_and_report(&mut catalog, &opts, ctl, start, !no_pair)?;
@@ -391,42 +416,51 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             }
             pair_and_report(&mut catalog, &pipeline.options(Priority::Normal), ctl, start, true)?;
         }
-        Command::Thumbs { height, cap, pipeline, foreground } => {
+        Command::Thumbs { height, cap, pipeline, foreground, serial } => {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
             let (events, printer) = thumb_events();
             let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, cap, events)?;
-            let s = pg_thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
+            // One lane per drive: each makes its volumes' thumbnails and placeholders, all into the one cache.
+            let groups = lanes_of(&catalog, serial)?;
+            let runs = run_lanes(&catalog_path, &groups, ctl, |catalog, group, lane| {
+                let s = pg_thumbs::run_while(&cache, &catalog_path, height, &opts, &group.volumes, &|| true, lane)?;
+                // The placeholders the thumbnails left owing: after them, as the app's rounds run them.
+                let placed =
+                    pg_thumbs::placeholders::run_while(catalog, &cache, &opts, &group.volumes, &|| true, lane)?;
+                Ok((s, placed))
+            })?;
             cache.flush();
-            say(&Line::ThumbsNeeded {
-                needed: s.needed.to_string(),
-                height: height.to_string(),
-                held: gigabytes(pg_model::num::size(s.cache_bytes)),
-            });
-            print_failures(Kept::Failed, &s.failures);
-            say(&Line::ThumbsDone {
-                made: s.made.to_string(),
-                height: height.to_string(),
-                failed: s.failed.to_string(),
-                changed: changed_while_read(s.changed),
-                full: if s.cache_full { line(&Line::CacheFull) } else { String::new() },
-                used: gigabytes(pg_model::num::signed(cache.totals()?.0)),
-                cap: gigabytes(pg_model::num::signed(cache.cap()?)),
-                seconds: secs(start.elapsed().as_secs_f64()),
-            });
-            let ledger_error = match s.ledger {
-                pg_thumbs::LedgerOutcome::Failed(error) => Some(error),
-                pg_thumbs::LedgerOutcome::Untouched | pg_thumbs::LedgerOutcome::Written => None,
-            };
-            report_pass(FilePass::Thumbs, s.unreadable, ledger_error);
-            // The placeholders the thumbnails left owing: after them, as the app's rounds run them.
-            let placed = pg_thumbs::placeholders::run_while(&mut catalog, &cache, &opts, &|| true, ctl)?;
-            say(&Line::PlaceholdersDone {
-                made: placed.made.to_string(),
-                failed: placed.failed.to_string(),
-                seconds: secs(start.elapsed().as_secs_f64()),
-            });
+            for (group, (s, placed)) in groups.iter().zip(&runs) {
+                lane_heading(group, groups.len());
+                say(&Line::ThumbsNeeded {
+                    needed: s.needed.to_string(),
+                    height: height.to_string(),
+                    held: gigabytes(pg_model::num::size(s.cache_bytes)),
+                });
+                print_failures(Kept::Failed, &s.failures);
+                say(&Line::ThumbsDone {
+                    made: s.made.to_string(),
+                    height: height.to_string(),
+                    failed: s.failed.to_string(),
+                    changed: changed_while_read(s.changed),
+                    full: if s.cache_full { line(&Line::CacheFull) } else { String::new() },
+                    used: gigabytes(pg_model::num::signed(cache.totals()?.0)),
+                    cap: gigabytes(pg_model::num::signed(cache.cap()?)),
+                    seconds: secs(start.elapsed().as_secs_f64()),
+                });
+                let ledger_error = match &s.ledger {
+                    pg_thumbs::LedgerOutcome::Failed(error) => Some(error.clone()),
+                    pg_thumbs::LedgerOutcome::Untouched | pg_thumbs::LedgerOutcome::Written => None,
+                };
+                report_pass(FilePass::Thumbs, s.unreadable, ledger_error);
+                say(&Line::PlaceholdersDone {
+                    made: placed.made.to_string(),
+                    failed: placed.failed.to_string(),
+                    seconds: secs(start.elapsed().as_secs_f64()),
+                });
+            }
             drop(cache);
             let _ = printer.join();
         }
@@ -435,7 +469,12 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
                 say(&Line::ReviewImported { marked: marked.to_string(), unknown: unknown.to_string() });
             } else {
-                let s = pg_borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
+                let s = pg_borders::find(
+                    &mut catalog,
+                    &pipeline.options(Priority::Normal),
+                    &pg_catalog::VolumeSet::All,
+                    ctl,
+                )?;
                 say(&Line::BordersDone {
                     files: s.files.to_string(),
                     failed: s.failed.to_string(),
@@ -517,6 +556,50 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
 
 /// Scan `root`; with `wait`, a walk refused because another process walks an overlapping folder is tried again, once a
 /// second, until that walk ends (or its lease expires), and the wait is said once on stderr.
+/// The lanes a bulk command runs: one per drive the library's folders are on (`lanes::groups`), or one under `--serial`.
+/// With no folders, one lane over every volume, as the command has always run.
+fn lanes_of(catalog: &Catalog, serial: bool) -> Result<Vec<Group>> {
+    let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
+    let groups = lanes::groups(catalog.rules(), &roots, serial);
+    if groups.is_empty() {
+        return Ok(vec![Group { roots: Vec::new(), volumes: VolumeSet::All, label: String::new() }]);
+    }
+    Ok(groups)
+}
+
+/// Runs `pass` for each group on a connection of its own and a child of `ctl` (`Control::lane`), one thread per group, so
+/// the drives are worked at once. The results are in the groups' order. A lane that panics fails the command.
+fn run_lanes<T: Send>(
+    catalog_path: &Path,
+    groups: &[Group],
+    ctl: &Control,
+    pass: impl Fn(&mut Catalog, &Group, &Control) -> Result<T> + Sync,
+) -> Result<Vec<T>> {
+    // The lanes share the cores as the app's do: their workers take CPU permits (set once for the run; a repeat is ignored).
+    ctl.share_cpu(std::thread::available_parallelism().map_or(4, |n| n.get()));
+    let lanes: Vec<(&Group, Arc<Control>)> = groups.iter().map(|group| (group, ctl.lane())).collect();
+    std::thread::scope(|scope| {
+        let pass = &pass;
+        let handles: Vec<_> = lanes
+            .iter()
+            .map(|(group, lane)| {
+                scope.spawn(move || -> Result<T> {
+                    let mut catalog = Catalog::open(catalog_path, PATH_RULES)?;
+                    pass(&mut catalog, group, lane)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|handle| handle.join().unwrap_or_else(|_| Err(anyhow!("a lane panicked")))).collect()
+    })
+}
+
+/// The heading of a lane's lines when the command runs several: its drive's label. Nothing for one lane.
+fn lane_heading(group: &Group, lanes: usize) {
+    if lanes > 1 {
+        println!("{}:", group.label);
+    }
+}
+
 fn scan_root(
     catalog: &mut Catalog,
     root: &RulePath,

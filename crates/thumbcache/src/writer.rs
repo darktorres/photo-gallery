@@ -280,15 +280,14 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
             let _ = reply.send(done);
         }
         Op::Checked { snapshot, through, reply } => {
-            // Evicted meanwhile (the counter moved on): not stored.
-            let done = conn
-                .execute(
-                    "INSERT INTO checked(height, seq, evictions) VALUES (?1, ?2, ?3)
-                     ON CONFLICT(height) DO UPDATE SET seq = excluded.seq
-                     WHERE checked.evictions = excluded.evictions",
-                    params![snapshot.height.get(), through, snapshot.evictions],
-                )
-                .map(drop)
+            // Each of the pass's volumes gets its checkpoint; evicted meanwhile (the counter moved on): none is stored.
+            let done = snapshot
+                .volumes
+                .iter()
+                .try_for_each(|&volume| {
+                    conn.execute(CHECKPOINT, params![snapshot.height.get(), volume, through, snapshot.evictions])
+                        .map(drop)
+                })
                 .map_err(anyhow::Error::from);
             let _ = reply.send(done);
         }
@@ -389,10 +388,19 @@ fn total_and_cap(conn: &Connection) -> Result<(i64, i64)> {
     Ok(conn.query_row("SELECT t.bytes, l.cap FROM totals t, limits l", [], |r| Ok((r.get(0)?, r.get(1)?)))?)
 }
 
-/// A height (`?1`) forgets how far it was checked (`checked.seq`), and counts an eviction, so a pass that read its work
-/// before doesn't store its watermark: what an eviction does to each height it took from, and a forgotten thumbnail.
-const FORGET_WATERMARK: &str = "INSERT INTO checked(height, seq, evictions) VALUES (?1, NULL, 1)
-     ON CONFLICT(height) DO UPDATE SET seq = NULL, evictions = evictions + 1";
+/// A volume's checkpoint at a height (`?1`, `?2`) is `?3`, stored only while the height's evictions are still those the
+/// pass read (`?4`): an eviction meanwhile means the pass's work is no longer its own to checkpoint.
+const CHECKPOINT: &str = "INSERT INTO checkpoints(height, volume, seq)
+     SELECT ?1, ?2, ?3 WHERE IFNULL((SELECT evictions FROM checked WHERE height = ?1), 0) = ?4
+     ON CONFLICT(height, volume) DO UPDATE SET seq = excluded.seq";
+
+/// A height (`?1`) counts an eviction, so a pass that read its work before doesn't store its watermark (what an eviction
+/// does to each height it took from, with [`FORGET_CHECKPOINTS`]).
+const FORGET_COUNT: &str = "INSERT INTO checked(height, evictions) VALUES (?1, 1)
+     ON CONFLICT(height) DO UPDATE SET evictions = evictions + 1";
+
+/// A height (`?1`) forgets how far each of its volumes was checked: its checkpoints go, so the next pass looks whole.
+const FORGET_CHECKPOINTS: &str = "DELETE FROM checkpoints WHERE height = ?1";
 
 /// Delete the least recently used entries, sparing `keep_height`, until `target` bytes are freed or none is left;
 /// returns the bytes freed. The heights evicted from forget how far they were checked (`checked`), and count the
@@ -416,9 +424,11 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<ThumbHeight>) -> Res
     for id in victims {
         delete.execute([id])?;
     }
-    let mut forget = tx.prepare_cached(FORGET_WATERMARK)?;
+    let mut forget = tx.prepare_cached(FORGET_COUNT)?;
+    let mut unchecked = tx.prepare_cached(FORGET_CHECKPOINTS)?;
     for height in heights {
         forget.execute([height])?;
+        unchecked.execute([height])?;
     }
     Ok(freed)
 }
@@ -428,7 +438,8 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<ThumbHeight>) -> Res
 fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: ThumbHeight) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height.get()])?;
-    tx.execute(FORGET_WATERMARK, [height.get()])?;
+    tx.execute(FORGET_COUNT, [height.get()])?;
+    tx.execute(FORGET_CHECKPOINTS, [height.get()])?;
     tx.commit()?;
     Ok(())
 }

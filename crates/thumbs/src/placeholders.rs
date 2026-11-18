@@ -66,6 +66,7 @@ pub fn run_while(
     catalog: &mut Catalog,
     cache: &ThumbCache,
     opts: &Options,
+    volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<PlaceholderStats> {
@@ -76,7 +77,7 @@ pub fn run_while(
     let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::THUMBHASH];
     let step_marks = steps.map(|step| step.mark());
     let pending = pg_perf::span("pending.placeholders");
-    let work = catalog.pending_placeholders()?;
+    let work = catalog.pending_placeholders(volumes)?;
     drop(pending);
     let items = &work.items;
     let sep = catalog.rules().sep_byte();

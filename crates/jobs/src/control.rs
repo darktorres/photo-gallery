@@ -1,15 +1,21 @@
 //! What a running pass shares with whoever started it: its progress, pause, and a stop request (a new job, a new
 //! thumbnail height, quitting). It holds no text: whoever shows the progress formats it (the command line, the app).
 //! The phase and the progress are the model's (`pg_model::progress`); the clock they are timed by is here.
+//!
+//! A run can have lanes (one per drive, `docs/plans/MULTI_DRIVE_LANES_PLAN.md`): [`Control::lane`] makes a child of the
+//! root that has its own stop, its own pause and its own progress, and shares the root's global pause, its stop, the
+//! hooks and a bus that tags every lane's events with its [`LaneId`] ([`Control::subscribe_all`]). The root's pause
+//! stops every lane's clock; a lane's pause stops that lane alone; the root's stop stops every lane.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use pg_model::progress::{Mark, Phase, Progress};
 
 use crate::events::{Bus, Subscription, Watch};
+use crate::governor::{CpuGate, Permit};
 
 /// The rate and the time left are taken over this much of the phase's latest progress: a sliding window.
 const RATE_WINDOW: Duration = Duration::from_secs(30);
@@ -108,32 +114,85 @@ pub enum Event {
     Finished(Progress),
 }
 
+/// A lane of a run: the root is [`LaneId::ROOT`], and each [`Control::lane`] takes the next number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LaneId(u32);
+
+impl LaneId {
+    /// The root control's lane: the run's own pass, when it has no lanes.
+    pub const ROOT: LaneId = LaneId(0);
+
+    /// The lane's number (0 for the root).
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// An event of one lane ([`Control::subscribe_all`]).
+#[derive(Clone, Debug)]
+pub struct Tagged {
+    pub lane: LaneId,
+    pub event: Event,
+}
+
 /// Progress events come at most this often while a phase runs.
 const EVENT_INTERVAL: Duration = Duration::from_secs(5);
 /// Events a subscriber can fall behind by before the oldest are dropped.
 const EVENT_CAP: usize = 64;
 
+/// What a run's controls share: the global pause, the root's stop, the hooks, the lanes, and the tagged bus.
+struct Family {
+    /// The root's pause: every lane waits, and every lane's clock stops.
+    global_paused: AtomicBool,
+    /// The root's stop: every lane stops.
+    root_stop: AtomicBool,
+    /// Called whenever what `snapshot` or `is_paused` says changes (progress, the pause), for an owner that reads them on
+    /// its own thread instead of polling.
+    hook: OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// Called when a lane changed the failure ledger ([`Control::ledger_changed`]).
+    on_ledger: OnceLock<Box<dyn Fn() + Send + Sync>>,
+    next_lane: AtomicU32,
+    /// The run's CPU permits, shared by every lane's workers ([`Control::share_cpu`]); none until it is set.
+    cpu: OnceLock<Arc<CpuGate>>,
+    /// The lanes made by [`Control::lane`], held weakly: a lane lasts while its owner holds it.
+    lanes: Mutex<Vec<Weak<Control>>>,
+    /// Every lane's events, tagged with the lane (the root's included).
+    everything: Bus<Tagged>,
+}
+
+impl Family {
+    fn new() -> Family {
+        Family {
+            global_paused: AtomicBool::new(false),
+            root_stop: AtomicBool::new(false),
+            hook: OnceLock::new(),
+            on_ledger: OnceLock::new(),
+            next_lane: AtomicU32::new(0),
+            cpu: OnceLock::new(),
+            lanes: Mutex::new(Vec::new()),
+            everything: Bus::new(EVENT_CAP),
+        }
+    }
+}
+
 pub struct Control {
+    lane: LaneId,
+    family: Arc<Family>,
+    /// This lane's own stop (the root never sets it: its stop is the family's).
     stop: AtomicBool,
-    /// The pause flag. The lock also orders a stop against a checkpoint's check, so a stop can't be missed while the
-    /// checkpoint waits on `resumed`.
-    paused: Mutex<bool>,
+    /// This lane's own pause and holds, under the lock its waiters wait on (`resumed`). The root's own pause is never set:
+    /// its pause is the family's global one.
+    paused: Mutex<Pausing>,
     resumed: Condvar,
     progress: Watch<Running>,
     events: Bus<Event>,
-    /// Called whenever what `snapshot` or `is_paused` says changes (progress, the pause), for an owner that
-    /// reads them on its own thread instead of polling.
-    hook: OnceLock<Box<dyn Fn() + Send + Sync>>,
-    /// Called when the pass changed the failure ledger ([`Control::ledger_changed`]): the runner pokes the inbox, which
-    /// reads the ledger again.
-    on_ledger: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// When the last progress event went out.
     last_event: Mutex<Instant>,
     /// The pauses since the job started, for the perf log's pass records (a pass's pauses outside its phases count too).
     pauses: Mutex<PauseClock>,
 }
 
-/// The time the job has been paused: the pauses ended, and the pause in progress since when it began.
+/// The time this lane has been paused: the pauses ended, and the pause in progress since when it began.
 #[derive(Default)]
 struct PauseClock {
     total: Duration,
@@ -169,6 +228,13 @@ fn span_name(phase: &Phase) -> &'static str {
     }
 }
 
+/// A lane's own waits: the user's pause of it, and the holds on it ([`Control::hold`]), which count.
+#[derive(Default)]
+struct Pausing {
+    own: bool,
+    holds: u32,
+}
+
 /// What a bounded checkpoint ([`Control::checkpoint_within`]) found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Checkpoint {
@@ -182,81 +248,160 @@ pub enum Checkpoint {
 }
 
 impl Control {
+    /// The root control of a new run.
     pub fn new() -> Control {
+        Control::in_family(LaneId::ROOT, Arc::new(Family::new()))
+    }
+
+    fn in_family(lane: LaneId, family: Arc<Family>) -> Control {
         Control {
+            lane,
+            family,
             stop: AtomicBool::new(false),
-            paused: Mutex::new(false),
+            paused: Mutex::new(Pausing::default()),
             resumed: Condvar::new(),
             progress: Watch::new(Running::idle()),
             events: Bus::new(EVENT_CAP),
-            hook: OnceLock::new(),
-            on_ledger: OnceLock::new(),
             last_event: Mutex::new(Instant::now()),
             pauses: Mutex::new(PauseClock::default()),
         }
     }
 
-    /// The time the job has been paused, up to now (a pause in progress counts).
+    /// Shares `permits` CPU permits among every lane's workers, for as long as the run lasts (set once: a second call is
+    /// ignored). Without it, a worker takes no permit.
+    pub fn share_cpu(&self, permits: usize) {
+        let _ = self.family.cpu.set(Arc::new(CpuGate::new(permits)));
+    }
+
+    /// A worker's CPU permit for the file it processes, when the run shares its CPU ([`Control::share_cpu`]).
+    pub fn cpu_permit(&self) -> Option<Permit> {
+        self.family.cpu.get().map(|gate| gate.acquire())
+    }
+
+    /// The time this lane has been paused, up to now (a pause in progress counts).
     pub fn paused_total(&self) -> Duration {
         let clock = self.pauses.lock().unwrap_or_else(PoisonError::into_inner);
         let open = clock.since.map_or(Duration::ZERO, |since| Instant::now().saturating_duration_since(since));
         clock.total.saturating_add(open)
     }
 
-    /// Ask the running pass to stop at the next file; it commits what it has.
+    /// This control's lane.
+    pub fn lane_id(&self) -> LaneId {
+        self.lane
+    }
+
+    fn is_root(&self) -> bool {
+        self.lane == LaneId::ROOT
+    }
+
+    /// A lane of this run: a control of its own, with its own stop, pause and progress, sharing the root's global pause,
+    /// its stop, the hooks and the tagged bus. Keep the returned `Arc` for as long as the lane runs: the run forgets a
+    /// lane once nothing holds it.
+    pub fn lane(&self) -> Arc<Control> {
+        let id = LaneId(self.family.next_lane.fetch_add(1, Ordering::SeqCst) + 1);
+        let lane = Arc::new(Control::in_family(id, self.family.clone()));
+        self.family.lanes.lock().unwrap_or_else(PoisonError::into_inner).push(Arc::downgrade(&lane));
+        lane
+    }
+
+    /// The lanes of the run that are still held, in the order they were made.
+    fn members(&self) -> Vec<Arc<Control>> {
+        let mut lanes = self.family.lanes.lock().unwrap_or_else(PoisonError::into_inner);
+        lanes.retain(|lane| lane.strong_count() > 0);
+        lanes.iter().filter_map(Weak::upgrade).collect()
+    }
+
+    /// Ask the running pass to stop at the next file; it commits what it has. On the root, every lane stops too.
     pub fn request_stop(&self) {
-        let _paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
-        self.stop.store(true, Ordering::SeqCst);
-        self.resumed.notify_all();
+        if self.is_root() {
+            self.family.root_stop.store(true, Ordering::SeqCst);
+        } else {
+            self.stop.store(true, Ordering::SeqCst);
+        }
+        self.wake_family();
     }
 
     pub fn clear_stop(&self) {
-        let _paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        let _own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
         self.stop.store(false, Ordering::SeqCst);
+        if self.is_root() {
+            self.family.root_stop.store(false, Ordering::SeqCst);
+        }
     }
 
+    /// Whether this lane must stop: its own stop, or the root's.
     pub fn stop_requested(&self) -> bool {
-        self.stop.load(Ordering::SeqCst)
+        self.stop.load(Ordering::SeqCst) || self.family.root_stop.load(Ordering::SeqCst)
     }
 
+    /// Whether this lane waits at its checkpoints, given its own pauses: the global pause, its own pause, or a hold.
+    fn waits(&self, own: &Pausing) -> bool {
+        own.own || own.holds > 0 || self.family.global_paused.load(Ordering::SeqCst)
+    }
+
+    /// Whether this lane waits at its checkpoints now (paused or held).
+    fn waiting(&self) -> bool {
+        let own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        self.waits(&own)
+    }
+
+    /// Pauses or resumes. On the root this is the global pause: every lane waits, and every lane's clock stops. On a lane
+    /// it is that lane's pause alone.
     pub fn set_paused(&self, paused: bool) {
-        {
-            let mut guard = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
-            *guard = paused;
+        if self.is_root() {
+            self.family.global_paused.store(paused, Ordering::SeqCst);
+            self.wake_family();
             let now = Instant::now();
-            self.progress.update(|running| running.set_paused(paused, now));
-            self.pauses.lock().unwrap_or_else(PoisonError::into_inner).set(paused, now);
-            self.resumed.notify_all();
+            self.refresh_clock(now);
+            for lane in self.members() {
+                lane.refresh_clock(now);
+            }
+        } else {
+            {
+                let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+                own.own = paused;
+                self.resumed.notify_all();
+            }
+            self.refresh_clock(Instant::now());
         }
         self.changed();
     }
 
-    /// The hook `changed` calls from now on (set once: a second one is ignored).
+    /// Stops or starts this lane's clock to match whether it is paused.
+    fn refresh_clock(&self, now: Instant) {
+        let paused = self.waiting();
+        self.progress.update(|running| running.set_paused(paused, now));
+        self.pauses.lock().unwrap_or_else(PoisonError::into_inner).set(paused, now);
+    }
+
+    /// The hook `changed` calls from now on (set once: a second one is ignored). Shared by the run's lanes.
     pub fn on_change(&self, hook: impl Fn() + Send + Sync + 'static) {
-        let _ = self.hook.set(Box::new(hook));
+        let _ = self.family.hook.set(Box::new(hook));
     }
 
     fn changed(&self) {
-        if let Some(hook) = self.hook.get() {
+        if let Some(hook) = self.family.hook.get() {
             hook();
         }
     }
 
-    /// The hook [`Control::ledger_changed`] calls from now on (set once: a second one is ignored).
+    /// The hook [`Control::ledger_changed`] calls from now on (set once: a second one is ignored). Shared by the run's lanes.
     pub fn on_ledger_change(&self, hook: impl Fn() + Send + Sync + 'static) {
-        let _ = self.on_ledger.set(Box::new(hook));
+        let _ = self.family.on_ledger.set(Box::new(hook));
     }
 
     /// The pass changed the failure ledger (wrote or cleared rows, or committed a batch whose triggers may have): whoever
     /// shows the ledger reads it again. Called on the pass's thread, after the commit.
     pub fn ledger_changed(&self) {
-        if let Some(hook) = self.on_ledger.get() {
+        if let Some(hook) = self.family.on_ledger.get() {
             hook();
         }
     }
 
+    /// Whether this lane is paused: the global pause, or its own.
     pub fn is_paused(&self) -> bool {
-        *self.paused.lock().unwrap_or_else(PoisonError::into_inner)
+        let own = self.paused.lock().unwrap_or_else(PoisonError::into_inner).own;
+        own || self.family.global_paused.load(Ordering::SeqCst)
     }
 
     /// Called before each unit of work: waits while paused. `false` means stop.
@@ -265,18 +410,18 @@ impl Control {
     }
 
     /// [`Control::checkpoint`], which also stops for `stop`, a stop of the caller's own (a pipeline's, set when its
-    /// pass ends). Both are checked under the pause lock: whoever sets `stop` and then calls [`Control::wake`] can't
-    /// set it between this check and the wait.
+    /// pass ends). Both are checked under the lane's pause lock: whoever sets `stop` and then calls [`Control::wake`]
+    /// can't set it between this check and the wait.
     pub fn checkpoint_until(&self, stop: &AtomicBool) -> bool {
-        let mut paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if self.stop_requested() || stop.load(Ordering::SeqCst) {
                 return false;
             }
-            if !*paused {
+            if !self.waits(&own) {
                 return true;
             }
-            paused = self.resumed.wait(paused).unwrap_or_else(PoisonError::into_inner);
+            own = self.resumed.wait(own).unwrap_or_else(PoisonError::into_inner);
         }
     }
 
@@ -284,27 +429,55 @@ impl Control {
     /// then. For a pass that holds something a long pause must not keep (a scan's lease, renewed between waits).
     pub fn checkpoint_within(&self, wait: Duration) -> Checkpoint {
         let deadline = Instant::now() + wait;
-        let mut paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if self.stop_requested() {
                 return Checkpoint::Stop;
             }
-            if !*paused {
+            if !self.waits(&own) {
                 return Checkpoint::Go;
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 return Checkpoint::Paused;
             }
-            paused = self.resumed.wait_timeout(paused, left).unwrap_or_else(PoisonError::into_inner).0;
+            own = self.resumed.wait_timeout(own, left).unwrap_or_else(PoisonError::into_inner).0;
         }
     }
 
-    /// Wakes every paused checkpoint to look at its stops again, without resuming: one whose own stop was set
+    /// Wakes this lane's paused checkpoints to look at their stops again, without resuming: one whose own stop was set
     /// ([`Control::checkpoint_until`]) returns, the others wait on.
     pub fn wake(&self) {
-        let _paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        let _own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
         self.resumed.notify_all();
+    }
+
+    /// [`Control::wake`] for every lane of the run, the root's included.
+    fn wake_family(&self) {
+        self.wake();
+        for lane in self.members() {
+            lane.wake();
+        }
+    }
+
+    /// Holds this lane: it waits at its checkpoints, and [`Control::wait_while_held`] keeps it from starting a round, until
+    /// the hold is dropped. Unlike a pause a hold is not the user's: [`Control::is_paused`] says what the user set. Holds
+    /// count, and each guard gives back its own. A caller that needs the lane to have stopped asks it to stop as well
+    /// ([`Control::request_stop`]), and waits for its round to end.
+    pub fn hold(self: &Arc<Self>) -> Hold {
+        self.paused.lock().unwrap_or_else(PoisonError::into_inner).holds += 1;
+        self.refresh_clock(Instant::now());
+        self.changed();
+        Hold { ctl: Arc::clone(self) }
+    }
+
+    /// Waits while this lane is held. `quit` is asked each time the wait wakes: a quitting lane returns with the hold still
+    /// standing. A release and [`Control::wake`] wake the wait.
+    pub fn wait_while_held(&self, quit: &dyn Fn() -> bool) {
+        let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        while own.holds > 0 && !quit() {
+            own = self.resumed.wait(own).unwrap_or_else(PoisonError::into_inner);
+        }
     }
 
     /// A phase starts: its progress from 0 of `total`. It ends when the guard is dropped, however the pass leaves (a
@@ -315,13 +488,10 @@ impl Control {
         // The phase's span in the perf log: opened here, closed with the guard (inert without a perf sink).
         let span = pg_perf::span(span_name(&phase));
         let progress = Progress { phase, total, ..Progress::idle() };
-        {
-            // The pause flag outlives phases: a phase that begins while paused starts with its clock stopped.
-            let paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
-            let mut running = Running::begun(progress, now);
-            running.set_paused(*paused, now);
-            self.progress.set(running);
-        }
+        // The pauses and holds outlive phases: a phase that begins while paused starts with its clock stopped.
+        let mut running = Running::begun(progress, now);
+        running.set_paused(self.waiting(), now);
+        self.progress.set(running);
         self.changed();
         PhaseGuard { ctl: self, span }
     }
@@ -349,9 +519,15 @@ impl Control {
         });
         if let Some(progress) = due {
             *last = Instant::now();
-            self.events.publish(Event::Progress(progress));
+            self.publish(Event::Progress(progress));
         }
         self.changed();
+    }
+
+    /// Sends an event to this lane's subscribers and to the run's tagged bus.
+    fn publish(&self, event: Event) {
+        self.family.everything.publish(Tagged { lane: self.lane, event: event.clone() });
+        self.events.publish(event);
     }
 
     /// The phase ended: its final progress goes out as an event, and the phase is idle. Called by [`PhaseGuard`]'s drop.
@@ -364,7 +540,7 @@ impl Control {
             let paused = wall.saturating_sub(ended.elapsed);
             (ended, paused)
         });
-        self.events.publish(Event::Finished(ended.clone()));
+        self.publish(Event::Finished(ended.clone()));
         self.changed();
         (ended, paused)
     }
@@ -374,15 +550,45 @@ impl Control {
         self.progress.get().read(Instant::now())
     }
 
-    /// Progress and phase-end events from now on.
+    /// Every lane's progress now, the root's and the held lanes', in lane order. Called on the root.
+    pub fn snapshots(&self) -> Vec<(LaneId, Progress)> {
+        let mut out = vec![(self.lane, self.snapshot())];
+        out.extend(self.members().iter().map(|lane| (lane.lane, lane.snapshot())));
+        out.sort_by_key(|(id, _)| *id);
+        out
+    }
+
+    /// Progress and phase-end events of this lane from now on.
     pub fn subscribe(&self) -> Subscription<Event> {
         self.events.subscribe()
+    }
+
+    /// Progress and phase-end events of every lane from now on, each tagged with its lane (the root's included).
+    pub fn subscribe_all(&self) -> Subscription<Tagged> {
+        self.family.everything.subscribe()
     }
 }
 
 impl Default for Control {
     fn default() -> Control {
         Control::new()
+    }
+}
+
+/// A hold on a lane ([`Control::hold`]): the lane waits until it is dropped.
+pub struct Hold {
+    ctl: Arc<Control>,
+}
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        {
+            let mut own = self.ctl.paused.lock().unwrap_or_else(PoisonError::into_inner);
+            own.holds = own.holds.saturating_sub(1);
+            self.ctl.resumed.notify_all();
+        }
+        self.ctl.refresh_clock(Instant::now());
+        self.ctl.changed();
     }
 }
 
@@ -528,6 +734,34 @@ mod tests {
     }
 
     #[test]
+    fn a_hold_stops_a_lane_at_its_checkpoints_but_is_not_the_users_pause() {
+        let root = Control::new();
+        let lane = root.lane();
+        let hold = lane.hold();
+        assert!(!lane.is_paused(), "a hold is not the user's pause");
+        let (sent, got) = std::sync::mpsc::channel();
+        let waiter = Arc::clone(&lane);
+        std::thread::spawn(move || {
+            sent.send(waiter.checkpoint()).ok();
+        });
+        assert!(got.recv_timeout(Duration::from_millis(100)).is_err(), "a held checkpoint waits");
+        drop(hold);
+        assert_eq!(got.recv_timeout(Duration::from_secs(5)), Ok(true), "the release lets it go on");
+    }
+
+    #[test]
+    fn a_quit_ends_the_wait_for_a_hold_and_the_hold_still_stands() {
+        let root = Control::new();
+        let lane = root.lane();
+        let hold = lane.hold();
+        let quit = AtomicBool::new(true);
+        lane.wait_while_held(&|| quit.load(Ordering::SeqCst));
+        assert_eq!(lane.checkpoint_within(Duration::ZERO), Checkpoint::Paused, "the hold still stands");
+        drop(hold);
+        assert_eq!(lane.checkpoint_within(Duration::ZERO), Checkpoint::Go);
+    }
+
+    #[test]
     fn a_stop_wakes_a_paused_checkpoint() {
         let ctl = Arc::new(Control::new());
         ctl.set_paused(true);
@@ -621,5 +855,72 @@ mod tests {
         }));
         assert!(panicked.is_err());
         assert_eq!(ctl.snapshot().phase, Phase::Idle);
+    }
+
+    #[test]
+    fn a_lane_pause_leaves_its_siblings_running() {
+        let root = Control::new();
+        let (a, b) = (root.lane(), root.lane());
+        a.set_paused(true);
+        assert!(a.is_paused());
+        assert!(!b.is_paused(), "a sibling is not paused");
+        let (tx, rx) = mpsc::channel();
+        let waiting = a.clone();
+        std::thread::spawn(move || tx.send(waiting.checkpoint()).unwrap());
+        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err(), "the paused lane waits");
+        assert!(b.checkpoint(), "the sibling goes on");
+        a.set_paused(false);
+        assert!(rx.recv_timeout(Duration::from_secs(5)).unwrap());
+    }
+
+    #[test]
+    fn a_global_pause_reaches_every_lane_and_stops_their_clocks() {
+        let root = Control::new();
+        let lane = root.lane();
+        let _phase = lane.begin(Phase::Import, 4);
+        root.set_paused(true);
+        assert!(lane.is_paused(), "the lane waits for the global pause");
+        let before = lane.snapshot().elapsed;
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(lane.snapshot().elapsed, before, "the lane's clock stands still");
+        root.set_paused(false);
+        assert!(!lane.is_paused());
+    }
+
+    #[test]
+    fn a_lane_stop_leaves_its_siblings_and_the_root_stop_reaches_every_lane() {
+        let root = Control::new();
+        let (a, b) = (root.lane(), root.lane());
+        a.request_stop();
+        assert!(a.stop_requested());
+        assert!(!b.stop_requested(), "a sibling keeps going");
+        root.request_stop();
+        assert!(b.stop_requested(), "the root's stop reaches every lane");
+        assert!(!a.checkpoint(), "a stopped lane's checkpoint says stop");
+    }
+
+    #[test]
+    fn subscribe_all_tags_each_lanes_events() {
+        let root = Control::new();
+        let sub = root.subscribe_all();
+        let lane = root.lane();
+        {
+            let _phase = lane.begin(Phase::Import, 1);
+            lane.add(3, false);
+        }
+        let items = sub.take().items;
+        assert!(items.iter().all(|t| t.lane == lane.lane_id()), "{items:?}");
+        assert!(matches!(items.last().map(|t| &t.event), Some(Event::Finished(_))));
+    }
+
+    #[test]
+    fn snapshots_lists_the_root_and_its_held_lanes_in_lane_order() {
+        let root = Control::new();
+        let first = root.lane();
+        let second = root.lane();
+        let lanes: Vec<LaneId> = root.snapshots().into_iter().map(|(id, _)| id).collect();
+        assert_eq!(lanes, vec![LaneId::ROOT, first.lane_id(), second.lane_id()]);
+        drop(second);
+        assert_eq!(root.snapshots().len(), 2, "a lane nothing holds is forgotten");
     }
 }

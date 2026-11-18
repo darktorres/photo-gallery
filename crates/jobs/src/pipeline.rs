@@ -14,7 +14,7 @@
 use std::io::{Read as _, Seek as _, SeekFrom};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Condvar, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -24,6 +24,7 @@ use pg_platform::priority::{self, Priority};
 use serde_json::json;
 
 use crate::control::Control;
+use crate::governor::Budget;
 use crate::panics::{self, Panicked};
 
 pub struct Options {
@@ -35,6 +36,9 @@ pub struct Options {
     /// The bytes of file buffers the pass holds at most (read, waiting, being processed, or idle in the pool). A
     /// file larger than all of it is read alone. [`Options::budget`] by default.
     pub buffer_bytes: usize,
+    /// The budget a governor shares among a run's lanes ([`crate::governor::Governor`]): when set, the pool reads it as it
+    /// changes, in place of `buffer_bytes`.
+    pub budget: Option<Arc<Budget>>,
     /// Thread priority of the readers and workers (a `Priority`). Below normal keeps the app's own threads
     /// (the UI, thumbnails on screen) ahead of a background pass.
     pub priority: Priority,
@@ -52,6 +56,7 @@ impl Options {
             workers: cpus,
             slots: Options::slots(8, cpus),
             buffer_bytes: Options::budget(8, cpus),
+            budget: None,
             priority,
         }
     }
@@ -217,7 +222,8 @@ where
     // The items the readers handed to the workers, to check that each came back with a result.
     let sent = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
-    let pool = Pool::new(opts.buffer_bytes, opts.slots);
+    let budget = opts.budget.clone().unwrap_or_else(|| Arc::new(Budget::new(opts.buffer_bytes)));
+    let pool = Pool::with_budget(budget, opts.slots);
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
     let (raw_tx, raw_rx) = bounded::<(usize, std::io::Result<Lease>, usize)>(pool.slots);
     let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers * 4);
@@ -290,9 +296,12 @@ where
                     let (out, len, rebuild) = match read {
                         Ok(lease) => {
                             let len = lease.bytes.len().saturating_add(streamed);
+                            // A CPU permit for the processing, when the run's lanes share the cores (not for the reading).
+                            let permit = ctl.cpu_permit();
                             let working = Instant::now();
                             let out = panics::guard(AssertUnwindSafe(|| process(&mut state, i, &lease.bytes)));
                             timing.work.add(working);
+                            drop(permit);
                             // The buffer goes back to the pool before the result is sent.
                             drop(lease);
                             // A panic may have left the state half-changed: it is made again.
@@ -631,11 +640,14 @@ impl Drop for StopOnDrop<'_> {
     }
 }
 
+/// How long a pool waiting for room waits before it looks at its budget again.
+const BUDGET_WAIT: Duration = Duration::from_millis(50);
+
 /// File buffers within a count (`slots`) and a byte budget. Reservations are granted in list order (item `i` after
 /// every item before it), so the disk is read in order and a large file is never passed over by the smaller ones
 /// behind it.
 struct Pool {
-    budget: usize,
+    budget: Arc<Budget>,
     slots: usize,
     state: Mutex<PoolState>,
     changed: Condvar,
@@ -694,16 +706,15 @@ impl Drop for Lease<'_> {
 }
 
 impl Pool {
+    #[cfg(test)]
     fn new(budget: usize, slots: usize) -> Pool {
+        Pool::with_budget(Arc::new(Budget::new(budget)), slots)
+    }
+
+    fn with_budget(budget: Arc<Budget>, slots: usize) -> Pool {
         let slots = slots.max(1);
         let state = PoolState { serving: 0, held: 0, lent: 0, idle: Vec::with_capacity(slots), stopped: false };
-        Pool {
-            budget: budget.max(1),
-            slots,
-            state: Mutex::new(state),
-            changed: Condvar::new(),
-            oversize: Mutex::new(()),
-        }
+        Pool { budget, slots, state: Mutex::new(state), changed: Condvar::new(), oversize: Mutex::new(()) }
     }
 
     /// A buffer that holds `size` bytes for item `i`, once the items before it have theirs, a slot is free, and the
@@ -719,6 +730,7 @@ impl Pool {
             if st.stopped {
                 return None;
             }
+            let budget = self.budget.get();
             if st.serving == i && st.lent < self.slots {
                 // Largest first, so the smallest is last.
                 st.idle.sort_unstable_by_key(|b| std::cmp::Reverse(b.capacity()));
@@ -734,14 +746,14 @@ impl Pool {
                 let mut freed = 0;
                 let state = &mut *st;
                 for buffer in state.idle.iter().take(others) {
-                    if state.held - smallest + size <= self.budget {
+                    if state.held - smallest + size <= budget {
                         break;
                     }
                     state.held -= buffer.capacity();
                     freed += 1;
                 }
                 st.idle.drain(..freed);
-                if st.held - smallest + size <= self.budget || st.held == smallest {
+                if st.held - smallest + size <= budget || st.held == smallest {
                     let mut bytes = st.idle.pop().unwrap_or_default();
                     bytes.clear();
                     bytes.reserve_exact(size);
@@ -749,7 +761,9 @@ impl Pool {
                     return Some(self.grant(&mut st, bytes));
                 }
             }
-            st = self.changed.wait(st).unwrap_or_else(PoisonError::into_inner);
+            // Timed, so a budget the governor changes is seen without a grant to wake this.
+            let (guard, _) = self.changed.wait_timeout(st, BUDGET_WAIT).unwrap_or_else(PoisonError::into_inner);
+            st = guard;
         }
     }
 
@@ -938,7 +952,14 @@ mod tests {
                 path.to_str().unwrap().to_string()
             })
             .collect();
-        let opts = Options { readers: 4, workers: 1, slots: 6, buffer_bytes: 1 << 20, priority: Priority::Normal };
+        let opts = Options {
+            readers: 4,
+            workers: 1,
+            slots: 6,
+            buffer_bytes: 1 << 20,
+            budget: None,
+            priority: Priority::Normal,
+        };
         let mut seen = vec![false; paths.len()];
         run(
             &paths,
@@ -992,7 +1013,14 @@ mod tests {
     /// Each item's result in a pass whose `read` or `process` panics on item 3, and how many times `init` ran.
     fn a_pass_panicking_on_item_3(in_read: bool) -> (Vec<Option<Result<usize, bool>>>, usize) {
         let (dir, items) = numbered_files(if in_read { "pg-pipeline-read-panic" } else { "pg-pipeline-panic" }, 8);
-        let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+        let opts = Options {
+            readers: 2,
+            workers: 2,
+            slots: 4,
+            buffer_bytes: 1 << 20,
+            budget: None,
+            priority: Priority::Normal,
+        };
         let inits = AtomicUsize::new(0);
         let mut results = vec![None; items.len()];
         run(
@@ -1048,7 +1076,14 @@ mod tests {
     fn a_failed_init_fails_the_pass() {
         let outcome = within_timeout(|| {
             let (dir, items) = numbered_files("pg-pipeline-init", 4);
-            let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+            let opts = Options {
+                readers: 2,
+                workers: 2,
+                slots: 4,
+                buffer_bytes: 1 << 20,
+                budget: None,
+                priority: Priority::Normal,
+            };
             let outcome = run(
                 &items,
                 |(_, p), wide| {
@@ -1074,7 +1109,14 @@ mod tests {
     fn a_sink_error_while_paused_returns_without_a_resume() {
         let outcome = within_timeout(|| {
             let (dir, items) = numbered_files("pg-pipeline-paused", 40);
-            let opts = Options { readers: 2, workers: 1, slots: 64, buffer_bytes: 1 << 20, priority: Priority::Normal };
+            let opts = Options {
+                readers: 2,
+                workers: 1,
+                slots: 64,
+                buffer_bytes: 1 << 20,
+                budget: None,
+                priority: Priority::Normal,
+            };
             let ctl = Control::new();
             let outcome = run(
                 &items,
@@ -1137,7 +1179,14 @@ mod tests {
                 (i, path.to_str().unwrap().to_string())
             })
             .collect();
-        let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+        let opts = Options {
+            readers: 2,
+            workers: 2,
+            slots: 4,
+            buffer_bytes: 1 << 20,
+            budget: None,
+            priority: Priority::Normal,
+        };
         let mut lengths = vec![0; items.len()];
         run(
             &items,

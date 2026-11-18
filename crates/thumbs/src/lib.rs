@@ -191,7 +191,7 @@ pub fn run(
     opts: &Options,
     ctl: &Control,
 ) -> Result<ThumbStats> {
-    run_while(cache, catalog_path, thumb, opts, &|| true, ctl)
+    run_while(cache, catalog_path, thumb, opts, &pg_catalog::VolumeSet::All, &|| true, ctl)
 }
 
 /// [`run`], which ends after the batch in which `still_wanted` turns false: the files it had not made stay changed (no
@@ -201,6 +201,7 @@ pub fn run_while(
     catalog_path: &Path,
     thumb: ThumbHeight,
     opts: &Options,
+    volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<ThumbStats> {
@@ -211,7 +212,10 @@ pub fn run_while(
     let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::ENCODE];
     let step_marks = steps.map(|step| step.mark());
     let pending = pg_perf::span("thumbs.pending");
-    let Pending { work, snapshot } = cache.pending(catalog_path, thumb)?;
+    let Pending { work, snapshot } = match volumes {
+        pg_catalog::VolumeSet::All => cache.pending(catalog_path, thumb)?,
+        pg_catalog::VolumeSet::Only(volumes) => cache.pending_on(catalog_path, thumb, volumes)?,
+    };
     drop(pending);
     let items = &work.items;
     let mut stats = ThumbStats {
@@ -467,7 +471,7 @@ mod tests {
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
-        pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+        pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
         let before = announced.load(Ordering::SeqCst);
 
@@ -520,7 +524,7 @@ mod tests {
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
-        pg_import::import(&mut c, &Options::new(Priority::Normal), false, &ctl).unwrap();
+        pg_import::import(&mut c, &Options::new(Priority::Normal), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         let (events, quiet) = Quiet::bus();
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
@@ -543,13 +547,17 @@ mod tests {
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         let (_dir, catalog_path, _c, cache, _quiet) = imported("thumbs-stop", &refs, 1 << 30);
         let opts = Options::new(Priority::Normal);
-        let stopped = run_while(&cache, &catalog_path, h(64), &opts, &|| false, &Control::new()).unwrap();
+        let stopped =
+            run_while(&cache, &catalog_path, h(64), &opts, &pg_catalog::VolumeSet::All, &|| false, &Control::new())
+                .unwrap();
         assert!(!stopped.complete, "a stopped pass is not complete");
         assert!(stopped.made > 0 && stopped.made < stopped.needed, "one batch was made: {}", stopped.made);
         let listed = cache.pending(&catalog_path, h(64)).unwrap();
         assert!(!listed.snapshot.since_checked, "no checked row: the pass is not done");
         assert_eq!(listed.work.items.len(), stopped.needed - stopped.made, "the files not made are listed again");
-        let done = run_while(&cache, &catalog_path, h(64), &opts, &|| true, &Control::new()).unwrap();
+        let done =
+            run_while(&cache, &catalog_path, h(64), &opts, &pg_catalog::VolumeSet::All, &|| true, &Control::new())
+                .unwrap();
         assert!(done.complete);
         let after = cache.pending(&catalog_path, h(64)).unwrap();
         assert!(after.snapshot.since_checked, "the complete pass wrote the checked row");
@@ -689,7 +697,7 @@ mod tests {
         let root = pg_platform::names::normalize_path(&images).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
-        pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+        pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         // Damaged after the import, at the same size and time (as a disk error would leave it): the catalog has it as
         // it was. Another goes.
         let a = images.join("a.png");
@@ -745,7 +753,7 @@ mod tests {
         let root = pg_platform::names::normalize_path(&images).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
-        pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+        pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         // Damaged after the import, at the same size and time: the import's analysis is what the catalog has.
         let b = images.join("b.png");
         let (len, mtime) = {
@@ -768,7 +776,8 @@ mod tests {
         let thumbs = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
         assert_eq!((thumbs.made, thumbs.failed), (1, 1));
         assert_eq!(c.owed_placeholders().unwrap(), 1, "the undecodable file is held by its ledger row");
-        let placed = crate::placeholders::run_while(&mut c, &cache, &opts, &|| true, &ctl).unwrap();
+        let placed =
+            crate::placeholders::run_while(&mut c, &cache, &opts, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
         assert_eq!((placed.needed, placed.made, placed.from_cache, placed.failed), (1, 1, 0, 0));
         assert!(placed.complete);
         assert_eq!(c.owed_placeholders().unwrap(), 0);

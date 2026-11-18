@@ -218,7 +218,7 @@ fn videos() {
     catalog.add_root(&root).unwrap();
     pg_scan::scan(&mut catalog, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    let stats = pg_import::import(&mut catalog, &opts, false, &ctl).unwrap();
+    let stats = pg_import::import(&mut catalog, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed), (6, 0));
     let rows = state::media_rows(&catalog).unwrap();
     for (name, kind, w, h, duration, poster, no_pixel_hash) in &rows {

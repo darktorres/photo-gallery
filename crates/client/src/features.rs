@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn the_borders_keys_are_refused_only_while_borders_are_off() {
-        let off = Features { borders: false, duplicates: true };
+        let off = Features { borders: false, duplicates: true, serial_drives: false };
         let on = Features::ALL;
         assert!(grid_refusal(Grid::Borders, off));
         assert!(grid_refusal(Grid::MarkBorder, off));

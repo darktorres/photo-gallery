@@ -48,13 +48,15 @@ pub struct Pending {
 }
 
 /// Where a pass's work list was read: the catalog's change sequence and the height's evictions at that moment.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Snapshot {
     pub height: ThumbHeight,
     pub seq: i64,
     pub evictions: i64,
     /// Only the files changed since the last complete pass were read (`false`: every file).
     pub since_checked: bool,
+    /// The catalog volumes the pass read: its checkpoint is stored for each of them.
+    pub volumes: Vec<i64>,
 }
 
 /// What the cache's writer reports. Nothing waits for these (the thumbnail was shown anyway, the totals were fixed),

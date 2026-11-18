@@ -45,12 +45,18 @@ CREATE TABLE limits(
 CREATE TABLE meta(
     key   TEXT PRIMARY KEY,
     value ANY NOT NULL);
--- Per height: the catalog's change number (files.seq) up to which every file was checked for a current entry
--- (NULL: not known), and how many times entries of that height were evicted.
+-- Per height: how many times entries of that height were evicted (a pass that read its work before an eviction doesn't
+-- store its watermark).
 CREATE TABLE checked(
     height    INTEGER PRIMARY KEY CHECK (height BETWEEN 16 AND 2048),
-    seq       INTEGER,
     evictions INTEGER NOT NULL);
+-- Per height and catalog volume: the catalog's change number (files.seq) up to which every file of that volume was
+-- checked for a current entry. No row: not known, so the height is looked at whole.
+CREATE TABLE checkpoints(
+    height INTEGER NOT NULL CHECK (height BETWEEN 16 AND 2048),
+    volume INTEGER NOT NULL,
+    seq    INTEGER NOT NULL,
+    PRIMARY KEY (height, volume));
 CREATE TRIGGER entries_added AFTER INSERT ON entries BEGIN
     UPDATE totals SET bytes = bytes + new.bytes, count = count + 1;
 END;
@@ -349,7 +355,8 @@ fn set_thumbs_version(conn: &mut Connection, current: i64) -> Result<()> {
     }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     if stored(&tx)? != Some(current) {
-        tx.execute("UPDATE checked SET seq = NULL, evictions = evictions + 1", [])?;
+        tx.execute("UPDATE checked SET evictions = evictions + 1", [])?;
+        tx.execute("DELETE FROM checkpoints", [])?;
         tx.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('thumbs_version', ?1)", [current])?;
     }
     tx.commit()?;

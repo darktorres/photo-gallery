@@ -267,10 +267,19 @@ impl ThumbCache {
     /// the catalog (`catalog`) attached; it never waits for the writer, nor the writer for it.
     pub fn pending(&self, catalog: &Path, height: ThumbHeight) -> Result<Pending> {
         let Some(store) = &self.store else {
-            let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false };
+            let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false, volumes: Vec::new() };
             return Ok(Pending { work: WorkList::default(), snapshot });
         };
         pending_in(&store.path, catalog, height)
+    }
+
+    /// [`ThumbCache::pending`] over the given catalog volumes only: a lane reads and checks its own volumes' work.
+    pub fn pending_on(&self, catalog: &Path, height: ThumbHeight, volumes: &[i64]) -> Result<Pending> {
+        let Some(store) = &self.store else {
+            let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false, volumes: volumes.to_vec() };
+            return Ok(Pending { work: WorkList::default(), snapshot });
+        };
+        reader::pending_on(&store.path, catalog, height, volumes)
     }
 
     /// A pass went through all the work `pending` gave it: files changed after its snapshot are the next pass's
@@ -282,7 +291,7 @@ impl ThumbCache {
             return Ok(());
         }
         let through = first_failed.map_or(snapshot.seq, |seq| snapshot.seq.min(seq - 1));
-        self.call(|reply| Op::Checked { snapshot: *snapshot, through, reply })?
+        self.call(|reply| Op::Checked { snapshot: snapshot.clone(), through, reply })?
     }
 
     /// Give back free pages to the file system, a bounded amount (the task does this at idle).
@@ -1008,7 +1017,7 @@ mod tests {
         let conn = Connection::open(cache_path(&dir)).unwrap();
         conn.execute("ATTACH DATABASE ?1 AS cat", [pg_platform::sqlite::attach_bytes(&catalog).unwrap()]).unwrap();
         let plan: Vec<String> = conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", reader::pending_sql(true)))
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", reader::pending_sql(true, &[1])))
             .unwrap()
             .query_map([100, -1], |r| r.get(3))
             .unwrap()
@@ -1068,7 +1077,7 @@ mod tests {
         let conn = Connection::open(cache_path(&dir)).unwrap();
         conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(&catalog).unwrap()]).unwrap();
         let plan: Vec<String> = conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true)))
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true, &[1])))
             .unwrap()
             .query_map(params![100, 0], |r| r.get(3))
             .unwrap()

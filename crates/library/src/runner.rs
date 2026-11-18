@@ -1,48 +1,34 @@
-//! The app's background job: one thread that saves the cropped copies asked for, scans the folders
-//! asked for, imports whatever is pending, makes thumbnails at the grid's current height, makes the duplicate hashes the
-//! import left out, pairs the duplicates, and looks for the borders of what it imported (and of everything after a new
-//! detector), then sleeps until there is something new to do. The round's order is that one; the thumbnails come before
-//! the duplicates and the borders, which are the long ones.
+//! The app's background job: one lane per drive, each a thread that runs the round of passes over its volumes (`lane`,
+//! `passes`), and the coordinator that plans the lanes from the drives the library's folders are on (`coordinator`,
+//! `lanes`). Folders on two drives are walked and processed at once; folders on one drive go one after the other, since two
+//! readers on one spindle fight over its head.
 //!
-//! The thread is a `pg_jobs::service::Service`, and a round is a schedule of passes over the queue of requests. A new
-//! request (a folder added, a rescan) stops the pass in progress at the next file; a new thumbnail height or a feature
-//! turned on or off does not stop a round, but the pass it concerns ends after its batch (each watches the value it
-//! runs for). It commits what it has and the next round starts with the new work. Every pass is resumable from the
-//! catalog, so stopping costs nothing but the batch in flight.
+//! A new request (a folder added, a rescan) stops the round in progress at its next file, on the lane of its folder; a new
+//! thumbnail height or a feature turned on or off does not stop a round, but the pass it concerns ends after its batch (each
+//! watches the value it runs for). A pass commits what it has and the next round starts with the new work. Every pass is
+//! resumable from the catalog, so stopping costs nothing but the batch in flight. The notices the lanes share are told
+//! through `tally`, which says what all the lanes say together.
 
-use std::collections::VecDeque;
-use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
-use pg_catalog::Catalog;
+use anyhow::Result;
 use pg_jobs::NoticeSink;
 use pg_jobs::control::Control;
 use pg_jobs::events::{Bus, Change};
-use pg_jobs::panics;
-use pg_jobs::pipeline::Options;
-use pg_jobs::schedule::{self, Pass, Step};
-use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::features::Features;
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Op, Trigger, tidy};
-use pg_model::progress::Progress;
+use pg_model::progress::{Phase, Progress};
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
-use pg_platform::priority::Priority;
-use pg_scan::ScanError;
+use pg_platform::drive::{Drives, SystemDrives};
 use pg_thumbcache::ThumbCache;
-use pg_thumbs::LedgerOutcome;
 
-use crate::scans;
-
-/// How long a walk refused by another walk's lease (an overlapping folder, in this process or another) waits before it
-/// is tried again, with nothing else to wake the job: a lease ends with its walk, or expires in
-/// `pg_catalog::SCAN_LEASE_SECS`.
-const BUSY_RETRY: Duration = Duration::from_secs(5);
+use crate::coordinator::Lanes;
+use crate::passes::PairGate;
+use crate::tally::Tally;
 
 /// The thumbnail height the grid asks for. It is held here, not given to the job at its start, so the height may be set
 /// before the job starts (the window's scale arrives after the library is made). The thumbnail pass makes thumbnails only
@@ -136,51 +122,6 @@ impl HeightCell {
     }
 }
 
-#[derive(Default)]
-struct Queue {
-    /// Folders to scan, normalized.
-    scans: VecDeque<RulePath>,
-    /// Cropped copies to save: the files, and the folder.
-    crops: VecDeque<(Vec<FileId>, PathBuf)>,
-    /// Borders to cut off the originals: the files. Queued only once confirmed (`Runner::cut_borders`).
-    cuts: VecDeque<Vec<FileId>>,
-}
-
-struct Inner {
-    catalog_path: PathBuf,
-    thumbs: &'static ThumbCache,
-    ctl: Control,
-    queue: Mutex<Queue>,
-    /// The folder a scan is walking now ([`Runner::stop_scans_under`]).
-    scanning: Mutex<Option<RulePath>>,
-    /// The scans refused because another walk of an overlapping folder held its lease: back in the queue at the next
-    /// round, which comes by [`BUSY_RETRY`] at the latest.
-    busy: Mutex<Vec<RulePath>>,
-    heights: HeightCell,
-    features: FeatureCell,
-    scans_done: AtomicU64,
-    imports_done: AtomicU64,
-    /// Rounds finished, however they ended: the app marks each one as a stage for measuring.
-    rounds: AtomicU64,
-    notices: Arc<dyn NoticeSink>,
-    /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.
-    changes: Arc<Bus<Change>>,
-}
-
-/// The notice of a crop job's file failure: its error capped as a notice holds it.
-fn file_failure(failure: FileFailure) -> FileFailure {
-    FileFailure { error: tidy(&failure.error, ERROR_CAP), ..failure }
-}
-
-/// A count as a notice holds it.
-fn count(n: usize) -> u64 {
-    u64::try_from(n).unwrap_or(u64::MAX)
-}
-
-/// An error's text as a notice holds it: its causes after it, on one line, capped.
-fn error_text(error: &anyhow::Error) -> String {
-    tidy(&format!("{error:#}"), ERROR_CAP)
-}
 /// What the job has done so far, for the app to refresh its views.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Generation {
@@ -192,17 +133,24 @@ pub struct Generation {
     pub imports: u64,
 }
 
+/// What one lane of the job is doing: its drive's label for people (`E:`, empty when the drive can't be told), and its
+/// progress.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LaneProgress {
+    pub label: String,
+    pub progress: Progress,
+}
+
 pub struct Runner {
-    inner: Arc<Inner>,
-    service: Arc<Service>,
+    lanes: Arc<Lanes>,
 }
 
 impl Runner {
-    /// Start the job thread. It begins by importing whatever is pending, and makes the thumbnails still missing at the
-    /// height `heights` holds (none until one is set). `features` says which background work is on (the borders, the
-    /// duplicates). What it changes is published on `changes` (`Change`), and what it tells the user goes to `notices`,
-    /// which is poked whenever a pass changes the failure ledger (`Control::ledger_changed`). An error if the thread
-    /// can't be spawned.
+    /// Start the job. It makes a lane for each drive the library's folders are on, as the drives are found out; each lane
+    /// begins by importing whatever is pending on its drive, and makes the thumbnails still missing at the height `heights`
+    /// holds (none until one is set). `features` says which background work is on (the borders, the duplicates). What it
+    /// changes is published on `changes` (`Change`), and what it tells the user goes to `notices`, which is poked whenever a
+    /// pass changes the failure ledger (`Control::ledger_changed`). An error if the job's threads can't be started.
     pub fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
@@ -211,590 +159,191 @@ impl Runner {
         changes: Arc<Bus<Change>>,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Runner> {
-        let inner = Arc::new(Inner {
-            catalog_path,
-            thumbs,
-            ctl: Control::new(),
-            queue: Mutex::new(Queue::default()),
-            scanning: Mutex::new(None),
-            busy: Mutex::new(Vec::new()),
-            heights: heights.clone(),
-            features: features.clone(),
-            scans_done: AtomicU64::new(0),
-            imports_done: AtomicU64::new(0),
-            rounds: AtomicU64::new(0),
-            notices,
-            changes,
-        });
-        let announce = inner.changes.clone();
-        inner.ctl.on_change(move || announce.publish(Change::Progress));
-        // The inbox reads the ledger again when a pass changed it, within the pass, not only at the round's end.
-        let ledger = inner.notices.clone();
-        inner.ctl.on_ledger_change(move || ledger.poke());
-        let job = inner.clone();
-        let service = Arc::new(
-            Service::start("background job", move |waker| job.run(waker)).context("start the background job")?,
-        );
-        // A new height or a change of features wakes the job; the passes they concern end after their batch, and the next
-        // round reads the new values. Weak references: the cells (held by the library) must not keep the job alive.
-        let service_weak: Weak<Service> = Arc::downgrade(&service);
-        let wake_service = service_weak.clone();
-        heights.listen(move || {
-            if let Some(service) = wake_service.upgrade() {
-                service.wake();
-            }
-        });
-        features.listen(move || {
-            if let Some(service) = service_weak.upgrade() {
-                service.wake();
-            }
-        });
-        Ok(Runner { inner, service })
+        Runner::start_with_drives(catalog_path, thumbs, heights, features, changes, notices, Arc::new(SystemDrives))
     }
 
-    /// Stop the job after the file (or the batch) in progress, as a new request does, and wait for its thread to end,
-    /// for at most `timeout`: its connections close with it. `false` if it is still running then; it ends with the
-    /// process, and the WAL it left is merged at the next open.
+    /// [`Runner::start`] with the drives the library's roots are on asked of `drives` (the system's, or a test's).
+    pub fn start_with_drives(
+        catalog_path: PathBuf,
+        thumbs: &'static ThumbCache,
+        heights: HeightCell,
+        features: FeatureCell,
+        changes: Arc<Bus<Change>>,
+        notices: Arc<dyn NoticeSink>,
+        drives: Arc<dyn Drives + Send + Sync>,
+    ) -> Result<Runner> {
+        let shared = Arc::new(Shared::new(catalog_path, thumbs, heights.clone(), features.clone(), notices, changes));
+        let root = Arc::new(Control::new());
+        let announce = shared.changes.clone();
+        root.on_change(move || announce.publish(Change::Progress));
+        // The inbox reads the ledger again when a pass changed it, within the pass, not only at the round's end.
+        let ledger = shared.notices.clone();
+        root.on_ledger_change(move || ledger.poke());
+        let lanes = Lanes::start(shared, root, drives)?;
+        // A new height or a change of features wakes every lane; the passes they concern end after their batch, and the next
+        // round reads the new values. Weak references: the cells (held by the library) must not keep the job alive.
+        let weak = Arc::downgrade(&lanes);
+        heights.listen(move || {
+            if let Some(lanes) = weak.upgrade() {
+                lanes.wake_all(false);
+            }
+        });
+        let weak = Arc::downgrade(&lanes);
+        features.listen(move || {
+            if let Some(lanes) = weak.upgrade() {
+                lanes.wake_all(false);
+            }
+        });
+        Ok(Runner { lanes })
+    }
+
+    /// Stop the job after the file (or the batch) in progress, as a new request does, and wait for its threads to end, for at
+    /// most `timeout`: their connections close with them. `false` if one is still running then; it ends with the process,
+    /// and the WAL it left is merged at the next open.
     pub fn stop(&self, timeout: Duration) -> bool {
-        // The quit first: the job clears the last request's stop and then looks for a quit, so a stop asked after
-        // the clear is one it sees.
-        self.service.quit();
-        self.inner.ctl.request_stop();
-        self.service.stop_within(timeout)
+        self.lanes.stop(timeout)
     }
 
     /// Scan these folders (normalized), then import and thumbnail what they hold.
     pub fn scan(&self, roots: Vec<RulePath>) {
-        {
-            let mut q = self.inner.queue();
-            for r in roots {
-                if !q.scans.contains(&r) {
-                    q.scans.push_back(r);
-                }
-            }
-        }
-        self.wake_up();
+        self.lanes.request_scans(roots);
     }
 
     /// A library folder was removed: the scans asked for under `root` are dropped, and one walking a folder under it is
     /// woken. That walk writes nothing more: the removal took its lease (`Catalog::remove_root`), so its next write
     /// ends it as `ScanError::Removed`, and it isn't asked for again, as the folder is no longer in the library.
     pub fn stop_scans_under(&self, root: &RulePath) {
-        let rules = pg_platform::native::PATH_RULES;
-        self.inner.queue().scans.retain(|path| !rules.is_under(path, root));
-        self.inner.busy().retain(|path| !rules.is_under(path, root));
-        let running = self.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner).clone();
-        if running.is_some_and(|path| rules.is_under(&path, root)) {
-            self.wake_up();
-        }
+        self.lanes.stop_scans_under(root);
     }
 
     /// Save cropped copies of these files' borders into `folder` (`pg_crop::save`), before anything else.
     pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
-        self.inner.queue().crops.push_back((ids, folder));
-        self.wake_up();
+        self.lanes.request_crop(ids, folder);
     }
 
     /// Cut the borders off the originals of these files, in place (`pg_crop::cut`), after the copies asked for. Nothing
     /// is queued unless `confirmed`: the originals change, and only the user's confirmation says they may.
     pub fn cut_borders(&self, ids: Vec<FileId>, confirmed: bool) {
-        if !confirmed {
-            return;
+        if confirmed {
+            self.lanes.request_cut(ids);
         }
-        self.inner.queue().cuts.push_back(ids);
-        self.wake_up();
     }
 
-    /// The catalog has new work outside a scan (a file turned in place needs its analysis redone): start a round.
+    /// The catalog has new work outside a scan (a file turned in place needs its analysis redone): every lane starts a round,
+    /// and the running ones stop at their next file.
     pub fn wake(&self) {
-        self.wake_up();
+        self.lanes.wake_all(true);
+    }
+
+    /// The lanes the job has now: one per physical drive its roots are on (`coordinator`), or one when they collapse.
+    pub fn lanes(&self) -> usize {
+        self.lanes.all().len()
+    }
+
+    /// Whether no lane is in a round now (for the measuring harness: it waits for the job to be idle).
+    pub fn idle(&self) -> bool {
+        self.lanes.all().iter().all(|lane| !lane.inner.is_active())
     }
 
     pub fn set_paused(&self, paused: bool) {
-        self.inner.ctl.set_paused(paused);
+        self.lanes.root.set_paused(paused);
     }
 
     pub fn is_paused(&self) -> bool {
-        self.inner.ctl.is_paused()
+        self.lanes.root.is_paused()
+    }
+
+    /// The progress of the first job that is busy (the crop thread's, then the lanes' in order), for the app's one line.
+    /// Idle when none is.
+    /// Every lane's progress, in the lanes' order, each with its drive's label (`LaneProgress`). The library's one progress
+    /// (`progress`) is the first of them that works.
+    pub fn lane_progress(&self) -> Vec<LaneProgress> {
+        self.lanes.progress_lines()
     }
 
     pub fn progress(&self) -> Progress {
-        self.inner.ctl.snapshot()
+        self.lanes
+            .controls()
+            .iter()
+            .map(|control| control.snapshot())
+            .find(|progress| progress.phase != Phase::Idle)
+            .unwrap_or_else(|| self.lanes.root.snapshot())
     }
 
     pub fn generation(&self) -> Generation {
-        Generation {
-            scans: self.inner.scans_done.load(Ordering::Relaxed),
-            imports: self.inner.imports_done.load(Ordering::Relaxed),
-        }
+        self.lanes.shared.generation()
     }
 
-    /// Rounds finished so far, for the app to count them as stages.
+    /// Rounds finished so far, for the app to count them as stages: every lane's.
     pub fn rounds(&self) -> u64 {
-        self.inner.rounds.load(Ordering::Relaxed)
-    }
-
-    /// The queue has a new request: stop the round in progress at its next file, and start one.
-    fn wake_up(&self) {
-        self.inner.ctl.request_stop();
-        self.service.wake();
+        self.lanes.shared.rounds.load(Ordering::Relaxed)
     }
 }
 
-impl Inner {
-    /// The queue of requests. A holder that panicked left it whole (a request is pushed or popped, or not), so it is
-    /// used as it is.
-    fn queue(&self) -> MutexGuard<'_, Queue> {
-        self.queue.lock().unwrap_or_else(PoisonError::into_inner)
-    }
+/// What the lanes share: the catalog's path, the thumbnail cache, the cells, the notices and the change bus, the tally of
+/// the lanes' notices, the pairing gate, and the job's counts (what the app reads to refresh its views).
+pub(crate) struct Shared {
+    pub(crate) catalog_path: PathBuf,
+    pub(crate) thumbs: &'static ThumbCache,
+    pub(crate) heights: HeightCell,
+    pub(crate) features: FeatureCell,
+    pub(crate) notices: Arc<dyn NoticeSink>,
+    pub(crate) changes: Arc<Bus<Change>>,
+    pub(crate) tally: Tally,
+    pub(crate) pairing: PairGate,
+    scans_done: AtomicU64,
+    imports_done: AtomicU64,
+    pub(crate) rounds: AtomicU64,
+}
 
-    /// The scans refused by another walk's lease, waiting for their retry.
-    fn busy(&self) -> MutexGuard<'_, Vec<RulePath>> {
-        self.busy.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// The walk of `path` was refused by another walk's lease: it is tried again later ([`BUSY_RETRY`]).
-    fn walk_busy(&self, path: RulePath) {
-        let mut busy = self.busy();
-        if !busy.contains(&path) {
-            busy.push(path);
+impl Shared {
+    pub(crate) fn new(
+        catalog_path: PathBuf,
+        thumbs: &'static ThumbCache,
+        heights: HeightCell,
+        features: FeatureCell,
+        notices: Arc<dyn NoticeSink>,
+        changes: Arc<Bus<Change>>,
+    ) -> Shared {
+        let tally = Tally::new(notices.clone());
+        Shared {
+            catalog_path,
+            thumbs,
+            heights,
+            features,
+            notices,
+            changes,
+            tally,
+            pairing: PairGate::default(),
+            scans_done: AtomicU64::new(0),
+            imports_done: AtomicU64::new(0),
+            rounds: AtomicU64::new(0),
         }
     }
 
-    /// The scans refused by a lease go back to the end of the queue, for this round to try again.
-    fn requeue_busy(&self) {
-        let busy = std::mem::take(&mut *self.busy());
-        let mut q = self.queue();
-        for path in busy {
-            if !q.scans.contains(&path) {
-                q.scans.push_back(path);
-            }
-        }
-    }
-
-    fn notify(&self, notice: Notice) {
-        self.notices.post(notice);
-    }
-
-    /// What happened that clears the kept notices its trigger names (see [`Trigger`]).
-    fn resolve(&self, trigger: Trigger) {
-        self.notices.resolve(trigger);
-    }
-
-    /// A pass couldn't read `unreadable` of its files (they are tried again by its next pass): what its kept notice says,
-    /// gone once a complete pass read them all.
-    fn files_read(&self, pass: FilePass, unreadable: usize, complete: bool) {
-        if unreadable > 0 {
-            self.notify(Notice::UnreadableFiles { pass, count: count(unreadable) });
-        } else if complete {
-            self.resolve(Trigger::Pass(pass));
-        }
-    }
-
-    /// What a pass's writes to the failure ledger came to: a failure is said; a write that went through clears what an
-    /// earlier failure said; a pass that wrote nothing says nothing (it is no success of the ledger's write).
-    fn ledger_written(&self, outcome: LedgerOutcome) {
-        match outcome {
-            LedgerOutcome::Failed(error) => {
-                self.notify(Notice::LedgerNotWritten { error: tidy(&error, ERROR_CAP) });
-            }
-            LedgerOutcome::Written => self.ledger_not_written_gone(),
-            LedgerOutcome::Untouched => {}
-        }
-    }
-
-    /// The thumbnails' ledger was written: a `ledger-not-written` kept for an earlier failure is no longer true.
-    fn ledger_not_written_gone(&self) {
-        self.resolve(Trigger::Op(Op::LedgerWrite(FilePass::Thumbs)));
-    }
-
-    /// Originals were cut in place: their thumbnails are forgotten (they show the uncut pixels), and the import that
-    /// follows analyzes them again. The app is told the files changed.
-    fn cut_done(&self, cut: &[FileId]) {
-        if cut.is_empty() {
-            return;
-        }
-        for (_, e) in scans::forget_replaced(self.thumbs, cut) {
-            self.notify(Notice::CutFailed { error: error_text(&e) });
-        }
-        self.imported();
-    }
-
-    fn scanned(&self) {
+    /// A walk changed the catalog.
+    pub(crate) fn scanned(&self) {
         self.scans_done.fetch_add(1, Ordering::Relaxed);
         self.changes.publish(Change::Scanned);
     }
 
-    fn imported(&self) {
+    /// A pass changed what the views show.
+    pub(crate) fn imported(&self) {
         self.imports_done.fetch_add(1, Ordering::Relaxed);
         self.changes.publish(Change::Imported);
     }
 
-    fn run(&self, waker: &Waker<'_>) {
-        // One connection for every round; after a round that failed, a new one.
-        let mut catalog: Option<Catalog> = None;
-        // A round stopped by a new request starts the next one at once: the request is already queued.
-        let mut again = false;
-        loop {
-            if !again {
-                // A walk refused by another's lease is tried again after a while, with nothing else to wake the job.
-                let idle = (!self.busy().is_empty()).then_some(BUSY_RETRY);
-                if waker.wait(idle) == Woke::Quit {
-                    return;
-                }
-            }
-            again = false;
-            // The stop the last request set is cleared here, then the quit is looked for: a quit asked after this
-            // check comes with a stop after the clear, so the round stops.
-            self.ctl.clear_stop();
-            if waker.quitting() {
-                return;
-            }
-            self.requeue_busy();
-            match self.round_caught(&mut catalog) {
-                Ok(step) => {
-                    // A round that ran is the end of a failed one's notice.
-                    self.resolve(Trigger::Op(Op::Round));
-                    again = matches!(step, Step::Preempted);
-                }
-                Err(notice) => self.notify(notice),
-            }
-            self.rounds.fetch_add(1, Ordering::Relaxed);
-            self.changes.publish(Change::Round);
-        }
+    /// A lane's round ended: counted, and published for the owner's views.
+    pub(crate) fn round_ended(&self) {
+        self.rounds.fetch_add(1, Ordering::Relaxed);
+        self.changes.publish(Change::Round);
     }
 
-    /// A round, with a panic in it caught: the job reports it (the inbox, and the log through the panic hook)
-    /// and goes on with the next request.
-    fn round_caught(&self, catalog: &mut Option<Catalog>) -> std::result::Result<Step, Notice> {
-        match panics::catch(AssertUnwindSafe(|| self.round(catalog))) {
-            Ok(result) => result.map_err(|e| Notice::RoundFailed { error: error_text(&e) }),
-            Err(panic) => {
-                // The connection a panicking pass held is not trusted: the next round opens a new one.
-                *catalog = None;
-                Err(Notice::RoundPanicked { message: tidy(panics::message(&*panic), ERROR_CAP) })
-            }
+    pub(crate) fn generation(&self) -> Generation {
+        Generation {
+            scans: self.scans_done.load(Ordering::Relaxed),
+            imports: self.imports_done.load(Ordering::Relaxed),
         }
-    }
-
-    /// One round: the passes in order, on the connection the job keeps between rounds.
-    fn round(&self, conn: &mut Option<Catalog>) -> Result<Step> {
-        // The round's span in the perf log: the passes it runs are its children, and the catalog's open is timed apart.
-        let _round = pg_perf::span("round");
-        let open = pg_perf::span("round.open");
-        let mut catalog = match conn.take() {
-            Some(c) => c,
-            None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES)?,
-        };
-        drop(open);
-        let step = {
-            let mut cx = Cx { inner: self, catalog: &mut catalog };
-            schedule::round(
-                &mut [
-                    &mut Crops,
-                    &mut Cuts,
-                    &mut Scans,
-                    &mut Import,
-                    &mut Thumbs,
-                    &mut Placeholders,
-                    &mut Hashes,
-                    &mut Pairing,
-                    &mut Borders,
-                ],
-                &mut cx,
-                |cx| cx.inner.ctl.stop_requested(),
-            )?
-        };
-        *conn = Some(catalog);
-        Ok(step)
-    }
-}
-
-/// What the passes of a round work with: the job, and the round's connection.
-struct Cx<'a> {
-    inner: &'a Inner,
-    catalog: &'a mut Catalog,
-}
-
-/// Saves the cropped copies asked for, one request at a time. A stopped save keeps its rest at the front of the queue.
-struct Crops;
-
-impl Pass<Cx<'_>> for Crops {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        loop {
-            let Some((ids, folder)) = cx.inner.queue().crops.pop_front() else {
-                return Ok(Step::Done);
-            };
-            match pg_crop::save(cx.catalog, &ids, &folder, &Options::new(Priority::BelowNormal), &cx.inner.ctl) {
-                Ok(s) if !s.remaining.is_empty() => {
-                    cx.inner.queue().crops.push_front((s.remaining, folder));
-                    return Ok(Step::Preempted);
-                }
-                Ok(s) => cx.inner.notify(Notice::Cropped {
-                    folder: folder.display().to_string(),
-                    saved: count(s.saved),
-                    skipped: count(s.skipped),
-                    failed: count(s.failed),
-                    failures: s.failures.into_iter().map(file_failure).collect(),
-                }),
-                Err(e) => cx.inner.notify(Notice::CropFailed { error: error_text(&e) }),
-            }
-        }
-    }
-}
-
-/// Cuts the borders off the originals asked for, one request at a time (`pg_crop::cut`). A stopped cut keeps its rest at
-/// the front of the queue. Its notice is told when the request is done.
-struct Cuts;
-
-impl Pass<Cx<'_>> for Cuts {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        loop {
-            let Some(ids) = cx.inner.queue().cuts.pop_front() else {
-                return Ok(Step::Done);
-            };
-            // Queued only once confirmed (`Runner::cut_borders`).
-            match pg_crop::cut(cx.catalog, &ids, true, &Options::new(Priority::BelowNormal), &cx.inner.ctl) {
-                Ok(s) => {
-                    cx.inner.cut_done(&s.cut);
-                    if !s.remaining.is_empty() {
-                        cx.inner.queue().cuts.push_front(s.remaining);
-                        return Ok(Step::Preempted);
-                    }
-                    cx.inner.notify(Notice::BordersCut {
-                        saved: count(s.saved),
-                        skipped: count(s.skipped),
-                        unsupported: count(s.unsupported),
-                        failed: count(s.failed),
-                        failures: s.failures.into_iter().map(file_failure).collect(),
-                    });
-                }
-                Err(e) => cx.inner.notify(Notice::CutFailed { error: error_text(&e) }),
-            }
-        }
-    }
-}
-
-/// Scans the folders asked for, skipping those no longer in the library. A scan stopped early goes back to the front.
-struct Scans;
-
-impl Pass<Cx<'_>> for Scans {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let rules = cx.catalog.rules();
-        let library: Vec<RulePath> = cx.catalog.roots()?.into_iter().map(|r| r.path).collect();
-        loop {
-            let Some(path) = cx.inner.queue().scans.pop_front() else {
-                return Ok(Step::Done);
-            };
-            // A folder asked for that is no longer in the library is skipped.
-            if !library.iter().any(|l| rules.is_under(&path, l)) {
-                continue;
-            }
-            *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
-            let scanned = pg_scan::scan(cx.catalog, &path, &cx.inner.ctl);
-            *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = None;
-            // What a scan leaves to the runner after the scan's phase has closed: the replaced thumbnails, the temp files, the
-            // notices.
-            let _after = pg_perf::span("scan.after");
-            match scanned {
-                Ok(s) => {
-                    // A scan stopped early has committed what it recorded so far.
-                    if s.changed > 0 || s.missing > 0 || s.pairing.rebound > 0 || s.pairing.replaced > 0 {
-                        cx.inner.scanned();
-                    }
-                    // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
-                    // Both come after the catalog's commit, which the scan made.
-                    for (_, e) in scans::forget_replaced(cx.inner.thumbs, &s.pairing.replaced_ids) {
-                        cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
-                    }
-                    for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
-                        cx.inner.notify(Notice::ScanFailed {
-                            root: path.clone(),
-                            error: tidy(&format!("can't delete {}: {e}", rules.display(&temp)), ERROR_CAP),
-                        });
-                    }
-                    let found = scans::scan_notices(&path, &s);
-                    // What the walk did is said whatever folder it walked, and stopped or not: the pairing's binds and
-                    // replacements are in, and the walk that resumes doesn't do them again.
-                    for notice in found.events {
-                        cx.inner.notify(notice);
-                    }
-                    if !s.complete {
-                        cx.inner.queue().scans.push_front(path);
-                        return Ok(Step::Preempted);
-                    }
-                    // A complete walk of a whole library folder is what holds for it now: its kept notes (the folder's
-                    // conditions) are replaced by the ones it found. A walk of a folder under it looked at part of the
-                    // folder only, so it changes none of them. The folders it couldn't read are the folder ledger's,
-                    // which the walk itself recorded and swept.
-                    if library.contains(&path) {
-                        cx.inner.notices.replace(Key::all("scan-note", Some(&path)).to_buf(), found.conditions);
-                    }
-                }
-                // Refused before any walk: the refusal is in the folder ledger (`pg_scan::scan` recorded it, and poked
-                // the inbox), until a walk of the folder can run.
-                Err(ScanError::Refused(_)) => {}
-                // Another walk of an overlapping folder holds its lease (in this process or another): nothing was
-                // written, and the scan is tried again once that walk can have ended.
-                Err(ScanError::Busy { .. }) => cx.inner.walk_busy(path),
-                // The folder was removed from the library while it was walked (here, or by another process): the
-                // removal marked its files missing and took the walk's lease, so the walk wrote nothing after it.
-                // Nothing failed, and the folder isn't asked for again.
-                Err(ScanError::Removed { .. }) => {}
-                Err(ScanError::Failed(e)) => {
-                    cx.inner.notify(Notice::ScanFailed { root: path, error: error_text(&e) });
-                    // Its batches before the error are in.
-                    cx.inner.scanned();
-                }
-            }
-        }
-    }
-}
-
-/// Analyzes what the scans found, from each file's header alone (`pg_import::import_while`): no hash, no pixel. The
-/// duplicates are the Hashes pass's, after the thumbnails.
-struct Import;
-
-impl Pass<Cx<'_>> for Import {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let s =
-            pg_import::import_while(cx.catalog, &Options::new(Priority::BelowNormal), false, &|| true, &cx.inner.ctl)?;
-        if s.files > 0 {
-            cx.inner.imported();
-        }
-        Ok(Step::Done)
-    }
-}
-
-/// Makes the duplicate hashes the import stored without them, while duplicates detection was off (`pg_import::hashes`).
-/// Its pass ends after a batch when duplicates detection is turned off; what is left stays owed (`hashes_owed`).
-struct Hashes;
-
-impl Pass<Cx<'_>> for Hashes {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        if !cx.inner.features.get().duplicates {
-            return Ok(Step::Done);
-        }
-        let features = cx.inner.features.clone();
-        let s = pg_import::hashes::hash(
-            cx.catalog,
-            &Options::new(Priority::BelowNormal),
-            &|| features.get().duplicates,
-            &cx.inner.ctl,
-        )?;
-        // Its stored hashes are new pictures for the pairing pass, and the views list the duplicates again.
-        if s.stored > 0 {
-            cx.inner.imported();
-        }
-        // A file that couldn't be read is said, as the borders' are; one that didn't decode is an import failure, which
-        // the import's ledger holds.
-        cx.inner.files_read(FilePass::Import, s.unreadable, s.complete);
-        Ok(Step::Done)
-    }
-}
-
-/// Pairs what the import and the hashes left owed (`pg_import::pairs`): the pictures analyzed since the last pass, against
-/// every picture hashed. Skipped while duplicates detection is off: the owed pairs wait (`pairs_owed`) for it to come
-/// back on. Its join runs to the end once started, as a pass of seconds to minutes.
-struct Pairing;
-
-impl Pass<Cx<'_>> for Pairing {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        if !cx.inner.features.get().duplicates {
-            return Ok(Step::Done);
-        }
-        let s = pg_import::pairs::pair(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
-        // The duplicates the views list change with the pairs stored.
-        if s.pairs > 0 || s.files > 0 {
-            cx.inner.imported();
-        }
-        Ok(Step::Done)
-    }
-}
-
-/// Looks for the borders of what was imported. Its own pass, after the import: the import's decode is reduced, the
-/// detector wants full size. Skipped while border detection is off, and its due files stay due (`borders_due`), so
-/// turning it back on finds them; it ends after a batch when it is turned off.
-struct Borders;
-
-impl Pass<Cx<'_>> for Borders {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let features = cx.inner.features.clone();
-        if !features.get().borders {
-            // Nothing is looked for, so nothing is unreadable: a notice from an earlier pass is no longer true.
-            cx.inner.files_read(FilePass::Borders, 0, true);
-            return Ok(Step::Done);
-        }
-        let s = pg_borders::find_while(
-            cx.catalog,
-            &Options::new(Priority::BelowNormal),
-            &|| features.get().borders,
-            &cx.inner.ctl,
-        )?;
-        // Only what went into the catalog changes what the app shows: files that couldn't be read stored nothing.
-        if s.stored > 0 {
-            cx.inner.imported();
-        }
-        cx.inner.files_read(FilePass::Borders, s.unreadable, s.complete);
-        // The borders' ledger rows are written in the transaction of the borders they go with (`pg_borders::find`): a
-        // failure to write them fails the batch, which is the round's failure, not a ledger's of its own.
-        Ok(Step::Done)
-    }
-}
-
-/// Makes the thumbnails still missing at the grid's current height. It runs before the duplicates and the borders: the
-/// grid shows them first. It ends after a batch when the grid asks for another height; the next round makes that one.
-struct Thumbs;
-
-impl Pass<Cx<'_>> for Thumbs {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        // No height yet: the grid has not said which thumbnails it wants, so there is nothing to make.
-        let Some(height) = cx.inner.heights.get() else {
-            return Ok(Step::Done);
-        };
-        let heights = cx.inner.heights.clone();
-        let opts = Options::new(Priority::Idle);
-        let s = match pg_thumbs::run_while(
-            cx.inner.thumbs,
-            &cx.inner.catalog_path,
-            height,
-            &opts,
-            &|| heights.get() == Some(height),
-            &cx.inner.ctl,
-        ) {
-            Ok(s) => s,
-            // A pass that fails is said, and the round goes on to the duplicates and the borders, which are after it.
-            Err(e) => {
-                cx.inner.notify(Notice::CacheNotStored { error: error_text(&e) });
-                return Ok(Step::Done);
-            }
-        };
-        if s.cache_full {
-            cx.inner.notify(Notice::CacheFull { height, made: count(s.made) });
-        } else if s.complete {
-            cx.inner.resolve(Trigger::Pass(FilePass::Thumbs));
-        }
-        cx.inner.files_read(FilePass::Thumbs, s.unreadable, s.complete);
-        cx.inner.ledger_written(s.ledger);
-        Ok(Step::Done)
-    }
-}
-
-/// Makes the ThumbHash placeholders the thumbnails left owing (`pg_thumbs::placeholders`), after them. It is not tied to
-/// the grid's height: a placeholder is read from a cached thumbnail or from the original, whatever the grid shows.
-struct Placeholders;
-
-impl Pass<Cx<'_>> for Placeholders {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        // Its failures (the files that don't decode) are the Thumbs ledger's rows, which the pass writes in its batches.
-        pg_thumbs::placeholders::run_while(
-            cx.catalog,
-            cx.inner.thumbs,
-            &Options::new(Priority::Idle),
-            &|| true,
-            &cx.inner.ctl,
-        )?;
-        Ok(Step::Done)
     }
 }
 
@@ -803,11 +352,18 @@ mod tests {
     use std::path::Path;
     use std::time::Instant;
 
+    use pg_catalog::Catalog;
+    use pg_jobs::pipeline::Options;
+    use pg_jobs::schedule::{Pass, Step};
     use pg_jobs_testkit::{Call, Quiet, RecordingSink};
-    use pg_model::notice::ScanNote;
+    use pg_model::notice::{FilePass, Key, Notice, Op, ScanNote, Trigger};
     use pg_platform::native::PATH_RULES;
+    use pg_platform::priority::Priority;
+    use pg_thumbs::LedgerOutcome;
 
     use super::*;
+    use crate::lane::Inner;
+    use crate::passes::{Borders, Cx, Hashes, Pairing, Scans, Thumbs};
 
     /// A height cell set to 64 pixels, as the grid asks at the start.
     fn height_64() -> HeightCell {
@@ -845,7 +401,7 @@ mod tests {
         features.listen(move || {
             counter.fetch_add(1, Ordering::Relaxed);
         });
-        let no_duplicates = Features { borders: true, duplicates: false };
+        let no_duplicates = Features { borders: true, duplicates: false, serial_drives: false };
         features.set(Features::ALL);
         features.set(no_duplicates);
         features.set(no_duplicates);
@@ -873,7 +429,15 @@ mod tests {
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         assert!(c.add_root(&root).unwrap());
         pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
-        pg_import::import_while(&mut c, &Options::new(Priority::Normal), false, &|| true, &Control::new()).unwrap();
+        pg_import::import_while(
+            &mut c,
+            &Options::new(Priority::Normal),
+            false,
+            &pg_catalog::VolumeSet::All,
+            &|| true,
+            &Control::new(),
+        )
+        .unwrap();
         (dir, catalog_path, root)
     }
 
@@ -885,7 +449,7 @@ mod tests {
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
-        inner.features.set(Features { borders: false, duplicates: false });
+        inner.shared.features.set(Features { borders: false, duplicates: false, serial_drives: false });
         let due = pg_catalog::fixture::state::borders_due(&Catalog::open(&catalog_path, PATH_RULES).unwrap(), "a.png")
             .unwrap();
         assert_eq!(run(&mut Hashes, &inner), Step::Done);
@@ -895,7 +459,7 @@ mod tests {
         assert_eq!(c.owed_hashes().unwrap(), 1, "the hashes stay owed while duplicates is off");
         assert_eq!(pg_catalog::fixture::state::borders_due(&c, "a.png").unwrap(), due, "the borders are not touched");
 
-        inner.features.set(Features { borders: false, duplicates: true });
+        inner.shared.features.set(Features { borders: false, duplicates: true, serial_drives: false });
         assert_eq!(run(&mut Hashes, &inner), Step::Done);
         assert_eq!(c.owed_hashes().unwrap(), 0, "turned on, the pass makes them");
     }
@@ -964,26 +528,21 @@ mod tests {
 
     /// The job's state without its thread: the test runs its passes one by one.
     fn job(catalog_path: &Path, thumbs: &'static ThumbCache, sink: Arc<RecordingSink>) -> Inner {
-        Inner {
-            catalog_path: catalog_path.to_path_buf(),
+        let shared = Shared::new(
+            catalog_path.to_path_buf(),
             thumbs,
-            ctl: Control::new(),
-            queue: Mutex::new(Queue::default()),
-            scanning: Mutex::new(None),
-            busy: Mutex::new(Vec::new()),
-            heights: height_64(),
-            features: FeatureCell::new(Features::ALL),
-            scans_done: AtomicU64::new(0),
-            imports_done: AtomicU64::new(0),
-            rounds: AtomicU64::new(0),
-            notices: sink,
-            changes: Arc::new(Bus::new(16)),
-        }
+            height_64(),
+            FeatureCell::new(Features::ALL),
+            sink,
+            Arc::new(Bus::new(16)),
+        );
+        let budget = Arc::new(pg_jobs::governor::Budget::new(Options::budget(8, 4)));
+        Inner::new(Arc::new(shared), 0, Arc::new(Control::new()), budget)
     }
 
     /// Run `pass` once on a connection of its own, as a round does.
     fn run(pass: &mut dyn for<'a> Pass<Cx<'a>>, inner: &Inner) -> Step {
-        let mut catalog = Catalog::open(&inner.catalog_path, PATH_RULES).unwrap();
+        let mut catalog = Catalog::open(&inner.shared.catalog_path, PATH_RULES).unwrap();
         pass.run(&mut Cx { inner, catalog: &mut catalog }).unwrap()
     }
 
@@ -1076,7 +635,7 @@ mod tests {
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
         let sub = pg_platform::names::normalize_path(&images.join("sub")).unwrap();
-        inner.queue().scans.extend([root.clone(), sub]);
+        inner.scans().extend([root.clone(), sub]);
         assert_eq!(run(&mut Scans, &inner), Step::Done);
         let duplicates = Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 1 };
         assert_eq!(sink.take(), [Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), vec![duplicates])]);
@@ -1091,7 +650,7 @@ mod tests {
         let inner = job(&catalog_path, cache, sink.clone());
         let mut holder = Catalog::open(&catalog_path, PATH_RULES).unwrap();
         let lease = holder.begin_scan(&root).unwrap();
-        inner.queue().scans.push_back(root.clone());
+        inner.scans().push_back(root.clone());
         assert_eq!(run(&mut Scans, &inner), Step::Done);
         assert_eq!(*inner.busy(), std::slice::from_ref(&root));
         assert!(sink.calls().is_empty(), "{:?}", sink.calls());
@@ -1111,7 +670,7 @@ mod tests {
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache, sink.clone());
         std::fs::remove_dir_all(dir.join("images")).unwrap();
-        inner.queue().scans.push_back(root.clone());
+        inner.scans().push_back(root.clone());
         assert_eq!(run(&mut Scans, &inner), Step::Done);
         assert!(sink.posted().is_empty(), "{:?}", sink.calls());
         let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
@@ -1154,7 +713,7 @@ mod tests {
         )
         .unwrap();
         let before = sink.pokes();
-        runner.inner.ctl.ledger_changed();
+        runner.lanes.root.ledger_changed();
         assert_eq!(sink.pokes(), before + 1);
         assert!(runner.stop(Duration::from_secs(30)));
     }
@@ -1178,7 +737,7 @@ mod tests {
         let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
         let id = pg_catalog::fixture::state::present_files(&c).unwrap()[0].0;
         runner.cut_borders(vec![id], false);
-        assert!(runner.inner.queue().cuts.is_empty(), "an unconfirmed cut queues nothing");
+        assert!(runner.lanes.cuts_queued() == 0, "an unconfirmed cut queues nothing");
         runner.cut_borders(vec![id], true);
         wait_for("the cut's notice", || sink.posted().iter().any(|n| matches!(n, Notice::BordersCut { .. })));
         let posted = sink.posted();

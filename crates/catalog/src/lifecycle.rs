@@ -301,7 +301,7 @@ mod tests {
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
     use crate::types::rules_name;
-    use crate::work::pending_import_sql;
+    use crate::work::{VolumeSet, pending_import_sql};
     use pg_model::notice::Carried;
 
     use crate::{Catalog, Error, Result, ScannedFile};
@@ -1235,9 +1235,9 @@ mod tests {
 
     fn a_round_with_nothing_to_import_reads_one_index(rules: PathRules) {
         let (c, _) = one_file(rules);
-        let plan = raw::query_plan(&c, pending_import_sql(false), []);
+        let plan = raw::query_plan(&c, &pending_import_sql(false, &VolumeSet::All), []);
         assert!(plan.contains("USING INDEX files_to_import") && !plan.contains("TEMP B-TREE"), "{plan}");
-        let retry = raw::query_plan(&c, pending_import_sql(true), []);
+        let retry = raw::query_plan(&c, &pending_import_sql(true, &VolumeSet::All), []);
         assert!(retry.contains("files_to_import") && retry.contains("analysis_failed"), "{retry}");
     }
 

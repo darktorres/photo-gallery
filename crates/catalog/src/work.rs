@@ -2,11 +2,13 @@
 //! duplicates are matched by, and files made due again (methods of `Catalog`); and a statement's rows as a `WorkList`,
 //! each folder's path read once (`work_list`). Its SQL macros are from `sql`.
 
+use std::collections::BTreeSet;
+
 use anyhow::anyhow;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
 use pg_model::turns::Turns;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::core::{Catalog, ReadOnly, Reader};
 use crate::error::{Error, Result};
@@ -14,20 +16,98 @@ use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, PairingWork, WorkItem, folder_path, pairing_marks};
 use pg_model::analysis::PLACEHOLDER_VERSION;
 
-/// `Catalog::pending_import`'s query.
-pub(crate) fn pending_import_sql(retry_errors: bool) -> &'static str {
+/// The volumes a work list covers: every one, or some of them, as the catalog stores them (`files.volume`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VolumeSet {
+    /// Every volume: the whole catalog.
+    All,
+    /// These volumes only.
+    Only(Vec<i64>),
+}
+
+impl VolumeSet {
+    /// The set of `volumes` (their ids as the catalog stores them), or `None` when one is above `i64::MAX`, which no stored
+    /// volume is.
+    pub fn only(volumes: &[u64]) -> Option<VolumeSet> {
+        volumes.iter().map(|&v| i64::try_from(v).ok()).collect::<Option<Vec<i64>>>().map(VolumeSet::Only)
+    }
+
+    /// Whether the set holds `volume` (as the catalog stores it): every volume is in `All`.
+    pub fn contains(&self, volume: i64) -> bool {
+        match self {
+            VolumeSet::All => true,
+            VolumeSet::Only(volumes) => volumes.contains(&volume),
+        }
+    }
+
+    /// ` AND <column> IN (…)` for the set, or nothing for every volume. The ids are integers written as literals, so a set
+    /// gives the same statement text each time.
+    fn and_in(&self, column: &str) -> String {
+        match self {
+            VolumeSet::All => String::new(),
+            VolumeSet::Only(volumes) => {
+                let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
+                format!(" AND {column} IN ({})", list.join(","))
+            }
+        }
+    }
+}
+
+impl Catalog {
+    /// The volumes the files `ids` are on, as the catalog stores them (the ids that are not in the catalog are none). A job
+    /// that changes those files holds the lanes of those volumes while it does.
+    pub fn volumes_of(&self, ids: &[FileId]) -> Result<BTreeSet<i64>> {
+        let mut stmt = self.conn.prepare_cached("SELECT volume FROM files WHERE id = ?1")?;
+        let mut volumes = BTreeSet::new();
+        for id in ids {
+            let found: Option<i64> = stmt.query_row([id.get()], |row| row.get(0)).optional()?;
+            volumes.extend(found);
+        }
+        Ok(volumes)
+    }
+}
+
+/// `Catalog::pending_import`'s query, for `volumes`.
+pub(crate) fn pending_import_sql(retry_errors: bool, volumes: &VolumeSet) -> String {
+    let and = volumes.and_in("f.volume");
     if retry_errors {
-        // A UNION, as an OR would scan every file; the failures are read from their index first.
-        concat!(
-            pending_files!(),
-            " UNION SELECT ",
-            work_columns!(),
-            ", f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record
+        // A UNION, as an OR would scan every file; the failures are read from their index first. The set's filter is in
+        // both branches.
+        format!(
+            "{}{and} UNION SELECT {}, f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record
              FROM analysis a CROSS JOIN files f
-             WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0 ORDER BY volume, record"
+             WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0{and} ORDER BY volume, record",
+            pending_files!(),
+            work_columns!(),
         )
     } else {
-        concat!(pending_files!(), " ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF")
+        format!("{}{and} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF", pending_files!())
+    }
+}
+
+/// The due-borders rows joined for `volumes`: from the queue for every volume (the due analyses are few), and from the
+/// set's files for some, so a lane probes the queue by key rather than walking it.
+fn borders_from(volumes: &VolumeSet) -> String {
+    match volumes {
+        VolumeSet::All => "FROM analysis a CROSS JOIN files f WHERE a.borders_due = 1 AND f.id = a.file_id".to_string(),
+        VolumeSet::Only(_) => format!(
+            "FROM files f CROSS JOIN analysis a WHERE a.file_id = f.id AND a.borders_due = 1{}",
+            volumes.and_in("f.volume")
+        ),
+    }
+}
+
+/// The owed-hashes rows joined for `volumes`, with the same choice of driver as [`borders_from`].
+fn hashes_from(volumes: &VolumeSet) -> String {
+    match volumes {
+        VolumeSet::All => {
+            "FROM hashes_owed h CROSS JOIN analysis a CROSS JOIN files f WHERE h.file_id = a.file_id AND f.id = a.file_id"
+                .to_string()
+        }
+        VolumeSet::Only(_) => format!(
+            "FROM files f CROSS JOIN hashes_owed h CROSS JOIN analysis a WHERE h.file_id = f.id AND a.file_id = f.id{}",
+            volumes.and_in("f.volume")
+        ),
     }
 }
 
@@ -381,35 +461,42 @@ const OWED: &str = "FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id 
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
     /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD.
-    /// Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
-    pub fn pending_import(&self, retry_errors: bool) -> Result<WorkList<WorkItem>> {
+    /// Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe. `volumes`
+    /// limits the list to those volumes.
+    pub fn pending_import(&self, retry_errors: bool, volumes: &VolumeSet) -> Result<WorkList<WorkItem>> {
         // Counted in the same snapshot: an upper bound (a failure may also be pending), each count read from its
         // index alone.
         let tx = self.conn.unchecked_transaction()?;
         let count = |sql: &str| -> Result<usize> { Ok(tx.query_row(sql, [], |r| r.get(0))?) };
-        let mut bound = count("SELECT count(*) FROM files WHERE missing = 0 AND pending = 1")?;
+        let and = volumes.and_in("f.volume");
+        let mut bound = count(&format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND f.pending = 1{and}"))?;
         if retry_errors {
-            bound += count("SELECT count(*) FROM analysis WHERE error IS NOT NULL")?;
+            bound += match volumes {
+                VolumeSet::All => count("SELECT count(*) FROM analysis WHERE error IS NOT NULL")?,
+                VolumeSet::Only(_) => count(&format!(
+                    "SELECT count(*) FROM analysis a CROSS JOIN files f WHERE a.error IS NOT NULL AND f.id = a.file_id{and}"
+                ))?,
+            };
         }
-        let list = work_list(&tx, &mut tx.prepare(pending_import_sql(retry_errors))?, bound)?;
+        let sql = pending_import_sql(retry_errors, volumes);
+        let list = work_list(&tx, &mut tx.prepare(&sql)?, bound)?;
         tx.commit()?;
         Ok(list)
     }
 
     /// Analyses whose borders are due (new ones, and all after a new detector: `set_borders_version`), of
-    /// files the import has nothing to do for, in on-disk order.
-    pub fn pending_borders(&self) -> Result<WorkList<WorkItem>> {
-        // An upper bound, from `analysis_borders_due` alone.
+    /// files the import has nothing to do for, in on-disk order. `volumes` limits the list to those volumes.
+    pub fn pending_borders(&self, volumes: &VolumeSet) -> Result<WorkList<WorkItem>> {
         let tx = self.conn.unchecked_transaction()?;
-        let bound: usize = tx.query_row("SELECT count(*) FROM analysis WHERE borders_due = 1", [], |r| r.get(0))?;
-        let mut stmt = tx.prepare(concat!(
-            "SELECT ",
-            work_columns!(),
-            " FROM analysis a CROSS JOIN files f
-             WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
+        let from = borders_from(volumes);
+        // An upper bound: the due analyses of the set.
+        let bound: usize = tx.query_row(&format!("SELECT count(*) {from}"), [], |r| r.get(0))?;
+        let mut stmt = tx.prepare(&format!(
+            "SELECT {} {from} AND f.missing = 0 AND f.pending = 0
                AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
                    AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)
-             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
+            work_columns!(),
         ))?;
         let list = work_list(&tx, &mut stmt, bound)?;
         drop(stmt);
@@ -418,16 +505,16 @@ impl Catalog {
     }
 
     /// The analyses the import stored without their duplicate hashes (`hashes_owed`), of present, non-pending files, in
-    /// on-disk order: the Hashes pass's work.
-    pub fn pending_hashes(&self) -> Result<WorkList<WorkItem>> {
+    /// on-disk order: the Hashes pass's work. `volumes` limits the list to those volumes.
+    pub fn pending_hashes(&self, volumes: &VolumeSet) -> Result<WorkList<WorkItem>> {
         let tx = self.conn.unchecked_transaction()?;
-        let bound: usize = tx.query_row("SELECT count(*) FROM hashes_owed", [], |r| r.get(0))?;
-        let mut stmt = tx.prepare(concat!(
-            "SELECT ",
+        let from = hashes_from(volumes);
+        // An upper bound: the owed hashes of the set.
+        let bound: usize = tx.query_row(&format!("SELECT count(*) {from}"), [], |r| r.get(0))?;
+        let mut stmt = tx.prepare(&format!(
+            "SELECT {} {from} AND f.missing = 0 AND f.pending = 0
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
             work_columns!(),
-            " FROM hashes_owed h CROSS JOIN analysis a CROSS JOIN files f
-             WHERE h.file_id = a.file_id AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
-             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
         ))?;
         let list = work_list(&tx, &mut stmt, bound)?;
         drop(stmt);
@@ -435,14 +522,19 @@ impl Catalog {
         Ok(list)
     }
 
-    /// The files the Placeholders pass has to make a placeholder for (`OWED_PLACEHOLDERS`), in on-disk order.
-    pub fn pending_placeholders(&self) -> Result<WorkList<PlaceholderWork>> {
+    /// The files the Placeholders pass has to make a placeholder for (`OWED_PLACEHOLDERS`), in on-disk order. `volumes`
+    /// limits the list to those volumes.
+    pub fn pending_placeholders(&self, volumes: &VolumeSet) -> Result<WorkList<PlaceholderWork>> {
         let tx = self.conn.unchecked_transaction()?;
-        // An upper bound: the present, non-pending files.
-        let bound: usize =
-            tx.query_row("SELECT count(*) FROM files WHERE missing = 0 AND pending = 0", [], |r| r.get(0))?;
+        let and = volumes.and_in("f.volume");
+        // An upper bound: the present, non-pending files of the set.
+        let bound: usize = tx.query_row(
+            &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND f.pending = 0{and}"),
+            [],
+            |r| r.get(0),
+        )?;
         let mut stmt = tx.prepare(&format!(
-            "SELECT {}, CASE WHEN f.kind = '{}' THEN coalesce(a.poster_ms, 0) END AS poster_ms {OWED_PLACEHOLDERS}
+            "SELECT {}, CASE WHEN f.kind = '{}' THEN coalesce(a.poster_ms, 0) END AS poster_ms {OWED_PLACEHOLDERS}{and}
              ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
             work_columns!(),
             pg_model::kind_video!(),
@@ -527,5 +619,46 @@ impl Catalog {
         }
         tx.commit()?;
         Ok(marked)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_volume_set_takes_only_ids_a_catalog_can_store() {
+        assert_eq!(VolumeSet::only(&[1, 2]), Some(VolumeSet::Only(vec![1, 2])));
+        assert_eq!(VolumeSet::only(&[i64::MAX.unsigned_abs()]), Some(VolumeSet::Only(vec![i64::MAX])));
+        assert_eq!(VolumeSet::only(&[u64::MAX]), None);
+    }
+
+    #[test]
+    fn the_volume_clause_is_a_literal_list() {
+        assert_eq!(VolumeSet::All.and_in("f.volume"), "");
+        assert_eq!(VolumeSet::Only(vec![3, -1]).and_in("f.volume"), " AND f.volume IN (3,-1)");
+        assert_eq!(VolumeSet::Only(vec![]).and_in("f.volume"), " AND f.volume IN ()");
+    }
+
+    #[test]
+    fn the_import_list_filters_each_branch_of_the_retry_union() {
+        let sql = pending_import_sql(true, &VolumeSet::Only(vec![3]));
+        assert_eq!(sql.matches("f.volume IN (3)").count(), 2, "{sql}");
+        assert!(!pending_import_sql(true, &VolumeSet::All).contains("IN ("));
+        assert!(pending_import_sql(false, &VolumeSet::All).ends_with("ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"));
+    }
+
+    #[test]
+    fn a_volume_set_limits_each_pending_list_to_its_volumes() {
+        let (c, id) = crate::test_support::one_file(pg_model::rules::PathRules::Posix);
+        let volume: i64 = c.conn.query_row("SELECT volume FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        let here = VolumeSet::Only(vec![volume]);
+        let elsewhere = VolumeSet::Only(vec![volume + 1]);
+        assert_eq!(c.pending_import(false, &VolumeSet::All).unwrap().len(), 1);
+        assert_eq!(c.pending_import(false, &here).unwrap().len(), 1, "its own volume lists it");
+        assert!(c.pending_import(false, &elsewhere).unwrap().is_empty(), "another volume does not");
+        assert!(c.pending_import(true, &elsewhere).unwrap().is_empty(), "the retry form too");
+        assert!(c.pending_borders(&elsewhere).unwrap().is_empty());
+        assert!(c.pending_hashes(&elsewhere).unwrap().is_empty());
     }
 }

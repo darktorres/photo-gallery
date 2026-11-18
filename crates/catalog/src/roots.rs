@@ -90,29 +90,52 @@ impl Catalog {
     /// would otherwise write what it listed after the marks, and bring the folder's files back as present.
     pub fn remove_root(&self, root: RootId) -> Result<Option<usize>> {
         let rules = self.rules;
-        let tx = write_transaction(&self.conn)?;
-        let path: Option<Vec<u8>> =
-            tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
-        let Some(path) = path else { return Ok(None) };
-        let path = rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
-        tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
-        let [p1, p2, p3] = under_params(rules, &path);
-        let n = tx.execute(
-            concat!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN (", under_root!(), ")"),
-            params![p1, p2, p3],
-        )?;
-        // The leases matched by the rules, as `begin_scan` matches them (by case too under Windows').
-        let leases: Vec<(i64, Vec<u8>)> = tx
-            .prepare("SELECT id, root FROM scan_leases")?
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?;
-        for (id, walked) in leases {
-            let walked = rules.parse_bytes(&walked).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
-            if rules.is_under(&walked, &path) {
-                tx.execute("DELETE FROM scan_leases WHERE id = ?1", [id])?;
+        // The root and its leases go in one transaction: a walk of the folder finds its lease gone, so it writes nothing
+        // after this, and no walk begins under a root that is no longer one.
+        let path = {
+            let tx = write_transaction(&self.conn)?;
+            let path: Option<Vec<u8>> =
+                tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
+            let Some(path) = path else { return Ok(None) };
+            let path = rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
+            tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
+            // The leases matched by the rules, as `begin_scan` matches them (by case too under Windows').
+            let leases: Vec<(i64, Vec<u8>)> = tx
+                .prepare("SELECT id, root FROM scan_leases")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            for (id, walked) in leases {
+                let walked = rules.parse_bytes(&walked).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
+                if rules.is_under(&walked, &path) {
+                    tx.execute("DELETE FROM scan_leases WHERE id = ?1", [id])?;
+                }
             }
+            tx.commit()?;
+            path
+        };
+        // The files are hidden in batches of `WRITE_BATCH`, so no write holds the lock for the whole folder: the rows are
+        // read once, and each write repeats the read's predicate, so a row that changed since is left alone.
+        let [p1, p2, p3] = under_params(rules, &path);
+        let unseen: Vec<i64> = {
+            let snapshot = self.conn.unchecked_transaction()?;
+            let ids = snapshot
+                .prepare(concat!("SELECT id FROM files WHERE missing = 0 AND folder_id IN (", under_root!(), ")"))?
+                .query_map(params![p1, p2, p3], |r| r.get::<_, i64>(0))?
+                .collect::<rusqlite::Result<Vec<i64>>>()?;
+            snapshot.commit()?;
+            ids
+        };
+        let mut n = 0;
+        for batch in unseen.chunks(WRITE_BATCH) {
+            let tx = write_transaction(&self.conn)?;
+            {
+                let mut hide = tx.prepare_cached("UPDATE files SET missing = 1 WHERE id = ?1 AND missing = 0")?;
+                for &id in batch {
+                    n += hide.execute([id])?;
+                }
+            }
+            tx.commit()?;
         }
-        tx.commit()?;
         Ok(Some(n))
     }
 

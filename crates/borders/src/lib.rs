@@ -47,21 +47,23 @@ fn unix_now() -> i64 {
 /// ledger's files whose borders are found leave it. The ledger's rows are written in the transaction of the borders
 /// they go with (`Tx::ledger_writer`): a batch stores both or neither, so a failure to write the ledger stores
 /// nothing, leaves the batch's files due, and fails the pass.
-pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stats> {
-    find_while(catalog, opts, &|| true, ctl)
+pub fn find(catalog: &mut Catalog, opts: &Options, volumes: &pg_catalog::VolumeSet, ctl: &Control) -> Result<Stats> {
+    find_while(catalog, opts, volumes, &|| true, ctl)
 }
 
 /// [`find`], which ends after the batch in which `still_wanted` turns false: the files it had not looked at stay due.
+/// `volumes` limits the pass to those volumes' files.
 pub fn find_while(
     catalog: &mut Catalog,
     opts: &Options,
+    volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
 ) -> Result<Stats> {
     let mut pass = pg_perf::span("pass.borders");
     let tx_at = pg_catalog::tx_mark();
     let pending = pg_perf::span("pending.borders");
-    let work = catalog.pending_borders()?;
+    let work = catalog.pending_borders(volumes)?;
     drop(pending);
     let items = &work.items;
     let stats = Stats { files: 0, failed: 0, unreadable: 0, stored: 0, complete: true };

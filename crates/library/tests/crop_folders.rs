@@ -59,8 +59,8 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     let root = pg_platform::names::normalize_path(&images)?;
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
-    pg_import::import(&mut c, &opts, false, &ctl)?;
-    pg_borders::find(&mut c, &opts, &ctl)?;
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl)?;
+    pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
     let files = state::present_files(&c)?;
     anyhow::ensure!(files.len() == 2, "two files were expected: {files:?}");
     let (mut dotted_id, mut sibling_id) = (None, None);

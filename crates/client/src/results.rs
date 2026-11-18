@@ -169,7 +169,8 @@ mod tests {
         assert_eq!(results.first(), [1, 2]);
         // An empty or inverted range changes nothing.
         results.remove_range(2..2);
-        results.remove_range(9..4);
+        let (from, to) = (9, 4);
+        results.remove_range(from..to);
         assert_eq!(results.items(), [1, 2, 5]);
     }
 

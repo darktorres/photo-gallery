@@ -100,19 +100,6 @@ fn preview_item_after(ids: &[u64], shown: Option<u64>) -> i32 {
     shown.and_then(|id| ids.iter().position(|&x| x == id)).map_or(-1, qt_int)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_preview_follows_its_picture_through_removals() {
-        assert_eq!(preview_item_after(&[10, 20, 30], Some(30)), 2);
-        assert_eq!(preview_item_after(&[10, 30], Some(30)), 1, "the picture moved up over a removed one before it");
-        assert_eq!(preview_item_after(&[10, 20], Some(30)), -1, "the picture died: the preview closes");
-        assert_eq!(preview_item_after(&[10, 20], None), -1);
-    }
-}
-
 impl qobject::YandexSearch {
     pub(crate) fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
         match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
@@ -461,5 +448,18 @@ impl qobject::YandexSearch {
         pg_log::warn("yandex", &format!("the {what} didn't start: {e}"));
         self.as_mut().set_busy(false);
         self.as_mut().set_status(QString::from(&render(&Message::YandexNotStarted { error: e.to_string() })));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_preview_follows_its_picture_through_removals() {
+        assert_eq!(preview_item_after(&[10, 20, 30], Some(30)), 2);
+        assert_eq!(preview_item_after(&[10, 30], Some(30)), 1, "the picture moved up over a removed one before it");
+        assert_eq!(preview_item_after(&[10, 20], Some(30)), -1, "the picture died: the preview closes");
+        assert_eq!(preview_item_after(&[10, 20], None), -1);
     }
 }

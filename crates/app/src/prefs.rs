@@ -48,8 +48,9 @@ pub struct Prefs {
     /// Off: a lane per physical drive, so two drives are read and written at once.
     pub serial_drives: bool,
     /// Keep the grid's thumbnails in the thumbnail cache (on by default). Off: nothing is kept or read from it, so every
-    /// thumbnail and placeholder is decoded from its original each time it is shown, and the background thumbnail
-    /// pass waits. What the cache holds is kept, and the setting takes effect at once.
+    /// thumbnail is decoded from its original each time it is shown, the background thumbnail pass waits, and the
+    /// Placeholders pass makes no new ThumbHashes (the stored ones still show). What the cache holds is kept, and the
+    /// setting takes effect at once.
     pub thumb_cache: bool,
 }
 

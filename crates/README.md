@@ -436,8 +436,9 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
   thumbnail when the cache holds one at least 200 px high (about a millisecond), and otherwise decodes the original
   DCT-scaled (at least 200 px on its long side). The hash is encoded from at most 100 px and stored in the
   `placeholders` table, with the file's identity (size, mtime, rotation) and `PLACEHOLDER_VERSION`: it is made again
-  when the file changes or the definition does. It doesn't depend on the grid's height, and runs with the cache disabled
-  or full. A file whose original doesn't decode is recorded in the Thumbs ledger (`retry = false`), and tried again when
+  when the file changes or the definition does. It doesn't depend on the grid's height. It follows the thumbnail cache's
+  setting: with the cache disabled it makes none (the stored ones still show), and it resumes when the cache is back on.
+  A file whose original doesn't decode is recorded in the Thumbs ledger (`retry = false`), and tried again when
   it changes or the user retries it. `gallery thumbs` runs this pass after the thumbnails.
 - **Grid**: justified rows. The **size slider**, Ctrl+wheel or Ctrl +/− change the row height at runtime; the
   layout follows at once, thumbnails at the new size follow a moment later (the old ones are scaled meanwhile,

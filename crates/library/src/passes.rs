@@ -297,19 +297,25 @@ impl Pass<Cx<'_>> for Thumbs {
 }
 
 /// Makes the ThumbHash placeholders the thumbnails left owing (`pg_thumbs::placeholders`), after them. It is not tied to
-/// the grid's height: a placeholder is read from a cached thumbnail or from the original, whatever the grid shows.
+/// the grid's height: a placeholder is read from a cached thumbnail or from the original, whatever the grid shows. The
+/// thumbnail cache's setting (the Library panel) turns it off too: while the cache is off nothing is made, and the
+/// placeholders already stored keep showing.
 pub(crate) struct Placeholders;
 
 impl Pass<Cx<'_>> for Placeholders {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+        if cx.inner.shared.thumbs.suspended() {
+            return Ok(Step::Done);
+        }
         // Its failures (the files that don't decode) are the Thumbs ledger's rows, which the pass writes in its batches.
         let volumes = cx.inner.volume_set();
+        let thumbs = cx.inner.shared.thumbs;
         pg_thumbs::placeholders::run_while(
             cx.catalog,
-            cx.inner.shared.thumbs,
+            thumbs,
             &cx.inner.options(Priority::Idle),
             &volumes,
-            &|| true,
+            &|| !thumbs.suspended(),
             &cx.inner.ctl,
         )?;
         Ok(Step::Done)

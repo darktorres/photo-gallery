@@ -41,6 +41,12 @@ TestCase {
         compare(d.folderText, "D:\\Photos\\Trips")
     }
 
+    // The question is laid out under the folder's name, not over it, and inside the dialog's height.
+    function test_the_question_sits_under_the_folder() {
+        const d = shown("D:\\Photos\\Trips")
+        verify(d.questionLabel.y >= d.folderLabelItem.y + d.folderLabelItem.height)
+    }
+
     function test_cancel_has_the_focus_when_it_opens() {
         const d = shown("D:\\Photos")
         tryVerify(() => d.cancelButton.activeFocus)

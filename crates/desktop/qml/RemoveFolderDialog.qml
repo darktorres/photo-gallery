@@ -29,6 +29,8 @@ Dialog {
     property alias folderText: folderLabel.text
     property alias cancelButton: cancelBtn
     property alias removeButton: removeBtn
+    property alias folderLabelItem: folderLabel
+    property alias questionLabel: question
 
     title: words.text("ui-remove-folder-title")
     modal: true
@@ -37,21 +39,28 @@ Dialog {
     onOpened: cancelBtn.forceActiveFocus()
     onAccepted: dialog.confirmed()
 
-    Label {
-        id: folderLabel
+    // A column, so the question sits under the folder's name: the dialog sizes to its content, and labels laid over each
+    // other at the top would leave the question's lines outside it.
+    Column {
         width: dialog.availableWidth
-        elide: Text.ElideMiddle
-        textFormat: Text.PlainText
-        font.bold: true
-        text: dialog.folder
-    }
+        spacing: 8
 
-    Label {
-        id: question
-        width: dialog.availableWidth
-        wrapMode: Text.WordWrap
-        textFormat: Text.PlainText
-        text: words.text("ui-remove-folder-question")
+        Label {
+            id: folderLabel
+            width: parent.width
+            elide: Text.ElideMiddle
+            textFormat: Text.PlainText
+            font.bold: true
+            text: dialog.folder
+        }
+
+        Label {
+            id: question
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: words.text("ui-remove-folder-question")
+        }
     }
 
     footer: DialogButtonBox {

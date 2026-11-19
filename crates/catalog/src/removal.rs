@@ -601,4 +601,201 @@ mod tests {
         a_deferred_row_is_kept_until_discarded_and_its_temp_is_returned_windows,
         a_deferred_row_is_kept_until_discarded_and_its_temp_is_returned_posix
     );
+
+    /// The removals thread's run, from the start: hide, then drive. A run after a stop or a crash is this again.
+    fn resume(c: &Catalog, rules: PathRules) -> Driven {
+        c.hide_pages(&p(rules, r"D:\r")).unwrap();
+        c.drive_removals(&mut |_| true).unwrap()
+    }
+
+    /// A crash after the start, before anything is hidden: the start is kept, the rows are still visible, and the next run
+    /// finishes the removal.
+    fn a_removal_left_after_its_start_is_finished_by_the_next_run(rules: PathRules) {
+        let c = library(rules);
+        begin(&c, rules);
+        assert_eq!((rows(&c, "files"), c.removal_markers().unwrap().len()), (2, 1));
+        let driven = resume(&c, rules);
+        assert_eq!((driven.files, driven.deferred, driven.stopped), (2, 0, false));
+        assert_eq!((rows(&c, "files"), rows(&c, "ratings"), rows(&c, "folders")), (0, 0, 0));
+        assert!(c.removal_markers().unwrap().is_empty());
+    }
+
+    under_both_rules!(
+        a_removal_left_after_its_start_is_finished_by_the_next_run,
+        a_removal_left_after_its_start_is_finished_by_the_next_run_windows,
+        a_removal_left_after_its_start_is_finished_by_the_next_run_posix
+    );
+
+    /// A crash part way through hiding: one file already hidden, the rest not. The next run hides the rest and deletes
+    /// them all, and a hide that is done again changes nothing.
+    fn a_removal_left_part_hidden_is_finished_by_the_next_run(rules: PathRules) {
+        let c = library(rules);
+        begin(&c, rules);
+        fixture::state::mark_missing(&c, FileId::new(1)).unwrap();
+        assert_eq!(c.hide_pages(&p(rules, r"D:\r")).unwrap(), 1, "only the file not hidden yet");
+        assert_eq!(c.hide_pages(&p(rules, r"D:\r")).unwrap(), 0, "a hide that is done changes nothing");
+        let driven = c.drive_removals(&mut |_| true).unwrap();
+        assert_eq!(driven.files, 2);
+        assert_eq!((rows(&c, "files"), rows(&c, "folders")), (0, 0));
+        assert!(c.removal_markers().unwrap().is_empty());
+    }
+
+    under_both_rules!(
+        a_removal_left_part_hidden_is_finished_by_the_next_run,
+        a_removal_left_part_hidden_is_finished_by_the_next_run_windows,
+        a_removal_left_part_hidden_is_finished_by_the_next_run_posix
+    );
+
+    /// A stop before the first batch is deleted (the thumbnails of the batch were forgotten, its rows not): nothing is
+    /// deleted, the marker stays, and the next run deletes it all.
+    fn a_removal_stopped_before_its_batch_keeps_its_rows_for_the_next_run(rules: PathRules) {
+        let c = library(rules);
+        begin(&c, rules);
+        c.hide_pages(&p(rules, r"D:\r")).unwrap();
+        let mut batches = Vec::new();
+        let stopped = c
+            .drive_removals(&mut |ids| {
+                batches.push(ids.len());
+                false
+            })
+            .unwrap();
+        assert_eq!((stopped.files, stopped.stopped), (0, true));
+        assert_eq!(batches, [2]);
+        assert_eq!((rows(&c, "files"), c.removal_markers().unwrap().len()), (2, 1));
+        assert_eq!(resume(&c, rules).files, 2);
+        assert_eq!(rows(&c, "files"), 0);
+    }
+
+    under_both_rules!(
+        a_removal_stopped_before_its_batch_keeps_its_rows_for_the_next_run,
+        a_removal_stopped_before_its_batch_keeps_its_rows_for_the_next_run_windows,
+        a_removal_stopped_before_its_batch_keeps_its_rows_for_the_next_run_posix
+    );
+
+    /// A stop between two batches: the first batch is deleted, the rest is kept, and the next run deletes the rest.
+    fn a_removal_stopped_between_batches_keeps_the_rest_for_the_next_run(rules: PathRules) {
+        let c = library(rules);
+        let bulk = i64::try_from(WRITE_BATCH).unwrap() + 5;
+        c.conn
+            .execute(
+                "WITH RECURSIVE n(i) AS (SELECT 100 UNION ALL SELECT i + 1 FROM n WHERE i < ?1) \
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key, pending) \
+                 SELECT i, 1, i, 1, CAST('bulk' || i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, CAST(i AS BLOB), 1 \
+                 FROM n",
+                [100 + bulk],
+            )
+            .unwrap();
+        let total = rows(&c, "files");
+        begin(&c, rules);
+        c.hide_pages(&p(rules, r"D:\r")).unwrap();
+        let mut batches = 0;
+        let stopped = c
+            .drive_removals(&mut |ids| {
+                batches += 1;
+                if batches == 1 {
+                    assert_eq!(ids.len(), WRITE_BATCH, "a full batch first");
+                }
+                batches == 1
+            })
+            .unwrap();
+        assert!(stopped.stopped);
+        assert_eq!(stopped.files, WRITE_BATCH);
+        assert_eq!(rows(&c, "files"), total - i64::try_from(WRITE_BATCH).unwrap());
+        assert_eq!(c.removal_markers().unwrap().len(), 1);
+        let rest = resume(&c, rules);
+        assert_eq!(rest.files, usize::try_from(total).unwrap() - WRITE_BATCH);
+        assert_eq!((rows(&c, "files"), rows(&c, "folders")), (0, 0));
+    }
+
+    under_both_rules!(
+        a_removal_stopped_between_batches_keeps_the_rest_for_the_next_run,
+        a_removal_stopped_between_batches_keeps_the_rest_for_the_next_run_windows,
+        a_removal_stopped_between_batches_keeps_the_rest_for_the_next_run_posix
+    );
+
+    /// Folders whose names start with the removed folder's name (`r2`, `r_x`, `r%`) are not its subtree: a removal takes
+    /// the folder and what is under it, by path, and nothing else.
+    fn a_sibling_named_folder_is_not_removed(rules: PathRules) {
+        let c = library(rules);
+        crate::fixture::state::add_folder(&c, 3, &spelled(rules, r"D:\r2")).unwrap();
+        crate::fixture::state::add_folder(&c, 4, &spelled(rules, r"D:\r_x")).unwrap();
+        crate::fixture::state::add_folder(&c, 5, &spelled(rules, r"D:\r%")).unwrap();
+        fixture::insert(
+            &c,
+            &[
+                File::new(FileId::new(3), FolderId::new(3), "c.jpg", 10, 100),
+                File::new(FileId::new(4), FolderId::new(4), "d.jpg", 10, 100),
+                File::new(FileId::new(5), FolderId::new(5), "e.jpg", 10, 100),
+            ],
+        )
+        .unwrap();
+        begin(&c, rules);
+        let driven = resume(&c, rules);
+        assert_eq!(driven.files, 2, "the library folder's own files, not its siblings'");
+        assert_eq!((rows(&c, "files"), rows(&c, "folders")), (3, 3));
+        let hidden: i64 = c.conn.query_row("SELECT count(*) FROM files WHERE missing = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(hidden, 0, "the siblings' files stay visible");
+    }
+
+    under_both_rules!(
+        a_sibling_named_folder_is_not_removed,
+        a_sibling_named_folder_is_not_removed_windows,
+        a_sibling_named_folder_is_not_removed_posix
+    );
+
+    /// A folder spelled in another case is the library folder's subtree under the Windows rules, where the case of a path
+    /// does not matter, and another folder under the POSIX rules.
+    fn a_folder_spelled_in_another_case_is_removed_only_by_the_windows_rules(rules: PathRules) {
+        let c = library(rules);
+        crate::fixture::state::add_folder(&c, 3, &spelled(rules, r"d:\R\Case")).unwrap();
+        fixture::insert(&c, &[File::new(FileId::new(3), FolderId::new(3), "c.jpg", 10, 100)]).unwrap();
+        begin(&c, rules);
+        let driven = resume(&c, rules);
+        match rules {
+            PathRules::Windows => {
+                assert_eq!(driven.files, 3);
+                assert_eq!(rows(&c, "files"), 0);
+            }
+            PathRules::Posix => {
+                assert_eq!(driven.files, 2);
+                assert_eq!(rows(&c, "files"), 1, "another folder under the POSIX rules: kept");
+            }
+        }
+    }
+
+    under_both_rules!(
+        a_folder_spelled_in_another_case_is_removed_only_by_the_windows_rules,
+        a_folder_spelled_in_another_case_is_removed_only_by_the_windows_rules_windows,
+        a_folder_spelled_in_another_case_is_removed_only_by_the_windows_rules_posix
+    );
+
+    /// A deferred row (a write still recorded for it) goes at a later run once that write is resolved: the writer drops or
+    /// finishes the record, and the next drive then deletes the row and its folder.
+    fn a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved(rules: PathRules) {
+        let c = library(rules);
+        let temp = spelled(rules, r"D:\r\.a.jpg.rating.pg-write");
+        c.conn
+            .execute(
+                "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) \
+                 VALUES (1, 'rating', 3, 0, ?1, 3)",
+                [rules.join(&p(rules, &temp))],
+            )
+            .unwrap();
+        begin(&c, rules);
+        let deferred = resume(&c, rules);
+        assert_eq!((deferred.files, deferred.deferred), (1, 1));
+        assert_eq!(c.removal_markers().unwrap()[0].deferred, 1, "the marker says what it keeps");
+
+        c.conn.execute("DELETE FROM file_writes WHERE file_id = 1", []).unwrap();
+        let driven = resume(&c, rules);
+        assert_eq!((driven.files, driven.deferred), (1, 0));
+        assert_eq!((rows(&c, "files"), rows(&c, "folders")), (0, 0));
+        assert!(c.removal_markers().unwrap().is_empty());
+    }
+
+    under_both_rules!(
+        a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved,
+        a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved_windows,
+        a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved_posix
+    );
 }

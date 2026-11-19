@@ -774,8 +774,14 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     let mut swept = false;
     // The hidden folders no marker covers (an older build's removals) are given one, once the thread has run without error.
     let mut adopted = false;
+    // The first pass is at once, not after a recheck: a removal a command left (with the app closed) is finished at start.
+    let mut first = true;
     loop {
-        if waker.wait(Some(REMOVAL_RECHECK)) == Woke::Quit {
+        if std::mem::take(&mut first) {
+            if waker.quitting() {
+                return;
+            }
+        } else if waker.wait(Some(REMOVAL_RECHECK)) == Woke::Quit {
             return;
         }
         let Some(lanes) = weak.upgrade() else { return };

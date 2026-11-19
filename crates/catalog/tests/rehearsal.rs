@@ -152,9 +152,15 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() {
     println!("tables added by the upgrade: {added:?}");
 
     // A catalog already at this build's schema is not upgraded, so no copy of the old file is made for it.
+    // Compared with the version the upgrade left, not with a number written here: the test outlives each schema change.
+    let now_version: i64 = Connection::open_with_flags(&copy, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
     let kept = kept_copies(&dir);
-    if source_version < 19 {
+    if source_version < now_version {
         assert!(!kept.is_empty(), "the old file is kept beside the catalog");
+        println!("upgraded from schema {source_version} to {now_version}");
     } else {
         println!("already at schema {source_version}: nothing upgraded, no copy kept");
     }

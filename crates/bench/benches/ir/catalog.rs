@@ -14,7 +14,7 @@ use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_catalog::browse::read::facets::Facets;
 use pg_catalog::ledger::Summary;
-use pg_catalog::{Catalog, Versions, WorkItem};
+use pg_catalog::{Begun, Catalog, Driven, Versions, WorkItem};
 use pg_jobs::control::Control;
 use pg_model::grid::Entry;
 use pg_model::path::WorkList;
@@ -275,3 +275,29 @@ fn scan_walk((mut catalog, root, mut tree, ctl): (Catalog, RulePath, SyntheticTr
 }
 
 library_benchmark_group!(name = scan, benchmarks = [scan_walk]);
+
+// A folder's removal (`Catalog::begin_removal`, then the two steps the removals thread runs, measured): the synthetic
+// tree of the scan above, 10,000 files in 100 folders, in a catalog in memory, its removal begun in the setup. The files
+// have no analysis, rating or write, so the deletes are the rows' own with their index work; the thumbnails are the
+// cache's, and are not measured. No bench data: it runs wherever the benches do.
+fn for_removal() -> (Catalog, RulePath) {
+    let mut catalog = or_stop(Catalog::prepare(Path::new(":memory:"), versions(), RULES), "a catalog in memory");
+    let root = scan_root();
+    or_stop(catalog.add_root(&root), "the library folder");
+    or_stop(pg_scan::scan_with(&mut catalog, &root, &Control::new(), &mut synthetic_tree(&root)), "the walk");
+    #[expect(clippy::panic, reason = "a folder the walk just added has an id: its absence is a bug in the bench")]
+    let Some(id) = or_stop(catalog.root_id(&root), "the library folder's id") else { panic!("the library folder") };
+    let begun = or_stop(catalog.begin_removal(id, &root), "the removal's start");
+    assert!(matches!(begun, Begun::Started(_)), "the removal did not start");
+    (catalog, root)
+}
+
+#[library_benchmark]
+#[bench::ten_thousand(setup = for_removal)]
+fn folder_removal((catalog, root): (Catalog, RulePath)) -> (Catalog, Driven) {
+    or_stop(catalog.hide_pages(&root), "the hide");
+    let driven = or_stop(catalog.drive_removals(&mut |_| true), "the delete");
+    (catalog, black_box(driven))
+}
+
+library_benchmark_group!(name = removal, benchmarks = [folder_removal]);

@@ -369,6 +369,9 @@ impl Inner {
         exiftool: &mut Option<ExifTool>,
         dropped: &mut Dropped,
     ) -> Result<()> {
+        // The files whose drive is away, failed this drain: their writes are not offered again until the drain has no
+        // other write to do, so the drain does not come round to them at each settle time.
+        let mut blocked: Vec<FileId> = Vec::new();
         loop {
             if waker.quitting() {
                 return Ok(());
@@ -378,11 +381,22 @@ impl Inner {
             let queued = catalog.writes_remaining()?;
             self.update_status(|s| s.queued = queued);
             // Finishing interrupted copies first; then the oldest settled change (`Catalog::next_write`).
-            let Some(job) = catalog.next_write(SETTLE_SECS)? else {
-                if catalog.writes_attemptable()? {
+            let Some(job) = catalog.next_write_skipping(SETTLE_SECS, &blocked)? else {
+                if catalog.writes_attemptable_skipping(&blocked)? {
                     self.tell_dropped(dropped);
                     // Come back when the newest change has settled (or at once for a new one); a stop ends the wait.
                     if waker.wait(Some(Duration::from_secs(u64::try_from(SETTLE_SECS)?))) == Woke::Quit {
+                        return Ok(());
+                    }
+                    continue;
+                }
+                if !blocked.is_empty() {
+                    // Only the writes of a drive that is away are left: they are tried again after `IDLE_CHECK`, the
+                    // drive's recheck, not at each settle time (each try writes to the catalog). A wake of any kind
+                    // tries them at once.
+                    self.tell_dropped(dropped);
+                    blocked.clear();
+                    if waker.wait(Some(IDLE_CHECK)) == Woke::Quit {
                         return Ok(());
                     }
                     continue;
@@ -411,8 +425,11 @@ impl Inner {
                         s.error = Some(WriteError::Failed(Cause::Error(message)));
                         s.error_file = Some(job.file_id);
                     });
-                    // Not returned from: its next try is after the settle time (`write_failed`), so the other jobs run
-                    // now. Returning here would starve every write behind it while the drive is away.
+                    // Not returned from: the other jobs run now, and this one waits (`blocked`). Returning here would
+                    // starve every write behind it while the drive is away.
+                    if !blocked.contains(&job.file_id) {
+                        blocked.push(job.file_id);
+                    }
                     continue;
                 }
                 catalog.drop_gone_write(&job)?;
@@ -489,7 +506,10 @@ impl Inner {
                         s.error_file = Some(job.file_id);
                     });
                     if offline {
-                        // Its next try is after the settle time (`write_failed` set it): the other jobs go on meanwhile.
+                        // The other jobs go on meanwhile; this one waits for its drive (`blocked`).
+                        if !blocked.contains(&job.file_id) {
+                            blocked.push(job.file_id);
+                        }
                         continue;
                     }
                 }

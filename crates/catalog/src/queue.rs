@@ -7,9 +7,11 @@
 //! recorded, and `retry_copies` lets each start of the writer try it again. Each call is one transaction or one
 //! statement, so no reader sees a write both done and still queued.
 
+use std::rc::Rc;
+
 use crate::core::Catalog;
 use crate::error::Result;
-use rusqlite::types::Type;
+use rusqlite::types::{Type, Value};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use pg_model::format::Format;
@@ -129,9 +131,16 @@ impl Catalog {
     /// The oldest job the writer can try now: an interrupted copy first (its temp is complete), then the oldest change
     /// that has settled for `settle_secs`. A failed job waits `settle_secs` longer for each attempt so far.
     pub fn next_write(&self, settle_secs: i64) -> Result<Option<Job>> {
+        self.next_write_skipping(settle_secs, &[])
+    }
+
+    /// [`Catalog::next_write`] without the files in `skip`: the writer's drain passes the files whose drive is away, so
+    /// their writes wait for the drive's own recheck rather than come round at each settle time.
+    pub fn next_write_skipping(&self, settle_secs: i64, skip: &[FileId]) -> Result<Option<Job>> {
         let conn = &self.conn;
+        let skip = Rc::new(skip.iter().map(|id| Value::Integer(id.get())).collect::<Vec<_>>());
         let job = conn
-            .query_row(NEXT_READY, params![MAX_ATTEMPTS, settle_secs], |r| {
+            .query_row(NEXT_READY, params![MAX_ATTEMPTS, settle_secs, skip], |r| {
                 let kind: String = r.get(1)?;
                 let kind = WriteKind::from_key(&kind)
                     .ok_or_else(|| rusqlite::Error::InvalidColumnType(1, kind, Type::Text))?;
@@ -167,9 +176,18 @@ impl Catalog {
 
     /// Whether a job is left that may still be tried (the writer waits for it to settle, rather than stopping).
     pub fn writes_attemptable(&self) -> Result<bool> {
+        self.writes_attemptable_skipping(&[])
+    }
+
+    /// [`Catalog::writes_attemptable`] without the files in `skip` (see [`Catalog::next_write_skipping`]).
+    pub fn writes_attemptable_skipping(&self, skip: &[FileId]) -> Result<bool> {
         let conn = &self.conn;
-        Ok(conn
-            .query_row("SELECT EXISTS(SELECT 1 FROM file_writes WHERE attempts < ?1)", [MAX_ATTEMPTS], |r| r.get(0))?)
+        let skip = Rc::new(skip.iter().map(|id| Value::Integer(id.get())).collect::<Vec<_>>());
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM file_writes WHERE attempts < ?1 AND file_id NOT IN rarray(?2))",
+            params![MAX_ATTEMPTS, skip],
+            |r| r.get(0),
+        )?)
     }
 
     /// Every queued write, failing or not.
@@ -314,7 +332,7 @@ impl Catalog {
 
 /// [`Catalog::next_write`]'s statement. Its order is the queue index's (`file_writes_next`): no sort of the queue.
 const NEXT_READY: &str = "SELECT file_id, kind, value, temp, temp_value, attempts FROM file_writes
-     WHERE attempts < ?1 AND queued <= unixepoch() - ?2 * (attempts + 1)
+     WHERE attempts < ?1 AND queued <= unixepoch() - ?2 * (attempts + 1) AND file_id NOT IN rarray(?3)
      ORDER BY temp IS NULL, queued LIMIT 1";
 
 /// Record what the file holds now (the rating it was last written with, or the import's reads).
@@ -483,6 +501,22 @@ mod tests {
         assert_eq!(c.writes_remaining().unwrap(), 0);
     }
 
+    /// The files in the skip set are not offered, the others are; with every queued file skipped there is no job and
+    /// nothing to wait for. The drain relies on this to leave an away drive's writes for its recheck.
+    #[test]
+    fn a_skipped_file_is_not_offered_and_the_others_are() {
+        let c = library(PathRules::Windows);
+        c.set_rating(FileId::new(1), Rating::new(3), true).unwrap();
+        c.set_rating(FileId::new(2), Rating::new(3), true).unwrap();
+        let one = [FileId::new(1)];
+        let both = [FileId::new(1), FileId::new(2)];
+        assert_eq!(c.next_write_skipping(0, &one).unwrap().unwrap().file_id, FileId::new(2));
+        assert!(c.next_write_skipping(0, &both).unwrap().is_none());
+        assert!(c.writes_attemptable_skipping(&one).unwrap());
+        assert!(!c.writes_attemptable_skipping(&both).unwrap());
+        assert!(c.writes_attemptable().unwrap(), "the unskipped entry point still sees both");
+    }
+
     /// The latest errors come first, a tie within a second broken by the file and the kind, and the limit keeps the
     /// newest.
     #[test]
@@ -622,7 +656,7 @@ mod tests {
     #[test]
     fn the_next_job_comes_off_the_queue_index() {
         let c = library(PathRules::Windows);
-        let plan = raw::query_plan(&c, NEXT_READY, [MAX_ATTEMPTS, 0]);
+        let plan = raw::query_plan(&c, NEXT_READY, params![MAX_ATTEMPTS, 0, Rc::new(Vec::<Value>::new())]);
         assert!(plan.contains("file_writes_next") && !plan.contains("TEMP B-TREE"), "{plan}");
     }
 

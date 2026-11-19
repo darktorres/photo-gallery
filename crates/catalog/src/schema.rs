@@ -1,5 +1,5 @@
 //! The catalog's schema: the SQL that makes a new catalog, the version a file is at, and how a file is brought to a
-//! version. A file is compared with [`expected`], the schema this build makes in memory from the same SQL, so the
+//! version. A file is compared with [`expected_for`], the schema this build makes in memory from the same SQL, so the
 //! layout checked is the layout created.
 //!
 //! ## Storage
@@ -21,6 +21,7 @@ use rusqlite::{Connection, Transaction};
 
 use crate::convert::Source;
 use crate::error::Result;
+use crate::progress::{NO_PROGRESS, Phase, Progress};
 use crate::transaction::write_transaction;
 
 /// One step of a migration: SQL that changes the layout, or a conversion of rows (`Source`: the old shape it reads from),
@@ -48,7 +49,7 @@ pub(crate) struct Migration {
     pub(crate) rebuilds_tables: bool,
 }
 
-/// A baseline and the migrations after it: the layout a catalog has at each version. [`SCHEMA`] is this build's.
+/// A baseline and the migrations after it: the layout a catalog has at each version. The build's own is `SCHEMA`.
 #[derive(Clone, Copy)]
 pub(crate) struct SchemaSet<'a> {
     pub(crate) baseline: &'a str,
@@ -65,13 +66,23 @@ pub(crate) const SCHEMA: SchemaSet<'static> = SchemaSet { baseline: BASELINE, mi
 /// before the first release, while the baseline is edited in place (see the module docs).
 pub(crate) const MIGRATIONS: &[Migration] = &[];
 
-/// What a caller watches while a catalog is brought to a version. Nothing yet: the fault points and the progress reports
-/// come in Phase 3, through this same parameter, so the signature of [`bring_to`] changes once.
-pub(crate) struct Hooks;
+/// What a caller watches while a catalog is brought to a version: the progress its steps are reported to. The fault
+/// points come through this same parameter (Phase 4), so the signature of [`bring_to`] changes once.
+pub(crate) struct Hooks<'a> {
+    pub(crate) progress: &'a dyn Progress,
+}
 
-impl Hooks {
+impl Hooks<'static> {
+    /// Watches nothing.
     pub(crate) fn none() -> Self {
-        Self
+        Hooks { progress: &NO_PROGRESS }
+    }
+}
+
+impl<'a> Hooks<'a> {
+    /// Reports to `progress`.
+    pub(crate) fn reporting(progress: &'a dyn Progress) -> Self {
+        Hooks { progress }
     }
 }
 
@@ -92,7 +103,12 @@ pub(crate) const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous
 
 /// The version this build's catalogs are at: the baseline, then each migration.
 pub(crate) fn current_version() -> Result<i64> {
-    let migrations = i64::try_from(MIGRATIONS.len()).context("too many migrations")?;
+    version_in(&SCHEMA)
+}
+
+/// The version the schema `set` brings a catalog to: the baseline, then each of its migrations.
+pub(crate) fn version_in(set: &SchemaSet<'_>) -> Result<i64> {
+    let migrations = i64::try_from(set.migrations.len()).context("too many migrations")?;
     Ok(BASELINE_VERSION + migrations)
 }
 
@@ -116,7 +132,7 @@ pub(crate) fn bring_to(
     set: &SchemaSet<'_>,
     rules: PathRules,
     target: i64,
-    _hooks: &Hooks,
+    hooks: &Hooks<'_>,
 ) -> Result<()> {
     loop {
         // The version is read outside the transaction first, so a migration that needs foreign keys off has them off
@@ -156,7 +172,13 @@ pub(crate) fn bring_to(
                 require_foreign_keys_off(&tx)?;
             }
             let context = || format!("migration to schema version {}", version + 1);
-            for step in migration.steps {
+            for (step_index, step) in migration.steps.iter().enumerate() {
+                hooks.progress.phase(Phase::Migrate {
+                    from: version,
+                    to: version + 1,
+                    step: step_index,
+                    steps: migration.steps.len(),
+                });
                 match *step {
                     Step::Sql(sql) => tx.execute_batch(sql).with_context(context)?,
                     Step::Rust(convert) => convert(&tx, Source::Main, rules).with_context(context)?,
@@ -222,13 +244,7 @@ fn require_foreign_keys_off(tx: &Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
-/// The schema a catalog at `version` has, as this build makes it in memory: the baseline and the migrations up to
-/// `version`. Version 0 (no catalog) is the empty database.
-pub(crate) fn expected(version: i64) -> Result<Schema> {
-    expected_for(&SCHEMA, version)
-}
-
-/// [`expected`] for the given schema, made on an empty database: the `Sql` steps make the layout, and the `Rust` steps
+/// [`expected_for`] for the given schema, made on an empty database: the `Sql` steps make the layout, and the `Rust` steps
 /// find no rows to convert.
 pub(crate) fn expected_for(set: &SchemaSet<'_>, version: i64) -> Result<Schema> {
     let conn = Connection::open_in_memory()?;
@@ -237,7 +253,7 @@ pub(crate) fn expected_for(set: &SchemaSet<'_>, version: i64) -> Result<Schema> 
     Ok(Schema::read(&conn, SEEDS)?)
 }
 
-/// The [`expected`] schema of the current version, built once per process (every connection's `Catalog::open` checks
+/// The [`expected_for`] schema of the current version, built once per process (every connection's `Catalog::open` checks
 /// its file against it).
 pub(crate) fn current_expected() -> Result<&'static Schema> {
     Ok(CURRENT.schema()?)
@@ -262,7 +278,7 @@ fn current_layout(conn: &Connection) -> rusqlite::Result<()> {
 /// The current schema, made once per process.
 static CURRENT: Expected = Expected::new(current_layout, SEEDS);
 
-/// Why the file at `conn` is not this build's catalog at `version`, given `want` (its [`expected`] schema): `None` when
+/// Why the file at `conn` is not this build's catalog at `version`, given `want` (its [`expected_for`] schema): `None` when
 /// it is. It reads only. A file that is not a database is not a catalog, and neither is one whose `application_id` is
 /// another's.
 pub(crate) fn mismatch(conn: &Connection, version: i64, want: &Schema) -> Result<Option<String>> {

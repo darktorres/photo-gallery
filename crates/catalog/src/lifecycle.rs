@@ -10,6 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use pg_model::media::Ext;
 use pg_model::rules::PathRules;
 
+use crate::core::FreeSpace;
 use crate::error::{Error, Result};
 use crate::types::{TAKEN_ZONE_QUERY, rules_name};
 
@@ -121,17 +122,25 @@ fn has_room(len: u64, free: Option<u64>, times: u64) -> bool {
     free.is_none_or(|free| free >= len.saturating_mul(times))
 }
 
+/// The folder whose volume holds the catalog file at `path`.
+fn folder_of(path: &Path) -> &Path {
+    path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."))
+}
+
 /// The catalog file's size and the free space of its volume (`None` when it can't be read).
 fn size_and_free(path: &Path) -> (u64, Option<u64>) {
     let len = std::fs::metadata(path).map_or(0, |m| m.len());
-    let folder = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    (len, pg_platform::volume::space(folder).map(|s| s.free))
+    (len, pg_platform::volume::space(folder_of(path)).map(|s| s.free))
 }
 
 /// Refuse a migration of the catalog at `path` when its volume has no room for it ([`MIGRATION_ROOM`]): before the
-/// copy aside, so the catalog is left as it is, and the error says how much is needed and where.
-pub(crate) fn ensure_room_to_migrate(path: &Path) -> Result<()> {
-    let (len, free) = size_and_free(path);
+/// copy aside, so the catalog is left as it is, and the error says how much is needed and where. `free_space`, when
+/// given, reports the volume's free bytes in its place (a test's room).
+pub(crate) fn ensure_room_to_migrate(path: &Path, free_space: Option<&FreeSpace<'_>>) -> Result<()> {
+    let (len, free) = match free_space {
+        None => size_and_free(path),
+        Some(space) => (size_and_free(path).0, space(folder_of(path))),
+    };
     if has_room(len, free, MIGRATION_ROOM) {
         return Ok(());
     }

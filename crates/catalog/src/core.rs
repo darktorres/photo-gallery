@@ -13,6 +13,7 @@ use std::time::Duration;
 use anyhow::{Context, anyhow};
 use rusqlite::{Connection, OpenFlags};
 
+use pg_dbfile::Schema;
 use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
 
@@ -22,9 +23,11 @@ use crate::lifecycle::{
     check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, set_borders_version, set_import_version,
     set_pairing_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, vacuum_if_owed,
 };
+use crate::progress::{NO_PROGRESS, Phase, Progress};
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
 use crate::schema::{
-    Hooks, SCHEMA, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
+    Hooks, SCHEMA, SETTINGS, SchemaSet, bring_to, current_expected, current_version, expected_for, mismatch,
+    version_in, version_of,
 };
 use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions};
@@ -66,11 +69,72 @@ impl Catalog {
     /// change to the file (a rebuild, or a migration) needs no other process or connection to have it open: otherwise
     /// it fails with the catalog untouched, and the one that has it open is left as it is.
     pub fn prepare(path: &Path, versions: Versions, rules: PathRules) -> Result<Catalog> {
+        Catalog::preparing(path, versions, rules).run()
+    }
+
+    /// A preparation of the catalog at `path`, to be configured and then run ([`Prepare::run`]): the progress it reports,
+    /// the schema it is brought to, and the free space its volume is taken to have. [`Catalog::prepare`] is this with the
+    /// defaults.
+    pub fn preparing(path: &Path, versions: Versions, rules: PathRules) -> Prepare<'_> {
+        Prepare { path, versions, rules, schemas: None, progress: &NO_PROGRESS, free_space: None }
+    }
+}
+
+/// The free bytes of a volume, as a test reports them in place of the volume's own ([`Prepare::free_space`]).
+pub type FreeSpace<'a> = dyn Fn(&Path) -> Option<u64> + Send + Sync + 'a;
+
+/// A preparation of a catalog ([`Catalog::preparing`]): the work [`Catalog::prepare`] does, with its options.
+pub struct Prepare<'a> {
+    path: &'a Path,
+    versions: Versions,
+    rules: PathRules,
+    /// The schema the catalog is brought to; the build's own when `None`.
+    schemas: Option<&'a SchemaSet<'a>>,
+    progress: &'a dyn Progress,
+    free_space: Option<&'a FreeSpace<'a>>,
+}
+
+impl<'a> Prepare<'a> {
+    /// Reports the preparation's progress to `progress` (report only: see [`Progress`]).
+    pub fn progress(mut self, progress: &'a dyn Progress) -> Self {
+        self.progress = progress;
+        self
+    }
+
+    /// Takes the free bytes of the catalog's volume from `space`, in place of the volume's own report. A test's room for a
+    /// migration.
+    pub fn free_space(mut self, space: &'a FreeSpace<'a>) -> Self {
+        self.free_space = Some(space);
+        self
+    }
+
+    /// Brings the catalog to `set`, rather than the build's own schema. Test-only until the crash tests (Phase 4) need it
+    /// from outside the crate, which is when `SchemaSet` becomes public behind the `fixture` feature.
+    #[cfg(test)]
+    pub(crate) fn schemas(mut self, set: &'a SchemaSet<'a>) -> Self {
+        self.schemas = Some(set);
+        self
+    }
+
+    /// Prepares the catalog as [`Catalog::prepare`] describes.
+    pub fn run(self) -> Result<Catalog> {
+        let Prepare { path, versions, rules, schemas, progress, free_space } = self;
+        progress.phase(Phase::Check);
+        let set = schemas.unwrap_or(&SCHEMA);
         let memory = path == Path::new(":memory:");
         let _lock = if memory { None } else { Some(take_lock(path)?) };
-        let current = current_version()?;
+        let current = version_in(set)?;
         let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         let version = version_of(&conn)?;
+        // The build's current schema is built once per process; a custom one, and an earlier version, are built here.
+        let custom;
+        let current_schema: &Schema = match schemas {
+            None => current_expected()?,
+            Some(_) => {
+                custom = expected_for(set, current)?;
+                &custom
+            }
+        };
         let why = match version {
             None => Some("not a database".to_string()),
             Some(found) if found > current => {
@@ -80,9 +144,8 @@ impl Catalog {
                     path.display()
                 )));
             }
-            // The current schema is built once per process; an earlier one only when a catalog is found at it.
-            Some(found) if found == current => mismatch(&conn, found, current_expected()?)?,
-            Some(found) => mismatch(&conn, found, &expected(found)?)?,
+            Some(found) if found == current => mismatch(&conn, found, current_schema)?,
+            Some(found) => mismatch(&conn, found, &expected_for(set, found)?)?,
         };
         // A catalog of this build's schema whose paths were stored under other rules is refused before anything is
         // written to it: its migrations would convert its rows under these rules (a rebuild checks them itself).
@@ -98,7 +161,7 @@ impl Catalog {
         }
         let mut rebuilt = None;
         if let Some(why) = why {
-            rebuilt = Some(rebuild(conn, path, rules, why, version.is_some())?);
+            rebuilt = Some(rebuild(conn, path, set, rules, why, version.is_some())?);
             conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         }
         // An empty file takes incremental auto-vacuum before its first table (where it is a page-1 change, at once).
@@ -114,12 +177,13 @@ impl Catalog {
         // was: the old file is kept as it was).
         let mut upgraded_from = None;
         if let Some(found) = version.filter(|&found| rebuilt.is_none() && found > 0 && found < current && !memory) {
-            ensure_room_to_migrate(path)?;
+            ensure_room_to_migrate(path, free_space)?;
+            progress.phase(Phase::Backup);
             back_up(&conn, path, found)?;
             pg_log::info("catalog", &upgrade_notice(found, current, &backup_path(path, found)));
             upgraded_from = Some(found);
         }
-        bring_to(&conn, &SCHEMA, rules, current, &Hooks::none()).with_context(|| match upgraded_from {
+        bring_to(&conn, set, rules, current, &Hooks::reporting(progress)).with_context(|| match upgraded_from {
             Some(found) => format!(
                 "catalog {}: the upgrade from version {found} failed; the catalog as it was is kept at {}",
                 path.display(),
@@ -127,7 +191,7 @@ impl Catalog {
             ),
             None => format!("catalog {}", path.display()),
         })?;
-        if let Some(why) = mismatch(&conn, current, current_expected()?)? {
+        if let Some(why) = mismatch(&conn, current, current_schema)? {
             return Err(Error::Other(anyhow!(
                 "catalog {}: the catalog made is not this build's: {why}",
                 path.display()
@@ -152,7 +216,9 @@ impl Catalog {
         let live = if memory { None } else { Some(take_shared(path)?) };
         Ok(Catalog { conn, rules, rebuilt, _live: live })
     }
+}
 
+impl Catalog {
     /// Open a catalog this process has prepared ([`Catalog::prepare`], which makes it, brings it to this build's schema
     /// and sets the build's version marks): the settings and the SQL functions. Every connection to it (the app's
     /// threads, the background job, the writer) runs this, so the check is the schema's itself, against the cached

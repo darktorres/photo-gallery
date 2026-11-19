@@ -33,6 +33,8 @@ mod lease;
 mod lifecycle;
 mod listing;
 mod lookup;
+mod progress;
+pub use progress::{NoProgress, Phase, Progress};
 mod rebuild;
 mod roots;
 mod transaction;
@@ -47,7 +49,7 @@ mod removal;
 pub use removal::{Begun, Discarded, Driven, Marker};
 mod schema;
 
-pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};
+pub use self::core::{BoundedCache, Catalog, FreeSpace, Prepare, Reader, ScanLease, Tx};
 pub use roots::FolderRowReader;
 pub use transaction::{Patience, PatienceGuard, wait_for_writers};
 pub use types::{

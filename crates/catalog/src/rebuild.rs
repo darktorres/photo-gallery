@@ -13,7 +13,7 @@ use rusqlite::Connection;
 
 use crate::convert::{Source, table_columns};
 use crate::error::{Error, Result};
-use crate::schema::{Hooks, MIGRATIONS, SCHEMA, SETTINGS, Step, bring_to, current_version};
+use crate::schema::{Hooks, SETTINGS, SchemaSet, Step, bring_to, version_in};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
 
 /// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
@@ -50,7 +50,14 @@ pub(crate) fn back_up(conn: &Connection, path: &Path, version: i64) -> Result<()
 
 /// Make the catalog `old` (at `path`) into a new one in this build's layout, carrying its rows ([`rebuild`]): the old file
 /// is moved aside, and the new one takes its name. `old` is the connection the change was found on; it is closed here.
-pub(crate) fn rebuild(old: Connection, path: &Path, rules: PathRules, why: String, readable: bool) -> Result<Rebuilt> {
+pub(crate) fn rebuild(
+    old: Connection,
+    path: &Path,
+    set: &SchemaSet<'_>,
+    rules: PathRules,
+    why: String,
+    readable: bool,
+) -> Result<Rebuilt> {
     let source = if readable {
         // The changes still in the old file's `-wal` are checkpointed into it, so the copy reads all of them.
         old.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
@@ -68,17 +75,17 @@ pub(crate) fn rebuild(old: Connection, path: &Path, rules: PathRules, why: Strin
     let replacement = building_path(path);
     remove_database(&replacement)?;
     let carried = match source {
-        Ok(()) => match make_replacement(&replacement, rules, Some(path)) {
+        Ok(()) => match make_replacement(&replacement, set, rules, Some(path)) {
             Ok((files, folders)) => Carried::Rows { files: count(files), folders: count(folders) },
             Err(e) => {
                 // The copy is one transaction, so an error leaves no rows; the replacement is made again without them.
                 remove_database(&replacement)?;
-                make_replacement(&replacement, rules, None)?;
+                make_replacement(&replacement, set, rules, None)?;
                 Carried::Nothing { reason: format!("{e:#}") }
             }
         },
         Err(reason) => {
-            make_replacement(&replacement, rules, None)?;
+            make_replacement(&replacement, set, rules, None)?;
             Carried::Nothing { reason }
         }
     };
@@ -101,18 +108,18 @@ pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
 /// Make the catalog file `path` in this build's layout, with the rows of `from` copied into it when given
 /// ([`carry_rows`]). Returns its file and library folder counts (zero without `from`). The file is closed, with its
 /// changes in the main file.
-fn make_replacement(path: &Path, rules: PathRules, from: Option<&Path>) -> Result<(i64, i64)> {
+fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Option<&Path>) -> Result<(i64, i64)> {
     let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
     // An empty file takes incremental auto-vacuum at once; a catalog made here is then compacted in place, never as a whole.
     conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
     conn.execute_batch(SETTINGS)?;
     // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
     conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
-    bring_to(&conn, &SCHEMA, rules, current_version()?, &Hooks::none())
+    bring_to(&conn, set, rules, version_in(set)?, &Hooks::none())
         .with_context(|| format!("catalog {}", path.display()))?;
     let counts = match from {
         Some(old) => {
-            carry_rows(&mut conn, old, rules)?;
+            carry_rows(&mut conn, old, set, rules)?;
             let count = |table: &str| -> rusqlite::Result<i64> {
                 conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
             };
@@ -168,7 +175,7 @@ pub(crate) const CARRIED: &[&str] = &[
 #[cfg_attr(not(test), expect(dead_code, reason = "a rebuild copies none of them; the test of `CARRIED` reads it"))]
 pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 
-/// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`SCHEMA`]: each table of [`CARRIED`],
+/// Copies the rows of the catalog at `old` into `conn`, a new catalog made from the schema: each table of [`CARRIED`],
 /// by column name (a column the old file lacks takes its default), with its ids kept. The `meta` rows the new catalog
 /// seeds are overwritten with the old values, except `path_rules`, which is this build's; a key the old file has and the
 /// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
@@ -177,18 +184,18 @@ pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 /// were stored under (the caller has checked they are this build's). Then every `Rust` step of the migrations runs, in
 /// order, on the copy ([`Source::Carried`]): none before the first release, and each after it finds the old shape it
 /// converts in the old file, so a conversion is idempotent.
-pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, rules: PathRules) -> Result<()> {
+pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, set: &SchemaSet<'_>, rules: PathRules) -> Result<()> {
     // The old file's name as SQLite takes it, bound as a BLOB: its bytes on Unix, and on Windows the UTF-8 of the alias
     // for a folder with no UTF-8 name (`pg_platform::sqlite`).
     let bound =
         pg_platform::sqlite::attach_bytes(old).with_context(|| format!("{}: the old catalog", old.display()))?;
     conn.execute("ATTACH DATABASE ?1 AS carried", [bound]).context("attaching the old catalog")?;
-    let copied = copy_tables(conn, rules);
+    let copied = copy_tables(conn, set, rules);
     conn.execute_batch("DETACH DATABASE carried")?;
     copied
 }
 
-fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
+fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> Result<()> {
     let triggers: Vec<(String, String)> = conn
         .prepare("SELECT name, sql FROM main.sqlite_schema WHERE type = 'trigger'")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -223,7 +230,7 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
         }
     }
     // The migrations' conversions, in order, before the triggers are back (they would fire on the converted rows).
-    for step in MIGRATIONS.iter().flat_map(|migration| migration.steps.iter()) {
+    for step in set.migrations.iter().flat_map(|migration| migration.steps.iter()) {
         if let Step::Rust(convert) = *step {
             convert(&tx, Source::Carried, rules)?;
         }
@@ -294,7 +301,7 @@ mod tests {
         let new_path = dir.join("new.sqlite");
         let mut new = made(&new_path, true);
         assert_eq!(vacuum_owed(&new), 0);
-        carry_rows(&mut new, &old_path, PATH_RULES).unwrap();
+        carry_rows(&mut new, &old_path, &SCHEMA, PATH_RULES).unwrap();
         assert_eq!(vacuum_owed(&new), 0, "the copy did not carry the old file's mark");
         drop(new);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -316,7 +323,7 @@ mod tests {
         }
         let new_path = dir.join("new.sqlite");
         let mut new = made(&new_path, true);
-        let error = carry_rows(&mut new, &old_path, PATH_RULES).unwrap_err().to_string();
+        let error = carry_rows(&mut new, &old_path, &SCHEMA, PATH_RULES).unwrap_err().to_string();
         assert!(error.contains("CHECK"), "{error}");
         let rows: i64 = new.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 0, "the copy is rolled back");

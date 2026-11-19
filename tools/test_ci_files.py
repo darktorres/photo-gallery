@@ -170,6 +170,10 @@ class InstallExifTool(unittest.TestCase):
 
 
 class WorkflowPins(unittest.TestCase):
+    def test_each_job_runs_cargo_deny_as_its_own_step(self):
+        # `just lint` leaves cargo-deny out (its advisory fetch is a network call); each job runs `just deny` in its own step.
+        self.assertEqual(WORKFLOW.count("run: |\n          for attempt in 1 2 3; do\n            if just deny"), 2)
+
     def test_the_workflow_holds_no_pinned_value(self):
         for name, value in PINNED.items():
             self.assertNotIn(value, WORKFLOW, f"{name} is written in ci.yml: read it from the pins step")

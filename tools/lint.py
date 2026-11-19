@@ -23,7 +23,6 @@ STEPS = [
     ["cargo", "metadata", "--locked", "--manifest-path", "fuzz/Cargo.toml", "--format-version", "1"],
     ["cargo", "metadata", "--locked", "--manifest-path", "eval/jpeg-decoders/Cargo.toml", "--format-version", "1"],
     ["cargo", "doc", "--workspace", "--no-deps", "--document-private-items", "--locked", "--timings"],
-    ["cargo", "deny", "check"],
     ["cargo", "machete", "crates"],
     ["ruff", "format", "--check", "."],
     ["ruff", "check", "."],

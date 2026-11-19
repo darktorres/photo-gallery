@@ -123,11 +123,16 @@ _qt:
 _lint-tools:
     {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }} --just {{ just_version }} --cargo-modules {{ cargo_modules_version }}
 
-# Every check: formatting, clippy, dependencies, the crate boundaries (tools/boundaries.py: the crate layers, acyclic dev
+# Every check: formatting, clippy, the crate boundaries (tools/boundaries.py: the crate layers, acyclic dev
 # edges, re-exports, platform code), the Python, the Markdown and the QML (tools/lint.py, every OS). cargo-machete reads
 # only our crates: vendor/ keeps the upstream's lints.
 lint: _qt _lint-tools && lint-qml
     {{ py }} tools/lint.py
+
+# The dependencies' advisories, licences and sources (cargo-deny). Not in `lint`: it fetches the advisory database from
+# GitHub, so a network failure is not a lint failure. CI runs it as its own step, which retries the fetch.
+deny: _lint-tools
+    cargo deny check
 
 # The module-cycle check: the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the

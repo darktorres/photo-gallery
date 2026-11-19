@@ -31,7 +31,7 @@ use crate::types::{
 // than preparing them again. A writer borrows its transaction, so it is dropped before the transaction commits.
 
 /// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
-/// change number ([`change_number`]). These are the columns the `files_added` trigger set, before migration 16.
+/// change number ([`change_number`]): the columns the insert sets itself, no trigger does.
 fn write_new(new_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, key: &[u8], change: i64) -> Result<usize> {
     let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
     let size = i64::try_from(f.size).context("a file's size")?;
@@ -159,7 +159,7 @@ impl<'tx> ScanWriter<'tx> {
                 "UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1",
             )?,
             // A new row is unpaired: the pairing at the end of the scan decides what it is. It is pending, and changed at
-            // the batch's number, which the insert sets itself (no trigger does, since migration 16). The row is not
+            // the batch's number, which the insert sets itself (no trigger does). The row is not
             // known to the writer, so the insert cannot conflict: the identity was looked up in this transaction.
             new_file: tx.prepare_cached(
                 "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime,
@@ -1110,7 +1110,7 @@ mod tests {
 
     /// A walk's batch records its new files pending (they have no analysis) and unpaired, all changed at one change
     /// number: the one past `meta.seq` before the batch. The next batch takes the next number. (The `files_added` trigger
-    /// that did this is gone, migration 16.)
+    /// that did this is gone: a new row's change is set by its insert.)
     fn a_scans_new_files_are_pending_and_unpaired_under_one_change_number(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let root = p(rules, &spelled(rules, r"D:\x"));

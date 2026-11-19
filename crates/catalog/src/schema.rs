@@ -232,6 +232,7 @@ pub(crate) fn expected(version: i64) -> Result<Schema> {
 /// find no rows to convert.
 pub(crate) fn expected_for(set: &SchemaSet<'_>, version: i64) -> Result<Schema> {
     let conn = Connection::open_in_memory()?;
+    prepare_like_a_catalog(&conn)?;
     bring_to(&conn, set, pg_platform::native::PATH_RULES, version, &Hooks::none())?;
     Ok(Schema::read(&conn, SEEDS)?)
 }
@@ -242,8 +243,17 @@ pub(crate) fn current_expected() -> Result<&'static Schema> {
     Ok(CURRENT.schema()?)
 }
 
+/// The pragmas `prepare` gives an empty file before its schema is made: incremental auto-vacuum (a page-1 setting, so
+/// before the first table), then the connection's settings. The expected layouts are made the same way, so they describe
+/// a catalog as this build makes one.
+fn prepare_like_a_catalog(conn: &Connection) -> rusqlite::Result<()> {
+    conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+    conn.execute_batch(SETTINGS)
+}
+
 /// This build's layout at its current version, as `pg_dbfile::Expected` makes it.
 fn current_layout(conn: &Connection) -> rusqlite::Result<()> {
+    prepare_like_a_catalog(conn)?;
     let version = current_version().map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
     bring_to(conn, &SCHEMA, pg_platform::native::PATH_RULES, version, &Hooks::none())
         .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
@@ -445,6 +455,103 @@ mod tests {
         bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
         assert_eq!(version(&conn), current_version().unwrap());
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(current_expected().unwrap()), None);
+    }
+
+    /// A fresh catalog with two files (ids 1 and 2) in one folder, for the tests of the layout's own rules.
+    fn fresh_with_two_files() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61'), (2, 1, 2, 1, x'62', 'jpg', 'image', 1, 1, x'62');",
+        )
+        .unwrap();
+        conn
+    }
+
+    /// `files`, `folders` and `roots` are AUTOINCREMENT: a deleted row's id is never given to a later one, so the next id
+    /// is one past the highest ever made, not one past the highest kept.
+    #[test]
+    fn a_deleted_row_id_is_never_reissued() {
+        let conn = fresh_with_two_files();
+        conn.execute("DELETE FROM files WHERE id = 2", []).unwrap();
+        conn.execute(
+            "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+             VALUES (1, 3, 1, x'63', 'jpg', 'image', 1, 1, x'63')",
+            [],
+        )
+        .unwrap();
+        let file: i64 = conn.query_row("SELECT max(id) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(file, 3, "file 2 is not reissued");
+
+        conn.execute("INSERT INTO roots(path, added) VALUES (x'01', 0), (x'02', 0)", []).unwrap();
+        conn.execute("DELETE FROM roots WHERE id = 2", []).unwrap();
+        conn.execute("INSERT INTO roots(path, added) VALUES (x'03', 0)", []).unwrap();
+        let root: i64 = conn.query_row("SELECT max(id) FROM roots", [], |r| r.get(0)).unwrap();
+        assert_eq!(root, 3, "root 2 is not reissued");
+
+        conn.execute("INSERT INTO folders(path, key) VALUES (x'02', x'02')", []).unwrap();
+        conn.execute("DELETE FROM folders WHERE id = 2", []).unwrap();
+        conn.execute("INSERT INTO folders(path, key) VALUES (x'03', x'03')", []).unwrap();
+        let folder: i64 = conn.query_row("SELECT max(id) FROM folders", [], |r| r.get(0)).unwrap();
+        assert_eq!(folder, 3, "folder 2 is not reissued");
+    }
+
+    /// `hashes_owed` is a queue of analyses: its row goes with its analysis, whether the analysis is deleted or its file is.
+    #[test]
+    fn a_queued_hash_goes_with_its_analysis() {
+        let conn = fresh_with_two_files();
+        for file in [1, 2] {
+            conn.execute(
+                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed) VALUES (?1, 1, 1, 1, 0, 'image', 0)",
+                [file],
+            )
+            .unwrap();
+            conn.execute("INSERT INTO hashes_owed(file_id) VALUES (?1)", [file]).unwrap();
+        }
+        conn.execute("DELETE FROM analysis WHERE file_id = 1", []).unwrap();
+        assert_eq!(count(&conn, "hashes_owed"), 1, "the other file's row stays");
+        conn.execute("DELETE FROM files WHERE id = 2", []).unwrap();
+        assert_eq!(count(&conn, "hashes_owed"), 0, "the file's analysis, and its row, went with the file");
+    }
+
+    /// `present_pdq_pairs` lists the pairs of files that are both present: a pair with a missing file is left out.
+    #[test]
+    fn a_pair_with_a_missing_file_is_not_present() {
+        let conn = fresh_with_two_files();
+        conn.execute("INSERT INTO pdq_pairs(a, b, distance) VALUES (1, 2, 5)", []).unwrap();
+        assert_eq!(count(&conn, "present_pdq_pairs"), 1);
+        conn.execute("UPDATE files SET missing = 1 WHERE id = 2", []).unwrap();
+        assert_eq!(count(&conn, "present_pdq_pairs"), 0);
+    }
+
+    /// A queued write's value is within its kind's range (the CHECK), and so is its temp's value.
+    #[test]
+    fn a_queued_write_is_in_its_kinds_range() {
+        let conn = fresh_with_two_files();
+        conn.execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (1, 'rating', 5, 0)", []).unwrap();
+        conn.execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (2, 'rotation', 3, 0)", []).unwrap();
+        assert!(
+            conn.execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (2, 'rating', 6, 0)", [])
+                .is_err(),
+            "a rating is 0 to 5"
+        );
+        assert!(
+            conn.execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (1, 'rotation', 4, 0)", [])
+                .is_err(),
+            "a rotation is 0 to 3"
+        );
+        assert!(
+            conn.execute(
+                "INSERT INTO file_writes(file_id, kind, value, queued, temp_value) VALUES (2, 'rating', 3, 0, 6)",
+                []
+            )
+            .is_err(),
+            "and the temp's value"
+        );
+        assert_eq!(count(&conn, "file_writes"), 2);
     }
 
     /// A new catalog made by `prepare` is the baseline at version 1, with incremental auto-vacuum and no VACUUM owed.

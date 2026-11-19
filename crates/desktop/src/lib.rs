@@ -241,9 +241,12 @@ fn refusal(bad: &[command_line::BadOption], out: &mut impl Write) -> i32 {
     2
 }
 
-/// A GUI program has nowhere to print: show the error, then quit.
+/// A GUI program has nowhere to print: log the error, show it, then quit. The log comes first, so the record is there
+/// even when the box is missed. Before the log has its file (a bad command line, no data folder) the record is held
+/// in memory and lost with the process; the box is then the only record.
 #[expect(clippy::exit, reason = "the process ends here by design, after the message box")]
 fn fatal(message: &str) -> ! {
+    pg_log::error("startup", message);
     alert::error_box(message);
     std::process::exit(1);
 }

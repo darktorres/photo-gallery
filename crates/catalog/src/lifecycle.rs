@@ -172,7 +172,7 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
             return Ok(());
         }
     }
-    // Incremental auto-vacuum (migration 19's): set first, a `VACUUM` is what makes it take effect on a file that has pages.
+    // Incremental auto-vacuum: set first, a `VACUUM` is what makes it take effect on a file that has pages.
     match conn.execute_batch(
         "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
     ) {

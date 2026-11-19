@@ -493,7 +493,7 @@ pub struct PairingWork {
     /// Its `pdq_quality`: with the hashes, what `PairsWriter`'s guard compares.
     pub quality: Vec<u8>,
     /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
-    /// orientation hashes, or whose hashes failed the check of migration 13), of present, non-pending files: not
+    /// orientation hashes, or whose hashes failed their check), of present, non-pending files: not
     /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
     /// files, so only they are counted.
     pub legacy: usize,
@@ -503,7 +503,7 @@ pub struct PairingWork {
 
 /// What the pairing pass's pairs depend on beyond the pictures: `meta.pairing_version`, the pairing the pairs are made by
 /// (another build's `Catalog::prepare` changes it and owes every pair again), and `meta.pairing_epoch`, which moves on
-/// whenever an analysis or an owed row that the pairs could have been made from changes (migration 14). A write whose
+/// whenever an analysis or an owed row that the pairs could have been made from changes (its triggers). A write whose
 /// marks are the load's needs no guard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PairingMarks {

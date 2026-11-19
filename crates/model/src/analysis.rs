@@ -130,7 +130,7 @@ impl Analysis {
 
 /// The version of a placeholder's definition (`pg_render::thumbhash_of`): a placeholder made at another version is owed
 /// again. Version 1 is the first definition: the ThumbHashes the import made, moved to `placeholders` by the migration
-/// that makes that table (`pg_catalog`'s `placeholders_from_thumbhashes`), and the Placeholders pass's own. Version 2: the fit into the placeholder's size is MKS2021 on sRGB bytes, not in
+/// that makes that table (the import's, and the Placeholders pass's own). Version 2: the fit into the placeholder's size is MKS2021 on sRGB bytes, not in
 /// linear light, which changes the ThumbHash of every picture that is resized to fit.
 pub const PLACEHOLDER_VERSION: i64 = 2;
 

@@ -205,12 +205,10 @@ messages! {
     PathUnreadable { path: String, error: String } => "path-unreadable",
     /// A path given has no path form under the rules (a NUL).
     NotAPath { path: String } => "not-a-path",
-    /// The library's status line while the background work is paused and no pass is running.
-    WorkPaused => "work-paused",
-    /// The library's status line while the background work is paused in a pass (`status`: the pass's line).
-    PausedPass { status: String } => "paused-pass",
     /// A lane's row while the lane is paused by itself and no pass of it runs.
     LanePaused => "lane-paused",
+    /// A paused lane's row in a pass with no known total: `status` is the pass's line.
+    PausedPass { status: String } => "paused-pass",
     /// A paused lane's row in a pass with a known total: its name, and how far it is (no rate or time left).
     LanePausedPass { what: String, done: String, total: String } => "lane-paused-pass",
     /// A paused lane's row in a scan: its name and the images found so far.

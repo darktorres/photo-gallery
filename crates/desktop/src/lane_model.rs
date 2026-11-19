@@ -21,11 +21,13 @@ use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex
 use pg_app::LaneLines;
 use pg_app::reexport::LaneProgress;
 use pg_client::text;
+use pg_model::notice::{FilePass, LedgerKind};
 use pg_model::progress::{Mark, Phase, Progress};
 use pg_model::rules::PathRules;
 use pg_model::size::ThumbHeight;
 
 use crate::command_line;
+use crate::ledgers::kind_code;
 use crate::library::running;
 use crate::list_diff::{self, Op};
 
@@ -41,6 +43,8 @@ const ROLE_PAUSED: i32 = 260;
 const ROLE_WORKING: i32 = 261;
 const ROLE_PROGRESS: i32 = 262;
 const ROLE_INDETERMINATE: i32 = 263;
+const ROLE_FAILED: i32 = 264;
+const ROLE_FAILED_PASS: i32 = 265;
 
 /// A row's identity: the crop thread (first, always) or a lane by its number (`LaneProgress::number`, never reused).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -55,12 +59,16 @@ pub(crate) struct LaneRow {
     pub(crate) key: RowKey,
     /// The lane's number, -1 for the crop row (`RowKey::Crop`).
     pub(crate) number: i32,
-    /// Whether the row has a Pause: a lane's own pause. The crop thread has none (the global button pauses it).
+    /// Whether the row has a Pause: a lane's own pause. The crop thread has none.
     pub(crate) pausable: bool,
     /// The drive's label, empty when it can't be told, and for the crop row.
     pub(crate) label: String,
-    /// The pass's line without the label, or the paused wording while the lane or the whole job is paused.
+    /// The pass's line without the label, or the paused wording while the lane is paused itself.
     pub(crate) status: String,
+    /// The pass's failed count ("2 failed"), empty when none.
+    pub(crate) failed: String,
+    /// The ledger the failed files are listed under (`ledgers::kind_code`), -1 when the pass has none.
+    pub(crate) failed_pass: i32,
     /// The lane's own pause (what its button shows and sets).
     pub(crate) paused: bool,
     /// The lane is in a phase now: its bar shows.
@@ -79,27 +87,31 @@ fn number_of(key: RowKey) -> i32 {
     }
 }
 
-/// One row from a progress: its status is the pass's line, or the paused wording when the row or the job is paused.
-fn row_of(
-    key: RowKey,
-    label: String,
-    progress: &Progress,
-    paused: bool,
-    global_paused: bool,
-    rules: PathRules,
-) -> LaneRow {
-    let known = progress.known_fraction();
-    let status = if paused || global_paused {
-        text::lane_paused_status(progress, rules)
-    } else {
-        text::pass_status(progress, rules)
+/// The ledger a pass's failed files are listed under: the thumbnails', the borders', the import's (a file that doesn't
+/// decode is recorded there: the placeholders' failures are the thumbnails', the hashes' the import's), or -1 for a pass
+/// with none (`ledgers::kind_code`).
+fn failed_pass_of(phase: &Phase) -> i32 {
+    let pass = match phase {
+        Phase::Thumbs { .. } | Phase::Placeholders => Some(FilePass::Thumbs),
+        Phase::Borders => Some(FilePass::Borders),
+        Phase::Import | Phase::Hashes => Some(FilePass::Import),
+        Phase::Idle | Phase::Scan { .. } | Phase::Crop | Phase::Pairing => None,
     };
+    kind_code(pass.map(LedgerKind::File))
+}
+
+/// One row from a progress: its status is the pass's line, or the paused wording while the lane is paused itself.
+fn row_of(key: RowKey, label: String, progress: &Progress, paused: bool, rules: PathRules) -> LaneRow {
+    let known = progress.known_fraction();
+    let status = if paused { text::lane_paused_status(progress, rules) } else { text::pass_status(progress, rules) };
     LaneRow {
         key,
         number: number_of(key),
         pausable: matches!(key, RowKey::Lane(_)),
         label,
         status,
+        failed: text::pass_failed(progress),
+        failed_pass: failed_pass_of(&progress.phase),
         paused,
         working: progress.phase != Phase::Idle,
         progress: known.unwrap_or(0.0),
@@ -110,32 +122,19 @@ fn row_of(
 /// The rows the job's lines show now, in order: the crop's first, then the lanes' by number. The crop's row shows while it
 /// had work less than `HOLD` ago; a lane's while it is paused itself, or had work less than `HOLD` ago. A lane never
 /// given a row by the library (`since_work` `None`, not paused) has none.
-pub(crate) fn rows_of(lines: &LaneLines, global_paused: bool, rules: PathRules) -> Vec<LaneRow> {
+pub(crate) fn rows_of(lines: &LaneLines, rules: PathRules) -> Vec<LaneRow> {
     let mut rows = Vec::new();
     if lines.crop_since_work.is_some_and(|since| since < HOLD) {
-        rows.push(row_of(RowKey::Crop, String::new(), &lines.crop, false, global_paused, rules));
+        rows.push(row_of(RowKey::Crop, String::new(), &lines.crop, false, rules));
     }
     for lane in &lines.lanes {
         if lane.paused || lane.since_work.is_some_and(|since| since < HOLD) {
-            rows.push(row_of(
-                RowKey::Lane(lane.number),
-                lane.label.clone(),
-                &lane.progress,
-                lane.paused,
-                global_paused,
-                rules,
-            ));
+            rows.push(row_of(RowKey::Lane(lane.number), lane.label.clone(), &lane.progress, lane.paused, rules));
         }
     }
     rows.sort_by_key(|row| row.key);
     rows.dedup_by_key(|row| row.key);
     rows
-}
-
-/// Whether the rows stack: one row for each lane (or the crop), each with its own bar. A lone row stays unstacked, the
-/// status line and the shared bar, unless it is a lane paused by itself: that Resume must stay on screen.
-pub(crate) fn stacked(rows: &[LaneRow]) -> bool {
-    rows.len() > 1 || rows.iter().any(|row| row.pausable && row.paused)
 }
 
 /// Whether some row exists only because of the hold: it has no work now and no pause of its own. The model is asked
@@ -151,7 +150,6 @@ pub(crate) struct Plan {
     pub(crate) ops: Vec<Op>,
     /// The new list's indices whose key was already there and whose row differs: each is a `dataChanged`.
     pub(crate) changed: Vec<usize>,
-    pub(crate) stacked: bool,
     pub(crate) settling: bool,
 }
 
@@ -166,16 +164,15 @@ pub(crate) fn plan(old: &[LaneRow], new: &[LaneRow]) -> Plan {
         .filter(|&(_, row)| old.iter().any(|kept| kept.key == row.key && kept != row))
         .map(|(at, _)| at)
         .collect();
-    Plan { ops: list_diff::diff(&old_keys, &new_keys), changed, stacked: stacked(new), settling: settling(new) }
+    Plan { ops: list_diff::diff(&old_keys, &new_keys), changed, settling: settling(new) }
 }
 
 /// The fixture's lines (`--lane-rows`), parsed: one `number|label|paused|since_work|phase|done|total|elapsed` line per
-/// lane, one `crop|since_work|phase|done|total|elapsed` line, and `global|0` or `global|1`. `since_work` is seconds, or `-`
-/// for never. A `phase` is one of `idle`, `import`, `hashes`, `pairing`, `borders`, `thumbs`, `placeholders`, `crop`.
-/// Returns the lines and the global pause, or the first line that doesn't parse, with its number.
-pub(crate) fn parse_fixture(text: &str) -> Result<(LaneLines, bool), String> {
+/// lane and one `crop|since_work|phase|done|total|elapsed` line. `since_work` is seconds, or `-` for never. A `phase` is one
+/// of `idle`, `import`, `hashes`, `pairing`, `borders`, `thumbs`, `placeholders`, `crop`.
+/// Returns the lines, or the first line that doesn't parse, with its number.
+pub(crate) fn parse_fixture(text: &str) -> Result<LaneLines, String> {
     let mut lines = LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() };
-    let mut global = false;
     for (at, line) in text.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
@@ -188,7 +185,6 @@ pub(crate) fn parse_fixture(text: &str) -> Result<(LaneLines, bool), String> {
                 lines.crop = progress_of(phase, done, total, elapsed).map_err(|e| format!("line {at}: {e}"))?;
                 lines.crop_since_work = since_of(since).map_err(|e| format!("line {at}: {e}"))?;
             }
-            ["global", on] => global = flag_of(on).map_err(|e| format!("line {at}: {e}"))?,
             [number, label, paused, since, phase, done, total, elapsed] => {
                 let number = number.parse::<usize>().map_err(|e| format!("line {at}: the number: {e}"))?;
                 let lane = LaneProgress {
@@ -200,10 +196,10 @@ pub(crate) fn parse_fixture(text: &str) -> Result<(LaneLines, bool), String> {
                 };
                 lines.lanes.push(lane);
             }
-            _ => return Err(format!("line {at}: not a lane, crop or global line")),
+            _ => return Err(format!("line {at}: not a lane or crop line")),
         }
     }
-    Ok((lines, global))
+    Ok(lines)
 }
 
 fn progress_of(phase: &str, done: &str, total: &str, elapsed: &str) -> Result<Progress, String> {
@@ -252,20 +248,20 @@ fn flag_of(text: &str) -> Result<bool, String> {
 }
 
 /// The fixture `--lane-rows` names, read once. A file that can't be read or parsed shows no rows, and says why in the log.
-fn load_fixture() -> Option<(LaneLines, bool)> {
+fn load_fixture() -> Option<LaneLines> {
     let path = command_line::lane_rows()?;
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) => {
             pg_log::warn("lane model", &format!("the lane rows {} can't be read: {e}", path.display()));
-            return Some((LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() }, false));
+            return Some(LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() });
         }
     };
     match parse_fixture(&text) {
         Ok(fixture) => Some(fixture),
         Err(e) => {
             pg_log::warn("lane model", &format!("the lane rows {} don't parse: {e}", path.display()));
-            Some((LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() }, false))
+            Some(LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() })
         }
     }
 }
@@ -288,6 +284,8 @@ impl qobject::LaneModel {
             ROLE_WORKING => QVariant::from(&row.working),
             ROLE_PROGRESS => QVariant::from(&row.progress),
             ROLE_INDETERMINATE => QVariant::from(&row.indeterminate),
+            ROLE_FAILED => QVariant::from(&QString::from(&row.failed)),
+            ROLE_FAILED_PASS => QVariant::from(&row.failed_pass),
             _ => QVariant::default(),
         }
     }
@@ -303,6 +301,8 @@ impl qobject::LaneModel {
             (ROLE_WORKING, "working"),
             (ROLE_PROGRESS, "progress"),
             (ROLE_INDETERMINATE, "indeterminate"),
+            (ROLE_FAILED, "failed"),
+            (ROLE_FAILED_PASS, "failedPass"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -314,7 +314,7 @@ impl qobject::LaneModel {
     }
 
     /// Brings the rows up to the job now (or the fixture): the changes from the rows shown, each row whose content changed
-    /// told so, then `stacked` and `settling`. Asked on each progress pass, and by the timer while `settling`.
+    /// told so, then `settling`. Asked on each progress pass, and by the timer while `settling`.
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         if !self.loaded {
             let fixture = load_fixture();
@@ -323,9 +323,9 @@ impl qobject::LaneModel {
         }
         let rules = pg_platform::native::PATH_RULES;
         let new: Vec<LaneRow> = match &self.fixture {
-            Some((lines, global)) => rows_of(lines, *global, rules),
+            Some(lines) => rows_of(lines, rules),
             None => match running() {
-                Some(library) => rows_of(&library.lane_lines(), library.is_paused(), rules),
+                Some(library) => rows_of(&library.lane_lines(), rules),
                 None => Vec::new(),
             },
         };
@@ -356,10 +356,6 @@ impl qobject::LaneModel {
         for &at in &change.changed {
             let index = self.index(qt_int(at), 0, &root);
             self.as_mut().data_changed(&index, &index, &QList::default());
-        }
-        if self.stacked != change.stacked {
-            self.as_mut().rust_mut().stacked = change.stacked;
-            self.as_mut().stacked_changed();
         }
         // The fixture is still: it never asks to be refreshed again.
         let settling = change.settling && self.fixture.is_none();
@@ -397,6 +393,8 @@ mod tests {
             pausable: matches!(key, RowKey::Lane(_)),
             label: String::new(),
             status: status.into(),
+            failed: String::new(),
+            failed_pass: -1,
             paused: false,
             working: true,
             progress: 0.0,
@@ -409,7 +407,7 @@ mod tests {
         let working_lane = lane(1, working(1, 4), Some(Duration::ZERO), false);
         let paused_idle = lane(2, Progress::idle(), None, true);
         let quiet = lane(3, Progress::idle(), Some(Duration::from_secs(10)), false);
-        let rows = rows_of(&lines(None, vec![working_lane, paused_idle, quiet]), false, RULES);
+        let rows = rows_of(&lines(None, vec![working_lane, paused_idle, quiet]), RULES);
         assert_eq!(rows.iter().map(|r| r.key).collect::<Vec<_>>(), vec![RowKey::Lane(1), RowKey::Lane(2)]);
         assert!(rows[0].working && !rows[0].paused);
         assert!(!rows[1].working && rows[1].paused, "the paused idle lane keeps its row, with no bar");
@@ -418,12 +416,12 @@ mod tests {
     #[test]
     fn a_lane_in_its_hold_keeps_its_row_with_a_blank_status_until_the_hold_ends() {
         let holding = lane(1, Progress::idle(), Some(Duration::from_secs(1)), false);
-        let rows = rows_of(&lines(None, vec![holding]), false, RULES);
+        let rows = rows_of(&lines(None, vec![holding]), RULES);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].status, "", "an idle lane's line is empty");
         assert!(!rows[0].working);
         let gone = lane(1, Progress::idle(), Some(HOLD), false);
-        assert!(rows_of(&lines(None, vec![gone]), false, RULES).is_empty(), "at the hold's end the row goes");
+        assert!(rows_of(&lines(None, vec![gone]), RULES).is_empty(), "at the hold's end the row goes");
     }
 
     #[test]
@@ -434,7 +432,7 @@ mod tests {
             crop_since_work: Some(Duration::ZERO),
             lanes: vec![lane(7, working(1, 4), Some(Duration::ZERO), false)],
         };
-        let rows = rows_of(&lines, false, RULES);
+        let rows = rows_of(&lines, RULES);
         assert_eq!(rows[0].key, RowKey::Crop);
         assert_eq!(rows[0].number, -1);
         assert!(!rows[0].pausable);
@@ -443,20 +441,20 @@ mod tests {
     }
 
     #[test]
-    fn the_status_has_no_label_and_the_paused_wording_under_the_global_pause() {
-        let lines = lines(None, vec![lane(1, working(1, 4), Some(Duration::ZERO), false)]);
-        let running = rows_of(&lines, false, RULES);
-        assert!(!running[0].status.contains("1:"), "the drive's label is the row's own");
-        assert_eq!(running[0].status, text::pass_status(&working(1, 4), RULES));
-        let paused = rows_of(&lines, true, RULES);
-        assert_eq!(paused[0].status, text::lane_paused_status(&working(1, 4), RULES));
+    fn the_status_has_no_label_and_the_paused_wording_for_a_paused_lane() {
+        let running = lines(None, vec![lane(1, working(1, 4), Some(Duration::ZERO), false)]);
+        let rows = rows_of(&running, RULES);
+        assert!(!rows[0].status.contains("1:"), "the drive's label is the row's own");
+        assert_eq!(rows[0].status, text::pass_status(&working(1, 4), RULES));
+        let paused = lines(None, vec![lane(1, working(1, 4), Some(Duration::ZERO), true)]);
+        assert_eq!(rows_of(&paused, RULES)[0].status, text::lane_paused_status(&working(1, 4), RULES));
     }
 
     #[test]
     fn an_unknown_total_is_indeterminate_with_no_progress_and_a_known_one_is_not() {
         let unknown = lane(1, working(3, 0), Some(Duration::ZERO), false);
         let known = lane(2, working(1, 4), Some(Duration::ZERO), false);
-        let rows = rows_of(&lines(None, vec![unknown, known]), false, RULES);
+        let rows = rows_of(&lines(None, vec![unknown, known]), RULES);
         assert!(rows[0].indeterminate);
         assert_eq!(rows[0].progress, 0.0);
         assert!(!rows[1].indeterminate);
@@ -470,22 +468,8 @@ mod tests {
         let again = lane(3, working(2, 4), Some(Duration::ZERO), false);
         let lines =
             LaneLines { crop: Progress::idle(), crop_since_work: Some(Duration::ZERO), lanes: vec![a, b, again] };
-        let keys: Vec<RowKey> = rows_of(&lines, false, RULES).iter().map(|r| r.key).collect();
+        let keys: Vec<RowKey> = rows_of(&lines, RULES).iter().map(|r| r.key).collect();
         assert_eq!(keys, vec![RowKey::Crop, RowKey::Lane(1), RowKey::Lane(3)]);
-    }
-
-    #[test]
-    fn stacked_is_two_or_more_rows_or_a_lone_paused_lane() {
-        assert!(!stacked(&[]));
-        assert!(!stacked(&[row(RowKey::Lane(1), "")]));
-        assert!(stacked(&[row(RowKey::Lane(1), ""), row(RowKey::Lane(2), "")]));
-        let mut paused = row(RowKey::Lane(1), "Paused");
-        paused.paused = true;
-        paused.working = false;
-        assert!(stacked(&[paused]), "a lane paused alone keeps its Resume on screen");
-        let mut crop = row(RowKey::Crop, "Saving");
-        crop.pausable = false;
-        assert!(!stacked(&[crop]), "a lone crop is the status line");
     }
 
     #[test]
@@ -526,10 +510,21 @@ mod tests {
     }
 
     #[test]
-    fn a_fixture_parses_its_lanes_crop_and_global_pause() {
-        let text = "1|E:|0|0|import|10|40|5\r\n2|D:|1|-|hashes|3|0|2\r\ncrop|-|idle|0|0|0\r\nglobal|0\r\n";
-        let (lines, global) = parse_fixture(text).expect("the fixture parses");
-        assert!(!global);
+    fn a_row_carries_its_passes_failed_count_and_the_ledger_it_is_listed_under() {
+        let import = Progress { phase: Phase::Import, done: 1, total: 4, failed: 3, ..Progress::idle() };
+        let rows = rows_of(&lines(None, vec![lane(1, import.clone(), Some(Duration::ZERO), false)]), RULES);
+        assert_eq!(rows[0].failed, text::pass_failed(&import));
+        assert!(!rows[0].failed.is_empty());
+        assert_eq!(rows[0].failed_pass, kind_code(Some(LedgerKind::File(FilePass::Import))));
+        let crop = Progress { phase: Phase::Crop, done: 1, total: 4, failed: 2, ..Progress::idle() };
+        let rows = rows_of(&LaneLines { crop, crop_since_work: Some(Duration::ZERO), lanes: vec![] }, RULES);
+        assert_eq!(rows[0].failed_pass, -1, "the crop lists its failures under no ledger");
+    }
+
+    #[test]
+    fn a_fixture_parses_its_lanes_and_crop() {
+        let text = "1|E:|0|0|import|10|40|5\r\n2|D:|1|-|hashes|3|0|2\r\ncrop|-|idle|0|0|0\r\n";
+        let lines = parse_fixture(text).expect("the fixture parses");
         assert_eq!(lines.lanes.len(), 2);
         assert_eq!(lines.lanes[0].label, "E:");
         assert_eq!(lines.lanes[0].since_work, Some(Duration::ZERO));
@@ -543,7 +538,7 @@ mod tests {
     fn a_fixture_line_that_does_not_parse_is_an_error_with_its_number() {
         let error = |text: &str| parse_fixture(text).err().unwrap_or_default();
         assert!(error("1|E:|0|0|nosuchphase|1|2|3").contains("line 1"));
-        assert!(error("\nglobal|yes").contains("line 2"));
+        assert!(error("\nnot|a|lane").contains("line 2"));
         assert!(error("1|E:").contains("line 1"));
     }
 }

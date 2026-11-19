@@ -69,7 +69,7 @@ ApplicationWindow {
         }
         inboxModel.setViewing(inboxOpen, win.active)
     }
-    // The ledger whose entry opens with the inbox, and again when it appears (the status bar's "N failed": the pass's
+    // The ledger whose entry opens with the inbox, and again when it appears (a lane row's "N failed": its pass's
     // ledger; --inbox-expand; -1: none): a `pass` code, a bit of Notices.passes.
     property int inboxExpandPass: -1
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
@@ -524,28 +524,19 @@ ApplicationWindow {
             toast: inboxModel.toast
             toastLevel: inboxModel.toastLevel
             unread: inboxModel.unread
-            status: library.status
             laneModel: laneRows
-            stacked: laneRows.stacked
-            indeterminate: library.indeterminate
-            failed: library.failed
-            // A link only to what the inbox lists: the pass's ledger entry, or its unreadable files.
-            failedLinked: library.failedPass >= 0 && (inboxModel.passes & (1 << library.failedPass)) !== 0
-            busy: library.busy
-            paused: library.paused
-            progress: library.progress
+            inboxPasses: inboxModel.passes
             devMode: shell.devMode
             // The screenshots: an info toast stays up while the window settles (no timer runs).
             toastHeld: testHooks.screenshot
             onLogRequested: shell.globalAction(GlobalShortcuts.Log)
             onToastExpired: inboxModel.dismissToast()
             onInboxRequested: shell.globalAction(GlobalShortcuts.Inbox)
-            onFailedRequested: {
-                win.inboxExpandPass = library.failedPass
+            onLaneFailedRequested: (pass) => {
+                win.inboxExpandPass = pass
                 if (!win.inboxOpen)
                     shell.globalAction(GlobalShortcuts.Inbox)
             }
-            onPauseToggled: library.togglePause()
             onLanePauseRequested: (number, paused) => library.setLanePaused(number, paused)
         }
 

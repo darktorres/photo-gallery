@@ -17,17 +17,6 @@ pub mod qobject {
         #[qml_element]
         #[qproperty(QStringList, roots, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(bool, paused, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
-        /// Done ÷ total of the current pass; 0 when the total isn't known (`indeterminate` says so).
-        #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
-        /// The current pass's total isn't known (scanning): its bar is indeterminate while it runs.
-        #[qproperty(bool, indeterminate, READ, WRITE, NOTIFY, FINAL)]
-        /// How many files the current pass failed on ("2 failed"), empty when none: the link to the inbox's entry of its
-        /// failed files.
-        #[qproperty(QString, failed, READ, WRITE, NOTIFY, FINAL)]
-        /// The pass `failed` is of: 0 the thumbnails, 1 the borders, 2 the import, -1 one without a failure ledger.
-        #[qproperty(i32, failed_pass, cxx_name = "failedPass", READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).
@@ -71,10 +60,6 @@ pub mod qobject {
         /// Scan every library folder again (new, changed, moved and deleted files).
         #[qinvokable]
         fn rescan(self: Pin<&mut Library>);
-
-        #[qinvokable]
-        #[cxx_name = "togglePause"]
-        fn toggle_pause(self: Pin<&mut Library>);
 
         /// Pauses (`paused`) or resumes the lane numbered `number` (a row's `number`), leaving the other drives running.
         #[qinvokable]

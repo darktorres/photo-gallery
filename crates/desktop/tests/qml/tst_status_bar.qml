@@ -1,7 +1,7 @@
-// The status bar (StatusBar.qml): the pass's "N failed" is a link to the inbox only while the inbox lists something of
-// the pass (Notices' `passes` bit, `failedLinked`): then it is underlined, a link to accessibility, and a click asks for
-// the failed files; otherwise it is plain text, a click does nothing, and its tooltip says it isn't recorded yet. An info
-// toast goes by itself unless the screenshots hold it. Run by `just qmltest`.
+// The status bar (StatusBar.qml): its line of the selection, the write-back status, the toast and the inbox's button. The
+// job is on the lane rows (LaneRow, tst_lane_row.qml), above it: each row has its own bar, its own Pause and its own
+// failed count, and the rows carry the job's text, so the status bar has no line of its own for it. An info toast goes by
+// itself unless the screenshots hold it. Run by `just qmltest`.
 import QtQuick
 import QtTest
 import pg.gallery
@@ -23,14 +23,7 @@ TestCase {
             toast: ""
             toastLevel: 0
             unread: 0
-            status: "Importing 1 of 4"
-            stacked: false
-            indeterminate: false
-            failed: "2 failed"
-            failedLinked: false
-            busy: true
-            paused: false
-            progress: 0.25
+            inboxPasses: 0
             devMode: false
         }
     }
@@ -41,16 +34,15 @@ TestCase {
         ListModel {}
     }
 
-    SignalSpy { id: failedSpy; signalName: "failedRequested" }
     SignalSpy { id: pauseSpy; signalName: "lanePauseRequested" }
 
-    // A bar with the given rows, stacked or not, and the rows' pause clicks counted.
-    function stackedBar(rows: var, stacked: bool): var {
+    // A bar with the given rows, and the rows' pause clicks counted.
+    function laneBar(rows: var): var {
         const model = createTemporaryObject(laneListC, tc)
         verify(model !== null)
         for (const row of rows)
             model.append(row)
-        const b = createTemporaryObject(barC, tc, { stacked: stacked, laneModel: model, busy: true })
+        const b = createTemporaryObject(barC, tc, { laneModel: model })
         verify(b !== null)
         pauseSpy.target = b
         pauseSpy.clear()
@@ -63,53 +55,10 @@ TestCase {
         return column.itemAt(at)
     }
 
-    function bar(linked: bool): var {
-        const b = createTemporaryObject(barC, tc, { failedLinked: linked })
-        verify(b !== null)
-        failedSpy.target = b
-        failedSpy.clear()
-        return b
-    }
-
-    function test_the_failed_count_links_only_with_the_passs_bit() {
-        const b = bar(false)
-        const failed = findChild(b, "statusFailed")
-        verify(failed.visible)
-        verify(!failed.font.underline)
-        compare(failed.Accessible.role, Accessible.StaticText)
-        waitForRendering(b)
-        mouseClick(failed)
-        compare(failedSpy.count, 0, "nothing listed: the click does nothing")
-        // The inbox lists the pass's ledger now: the same words become the link.
-        b.failedLinked = true
-        verify(failed.font.underline)
-        compare(failed.Accessible.role, Accessible.Link)
-        mouseClick(failed)
-        compare(failedSpy.count, 1)
-        // And back, when the entry goes.
-        b.failedLinked = false
-        mouseClick(failed)
-        compare(failedSpy.count, 1)
-    }
-
-    function test_the_link_starts_live_when_the_bit_is_set() {
-        const b = bar(true)
-        const failed = findChild(b, "statusFailed")
-        verify(failed.font.underline)
-        waitForRendering(b)
-        mouseClick(failed)
-        compare(failedSpy.count, 1)
-    }
-
-    function test_no_failures_show_no_count() {
-        const b = bar(true)
-        b.failed = ""
-        verify(!findChild(b, "statusFailed").visible)
-    }
-
     // An info toast's timer runs, unless the toast is held (the screenshots); a warning's never runs.
     function test_an_info_toast_goes_by_itself_unless_held() {
-        const b = bar(false)
+        const b = createTemporaryObject(barC, tc)
+        verify(b !== null)
         const timer = findChild(b, "toastTimer")
         verify(!timer.running)
         b.toast = "Cropped copies saved"
@@ -121,15 +70,16 @@ TestCase {
         verify(!timer.running)
     }
 
-    // Stacked: a row for each lane, each with its own bar and its own Pause, one under the other, and no shared bar. The
-    // Pause names its lane by its number.
-    function test_stacked_rows_each_have_their_own_bar_and_pause_one_under_another() {
-        const b = stackedBar([
-            { number: 1, pausable: true, label: "E:", status: "Importing 1 of 0", paused: false, working: true,
-              progress: 0, indeterminate: true },
-            { number: 2, pausable: true, label: "D:", status: "Paused · Importing 2 of 0", paused: true, working: true,
-              progress: 0, indeterminate: true },
-        ], true)
+    // Each lane has a row, with its own bar and its own Pause, one under another, and the rows are aligned to the right
+    // edge of the status row beneath them. There is no shared bar and no line of the job in the status bar: the rows carry
+    // it. The Pause names its lane by its number.
+    function test_each_lane_has_its_own_row_bar_and_pause_one_under_another() {
+        const b = laneBar([
+            { number: 1, pausable: true, label: "E:", status: "Importing 1 of 0", failed: "", failedPass: -1,
+              paused: false, working: true, progress: 0, indeterminate: true },
+            { number: 2, pausable: true, label: "D:", status: "Paused · Importing 2 of 0", failed: "", failedPass: -1,
+              paused: true, working: true, progress: 0, indeterminate: true },
+        ])
         const first = rowOf(b, 0)
         const second = rowOf(b, 1)
         verify(first !== null && second !== null)
@@ -140,8 +90,14 @@ TestCase {
         compare(bar1.mapToItem(b, 0, 0).x, bar2.mapToItem(b, 0, 0).x, "the bars share a column")
         verify(bar1.indeterminate, "a running lane with no known total is indeterminate")
         verify(!bar2.indeterminate, "a paused lane's bar is not, however its total")
-        verify(!findChild(b, "sharedBar").visible, "stacked: the shared bar is not shown")
+        verify(findChild(b, "sharedBar") === null, "no shared bar: each row has its own")
+        verify(findChild(b, "statusLine") === null, "the job's line is on the rows, not in the status bar")
         verify(findChild(b, "laneColumn").visible)
+        const statusRow = findChild(b, "statusRow")
+        verify(first.mapToItem(b, 0, 0).y < statusRow.mapToItem(b, 0, 0).y, "the lanes are on lines above the status row")
+        const column = findChild(b, "laneColumn")
+        compare(column.mapToItem(b, column.width, 0).x, statusRow.mapToItem(b, statusRow.width, 0).x,
+                "the lanes are aligned to the right, with the status row's right edge")
         mouseClick(findChild(first, "laneToggle"))
         compare(pauseSpy.count, 1)
         compare(pauseSpy.signalArguments[0][0], 1, "the Pause names its lane by its number")
@@ -151,12 +107,12 @@ TestCase {
     // A lane paused and idle keeps its Resume with no bar, and the crop has no Pause: the cells keep their place, so
     // the rows still line up.
     function test_an_idle_paused_lane_and_the_crop_keep_their_cells() {
-        const b = stackedBar([
-            { number: -1, pausable: false, label: "", status: "Saving crops 1 of 3", paused: false, working: true,
-              progress: 0.33, indeterminate: false },
-            { number: 4, pausable: true, label: "F:", status: "Paused", paused: true, working: false, progress: 0,
-              indeterminate: false },
-        ], true)
+        const b = laneBar([
+            { number: -1, pausable: false, label: "", status: "Saving crops 1 of 3", failed: "", failedPass: -1,
+              paused: false, working: true, progress: 0.33, indeterminate: false },
+            { number: 4, pausable: true, label: "F:", status: "Paused", failed: "", failedPass: -1,
+              paused: true, working: false, progress: 0, indeterminate: false },
+        ])
         const crop = rowOf(b, 0)
         const idle = rowOf(b, 1)
         verify(!findChild(crop, "laneToggle").visible, "the crop has no Pause")
@@ -167,13 +123,14 @@ TestCase {
                 "the Pause cells keep their place whichever row has one")
     }
 
-    // One lane is the status line and the shared bar, as it always was: no rows.
-    function test_one_lane_keeps_the_status_line_and_the_shared_bar() {
-        const b = stackedBar([
-            { number: 1, pausable: true, label: "E:", status: "Importing 1 of 4", paused: false, working: true,
-              progress: 0.25, indeterminate: false },
-        ], false)
-        verify(!findChild(b, "laneColumn").visible, "one lane is not stacked")
-        verify(findChild(b, "sharedBar").visible, "the shared bar shows the one lane")
+    // One working lane has its own row too, as any number of lanes do. With no rows there is no column.
+    function test_one_working_lane_has_its_own_row() {
+        const b = laneBar([
+            { number: 1, pausable: true, label: "E:", status: "Importing 1 of 4", failed: "", failedPass: -1,
+              paused: false, working: true, progress: 0.25, indeterminate: false },
+        ])
+        verify(findChild(b, "laneColumn").visible, "one lane has its row")
+        const empty = laneBar([])
+        verify(!findChild(empty, "laneColumn").visible, "no rows, no column")
     }
 }

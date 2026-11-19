@@ -18,7 +18,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, WriteError};
 use pg_client::text::{self, Message};
-use pg_model::notice::{FilePass, LedgerKind, Notice};
+use pg_model::notice::Notice;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
 
@@ -165,34 +165,12 @@ impl qobject::Library {
         }
     }
 
-    /// The job's pass and its pause: the status line, the busy state and the progress. Returns the pass's failed count
-    /// (0 when no job runs), and tells the lane rows (`progressed`), which read the job's rows themselves.
+    /// The job's busy state, then the lane rows are told (`progressed`), which read the job's rows themselves. Returns the
+    /// pass's failed count (0 when no job runs), which `on_pass` pokes the inbox on.
     fn refresh_progress(mut self: Pin<&mut Self>) -> u64 {
         let Some(library) = running() else { return 0 };
-        let status = library.status();
-        let p = &status.progress;
-        // The status line is the library's one progress: the crop's when it works, else the first lane that works. The
-        // rows of the lanes are the lane model's (`lane_model`). A scanned folder is shown under this machine's rules.
-        let pass = text::pass_status(p, pg_platform::native::PATH_RULES);
-        let line = if status.paused { text::paused_status(&pass) } else { pass };
+        let p = &library.status().progress;
         self.as_mut().set_busy(p.phase != Phase::Idle);
-        self.as_mut().set_paused(status.paused);
-        self.as_mut().set_status(QString::from(&line));
-        self.as_mut().set_progress(p.fraction());
-        self.as_mut().set_indeterminate(p.known_fraction().is_none());
-        let failed = QString::from(&text::pass_failed(p));
-        if self.failed != failed {
-            self.as_mut().set_failed(failed);
-        }
-        let pass = match p.phase {
-            // The placeholders' failures are the Thumbs pass's: a file that doesn't decode is recorded there.
-            Phase::Thumbs { .. } | Phase::Placeholders => Some(FilePass::Thumbs),
-            Phase::Borders => Some(FilePass::Borders),
-            // The hashes' failures are the import's: a file that doesn't decode is an import failure.
-            Phase::Import | Phase::Hashes => Some(FilePass::Import),
-            Phase::Idle | Phase::Scan { .. } | Phase::Crop | Phase::Pairing => None,
-        };
-        self.as_mut().set_failed_pass(crate::ledgers::kind_code(pass.map(LedgerKind::File)));
         self.as_mut().progressed();
         p.failed
     }
@@ -252,12 +230,6 @@ impl qobject::Library {
         if let Err(e) = app::get().library().rescan() {
             app::post(Notice::RescanFailed { error: app::error_text(&e) });
         }
-    }
-
-    pub(crate) fn toggle_pause(mut self: Pin<&mut Self>) {
-        let Some(library) = running() else { return };
-        library.set_paused(!library.is_paused());
-        self.as_mut().refresh_progress();
     }
 
     /// Pauses (`paused`) or resumes the lane numbered `number`, as its row showed it: a command, not a toggle, so a click on

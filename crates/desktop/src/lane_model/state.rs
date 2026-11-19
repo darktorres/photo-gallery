@@ -12,12 +12,10 @@ use crate::lane_model::LaneRow;
 pub struct LaneRust {
     /// The rows as the model holds them, in order (the view's rows are these).
     pub(crate) rows: Vec<LaneRow>,
-    /// Whether the rows stack (`lane_model::stacked`).
-    pub(crate) stacked: bool,
     /// Whether a row waits on the hold alone (`lane_model::settling`): the model is asked again until it has gone.
     pub(crate) settling: bool,
-    /// The fixture `--lane-rows` names, read once: the job's rows are not asked for while it is set, and the global pause.
-    pub(crate) fixture: Option<(LaneLines, bool)>,
+    /// The fixture `--lane-rows` names, read once: the job's rows are not asked for while it is set.
+    pub(crate) fixture: Option<LaneLines>,
     /// Whether the fixture has been read (once, at the first refresh).
     pub(crate) loaded: bool,
 }

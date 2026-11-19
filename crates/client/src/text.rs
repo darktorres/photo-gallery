@@ -338,16 +338,6 @@ pub fn hint(labels: &[Hint]) -> String {
     words.join(&ui(HINT_SEPARATOR, 0.0, "", ""))
 }
 
-/// The library's status line while the background work is paused: `pass` is the running pass's line, empty when none
-/// runs.
-pub fn paused_status(pass: &str) -> String {
-    if pass.is_empty() {
-        render(&Message::WorkPaused)
-    } else {
-        render(&Message::PausedPass { status: pass.to_string() })
-    }
-}
-
 /// A Yandex save that ended: `written` files into `folder`, and when some failed, how many and the first failure.
 pub fn yandex_saved(written: usize, folder: &str, failed: usize, first_error: Option<&str>) -> String {
     match first_error {
@@ -601,8 +591,6 @@ mod tests {
     #[test]
     fn the_library_lines_are_worded() {
         let rules = PathRules::Windows;
-        assert_eq!(paused_status(""), "Background work paused");
-        assert_eq!(paused_status("Importing"), "Paused · Importing");
         assert_eq!(
             worded(&Notice::FolderAlreadyAdded { folder: d(rules, r"D:\Photos") }).0,
             format!("{} is already in the library", iso(r"D:\Photos"))

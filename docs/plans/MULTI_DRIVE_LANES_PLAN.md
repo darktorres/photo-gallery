@@ -13,7 +13,7 @@
 > | 3 Jobs | Lane child controls (own stop, pause and progress; shared global pause; tagged events; a per-lane pause that `Runner::set_lane_paused` sets and reads), `CpuGate` (wired by `Lanes::start`), `Budget` and `Governor` (each lane's budget split under the cap, rebalanced when a lane retires), and the pool reads its budget live. | Per-lane page-cache sizes: the connections keep their sizes. `Options::for_drive` and listing workers by kind: no measured values yet (R1). |
 > | 4 Library | `lanes::plan` (fail closed, unplugged roots get no lane, opaque drives share one), the coordinator (deadline probes, routing, retirement, crop parking, turned files routed to the lanes of their volumes through `Writer::take_turned`), per-lane stops, `LaneProgress` with drive labels, the serial escape hatch (`Features::serial_drives`, a pref), notices that name the drive (`UnreadableFiles.drives`), `tests/lanes.rs` (8 tests). | The pairing cooldown (its length is a measurement, R1). Linux nested mounts (Phase 1). The lane tests the tree lacks (L1, L2, L4, L6): see the ledger. |
 > | 5 CLI | `gallery` scan, import and thumbs run one lane per drive through `pg_library::lanes` (`command_groups`, `run_each`), each on its own connection and child control; `--serial` for one lane; C1 compares `--serial` with the lanes over two roots. | `report.rs` per-lane tagged progress: a lane's lines follow a heading with its drive's label. |
-> | 6 Front ends | Per-lane rows with their own bar and pause in `StatusBar.qml`, over a `LaneModel` (one working lane reads exactly as before). `LaneProgress` serves; there is no separate `LaneInfo`. | Screenshots of the stacked rows (`just shots`, the `lanes` scenario). |
+> | 6 Front ends | Per-lane rows with their own bar and pause in `StatusBar.qml`, over a `LaneModel`; every working or paused lane has a row, and the shared bar is gone. `LaneProgress` serves; there is no separate `LaneInfo`. | Screenshots of the stacked rows (`just shots`, the `lanes` scenario). |
 > | 7 Docs | This file, `docs/reference/IO.md` (spike results), `docs/reference/STORAGE.md` (the drive kinds as the job detects them), `crates/README.md` (the lanes), and the scan plan's Phase 4 note on the device query. | `docs/plans/PLAN.md` "1 reader per HDD" still holds (one lane per spindle), so it is unchanged. |
 >
 > Verified: `cargo check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and the tests of
@@ -303,10 +303,12 @@ that result goes to the user before any code is written.
 - `pg-model`: `LaneId`, `LaneInfo { label, kind }`; `Progress` unchanged.
 - As built (the stacked rows): the rows are a `LaneModel` (`crates/desktop/src/lane_model.rs`) over `Library::lane_lines()`
   (`LaneLines`: the crop's progress and each lane's, `LaneProgress`). The `lanes_status` idea is gone: a row's text is
-  `pg_client::text::pass_status` (a single lane reads as before), or `lane_paused_status` while it is paused. `Status.lanes`
-  is gone with it. A row lasts while its lane had work less than `HOLD` ago (`lane_model.rs`), and `progress` is the
-  library's one progress (the crop's first, else the first lane that works). Each row has its own bar and Pause
-  (`LaneRow.qml`); `setLanePaused(number, paused)` names the lane by its number.
+  `pg_client::text::pass_status`, or `lane_paused_status` while it is paused. `Status.lanes` is gone with it. A row lasts
+  while its lane had work less than `HOLD` ago (`lane_model.rs`), or while it is paused. The job's text and its failed count are on
+  the rows, not in the status bar, which keeps only the selection, the write status, the toast and the Inbox. The shared
+  progress bar and the global Pause are gone: each row has its own bar, Pause and failed count (`LaneRow.qml`), and
+  `setLanePaused(number, paused)` names the lane by its number. The jobs' global pause is still in the library, with
+  no button to set it.
 - Tests: `text` single and multi-lane; desktop `just qmltest` for one and two lines; the runner tests' `finished_order`
   (`runner.rs:912-925`) adapted to the tagged `Event`; `just shots` refresh.
 

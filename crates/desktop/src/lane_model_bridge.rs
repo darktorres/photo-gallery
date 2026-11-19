@@ -23,9 +23,6 @@ pub mod qobject {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
-        /// Whether the rows stack: one row for each lane, each with its own bar and Pause. False: the status line and the
-        /// shared bar, as one lane has always read.
-        #[qproperty(bool, stacked, READ, NOTIFY, FINAL)]
         /// Whether a row exists only because of the hold: the window asks for a refresh until it has gone.
         #[qproperty(bool, settling, READ, NOTIFY, FINAL)]
         type LaneModel = super::LaneRust;

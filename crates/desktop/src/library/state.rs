@@ -13,15 +13,6 @@ pub struct LibraryRust {
     /// The catalog's id of each folder in `roots`, row for row: what removing a row removes.
     pub(super) root_ids: Vec<RootId>,
     pub(crate) busy: bool,
-    pub(crate) paused: bool,
-    pub(crate) status: QString,
-    pub(crate) progress: f64,
-    /// The total of the pass is unknown (scanning): the bar is indeterminate while it runs.
-    pub(crate) indeterminate: bool,
-    /// The pass's failed count ("2 failed"; empty when none), the link to its files, and the pass it is of (a
-    /// `FailedFiles` pass code; meaningless while `failed` is empty).
-    pub(crate) failed: QString,
-    pub(crate) failed_pass: i32,
     pub(crate) writes: QString,
     pub(crate) write_failed: bool,
 }

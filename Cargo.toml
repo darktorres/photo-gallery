@@ -120,6 +120,13 @@ debug = 1
 lto = false
 incremental = true
 
+# Release's optimizations with incremental compilation (off by default in release), for everyday rebuilds: a change
+# recompiles the crates it touches, not every crate from scratch. Its own target directory (target/relinc) keeps it from
+# replacing the release build's artifacts. Measure and ship with `--release`: incremental builds can run a little slower.
+[profile.relinc]
+inherits = "release"
+incremental = true
+
 # turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app; qt-build-utils that gives the QML
 # compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit, and whose bundled SQLite
 # has the photo-gallery-defaults feature; thumbhash with a

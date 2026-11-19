@@ -22,7 +22,8 @@ cli-thumb-not-forgotten = { $root }: a replaced file's thumbnail wasn't deleted:
 cli-temp-not-deleted = { $root }: can't delete { $temp }: { $error }
 
 # gallery remove
-cli-removed = { $root }: removed from the library, { $hidden } files hidden
+cli-removed = { $root }: removed from the library, { $deleted } files deleted from the catalog
+cli-removal-kept = { $root }: { $deferred } rows kept for an unfinished write. Start the app to finish them, or run remove with --discard-pending to give them up
 cli-not-in-library = { $root }: not in the library
 
 # gallery import
@@ -57,6 +58,7 @@ cli-csv-missing = --csv: where the report goes
 # gallery status
 cli-status-home = data folder: { $folder }
 cli-status-library = library: { $folder }
+cli-status-removing = { $folder }: removal not finished, { $deferred } rows kept for an unfinished write
 cli-status-files = { $files } files ({ $missing } missing), { $analyzed } analyzed, { $failed } failed, { $pending } pending, { $pairs } PDQ pairs
 cli-status-writes = { $queued } changes to write into files ({ $failing } failing)
 cli-status-cache = thumbnail cache: { $count } thumbnails, { $used } of { $cap } GB

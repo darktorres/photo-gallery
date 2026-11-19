@@ -29,6 +29,9 @@ pub enum Phase {
     },
     /// The ThumbHash placeholders the thumbnails left owing (the Placeholders pass, ).
     Placeholders,
+    /// A folder's removal from the library: its files, and their thumbnails, going from the catalog
+    /// (`pg_library::removals`).
+    Removing,
 }
 
 /// The count at a time into a phase: where a rate's window starts.

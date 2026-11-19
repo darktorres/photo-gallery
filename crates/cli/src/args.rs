@@ -72,8 +72,16 @@ pub(crate) enum Command {
         #[arg(long)]
         serial: bool,
     },
-    /// Take a folder out of the library (its files are hidden, not deleted from the catalog).
-    Remove { root: PathBuf },
+    /// Take a folder out of the library for good: its files, their analyses, ratings and thumbnails are deleted. A
+    /// change still waiting to be written into a file of it is kept (its temp file beside the file stays) until the app
+    /// finishes it; `--discard-pending` gives those up instead: their temp files are deleted, and the originals they
+    /// were writing may be left part-written.
+    Remove {
+        root: PathBuf,
+        /// Give up the removal of the folder that waits for its unfinished writes, deleting their temp files.
+        #[arg(long)]
+        discard_pending: bool,
+    },
     /// Read every new or changed file's header (format, size, orientation, dates: no pixels); then hash and pair the
     /// duplicates (`hash`, `pair`).
     Import {

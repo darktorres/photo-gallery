@@ -5,6 +5,7 @@ use std::borrow::Cow;
 
 use anyhow::{Context, Result, bail, ensure};
 
+use super::buffers::reserved;
 use super::op::Op;
 
 /// The bytes of a decoded raster, the product of `factors` (width, height, bytes per pixel), held to the one cap
@@ -17,14 +18,6 @@ pub(super) fn decoded_size(what: &str, factors: &[usize]) -> Result<usize> {
         Some(len) if u64::try_from(len).is_ok_and(|len| len <= pg_codec::max_decode_bytes()) => Ok(len),
         _ => bail!("{what} is too large to decode"),
     }
-}
-
-/// An empty buffer with room for `len` bytes (a size [`decoded_size`] passed), allocated fallibly: too little memory
-/// is an error, not an abort.
-pub(super) fn reserved(len: usize) -> Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    buf.try_reserve_exact(len).context("not enough memory to decode the image")?;
-    Ok(buf)
 }
 
 /// A zeroed buffer of `len` bytes (a size [`decoded_size`] passed), allocated fallibly.

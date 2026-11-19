@@ -294,6 +294,7 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
     assert!(all_entries(&c, Query { border_marked: Some(true), ..Query::default() }).is_empty(), "no mark");
 
     // The next scan sees them as they are: unchanged, not missing, not replaced.
+    c.add_root(&root).unwrap();
     let s = pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!((s.changed, s.missing, s.pairing.replaced), (0, 0, 0));
 

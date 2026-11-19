@@ -115,6 +115,12 @@ impl Runner {
         }
     }
 
+    /// A folder was taken out of the library (`Catalog::begin_removal`): its removal is finished by the removal job now,
+    /// and not only at its next recheck.
+    pub fn wake_removals(&self) {
+        self.lanes.wake_removals();
+    }
+
     /// The catalog has new work outside a scan (a file turned in place needs its analysis redone): every lane starts a round,
     /// and the running ones stop at their next file.
     pub fn wake(&self) {
@@ -408,7 +414,9 @@ mod tests {
         let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
         assert!(c.failed_files(FilePass::Thumbs, 10).unwrap().is_empty(), "an unreadable file is in no ledger");
         // The rescan finds it missing: the next pass has nothing to make, and is complete.
-        pg_scan::scan(&mut Catalog::open(&catalog_path, PATH_RULES).unwrap(), &root, &Control::new()).unwrap();
+        let mut catalog = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        catalog.add_root(&root).unwrap();
+        pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         sink.take();
         run(&mut Thumbs, &inner);
         assert!(sink.posted().is_empty(), "{:?}", sink.calls());
@@ -428,7 +436,9 @@ mod tests {
             [Notice::CacheFull { height: ThumbHeight::new(64).expect("a height in range"), made: 0 }]
         );
         std::fs::remove_file(dir.join("images").join("a.png")).unwrap();
-        pg_scan::scan(&mut Catalog::open(&catalog_path, PATH_RULES).unwrap(), &root, &Control::new()).unwrap();
+        let mut catalog = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        catalog.add_root(&root).unwrap();
+        pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         sink.take();
         run(&mut Thumbs, &inner);
         assert!(sink.calls().contains(&Call::Resolve(Trigger::Pass(FilePass::Thumbs))), "{:?}", sink.calls());

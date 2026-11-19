@@ -33,6 +33,7 @@ fn imported(prefix: &str) -> (std::path::PathBuf, Vec<u8>, Catalog) {
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     (a, good, c)
@@ -73,6 +74,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
@@ -117,6 +119,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();

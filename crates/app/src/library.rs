@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
-use pg_catalog::Root;
+use pg_catalog::{Begun, Root};
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Change};
 use pg_library::folders::AddError;
@@ -222,6 +222,11 @@ impl Library {
         self.runner.stop_scans_under(root);
     }
 
+    /// A folder was taken out of the library: its removal is finished by the job now (`Runner::wake_removals`).
+    pub fn wake_removals(&self) {
+        self.runner.wake_removals();
+    }
+
     pub fn set_paused(&self, paused: bool) {
         self.runner.set_paused(paused);
     }
@@ -375,19 +380,48 @@ impl LibraryService {
         Ok((root, added))
     }
 
-    /// Remove a folder from the library, by its id (from [`LibraryService::roots`]). A scan of it in progress stops. The
-    /// files it had are marked missing at once (`Catalog::remove_root`), not deleted: adding the folder back brings them
-    /// back with their analyses and ratings.
-    pub fn remove_folder(&self, id: RootId) -> Result<()> {
-        let root = self.catalogs.with_catalog(|c| {
-            let root = c.roots()?.into_iter().find(|r| r.id == id).map(|r| r.path);
-            c.remove_root(id)?;
-            Ok(root)
-        })?;
-        if let (Some(library), Some(root)) = (self.running(), root) {
-            library.stop_scans_under(&root);
+    /// Remove a folder from the library for good, by its id (from [`LibraryService::roots`]): its files, their analyses,
+    /// ratings and thumbnails, and its folders. `expected` is the folder the caller showed (`RulePath`, as the roots have
+    /// it). The folder leaves the library at once (`Catalog::begin_removal`), and a scan of it in progress stops; its files
+    /// are then finished by the library's removal job, or here when the library is not running. Returns what the catalog
+    /// found: [`Begun::Changed`] when the id names another folder now (nothing was changed).
+    pub fn remove_folder(&self, id: RootId, expected: &RulePath) -> Result<Begun> {
+        let begun = self.catalogs.with_catalog(|c| c.begin_removal(id, expected))?;
+        if let Begun::Started(path) = &begun {
+            match self.running() {
+                Some(library) => {
+                    library.stop_scans_under(path);
+                    library.wake_removals();
+                }
+                None => {
+                    self.catalogs.with_catalog(|c| {
+                        pg_library::removals::finish(c, self.thumbs, &self.catalog_path, &mut |_| true)
+                            .map_err(pg_catalog::Error::Other)
+                    })?;
+                }
+            }
         }
-        Ok(())
+        Ok(begun)
+    }
+
+    /// The folders whose removal is not finished, with the rows each keeps for an unfinished write (`Catalog::removal_markers`).
+    pub fn pending_removals(&self) -> Result<Vec<(RulePath, usize)>> {
+        let markers = self.catalogs.with_catalog(|c| c.removal_markers())?;
+        Ok(markers.into_iter().map(|m| (m.path, m.deferred)).collect())
+    }
+
+    /// Gives up a removal kept for its unfinished writes (`Catalog::discard_removal`): the changes are dropped, their temp
+    /// files are unlinked (one that can't be is logged), and the thumbnails of the files are dropped. `false` when no such
+    /// removal is pending.
+    pub fn discard_removal(&self, path: &RulePath) -> Result<bool> {
+        let Some(discarded) = self.catalogs.with_catalog(|c| c.discard_removal(path))? else { return Ok(false) };
+        let rules = pg_platform::native::PATH_RULES;
+        let temps: Vec<RulePath> = discarded.temps.iter().filter_map(|bytes| rules.parse_bytes(bytes)).collect();
+        for (temp, e) in pg_writeback::discard_temps(rules, &temps) {
+            pg_log::warn("removal", &format!("{}: the temp file wasn't deleted: {e}", rules.display(&temp)));
+        }
+        self.thumbs.sweep_orphans(&self.catalog_path).map_err(failed)?;
+        Ok(true)
     }
 
     /// Scan every library folder again (new, changed, moved and deleted files).

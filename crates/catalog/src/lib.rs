@@ -25,6 +25,7 @@ pub mod ledger;
 pub mod pair;
 pub mod queue;
 
+mod autoincrement;
 mod borders;
 mod convert;
 mod core;
@@ -43,6 +44,8 @@ mod writers;
 
 mod error;
 pub use error::{Error, Result};
+mod removal;
+pub use removal::{Begun, Discarded, Driven, Marker};
 mod schema;
 
 pub use self::core::{BoundedCache, Catalog, Reader, ScanLease, Tx};

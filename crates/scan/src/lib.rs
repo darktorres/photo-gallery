@@ -1495,6 +1495,7 @@ mod tests {
     fn scan_fake<S: AsRef<str>>(catalog: &mut Catalog, tree: &[(S, Vec<FakeEntry>)], root_volume: u64) -> ScanStats {
         let rules = catalog.rules();
         let root = fake_root_under(rules);
+        catalog.add_root(&root).unwrap();
         let mut lister = FakeListing::under(rules, root_volume, tree);
         walk(catalog, &root, &Control::new(), &mut lister).unwrap()
     }
@@ -1678,6 +1679,7 @@ mod tests {
         // "mnt" is on another device (volume 2) under the root. It is walked on the first scan; the second refuses it, and
         // then its file is neither walked nor marked missing (its folder was not seen, as an unreadable one is not).
         let mut c = catalog();
+        c.add_root(&fake_root()).unwrap();
         let mnt = FakeEntry { volume: Some(2), ..folder("mnt", 30) };
         let tree = [("", vec![file("a.jpg", 7, 1), mnt]), ("mnt", vec![file("m.jpg", 8, 1)])];
         let first = walk(&mut c, &fake_root(), &Control::new(), &mut FakeListing::new(1, &tree)).unwrap();
@@ -1838,6 +1840,7 @@ mod tests {
     #[test]
     fn a_walk_that_panics_gives_its_lease_back() {
         let mut c = catalog();
+        c.add_root(&fake_root()).unwrap();
         let mut lister = FakeListing::new(1, &three_folders()).on_listing("b", || panic!("the listing panicked"));
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             walk(&mut c, &fake_root(), &Control::new(), &mut lister).map(|_| ())
@@ -1959,7 +1962,7 @@ mod tests {
     }
 
     /// The folder removed from the library while it is walked, by another process (which can't stop this walk): the
-    /// walk ends at its next write, writing nothing, and the folder's files stay missing.
+    /// walk ends at its next write, writing nothing, and the folder's files are gone from the catalog.
     #[test]
     fn a_folder_removed_while_it_is_walked_is_not_written_again() {
         let path = on_disk("scan-removed");
@@ -1980,7 +1983,7 @@ mod tests {
         let walked = walk(&mut c, &fake_root(), &Control::new(), &mut lister);
         assert!(matches!(walked, Err(ScanError::Removed { .. })), "{walked:?}");
         let status = c.status().unwrap();
-        assert_eq!((status.files, status.missing), (0, 3), "the removed folder's files were written again");
+        assert_eq!((status.files, status.missing), (0, 0), "the removed folder's files were written again");
     }
 
     /// A new import version between a folder's listing and the batch that writes its files: the bump makes the analysed
@@ -2074,6 +2077,7 @@ mod tests {
     #[test]
     fn a_pairing_across_the_batch_boundary_still_finds_its_rows() {
         let mut c = catalog();
+        c.add_root(&fake_root()).unwrap();
         let folders = |moved_into: &str| -> Vec<(String, Vec<FakeEntry>)> {
             let mut tree = vec![(String::new(), (0..5u64).map(|f| folder(&format!("f{f}"), 100 + f)).collect())];
             for f in 0..5u64 {
@@ -2105,6 +2109,8 @@ mod tests {
         let mut c = catalog();
         let a = fake_root().child(&Name::from("a"));
         let b = fake_root().child(&Name::from("b"));
+        c.add_root(&a).unwrap();
+        c.add_root(&b).unwrap();
         let both = [("a", vec![file("p.jpg", 7, 1)]), ("b", vec![file("p.jpg", 7, 1)])];
         walk(&mut c, &a, &Control::new(), &mut FakeListing::new(1, &both)).unwrap();
         let linked = walk(&mut c, &b, &Control::new(), &mut FakeListing::new(1, &both)).unwrap();

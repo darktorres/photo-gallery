@@ -24,9 +24,12 @@ use crate::gallery_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::{Cell, RefCell};
+use std::sync::Arc;
 
-use cxx_qt::{CxxQtThread, Threading};
+use cxx_qt::{CxxQtThread, CxxQtType, Threading};
+use pg_model::details::Details;
 use pg_model::ids::FileId;
+use state::DetailsDelivery;
 
 thread_local! {
     /// The model's thread handle, kept at `register`. Only the GUI thread touches it.
@@ -68,9 +71,14 @@ pub(crate) fn post(run: impl FnOnce(Pin<&mut qobject::GalleryModel>) + Send + 's
 }
 
 impl cxx_qt::Initialize for qobject::GalleryModel {
-    /// Make this model the one the window's commands are carried out on (`post`). Qt calls this when the model is made.
-    fn initialize(self: Pin<&mut Self>) {
+    /// Make this model the one the window's commands are carried out on (`post`), and the one a details read's answer
+    /// is delivered to. Qt calls this when the model is made.
+    fn initialize(mut self: Pin<&mut Self>) {
         let thread = self.qt_thread();
         MODEL.with(|model| *model.borrow_mut() = Some(thread));
+        let deliver: DetailsDelivery = Arc::new(|generation: u64, file: FileId, details: Option<Details>| {
+            post(move |model| model.details_read(generation, file, details));
+        });
+        self.as_mut().rust_mut().details_delivery = Some(deliver);
     }
 }

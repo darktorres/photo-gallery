@@ -42,6 +42,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use crate::core::{Catalog, ScanLease};
 use crate::error::{Error, Result};
 use crate::ledger::failure::tidy;
+use crate::removal::{Begun, overlapping_marker};
 use crate::transaction::write_transaction;
 use crate::types::{
     FOLDER_FAILED, FolderFailure, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH,
@@ -69,6 +70,10 @@ impl Catalog {
         // One transaction: the roots it replaces go only with the insert that replaces them (a crash between the two
         // would lose them), and the check reads what the replacement will see.
         let tx = write_transaction(&self.conn)?;
+        // A folder whose removal is not finished can't come back until it is (its files are still going).
+        if let Some(removing) = overlapping_marker(&tx, self.rules, root)? {
+            return Err(Error::RemovalPending { path: self.rules.display(&removing) });
+        }
         let roots = roots_on(&tx, self.rules)?;
         if roots.iter().any(|r| self.rules.is_under(root, &r.path)) {
             return Ok(false);
@@ -81,62 +86,22 @@ impl Catalog {
         Ok(true)
     }
 
-    /// Take a folder out of the library. Its files are marked missing, not deleted: adding it back (or the drive
-    /// returning) brings them back with their analysis and ratings. Its notices and its folder ledger's rows go (their
-    /// foreign key). Returns how many files it hid; `None`, with nothing changed, when `root` is not a library folder.
+    /// Take a folder out of the library, and its files out of the catalog for good: the removal run to its end
+    /// (`begin_removal`, `hide_pages`, `drive_removals`) without thumbnails (the caller forgets them). Returns
+    /// how many files went; `None`, with nothing changed, when `root` is not a library folder. A file with an unfinished
+    /// write is kept, and so is its folder, and the marker stays for the write (or a discard) to finish.
     ///
-    /// The walks of the folder, or of folders inside it, end: their leases go in the same transaction as the marks, in
-    /// any process, so each walk's next write finds its lease gone and writes nothing ([`Error::RootRemoved`]). A walk
-    /// would otherwise write what it listed after the marks, and bring the folder's files back as present.
+    /// The walks of the folder, or of folders inside it, end: their leases go in the same transaction as the root, so
+    /// each walk's next write finds its lease gone and writes nothing ([`Error::RootRemoved`]).
     pub fn remove_root(&self, root: RootId) -> Result<Option<usize>> {
-        let rules = self.rules;
-        // The root and its leases go in one transaction: a walk of the folder finds its lease gone, so it writes nothing
-        // after this, and no walk begins under a root that is no longer one.
-        let path = {
-            let tx = write_transaction(&self.conn)?;
-            let path: Option<Vec<u8>> =
-                tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
-            let Some(path) = path else { return Ok(None) };
-            let path = rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
-            tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
-            // The leases matched by the rules, as `begin_scan` matches them (by case too under Windows').
-            let leases: Vec<(i64, Vec<u8>)> = tx
-                .prepare("SELECT id, root FROM scan_leases")?
-                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect::<rusqlite::Result<_>>()?;
-            for (id, walked) in leases {
-                let walked = rules.parse_bytes(&walked).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
-                if rules.is_under(&walked, &path) {
-                    tx.execute("DELETE FROM scan_leases WHERE id = ?1", [id])?;
-                }
+        let Some(path) = self.roots()?.into_iter().find(|r| r.id == root).map(|r| r.path) else { return Ok(None) };
+        match self.begin_removal(root, &path)? {
+            Begun::Started(path) => {
+                self.hide_pages(&path)?;
+                Ok(Some(self.drive_removals(&mut |_| true)?.files))
             }
-            tx.commit()?;
-            path
-        };
-        // The files are hidden in batches of `WRITE_BATCH`, so no write holds the lock for the whole folder: the rows are
-        // read once, and each write repeats the read's predicate, so a row that changed since is left alone.
-        let [p1, p2, p3] = under_params(rules, &path);
-        let unseen: Vec<i64> = {
-            let snapshot = self.conn.unchecked_transaction()?;
-            let ids = snapshot
-                .prepare(concat!("SELECT id FROM files WHERE missing = 0 AND folder_id IN (", under_root!(), ")"))?
-                .query_map(params![p1, p2, p3], |r| r.get::<_, i64>(0))?
-                .collect::<rusqlite::Result<Vec<i64>>>()?;
-            snapshot.commit()?;
-            ids
-        };
-        let mut n = 0;
-        for batch in unseen.chunks(WRITE_BATCH) {
-            let tx = write_transaction(&self.conn)?;
-            {
-                let mut hide = tx.prepare_cached("UPDATE files SET missing = 1 WHERE id = ?1 AND missing = 0")?;
-                for &id in batch {
-                    n += hide.execute([id])?;
-                }
-            }
-            tx.commit()?;
+            Begun::NotFound | Begun::Changed | Begun::Pending(_) => Ok(None),
         }
-        Ok(Some(n))
     }
 
     /// Begin a walk of `root`: its `scans` row (the id the walk stamps its writes with), and its lease, in one write
@@ -149,6 +114,11 @@ impl Catalog {
         let bytes = rules.join(root);
         ensure_seen(&self.conn)?;
         let tx = write_transaction(&self.conn)?;
+        // A walk is of a library folder, or of one below it: a folder the library no longer holds (removed, or never
+        // added) is not walked, and nothing is written for it.
+        if covering_root(&tx, rules, root)?.is_none() {
+            return Err(Error::RootRemoved { root: rules.display(root) });
+        }
         tx.execute("DELETE FROM scan_leases WHERE heartbeat < unixepoch() - ?1", [SCAN_LEASE_SECS])?;
         let held: Vec<(Vec<u8>, String)> = tx
             .prepare("SELECT root, holder FROM scan_leases ORDER BY id")?
@@ -658,15 +628,10 @@ mod tests {
         let rules = PathRules::Posix;
         let mut c = library(rules);
         let elsewhere = p(rules, r"D:\elsewhere");
-        let mut lease = c.begin_scan(&elsewhere).unwrap();
-        let scan = lease.id();
-        let tx = lease.tx().unwrap();
-        let mut writer = tx.scan_writer(scan, &elsewhere).unwrap();
-        assert!(!writer.folder_failed(&p(rules, r"D:\elsewhere\a"), UNREADABLE, "denied").unwrap());
-        drop(writer);
-        tx.commit().unwrap();
-        assert!(!lease.folder_refused(&elsewhere, "not NTFS").unwrap());
-        drop(lease);
+        assert!(
+            matches!(c.begin_scan(&elsewhere).err(), Some(Error::RootRemoved { .. })),
+            "a walk of a folder no library folder holds is refused"
+        );
         // Removed between two batches of a walk: the removal took the walk's lease, so the next batch writes nothing,
         // and says why.
         let root = p(rules, r"D:\r");
@@ -1023,10 +988,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    // `remove_root` over a folder of more files than one write batch: every row under it is hidden (and kept), the
-    // root and the leases of the walks under it go, and the other library folder's files and its walk's lease stay.
+    // `remove_root` over a folder of more files than one write batch: every row under it is deleted, the root and the
+    // leases of the walks under it go, and the other library folder's files and its walk's lease stay.
     #[test]
-    fn removing_a_root_hides_every_row_of_several_batches_and_leaves_the_others_alone() {
+    fn removing_a_root_deletes_every_row_of_several_batches_and_leaves_the_others_alone() {
         use crate::types::WRITE_BATCH;
         use pg_model::ids::{FileId, FolderId};
         let rules = PathRules::Posix;
@@ -1057,12 +1022,16 @@ mod tests {
         assert_eq!(c.remove_root(root).unwrap(), Some(2_500), "every file under the root is hidden");
         assert!(c.root_id(&r).unwrap().is_none(), "the root is gone");
         assert!(c.root_id(&s).unwrap().is_some(), "the other root stays");
-        assert_eq!(raw::missing_count(&c), under, "hidden, not deleted: the rows are there");
+        assert_eq!(raw::missing_count(&c), 0, "deleted: no hidden row of the removed folder is left");
+        let rows: i64 = c.conn.query_row("SELECT count(*) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 30, "the other root's files are the only rows");
         let present: Vec<i64> =
             crate::fixture::state::present_files(&c).unwrap().iter().map(|(id, _)| id.get()).collect();
         assert_eq!(present.len(), 30, "the other root's files are as they were");
         assert!(present.iter().all(|&id| id > under), "{present:?}");
-        assert!(c.begin_scan(&r).is_ok(), "the walks of the removed folder and under it lost their leases");
+        let leases: i64 = c.conn.query_row("SELECT count(*) FROM scan_leases", [], |r| r.get(0)).unwrap();
+        assert_eq!(leases, 1, "the walks of the removed folder and under it lost their leases; the other root's stays");
+        assert!(matches!(c.begin_scan(&r).err(), Some(Error::RootRemoved { .. })), "no library folder holds it now");
         assert!(matches!(c.begin_scan(&s).err(), Some(Error::ScanBusy { .. })), "the other root's lease stays");
     }
 }

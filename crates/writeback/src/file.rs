@@ -29,11 +29,28 @@ pub(crate) fn unchanged(shown: &str, before: (i64, i64), now: (i64, i64)) -> Res
 pub fn discard_temps(rules: PathRules, temps: &[RulePath]) -> Vec<(RulePath, std::io::Error)> {
     temps
         .iter()
-        .filter_map(|temp| match std::fs::remove_file(pg_platform::names::disk_path(rules, temp)) {
+        .filter_map(|temp| match remove_temp(rules, temp) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Some((temp.clone(), e)),
             _ => None,
         })
         .collect()
+}
+
+/// Unlinks one write temp, and only one: the name must be a temp's (`.<name>.<kind>.pg-write`), and the path a regular
+/// file, not a link or a folder. Anything else is refused with `InvalidInput`, and nothing is removed.
+fn remove_temp(rules: PathRules, temp: &RulePath) -> std::io::Result<()> {
+    let disk = pg_platform::names::disk_path(rules, temp);
+    let is_temp_name = disk
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.') && name.ends_with(".pg-write"));
+    if !is_temp_name {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a write temp"));
+    }
+    if !std::fs::symlink_metadata(&disk)?.is_file() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a regular file"));
+    }
+    std::fs::remove_file(disk)
 }
 
 /// The temp file of a file for a kind of write: beside the original, so it is on the same drive, named by the

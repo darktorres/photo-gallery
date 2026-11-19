@@ -393,7 +393,13 @@ impl Inner {
             // is told (`WriteStatus::dropped`); a failure the status still shows for it goes with it. A copy that may have
             // started is kept with its temp, the only whole copy of the new content while the original may be part-written:
             // it waits, offline (not an attempt), until the file is listed again.
-            if catalog.file_gone(job.file_id)? {
+            // A file under a removal of its folder (`Catalog::begin_removal`) is going: a copy that may have started
+            // finishes while its folder is there (the original may be part-written, and the copy is the only whole one),
+            // and otherwise waits; a write without a copy is dropped with no count, since the file is going anyway.
+            let gone = catalog.file_gone(job.file_id)?;
+            let removing = gone && catalog.under_marker(job.file_id)?;
+            let finish_removing_copy = removing && job.temp.is_some() && self.folder_present(catalog, job.file_id);
+            if gone && !finish_removing_copy {
                 if let Some((temp, _)) = &job.temp {
                     let message = format!(
                         "{} is no longer in the library; the whole new content is kept in {} until it is back",
@@ -405,16 +411,21 @@ impl Inner {
                         s.error = Some(WriteError::Failed(Cause::Error(message)));
                         s.error_file = Some(job.file_id);
                     });
-                    // Left for the next idle check, as an offline file is.
-                    return Ok(());
+                    // Not returned from: its next try is after the settle time (`write_failed`), so the other jobs run
+                    // now. Returning here would starve every write behind it while the drive is away.
+                    continue;
                 }
                 catalog.drop_gone_write(&job)?;
-                // A lost edit is a fact, told once as an event (with the others this drain dropped), not a condition.
-                dropped.count = dropped.count.saturating_add(1);
-                dropped.last = Some(job.kind());
+                if !removing {
+                    // A lost edit is a fact, told once as an event (with the others this drain dropped), not a condition.
+                    dropped.count = dropped.count.saturating_add(1);
+                    dropped.last = Some(job.kind());
+                }
                 self.update_status(|s| {
-                    s.dropped = s.dropped.saturating_add(1);
-                    s.last_dropped = Some(job.kind());
+                    if !removing {
+                        s.dropped = s.dropped.saturating_add(1);
+                        s.last_dropped = Some(job.kind());
+                    }
                     if s.error_file == Some(job.file_id) {
                         s.error = None;
                         s.error_file = None;
@@ -442,6 +453,26 @@ impl Inner {
                             matches!(io.kind(), std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound)
                                 && !self.folder_present(catalog, job.file_id)
                         });
+                    // A copy that may have started, whose original was deleted outside the app since its folder's removal
+                    // began: there is nothing left to finish it into. Its temp is the only whole copy, so it stays where it
+                    // is, the user is told where, and the write goes.
+                    let original_gone = !panicked
+                        && job.temp.is_some()
+                        && e.downcast_ref::<std::io::Error>()
+                            .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound);
+                    if original_gone && catalog.under_marker(job.file_id)? {
+                        if let (Some((temp, _)), Some(folder)) = (&job.temp, catalog.file_folder(job.file_id)?) {
+                            self.notices.post(Notice::FolderRemovalUnfinished { folder, temp: temp.clone() });
+                        }
+                        catalog.drop_gone_write(&job)?;
+                        self.update_status(|s| {
+                            if s.error_file == Some(job.file_id) {
+                                s.error = None;
+                                s.error_file = None;
+                            }
+                        });
+                        continue;
+                    }
                     let cause = Cause::of(&e);
                     let at_cap = !offline && job.attempts.saturating_add(1) >= MAX_ATTEMPTS;
                     // At the cap, a copy that may have started says so: the original may be incomplete, and its temp
@@ -458,8 +489,8 @@ impl Inner {
                         s.error_file = Some(job.file_id);
                     });
                     if offline {
-                        // Leave it for the next idle check rather than spinning on it.
-                        return Ok(());
+                        // Its next try is after the settle time (`write_failed` set it): the other jobs go on meanwhile.
+                        continue;
                     }
                 }
             }

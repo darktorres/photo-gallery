@@ -2,6 +2,7 @@
 //! values, the grid and the details read last), and what it reads of the catalog.
 
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 
 use cxx_qt_lib::{QRectF, QString, QStringList};
 use pg_client::grid::Grid;
@@ -10,6 +11,11 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::media::MediaType;
 use pg_model::notice::{Notice, Op};
+
+/// Hands a details read's answer to the model's thread: the generation the read was asked in, the file, and what the
+/// catalog had (`None`: gone, or unreadable). The model's `initialize` sets it (`gallery.rs`); the state holds it rather
+/// than calling into the module that holds the state.
+pub(crate) type DetailsDelivery = Arc<dyn Fn(u64, FileId, Option<Details>) + Send + Sync>;
 
 /// The model's properties, the list and the details read last.
 #[expect(
@@ -57,6 +63,8 @@ pub struct GalleryRust {
     pub(super) details: Vec<(FileId, Option<Details>)>,
     /// Counts the emptyings of `details`: a read asked for before the last one is dropped when it comes in.
     pub(super) details_generation: u64,
+    /// Where a details read's answer goes; set when the model is made. A read asked before it is set is not carried out.
+    pub(crate) details_delivery: Option<DetailsDelivery>,
     /// The border marks written off the window's thread and not yet shown, per file: the marks the writes still to be
     /// made set, in the order they were asked for (`set_border_marked`).
     pub(super) mark_writes: BTreeMap<FileId, VecDeque<bool>>,
@@ -95,6 +103,7 @@ impl Default for GalleryRust {
             grid: Grid::default(),
             details: Vec::new(),
             details_generation: 0,
+            details_delivery: None,
             mark_writes: BTreeMap::new(),
         }
     }
@@ -135,13 +144,17 @@ impl GalleryRust {
     /// unless the details were emptied since the request.
     fn read_details(&self, file: FileId) {
         let generation = self.details_generation;
+        let Some(deliver) = self.details_delivery.clone() else {
+            pg_log::error("gallery", "a file's details were asked for before the grid model was made; not read");
+            return;
+        };
         crate::app::get().reading().session().details(file, move |read| {
             // No details when the read fails (the notice says why) or the file is gone.
             let details = crate::app::observe(Op::RowRead, read, |err| Notice::RowReadFailed {
                 error: crate::app::error_text(&format!("{err:#}")),
             })
             .flatten();
-            crate::gallery::post(move |model| model.details_read(generation, file, details));
+            deliver(generation, file, details);
         });
     }
 

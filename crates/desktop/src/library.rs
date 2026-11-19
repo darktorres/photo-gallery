@@ -16,7 +16,7 @@ use std::path::Path;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use pg_app::reexport::{Cause, Change, WriteError};
+use pg_app::reexport::{Begun, Cause, Change, WriteError};
 use pg_client::text::{self, Message};
 use pg_model::notice::Notice;
 use pg_model::progress::Phase;
@@ -94,7 +94,55 @@ impl qobject::Library {
         let texts: QStringList =
             roots.iter().map(|r| QString::from(&pg_platform::native::PATH_RULES.display(&r.path))).collect();
         self.as_mut().rust_mut().root_ids = roots.iter().map(|r| r.id).collect();
+        self.as_mut().rust_mut().root_paths = roots.iter().map(|r| r.path.clone()).collect();
+        self.as_mut().load_removals();
         self.set_roots(texts);
+    }
+
+    /// The removals not finished, listed under the folders: each with its state (kept for an unfinished write, or still
+    /// removing).
+    fn load_removals(mut self: Pin<&mut Self>) {
+        let pending = match app::get().library().pending_removals() {
+            Ok(pending) => pending,
+            Err(e) => {
+                app::post(Notice::FoldersUnreadable { error: app::error_text(&e) });
+                Vec::new()
+            }
+        };
+        let folders = |kept: bool| -> QStringList {
+            pending
+                .iter()
+                .filter(|(_, deferred)| (*deferred > 0) == kept)
+                .map(|(path, _)| QString::from(&pg_platform::native::PATH_RULES.display(path)))
+                .collect()
+        };
+        let kept = folders(true);
+        let removing = folders(false);
+        self.as_mut().set_kept_removals(kept);
+        self.set_removing_removals(removing);
+    }
+
+    /// Gives up the removal of `folder` (as the panel lists it) that waits for unfinished writes: the Discard button, after
+    /// the window asks. The folder is found again in the catalog's pending removals, so a list read before a change is never
+    /// acted on by its position.
+    pub(crate) fn discard_removal(mut self: Pin<&mut Self>, folder: QString) {
+        let folder = folder.to_string();
+        let library = app::get().library();
+        let pending = match library.pending_removals() {
+            Ok(pending) => pending,
+            Err(e) => {
+                app::post(Notice::FolderNotRemoved { error: app::error_text(&e) });
+                return;
+            }
+        };
+        let rules = pg_platform::native::PATH_RULES;
+        let Some(path) = pending.into_iter().map(|(path, _)| path).find(|p| rules.display(p) == folder) else {
+            return;
+        };
+        match library.discard_removal(&path) {
+            Ok(_) => self.as_mut().load_roots(),
+            Err(e) => app::post(Notice::FolderNotRemoved { error: app::error_text(&e) }),
+        }
     }
 
     pub(crate) fn start(mut self: Pin<&mut Self>) {
@@ -150,6 +198,8 @@ impl qobject::Library {
             self.as_mut().files_changed();
         }
         if taken.scanned {
+            // A folder can have left the library since the list was read (a removal finished by the job, or from a command).
+            self.as_mut().load_roots();
             self.as_mut().scanned();
         }
         if taken.imported {
@@ -214,13 +264,22 @@ impl qobject::Library {
     }
 
     pub(crate) fn remove_folder(mut self: Pin<&mut Self>, row: i32) {
-        let Some(id) = usize::try_from(row).ok().and_then(|r| self.rust().root_ids.get(r).copied()) else {
+        let Some(index) = usize::try_from(row).ok() else { return };
+        let (Some(id), Some(path)) =
+            (self.rust().root_ids.get(index).copied(), self.rust().root_paths.get(index).cloned())
+        else {
             return;
         };
-        match app::get().library().remove_folder(id) {
-            Ok(()) => {
+        match app::get().library().remove_folder(id, &path) {
+            // Gone from the list at once; its files are finished by the library's job, which tells the grid when it has.
+            Ok(Begun::Started(_) | Begun::Pending(_)) => {
                 self.as_mut().load_roots();
                 self.scanned();
+            }
+            // The list changed since it was shown: nothing was removed, and the list is read again.
+            Ok(Begun::Changed | Begun::NotFound) => {
+                self.as_mut().load_roots();
+                app::post(Notice::FolderNotRemoved { error: "the folder list changed: try again".to_string() });
             }
             Err(e) => app::post(Notice::FolderNotRemoved { error: app::error_text(&e) }),
         }

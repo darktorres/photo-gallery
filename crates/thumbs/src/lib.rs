@@ -488,6 +488,7 @@ mod tests {
             counted.fetch_add(1, Ordering::SeqCst);
         });
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+        c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
@@ -542,6 +543,7 @@ mod tests {
         let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+        c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         pg_import::import(&mut c, &Options::new(Priority::Normal), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         let (events, quiet) = Quiet::bus();
@@ -714,6 +716,7 @@ mod tests {
         let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&images).unwrap();
+        c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
@@ -770,6 +773,7 @@ mod tests {
         let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&images).unwrap();
+        c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();

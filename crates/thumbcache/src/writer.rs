@@ -121,6 +121,12 @@ pub(crate) enum Op {
         file_id: FileId,
         reply: Sender<Result<()>>,
     },
+    /// The thumbnails of many files are dropped (a removal's, or a sweep's orphans), in short transactions of
+    /// [`FORGET_CHUNK`] files, so the writer is never held for a whole removal.
+    ForgetMany {
+        file_ids: Vec<FileId>,
+        reply: Sender<Result<()>>,
+    },
     /// One height's thumbnail of the file is dropped, and that height's watermark with it.
     ForgetHeight {
         file_id: FileId,
@@ -290,6 +296,10 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
                 .execute("DELETE FROM entries WHERE file_id = ?1", params![file_id.get()])
                 .map(drop)
                 .map_err(anyhow::Error::from);
+            let _ = reply.send(done);
+        }
+        Op::ForgetMany { file_ids, reply } => {
+            let done = forget_many_entries(conn, &file_ids);
             let _ = reply.send(done);
         }
         Op::ForgetHeight { file_id, height, reply } => {
@@ -476,6 +486,24 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<ThumbHeight>) -> Res
 
 /// Drop the entry of `file_id` at `height`, and that height's watermark (`checked`), as an eviction does
 /// ([`crate::ThumbCache::forget_height`]). The entry's JPEG goes with it (the trigger on `entries`).
+/// Files per transaction of [`Op::ForgetMany`]: a file's thumbnails are a few JPEGs, so a chunk is a short write.
+pub(crate) const FORGET_CHUNK: usize = 256;
+
+/// The thumbnails of `file_ids` dropped, in transactions of [`FORGET_CHUNK`] files (`entries_removed` keeps the totals).
+fn forget_many_entries(conn: &mut Connection, file_ids: &[FileId]) -> Result<()> {
+    for chunk in file_ids.chunks(FORGET_CHUNK) {
+        let tx = conn.transaction()?;
+        {
+            let mut delete = tx.prepare_cached("DELETE FROM entries WHERE file_id = ?1")?;
+            for id in chunk {
+                delete.execute(params![id.get()])?;
+            }
+        }
+        tx.commit()?;
+    }
+    Ok(())
+}
+
 fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: ThumbHeight) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height.get()])?;

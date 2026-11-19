@@ -81,7 +81,11 @@ pub enum Line {
     },
     Removed {
         root: String,
-        hidden: String,
+        deleted: String,
+    },
+    RemovalKept {
+        root: String,
+        deferred: String,
     },
     NotInLibrary {
         root: String,
@@ -202,6 +206,10 @@ pub enum Line {
     StatusLibrary {
         folder: String,
     },
+    StatusRemoving {
+        folder: String,
+        deferred: String,
+    },
     StatusFiles {
         files: String,
         missing: String,
@@ -278,6 +286,7 @@ impl Line {
             Line::ThumbNotForgotten { .. } => "cli-thumb-not-forgotten",
             Line::TempNotDeleted { .. } => "cli-temp-not-deleted",
             Line::Removed { .. } => "cli-removed",
+            Line::RemovalKept { .. } => "cli-removal-kept",
             Line::NotInLibrary { .. } => "cli-not-in-library",
             Line::MarkedAgain { .. } => "cli-marked-again",
             Line::ImportPending { .. } => "cli-import-pending",
@@ -302,6 +311,7 @@ impl Line {
             Line::CsvMissing => "cli-csv-missing",
             Line::StatusHome { .. } => "cli-status-home",
             Line::StatusLibrary { .. } => "cli-status-library",
+            Line::StatusRemoving { .. } => "cli-status-removing",
             Line::StatusFiles { .. } => "cli-status-files",
             Line::StatusWrites { .. } => "cli-status-writes",
             Line::StatusCache { .. } => "cli-status-cache",
@@ -355,7 +365,8 @@ impl Line {
             Line::RefusedMountsNotListed { count } => vec![("count", count)],
             Line::ThumbNotForgotten { root, error } => vec![("root", root), ("error", error)],
             Line::TempNotDeleted { root, temp, error } => vec![("root", root), ("temp", temp), ("error", error)],
-            Line::Removed { root, hidden } => vec![("root", root), ("hidden", hidden)],
+            Line::Removed { root, deleted } => vec![("root", root), ("deleted", deleted)],
+            Line::RemovalKept { root, deferred } => vec![("root", root), ("deferred", deferred)],
             Line::NotInLibrary { root } => vec![("root", root)],
             Line::ImportPending { pending } => vec![("pending", pending)],
             Line::ImportDone { files, failed, changed, seconds } => {
@@ -416,6 +427,7 @@ impl Line {
                 ("rate", rate),
             ],
             Line::StatusHome { folder } | Line::StatusLibrary { folder } => vec![("folder", folder)],
+            Line::StatusRemoving { folder, deferred } => vec![("folder", folder), ("deferred", deferred)],
             Line::StatusFiles { files, missing, analyzed, failed, pending, pairs } => vec![
                 ("files", files),
                 ("missing", missing),
@@ -482,7 +494,8 @@ impl Line {
             Line::RefusedMountsNotListed { count: s() },
             Line::ThumbNotForgotten { root: s(), error: s() },
             Line::TempNotDeleted { root: s(), temp: s(), error: s() },
-            Line::Removed { root: s(), hidden: s() },
+            Line::Removed { root: s(), deleted: s() },
+            Line::RemovalKept { root: s(), deferred: s() },
             Line::NotInLibrary { root: s() },
             Line::MarkedAgain { count: s() },
             Line::ImportPending { pending: s() },
@@ -534,6 +547,7 @@ impl Line {
             Line::CsvMissing,
             Line::StatusHome { folder: s() },
             Line::StatusLibrary { folder: s() },
+            Line::StatusRemoving { folder: s(), deferred: s() },
             Line::StatusFiles { files: s(), missing: s(), analyzed: s(), failed: s(), pending: s(), pairs: s() },
             Line::StatusWrites { queued: s(), failing: s() },
             Line::StatusCache { count: s(), used: s(), cap: s() },

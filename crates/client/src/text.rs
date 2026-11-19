@@ -239,6 +239,7 @@ pub fn pass_name(phase: &Phase, rules: PathRules) -> String {
         Phase::Crop => render(&Message::PassCrop),
         Phase::Thumbs { height } => render(&Message::PassThumbs { height: height.to_string() }),
         Phase::Placeholders => render(&Message::PassPlaceholders),
+        Phase::Removing => render(&Message::PassRemoving),
     }
 }
 

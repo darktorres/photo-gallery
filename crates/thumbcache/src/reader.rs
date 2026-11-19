@@ -15,6 +15,27 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::schema::{BUSY_TIMEOUT, CONNECTION_PRAGMAS};
 use crate::types::{Pending, Snapshot, Source, ThumbWork};
 
+/// The files whose thumbnails the cache at `cache` holds and the catalog at `catalog` no longer does (`ThumbCache::
+/// sweep_orphans`). The catalog's id high-water mark (its `sqlite_sequence`: the ids are never reused, schema 19) is read
+/// first. An entry at or below it whose file is absent was deleted for good; a file inserted meanwhile has a higher id,
+/// and is not among them. Read on one connection with `query_only`, so no write of the cache waits for it.
+pub(crate) fn orphans_in(cache: &Path, catalog: &Path) -> Result<Vec<FileId>> {
+    let conn = Connection::open(cache)?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;")?;
+    conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(catalog)?])?;
+    let high: i64 =
+        conn.query_row("SELECT coalesce((SELECT seq FROM cat.sqlite_sequence WHERE name = 'files'), 0)", [], |r| {
+            r.get(0)
+        })?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT file_id FROM main.entries WHERE file_id <= ?1 AND file_id NOT IN (SELECT id FROM cat.files) \
+         ORDER BY file_id",
+    )?;
+    let ids: Vec<i64> = stmt.query_map([high], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    Ok(ids.into_iter().map(FileId::new).collect())
+}
+
 /// `ThumbCache::pending` on the cache file `cache` (a free function: the bench calls it without a writer), over every
 /// volume of the catalog. See `pending_for`.
 pub fn pending_in(cache: &Path, catalog: &Path, height: ThumbHeight) -> Result<Pending> {

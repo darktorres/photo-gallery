@@ -5,7 +5,7 @@ use anyhow::{Context, Result, ensure};
 use pg_codec::decode::transform;
 use pg_model::orientation::Orientation;
 
-use super::raster::reserved;
+use super::buffers::reserved;
 
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]

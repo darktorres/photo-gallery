@@ -305,6 +305,12 @@ copy can't take the rows (a column the new layout needs is missing from the old 
 the note says why, and the library is scanned again. A catalog made under the other platform's path rules is refused,
 not moved: open it on the platform that made it.
 
+Schema 19 makes the ids of `files`, `folders` and `roots` never reused (`AUTOINCREMENT`), so a deleted folder's ids are
+not given to a later one. It also turns on incremental auto-vacuum, so a removal gives its free pages back: the first
+start after the upgrade runs one `VACUUM` to convert the file, which needs room for about three times the catalog's
+size. The upgrade is copied aside first as `catalog.sqlite.pre-v18.bak`, and that copy is kept. Rows deleted before the
+upgrade can't be recovered as never-used: the next id is one past the highest kept.
+
 Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
 below normal priority (thumbnails at idle), so the window and the thumbnails on screen come first. Quitting at
@@ -325,7 +331,7 @@ $g = '.\target\release\gallery.exe'
 & $g dups --show 5 | Out-Host                              # what tiers 0-1 found, and the groups they form
 & $g borders --csv 'D:\x\report.csv' 'D:\x\images' | Out-Host # borders of any files, in the prototype's columns
 & $g borders --import-review 'D:\x\review.json'            # the eval viewer's "not a border" marks, into the catalog
-& $g remove 'D:\PhotoGallery\datasets\pinterest'           # take a folder out (its files are hidden, not deleted)
+& $g remove 'D:\PhotoGallery\datasets\pinterest'           # take a folder out for good (its files, ratings and thumbnails are deleted; the files on disk are not)
 ```
 
 `gallery.exe` is a GUI program, so no console window opens when it starts from Explorer. Its commands print to
@@ -388,8 +394,13 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   `analysis.cut_*`. The detector has its own version (`BORDERS_VERSION`): a new one makes every file due again,
   without importing the files again. `gallery borders --csv` reports on any files, outside the catalog.
 - **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
-  its children, and adding a subfolder only rescans it. Removing one marks its files missing; adding it back
-  restores them with their analysis and ratings.
+  its children, and adding a subfolder only rescans it. Removing one deletes it for good: its files, their analysis,
+  ratings and thumbnails, and its folders (`Catalog::begin_removal`, then `removals::finish` in `pg-library`). The files
+  on disk are not touched. A removal can't be added back while it is pending. A change still waiting to be written into
+  one of its files keeps that row (and the temp file beside the file) until the app finishes the write or
+  `gallery remove --discard-pending` gives it up. A folder that is only missing (an offline drive) is not removed: its
+  files stay missing, as before. Folders removed before this version stay hidden with their ratings; adding one back and
+  removing it again deletes them.
 - **Write** is what the app's writer does in the background (see Ratings below); the command drains the queue
   and reports what still fails.
 

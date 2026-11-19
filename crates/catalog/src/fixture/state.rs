@@ -11,7 +11,8 @@ use rusqlite::{OptionalExtension, params};
 
 /// A scan row. Ids are the test's own: [`super::insert`] needs scan 1, and the folders its files name.
 pub fn add_scan(c: &Catalog, id: i64, root: &str) -> Result<()> {
-    c.conn.execute("INSERT INTO scans(id, root, started) VALUES (?1, ?2, 0)", params![id, root])?;
+    // The folder as the production writes it: its bytes (`PathRules::join`), a BLOB.
+    c.conn.execute("INSERT INTO scans(id, root, started) VALUES (?1, ?2, 0)", params![id, root.as_bytes()])?;
     Ok(())
 }
 

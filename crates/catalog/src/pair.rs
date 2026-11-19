@@ -1095,7 +1095,7 @@ mod tests {
 
     /// The library folder removed after the scan's batches and before its pairing (by another process, which can't stop
     /// the walk; or between two of the pairing's batches): the pairing writes nothing, so no rebind brings the removed
-    /// folder's rows back as present, and it says the folder was removed.
+    /// folder's rows back, and its result is empty.
     fn a_pairing_after_its_folder_was_removed_writes_nothing(rules: PathRules) {
         let mut c = catalog(rules);
         assert!(c.add_root(&p(rules, r"D:\x")).unwrap());
@@ -1107,12 +1107,12 @@ mod tests {
         found(&mut c, second, 2, 7, "a.jpg", 10, None);
         let root = c.root_id(&p(rules, r"D:\x")).unwrap().unwrap();
         assert_eq!(c.remove_root(root).unwrap(), Some(2));
-        let paired =
-            lease(&mut c, second, &p(rules, r"D:\x")).pair_after_scan(Coverage { complete: false, skipped: &[] });
-        assert!(matches!(paired, Err(crate::Error::RootRemoved { .. })), "{paired:?}");
-        assert_eq!(count(&c), 2, "nothing was rebound");
-        let present: i64 = c.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0)).unwrap();
-        assert_eq!(present, 0, "the removed folder's rows stay missing");
+        // The walk's lease went with the root, and so did the rows: the pairing finds nothing and writes nothing.
+        let paired = lease(&mut c, second, &p(rules, r"D:\x"))
+            .pair_after_scan(Coverage { complete: false, skipped: &[] })
+            .unwrap();
+        assert_eq!((paired.rebound, paired.replaced), (0, 0), "{paired:?}");
+        assert_eq!(count(&c), 0, "the removed folder's rows are gone: nothing was rebound back");
     }
 
     under_both_rules!(

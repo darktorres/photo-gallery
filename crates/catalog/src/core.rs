@@ -27,12 +27,8 @@ use crate::schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
 };
 use crate::transaction::{WriteTx, write_transaction};
-use crate::types::{Rebuilt, Versions};
+use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
-
-/// The page cache of [`Catalog::prepare`]'s own work and of a rebuild's copy, in KiB: the copy aside, a migration and
-/// its `VACUUM` read and write each page once or twice, so a larger cache would only hold the whole file.
-pub(crate) const PREPARE_CACHE_KIB: i64 = 16 * 1024;
 
 pub struct Catalog {
     pub(crate) conn: Connection,
@@ -105,6 +101,10 @@ impl Catalog {
             rebuilt = Some(rebuild(conn, path, rules, why, version.is_some())?);
             conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         }
+        // An empty file takes incremental auto-vacuum before its first table (where it is a page-1 change, at once).
+        if version == Some(0) && rebuilt.is_none() {
+            conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+        }
         conn.execute_batch(SETTINGS)?;
         // What follows is one-off work over whole tables (the copy aside, a migration, its `VACUUM`, a mark's
         // recompute), which reads each page once or twice: on a small cache, so it does not fill the cache with the whole
@@ -124,7 +124,9 @@ impl Catalog {
             )));
         }
         check_rules(&conn, path, rules)?;
-        vacuum_if_owed(&conn, (!memory).then_some(path))?;
+        // The one-time compaction (incremental auto-vacuum's conversion) only under the exclusive hold: it writes the whole
+        // file, and a start that holds it shared must not make every other process wait for it.
+        vacuum_if_owed(&conn, (!memory).then_some(path), exclusive.is_some() || memory)?;
         mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;

@@ -211,8 +211,11 @@ impl Catalog {
     pub fn record_write_temp(&self, job: &Job, temp: &RulePath, write: Write) -> Result<bool> {
         let conn = &self.conn;
         let bytes = self.rules().join(temp);
+        // Not for a file hidden since the job was picked (a removal is under way): its temp would then be the only copy
+        // of the edit with nothing that finishes it.
         let recorded = conn.execute(
-            "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
+            "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2 AND \
+             EXISTS (SELECT 1 FROM files WHERE id = ?1 AND missing = 0)",
             params![job.file_id.get(), job.kind().key(), bytes, write.stored()],
         )?;
         Ok(recorded == 1)

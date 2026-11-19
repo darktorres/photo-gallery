@@ -15,6 +15,7 @@ pub mod lanes;
 pub mod layout;
 mod pair_gate;
 mod passes;
+pub mod removals;
 pub mod runner;
 pub mod scans;
 pub mod shared;

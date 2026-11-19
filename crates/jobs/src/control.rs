@@ -249,6 +249,7 @@ fn span_name(phase: &Phase) -> &'static str {
         Phase::Borders => "phase.borders",
         Phase::Thumbs { .. } => "phase.thumbs",
         Phase::Placeholders => "phase.placeholders",
+        Phase::Removing => "phase.removing",
     }
 }
 

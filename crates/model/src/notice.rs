@@ -594,6 +594,13 @@ pub enum Notice {
     FolderNotRemoved {
         error: String,
     },
+    /// A copy of a file in a folder being removed from the library is kept: the write was under way when the file was
+    /// deleted outside the app, so its temp (the only whole copy of the edit) stays at `temp`, and the write goes.
+    /// Keyless, as an event: the folder is not in the library, so the notice is not one of its folders.
+    FolderRemovalUnfinished {
+        folder: RulePath,
+        temp: RulePath,
+    },
     RescanFailed {
         error: String,
     },
@@ -972,6 +979,7 @@ ids! {
     FolderRefused => "folder-refused",
     FolderNotAdded => "folder-not-added",
     FolderNotRemoved => "folder-not-removed",
+    FolderRemovalUnfinished => "folder-removal-unfinished",
     RescanFailed => "rescan-failed",
     LibraryUnavailable => "library-unavailable",
     FoldersUnreadable => "folders-unreadable",
@@ -1080,6 +1088,7 @@ impl Notice {
             | Notice::WriteStopped
             | Notice::FolderNotAdded { .. }
             | Notice::FolderNotRemoved { .. }
+            | Notice::FolderRemovalUnfinished { .. }
             | Notice::RescanFailed { .. }
             | Notice::LibraryUnavailable { .. }
             | Notice::ListingFailed { .. }
@@ -1129,6 +1138,7 @@ impl Notice {
             | Notice::FolderRefused { .. }
             | Notice::FolderNotAdded { .. }
             | Notice::FolderNotRemoved { .. }
+            | Notice::FolderRemovalUnfinished { .. }
             | Notice::FoldersUnreadable { .. }
             | Notice::PickerFailed { .. } => Source::Folders,
             Notice::EditFailed { .. } => Source::Edit,
@@ -1208,6 +1218,7 @@ impl Notice {
             | Notice::FoldersUnreadable { .. }
             | Notice::PickerFailed { .. }
             | Notice::NoticesLost { .. }
+            | Notice::FolderRemovalUnfinished { .. }
             | Notice::UpdateAvailable { .. } => Lifecycle::Event,
         }
     }
@@ -1295,7 +1306,8 @@ impl Notice {
             | Notice::WriteFailed { .. }
             | Notice::WriteStopped
             | Notice::WriteDropped { .. }
-            // Not yet in the library (an added folder), so not one of its folders.
+            // Not yet in the library (an added folder), or no longer (a removed one): not one of its folders.
+            | Notice::FolderRemovalUnfinished { .. }
             | Notice::FolderAlreadyAdded { .. }
             | Notice::FolderRefused { .. }
             | Notice::FolderNotAdded { .. }
@@ -1425,6 +1437,10 @@ impl Notice {
                 }],
             },
             Notice::CutFailed { error: error() },
+            Notice::FolderRemovalUnfinished {
+                folder: sample_path(&["Photos"]),
+                temp: sample_path(&["Photos", "a.jpg.pg-write"]),
+            },
         ]
     }
 }
@@ -1515,10 +1531,11 @@ mod tests {
             Notice::SessionNotRead { .. } => 46,
             Notice::BordersCut { .. } => 47,
             Notice::CutFailed { .. } => 48,
+            Notice::FolderRemovalUnfinished { .. } => 49,
         }
     }
 
-    const KINDS: usize = 49;
+    const KINDS: usize = 50;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {

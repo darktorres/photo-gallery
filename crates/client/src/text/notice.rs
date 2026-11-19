@@ -186,6 +186,10 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("folder", shown(rules, folder));
             a.set("reason", (nested.refused)(reason));
         }
+        Notice::FolderRemovalUnfinished { folder, temp } => {
+            a.set("folder", shown(rules, folder));
+            a.set("temp", shown(rules, temp));
+        }
         Notice::ViewsFailed { op, error } => {
             a.set("op", op.code());
             a.set("error", error.clone());

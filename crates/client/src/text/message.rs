@@ -172,6 +172,7 @@ messages! {
     PassCrop => "pass-crop",
     PassThumbs { height: String } => "pass-thumbs",
     PassPlaceholders => "pass-placeholders",
+    PassRemoving => "pass-removing",
     PassWorking { what: String, done: String, total: String, rate: String, eta: String } => "pass-working",
     PassFailed { count: String } => "pass-failed",
     EtaSeconds { seconds: String } => "eta-seconds",

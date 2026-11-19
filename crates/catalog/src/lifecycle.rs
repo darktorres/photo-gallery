@@ -150,9 +150,13 @@ pub(crate) fn ensure_room_to_migrate(path: &Path) -> Result<()> {
 /// cleared. Not run without room for it ([`VACUUM_ROOM`]), and a `VACUUM` that fails (busy, the disk filled) fails
 /// nothing: the catalog is whole either way, so it is logged and the mark kept, for the next start. `path` is `None`
 /// for an in-memory catalog.
-pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>) -> Result<()> {
+pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: bool) -> Result<()> {
     let owed: i64 = conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0))?;
     if owed == 0 {
+        return Ok(());
+    }
+    // Without the exclusive hold the mark stays, for the start that has it: the `VACUUM` writes the whole file.
+    if !exclusive {
         return Ok(());
     }
     if let Some(path) = path {
@@ -168,7 +172,10 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>) -> Result<(
             return Ok(());
         }
     }
-    match conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);") {
+    // Incremental auto-vacuum (migration 19's): set first, a `VACUUM` is what makes it take effect on a file that has pages.
+    match conn.execute_batch(
+        "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
+    ) {
         Ok(()) => {
             conn.execute("UPDATE meta SET value = 0 WHERE key = 'vacuum_owed'", [])?;
             Ok(())
@@ -1608,13 +1615,13 @@ mod tests {
         conn.execute_batch("BEGIN IMMEDIATE;").unwrap();
         let other = raw::on_disk(&path);
         other.execute_batch("PRAGMA busy_timeout = 0;").unwrap();
-        super::vacuum_if_owed(&other, Some(&path)).unwrap();
+        super::vacuum_if_owed(&other, Some(&path), true).unwrap();
         let owed: i64 = other.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
         assert_eq!(owed, 1, "kept for the next start");
         conn.execute_batch("COMMIT;").unwrap();
         reader.execute_batch("COMMIT;").unwrap();
         drop((conn, reader));
-        super::vacuum_if_owed(&other, Some(&path)).unwrap();
+        super::vacuum_if_owed(&other, Some(&path), true).unwrap();
         let owed: i64 = other.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
         assert_eq!(owed, 0, "done once nothing holds the file");
         drop(other);

@@ -22,6 +22,7 @@ use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, Transaction};
 
+use crate::autoincrement::ids_autoincrement;
 use crate::convert::{Source, convert_notify, convert_session, pairs_owed_and_hashes, retire_kinds};
 use crate::error::Result;
 use crate::transaction::write_transaction;
@@ -66,7 +67,14 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     &[Step::Sql(TO_16_NEW_FILES)],
     TO_17_PLACEHOLDERS,
     &[Step::Sql(TO_18_ANALYSIS_TOUCHES)],
+    &[Step::Sql(TO_19_ROOT_REMOVALS), Step::Rust(ids_autoincrement)],
 ];
+
+/// The versions a migration takes from which runs with foreign keys off. `DROP TABLE` of a parent runs an implicit
+/// `DELETE` with foreign keys on, which cascades into its children (their analyses, ratings, queued writes): a rebuild of
+/// `files`, `folders` or `roots` must not. The pragma is a no-op inside a transaction, so it is set around the
+/// migration's (`bring_to`), and the migration checks it is off before it drops anything.
+const FOREIGN_KEYS_OFF_FROM: &[i64] = &[18];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
 #[cfg(test)]
@@ -575,6 +583,19 @@ DROP TRIGGER analysis_cut_stamp;
 /// `touch_analysis` too.
 const TO_18_ANALYSIS_TOUCHES: &str = "DROP TRIGGER analysis_added;\n";
 
+/// Version 19: **`root_removals`**, the marker of a folder being removed from the library: from the moment it leaves the
+/// library until its files, their thumbnails and its folders are gone (`crate::removal`). `path` is the folder as the
+/// rules join it, the same bytes as `roots.path`, and overlaps are tested with the rules, not with `=`. `deferred` counts
+/// the files kept because an unfinished write is recorded for them. The ids of `files`, `folders` and `roots` are then
+/// never reused (`ids_autoincrement`), so a removed id names nothing.
+const TO_19_ROOT_REMOVALS: &str = "CREATE TABLE root_removals(
+    id       INTEGER PRIMARY KEY,
+    path     BLOB NOT NULL UNIQUE,
+    started  INTEGER NOT NULL,   -- Unix seconds
+    deferred INTEGER NOT NULL DEFAULT 0
+);
+";
+
 const TO_11_IMPORT_HIDDEN: &str = "DROP TRIGGER analysis_import;
 CREATE TRIGGER analysis_import AFTER INSERT ON analysis
 WHEN new.error IS NOT NULL OR EXISTS (SELECT 1 FROM file_failures WHERE file_id = new.file_id AND pass = 'import')
@@ -634,10 +655,21 @@ pub(crate) fn bring_to(
     target: i64,
 ) -> Result<()> {
     loop {
+        // The version is read outside the transaction first, so a migration that needs foreign keys off has them off
+        // before its transaction begins: the pragma does nothing inside one. It is read again inside it, and when it has
+        // moved (another connection migrated meanwhile) this round starts over.
+        let advisory = version_of(conn)?.unwrap_or(0);
+        let _foreign_keys_off = (advisory < target && FOREIGN_KEYS_OFF_FROM.contains(&advisory))
+            .then(|| ForeignKeysOff::new(conn))
+            .transpose()?;
         let tx = write_transaction(conn)?;
         let version: i64 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version >= target {
             return Ok(());
+        }
+        if version != advisory {
+            drop(tx);
+            continue;
         }
         if version == 0 {
             tx.execute_batch(baseline).context("creating the catalog")?;
@@ -649,6 +681,9 @@ pub(crate) fn bring_to(
                 .with_context(|| format!("schema version {version}, older than the baseline {BASELINE_VERSION}"))?;
             let steps =
                 migrations.get(index).ok_or_else(|| anyhow!("schema version {version}: no migration takes it on"))?;
+            if FOREIGN_KEYS_OFF_FROM.contains(&version) {
+                require_foreign_keys_off(&tx)?;
+            }
             let context = || format!("migration to schema version {}", version + 1);
             for step in steps.iter() {
                 match *step {
@@ -660,6 +695,51 @@ pub(crate) fn bring_to(
         }
         tx.commit()?;
     }
+}
+
+/// Foreign keys off and `legacy_alter_table` on, for a migration that needs them ([`FOREIGN_KEYS_OFF_FROM`]). The
+/// connection's own values are read first and put back when the guard drops, whether the migration committed or not, so a
+/// later migration on the connection runs as it would have. `legacy_alter_table` on keeps a rename from re-resolving the
+/// views and triggers of the other tables, which name a table that is missing between the drop and the rename.
+struct ForeignKeysOff<'c> {
+    conn: &'c Connection,
+    foreign_keys: bool,
+    legacy_alter_table: bool,
+}
+
+impl<'c> ForeignKeysOff<'c> {
+    fn new(conn: &'c Connection) -> Result<Self> {
+        let guard = Self {
+            conn,
+            foreign_keys: conn.query_row("PRAGMA foreign_keys", [], |r| r.get::<_, i64>(0))? != 0,
+            legacy_alter_table: conn.query_row("PRAGMA legacy_alter_table", [], |r| r.get::<_, i64>(0))? != 0,
+        };
+        conn.pragma_update(None, "foreign_keys", false)?;
+        conn.pragma_update(None, "legacy_alter_table", true)?;
+        Ok(guard)
+    }
+}
+
+impl Drop for ForeignKeysOff<'_> {
+    fn drop(&mut self) {
+        if let Err(e) = self.conn.pragma_update(None, "legacy_alter_table", self.legacy_alter_table) {
+            pg_log::warn("catalog", &format!("putting back the connection's legacy_alter_table: {e}"));
+        }
+        if let Err(e) = self.conn.pragma_update(None, "foreign_keys", self.foreign_keys) {
+            pg_log::warn("catalog", &format!("putting back the connection's foreign_keys: {e}"));
+        }
+    }
+}
+
+/// Refuse a migration that needs foreign keys off when they are on (the guard did not take): nothing is changed.
+fn require_foreign_keys_off(tx: &Transaction<'_>) -> Result<()> {
+    let on: i64 = tx.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
+    if on != 0 {
+        return Err(crate::error::Error::Other(anyhow!(
+            "foreign keys are on for a migration that drops tables: it is refused, and the catalog is unchanged"
+        )));
+    }
+    Ok(())
 }
 
 /// The schema a catalog at `version` has, as this build makes it in memory: the baseline and the migrations up to
@@ -1341,6 +1421,57 @@ mod tests {
         version_11_hides_the_pending_imports_and_retires_the_kinds,
         version_11_hides_the_pending_imports_and_retires_the_kinds_windows,
         version_11_hides_the_pending_imports_and_retires_the_kinds_posix
+    );
+
+    /// Version 19 makes `files`, `folders` and `roots` AUTOINCREMENT: a row deleted after the migration never has its id
+    /// reissued, and the rows the migration copied keep their ids and their children. A row deleted before the migration
+    /// is the accepted limit: SQLite kept no record of it, so the next id is one past the highest kept.
+    fn version_19_ids_are_never_reissued_after_the_migration(rules: PathRules) {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap() - 1).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+             INSERT INTO roots(id, path, added) VALUES (1, x'00', 0);
+             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01'), (2, x'02', x'02');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61'), (2, 1, 2, 1, x'62', 'jpg', 'image', 1, 1, x'62');
+             INSERT INTO ratings(file_id, rating, updated) VALUES (2, 3, 0);",
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+
+        let ratings: i64 = conn.query_row("SELECT count(*) FROM ratings WHERE file_id = 2", [], |r| r.get(0)).unwrap();
+        assert_eq!(ratings, 1, "the child rows of a copied file keep it");
+        let fk: Vec<String> = conn
+            .prepare("PRAGMA foreign_key_check")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(fk.is_empty(), "{fk:?}");
+
+        // Once migrated, the high-water mark is kept: deleting the top rows never lets their ids come back.
+        let insert = "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                      VALUES (1, ?1, 1, ?2, 'jpg', 'image', 1, 1, ?2)";
+        conn.execute(insert, rusqlite::params![3, b"c".as_slice()]).unwrap();
+        conn.execute("DELETE FROM files WHERE id = 3", []).unwrap();
+        conn.execute(insert, rusqlite::params![4, b"d".as_slice()]).unwrap();
+        let fresh: i64 = conn.query_row("SELECT max(id) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(fresh, 4, "a deleted id (3) is not reissued");
+
+        // The second root takes id 2; deleting it, the next root takes 3, never 2 again.
+        conn.execute("INSERT INTO roots(path, added) VALUES (x'03', 0)", []).unwrap();
+        conn.execute("DELETE FROM roots WHERE id = 2", []).unwrap();
+        conn.execute("INSERT INTO roots(path, added) VALUES (x'04', 0)", []).unwrap();
+        let root: i64 = conn.query_row("SELECT max(id) FROM roots", [], |r| r.get(0)).unwrap();
+        assert_eq!(root, 3, "a deleted root id is not reissued");
+    }
+
+    under_both_rules!(
+        version_19_ids_are_never_reissued_after_the_migration,
+        version_19_ids_are_never_reissued_after_the_migration_windows,
+        version_19_ids_are_never_reissued_after_the_migration_posix
     );
 
     fn triggers(conn: &Connection) -> Vec<String> {

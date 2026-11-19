@@ -209,6 +209,35 @@ ApplicationWindow {
         onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
     }
 
+    // Where the library panel's Remove starts: the folder is named, then the dialog confirms. The folder leaves the library
+    // for good (its images and their ratings), so nothing is removed before the user's confirmation.
+    function askRemoveFolder(row: int) {
+        removeDialog.row = row
+        removeDialog.folder = library.roots[row] ?? ""
+        removeDialog.open()
+    }
+
+    RemoveFolderDialog {
+        id: removeDialog
+        onConfirmed: library.removeFolder(removeDialog.row)
+        onClosed: grid.takeFocus()
+        onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+    }
+
+    // Where the library panel's Discard starts: the removal is named, then the dialog confirms. Its changes are given up
+    // for good, so nothing is dropped before the user's confirmation.
+    function askDiscardRemoval(folder: string) {
+        discardDialog.folder = folder
+        discardDialog.open()
+    }
+
+    DiscardRemovalDialog {
+        id: discardDialog
+        onConfirmed: library.discardRemoval(discardDialog.folder)
+        onClosed: grid.takeFocus()
+        onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+    }
+
     function relayout() {
         const anchor = current >= 0 ? current : grid.topItem()
         grid.settling = true
@@ -654,6 +683,9 @@ ApplicationWindow {
                 LibraryPanel {
                     open: win.libraryOpen
                     roots: library.roots
+                    keptRemovals: library.keptRemovals
+                    removingRemovals: library.removingRemovals
+                    hasRemovals: library.keptRemovals.length + library.removingRemovals.length > 0
                     hasRoots: library.roots.length > 0
                     writeBack: appSettings.writeBack
                     detectBorders: appSettings.detectBorders
@@ -665,7 +697,8 @@ ApplicationWindow {
                     onHidden: grid.takeFocus()
                     onVisibleChanged: win.modalShown(PanelKind.Library, visible)
                     onAddRequested: addPicker.pick(0)
-                    onRemoveRequested: (row) => library.removeFolder(row)
+                    onRemoveRequested: (row) => win.askRemoveFolder(row)
+                    onDiscardRequested: (folder) => win.askDiscardRemoval(folder)
                     onRescanRequested: library.rescan()
                     onWriteBackToggled: (on) => {
                         appSettings.writeBack = on

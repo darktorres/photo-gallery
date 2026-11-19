@@ -16,6 +16,10 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         #[qproperty(QStringList, roots, READ, WRITE, NOTIFY, FINAL)]
+        /// The folders whose removal is not finished and waits for an unfinished write (Discard gives it up).
+        #[qproperty(QStringList, kept_removals, cxx_name = "keptRemovals", READ, WRITE, NOTIFY, FINAL)]
+        /// The folders whose removal is not finished and is still going.
+        #[qproperty(QStringList, removing_removals, cxx_name = "removingRemovals", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
@@ -56,6 +60,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "removeFolder"]
         fn remove_folder(self: Pin<&mut Library>, row: i32);
+
+        /// Give up the removal of the folder `folder` (as `keptRemovals` lists it) that waits for unfinished writes: the
+        /// changes are dropped.
+        #[qinvokable]
+        #[cxx_name = "discardRemoval"]
+        fn discard_removal(self: Pin<&mut Library>, folder: QString);
 
         /// Scan every library folder again (new, changed, moved and deleted files).
         #[qinvokable]

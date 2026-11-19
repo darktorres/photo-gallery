@@ -36,6 +36,10 @@ pub enum Error {
     /// written again after its removal.
     #[error("{root} was removed from the library while it was scanned")]
     RootRemoved { root: String },
+    /// A library folder overlapping `path` is being removed (its marker is there, `Catalog::begin_removal`): it can't be
+    /// added until the removal is finished (or discarded), since its files are still going.
+    #[error("{path} is still being removed from the library: try again when it is gone")]
+    RemovalPending { path: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -74,6 +78,7 @@ impl Error {
             | Error::ScanBusy { .. }
             | Error::LeaseLost { .. }
             | Error::RootRemoved { .. }
+            | Error::RemovalPending { .. }
             | Error::Io(_) => false,
         }
     }

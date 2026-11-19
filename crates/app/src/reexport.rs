@@ -5,6 +5,7 @@
 //! reads and writes are on the services that [`crate::App`] opens, and [`crate::Session`]. (`pg_model`'s types, such as
 //! `LedgerKind`, the front end names from `pg-model`, which it depends on itself.)
 
+pub use pg_catalog::Begun;
 pub use pg_catalog::FolderFailure;
 pub use pg_catalog::browse::read::facets::Facets;
 pub use pg_catalog::inbox::{Entry as InboxEntry, EntryId as InboxEntryId};

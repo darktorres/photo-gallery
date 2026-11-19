@@ -20,13 +20,14 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use pg_catalog::{Catalog, VolumeSet};
 use pg_jobs::control::{Control, Hold};
+use pg_jobs::events::Change;
 use pg_jobs::governor::Governor;
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
-use pg_model::progress::Progress;
+use pg_model::progress::{Phase, Progress};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::drive::Drives;
 use pg_platform::native::PATH_RULES;
@@ -35,6 +36,7 @@ use pg_platform::priority::Priority;
 use crate::inner::Inner;
 use crate::lanes::{self, Place, probe_place};
 use crate::passes::{count, cut_done, error_text, file_failure};
+use crate::removals;
 use crate::shared::{LaneProgress, Shared};
 
 /// How long a root's probe may run before its root is taken as unknown: the lanes collapse to one until it answers.
@@ -130,6 +132,8 @@ pub(crate) struct Lanes {
     pub(crate) root: Arc<Control>,
     /// The crop thread's control: a child of the root, shown as a job of its own.
     crop_ctl: Arc<Control>,
+    /// The removals' control: a child of the root too, shown as a job of its own (its progress, and its pause).
+    removal_ctl: Arc<Control>,
     pub(crate) shared: Arc<Shared>,
     /// Splits the file-buffer budget among the lanes (each lane's [`Inner::options`] carries its share).
     governor: Governor,
@@ -138,7 +142,11 @@ pub(crate) struct Lanes {
     registry: Mutex<Registry>,
     coordinator: OnceLock<Arc<Service>>,
     cropper: OnceLock<Arc<Service>>,
+    removals: OnceLock<Arc<Service>>,
 }
+
+/// How often the removals are looked at without a wake: a removal kept for an unfinished write is tried again then.
+const REMOVAL_RECHECK: Duration = Duration::from_secs(30);
 
 /// One crop or cut, as the crop thread takes it from the queues.
 enum Job {
@@ -160,6 +168,7 @@ impl Lanes {
         drives: Arc<dyn Drives + Send + Sync>,
     ) -> Result<Arc<Lanes>> {
         let crop_ctl = root.lane();
+        let removal_ctl = root.lane();
         // The lanes' CPU is shared: their workers take permits, so two drives' decoders share the cores.
         let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
         root.share_cpu(cpus);
@@ -170,12 +179,14 @@ impl Lanes {
         let lanes = Arc::new(Lanes {
             root,
             crop_ctl,
+            removal_ctl,
             shared,
             governor,
             drives,
             registry: Mutex::new(Registry::default()),
             coordinator: OnceLock::new(),
             cropper: OnceLock::new(),
+            removals: OnceLock::new(),
         });
         let weak = Arc::downgrade(&lanes);
         let coordinator = Service::start("lane coordinator", move |waker| coordinate(&weak, waker))
@@ -184,6 +195,10 @@ impl Lanes {
         let weak = Arc::downgrade(&lanes);
         let cropper = Service::start("crop job", move |waker| crop(&weak, waker)).context("start the crop job")?;
         let _ = lanes.cropper.set(Arc::new(cropper));
+        let weak = Arc::downgrade(&lanes);
+        let removals =
+            Service::start("removal job", move |waker| remove(&weak, waker)).context("start the removal job")?;
+        let _ = lanes.removals.set(Arc::new(removals));
         Ok(lanes)
     }
 
@@ -232,7 +247,7 @@ impl Lanes {
 
     /// The controls of the crop thread and the lanes, the crop's first: each one's progress is a line of its own.
     pub(crate) fn controls(&self) -> Vec<Arc<Control>> {
-        let mut controls = vec![self.crop_ctl.clone()];
+        let mut controls = vec![self.crop_ctl.clone(), self.removal_ctl.clone()];
         controls.extend(self.all().into_iter().map(|lane| lane.inner.ctl.clone()));
         controls
     }
@@ -245,6 +260,13 @@ impl Lanes {
 
     fn wake_cropper(&self) {
         if let Some(service) = self.cropper.get() {
+            service.wake();
+        }
+    }
+
+    /// A removal was begun (`Catalog::begin_removal`): the removals thread finishes it, now.
+    pub(crate) fn wake_removals(&self) {
+        if let Some(service) = self.removals.get() {
             service.wake();
         }
     }
@@ -326,7 +348,7 @@ impl Lanes {
         let deadline = Instant::now() + timeout;
         let mut stopped = true;
         self.root.request_stop();
-        for service in [self.coordinator.get(), self.cropper.get()].into_iter().flatten() {
+        for service in [self.coordinator.get(), self.cropper.get(), self.removals.get()].into_iter().flatten() {
             service.quit();
             self.root.wake();
             stopped &= service.stop_within(deadline.saturating_duration_since(Instant::now()));
@@ -730,6 +752,79 @@ fn crop(weak: &Weak<Lanes>, waker: &Waker<'_>) {
         let Some(lanes) = weak.upgrade() else { return };
         lanes.run_jobs(&mut catalog, waker);
         drop(lanes);
+    }
+}
+
+/// The removals thread: woken when a folder is removed, and every [`REMOVAL_RECHECK`] otherwise, it finishes the removals
+/// not finished (`removals::finish`): a removal kept for an unfinished write is tried again, and one a command left (with
+/// the app closed) is finished here.
+fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
+    let mut catalog: Option<Catalog> = None;
+    // The failure last told: a failure that repeats at each recheck is told once, until it changes or goes.
+    let mut told: Option<String> = None;
+    // The thumbnails of the files a command removed (with the app closed) are dropped once, at the first start.
+    let mut swept = false;
+    loop {
+        if waker.wait(Some(REMOVAL_RECHECK)) == Woke::Quit {
+            return;
+        }
+        let Some(lanes) = weak.upgrade() else { return };
+        if !swept {
+            swept = true;
+            if let Err(e) = lanes.shared.thumbs.sweep_orphans(&lanes.shared.catalog_path) {
+                lanes.shared.notices.post(Notice::FolderNotRemoved {
+                    error: format!("the thumbnails of removed files weren't dropped: {}", error_text(&e)),
+                });
+            }
+        }
+        match lanes.run_removals(&mut catalog) {
+            Ok(()) => told = None,
+            Err(error) => {
+                if told.as_deref() != Some(error.as_str()) {
+                    lanes.shared.notices.post(Notice::FolderNotRemoved { error: error.clone() });
+                    told = Some(error);
+                }
+            }
+        }
+        drop(lanes);
+    }
+}
+
+impl Lanes {
+    /// Finishes the removals not finished, as one phase of the removal job: its row in the status bar, its progress
+    /// (the files of the removals, as they go), and its pause, which waits between batches. The error text when a
+    /// removal could not be finished.
+    fn run_removals(&self, conn: &mut Option<Catalog>) -> std::result::Result<(), String> {
+        let catalog = match conn.take() {
+            Some(c) => c,
+            None => Catalog::open(&self.shared.catalog_path, PATH_RULES).map_err(|e| error_text(&e.into()))?,
+        };
+        let result = match catalog.removal_markers() {
+            Ok(markers) if markers.is_empty() => Ok(()),
+            Ok(markers) => self.finish_removals(&catalog, &markers),
+            Err(e) => Err(error_text(&e.into())),
+        };
+        *conn = Some(catalog);
+        result
+    }
+
+    /// The markers' removals, finished: the lanes stop reading the folders, then the files go in batches under the job's
+    /// phase, and the folders' listing is told the tree changed.
+    fn finish_removals(&self, catalog: &Catalog, markers: &[pg_catalog::Marker]) -> std::result::Result<(), String> {
+        for marker in markers {
+            self.stop_scans_under(&marker.path);
+        }
+        self.wake_all(true);
+        let total = u64::try_from(catalog.removal_files().unwrap_or(0)).unwrap_or(u64::MAX);
+        let _phase = self.removal_ctl.begin(Phase::Removing, total);
+        let mut done = 0u64;
+        let finished = removals::finish(catalog, self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
+            done = done.saturating_add(u64::try_from(files).unwrap_or(u64::MAX));
+            self.removal_ctl.set_done(done);
+            self.removal_ctl.checkpoint()
+        });
+        self.shared.changes.publish(Change::Scanned);
+        finished.map(drop).map_err(|e| error_text(&e))
     }
 }
 

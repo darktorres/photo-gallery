@@ -38,6 +38,7 @@ fn imported(prefix: &str) -> (Catalog, Control, PathBuf) {
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // The Hashes pass makes the hashes the import leaves owed: the pairs are made from them.
@@ -53,6 +54,7 @@ fn opts() -> Options {
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn scan(c: &mut Catalog, dir: &Path, ctl: &Control) {
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(c, &root, ctl).unwrap();
 }
 

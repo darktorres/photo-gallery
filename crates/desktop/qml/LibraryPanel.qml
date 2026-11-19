@@ -14,6 +14,10 @@ ModalOverlay {
     id: panel
     // The library's folders (library.roots), whether there are any, and whether the write-back setting is on.
     required property var roots
+    // The removals not finished: those waiting for an unfinished write (Discard gives them up), and those still going.
+    required property var keptRemovals
+    required property var removingRemovals
+    required property bool hasRemovals
     required property bool hasRoots
     required property bool writeBack
     // Whether the borders and the duplicates are detected (the preferences; on by default).
@@ -25,6 +29,8 @@ ModalOverlay {
     // Add a folder (Main asks the picker, then the library takes what it chose).
     signal addRequested()
     signal removeRequested(int row)
+    // The folder whose kept removal is to be given up (its path as the panel lists it).
+    signal discardRequested(string folder)
     signal rescanRequested()
     signal writeBackToggled(bool on)
     signal detectBordersToggled(bool on)
@@ -70,6 +76,49 @@ ModalOverlay {
                     visible: !panel.hasRoots
                     text: words.text("ui-no-folders-yet")
                     color: "#888888"
+                }
+            }
+            // The folders being removed for good (their files are going, or kept for a write not yet finished).
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: panel.hasRemovals
+                Label { text: words.text("ui-removal-heading"); color: "#999999"; font.bold: true }
+                Repeater {
+                    model: panel.keptRemovals
+                    delegate: RowLayout {
+                        id: keptRow
+                        required property string modelData
+                        Layout.fillWidth: true
+                        Label {
+                            text: keptRow.modelData
+                            textFormat: Text.PlainText
+                            elide: Text.ElideMiddle
+                            color: "#999999"
+                            Layout.fillWidth: true
+                        }
+                        Label { text: words.text("ui-removal-kept"); color: "#999999" }
+                        Button {
+                            text: words.text("ui-removal-discard")
+                            flat: true
+                            onClicked: panel.discardRequested(keptRow.modelData)
+                        }
+                    }
+                }
+                Repeater {
+                    model: panel.removingRemovals
+                    delegate: RowLayout {
+                        id: removingRow
+                        required property string modelData
+                        Layout.fillWidth: true
+                        Label {
+                            text: removingRow.modelData
+                            textFormat: Text.PlainText
+                            elide: Text.ElideMiddle
+                            color: "#999999"
+                            Layout.fillWidth: true
+                        }
+                        Label { text: words.text("ui-removal-removing"); color: "#999999" }
+                    }
                 }
             }
             CheckBox {

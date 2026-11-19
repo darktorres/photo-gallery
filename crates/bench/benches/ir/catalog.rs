@@ -36,8 +36,9 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
 // opened once by the build of schema version 7 (migrations 2 to 7: the borders' change stamps, the inbox, the ledger,
 // the session row, the thumbnail views, the typed queue), so its rows are v5's and a change between the two is the
 // code's; the cache's schema is unchanged. v7 is v6's catalog opened once by the build of schema version 8 (the
-// notifications' migration), the same way.
-const LAYOUT: &str = "v8-windows-rules";
+// notifications' migration), the same way. v9 is v8's catalog opened once by the build of schema version 19 (the
+// AUTOINCREMENT ids, the incremental auto-vacuum, the removals' marker), the same way.
+const LAYOUT: &str = "v9-windows-rules";
 // The large layout (tools/profiling/bench_data.py, `-large`): 200,000 files of the synthetic library's large profile,
 // 50,000 of them broken (the import's failures), and the failure ledger seeded to 100,000 rows. Made and named as
 // LAYOUT is; the inbox's refresh is measured on it. v6-large was made by the build of schema version 7 (the F0

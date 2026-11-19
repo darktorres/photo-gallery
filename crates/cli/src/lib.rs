@@ -361,7 +361,31 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 }
             }
         }
-        Command::Remove { root } => {
+        Command::Remove { root, discard_pending: true } => {
+            let root = match pg_platform::names::normalize_path(&root) {
+                Ok(path) => path,
+                Err(_) => pg_platform::names::rule_path_in(rules, &root)
+                    .ok_or_else(|| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
+            };
+            let name = rules.display(&root);
+            let Some(discarded) = catalog.discard_removal(&root)? else {
+                bail!(line(&Line::NotInLibrary { root: name }))
+            };
+            // The temps as the catalog stored them (`PathRules::join`): a stored path that no longer parses is none of ours.
+            let temps: Vec<_> = discarded.temps.iter().filter_map(|bytes| rules.parse_bytes(bytes)).collect();
+            for (temp, e) in pg_writeback::discard_temps(rules, &temps) {
+                say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() });
+            }
+            // The discarded files' thumbnails: the sweep drops every entry whose file the catalog no longer has.
+            let (events, printer) = thumb_events();
+            let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
+            let swept = cache.sweep_orphans(&catalog_path);
+            drop(cache);
+            let _ = printer.join();
+            swept?;
+            say(&Line::Removed { root: name, deleted: discarded.rows.to_string() });
+        }
+        Command::Remove { root, discard_pending: false } => {
             // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
             // the catalog's, and the catalog says whether it is a library folder.
             let root = match pg_platform::names::normalize_path(&root) {
@@ -370,13 +394,30 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     .ok_or_else(|| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
             };
             let name = rules.display(&root);
-            let removed = match catalog.root_id(&root)? {
-                Some(id) => catalog.remove_root(id)?,
-                None => None,
-            };
-            match removed {
-                Some(n) => say(&Line::Removed { root: name, hidden: n.to_string() }),
+            // A removal begun by an earlier run (its marker left, the folder already out of the list) is finished here.
+            let begun = match catalog.root_id(&root)? {
+                Some(id) => catalog.begin_removal(id, &root)?,
+                None if catalog.removal_markers()?.iter().any(|m| rules.same(&m.path, &root)) => {
+                    pg_catalog::Begun::Pending(root.clone())
+                }
                 None => bail!(line(&Line::NotInLibrary { root: name })),
+            };
+            match begun {
+                pg_catalog::Begun::Started(_) | pg_catalog::Begun::Pending(_) => {
+                    let (events, printer) = thumb_events();
+                    let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
+                    let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
+                    drop(cache);
+                    let _ = printer.join();
+                    let driven = driven?;
+                    say(&Line::Removed { root: name.clone(), deleted: driven.files.to_string() });
+                    if driven.deferred > 0 {
+                        say(&Line::RemovalKept { root: name, deferred: driven.deferred.to_string() });
+                    }
+                }
+                pg_catalog::Begun::NotFound | pg_catalog::Begun::Changed => {
+                    bail!(line(&Line::NotInLibrary { root: name }))
+                }
             }
         }
         Command::Import { pipeline, retry_errors, again, no_pair, no_dups, serial } => {
@@ -488,6 +529,12 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             say(&Line::StatusHome { folder: shown(layout.home()) });
             for root in catalog.roots()? {
                 say(&Line::StatusLibrary { folder: rules.display(&root.path) });
+            }
+            // A removal not finished is only reported here: a read command changes nothing. Running `remove` on the
+            // folder, or the app (its removal job, after its first start), finishes it.
+            for marker in catalog.removal_markers()? {
+                let folder = rules.display(&marker.path);
+                say(&Line::StatusRemoving { folder, deferred: marker.deferred.to_string() });
             }
             let s = catalog.status()?;
             say(&Line::StatusFiles {
@@ -837,6 +884,7 @@ mod tests {
         let mut catalog =
             Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+        catalog.add_root(&root).unwrap();
         pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
         let (events, quiet) = pg_jobs_testkit::Quiet::bus();

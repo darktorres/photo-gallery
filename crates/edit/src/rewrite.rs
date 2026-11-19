@@ -7,6 +7,7 @@
 //! bytes under an [`op::Op`]; they share the decoded rasters ([`raster`]) and the PNG and WebP chunks ([`chunk`]).
 
 pub(crate) mod bmp;
+pub(crate) mod buffers;
 pub(crate) mod chunk;
 pub(crate) mod gif;
 pub(crate) mod jpeg;

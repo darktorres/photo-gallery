@@ -12,10 +12,9 @@ use pg_platform::file::beside;
 use rusqlite::Connection;
 
 use crate::convert::{Source, column_type, table_columns};
-use crate::core::PREPARE_CACHE_KIB;
 use crate::error::{Error, Result};
 use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, Step, bring_to, current_version};
-use crate::types::Rebuilt;
+use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
 
 /// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
 fn count(rows: i64) -> u64 {
@@ -104,6 +103,8 @@ pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
 /// changes in the main file.
 fn make_replacement(path: &Path, rules: PathRules, from: Option<&Path>) -> Result<(i64, i64)> {
     let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
+    // An empty file takes incremental auto-vacuum at once; a catalog made here is then compacted in place, never as a whole.
+    conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
     conn.execute_batch(SETTINGS)?;
     // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
     conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
@@ -152,6 +153,8 @@ pub(crate) const CARRIED: &[&str] = &[
     "file_ratings",
     "file_writes",
     "roots",
+    // A removal in progress is finished by the copy's catalog, as the old one would have finished it.
+    "root_removals",
     "folder_failures",
     "views",
     "session",
@@ -241,10 +244,36 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     if text_temps {
         tx.execute("UPDATE main.file_writes SET temp = CAST(temp AS BLOB) WHERE temp IS NOT NULL", [])?;
     }
+    carry_sequences(&tx)?;
     for (_, sql) in &triggers {
         tx.execute_batch(sql)?;
     }
     tx.commit()?;
+    Ok(())
+}
+
+/// The ids' high-water marks of the old catalog (`sqlite_sequence`, of the `AUTOINCREMENT` tables) are carried over: the
+/// copy's sequence is its largest copied id, so an id the old catalog had freed above that would be handed out again.
+/// The sequence is raised to the old one's, and never lowered; a table without a row there (none freed yet) is given
+/// the old one's. The old catalog has no `sqlite_sequence` before migration 19: then there is nothing to carry.
+fn carry_sequences(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let old_has_sequences: i64 =
+        tx.query_row("SELECT count(*) FROM carried.sqlite_schema WHERE name = 'sqlite_sequence'", [], |r| r.get(0))?;
+    if old_has_sequences == 0 {
+        return Ok(());
+    }
+    for table in ["files", "folders", "roots"] {
+        tx.execute(
+            "UPDATE main.sqlite_sequence SET seq = max(seq, (SELECT seq FROM carried.sqlite_sequence WHERE name = ?1)) \
+             WHERE name = ?1 AND EXISTS (SELECT 1 FROM carried.sqlite_sequence WHERE name = ?1)",
+            [table],
+        )?;
+        tx.execute(
+            "INSERT INTO main.sqlite_sequence(name, seq) SELECT ?1, seq FROM carried.sqlite_sequence WHERE name = ?1 \
+             AND NOT EXISTS (SELECT 1 FROM main.sqlite_sequence WHERE name = ?1)",
+            [table],
+        )?;
+    }
     Ok(())
 }
 

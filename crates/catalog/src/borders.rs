@@ -22,6 +22,15 @@ impl Catalog {
     /// analyzes it again, and the borders pass looks at the cut file once more.
     pub fn borders_cut(&self, file_id: FileId, after: (i64, i64)) -> Result<()> {
         let tx = crate::transaction::write_transaction(&self.conn)?;
+        // A file removed from the library since its cut was made (absent, or hidden for a removal) has nothing to record:
+        // that is not a failure of anything the user still has.
+        let present: bool =
+            tx.query_row("SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND missing = 0)", [file_id.get()], |r| {
+                r.get(0)
+            })?;
+        if !present {
+            return Ok(());
+        }
         tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
         // The file as it is now, which the detection is stored for, and the stored size its analysis has (a detection of
         // none has no cut, whatever that size is).

@@ -62,8 +62,17 @@ ui-player-error = — { $text }
 
 # The library panel
 ui-library-folders = Library folders
-ui-library-intro = Images in these folders and their subfolders are imported in the background. Removing a folder only hides its images: adding it back restores them, ratings included.
+ui-library-intro = Images in these folders and their subfolders are imported in the background. Removing a folder deletes its images from the catalog, ratings and thumbnails included; the files on disk are not touched.
 ui-remove = Remove
+ui-remove-folder-title = Remove this folder from the library?
+ui-remove-folder-question = Its images are deleted from the catalog, with their ratings, analyses and thumbnails. The files on disk are not touched, and the folder can be added again later.
+ui-removal-heading = Being removed
+ui-removal-removing = removing
+ui-removal-kept = kept: a change is waiting to be written
+ui-removal-discard = Discard
+ui-removal-discard-title = Discard this removal?
+ui-removal-discard-question = The changes not yet written into its files are given up, and their temporary copies are deleted. The files they were being written into may be left partly written.
+ui-removal-discard-confirm = Discard changes
 ui-no-folders-yet = No folders yet.
 ui-write-files = Write ratings and turns into the files too (where the format allows)
 ui-write-files-tooltip = Ratings are always kept in the catalog. With this on, they also go into the image files (XMP), so other programs see them; turns rotate the files losslessly.

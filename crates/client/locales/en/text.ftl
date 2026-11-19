@@ -70,6 +70,7 @@ pass-borders = Finding borders
 pass-crop = Saving cropped copies
 pass-thumbs = Thumbnails at { $height } px
 pass-placeholders = Making ThumbHash placeholders
+pass-removing = Removing a folder from the library
 pass-working = { $what } { $done } of { $total } · { $rate }/s · { $eta }
 # The status bar's link to the pass's failed files, beside its line
 pass-failed = { $count } failed
@@ -278,6 +279,8 @@ notice-folder-not-added-title = The folder couldn't be added
 notice-folder-not-added-body = { $error }
 notice-folder-not-removed-title = The folder couldn't be removed from the library
 notice-folder-not-removed-body = { $error }
+notice-folder-removal-unfinished-title = A change to a file in { $folder } was kept
+notice-folder-removal-unfinished-body = The file was deleted before its change was written, and its folder is being removed from the library. The new content is kept in { $temp }; the change is not written anywhere else.
 notice-rescan-failed-title = The library couldn't be scanned again
 notice-rescan-failed-body = { $error }
 notice-library-unavailable-title = The background work couldn't start

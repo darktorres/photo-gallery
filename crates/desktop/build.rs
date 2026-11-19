@@ -46,6 +46,8 @@ fn main() -> Result<(), String> {
                 "qml/LibraryPanel.qml",
                 "qml/SaveViewDialog.qml",
                 "qml/CutBordersDialog.qml",
+                "qml/RemoveFolderDialog.qml",
+                "qml/DiscardRemovalDialog.qml",
                 "qml/ModalOverlay.qml",
                 "qml/TestHooks.qml",
                 "qml/ImageLayers.qml",

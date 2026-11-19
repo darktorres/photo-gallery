@@ -81,6 +81,7 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images"))?;
+    c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
     pg_import::import(
         &mut c,
@@ -143,6 +144,7 @@ fn ratings_and_turns_reach_the_files() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
@@ -190,6 +192,7 @@ fn ratings_and_turns_reach_the_files() {
     }
     assert_eq!(c.status().unwrap().pending, 0, "a metadata write must not trigger a re-import");
     // Same files, same identities (written in place).
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
     assert_eq!(c.status().unwrap().missing, 0);
@@ -226,6 +229,7 @@ fn ratings_and_turns_reach_the_files() {
         before.iter().map(|(id, _)| c.placeholder(FileId::new(*id)).unwrap().unwrap().turns.get()).collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
@@ -250,6 +254,7 @@ fn ratings_and_turns_reach_the_files() {
         .output()
         .unwrap();
     assert!(out.status.success());
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(state::rating_of(&c, FileId::new(before[0].0)).unwrap(), Some(2));
@@ -291,6 +296,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&images).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
@@ -323,6 +329,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
         Some(4)
     );
     // Written in place: the same identities, and no other file beside them.
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
     assert_eq!(std::fs::read_dir(&images).unwrap().count(), 2);
@@ -541,6 +548,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
     // The scan lists both folders, each by its own name.
     let files = state::present_files(&c).unwrap();
@@ -680,6 +688,7 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(
         &mut c,
@@ -899,6 +908,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(
         &mut c,
@@ -990,6 +1000,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(
         &mut c,
@@ -1057,6 +1068,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     c.queue_rotation(state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
 
@@ -1101,6 +1113,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(
         &mut c,
@@ -1148,5 +1161,76 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     drop(writer);
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
+}
+
+/// A folder removed while a change to one of its files still waits for the writer, and the folder is not where it was
+/// (an unplugged drive, here moved away): the removal keeps that file's row and its temp, the writer keeps the change
+/// queued, and only the user's discard gives the change up (with its temp).
+#[test]
+fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
+    let (dir, _files, catalog_path, c) = imported("removalgone").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
+    state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
+    let images = dir.join("images");
+    let away = dir.join("images-away");
+    std::fs::rename(&images, &away).unwrap();
+
+    let root = c.roots().unwrap().remove(0);
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    let driven = pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!(driven.deferred, 1, "the file with a change is kept");
+    assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
+
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    writer.wake();
+    // Long enough for the writer to look at the change once (its folder is not there, so it waits).
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(state::writes_queued(&c, id).unwrap(), 1, "the change is still queued");
+    assert_eq!(c.removal_markers().unwrap().first().map(|m| m.deferred), Some(1));
+    drop(writer);
+
+    let discarded = c.discard_removal(&root.path).unwrap().expect("the removal is pending");
+    assert_eq!((discarded.rows, discarded.temps.len()), (1, 1));
+    assert!(c.removal_markers().unwrap().is_empty());
+    std::fs::rename(&away, &images).unwrap();
+    drop(c);
+    quiet.check();
+}
+
+/// A folder removed while its files have a change waiting, and the folder is still there: the writer finishes each
+/// change from its temp (the whole copy it kept), and then the removal deletes the files, for good.
+#[test]
+fn a_removal_finishes_a_change_whose_folder_is_still_there() {
+    let (dir, _files, catalog_path, c) = imported("removalrecover").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
+    std::fs::copy(on_disk(&c, &db_path), on_disk(&c, &temp)).unwrap();
+    state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
+
+    let root = c.roots().unwrap().remove(0);
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    let kept = pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!(kept.deferred, 1, "the file with a change waits for the writer");
+    assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
+
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    writer.wake();
+    wait_until(
+        60,
+        || "the change is still queued".into(),
+        || state::writes_queued(&c, id).unwrap() == 0 && writer.status().error.is_none(),
+    );
+    assert!(!on_disk(&c, &temp).exists(), "the writer finished the copy and took its temp");
+    drop(writer);
+
+    let done = pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!((done.files, done.deferred), (1, 0));
+    assert!(c.removal_markers().unwrap().is_empty());
+    assert_eq!(c.status().unwrap().files, 0, "the removed folder's files are gone");
+    drop(c);
     quiet.check();
 }

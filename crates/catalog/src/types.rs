@@ -128,6 +128,10 @@ pub(crate) fn covering_root(conn: &Connection, rules: PathRules, path: &RulePath
 /// transaction: each batch commits at once, so another writer waits for one batch at most, never for the pass.
 pub(crate) const WRITE_BATCH: usize = 1000;
 
+/// The page cache of [`crate::core::Catalog::prepare`]'s own work and of a rebuild's copy, in KiB: the copy aside, a
+/// migration and its `VACUUM` read and write each page once or twice, so a larger cache would only hold the whole file.
+pub(crate) const PREPARE_CACHE_KIB: i64 = 16 * 1024;
+
 /// How long a scan lease lasts without a heartbeat (seconds): past it, the walk that held it is taken to have died
 /// (its process crashed), and another walk of an overlapping folder may start (`Catalog::begin_scan`).
 pub const SCAN_LEASE_SECS: i64 = 60;

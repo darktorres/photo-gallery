@@ -253,13 +253,13 @@ impl Catalog {
     }
 }
 
-/// What every connection of a catalog has besides its settings: the SQL functions the queries call, and `rarray`, which
-/// binds a list of ids as one parameter (the pairing pass's writes, `PairsWriter`).
 /// What the log says of a one-time upgrade: the versions, and the copy of the old file that is kept.
 pub(crate) fn upgrade_notice(from: i64, to: i64, copy: &Path) -> String {
     format!("Updating the catalog from version {from} to {to}, one time. The old file is kept at {}.", copy.display())
 }
 
+/// What every connection of a catalog has besides its settings: the SQL functions the queries call, and `rarray`, which
+/// binds a list of ids as one parameter (the pairing pass's writes, `PairsWriter`).
 fn register(conn: &Connection) -> Result<()> {
     pg_query::register_functions(conn)?;
     rusqlite::vtab::array::load_module(conn)?;

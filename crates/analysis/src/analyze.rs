@@ -19,8 +19,8 @@ use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
-/// in place, which keeps the library, ratings and views. Not a schema version (a change to the tables is a migration
-/// of the catalog's schema, `MIGRATIONS` in `pg_catalog`'s `schema.rs`, whose baseline is frozen). Bumped when what is
+/// in place, which keeps the library, ratings and views. Not a schema version (a change to the tables is a change to the
+/// catalog's baseline before the first release, and a migration of `pg_catalog`'s `MIGRATIONS` after it). Bumped when what is
 /// stored changes. Version 2: the resize is linear-light MKS2021 (`pg_codec::resize`), which changes the PDQ inputs and
 /// so their hashes and the pairs made from them. Version 3: the resize is MKS2021 on the sRGB bytes, with no linear
 /// light, which changes the PDQ inputs again. Not bumped by the header-only import: the stored facts are the same

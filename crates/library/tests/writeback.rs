@@ -1103,67 +1103,6 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     quiet.check();
 }
 
-/// A finishing copy queued while its temp was text (the catalog before temps were kept as bytes) is carried over by the
-/// upgrade and finished: the original takes the temp's content, the rating is applied, and the temp is gone.
-#[test]
-fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
-    let dir = pg_testkit::run_folder_with("scratch_writeback", "carried-temp", &["images"]).unwrap();
-    let files = make_files(&dir).unwrap();
-    let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
-    let ctl = Control::new();
-    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
-    c.add_root(&root).unwrap();
-    pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(
-        &mut c,
-        &Options::new(pg_platform::priority::Priority::Normal),
-        false,
-        &pg_catalog::VolumeSet::All,
-        &ctl,
-    )
-    .unwrap();
-
-    // The temp a rating of b.png left: it holds a.jpg's bytes, so the copy into b.png is visible.
-    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
-    let temp_text = String::from_utf8(c.rules().join(&temp)).unwrap();
-    let copied = std::fs::read(&files[0].0).unwrap();
-    std::fs::write(pg_platform::names::disk_path(c.rules(), &temp), &copied).unwrap();
-    drop(c);
-
-    // The catalog as it was before, with the temp as text.
-    state::set_text_temp_layout(&catalog_path, id, &temp_text).unwrap();
-
-    // The upgrade carries the row (its temp as bytes), and the writer finishes the copy.
-    let c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
-    assert!(c.rebuilt().is_some(), "the text layout is moved aside");
-    assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()));
-    let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
-        ThumbCache::open(
-            &dir.join("thumbs.sqlite"),
-            &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
-            events,
-        )
-        .unwrap(),
-    ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
-    writer.wake();
-    wait_for_queue(&c).unwrap();
-    assert_eq!(writer.status().error, None);
-    assert_eq!(std::fs::read(&files[1].0).unwrap(), copied, "the copy went into the original");
-    assert!(!pg_platform::names::disk_path(c.rules(), &temp).exists(), "the temp is still on disk");
-    assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the file holds the rating once the copy is done");
-
-    drop(writer);
-    drop(c);
-    let _ = std::fs::remove_dir_all(dir.join("images"));
-    quiet.check();
-}
-
 /// A folder removed while a change to one of its files still waits for the writer, and the folder is not where it was
 /// (an unplugged drive, here moved away): the removal keeps that file's row and its temp, the writer keeps the change
 /// queued, and only the user's discard gives the change up (with its temp).

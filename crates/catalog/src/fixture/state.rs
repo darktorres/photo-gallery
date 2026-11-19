@@ -304,31 +304,6 @@ pub fn queue_finished_copy(
     Ok(())
 }
 
-/// Makes the catalog at `path` the layout before the temp was bytes: `file_writes` with `temp` as text, holding one
-/// queued rating for `id` whose temp is `temp_text`. The next open carries that row (its temp as bytes). It takes the
-/// path, not a `Catalog`: the test has closed its catalog, and the statements are the old layout's.
-pub fn set_text_temp_layout(path: &std::path::Path, id: FileId, temp_text: &str) -> Result<()> {
-    let old = rusqlite::Connection::open(path)?;
-    old.execute_batch(
-        r"DROP TABLE file_writes;
-          CREATE TABLE file_writes(
-              file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-              kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
-              value    INTEGER NOT NULL,
-              queued   INTEGER NOT NULL,
-              attempts INTEGER NOT NULL DEFAULT 0,
-              error    TEXT,
-              temp       TEXT,
-              temp_value INTEGER,
-              PRIMARY KEY(file_id, kind));",
-    )?;
-    old.execute(
-        "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rating', 3, 0, ?2, 3)",
-        params![id.get(), temp_text],
-    )?;
-    Ok(())
-}
-
 /// The stored notice rows of kind `kind` are rewritten to kind `to_kind` with `data` as their payload: a row that won't
 /// read, as an older build or a damaged file leaves one. Returns how many rows changed.
 pub fn rewrite_notices(c: &Catalog, kind: &str, to_kind: &str, data: &str) -> Result<usize> {

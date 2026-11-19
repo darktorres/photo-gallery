@@ -225,7 +225,6 @@ impl Rebuilt {
         }
     }
 }
-/// The `meta.path_rules` value of a rule set.
 /// The kind in column `i` (`files.kind`): an error for one that doesn't read, as an unknown extension is.
 pub(crate) fn kind_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Kind> {
     let key = r.get_ref(i)?.as_str()?;
@@ -258,6 +257,7 @@ pub struct WriteTarget {
     pub kind: Kind,
 }
 
+/// The `meta.path_rules` value of a rule set.
 pub(crate) fn rules_name(rules: PathRules) -> &'static str {
     match rules {
         PathRules::Windows => "windows",

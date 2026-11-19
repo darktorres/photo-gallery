@@ -41,8 +41,9 @@
 //! (`post_notice`, `replace_notices`, `clear_notices`, the marks, the dismissals, `record_failures`, `clear_failures`) says
 //! whether it changed a row, and the writer reads the inbox again only after a real change or a `data_version` change.
 //!
-//! Before a catalog of an earlier version is migrated, it is copied aside as `catalog.sqlite.pre-v<N>.bak` (once): the
-//! migrations can't be undone, and an older build refuses a later catalog.
+//! Before a catalog of an earlier version is migrated, it is copied aside as `catalog.sqlite.pre-v<N>.bak` (once): a
+//! migration can't be undone, and an older build refuses a later catalog. (Before the first release there is no earlier
+//! version, so no copy is made.)
 
 use rusqlite::{Connection, params};
 

@@ -294,22 +294,22 @@ file selected, dev mode) are in `gallery.json`, so they survive rebuilding the c
 where you were (folder, subfolders, filters, sort) are in the catalog. Each of these is resolved in one place,
 `crates/library/src/layout.rs`; for now they share the home folder.
 
-The catalog schema is a baseline (version 1) and the migrations after it (`MIGRATIONS` in
-`crates/catalog/src/schema.rs`; version 2 adds the change stamps for borders). The baseline is frozen: every schema
-change is a migration, and a catalog of this build's schema at an earlier version is migrated forward with its rows.
-Each start checks the catalog's schema against the one this build creates for its version (`pg-dbfile`). A difference
-(a changed column, index or trigger, an extra object, another application id) is rebuilt: a new catalog in this
-build's layout is made beside it, the old rows are copied into it with their ids (files, library folders, ratings,
-analysis, and the rest), and the old file is moved aside as `catalog.sqlite.replaced`. Nothing is deleted. Where a
-copy can't take the rows (a column the new layout needs is missing from the old one), the new catalog is empty and
-the note says why, and the library is scanned again. A catalog made under the other platform's path rules is refused,
-not moved: open it on the platform that made it.
+The catalog's schema is `crates/catalog/src/baseline.sql`: every table, index, view and trigger, and the seeds of
+`meta`, at version 1. Before the first release that file is edited in place and the version stays 1. From the release
+on, every change is a migration (`MIGRATIONS` in `crates/catalog/src/schema.rs`) and the baseline is frozen; the
+migration machinery is kept for that, and has no migration yet. A catalog at a version after this build's is refused,
+as made by another build. Each start checks the catalog's schema against this build's for its version (`pg-dbfile`),
+and a difference (a changed column, index or trigger, an extra object, another application id) is rebuilt before the
+release: a new catalog is made beside it, the rows are copied into it with their ids, and the old file is moved aside.
+Nothing is deleted. A catalog made under the other platform's path rules is refused, not moved: open it on the platform
+that made it.
 
-Schema 19 makes the ids of `files`, `folders` and `roots` never reused (`AUTOINCREMENT`), so a deleted folder's ids are
-not given to a later one. It also turns on incremental auto-vacuum, so a removal gives its free pages back: the first
-start after the upgrade runs one `VACUUM` to convert the file, which needs room for about three times the catalog's
-size. The upgrade is copied aside first as `catalog.sqlite.pre-v18.bak`, and that copy is kept. Rows deleted before the
-upgrade can't be recovered as never-used: the next id is one past the highest kept.
+The ids of `files`, `folders` and `roots` are `AUTOINCREMENT`, so a deleted row's id is never given to a later one. The
+catalog is created with incremental auto-vacuum, so a removal gives its free pages back; a file made without it is
+compacted by one `VACUUM` at its next start (`meta.vacuum_owed`).
+
+Development catalogs from before this reset (any version above 1) are refused. Delete them by hand (`catalog.sqlite`
+and its sidecars, `.pre-v*.bak`, `.replaced*`) and let the next start make a new one, then scan again.
 
 Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs

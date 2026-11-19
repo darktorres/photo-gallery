@@ -61,7 +61,7 @@ impl Catalog {
     /// all) is rebuilt: a new catalog in this build's layout is made beside it, the old rows are copied into it with
     /// their ids (`carry_rows`), and the old file is moved aside (`pg_dbfile::move_aside`; see [`Catalog::rebuilt`]). A
     /// row the copy can't take (a column the new layout needs that the old one lacks) fails the copy, and the new catalog
-    /// is made empty, with the reason said. A catalog of this build's schema at an earlier version is migrated forward.
+    /// is made empty, with the reason said. A catalog at a version after this build's is refused (made by another build).
     /// Its version marks are set to `versions`. The library calls this once, before anything else opens the catalog. A
     /// change to the file (a rebuild, or a migration) needs no other process or connection to have it open: otherwise
     /// it fails with the catalog untouched, and the one that has it open is left as it is.

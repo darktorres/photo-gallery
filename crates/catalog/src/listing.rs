@@ -1,6 +1,5 @@
 //! A listing in its four columns (`folder`, `recursive`, `query`, `sort`), as the saved views and the session store
-//! it: read, written, and the session's row put. The views and the migrations' conversion of the old session
-//! (`convert::convert_session`) use it. A leaf, below `core`.
+//! it: read, written, and the session's row put. The saved views use it too. A leaf, below `core`.
 
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};

@@ -1,6 +1,6 @@
 //! The failure ledgers (see the docs below). The files a pass couldn't make its result of, for the state each file was
 //! in (`file_failures`): the thumbnails' and the borders' passes write theirs; the import's rows are kept by triggers
-//! on `analysis` (`TO_8_NOTIFY`), mirroring the failed analyses. And the folders the walks couldn't take
+//! on `analysis`, mirroring the failed analyses. And the folders the walks couldn't take
 //! (`folder_failures`), which the scan's writer records and a complete walk sweeps (`ScanLease::mark_missing`).
 //!
 //! Each ledger is one inbox entry ([`LedgerKind`]), built when the inbox is read ([`Catalog::ledger_entries`]) from its
@@ -18,8 +18,7 @@
 //!
 //! ## The failure ledgers
 //!
-//! The files a pass failed on are the `file_failures` table of `catalog.sqlite` (migration `TO_4`, changed by
-//! `TO_8_NOTIFY`), read and written by `pg_catalog::ledger`: one row per file and pass (thumbnails, borders, import),
+//! The files a pass failed on are the `file_failures` table of `catalog.sqlite`, read and written by `pg_catalog::ledger`: one row per file and pass (thumbnails, borders, import),
 //! holding the file as the pass read it (mtime, size, rotation), the error, whether the pass tries it again by itself
 //! (`retry`), when it first failed, a serial (`meta.seq` when it was recorded) and whether it is hidden.
 //!

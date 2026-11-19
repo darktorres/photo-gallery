@@ -11,7 +11,7 @@ use pg_model::rules::PathRules;
 use pg_platform::file::beside;
 use rusqlite::Connection;
 
-use crate::convert::{Source, column_type, table_columns};
+use crate::convert::{Source, table_columns};
 use crate::error::{Error, Result};
 use crate::schema::{Hooks, MIGRATIONS, SCHEMA, SETTINGS, Step, bring_to, current_version};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
@@ -174,10 +174,9 @@ pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 /// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
 /// would rewrite the copied rows' `pending` and `seq`, and are made again from their own text after it. All of it is one
 /// transaction: a failure copies nothing, and the old file is not changed. `rules` are the rules the old file's paths
-/// were stored under (the caller has checked they are this build's): a saved view that kept its folder as text (before
-/// the folders were typed) is converted to the typed form as it is copied. Then every `Rust` step of the migrations
-/// runs, in order, on the copy ([`Source::Carried`]): each finds the old shape it converts in the old file, so a file
-/// of any version is converted as its migrations would have, and one already converted is left as it is.
+/// were stored under (the caller has checked they are this build's). Then every `Rust` step of the migrations runs, in
+/// order, on the copy ([`Source::Carried`]): none before the first release, and each after it finds the old shape it
+/// converts in the old file, so a conversion is idempotent.
 pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, rules: PathRules) -> Result<()> {
     // The old file's name as SQLite takes it, bound as a BLOB: its bytes on Unix, and on Windows the UTF-8 of the alias
     // for a folder with no UTF-8 name (`pg_platform::sqlite`).
@@ -198,11 +197,6 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     for (name, _) in &triggers {
         tx.execute_batch(&format!("DROP TRIGGER main.\"{name}\""))?;
     }
-    // The saved views' folders were text before they were typed (the stored form is the rules' bytes now).
-    let text_folders = column_type(&tx, "carried", "views", "folder")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
-    // The queued writes' temp files were text too: a TEXT value stays TEXT in the BLOB column, so it is cast.
-    let text_temps =
-        column_type(&tx, "carried", "file_writes", "temp")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
     for table in CARRIED {
         let new_columns = table_columns(&tx, "main", table)?;
         let old_columns = table_columns(&tx, "carried", table)?;
@@ -213,36 +207,26 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
         }
         let columns = common.join(", ");
         if *table == "meta" {
+            // The file's own `path_rules` is this build's, and its `vacuum_owed` is the one this file's creation set: the
+            // copy's value for it is not the old file's.
             tx.execute(
                 &format!(
                     "INSERT OR REPLACE INTO main.meta ({columns}) SELECT {columns} FROM carried.meta \
-                     WHERE key IN (SELECT key FROM main.meta) AND key <> 'path_rules'"
+                     WHERE key IN (SELECT key FROM main.meta) AND key NOT IN ('path_rules', 'vacuum_owed')"
                 ),
                 [],
             )?;
-        } else if *table == "file_writes" {
-            // A queued write whose value breaks its kind's rule (version 7's CHECK) was never valid: it is left out, as
-            // the migration drops it. This is the copy obeying the current layout's constraint, not a conversion of
-            // data: the insert can't take a row the CHECK refuses, so it is dropped here, before any `Rust` step runs.
-            tx.execute(
-                &format!("INSERT OR IGNORE INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"),
-                [],
-            )?;
         } else {
+            // A plain insert: a row the layout refuses (a CHECK, a NOT NULL, a UNIQUE) is an error that rolls the copy back,
+            // not a row dropped. The old file has this build's layout, so none is expected.
             tx.execute(&format!("INSERT INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"), [])?;
         }
-    }
-    if text_folders {
-        convert_text_folders(&tx, rules)?;
     }
     // The migrations' conversions, in order, before the triggers are back (they would fire on the converted rows).
     for step in MIGRATIONS.iter().flat_map(|migration| migration.steps.iter()) {
         if let Step::Rust(convert) = *step {
             convert(&tx, Source::Carried, rules)?;
         }
-    }
-    if text_temps {
-        tx.execute("UPDATE main.file_writes SET temp = CAST(temp AS BLOB) WHERE temp IS NOT NULL", [])?;
     }
     carry_sequences(&tx)?;
     for (_, sql) in &triggers {
@@ -255,7 +239,7 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
 /// The ids' high-water marks of the old catalog (`sqlite_sequence`, of the `AUTOINCREMENT` tables) are carried over: the
 /// copy's sequence is its largest copied id, so an id the old catalog had freed above that would be handed out again.
 /// The sequence is raised to the old one's, and never lowered; a table without a row there (none freed yet) is given
-/// the old one's. The old catalog has no `sqlite_sequence` before migration 19: then there is nothing to carry.
+/// the old one's. A file with no `sqlite_sequence` (none of its tables is AUTOINCREMENT) has nothing to carry.
 fn carry_sequences(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     let old_has_sequences: i64 =
         tx.query_row("SELECT count(*) FROM carried.sqlite_schema WHERE name = 'sqlite_sequence'", [], |r| r.get(0))?;
@@ -277,22 +261,66 @@ fn carry_sequences(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
-/// The saved views' folders, copied as text from an older catalog: each becomes the rules' stored bytes. The
-/// text is split by the rules, so a folder that the old text named is the same folder; a NUL in it is refused, and the
-/// copy is rolled back with the rest.
-fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Result<()> {
-    let views: Vec<(String, Vec<u8>)> = tx
-        .prepare("SELECT name, CAST(folder AS BLOB) FROM main.views")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    for (name, text) in views {
-        let folder = rules
-            .parse_merged(&text)
-            .ok_or_else(|| Error::Other(anyhow!("saved view {name:?}: a NUL in its folder")))?;
-        tx.execute(
-            "UPDATE main.views SET folder = ?1 WHERE name = ?2",
-            rusqlite::params![rules.join_merged(&folder), name],
-        )?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{Hooks, SCHEMA, bring_to, current_version};
+    use pg_platform::native::PATH_RULES;
+    use pg_testkit::run_folder;
+
+    /// A fresh catalog file at `path`, made as `prepare` makes one: with incremental auto-vacuum when `incremental`, and
+    /// without it otherwise (then the file owes a VACUUM).
+    fn made(path: &Path, incremental: bool) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        if incremental {
+            conn.pragma_update(None, "auto_vacuum", "INCREMENTAL").unwrap();
+        }
+        bring_to(&conn, &SCHEMA, PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
+        conn
     }
-    Ok(())
+
+    fn vacuum_owed(conn: &Connection) -> i64 {
+        conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap()
+    }
+
+    /// The copy keeps the new file's own `vacuum_owed`: the old file's mark (set when it was made without incremental
+    /// auto-vacuum) is not carried over, since the new file was made with it.
+    #[test]
+    fn the_copy_keeps_the_new_files_vacuum_mark() {
+        let dir = run_folder("scratch_rebuild", "vacuum-mark").unwrap();
+        let old_path = dir.join("old.sqlite");
+        drop(made(&old_path, false));
+        assert_eq!(vacuum_owed(&Connection::open(&old_path).unwrap()), 1, "the old file owes a vacuum");
+        let new_path = dir.join("new.sqlite");
+        let mut new = made(&new_path, true);
+        assert_eq!(vacuum_owed(&new), 0);
+        carry_rows(&mut new, &old_path, PATH_RULES).unwrap();
+        assert_eq!(vacuum_owed(&new), 0, "the copy did not carry the old file's mark");
+        drop(new);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A queued write the layout refuses (its value out of its kind's range: the CHECK) is an error that rolls the copy
+    /// back, not a row dropped: the old file has such a row only because its constraints were off.
+    #[test]
+    fn a_queued_write_the_layout_refuses_is_an_error_not_a_dropped_row() {
+        let dir = run_folder("scratch_rebuild", "refused-write").unwrap();
+        let old_path = dir.join("old.sqlite");
+        {
+            let old = made(&old_path, true);
+            old.execute_batch(
+                "PRAGMA ignore_check_constraints = ON; PRAGMA foreign_keys = OFF;
+                 INSERT INTO file_writes(file_id, kind, value, queued) VALUES (1, 'rating', 9, 0);",
+            )
+            .unwrap();
+        }
+        let new_path = dir.join("new.sqlite");
+        let mut new = made(&new_path, true);
+        let error = carry_rows(&mut new, &old_path, PATH_RULES).unwrap_err().to_string();
+        assert!(error.contains("CHECK"), "{error}");
+        let rows: i64 = new.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 0, "the copy is rolled back");
+        drop(new);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

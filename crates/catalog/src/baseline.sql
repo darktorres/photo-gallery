@@ -1,6 +1,7 @@
--- The catalog's schema as the migration chain makes it at version 20: the objects in creation order
--- (tables, indexes, views, triggers), then the rows the chain seeds in `meta`. Plain SQL: the macros were expanded
--- when it was made. `bring_to` adds the `path_rules` row, the application id and the version.
+-- The catalog's schema: every table, index, view and trigger, then the rows creation seeds in `meta`. Plain SQL: the
+-- shared SQL macros (`sql.rs`) are expanded in it. `bring_to` adds the `path_rules` row, the application id and the
+-- version. Before the first release this file is edited in place; after it, it is frozen and each change is a migration.
+-- `vacuum_owed` is 0 here: `bring_to` sets it when the file has no incremental auto-vacuum.
 
 -- tables
 CREATE TABLE scans(
@@ -460,4 +461,4 @@ INSERT INTO meta(key, value) VALUES ('pairing_version', 1);
 INSERT INTO meta(key, value) VALUES ('seq', 0);
 INSERT INTO meta(key, value) VALUES ('taken_zone', '');
 INSERT INTO meta(key, value) VALUES ('thumbs_version', 0);
-INSERT INTO meta(key, value) VALUES ('vacuum_owed', 1);
+INSERT INTO meta(key, value) VALUES ('vacuum_owed', 0);

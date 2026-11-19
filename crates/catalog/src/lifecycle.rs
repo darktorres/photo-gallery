@@ -303,10 +303,8 @@ mod tests {
     use super::set_taken_zone;
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
-    use crate::rebuild::backup_path;
     use crate::schema::{
-        BASELINE, BEFORE_NOTIFY, Hooks, MIGRATIONS, SCHEMA, SchemaSet, bring_to, current_expected, current_version,
-        mismatch,
+        BASELINE, Hooks, MIGRATIONS, SchemaSet, bring_to, current_expected, current_version, mismatch,
     };
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
@@ -318,7 +316,7 @@ mod tests {
     use crate::{Catalog, Error, Result, ScannedFile};
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::Taken;
-    use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
+    use pg_model::ids::{FileId, FileIdentity, FolderId};
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::rules::PathRules;
@@ -531,80 +529,6 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         let r = c.rebuilt().expect("moved aside");
         assert_eq!(r.carried, Carried::Rows { files: 1, folders: 1 });
-    }
-
-    /// A catalog from before the folders were typed kept its saved views' folders and the session's as text, and its
-    /// session as text keys. They are carried typed (a view's stored bytes; the session's one row), so they read as
-    /// they were saved.
-    // Windows-only: before the folders were typed, the views and the session held backslash-separated Windows text,
-    // and that text is what this carries.
-    #[test]
-    fn text_folders_of_views_and_session_are_carried_typed() {
-        let dir = run_folder(SCRATCH, "text-folders").unwrap();
-        let path = dir.join("catalog.sqlite");
-        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
-        drop(c);
-        let old = Connection::open(&path).unwrap();
-        old.execute_batch(
-            r#"DROP TABLE views;
-              CREATE TABLE views(name TEXT PRIMARY KEY, folder TEXT NOT NULL, recursive INTEGER NOT NULL,
-                                 query TEXT NOT NULL, sort TEXT NOT NULL);
-              INSERT INTO views VALUES ('old', 'pinterest\a', 1, '{}', '{"key":"name","descending":false}');
-              DROP TABLE session;
-              CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-              INSERT INTO session VALUES ('folder', 'pinterest\a'), ('recursive', 'false');"#,
-        )
-        .unwrap();
-        drop(old);
-        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
-        let r = c.rebuilt().expect("moved aside");
-        assert_eq!(r.carried, Carried::Rows { files: 0, folders: 0 });
-        let saved = c.views().unwrap();
-        assert_eq!(saved.len(), 1);
-        let folder = pg_model::rules::Merged::from(vec![Name::from("pinterest"), Name::from("a")]);
-        assert_eq!(saved[0].listing.folder, folder);
-        let session = c.session_listing().unwrap().expect("carried");
-        assert_eq!((session.folder, session.recursive), (folder, false));
-        drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// A catalog from before the queued writes' temps were bytes keeps them: a copy that was finished when the app
-    /// stopped is still the job it was, with its temp at the same path.
-    #[test]
-    fn a_queued_temp_from_before_it_was_bytes_is_carried_and_read_back() {
-        let dir = run_folder(SCRATCH, "text-temps").unwrap();
-        let path = dir.join("catalog.sqlite");
-        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
-        crate::fixture::state::add_scan(&c, 1, r"D:\p").unwrap();
-        crate::fixture::state::add_folder(&c, 1, r"D:\p").unwrap();
-        fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5)]).unwrap();
-        drop(c);
-        let old = Connection::open(&path).unwrap();
-        old.execute_batch(
-            r"DROP TABLE file_writes;
-              CREATE TABLE file_writes(
-                  file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-                  kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
-                  value    INTEGER NOT NULL,
-                  queued   INTEGER NOT NULL,
-                  attempts INTEGER NOT NULL DEFAULT 0,
-                  error    TEXT,
-                  temp       TEXT,
-                  temp_value INTEGER,
-                  PRIMARY KEY(file_id, kind));
-              INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
-                  VALUES (1, 'rating', 3, 0, 'D:\p\.a.jpg.pg-write', 3);",
-        )
-        .unwrap();
-        drop(old);
-        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
-        assert!(c.rebuilt().is_some(), "moved aside");
-        let job = c.next_write(0).unwrap().expect("the queued copy");
-        let temp = PathRules::Windows.parse(r"D:\p\.a.jpg.pg-write").unwrap();
-        assert_eq!(job.temp, Some((temp, pg_model::write::Write::Rating(pg_model::rating::Rating::new(3).unwrap()))));
-        drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// On Windows, a catalog in a folder whose name has no UTF-8 form is opened, and rebuilt with its rows carried (the
@@ -898,7 +822,8 @@ mod tests {
         let dir = run_folder(SCRATCH, &format!("comment-edit-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // A catalog whose `files` table was written with a comment in it: the same schema.
-        let commented = BASELINE.replacen("CREATE TABLE files(", "CREATE TABLE files( -- an added comment\n", 1);
+        let commented =
+            BASELINE.replacen("CREATE TABLE \"files\"(", "CREATE TABLE \"files\"( -- an added comment\n", 1);
         assert_ne!(commented, BASELINE);
         let conn = Connection::open(&path).unwrap();
         let set = SchemaSet { baseline: &commented, migrations: MIGRATIONS };
@@ -915,37 +840,6 @@ mod tests {
         a_comment_in_a_stored_definition_is_not_a_schema_change_windows,
         a_comment_in_a_stored_definition_is_not_a_schema_change_posix
     );
-
-    fn a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows(rules: PathRules) {
-        let dir = run_folder(SCRATCH, &format!("migrate-v1-{}", rules_name(rules))).unwrap();
-        let path = dir.join("catalog.sqlite");
-        // A catalog as the build before the first migration made it: the baseline, with a library folder.
-        {
-            let conn = Connection::open(&path).unwrap();
-            bring_to(&conn, &SCHEMA, rules, crate::schema::BASELINE_VERSION, &Hooks::none()).unwrap();
-            let root = rules.join(&p(rules, r"D:\kept"));
-            conn.execute("INSERT INTO roots(id, path, added) VALUES (7, ?1, 1)", [root]).unwrap();
-        }
-        let c = Catalog::prepare(&path, versions(), rules).unwrap();
-        assert!(c.rebuilt().is_none(), "migrated, not rebuilt");
-        assert!(!dir.join("catalog.sqlite.replaced").exists());
-        assert_eq!(pg_dbfile::user_version(&c.conn).unwrap(), current_version().unwrap());
-        assert!(is_current(&c.conn).unwrap());
-        let roots = c.roots().unwrap();
-        assert_eq!(roots.len(), 1);
-        assert_eq!((roots[0].id, &roots[0].path), (RootId::new(7), &p(rules, r"D:\kept")));
-        // The file as it was before the migration is kept beside it, once: an older build can be gone back to.
-        let backup = backup_path(&path, crate::schema::BASELINE_VERSION);
-        let old = Connection::open(&backup).unwrap();
-        assert_eq!(pg_dbfile::user_version(&old).unwrap(), crate::schema::BASELINE_VERSION);
-        assert_eq!(old.query_row("SELECT count(*) FROM roots", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
-        drop(old);
-        drop(c);
-        let kept = std::fs::metadata(&backup).unwrap().modified().unwrap();
-        drop(Catalog::prepare(&path, versions(), rules).unwrap());
-        assert_eq!(std::fs::metadata(&backup).unwrap().modified().unwrap(), kept);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
 
     /// A file whose extension this build doesn't hold (a build that held more recorded it) is marked missing when the
     /// catalog is prepared, so the grid lists the rest, and every count leaves it out.
@@ -1069,12 +963,6 @@ mod tests {
         the_unheld_extensions_are_looked_for_when_another_build_wrote,
         the_unheld_extensions_are_looked_for_when_another_build_wrote_windows,
         the_unheld_extensions_are_looked_for_when_another_build_wrote_posix
-    );
-
-    under_both_rules!(
-        a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows,
-        a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows_windows,
-        a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows_posix
     );
 
     fn a_database_that_is_not_a_catalog_is_moved_aside_not_built_on(rules: PathRules) {
@@ -1271,337 +1159,6 @@ mod tests {
         a_round_with_nothing_to_import_reads_one_index,
         a_round_with_nothing_to_import_reads_one_index_windows,
         a_round_with_nothing_to_import_reads_one_index_posix
-    );
-
-    /// A catalog at `path` at the version before the inbox's conversion (`TO_8_NOTIFY`, [`BEFORE_NOTIFY`]), as that
-    /// build left one. Files
-    /// 1 to 4 (`files.seq` 10, 20, 12 and 30), the first three with failed analyses and the third missing; a thumbnail
-    /// failure of file 1 at serial 50; the acknowledgements by time (`dismissed`): the import's mark `import_mark` (a
-    /// `files.seq`, as it was then), read and then dismissed, the thumbnails' dismissed after they were read, the
-    /// borders' read after they were dismissed; a write-dropped notice with a key and a part; and the two retired scan
-    /// notices.
-    fn before_the_inbox_conversion(rules: PathRules, path: &Path, import_mark: i64) {
-        let conn = Connection::open(path).unwrap();
-        bring_to(&conn, &SCHEMA, rules, BEFORE_NOTIFY, &Hooks::none()).unwrap();
-        let folder = p(rules, r"D:\p");
-        let v = versions();
-        conn.execute_batch(&format!(
-            "UPDATE meta SET value = {} WHERE key = 'import_version';
-             UPDATE meta SET value = {} WHERE key = 'borders_version';
-             UPDATE meta SET value = {} WHERE key = 'thumbs_version';",
-            v.import, v.borders, v.thumbs
-        ))
-        .unwrap();
-        conn.execute("INSERT INTO scans(id, root, started) VALUES (1, ?1, 0)", [rules.join(&folder)]).unwrap();
-        let key = rules.folder_key(&folder.parts);
-        let path_bytes = rules.join(&folder);
-        conn.execute("INSERT INTO folders(id, path, key) VALUES (1, ?1, ?2)", rusqlite::params![path_bytes, key])
-            .unwrap();
-        for id in 1..=4_i64 {
-            let name = Name::from(format!("{id}.jpg").as_str());
-            conn.execute(
-                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
-                 VALUES (?1, 1, ?1, 1, ?2, 'jpg', 'image', 10, 100, 1, ?3)",
-                rusqlite::params![id, name.as_bytes(), rules.order_key(&key, &name)],
-            )
-            .unwrap();
-            let error = (id < 4).then_some("it doesn't decode");
-            conn.execute(
-                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
-                 VALUES (?1, ?2, 10, 100, 0, 'image', 5, ?3)",
-                rusqlite::params![id, v.import, error],
-            )
-            .unwrap();
-        }
-        conn.execute_batch(&format!(
-            "UPDATE files SET missing = 1 WHERE id = 3;
-             INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)
-                 VALUES (1, 'thumbs', 100, 10, 0, 'panicked', 0, 5);
-             UPDATE file_failures SET serial = 50;
-             UPDATE files SET seq = CASE id WHEN 1 THEN 10 WHEN 2 THEN 20 WHEN 3 THEN 12 ELSE 30 END;
-             UPDATE meta SET value = 100 WHERE key = 'seq';
-             INSERT INTO ledger_ack(kind, seen_to, read, dismissed) VALUES
-                 ('import', {import_mark}, 5, 7), ('thumbs', 50, 5, 6), ('borders', 40, 9, 6);
-             INSERT INTO notices(key, part, level, source, kind, data, created, updated) VALUES
-                 ('write-dropped:1', 'x', 1, 'writes', 'write-dropped', '{{}}', 1, 1),
-                 ('scan-unreadable:1', NULL, 1, 'scan', 'scan-unreadable', '{{}}', 1, 1),
-                 ('mount-refused:1', NULL, 1, 'scan', 'mount-refused', '{{}}', 1, 1);"
-        ))
-        .unwrap();
-    }
-
-    /// The rows of [`before_the_inbox_conversion`]'s catalog as the conversion leaves them, whichever path took it
-    /// forward (the serials differ by path, their order doesn't).
-    fn the_inbox_rows_are_converted(c: &Catalog, import_mark: i64) {
-        use pg_model::notice::{FilePass, LedgerKind};
-        let notices = raw::rows_of(c, "SELECT kind, key, part FROM notices ORDER BY id", [], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?))
-        });
-        assert_eq!(notices, [("write-dropped".to_string(), None, None)], "an Event; the scan notices are gone");
-        let import = raw::rows_of(
-            c,
-            "SELECT file_id, serial, hidden FROM file_failures WHERE pass = 'import' ORDER BY serial",
-            [],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, bool>(2)?)),
-        );
-        let order: Vec<(i64, bool)> = import.iter().map(|r| (r.0, r.2)).collect();
-        assert_eq!(order, [(1, false), (3, true), (2, false)], "by (seq, id); the missing file's row hidden");
-        let thumbs = raw::rows_of(c, "SELECT serial, hidden FROM file_failures WHERE pass = 'thumbs'", [], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, bool>(1)?))
-        });
-        assert_eq!(thumbs, [(50, false)]);
-        let (first, middle, last) = (import[0].1, import[1].1, import[2].1);
-        assert!(50 < first && first < middle && middle < last, "{import:?}");
-        assert!(raw::meta_seq(c) >= last, "the change sequence is past every serial");
-        let ack = |kind: &str| {
-            raw::rows_of(c, "SELECT seen_to, dismissed_to FROM ledger_ack WHERE kind = ?1", [kind], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?))
-            })
-            .remove(0)
-        };
-        assert_eq!(ack("thumbs"), (50, Some(50)), "dismissed after it was read: dismissed up to what was seen");
-        assert_eq!(ack("borders"), (40, None), "read after it was dismissed: it came back, and stays back");
-        let (seen, dismissed) = ack("import");
-        assert_eq!(dismissed, Some(seen));
-        if import_mark >= 12 {
-            assert_eq!(seen, middle, "the mark covered the files at or below its seq: 1 and 3");
-        } else {
-            assert!(seen < first, "a mark below every failed file: none of them was seen ({seen}, {import:?})");
-        }
-        let columns = crate::convert::table_columns(&c.conn, "main", "ledger_ack").unwrap();
-        assert!(!columns.iter().any(|c| c == "dismissed"), "{columns:?}");
-        // The import's entry: back since the dismissal, with its live rows (files 1 and 2) counted against the mark.
-        let kind = LedgerKind::File(FilePass::Import);
-        let state = c.ledger_state(kind, &c.ledger_ack(kind).unwrap()).unwrap();
-        assert!(state.shown && state.new && state.since_dismissed, "{state:?}");
-        let counts = c.ledger_counts(kind, &c.ledger_ack(kind).unwrap()).unwrap();
-        let new = if import_mark >= 12 { 1 } else { 2 };
-        assert_eq!((counts.total, counts.new, counts.since_dismissed), (2, new, new));
-        let thumbs = LedgerKind::File(FilePass::Thumbs);
-        assert!(!c.ledger_state(thumbs, &c.ledger_ack(thumbs).unwrap()).unwrap().shown, "still dismissed");
-    }
-
-    /// The ledger's rows and acknowledgements, as text, to compare a catalog with itself.
-    fn ledger_rows(path: &Path) -> String {
-        raw::on_disk(path)
-            .query_row(
-                "SELECT (SELECT group_concat(file_id || ':' || pass || ':' || serial || ':' || hidden, ',')
-                         FROM (SELECT * FROM file_failures ORDER BY id))
-                     || '|' || (SELECT group_concat(kind || ':' || seen_to || ':' || coalesce(dismissed_to, '-'), ',')
-                                FROM (SELECT * FROM ledger_ack ORDER BY kind))",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap()
-    }
-
-    /// The inbox's rows are converted the same on the migration and on the rebuild's copy; a catalog already converted
-    /// that is rebuilt is converted again to the same rows; the copy kept before the migration is the file as it was,
-    /// untouched by a second preparation.
-    fn the_inbox_rows_convert_the_same_on_both_paths(rules: PathRules) {
-        for (mark, name) in [(15, "seen"), (5, "unseen")] {
-            // The migration.
-            let dir = run_folder(SCRATCH, &format!("notify-migrate-{name}-{}", rules_name(rules))).unwrap();
-            let path = dir.join("catalog.sqlite");
-            before_the_inbox_conversion(rules, &path, mark);
-            let c = Catalog::prepare(&path, versions(), rules).unwrap();
-            assert!(c.rebuilt().is_none(), "migrated, not rebuilt");
-            the_inbox_rows_are_converted(&c, mark);
-            drop(c);
-            let backup = backup_path(&path, BEFORE_NOTIFY);
-            let kept = std::fs::read(&backup).unwrap();
-            let old = Connection::open(&backup).unwrap();
-            assert_eq!(pg_dbfile::user_version(&old).unwrap(), BEFORE_NOTIFY);
-            drop(old);
-            drop(Catalog::prepare(&path, versions(), rules).unwrap());
-            assert_eq!(std::fs::read(&backup).unwrap(), kept, "the copy is made once");
-            // Converted already, then rebuilt (its schema differs): nothing is converted twice.
-            let converted = ledger_rows(&path);
-            raw::on_disk(&path).execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
-            let c = Catalog::prepare(&path, versions(), rules).unwrap();
-            assert!(c.rebuilt().is_some());
-            drop(c);
-            assert_eq!(ledger_rows(&path), converted);
-            std::fs::remove_dir_all(&dir).unwrap();
-
-            // The rebuild's copy of the same catalog.
-            let dir = run_folder(SCRATCH, &format!("notify-rebuild-{name}-{}", rules_name(rules))).unwrap();
-            let path = dir.join("catalog.sqlite");
-            before_the_inbox_conversion(rules, &path, mark);
-            raw::on_disk(&path).execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
-            let c = Catalog::prepare(&path, versions(), rules).unwrap();
-            assert!(c.rebuilt().is_some(), "rebuilt, not migrated");
-            the_inbox_rows_are_converted(&c, mark);
-            drop(c);
-            std::fs::remove_dir_all(&dir).unwrap();
-        }
-    }
-
-    under_both_rules!(
-        the_inbox_rows_convert_the_same_on_both_paths,
-        the_inbox_rows_convert_the_same_on_both_paths_windows,
-        the_inbox_rows_convert_the_same_on_both_paths_posix
-    );
-
-    /// A catalog of every older version reaches this build's schema on both paths: migrated (its schema that
-    /// version's), and rebuilt (its schema not quite: an index added).
-    #[test]
-    fn every_older_version_reaches_the_current_one_on_both_paths() {
-        let rules = pg_platform::native::PATH_RULES;
-        let current = current_version().unwrap();
-        for version in crate::schema::BASELINE_VERSION..current {
-            for rebuilt in [false, true] {
-                let dir = run_folder(SCRATCH, &format!("every-version-{version}-{rebuilt}")).unwrap();
-                let path = dir.join("catalog.sqlite");
-                {
-                    let conn = Connection::open(&path).unwrap();
-                    bring_to(&conn, &SCHEMA, rules, version, &Hooks::none()).unwrap();
-                    if rebuilt {
-                        conn.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
-                    }
-                }
-                let c = Catalog::prepare(&path, versions(), rules).unwrap();
-                assert_eq!(c.rebuilt().is_some(), rebuilt, "version {version}");
-                assert_eq!(pg_dbfile::user_version(&c.conn).unwrap(), current, "version {version}");
-                assert!(is_current(&c.conn).unwrap(), "version {version}, rebuilt {rebuilt}");
-                drop(c);
-                std::fs::remove_dir_all(&dir).unwrap();
-            }
-        }
-    }
-
-    /// Four random hashes (a xorshift from `seed`).
-    fn four_hashes(seed: u64) -> [pg_model::pdq::Hash; 4] {
-        let mut x = seed | 1;
-        std::array::from_fn(|_| {
-            let mut b = [0u8; 32];
-            for byte in &mut b {
-                x ^= x << 13;
-                x ^= x >> 7;
-                x ^= x << 17;
-                *byte = x.to_le_bytes()[0];
-            }
-            pg_model::pdq::Hash(b)
-        })
-    }
-
-    /// The 256-byte blob a draft-v12 build stored: the four kept orientations, then their transposes.
-    fn eight_blob(four: &[pg_model::pdq::Hash; 4]) -> Vec<u8> {
-        four.iter().map(|h| h.0).chain(four.iter().map(|h| h.transpose().0)).flatten().collect()
-    }
-
-    /// A draft-v12 catalog at `path` with six analysed pictures, file `id` = row `id`:
-    /// 1. kept hashes and their transposes, owed;  2. the same, done;  3. eight unrelated hashes, owed;
-    /// 4. a 100-byte blob, owed;  5. good hashes of an unreliable quality, owed (no build makes that: the rule removes it);
-    /// 6. no blob (an older build's), done.
-    fn before_migration_13(rules: PathRules, path: &Path) -> Vec<[pg_model::pdq::Hash; 4]> {
-        let conn = Connection::open(path).unwrap();
-        bring_to(&conn, &SCHEMA, rules, 12, &Hooks::none()).unwrap();
-        let v = versions();
-        conn.execute_batch(&format!(
-            "UPDATE meta SET value = {} WHERE key = 'import_version';
-             UPDATE meta SET value = {} WHERE key = 'borders_version';
-             UPDATE meta SET value = {} WHERE key = 'thumbs_version';",
-            v.import, v.borders, v.thumbs
-        ))
-        .unwrap();
-        let folder = p(rules, r"D:\p");
-        conn.execute("INSERT INTO scans(id, root, started) VALUES (1, ?1, 0)", [rules.join(&folder)]).unwrap();
-        let key = rules.folder_key(&folder.parts);
-        conn.execute(
-            "INSERT INTO folders(id, path, key) VALUES (1, ?1, ?2)",
-            rusqlite::params![rules.join(&folder), key],
-        )
-        .unwrap();
-        let fours: Vec<_> = (1..=6u64).map(|id| four_hashes(id * 0x9E37_79B9)).collect();
-        for (id, four) in (1..=6_i64).zip(&fours) {
-            let name = Name::from(format!("{id}.jpg").as_str());
-            conn.execute(
-                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
-                 VALUES (?1, 1, ?1, 1, ?2, 'jpg', 'image', 10, 100, 1, ?3)",
-                rusqlite::params![id, name.as_bytes(), rules.order_key(&key, &name)],
-            )
-            .unwrap();
-            let blob = match id {
-                3 => eight_blob(&four_hashes(77))
-                    .into_iter()
-                    .take(128)
-                    .chain(eight_blob(&four_hashes(78)).into_iter().skip(128))
-                    .collect(),
-                4 => vec![7u8; 100],
-                _ => eight_blob(four),
-            };
-            let blob = (id != 6).then_some(blob);
-            let quality = if id == 5 { 10 } else { 100 };
-            let state = if matches!(id, 2 | 6) { "done" } else { "due" };
-            conn.execute(
-                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, pdq, pdq_quality,
-                     pdq_dihedral, dups_state)
-                 VALUES (?1, ?2, 10, 100, 0, 'image', 5, ?3, ?4, ?5, ?6)",
-                rusqlite::params![id, v.import, four[0].0.to_vec(), quality, blob, state],
-            )
-            .unwrap();
-        }
-        fours
-    }
-
-    /// What migration 13 leaves: the owed rows carried where they still hold, the good blobs cut to the kept four, the
-    /// bad ones gone, no `dups_state` or `pdq`, and no `VACUUM` owed.
-    fn migration_13_left(c: &Catalog, fours: &[[pg_model::pdq::Hash; 4]]) {
-        let blobs: Vec<(i64, Option<Vec<u8>>)> =
-            raw::rows_of(c, "SELECT file_id, pdq_dihedral FROM analysis ORDER BY file_id", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            });
-        let kept = |id: usize| Some(pg_model::pdq::to_blob(&fours[id - 1]).to_vec());
-        assert_eq!(
-            blobs,
-            vec![(1, kept(1)), (2, kept(2)), (3, None), (4, None), (5, kept(5)), (6, None)],
-            "the good blobs cut to their first 128 bytes, the bad ones nulled"
-        );
-        let owed: Vec<i64> = raw::rows_of(c, "SELECT file_id FROM pairs_owed ORDER BY file_id", [], |r| r.get(0));
-        assert_eq!(owed, vec![1], "only the eligible owed analysis owes");
-        let columns: Vec<String> = raw::rows_of(c, "SELECT name FROM pragma_table_info('analysis')", [], |r| r.get(0));
-        assert!(!columns.iter().any(|n| n == "dups_state" || n == "pdq"), "{columns:?}");
-        let vacuum: i64 =
-            c.conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
-        assert_eq!(vacuum, 0);
-        let work = c.pairing_work().unwrap();
-        assert_eq!(work.ids.iter().map(|i| i.get()).collect::<Vec<_>>(), vec![1, 2]);
-        assert_eq!(work.legacy, 3, "files 3, 4 and 6: a reliable quality and no stored hashes");
-    }
-
-    /// Migration 13 on both paths: migrated (the data step reads `main`, then `VACUUM` runs after the commit), and
-    /// rebuilt (the copy brings the 256-byte blobs over, and the data step reads the old file's `dups_state`).
-    fn migration_13_is_the_same_on_both_paths(rules: PathRules) {
-        for rebuilt in [false, true] {
-            let dir = run_folder(SCRATCH, &format!("migration-13-{rebuilt}-{}", rules_name(rules))).unwrap();
-            let path = dir.join("catalog.sqlite");
-            let fours = before_migration_13(rules, &path);
-            if rebuilt {
-                raw::on_disk(&path).execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
-            }
-            let c = Catalog::prepare(&path, versions(), rules).unwrap();
-            assert_eq!(c.rebuilt().is_some(), rebuilt);
-            migration_13_left(&c, &fours);
-            // The data step again changes nothing (idempotent).
-            let tx = c.conn.unchecked_transaction().unwrap();
-            crate::convert::pairs_owed_and_hashes(&tx, crate::convert::Source::Main, rules).unwrap();
-            tx.commit().unwrap();
-            migration_13_left(&c, &fours);
-            // The header and the journal survive the VACUUM.
-            assert_eq!(pg_dbfile::user_version(&c.conn).unwrap(), current_version().unwrap());
-            assert_eq!(pg_dbfile::application_id(&c.conn).unwrap(), crate::schema::APPLICATION_ID);
-            let mode: String = c.conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
-            assert_eq!(mode, "wal");
-            drop(c);
-            std::fs::remove_dir_all(&dir).unwrap();
-        }
-    }
-
-    under_both_rules!(
-        migration_13_is_the_same_on_both_paths,
-        migration_13_is_the_same_on_both_paths_windows,
-        migration_13_is_the_same_on_both_paths_posix
     );
 
     /// A `VACUUM` that can't run (another connection reads) fails nothing: the mark stays, and the next start runs it.

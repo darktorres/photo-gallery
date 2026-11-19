@@ -15,7 +15,7 @@
 //!
 //! ## The inbox
 //!
-//! The notices kept are the `notices` table of `catalog.sqlite` (migration `TO_3`, changed by `TO_8_NOTIFY`), read and
+//! The notices kept are the `notices` table of `catalog.sqlite`, read and
 //! written by `pg_catalog::inbox`: a row holds the notice as JSON with its kind, level and source beside it, a count of its
 //! posts and their first and last times, its read and dismissed marks, and its revision. A row is named by its id, its
 //! `uid` (`meta.seq` when it was made; ids are reused) and its `rev`. `root` is the library folder it is about, a foreign

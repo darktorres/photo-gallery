@@ -56,12 +56,18 @@ impl NativePath {
         set_units(&mut self.0, parts, true);
     }
 
-    /// `parts` concatenated as they are, never in the verbatim form: for the volume calls, which are given the path
-    /// as it was typed. Windows only: its callers (the volume calls in dir.rs) are Windows code, so elsewhere it is dead.
+    /// `parts` concatenated in the plain form, never the verbatim one: for the volume calls, which are given the path as
+    /// it was typed. A verbatim drive or UNC path is taken back to its plain form (`GetVolumePathNameW` answers
+    /// `\\?\D:\` for `\\?\D:\photos`, not `D:\`). Windows only: its callers (the volume calls in dir.rs) are Windows
+    /// code, so elsewhere it is dead.
     #[cfg(windows)]
     pub(crate) fn set_plain(&mut self, parts: &[&[Unit]]) {
         self.0.clear();
-        set_units(&mut self.0, parts, false);
+        for part in parts {
+            self.0.extend_from_slice(part);
+        }
+        plain_in_place(&mut self.0);
+        self.0.push(0);
     }
 
     /// The units the call is given: NUL-terminated on Windows.
@@ -253,6 +259,26 @@ fn to_verbatim(path: &mut Vec<Unit>) {
     }
 }
 
+/// `path` (its units, no NUL) without its verbatim prefix, where the plain form has one: `\\?\D:\…` becomes `D:\…`, and
+/// `\\?\UNC\server\…` becomes `\\server\…`. Any other verbatim path (a volume's GUID path, a device) is as it is.
+#[cfg(windows)]
+fn plain_in_place(path: &mut Vec<Unit>) {
+    const COLON: Unit = 0x3A;
+    let plain: Option<Vec<Unit>> = match path.strip_prefix(VERBATIM) {
+        Some(rest) if matches!(rest, [letter, COLON, SEP, ..] if u8::try_from(*letter).is_ok_and(|b| b.is_ascii_alphabetic())) => {
+            Some(rest.to_vec())
+        }
+        Some(_) => path
+            .get(2..)
+            .and_then(|after| after.strip_prefix(UNC_AFTER))
+            .map(|share| [SEP, SEP].into_iter().chain(share.iter().copied()).collect()),
+        None => None,
+    };
+    if let Some(plain) = plain {
+        *path = plain;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +326,21 @@ mod tests {
         assert_eq!(path.units(), nul(r"\\?\D:\a\b.jpg"));
         path.set(&[&wide(r"D:\a")[..], &wide("/b.jpg")[..]]);
         assert_eq!(path.units(), nul(r"D:\a/b.jpg"), "a slash anywhere keeps it plain");
+    }
+
+    /// The volume calls get the plain form of a drive or UNC path, verbatim or not, and a volume's GUID path as it is.
+    #[cfg(windows)]
+    #[test]
+    fn the_volume_calls_get_the_plain_form() {
+        let mut path = NativePath::default();
+        path.set_plain(&[&wide(r"\\?\D:\photos")[..]]);
+        assert_eq!(path.units(), nul(r"D:\photos"));
+        path.set_plain(&[&wide(r"D:\photos")[..]]);
+        assert_eq!(path.units(), nul(r"D:\photos"));
+        path.set_plain(&[&wide(r"\\?\UNC\nas\photos")[..]]);
+        assert_eq!(path.units(), nul(r"\\nas\photos"));
+        path.set_plain(&[&wide(r"\\?\Volume{4ea5b958-f73e-44e2-81cb-64a4c313cb29}\")[..]]);
+        assert_eq!(path.units(), nul(r"\\?\Volume{4ea5b958-f73e-44e2-81cb-64a4c313cb29}\"));
     }
 
     #[cfg(windows)]

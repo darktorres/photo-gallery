@@ -47,6 +47,7 @@ function `path_name_key(name BLOB) -> BLOB`, built per `PathRules`, is registere
 `pg_query::register_functions` and `rusqlite::vtab::array::load_module` (`crates/catalog/src/core.rs:263-266`, with the
 connection's rules passed in), with the deterministic flag. The index is `files_mn(mid, missing, path_name_key(name))`.
 The key exists only in the index; the table keeps the name once.
+
 - **Windows key:** each UTF-16 unit mapped through an **embedded, versioned upcase table** generated from the Unicode
   data (BMP only, like `$UpCase`; supplementary letters are left as they are), then encoded as WTF-8. The table is not the
   running OS's `RtlUpcaseUnicodeChar` (`BOUNDED_MEMORY_PLAN.md:313`, which varies by Windows build and cannot run in the
@@ -80,6 +81,7 @@ The key exists only in the index; the table keeps the name once.
   rules' folder check.
 
 **Rejected alternatives (each with its reason):**
+
 - `NOCASE`/`lower()`: ASCII only (sqlite.org/datatype3.html, section 7). ICU extension: locale order (CLDR) rather than the
   filesystem's rule, an optional build, and an OS-provided ICU that changes silently invalidates the index.
   sqlean `text_nocase`: simple folding over the BMP only, an extension DLL on every connection, no WTF-8.
@@ -325,6 +327,7 @@ phase, then compile once. Never migrate the live catalog: use a copy.
 
 **Measured (read-only on the real catalog, via `ATTACH` into memory or a `VACUUM INTO` copy in the scratchpad; the live file was
 never changed; scratch databases deleted):**
+
 - Earlier in-place design end to end (foreign keys on, real triggers and views): `integrity_check` ok, `foreign_key_check` 0,
   sequences unchanged, 285.1 MiB after `VACUUM`; old and new order identical over all 715,051 files (0 rank mismatches, 0 name
   ties); today's key format `folder key 00 lower 00 exact` confirmed, Rust lowercase == Python per-char `lower()` for all names

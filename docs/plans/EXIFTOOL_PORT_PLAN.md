@@ -13,7 +13,7 @@ The reference is ExifTool 13.60, installed at `C:\Program Files\ExifTool`. Its s
 **The goal is checkable.** For every file we read, the port finds the same values ExifTool does, in the same places,
 and picks the same winner. A harness runs both on real files and on mutated ones, and zero mismatches is the bar.
 
-**Scope.** The port covers all of ExifTool 13.60, read and write, as set out in `docs/temp/EXIFTOOL_PORT_DESIGN.md`. This plan is the first slice of that design: the read side of the five containers (JPEG, PNG, GIF, WebP and TIFF) for the six fields below. Its steps are the acceptance gate for that slice. The rest of the port is gated by the design's phases and their done tests.
+**Scope.** The port covers all of ExifTool 13.60, read and write, as set out in `docs/plans/EXIFTOOL_PORT_DESIGN.md`. This plan is the first slice of that design: the read side of the five containers (JPEG, PNG, GIF, WebP and TIFF) for the six fields below. Its steps are the acceptance gate for that slice. The rest of the port is gated by the design's phases and their done tests.
 
 Checked against e428ab2 (2026-11-12) claim by claim, then corrected after an adversarial review (2026-11-14) of every
 path, line, ExifTool range and behaviour in this plan. The base 4e1ad4d (2026-11-01) and 29c4d5e (whose six files step 6 covers) are not ancestors of HEAD: HEAD's history begins at the squash commit
@@ -207,7 +207,7 @@ moves into the patcher, so the patcher returns `None` rather than an unchecked `
 ### 2. The port (in the `pg-et-*` crates, per design §1.2: `found.rs`, `jpeg.rs`, `png.rs`, `webp.rs`, `gif.rs`, `irb.rs`, `tiff.rs` and `xmp.rs` are the modules these crates hold)
 
 This section is the slice of design phases P1 to P5, plus the PNG and GIF parts of P6a and the WebP part of P7a
-(`docs/temp/EXIFTOOL_PORT_DESIGN.md`). The modules listed here are that slice, not the whole port.
+(`docs/plans/EXIFTOOL_PORT_DESIGN.md`). The modules listed here are that slice, not the whole port.
 
 Crate placement: the port is built in the `pg-et-*` crates from the start, as design §1.2 places it. `pg-metadata` is
 not reused as the reader (design §1.3). `pg-metadata` calls the new crates, and its old reader is removed at step 6.

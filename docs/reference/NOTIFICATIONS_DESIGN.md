@@ -2,9 +2,9 @@
 # Notifications plan: persistent inbox, failure ledger, dev log view
 
 Status (2026-11-11): S1, S2 and S3 done (see "S1 as built", "S2 as built" and "S3 as built" below), then corrected by
-[NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (status: implemented in one change; see git log), which three
+`NOTIFICATIONS_FIX_PLAN.md`, deleted in `dd8022b5` (`dd8022b5^:docs/temp/NOTIFICATIONS_FIX_PLAN.md`; status: implemented in one change; see git log), which three
 adversarial reviews of S1 to S3 called for. Re-checked against `d2cbc13`; delivered in three stages (S1, S2, S3), each
-its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
+its own commit. The reference for the code as it is was `NOTIFICATIONS.md`, folded into the code in `b5797ccf` (`b5797ccf^:docs/temp/NOTIFICATIONS.md`).
 
 ## Decisions taken after the implementation (2026-11-14)
 
@@ -77,7 +77,7 @@ Then the fix plan's (migration `TO_8_NOTIFY`; the rules are in NOTIFICATIONS.md)
   write-back in between, a scan lease between overlapping walks (`scan_leases`), and pairing and `mark_missing` in
   batches. This was the real cause of the writer's lost commands: a paused scan held the catalog's write lock.
 - **The inbox's own catalog reads left the GUI thread** (the `Reader`'s `FailedFiles`, `CopyDetails` and
-  `RevealFolder`); the rest of the window's catalog work on that thread is [GUI_THREAD_PLAN.md](GUI_THREAD_PLAN.md).
+  `RevealFolder`); the rest of the window's catalog work on that thread is [GUI_THREAD_PLAN.md](../plans/GUI_THREAD_PLAN.md).
   The status bar's "N failed" links only to an entry that exists, and a pass announces its ledger writes through
   `Control::ledger_changed`, so the entry follows within about 2 s. Reveal waits for its own listing (a generation).
 - **The log loses no record to contention** (one `RingGuard`; a panic inside the ring's hold is written `file_only`), and

@@ -503,7 +503,7 @@ libjpeg-turbo, and convert progressive files to baseline (2.6× fewer instructio
 ### The pairing pass
 
 The tier-1 pairs after the import (`pg_import::pairs`, the join in `pg_dedup::join`), measured for
-[PAIRING_PASS_PLAN.md](../plans/PAIRING_PASS_PLAN.md). The data is the user's library (189,520 files, 187,804 pictures
+`PAIRING_PASS_PLAN.md` (deleted in `16f5fa6f`; `16f5fa6f^:docs/plans/PAIRING_PASS_PLAN.md`). The data is the user's library (189,520 files, 187,804 pictures
 with orientation hashes). The release build ran on an i7-8700 (6 cores, 12 threads). Every run was on a scratch copy,
 never the live catalog.
 

@@ -271,7 +271,7 @@ Qt is not checked for reproducibility.
 - The static FFmpeg from this recipe is LGPL 2.1 or later (no GPL options, see above). It is not the GPL build the
   Justfile fetches.
 - The static Qt is LGPL 3.0 or the Qt commercial licence. Which route a distributed build takes is an open decision. See
-  `docs/temp/WEB_CLIENT_DESIGN.md`.
+  `docs/webclient/WEB_CLIENT_DESIGN.md`.
 
 ## Pitfalls
 

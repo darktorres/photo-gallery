@@ -541,7 +541,7 @@ const TO_15_HASHES_OWED: &str = "CREATE TABLE hashes_owed(
 /// Version 16: **`files_added` goes.** Whoever inserts a `files` row sets its `pending`, `seq` and `changed` itself: the
 /// scan's writer does (`ScanWriter::record_file`, one change number per batch) and so does the fixture. The trigger
 /// made each insert a multi-write statement with a statement journal, for three columns the insert can set itself: the
-/// first scan of 200,000 files spent 42% of its instructions there (docs/temp/scan-optimizations-validation.md).
+/// first scan of 200,000 files spent 42% of its instructions there (docs/webclient/scan-optimizations-validation.md).
 const TO_16_NEW_FILES: &str = "DROP TRIGGER files_added;
 DROP INDEX files_fresh;
 ALTER TABLE files DROP COLUMN last_scan;

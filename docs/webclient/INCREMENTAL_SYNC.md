@@ -93,9 +93,9 @@ from a restored catalog.
 
 ## Sources
 
-- `docs/temp/WEB_CLIENT_TECH_DECISIONS.md`: decisions and spike results.
-- `docs/temp/WEB_CLIENT_DESIGN.md`: listing snapshots and sync, around lines 442–530; tombstones around line 482.
-- `docs/temp/WEB_CLIENT_RECONCILED.md`: section 4.6 (stamps, tombstones, bulk marker), around lines 972–1010.
+- `docs/webclient/WEB_CLIENT_TECH_DECISIONS.md`: decisions and spike results.
+- `docs/webclient/WEB_CLIENT_DESIGN.md`: listing snapshots and sync, around lines 442–530; tombstones around line 482.
+- `docs/webclient/WEB_CLIENT_RECONCILED.md`: section 4.6 (stamps, tombstones, bulk marker), around lines 972–1010.
 - `docs/plans/BOUNDED_MEMORY_PLAN.md`: Phase 2 (BASELINE), decision D1 (freeze), migration table.
 - `docs/plans/DATABASE.md`: scale figures for counts and scans.
 

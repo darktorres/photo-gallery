@@ -1,6 +1,6 @@
 # Open items
 
-Open items moved from the former `FINDINGS.md` log. Some may overlap with the open decisions in [PLAN.md](../temp/PLAN.md) §9; check before acting on one.
+Open items moved from the former `FINDINGS.md` log. Some may overlap with the open decisions in [PLAN.md](PLAN.md) §9; check before acting on one.
 
 Checked against the code and the eval outputs on 2026-11-12. Items that name 2026-11-14 were rechecked that day. Rechecked again on 2026-11-18: the code and docs had moved, so each item whose status or location changed that day says so ("2026-11-18"). The eval outputs are in `D:\PhotoGallery` (`eval`, `eval_smoke`, `eval_ann`, `cache`).
 
@@ -47,7 +47,7 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
   whether this is still on hold.
 - Video player: Qt Multimedia plays videos now, with hardware decoding turned off on a GPU without AV1 decoding
   (a stopgap, "Videos and animations"). Choose between our own engine on our FFmpeg 9 and libmpv with its D3D11
-  render API ([VIDEO_PLAYER.md](plans/VIDEO_PLAYER.md)). **Open.** Qt Multimedia is in use (`crates/desktop/build.rs:72`,
+  render API ([VIDEO_PLAYER.md](VIDEO_PLAYER.md)). **Open.** Qt Multimedia is in use (`crates/desktop/build.rs:72`,
   `qml/MediaView.qml`), and on a GPU without AV1 decoding the player decodes on the CPU (`crates/desktop/src/gpu_device.rs`).
   Neither libmpv nor our own engine is in the code, and VIDEO_PLAYER.md says "not decided".
 - Yandex: whether the browser shows all 18 other sizes or about 5 is not measured; only one photo was tested.
@@ -98,7 +98,7 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
   - **Today.** SQLite is built by `libsqlite3-sys`'s `cc` build: MSVC's `cl` on Windows, gcc in the Linux container.
     Either way it sits outside Rust's LTO.
   - **What was measured.** Fat LTO with one codegen unit on the Rust side alone gave −0.7% on the scan
-    (`docs/temp/scan-optimizations-validation.md`, item 21). That was a callgrind run in the container, so with gcc,
+    (`docs/webclient/scan-optimizations-validation.md`, item 21). That was a callgrind run in the container, so with gcc,
     not MSVC.
   - **Cross-language LTO** brings SQLite in: Rust built with `-Clinker-plugin-lto`, SQLite compiled by clang with
     `-flto=thin`, and both optimized together at the link by `lld-link`. The rustc book's "Linker-plugin-based LTO"

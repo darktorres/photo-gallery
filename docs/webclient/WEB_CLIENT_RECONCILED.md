@@ -1155,7 +1155,7 @@ Admission numbers are in section 2.11: 5 failures, a 30 s doubling wait to 15 mi
 
 ### 5.8 Yandex TLS (its own commit, first)
 
-- The Yandex change ships before the LAN code, as its own commit: Cargo.toml:46 and the workspace rustls entry (ring, std, tls12, logging); crates/yandex/src/http.rs with one constructor serving client.rs:38 and fetch.rs:29 (the comment at http.rs:26-29 rewritten, and a cfg(test) read-back test asserting PlatformVerifier and a Some provider); deny.toml; Cargo.lock; libssl-dev removed from docker/apt-packages.txt:11, tools/profiling/ci_setup.py:36 and docs/temp/PROFILING.md:218, only after Linux CI passes without it.
+- The Yandex change ships before the LAN code, as its own commit: Cargo.toml:46 and the workspace rustls entry (ring, std, tls12, logging); crates/yandex/src/http.rs with one constructor serving client.rs:38 and fetch.rs:29 (the comment at http.rs:26-29 rewritten, and a cfg(test) read-back test asserting PlatformVerifier and a Some provider); deny.toml; Cargo.lock; libssl-dev removed from docker/apt-packages.txt:11, tools/profiling/ci_setup.py:36 and docs/reference/PROFILING.md:218, only after Linux CI passes without it.
 - Behaviour changes, gated by O33 and a paired live measurement: online end-certificate revocation with soft-fail on unknown status; a connect-time wait of up to about 10 s per new end certificate; Linux roots from rustls-native-certs; changed error text.
 - Checks: `cargo tree -i` for native-tls, openssl, openssl-sys and schannel (none present) and ring (rustls only); cargo deny; Linux CI without libssl-dev; a manual root check with a test CA; paired live searches and downloads on old and new builds (about 50 per build, P).
 

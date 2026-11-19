@@ -21,7 +21,7 @@ paper name are from that paper. Measured figures are as recorded when measured; 
   (SSCD-large, fp32), exact rather than approximate k-NN (docs/plans/TIER2_ANN_BAKEOFF_PLAN.md: ~5.5 days of GEMM for 70M), multiple
   embeddings per image and a learned geometric verifier are all in scope. Resumability and the user's review time
   (precision) are the real constraints.
-- A **high-performance desktop UI** first. A phone/browser client over the LAN is in scope after it; see `docs/temp/WEB_CLIENT.md`.
+- A **high-performance desktop UI** first. A phone/browser client over the LAN is in scope after it; see `docs/webclient/WEB_CLIENT.md`.
 - **Non-destructive:** nothing is ever deleted automatically. Removals go to a quarantine folder or the
   Recycle Bin after review.
 
@@ -272,7 +272,7 @@ can be added later against the same crates.
   edits, with tuned indexes (§9 decision 5).
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
   backed by a number. Met: the model and the read order; the thumbnail size is no longer fixed (§6). Open: the
-  thresholds (they wait on the hand marks, the first item in `docs/temp/OPEN_ITEMS.md`), and the index type
+  thresholds (they wait on the hand marks, the first item in `docs/plans/OPEN_ITEMS.md`), and the index type
   (§9 decision 5). The thumbnail cache's format and cap are set in code (§6).
 
 ### M1 — Core and ingest (on the sample)

@@ -1,6 +1,6 @@
 # ExifTool 13.60 to Rust: architecture design
 
-Status: design, revised 2026-11-13 to the most proper choices (section 9; section 10 answered). No Rust written, nothing compiled. A copy is in the repo at `docs/temp/EXIFTOOL_PORT_DESIGN.md`.
+Status: design, revised 2026-11-13 to the most proper choices (section 9; section 10 answered). No Rust written, nothing compiled. The repo copy is this file.
 Sources: the 14 group inventories (the JSON in the task), the repo at `D:/GitHub/photo-gallery/crates` (checked: crate list, `crates/metadata/src/lib.rs`, `crates/exiftool/src/lib.rs`, `crates/writeback/Cargo.toml:21`), and the installed tree `C:/Program Files/ExifTool/exiftool_files/lib`. The installed `C:/Program Files/ExifTool/exiftool.exe` is the oracle.
 
 ## 0. Scope in numbers

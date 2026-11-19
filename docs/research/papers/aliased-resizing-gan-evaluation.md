@@ -4,7 +4,7 @@ Gaurav Parmar, Richard Zhang, Jun-Yan Zhu (Carnegie Mellon University, Adobe Res
 
 Excerpts taken on 2026-11-13 from the PDF `On Aliased Resizing and Surprising Subtleties in GAN Evaluation.pdf` (11 pages), which is not kept: the abstract and §1 Introduction, §3.2 Image Resizing, Table 1 with §4.1–4.2, and §5 Recommendations. The text is the PDF's text layer as is, joined into paragraphs. Figures, table bodies and display equations are left out, except where marked *transcribed*: those were copied by hand from the rendered page. Exponents are written with `^` (s^r), and `*[p. N]*` marks the PDF page.
 
-Kept for: PLAN §3 item 8 (the resize filter is part of the model: freeze one antialiased resize, Table 1) and §10; also `docs/temp/THUMBNAIL_RESAMPLING.md`.
+Kept for: PLAN §3 item 8 (the resize filter is part of the model: freeze one antialiased resize, Table 1) and §10; also `docs/plans/THUMBNAIL_RESAMPLING.md`.
 
 ---
 

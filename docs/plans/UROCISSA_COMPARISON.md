@@ -59,7 +59,7 @@ against a clone at `102025d` on the same day. Where a claim was wrong, the text 
   triggers on every change (`next_seq!` in `crates/catalog/src/sql.rs:17`, used by the triggers in
   `crates/catalog/src/schema.rs`), so invalidation is
   already available. A cache hit is a map lookup; a miss is today's cost.
-- **Measure:** the existing `catalog::facets.all` benchmark (93,581,775 Ir in `docs/temp/REFACTOR_MEASUREMENTS.md`, Phase 0 baseline),
+- **Measure:** the existing `catalog::facets.all` benchmark (93,581,775 Ir in `docs/reference/REFACTOR_MEASUREMENTS.md`, Phase 0 baseline),
   and a timed facet request on a 2M-row library.
 - **Overlap:** `docs/plans/DATABASE.md:45-47` already proposes keeping counts up to date or holding facet
   columns in RAM (~0.8 GB at 70M). A cache is the smaller first step.
@@ -137,7 +137,7 @@ against a clone at `102025d` on the same day. Where a claim was wrong, the text 
 - **Thumbnail size.** Urocissa keeps one 1920 px JPEG per image. We keep thumbnails at the
   display height with nearest-height lookup and an LRU cap (`crates/thumbcache/src/lib.rs`).
   Theirs costs one generation up front; ours regenerates every thumbnail when the grid height changes (about 190k images, 6–8 minutes;
-  `docs/temp/THUMBNAIL_RESAMPLING.md` §1), and uses
+  `docs/plans/THUMBNAIL_RESAMPLING.md` §1), and uses
   less disk at display size. We should not change ours without measuring how often the height
   changes in practice.
 - **Write path.** Their write-behind buffer trades durability for throughput. We do not need it
@@ -165,7 +165,7 @@ Both still need a measurement or an instrumented count that this repo does not c
 
 - **How often does the grid height change in real use?** Not answerable from the repo: nothing records it.
   Each change regenerates the cache at the new height (about 190k thumbnails, 6–8 minutes;
-  `docs/temp/THUMBNAIL_RESAMPLING.md` §1), and it enters through `set_thumb_height`
+  `docs/plans/THUMBNAIL_RESAMPLING.md` §1), and it enters through `set_thumb_height`
   (`crates/app/src/library.rs:252`). A counter there, over real sessions, would answer it. Until then the
   thumbnail trade-off stays open.
 - **How slow is facet computation at 2M rows?** Not measured. The 0.6–0.9 s in `docs/plans/DATABASE.md:45`

@@ -564,7 +564,7 @@ ID.
 unknown list. Every source writes through it, unelevated.
 
 It keeps the rules of `docs/plans/SCAN_OPTIMIZATION_PLAN.md`, whose Phases 1 and 3 land first. Its report
-(`docs/temp/scan-optimizations-validation.md`) has the measurements.
+(`docs/webclient/scan-optimizations-validation.md`) has the measurements.
 
 - **No INSERT trigger on `files` or `links`.**
   - A trigger makes every INSERT multi-write, so SQLite opens a statement journal for each row. On a first scan,

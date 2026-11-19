@@ -162,7 +162,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - `crates/catalog/src/schema.rs` (SETTINGS)
   - `crates/thumbcache/src/lib.rs` (remove the MEMORY pragma)
   - `vendor/README.md`
-  - `docs/temp/DATABASE.md`
+  - `docs/plans/DATABASE.md`
 - **Change:**
   - `LIBSQLITE3_FLAGS = "SQLITE_TEMP_STORE=0 SQLITE_DEFAULT_MEMSTATUS=1"` (forced).
   - SETTINGS gains `temp_store=FILE` and `journal_size_limit=67108864`.
@@ -510,7 +510,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - `lib.rs` (`prepare`, `open`, `rebuild`, `make_replacement`, `move_aside`, `acknowledge_rebuilt`)
   - `platform/src/{sqlite.rs, file.rs, volume.rs}`
   - `schema/src/env.rs`
-  - `docs/temp/DATABASE.md`
+  - `docs/plans/DATABASE.md`
 - **Change.** A state machine driven by `<catalog>.rebuild`, the manifest: JSON written by Staged, plus fsync. It holds:
   - the build digest, the reason, the kept base name and the building path;
   - the kept file's change counter and size;
@@ -1569,7 +1569,7 @@ The journal only says where to look. Listings are the truth, and results replay 
   - `docs/perf/sql-plans.toml`
   - `Justfile` (`usn-vhd`)
   - `.github/workflows/{ci, scale}.yml`
-  - `docs/SCALE.md` (new), and `docs/temp/{DATABASE, PLAN, STORAGE, HEAP_PROFILE, REVIEW, REFACTOR_PLAN}.md`
+  - `docs/SCALE.md` (new), and `docs/plans/{DATABASE, PLAN, REVIEW}.md`, `docs/reference/{STORAGE, HEAP_PROFILE}.md`, and `d28e2f72^:docs/temp/REFACTOR_PLAN.md`
   - `crates/README.md`
   - `.env.example`
 - **8.1 Generator.** It produces every trigger-maintained value, each checked against its recount oracle:

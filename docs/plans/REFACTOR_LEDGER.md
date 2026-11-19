@@ -135,7 +135,7 @@ is a choice between building the plan and changing the plan; `verify` is a row t
 
 | ID | Kind | Where | Problem | Proper fix | Status |
 |---|---|---|---|---|---|
-| F-52 | deferred | `crates/platform` (no MFT or USN code); `crates/cli/src/args.rs` (no elevated subcommand) | The MFT reader, the USN journal reader and the elevated `gallery` subcommand are not built | Build them per `docs/temp/NTFS_MFT_SCAN_PLAN.md` | deferred |
+| F-52 | deferred | `crates/platform` (no MFT or USN code); `crates/cli/src/args.rs` (no elevated subcommand) | The MFT reader, the USN journal reader and the elevated `gallery` subcommand are not built | Build them per `docs/plans/NTFS_MFT_SCAN_PLAN.md` | deferred |
 | F-53 | deferred | `crates/catalog/src/browse/read/grid.rs:115`, `browse/read/facets.rs:62`, `browse/read/tree.rs:11` | The grid range with a total, and facet and tree counts from trigger counters, are not built. Both still use `GROUP BY` | Build them when the plan's later step comes | deferred |
 | F-54 | deferred | `crates/dedup` (`verifier`, `multicut` and `keeper` absent) | The tier-2 dedup work is not built | Build it at tier 2 | deferred |
 | F-55 | deferred | `crates/codec/Cargo.toml` | The `heif` and `raw` features are not started | Start them at their step | deferred |

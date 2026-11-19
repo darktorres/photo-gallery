@@ -39,7 +39,7 @@ Each finding was checked against the code or the SQLite source before it was tak
   - Phase 4's identities on Linux, its admission rule, its stop path, its lease renewal and its device counts;
   - `RETURNING` on the new INSERT would bring the statement journal back.
 
-The evidence is in `docs/temp/scan-optimizations-validation.md` (**the report**): callgrind runs on 4,000 and 200,000
+The evidence is in `docs/webclient/scan-optimizations-validation.md` (**the report**): callgrind runs on 4,000 and 200,000
 files, the variant probe, the build-option builds, and warm, flushed and cold wall-clock runs on Windows. Where a figure
 here comes from the probe, or wasn't measured, it says so.
 
@@ -1088,5 +1088,5 @@ After each phase, repeat what the report measured:
   - the copies `target/scan-probe/tree` and `target/scan-probe/fork`.
 
   Keep the scripts until Phase 4 is measured.
-- **The report** stays in `docs/temp` until the plan is done. Then its figures fold into this plan's phases, and it
+- **The report** stays in `docs/webclient` until the plan is done. Then its figures fold into this plan's phases, and it
   goes.

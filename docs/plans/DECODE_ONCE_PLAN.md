@@ -25,13 +25,13 @@ No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERS
 - the `IMPORT_VERSION` doc in `crates/analysis/src/analyze.rs` (the constant is at `:27`);
 - the `CACHE_VERSION` doc (`crates/thumbcache/src/config.rs`);
 - `crates/README.md` cache layout paragraph (line 316);
-- `docs/temp/PLAN.md` "Schema (user decision, 2026-10-30 ...)" paragraph (line 334; "no migrations yet", line 341);
-- `docs/temp/REFACTOR_PLAN.md:390` ("no schema bumps before release");
-- `docs/temp/BOUNDED_MEMORY_PLAN.md:2004` ("the cache layout freezes with BASELINE", which rests on the rule) and `:1197` ("CACHE_VERSION stays 1").
+- `docs/plans/PLAN.md` "Schema (user decision, 2026-10-30 ...)" paragraph (line 334; "no migrations yet", line 341);
+- `d28e2f72^:docs/temp/REFACTOR_PLAN.md:390` ("no schema bumps before release");
+- `docs/plans/BOUNDED_MEMORY_PLAN.md:2004` ("the cache layout freezes with BASELINE", which rests on the rule) and `:1197` ("CACHE_VERSION stays 1").
 
 Not in the list: `docs/temp/S17_REMAINDERS_PLAN.md` (since deleted; it had no rule); `docs/plans/REVIEW.md` R-123 (line 85; the catalog split, not the version rule). History gets "Superseded" notes dated the day of the commit. No existing note exists to copy (the S-17.7 plan had an unrelated bullet there; that plan is removed), so the first one written sets the style: a one-line blockquote under the old rule, `> Superseded YYYY-MM-DD (commit <sha>): <new rule>.`
 
-Other old notes: `docs/plans/NTFS_MFT_SCAN_PLAN.md` (190, 258); `docs/temp/REFACTOR_MEASUREMENTS.md` (the S-13.5 section, line 111; its home `FINDINGS.md:1574` is blank, so the note goes under the section heading instead); `docs/temp/EXIFTOOL_PORT_PLAN.md:54` (its `analyze.rs:29` cite is stale: `IMPORT_VERSION` is at line 27; correct the cite in the same edit). Close ledger items L-24 and L-59 in `docs/plans/REVIEW_LEDGER.md` (both Open; L-24 cites `crates/README.md:249`, which is catalog text; the cache paragraph is at line 316).
+Other old notes: `docs/plans/NTFS_MFT_SCAN_PLAN.md` (190, 258); `docs/reference/REFACTOR_MEASUREMENTS.md` (the S-13.5 section, line 111; its home `FINDINGS.md:1574` is blank, so the note goes under the section heading instead); `docs/plans/EXIFTOOL_PORT_PLAN.md:54` (its `analyze.rs:29` cite is stale: `IMPORT_VERSION` is at line 27; correct the cite in the same edit). Close ledger items L-24 and L-59 in `docs/plans/REVIEW_LEDGER.md` (both Open; L-24 cites `crates/README.md:249`, which is catalog text; the cache paragraph is at line 316).
 
 **Leave** `crates/catalog/src/schema.rs` and `crates/README.md` "baseline is frozen" (line 253; a migration policy, not a version rule).
 

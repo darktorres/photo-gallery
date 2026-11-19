@@ -1,6 +1,6 @@
 # Refactor design: the record and the deviations
 
-Status (2026-11-12, HEAD `898b709`): this file is the design record, rewritten from the code. It replaces the 2026-11-06 version, whose Context described the tree as of 2026-11-02. The status source is the ledger in `docs/temp/REFACTOR_PLAN.md` ("Order of work"); where this file and the ledger disagree on status, the ledger wins. Commit hashes cited in the ledger are only reachable by object id: history was squashed into one commit, `88e780b` ("the full history squashed into one commit", 2026-11-06), and `5eb81bc` and `c552170` are not ancestors of `main`.
+Status (2026-11-12, HEAD `898b709`): this file is the design record, rewritten from the code. It replaces the 2026-11-06 version, whose Context described the tree as of 2026-11-02. The status source is the ledger in `d28e2f72^:docs/temp/REFACTOR_PLAN.md` ("Order of work"); where this file and the ledger disagree on status, the ledger wins. Commit hashes cited in the ledger are only reachable by object id: history was squashed into one commit, `88e780b` ("the full history squashed into one commit", 2026-11-06), and `5eb81bc` and `c552170` are not ancestors of `main`.
 
 ## 1. Corrected baseline
 

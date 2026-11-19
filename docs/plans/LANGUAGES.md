@@ -8,12 +8,12 @@ How the app should support more than one language: what exists today, what is mi
 
 **Decided** (by the repo's own records):
 
-- Fluent is the engine for the app's own words, with `fluent-bundle` 0.16 and `unic-langid`. The decision is recorded in `docs/reference/REFACTOR_DESIGN.md` (section 2, item 11, "Localisation") and the seam's plan is S-19 in `docs/temp/REFACTOR_PLAN.md` (the S-19 rows, `:905-907`). Section 3.9 checks its reasons against the present code.
+- Fluent is the engine for the app's own words, with `fluent-bundle` 0.16 and `unic-langid`. The decision is recorded in `docs/reference/REFACTOR_DESIGN.md` (section 2, item 11, "Localisation") and the seam's plan is S-19 in `d28e2f72^:docs/temp/REFACTOR_PLAN.md` (the S-19 rows, `:905-907`). Section 3.9 checks its reasons against the present code.
 - English is the first locale, and it is the only one that ships in the first release. The second locale is pt-BR, added in phase 4 with the live switch, and the owner is its reviewer.
-- Only English ships. The S-19.3 ledger row, `docs/temp/REFACTOR_PLAN.md:907`, says "Only `en` ships; a pseudo-locale runs in the screenshot matrix" (read by the investigators, not re-read here). The 2026-11-06 design record said the same at its line 203, which is not in git.
-- The seam lives in `pg-client` (`crates/client/src/text.rs`), which compiles for `wasm32-unknown-unknown` in the lint job (`tools/lint.py:21`). `docs/temp/WEB_CLIENT.md:347-348` records that `pg-client` is WASM-clean and runs in every client.
-- Notices are stored as a kind code and values, and are worded when they are read, so a language change re-words stored notices (`docs/temp/NOTIFICATIONS.md:10-12`, `crates/model/src/notice.rs:1-12`).
-- The web client's frontend is the shared QML app, gated on a phone check (`docs/temp/WEB_CLIENT.md:35-36, 44-47`). Its stack is not decided, and no text design exists there.
+- Only English ships. The S-19.3 ledger row, `d28e2f72^:docs/temp/REFACTOR_PLAN.md:907`, says "Only `en` ships; a pseudo-locale runs in the screenshot matrix" (read by the investigators, not re-read here). The 2026-11-06 design record said the same at its line 203, which is not in git.
+- The seam lives in `pg-client` (`crates/client/src/text.rs`), which compiles for `wasm32-unknown-unknown` in the lint job (`tools/lint.py:21`). `docs/webclient/WEB_CLIENT.md:347-348` records that `pg-client` is WASM-clean and runs in every client.
+- Notices are stored as a kind code and values, and are worded when they are read, so a language change re-words stored notices (`b5797ccf^:docs/temp/NOTIFICATIONS.md:10-12`, `crates/model/src/notice.rs:1-12`).
+- The web client's frontend is the shared QML app, gated on a phone check (`docs/webclient/WEB_CLIENT.md:35-36, 44-47`). Its stack is not decided, and no text design exists there.
 
 **Decided and designed** (by the owner, 2026-11-14):
 
@@ -157,7 +157,7 @@ The reports disagree in these places, and the disagreement is not resolved here.
 | Notice kinds' test | every kind is covered by `Notice::samples()` (RS-17 and WT-05 infer this by comparing two lists) | Inferred, not checked by running the test. |
 | Web text in WEB_CLIENT | no text section (SF-02) | Agreed. |
 
-Stale documents named by the reports: `docs/temp/NOTIFICATIONS_PLAN.md:149` names a `pg_app::Note` that no longer exists (PE-05); `review 4 (e428ab2):64` says the CLI writes its own English (RS-02, stale at `e428ab2`); `docs/temp/REFACTOR_PLAN.md:829-830` has the 103 count and the `.ps1` name; and `README.md`, `site/index.html` and `docs/temp/PLAN.md` link to documents that do not exist at HEAD (SF-10). The M-26 item in `docs/temp/MODULARITY_REVIEW_4.md:16-22` at HEAD (`review 4 (e428ab2).md` is in neither HEAD nor the working tree, and the working tree deletes MODULARITY_REVIEW_4.md) (the English hint labels) is closed in the working tree: `keys.rs:204-230` names the labels as `ui-hint-*` entries (uncommitted), so WT-11's claim that `keys.rs:205-248` holds English hint constants is stale. The status line's second part is `ui-selection-line` (`ui.ftl:206`), which was not checked against M-26's wording.
+Stale documents named by the reports: `docs/plans/NOTIFICATIONS_PLAN.md:149` names a `pg_app::Note` that no longer exists (PE-05); `review 4 (e428ab2):64` says the CLI writes its own English (RS-02, stale at `e428ab2`); `d28e2f72^:docs/temp/REFACTOR_PLAN.md:829-830` has the 103 count and the `.ps1` name; and `README.md`, `site/index.html` and `docs/plans/PLAN.md` link to documents that do not exist at HEAD (SF-10). The M-26 item in `56bd08c3^:docs/temp/MODULARITY_REVIEW_4.md:16-22` at HEAD (`review 4 (e428ab2).md` is in neither HEAD nor the working tree, and the working tree deletes MODULARITY_REVIEW_4.md) (the English hint labels) is closed in the working tree: `keys.rs:204-230` names the labels as `ui-hint-*` entries (uncommitted), so WT-11's claim that `keys.rs:205-248` holds English hint constants is stale. The status line's second part is `ui-selection-line` (`ui.ftl:206`), which was not checked against M-26's wording.
 
 ## Inventory
 
@@ -334,7 +334,7 @@ The policy has five classes, and each one has a rule that a migration, a test or
 
 Migration. None is needed for notices or prefs, because the language is a new optional key and the notice data is language-neutral (LR-03, PE-03). A new notice kind needs its `notice-<code>-title` and `-body` entries and a `source-<code>` entry in every locale, as `NOTIFICATIONS.md` already says ("Adding a kind", steps 1 to 4, SF-20).
 
-The two docs that say nothing stored is English (`docs/temp/NOTIFICATIONS.md:12-13`, `crates/model/src/notice.rs:3-4`, `refusal.rs:1-3`) need a correction: codes and paths are language-neutral, and technical detail is stored verbatim (PE-04).
+The two docs that say nothing stored is English (`b5797ccf^:docs/temp/NOTIFICATIONS.md:12-13`, `crates/model/src/notice.rs:3-4`, `refusal.rs:1-3`) need a correction: codes and paths are language-neutral, and technical detail is stored verbatim (PE-04).
 
 ### 5.6 Logs, diagnostics and external tool messages
 
@@ -439,7 +439,7 @@ Each phase has a check that proves it. A phase ends when its check passes, and t
 
 Files read or cited by the six reports, and the files this document read directly.
 
-Read directly for this document: `crates/client/src/text/words.rs` (lines 1-135), `docs/temp/WEB_CLIENT.md` (lines 1-62, and a grep of `Svelte`), `docs/temp/REFACTOR_DESIGN.md` (since moved to `docs/reference/`; lines 15-64 of the version read, and a grep of `Fluent`).
+Read directly for this document: `crates/client/src/text/words.rs` (lines 1-135), `docs/webclient/WEB_CLIENT.md` (lines 1-62, and a grep of `Svelte`), `docs/temp/REFACTOR_DESIGN.md` (since moved to `docs/reference/`; lines 15-64 of the version read, and a grep of `Fluent`).
 
 Read for the checks settled in this round (not in the six reports): at HEAD 898b709, `crates/yandex/src/client.rs`, `http.rs`, `fetch.rs`, `lib.rs`, `parse.rs`, `types.rs`; `crates/dbfile/src/judge.rs`; `crates/thumbcache/src/schema.rs`, `types.rs`, `lib.rs`; `crates/catalog/src/core.rs`, `rebuild.rs`, `types.rs`; `crates/app/src/app.rs`, `inbox.rs`; `crates/cli/src/report.rs`; `crates/client/locales/en/text.ftl`. Qt 6.12 sources under `C:/Qt/6.12.0/Src`: `qtbase/src/gui/text/qfontengine.cpp`, `qfontdatabase.cpp`, `qplatformfontdatabase.cpp` and the `windows` folder beside them, `qtbase/src/gui/kernel/qguiapplication.cpp`, `qtbase/src/plugins/platforms/windows/qwindowstheme.cpp` and `qwindowsintegration.cpp`, `qtdeclarative/src/quicktemplates/qquicktheme.cpp`, `qtdeclarative/src/quickcontrols/qquickstyleplugin.cpp`. The installed fonts in `C:/Windows/Fonts`, read by a cmap parser. The Qt-WASM spike, which exists only in two session scratchpads outside the repo. The Yandex Search API page, <https://aistudio.yandex.ru/docs/en/search-api/operations/search-images-by-pic.html>, which is a different product from the consumer images endpoint the crate calls.
 
@@ -453,7 +453,7 @@ Other crates: `crates/cli/src/args.rs`, `crates/cli/src/lib.rs`, `crates/cli/src
 
 Workspace, tooling and CI: `Cargo.toml`, `Cargo.lock`, `deny.toml`, `Justfile`, `tools/lint.py`, `tools/compare_shots.py`, `tools/README.md`, `tools/shots/reference`, `.github/workflows/ci.yml`, `.github/workflows/pages.yml`, `docker/Dockerfile`.
 
-Documents: `docs/reference/REFACTOR_DESIGN.md`, `docs/temp/REFACTOR_PLAN.md` (S-19, S-14.1, S-7.1, S-12.4, S-10.8 rows), `docs/temp/WEB_CLIENT.md`, `docs/temp/NOTIFICATIONS.md`, `docs/temp/NOTIFICATIONS_PLAN.md`, `review 4 (e428ab2)` (read at `e428ab2` through git), `docs/temp/PLAN.md`, `README.md`, `crates/README.md`, `site/index.html`, `site/style.css`, `crates/desktop/resources/mascots`, `crates/desktop/resources/app-icon.png`.
+Documents: `docs/reference/REFACTOR_DESIGN.md`, `d28e2f72^:docs/temp/REFACTOR_PLAN.md` (S-19, S-14.1, S-7.1, S-12.4, S-10.8 rows), `docs/webclient/WEB_CLIENT.md`, `b5797ccf^:docs/temp/NOTIFICATIONS.md`, `docs/plans/NOTIFICATIONS_PLAN.md`, `review 4 (e428ab2)` (read at `e428ab2` through git), `docs/plans/PLAN.md`, `README.md`, `crates/README.md`, `site/index.html`, `site/style.css`, `crates/desktop/resources/mascots`, `crates/desktop/resources/app-icon.png`.
 
 External sources and toolchain (read from local copies or search results):
 

@@ -97,7 +97,7 @@ No production SQL reads through it: `roots.rs:283` reads `changed` through `UNIQ
 a test helper, `test_support.rs:171` (`WHERE changed > ?1 ORDER BY id`), which becomes a scan. **DECIDED by the owner
 (2026-11-19): drop it now and recreate it later in the web client plan if needed.** This reverses
 `docs/plans/SCAN_OPTIMIZATION_PLAN.md:1015` (D1: "keep it", decided 2026-11-15), whose reason was a planned resync reader.
-That reader is concrete: `docs/temp/WEB_CLIENT_DESIGN.md:463` (the Delta request) and `:1511` (the changes cursor) read
+That reader is concrete: `docs/webclient/WEB_CLIENT_DESIGN.md:463` (the Delta request) and `:1511` (the changes cursor) read
 "rows with `changed` > S via the `files_changed` index". Measured on the real catalog, that query takes 0.07-0.12 ms with the
 index and about 310 ms as a full table scan, so **the web client's migration must add
 `CREATE INDEX files_changed ON files(changed)`** (about 0.5 s to build on 715k rows, 8-9 MiB). Record that in the web client
@@ -315,11 +315,11 @@ phase, then compile once. Never migrate the live catalog: use a copy.
 7. Linux pass in the `pg-dev` container (Posix rules): reference keys, case-variant names, multi-volume pairing, the embedded
    upcase table's tests (they must not depend on the OS).
 8. Docs: `crates/README.md:296-312`, `docs/plans/DATABASE.md:26-32`, `SCAN_OPTIMIZATION_PLAN.md:1015`, `REFACTOR_LEDGER.md:40`,
-   `DECODE_ONCE_PLAN.md:667-669,845,852`, `docs/temp/WEB_CLIENT_DESIGN.md:463,1511` (the Delta and changes cursor now owe
+   `DECODE_ONCE_PLAN.md:667-669,845,852`, `docs/webclient/WEB_CLIENT_DESIGN.md:463,1511` (the Delta and changes cursor now owe
    their own `CREATE INDEX files_changed` in the web client's migration; `SCAN_OPTIMIZATION_PLAN.md:1015` D1 is amended to say
    dropped on 2026-11-19), `BOUNDED_MEMORY_PLAN.md` (111, 313, 411-412, 844-848, 879, 1077; its `collation_key`
    becomes this key), `NTFS_MFT_SCAN_PLAN.md:499-533`, `UROCISSA_COMPARISON.md:83-84` (keyset paging on `order_key` becomes
-   `(mid, key, id)`), `docs/reference/REFACTOR_MEASUREMENTS.md:81`, `docs/temp/INCREMENTAL_SYNC.md`, `docs/temp/WEB_CLIENT_*`,
+   `(mid, key, id)`), `docs/reference/REFACTOR_MEASUREMENTS.md:81`, `docs/webclient/INCREMENTAL_SYNC.md`, `docs/webclient/WEB_CLIENT_*`,
    `docs/reference/PROFILING.md:337`, `START_PROFILE.md:56`, `NOTIFICATIONS_DESIGN.md:262`, `docs/perf/callgrind/1bb039084.md`,
    `crates/thumbcache/Cargo.toml:12` (stale `thumb_folders`), and the `schema.rs` header comments.
 

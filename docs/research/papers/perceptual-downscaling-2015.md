@@ -4,7 +4,7 @@ A. Cengiz Öztireli and Markus Gross (ETH Zurich), 2015.
 
 Excerpts taken on 2026-11-13 from the PDF `Perceptually Based Downscaling of Images.pdf` (10 pages), which is not kept: the abstract and §1 Introduction, §4 Results (with the user study, performance and limitations), §5 Conclusions, and the pseudo-code of Appendix B. The text is the PDF's text layer as is, joined into paragraphs. Figures, table bodies and display equations are left out, except where marked *transcribed*: those were copied by hand from the rendered page. Exponents are written with `^` (s^r), and `*[p. N]*` marks the PDF page.
 
-Kept for: not cited yet; an alternative to resample-then-sharpen for `docs/temp/THUMBNAIL_RESAMPLING.md`.
+Kept for: not cited yet; an alternative to resample-then-sharpen for `docs/plans/THUMBNAIL_RESAMPLING.md`.
 
 ---
 

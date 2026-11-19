@@ -44,7 +44,7 @@ RowLayout {
 
     Label {
         objectName: "laneLabel"
-        Layout.preferredWidth: 110
+        Layout.preferredWidth: 36
         text: laneRow.label
         textFormat: Text.PlainText
         color: Theme.statusText
@@ -62,7 +62,7 @@ RowLayout {
     // tooltip saying it isn't recorded yet.
     Label {
         objectName: "laneFailed"
-        Layout.preferredWidth: 100
+        Layout.preferredWidth: 80
         text: laneRow.failed
         textFormat: Text.PlainText
         color: Theme.statusWarning
@@ -84,7 +84,7 @@ RowLayout {
     }
     Item {
         id: barCell
-        Layout.preferredWidth: 140
+        Layout.preferredWidth: 120
         implicitHeight: laneBar.implicitHeight
         ProgressBar {
             id: laneBar
@@ -98,7 +98,7 @@ RowLayout {
     }
     Item {
         id: toggleCell
-        Layout.preferredWidth: 90
+        Layout.preferredWidth: 80
         implicitHeight: laneToggle.implicitHeight
         Button {
             id: laneToggle

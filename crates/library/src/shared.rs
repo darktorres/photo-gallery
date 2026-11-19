@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Change};
@@ -128,6 +129,8 @@ pub struct LaneProgress {
     pub number: usize,
     pub label: String,
     pub progress: Progress,
+    /// The time since this lane last had a phase running: `Some(ZERO)` while one runs, `None` before its first.
+    pub since_work: Option<Duration>,
     /// Whether this lane is paused itself (not the run's global pause).
     pub paused: bool,
 }

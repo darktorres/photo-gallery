@@ -48,6 +48,7 @@ pub(crate) const OPTIONS: &[&str] = &[
     "save-crops",
     "log",
     "log-view",
+    "lane-rows",
     "inbox",
     "inbox-expand",
     // The screenshot, and the window's language.
@@ -422,6 +423,12 @@ pub(crate) fn path(name: &str) -> Option<&'static Path> {
 /// with nothing followed. The app's own logging is unchanged.
 pub(crate) fn log_view() -> Option<&'static Path> {
     path("log-view")
+}
+
+/// The lanes the status bar's rows show instead of the job's (`--lane-rows=<path>`, the screenshots' fixed lanes): read
+/// once, in the format `lane_model` parses.
+pub(crate) fn lane_rows() -> Option<&'static Path> {
+    path("lane-rows")
 }
 
 /// Where a Yandex search or save gets its calls. The real client, unless `--yandex-fixture=<dir>` names a recorded

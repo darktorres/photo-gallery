@@ -19,7 +19,7 @@ use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, WriteError};
 use pg_client::text::{self, Message};
 use pg_model::notice::{FilePass, LedgerKind, Notice};
-use pg_model::progress::{Phase, Progress};
+use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
 
 use crate::app;
@@ -27,8 +27,8 @@ use crate::picker;
 use crate::picker::state::Purpose;
 use crate::pump::Pending;
 
-/// The library, once `start` has started it: what the change pump and the folder operations read.
-fn running() -> Option<&'static pg_app::Library> {
+/// The library, once `start` has started it: what the change pump, the folder operations and the lane rows read.
+pub(crate) fn running() -> Option<&'static pg_app::Library> {
     app::get().library().running()
 }
 
@@ -132,10 +132,10 @@ impl qobject::Library {
     fn on_pass(mut self: Pin<&mut Self>, pending: &Mutex<Pending<Changes>>) {
         let taken = Pending::take(pending);
         if taken.progress {
-            self.as_mut().refresh_progress();
+            let failed = self.as_mut().refresh_progress();
             // While a pass has failed files, the inbox's "N failed" link follows the pass: it is poked here, not left to
             // the inbox's poll (30 s) or to the job's next round.
-            if running().is_some_and(|library| library.status().progress.failed > 0) {
+            if failed > 0 {
                 app::get().inbox().poke();
             }
         }
@@ -165,38 +165,21 @@ impl qobject::Library {
         }
     }
 
-    /// The job's pass and its pause: the status line, the busy state and the progress.
-    fn refresh_progress(mut self: Pin<&mut Self>) {
-        let Some(library) = running() else { return };
+    /// The job's pass and its pause: the status line, the busy state and the progress. Returns the pass's failed count
+    /// (0 when no job runs), and tells the lane rows (`progressed`), which read the job's rows themselves.
+    fn refresh_progress(mut self: Pin<&mut Self>) -> u64 {
+        let Some(library) = running() else { return 0 };
         let status = library.status();
         let p = &status.progress;
-        // One line per working lane, its drive's label first; one lane reads as it always has. A scanned folder is shown
-        // under the catalog's rules, this machine's.
-        let working: Vec<(String, Progress)> =
-            status.lanes.iter().map(|lane| (lane.label.clone(), lane.progress.clone())).collect();
-        let pass = text::lanes_status(&working, pg_platform::native::PATH_RULES).join("\n");
+        // The status line is the library's one progress: the crop's when it works, else the first lane that works. The
+        // rows of the lanes are the lane model's (`lane_model`). A scanned folder is shown under this machine's rules.
+        let pass = text::pass_status(p, pg_platform::native::PATH_RULES);
         let line = if status.paused { text::paused_status(&pass) } else { pass };
-        // The lanes that work or are paused: one row each, its status and its pause ("1" or "0"). Each row keeps its lane's
-        // number here, so a toggle (`toggle_lane_pause`) names the lane by its row and QML parses nothing.
-        let shown: Vec<_> =
-            status.lanes.iter().filter(|lane| lane.progress.phase != Phase::Idle || lane.paused).collect();
-        let texts: QStringList = shown
-            .iter()
-            .map(|lane| {
-                let row =
-                    text::lanes_status(&[(lane.label.clone(), lane.progress.clone())], pg_platform::native::PATH_RULES)
-                        .join(" ");
-                QString::from(&row)
-            })
-            .collect();
-        let paused: QStringList = shown.iter().map(|lane| QString::from(&u8::from(lane.paused).to_string())).collect();
-        self.as_mut().rust_mut().lane_rows = shown.iter().map(|lane| (lane.number, lane.paused)).collect();
-        self.as_mut().set_lanes(texts);
-        self.as_mut().set_lane_paused(paused);
         self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().set_paused(status.paused);
         self.as_mut().set_status(QString::from(&line));
-        self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
+        self.as_mut().set_progress(p.fraction());
+        self.as_mut().set_indeterminate(p.known_fraction().is_none());
         let failed = QString::from(&text::pass_failed(p));
         if self.failed != failed {
             self.as_mut().set_failed(failed);
@@ -210,6 +193,8 @@ impl qobject::Library {
             Phase::Idle | Phase::Scan { .. } | Phase::Crop | Phase::Pairing => None,
         };
         self.as_mut().set_failed_pass(crate::ledgers::kind_code(pass.map(LedgerKind::File)));
+        self.as_mut().progressed();
+        p.failed
     }
 
     /// The writer's queue and its latest failure, on the status line: display only. The inbox hears of the writer from
@@ -275,12 +260,12 @@ impl qobject::Library {
         self.as_mut().refresh_progress();
     }
 
-    /// Pauses or resumes the lane of row `index` in `lanes`, from the pause that row shows. A row that isn't there does nothing.
-    pub(crate) fn toggle_lane_pause(mut self: Pin<&mut Self>, index: i32) {
+    /// Pauses (`paused`) or resumes the lane numbered `number`, as its row showed it: a command, not a toggle, so a click on
+    /// a row that has since changed sets the state the user asked for. The crop's -1 and a lane that has retired do nothing.
+    pub(crate) fn set_lane_paused(mut self: Pin<&mut Self>, number: i32, paused: bool) {
         let Some(library) = running() else { return };
-        let row = usize::try_from(index).ok().and_then(|i| self.rust().lane_rows.get(i).copied());
-        if let Some((number, paused)) = row {
-            library.set_lane_paused(number, !paused);
+        if let Ok(number) = usize::try_from(number) {
+            library.set_lane_paused(number, paused);
         }
         self.as_mut().refresh_progress();
     }

@@ -61,7 +61,9 @@ tests (`just test-eval`).
   `fixture.py` so its hash doesn't move for them: `broken/broken.jpg` (a valid SOI and APP0, then deterministic bytes
   that are no JPEG: the import fails it, with the same error every time), which the `broken` template adds as a second
   library folder from the fixed `target/shots/broken`, and `shot.log` (JSON records at fixed times, every level, a
-  multi-line detail, legacy plain lines), which the `log` scenario shows through `--log-view`.
+  multi-line detail, legacy plain lines), which the `log` scenario shows through `--log-view`; and `lanes.txt` (the status
+  bar's rows: a lane working, one paused with no known total, one paused and idle, one in its hold, and the crop), which
+  the `lanes` and `pseudo-lanes` scenarios show through `--lane-rows`.
 - `crate-layers.txt`: each crate's allowed normal dependencies on the workspace's crates, bottom layer first
   (`boundaries.py`).
 - `profiling/`, `modgraph/`: as in the table.

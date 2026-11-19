@@ -18,6 +18,7 @@
 //   --dev=1  dev mode for the run, not saved (read by the shell, in Rust; PG_DEV=1 too; --dev=0 off for the run)
 //   --log=1  open the log view (in dev mode)   --log-view=<path>  the log view shows that file, read once, following
 //            nothing (read by the log view, in Rust)
+//   --lane-rows=<path>  the status bar's lane rows are the file's, read once, not the job's (read by LaneModel, in Rust)
 //   --inbox=1  open the inbox   --inbox-expand=<ledger>  open that ledger's entry in it (thumbs, borders, import,
 //              scan-folders), when it is listed and again when it appears
 //   --save-crops=<folder>  save cropped copies of the listed files with borders found

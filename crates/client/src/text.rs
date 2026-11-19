@@ -259,22 +259,17 @@ pub fn pass_status(p: &Progress, rules: PathRules) -> String {
     }
 }
 
-/// The status line of each lane that is working: its drive's label, then the lane's pass (`pass_status`). With one lane
-/// working (or none), the result is that lane's [`pass_status`] alone, as it has always read. An empty label (a folder
-/// whose drive can't be told) is left off the line.
-pub fn lanes_status(lanes: &[(String, Progress)], rules: PathRules) -> Vec<String> {
-    let working: Vec<&(String, Progress)> = lanes.iter().filter(|(_, p)| p.phase != Phase::Idle).collect();
-    if working.len() <= 1 {
-        let only = working.first().map_or_else(Progress::idle, |(_, p)| p.clone());
-        return vec![pass_status(&only, rules)];
+/// A lane's row while the lane is paused by itself, or the background work is: the pass's name and how far it is, with
+/// no rate or time left (they don't move while it is paused). The drive's label is the row's own, not this line's.
+pub fn lane_paused_status(p: &Progress, rules: PathRules) -> String {
+    let what = pass_name(&p.phase, rules);
+    match p.phase {
+        Phase::Idle => render(&Message::LanePaused),
+        Phase::Scan { .. } => render(&Message::LanePausedFound { what, count: group_digits(p.done) }),
+        // A pass whose total isn't known says its name only: "0 of 0" would read as a finished pass.
+        _ if p.total == 0 => render(&Message::PausedPass { status: what }),
+        _ => render(&Message::LanePausedPass { what, done: group_digits(p.done), total: group_digits(p.total) }),
     }
-    working
-        .iter()
-        .map(|(label, p)| {
-            let status = pass_status(p, rules);
-            if label.is_empty() { status } else { format!("{label} {status}") }
-        })
-        .collect()
 }
 
 /// How many files the pass in progress failed on ("2 failed": those it recorded, and those it couldn't read), the status
@@ -577,22 +572,16 @@ mod tests {
     }
 
     #[test]
-    fn one_working_lane_reads_as_its_pass_and_each_working_lane_gets_a_line() {
-        let rules = pg_model::rules::PathRules::Windows;
+    fn a_paused_lane_says_its_pass_with_its_count_and_no_rate_or_time_left() {
+        let rules = PathRules::Windows;
+        assert_eq!(lane_paused_status(&Progress::idle(), rules), "Paused");
         let working = Progress { phase: Phase::Import, done: 10, total: 40, ..Progress::idle() };
-        let idle = Progress::idle();
-        let alone = pass_status(&working, rules);
-        assert_eq!(
-            lanes_status(&[("E:".into(), working.clone()), ("D:".into(), idle.clone())], rules),
-            vec![alone.clone()]
-        );
-        assert_eq!(lanes_status(&[("E:".into(), working.clone())], rules), vec![alone.clone()]);
-        assert_eq!(lanes_status(&[("E:".into(), idle.clone())], rules), vec![pass_status(&idle, rules)]);
-        let lines = lanes_status(
-            &[("E:".into(), working.clone()), ("D:".into(), working.clone()), ("".into(), working)],
-            rules,
-        );
-        assert_eq!(lines, vec![format!("E: {alone}"), format!("D: {alone}"), alone]);
+        assert_eq!(lane_paused_status(&working, rules), "Paused · Importing 10 of 40");
+        let unknown = Progress { phase: Phase::Import, done: 10, total: 0, ..Progress::idle() };
+        assert_eq!(lane_paused_status(&unknown, rules), "Paused · Importing", "an unknown total says its name only");
+        let root = rules.parse(r"D:\Photos").unwrap();
+        let scan = Progress { phase: Phase::Scan { root }, done: 1234, total: 0, ..Progress::idle() };
+        assert_eq!(lane_paused_status(&scan, rules), "Paused · Scanning D:\\Photos · 1,234 images found");
     }
 
     #[test]

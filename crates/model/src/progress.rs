@@ -82,9 +82,14 @@ impl Progress {
         if rate > 0.0 { num::size(self.total.saturating_sub(self.done)) / rate } else { 0.0 }
     }
 
+    /// Done over total; `None` when the total is unknown (scanning).
+    pub fn known_fraction(&self) -> Option<f64> {
+        (self.total > 0).then(|| num::size(self.done) / num::size(self.total))
+    }
+
     /// Done over total, 0 when the total is unknown.
     pub fn fraction(&self) -> f64 {
-        if self.total == 0 { 0.0 } else { num::size(self.done) / num::size(self.total) }
+        self.known_fraction().unwrap_or(0.0)
     }
 }
 
@@ -108,6 +113,13 @@ mod tests {
         assert_eq!(p.fraction(), 0.25);
         assert_eq!(Progress::idle().eta(), 0.0, "no rate yet");
         assert_eq!(Progress { total: 0, ..p }.fraction(), 0.0, "an unknown total");
+    }
+
+    #[test]
+    fn a_known_fraction_is_none_only_when_the_total_is_unknown() {
+        let p = Progress { total: 400, done: 100, ..Progress::idle() };
+        assert_eq!(p.known_fraction(), Some(0.25));
+        assert_eq!(Progress { total: 0, done: 7, ..Progress::idle() }.known_fraction(), None);
     }
 
     #[test]

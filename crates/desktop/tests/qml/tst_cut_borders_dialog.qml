@@ -38,7 +38,7 @@ TestCase {
 
     function test_the_question_says_how_many_files() {
         const d = shown(12)
-        compare(d.questionText, "ui-cut-borders-question 12")
+        compare(d.questionText, "ui-cut-borders-question:12 12")
     }
 
     function test_cancel_has_the_focus_when_it_opens() {

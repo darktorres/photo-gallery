@@ -139,6 +139,10 @@ yandex-no-folder = No folder was chosen, so nothing was saved.
 # The library panel (the desktop's `Library`): the status line while paused
 work-paused = Background work paused
 paused-pass = Paused · { $status }
+# A lane's row while the lane is paused by itself: no pass running, a pass with its count, or a scan with what it found
+lane-paused = Paused
+lane-paused-pass = Paused · { $what } { $done } of { $total }
+lane-paused-found = Paused · { $what } · { $count } images found
 
 # The Yandex panel's search and save lines
 yandex-starting = Starting…

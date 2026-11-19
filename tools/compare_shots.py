@@ -11,17 +11,19 @@ It was compare-shots.ps1.
 
 How it works:
 - A reference is tools/shots/reference/<sha10>/: one PNG per scenario and manifest.json, which holds the full commit, the
-  fixtures' hashes (`fixtures`: one per template, and shot.log's), the Qt folder, the wait, and each scenario's crop
+  fixtures' hashes (`fixtures`: one per template, and one per input file: shot.log's, lanes.txt's), the Qt folder, the wait,
+  and each scenario's crop
   hashes and settle line. It is recorded once, from a scratch worktree at target/shots/base (built into
   target/shots/base-target). A comparison builds only the working tree. Recording over an existing reference replaces it.
 - The fixture (tools/shots/fixture.py): a synthetic library (target/shots/library, made once; delete it to make another)
   and, per side, catalogs built by that side's own binary (scan, import, thumbnails at 120 and 220 px) and saved as
   templates under target/shots/sides/<side>/<template>. `default` is the library's; `broken` adds the committed files
   of tools/shots/broken (a JPEG the import fails), copied to the fixed target/shots/broken, as a second library folder,
-  for the inbox scenarios. A comparison refuses a reference whose hash for a scenario's template (or for shot.log, which
-  the log scenario reads) differs from this tree's. A manifest recorded before the templates has one `fixture` hash,
+  for the inbox scenarios. A comparison refuses a reference whose hash for a scenario's template (or for an input file
+  the scenario reads) differs from this tree's. A manifest recorded before the templates has one `fixture` hash,
   the default template's, and is still compared.
-- Each run starts from a copy of its side's template catalog, fresh preferences, notes.txt and tools/shots/shot.log, and
+- Each run starts from a copy of its side's template catalog, fresh preferences, notes.txt and the input files (shot.log,
+  lanes.txt), and
   the library as it was made: the turn and rating keys write into the original files, so restore_library puts them back
   in place (same file, so the catalog's identity holds; the timestamp is put back too), target/shots/broken included.
 - A difference is written as a diff image (the reference's pixels, with the differing ones red) under target/shots/diff.
@@ -68,8 +70,11 @@ BROKEN_MTIME_NS = 1_717_200_000 * 1_000_000_000  # 2024-06-01 UTC: every copy ha
 # When the broken template's failures were found, as the inbox shows it: fixed, so the inbox shots don't change with the
 # day the template was made (2026-01-01 09:00 UTC).
 BROKEN_FOUND_AT = 1_767_258_000
-# The log view's input (the `log` scenario), copied into each run's folder.
+# The files a scenario reads (its hook names one as `{FIX}\<name>`): each is copied into the run's folder and hashed into the
+# manifest under its name. The log view's records (`log`) and the status bar's lanes (`lanes`, `pseudo-lanes`).
 SHOT_LOG = HERE / "shots" / "shot.log"
+LANES_FILE = HERE / "shots" / "lanes.txt"
+INPUT_FILES = {"shot.log": SHOT_LOG, "lanes.txt": LANES_FILE}
 MASCOT = (
     1  # every run shows one fixed mascot, not the random one a window picks, so the screenshots of a commit match its reference
 )
@@ -79,8 +84,6 @@ MASCOT = (
 DEFAULT = "default"
 BROKEN_TEMPLATE = "broken"
 TEMPLATES = (DEFAULT, BROKEN_TEMPLATE)
-# The manifest's key for shot.log, beside the templates': the scenarios that read it are checked against it too.
-LOG_INPUT = "shot.log"
 
 
 @dataclass(frozen=True)
@@ -91,8 +94,8 @@ class Scenario:
     template: str = DEFAULT
 
     def inputs(self) -> list[str]:
-        """The manifest's fixture keys this scenario depends on: its template's, and shot.log's when a hook reads it."""
-        return [self.template, *([LOG_INPUT] if any(LOG_INPUT in hook for hook in self.hooks) else [])]
+        """The manifest's fixture keys this scenario depends on: its template's, and each input file's a hook reads."""
+        return [self.template, *(name for name in INPUT_FILES if any(name in hook for hook in self.hooks))]
 
 
 def scenario(*hooks: str, template: str = DEFAULT) -> Scenario:
@@ -127,12 +130,17 @@ SCENARIOS = {
     "inbox-expanded": scenario("--inbox=1", "--inbox-expand=import", template=BROKEN_TEMPLATE),
     "dev-mode": scenario("--dev=1"),
     "log": scenario("--dev=1", "--log=1", "--log-view={FIX}\\shot.log"),
+    # The status bar's rows, stacked: a lane working, one paused with no known total, one paused and idle, one in its hold,
+    # and the crop. The rows come from lanes.txt, not the job, so the screenshot is the same whatever the drives are.
+    "lanes": scenario("--lane-rows={FIX}\\lanes.txt"),
 }
 # The pseudo-locale: every line of the front end in the pseudo-locale. No reference has it, so it is run on the
 # working tree only and its screenshot kept under target/shots/pseudo, for a look; it is not compared.
 PSEUDO = {
     "pseudo-locale": scenario("--locale=pseudo"),
     "pseudo-library": scenario("--locale=pseudo", "--library=1"),
+    # The stacked rows in the pseudo-locale: their fixed cells are what a longer translation breaks.
+    "pseudo-lanes": scenario("--locale=pseudo", "--lane-rows={FIX}\\lanes.txt"),
 }
 
 
@@ -253,12 +261,13 @@ def fixture_hash() -> str:
 
 
 def fixture_hashes() -> dict[str, str]:
-    """The manifest's `fixtures`: each template's identity, and shot.log's. The broken template is the default one with
+    """The manifest's `fixtures`: each template's identity, and each input file's. The broken template is the default one with
     tools/shots/broken added, so its hash covers the default's and the broken files' bytes."""
     default = fixture_hash()
     lines = [f"default {default}", *(f"{file.relative_to(BROKEN_SOURCE).as_posix()} {sha256(file)}" for file in broken_files())]
     broken = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest().upper()
-    return {DEFAULT: default, BROKEN_TEMPLATE: broken, LOG_INPUT: sha256(SHOT_LOG)}
+    inputs = {name: sha256(path) for name, path in INPUT_FILES.items()}
+    return {DEFAULT: default, BROKEN_TEMPLATE: broken, **inputs}
 
 
 def manifest_fixtures(manifest: dict) -> dict[str, str]:
@@ -350,7 +359,8 @@ def invoke_shot(exe: Path, side: str, name: str, hooks: tuple[str, ...], templat
     run_folder.mkdir(parents=True)
     shutil.copytree(template / "catalog", run_folder / "catalog")
     shutil.copy(template / "notes.txt", run_folder)
-    shutil.copy(SHOT_LOG, run_folder)
+    for source in INPUT_FILES.values():
+        shutil.copy(source, run_folder)
     (run_folder / "crops").mkdir()
     restore_library()
     png = run_folder / "shot.png"

@@ -4,6 +4,10 @@
 // with a tooltip saying it isn't recorded yet) and its progress with pause, the inbox's button with its unread count,
 // and in dev mode the log view's button. The library calls are signals: Main makes them. A name, a path or an error is
 // plain text: one holding markup (`<b>`) is shown as written, never as rich text.
+//
+// The job's rows (LaneModel): while one lane works, the status line and the shared bar show it, as they always have. When
+// the rows stack (`stacked`: two or more rows, or a lane paused by itself), each row is a LaneRow with its own bar and
+// its own Pause, one under the other, and the status line and the shared bar are not shown.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -26,12 +30,13 @@ ToolBar {
     required property string toast
     required property int toastLevel
     required property int unread
-    // The job's status, and whether it is running, paused, and how far.
+    // The job's status line (the library's one progress), and whether it is running, paused, and how far.
     required property string status
-    // The lanes that work or are paused (`Library::lanes`): a row's status, and its pause ("1" or "0", `lanePaused`). Two
-    // or more lanes show a row each, with its own pause; one lane is the status line above.
-    property list<string> lanes: []
-    property list<string> lanePaused: []
+    // The rows of the lanes (LaneModel, src/lane_model.rs), and whether they stack.
+    property var laneModel: null
+    required property bool stacked
+    // The pass's total isn't known: the shared bar is indeterminate while it runs.
+    required property bool indeterminate
     // The pass's failures ("N failed"; empty: none), and whether the inbox lists something of the pass (Notices'
     // `passes` has its bit): only then is it a link.
     required property string failed
@@ -49,7 +54,8 @@ ToolBar {
     signal inboxRequested()
     signal failedRequested()
     signal pauseToggled()
-    signal lanePauseToggled(int index)
+    // A row's Pause was pressed: the lane numbered `number` is to be paused (`paused`) or resumed.
+    signal lanePauseRequested(int number, bool paused)
     signal logRequested()
 
     anchors.left: parent.left
@@ -64,7 +70,7 @@ ToolBar {
         Label {
             Layout.fillWidth: true
             elide: Text.ElideMiddle
-            color: "#aaaaaa"
+            color: Theme.statusText
             text: bar.selection
             textFormat: Text.PlainText
         }
@@ -73,7 +79,7 @@ ToolBar {
             visible: bar.writeStatus.length > 0
             text: bar.writeStatus
             textFormat: Text.PlainText
-            color: bar.writeFailed ? "#e0a050" : "#aaaaaa"
+            color: bar.writeFailed ? Theme.statusWarning : Theme.statusText
             elide: Text.ElideMiddle
             Layout.maximumWidth: 500
         }
@@ -83,7 +89,7 @@ ToolBar {
             visible: bar.toast.length > 0
             text: (bar.toastLevel > 0 ? "⚠ " : "") + bar.toast
             textFormat: Text.PlainText
-            color: bar.toastLevel > 0 ? "#e0a050" : "#aaaaaa"
+            color: bar.toastLevel > 0 ? Theme.statusWarning : Theme.statusText
             elide: Text.ElideMiddle
             Layout.maximumWidth: 500
             TapHandler { onTapped: bar.inboxRequested() }
@@ -95,33 +101,24 @@ ToolBar {
             onTriggered: bar.toastExpired()
         }
         Label {
-            visible: bar.status.length > 0 && bar.lanes.length < 2
+            visible: bar.status.length > 0 && !bar.stacked
             text: bar.status
             textFormat: Text.PlainText
-            color: "#aaaaaa"
+            color: Theme.statusText
         }
-        // Two or more lanes: a row for each lane that works or is paused, with its own pause beside the global one.
-        Repeater {
-            model: bar.lanes
-            delegate: RowLayout {
-                id: laneRow
-                required property int index
-                visible: bar.lanes.length > 1
-                readonly property bool lanePaused: bar.lanePaused[index] === "1"
-                spacing: 4
-                Label {
-                    objectName: "laneStatus"
-                    text: bar.lanes[laneRow.index]
-                    textFormat: Text.PlainText
-                    color: "#aaaaaa"
-                    elide: Text.ElideRight
-                    Layout.maximumWidth: 320
-                }
-                Button {
-                    objectName: "laneToggle"
-                    text: laneRow.lanePaused ? words.text("ui-resume") : words.text("ui-pause")
-                    flat: true
-                    onClicked: bar.lanePauseToggled(laneRow.index)
+        // Stacked: a row for each lane that works or is paused (and the crop), each with its own bar and its own Pause.
+        ColumnLayout {
+            objectName: "laneColumn"
+            visible: bar.stacked
+            spacing: 2
+            Repeater {
+                id: laneRepeater
+                objectName: "laneRepeater"
+                model: bar.laneModel
+                delegate: LaneRow {
+                    id: lane
+                    globalPaused: bar.paused
+                    onPauseRequested: (paused) => bar.lanePauseRequested(lane.number, paused)
                 }
             }
         }
@@ -131,7 +128,7 @@ ToolBar {
             visible: bar.failed.length > 0
             text: bar.failed
             textFormat: Text.PlainText
-            color: "#e0a050"
+            color: Theme.statusWarning
             font.underline: bar.failedLinked
             Accessible.role: bar.failedLinked ? Accessible.Link : Accessible.StaticText
             Accessible.name: bar.failedLinked ? words.text("ui-failed-link") : bar.failed
@@ -148,10 +145,12 @@ ToolBar {
                 onTapped: bar.failedRequested()
             }
         }
+        // One line's bar: the shared one while the rows don't stack (a row has its own bar when they do).
         ProgressBar {
-            visible: bar.busy
-            indeterminate: bar.progress < 0
-            value: Math.max(bar.progress, 0)
+            objectName: "sharedBar"
+            visible: bar.busy && !bar.stacked
+            indeterminate: bar.indeterminate && !bar.paused
+            value: bar.progress
             Layout.preferredWidth: 140
         }
         Button {

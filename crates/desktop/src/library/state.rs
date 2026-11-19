@@ -15,12 +15,9 @@ pub struct LibraryRust {
     pub(crate) busy: bool,
     pub(crate) paused: bool,
     pub(crate) status: QString,
-    /// One row per lane that works or is paused: its status (see `lanes` in the bridge), and its pause ("1" or "0").
-    pub(crate) lanes: QStringList,
-    pub(crate) lane_paused: QStringList,
-    /// The lane number and pause of each row in `lanes`, row for row: what a toggle of that row names.
-    pub(super) lane_rows: Vec<(usize, bool)>,
     pub(crate) progress: f64,
+    /// The total of the pass is unknown (scanning): the bar is indeterminate while it runs.
+    pub(crate) indeterminate: bool,
     /// The pass's failed count ("2 failed"; empty when none), the link to its files, and the pass it is of (a
     /// `FailedFiles` pass code; meaningless while `failed` is empty).
     pub(crate) failed: QString,

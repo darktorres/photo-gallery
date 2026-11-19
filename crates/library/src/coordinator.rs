@@ -26,6 +26,7 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
+use pg_model::progress::Progress;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::drive::Drives;
 use pg_platform::native::PATH_RULES;
@@ -199,11 +200,16 @@ impl Lanes {
     pub(crate) fn progress_lines(&self) -> Vec<LaneProgress> {
         self.all()
             .iter()
-            .map(|lane| LaneProgress {
-                number: lane.inner.number,
-                label: lane.inner.label(),
-                progress: lane.inner.ctl.snapshot(),
-                paused: lane.inner.ctl.is_own_paused(),
+            .map(|lane| {
+                // One snapshot for both, so a row's phase and its time since work agree.
+                let (progress, since_work) = lane.inner.ctl.snapshot_since();
+                LaneProgress {
+                    number: lane.inner.number,
+                    label: lane.inner.label(),
+                    progress,
+                    since_work,
+                    paused: lane.inner.ctl.is_own_paused(),
+                }
             })
             .collect()
     }
@@ -217,6 +223,11 @@ impl Lanes {
             }
             None => false,
         }
+    }
+
+    /// The crop thread's progress and time since work, read together.
+    pub(crate) fn crop_snapshot(&self) -> (Progress, Option<Duration>) {
+        self.crop_ctl.snapshot_since()
     }
 
     /// The controls of the crop thread and the lanes, the crop's first: each one's progress is a line of its own.
@@ -388,9 +399,15 @@ impl Lanes {
                 .collect();
             let serial = self.shared.features.get().serial_drives;
             let groups = lanes::plan(&places, serial);
+            let before = lane_names(&reg.lanes);
             let retiring = self.assign_lanes(&mut reg, &groups, &volumes)?;
             for lane in &reg.lanes {
                 lane.inner.set_label(drive_label(&lane.roots, &places));
+            }
+            // A label that changed and a lane that retired change the rows without any progress event: tell the hook.
+            // The hook only publishes on the bus, so it is safe under the registry lock.
+            if before != lane_names(&reg.lanes) {
+                self.root.announce();
             }
             self.route_scans(&mut reg, &rules, &roots);
             let next = reg.probes.values().filter_map(|probe| probe.due(now)).min();
@@ -714,6 +731,11 @@ fn crop(weak: &Weak<Lanes>, waker: &Waker<'_>) {
         lanes.run_jobs(&mut catalog, waker);
         drop(lanes);
     }
+}
+
+/// Each lane's number and label, the two things the rows show that no progress event carries.
+fn lane_names(lanes: &[Lane]) -> Vec<(usize, String)> {
+    lanes.iter().map(|lane| (lane.inner.number, lane.inner.label())).collect()
 }
 
 /// The drive for people of a lane's roots: the drive of the first of them whose place is known (`E:`), empty when none is.

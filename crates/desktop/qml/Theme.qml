@@ -1,5 +1,6 @@
-// The colours of the components that are not the Main window's own: the Yandex panel and its parts, and the filter
-// bar. Each name says what the colour is for; the values are the ones those components used as literals.
+// The colours of the components that are not the Main window's own: the Yandex panel and its parts, the filter bar, and the
+// status bar with its lane rows. Each name says what the colour is for; the values are the ones those components used as
+// literals.
 pragma Singleton
 import QtQuick
 
@@ -23,4 +24,8 @@ QtObject {
     readonly property color errorText: "#e57373"
     // A range field's text that doesn't parse.
     readonly property color invalidText: "#e06060"
+    // The status bar's quiet text (the selection, the status line, a lane's status), and its warning text (a failed write,
+    // a warning toast, the failed files' count).
+    readonly property color statusText: "#aaaaaa"
+    readonly property color statusWarning: "#e0a050"
 }

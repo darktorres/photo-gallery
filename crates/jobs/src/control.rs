@@ -36,6 +36,8 @@ struct Running {
     /// (working time, count without the drained files), oldest first. The front one is where the window starts: the
     /// latest mark at least a window old, or the phase's start.
     marks: VecDeque<(Duration, u64)>,
+    /// When the last phase ended: `None` until the control's first phase has ended.
+    ended: Option<Instant>,
 }
 
 impl Running {
@@ -47,11 +49,27 @@ impl Running {
             paused_since: None,
             drained: 0,
             marks: VecDeque::from([(Duration::ZERO, 0)]),
+            ended: None,
         }
     }
 
     fn idle() -> Running {
         Running::begun(Progress::idle(), Instant::now())
+    }
+
+    /// The idle state a phase leaves behind, remembering when it ended.
+    fn ended(now: Instant) -> Running {
+        Running { ended: Some(now), ..Running::idle() }
+    }
+
+    /// The time since work last ran: `Some(0)` while a phase runs, the time since the last one ended, `None` before
+    /// any phase has ended.
+    fn since_work(&self, now: Instant) -> Option<Duration> {
+        if self.progress.phase != Phase::Idle {
+            Some(Duration::ZERO)
+        } else {
+            self.ended.map(|at| now.saturating_duration_since(at))
+        }
     }
 
     /// The time the phase has run at `now`, not counting its pauses.
@@ -562,7 +580,7 @@ impl Control {
         let (ended, paused) = self.progress.update(|running| {
             let now = Instant::now();
             let wall = now.saturating_duration_since(running.started);
-            let ended = std::mem::replace(running, Running::idle()).read(now);
+            let ended = std::mem::replace(running, Running::ended(now)).read(now);
             let paused = wall.saturating_sub(ended.elapsed);
             (ended, paused)
         });
@@ -574,6 +592,18 @@ impl Control {
     /// The progress now, with the time its phase has run.
     pub fn snapshot(&self) -> Progress {
         self.progress.get().read(Instant::now())
+    }
+
+    /// The progress now, and the time since work last ran (`Running::since_work`), read together so the two agree.
+    pub fn snapshot_since(&self) -> (Progress, Option<Duration>) {
+        let now = Instant::now();
+        let running = self.progress.get();
+        (running.read(now), running.since_work(now))
+    }
+
+    /// Tells the hook that something changed that no progress event reports (a lane's label, a retired lane).
+    pub fn announce(&self) {
+        self.changed();
     }
 
     /// Every lane's progress now, the root's and the held lanes', in lane order. Called on the root.
@@ -900,6 +930,34 @@ mod tests {
         }));
         assert!(panicked.is_err());
         assert_eq!(ctl.snapshot().phase, Phase::Idle);
+    }
+
+    #[test]
+    fn since_work_is_none_before_a_phase_ends_then_zero_while_one_runs_then_grows() {
+        let ctl = Control::new();
+        assert_eq!(ctl.snapshot_since().1, None, "no phase has ended yet");
+        let phase = ctl.begin(Phase::Import, 10);
+        assert_eq!(ctl.snapshot_since().1, Some(Duration::ZERO), "a phase runs");
+        drop(phase);
+        std::thread::sleep(Duration::from_millis(20));
+        let (p, since) = ctl.snapshot_since();
+        assert_eq!(p.phase, Phase::Idle);
+        assert!(since.is_some_and(|s| s >= Duration::from_millis(20)), "the time since the phase ended grows");
+        let _again = ctl.begin(Phase::Hashes, 1);
+        assert_eq!(ctl.snapshot_since().1, Some(Duration::ZERO), "a new phase resets it");
+    }
+
+    #[test]
+    fn since_work_ends_with_a_panicking_phase_and_a_lane_keeps_its_own() {
+        let root = Control::new();
+        let (a, b) = (root.lane(), root.lane());
+        let panicked = crate::panics::catch(std::panic::AssertUnwindSafe(|| {
+            let _phase = a.begin(Phase::Import, 1);
+            panic!("the pass panicked");
+        }));
+        assert!(panicked.is_err());
+        assert!(a.snapshot_since().1.is_some(), "the panic still ended the phase");
+        assert_eq!(b.snapshot_since().1, None, "a sibling that never worked has no time since work");
     }
 
     #[test]

@@ -19,13 +19,10 @@ pub mod qobject {
         #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, paused, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
-        /// One row per lane that is working or paused: its status. The status bar shows a row for each when there is more than
-        /// one lane.
-        #[qproperty(QStringList, lanes, READ, WRITE, NOTIFY, FINAL)]
-        /// Each row's pause of `lanes`: `1` when that lane is paused, `0` when it runs.
-        #[qproperty(QStringList, lane_paused, cxx_name = "lanePaused", READ, WRITE, NOTIFY, FINAL)]
-        /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
+        /// Done ÷ total of the current pass; 0 when the total isn't known (`indeterminate` says so).
         #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
+        /// The current pass's total isn't known (scanning): its bar is indeterminate while it runs.
+        #[qproperty(bool, indeterminate, READ, WRITE, NOTIFY, FINAL)]
         /// How many files the current pass failed on ("2 failed"), empty when none: the link to the inbox's entry of its
         /// failed files.
         #[qproperty(QString, failed, READ, WRITE, NOTIFY, FINAL)]
@@ -46,6 +43,10 @@ pub mod qobject {
 
         #[qsignal]
         fn imported(self: Pin<&mut Library>);
+
+        /// The job's progress was read again (a pass, a pause): the lane rows (`LaneModel`) refresh from it.
+        #[qsignal]
+        fn progressed(self: Pin<&mut Library>);
 
         /// Files were turned (rewritten or turned in the catalog): their images and sizes changed.
         #[qsignal]
@@ -75,9 +76,9 @@ pub mod qobject {
         #[cxx_name = "togglePause"]
         fn toggle_pause(self: Pin<&mut Library>);
 
-        /// Pauses or resumes the lane of row `index` of `lanes`, leaving the other drives running.
+        /// Pauses (`paused`) or resumes the lane numbered `number` (a row's `number`), leaving the other drives running.
         #[qinvokable]
-        #[cxx_name = "toggleLanePause"]
-        fn toggle_lane_pause(self: Pin<&mut Library>, index: i32);
+        #[cxx_name = "setLanePaused"]
+        fn set_lane_paused(self: Pin<&mut Library>, number: i32, paused: bool);
     }
 }

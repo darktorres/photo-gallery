@@ -128,6 +128,8 @@ ApplicationWindow {
         id: library
         onScanned: win.reloadAll()
         onImported: win.refreshGrid()
+        // The job's progress was read again: the status bar's rows follow it (LaneModel).
+        onProgressed: laneRows.refresh()
         // Turned files changed in place: no renumbering, so the viewer can stay open (the controller reads them again).
         onFilesChanged: shell.filesChanged()
     }
@@ -372,6 +374,18 @@ ApplicationWindow {
     LogModel {
         id: logModel
     }
+    // The lanes the status bar shows, one row each (LaneModel). Refreshed as the job's progress is read; while a row only
+    // waits out its hold, the timer asks again, so the row goes when it should.
+    LaneModel {
+        id: laneRows
+        Component.onCompleted: refresh()
+    }
+    Timer {
+        interval: 250
+        repeat: true
+        running: laneRows.settling
+        onTriggered: laneRows.refresh()
+    }
     // The inbox: its entries, the bell's count and the toast. Followed from the start, so the opening's notices toast.
     Notices {
         id: inboxModel
@@ -511,8 +525,9 @@ ApplicationWindow {
             toastLevel: inboxModel.toastLevel
             unread: inboxModel.unread
             status: library.status
-            lanes: library.lanes
-            lanePaused: library.lanePaused
+            laneModel: laneRows
+            stacked: laneRows.stacked
+            indeterminate: library.indeterminate
             failed: library.failed
             // A link only to what the inbox lists: the pass's ledger entry, or its unreadable files.
             failedLinked: library.failedPass >= 0 && (inboxModel.passes & (1 << library.failedPass)) !== 0
@@ -531,7 +546,7 @@ ApplicationWindow {
                     shell.globalAction(GlobalShortcuts.Inbox)
             }
             onPauseToggled: library.togglePause()
-            onLanePauseToggled: (index) => library.toggleLanePause(index)
+            onLanePauseRequested: (number, paused) => library.setLanePaused(number, paused)
         }
 
         FilterBar {

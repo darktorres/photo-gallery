@@ -17,6 +17,7 @@ use pg_jobs_testkit::{Quiet, RecordingSink};
 use pg_library::runner::Runner;
 use pg_library::shared::{FeatureCell, HeightCell};
 use pg_model::features::Features;
+use pg_model::progress::Phase;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
 use pg_platform::drive::{Drive, DriveKey, Drives, Kind};
@@ -187,6 +188,25 @@ fn each_lane_reports_its_drive_label() {
     });
     let lanes = runner.lane_progress();
     assert_ne!(lanes[0].label, lanes[1].label, "one drive's label is not another's");
+    assert!(runner.stop(WAIT));
+}
+
+/// A lane's time since work agrees with its phase in the same read: a lane whose phase runs reports no time since work
+/// (`Some(ZERO)`), and once a lane has had work its time since work is known. Waits for that, not for a phase to be seen:
+/// a short phase can end between two reads.
+#[test]
+fn a_lane_reports_its_time_since_work_with_its_phase() {
+    let (dir, catalog_path, a, b) = two_folders("since-work");
+    let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    runner.scan(vec![a, b]);
+    wait_for("two lanes", || runner.lanes() == 2);
+    wait_for("a lane to have had work", || runner.lane_progress().iter().any(|lane| lane.since_work.is_some()));
+    for lane in runner.lane_progress() {
+        if lane.progress.phase != Phase::Idle {
+            assert_eq!(lane.since_work, Some(Duration::ZERO), "a running phase has no time since work");
+        }
+    }
     assert!(runner.stop(WAIT));
 }
 

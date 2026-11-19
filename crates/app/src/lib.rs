@@ -35,7 +35,7 @@ pub use edit::Edit;
 pub use error::{Error, Result};
 pub use images::{Images, Keep, Thumbnail};
 pub use inbox::{Inbox, InboxEvent, Listing};
-pub use library::{Library, LibraryService, Status};
+pub use library::{LaneLines, Library, LibraryService, Status};
 pub use prefs::{PrefStore, Prefs};
 pub use reader::{Failed, FailedItems, Kind, Reading, Session};
 pub use views::Views;

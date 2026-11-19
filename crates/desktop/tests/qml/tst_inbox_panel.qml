@@ -216,8 +216,8 @@ TestCase {
         p.failedError = "database is locked"
         const error = findChild(p, "inboxFilesError")
         verify(error.visible)
-        // The read's error, worded (the stub of Words answers with the id).
-        compare(error.text, "ui-inbox-unreadable")
+        // The read's error, worded (the stub of Words answers with the id and the value it was given).
+        compare(error.text, "ui-inbox-unreadable:database is locked")
     }
 
     // A notice that comes in above the selected row keeps the selection on its entry, with its details open.

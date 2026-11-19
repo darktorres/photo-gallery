@@ -133,6 +133,9 @@ ui-stars = { $count ->
 # The status bar
 ui-pause = Pause
 ui-resume = Resume
+# A lane's own pause, named for its drive (`$text`): the accessible name of its row's button
+ui-pause-lane = Pause { $text }
+ui-resume-lane = Resume { $text }
 
 # The top bar
 ui-sort-name = By name

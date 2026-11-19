@@ -145,12 +145,15 @@ impl Runner {
         self.lanes.root.is_paused()
     }
 
-    /// The progress of the first job that is busy (the crop thread's, then the lanes' in order), for the app's one line.
-    /// Idle when none is.
     /// Every lane's progress, in the lanes' order, each with its drive's label (`LaneProgress`). The library's one progress
     /// (`progress`) is the first of them that works.
     pub fn lane_progress(&self) -> Vec<LaneProgress> {
         self.lanes.progress_lines()
+    }
+
+    /// The crop thread's progress and its time since work (`LaneProgress::since_work`): the crop is a row of its own.
+    pub fn crop_progress(&self) -> (Progress, Option<Duration>) {
+        self.lanes.crop_snapshot()
     }
 
     /// Pauses or resumes one lane (by its `LaneProgress::number`), leaving the others running. `false` when no lane has
@@ -159,6 +162,8 @@ impl Runner {
         self.lanes.set_lane_paused(number, paused)
     }
 
+    /// The progress of the first job that is busy (the crop thread's, then the lanes' in order), for the app's one line.
+    /// Idle when none is.
     pub fn progress(&self) -> Progress {
         self.lanes
             .controls()

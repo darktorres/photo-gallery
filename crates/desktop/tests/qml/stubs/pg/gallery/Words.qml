@@ -1,7 +1,7 @@
 // A stub of the Words facade (crates/desktop/src/words.rs, over pg_client's text): the rating symbols and the timecode,
 // with the same names and the same answers as the Rust (text::RATING_SYMBOLS, text::timecode). The front end's own
-// literals (text, phrase) answer with their ui.ftl id (a phrase with a count, the number it is about, after the id): these
-// tests check the QML's logic, not its words.
+// literals (text, phrase) answer with their ui.ftl id: a phrase's value follows it after a colon, and its count (the number
+// it is about) after that. These tests check the QML's logic, not its words, but a test can tell which value it was given.
 import QtQuick
 
 QtObject {
@@ -11,7 +11,7 @@ QtObject {
 
     function text(id) { return id }
 
-    function phrase(id, count, value, second) { return count ? id + " " + count : id }
+    function phrase(id, count, value, second) { return id + (value ? ":" + value : "") + (count ? " " + count : "") }
 
     function timecode(seconds) {
         const h = Math.floor(seconds / 3600)

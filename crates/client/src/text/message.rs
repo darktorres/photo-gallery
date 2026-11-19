@@ -209,6 +209,12 @@ messages! {
     WorkPaused => "work-paused",
     /// The library's status line while the background work is paused in a pass (`status`: the pass's line).
     PausedPass { status: String } => "paused-pass",
+    /// A lane's row while the lane is paused by itself and no pass of it runs.
+    LanePaused => "lane-paused",
+    /// A paused lane's row in a pass with a known total: its name, and how far it is (no rate or time left).
+    LanePausedPass { what: String, done: String, total: String } => "lane-paused-pass",
+    /// A paused lane's row in a scan: its name and the images found so far.
+    LanePausedFound { what: String, count: String } => "lane-paused-found",
     /// The Yandex panel's line while a search or a save starts.
     YandexStarting => "yandex-starting",
     /// A save of `count` results about to start.

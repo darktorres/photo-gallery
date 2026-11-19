@@ -46,7 +46,8 @@ def qt_kit() -> Path:
 
 
 def stage() -> None:
-    """Stages the module: the stubs, then every QML file of the app, with its qmldir entry (the singleton's is a `singleton`)."""
+    """Stages the module: the stubs, then every QML file of the app, with its qmldir entry (a `pragma Singleton` file's is a
+    `singleton`)."""
     if STAGED.exists():
         shutil.rmtree(STAGED)
     module = STAGED / "pg" / "gallery"
@@ -54,8 +55,9 @@ def stage() -> None:
     entries = (module / "qmldir").read_text(encoding="utf-8").splitlines()
     for file in sorted(QML.glob("*.qml")):
         shutil.copy(file, module)
-        if file.stem == "Ratings":
-            entries.append("singleton Ratings 1.0 Ratings.qml")
+        # A file that declares `pragma Singleton` is a singleton in the qmldir, as the app's build registers it.
+        if "pragma Singleton" in file.read_text(encoding="utf-8"):
+            entries.append(f"singleton {file.stem} 1.0 {file.name}")
         else:
             entries.append(f"{file.stem} 1.0 {file.name}")
     (module / "qmldir").write_text("\n".join(entries) + "\n", encoding="utf-8")

@@ -70,12 +70,18 @@ struct WriterSlot {
     stopping: bool,
 }
 
+/// The job's rows now: the crop thread, and each lane (`LaneProgress`, in the lanes' order).
+pub struct LaneLines {
+    pub crop: Progress,
+    /// The time since the crop last had work (`LaneProgress::since_work`).
+    pub crop_since_work: Option<Duration>,
+    pub lanes: Vec<LaneProgress>,
+}
+
 /// What the library is doing now, for the status line and the progress.
 pub struct Status {
-    /// The library's one progress: the first lane working (`lanes` has each lane's).
+    /// The library's one progress: the crop's when it works, else the first lane that works (`lane_lines` has each row's).
     pub progress: Progress,
-    /// Each lane's progress and its drive's label, in the lanes' order.
-    pub lanes: Vec<LaneProgress>,
     pub paused: bool,
     pub writes: WriteStatus,
     /// Files turned by the writer so far (their images and sizes changed).
@@ -224,9 +230,16 @@ impl Library {
         self.runner.is_paused()
     }
 
-    /// Pauses or resumes one lane (its number from `Status::lanes`); `false` when no lane has that number.
+    /// Pauses or resumes one lane (its number from `LaneProgress::number`); `false` when no lane has that number.
     pub fn set_lane_paused(&self, number: usize, paused: bool) -> bool {
         self.runner.set_lane_paused(number, paused)
+    }
+
+    /// The rows of the job now: the crop's progress and its time since work, and each lane's. Reads the runner only, so
+    /// the writer is left alone (`status` also tends it).
+    pub fn lane_lines(&self) -> LaneLines {
+        let (crop, crop_since_work) = self.runner.crop_progress();
+        LaneLines { crop, crop_since_work, lanes: self.runner.lane_progress() }
     }
 
     /// The job's and the writer's state now.
@@ -235,7 +248,6 @@ impl Library {
         self.tend(&mut slot);
         Status {
             progress: self.runner.progress(),
-            lanes: self.runner.lane_progress(),
             paused: self.runner.is_paused(),
             writes: slot.writer.status(),
             turned: slot.writer.turned(),

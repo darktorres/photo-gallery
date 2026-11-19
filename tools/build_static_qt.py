@@ -26,7 +26,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from pgtools import WINDOWS, import_msvc_environment, load_env_file
+from pgtools import MSVC_TOOLSET, WINDOWS, import_msvc_environment, load_env_file
 
 # ---- Pins. Change them here, and note the reason beside each one. --------------------------------------
 QT_VERSION = "6.12.0"
@@ -35,7 +35,6 @@ SOURCE_NAME = f"qt-everywhere-src-{QT_VERSION}"
 SOURCE_URL = f"https://download.qt.io/official_releases/qt/6.12/{QT_VERSION}/single/{SOURCE_NAME}.zip"
 SOURCE_BYTES = 604_643_023
 SOURCE_SHA256 = "A72E89C33726D742E67EDF494ABF7B625EAFFC756673221C9823322ECD1A32D1"  # upper case, as sha256() gives it
-TOOLSET = "14.44.35207"  # MSVC toolset (vcvars64 -vcvars_ver), the same as the other static recipes
 # The modules the app uses. qtbase carries the platforms, the image formats' base, the TLS and network plugins.
 SUBMODULES = ["qtbase", "qtshadertools", "qtdeclarative", "qtmultimedia", "qtimageformats", "qtsvg"]
 # Each of these folders must hold static plugin libraries after the install, or the app's plugin list cannot be linked.
@@ -189,7 +188,7 @@ def main() -> None:
 
     logs, build, prefix = work / "logs", work / "build", work / "prefix"
     logs.mkdir(parents=True, exist_ok=True)
-    cl = import_msvc_environment(args.build_tools, TOOLSET)
+    cl = import_msvc_environment(args.build_tools, MSVC_TOOLSET)
     # MSYS2's usr\bin, for Perl, after MSVC's folder: MSYS2's own link (coreutils) would otherwise shadow MSVC's link.exe.
     os.environ["PATH"] = os.pathsep.join([str(Path(cl).parent), str(args.msys / "usr" / "bin"), os.environ.get("PATH", "")])
     check_tools()
@@ -219,7 +218,7 @@ def main() -> None:
         "built": started.isoformat(timespec="seconds"),
         "seconds": int((datetime.datetime.now(datetime.UTC) - started).total_seconds()),
         "qt": {"version": QT_VERSION, "source": SOURCE_URL, "source_sha256": SOURCE_SHA256},
-        "tools": {"cl": cl, "msvc_toolset": TOOLSET, "jobs": args.jobs},
+        "tools": {"cl": cl, "msvc_toolset": MSVC_TOOLSET, "jobs": args.jobs},
         "inputs": {"jpeg": str(jpeg), "ffmpeg": str(ffmpeg)},
         "configure_log": str(logs / "configure.log"),
         "install": install,

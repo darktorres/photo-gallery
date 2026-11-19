@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-from pgtools import WINDOWS, import_msvc_environment, load_env_file
+from pgtools import MSVC_TOOLSET, WINDOWS, import_msvc_environment, load_env_file
 
 HERE = Path(__file__).resolve().parent
 
@@ -32,7 +32,6 @@ HERE = Path(__file__).resolve().parent
 FFMPEG_URL = "https://github.com/FFmpeg/FFmpeg.git"
 FFMPEG_COMMIT = "7adfbe40dcde598f93a6963d2f7b22cd75202ccc"  # n9.0.2-39-g7adfbe40dc, the commit the pinned build came from
 FFMPEG_RELEASE = "9.0.2"  # the RELEASE file at that commit
-TOOLSET = "14.44.35207"  # MSVC toolset (vcvars64 -vcvars_ver)
 WINDOWS_SDK = "10.0.26100.0"
 MSYS_PACKAGES = {"make": "4.4.1-3", "diffutils": "3.12-1"}  # installed if missing; a different version is recorded
 # The Windows libraries the static link needs. FFmpeg's .pc files don't list them (Libs.private is empty).
@@ -97,7 +96,7 @@ def default_work() -> Path:
 def setup_environment(build_tools: Path, msys: Path) -> str:
     """The MSVC environment, with MSYS2's usr\\bin after it: MSYS2's link (coreutils) would otherwise shadow MSVC's link.exe.
     Returns cl.exe's path."""
-    cl = import_msvc_environment(build_tools, TOOLSET)
+    cl = import_msvc_environment(build_tools, MSVC_TOOLSET)
     os.environ["PATH"] = os.pathsep.join([str(Path(cl).parent), str(msys / "usr" / "bin"), os.environ.get("PATH", "")])
     os.environ["MSYS2_PATH_TYPE"] = "inherit"
     program_files = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")  # Windows' environment is case-blind
@@ -283,7 +282,7 @@ def main() -> None:
         "ffmpeg": {"commit": head, "release": FFMPEG_RELEASE, "configure": f"./configure {flags} --prefix=/ffbuild/prefix"},
         "tools": {
             "cl": cl,
-            "msvc_toolset": TOOLSET,
+            "msvc_toolset": MSVC_TOOLSET,
             "windows_sdk": WINDOWS_SDK,
             "msys2_pacman": [f"{name} {version}" for name, version in msys_versions.items()],
             "msys2_root": str(args.msys),

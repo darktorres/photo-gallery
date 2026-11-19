@@ -1,15 +1,17 @@
 # CI. Two jobs: `windows` (the app: lint, the module cycles, tests, the QML tests, the screenshot comparison),
-# and `linux` (the whole workspace on Linux, with Qt 6.12 for Linux: the same recipes as the Windows job, lint, the module
+# and `linux` (the whole workspace on Linux, with Qt for Linux: the same recipes as the Windows job, lint, the module
 # cycles, tests and the QML tests). Both run the Justfile's recipes, so a check that passes here passes there; the steps that are not
-# recipes are the setup. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
-# comment; .github/dependabot.yml proposes updates. The Linux packages are in docker/apt-packages.txt.
+# recipes are the setup. The first step of each job (`github_files.py pins`) writes the Justfile's pins to the environment, so
+# the Justfile is the one place a version is written. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit
+# SHAs with the tag in the comment; .github/dependabot.yml proposes updates. The Linux packages are in docker/apt-packages.txt.
 #
 # Inputs from outside the repository, and what each one is pinned to:
-#   - Qt 6.12.0 (msvc2022_64), installed by jurplel/install-qt-action at C:\Qt\6.12.0\msvc2022_64. The Windows job sets
-#     QT_DIR to that folder, as a developer's .env does.
+#   - Qt (the Justfile's qt_version; msvc2022_64 on Windows), installed by jurplel/install-qt-action under QT_INSTALL_ROOT.
+#     The pins step sets QT_DIR to that kit, as a developer's .env does.
 #   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01): pinned in the Justfile, which `just setup` fetches and
 #     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
-#   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in docker/apt-packages.txt.
+#   - ExifTool at the Justfile's pins: Chocolatey's package (exiftool_version) on Windows, the release's source archive
+#     (exiftool_source_*, tools/install_exiftool.py) on Linux. The rest of the Linux packages are in docker/apt-packages.txt.
 #
 # The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable.
 name: CI
@@ -45,9 +47,6 @@ env:
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
   CARGO_BUILD_FINGERPRINT: "content"
   CARGO_UNSTABLE_RUSTDOC_DEPINFO: "true"
-  QT_VERSION: "6.12.0"
-  # Pinned, so a new ExifTool release does not change the metadata tests unasked.
-  EXIFTOOL_VERSION: "13.59.0"
   # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::missing_tool).
   PG_REQUIRE_TOOLS: "1"
 
@@ -59,8 +58,6 @@ jobs:
     env:
       # Diagnostic (temporary): why cargo rebuilds each unit. Each rebuilt unit logs "dirty:" with its reason.
       CARGO_LOG: cargo::compiler::fingerprint=info
-      # The Qt kit installed below: where the Justfile's recipes and the desktop crate find qmake (a developer sets it in .env).
-      QT_DIR: 'C:\Qt\6.12.0\msvc2022_64'
     # The steps run under bash (Git for Windows), so a failed command fails its step; the diagnostics below say pwsh.
     defaults:
       run:
@@ -68,33 +65,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The pinned Python comes first: the pins step and `just setup` and the other recipes run its scripts (the screenshot
+      # fixture's venv is built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.12.10).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12.10"
+
+      # The Justfile's pins, for every later step: QT_VERSION, QT_DIR (the kit the recipes and the desktop crate find qmake
+      # in, as a developer's .env sets it), the install-action's tool list and the aqtinstall commit (tools/ci/github_files.py).
+      - name: Pins (the Justfile's versions, into the environment)
+        run: python tools/ci/github_files.py pins
+
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup show
 
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
-          # Pinned: a new release of these can change what the lint reports. `just lint` checks the same versions.
-          tool: just@1.59.0,cargo-deny@0.21.0,cargo-machete@0.10.1,cargo-modules@0.28.0
+          # Pinned in the Justfile: a new release of these can change what the lint reports. `just lint` checks the same versions.
+          tool: ${{ env.TAIKI_TOOLS }}
 
-      - name: "Qt ${{ env.QT_VERSION }} (at QT_DIR, C:\\Qt\\6.12.0\\msvc2022_64)"
+      - name: "Qt ${{ env.QT_VERSION }} (at QT_DIR)"
         uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
         with:
           version: ${{ env.QT_VERSION }}
           # aqtinstall's latest release, 3.3.0, cannot install Qt 6.11 or later on Windows x64: Qt split that repository
           # by compiler, and 3.3.0 still looks for the old path (Updates.xml 404, "Failed to locate XML data"). Its master
-          # can (issue miurahr/aqtinstall#959). Pinned to the commit wiRedPanda's CI uses for Qt 6.12 on Windows x64.
-          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
-          arch: win64_msvc2022_64
-          # The action installs to <dir>\Qt\<version>\<arch>, so dir is the drive root: C:\Qt\6.12.0\msvc2022_64.
-          dir: C:\
+          # can (issue miurahr/aqtinstall#959). The commit is the Justfile's aqtinstall_commit, the one that installs this Qt.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@${{ env.AQTINSTALL_COMMIT }}
+          arch: ${{ env.QT_ARCH }}
+          # The action installs to <dir>\Qt\<version>\<arch>: QT_INSTALL_ROOT is the drive root, so QT_DIR is the kit.
+          dir: ${{ env.QT_INSTALL_ROOT }}
           modules: qtmultimedia
           cache: true
-
-      # The pinned Python comes first: `just setup` and the other recipes run its scripts (the screenshot fixture's venv is
-      # built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.12.10).
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12.10"
 
       - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
         run: python tools/ci/github_files.py env PG_DESKTOP_CONTENT_KEY "${{ hashFiles('crates/desktop/**') }}"
@@ -220,6 +222,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The Justfile's pins, for every later step (see the Windows job). The runner's python3 runs it.
+      - name: Pins (the Justfile's versions, into the environment)
+        run: python3 tools/ci/github_files.py pins
+
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup show
 
@@ -229,12 +235,19 @@ jobs:
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           # Pinned (see the Windows job): `just lint` checks these versions too.
-          tool: just@1.59.0,cargo-deny@0.21.0,cargo-machete@0.10.1,cargo-modules@0.28.0
+          tool: ${{ env.TAIKI_TOOLS }}
 
       # The apt packages (docker/apt-packages.txt) and the FFmpeg and libclang links. Not cached: an apt cache
       # restores files without registering them with apt, so apt downloads them again anyway, and the cached step did nothing.
       - name: System packages and libraries (FFmpeg, libclang)
         run: python3 tools/profiling/ci_setup.py
+
+      # ExifTool at the Justfile's pinned release (its source archive, checked by SHA-256), the tests' program on Linux.
+      - name: ExifTool (the pinned release, for the metadata tests)
+        run: |
+          python3 tools/install_exiftool.py --url "$EXIFTOOL_SOURCE_URL" --sha256 "$EXIFTOOL_SOURCE_SHA256" \
+            --version "$EXIFTOOL_SOURCE_VERSION" --prefix "$RUNNER_TEMP/exiftool"
+          python3 tools/ci/github_files.py path "$RUNNER_TEMP/exiftool"
 
       - name: Build environment (libclang and the video build's key, for the steps after this one)
         # Each step runs in its own shell, so an export in one step does not reach the next. GITHUB_ENV carries these
@@ -246,25 +259,18 @@ jobs:
           LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
           echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
 
-      - name: Qt 6.12.0 (linux_gcc_64, at $RUNNER_TEMP/Qt, as the Windows job's kit)
+      # The kit's QMAKE (cxx-qt) and LD_LIBRARY_PATH (the test binaries) are written by the pins step, with QT_DIR.
+      - name: Qt (linux, under QT_INSTALL_ROOT, as the Windows job's kit)
         uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
         with:
           version: ${{ env.QT_VERSION }}
           # The same aqtinstall commit as the Windows job (see there for why).
-          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
-          arch: linux_gcc_64
-          # The action installs to <dir>/Qt/<version>/<arch>: gcc_64 under RUNNER_TEMP.
-          dir: ${{ runner.temp }}
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@${{ env.AQTINSTALL_COMMIT }}
+          arch: ${{ env.QT_ARCH }}
+          # The action installs to <dir>/Qt/<version>/<arch>: the kit under RUNNER_TEMP, where QT_DIR is.
+          dir: ${{ env.QT_INSTALL_ROOT }}
           modules: qtmultimedia
           cache: true
-
-      - name: Qt's qmake and libraries (for the recipes, cxx-qt and the test binaries)
-        run: |
-          # The recipes find Qt through QT_DIR (as a developer's .env does); cxx-qt finds qmake through QMAKE; the test
-          # binaries load Qt's libraries from LD_LIBRARY_PATH.
-          echo "QT_DIR=$RUNNER_TEMP/Qt/6.12.0/gcc_64" >> "$GITHUB_ENV"
-          echo "QMAKE=$RUNNER_TEMP/Qt/6.12.0/gcc_64/bin/qmake" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/Qt/6.12.0/gcc_64/lib" >> "$GITHUB_ENV"
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:

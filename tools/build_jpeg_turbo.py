@@ -23,14 +23,13 @@ import sys
 import time
 from pathlib import Path
 
-from pgtools import WINDOWS, import_msvc_environment, load_env_file
+from pgtools import MSVC_TOOLSET, WINDOWS, import_msvc_environment, load_env_file
 
 # ---- Pins. Change them here, and note the reason beside each one.
 # The libjpeg-turbo sources are inside the rust-turbojpeg fork at this commit (turbojpeg-sys/libjpeg-turbo), the same commit
 # the root Cargo.toml pins for turbojpeg-sys, so the app's and Qt's libjpeg come from one source.
 FORK_URL = "https://github.com/darktorres/rust-turbojpeg"
 FORK_COMMIT = "945d853b47a76f98fd97ac5ff43830997712caa2"
-TOOLSET = "14.44.35207"  # MSVC toolset (vcvars64 -vcvars_ver)
 DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
 
 
@@ -92,7 +91,7 @@ def main() -> None:
     logs.mkdir(parents=True, exist_ok=True)
     src, build, prefix, link = work / "src", work / "build", work / "prefix", work / "link"
 
-    import_msvc_environment(args.build_tools, TOOLSET)
+    import_msvc_environment(args.build_tools, MSVC_TOOLSET)
 
     # The source: the fork at the pinned commit, by hash.
     if (src / ".git").is_dir():
@@ -139,7 +138,7 @@ def main() -> None:
     manifest = {
         "fork_url": FORK_URL,
         "fork_commit": FORK_COMMIT,
-        "msvc_toolset": TOOLSET,
+        "msvc_toolset": MSVC_TOOLSET,
         "configure": cmake_args[:-1],
         "libraries": [{"path": str(library), "sha256": sha256(library)}],
     }

@@ -12,6 +12,9 @@ ARG CARGO_MACHETE_VERSION
 ARG CARGO_MODULES_VERSION
 ARG AQTINSTALL_COMMIT
 ARG QT_VERSION
+ARG EXIFTOOL_SOURCE_VERSION
+ARG EXIFTOOL_SOURCE_URL
+ARG EXIFTOOL_SOURCE_SHA256
 
 # Everything the checks use lives outside /root (Ubuntu makes it mode 0700): the checks run as the user `pg`, not as
 # root, because root ignores file permissions and the permission-based tests (testkit's `hold`) skip as root.
@@ -28,7 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LIBCLANG_PATH=/opt/libclang \
     QMAKE=/opt/Qt/${QT_VERSION}/gcc_64/bin/qmake \
     LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib \
-    PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/opt/exiftool:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The system packages: the list CI installs (apt-packages.txt), the mold linker (CI's Linux job links with it), git (the
 # aqtinstall install below is from a git URL), nodejs and npm (markdownlint), and the venv module, its own package on
@@ -39,6 +42,12 @@ RUN apt-get update \
       ca-certificates curl git mold nodejs npm python3-venv \
  && rm -rf /var/lib/apt/lists/*
 
+# ExifTool at the Justfile's pinned release (the source archive, checked by SHA-256; tools/install_exiftool.py), in /opt, which
+# every user reads. Not an apt package: apt would give whatever release the image carries, not the one the tests are pinned to.
+COPY tools/install_exiftool.py /opt/pg/install_exiftool.py
+RUN python3 /opt/pg/install_exiftool.py --url "${EXIFTOOL_SOURCE_URL}" --sha256 "${EXIFTOOL_SOURCE_SHA256}" \
+      --version "${EXIFTOOL_SOURCE_VERSION}" --prefix /opt/exiftool
+
 # libclang for bindgen: the newest LLVM the image has, at a fixed path (LIBCLANG_PATH), as CI finds it.
 RUN ln -sfn "$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)" /opt/libclang
 
@@ -48,7 +57,7 @@ RUN useradd --uid 1001 --create-home --shell /bin/bash pg
 # Git reads the repository from the bind mount, which belongs to the host user. System scope, so every user gets it.
 RUN git config --system --add safe.directory '*'
 
-# Qt 6.12.0 for Linux, with qtmultimedia, from the aqtinstall commit that CI's Windows job also pins. Installed as root
+# Qt (the Justfile's qt_version) for Linux, with qtmultimedia, from the aqtinstall commit that CI's Windows job also pins. Installed as root
 # into /opt, which every user reads.
 RUN python3 -m venv /opt/aqt \
  && /opt/aqt/bin/pip install --quiet "git+https://github.com/miurahr/aqtinstall.git@${AQTINSTALL_COMMIT}" \

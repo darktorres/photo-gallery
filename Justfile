@@ -83,11 +83,21 @@ fmt:
 cargo_deny_version := "0.21.0"
 cargo_machete_version := "0.10.1"
 
-# The Linux container's pins (docker/Dockerfile): the launcher reads them from here with `just --evaluate`, so each is
-# written once. CI's Linux job runs the same image, and its `just` is the one in the install step (just_version).
+# The pins of the Linux container (docker/Dockerfile) and of CI, each written once, here. Python reads these lines from the
+# text (tools/pgtools.py just_value: one literal `NAME := "value"` line each), because CI reads them before `just` is
+# installed. CI's Linux job runs the same image, and its `just` is the one in the install step (just_version).
+# qt_version is the Qt kit for the Linux container and for CI's Windows job (QT_DIR is derived from it).
 just_version := "1.59.0"
 cargo_fuzz_version := "0.13.2"
-qt_linux_version := "6.12.0"
+# ExifTool for CI's Windows job (Chocolatey). Pinned, so a new release does not change the metadata tests unasked.
+exiftool_version := "13.59.0"
+# The same release for Linux (the container and CI's Linux job; tools/install_exiftool.py): its version as ExifTool reports it,
+# and its source archive, checked by SHA-256 before anything is unpacked. The archive is SourceForge's copy: exiftool.org
+# keeps only the newest release, and CPAN has no 13.59.
+exiftool_source_version := "13.59"
+exiftool_source_url := "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.59.tar.gz/download"
+exiftool_source_sha256 := "668ea3acececb7235fbd0f4900e72d5f12c9b07e5c778fd36cb1e9b5828fd65a"
+qt_version := "6.12.0"
 # The aqtinstall commit that installs Qt for Linux, as CI's jurplel/install-qt-action pins it for the Windows job.
 aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"
 

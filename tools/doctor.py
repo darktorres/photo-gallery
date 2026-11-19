@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pgtools import REPO, WINDOWS, load_env_file
+from pgtools import REPO, WINDOWS, just_value, load_env_file
 
 # The FFmpeg libraries pg-video uses, as pkg-config names them (crates/video/build.rs).
 FFMPEG_LIBS = ["libavcodec", "libavformat", "libavutil", "libswscale", "libswresample"]
@@ -110,7 +110,8 @@ def main() -> None:
         qmake is not None and qmake.is_file(),
         "Qt (QT_DIR)",
         qt,
-        f"set QT_DIR in .env to the Qt 6.12.0 {qt_kit()} kit (the folder with bin/qmake), from the Qt Online Installer",
+        f"set QT_DIR in .env to the Qt {just_value('qt_version')} {qt_kit()} kit (the folder with bin/qmake), "
+        "from the Qt Online Installer",
     )
 
     # FFmpeg: the headers are what the video build generates its bindings from; on Windows the DLLs are what the app loads.

@@ -20,6 +20,23 @@ if sys.version_info < (3, 12):  # noqa: UP036 (the target is the floor; this gua
 REPO = Path(__file__).resolve().parent.parent
 WINDOWS = os.name == "nt"
 _ENV_LINE = re.compile(r"^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$")
+# The MSVC toolset of the static builds (vcvars64 -vcvars_ver). The PowerShell copies keep their own; a tools test asserts
+# they agree.
+MSVC_TOOLSET = "14.44.35207"
+
+
+def just_value(name: str) -> str:
+    """The value of NAME in the Justfile, read from its text. CI reads the pins before `just` is installed, so this cannot
+    run `just --evaluate`. It takes only the one literal line `NAME := "value"`: any other right-hand side, or a second
+    assignment, ends the program, so a new kind of assignment is never read wrongly."""
+    assign = re.compile(rf"{re.escape(name)}\s*:=")
+    lines = [line for line in (REPO / "Justfile").read_text(encoding="utf-8").splitlines() if assign.match(line)]
+    if len(lines) != 1:
+        sys.exit(f"the Justfile must assign {name} exactly once, found {len(lines)}")
+    match = re.fullmatch(rf'{re.escape(name)}\s*:=\s*"([^"\\]*)"\s*(?:#.*)?', lines[0])
+    if not match:
+        sys.exit(f"the Justfile's {name} is not a plain double-quoted literal: {lines[0]!r}")
+    return match.group(1)
 
 
 def load_env_file() -> None:

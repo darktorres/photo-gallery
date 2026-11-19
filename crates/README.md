@@ -224,7 +224,7 @@ Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crat
 parajpeg's C++ (the viewer's full-size JPEG decoder, `crates/codec`) is built with clang-cl, because its AVX2 kernels use
 GCC/Clang attributes that MSVC lacks. `CLANG_CL` names another `clang-cl.exe`; the build fails with the install's name
 if none is found at `C:\Program Files\LLVM\bin`. The clang-cl the build uses is the one LLVM installs, the same as
-libclang's. Qt 6.12 for MSVC
+libclang's. Qt, at the Justfile's `qt_version`, for MSVC
 (the `msvc2022_64` kit, whose folder `QT_DIR` in `.env` names; `just doctor` checks it), with the **Qt Image Formats** add-on: the Yandex panel
 shows remote previews through Qt's decoders, and without its `qwebp` plugin WebP results stay blank. Writing ratings into files needs
 [ExifTool](https://exiftool.org) on `PATH` (or `PG_EXIFTOOL`); without it they stay queued and the bottom bar
@@ -240,7 +240,7 @@ is not distributed. The bindings to its types are generated from its headers wit
 Nothing links FFmpeg: `pg-video` loads its DLLs at run time by full path (`crates/video/src/ffi/load.rs`), from the folder
 of the executable, then from the `bin` the build script found, so PATH plays no part. Its build script copies the DLLs
 into the profile folder, so `gallery.exe` finds them beside it. Qt Multimedia plays videos with
-the same DLLs: Qt 6.12 is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
+the same DLLs: the pinned Qt is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
 --no-ffmpeg`. The video test (`crates/library/tests/video.rs`) makes its clips and animations with the same `ffmpeg` command line,
 found at `PG_FFMPEG` if that is set, else in the pinned build's `bin` (`.deps/ffmpeg/bin`), else on `PATH`. The clips go in
 the temp folder's `scratch_video` (`PG_TEST_DIR` moves it), and the test skips itself without an ffmpeg.

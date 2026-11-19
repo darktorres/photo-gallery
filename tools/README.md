@@ -8,7 +8,7 @@ arguments, where it has any.
 | Script | What it does | OS | How it runs |
 |---|---|---|---|
 | `pgtools.py` | The helpers the other tools share: the repository's folder, the `.env` loader, a command runner, the MSVC environment | both | imported |
-| `check_qt.py` | Fails with the fix when `QT_DIR` is not a Qt 6.12.0 kit (its `bin/qmake`) | both | `_qt` in the recipes that need Qt |
+| `check_qt.py` | Fails with the fix when `QT_DIR` is not the Qt kit the Justfile pins (`qt_version`; its `bin/qmake` must report that version) | both | `_qt` in the recipes that need Qt |
 | `check_lint_tools.py` | The lint tools at their pins: ruff and markdownlint from `.venv` and `.tools` (or PATH); `--install` makes them, from their lockfiles | both | `just lint-tools-setup`, `just lint` |
 | `lint.py` | The lint steps, the same list on every OS (fmt, clippy, wasm32, docs, the lockfiles, deny, machete, ruff, markdownlint, the crate boundaries) | both | `just lint`, `docker/check.py` |
 | `boundaries.py` | The workspace's structural rules: the crate layers (`crate-layers.txt`), acyclic dev edges, re-exports, and the platform rule (OS calls and branches only in pg-platform) | both | `lint.py` |

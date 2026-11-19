@@ -1171,7 +1171,7 @@ Decision: Expected to compile; not compiled (no build run, by instruction). Fiel
 Why: The derive needs only the field types to implement the traits, which by reading they do.
 
 **Q: Format and replay.**
-Decision: Start changes shape, so the replay FORMAT bumps from 3 to 4 (replay.rs:13). The existing refusal of another format's recording (replay.rs:63-65) applies; format 3 recordings are not read by format 4.
+Decision: Start changes shape, so the replay format (REPLAY_FORMAT_VERSION, replay.rs:13) bumps from 3 to 4. The existing refusal of another format's recording (replay.rs:63-65) applies; format 3 recordings are not read by format 4.
 Why: Init embeds Start, so a changed Start is a changed recording shape.
 
 **Q: Sleeping phone and server snapshot expiry.**
@@ -1344,7 +1344,7 @@ Rejected: close codes on a socket; killing the process (an in-flight set becomes
 
 **Q: Which crate holds the wire types, the build script and the state machine?**
 Decision: A new crate pg-wire (crates/wire): depends on pg-model and serde only, is wasm32-clean and added to the wasm32 check (tools/lint.py:21). It holds the build script for build_id, the bundle_id type, the change vector, frozen envelopes and their golden fixtures, error codes, and the pure client state machine. Desktop and browser (the same code compiled to wasm) both use it, each with its own transport. crates/web (pg-web) depends on pg-wire and pg-app and holds the axum server.
-Why: The controller's index-based Event is recorded under PG_RECORD with FORMAT 3 (replay.rs:11-13), so putting wire types in pg-client would couple them to the replay format. pg-web depends on tokio and axum and cannot be wasm32-clean.
+Why: The controller's index-based Event is recorded under PG_RECORD with REPLAY_FORMAT_VERSION 3 (replay.rs:11-13), so putting wire types in pg-client would couple them to the replay format. pg-web depends on tokio and axum and cannot be wasm32-clean.
 
 **Q: How is build_id computed in practice, and what about the QML dev loop?**
 Decision: The pg-wire build script hashes every workspace crate's src and Cargo.toml, Cargo.lock and the workspace manifest, declaring each with rerun-if-changed. QML is excluded from build_id so the debug live reload does not restart the server. The browser bundle's QML is covered by bundle_id. In the web dev loop a bundle rebuild needs a server restart to be served. Whether the target triple and feature set belong in the digest is open.

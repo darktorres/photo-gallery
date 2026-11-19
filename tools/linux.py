@@ -19,9 +19,9 @@ Each command runs in a new container, removed when the command ends, so its outp
 left running. The compiled state lives in Docker's named volumes (or, with PG_LINUX_CACHE=<folder>, folders under it),
 which outlive the containers: a new container reuses the build of the last one.
 
-The tool versions are read from the Justfile with `just --evaluate`, and the gungraun version from Cargo.lock, so each
-version is written once. PG_LINUX_BUILD_CACHE=gha builds with the GitHub Actions cache (CI). CI restores PG_LINUX_CACHE
-with actions/cache.
+The tool versions are read from the Justfile (pgtools.just_value, the file's literal lines), and the gungraun version from
+Cargo.lock, so each version is written once. PG_LINUX_BUILD_CACHE=gha builds with the GitHub Actions cache (CI). CI
+restores PG_LINUX_CACHE with actions/cache.
 """
 
 import argparse
@@ -35,6 +35,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import NoReturn
+
+from pgtools import just_value
 
 REPO = Path(__file__).resolve().parent.parent
 CHECKS = "pg-dev"
@@ -51,7 +53,10 @@ PINS = {
     "CARGO_MODULES_VERSION": "cargo_modules_version",
     "CARGO_FUZZ_VERSION": "cargo_fuzz_version",
     "AQTINSTALL_COMMIT": "aqtinstall_commit",
-    "QT_VERSION": "qt_linux_version",
+    "QT_VERSION": "qt_version",
+    "EXIFTOOL_SOURCE_VERSION": "exiftool_source_version",
+    "EXIFTOOL_SOURCE_URL": "exiftool_source_url",
+    "EXIFTOOL_SOURCE_SHA256": "exiftool_source_sha256",
 }
 # The committed HEAD, extracted for the runs that take it. Every container mounts this folder at /head; `refresh_head`
 # refills it, and it is a fixed folder so the mount never changes.
@@ -60,13 +65,6 @@ HEAD_FOLDER = REPO / "target" / "linux-head"
 
 def fail(message) -> NoReturn:
     sys.exit(f"linux.py: {message}")
-
-
-def just_value(name):
-    result = subprocess.run(["just", "--evaluate", name], cwd=REPO, capture_output=True, text=True, check=False)
-    if result.returncode != 0 or not result.stdout.strip():
-        fail(f"`just --evaluate {name}` gave no value: {result.stderr.strip()}")
-    return result.stdout.strip()
 
 
 def gungraun_version():

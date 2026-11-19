@@ -7,7 +7,7 @@ A desktop photo gallery for very large libraries, built around near-duplicate de
 same picture, and the same pin saved at different sizes. Non-destructive by design: nothing is deleted automatically.
 
 - **Rust** for the core: scanning, the SQLite catalog, decoding and thumbnails, duplicate detection.
-- **Qt 6.12 and QML** for the window, through cxx-qt.
+- **Qt and QML** for the window, through cxx-qt (the Qt version is the Justfile's `qt_version`).
 - **Windows only** for now.
 
 The project page: <https://darktorres.github.io/photo-gallery/> (its source is `site/`).

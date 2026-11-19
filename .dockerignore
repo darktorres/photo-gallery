@@ -9,4 +9,5 @@ docker/*
 !tools/lint/requirements.txt
 !tools/lint/package.json
 !tools/lint/package-lock.json
+!tools/install_exiftool.py
 !rust-toolchain.toml

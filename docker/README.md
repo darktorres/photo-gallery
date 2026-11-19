@@ -1,7 +1,7 @@
 # The Linux environment in a container
 
 The container is CI's Linux environment (`.github/workflows/ci.yml`): Ubuntu 26.04, the toolchain from
-`rust-toolchain.toml`, Qt 6.12.0, FFmpeg, ExifTool, and the pinned `just`, `cargo-deny`, `cargo-machete`,
+`rust-toolchain.toml`, Qt (the Justfile's `qt_version`), FFmpeg, ExifTool, and the pinned `just`, `cargo-deny`, `cargo-machete`,
 `cargo-modules` (the module-graph check), ruff and markdownlint. It is the only Linux environment this repository uses:
 the checks, the callgrind benches, the fuzzer and the eval's Linux parts all run in it. Docker Desktop must be running.
 
@@ -19,9 +19,9 @@ From the repository root, through the Justfile:
 | `just linux-shell` | a shell in `pg-dev`, on the working tree |
 
 `tools/linux.py` is what those recipes run. It builds an image when it is missing, passes the versions in, and mounts
-the repository. The images are built with the versions the Justfile pins (`just_version`, `ruff_version`,
-`cargo_deny_version`, `cargo_machete_version`, `cargo_modules_version`, `cargo_fuzz_version`, `qt_linux_version`,
-`aqtinstall_commit`) and the gungraun version in `Cargo.lock`, so each version is written once. Build the image by hand
+the repository. The images are built with the versions the Justfile pins (`just_version`,
+`cargo_deny_version`, `cargo_machete_version`, `cargo_modules_version`, `cargo_fuzz_version`, `qt_version`,
+`aqtinstall_commit`) and the gungraun version in `Cargo.lock`, so each version is written once. (ruff is pinned in `tools/lint`.) Build the image by hand
 only through `linux-build`: without the build arguments the Dockerfile fails on purpose.
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs. The compiled

@@ -10,7 +10,7 @@ use super::{Command, Controller, Event, Start};
 
 /// The recording's format: bumped whenever a record's shape changes, so a file of another format is refused with its
 /// version (`parse`), not with a parse error. A file with no `format` on its `Init` is format 1.
-pub const FORMAT: u32 = 3;
+pub const REPLAY_FORMAT_VERSION: i64 = 3;
 
 /// One line of a recording.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -18,14 +18,14 @@ pub const FORMAT: u32 = 3;
 pub enum Record {
     /// The controller's start: the format it is written in, and the start it was made from. The window's scale comes as
     /// the first size event, as it does live.
-    Init { format: u32, start: Start },
+    Init { format: i64, start: Start },
     /// An event, applied at `now_ms`, and the commands it gave.
     Update { now_ms: u64, event: Event, commands: Vec<Command> },
 }
 
 /// A record for the controller's start, as `Controller::new` takes it.
 pub fn init(controller: &Controller) -> Record {
-    Record::Init { format: FORMAT, start: controller.initial().clone() }
+    Record::Init { format: REPLAY_FORMAT_VERSION, start: controller.initial().clone() }
 }
 
 /// The records of a recording's text, one per line. A recording of another format is refused by its version, before its
@@ -36,15 +36,15 @@ pub fn parse(text: &str) -> Result<Vec<Record>, String> {
     struct Head {
         kind: String,
         #[serde(default)]
-        format: Option<u32>,
+        format: Option<i64>,
     }
     let mut records = Vec::new();
     for (n, line) in text.lines().enumerate().filter(|(_, line)| !line.trim().is_empty()) {
         let head: Head = serde_json::from_str(line).map_err(|e| format!("line {}: {e}", n + 1))?;
         if head.kind == "Init" {
             let format = head.format.unwrap_or(1);
-            if format != FORMAT {
-                return Err(format!("recorded by format {format}, this build reads {FORMAT}"));
+            if format != REPLAY_FORMAT_VERSION {
+                return Err(format!("recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
             }
         }
         records.push(serde_json::from_str(line).map_err(|e| format!("line {}: {e}", n + 1))?);
@@ -60,8 +60,8 @@ pub fn replay(records: &[Record]) -> Result<usize, String> {
     let Record::Init { format, start } = first else {
         return Err("a recording starts with its Init record".to_string());
     };
-    if *format != FORMAT {
-        return Err(format!("recorded by format {format}, this build reads {FORMAT}"));
+    if *format != REPLAY_FORMAT_VERSION {
+        return Err(format!("recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
     }
     let mut controller = Controller::new(start.clone());
     for (n, record) in rest.iter().enumerate() {

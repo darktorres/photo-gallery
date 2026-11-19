@@ -304,7 +304,10 @@ mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
     use crate::rebuild::backup_path;
-    use crate::schema::{BASELINE, BEFORE_NOTIFY, MIGRATIONS, bring_to, current_expected, current_version, mismatch};
+    use crate::schema::{
+        BASELINE, BEFORE_NOTIFY, Hooks, MIGRATIONS, SCHEMA, SchemaSet, bring_to, current_expected, current_version,
+        mismatch,
+    };
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
     use crate::types::VolumeSet;
@@ -898,7 +901,8 @@ mod tests {
         let commented = BASELINE.replacen("CREATE TABLE files(", "CREATE TABLE files( -- an added comment\n", 1);
         assert_ne!(commented, BASELINE);
         let conn = Connection::open(&path).unwrap();
-        bring_to(&conn, &commented, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        let set = SchemaSet { baseline: &commented, migrations: MIGRATIONS };
+        bring_to(&conn, &set, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         drop(conn);
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(c.rebuilt().is_none(), "a comment moved the catalog aside");
@@ -918,7 +922,7 @@ mod tests {
         // A catalog as the build before the first migration made it: the baseline, with a library folder.
         {
             let conn = Connection::open(&path).unwrap();
-            bring_to(&conn, BASELINE, MIGRATIONS, rules, crate::schema::BASELINE_VERSION).unwrap();
+            bring_to(&conn, &SCHEMA, rules, crate::schema::BASELINE_VERSION, &Hooks::none()).unwrap();
             let root = rules.join(&p(rules, r"D:\kept"));
             conn.execute("INSERT INTO roots(id, path, added) VALUES (7, ?1, 1)", [root]).unwrap();
         }
@@ -1278,7 +1282,7 @@ mod tests {
     /// notices.
     fn before_the_inbox_conversion(rules: PathRules, path: &Path, import_mark: i64) {
         let conn = Connection::open(path).unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, BEFORE_NOTIFY).unwrap();
+        bring_to(&conn, &SCHEMA, rules, BEFORE_NOTIFY, &Hooks::none()).unwrap();
         let folder = p(rules, r"D:\p");
         let v = versions();
         conn.execute_batch(&format!(
@@ -1451,7 +1455,7 @@ mod tests {
                 let path = dir.join("catalog.sqlite");
                 {
                     let conn = Connection::open(&path).unwrap();
-                    bring_to(&conn, BASELINE, MIGRATIONS, rules, version).unwrap();
+                    bring_to(&conn, &SCHEMA, rules, version, &Hooks::none()).unwrap();
                     if rebuilt {
                         conn.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
                     }
@@ -1492,7 +1496,7 @@ mod tests {
     /// 6. no blob (an older build's), done.
     fn before_migration_13(rules: PathRules, path: &Path) -> Vec<[pg_model::pdq::Hash; 4]> {
         let conn = Connection::open(path).unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, 12).unwrap();
+        bring_to(&conn, &SCHEMA, rules, 12, &Hooks::none()).unwrap();
         let v = versions();
         conn.execute_batch(&format!(
             "UPDATE meta SET value = {} WHERE key = 'import_version';

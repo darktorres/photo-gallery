@@ -24,7 +24,7 @@ use crate::lifecycle::{
 };
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
 use crate::schema::{
-    BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
+    Hooks, SCHEMA, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
 };
 use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions};
@@ -119,7 +119,7 @@ impl Catalog {
             pg_log::info("catalog", &upgrade_notice(found, current, &backup_path(path, found)));
             upgraded_from = Some(found);
         }
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current).with_context(|| match upgraded_from {
+        bring_to(&conn, &SCHEMA, rules, current, &Hooks::none()).with_context(|| match upgraded_from {
             Some(found) => format!(
                 "catalog {}: the upgrade from version {found} failed; the catalog as it was is kept at {}",
                 path.display(),

@@ -49,33 +49,58 @@ pub(crate) enum Step {
 /// steps on them), and the old file is moved aside. A catalog of this build's schema at an earlier version is migrated
 /// forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&[Step]] = &[
-    &[Step::Sql(TO_2_CHANGE_STAMPS)],
-    &[Step::Sql(TO_3_NOTICES)],
-    &[Step::Sql(TO_4_FAILURES)],
-    TO_5_SESSION,
-    &[Step::Sql(TO_6_THUMB_VIEWS)],
-    &[Step::Sql(TO_7_WRITE_CHECKS)],
-    TO_8_NOTIFY,
-    &[Step::Sql(TO_9_CHEAPER_WRITES)],
-    &[Step::Sql(TO_10_LEDGER_NOT_WRITTEN)],
-    TO_11_NOTIFY_FIXES,
-    &[Step::Sql(TO_12_PAIRING_PASS)],
-    TO_13_PAIRS_OWED,
-    &[Step::Sql(TO_14_PAIRING_EPOCH)],
-    &[Step::Sql(TO_15_HASHES_OWED)],
-    &[Step::Sql(TO_16_NEW_FILES)],
-    TO_17_PLACEHOLDERS,
-    &[Step::Sql(TO_18_ANALYSIS_TOUCHES)],
-    &[Step::Sql(TO_19_ROOT_REMOVALS), Step::Rust(ids_autoincrement)],
-    &[Step::Sql(TO_20_DROP_THUMB_FOLDERS)],
-];
+/// One migration: the steps that take a catalog one version on, in order, in one transaction with the version.
+/// `rebuilds_tables`: the migration drops tables that have dependants. `DROP TABLE` of a parent runs an implicit `DELETE`
+/// with foreign keys on, which cascades into its children (their analyses, ratings, queued writes), so such a migration
+/// runs with foreign keys off and `legacy_alter_table` on (see [`ForeignKeysOff`]), and checks that they are off before its
+/// first step. The pragma is a no-op inside a transaction, so it is set around the migration, not in it.
+pub(crate) struct Migration {
+    pub(crate) steps: &'static [Step],
+    pub(crate) rebuilds_tables: bool,
+}
 
-/// The versions a migration takes from which runs with foreign keys off. `DROP TABLE` of a parent runs an implicit
-/// `DELETE` with foreign keys on, which cascades into its children (their analyses, ratings, queued writes): a rebuild of
-/// `files`, `folders` or `roots` must not. The pragma is a no-op inside a transaction, so it is set around the
-/// migration's (`bring_to`), and the migration checks it is off before it drops anything.
-const FOREIGN_KEYS_OFF_FROM: &[i64] = &[18];
+/// A baseline and the migrations after it: the layout a catalog has at each version. [`SCHEMA`] is this build's.
+#[derive(Clone, Copy)]
+pub(crate) struct SchemaSet<'a> {
+    pub(crate) baseline: &'a str,
+    pub(crate) migrations: &'a [Migration],
+}
+
+/// This build's schema: [`BASELINE`] and [`MIGRATIONS`].
+pub(crate) const SCHEMA: SchemaSet<'static> = SchemaSet { baseline: BASELINE, migrations: MIGRATIONS };
+
+/// What a caller watches while a catalog is brought to a version. Nothing yet: the fault points and the progress reports
+/// come in Phase 3, through this same parameter, so the signature of [`bring_to`] changes once.
+pub(crate) struct Hooks;
+
+impl Hooks {
+    pub(crate) fn none() -> Self {
+        Self
+    }
+}
+
+pub(crate) const MIGRATIONS: &[Migration] = &[
+    Migration { steps: &[Step::Sql(TO_2_CHANGE_STAMPS)], rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_3_NOTICES)], rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_4_FAILURES)], rebuilds_tables: false },
+    Migration { steps: TO_5_SESSION, rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_6_THUMB_VIEWS)], rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_7_WRITE_CHECKS)], rebuilds_tables: false },
+    Migration { steps: TO_8_NOTIFY, rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_9_CHEAPER_WRITES)], rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_10_LEDGER_NOT_WRITTEN)], rebuilds_tables: false },
+    Migration { steps: TO_11_NOTIFY_FIXES, rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_12_PAIRING_PASS)], rebuilds_tables: false },
+    Migration { steps: TO_13_PAIRS_OWED, rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_14_PAIRING_EPOCH)], rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_15_HASHES_OWED)], rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_16_NEW_FILES)], rebuilds_tables: false },
+    Migration { steps: TO_17_PLACEHOLDERS, rebuilds_tables: false },
+    Migration { steps: &[Step::Sql(TO_18_ANALYSIS_TOUCHES)], rebuilds_tables: false },
+    // Version 18 to 19 drops tables that have dependants: its one flagged migration (see `Migration::rebuilds_tables`).
+    Migration { steps: &[Step::Sql(TO_19_ROOT_REMOVALS), Step::Rust(ids_autoincrement)], rebuilds_tables: true },
+    Migration { steps: &[Step::Sql(TO_20_DROP_THUMB_FOLDERS)], rebuilds_tables: false },
+];
 
 /// The version [`TO_8_NOTIFY`] takes a catalog from: the tests' "as that build left one".
 #[cfg(test)]
@@ -655,19 +680,18 @@ pub(crate) fn version_of(conn: &Connection) -> Result<Option<i64>> {
 /// rolls back its migration and leaves the database at the last good version.
 pub(crate) fn bring_to(
     conn: &Connection,
-    baseline: &str,
-    migrations: &[&[Step]],
+    set: &SchemaSet<'_>,
     rules: PathRules,
     target: i64,
+    _hooks: &Hooks,
 ) -> Result<()> {
     loop {
         // The version is read outside the transaction first, so a migration that needs foreign keys off has them off
         // before its transaction begins: the pragma does nothing inside one. It is read again inside it, and when it has
         // moved (another connection migrated meanwhile) this round starts over.
         let advisory = version_of(conn)?.unwrap_or(0);
-        let _foreign_keys_off = (advisory < target && FOREIGN_KEYS_OFF_FROM.contains(&advisory))
-            .then(|| ForeignKeysOff::new(conn))
-            .transpose()?;
+        let _foreign_keys_off =
+            (advisory < target && rebuilds_tables(set, advisory)).then(|| ForeignKeysOff::new(conn)).transpose()?;
         let tx = write_transaction(conn)?;
         let version: i64 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version >= target {
@@ -678,20 +702,22 @@ pub(crate) fn bring_to(
             continue;
         }
         if version == 0 {
-            tx.execute_batch(baseline).context("creating the catalog")?;
+            tx.execute_batch(set.baseline).context("creating the catalog")?;
             tx.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [crate::types::rules_name(rules)])?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)?;
             tx.pragma_update(None, "user_version", BASELINE_VERSION)?;
         } else {
             let index = usize::try_from(version - BASELINE_VERSION)
                 .with_context(|| format!("schema version {version}, older than the baseline {BASELINE_VERSION}"))?;
-            let steps =
-                migrations.get(index).ok_or_else(|| anyhow!("schema version {version}: no migration takes it on"))?;
-            if FOREIGN_KEYS_OFF_FROM.contains(&version) {
+            let migration = set
+                .migrations
+                .get(index)
+                .ok_or_else(|| anyhow!("schema version {version}: no migration takes it on"))?;
+            if migration.rebuilds_tables {
                 require_foreign_keys_off(&tx)?;
             }
             let context = || format!("migration to schema version {}", version + 1);
-            for step in steps.iter() {
+            for step in migration.steps {
                 match *step {
                     Step::Sql(sql) => tx.execute_batch(sql).with_context(context)?,
                     Step::Rust(convert) => convert(&tx, Source::Main, rules).with_context(context)?,
@@ -703,7 +729,7 @@ pub(crate) fn bring_to(
     }
 }
 
-/// Foreign keys off and `legacy_alter_table` on, for a migration that needs them ([`FOREIGN_KEYS_OFF_FROM`]). The
+/// Foreign keys off and `legacy_alter_table` on, for a migration that needs them ([`Migration::rebuilds_tables`]). The
 /// connection's own values are read first and put back when the guard drops, whether the migration committed or not, so a
 /// later migration on the connection runs as it would have. `legacy_alter_table` on keeps a rename from re-resolving the
 /// views and triggers of the other tables, which name a table that is missing between the drop and the rename.
@@ -737,6 +763,15 @@ impl Drop for ForeignKeysOff<'_> {
     }
 }
 
+/// Whether the migration that takes `version` on drops tables that have dependants ([`Migration::rebuilds_tables`]). A
+/// version before the baseline has none.
+fn rebuilds_tables(set: &SchemaSet<'_>, version: i64) -> bool {
+    usize::try_from(version - BASELINE_VERSION)
+        .ok()
+        .and_then(|index| set.migrations.get(index))
+        .is_some_and(|migration| migration.rebuilds_tables)
+}
+
 /// Refuse a migration that needs foreign keys off when they are on (the guard did not take): nothing is changed.
 fn require_foreign_keys_off(tx: &Transaction<'_>) -> Result<()> {
     let on: i64 = tx.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
@@ -751,14 +786,14 @@ fn require_foreign_keys_off(tx: &Transaction<'_>) -> Result<()> {
 /// The schema a catalog at `version` has, as this build makes it in memory: the baseline and the migrations up to
 /// `version`. Version 0 (no catalog) is the empty database.
 pub(crate) fn expected(version: i64) -> Result<Schema> {
-    expected_for(BASELINE, MIGRATIONS, version)
+    expected_for(&SCHEMA, version)
 }
 
-/// [`expected`] for the given baseline and migrations, made on an empty database: the `Sql` steps make the layout, and
-/// the `Rust` steps find no rows to convert.
-pub(crate) fn expected_for(baseline: &str, migrations: &[&[Step]], version: i64) -> Result<Schema> {
+/// [`expected`] for the given schema, made on an empty database: the `Sql` steps make the layout, and the `Rust` steps
+/// find no rows to convert.
+pub(crate) fn expected_for(set: &SchemaSet<'_>, version: i64) -> Result<Schema> {
     let conn = Connection::open_in_memory()?;
-    bring_to(&conn, baseline, migrations, pg_platform::native::PATH_RULES, version)?;
+    bring_to(&conn, set, pg_platform::native::PATH_RULES, version, &Hooks::none())?;
     Ok(Schema::read(&conn, SEEDS)?)
 }
 
@@ -771,7 +806,7 @@ pub(crate) fn current_expected() -> Result<&'static Schema> {
 /// This build's layout at its current version, as `pg_dbfile::Expected` makes it.
 fn current_layout(conn: &Connection) -> rusqlite::Result<()> {
     let version = current_version().map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
-    bring_to(conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, version)
+    bring_to(conn, &SCHEMA, pg_platform::native::PATH_RULES, version, &Hooks::none())
         .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
 }
 
@@ -1118,7 +1153,7 @@ mod tests {
     #[test]
     fn carried_is_every_table_of_the_current_schema() {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
         let mut tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite%' ORDER BY name")
             .unwrap()
@@ -1177,7 +1212,7 @@ mod tests {
     #[test]
     fn every_trigger_names_the_test_that_covers_it() {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
         let mut live = triggers(&conn);
         let mut named: Vec<String> = TRIGGER_TESTS.iter().map(|(trigger, _)| trigger.to_string()).collect();
         live.sort();
@@ -1190,20 +1225,28 @@ mod tests {
     const SEVEN: &[Step] = &[Step::Sql("INSERT INTO extra VALUES (7);")];
     const NOT_SQL: &[Step] = &[Step::Sql("INSERT INTO extra VALUES (8);"), Step::Sql("NOT SQL")];
 
+    /// A migration that drops nothing with dependants.
+    const fn plain(steps: &'static [Step]) -> Migration {
+        Migration { steps, rebuilds_tables: false }
+    }
+
     fn migrations_apply_once_in_order_and_a_failed_one_rolls_back(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, &[], rules, BASELINE_VERSION).unwrap();
+        let none = SchemaSet { baseline: BASELINE, migrations: &[] };
+        bring_to(&conn, &none, rules, BASELINE_VERSION, &Hooks::none()).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION);
         // A later build adds two migrations: both run, in order, once.
-        let later = [EXTRA, SEVEN];
-        bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION + 2).unwrap();
-        bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION + 2).unwrap();
+        let later = [plain(EXTRA), plain(SEVEN)];
+        let set = SchemaSet { baseline: BASELINE, migrations: &later };
+        bring_to(&conn, &set, rules, BASELINE_VERSION + 2, &Hooks::none()).unwrap();
+        bring_to(&conn, &set, rules, BASELINE_VERSION + 2, &Hooks::none()).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
         assert_eq!(conn.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
         // A failed migration leaves the catalog at the last good version, none of its steps made.
-        let broken = [EXTRA, SEVEN, NOT_SQL];
+        let broken = [plain(EXTRA), plain(SEVEN), plain(NOT_SQL)];
+        let broken_set = SchemaSet { baseline: BASELINE, migrations: &broken };
         let fresh = Connection::open_in_memory().unwrap();
-        assert!(bring_to(&fresh, BASELINE, &broken, rules, BASELINE_VERSION + 3).is_err());
+        assert!(bring_to(&fresh, &broken_set, rules, BASELINE_VERSION + 3, &Hooks::none()).is_err());
         assert_eq!(version(&fresh), BASELINE_VERSION + 2);
         assert_eq!(fresh.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
     }
@@ -1215,15 +1258,16 @@ mod tests {
     );
 
     fn expected_schemas_follow_the_version(rules: PathRules) {
-        let later = [EXTRA];
-        let at_one = expected_for(BASELINE, &later, BASELINE_VERSION).unwrap();
-        let at_two = expected_for(BASELINE, &later, BASELINE_VERSION + 1).unwrap();
+        let later = [plain(EXTRA)];
+        let set = SchemaSet { baseline: BASELINE, migrations: &later };
+        let at_one = expected_for(&set, BASELINE_VERSION).unwrap();
+        let at_two = expected_for(&set, BASELINE_VERSION + 1).unwrap();
         assert!(matches!(at_one.difference(&at_two), Some(Difference::Missing { .. })));
         assert!(matches!(at_two.difference(&at_one), Some(Difference::Unexpected { .. })));
-        assert!(expected_for(BASELINE, &later, 0).unwrap().is_empty());
+        assert!(expected_for(&set, 0).unwrap().is_empty());
         // A database at a version matches the expected schema of that version.
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION).unwrap();
+        bring_to(&conn, &set, rules, BASELINE_VERSION, &Hooks::none()).unwrap();
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(&at_one), None);
     }
 
@@ -1237,13 +1281,13 @@ mod tests {
     /// separator, as a view's folder is stored, and the other keys as they were. A session never saved stays empty.
     fn the_session_keys_become_its_row(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 3).unwrap();
+        bring_to(&conn, &SCHEMA, rules, BASELINE_VERSION + 3, &Hooks::none()).unwrap();
         conn.execute_batch(
             r#"INSERT INTO session(key, value) VALUES
                  ('folder', '["pinterest",{"b":"78ff"}]'), ('recursive', 'false'), ('sort', '{"key":"size"}');"#,
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         let row: (i64, Vec<u8>, bool, String, String) = conn
             .query_row("SELECT id, folder, recursive, query, sort FROM session", [], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -1260,7 +1304,7 @@ mod tests {
         assert_eq!(sort, pg_model::query::Sort { key: pg_model::query::SortKey::Size, descending: false });
 
         let empty = Connection::open_in_memory().unwrap();
-        bring_to(&empty, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&empty, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         assert_eq!(empty.query_row("SELECT count(*) FROM session", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
     }
 
@@ -1274,7 +1318,7 @@ mod tests {
     /// refuses one, and the stamps still fire.
     fn a_write_out_of_its_kinds_range_is_dropped_and_refused(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 5).unwrap();
+        bring_to(&conn, &SCHEMA, rules, BASELINE_VERSION + 5, &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
              INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
@@ -1284,7 +1328,7 @@ mod tests {
                  (2, 'rating', 9, 0), (2, 'rotation', 3, 0);",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         let kept: Vec<(i64, String, i64)> = conn
             .prepare("SELECT file_id, kind, value FROM file_writes ORDER BY file_id, kind")
             .unwrap()
@@ -1312,7 +1356,7 @@ mod tests {
     /// drops the column: the placeholder the grid shows is the one the catalog had, with no pass to make it again.
     fn version_17_moves_the_thumbhashes_to_placeholders(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 15).unwrap();
+        bring_to(&conn, &SCHEMA, rules, BASELINE_VERSION + 15, &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
              INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
@@ -1324,7 +1368,7 @@ mod tests {
                  VALUES (1, 2, 7, 9, 0, 'image', 0, x'0102'), (2, 2, 7, 9, 0, 'image', 0, x'');",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         let moved: Vec<(i64, i64, i64, Vec<u8>)> = conn
             .prepare("SELECT file_id, size, version, hash FROM placeholders ORDER BY file_id")
             .unwrap()
@@ -1352,7 +1396,7 @@ mod tests {
     /// and not of its thumbnails (`files.seq`): stored, replaced and removed, each one stamps the file, and only that.
     fn a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
              INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
@@ -1397,7 +1441,7 @@ mod tests {
     /// that holds both: the row was left visible by `analysis_import`, and a `root-refused` notice by version 8.
     fn version_11_hides_the_pending_imports_and_retires_the_kinds(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 8).unwrap();
+        bring_to(&conn, &SCHEMA, rules, BASELINE_VERSION + 8, &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
              INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
@@ -1409,7 +1453,7 @@ mod tests {
                  (2, 'app', 'root-refused', '{}', 0, 0), (2, 'app', 'listing-failed', '{}', 0, 0);",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         let hidden: i64 =
             conn.query_row("SELECT hidden FROM file_failures WHERE pass = 'import'", [], |r| r.get(0)).unwrap();
         assert_eq!(hidden, 1, "a pending file's import row is hidden");
@@ -1434,7 +1478,7 @@ mod tests {
     /// is the accepted limit: SQLite kept no record of it, so the next id is one past the highest kept.
     fn version_19_ids_are_never_reissued_after_the_migration(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap() - 1).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap() - 1, &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
              INSERT INTO roots(id, path, added) VALUES (1, x'00', 0);
@@ -1444,7 +1488,7 @@ mod tests {
              INSERT INTO ratings(file_id, rating, updated) VALUES (2, 3, 0);",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
 
         let ratings: i64 = conn.query_row("SELECT count(*) FROM ratings WHERE file_id = 2", [], |r| r.get(0)).unwrap();
         assert_eq!(ratings, 1, "the child rows of a copied file keep it");
@@ -1496,11 +1540,11 @@ mod tests {
         let stamps =
             ["analysis_cut_stamp", "analysis_removed_stamp", "border_sides_stamp_delete", "border_sides_stamp_insert"];
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION).unwrap();
+        bring_to(&conn, &SCHEMA, rules, BASELINE_VERSION, &Hooks::none()).unwrap();
         let before = triggers(&conn);
         assert!(stamps.iter().all(|s| !before.iter().any(|t| t == s)), "{before:?}");
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(&expected(BASELINE_VERSION).unwrap()), None);
-        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         assert_eq!(version(&conn), current_version().unwrap());
         let after = triggers(&conn);
         assert!(stamps.iter().all(|s| after.iter().any(|t| t == s)), "{after:?}");
@@ -1518,7 +1562,7 @@ mod tests {
     #[test]
     fn before_notify_is_the_inbox_conversions_source() {
         let at = usize::try_from(BEFORE_NOTIFY - BASELINE_VERSION).unwrap();
-        assert!(std::ptr::eq(MIGRATIONS[at], TO_8_NOTIFY));
+        assert!(std::ptr::eq(MIGRATIONS[at].steps, TO_8_NOTIFY));
     }
 
     /// The version-10 migration drops the stored `ledger-not-written` rows of the borders and the import (a kind the
@@ -1528,7 +1572,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         // Version 9: the migration before TO_10 (`MIGRATIONS[8]`) is the next one to run.
         let before = BASELINE_VERSION + 8;
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, before).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, before, &Hooks::none()).unwrap();
         for (key, part) in [
             ("ledger-not-written|borders", "borders"),
             ("ledger-not-written|import", "import"),
@@ -1541,7 +1585,7 @@ mod tests {
             )
             .unwrap();
         }
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
         let kept: Vec<String> = conn
             .prepare("SELECT part FROM notices WHERE kind = 'ledger-not-written' ORDER BY part")
             .unwrap()
@@ -1558,7 +1602,7 @@ mod tests {
     #[test]
     fn the_pairing_pass_keeps_the_pairs_an_older_catalog_made() {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 11).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, 11, &Hooks::none()).unwrap();
         // The rows name files this test does not make: only the migration's effect on them is tested.
         conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
         conn.execute_batch(
@@ -1567,7 +1611,7 @@ mod tests {
              INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (1, 2, 5, 3);",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 12).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, 12, &Hooks::none()).unwrap();
         let state: String =
             conn.query_row("SELECT dups_state FROM analysis WHERE file_id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(state, "done");
@@ -1594,7 +1638,7 @@ mod tests {
     #[test]
     fn the_hashes_owed_queue_starts_empty_and_goes_with_its_analysis() {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 14).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, 14, &Hooks::none()).unwrap();
         // The row names a file this test does not make: only the migration's effect on it is tested.
         conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
         conn.execute_batch(
@@ -1602,7 +1646,7 @@ mod tests {
              VALUES (1, 2, 10, 100, 0, 'image', 0, 100, zeroblob(128));",
         )
         .unwrap();
-        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, 15).unwrap();
+        bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, 15, &Hooks::none()).unwrap();
         let owed: i64 = conn.query_row("SELECT count(*) FROM hashes_owed", [], |r| r.get(0)).unwrap();
         assert_eq!(owed, 0);
         conn.execute_batch("PRAGMA foreign_keys = ON; INSERT INTO hashes_owed(file_id) VALUES (1);").unwrap();

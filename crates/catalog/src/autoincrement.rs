@@ -4,7 +4,7 @@
 //! with their ids, the old table is dropped and the new one renamed into its place. The table's indexes and triggers are
 //! replayed from the text SQLite stores for them, so they are exactly the ones it had, whichever migration made them.
 //!
-//! The rebuild runs with foreign keys off and `legacy_alter_table` on (`schema::FOREIGN_KEYS_OFF_FROM`): the drop of a
+//! The rebuild runs with foreign keys off and `legacy_alter_table` on (`schema::Migration::rebuilds_tables`): the drop of a
 //! parent would otherwise cascade into its children, and the rename would rewrite the views and triggers of the other
 //! tables. The foreign-key violations are counted before and after, and a rebuild that adds any is refused.
 

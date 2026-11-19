@@ -13,7 +13,7 @@ use rusqlite::Connection;
 
 use crate::convert::{Source, column_type, table_columns};
 use crate::error::{Error, Result};
-use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, Step, bring_to, current_version};
+use crate::schema::{Hooks, MIGRATIONS, SCHEMA, SETTINGS, Step, bring_to, current_version};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
 
 /// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
@@ -108,7 +108,7 @@ fn make_replacement(path: &Path, rules: PathRules, from: Option<&Path>) -> Resul
     conn.execute_batch(SETTINGS)?;
     // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
     conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
-    bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version()?)
+    bring_to(&conn, &SCHEMA, rules, current_version()?, &Hooks::none())
         .with_context(|| format!("catalog {}", path.display()))?;
     let counts = match from {
         Some(old) => {
@@ -168,7 +168,7 @@ pub(crate) const CARRIED: &[&str] = &[
 #[cfg_attr(not(test), expect(dead_code, reason = "a rebuild copies none of them; the test of `CARRIED` reads it"))]
 pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 
-/// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`BASELINE`]: each table of [`CARRIED`],
+/// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`SCHEMA`]: each table of [`CARRIED`],
 /// by column name (a column the old file lacks takes its default), with its ids kept. The `meta` rows the new catalog
 /// seeds are overwritten with the old values, except `path_rules`, which is this build's; a key the old file has and the
 /// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
@@ -236,7 +236,7 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
         convert_text_folders(&tx, rules)?;
     }
     // The migrations' conversions, in order, before the triggers are back (they would fire on the converted rows).
-    for step in MIGRATIONS.iter().flat_map(|steps| steps.iter()) {
+    for step in MIGRATIONS.iter().flat_map(|migration| migration.steps.iter()) {
         if let Step::Rust(convert) = *step {
             convert(&tx, Source::Carried, rules)?;
         }

@@ -12,8 +12,8 @@ set windows-shell := ["cmd.exe", "/d", "/c"]
 
 # The pinned third-party build `just setup` fetches: BtbN's GPL shared build of FFmpeg 9.0 (the release's asset, and its
 # SHA-256 as GitHub's digest). CI runs `just setup` too, so these are the only place the pin is written.
-ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-30-13-01/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
-ffmpeg_sha256 := "7c09a4c6bd73a5013963f06b1c6175326605cbc2585444ebe0f740ef4f35b4c9"
+ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-19-12-39/ffmpeg-n9.0.2-58-g8c7ef49002-win64-gpl-shared-9.0.zip"
+ffmpeg_sha256 := "08f4d6542510d35710631e1475e72f1a2e731700f35a701c84d7479893a7aa96"
 
 # The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
 py := env('PG_PYTHON', if os() == "windows" { "python" } else { "python3" })

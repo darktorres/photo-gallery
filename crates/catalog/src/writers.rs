@@ -1187,9 +1187,8 @@ mod tests {
         // An image has no poster time.
         let poster: Option<i64> = c.conn.query_row("SELECT poster_ms FROM thumb_sources", [], |r| r.get(0)).unwrap();
         assert_eq!(poster, None);
-        // The clock is the catalog's change number, and the folders' bound the largest folder id, as the pass reads them.
+        // The clock is the catalog's change number, as the pass reads it.
         assert_eq!(raw::thumb_clock(&c), raw::meta_seq(&c));
-        assert_eq!(c.conn.query_row("SELECT max_id FROM thumb_folders", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
         // A change number's range of the view still reads files_seq (the cache's join over it is tested there).
         let plan = raw::query_plan(&c, "SELECT id FROM thumb_sources WHERE seq > ?1", [-1]);
         assert!(plan.contains("files_seq"), "{plan:?}");

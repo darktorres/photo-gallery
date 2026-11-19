@@ -225,7 +225,17 @@ struct CutWorker {
 /// come out without their metadata (JPEG, TIFF, lossy WebP) get the original's tags first, by ExifTool, so a failed tag
 /// copy leaves the original as it was. A file that fails is counted and the rest go on; a file whose catalog row can't be
 /// updated after its cut counts as failed, though its original is cut.
-pub fn cut(catalog: &Catalog, ids: &[FileId], confirmed: bool, opts: &Options, ctl: &Control) -> Result<CutStats> {
+///
+/// `present` says whether a file is still in the library. It is asked before each original is written, since a folder
+/// can be removed while the pass runs: a file that is not is skipped, and its original is left as it is.
+pub fn cut(
+    catalog: &Catalog,
+    ids: &[FileId],
+    confirmed: bool,
+    opts: &Options,
+    ctl: &Control,
+    present: &(dyn Fn(FileId) -> bool + Sync),
+) -> Result<CutStats> {
     // The pass's span in the perf log: its phase is its child, and the phase records what it did.
     let _pass = pg_perf::span("pass.cut");
     ensure!(confirmed, "the originals are changed only once the user has confirmed it");
@@ -256,7 +266,7 @@ pub fn cut(catalog: &Catalog, ids: &[FileId], confirmed: bool, opts: &Options, c
         ctl,
         || Ok(CutWorker::default()),
         |worker: &mut CutWorker, i, bytes| {
-            cut_original(jobs.get(i).context("an item outside the pass")?, &paths, bytes, worker)
+            cut_original(jobs.get(i).context("an item outside the pass")?, &paths, bytes, worker, present)
         },
         |i, result, len| {
             let (Some(job), Some(job_done)) = (jobs.get(i), done.get_mut(i)) else {
@@ -296,7 +306,17 @@ pub fn cut(catalog: &Catalog, ids: &[FileId], confirmed: bool, opts: &Options, c
 /// Cut `job`'s borders off the original as it was read (`bytes`), and replace the original with the result. Bytes that
 /// come out without their metadata take the original's tags first (`with_tags`), so a failure there leaves the original
 /// untouched.
-fn cut_original(job: &CutJob, paths: &PathArena, bytes: &[u8], worker: &mut CutWorker) -> Result<CutWritten> {
+fn cut_original(
+    job: &CutJob,
+    paths: &PathArena,
+    bytes: &[u8],
+    worker: &mut CutWorker,
+    present: &(dyn Fn(FileId) -> bool + Sync),
+) -> Result<CutWritten> {
+    // Removed since the pass chose it: its original is not written (a removal's files are the user's to be rid of).
+    if !present(job.id) {
+        return Ok(CutWritten::Skipped);
+    }
     let s = &job.source;
     let path = disk_path_of(paths.get(s.path));
     if pg_platform::file::stat(&path).with_context(|| format!("reading {}", shown(&path)))? != (s.size, s.mtime)

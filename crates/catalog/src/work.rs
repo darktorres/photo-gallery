@@ -114,7 +114,7 @@ pub(crate) fn work_list_mapped<T>(
     while let Some(r) = rows.next()? {
         if folder.is_none() {
             // Only once there is work: a round with nothing to do reads nothing more.
-            list = WorkList::with_capacity(bound, max_folder_id(conn)?);
+            list = WorkList::with_capacity(bound);
             folder = Some(conn.prepare_cached(FOLDER_PATH)?);
         }
         let Some(folder) = folder.as_mut() else { unreachable!("made above") };
@@ -149,12 +149,6 @@ const OWED_PLACEHOLDERS: &str = "FROM files f
 pub(crate) fn work_item(conn: &Connection, id: FileId) -> Result<Option<WorkItem>> {
     let mut stmt = conn.prepare_cached(concat!("SELECT ", work_columns!(), " FROM files f WHERE f.id = ?1"))?;
     Ok(work_list_of(conn, stmt.query([id.get()])?, 1)?.items.pop())
-}
-
-/// The largest folder id of the catalog (-1 for none): an O(1) read of the table's last row. The thumbnail cache reads
-/// the same through the `thumb_folders` view.
-fn max_folder_id(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row("SELECT coalesce(max(id), -1) FROM folders", [], |r| r.get(0))?)
 }
 
 /// What [`Catalog::pairing_work`] reads: the analyses of a reliable quality in a range of file ids (all of them, or one

@@ -98,7 +98,7 @@ fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
 
     // SAFETY: this test binary runs no other test that reads PG_EXIFTOOL, so nothing reads it concurrently.
     unsafe { std::env::set_var("PG_EXIFTOOL", dir.join("no-such-exiftool")) };
-    let stats = pg_crop::cut(&c, &[id], true, &opts, &ctl).unwrap();
+    let stats = pg_crop::cut(&c, &[id], true, &opts, &ctl, &|_| true).unwrap();
     assert_eq!((stats.saved, stats.failed), (0, 1), "the tags could not be copied: a failure ({:?})", stats.failures);
     assert_eq!(std::fs::read(&path).unwrap(), before, "the original is as it was");
     assert_eq!(files_under(&images), vec![path.clone()], "no temporary is left beside it");

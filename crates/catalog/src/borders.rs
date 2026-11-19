@@ -16,6 +16,15 @@ use crate::work::work_item;
 use crate::writers::BordersWriter;
 
 impl Catalog {
+    /// Whether a file is in the library now: its row is there and not hidden. A pass checks it before it writes the file.
+    pub fn is_present(&self, file_id: FileId) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND missing = 0)",
+            [file_id.get()],
+            |r| r.get(0),
+        )?)
+    }
+
     /// A file's borders were cut off in its original (`pg_crop::cut`), which now has the (size, mtime) `after`. The cut is
     /// exact, so the file has no borders left: its detection is stored as none now, with no mark (the review's). Its
     /// analysis was made of the uncut pixels, and its size and mtime no longer match the file's, so the next import

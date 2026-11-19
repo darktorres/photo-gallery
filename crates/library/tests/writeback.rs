@@ -1234,3 +1234,34 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
     drop(c);
     quiet.check();
 }
+
+/// A copy waiting on a file that is gone (missing) comes first in the queue, and a rating on another file is queued behind
+/// it: the rating is written while the copy waits, and the copy keeps its temp (the only whole copy) until the file is back.
+#[test]
+fn a_waiting_copy_does_not_hold_back_the_other_writes() {
+    let (dir, files, catalog_path, c) = imported("waitingcopy").unwrap();
+    let (b, b_path) = state::file_and_path(&c, "b.png").unwrap();
+    let (a, _) = state::file_and_path(&c, "a.jpg").unwrap();
+    let temp = pg_writeback::temp_of(&b_path, WriteKind::Rating);
+    std::fs::copy(&files[1].0, on_disk(&c, &temp)).unwrap();
+    state::queue_finished_copy(&c, b, "rating", 3, &temp).unwrap();
+    state::queue_write(&c, a, "rating", 4).unwrap();
+    state::mark_missing(&c, b).unwrap();
+
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    writer.wake();
+    wait_until(
+        60,
+        || "the other rating is still queued behind the waiting copy".into(),
+        || state::writes_queued(&c, a).unwrap() == 0,
+    );
+    assert_eq!(state::file_rating_of(&c, a).unwrap(), Some(4));
+    assert_eq!(state::writes_queued(&c, b).unwrap(), 1, "the copy waits");
+    assert!(on_disk(&c, &temp).exists(), "its temp is kept");
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
+}

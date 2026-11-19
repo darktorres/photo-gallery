@@ -259,7 +259,7 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
         }
     }
 
-    let s = pg_crop::cut(&c, &all, true, &opts, &ctl).unwrap();
+    let s = pg_crop::cut(&c, &all, true, &opts, &ctl, &|_| true).unwrap();
     assert_eq!((s.saved, s.skipped, s.unsupported, s.failed), (5, 0, 0, 0), "{:?}", s.failures);
     assert_eq!(s.cut.len(), 5);
     assert!(s.remaining.is_empty());
@@ -307,6 +307,31 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
     }
 }
 
+/// A file a folder's removal takes away while the pass runs is not written: the pass counts it as skipped, its original
+/// is left as it was, and the others are cut.
+#[test]
+fn a_file_removed_before_its_cut_is_not_written() {
+    if exiftool_missing() {
+        return;
+    }
+    let dir = pg_testkit::run_folder_with("scratch_rate", "cut_removed", &["images/sub"]).unwrap();
+    let files = make_files(&dir).unwrap();
+    let (c, found) = library_with_borders(&dir);
+    let ctl = Control::new();
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
+    let (gone_id, gone_name) = found[0].clone();
+    let originals: Vec<Vec<u8>> = files.iter().map(|p| std::fs::read(p).unwrap()).collect();
+
+    let s = pg_crop::cut(&c, &all, true, &opts, &ctl, &|id: FileId| id.get() != gone_id).unwrap();
+    assert_eq!((s.saved, s.skipped, s.failed), (all.len() - 1, 1, 0), "{:?}", s.failures);
+    for (path, original) in files.iter().zip(&originals) {
+        let name = Path::new(path).file_name().unwrap().to_string_lossy().into_owned();
+        let unchanged = std::fs::read(path).unwrap() == *original;
+        assert_eq!(unchanged, name == gone_name, "{name}: the removed file is left as it was, the others are cut");
+    }
+}
+
 /// Refused without the user's confirmation: nothing is written, and the catalog still has the borders to cut.
 #[test]
 fn an_unconfirmed_cut_writes_nothing() {
@@ -318,7 +343,10 @@ fn an_unconfirmed_cut_writes_nothing() {
     let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
     let originals: Vec<Vec<u8>> = files.iter().map(|p| std::fs::read(p).unwrap()).collect();
 
-    assert!(pg_crop::cut(&c, &all, false, &opts, &ctl).is_err(), "a cut without the confirmation was not refused");
+    assert!(
+        pg_crop::cut(&c, &all, false, &opts, &ctl, &|_| true).is_err(),
+        "a cut without the confirmation was not refused"
+    );
     for (path, original) in files.iter().zip(&originals) {
         assert_eq!(&std::fs::read(path).unwrap(), original, "{path} changed");
     }
@@ -344,7 +372,7 @@ fn a_tiff_is_cut_and_keeps_its_metadata() {
     let [_, top, _, bottom] = c.crop_source(FileId::new(tiff), &mut PathArena::default()).unwrap().unwrap().cut;
     let before = std::fs::read(&files[3]).unwrap();
 
-    let s = pg_crop::cut(&c, &[FileId::new(tiff)], true, &opts, &ctl).unwrap();
+    let s = pg_crop::cut(&c, &[FileId::new(tiff)], true, &opts, &ctl, &|_| true).unwrap();
     assert_eq!((s.saved, s.unsupported, s.failed), (1, 0, 0), "{:?}", s.failures);
     assert_eq!(s.cut, [FileId::new(tiff)]);
     let bytes = std::fs::read(&files[3]).unwrap();
@@ -386,7 +414,7 @@ fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() {
 
     // FILE_SHARE_READ only: no other handle may write the file while this one is open.
     let holder = std::fs::OpenOptions::new().read(true).share_mode(0x1).open(&files[0]).unwrap();
-    let s = pg_crop::cut(&c, &all, true, &opts, &ctl).unwrap();
+    let s = pg_crop::cut(&c, &all, true, &opts, &ctl, &|_| true).unwrap();
     drop(holder);
 
     assert_eq!((s.saved, s.unsupported, s.failed), (4, 0, 1), "{:?}", s.failures);

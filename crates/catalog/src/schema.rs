@@ -68,6 +68,7 @@ pub(crate) const MIGRATIONS: &[&[Step]] = &[
     TO_17_PLACEHOLDERS,
     &[Step::Sql(TO_18_ANALYSIS_TOUCHES)],
     &[Step::Sql(TO_19_ROOT_REMOVALS), Step::Rust(ids_autoincrement)],
+    &[Step::Sql(TO_20_DROP_THUMB_FOLDERS)],
 ];
 
 /// The versions a migration takes from which runs with foreign keys off. `DROP TABLE` of a parent runs an implicit
@@ -588,6 +589,11 @@ const TO_18_ANALYSIS_TOUCHES: &str = "DROP TRIGGER analysis_added;\n";
 /// rules join it, the same bytes as `roots.path`, and overlaps are tested with the rules, not with `=`. `deferred` counts
 /// the files kept because an unfinished write is recorded for them. The ids of `files`, `folders` and `roots` are then
 /// never reused (`ids_autoincrement`), so a removed id names nothing.
+/// Version 20: `thumb_folders` (version 6's view of the largest folder id) goes. The work lists are sized by what they
+/// hold, not by the largest folder id, which after removals is far above the folders there are, and a folder id is never
+/// reused (AUTOINCREMENT, version 19), so that bound only grows. Its own version, since a catalog at 19 already has it.
+const TO_20_DROP_THUMB_FOLDERS: &str = "DROP VIEW thumb_folders;\n";
+
 const TO_19_ROOT_REMOVALS: &str = "CREATE TABLE root_removals(
     id       INTEGER PRIMARY KEY,
     path     BLOB NOT NULL UNIQUE,

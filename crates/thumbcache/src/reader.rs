@@ -73,9 +73,8 @@ fn pending_for(cache: &Path, catalog: &Path, height: ThumbHeight, volumes: Optio
         Some(c) => vec![i64::from(height.get()), c],
         None => vec![i64::from(height.get())],
     };
-    // The folder ids' table is sized up front. The items are not: counting them first would scan the view.
-    let folders: i64 = tx.query_row("SELECT max_id FROM cat.thumb_folders", [], |r| r.get(0))?;
-    let mut work = WorkList::with_capacity(0, folders);
+    // The items are not sized up front: counting them first would scan the view.
+    let mut work = WorkList::with_capacity(0);
     {
         let mut stmt = tx.prepare(&pending_sql(since.is_some(), &volumes))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;

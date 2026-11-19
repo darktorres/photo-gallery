@@ -29,7 +29,9 @@ From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse/`, `crate
   `crates/catalog/src/browse/read/` runs: facet counts, folder counts, name order, joins of `files` and `analysis`. The
   grid has no paging yet (§3).
 - **Row triggers and a view:** `files_changed`, `analysis_*` keep `pending`, `seq` and the totals (a new row's columns are the writer's: `files_added` went in migration 16);
-  `present_pdq_pairs` is a view. Partial indexes. `auto_vacuum = INCREMENTAL` in the thumbnail cache.
+  `present_pdq_pairs` is a view. Partial indexes. `auto_vacuum = INCREMENTAL` in the catalog (schema 19: a removal's pages go
+  back to the disk) and in the thumbnail cache. The ids of `files`, `folders` and `roots` are `AUTOINCREMENT`, never reused:
+  the thumbnail cache finds a removed file's entries by id, and that relies on it (schema 19).
 - **Two processes write the same file** at once: the app and `gallery` (import, thumbs).
 - **Windows, from Rust, in-process.** Batched writes plus point updates (ratings, rotations), reads while writing.
 

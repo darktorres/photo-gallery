@@ -3,6 +3,8 @@
 //! only holds the bytes a pass reads and the paths it hands out. The wide form a file is opened by is the platform's
 //! (`PathRules::to_wide`), built from a work list's folder and name.
 
+use std::collections::BTreeMap;
+
 /// Paths kept end to end in one buffer of bytes, each named by its range ([`PathRef`]). It grows by doubling, so a
 /// list of n paths makes about log₂ n allocations. Bytes, not text: a path is stored as the OS has it (`Name` bytes
 /// joined by the separator, `PathRules::join`), which need not be UTF-8.
@@ -51,19 +53,18 @@ pub struct FilePath {
 pub struct WorkList<T> {
     pub items: Vec<T>,
     folders: PathArena,
-    /// Each folder id's path in `folders`, once read.
-    folder_paths: Vec<Option<PathRef>>,
+    /// Each folder id's path in `folders`, once read. A map, so its size is what the list holds, not the largest id.
+    folder_paths: BTreeMap<i64, PathRef>,
     names: PathArena,
 }
 
 impl<T> WorkList<T> {
-    /// Room for `items` items, and folder ids up to `max_folder_id`.
-    pub fn with_capacity(items: usize, max_folder_id: i64) -> Self {
-        let folder_paths = vec![None; usize::try_from(max_folder_id).map_or(0, |n| n + 1)];
+    /// Room for `items` items.
+    pub fn with_capacity(items: usize) -> Self {
         WorkList {
             items: Vec::with_capacity(items),
             folders: PathArena::default(),
-            folder_paths,
+            folder_paths: BTreeMap::new(),
             names: PathArena::default(),
         }
     }
@@ -76,18 +77,11 @@ impl<T> WorkList<T> {
         name: &[u8],
         read_folder: impl FnOnce(&mut PathArena) -> Result<PathRef, E>,
     ) -> Result<FilePath, E> {
-        let k = usize::try_from(folder_id).unwrap_or(usize::MAX);
-        let folder = match self.folder_paths.get(k).copied().flatten() {
+        let folder = match self.folder_paths.get(&folder_id).copied() {
             Some(folder) => folder,
             None => {
                 let folder = read_folder(&mut self.folders)?;
-                if k >= self.folder_paths.len() && k != usize::MAX {
-                    // A folder made after the list was sized (not within one read).
-                    self.folder_paths.resize(k + 1, None);
-                }
-                if let Some(slot) = self.folder_paths.get_mut(k) {
-                    *slot = Some(folder);
-                }
+                self.folder_paths.insert(folder_id, folder);
                 folder
             }
         };
@@ -117,7 +111,7 @@ impl<T> WorkList<T> {
 
 impl<T> Default for WorkList<T> {
     fn default() -> Self {
-        WorkList::with_capacity(0, -1)
+        WorkList::with_capacity(0)
     }
 }
 
@@ -141,7 +135,7 @@ mod tests {
 
     #[test]
     fn a_work_list_reads_each_folder_once() {
-        let mut list = WorkList::<()>::with_capacity(4, 3);
+        let mut list = WorkList::<()>::with_capacity(4);
         let mut reads = 0;
         let mut add = |list: &mut WorkList<()>, folder: i64, name: &str| {
             list.file(folder, name.as_bytes(), |arena| {
@@ -161,5 +155,22 @@ mod tests {
             [r"D:\f2\a.jpg", r"D:\f0\b.jpg", r"D:\f2\c.jpg", r"D:\f9\d.jpg"].map(|s| s.as_bytes().to_vec())
         );
         assert_eq!(list.parts(c), [r"D:\f2".as_bytes(), b"c.jpg"]);
+    }
+
+    /// A folder id far above the folders there are (after removals, ids are never reused) costs the list one entry, not
+    /// a table as long as the id.
+    #[test]
+    fn a_large_folder_id_costs_one_entry() {
+        let mut list = WorkList::<()>::default();
+        let mut read = 0;
+        let path = list
+            .file(1_000_000_000, b"a.jpg", |arena| {
+                read += 1;
+                Ok::<_, ()>(arena.push(br"D:\far"))
+            })
+            .unwrap();
+        assert_eq!(read, 1);
+        assert_eq!(list.parts(path), [br"D:\far".as_slice(), b"a.jpg"]);
+        assert_eq!(list.folder_paths.len(), 1);
     }
 }

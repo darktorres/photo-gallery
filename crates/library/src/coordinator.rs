@@ -642,7 +642,15 @@ impl Lanes {
                     Done::Finished
                 }
             },
-            Job::Cut(ids) => match pg_crop::cut(&catalog, &ids, true, &opts, &self.crop_ctl) {
+            // The presence check runs on its own connection, shared by the cut's writers: a folder removed while the cut runs
+            // is not written to.
+            Job::Cut(ids) => match Catalog::open(&self.shared.catalog_path, PATH_RULES)
+                .map(Mutex::new)
+                .map_err(anyhow::Error::from)
+                .and_then(|checker| {
+                    let present = |id: FileId| checker.lock().is_ok_and(|c| c.is_present(id).unwrap_or(false));
+                    pg_crop::cut(&catalog, &ids, true, &opts, &self.crop_ctl, &present)
+                }) {
                 Ok(s) => {
                     // The cut's files are forgotten and analyzed again, whether or not the cut is done.
                     cut_done(&self.shared, &s.cut);

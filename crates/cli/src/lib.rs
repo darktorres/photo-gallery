@@ -282,6 +282,37 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             } else {
                 let mut added = Vec::new();
                 for root in roots {
+                    // A removal over this folder (begun, or kept for an unfinished write) is finished first: an add over it
+                    // is refused until then.
+                    let over: Vec<RulePath> = match pg_platform::names::rule_path_in(rules, &root) {
+                        Some(rule_root) => catalog
+                            .removal_markers()?
+                            .into_iter()
+                            .map(|m| m.path)
+                            .filter(|m| {
+                                rules.same(m, &rule_root)
+                                    || rules.is_under(&rule_root, m)
+                                    || rules.is_under(m, &rule_root)
+                            })
+                            .collect(),
+                        // Not a path the library can hold: the add says so.
+                        None => Vec::new(),
+                    };
+                    if let Some(first) = over.first() {
+                        let (events, printer) = thumb_events();
+                        let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
+                        let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
+                        drop(cache);
+                        let _ = printer.join();
+                        let driven = driven?;
+                        say(&Line::Removed { root: rules.display(first), deleted: driven.files.to_string() });
+                        if driven.deferred > 0 {
+                            say(&Line::RemovalKept {
+                                root: rules.display(first),
+                                deferred: driven.deferred.to_string(),
+                            });
+                        }
+                    }
                     match pg_library::folders::add_folder(&catalog, &root) {
                         Ok((root, new)) => {
                             if !new {
@@ -863,6 +894,40 @@ mod tests {
         let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
         let kept: Vec<Notice> = catalog.inbox_entries(10, false).unwrap().into_iter().map(|e| e.notice).collect();
         assert_eq!(kept, [note(&root_b)]);
+    }
+
+    /// A folder added again over a removal begun and left unfinished (as a stopped app leaves one): the scan finishes the
+    /// removal first, then adds the folder and scans it.
+    #[test]
+    fn gallery_scan_finishes_a_removal_over_the_folder_first() {
+        let dir = pg_testkit::run_folder_with("scratch_cli", "cli-readd", &["a", "catalog"]).unwrap();
+        std::fs::write(dir.join("a").join("1.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+        let catalog_dir = dir.join("catalog").to_string_lossy().into_owned();
+        let gallery = |args: &[&str]| {
+            let mut words = vec!["gallery", "--catalog-dir", catalog_dir.as_str()];
+            words.extend_from_slice(args);
+            Cli::try_parse_from(words).unwrap()
+        };
+        let a = dir.join("a").to_string_lossy().into_owned();
+        run_command(gallery(&["scan", &a]), &Control::new()).unwrap();
+
+        let rules = pg_platform::native::PATH_RULES;
+        let root_a = pg_platform::names::normalize_path(&dir.join("a")).unwrap();
+        let layout = gallery(&["scan"]).layout().unwrap();
+        let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
+        let id = catalog.root_id(&root_a).unwrap().unwrap();
+        assert!(matches!(catalog.begin_removal(id, &root_a).unwrap(), pg_catalog::Begun::Started(_)));
+        assert_eq!(catalog.removal_markers().unwrap().len(), 1);
+        drop(catalog);
+
+        run_command(gallery(&["scan", &a]), &Control::new()).unwrap();
+
+        let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
+        assert!(catalog.removal_markers().unwrap().is_empty(), "the removal was finished first");
+        let roots = catalog.roots().unwrap();
+        assert_eq!(roots.len(), 1, "the folder is in the library again");
+        assert!(rules.same(&roots[0].path, &root_a));
+        assert_eq!(catalog.status().unwrap().files, 1, "the folder is scanned again");
     }
 
     #[test]

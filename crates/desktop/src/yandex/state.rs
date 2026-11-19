@@ -18,6 +18,9 @@ pub struct YandexSearchRust {
     pub(crate) picked_count: i32,
     pub(crate) other_picked: i32,
     pub(crate) similar_picked: i32,
+    /// The first row whose picture has not settled (loaded or failed): the tiles at or before it may load (see
+    /// `YandexSearch::thumb_settled`).
+    pub(crate) thumb_turn: i32,
     pub(crate) preview_item: i32,
     pub(crate) preview_url: QString,
     pub(crate) preview_prev_url: QString,

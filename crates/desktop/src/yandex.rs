@@ -100,6 +100,20 @@ fn preview_item_after(ids: &[u64], shown: Option<u64>) -> i32 {
     shown.and_then(|id| ids.iter().position(|&x| x == id)).map_or(-1, qt_int)
 }
 
+/// The thumbnail turn after row `row` settled: it moves on only when `row` is the row at the turn, and not past the last
+/// row of `len` results.
+fn settle_turn(turn: i32, row: i32, len: usize) -> i32 {
+    if row == turn && turn < qt_int(len) { turn + 1 } else { turn }
+}
+
+/// The thumbnail turn after the rows of `runs` are removed: rows removed before it move it back, and rows from it on
+/// leave it where it is (the row that follows takes its place).
+fn turn_after_removal(turn: i32, runs: &[std::ops::Range<usize>]) -> i32 {
+    let at = usize::try_from(turn).unwrap_or(0);
+    let before: usize = runs.iter().map(|run| run.end.min(at).saturating_sub(run.start.min(at))).sum();
+    turn - qt_int(before)
+}
+
 impl qobject::YandexSearch {
     pub(crate) fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
         match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
@@ -171,9 +185,19 @@ impl qobject::YandexSearch {
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().results = results;
         self.as_mut().set_group_counts();
+        // The new results' pictures load from the first row, as the tiles are made inside the reset.
+        self.as_mut().set_thumb_turn(0);
         self.as_mut().compute_layout();
         self.as_mut().end_reset_model();
         self.picks_changed();
+    }
+
+    /// A row's picture loaded or failed: the turn moves on if that is the row at it (the next row's picture may load).
+    pub(crate) fn thumb_settled(mut self: Pin<&mut Self>, row: i32) {
+        let turn = settle_turn(self.thumb_turn, row, self.results.len());
+        if turn != self.thumb_turn {
+            self.as_mut().set_thumb_turn(turn);
+        }
     }
 
     /// The groups' counts, from the results.
@@ -220,6 +244,7 @@ impl qobject::YandexSearch {
             return;
         }
         let shown = self.shown_id();
+        let turn = turn_after_removal(self.thumb_turn, &runs);
         let root = QModelIndex::default();
         for run in runs.into_iter().rev() {
             self.as_mut().begin_remove_rows(&root, qt_int(run.start), qt_int(run.end) - 1);
@@ -229,6 +254,7 @@ impl qobject::YandexSearch {
             state.frames.drain(run.start.min(end)..end);
             self.as_mut().end_remove_rows();
         }
+        self.as_mut().set_thumb_turn(turn);
         // Before the groups' counts and the layout are set: the preview's item is then one the results have.
         let ids: Vec<u64> = self.results.items().iter().map(|hit| hit.id).collect();
         self.as_mut().set_preview_item(preview_item_after(&ids, shown));
@@ -454,6 +480,21 @@ impl qobject::YandexSearch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_turn_moves_only_when_the_row_at_it_settles() {
+        assert_eq!(settle_turn(0, 0, 3), 1);
+        assert_eq!(settle_turn(0, 2, 3), 0, "a row past the turn does not move it");
+        assert_eq!(settle_turn(3, 3, 3), 3, "past the last row it stays");
+    }
+
+    #[test]
+    fn removals_before_the_turn_move_it_back_and_those_from_it_on_do_not() {
+        // Two runs, the second empty (so the arrays are not single-element ones, which clippy flags).
+        assert_eq!(turn_after_removal(5, &[1..3, 0..0]), 3);
+        assert_eq!(turn_after_removal(5, &[4..7, 0..0]), 4, "the run from the turn's row on moves nothing before it");
+        assert_eq!(turn_after_removal(2, &[4..6, 0..0]), 2);
+    }
 
     #[test]
     fn the_preview_follows_its_picture_through_removals() {

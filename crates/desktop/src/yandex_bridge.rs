@@ -34,6 +34,9 @@ pub mod qobject {
         #[qproperty(i32, picked_count, cxx_name = "pickedCount", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, other_picked, cxx_name = "otherPicked", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, similar_picked, cxx_name = "similarPicked", READ, WRITE, NOTIFY, FINAL)]
+        /// The first row whose picture has not settled: the thumbnails load in row order, one row at a time, because the
+        /// image loader serves queued requests newest first. A tile loads once its row is at or before this.
+        #[qproperty(i32, thumb_turn, cxx_name = "thumbTurn", READ, WRITE, NOTIFY, FINAL)]
         /// The width the results are laid out in: the panel sets it to its list's width, and they are laid out again.
         #[qproperty(f64, layout_width, cxx_name = "layoutWidth", READ, WRITE = set_layout_width, NOTIFY, FINAL)]
         /// The space between the results: the gallery's gap, so the two agree.
@@ -117,6 +120,11 @@ pub mod qobject {
 
         #[inherit]
         fn index(self: &YandexSearch, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
+
+        /// A row's picture loaded or failed. If it is the row at the turn, the turn moves on to the next row.
+        #[qinvokable]
+        #[cxx_name = "thumbSettled"]
+        fn thumb_settled(self: Pin<&mut YandexSearch>, row: i32);
 
         /// Pick a result to be saved, or unpick it. It becomes the anchor of the next `pickTo`.
         #[qinvokable]

@@ -218,6 +218,8 @@ Rectangle {
                             model: yandex
                             ResultTile {
                                 visible: isOther
+                                loadTurn: yandex.thumbTurn
+                                onThumbSettled: (row) => yandex.thumbSettled(row)
                                 onToggled: (chosen) => yandex.togglePick(chosen)
                                 onRangeTo: (chosen) => yandex.pickTo(chosen)
                                 onPreviewRequested: (chosen) => preview.open(chosen)
@@ -238,6 +240,8 @@ Rectangle {
                             model: yandex
                             ResultTile {
                                 visible: !isOther
+                                loadTurn: yandex.thumbTurn
+                                onThumbSettled: (row) => yandex.thumbSettled(row)
                                 onToggled: (chosen) => yandex.togglePick(chosen)
                                 onRangeTo: (chosen) => yandex.pickTo(chosen)
                                 onPreviewRequested: (chosen) => preview.open(chosen)

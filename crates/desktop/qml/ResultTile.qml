@@ -28,9 +28,14 @@ Item {
     // Whether it is one of the other sizes (the first group); the panel shows each group's tiles by it.
     required property bool isOther
 
+    // The row whose picture may load now: the rows at or before it (YandexSearch.thumbTurn), in order.
+    required property int loadTurn
+
     signal toggled(int item)
     signal rangeTo(int item)
     signal previewRequested(int item)
+    // The picture loaded or failed: the search moves its turn on from this row.
+    signal thumbSettled(int row)
 
     x: tile.frameX
     y: tile.frameY
@@ -40,12 +45,17 @@ Item {
     Image {
         anchors.fill: parent
         // The panel shows each group with its own Repeater over the whole model, so a tile of the other group is
-        // hidden here and loads no picture.
-        source: tile.visible ? tile.thumb : ""
+        // hidden here and loads no picture. The loader serves queued requests newest first, so the pictures are asked
+        // for one row at a time, in order: a tile asks once its row is at the turn or before it.
+        source: tile.visible && tile.index <= tile.loadTurn ? tile.thumb : ""
         sourceSize.width: 320
         sourceSize.height: 320
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        onStatusChanged: {
+            if (status === Image.Ready || status === Image.Error)
+                tile.thumbSettled(tile.index)
+        }
     }
     // Picked: a check in the accent colour, in the top-right corner.
     Rectangle {

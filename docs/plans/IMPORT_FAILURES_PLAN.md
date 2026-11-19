@@ -8,10 +8,7 @@ the wheel steps through results), and `8cede668` with `5c858739` and `1799c09c` 
 
 Item 2's pixmap cache (step 5) and its instrumentation (step 0) were not built. They were gated on measurements.
 
-**This file now holds item 5 only.** It is marked dropped below.
-
-**Item 5 (import-failure persistence) is dropped.** The progressive JPEGs were re-encoded to baseline, the errors no
-longer happen, and they cannot be reproduced. The question "what exactly was seen" is moot.
+**This file now holds item 5 only.**
 
 Verification of items 1-4: `cargo test` passes for the affected crates, `cargo clippy -D warnings` is clean, and
 `just qmltest` passes (108 of 108). `just lint` passes apart from `cargo deny`'s advisory check, which needs the network.
@@ -581,7 +578,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 
 ## Open items to settle during implementation
 
-- Placeholders get no observer (point 1 above). The "what exactly was seen" question is moot (see Status).
+- Placeholders get no observer (point 1 above).
 - Whether `Control` can hand the sink an `Arc<AtomicBool>` for `wait_for_writers(Patience { stop, until })` (5.2), and the
   `until` bound.
 - The trace of the F1 flake (`thumbs` test at `lib.rs:687`) before the `Unwritten`/`fold` rewrite.

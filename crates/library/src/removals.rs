@@ -34,6 +34,9 @@ pub fn finish(
     })?;
     catalog.shrink()?;
     thumbs.sweep_orphans(catalog_path)?;
+    // The forgotten thumbnails' pages go back to the file system too (the cache keeps a little free space, as its own
+    // maintenance does, and gives the rest back).
+    thumbs.shrink_all()?;
     match forget_failed {
         Some(e) => Err(e),
         None => Ok(driven),

@@ -59,7 +59,9 @@ pub(crate) fn heal(conn: &mut Connection) -> Result<Option<Drift>> {
     Ok(Some(Drift { kept, actual }))
 }
 
-pub(crate) fn shrink(conn: &Connection) -> Result<()> {
+/// One bounded pass of shrinking: at most [`SHRINK_STEPS`] steps. Returns the free pages left, which the caller compares
+/// with [`SHRINK_ABOVE_PAGES`] to see whether another pass would give more back.
+pub(crate) fn shrink(conn: &Connection) -> Result<i64> {
     for _ in 0..SHRINK_STEPS {
         let free: i64 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
         if free <= SHRINK_ABOVE_PAGES {
@@ -70,5 +72,5 @@ pub(crate) fn shrink(conn: &Connection) -> Result<()> {
         let mut rows = step.query([])?;
         while rows.next()?.is_some() {}
     }
-    Ok(())
+    Ok(conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?)
 }

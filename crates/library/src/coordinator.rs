@@ -764,6 +764,8 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     let mut told: Option<String> = None;
     // The thumbnails of the files a command removed (with the app closed) are dropped once, at the first start.
     let mut swept = false;
+    // The hidden folders no marker covers (an older build's removals) are given one, once the thread has run without error.
+    let mut adopted = false;
     loop {
         if waker.wait(Some(REMOVAL_RECHECK)) == Woke::Quit {
             return;
@@ -777,8 +779,11 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
                 });
             }
         }
-        match lanes.run_removals(&mut catalog) {
-            Ok(()) => told = None,
+        match lanes.run_removals(&mut catalog, !adopted) {
+            Ok(()) => {
+                told = None;
+                adopted = true;
+            }
             Err(error) => {
                 if told.as_deref() != Some(error.as_str()) {
                     lanes.shared.notices.post(Notice::FolderNotRemoved { error: error.clone() });
@@ -794,12 +799,14 @@ impl Lanes {
     /// Finishes the removals not finished, as one phase of the removal job: its row in the status bar, its progress
     /// (the files of the removals, as they go), and its pause, which waits between batches. The error text when a
     /// removal could not be finished.
-    fn run_removals(&self, conn: &mut Option<Catalog>) -> std::result::Result<(), String> {
+    fn run_removals(&self, conn: &mut Option<Catalog>, adopt: bool) -> std::result::Result<(), String> {
         let catalog = match conn.take() {
             Some(c) => c,
             None => Catalog::open(&self.shared.catalog_path, PATH_RULES).map_err(|e| error_text(&e.into()))?,
         };
-        let result = match catalog.removal_markers() {
+        let found = if adopt { catalog.adopt_hidden_folders().map(drop) } else { Ok(()) }
+            .and_then(|()| catalog.removal_markers());
+        let result = match found {
             Ok(markers) if markers.is_empty() => Ok(()),
             Ok(markers) => self.finish_removals(&catalog, &markers),
             Err(e) => Err(error_text(&e.into())),

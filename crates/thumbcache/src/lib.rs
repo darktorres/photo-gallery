@@ -339,7 +339,24 @@ impl ThumbCache {
         if self.store.is_none() {
             return Ok(());
         }
-        self.call(Op::Shrink)?
+        self.call(Op::Shrink)?.map(drop)
+    }
+
+    /// Give back every free page above the cache's slack, in as many bounded passes as that takes: a removal's forgotten
+    /// thumbnails can be most of the file, more than one pass returns. Each pass is one step of the writer, so its other
+    /// work goes between them. Stops when a pass gives nothing back.
+    pub fn shrink_all(&self) -> Result<()> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let mut before = i64::MAX;
+        loop {
+            let free = self.call(Op::Shrink)??;
+            if free <= maintenance::SHRINK_ABOVE_PAGES || free >= before {
+                return Ok(());
+            }
+            before = free;
+        }
     }
 
     /// Wait until everything handed to the writer so far is written (touches included).
@@ -651,6 +668,11 @@ mod tests {
         assert!(before > 300, "{before}");
         cache.shrink().unwrap();
         assert!(free() <= SHRINK_ABOVE_PAGES, "{before} -> {}", free());
+        // The whole of it, in passes until none gives more back: the same floor, and the call ends.
+        assert!(cache.put_batch(&mut (0..200).map(|i| thumb(i, 50, 1, 8000)).collect(), None).unwrap());
+        c.execute("DELETE FROM entries", []).unwrap();
+        cache.shrink_all().unwrap();
+        assert!(free() <= SHRINK_ABOVE_PAGES, "shrink_all: {}", free());
     }
 
     #[test]

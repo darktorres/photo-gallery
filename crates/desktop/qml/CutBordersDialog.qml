@@ -13,6 +13,9 @@ Dialog {
     Words {
         id: words
     }
+    // Centred on the window: Main declares it under the window, where a dialog has no parent of its own to centre on.
+    parent: Overlay.overlay
+    anchors.centerIn: parent
     // How many files the borders come off, in the question.
     property int count: 0
 

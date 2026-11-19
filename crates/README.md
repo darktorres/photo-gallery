@@ -399,8 +399,9 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   on disk are not touched. A removal can't be added back while it is pending. A change still waiting to be written into
   one of its files keeps that row (and the temp file beside the file) until the app finishes the write or
   `gallery remove --discard-pending` gives it up. A folder that is only missing (an offline drive) is not removed: its
-  files stay missing, as before. Folders removed before this version stay hidden with their ratings; adding one back and
-  removing it again deletes them.
+  files stay missing, as before. Folders removed before this version (their files hidden, with no marker and no library
+  folder covering them) are adopted when the removals thread first runs after the start: each gets a marker, and its
+  removal deletes its rows and thumbnails like any other. A folder that a library folder still covers is not adopted.
 - **Write** is what the app's writer does in the background (see Ratings below); the command drains the queue
   and reports what still fails.
 

@@ -108,6 +108,10 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() {
 
     let before = counts(&copy);
     println!("tables before: {}", before.len());
+    let source_version: i64 = Connection::open_with_flags(&copy, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
 
     let started = Instant::now();
     let catalog = Catalog::prepare(&copy, versions(), pg_platform::native::PATH_RULES).expect("the upgrade runs");
@@ -147,14 +151,23 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() {
         after.iter().map(|(t, _)| t.as_str()).filter(|t| !before.iter().any(|(b, _)| b == t)).collect();
     println!("tables added by the upgrade: {added:?}");
 
+    // A catalog already at this build's schema is not upgraded, so no copy of the old file is made for it.
     let kept = kept_copies(&dir);
-    assert!(!kept.is_empty(), "the old file is kept beside the catalog");
+    if source_version < 19 {
+        assert!(!kept.is_empty(), "the old file is kept beside the catalog");
+    } else {
+        println!("already at schema {source_version}: nothing upgraded, no copy kept");
+    }
     for k in &kept {
         println!("kept: {} ({} MiB)", k.display(), mebibytes(k));
     }
 
     // A folder's removal on the upgraded copy: the library's first folder goes, for good.
     let catalog = Catalog::prepare(&copy, versions(), pg_platform::native::PATH_RULES).unwrap();
+    // The hidden folders no library folder covers (an older build's removals) get their markers, as the app does on start.
+    let started = Instant::now();
+    let adopted = catalog.adopt_hidden_folders().unwrap();
+    println!("adopted {adopted} hidden folders in {:.2?}", started.elapsed());
     let roots = catalog.roots().unwrap();
     println!("library folders: {}", roots.len());
     let Some(root) = roots.first() else {

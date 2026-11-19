@@ -143,6 +143,43 @@ impl Catalog {
         Ok(driven)
     }
 
+    /// Gives a marker to each folder whose files are hidden while no library folder and no removal covers them: what an
+    /// older build left when it hid a removed folder's files and kept no marker. Their removal then finishes them like any
+    /// other, deleting their rows and thumbnails. A folder that overlaps a library folder is left alone (its scan keeps
+    /// its files), and so is one under a marker already. Returns how many markers were made.
+    pub fn adopt_hidden_folders(&self) -> Result<usize> {
+        let rules = self.rules;
+        let mut covering: Vec<RulePath> = self.removal_markers()?.into_iter().map(|m| m.path).collect();
+        let tx = write_transaction(&self.conn)?;
+        let roots: Vec<RulePath> = roots_on(&tx, rules)?.into_iter().map(|r| r.path).collect();
+        let candidates: Vec<Vec<u8>> = {
+            // By their bytes: a folder comes before the folders under it, so the top one's marker covers the rest.
+            let mut stmt = tx.prepare(
+                "SELECT DISTINCT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.missing = 1 \
+                 ORDER BY fo.path",
+            )?;
+            stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        let mut made = 0;
+        for bytes in candidates {
+            let Some(folder) = rules.parse_bytes(&bytes) else { continue };
+            let overlaps_root = roots
+                .iter()
+                .any(|r| rules.same(r, &folder) || rules.is_under(r, &folder) || rules.is_under(&folder, r));
+            if overlaps_root || covering.iter().any(|m| rules.is_under(&folder, m)) {
+                continue;
+            }
+            tx.execute(
+                "INSERT OR IGNORE INTO root_removals(path, started) VALUES (?1, unixepoch())",
+                [rules.join(&folder)],
+            )?;
+            covering.push(folder);
+            made += 1;
+        }
+        tx.commit()?;
+        Ok(made)
+    }
+
     /// The removals not finished, with the files each keeps.
     pub fn removal_markers(&self) -> Result<Vec<Marker>> {
         let rules = self.rules;
@@ -459,6 +496,43 @@ mod tests {
         a_removed_folder_is_deleted_with_its_children,
         a_removed_folder_is_deleted_with_its_children_windows,
         a_removed_folder_is_deleted_with_its_children_posix
+    );
+
+    /// A removal an older build left: the library folder went, its files stayed hidden and no marker was kept. Adopting
+    /// makes one marker, for the folder (which covers its sub-folder), and the removal then deletes the rows; a second
+    /// adoption finds nothing.
+    fn an_older_removal_is_adopted_and_finished(rules: PathRules) {
+        let c = library(rules);
+        c.conn.execute("DELETE FROM roots", []).unwrap();
+        c.conn.execute("UPDATE files SET missing = 1", []).unwrap();
+        assert_eq!(c.adopt_hidden_folders().unwrap(), 1, "the folder's marker covers its sub-folder too");
+        assert_eq!(c.removal_markers().unwrap().len(), 1);
+        let driven = c.drive_removals(&mut |_| true).unwrap();
+        assert_eq!(driven.files, 2);
+        assert_eq!((rows(&c, "files"), rows(&c, "folders")), (0, 0));
+        assert!(c.removal_markers().unwrap().is_empty());
+        assert_eq!(c.adopt_hidden_folders().unwrap(), 0);
+    }
+
+    /// A hidden file under a library folder is the scan's (a file gone from disk), not a removal's: nothing is adopted.
+    fn a_hidden_file_a_library_folder_covers_is_not_adopted(rules: PathRules) {
+        let c = library(rules);
+        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 1", []).unwrap();
+        assert_eq!(c.adopt_hidden_folders().unwrap(), 0);
+        assert!(c.removal_markers().unwrap().is_empty());
+        assert_eq!(rows(&c, "files"), 2);
+    }
+
+    under_both_rules!(
+        an_older_removal_is_adopted_and_finished,
+        an_older_removal_is_adopted_and_finished_windows,
+        an_older_removal_is_adopted_and_finished_posix
+    );
+
+    under_both_rules!(
+        a_hidden_file_a_library_folder_covers_is_not_adopted,
+        a_hidden_file_a_library_folder_covers_is_not_adopted_windows,
+        a_hidden_file_a_library_folder_covers_is_not_adopted_posix
     );
 
     /// A removal begun but not yet hidden (the process ended between the two) keeps its rows: they are hidden, and then

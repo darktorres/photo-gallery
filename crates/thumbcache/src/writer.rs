@@ -139,7 +139,8 @@ pub(crate) enum Op {
         through: i64,
         reply: Sender<Result<()>>,
     },
-    Shrink(Sender<Result<()>>),
+    /// One bounded pass of shrinking; answers the free pages left (`maintenance::shrink`).
+    Shrink(Sender<Result<i64>>),
     /// Write what's waiting (touches), then answer.
     Flush(Sender<()>),
 }

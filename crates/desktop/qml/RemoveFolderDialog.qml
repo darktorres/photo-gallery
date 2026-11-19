@@ -14,6 +14,9 @@ Dialog {
     Words {
         id: words
     }
+    // Centred on the window: Main declares it under the window, where a dialog has no parent of its own to centre on.
+    parent: Overlay.overlay
+    anchors.centerIn: parent
     // The folder shown, and its row in the library panel.
     property string folder: ""
     property int row: -1

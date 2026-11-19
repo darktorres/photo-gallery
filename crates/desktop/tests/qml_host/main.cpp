@@ -16,12 +16,14 @@
 namespace {
 
 // One stand-in provider: a solid image of the requested size, or 16 px square when none is asked for (the placeholder
-// is requested without a size).
+// is requested without a size). An id starting with "broken" gets no image, as a thumbnail that doesn't decode does:
+// QML reports that as Image.Error.
 class StubProvider : public QQuickImageProvider {
 public:
     StubProvider() : QQuickImageProvider(QQuickImageProvider::Image) {}
 
     QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override {
+        if (id.startsWith(QLatin1String("broken"))) return QImage();
         const QSize s = requestedSize.isValid() ? requestedSize : QSize(16, 16);
         if (size) *size = s;
         QImage image(s, QImage::Format_RGB32);

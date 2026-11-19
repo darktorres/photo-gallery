@@ -80,6 +80,37 @@ Item {
         // tolerance, and the step is invisible.
         opacity: fade < 0.999 ? fade : 1
     }
+    // A thumbnail that won't load (it doesn't decode, or its original can't be read): an error mark in its place, a red
+    // circle with a white cross, drawn with shapes so no font is needed. The placeholder under it is blank for such a file
+    // (no ThumbHash, so a transparent image), so the cell would be empty.
+    Item {
+        objectName: "failed"
+        anchors.centerIn: parent
+        visible: thumb.status === Image.Error
+        width: Math.round(Math.min(cell.width, cell.height) / 3)
+        height: width
+        Rectangle {
+            anchors.fill: parent
+            radius: width / 2
+            color: "#e57373"
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.5
+            height: Math.max(2, parent.width * 0.12)
+            radius: height / 2
+            color: "white"
+            rotation: 45
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.5
+            height: Math.max(2, parent.width * 0.12)
+            radius: height / 2
+            color: "white"
+            rotation: -45
+        }
+    }
     // B: the borders over the thumbnail, placed as PreserveAspectCrop paints it.
     Item {
         anchors.fill: parent

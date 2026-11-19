@@ -194,6 +194,10 @@ class Consumers(unittest.TestCase):
             text = (REPO / "tools" / script).read_text(encoding="utf-8")
             self.assertIn(f"'{MSVC_TOOLSET}'", text, script)
 
+    def test_the_workflow_python_is_the_justfile_pin(self):
+        # setup-python runs before the pins step, so the workflow holds the literal; this asserts it is the pinned one.
+        self.assertIn(f'python-version: "{just_value("python_version")}"', WORKFLOW)
+
     def test_the_static_qt_source_is_the_pinned_version(self):
         text = (REPO / "tools" / "build_static_qt.py").read_text(encoding="utf-8")
         self.assertEqual(re.search(r'^QT_VERSION = "([^"]+)"', text, re.MULTILINE).group(1), PINNED["qt_version"])

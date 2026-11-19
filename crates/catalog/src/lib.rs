@@ -26,6 +26,8 @@ pub mod pair;
 pub mod queue;
 
 mod autoincrement;
+#[cfg(test)]
+mod bake;
 mod borders;
 mod convert;
 mod core;

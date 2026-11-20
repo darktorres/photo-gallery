@@ -20,7 +20,7 @@ Dialog {
     property int count: 0
 
     // The user chose "Cut borders": the library cuts them (Main connects it to GalleryModel.cutBordersConfirmed).
-    signal confirmed()
+    signal confirmed
 
     // The question's text and the two buttons, for the tests.
     property alias questionText: question.text

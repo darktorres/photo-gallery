@@ -21,7 +21,7 @@ Dialog {
     property string folder: ""
 
     // The user chose "Discard changes": the library gives the removal up (Main connects it to the library's discardRemoval).
-    signal confirmed()
+    signal confirmed
 
     // The question's text, the folder's and the two buttons, for the tests.
     property alias questionText: question.text

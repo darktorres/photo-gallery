@@ -8,10 +8,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 ModalOverlay {
+    id: panel
     Words {
         id: words
     }
-    id: panel
     // The library's folders (library.roots), whether there are any, and whether the write-back setting is on.
     required property var roots
     // The removals not finished: those waiting for an unfinished write (Discard gives them up), and those still going.
@@ -27,11 +27,11 @@ ModalOverlay {
     required property bool thumbCache
 
     // Add a folder (Main asks the picker, then the library takes what it chose).
-    signal addRequested()
+    signal addRequested
     signal removeRequested(int row)
     // The folder whose kept removal is to be given up (its path as the panel lists it).
     signal discardRequested(string folder)
-    signal rescanRequested()
+    signal rescanRequested
     signal writeBackToggled(bool on)
     signal detectBordersToggled(bool on)
     signal detectDuplicatesToggled(bool on)
@@ -42,11 +42,17 @@ ModalOverlay {
         width: 680
         height: 540
         padding: 16
-        MouseArea { anchors.fill: parent }
+        MouseArea {
+            anchors.fill: parent
+        }
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
-            Label { text: words.text("ui-library-folders"); font.bold: true; font.pixelSize: 16 }
+            Label {
+                text: words.text("ui-library-folders")
+                font.bold: true
+                font.pixelSize: 16
+            }
             Label {
                 text: words.text("ui-library-intro")
                 color: "#999999"
@@ -64,7 +70,12 @@ ModalOverlay {
                     required property string modelData
                     required property int index
                     width: ListView.view.width
-                    Label { text: rootRow.modelData; textFormat: Text.PlainText; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                    Label {
+                        text: rootRow.modelData
+                        textFormat: Text.PlainText
+                        elide: Text.ElideMiddle
+                        Layout.fillWidth: true
+                    }
                     Button {
                         text: words.text("ui-remove")
                         flat: true
@@ -82,7 +93,11 @@ ModalOverlay {
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: panel.hasRemovals
-                Label { text: words.text("ui-removal-heading"); color: "#999999"; font.bold: true }
+                Label {
+                    text: words.text("ui-removal-heading")
+                    color: "#999999"
+                    font.bold: true
+                }
                 Repeater {
                     model: panel.keptRemovals
                     delegate: RowLayout {
@@ -96,7 +111,10 @@ ModalOverlay {
                             color: "#999999"
                             Layout.fillWidth: true
                         }
-                        Label { text: words.text("ui-removal-kept"); color: "#999999" }
+                        Label {
+                            text: words.text("ui-removal-kept")
+                            color: "#999999"
+                        }
                         Button {
                             text: words.text("ui-removal-discard")
                             flat: true
@@ -117,7 +135,10 @@ ModalOverlay {
                             color: "#999999"
                             Layout.fillWidth: true
                         }
-                        Label { text: words.text("ui-removal-removing"); color: "#999999" }
+                        Label {
+                            text: words.text("ui-removal-removing")
+                            color: "#999999"
+                        }
                     }
                 }
             }
@@ -150,14 +171,22 @@ ModalOverlay {
                 ToolTip.text: words.text("ui-thumb-cache-tooltip")
             }
             RowLayout {
-                Button { text: words.text("ui-add-folder"); onClicked: panel.addRequested() }
+                Button {
+                    text: words.text("ui-add-folder")
+                    onClicked: panel.addRequested()
+                }
                 Button {
                     text: words.text("ui-rescan-all")
                     enabled: panel.hasRoots
                     onClicked: panel.rescanRequested()
                 }
-                Item { Layout.fillWidth: true }
-                Button { text: words.text("ui-close"); onClicked: panel.dismissed() }
+                Item {
+                    Layout.fillWidth: true
+                }
+                Button {
+                    text: words.text("ui-close")
+                    onClicked: panel.dismissed()
+                }
             }
         }
     }

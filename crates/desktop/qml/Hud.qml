@@ -8,10 +8,10 @@ import QtQuick.Controls.Fusion
 import pg.gallery
 
 Item {
+    id: hud
     Words {
         id: words
     }
-    id: hud
 
     anchors.fill: parent
 
@@ -37,11 +37,11 @@ Item {
     // The rating bar's height (the root's transport sits above it).
     readonly property real barHeight: ratingBar.height
 
-    signal closeAsked()
+    signal closeAsked
     signal rateAsked(int r)
     signal turnAsked(int d)
     signal borderMarkAsked(bool marked)
-    signal findSimilarAsked()
+    signal findSimilarAsked
 
     KeyMap {
         id: keymap
@@ -86,14 +86,7 @@ Item {
         color: "#cccccc"
         style: Text.Outline
         styleColor: "black"
-        text: hud.info
-            + (hud.rating > 0 ? "   " + Ratings.symbol(hud.rating) : "")
-            + (hud.zoomable ? "   " + Math.round(hud.viewport.zoom * 100) + "%" : "")
-            + (hud.settings.realSize ? "   " + words.text("ui-real-size") : "")
-            + (hud.loupe ? "   " + words.text("ui-loupe") : "")
-            + (hud.turns !== 0 ? "   " + words.text("ui-turning") : "")
-            + (hud.fitFailed ? "   " + words.text("ui-original-unavailable") : "")
-            + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? "   " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
+        text: hud.info + (hud.rating > 0 ? "   " + Ratings.symbol(hud.rating) : "") + (hud.zoomable ? "   " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.settings.realSize ? "   " + words.text("ui-real-size") : "") + (hud.loupe ? "   " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? "   " + words.text("ui-turning") : "") + (hud.fitFailed ? "   " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? "   " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
     }
 
     RatingBar {
@@ -102,9 +95,9 @@ Item {
         hasBorders: hud.hasBorders
         borderMarked: hud.borderMarked
         rating: hud.rating
-        onRateAsked: (r) => hud.rateAsked(r)
-        onTurnAsked: (d) => hud.turnAsked(d)
-        onBorderMarkAsked: (marked) => hud.borderMarkAsked(marked)
+        onRateAsked: r => hud.rateAsked(r)
+        onTurnAsked: d => hud.turnAsked(d)
+        onBorderMarkAsked: marked => hud.borderMarkAsked(marked)
         onFindSimilarAsked: hud.findSimilarAsked()
     }
 }

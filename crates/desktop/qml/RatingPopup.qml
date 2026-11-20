@@ -14,14 +14,25 @@ Label {
     styleColor: "black"
 
     function show(r: int) {
-        text = Ratings.symbol(r)
-        fade.restart()
+        text = Ratings.symbol(r);
+        fade.restart();
     }
 
     SequentialAnimation {
         id: fade
-        PropertyAction { target: popup; property: "opacity"; value: 1 }
-        PauseAnimation { duration: 350 }
-        NumberAnimation { target: popup; property: "opacity"; to: 0; duration: 150 }
+        PropertyAction {
+            target: popup
+            property: "opacity"
+            value: 1
+        }
+        PauseAnimation {
+            duration: 350
+        }
+        NumberAnimation {
+            target: popup
+            property: "opacity"
+            to: 0
+            duration: 150
+        }
     }
 }

@@ -5,5 +5,6 @@ import QtQuick
 QtObject {
     property int fileId: 0
     property bool playing: false
-    function setSink(sink) {}
+    function setSink(sink) {
+    }
 }

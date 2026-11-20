@@ -67,37 +67,37 @@ Item {
     // Whether two rows' cells show the same files, in the same places.
     function sameFiles(a: list<real>, b: list<real>): bool {
         if (a.length !== b.length)
-            return false
+            return false;
         for (let i = 0; i < a.length; ++i) {
             if (a[i] !== b[i])
-                return false
+                return false;
         }
-        return true
+        return true;
     }
 
     function take() {
         if (!rowItem.live)
-            return
+            return;
         // A cell keeps its place only while it shows the same file in it: a kept cell would show another file's image
         // until the new one loads. A row whose first item or files change makes new cells; a row given again with the
         // same files keeps them, and each cell reads its item's values again.
         if (rowItem.shownFirst !== rowItem.first || !rowItem.sameFiles(rowItem.shownIds, rowItem.ids))
-            rowItem.cellCount = 0
-        rowItem.shownFirst = rowItem.first
-        rowItem.shownCount = rowItem.count
-        rowItem.shownIds = rowItem.ids
-        rowItem.shownThumbUrls = rowItem.thumbUrls
-        rowItem.shownThumbhashUrls = rowItem.thumbhashUrls
-        rowItem.shownBadges = rowItem.badges
-        rowItem.shownRatings = rowItem.ratings
-        rowItem.shownBordersMarked = rowItem.bordersMarked
-        rowItem.shownImageAspects = rowItem.imageAspects
-        rowItem.shownAspects = rowItem.aspects
-        rowItem.shownContentX = rowItem.contentX
-        rowItem.shownContentY = rowItem.contentY
-        rowItem.shownContentWidth = rowItem.contentWidth
-        rowItem.shownContentHeight = rowItem.contentHeight
-        rowItem.cellCount = rowItem.count
+            rowItem.cellCount = 0;
+        rowItem.shownFirst = rowItem.first;
+        rowItem.shownCount = rowItem.count;
+        rowItem.shownIds = rowItem.ids;
+        rowItem.shownThumbUrls = rowItem.thumbUrls;
+        rowItem.shownThumbhashUrls = rowItem.thumbhashUrls;
+        rowItem.shownBadges = rowItem.badges;
+        rowItem.shownRatings = rowItem.ratings;
+        rowItem.shownBordersMarked = rowItem.bordersMarked;
+        rowItem.shownImageAspects = rowItem.imageAspects;
+        rowItem.shownAspects = rowItem.aspects;
+        rowItem.shownContentX = rowItem.contentX;
+        rowItem.shownContentY = rowItem.contentY;
+        rowItem.shownContentWidth = rowItem.contentWidth;
+        rowItem.shownContentHeight = rowItem.contentHeight;
+        rowItem.cellCount = rowItem.count;
     }
 
     Component.onCompleted: take()
@@ -142,8 +142,8 @@ Item {
                 itemThumbhashUrl: rowItem.shownThumbhashUrls[index] ?? ""
                 showBorders: rowItem.showBorders
                 current: rowItem.current
-                onCellClicked: (itemIndex) => rowItem.cellClicked(itemIndex)
-                onCellDoubleClicked: (itemIndex) => rowItem.cellDoubleClicked(itemIndex)
+                onCellClicked: itemIndex => rowItem.cellClicked(itemIndex)
+                onCellDoubleClicked: itemIndex => rowItem.cellDoubleClicked(itemIndex)
             }
         }
     }

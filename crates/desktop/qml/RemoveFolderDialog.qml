@@ -22,7 +22,7 @@ Dialog {
     property int row: -1
 
     // The user chose "Remove": the library removes the folder (Main connects it to the library's removeFolder).
-    signal confirmed()
+    signal confirmed
 
     // The question's text, the folder's and the two buttons, for the tests.
     property alias questionText: question.text

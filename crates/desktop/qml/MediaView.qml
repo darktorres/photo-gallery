@@ -34,31 +34,31 @@ Item {
     readonly property real playScale: fw > 0 && fh > 0 ? Math.min(width / fw, height / fh) : 0
 
     // From the players: a frame was drawn; the source changed (the poster comes back); the player's error.
-    signal frameDrawn()
-    signal sourceSwitched()
+    signal frameDrawn
+    signal sourceSwitched
     signal playerFailed(string text)
     // The transport asks: play or pause, mute, the volume.
-    signal playAsked()
-    signal muteAsked()
+    signal playAsked
+    signal muteAsked
     signal volumeAsked(real value)
 
     // Play or pause the video or animation shown.
     function togglePlay() {
         if (kind === GalleryModel.Animated)
-            animPlayer.playing = !animPlayer.playing
+            animPlayer.playing = !animPlayer.playing;
         else if (player.playbackState === MediaPlayer.PlayingState)
-            player.pause()
+            player.pause();
         else
-            player.play()
+            player.play();
     }
 
     // The video's file, played as a device (src/video_source.rs): it is opened when the video is shown and stopped when
     // it isn't. The player's own source is only what the device sets.
     function openVideo() {
         if (media.playsVideo)
-            video.play(media.fileId)
+            video.play(media.fileId);
         else
-            video.stop()
+            video.stop();
     }
     onPlaysVideoChanged: openVideo()
     onFileIdChanged: openVideo()
@@ -94,9 +94,9 @@ Item {
         }
         loops: MediaPlayer.Infinite
         onSourceChanged: {
-            media.sourceSwitched()
+            media.sourceSwitched();
             if (media.playsVideo)
-                play()
+                play();
         }
         onErrorChanged: media.playerFailed(errorString)
     }
@@ -117,7 +117,7 @@ Item {
     Connections {
         target: videoOut.videoSink
         function onVideoFrameChanged() {
-            media.frameDrawn()
+            media.frameDrawn();
         }
     }
 
@@ -126,13 +126,13 @@ Item {
         position: player.position
         duration: player.duration
         seekable: player.seekable
-        onSeekAsked: (ms) => player.position = ms
+        onSeekAsked: ms => player.position = ms
         showTransport: media.kind === GalleryModel.Video && !media.zen
         barHeight: media.barHeight
         muted: media.muted
         volume: media.volume
         onPlayAsked: media.playAsked()
         onMuteAsked: media.muteAsked()
-        onVolumeAsked: (value) => media.volumeAsked(value)
+        onVolumeAsked: value => media.volumeAsked(value)
     }
 }

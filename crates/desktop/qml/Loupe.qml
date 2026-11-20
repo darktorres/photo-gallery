@@ -27,8 +27,7 @@ Rectangle {
     readonly property real u: (cursorX - fit.x) / Math.max(1, fit.width)
     readonly property real v: (cursorY - fit.y) / Math.max(1, fit.height)
 
-    visible: requested && !viewport.zoomed && hovered
-             && fullReady && u >= 0 && u <= 1 && v >= 0 && v <= 1
+    visible: requested && !viewport.zoomed && hovered && fullReady && u >= 0 && u <= 1 && v >= 0 && v <= 1
     width: 400
     height: 400
     x: cursorX - width / 2

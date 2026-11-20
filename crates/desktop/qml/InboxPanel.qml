@@ -18,10 +18,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 ModalOverlay {
+    id: panel
     Words {
         id: words
     }
-    id: panel
     // The entries (Main's Notices), and what the ledger's entry shown lists (Main's FailedFiles), of which the ledger
     // holds `failedTotal`; whether that list is being read, and the error its read failed with ("": it didn't).
     required property var notices
@@ -51,47 +51,47 @@ ModalOverlay {
     signal copyRequested(int row)
     signal dismissRequested(int row)
     signal retryRequested(int row)
-    signal clearRequested()
+    signal clearRequested
     // A ledger's entry is open: its list is to be read (-1: none). Asked again when its newest failure moves.
     signal filesRequested(int pass)
     // A failed file is to be shown in its folder; a failed folder's parent (its row of the list); the import's failed
     // files are to be listed in the grid.
     signal revealRequested(real fileId)
     signal folderRevealRequested(int row)
-    signal showFilesRequested()
+    signal showFilesRequested
 
     // The selected row says what it is (when it becomes the selected one, and when its entry changes in place).
     function show(key: string, body: string, pass: int, serial: real, canRetry: bool, canShowFiles: bool) {
-        selectedKey = key
-        selectedText = body
-        selectedPass = pass
-        selectedSerial = serial
-        selectedCanRetry = canRetry
-        selectedCanShowFiles = canShowFiles
-        requestFiles()
+        selectedKey = key;
+        selectedText = body;
+        selectedPass = pass;
+        selectedSerial = serial;
+        selectedCanRetry = canRetry;
+        selectedCanShowFiles = canShowFiles;
+        requestFiles();
     }
 
     // The open ledger's list, asked for once per entry and newest failure; none while no ledger's details are open.
     function requestFiles() {
-        const pass = detailsOpen && selected >= 0 ? selectedPass : -1
-        const key = pass >= 0 ? selectedKey : ""
+        const pass = detailsOpen && selected >= 0 ? selectedPass : -1;
+        const key = pass >= 0 ? selectedKey : "";
         if (key === requestedKey && (key === "" || selectedSerial === requestedSerial))
-            return
-        requestedKey = key
-        requestedSerial = selectedSerial
-        filesRequested(pass)
+            return;
+        requestedKey = key;
+        requestedSerial = selectedSerial;
+        filesRequested(pass);
     }
     onDetailsOpenChanged: requestFiles()
 
     function unselect() {
-        selected = -1
-        detailsOpen = false
-        selectedKey = ""
-        selectedText = ""
-        selectedPass = -1
-        selectedCanRetry = false
-        selectedCanShowFiles = false
-        requestFiles()
+        selected = -1;
+        detailsOpen = false;
+        selectedKey = "";
+        selectedText = "";
+        selectedPass = -1;
+        selectedCanRetry = false;
+        selectedCanShowFiles = false;
+        requestFiles();
     }
 
     // The row just selected is to tell what it is (its delegate answers; one made later tells on its own).
@@ -99,32 +99,32 @@ ModalOverlay {
 
     // Select `row`.
     function select(row: int) {
-        selected = row
-        selectedKey = ""
-        rowSelected(row)
+        selected = row;
+        selectedKey = "";
+        rowSelected(row);
     }
 
     // Select `row` and bring it into view (a row past the list selects the nearest). Positioning first makes the row's
     // delegate, at its row (the view applies the model's changes then).
     function moveTo(row: int) {
         if (list.count === 0)
-            return
-        const at = Math.max(0, Math.min(list.count - 1, row))
-        list.positionViewAtIndex(at, ListView.Contain)
-        select(at)
+            return;
+        const at = Math.max(0, Math.min(list.count - 1, row));
+        list.positionViewAtIndex(at, ListView.Contain);
+        select(at);
     }
 
     function dismissSelected() {
         if (selected < 0)
-            return
-        const row = selected
-        unselect()
-        dismissRequested(row)
+            return;
+        const row = selected;
+        unselect();
+        dismissRequested(row);
     }
 
     function retrySelected() {
         if (selected >= 0 && selectedCanRetry)
-            retryRequested(selected)
+            retryRequested(selected);
     }
 
     // The entry to expand was opened: once per opening of the panel and per appearance of the entry, so its row moving
@@ -132,14 +132,14 @@ ModalOverlay {
     property bool expanded: false
     function expand() {
         if (!open || expandRow < 0) {
-            expanded = false
-            return
+            expanded = false;
+            return;
         }
         if (expanded || expandRow >= list.count)
-            return
-        moveTo(expandRow)
-        detailsOpen = true
-        expanded = true
+            return;
+        moveTo(expandRow);
+        detailsOpen = true;
+        expanded = true;
     }
     onOpenChanged: expand()
     onExpandRowChanged: expand()
@@ -153,31 +153,31 @@ ModalOverlay {
         target: panel.notices
         function onRowsInserted(parent: var, first: int, last: int) {
             if (panel.selected >= first)
-                panel.selected += last - first + 1
+                panel.selected += last - first + 1;
         }
         function onRowsRemoved(parent: var, first: int, last: int) {
             if (panel.selected < 0)
-                return
+                return;
             if (panel.selected > last)
-                panel.selected -= last - first + 1
+                panel.selected -= last - first + 1;
             else if (panel.selected >= first)
-                panel.unselect()
+                panel.unselect();
         }
         // Rows `start` to `end` go before row `row` (counted before the move).
         function onRowsMoved(parent: var, start: int, end: int, destination: var, row: int) {
-            const at = panel.selected
-            const n = end - start + 1
+            const at = panel.selected;
+            const n = end - start + 1;
             if (at < 0)
-                return
+                return;
             if (at >= start && at <= end)
-                panel.selected = (row > end ? row - n : row) + at - start
+                panel.selected = (row > end ? row - n : row) + at - start;
             else if (row > end && at > end && at < row)
-                panel.selected = at - n
+                panel.selected = at - n;
             else if (row < start && at >= row && at < start)
-                panel.selected = at + n
+                panel.selected = at + n;
         }
         function onModelReset() {
-            panel.unselect()
+            panel.unselect();
         }
     }
 
@@ -188,11 +188,17 @@ ModalOverlay {
         padding: 16
         // A control is a focus scope too: the focus passes through it to the list.
         focus: true
-        MouseArea { anchors.fill: parent }
+        MouseArea {
+            anchors.fill: parent
+        }
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
-            Label { text: words.text("ui-inbox-title"); font.bold: true; font.pixelSize: 16 }
+            Label {
+                text: words.text("ui-inbox-title")
+                font.bold: true
+                font.pixelSize: 16
+            }
             WheelListView {
                 id: list
                 objectName: "inboxList"
@@ -210,34 +216,34 @@ ModalOverlay {
                 Accessible.role: Accessible.List
                 Accessible.name: words.text("ui-inbox-title")
                 readonly property int rowHeight: 30
-                Keys.onPressed: (event) => {
-                    const page = Math.max(1, Math.floor(list.height / list.rowHeight) - 1)
-                    const at = panel.selected
-                    const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+                Keys.onPressed: event => {
+                    const page = Math.max(1, Math.floor(list.height / list.rowHeight) - 1);
+                    const at = panel.selected;
+                    const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
                     if (event.key === Qt.Key_Up)
-                        panel.moveTo(at - 1)
+                        panel.moveTo(at - 1);
                     else if (event.key === Qt.Key_Down)
-                        panel.moveTo(at + 1)
+                        panel.moveTo(at + 1);
                     else if (event.key === Qt.Key_Home)
-                        panel.moveTo(0)
+                        panel.moveTo(0);
                     else if (event.key === Qt.Key_End)
-                        panel.moveTo(list.count - 1)
+                        panel.moveTo(list.count - 1);
                     else if (event.key === Qt.Key_PageUp)
-                        panel.moveTo(at - page)
+                        panel.moveTo(at - page);
                     else if (event.key === Qt.Key_PageDown)
-                        panel.moveTo(Math.max(at, 0) + page)
+                        panel.moveTo(Math.max(at, 0) + page);
                     else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)
-                        panel.detailsOpen = at >= 0 && !panel.detailsOpen
+                        panel.detailsOpen = at >= 0 && !panel.detailsOpen;
                     else if (event.key === Qt.Key_Delete)
-                        panel.dismissSelected()
+                        panel.dismissSelected();
                     else if (event.key === Qt.Key_C && ctrl) {
                         if (at >= 0)
-                            panel.copyRequested(at)
+                            panel.copyRequested(at);
                     } else if (event.key === Qt.Key_R && event.modifiers === Qt.NoModifier)
-                        panel.retrySelected()
+                        panel.retrySelected();
                     else
-                        return
-                    event.accepted = true
+                        return;
+                    event.accepted = true;
                 }
                 delegate: Rectangle {
                     id: row
@@ -258,24 +264,28 @@ ModalOverlay {
                     // The selected entry's row: by its key, which a stale row number can't confuse.
                     readonly property bool chosen: panel.selectedKey.length > 0 && row.key === panel.selectedKey
                     function tell() {
-                        panel.show(row.key, row.body, row.pass, row.serial, row.canRetry, row.canShowFiles)
+                        panel.show(row.key, row.body, row.pass, row.serial, row.canRetry, row.canShowFiles);
                     }
                     // The row just selected, whose key isn't known yet: it tells it.
                     function wanted(): bool {
-                        return panel.selectedKey.length === 0 && row.index === panel.selected
+                        return panel.selectedKey.length === 0 && row.index === panel.selected;
                     }
                     Connections {
                         target: panel
                         function onRowSelected(at: int) {
                             if (at === row.index)
-                                row.tell()
+                                row.tell();
                         }
                     }
                     // The entry changed in place (a new revision, its counts, a newer failure): its details follow.
-                    onBodyChanged: if (chosen) tell()
-                    onSerialChanged: if (chosen) tell()
-                    onCanRetryChanged: if (chosen) tell()
-                    Component.onCompleted: if (chosen || wanted()) tell()
+                    onBodyChanged: if (chosen)
+                        tell()
+                    onSerialChanged: if (chosen)
+                        tell()
+                    onCanRetryChanged: if (chosen)
+                        tell()
+                    Component.onCompleted: if (chosen || wanted())
+                        tell()
                     width: list.width
                     height: list.rowHeight
                     color: row.chosen ? "#2f5f93" : (row.index % 2 ? "#242424" : "transparent")
@@ -330,9 +340,9 @@ ModalOverlay {
                     }
                     TapHandler {
                         onTapped: {
-                            list.forceActiveFocus()
-                            panel.select(row.index)
-                            panel.detailsOpen = true
+                            list.forceActiveFocus();
+                            panel.select(row.index);
+                            panel.detailsOpen = true;
                         }
                     }
                 }
@@ -447,9 +457,9 @@ ModalOverlay {
                                 flat: true
                                 onClicked: {
                                     if (file.isFolder)
-                                        panel.folderRevealRequested(file.index)
+                                        panel.folderRevealRequested(file.index);
                                     else
-                                        panel.revealRequested(file.fileId)
+                                        panel.revealRequested(file.fileId);
                                 }
                             }
                         }
@@ -458,9 +468,7 @@ ModalOverlay {
                 Label {
                     visible: panel.failedTotal > files.count && !panel.failedLoading
                     // The scans' folders (pass 3), or a pass's files.
-                    text: panel.selectedPass === 3
-                        ? words.phrase("ui-inbox-more-folders", panel.failedTotal, "" + panel.failedTotal, "" + files.count)
-                        : words.phrase("ui-inbox-more", panel.failedTotal, "" + panel.failedTotal, "" + files.count)
+                    text: panel.selectedPass === 3 ? words.phrase("ui-inbox-more-folders", panel.failedTotal, "" + panel.failedTotal, "" + files.count) : words.phrase("ui-inbox-more", panel.failedTotal, "" + panel.failedTotal, "" + files.count)
                     textFormat: Text.PlainText
                     color: "#888888"
                 }
@@ -490,14 +498,16 @@ ModalOverlay {
                     enabled: panel.selected >= 0
                     onClicked: panel.dismissSelected()
                 }
-                Item { Layout.fillWidth: true }
+                Item {
+                    Layout.fillWidth: true
+                }
                 Button {
                     objectName: "inboxClear"
                     text: words.text("ui-inbox-clear")
                     enabled: list.count > 0
                     onClicked: {
-                        panel.unselect()
-                        panel.clearRequested()
+                        panel.unselect();
+                        panel.clearRequested();
                     }
                 }
                 Button {

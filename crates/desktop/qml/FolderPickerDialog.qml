@@ -19,16 +19,16 @@ ModalOverlay {
     property string here: ""
 
     // The choices: the owner passes each on to its picker.
-    signal goUp()
+    signal goUp
     signal openRow(int row)
     signal chooseRow(int row)
-    signal chooseHere()
+    signal chooseHere
     // Closed without a choice (Cancel, Escape, or a click on the backdrop).
-    signal cancelled()
+    signal cancelled
 
     onDismissed: {
-        overlay.open = false
-        overlay.cancelled()
+        overlay.open = false;
+        overlay.cancelled();
     }
 
     Pane {
@@ -37,12 +37,18 @@ ModalOverlay {
         height: 460
         padding: 16
         // Clicks inside the dialog don't reach the dimmed background.
-        MouseArea { anchors.fill: parent }
+        MouseArea {
+            anchors.fill: parent
+        }
 
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
-            Label { text: words.text("ui-choose-folder-title"); font.bold: true; font.pixelSize: 16 }
+            Label {
+                text: words.text("ui-choose-folder-title")
+                font.bold: true
+                font.pixelSize: 16
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Button {
@@ -82,21 +88,23 @@ ModalOverlay {
                         text: words.text("ui-choose")
                         flat: true
                         onClicked: {
-                            overlay.open = false
-                            overlay.chooseRow(folderRow.index)
+                            overlay.open = false;
+                            overlay.chooseRow(folderRow.index);
                         }
                     }
                 }
             }
             RowLayout {
                 Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
+                Item {
+                    Layout.fillWidth: true
+                }
                 Button {
                     objectName: "chooseHere"
                     text: words.text("ui-choose-here")
                     onClicked: {
-                        overlay.open = false
-                        overlay.chooseHere()
+                        overlay.open = false;
+                        overlay.chooseHere();
                     }
                 }
                 Button {

@@ -11,6 +11,6 @@ Item {
     }
 
     function symbol(rating: int): string {
-        return words.ratingSymbol(rating)
+        return words.ratingSymbol(rating);
     }
 }

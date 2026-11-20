@@ -20,14 +20,14 @@ ListView {
 
     // A wheel's scroll came to rest (the view's own `movementEnded` is a drag's or a flick's): what the user scrolled to,
     // for a view that follows its end (LogPanel).
-    signal wheelScrolled()
+    signal wheelScrolled
 
     // contentY's range, as QQuickFlickable / QQuickItemView compute it (-minYExtent … -maxYExtent). A ListView's
     // contentHeight and originY are estimates that firm up as rows are created, so this is re-read every frame.
     function clampContentY(y: real): real {
-        const top = list.originY - list.topMargin
-        const bottom = Math.max(top, list.originY + list.contentHeight + list.bottomMargin - list.height)
-        return Math.max(top, Math.min(bottom, y))
+        const top = list.originY - list.topMargin;
+        const bottom = Math.max(top, list.originY + list.contentHeight + list.bottomMargin - list.height);
+        return Math.max(top, Math.min(bottom, y));
     }
 
     // One wheel event, by its vertical fields (QWheelEvent's angleDelta.y, pixelDelta.y and phase): the handler below
@@ -36,21 +36,20 @@ ListView {
     // scalars, not the event object: the QML compiler needs the types to compile this to C++.
     function wheelBy(angleY: real, pixelY: real, phase: int) {
         if (!frames.running)
-            scroller.destination = list.contentY
+            scroller.destination = list.contentY;
         // Pixel deltas from the platform (touchpads, on some systems): follow them as they come, which is what
         // they are for. Qt takes this path under the same conditions, except that it cannot see the event's
         // source here.
         if (pixelY !== 0 && phase !== Qt.NoScrollPhase) {
-            frames.stop()
-            scroller.moveTo(clampContentY(scroller.destination - pixelY))
-            list.wheelScrolled()
-            return
+            frames.stop();
+            scroller.moveTo(clampContentY(scroller.destination - pixelY));
+            list.wheelScrolled();
+            return;
         }
-        scroller.destination = clampContentY(
-            scroller.destination - angleY / 120 * Application.styleHints.wheelScrollLines * wheelLineHeight)
+        scroller.destination = clampContentY(scroller.destination - angleY / 120 * Application.styleHints.wheelScrollLines * wheelLineHeight);
         if (!frames.running) {
-            scroller.written = contentY
-            frames.start()
+            scroller.written = contentY;
+            frames.start();
         }
     }
 
@@ -72,31 +71,31 @@ ListView {
         readonly property real tau: 0.3 / (10 * Math.LN2)
 
         function moveTo(y: real) {
-            written = y
-            list.contentY = y  // also stops a flick of the Flickable's own (setContentY resets its timeline)
+            written = y;
+            list.contentY = y;  // also stops a flick of the Flickable's own (setContentY resets its timeline)
         }
 
         // Plain wheel only: Ctrl+wheel and the like stay with other handlers (modifiers must match exactly).
         acceptedModifiers: Qt.NoModifier
         orientation: Qt.Vertical
 
-        onWheel: (ev) => list.wheelBy(ev.angleDelta.y, ev.pixelDelta.y, ev.phase)
+        onWheel: ev => list.wheelBy(ev.angleDelta.y, ev.pixelDelta.y, ev.phase)
     }
 
     FrameAnimation {
         id: frames
         onTriggered: {
             if (Math.abs(list.contentY - scroller.written) >= 1) {
-                stop()
-                return
+                stop();
+                return;
             }
-            scroller.destination = list.clampContentY(scroller.destination)
-            const rest = scroller.destination - list.contentY
-            const done = Math.abs(rest) < 0.5
-            scroller.moveTo(done ? scroller.destination : list.contentY + rest * (1 - Math.exp(-frameTime / scroller.tau)))
+            scroller.destination = list.clampContentY(scroller.destination);
+            const rest = scroller.destination - list.contentY;
+            const done = Math.abs(rest) < 0.5;
+            scroller.moveTo(done ? scroller.destination : list.contentY + rest * (1 - Math.exp(-frameTime / scroller.tau)));
             if (done) {
-                stop()
-                list.wheelScrolled()
+                stop();
+                list.wheelScrolled();
             }
         }
     }

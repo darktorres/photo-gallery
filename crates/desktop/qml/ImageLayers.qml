@@ -36,7 +36,7 @@ Item {
     readonly property real fullHeight: full.implicitHeight
 
     // The view wants the visible part rendered (showRegion), now.
-    signal regionDue()
+    signal regionDue
 
     // The view moved: render the visible part at once, and again at most every 50 ms while it keeps moving (a move in
     // between is rendered when the window is over). A new image opened: drop the old part (dropRegion).
@@ -44,23 +44,23 @@ Item {
 
     function restartRegion() {
         if (regionTimer.running) {
-            regionPending = true
-            return
+            regionPending = true;
+            return;
         }
-        layers.regionDue()
-        regionTimer.start()
+        layers.regionDue();
+        regionTimer.start();
     }
 
     // The region as Rust made it: its URL and the part of the image it shows (fractions), placed when it is ready.
     function showRegion(source: string, next: rect) {
         // Before the source: a cached region is ready at once.
-        region.next = next
-        region.source = source
+        region.next = next;
+        region.source = source;
     }
 
     function dropRegion() {
-        region.held = false
-        region.source = ""
+        region.held = false;
+        region.source = "";
     }
 
     // Fitted by Rust. When zoomed, the GPU stretches it over the image's place until a sharper layer is ready.
@@ -90,8 +90,8 @@ Item {
         // A part has been shown for the picture (cleared by dropRegion).
         property bool held: false
         onStatusChanged: if (status === Image.Ready) {
-            shown = next
-            held = true
+            shown = next;
+            held = true;
         }
         visible: held && layers.viewport.zoomed && !(layers.viewport.pixels && layers.fullReady)
         x: layers.viewport.ox + shown.x * layers.viewport.dw
@@ -109,17 +109,16 @@ Item {
         id: regionTimer
         interval: 50
         onTriggered: if (layers.regionPending) {
-            layers.regionPending = false
-            layers.regionDue()
-            start()
+            layers.regionPending = false;
+            layers.regionDue();
+            start();
         }
     }
 
     // 1:1 and beyond (and the loupe's source): the original, nearest neighbour.
     Image {
         id: full
-        source: layers.showing && layers.still && layers.key.length && (layers.viewport.pixels || layers.loupe)
-                ? layers.fullUrl : ""
+        source: layers.showing && layers.still && layers.key.length && (layers.viewport.pixels || layers.loupe) ? layers.fullUrl : ""
         visible: layers.viewport.pixels && status === Image.Ready
         x: layers.viewport.ox
         y: layers.viewport.oy

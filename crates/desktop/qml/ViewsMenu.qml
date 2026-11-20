@@ -7,10 +7,10 @@ import QtQuick.Controls.Fusion
 import pg.gallery
 
 Button {
+    id: views
     Words {
         id: words
     }
-    id: views
 
     // The saved views, by name, and whether there are any (the delete menu is off without).
     required property var savedViews
@@ -21,11 +21,11 @@ Button {
 
     signal viewChosen(string name)
     signal viewDeleteRequested(string name)
-    signal saveViewRequested()
+    signal saveViewRequested
 
     // Opens the menu (the test hook --menu=views).
     function open() {
-        views.clicked()
+        views.clicked();
     }
 
     text: words.text("ui-views")

@@ -13,10 +13,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 Pane {
+    id: bar
     Words {
         id: words
     }
-    id: bar
 
     // How many facets filter; files in the folder, unfiltered, and those the query keeps (countFacets()).
     readonly property int active: filters.active
@@ -26,22 +26,26 @@ Pane {
     readonly property string description: filters.description
 
     // The user changed the query.
-    signal edited()
+    signal edited
     // Listed files with borders to crop off (GalleryModel.croppable), and the user asking to save them cropped.
     property int croppable: 0
-    signal saveCropsRequested()
+    signal saveCropsRequested
     // Border detection is on: the borders controls act only then. Used while it is off, they say so (bordersBlocked),
     // and the crop and cut buttons with nothing to cut say so too (nothingToCrop).
     property bool bordersOn: true
-    signal bordersBlocked()
-    signal nothingToCrop()
+    signal bordersBlocked
+    signal nothingToCrop
     // The user asking to cut the borders off the listed originals (the window asks first: CutBordersDialog).
-    signal cutBordersRequested()
+    signal cutBordersRequested
 
     // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
-    function countFacets() { filters.countFacets() }
+    function countFacets() {
+        filters.countFacets();
+    }
     // The listing's query changed outside the bar (a saved view was applied): the fields show it again.
-    function reloadQuery() { filters.reload() }
+    function reloadQuery() {
+        filters.reload();
+    }
 
     // The list facets, by index: the order of pg_client::facets::Facet (pinned by tests/facets.rs). A FacetChoices row
     // set is made for each, in the flow below.
@@ -59,14 +63,17 @@ Pane {
 
     // Shown once: the controls are made then (the window starts with the bar closed), and kept.
     property bool opened: false
-    onVisibleChanged: if (visible) opened = true
+    onVisibleChanged: if (visible)
+        opened = true
 
     Filters {
         id: filters
         onEdited: bar.edited()
     }
 
-    function count(n: int): string { return Qt.locale().toString(n) }
+    function count(n: int): string {
+        return Qt.locale().toString(n);
+    }
 
     // A choice in a list facet, one row of a FacetChoices: highlighted while the query has it (`chosen`). Each
     // delegate's `onClicked` toggles its row's key in its facet (`Filters.toggle`).
@@ -92,7 +99,9 @@ Pane {
         required property int end
         property bool isDate: false
         readonly property bool bad: !filters.boundValid(facet, text)
-        function reload() { text = filters.bound(facet, end) }
+        function reload() {
+            text = filters.bound(facet, end);
+        }
         Layout.preferredWidth: isDate ? 96 : 60
         placeholderText: isDate ? words.text("ui-date-format") : (end === 0 ? words.text("ui-min") : words.text("ui-max"))
         selectByMouse: true
@@ -102,7 +111,9 @@ Pane {
         Component.onCompleted: reload()
         Connections {
             target: filters
-            function onLoaded() { field.reload() }
+            function onLoaded() {
+                field.reload();
+            }
         }
     }
 
@@ -123,33 +134,59 @@ Pane {
 
                 // The rows of each list facet (facet_choices.rs): a chip reads its row's key, label, count and chosen.
                 // They read the query and the counts themselves; each change to either asks for the rows again.
-                FacetChoices { id: typeChoices; facet: bar.facetTypes }
-                FacetChoices { id: ratingChoices; facet: bar.facetRatings }
-                FacetChoices { id: extChoices; facet: bar.facetExts }
-                FacetChoices { id: shapeChoices; facet: bar.facetOrientations }
-                FacetChoices { id: statusChoices; facet: bar.facetStatus }
-                FacetChoices { id: borderChoices; facet: bar.facetBorders }
+                FacetChoices {
+                    id: typeChoices
+                    facet: bar.facetTypes
+                }
+                FacetChoices {
+                    id: ratingChoices
+                    facet: bar.facetRatings
+                }
+                FacetChoices {
+                    id: extChoices
+                    facet: bar.facetExts
+                }
+                FacetChoices {
+                    id: shapeChoices
+                    facet: bar.facetOrientations
+                }
+                FacetChoices {
+                    id: statusChoices
+                    facet: bar.facetStatus
+                }
+                FacetChoices {
+                    id: borderChoices
+                    facet: bar.facetBorders
+                }
 
                 function refreshChoices() {
-                    reviewBox.currentIndex = filters.borderMarkedIndex
-                    typeChoices.refresh()
-                    ratingChoices.refresh()
-                    extChoices.refresh()
-                    shapeChoices.refresh()
-                    statusChoices.refresh()
-                    borderChoices.refresh()
+                    reviewBox.currentIndex = filters.borderMarkedIndex;
+                    typeChoices.refresh();
+                    ratingChoices.refresh();
+                    extChoices.refresh();
+                    shapeChoices.refresh();
+                    statusChoices.refresh();
+                    borderChoices.refresh();
                 }
 
                 Connections {
                     target: filters
-                    function onEdited() { choiceRows.refreshChoices() }
-                    function onLoaded() { choiceRows.refreshChoices() }
-                    function onCounted() { choiceRows.refreshChoices() }
+                    function onEdited() {
+                        choiceRows.refreshChoices();
+                    }
+                    function onLoaded() {
+                        choiceRows.refreshChoices();
+                    }
+                    function onCounted() {
+                        choiceRows.refreshChoices();
+                    }
                 }
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-type") }
+                    Caption {
+                        text: words.text("ui-type")
+                    }
                     Repeater {
                         model: typeChoices
                         delegate: Chip {
@@ -161,7 +198,9 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-rating") }
+                    Caption {
+                        text: words.text("ui-rating")
+                    }
                     Repeater {
                         model: ratingChoices
                         delegate: Chip {
@@ -174,7 +213,9 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-extension") }
+                    Caption {
+                        text: words.text("ui-extension")
+                    }
                     Repeater {
                         model: extChoices
                         delegate: Chip {
@@ -186,7 +227,9 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-shape") }
+                    Caption {
+                        text: words.text("ui-shape")
+                    }
                     Repeater {
                         model: shapeChoices
                         delegate: Chip {
@@ -198,38 +241,86 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-size-mb") }
-                    Bound { facet: 0; end: 0 }
-                    Bound { facet: 0; end: 1 }
-                    Caption { text: words.text("ui-megapixels") }
-                    Bound { facet: 1; end: 0 }
-                    Bound { facet: 1; end: 1 }
-                    Caption { text: words.text("ui-duration-s") }
-                    Bound { facet: 2; end: 0 }
-                    Bound { facet: 2; end: 1 }
+                    Caption {
+                        text: words.text("ui-size-mb")
+                    }
+                    Bound {
+                        facet: 0
+                        end: 0
+                    }
+                    Bound {
+                        facet: 0
+                        end: 1
+                    }
+                    Caption {
+                        text: words.text("ui-megapixels")
+                    }
+                    Bound {
+                        facet: 1
+                        end: 0
+                    }
+                    Bound {
+                        facet: 1
+                        end: 1
+                    }
+                    Caption {
+                        text: words.text("ui-duration-s")
+                    }
+                    Bound {
+                        facet: 2
+                        end: 0
+                    }
+                    Bound {
+                        facet: 2
+                        end: 1
+                    }
                 }
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-taken") }
-                    Bound { facet: 3; end: 0; isDate: true }
-                    Bound { facet: 3; end: 1; isDate: true }
-                    Caption { text: words.text("ui-modified") }
-                    Bound { facet: 4; end: 0; isDate: true }
-                    Bound { facet: 4; end: 1; isDate: true }
+                    Caption {
+                        text: words.text("ui-taken")
+                    }
+                    Bound {
+                        facet: 3
+                        end: 0
+                        isDate: true
+                    }
+                    Bound {
+                        facet: 3
+                        end: 1
+                        isDate: true
+                    }
+                    Caption {
+                        text: words.text("ui-modified")
+                    }
+                    Bound {
+                        facet: 4
+                        end: 0
+                        isDate: true
+                    }
+                    Bound {
+                        facet: 4
+                        end: 1
+                        isDate: true
+                    }
                 }
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-duplicates") }
+                    Caption {
+                        text: words.text("ui-duplicates")
+                    }
                     ComboBox {
                         model: bar.duplicateChoices
                         currentIndex: filters.duplicatesIndex
-                        onActivated: (i) => filters.chooseDuplicates(i)
+                        onActivated: i => filters.chooseDuplicates(i)
                         font.pixelSize: 12
                         Layout.preferredWidth: 140
                     }
-                    Caption { text: words.text("ui-import") }
+                    Caption {
+                        text: words.text("ui-import")
+                    }
                     Repeater {
                         model: statusChoices
                         delegate: Chip {
@@ -241,7 +332,9 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-borders") }
+                    Caption {
+                        text: words.text("ui-borders")
+                    }
                     Repeater {
                         model: borderChoices
                         delegate: Chip {
@@ -249,19 +342,21 @@ Pane {
                             onClicked: bar.bordersOn ? filters.toggle(bar.facetBorders, key) : bar.bordersBlocked()
                         }
                     }
-                    Caption { text: words.text("ui-review") }
+                    Caption {
+                        text: words.text("ui-review")
+                    }
                     ComboBox {
                         id: reviewBox
                         model: bar.reviewChoices
                         currentIndex: filters.borderMarkedIndex
-                        onActivated: (i) => {
+                        onActivated: i => {
                             // Index 0 is "any", which needs no borders. Any other choice is refused while they are off:
                             // the box shows the review in force again (refreshChoices keeps it in step with the query).
                             if (i === 0 || bar.bordersOn) {
-                                filters.chooseBorderMarked(i)
+                                filters.chooseBorderMarked(i);
                             } else {
-                                bar.bordersBlocked()
-                                currentIndex = filters.borderMarkedIndex
+                                bar.bordersBlocked();
+                                currentIndex = filters.borderMarkedIndex;
                             }
                         }
                         font.pixelSize: 12
@@ -271,9 +366,12 @@ Pane {
                         text: words.phrase("ui-save-crops", 0, bar.count(bar.croppable), "")
                         font.pixelSize: 12
                         onClicked: {
-                            if (!bar.bordersOn) bar.bordersBlocked()
-                            else if (bar.croppable > 0) bar.saveCropsRequested()
-                            else bar.nothingToCrop()
+                            if (!bar.bordersOn)
+                                bar.bordersBlocked();
+                            else if (bar.croppable > 0)
+                                bar.saveCropsRequested();
+                            else
+                                bar.nothingToCrop();
                         }
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
@@ -283,9 +381,12 @@ Pane {
                         text: words.text("ui-cut-originals")
                         font.pixelSize: 12
                         onClicked: {
-                            if (!bar.bordersOn) bar.bordersBlocked()
-                            else if (bar.croppable > 0) bar.cutBordersRequested()
-                            else bar.nothingToCrop()
+                            if (!bar.bordersOn)
+                                bar.bordersBlocked();
+                            else if (bar.croppable > 0)
+                                bar.cutBordersRequested();
+                            else
+                                bar.nothingToCrop();
                         }
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
@@ -295,7 +396,9 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: words.text("ui-name") }
+                    Caption {
+                        text: words.text("ui-name")
+                    }
                     TextField {
                         id: nameField
                         placeholderText: words.text("ui-contains")
@@ -304,12 +407,16 @@ Pane {
                         Layout.preferredWidth: 160
                         // Not bound to the query's name, which is trimmed: a space typed between two words
                         // would vanish.
-                        function reload() { text = filters.name }
+                        function reload() {
+                            text = filters.name;
+                        }
                         onTextEdited: filters.editName(text)
                         Component.onCompleted: reload()
                         Connections {
                             target: filters
-                            function onLoaded() { nameField.reload() }
+                            function onLoaded() {
+                                nameField.reload();
+                            }
                         }
                     }
                     Button {

@@ -72,48 +72,47 @@ TestCase {
     // well below 1, one within 1e-5 of it, and then 1. The wait is past GridCell's 120 ms Behavior.
     function showFrames(target, values) {
         for (const value of values) {
-            target.fade = value
-            wait(250)
+            target.fade = value;
+            wait(250);
         }
     }
 
     function channels(image, x, y) {
-        const c = image.pixel(x, y)
-        return [c.r, c.g, c.b].map(v => Math.round(v * 255))
+        const c = image.pixel(x, y);
+        return [c.r, c.g, c.b].map(v => Math.round(v * 255));
     }
 
     // The thumbnail at x 0 and the opaque one at x 100, after the frames.
     function drawnAndOpaque(target) {
-        const opaque = createTemporaryObject(opaqueC, tc)
-        verify(opaque !== null)
-        tryCompare(opaque, "status", Image.Ready)
-        tryCompare(target, "status", Image.Ready)
-        showFrames(target, [0, 0.98, 0.999996, 1])
-        compare(target.opacity, 1)
-        const image = grabImage(tc)
-        return [channels(image, 50, 50), channels(image, 150, 50)]
+        const opaque = createTemporaryObject(opaqueC, tc);
+        verify(opaque !== null);
+        tryCompare(opaque, "status", Image.Ready);
+        tryCompare(target, "status", Image.Ready);
+        showFrames(target, [0, 0.98, 0.999996, 1]);
+        compare(target.opacity, 1);
+        const image = grabImage(tc);
+        return [channels(image, 50, 50), channels(image, 150, 50)];
     }
 
     function init() {
         // The renderer these tests are about: offscreen runs fall back to it on Windows and on Linux.
-        compare(GraphicsInfo.api, GraphicsInfo.Software, "offscreen Qt Quick renders with the software renderer")
+        compare(GraphicsInfo.api, GraphicsInfo.Software, "offscreen Qt Quick renders with the software renderer");
     }
 
     function test_a_faded_in_thumbnail_is_drawn_as_an_opaque_one() {
-        const cell = createTemporaryObject(cellC, tc)
-        verify(cell !== null)
-        const thumb = findChild(cell, "thumb")
-        verify(thumb !== null, "GridCell's thumbnail has the objectName thumb")
-        const [drawn, opaque] = drawnAndOpaque(thumb)
-        verify(opaque.some(v => v >= 128), "the stub color has a channel the bug would change: " + opaque)
-        compare(drawn, opaque)
+        const cell = createTemporaryObject(cellC, tc);
+        verify(cell !== null);
+        const thumb = findChild(cell, "thumb");
+        verify(thumb !== null, "GridCell's thumbnail has the objectName thumb");
+        const [drawn, opaque] = drawnAndOpaque(thumb);
+        verify(opaque.some(v => v >= 128), "the stub color has a channel the bug would change: " + opaque);
+        compare(drawn, opaque);
     }
 
     function test_qt_still_keeps_an_opacity_near_1() {
-        const plain = createTemporaryObject(plainFadeC, tc)
-        verify(plain !== null)
-        const [drawn, opaque] = drawnAndOpaque(plain)
-        compare(drawn, opaque.map(v => v >= 128 ? v - 1 : v),
-                "Qt's software renderer no longer keeps an opacity within 1e-5 of 1: GridCell's snap to 1 can go")
+        const plain = createTemporaryObject(plainFadeC, tc);
+        verify(plain !== null);
+        const [drawn, opaque] = drawnAndOpaque(plain);
+        compare(drawn, opaque.map(v => v >= 128 ? v - 1 : v), "Qt's software renderer no longer keeps an opacity within 1e-5 of 1: GridCell's snap to 1 can go");
     }
 }

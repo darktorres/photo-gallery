@@ -84,21 +84,23 @@ Rectangle {
     // Opening the viewer, or another item, renders the fit at the window's size at once (settleFit).
     onVisibleChanged: {
         if (visible) {
-            opened = true
-            settleFit()
+            opened = true;
+            settleFit();
         }
     }
     onKeyChanged: settleFit()
-    onPlaysVideoChanged: if (playsVideo) mediaOpened = true
-    onPlaysAnimationChanged: if (playsAnimation) mediaOpened = true
+    onPlaysVideoChanged: if (playsVideo)
+        mediaOpened = true
+    onPlaysAnimationChanged: if (playsAnimation)
+        mediaOpened = true
     // From the media: a frame of the shown video or animation was drawn (the poster gives way); the player's error.
     property bool videoStarted: false
     property string playerError: ""
 
     // To what the parts made: the view moved (render the visible part again, at once and then at most every 50 ms), a new image opened
     // (drop the old part), play or pause asked for.
-    signal viewMoved()
-    signal viewReset()
+    signal viewMoved
+    signal viewReset
     // Play or pause asked: each change makes MediaView toggle its player (its togglePlay).
     property int playRequests: 0
 
@@ -110,7 +112,7 @@ Rectangle {
     signal rated(int index, int rating)
     signal turned(int index, int turns)
     // B: show or hide the borders (the window keeps the setting); N: mark the shown item's as not a border, or not.
-    signal bordersToggled()
+    signal bordersToggled
     signal borderMarkToggled(int index, bool marked)
     // The bar's "find similar" button: the photo's file (its id), for the Yandex panel (Main.qml).
     signal findSimilar(int fileId)
@@ -138,9 +140,9 @@ Rectangle {
     property int fitH: 0
 
     function settleFit() {
-        fitSettle.stop()
-        fitW = viewportItem.fitWidth
-        fitH = viewportItem.fitHeight
+        fitSettle.stop();
+        fitW = viewportItem.fitWidth;
+        fitH = viewportItem.fitHeight;
     }
 
     Timer {
@@ -156,89 +158,89 @@ Rectangle {
     focus: visible
 
     function show(i: int) {
-        moved(i)
-        resetView()
-        forceActiveFocus()
+        moved(i);
+        resetView();
+        forceActiveFocus();
     }
 
     // The item it was on first, while the list is still the one it showed: closing may show a list that waited.
     function close() {
-        closed(index)
-        moved(-1)
+        closed(index);
+        moved(-1);
     }
 
     function step(d: int) {
-        stepRequested(d)
+        stepRequested(d);
     }
 
     // The item the step lands on (`n`): the viewer moves there, unless the step stays on the item it is on.
     function stepTo(n: int) {
         if (n !== index) {
-            moved(n)
-            resetView()
+            moved(n);
+            resetView();
         }
     }
 
     // Rate, show the rating's symbol for a moment (the content, on `rated`), and move on (ImageRater's triage).
     function rate(r: int) {
         if (index < 0)
-            return
-        rated(index, r)
-        step(1)
+            return;
+        rated(index, r);
+        step(1);
     }
 
     function turn(d: int) {
-        turned(index, d)
-        resetView()
+        turned(index, d);
+        resetView();
     }
 
     function togglePlay() {
-        playRequests++
+        playRequests++;
     }
 
     // Zoom to `z` keeping the image point under (px, py) where it is (the view limits it).
     function setZoom(z: real, px: real, py: real) {
         if (!zoomable)
-            return
-        viewportItem.setZoom(z, px, py)
-        viewMoved()
+            return;
+        viewportItem.setZoom(z, px, py);
+        viewMoved();
     }
 
     // Pan the image's corner (a drag or a swipe), kept on screen.
     function pan(x: real, y: real) {
-        viewportItem.pan(x, y)
-        viewMoved()
+        viewportItem.pan(x, y);
+        viewMoved();
     }
 
     // How a new image opens: fitted, or 1:1 in Real Size mode (Z), which is the fit when the two are the same.
     function resetView() {
-        viewportItem.resetView(settings.realSize)
-        viewMoved()
-        viewReset()
+        viewportItem.resetView(settings.realSize);
+        viewMoved();
+        viewReset();
     }
 
     // Double-click: fit ↔ 1:1 at the point clicked.
     function toggleOneToOne(px: real, py: real) {
         if (!zoomable)
-            return
-        viewportItem.toggleOneToOne(px, py)
-        viewMoved()
+            return;
+        viewportItem.toggleOneToOne(px, py);
+        viewMoved();
     }
 
     // The window's size or pixel ratio changed: a fitted view follows it (reopened fitted), another is kept and
     // clamped. The fitted image is rendered again at the new size once the size has settled (fitSettle).
     function pushWindow() {
-        const reset = viewportItem.setWindow(width, height, dpr, settings.realSize)
-        viewMoved()
+        const reset = viewportItem.setWindow(width, height, dpr, settings.realSize);
+        viewMoved();
         if (reset)
-            viewReset()
+            viewReset();
     }
 
     // The image's size changed: a fitted view opens it again, fitted (or 1:1 in Real Size mode).
     function pushMedia() {
         if (viewportItem.setMedia(fw, fh, settings.realSize)) {
-            viewMoved()
-            viewReset()
+            viewMoved();
+            viewReset();
         }
     }
 
@@ -250,10 +252,10 @@ Rectangle {
 
     // The view starts from the values the properties have when the viewer is made, without the signals.
     Component.onCompleted: {
-        viewportItem.setStill(still)
-        viewportItem.setMedia(fw, fh, settings.realSize)
-        viewportItem.setWindow(width, height, dpr, settings.realSize)
-        settleFit()
+        viewportItem.setStill(still);
+        viewportItem.setMedia(fw, fh, settings.realSize);
+        viewportItem.setWindow(width, height, dpr, settings.realSize);
+        settleFit();
     }
 
     // The key map (pg-client's keys, through the KeyMap facade) names the viewer's action for a key; this carries it out.
@@ -262,31 +264,78 @@ Rectangle {
     }
 
     // The viewer's actions, as the codes keymap.viewerAction returns (the Rust side lists them in the same order).
-    enum ViewerAction { Close, StepBack, StepForward, Rate, TurnForward, TurnBack, RealSize, ZoomIn, ZoomOut, Loupe, Borders, MarkBorder, Hide, PlayPause, Mute }
+    enum ViewerAction {
+        Close,
+        StepBack,
+        StepForward,
+        Rate,
+        TurnForward,
+        TurnBack,
+        RealSize,
+        ZoomIn,
+        ZoomOut,
+        Loupe,
+        Borders,
+        MarkBorder,
+        Hide,
+        PlayPause,
+        Mute
+    }
 
-    Keys.onPressed: (e) => {
-        const action = keymap.viewerAction(e.key, e.modifiers, kind, hasBorders)
+    Keys.onPressed: e => {
+        const action = keymap.viewerAction(e.key, e.modifiers, kind, hasBorders);
         if (action < 0)
-            return
-        const arg = keymap.viewerArg(e.key, e.modifiers, kind, hasBorders)
+            return;
+        const arg = keymap.viewerArg(e.key, e.modifiers, kind, hasBorders);
         switch (action) {
-        case Viewer.ViewerAction.Close: close(); break
-        case Viewer.ViewerAction.StepBack: step(-1); break
-        case Viewer.ViewerAction.StepForward: step(1); break
-        case Viewer.ViewerAction.Rate: rate(arg); break
-        case Viewer.ViewerAction.TurnForward: turn(1); break
-        case Viewer.ViewerAction.TurnBack: turn(-1); break
-        case Viewer.ViewerAction.RealSize: settings.realSize = !settings.realSize; resetView(); break
-        case Viewer.ViewerAction.ZoomIn: setZoom(zoom * 1.25, width / 2, height / 2); break
-        case Viewer.ViewerAction.ZoomOut: setZoom(zoom / 1.25, width / 2, height / 2); break
-        case Viewer.ViewerAction.Loupe: loupe = !loupe; break
-        case Viewer.ViewerAction.Borders: bordersToggled(); break
-        case Viewer.ViewerAction.MarkBorder: borderMarkToggled(index, !borderMarked); break
-        case Viewer.ViewerAction.Hide: zen = !zen; break
-        case Viewer.ViewerAction.PlayPause: togglePlay(); break
-        case Viewer.ViewerAction.Mute: muted = !muted; break
+        case Viewer.ViewerAction.Close:
+            close();
+            break;
+        case Viewer.ViewerAction.StepBack:
+            step(-1);
+            break;
+        case Viewer.ViewerAction.StepForward:
+            step(1);
+            break;
+        case Viewer.ViewerAction.Rate:
+            rate(arg);
+            break;
+        case Viewer.ViewerAction.TurnForward:
+            turn(1);
+            break;
+        case Viewer.ViewerAction.TurnBack:
+            turn(-1);
+            break;
+        case Viewer.ViewerAction.RealSize:
+            settings.realSize = !settings.realSize;
+            resetView();
+            break;
+        case Viewer.ViewerAction.ZoomIn:
+            setZoom(zoom * 1.25, width / 2, height / 2);
+            break;
+        case Viewer.ViewerAction.ZoomOut:
+            setZoom(zoom / 1.25, width / 2, height / 2);
+            break;
+        case Viewer.ViewerAction.Loupe:
+            loupe = !loupe;
+            break;
+        case Viewer.ViewerAction.Borders:
+            bordersToggled();
+            break;
+        case Viewer.ViewerAction.MarkBorder:
+            borderMarkToggled(index, !borderMarked);
+            break;
+        case Viewer.ViewerAction.Hide:
+            zen = !zen;
+            break;
+        case Viewer.ViewerAction.PlayPause:
+            togglePlay();
+            break;
+        case Viewer.ViewerAction.Mute:
+            muted = !muted;
+            break;
         }
-        e.accepted = true
+        e.accepted = true;
     }
 
     // What it shows: made at the first show (`opened`), then kept.
@@ -302,12 +351,12 @@ Rectangle {
                 WheelHandler {
                     id: wheelStep
                     property real notches: 0
-                    onWheel: (ev) => {
-                        notches += ev.angleDelta.y / 120
-                        const n = Math.trunc(notches)
+                    onWheel: ev => {
+                        notches += ev.angleDelta.y / 120;
+                        const n = Math.trunc(notches);
                         if (n !== 0) {
-                            notches -= n
-                            viewer.step(-n)
+                            notches -= n;
+                            viewer.step(-n);
                         }
                     }
                 }
@@ -315,7 +364,8 @@ Rectangle {
                     id: pinch
                     target: null
                     property real start: 1
-                    onActiveChanged: if (active) start = viewer.zoom
+                    onActiveChanged: if (active)
+                        start = viewer.zoom
                     onActiveScaleChanged: viewer.setZoom(start * activeScale, centroid.position.x, centroid.position.y)
                 }
                 // Mouse: drag pans a zoomed image.
@@ -324,7 +374,8 @@ Rectangle {
                     target: null
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.Stylus
                     property point start
-                    onActiveChanged: if (active) start = Qt.point(viewer.ox, viewer.oy)
+                    onActiveChanged: if (active)
+                        start = Qt.point(viewer.ox, viewer.oy)
                     onActiveTranslationChanged: if (active && viewer.zoomed)
                         viewer.pan(start.x + activeTranslation.x, start.y + activeTranslation.y)
                 }
@@ -336,28 +387,30 @@ Rectangle {
                     property bool panning
                     onActiveChanged: {
                         if (active) {
-                            start = Qt.point(viewer.ox, viewer.oy)
-                            panning = viewer.zoomed
-                            return
+                            start = Qt.point(viewer.ox, viewer.oy);
+                            panning = viewer.zoomed;
+                            return;
                         }
                         if (panning)
-                            return
-                        const t = activeTranslation
-                        if (Math.abs(t.x) > Math.abs(t.y) && Math.abs(t.x) > 60) viewer.step(t.x < 0 ? 1 : -1)
-                        else if (Math.abs(t.y) > 60) viewer.rate(t.y < 0 ? 4 : 1)
+                            return;
+                        const t = activeTranslation;
+                        if (Math.abs(t.x) > Math.abs(t.y) && Math.abs(t.x) > 60)
+                            viewer.step(t.x < 0 ? 1 : -1);
+                        else if (Math.abs(t.y) > 60)
+                            viewer.rate(t.y < 0 ? 4 : 1);
                     }
                     onActiveTranslationChanged: if (active && panning) {
-                        viewer.pan(start.x + activeTranslation.x, start.y + activeTranslation.y)
+                        viewer.pan(start.x + activeTranslation.x, start.y + activeTranslation.y);
                     }
                 }
                 // A tap shows or hides the overlays (zen); a double tap toggles fit ↔ 1:1.
                 TapHandler {
                     onTapped: (ev, button) => {
                         if (tapCount === 2) {
-                            zenTimer.stop()
-                            viewer.toggleOneToOne(point.position.x, point.position.y)
+                            zenTimer.stop();
+                            viewer.toggleOneToOne(point.position.x, point.position.y);
                         } else {
-                            zenTimer.restart()
+                            zenTimer.restart();
                         }
                     }
                 }
@@ -383,12 +436,11 @@ Rectangle {
                     // The part on screen, as the view moves: Rust works it out and renders it; "" when none shows.
                     onRegionDue: {
                         if (!viewer.visible || !viewportItem.zoomed || viewportItem.pixels)
-                            return
-                        const source = viewportItem.regionSource(viewer.key)
+                            return;
+                        const source = viewportItem.regionSource(viewer.key);
                         if (source === "")
-                            return
-                        layers.showRegion(source, Qt.rect(viewportItem.regionX(), viewportItem.regionY(),
-                                                          viewportItem.regionW(), viewportItem.regionH()))
+                            return;
+                        layers.showRegion(source, Qt.rect(viewportItem.regionX(), viewportItem.regionY(), viewportItem.regionW(), viewportItem.regionH()));
                     }
                 }
 
@@ -425,10 +477,10 @@ Rectangle {
                         barHeight: hud.barHeight
                         onFrameDrawn: viewer.videoStarted = true
                         onSourceSwitched: viewer.videoStarted = false
-                        onPlayerFailed: (text) => viewer.playerError = text
+                        onPlayerFailed: text => viewer.playerError = text
                         onPlayAsked: viewer.togglePlay()
                         onMuteAsked: viewer.muted = !viewer.muted
-                        onVolumeAsked: (value) => viewer.volume = value
+                        onVolumeAsked: value => viewer.volume = value
                     }
                 }
 
@@ -451,8 +503,7 @@ Rectangle {
                     // The cursor's place in the image, as fractions.
                     readonly property real u: (hover.point.position.x - x) / Math.max(1, width)
                     readonly property real v: (hover.point.position.y - y) / Math.max(1, height)
-                    readonly property bool peek: hover.hovered && u >= 0 && u <= 1 && v >= 0 && v <= 1
-                        && !(u >= kept.x && u < kept.x + kept.width && v >= kept.y && v < kept.y + kept.height)
+                    readonly property bool peek: hover.hovered && u >= 0 && u <= 1 && v >= 0 && v <= 1 && !(u >= kept.x && u < kept.x + kept.width && v >= kept.y && v < kept.y + kept.height)
                     visible: viewer.showBorders && viewer.hasBorders && layers.fitStatus === Image.Ready && !peek
                     x: viewportItem.zoomed ? viewportItem.ox : layers.fitImage.x
                     y: viewportItem.zoomed ? viewportItem.oy : layers.fitImage.y
@@ -466,7 +517,9 @@ Rectangle {
                     marked: viewer.borderMarked
                 }
 
-                HoverHandler { id: hover }
+                HoverHandler {
+                    id: hover
+                }
 
                 // Loupe: the full-resolution image at 10× (nearest neighbour), centred on the point under the cursor.
                 Loupe {
@@ -504,9 +557,9 @@ Rectangle {
                     settings: viewer.settings
                     viewport: viewportItem
                     onCloseAsked: viewer.close()
-                    onRateAsked: (r) => viewer.rate(r)
-                    onTurnAsked: (d) => viewer.turn(d)
-                    onBorderMarkAsked: (marked) => viewer.borderMarkToggled(viewer.index, marked)
+                    onRateAsked: r => viewer.rate(r)
+                    onTurnAsked: d => viewer.turn(d)
+                    onBorderMarkAsked: marked => viewer.borderMarkToggled(viewer.index, marked)
                     onFindSimilarAsked: viewer.findSimilar(viewer.fileId)
                 }
 
@@ -518,9 +571,15 @@ Rectangle {
                 // What the root asks of it.
                 Connections {
                     target: viewer
-                    function onRated(i: int, r: int) { ratingPopup.show(r) }
-                    function onViewMoved() { layers.restartRegion() }
-                    function onViewReset() { layers.dropRegion() }
+                    function onRated(i: int, r: int) {
+                        ratingPopup.show(r);
+                    }
+                    function onViewMoved() {
+                        layers.restartRegion();
+                    }
+                    function onViewReset() {
+                        layers.dropRegion();
+                    }
                 }
             }
         }

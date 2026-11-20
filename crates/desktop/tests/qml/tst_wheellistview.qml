@@ -32,44 +32,44 @@ TestCase {
 
     // The distance one notch moves, in pixels: the system's wheel lines, each wheelLineHeight.
     function notch(list) {
-        return Application.styleHints.wheelScrollLines * list.wheelLineHeight
+        return Application.styleHints.wheelScrollLines * list.wheelLineHeight;
     }
 
     // One notch as QWheelEvent reports it: a negative vertical angle delta (120 units) scrolls down.
     function wheelNotch(list) {
-        list.wheelBy(-120, 0, Qt.NoScrollPhase)
+        list.wheelBy(-120, 0, Qt.NoScrollPhase);
     }
 
     function test_a_notch_moves_the_system_lines() {
-        const list = createTemporaryObject(listC, tc)
-        verify(list !== null)
-        wait(20)
-        compare(list.contentY, 0)
-        wheelNotch(list)
-        wait(1000)
-        fuzzyCompare(list.contentY, notch(list), 1)
+        const list = createTemporaryObject(listC, tc);
+        verify(list !== null);
+        wait(20);
+        compare(list.contentY, 0);
+        wheelNotch(list);
+        wait(1000);
+        fuzzyCompare(list.contentY, notch(list), 1);
     }
 
     function test_a_burst_of_notches_travels_all_of_them() {
-        const list = createTemporaryObject(listC, tc)
-        verify(list !== null)
-        wait(20)
+        const list = createTemporaryObject(listC, tc);
+        verify(list !== null);
+        wait(20);
         for (let i = 0; i < 10; i++)
-            wheelNotch(list)
-        wait(2000)
-        fuzzyCompare(list.contentY, 10 * notch(list), 2)
+            wheelNotch(list);
+        wait(2000);
+        fuzzyCompare(list.contentY, 10 * notch(list), 2);
     }
 
     // 400 notches are 400 × 72 px, far past the 9800 px of this list: the burst must stop at the end, not beyond it.
     function test_the_view_stops_at_its_end() {
-        const list = createTemporaryObject(listC, tc)
-        verify(list !== null)
-        wait(20)
+        const list = createTemporaryObject(listC, tc);
+        verify(list !== null);
+        wait(20);
         for (let i = 0; i < 400; i++)
-            wheelNotch(list)
-        wait(3000)
-        const bottom = list.contentHeight + list.bottomMargin - list.height
-        verify(list.contentY <= bottom + 1, "scrolled past the last row: " + list.contentY + " > " + bottom)
-        fuzzyCompare(list.contentY, bottom, 1)
+            wheelNotch(list);
+        wait(3000);
+        const bottom = list.contentHeight + list.bottomMargin - list.height;
+        verify(list.contentY <= bottom + 1, "scrolled past the last row: " + list.contentY + " > " + bottom);
+        fuzzyCompare(list.contentY, bottom, 1);
     }
 }

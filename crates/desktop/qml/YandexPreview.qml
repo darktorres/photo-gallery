@@ -11,13 +11,18 @@ import QtQuick.Window
 import pg.gallery
 
 Rectangle {
+    id: preview
     Words {
         id: words
     }
-    id: preview
 
     // The panel's actions, as the codes keymap.panelAction returns (the Rust side lists them in the same order).
-    enum PanelAction { Close, StepBack, StepForward, Pick }
+    enum PanelAction {
+        Close,
+        StepBack,
+        StepForward,
+        Pick
+    }
 
     // The result shown (its index in the search), -1 when none.
     property int item: -1
@@ -39,7 +44,7 @@ Rectangle {
     // The user asked to pick or unpick an item (`-1` for none).
     signal pickRequested(int item)
     // Back to the list.
-    signal closed()
+    signal closed
 
     readonly property int total: preview.otherCount + preview.similarCount
 
@@ -49,11 +54,11 @@ Rectangle {
     }
 
     function open(i: int) {
-        preview.item = i
-        preview.actual = false
-        preview.wheelNotches = 0
-        preview.visible = true
-        preview.forceActiveFocus()
+        preview.item = i;
+        preview.actual = false;
+        preview.wheelNotches = 0;
+        preview.visible = true;
+        preview.forceActiveFocus();
     }
 
     // The wheel's fraction of a notch that has not made one yet (a touchpad's small deltas add up).
@@ -62,22 +67,22 @@ Rectangle {
     // The whole notches a wheel movement of `angleY` makes, with the rest kept for the next movement. Up is negative
     // (the previous result), as in the viewer.
     function notchesFor(angleY: real): int {
-        preview.wheelNotches += angleY / 120
-        const n = Math.trunc(preview.wheelNotches)
-        preview.wheelNotches -= n
-        return n
+        preview.wheelNotches += angleY / 120;
+        const n = Math.trunc(preview.wheelNotches);
+        preview.wheelNotches -= n;
+        return n;
     }
 
     function close() {
-        preview.visible = false
-        preview.item = -1
-        preview.closed()
+        preview.visible = false;
+        preview.item = -1;
+        preview.closed();
     }
 
     function step(by: int) {
         if (preview.total > 0) {
-            preview.item = ((preview.item + by) % preview.total + preview.total) % preview.total
-            preview.actual = false
+            preview.item = ((preview.item + by) % preview.total + preview.total) % preview.total;
+            preview.actual = false;
         }
     }
 
@@ -87,8 +92,8 @@ Rectangle {
         id: centre
         interval: 0
         onTriggered: {
-            previewView.contentX = Math.max(0, (previewView.contentWidth - previewView.width) / 2)
-            previewView.contentY = Math.max(0, (previewView.contentHeight - previewView.height) / 2)
+            previewView.contentX = Math.max(0, (previewView.contentWidth - previewView.width) / 2);
+            previewView.contentY = Math.max(0, (previewView.contentHeight - previewView.height) / 2);
         }
     }
     onActualChanged: centre.restart()
@@ -96,22 +101,30 @@ Rectangle {
     anchors.fill: parent
     visible: false
     color: Theme.previewFill
-    Keys.onPressed: (e) => {
-        const action = keymap.panelAction(e.key)
+    Keys.onPressed: e => {
+        const action = keymap.panelAction(e.key);
         if (action < 0)
-            return
+            return;
         switch (action) {
-        case YandexPreview.PanelAction.Close: preview.close(); break
-        case YandexPreview.PanelAction.StepBack: preview.step(-1); break
-        case YandexPreview.PanelAction.StepForward: preview.step(1); break
-        case YandexPreview.PanelAction.Pick: preview.pickRequested(preview.item); break
+        case YandexPreview.PanelAction.Close:
+            preview.close();
+            break;
+        case YandexPreview.PanelAction.StepBack:
+            preview.step(-1);
+            break;
+        case YandexPreview.PanelAction.StepForward:
+            preview.step(1);
+            break;
+        case YandexPreview.PanelAction.Pick:
+            preview.pickRequested(preview.item);
+            break;
         }
-        e.accepted = true
+        e.accepted = true;
     }
     // Nothing reaches the list below.
     MouseArea {
         anchors.fill: parent
-        onWheel: (wheel) => wheel.accepted = true
+        onWheel: wheel => wheel.accepted = true
     }
 
     RowLayout {
@@ -124,23 +137,18 @@ Rectangle {
 
         Label {
             textFormat: Text.PlainText
-            text: preview.item < 0 ? ""
-                : preview.item < preview.otherCount
-                    ? words.phrase("ui-other-size", 0, ("" + (preview.item + 1)), ("" + (preview.otherCount)))
-                    : words.phrase("ui-similar-image", 0, ("" + (preview.item - preview.otherCount + 1)), ("" + (preview.similarCount)))
+            text: preview.item < 0 ? "" : preview.item < preview.otherCount ? words.phrase("ui-other-size", 0, ("" + (preview.item + 1)), ("" + (preview.otherCount))) : words.phrase("ui-similar-image", 0, ("" + (preview.item - preview.otherCount + 1)), ("" + (preview.similarCount)))
             font.bold: true
         }
         // The file's own size once it is loaded; Yandex's until then.
         Label {
             textFormat: Text.PlainText
-            text: full.status === Image.Ready ? full.sourceSize.width + "×" + full.sourceSize.height
-                : preview.sizeText
+            text: full.status === Image.Ready ? full.sourceSize.width + "×" + full.sourceSize.height : preview.sizeText
             color: Theme.bodyText
         }
         Label {
             textFormat: Text.PlainText
-            text: full.status === Image.Loading ? words.phrase("ui-loading-percent", 0, ("" + Math.round(full.progress * 100)), "")
-                : full.status === Image.Error ? words.text("ui-cannot-decode") : ""
+            text: full.status === Image.Loading ? words.phrase("ui-loading-percent", 0, ("" + Math.round(full.progress * 100)), "") : full.status === Image.Error ? words.text("ui-cannot-decode") : ""
             color: full.status === Image.Error ? Theme.errorText : Theme.captionText
             Layout.fillWidth: true
             elide: Text.ElideRight
@@ -158,7 +166,11 @@ Rectangle {
             focusPolicy: Qt.NoFocus
             onClicked: preview.actual = !preview.actual
         }
-        Button { text: words.text("ui-back"); focusPolicy: Qt.NoFocus; onClicked: preview.close() }
+        Button {
+            text: words.text("ui-back")
+            focusPolicy: Qt.NoFocus
+            onClicked: preview.close()
+        }
     }
 
     Flickable {
@@ -178,9 +190,10 @@ Rectangle {
         // the wheel before the Flickable scrolls (blocking by default); the content is at least the view, so it covers the
         // whole picture area in fit mode too.
         WheelHandler {
-            onWheel: (ev) => {
-                const n = preview.notchesFor(ev.angleDelta.y)
-                if (n !== 0) preview.step(-n)
+            onWheel: ev => {
+                const n = preview.notchesFor(ev.angleDelta.y);
+                if (n !== 0)
+                    preview.step(-n);
             }
         }
 
@@ -189,8 +202,7 @@ Rectangle {
             // Its size in logical pixels at 1:1, and the scale that fits it to the view, up or down.
             readonly property real naturalWidth: sourceSize.width / preview.dpr
             readonly property real naturalHeight: sourceSize.height / preview.dpr
-            readonly property real fit: naturalWidth > 0
-                ? Math.min(previewView.width / naturalWidth, previewView.height / naturalHeight) : 1
+            readonly property real fit: naturalWidth > 0 ? Math.min(previewView.width / naturalWidth, previewView.height / naturalHeight) : 1
             // 1:1 differs from the fit: it is worth a button and a click.
             readonly property bool zoomable: Math.abs(fit - 1) > 0.01
             readonly property real zoom: preview.actual ? 1 : fit
@@ -207,7 +219,8 @@ Rectangle {
             y: Math.max(0, (previewView.height - height) / 2)
 
             TapHandler {
-                onTapped: if (full.zoomable) preview.actual = !preview.actual
+                onTapped: if (full.zoomable)
+                    preview.actual = !preview.actual
             }
         }
     }

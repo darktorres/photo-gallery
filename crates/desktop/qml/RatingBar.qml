@@ -9,10 +9,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 Rectangle {
+    id: bar
     Words {
         id: words
     }
-    id: bar
 
     required property bool still
     required property bool hasBorders
@@ -22,7 +22,7 @@ Rectangle {
     signal rateAsked(int r)
     signal turnAsked(int d)
     signal borderMarkAsked(bool marked)
-    signal findSimilarAsked()
+    signal findSimilarAsked
 
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
@@ -53,9 +53,7 @@ Rectangle {
             font.pixelSize: 22
             font.strikeout: bar.borderMarked
             ToolTip.visible: hovered
-            ToolTip.text: bar.borderMarked
-                ? words.text("ui-unmark-not-border")
-                : words.text("ui-not-a-border")
+            ToolTip.text: bar.borderMarked ? words.text("ui-unmark-not-border") : words.text("ui-not-a-border")
             onClicked: bar.borderMarkAsked(!bar.borderMarked)
         }
         ToolButton {

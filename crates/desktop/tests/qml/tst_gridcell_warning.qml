@@ -34,7 +34,9 @@ TestCase {
     }
 
     function test_a_failed_thumbnail_shows_the_warning() {
-        const cell = createTemporaryObject(cellC, tc, { itemThumbUrl: "image://thumb/broken/100" });
+        const cell = createTemporaryObject(cellC, tc, {
+            itemThumbUrl: "image://thumb/broken/100"
+        });
         verify(cell !== null);
         const thumb = findChild(cell, "thumb");
         tryCompare(thumb, "status", Image.Error);
@@ -42,7 +44,9 @@ TestCase {
     }
 
     function test_a_loaded_thumbnail_shows_no_warning() {
-        const cell = createTemporaryObject(cellC, tc, { itemThumbUrl: "image://thumb/warning/100" });
+        const cell = createTemporaryObject(cellC, tc, {
+            itemThumbUrl: "image://thumb/warning/100"
+        });
         verify(cell !== null);
         const thumb = findChild(cell, "thumb");
         tryCompare(thumb, "status", Image.Ready);

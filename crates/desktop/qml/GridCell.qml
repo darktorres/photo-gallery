@@ -37,8 +37,7 @@ Item {
     readonly property int rating: cell.itemRating
     readonly property string badge: cell.itemBadge
     // What is left without the borders (an empty rectangle: none found).
-    readonly property rect content: Qt.rect(cell.itemContentX, cell.itemContentY, cell.itemContentWidth,
-                                            cell.itemContentHeight)
+    readonly property rect content: Qt.rect(cell.itemContentX, cell.itemContentY, cell.itemContentWidth, cell.itemContentHeight)
     readonly property bool bordersMarked: cell.itemBordersMarked
     // The image's aspect as shown; the tile's may be narrower (clamped panoramas), and the thumbnail is then cropped to it.
     readonly property real imageAspect: cell.itemImageAspect
@@ -72,7 +71,12 @@ Item {
         mipmap: true
         // The fade in, from 0 to 1 once the thumbnail is ready.
         property real fade: status === Image.Ready ? 1 : 0
-        Behavior on fade { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        Behavior on fade {
+            NumberAnimation {
+                duration: 120
+                easing.type: Easing.OutCubic
+            }
+        }
         // The fade's last stretch shows as 1. Qt's software renderer (offscreen runs and the screenshots) ignores an
         // opacity within 1e-5 of the one it has (qFuzzyCompare in QSGSoftwareRenderableNode::setOpacity, Qt 6.12): a
         // frame of the fade at 0.999996 kept it there, under QML's final 1, and the thumbnail was drawn at alpha 254
@@ -148,7 +152,10 @@ Item {
         padding: 1
         leftPadding: 4
         rightPadding: 4
-        background: Rectangle { color: "#a0000000"; radius: 3 }
+        background: Rectangle {
+            color: "#a0000000"
+            radius: 3
+        }
     }
     Text {
         textFormat: Text.PlainText
@@ -175,7 +182,10 @@ Item {
         padding: 2
         leftPadding: 4
         rightPadding: 4
-        background: Rectangle { color: "#a0000000"; radius: 3 }
+        background: Rectangle {
+            color: "#a0000000"
+            radius: 3
+        }
     }
     MouseArea {
         anchors.fill: parent

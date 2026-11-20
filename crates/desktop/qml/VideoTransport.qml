@@ -21,8 +21,8 @@ Rectangle {
     required property bool muted
     required property real volume
 
-    signal playAsked()
-    signal muteAsked()
+    signal playAsked
+    signal muteAsked
     signal volumeAsked(real value)
     // A position dragged to (ms).
     signal seekAsked(real ms)
@@ -33,7 +33,7 @@ Rectangle {
 
     // A playback position: m:ss, or h:mm:ss from an hour.
     function time(ms: real): string {
-        return words.timecode(Math.floor(ms / 1000))
+        return words.timecode(Math.floor(ms / 1000));
     }
 
     visible: showTransport
@@ -58,7 +58,11 @@ Rectangle {
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-play-pause")
         }
-        Label { textFormat: Text.PlainText; text: transport.time(transport.position); color: "#cccccc" }
+        Label {
+            textFormat: Text.PlainText
+            text: transport.time(transport.position)
+            color: "#cccccc"
+        }
         Slider {
             id: seek
             Layout.fillWidth: true
@@ -72,7 +76,11 @@ Rectangle {
                 value: transport.position
             }
         }
-        Label { textFormat: Text.PlainText; text: transport.time(transport.duration); color: "#cccccc" }
+        Label {
+            textFormat: Text.PlainText
+            text: transport.time(transport.duration)
+            color: "#cccccc"
+        }
         ToolButton {
             text: transport.muted || transport.volume === 0 ? "🔇" : "🔊"
             font.pixelSize: 16

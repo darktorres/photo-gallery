@@ -28,58 +28,70 @@ TestCase {
 
     // The dialog, for `folder` (the path the panel shows), open and with its focus where it opens.
     function shown(folder) {
-        const d = createTemporaryObject(dialogC, tc)
-        verify(d !== null)
-        d.folder = folder
-        d.open()
-        tryVerify(() => d.opened)
-        return d
+        const d = createTemporaryObject(dialogC, tc);
+        verify(d !== null);
+        d.folder = folder;
+        d.open();
+        tryVerify(() => d.opened);
+        return d;
     }
 
     function test_the_folder_is_named() {
-        const d = shown("E:\\Archive")
-        compare(d.folderText, "E:\\Archive")
+        const d = shown("E:\\Archive");
+        compare(d.folderText, "E:\\Archive");
     }
 
     function test_cancel_has_the_focus_when_it_opens() {
-        const d = shown("E:\\Archive")
-        tryVerify(() => d.cancelButton.activeFocus)
-        verify(!d.discardButton.activeFocus)
+        const d = shown("E:\\Archive");
+        tryVerify(() => d.cancelButton.activeFocus);
+        verify(!d.discardButton.activeFocus);
     }
 
     function test_enter_does_not_confirm() {
-        const d = shown("E:\\Archive")
-        const confirmed = createTemporaryObject(spyC, tc, { target: d, signalName: "confirmed" })
-        tryVerify(() => d.cancelButton.activeFocus)
-        keyClick(Qt.Key_Return)
-        keyClick(Qt.Key_Enter)
-        compare(confirmed.count, 0)
+        const d = shown("E:\\Archive");
+        const confirmed = createTemporaryObject(spyC, tc, {
+            target: d,
+            signalName: "confirmed"
+        });
+        tryVerify(() => d.cancelButton.activeFocus);
+        keyClick(Qt.Key_Return);
+        keyClick(Qt.Key_Enter);
+        compare(confirmed.count, 0);
     }
 
     function test_cancel_closes_it_without_a_choice() {
-        const d = shown("E:\\Archive")
-        const confirmed = createTemporaryObject(spyC, tc, { target: d, signalName: "confirmed" })
-        waitForRendering(d.cancelButton)
-        mouseClick(d.cancelButton)
-        tryVerify(() => !d.opened)
-        compare(confirmed.count, 0)
+        const d = shown("E:\\Archive");
+        const confirmed = createTemporaryObject(spyC, tc, {
+            target: d,
+            signalName: "confirmed"
+        });
+        waitForRendering(d.cancelButton);
+        mouseClick(d.cancelButton);
+        tryVerify(() => !d.opened);
+        compare(confirmed.count, 0);
     }
 
     function test_escape_closes_it_without_a_choice() {
-        const d = shown("E:\\Archive")
-        const confirmed = createTemporaryObject(spyC, tc, { target: d, signalName: "confirmed" })
-        tryVerify(() => d.cancelButton.activeFocus)
-        keyClick(Qt.Key_Escape)
-        tryVerify(() => !d.opened)
-        compare(confirmed.count, 0)
+        const d = shown("E:\\Archive");
+        const confirmed = createTemporaryObject(spyC, tc, {
+            target: d,
+            signalName: "confirmed"
+        });
+        tryVerify(() => d.cancelButton.activeFocus);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !d.opened);
+        compare(confirmed.count, 0);
     }
 
     function test_discard_confirms_exactly_once() {
-        const d = shown("E:\\Archive")
-        const confirmed = createTemporaryObject(spyC, tc, { target: d, signalName: "confirmed" })
-        waitForRendering(d.discardButton)
-        mouseClick(d.discardButton)
-        tryVerify(() => !d.opened)
-        compare(confirmed.count, 1)
+        const d = shown("E:\\Archive");
+        const confirmed = createTemporaryObject(spyC, tc, {
+            target: d,
+            signalName: "confirmed"
+        });
+        waitForRendering(d.discardButton);
+        mouseClick(d.discardButton);
+        tryVerify(() => !d.opened);
+        compare(confirmed.count, 1);
     }
 }

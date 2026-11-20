@@ -12,7 +12,11 @@ Item {
     id: shortcuts
 
     // The shortcuts' codes, in the order of pg_client's Global (a Rust test, keymap.rs, checks the order).
-    enum GlobalAction { Inbox, Log, DevMode }
+    enum GlobalAction {
+        Inbox,
+        Log,
+        DevMode
+    }
 
     // A shortcut fired: its GlobalAction code.
     signal activated(int code)

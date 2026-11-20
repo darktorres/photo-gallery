@@ -7,17 +7,23 @@ import QtQuick
 QtObject {
     readonly property var symbols: ["☆", "❌", "❔", "🔨", "✔️", "⭐"]
 
-    function ratingSymbol(rating) { return symbols[Math.min(Math.max(rating, 0), 5)] }
+    function ratingSymbol(rating) {
+        return symbols[Math.min(Math.max(rating, 0), 5)];
+    }
 
-    function text(id) { return id }
+    function text(id) {
+        return id;
+    }
 
-    function phrase(id, count, value, second) { return id + (value ? ":" + value : "") + (count ? " " + count : "") }
+    function phrase(id, count, value, second) {
+        return id + (value ? ":" + value : "") + (count ? " " + count : "");
+    }
 
     function timecode(seconds) {
-        const h = Math.floor(seconds / 3600)
-        const m = Math.floor(seconds / 60) % 60
-        const s = seconds % 60
-        const pad = (n) => (n < 10 ? "0" : "") + n
-        return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s)
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor(seconds / 60) % 60;
+        const s = seconds % 60;
+        const pad = n => (n < 10 ? "0" : "") + n;
+        return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
     }
 }

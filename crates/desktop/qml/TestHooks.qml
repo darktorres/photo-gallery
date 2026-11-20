@@ -41,20 +41,20 @@ Item {
     // Done on the window by Main.
     signal selectRequested(int index)
     signal borderMarkToggled(int index)
-    signal bordersRequested()
-    signal viewsMenuRequested()
-    signal libraryPanelRequested()
-    signal saveViewDialogRequested()
-    signal similarRequested()
-    signal addFolderRequested()
-    signal saveCropsRequested()
-    signal logPanelRequested()
-    signal inboxPanelRequested()
+    signal bordersRequested
+    signal viewsMenuRequested
+    signal libraryPanelRequested
+    signal saveViewDialogRequested
+    signal similarRequested
+    signal addFolderRequested
+    signal saveCropsRequested
+    signal logPanelRequested
+    signal inboxPanelRequested
     // The inbox's entry to open, by its ledger's code (--inbox-expand).
     signal inboxExpandRequested(string code)
     // The viewer's calls (its functions), made by Main.
     signal viewerShowRequested(int index)
-    signal viewerPlayRequested()
+    signal viewerPlayRequested
     signal viewerSetZoomRequested(real zoom, real px, real py)
     signal viewerTurnRequested(int turns)
     signal viewerRateRequested(int rating)
@@ -63,7 +63,9 @@ Item {
 
     // The test hooks, read by Rust (command_line.rs) and given to this component as typed properties of CommandLine:
     // a "not given" value is -1 for an index, 0 for a zoom or a mascot, empty for a text, false for a flag.
-    CommandLine { id: commandLine }
+    CommandLine {
+        id: commandLine
+    }
 
     // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
     readonly property list<string> viewerKeys: commandLine.viewerKeys
@@ -81,45 +83,69 @@ Item {
 
     // The hooks that run once the first list is shown (Main's startHooks(), before the library job starts).
     function run() {
-        if (commandLine.select >= 0) selectRequested(commandLine.select)
+        if (commandLine.select >= 0)
+            selectRequested(commandLine.select);
         for (let k = 0; k < gridKeys.length; k++) {
-            const c = gridKeys[k]
-            if (c === "L") gridKeyRequested(Qt.Key_Left)
-            else if (c === "R") gridKeyRequested(Qt.Key_Right)
-            else if (c === "U") gridKeyRequested(Qt.Key_Up)
-            else if (c === "D") gridKeyRequested(Qt.Key_Down)
+            const c = gridKeys[k];
+            if (c === "L")
+                gridKeyRequested(Qt.Key_Left);
+            else if (c === "R")
+                gridKeyRequested(Qt.Key_Right);
+            else if (c === "U")
+                gridKeyRequested(Qt.Key_Up);
+            else if (c === "D")
+                gridKeyRequested(Qt.Key_Down);
         }
         if (commandLine.view >= 0) {
-            viewerShowRequested(commandLine.view)
+            viewerShowRequested(commandLine.view);
             for (let k = 0; k < viewerKeys.length; k++) {
-                const c = viewerKeys[k]
-                if (c === "L") viewer.loupe = true
-                else if (c === "B") bordersRequested()
-                else if (c === "N") borderMarkToggled(viewer.index)
-                else if (c === "H") viewer.zen = true
-                else if (c === "K") viewerPlayRequested()
-                else if (c === "+") viewerSetZoomRequested(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2)
-                else if (c === "1") viewerSetZoomRequested(1, viewer.width / 2, viewer.height / 2)
-                else if (c === "<") viewerTurnRequested(-1)
-                else if (c === ">") viewerTurnRequested(1)
-                else if (ratingKeys.indexOf(c) >= 0) viewerRateRequested(ratingKeys.indexOf(c))
+                const c = viewerKeys[k];
+                if (c === "L")
+                    viewer.loupe = true;
+                else if (c === "B")
+                    bordersRequested();
+                else if (c === "N")
+                    borderMarkToggled(viewer.index);
+                else if (c === "H")
+                    viewer.zen = true;
+                else if (c === "K")
+                    viewerPlayRequested();
+                else if (c === "+")
+                    viewerSetZoomRequested(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2);
+                else if (c === "1")
+                    viewerSetZoomRequested(1, viewer.width / 2, viewer.height / 2);
+                else if (c === "<")
+                    viewerTurnRequested(-1);
+                else if (c === ">")
+                    viewerTurnRequested(1);
+                else if (ratingKeys.indexOf(c) >= 0)
+                    viewerRateRequested(ratingKeys.indexOf(c));
             }
             if (commandLine.zoom > 0)
-                viewerSetZoomRequested(commandLine.zoom, viewer.width / 2, viewer.height / 2)
+                viewerSetZoomRequested(commandLine.zoom, viewer.width / 2, viewer.height / 2);
         }
-        if (commandLine.menuViews) viewsMenuRequested()
-        if (commandLine.library) libraryPanelRequested()
-        if (commandLine.saveView) saveViewDialogRequested()
-        if (commandLine.findSimilar) similarRequested()
-        if (commandLine.log) logPanelRequested()
+        if (commandLine.menuViews)
+            viewsMenuRequested();
+        if (commandLine.library)
+            libraryPanelRequested();
+        if (commandLine.saveView)
+            saveViewDialogRequested();
+        if (commandLine.findSimilar)
+            similarRequested();
+        if (commandLine.log)
+            logPanelRequested();
         // Before the inbox opens, so it opens at the entry.
-        if (commandLine.inboxExpand !== "") inboxExpandRequested(commandLine.inboxExpand)
-        if (commandLine.inbox) inboxPanelRequested()
+        if (commandLine.inboxExpand !== "")
+            inboxExpandRequested(commandLine.inboxExpand);
+        if (commandLine.inbox)
+            inboxPanelRequested();
     }
 
     // The hooks that run after the library job has started (Main's startHooks()).
     function runAfterLibraryStart() {
-        if (commandLine.addFolder) addFolderRequested()
-        if (commandLine.saveCrops) saveCropsRequested()
+        if (commandLine.addFolder)
+            addFolderRequested();
+        if (commandLine.saveCrops)
+            saveCropsRequested();
     }
 }

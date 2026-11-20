@@ -16,10 +16,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 ModalOverlay {
+    id: panel
     Words {
         id: words
     }
-    id: panel
     // The records (Main's LogModel).
     required property var records
     // The row clicked: its message and detail are shown below the list (-1: none), and its number (`seq`).
@@ -31,20 +31,20 @@ ModalOverlay {
 
     // The user scrolled (a drag, a flick, the wheel, the scroll bar): following again only at the end.
     function scrolled() {
-        following = list.atYEnd
+        following = list.atYEnd;
     }
 
     // A key that moves the current row (the list's own keyboard navigation) is the user scrolling, as a wheel or a scroll
     // bar is. The view moves with the row, but a keyboard move from rest ends with no movementEnded (Qt's setContentY
     // sets no moving flag), so the flag is read from the row: following only while it is the newest one.
     function keyMoved() {
-        following = list.currentIndex === list.count - 1
+        following = list.currentIndex === list.count - 1;
     }
 
     // The keys that move the row, read a turn later: the view has moved to the row by then.
     function keyPressed(key: int) {
         if ([Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End].includes(key))
-            keyMovedLater.restart()
+            keyMovedLater.restart();
     }
 
     Timer {
@@ -54,15 +54,15 @@ ModalOverlay {
     }
 
     function select(row: int, seq: real, text: string) {
-        selected = row
-        selectedSeq = seq
-        selectedText = text
+        selected = row;
+        selectedSeq = seq;
+        selectedText = text;
     }
 
     function unselect() {
-        selected = -1
-        selectedSeq = -1
-        selectedText = ""
+        selected = -1;
+        selectedSeq = -1;
+        selectedText = "";
     }
 
     // The rows move under the selection: records appended after it, the oldest trimmed before it (or with it).
@@ -70,18 +70,18 @@ ModalOverlay {
         target: panel.records
         function onRowsInserted(parent: var, first: int, last: int) {
             if (panel.selected >= first)
-                panel.selected += last - first + 1
+                panel.selected += last - first + 1;
         }
         function onRowsRemoved(parent: var, first: int, last: int) {
             if (panel.selected < 0)
-                return
+                return;
             if (panel.selected > last)
-                panel.selected -= last - first + 1
+                panel.selected -= last - first + 1;
             else if (panel.selected >= first)
-                panel.unselect()
+                panel.unselect();
         }
         function onModelReset() {
-            panel.unselect()
+            panel.unselect();
         }
     }
 
@@ -92,11 +92,17 @@ ModalOverlay {
         padding: 16
         // A control is a focus scope too: the focus passes through it to the list.
         focus: true
-        MouseArea { anchors.fill: parent }
+        MouseArea {
+            anchors.fill: parent
+        }
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
-            Label { text: words.text("ui-log-title"); font.bold: true; font.pixelSize: 16 }
+            Label {
+                text: words.text("ui-log-title")
+                font.bold: true
+                font.pixelSize: 16
+            }
             WheelListView {
                 id: list
                 objectName: "logList"
@@ -109,13 +115,15 @@ ModalOverlay {
                 activeFocusOnTab: true
                 KeyNavigation.backtab: closeButton
                 // The newest record is at the bottom, and the view stays there as records come while it follows them.
-                onCountChanged: if (panel.following) positionViewAtEnd()
+                onCountChanged: if (panel.following)
+                    positionViewAtEnd()
                 onMovementEnded: panel.scrolled()
                 onWheelScrolled: panel.scrolled()
                 // The keys that move the current row (read a turn later, see `keyPressed`).
-                Keys.onPressed: (event) => panel.keyPressed(event.key)
+                Keys.onPressed: event => panel.keyPressed(event.key)
                 ScrollBar.vertical: ScrollBar {
-                    onPressedChanged: if (!pressed) panel.scrolled()
+                    onPressedChanged: if (!pressed)
+                        panel.scrolled()
                 }
                 delegate: Rectangle {
                     id: row
@@ -138,7 +146,12 @@ ModalOverlay {
                         anchors.leftMargin: 6
                         anchors.rightMargin: 6
                         spacing: 10
-                        Label { text: row.time; textFormat: Text.PlainText; color: "#888888"; font.family: "monospace" }
+                        Label {
+                            text: row.time
+                            textFormat: Text.PlainText
+                            color: "#888888"
+                            font.family: "monospace"
+                        }
                         Label {
                             text: row.level === 2 ? "E" : (row.level === 1 ? "W" : "I")
                             textFormat: Text.PlainText
@@ -160,8 +173,7 @@ ModalOverlay {
                         }
                     }
                     TapHandler {
-                        onTapped: panel.select(row.index, row.seq,
-                                               row.detail.length > 0 ? row.message + "\n\n" + row.detail : row.message)
+                        onTapped: panel.select(row.index, row.seq, row.detail.length > 0 ? row.message + "\n\n" + row.detail : row.message)
                     }
                 }
                 Label {
@@ -185,7 +197,9 @@ ModalOverlay {
                 }
             }
             RowLayout {
-                Item { Layout.fillWidth: true }
+                Item {
+                    Layout.fillWidth: true
+                }
                 Button {
                     id: closeButton
                     objectName: "logClose"

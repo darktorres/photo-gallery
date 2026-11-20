@@ -9,7 +9,7 @@ QtObject {
     property int playingFileId: -1
 
     function reset() {
-        playing = false
-        playingFileId = -1
+        playing = false;
+        playingFileId = -1;
     }
 }

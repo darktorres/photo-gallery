@@ -11,9 +11,9 @@ FocusScope {
     // Shown while true.
     property bool open: false
     // Escape, or a click on the backdrop: the owner closes the panel.
-    signal dismissed()
+    signal dismissed
     // Hidden after it was shown: the owner gives the keys back to the page.
-    signal hidden()
+    signal hidden
 
     visible: overlay.open
     // The keys go to the panel when it opens.
@@ -28,6 +28,6 @@ FocusScope {
     MouseArea {
         anchors.fill: parent
         onClicked: overlay.dismissed()
-        onWheel: (wheel) => wheel.accepted = true
+        onWheel: wheel => wheel.accepted = true
     }
 }

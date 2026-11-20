@@ -4,5 +4,14 @@
 import QtQml
 
 QtObject {
-    enum Kind { Inbox, Log, Library, SaveViewDialog, ViewsMenu, FolderPicker, Yandex, YandexPreview }
+    enum Kind {
+        Inbox,
+        Log,
+        Library,
+        SaveViewDialog,
+        ViewsMenu,
+        FolderPicker,
+        Yandex,
+        YandexPreview
+    }
 }

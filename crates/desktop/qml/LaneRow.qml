@@ -10,10 +10,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 RowLayout {
+    id: laneRow
     Words {
         id: words
     }
-    id: laneRow
     required property int index
     // The lane's number (-1 for the crop row, which has no Pause of its own).
     required property int number
@@ -110,10 +110,7 @@ RowLayout {
             flat: true
             // The name carries the drive, so each row's button says which drive it pauses. Literal calls only: the ids of
             // the words are read from the QML's own calls (words.rs).
-            Accessible.name: laneRow.label.length === 0
-                ? (laneRow.paused ? words.text("ui-resume") : words.text("ui-pause"))
-                : (laneRow.paused ? words.phrase("ui-resume-lane", 0, laneRow.label, "")
-                                  : words.phrase("ui-pause-lane", 0, laneRow.label, ""))
+            Accessible.name: laneRow.label.length === 0 ? (laneRow.paused ? words.text("ui-resume") : words.text("ui-pause")) : (laneRow.paused ? words.phrase("ui-resume-lane", 0, laneRow.label, "") : words.phrase("ui-pause-lane", 0, laneRow.label, ""))
             onClicked: laneRow.pauseRequested(!laneRow.paused)
         }
     }

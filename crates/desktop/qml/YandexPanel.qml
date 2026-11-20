@@ -12,12 +12,12 @@ import QtQuick.Layouts
 import pg.gallery
 
 Rectangle {
+    id: panel
     Words {
         id: words
     }
-    id: panel
 
-    signal closed()
+    signal closed
 
     // A result is shown at full size (a modal panel over this one: Main reports it, PanelKind.YandexPreview).
     readonly property bool previewOpen: preview.visible
@@ -29,26 +29,26 @@ Rectangle {
 
     // The viewer's photo: the catalog's file, by its id.
     function show(fileId: int) {
-        openPanel()
-        yandex.searchFile(fileId)
+        openPanel();
+        yandex.searchFile(fileId);
     }
 
     // The command line's photo (`--find-similar`).
     function showCommandLine() {
-        openPanel()
-        yandex.searchCommandLine()
+        openPanel();
+        yandex.searchCommandLine();
     }
 
     function openPanel() {
-        preview.visible = false
-        visible = true
+        preview.visible = false;
+        visible = true;
         // The keys come here (Escape closes), not to the viewer's photo stepping behind.
-        forceActiveFocus()
+        forceActiveFocus();
     }
 
     function close() {
-        visible = false
-        closed()
+        visible = false;
+        closed();
     }
 
     // For the test hook --yandex-preview: show result `item` at full size once the search has its results.
@@ -57,8 +57,8 @@ Rectangle {
         target: yandex
         function onBusyChanged() {
             if (!yandex.busy && panel.previewWhenFound >= 0) {
-                preview.open(panel.previewWhenFound)
-                panel.previewWhenFound = -1
+                preview.open(panel.previewWhenFound);
+                panel.previewWhenFound = -1;
             }
         }
     }
@@ -74,7 +74,11 @@ Rectangle {
 
         visible: count > 0
         spacing: 12
-        Label { textFormat: Text.PlainText; text: header.title + " (" + header.count + ")"; font.bold: true }
+        Label {
+            textFormat: Text.PlainText
+            text: header.title + " (" + header.count + ")"
+            font.bold: true
+        }
         Button {
             text: header.picked === header.count ? words.text("ui-select-none") : words.text("ui-select-all")
             flat: true
@@ -87,25 +91,30 @@ Rectangle {
     color: Theme.panelScrim
     focus: visible
     // The panel's actions, as the codes keymap.panelAction returns (the Rust side lists them in the same order).
-    enum PanelAction { Close, StepBack, StepForward, Pick }
+    enum PanelAction {
+        Close,
+        StepBack,
+        StepForward,
+        Pick
+    }
 
     // The panel's keys: the key map (pg-client's keys) names the action.
     KeyMap {
         id: keymap
     }
 
-    Keys.onPressed: (e) => {
+    Keys.onPressed: e => {
         if (keymap.panelAction(e.key) !== YandexPanel.PanelAction.Close)
-            return
-        close()
-        e.accepted = true
+            return;
+        close();
+        e.accepted = true;
     }
     // Clicks on the dimmed background close it. No click or wheel reaches the viewer below: the results' Flickable
     // passes the wheel on at its ends, and the viewer would step to the next picture (its wheel), so it is not reached.
     MouseArea {
         anchors.fill: parent
         onClicked: panel.close()
-        onWheel: (wheel) => wheel.accepted = true
+        onWheel: wheel => wheel.accepted = true
     }
 
     // The results are its rows, and its state comes across when it changes (the change pump, src/yandex.rs). They are
@@ -130,8 +139,8 @@ Rectangle {
         names: savePicker.names
         here: savePicker.here
         onGoUp: savePicker.up()
-        onOpenRow: (row) => savePicker.enter(row)
-        onChooseRow: (row) => savePicker.choose(row)
+        onOpenRow: row => savePicker.enter(row)
+        onChooseRow: row => savePicker.choose(row)
         onChooseHere: savePicker.chooseHere()
         onCancelled: savePicker.cancel()
     }
@@ -143,7 +152,9 @@ Rectangle {
         height: Math.round(parent.height * 0.9)
         padding: 16
         // Clicks inside the panel don't reach the dimmed background.
-        MouseArea { anchors.fill: parent }
+        MouseArea {
+            anchors.fill: parent
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -152,23 +163,32 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
-                Label { text: words.text("ui-find-similar-yandex"); font.bold: true; font.pixelSize: 16 }
+                Label {
+                    text: words.text("ui-find-similar-yandex")
+                    font.bold: true
+                    font.pixelSize: 16
+                }
                 BusyIndicator {
                     running: yandex.busy
                     visible: running
                     implicitWidth: 28
                     implicitHeight: 28
                 }
-                Item { Layout.fillWidth: true }
+                Item {
+                    Layout.fillWidth: true
+                }
                 Button {
                     text: words.phrase("ui-save-picked", yandex.pickedCount, ("" + (yandex.pickedCount)), "")
                     enabled: yandex.pickedCount > 0 && !yandex.busy
                     onClicked: {
                         // The picker opens in the folder saved into last, or the photo's.
-                        savePicker.pick(2)
+                        savePicker.pick(2);
                     }
                 }
-                Button { text: words.text("ui-close"); onClicked: panel.close() }
+                Button {
+                    text: words.text("ui-close")
+                    onClicked: panel.close()
+                }
             }
 
             // How to see a result at full size, shown while there are results to see.
@@ -219,10 +239,10 @@ Rectangle {
                             ResultTile {
                                 visible: isOther
                                 loadTurn: yandex.thumbTurn
-                                onThumbSettled: (row) => yandex.thumbSettled(row)
-                                onToggled: (chosen) => yandex.togglePick(chosen)
-                                onRangeTo: (chosen) => yandex.pickTo(chosen)
-                                onPreviewRequested: (chosen) => preview.open(chosen)
+                                onThumbSettled: row => yandex.thumbSettled(row)
+                                onToggled: chosen => yandex.togglePick(chosen)
+                                onRangeTo: chosen => yandex.pickTo(chosen)
+                                onPreviewRequested: chosen => preview.open(chosen)
                             }
                         }
                     }
@@ -241,10 +261,10 @@ Rectangle {
                             ResultTile {
                                 visible: !isOther
                                 loadTurn: yandex.thumbTurn
-                                onThumbSettled: (row) => yandex.thumbSettled(row)
-                                onToggled: (chosen) => yandex.togglePick(chosen)
-                                onRangeTo: (chosen) => yandex.pickTo(chosen)
-                                onPreviewRequested: (chosen) => preview.open(chosen)
+                                onThumbSettled: row => yandex.thumbSettled(row)
+                                onToggled: chosen => yandex.togglePick(chosen)
+                                onRangeTo: chosen => yandex.pickTo(chosen)
+                                onPreviewRequested: chosen => preview.open(chosen)
                             }
                         }
                     }
@@ -252,8 +272,7 @@ Rectangle {
                     Label {
                         text: words.text("ui-no-results")
                         color: Theme.hintText
-                        visible: !yandex.busy && yandex.otherCount === 0 && yandex.similarCount === 0
-                            && yandex.status === ""
+                        visible: !yandex.busy && yandex.otherCount === 0 && yandex.similarCount === 0 && yandex.status === ""
                     }
                 }
             }
@@ -271,7 +290,7 @@ Rectangle {
         nextUrl: yandex.previewNextUrl
         sizeText: yandex.previewWidth > 0 ? yandex.previewWidth + "×" + yandex.previewHeight : ""
         picked: yandex.previewPicked
-        onPickRequested: (chosen) => yandex.togglePick(chosen)
+        onPickRequested: chosen => yandex.togglePick(chosen)
         onClosed: panel.forceActiveFocus()
     }
     // The search previews the item the preview is open on, and none while it is closed.
@@ -286,9 +305,10 @@ Rectangle {
         target: yandex
         function onPreviewItemChanged() {
             if (yandex.previewItem < 0) {
-                if (preview.visible) preview.close()
+                if (preview.visible)
+                    preview.close();
             } else if (preview.item !== yandex.previewItem) {
-                preview.item = yandex.previewItem
+                preview.item = yandex.previewItem;
             }
         }
     }

@@ -23,13 +23,13 @@ ListModel {
     function poke() {
     }
     function rowOfKey(key) {
-        return -1
+        return -1;
     }
     function passKey(pass) {
-        return ""
+        return "";
     }
     function passOfCode(code) {
-        return -1
+        return -1;
     }
     function retry(row) {
     }

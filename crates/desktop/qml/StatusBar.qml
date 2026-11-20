@@ -12,10 +12,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 ToolBar {
+    id: bar
     Words {
         id: words
     }
-    id: bar
     // The selection's text (Main's selectionInfo).
     required property string selection
     // The library's write-back status, and whether it failed.
@@ -36,13 +36,13 @@ ToolBar {
     property bool toastHeld: false
 
     // The toast went by itself (an info, after a while).
-    signal toastExpired()
-    signal inboxRequested()
+    signal toastExpired
+    signal inboxRequested
     // A row's Pause was pressed: the lane numbered `number` is to be paused (`paused`) or resumed.
     signal lanePauseRequested(int number, bool paused)
     // A row's failed count was pressed: the ledger `pass` (a LedgerKind code) opens in the inbox.
     signal laneFailedRequested(int pass)
-    signal logRequested()
+    signal logRequested
 
     anchors.left: parent.left
     anchors.right: parent.right
@@ -66,8 +66,8 @@ ToolBar {
                 delegate: LaneRow {
                     id: lane
                     inboxPasses: bar.inboxPasses
-                    onPauseRequested: (paused) => bar.lanePauseRequested(lane.number, paused)
-                    onFailedRequested: (pass) => bar.laneFailedRequested(pass)
+                    onPauseRequested: paused => bar.lanePauseRequested(lane.number, paused)
+                    onFailedRequested: pass => bar.laneFailedRequested(pass)
                 }
             }
         }
@@ -102,7 +102,9 @@ ToolBar {
                 color: bar.toastLevel > 0 ? Theme.statusWarning : Theme.statusText
                 elide: Text.ElideMiddle
                 Layout.maximumWidth: 500
-                TapHandler { onTapped: bar.inboxRequested() }
+                TapHandler {
+                    onTapped: bar.inboxRequested()
+                }
             }
             Timer {
                 objectName: "toastTimer"

@@ -17,7 +17,7 @@ Image {
 
     // Shows the mascot `d` places on (-1 the previous one, 1 the next), wrapping around.
     function step(d: int): void {
-        number = (number - 1 + d + count) % count + 1
+        number = (number - 1 + d + count) % count + 1;
     }
 
     height: 200
@@ -35,6 +35,6 @@ Image {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        onClicked: (mouse) => mascot.step(mouse.button === Qt.RightButton ? -1 : 1)
+        onClicked: mouse => mascot.step(mouse.button === Qt.RightButton ? -1 : 1)
     }
 }

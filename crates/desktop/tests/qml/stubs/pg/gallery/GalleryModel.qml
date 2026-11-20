@@ -4,7 +4,11 @@ import QtQuick
 
 QtObject {
     // The media kinds, as the real enum (gallery.rs MediaKind) names them.
-    enum MediaKind { Image, Animated, Video }
+    enum MediaKind {
+        Image,
+        Animated,
+        Video
+    }
 
     property string viewedKey: ""
     property var viewedNeighbourKeys: []
@@ -26,6 +30,10 @@ QtObject {
     property string viewedFullUrl: ""
 
     // The cut-borders calls of Main (askCutBorders, the dialog's confirmed): the real ones are the Rust invokables.
-    function cutBordersCount() { return 0 }
-    function cutBordersConfirmed() { return 0 }
+    function cutBordersCount() {
+        return 0;
+    }
+    function cutBordersConfirmed() {
+        return 0;
+    }
 }

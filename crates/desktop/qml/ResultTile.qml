@@ -54,7 +54,7 @@ Item {
         asynchronous: true
         onStatusChanged: {
             if (status === Image.Ready || status === Image.Error)
-                tile.thumbSettled(tile.index)
+                tile.thumbSettled(tile.index);
         }
     }
     // Picked: a check in the accent colour, in the top-right corner.
@@ -97,18 +97,18 @@ Item {
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: (mouse) => {
+        onClicked: mouse => {
             if (mouse.modifiers & Qt.ShiftModifier)
-                tile.rangeTo(tile.index)
+                tile.rangeTo(tile.index);
             else
-                tile.toggled(tile.index)
+                tile.toggled(tile.index);
         }
         // The double-click's first click has toggled the pick already (MouseArea sends no click for the second):
         // toggled back, so looking at a result doesn't change what is picked.
-        onDoubleClicked: (mouse) => {
+        onDoubleClicked: mouse => {
             if (!(mouse.modifiers & Qt.ShiftModifier))
-                tile.toggled(tile.index)
-            tile.previewRequested(tile.index)
+                tile.toggled(tile.index);
+            tile.previewRequested(tile.index);
         }
     }
 }

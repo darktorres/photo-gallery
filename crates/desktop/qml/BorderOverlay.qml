@@ -30,9 +30,24 @@ Item {
         color: overlay.tint
         opacity: 0.38
     }
-    Cut { x: 0; y: 0; width: overlay.width; height: overlay.keptTop }
-    Cut { x: 0; y: overlay.keptBottom; width: overlay.width; height: overlay.height - overlay.keptBottom }
-    Cut { x: 0; y: overlay.keptTop; width: overlay.keptLeft; height: overlay.keptBottom - overlay.keptTop }
+    Cut {
+        x: 0
+        y: 0
+        width: overlay.width
+        height: overlay.keptTop
+    }
+    Cut {
+        x: 0
+        y: overlay.keptBottom
+        width: overlay.width
+        height: overlay.height - overlay.keptBottom
+    }
+    Cut {
+        x: 0
+        y: overlay.keptTop
+        width: overlay.keptLeft
+        height: overlay.keptBottom - overlay.keptTop
+    }
     Cut {
         x: overlay.keptRight
         y: overlay.keptTop

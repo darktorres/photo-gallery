@@ -8,10 +8,10 @@ import QtQuick.Controls.Fusion
 import pg.gallery
 
 Item {
+    id: root
     Words {
         id: words
     }
-    id: root
     // The gallery model (made by Main, which also gives it the thumbnail height), the gap between cells, the selection
     // and the borders.
     required property GalleryModel gallery
@@ -39,21 +39,21 @@ Item {
 
     // The first item of the topmost visible row, to keep the view anchored across relayouts.
     function topItem(): int {
-        const row = grid.indexAt(10, grid.contentY + 1)
-        const del = row >= 0 ? grid.itemAtIndex(row) as GridRow : null
-        return del ? del.firstItem : -1
+        const row = grid.indexAt(10, grid.contentY + 1);
+        const del = row >= 0 ? grid.itemAtIndex(row) as GridRow : null;
+        return del ? del.firstItem : -1;
     }
 
     function positionAt(row: int, mode: int) {
-        grid.positionViewAtIndex(row, mode)
+        grid.positionViewAtIndex(row, mode);
     }
 
     function positionAtBeginning() {
-        grid.positionViewAtBeginning()
+        grid.positionViewAtBeginning();
     }
 
     function takeFocus() {
-        grid.forceActiveFocus()
+        grid.forceActiveFocus();
     }
 
     WheelListView {
@@ -70,11 +70,11 @@ Item {
         reuseItems: true
         boundsBehavior: Flickable.StopAtBounds
         onWidthChanged: root.gridResized(width)
-        Keys.onPressed: (e) => root.keyPressed(e)
+        Keys.onPressed: e => root.keyPressed(e)
 
         WheelHandler {
             acceptedModifiers: Qt.ControlModifier
-            onWheel: (ev) => root.sizeStepped(ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1)
+            onWheel: ev => root.sizeStepped(ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1)
         }
 
         delegate: GridRow {
@@ -82,11 +82,11 @@ Item {
             showBorders: root.showBorders
             current: root.current
             settling: root.settling
-            onCellClicked: (itemIndex) => {
-                root.cellClicked(itemIndex)
-                grid.forceActiveFocus()
+            onCellClicked: itemIndex => {
+                root.cellClicked(itemIndex);
+                grid.forceActiveFocus();
             }
-            onCellDoubleClicked: (itemIndex) => root.cellDoubleClicked(itemIndex)
+            onCellDoubleClicked: itemIndex => root.cellDoubleClicked(itemIndex)
         }
     }
 
@@ -94,9 +94,7 @@ Item {
         textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: root.gallery.count === 0 && !root.gallery.loading
-        text: root.noFolders ? words.text("ui-no-folders")
-            : root.filtering ? words.text("ui-nothing-matches")
-            : root.importing ? words.text("ui-nothing-importing") : words.text("ui-no-images")
+        text: root.noFolders ? words.text("ui-no-folders") : root.filtering ? words.text("ui-nothing-matches") : root.importing ? words.text("ui-nothing-importing") : words.text("ui-no-images")
         horizontalAlignment: Text.AlignHCenter
         color: "#888888"
     }
@@ -120,7 +118,8 @@ Item {
             value: grid.visibleArea.yPosition
             when: !gridBar.pressed
         }
-        onPositionChanged: if (pressed) grid.contentY = grid.originY + position * grid.contentHeight
+        onPositionChanged: if (pressed)
+            grid.contentY = grid.originY + position * grid.contentHeight
         contentItem: Rectangle {
             implicitWidth: 12
             radius: width / 2
@@ -134,8 +133,7 @@ Item {
         width: readout.implicitWidth + 16
         height: readout.implicitHeight + 8
         x: parent.width - width - 24
-        y: Math.max(0, Math.min(parent.height - height,
-                                gridBar.y + gridBar.position * gridBar.height - height / 2))
+        y: Math.max(0, Math.min(parent.height - height, gridBar.y + gridBar.position * gridBar.height - height / 2))
         radius: 4
         color: "#2a2a2a"
         border.color: "#555555"
@@ -146,10 +144,8 @@ Item {
             color: "#dddddd"
             font.pixelSize: 12
             text: {
-                const f = gridBar.size < 1 ? Math.min(1, gridBar.position / (1 - gridBar.size)) : 0
-                return words.phrase("ui-grid-position", 0,
-                    Qt.locale().toString(Math.round(f * (root.gallery.count - 1)) + 1),
-                    Qt.locale().toString(root.gallery.count))
+                const f = gridBar.size < 1 ? Math.min(1, gridBar.position / (1 - gridBar.size)) : 0;
+                return words.phrase("ui-grid-position", 0, Qt.locale().toString(Math.round(f * (root.gallery.count - 1)) + 1), Qt.locale().toString(root.gallery.count));
             }
         }
     }

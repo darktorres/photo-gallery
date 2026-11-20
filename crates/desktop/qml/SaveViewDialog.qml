@@ -8,10 +8,10 @@ import QtQuick.Layouts
 import pg.gallery
 
 Dialog {
+    id: dialog
     Words {
         id: words
     }
-    id: dialog
     // The item the dialog is centred over (Main's page): a Loader doesn't parent a popup to an item.
     required property Item host
     // Opens the dialog each time it rises (Main counts the asks).
@@ -38,18 +38,15 @@ Dialog {
     standardButtons: Dialog.Save | Dialog.Cancel
     onRequestsChanged: dialog.open()
     onAboutToShow: {
-        viewName.text = ""
-        viewName.forceActiveFocus()
+        viewName.text = "";
+        viewName.forceActiveFocus();
     }
     onAccepted: dialog.saved(viewName.text)
 
     ColumnLayout {
         Label {
             textFormat: Text.PlainText
-            text: (dialog.folder.length ? dialog.folder
-                       : dialog.folderKind === 1 ? words.text("ui-drive-roots") : words.text("ui-all-folders"))
-                + (dialog.recursive ? " " + words.text("ui-and-subfolders") : "") + " · " + dialog.filters + " · "
-                + dialog.sortName + (dialog.descending ? " ↓" : " ↑")
+            text: (dialog.folder.length ? dialog.folder : dialog.folderKind === 1 ? words.text("ui-drive-roots") : words.text("ui-all-folders")) + (dialog.recursive ? " " + words.text("ui-and-subfolders") : "") + " · " + dialog.filters + " · " + dialog.sortName + (dialog.descending ? " ↓" : " ↑")
             color: "#999999"
         }
         TextField {

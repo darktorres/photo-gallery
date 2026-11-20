@@ -35,75 +35,83 @@ TestCase {
     }
 
     function init() {
-        VideoLog.reset()
+        VideoLog.reset();
     }
 
     function test_a_video_plays_its_file() {
-        const m = createTemporaryObject(mediaC, tc)
-        verify(m !== null)
-        compare(VideoLog.playing, true)
-        compare(VideoLog.playingFileId, 7)
+        const m = createTemporaryObject(mediaC, tc);
+        verify(m !== null);
+        compare(VideoLog.playing, true);
+        compare(VideoLog.playingFileId, 7);
     }
 
     function test_a_new_file_plays_the_new_video() {
-        const m = createTemporaryObject(mediaC, tc)
-        verify(m !== null)
-        m.fileId = 9
-        compare(VideoLog.playing, true)
-        compare(VideoLog.playingFileId, 9)
+        const m = createTemporaryObject(mediaC, tc);
+        verify(m !== null);
+        m.fileId = 9;
+        compare(VideoLog.playing, true);
+        compare(VideoLog.playingFileId, 9);
     }
 
     function test_leaving_video_stops_it() {
-        const m = createTemporaryObject(mediaC, tc)
-        verify(m !== null)
-        compare(VideoLog.playing, true)
-        m.playsVideo = false
-        compare(VideoLog.playing, false)
+        const m = createTemporaryObject(mediaC, tc);
+        verify(m !== null);
+        compare(VideoLog.playing, true);
+        m.playsVideo = false;
+        compare(VideoLog.playing, false);
     }
 
     function test_an_animation_replaces_the_video() {
-        const m = createTemporaryObject(mediaC, tc)
-        verify(m !== null)
-        compare(VideoLog.playing, true)
-        m.kind = GalleryModel.Animated
-        m.playsVideo = false
-        m.playsAnimation = true
-        compare(VideoLog.playing, false)
+        const m = createTemporaryObject(mediaC, tc);
+        verify(m !== null);
+        compare(VideoLog.playing, true);
+        m.kind = GalleryModel.Animated;
+        m.playsVideo = false;
+        m.playsAnimation = true;
+        compare(VideoLog.playing, false);
     }
 
     // A video opened before its import has no size yet (fw, fh 0): its picture shows anyway, over the whole view, and
     // the VideoOutput fits the frame in it.
     function test_a_video_without_a_size_shows_at_the_view_size() {
-        const m = createTemporaryObject(mediaC, tc, { fw: 0, fh: 0 })
-        verify(m !== null)
-        const box = findChild(m, "videoBox")
-        verify(box !== null)
-        compare(box.visible, true)
-        compare(box.width, 800)
-        compare(box.height, 600)
+        const m = createTemporaryObject(mediaC, tc, {
+            fw: 0,
+            fh: 0
+        });
+        verify(m !== null);
+        const box = findChild(m, "videoBox");
+        verify(box !== null);
+        compare(box.visible, true);
+        compare(box.width, 800);
+        compare(box.height, 600);
     }
 
     // With a size, the picture is fitted to the view: 640×480 in 800×600 is scaled by 1.25.
     function test_a_video_with_a_size_is_fitted() {
-        const m = createTemporaryObject(mediaC, tc)
-        verify(m !== null)
-        const box = findChild(m, "videoBox")
-        verify(box !== null)
-        compare(box.visible, true)
-        compare(box.width, 800)
-        compare(box.height, 600)
-        m.fw = 1600
-        compare(box.width, 800)
-        compare(box.height, 240)
+        const m = createTemporaryObject(mediaC, tc);
+        verify(m !== null);
+        const box = findChild(m, "videoBox");
+        verify(box !== null);
+        compare(box.visible, true);
+        compare(box.width, 800);
+        compare(box.height, 600);
+        m.fw = 1600;
+        compare(box.width, 800);
+        compare(box.height, 240);
     }
 
     // A still image is not the players': the video's place stays hidden.
     function test_a_still_hides_the_video() {
-        const m = createTemporaryObject(mediaC, tc,
-                                        { kind: GalleryModel.Image, still: true, playsVideo: false, fw: 0, fh: 0 })
-        verify(m !== null)
-        const box = findChild(m, "videoBox")
-        verify(box !== null)
-        compare(box.visible, false)
+        const m = createTemporaryObject(mediaC, tc, {
+            kind: GalleryModel.Image,
+            still: true,
+            playsVideo: false,
+            fw: 0,
+            fh: 0
+        });
+        verify(m !== null);
+        const box = findChild(m, "videoBox");
+        verify(box !== null);
+        compare(box.visible, false);
     }
 }

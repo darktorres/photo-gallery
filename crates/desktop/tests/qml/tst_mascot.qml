@@ -20,65 +20,69 @@ TestCase {
     }
 
     function clickAt(item, button) {
-        mouseClick(item, item.width / 2, item.height / 2, button)
+        mouseClick(item, item.width / 2, item.height / 2, button);
     }
 
     function test_starts_on_a_mascot_from_1_to_40() {
-        const m = createTemporaryObject(mascotC, tc)
-        verify(m !== null)
-        verify(m.number >= 1 && m.number <= m.count)
+        const m = createTemporaryObject(mascotC, tc);
+        verify(m !== null);
+        verify(m.number >= 1 && m.number <= m.count);
     }
 
     function test_left_click_shows_the_next_one() {
-        const m = createTemporaryObject(mascotC, tc)
-        verify(m !== null)
-        wait(20)
-        m.number = 5
-        clickAt(m, Qt.LeftButton)
-        compare(m.number, 6)
-        verify(m.source.toString().endsWith("/resources/mascots/06.png"), m.source)
+        const m = createTemporaryObject(mascotC, tc);
+        verify(m !== null);
+        wait(20);
+        m.number = 5;
+        clickAt(m, Qt.LeftButton);
+        compare(m.number, 6);
+        verify(m.source.toString().endsWith("/resources/mascots/06.png"), m.source);
     }
 
     function test_right_click_shows_the_previous_one() {
-        const m = createTemporaryObject(mascotC, tc)
-        verify(m !== null)
-        wait(20)
-        m.number = 5
-        clickAt(m, Qt.RightButton)
-        compare(m.number, 4)
-        verify(m.source.toString().endsWith("/resources/mascots/04.png"), m.source)
+        const m = createTemporaryObject(mascotC, tc);
+        verify(m !== null);
+        wait(20);
+        m.number = 5;
+        clickAt(m, Qt.RightButton);
+        compare(m.number, 4);
+        verify(m.source.toString().endsWith("/resources/mascots/04.png"), m.source);
     }
 
     function test_left_click_after_the_last_wraps_to_the_first() {
-        const m = createTemporaryObject(mascotC, tc)
-        verify(m !== null)
-        wait(20)
-        m.number = m.count
-        clickAt(m, Qt.LeftButton)
-        compare(m.number, 1)
-        verify(m.source.toString().endsWith("/resources/mascots/01.png"), m.source)
+        const m = createTemporaryObject(mascotC, tc);
+        verify(m !== null);
+        wait(20);
+        m.number = m.count;
+        clickAt(m, Qt.LeftButton);
+        compare(m.number, 1);
+        verify(m.source.toString().endsWith("/resources/mascots/01.png"), m.source);
     }
 
     function test_a_pinned_mascot_starts_on_its_number() {
-        const m = createTemporaryObject(mascotC, tc, { pinned: 7 })
-        verify(m !== null)
-        compare(m.number, 7)
-        verify(m.source.toString().endsWith("/resources/mascots/07.png"), m.source)
+        const m = createTemporaryObject(mascotC, tc, {
+            pinned: 7
+        });
+        verify(m !== null);
+        compare(m.number, 7);
+        verify(m.source.toString().endsWith("/resources/mascots/07.png"), m.source);
     }
 
     function test_a_pin_out_of_range_is_random_as_without_one() {
-        const m = createTemporaryObject(mascotC, tc, { pinned: 99 })
-        verify(m !== null)
-        verify(m.number >= 1 && m.number <= m.count)
+        const m = createTemporaryObject(mascotC, tc, {
+            pinned: 99
+        });
+        verify(m !== null);
+        verify(m.number >= 1 && m.number <= m.count);
     }
 
     function test_right_click_before_the_first_wraps_to_the_last() {
-        const m = createTemporaryObject(mascotC, tc)
-        verify(m !== null)
-        wait(20)
-        m.number = 1
-        clickAt(m, Qt.RightButton)
-        compare(m.number, m.count)
-        verify(m.source.toString().endsWith("/resources/mascots/40.png"), m.source)
+        const m = createTemporaryObject(mascotC, tc);
+        verify(m !== null);
+        wait(20);
+        m.number = 1;
+        clickAt(m, Qt.RightButton);
+        compare(m.number, m.count);
+        verify(m.source.toString().endsWith("/resources/mascots/40.png"), m.source);
     }
 }

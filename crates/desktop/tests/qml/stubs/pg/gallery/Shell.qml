@@ -12,6 +12,6 @@ QtObject {
     }
 
     function viewerStep(from, d) {
-        return Math.max(0, Math.min(count - 1, from + d))
+        return Math.max(0, Math.min(count - 1, from + d));
     }
 }

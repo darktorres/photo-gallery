@@ -79,6 +79,25 @@ jobs:
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup show
 
+      # parajpeg (a git dependency) compiles its C++ with clang-cl, which it finds at CLANG_CL, else at the runner's LLVM 20.
+      # The runner's Visual Studio STL refuses Clang older than 22, so LLVM 22 is installed beside it (its own folder, the
+      # release's installer, checked against the release's SHA-256) and CLANG_CL points at it for every later step.
+      - name: clang-cl 22 for parajpeg's C++ (installed beside the runner's LLVM 20)
+        shell: pwsh
+        env:
+          LLVM_VERSION: "22.1.8"
+          LLVM_SHA256: "16e5709785fef73c854646241c4a92c5cd574318d1b33c63330dd7721903e55c"
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "LLVM-$env:LLVM_VERSION-win64.exe"
+          Invoke-WebRequest -Uri "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/LLVM-$env:LLVM_VERSION-win64.exe" -OutFile $installer
+          $actual = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
+          if ($actual -ne $env:LLVM_SHA256) { throw "the LLVM installer is $actual, not the release's $env:LLVM_SHA256" }
+          Start-Process -FilePath $installer -ArgumentList '/S', '/D=C:\LLVM22' -Wait
+          $clang = 'C:\LLVM22\bin\clang-cl.exe'
+          & $clang --version
+          if ($LASTEXITCODE -ne 0) { throw "clang-cl did not run at $clang" }
+          "CLANG_CL=$clang" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
         with:
           # Pinned in the Justfile: a new release of these can change what the lint reports. `just lint` checks the same versions.

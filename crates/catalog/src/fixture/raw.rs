@@ -249,7 +249,8 @@ pub(crate) fn start_import_version(c: &Catalog) {
     set_import_version(&c.conn, IMPORT_VERSION).unwrap();
 }
 
-/// The stored borders version, older than this build's detector.
+/// The stored borders version, older than this build's detector. 0 is the sentinel for an older build's mark: the
+/// registry starts at 1, so no build writes 0.
 pub(crate) fn older_borders_version(c: &Catalog) {
     c.conn.execute("UPDATE meta SET value = 0 WHERE key = 'borders_version'", []).unwrap();
 }

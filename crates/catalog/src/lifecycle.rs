@@ -124,12 +124,14 @@ fn set_mark_i64(
 
 /// Make `files.pending` mean this build's IMPORT_VERSION: when the catalog's `meta.import_version` is older (a new
 /// catalog, or a build that analyzes differently), every file's is computed again, and every file's `seq` moves on, so
-/// the thumbnail pass looks at all of them once. A newer one only has its mark set back: the stale test is `>=`, so
-/// the rows of this build are current under it, and nothing is made due. Checked and set in one write transaction.
+/// the thumbnail pass looks at all of them once. A newer one (`Lowered`) has its mark set back, and every `pending` is
+/// computed again under the lower mark: the stale test is `>=`, so nothing is made due, and a file a newer build made
+/// due that this build's analysis already covers stops being due (the flags only clear). Checked and set in one write
+/// transaction.
 pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<MarkChange> {
     set_mark_i64(conn, "import_version", current, |tx, change| {
         if change == MarkChange::Lowered {
-            return Ok(());
+            return Ok(tx.execute_batch(concat!("UPDATE files SET pending = ", stale!(), ";"))?);
         }
         Ok(tx.execute_batch(concat!(
             "UPDATE files SET pending = ",

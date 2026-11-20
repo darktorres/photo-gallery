@@ -243,23 +243,23 @@ fn a_pair_made_while_its_file_had_another_time_is_there_when_the_time_is_put_bac
 }
 
 #[test]
-#[ignore = "needs an older import version than this build's: the reset starts IMPORT_VERSION at 1, so `ours - 1` is 0, \
-            outside the versions a build writes. Restore when the next bump makes an older version exist."]
 fn a_pair_made_while_another_build_found_its_analysis_stale_is_there_when_the_first_opens_the_catalog() {
     let ours = pg_library::versions().import;
+    // An older build's version: the registry starts at 1, so 0 is never a build's own and stands for any older one.
+    let older = 0;
     the_pair_is_made_while_its_partner_is_away(
         "away-import-version",
         // b.png analysed by an older build, which opens the catalog last; then this build opens it again, for which
         // that analysis is stale.
         &|mut c, dir, ctl| {
             analysed_again(&mut c, ctl);
-            state::set_analysis_version(&c, state::file_id(&c, "b.png").unwrap(), ours - 1).unwrap();
-            let c = reopened(reopened(c, dir, ours - 1), dir, ours);
+            state::set_analysis_version(&c, state::file_id(&c, "b.png").unwrap(), older).unwrap();
+            let c = reopened(reopened(c, dir, older), dir, ours);
             assert!(due(&c, "b.png") && !due(&c, "a.png"));
             c
         },
         // The older build opens it again: b.png's analysis is current for it.
-        &|c, dir, _| reopened(c, dir, ours - 1),
+        &|c, dir, _| reopened(c, dir, older),
     );
 }
 

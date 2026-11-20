@@ -5,10 +5,16 @@ it writes the DOT graph to OUT/<crate>.dot, maps each item to its enclosing modu
 and prints the cycle groups (strongly connected components with more than one module). cargo-modules cannot see the
 cxx-qt bridge modules, so the text scan (module_graph.py) covers those; `just modgraph` runs both.
 
+A crate's graph is reused, without calling cargo-modules, when nothing that shapes it has changed: the crate's own
+files, the workspace manifest and toolchain file, cargo-modules' version, rustc's version and the target. Each cargo
+call costs seconds even when everything is built, so a warm run of all crates would otherwise take minutes.
+The key is stored beside the DOT as OUT/<crate>.key; a failed call removes it. `--fresh` ignores the cache.
+
 A group that is not on the allowlist (tools/modgraph-allow.txt, for this target) fails the run; see allowlist.py.
-Usage: python tools/modgraph/compiler_graph.py [OUT_DIR]   (default: target/modgraph/cargo-modules)
+Usage: python tools/modgraph/compiler_graph.py [--fresh] [OUT_DIR]   (default: target/modgraph/cargo-modules)
 """
 
+import hashlib
 import json
 import re
 import subprocess
@@ -26,8 +32,8 @@ NODE = re.compile(r'^\s*"([^"]+)" \[label="([^"]*)"', re.MULTILINE)
 EDGE = re.compile(r'"([^"]+)" -> "([^"]+)" \[label="(\w+)"')
 
 
-def library_crates():
-    """The workspace's packages with a library target, by name."""
+def library_packages():
+    """The workspace's packages with a library target, as (name, folder) pairs."""
     meta = subprocess.run(
         ["cargo", "metadata", "--no-deps", "--format-version", "1"],
         cwd=REPO,
@@ -35,7 +41,33 @@ def library_crates():
         text=True,
         check=True,
     )
-    return [p["name"] for p in json.loads(meta.stdout)["packages"] if any("lib" in t["kind"] for t in p["targets"])]
+    return [
+        (p["name"], Path(p["manifest_path"]).parent)
+        for p in json.loads(meta.stdout)["packages"]
+        if any("lib" in t["kind"] for t in p["targets"])
+    ]
+
+
+def tool_versions():
+    """What shapes every graph besides the crate's files: cargo-modules, rustc, and the target."""
+    cm = subprocess.run(["cargo", "modules", "--version"], capture_output=True, text=True, check=True)
+    rustc = subprocess.run(["rustc", "-V"], capture_output=True, text=True, check=True)
+    return f"{cm.stdout.strip()}|{rustc.stdout.strip()}|{target_source()}"
+
+
+def source_key(name, folder, tools):
+    """The key of one crate's graph: its files (not `target/`), the workspace manifest and toolchain, and the tools."""
+    digest = hashlib.sha256()
+    digest.update(f"{name}\0{tools}\0".encode())
+    for shared in ("Cargo.toml", "rust-toolchain.toml"):
+        path = REPO / shared
+        if path.exists():
+            digest.update(f"{shared}\0".encode() + path.read_bytes() + b"\0")
+    for path in sorted(folder.rglob("*")):
+        rel = path.relative_to(folder)
+        if path.is_file() and "target" not in rel.parts:
+            digest.update(rel.as_posix().encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()
 
 
 def graph_of(crate):
@@ -89,27 +121,47 @@ def cycle_groups(dot, crate):
     return sccs(modules, edges), len(edges)
 
 
+def cached_dot(out, crate, key):
+    """The crate's DOT from the last run, when its stored key is this one; None when it must be made again."""
+    dot_file, stamp = out / f"{crate}.dot", out / f"{crate}.key"
+    if dot_file.exists() and stamp.exists() and stamp.read_text(encoding="utf-8") == key:
+        return dot_file.read_text(encoding="utf-8")
+    return None
+
+
 def main():
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUT
+    args = sys.argv[1:]
+    fresh = "--fresh" in args
+    positional = [a for a in args if not a.startswith("--")]
+    out = Path(positional[0]) if positional else DEFAULT_OUT
     out.mkdir(parents=True, exist_ok=True)
+    tools = tool_versions()
     failed = []
     groups_total = 0
+    reused = 0
     by_crate = {}
-    for crate in library_crates():
-        try:
-            dot = graph_of(crate)
-        except RuntimeError as err:
-            failed.append(crate)
-            print(f"{crate}: cargo-modules failed: {err}")
-            continue
-        (out / f"{crate}.dot").write_text(dot, encoding="utf-8")
+    for crate, folder in library_packages():
+        key = source_key(crate, folder, tools)
+        dot = None if fresh else cached_dot(out, crate, key)
+        if dot is None:
+            try:
+                dot = graph_of(crate)
+            except RuntimeError as err:
+                (out / f"{crate}.key").unlink(missing_ok=True)
+                failed.append(crate)
+                print(f"{crate}: cargo-modules failed: {err}")
+                continue
+            (out / f"{crate}.dot").write_text(dot, encoding="utf-8")
+            (out / f"{crate}.key").write_text(key, encoding="utf-8")
+        else:
+            reused += 1
         groups, edges = cycle_groups(dot, crate)
         groups_total += len(groups)
         print(f"{crate}: {edges} module edges, {len(groups)} cycle group(s)")
         for group in groups:
             print("   group:", " <-> ".join(sorted(x or "(crate root)" for x in group)))
         by_crate[crate.removeprefix("pg-")] = [[x or "(crate root)" for x in group] for group in groups]
-    print(f"compiler graph: {groups_total} cycle group(s); DOT files in {out}")
+    print(f"compiler graph: {groups_total} cycle group(s); DOT files in {out} ({reused} from the cache)")
     if failed:
         print("cargo-modules failed for: " + ", ".join(failed))
         sys.exit(1)

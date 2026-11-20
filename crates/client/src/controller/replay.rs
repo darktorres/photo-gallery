@@ -10,7 +10,7 @@ use super::{Command, Controller, Event, Start};
 
 /// The recording's format: bumped whenever a record's shape changes, so a file of another format is refused with its
 /// version (`parse`), not with a parse error. A file with no `format` on its `Init` is format 1.
-pub const REPLAY_FORMAT_VERSION: i64 = 3;
+pub const REPLAY_FORMAT_VERSION: i64 = pg_model::versions::REPLAY_FORMAT_VERSION;
 
 /// One line of a recording.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

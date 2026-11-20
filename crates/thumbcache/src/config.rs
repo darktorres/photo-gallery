@@ -16,7 +16,9 @@ macro_rules! cache_version {
 }
 pub(crate) use cache_version;
 
-pub const CACHE_VERSION: i64 = cache_version!();
+pub const CACHE_VERSION: i64 = pg_model::versions::CACHE_VERSION;
+// The macro is the literal `SCHEMA` sets in SQL; it must be the registry's version.
+const _: () = assert!(cache_version!() == CACHE_VERSION);
 
 /// The largest cap a new cache gets when none is set (`ThumbCache::open`), and the cap where the volume's size can't be
 /// read.

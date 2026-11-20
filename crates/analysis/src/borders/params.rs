@@ -1,7 +1,7 @@
 //! The detector's thresholds, and the version that marks what they detect.
 
 /// Bump when anything here changes what is detected; detections of an older version are redone.
-pub const BORDERS_VERSION: i64 = 1;
+pub const BORDERS_VERSION: i64 = pg_model::versions::BORDERS_VERSION;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Params {

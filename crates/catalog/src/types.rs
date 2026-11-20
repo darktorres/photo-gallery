@@ -277,6 +277,14 @@ pub struct Versions {
     pub pairing: i64,
 }
 
+impl Versions {
+    /// This build's versions, from the registry (`pg_model::versions`).
+    pub fn current() -> Versions {
+        use pg_model::versions::{BORDERS_VERSION, IMPORT_VERSION, PAIRING_VERSION, THUMBS_VERSION};
+        Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: THUMBS_VERSION, pairing: PAIRING_VERSION }
+    }
+}
+
 /// The local zone's UTC offsets, in seconds, on January 1 and July 1 of 2000 and of 2030: the zone's fingerprint, as
 /// `a,b,c,d`. A UTC-sourced `analysis.taken` depends on the zone only through these offsets, so a change to any of
 /// them is a change of zone (or of its daylight-saving rules as they apply to these dates).

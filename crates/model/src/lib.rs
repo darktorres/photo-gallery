@@ -40,6 +40,7 @@ pub mod size;
 pub mod state;
 pub mod tree;
 pub mod turns;
+pub mod versions;
 pub mod view;
 pub mod write;
 pub mod yandex;

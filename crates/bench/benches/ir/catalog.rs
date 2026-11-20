@@ -11,7 +11,6 @@
 use std::path::{Path, PathBuf};
 
 use pg_analysis::analyze::IMPORT_VERSION;
-use pg_analysis::borders::BORDERS_VERSION;
 use pg_catalog::browse::read::facets::Facets;
 use pg_catalog::ledger::Summary;
 use pg_catalog::{Begun, Catalog, Driven, Versions, WorkItem};
@@ -78,7 +77,7 @@ fn copy_layout(layout: &str) -> PathBuf {
 }
 
 fn versions() -> Versions {
-    Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: 1, pairing: pg_model::pdq::PAIRING_VERSION }
+    Versions::current()
 }
 
 fn open_catalog() -> Catalog {

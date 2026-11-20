@@ -40,12 +40,7 @@ pub fn open_thumbs(
 }
 
 /// The versions of the analyses this build makes, for `Catalog::prepare`: the library passes them when it prepares a
-/// catalog for writing.
+/// catalog for writing. The registry's (`pg_model::versions`).
 pub fn versions() -> pg_catalog::Versions {
-    pg_catalog::Versions {
-        import: pg_analysis::analyze::IMPORT_VERSION,
-        borders: pg_analysis::borders::BORDERS_VERSION,
-        thumbs: pg_render::THUMBS_VERSION,
-        pairing: pg_model::pdq::PAIRING_VERSION,
-    }
+    pg_catalog::Versions::current()
 }

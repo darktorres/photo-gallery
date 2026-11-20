@@ -25,7 +25,7 @@ use pg_model::format::Format;
 /// so their hashes and the pairs made from them. Version 3: the resize is MKS2021 on the sRGB bytes, with no linear
 /// light, which changes the PDQ inputs again. Not bumped by the header-only import: the stored facts are the same
 /// values, read from the header instead of a decode.
-pub const IMPORT_VERSION: i64 = 3;
+pub const IMPORT_VERSION: i64 = pg_model::versions::IMPORT_VERSION;
 
 /// The hashing decode keeps at least this many pixels on the upright long side…
 const DECODE_MIN_LONG: usize = 512;

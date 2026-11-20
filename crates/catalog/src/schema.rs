@@ -39,6 +39,21 @@ pub(crate) enum Step {
 /// The version of a catalog made from the baseline, before any migration.
 pub(crate) const BASELINE_VERSION: i64 = 1;
 
+// The registry's schema version is the baseline and its migrations; a migration added without the registry's bump fails
+// here. The baseline's `pairing_version` seed is the literal `1` in `baseline.sql`, so the registry's value must be 1.
+/// The number of migrations, as a version step (a `const` loop, since `try_from` is not `const`).
+const MIGRATION_COUNT: i64 = {
+    let mut count: i64 = 0;
+    let mut index = 0;
+    while index < MIGRATIONS.len() {
+        index += 1;
+        count += 1;
+    }
+    count
+};
+const _: () = assert!(pg_model::versions::CATALOG_SCHEMA_VERSION == BASELINE_VERSION + MIGRATION_COUNT);
+const _: () = assert!(pg_model::versions::PAIRING_VERSION == 1);
+
 /// One migration: the steps that take a catalog one version on, in order, in one transaction with the version.
 /// `rebuilds_tables`: the migration drops tables that have dependants. `DROP TABLE` of a parent runs an implicit `DELETE`
 /// with foreign keys on, which cascades into its children (their analyses, ratings, queued writes), so such a migration
@@ -762,7 +777,8 @@ mod tests {
         }
         // `kept_events!()` is a number in the notices trigger's LIMIT, not a fragment: asserted in that context.
         assert!(stored.contains(&format!("WHERE key IS NULL) - {}))", kept_events!())), "kept_events!() context");
-        // `pairing_version!()` is an integer: its seed row is the stored text.
-        assert!(stored.contains(&format!("'pairing_version', {})", pg_model::pairing_version!())));
+        // The pairing version's seed is the baseline's literal, which the registry's value must equal (checked at compile
+        // time, beside `BASELINE_VERSION`): the stored text carries it.
+        assert!(stored.contains(&format!("'pairing_version', {})", pg_model::pdq::PAIRING_VERSION)));
     }
 }

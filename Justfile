@@ -75,9 +75,10 @@ test *args: _qt
 test-eval:
     {{ py }} -m unittest discover -s eval -p "test_*.py"
 
-# Format the Rust and the Python code.
+# Format the Rust and the Python code. ruff check --fix applies the lint's auto-fixes (import order) before ruff format.
 fmt:
     cargo fmt --all
+    ruff check --fix .
     ruff format .
 
 # The lint tools' versions. ruff and markdownlint are pinned in tools/lint (their lockfiles, which CI installs from);

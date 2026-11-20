@@ -75,11 +75,12 @@ test *args: _qt
 test-eval:
     {{ py }} -m unittest discover -s eval -p "test_*.py"
 
-# Format the Rust and the Python code. ruff check --fix applies the lint's auto-fixes (import order) before ruff format.
+# Format the Rust, the Python and the QML code. ruff check --fix applies the lint's auto-fixes (import order) before ruff format.
 fmt:
     cargo fmt --all
     ruff check --fix .
     ruff format .
+    {{ py }} tools/format_qml.py
 
 # The lint tools' versions. ruff and markdownlint are pinned in tools/lint (their lockfiles, which CI installs from);
 # cargo-deny and cargo-machete are pinned here, and CI's install step names the same two.

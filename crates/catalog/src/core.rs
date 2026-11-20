@@ -20,8 +20,9 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use crate::error::{Error, Result};
 use crate::lease::HeldLease;
 use crate::lifecycle::{
-    check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, set_borders_version, set_import_version,
-    set_pairing_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, vacuum_if_owed,
+    MarkChange, check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, meta_text, set_borders_version,
+    set_import_version, set_key_version, set_pairing_version, set_taken_zone, set_thumbs_version, take_lock,
+    take_shared, try_exclusive, vacuum_if_owed,
 };
 use crate::progress::{FreeSpace, NO_PROGRESS, Phase, Progress};
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
@@ -30,7 +31,7 @@ use crate::schema::{
     version_in, version_of,
 };
 use crate::transaction::{WriteTx, write_transaction};
-use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions};
+use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions, key_version_text};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
 
 pub struct Catalog {
@@ -151,7 +152,21 @@ impl<'a> Prepare<'a> {
         }
         // The lock order of a change: the exclusive hold first, kept through the change. Without it a change is refused
         // before anything is moved; a catalog that needs no change is held shared, below, as any open catalog is.
-        let changes = why.is_some() || version.is_some_and(|found| found != current);
+        // A catalog whose `key_version` mark is another's (or missing) has its keys recomputed under the lock: a change.
+        let key_text = key_version_text();
+        let stored_key_version = meta_text(&conn, "key_version");
+        let key_stale =
+            version.is_some_and(|found| found > 0) && stored_key_version.as_deref() != Some(key_text.as_str());
+        // A rebuild carries the rows, and the carry needs the mark to say which keys they have: a catalog that predates
+        // `key_version` and whose schema differs from this build's is refused, not carried.
+        if why.is_some() && version.is_some_and(|found| found > 0) && stored_key_version.is_none() {
+            return Err(Error::Other(anyhow!(
+                "catalog {}: its schema differs from this build's and it predates key_version: restore a .pre-v*.bak or \
+                 start fresh",
+                path.display()
+            )));
+        }
+        let changes = why.is_some() || key_stale || version.is_some_and(|found| found != current);
         let exclusive = if memory { None } else { try_exclusive(path)? };
         if changes && !memory && exclusive.is_none() {
             return Err(in_use(path));
@@ -195,14 +210,33 @@ impl<'a> Prepare<'a> {
             )));
         }
         check_rules(&conn, path, rules)?;
+        // The keys follow this build's key algorithm and toolchain (a copy carried the old file's mark; a change of it
+        // recomputes them, under the exclusive hold taken above).
+        set_key_version(&conn, rules).with_context(|| format!("catalog {}", path.display()))?;
         // The one-time compaction (incremental auto-vacuum's conversion) only under the exclusive hold: it writes the whole
         // file, and a start that holds it shared must not make every other process wait for it.
         vacuum_if_owed(&conn, (!memory).then_some(path), exclusive.is_some() || memory)?;
         mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
-        set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
-        set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
-        set_pairing_version(&conn, versions.pairing).with_context(|| format!("catalog {}", path.display()))?;
-        set_thumbs_version(&conn, versions.thumbs).with_context(|| format!("catalog {}", path.display()))?;
+        let context = || format!("catalog {}", path.display());
+        let marks = [
+            ("import_version", set_import_version(&conn, versions.import).with_context(context)?),
+            ("borders_version", set_borders_version(&conn, versions.borders).with_context(context)?),
+            ("pairing_version", set_pairing_version(&conn, versions.pairing).with_context(context)?),
+            ("thumbs_version", set_thumbs_version(&conn, versions.thumbs).with_context(context)?),
+        ];
+        // A mark above this build's was set by a later build: it is set back (so this build's rows count), and said.
+        let lowered: Vec<&str> =
+            marks.iter().filter(|(_, change)| *change == MarkChange::Lowered).map(|(name, _)| *name).collect();
+        if !lowered.is_empty() {
+            pg_log::warn(
+                "catalog",
+                &format!(
+                    "{}: {} above this build's (a later build made or changed this catalog); they are set back",
+                    path.display(),
+                    lowered.join(", ")
+                ),
+            );
+        }
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
         conn.execute_batch(SETTINGS)?;
         conn.release_memory()?;

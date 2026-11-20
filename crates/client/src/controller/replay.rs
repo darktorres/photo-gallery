@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::{Command, Controller, Event, Start};
 
 /// The recording's format: bumped whenever a record's shape changes, so a file of another format is refused with its
-/// version (`parse`), not with a parse error. A file with no `format` on its `Init` is format 1.
+/// version (`parse`), not with a parse error. A file with no `format` on its `Init` is refused too.
 pub const REPLAY_FORMAT_VERSION: i64 = pg_model::versions::REPLAY_FORMAT_VERSION;
 
 /// One line of a recording.
@@ -31,7 +31,7 @@ pub fn init(controller: &Controller) -> Record {
 /// The records of a recording's text, one per line. A recording of another format is refused by its version, before its
 /// records are read as this format's.
 pub fn parse(text: &str) -> Result<Vec<Record>, String> {
-    /// The part of a line that tells its format: an `Init` with no `format` is format 1.
+    /// The part of a line that tells its format: an `Init` with no `format` is refused, not read as some format.
     #[derive(Deserialize)]
     struct Head {
         kind: String,
@@ -42,7 +42,12 @@ pub fn parse(text: &str) -> Result<Vec<Record>, String> {
     for (n, line) in text.lines().enumerate().filter(|(_, line)| !line.trim().is_empty()) {
         let head: Head = serde_json::from_str(line).map_err(|e| format!("line {}: {e}", n + 1))?;
         if head.kind == "Init" {
-            let format = head.format.unwrap_or(1);
+            let Some(format) = head.format else {
+                return Err(format!(
+                    "line {}: the Init has no format; this build reads format {REPLAY_FORMAT_VERSION}",
+                    n + 1
+                ));
+            };
             if format != REPLAY_FORMAT_VERSION {
                 return Err(format!("recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
             }

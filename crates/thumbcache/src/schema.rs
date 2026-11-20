@@ -109,6 +109,9 @@ enum Found {
     Damaged { why: Why },
     /// A database that is not a thumbnail cache: refused, and left as it is.
     Foreign { why: String },
+    /// A cache a later build made (a later layout, or later thumbnail pixels): refused, and left as it is, as a foreign
+    /// file is. This build's own cache is not changed by it (plan D9).
+    Newer { why: String },
 }
 
 /// Why a damaged file is started over (`pg_dbfile::Damage`): the reason, and its account.
@@ -150,6 +153,7 @@ fn make_layout(conn: &Connection, catalog_id: &str, cap_bytes: i64) -> rusqlite:
     conn.pragma_update(None, "application_id", APPLICATION_ID)?;
     conn.execute("INSERT INTO limits VALUES (1, ?1)", [cap_bytes])?;
     conn.execute("INSERT INTO meta VALUES ('catalog_id', ?1)", [catalog_id])?;
+    conn.execute("INSERT INTO meta VALUES ('thumb_output_version', ?1)", [pg_model::versions::THUMB_OUTPUT_VERSION])?;
     Ok(())
 }
 
@@ -194,6 +198,25 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
         conn.query_row("SELECT cap FROM limits", [], |r| r.get::<_, i64>(0)).optional()?
     };
     let version = pg_dbfile::user_version(conn)?;
+    // A later build's cache is refused and left alone, whichever of its versions is later (plan D9).
+    if version > CACHE_VERSION {
+        return Ok(Found::Newer { why: format!("layout version {version}, this build's is {CACHE_VERSION}") });
+    }
+    // The thumbnail pixels' version: none in an earlier layout (its `meta` may be missing too, read only when there).
+    let output: Option<i64> = if schema.has_table("meta") {
+        conn.query_row("SELECT value FROM meta WHERE key = 'thumb_output_version'", [], |r| r.get(0)).optional()?
+    } else {
+        None
+    };
+    if output.is_some_and(|output| output > pg_model::versions::THUMB_OUTPUT_VERSION) {
+        let output = output.unwrap_or_default();
+        return Ok(Found::Newer {
+            why: format!(
+                "thumbnail output version {output}, this build's is {}",
+                pg_model::versions::THUMB_OUTPUT_VERSION
+            ),
+        });
+    }
     let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
     // The owner is read last: an earlier layout may have no `meta` table at all.
     let other_build = |detail: String| Some(Why { reason: StartOverReason::OtherBuild, detail });
@@ -205,6 +228,15 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
         other_build(format!("application id {id}, not a cache's"))
     } else if auto_vacuum != 2 {
         other_build("auto_vacuum is not incremental, so its free pages can't be given back".to_string())
+    } else if output != Some(pg_model::versions::THUMB_OUTPUT_VERSION) {
+        // A missing or earlier output version starts over: the pixels were made by another build.
+        other_build(match output {
+            Some(output) => format!(
+                "thumbnail output version {output}, this build's is {}",
+                pg_model::versions::THUMB_OUTPUT_VERSION
+            ),
+            None => "no thumbnail output version (made before it was recorded)".to_string(),
+        })
     } else {
         let owner: Option<String> =
             conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0)).optional()?;
@@ -276,6 +308,7 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_versi
         Found::Stale { why, cap } => (false, Some(why), cap),
         Found::Damaged { why } => return Ok(Attempt::Damaged(why)),
         Found::Foreign { why } => bail!("{}: {why}, so it is left alone", path.display()),
+        Found::Newer { why } => bail!("{}: {why}, made by a later build, so it is left alone", path.display()),
     };
     // Taken before anything is removed, and kept until the new file is made: the exclusive hold says nothing else has
     // the file open. Without it, the file is not touched.

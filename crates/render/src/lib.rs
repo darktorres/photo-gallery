@@ -13,6 +13,9 @@
 /// and the next pass looks at every file again.
 pub const THUMBS_VERSION: i64 = pg_model::versions::THUMBS_VERSION;
 
+/// The version of the thumbnail pixels (`pg_model::versions::THUMB_OUTPUT_VERSION`): what a cache's pixels are made by.
+pub const THUMB_OUTPUT_VERSION: i64 = pg_model::versions::THUMB_OUTPUT_VERSION;
+
 // Zero is the mark of a catalog or a cache that has none: this build's thumbnails must differ from it, or a bump is missed.
 const _: () = assert!(THUMBS_VERSION > 0);
 

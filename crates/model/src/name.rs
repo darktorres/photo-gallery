@@ -10,6 +10,9 @@
 use std::borrow::Cow;
 use std::fmt;
 
+/// The key algorithm's version (`pg_model::versions::KEY_ALGO_VERSION`): the folder and order keys this module makes.
+pub const KEY_ALGO_VERSION: i64 = crate::versions::KEY_ALGO_VERSION;
+
 /// One unit of a name: a scalar value, an unpaired surrogate (WTF-8 only), or a byte that is not part of any
 /// valid sequence (a Unix name).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

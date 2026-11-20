@@ -1,4 +1,4 @@
-{"kind":"Init","format":3,"start":{"listing":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}},"row":220,"saved_row":220,"filters_open":true,"show_borders":false,"dev_mode":false,"last_file":null,"apply_view":true}}
+{"kind":"Init","format":1,"start":{"listing":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}},"row":220,"saved_row":220,"filters_open":true,"show_borders":false,"dev_mode":false,"last_file":null,"apply_view":true}}
 {"kind":"Update","now_ms":0,"event":{"Panel":{"SetViewerOpen":false}},"commands":[]}
 {"kind":"Update","now_ms":3,"event":{"Panel":{"PanelClosed":"FolderPicker"}},"commands":[]}
 {"kind":"Update","now_ms":4,"event":{"Panel":{"PanelClosed":"FolderPicker"}},"commands":[]}

@@ -243,6 +243,8 @@ fn a_pair_made_while_its_file_had_another_time_is_there_when_the_time_is_put_bac
 }
 
 #[test]
+#[ignore = "needs an older import version than this build's: the reset starts IMPORT_VERSION at 1, so `ours - 1` is 0, \
+            outside the versions a build writes. Restore when the next bump makes an older version exist."]
 fn a_pair_made_while_another_build_found_its_analysis_stale_is_there_when_the_first_opens_the_catalog() {
     let ours = pg_library::versions().import;
     the_pair_is_made_while_its_partner_is_away(

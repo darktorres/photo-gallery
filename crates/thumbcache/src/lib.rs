@@ -725,12 +725,73 @@ mod tests {
         assert_eq!(cache.totals().unwrap(), (10, 1));
     }
 
+    /// Opens the cache at `dir`, which must be refused: the error, and the file's bytes are left as they were.
+    fn refused(dir: &Path) -> String {
+        let bus = Arc::new(Bus::new(4));
+        let open = ThumbCache::open(
+            &cache_path(dir),
+            CATALOG_ID,
+            Cap::from_bytes(1 << 30),
+            pg_model::versions::THUMBS_VERSION,
+            bus,
+        );
+        open.err().map(|e| e.to_string()).unwrap_or_default()
+    }
+
+    /// A cache of a later layout is refused and left alone (plan D9): it is not started over.
+    #[test]
+    fn a_newer_layout_is_left_alone() {
+        let dir = run_folder(SCRATCH, "newer-layout").unwrap();
+        drop(open_quiet(&dir, CATALOG_ID, None));
+        Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
+        let why = refused(&dir);
+        assert!(why.contains("made by a later build"), "{why}");
+        assert_eq!(pg_dbfile::user_version(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 7);
+    }
+
+    /// A cache of an earlier layout starts over, with its totals reset and its cap kept.
     #[test]
     fn another_layout_version_starts_over() {
         let dir = run_folder(SCRATCH, "layout").unwrap();
-        Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
-        let cache = open_quiet(&dir, CATALOG_ID, None);
-        assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), default_cap_bytes(&dir)));
+        drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
+        Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 0;").unwrap();
+        let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
+        assert!(why.contains("layout version 0"), "{why}");
+        assert_eq!(
+            (reason, cache.totals().unwrap(), cache.cap().unwrap()),
+            (StartOverReason::OtherBuild, (0, 0), 12345)
+        );
+    }
+
+    /// Thumbnail pixels of a later build's are refused and left alone.
+    #[test]
+    fn a_newer_thumbnail_output_is_left_alone() {
+        let dir = run_folder(SCRATCH, "newer-output").unwrap();
+        drop(open_quiet(&dir, CATALOG_ID, None));
+        let later = pg_model::versions::THUMB_OUTPUT_VERSION + 1;
+        Connection::open(cache_path(&dir))
+            .unwrap()
+            .execute("UPDATE meta SET value = ?1 WHERE key = 'thumb_output_version'", [later])
+            .unwrap();
+        let why = refused(&dir);
+        assert!(why.contains("made by a later build"), "{why}");
+    }
+
+    /// Thumbnail pixels of an earlier build's start the cache over: the pixels are not this build's.
+    #[test]
+    fn an_earlier_thumbnail_output_starts_over() {
+        let dir = run_folder(SCRATCH, "earlier-output").unwrap();
+        drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
+        Connection::open(cache_path(&dir))
+            .unwrap()
+            .execute("UPDATE meta SET value = 0 WHERE key = 'thumb_output_version'", [])
+            .unwrap();
+        let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
+        assert!(why.contains("thumbnail output version 0"), "{why}");
+        assert_eq!(
+            (reason, cache.totals().unwrap(), cache.cap().unwrap()),
+            (StartOverReason::OtherBuild, (0, 0), 12345)
+        );
     }
 
     #[test]

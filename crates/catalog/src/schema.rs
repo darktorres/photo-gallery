@@ -168,6 +168,8 @@ pub(crate) fn bring_to(
         if version == 0 {
             tx.execute_batch(set.baseline).context("creating the catalog")?;
             tx.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [crate::types::rules_name(rules)])?;
+            // The keys this build makes are the ones the mark names (the baseline holds no keys, so none is stored yet).
+            tx.execute("INSERT INTO meta(key, value) VALUES ('key_version', ?1)", [crate::types::key_version_text()])?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)?;
             tx.pragma_update(None, "user_version", BASELINE_VERSION)?;
             // A file made without incremental auto-vacuum is compacted by a VACUUM that the next start runs (`vacuum_owed`):

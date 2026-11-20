@@ -259,6 +259,11 @@ pub(crate) fn start_borders_version(c: &Catalog) {
     set_borders_version(&c.conn, BORDERS_VERSION).unwrap();
 }
 
+/// A later build's detector has taken the catalog's borders mark: this build's detections are refused.
+pub(crate) fn newer_borders_version(c: &Catalog) {
+    c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [BORDERS_VERSION + 1]).unwrap();
+}
+
 /// The thumbnails' version as an older build left it: the stored mark (`meta.thumbs_version`), older than this build's
 /// thumbnailer.
 pub(crate) fn older_thumbs_version(c: &Catalog) {

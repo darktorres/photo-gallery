@@ -710,11 +710,14 @@ pub struct BordersWriter<'tx> {
     cut: Statement<'tx>,
     delete_sides: Statement<'tx>,
     side: Statement<'tx>,
+    /// The catalog's `borders_version` mark, read at each store.
+    mark: Statement<'tx>,
 }
 
 impl<'tx> BordersWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
         Ok(BordersWriter {
+            mark: tx.prepare("SELECT value FROM meta WHERE key = 'borders_version'")?,
             current: tx.prepare(crate::current::IS_CURRENT)?,
             cut: tx.prepare(
                 "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0,
@@ -734,15 +737,22 @@ impl<'tx> BordersWriter<'tx> {
     /// is the stored size the decode found, upright: the import's header read is corrected to it in the same write, so
     /// the cut and the size a crop of it keeps are one fact (`analysis_cut_stamp` marks the change); `None` keeps the
     /// stored size. Unless the file changed meanwhile (the import then analyzes it again, and the borders are due again)
-    /// or a write of the app's into it is in progress (they stay due).
+    /// or a write of the app's into it is in progress (they stay due). Returns whether the borders were stored: `false`
+    /// writes nothing, for a stale file or a catalog whose `borders_version` another build has taken.
     pub fn store_borders(
         &mut self,
         item: &WorkItem,
         size: Option<(u32, u32)>,
         borders: Option<&Detection>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        // A detection is this build's: it is stored only where the catalog's `borders_version` is this build's. Another
+        // build's mark (a later build prepared the catalog meanwhile) refuses it: nothing is written, as with a stale row.
+        let mark: i64 = self.mark.query_row([], |r| r.get(0))?;
+        if mark != pg_model::versions::BORDERS_VERSION {
+            return Ok(false);
+        }
         if !crate::current::query_current(&mut self.current, item.id, &item.listed())? {
-            return Ok(());
+            return Ok(false);
         }
         let cut = borders.map(Detection::cut);
         self.cut.execute(params![
@@ -771,7 +781,7 @@ impl<'tx> BordersWriter<'tx> {
                 s.rejected.map(|r| r.key()),
             ])?;
         }
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -786,8 +796,12 @@ impl<'tx> LedgerWriter<'tx> {
         LedgerWriter { conn: tx }
     }
 
-    /// `record_failures_on`: whether a row changed.
+    /// `record_failures_on`: whether a row changed. Refused (`false`, nothing written) when the catalog's mark for the pass
+    /// is not this build's: a failure of this build's pass is for its own version only ([`pass_mark_is_ours`]).
     pub fn record(&mut self, pass: FilePass, failures: &[Failure], now: i64) -> Result<bool> {
+        if !pass_mark_is_ours(self.conn, pass)? {
+            return Ok(false);
+        }
         record_failures_on(self.conn, pass, failures, now)
     }
 
@@ -795,6 +809,18 @@ impl<'tx> LedgerWriter<'tx> {
     pub fn clear(&mut self, pass: FilePass, files: &[FileId]) -> Result<bool> {
         clear_failures_on(self.conn, pass, files)
     }
+}
+
+/// Whether the catalog's mark for `pass` is this build's: the thumbnail and borders passes' failures are for their own
+/// version, so a catalog another build marked takes no record of this build's. The other passes have no version here.
+pub(crate) fn pass_mark_is_ours(conn: &Connection, pass: FilePass) -> Result<bool> {
+    let (key, ours) = match pass {
+        FilePass::Thumbs => ("thumbs_version", pg_model::versions::THUMBS_VERSION),
+        FilePass::Borders => ("borders_version", pg_model::versions::BORDERS_VERSION),
+        _ => return Ok(true),
+    };
+    let stored: i64 = conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))?;
+    Ok(stored == ours)
 }
 
 /// The import's ledger is the triggers' (`analysis_import_*`, mirroring the failed analyses): no pass writes it.
@@ -1318,6 +1344,36 @@ mod tests {
         borders_are_looked_for_after_the_import_and_again_after_a_new_detector,
         borders_are_looked_for_after_the_import_and_again_after_a_new_detector_windows,
         borders_are_looked_for_after_the_import_and_again_after_a_new_detector_posix
+    );
+
+    /// A later build's borders mark refuses this build's detection: the store reports it, and nothing is written (the
+    /// file stays due, and the cut is still the one it had).
+    fn a_later_borders_mark_refuses_the_store_and_writes_nothing(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let item = next_work(&c);
+        store_for(&mut c, item.id.get(), &picture([1; 32], 100));
+        raw::newer_borders_version(&c);
+
+        let tx = c.tx().unwrap();
+        let stored = tx
+            .borders_writer()
+            .unwrap()
+            .store_borders(&item, Some((400, 300)), Some(&Detection::none(400, 300)))
+            .unwrap();
+        tx.commit().unwrap();
+        assert!(!stored, "a later build's mark refuses the store");
+        assert_eq!(raw::cut_sides(&c), [None; 4], "nothing was written");
+        let due = c.pending_borders(&crate::VolumeSet::All).unwrap();
+        assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id], "the file stays due");
+    }
+
+    under_both_rules!(
+        a_later_borders_mark_refuses_the_store_and_writes_nothing,
+        a_later_borders_mark_refuses_the_store_and_writes_nothing_windows,
+        a_later_borders_mark_refuses_the_store_and_writes_nothing_posix
     );
 
     /// The borders the grid shows are a change of the file (`files.changed`): storing them, a changed cut, removed

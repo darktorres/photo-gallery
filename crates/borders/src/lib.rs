@@ -114,8 +114,9 @@ pub fn find_while(
                             (None, None)
                         }
                     };
-                    writer.store_borders(item, size, found.as_ref())?;
-                    done.stored += 1;
+                    if writer.store_borders(item, size, found.as_ref())? {
+                        done.stored += 1;
+                    }
                 }
                 drop(writer);
                 // In the batch's transaction: the failures it found, and the files of the ledger it found borders for (a

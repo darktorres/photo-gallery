@@ -129,9 +129,8 @@ impl Analysis {
 }
 
 /// The version of a placeholder's definition (`pg_render::thumbhash_of`): a placeholder made at another version is owed
-/// again. Version 1 is the first definition: the ThumbHashes the import made, moved to `placeholders` by the migration
-/// that makes that table (the import's, and the Placeholders pass's own). Version 2: the fit into the placeholder's size is MKS2021 on sRGB bytes, not in
-/// linear light, which changes the ThumbHash of every picture that is resized to fit.
+/// again. The fit into the placeholder's size is MKS2021 on the sRGB bytes, which is what changes the ThumbHash of a
+/// picture resized to fit: the rule is the registry's (`pg_model::versions`).
 pub const PLACEHOLDER_VERSION: i64 = crate::versions::PLACEHOLDER_VERSION;
 
 /// The longest ThumbHash: 25 bytes with alpha, 24 opaque. It is the vendored encoder's `MAX_LEN` as a literal (the

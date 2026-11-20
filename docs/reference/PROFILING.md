@@ -167,9 +167,9 @@ option's value goes after `=`: `--save-baseline before` is refused, because `bef
   ledger's cheap state) and open (the counts too).
 
 The large layout is made like the default one, on the Windows side, under a name ending in `-large`
-(`v6-windows-rules-large`, the bench's `LARGE_LAYOUT`): `synthetic_library.py --profile large` (400 folders of 500
+(`v1-windows-rules-large`, the bench's `BENCH_LARGE_LAYOUT`): `synthetic_library.py --profile large` (400 folders of 500
 files, a quarter of them broken JPEGs that the import fails, small pictures so the library is a few GB), the CLI's
-scan, import and thumbnails over it, then `bench_data.py v6-windows-rules-large <catalog folder> <bench-data>`; the
+scan, import and thumbnails over it, then `bench_data.py v1-windows-rules-large <catalog folder> <bench-data>`; the
 commands are in `bench_data.py`'s docstring. For a `-large` layout `bench_data.py` also seeds the failure ledger to
 100,000 rows (`--ledger-rows`; the import's own rows first, then thumbnails' and borders' rows), when the copy's schema
 has `file_failures.hidden`; an older schema is left unseeded, with a note.

@@ -1,11 +1,11 @@
 // The catalog's work for the grid, the tree and the background job, on a copy of a synthetic catalog (4,000 files,
 // 81 folders: tools/profiling/synthetic_library.py, scanned, imported and thumbnailed at 256 px; included from
-// linux.rs). The data is prepared once by tools/profiling/bench_data.py into PG_BENCH_DATA/<LAYOUT>/: the catalog and
+// linux.rs). The data is prepared once by tools/profiling/bench_data.py into PG_BENCH_DATA/<BENCH_LAYOUT>/: the catalog and
 // a cache without its JPEGs, each compacted with VACUUM INTO. Setup copies both to PG_BENCH_DATA/run/ and opens the
 // catalog, so the measured function starts with the schema parsed and every page cold, like the app's first list.
 //
-// The bench ids stay the same across commits; the bodies follow the API. LAYOUT names the catalog layout the code
-// expects, and changes in the same commit as the schema. It also names the dataset, because bench_data.py never
+// The bench ids stay the same across commits; the bodies follow the API. BENCH_LAYOUT names the catalog layout the code
+// expects, and is bumped with a change to the data's layout. It also names the dataset, because bench_data.py never
 // overwrites a layout's folder.
 
 use std::path::{Path, PathBuf};
@@ -29,23 +29,15 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
     Some(path) => path,
     None => "/root/pg-bench",
 };
-// The layout: a catalog made on Windows by this build's CLI passes (scan, import, thumbs at 256) from the synthetic
-// library at D:\PhotoGallery\synthetic\library. Its paths are Windows paths, as the folder literals below are. The
-// name is bumped whenever the schema changes, so data made before it is never read as current. v6 is v5's catalog
-// opened once by the build of schema version 7 (migrations 2 to 7: the borders' change stamps, the inbox, the ledger,
-// the session row, the thumbnail views, the typed queue), so its rows are v5's and a change between the two is the
-// code's; the cache's schema is unchanged. v7 is v6's catalog opened once by the build of schema version 8 (the
-// notifications' migration), the same way. v9 is v8's catalog opened once by the build of schema version 19 (the
-// AUTOINCREMENT ids, the incremental auto-vacuum, the removals' marker), the same way. v10 is v9's catalog opened once by
-// the build of schema version 20 (the `thumb_folders` view dropped), the same way; its data is made by
-// tools/profiling/bench_data.py.
-const LAYOUT: &str = "v10-windows-rules";
+// The layout: a catalog made on Windows by this build's CLI passes (scan, import, thumbs) from the synthetic library at
+// D:\PhotoGallery\synthetic\library. Its paths are Windows paths, as the folder literals below are. Its name carries the
+// layout's version (`v1`, the reset's first) and the path rules; data made by another build is regenerated, never read as
+// current (tools/profiling/bench_data.py makes it).
+const BENCH_LAYOUT: &str = "v1-windows-rules";
 // The large layout (tools/profiling/bench_data.py, `-large`): 200,000 files of the synthetic library's large profile,
 // 50,000 of them broken (the import's failures), and the failure ledger seeded to 100,000 rows. Made and named as
-// LAYOUT is; the inbox's refresh is measured on it. v6-large was made by the build of schema version 7 (the F0
-// baseline's), and v7-large is v6-large's catalog opened once by the build of schema version 8, so both hold the same
-// failures.
-const LARGE_LAYOUT: &str = "v7-windows-rules-large";
+// BENCH_LAYOUT is; the inbox's refresh is measured on it.
+const BENCH_LARGE_LAYOUT: &str = "v1-windows-rules-large";
 // The path rules the layout was made under (its meta.path_rules). Not pg_platform::native::PATH_RULES: the benches
 // run on Linux, where that is posix, and a catalog keeps the rules it was made with.
 const RULES: pg_model::rules::PathRules = pg_model::rules::PathRules::Windows;
@@ -58,7 +50,7 @@ fn run_dir() -> PathBuf {
 
 // Fresh copies of the layout's files in run/, in WAL mode like the app's.
 fn copy_data() -> PathBuf {
-    copy_layout(LAYOUT)
+    copy_layout(BENCH_LAYOUT)
 }
 
 // Fresh copies of `layout`'s files in run/.
@@ -81,7 +73,7 @@ fn versions() -> Versions {
 }
 
 fn open_catalog() -> Catalog {
-    open_layout(LAYOUT)
+    open_layout(BENCH_LAYOUT)
 }
 
 fn open_layout(layout: &str) -> Catalog {
@@ -182,10 +174,10 @@ fn pending_thumbs(run: PathBuf) -> Pending {
 const IMPORT_BATCH: usize = 500;
 
 fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analysis) {
-    let catalog = open_layout(LARGE_LAYOUT);
+    let catalog = open_layout(BENCH_LARGE_LAYOUT);
     let roots = or_stop(catalog.roots(), "the library folders");
     #[expect(clippy::panic, reason = "a layout with no library folder is a bug in the bench data")]
-    let Some(root) = roots.first() else { panic!("the {LARGE_LAYOUT} catalog has no library folder") };
+    let Some(root) = roots.first() else { panic!("the {BENCH_LARGE_LAYOUT} catalog has no library folder") };
     let mut ids = or_stop(catalog.files_under(&root.path), "the library's files");
     ids.truncate(IMPORT_BATCH);
     or_stop(catalog.mark_pending(&ids), "the files made due");
@@ -218,7 +210,7 @@ fn import_flush((mut catalog, items, analyzed): (Catalog, Vec<WorkItem>, Analysi
 }
 
 fn for_refresh(viewing: bool) -> (Catalog, bool) {
-    (open_layout(LARGE_LAYOUT), viewing)
+    (open_layout(BENCH_LARGE_LAYOUT), viewing)
 }
 
 // The inbox's refresh of the failure ledgers on the large layout (`Catalog::ledger_entries`: each ledger's cheap state,

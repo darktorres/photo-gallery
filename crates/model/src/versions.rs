@@ -10,7 +10,7 @@
 /// The analysis pipeline's version (`pg_analysis::analyze::IMPORT_VERSION`): an analysis made at another is redone. Bump
 /// it when the import computes a different value from the same file: the pixel or file hash, the decode bounds, the PDQ
 /// hash, the EXIF date and zone semantics.
-pub const IMPORT_VERSION: i64 = 3;
+pub const IMPORT_VERSION: i64 = 1;
 
 /// The version of the borders pass (`pg_analysis::borders::BORDERS_VERSION`): the detection of a picture's borders.
 pub const BORDERS_VERSION: i64 = 1;
@@ -22,19 +22,29 @@ pub const PAIRING_VERSION: i64 = 1;
 
 /// The version of the thumbnails' pass state (`pg_render::THUMBS_VERSION`): the retry semantics of a thumbnail the pass
 /// made. Bump it when the pass must look at every file again.
-pub const THUMBS_VERSION: i64 = 2;
+pub const THUMBS_VERSION: i64 = 1;
 
 /// The version of a placeholder's definition (`pg_model::analysis::PLACEHOLDER_VERSION`): a placeholder made at another
 /// is owed again. Bump it when the ThumbHash of a picture changes for the same pixels.
-pub const PLACEHOLDER_VERSION: i64 = 2;
+pub const PLACEHOLDER_VERSION: i64 = 1;
 
 /// The version of the thumbnail cache's layout (`pg_thumbcache::CACHE_VERSION`). A cache at another starts over; a newer
 /// one is left alone (plan D9).
 pub const CACHE_VERSION: i64 = 1;
 
 /// The version of the replay format (`pg_client::controller::replay::REPLAY_FORMAT_VERSION`): a dev recording's format.
-pub const REPLAY_FORMAT_VERSION: i64 = 3;
+pub const REPLAY_FORMAT_VERSION: i64 = 1;
 
 /// The version of the catalog's schema this build makes (`pg_catalog`'s current version): the baseline, then each
 /// migration. The catalog checks it against its baseline and migrations (`schema.rs`).
 pub const CATALOG_SCHEMA_VERSION: i64 = 1;
+
+/// The version of the thumbnail pixels this build makes (`pg_render::THUMB_OUTPUT_VERSION`): the resize, the JPEG and
+/// WebP settings, the chroma. A cache whose `meta.thumb_output_version` is another starts over; a newer one is left
+/// alone (plan D9). Bump it when a thumbnail's bytes change for the same source.
+pub const THUMB_OUTPUT_VERSION: i64 = 1;
+
+/// The version of the key algorithm (`pg_model::name`'s folder and order keys: `folders.key`, `files.order_key`). Bump it
+/// when a key changes for the same name. The catalog's `key_version` mark is this with the toolchain's Unicode version,
+/// which the keys' case folding depends on: either changing recomputes the stored keys.
+pub const KEY_ALGO_VERSION: i64 = 1;

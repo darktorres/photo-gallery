@@ -20,6 +20,11 @@ use crate::types::{Pending, Snapshot, Source, ThumbWork};
 /// first. An entry at or below it whose file is absent was deleted for good; a file inserted meanwhile has a higher id,
 /// and is not among them. Read on one connection with `query_only`, so no write of the cache waits for it.
 pub(crate) fn orphans_in(cache: &Path, catalog: &Path) -> Result<Vec<FileId>> {
+    // ATTACH makes an empty file at a path with none, so a missing catalog is an error here, not a new catalog beside
+    // the cache (the sweep's caller logs it).
+    if !catalog.exists() {
+        anyhow::bail!("catalog {}: not there, so its orphans are not looked for", catalog.display());
+    }
     let conn = Connection::open(cache)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;")?;
@@ -233,4 +238,22 @@ pub(crate) fn with_reader<R>(path: &Path, f: impl FnOnce(&Connection) -> Result<
         readers.push((path.to_path_buf(), conn));
         result
     })
+}
+
+#[cfg(test)]
+mod orphan_tests {
+    use super::orphans_in;
+    use pg_testkit::run_folder;
+
+    /// A catalog that is not there is an error, and no catalog is made at its path: the attach would have made an empty
+    /// file that the catalog's own open (and a rename over it) then trips on.
+    #[test]
+    fn a_missing_catalog_is_an_error_and_no_file_is_made() {
+        let dir = run_folder("scratch_thumbs", "orphans-missing-catalog").unwrap();
+        let catalog = dir.join("catalog.sqlite");
+        let cache = dir.join("thumbs.sqlite");
+        assert!(orphans_in(&cache, &catalog).is_err());
+        assert!(!catalog.exists(), "no catalog was made beside the cache");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

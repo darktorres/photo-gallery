@@ -12,7 +12,9 @@ use pg_model::rules::PathRules;
 
 use crate::error::{Error, Result};
 use crate::progress::FreeSpace;
-use crate::types::{TAKEN_ZONE_QUERY, rules_name};
+use crate::types::{TAKEN_ZONE_QUERY, key_version_text, rules_name};
+use pg_model::name::Name;
+use std::collections::BTreeMap;
 
 /// Why the paths of the catalog on `conn` don't read as paths under `rules` (`meta.path_rules`): they were stored under
 /// other rules, or before the rules were recorded. `None` when they were stored under these. Opening refuses such a
@@ -67,12 +69,68 @@ pub(crate) fn take_shared(path: &Path) -> Result<pg_dbfile::Live> {
         .ok_or_else(|| Error::Other(anyhow!("catalog {}: another program is changing it", path.display())))
 }
 
-/// Make `files.pending` mean this build's IMPORT_VERSION: when the catalog's `meta.import_version` is another
-/// (a new catalog, or a build that analyzes differently), every file's is computed again, and every file's `seq`
-/// moves on, so the thumbnail pass looks at all of them once. Checked and set in one write transaction, so two
-/// processes opening the catalog at once do it once.
-pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<()> {
-    set_mark(conn, "import_version", &current, |tx| {
+/// Which way an integer mark moved, against the catalog's own (3.4): `Raised` when the catalog's mark is older than this
+/// build's (or missing), `Lowered` when it is newer (a later build made or changed the catalog), `Same` when nothing
+/// changed. A `Lowered` mark is set back to this build's value too, so this build's rows count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MarkChange {
+    Same,
+    Raised,
+    Lowered,
+}
+
+/// The direction of a stored integer mark (`None`: not there) against `current`.
+fn direction(stored: Option<i64>, current: i64) -> MarkChange {
+    match stored {
+        None => MarkChange::Raised,
+        Some(stored) if stored == current => MarkChange::Same,
+        Some(stored) if stored < current => MarkChange::Raised,
+        Some(_) => MarkChange::Lowered,
+    }
+}
+
+/// Set the integer mark `key` to `current` and, when it moved, make the rows follow it: `recompute` gets the direction
+/// (`Raised` or `Lowered`, never `Same`) and the same transaction, and decides what each direction means. Checked before
+/// and again inside one immediate write transaction, as [`set_mark`] is.
+fn set_mark_i64(
+    conn: &Connection,
+    key: &str,
+    current: i64,
+    recompute: impl FnOnce(&Transaction, MarkChange) -> Result<()>,
+) -> Result<MarkChange> {
+    let stored = |c: &Connection| -> Result<Option<i64>> {
+        match c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)) {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    };
+    let first = direction(stored(conn)?, current);
+    if first == MarkChange::Same {
+        return Ok(first);
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    let change = direction(stored(&tx)?, current);
+    if change != MarkChange::Same {
+        tx.execute(
+            "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![current, key],
+        )?;
+        recompute(&tx, change)?;
+    }
+    tx.commit()?;
+    Ok(change)
+}
+
+/// Make `files.pending` mean this build's IMPORT_VERSION: when the catalog's `meta.import_version` is older (a new
+/// catalog, or a build that analyzes differently), every file's is computed again, and every file's `seq` moves on, so
+/// the thumbnail pass looks at all of them once. A newer one only has its mark set back: the stale test is `>=`, so
+/// the rows of this build are current under it, and nothing is made due. Checked and set in one write transaction.
+pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<MarkChange> {
+    set_mark_i64(conn, "import_version", current, |tx, change| {
+        if change == MarkChange::Lowered {
+            return Ok(());
+        }
         Ok(tx.execute_batch(concat!(
             "UPDATE files SET pending = ",
             stale!(),
@@ -96,18 +154,81 @@ fn set_mark<T>(
 where
     T: rusqlite::types::FromSql + rusqlite::ToSql + PartialEq,
 {
-    let stored = |c: &Connection| -> Result<T> {
-        Ok(c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))?)
+    // A mark that is not there (a catalog from before it existed) is another value: it is set, and the rows follow.
+    let stored = |c: &Connection| -> Result<Option<T>> {
+        match c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)) {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     };
-    if stored(conn)? == *current {
+    if stored(conn)?.as_ref() == Some(current) {
         return Ok(());
     }
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if stored(&tx)? != *current {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = ?2", rusqlite::params![current, key])?;
+    if stored(&tx)?.as_ref() != Some(current) {
+        tx.execute(
+            "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![current, key],
+        )?;
         recompute(&tx)?;
     }
     Ok(tx.commit()?)
+}
+
+/// The value of the `meta` row `key`, or `None` when it is not there (or the table is not readable).
+pub(crate) fn meta_text(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)).ok()
+}
+
+/// Make the stored keys of the folders and files follow this build's key algorithm (the `key_version` mark changed):
+/// each folder's key from its path, then each file's order key from its folder's key and its name. Only the rows whose
+/// key changed are written, in pages of files by id. A folder whose path doesn't parse under the catalog's rules keeps
+/// its key, and so do its files' order keys: that is logged, not an error.
+fn recompute_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<()> {
+    let folders: Vec<(i64, Vec<u8>, Vec<u8>)> = tx
+        .prepare("SELECT id, path, key FROM folders")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut folder_keys: BTreeMap<i64, Vec<u8>> = BTreeMap::new();
+    for (id, path, stored) in folders {
+        let key = match rules.parse_bytes(&path) {
+            Some(parsed) => rules.folder_key(&parsed.parts),
+            None => {
+                pg_log::warn(
+                    "catalog",
+                    &format!("folder {id}: its path doesn't parse under the path rules; its key is kept"),
+                );
+                stored.clone()
+            }
+        };
+        if key != stored {
+            tx.execute("UPDATE folders SET key = ?1 WHERE id = ?2", rusqlite::params![key, id])?;
+        }
+        folder_keys.insert(id, key);
+    }
+    let mut after = 0_i64;
+    loop {
+        let page: Vec<(i64, i64, Vec<u8>, Vec<u8>)> = tx
+            .prepare("SELECT id, folder_id, name, order_key FROM files WHERE id > ?1 ORDER BY id LIMIT 4096")?
+            .query_map([after], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let Some(last) = page.last() else { break };
+        after = last.0;
+        for (id, folder, name, stored) in page {
+            let Some(folder_key) = folder_keys.get(&folder) else { continue };
+            let key = rules.order_key(folder_key, &Name::from_raw(&name));
+            if key != stored {
+                tx.execute("UPDATE files SET order_key = ?1 WHERE id = ?2", rusqlite::params![key, id])?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Set the catalog's `key_version` mark to this build's, and recompute the keys when it was another ([`recompute_keys`]).
+pub(crate) fn set_key_version(conn: &Connection, rules: PathRules) -> Result<()> {
+    set_mark(conn, "key_version", &key_version_text(), |tx| recompute_keys(tx, rules))
 }
 
 /// The free space a migration needs, in multiples of the catalog file's size: the copy aside (`rebuild::back_up`) and
@@ -236,8 +357,9 @@ pub(crate) fn stamp_held_exts(tx: &Connection) -> Result<()> {
 
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
 /// every analysis that can have borders is due. Like [`set_import_version`], one [`set_mark`].
-pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<()> {
-    set_mark(conn, "borders_version", &current, |tx| {
+pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<MarkChange> {
+    // Either direction recomputes: a borders detection of another version is not this build's, whichever is newer.
+    set_mark_i64(conn, "borders_version", current, |tx, _| {
         tx.execute_batch(concat!("UPDATE analysis SET borders_due = coalesce(", has_borders!(), ", 0)"))?;
         // Every file is looked at again by the new detector: what the old one failed on is not known to fail.
         tx.execute("DELETE FROM file_failures WHERE pass = 'borders'", [])?;
@@ -246,9 +368,10 @@ pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<()>
 }
 
 /// Make the pairs this build's: when the catalog's `meta.pairing_version` is another, every eligible analysis is due again
-/// (the pairing pass makes all of them) and the pairs go, with the changes stamped so the views read them again.
-pub(crate) fn set_pairing_version(conn: &Connection, current: i64) -> Result<()> {
-    set_mark(conn, "pairing_version", &current, |tx| owe_pairs_again(tx).map(|_| ()))
+/// (the pairing pass makes all of them) and the pairs go, with the changes stamped so the views read them again. A newer
+/// one does the same, and its change is reported (`MarkChange::Lowered`): the pairs of the later build are not kept.
+pub(crate) fn set_pairing_version(conn: &Connection, current: i64) -> Result<MarkChange> {
+    set_mark_i64(conn, "pairing_version", current, |tx, _| owe_pairs_again(tx).map(|_| ()))
 }
 
 /// Every eligible analysis (orientation hashes and a reliable quality) owes its pairs again, and the pairs go, with the
@@ -271,8 +394,8 @@ pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<usize> {
 /// are listed again for the pass (the others are, by the pass's own rule), and the rows go: the next pass records what
 /// still fails. The cache's checkpoint holds the panicked files back too, and keeps a mark of its own
 /// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`].
-pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<()> {
-    set_mark(conn, "thumbs_version", &current, |tx| {
+pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<MarkChange> {
+    set_mark_i64(conn, "thumbs_version", current, |tx, _| {
         tx.execute_batch(next_seq!())?;
         tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?;
         tx.execute("DELETE FROM file_failures WHERE pass = 'thumbs'", [])?;
@@ -291,6 +414,175 @@ pub(crate) fn set_taken_zone(conn: &Connection) -> Result<()> {
             "UPDATE analysis SET taken = unixepoch(taken_utc, 'unixepoch', 'localtime') WHERE taken_utc IS NOT NULL",
         )?)
     })
+}
+
+#[cfg(test)]
+mod key_version_tests {
+    use pg_model::ids::{FileId, FolderId};
+    use pg_model::name::Name;
+    use pg_platform::native::PATH_RULES;
+    use rusqlite::{Connection, params};
+
+    use crate::Catalog;
+    use crate::fixture::{File, insert, state};
+    use crate::test_support::versions;
+    use crate::types::key_version_text;
+
+    /// Seeds the `key_version` mark into a file a test made by hand, as an earlier layout (its rows are the test's): a file
+    /// without the mark is refused as one that predates it, so the test that means to carry its rows seeds it. The
+    /// mark is this build's, so the carry copies it and no key is recomputed.
+    pub(crate) fn seed_key_version(path: &std::path::Path) {
+        Connection::open(path)
+            .unwrap()
+            .execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('key_version', ?1)", [key_version_text()])
+            .unwrap();
+    }
+
+    /// The stored keys: the folder's, then each file's order key, by id.
+    fn keys_of(c: &Catalog) -> Vec<Vec<u8>> {
+        let folders: Vec<Vec<u8>> = c
+            .conn
+            .prepare("SELECT key FROM folders ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let files: Vec<Vec<u8>> = c
+            .conn
+            .prepare("SELECT order_key FROM files ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        folders.into_iter().chain(files).collect()
+    }
+
+    /// A catalog at `name` with one folder and two files, and the keys they were stored with.
+    fn catalog_with_files(name: &str) -> (std::path::PathBuf, Vec<Vec<u8>>) {
+        let dir = pg_testkit::run_folder("scratch_key_version", name).unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
+        state::add_scan(&c, 1, "D:\\p").unwrap();
+        state::add_folder(&c, 1, "D:\\p").unwrap();
+        insert(
+            &c,
+            &[
+                File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5),
+                File::new(FileId::new(2), FolderId::new(1), "b.jpg", 1, 5),
+            ],
+        )
+        .unwrap();
+        let keys = keys_of(&c);
+        drop(c);
+        (path, keys)
+    }
+
+    /// A lowered import mark (a later build's catalog) is set back to this build's, so this build's rows count.
+    #[test]
+    fn a_lowered_import_mark_is_set_back() {
+        use pg_model::versions::IMPORT_VERSION;
+        let dir = pg_testkit::run_folder("scratch_key_version", "lowered-import").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let newer = crate::Versions { import: IMPORT_VERSION + 1, ..versions() };
+        drop(Catalog::prepare(&path, newer, PATH_RULES).unwrap());
+        let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
+        let mark: i64 =
+            c.conn.query_row("SELECT value FROM meta WHERE key = 'import_version'", [], |r| r.get(0)).unwrap();
+        assert_eq!(mark, IMPORT_VERSION);
+    }
+
+    /// A later build's mark for a pass refuses this build's records of that pass, and not another pass's.
+    #[test]
+    fn a_later_pass_mark_refuses_this_builds_records_of_that_pass() {
+        use pg_model::notice::FilePass;
+        use pg_model::versions::{BORDERS_VERSION, THUMBS_VERSION};
+        let (path, _) = catalog_with_files("pass-marks");
+        let raw = Connection::open(&path).unwrap();
+        raw.execute("UPDATE meta SET value = ?1 WHERE key = 'thumbs_version'", [THUMBS_VERSION + 1]).unwrap();
+        assert!(!crate::writers::pass_mark_is_ours(&raw, FilePass::Thumbs).unwrap());
+        assert!(crate::writers::pass_mark_is_ours(&raw, FilePass::Borders).unwrap());
+        raw.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [BORDERS_VERSION + 1]).unwrap();
+        assert!(!crate::writers::pass_mark_is_ours(&raw, FilePass::Borders).unwrap());
+    }
+
+    /// Keys stored by another algorithm version (or toolchain) are recomputed when the catalog is prepared, and the mark
+    /// is this build's afterwards.
+    #[test]
+    fn stale_keys_are_recomputed_when_the_mark_is_another() {
+        let (path, keys) = catalog_with_files("another-mark");
+        let raw = Connection::open(&path).unwrap();
+        raw.execute_batch(
+            "UPDATE folders SET key = x'00'; UPDATE files SET order_key = x'00';
+             UPDATE meta SET value = 'an older key algorithm' WHERE key = 'key_version';",
+        )
+        .unwrap();
+        drop(raw);
+        let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
+        assert_eq!(keys_of(&c), keys, "the keys are this build's again");
+        assert_eq!(super::meta_text(&c.conn, "key_version").as_deref(), Some(key_version_text().as_str()));
+    }
+
+    /// A rebuild carries the rows, and the carry needs the mark to say which keys they have: a catalog without the mark
+    /// whose schema differs from this build's is refused, with the file untouched.
+    #[test]
+    fn a_rebuild_of_a_catalog_without_the_mark_is_refused() {
+        let (path, _) = catalog_with_files("refused");
+        let raw = Connection::open(&path).unwrap();
+        raw.execute_batch("DROP INDEX analysis_failed; DELETE FROM meta WHERE key = 'key_version';").unwrap();
+        drop(raw);
+        let refused = Catalog::prepare(&path, versions(), PATH_RULES);
+        let message = refused.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(message.contains("predates key_version"), "{message}");
+        let raw = Connection::open(&path).unwrap();
+        let indexes: i64 = raw
+            .query_row("SELECT count(*) FROM sqlite_master WHERE name = 'analysis_failed'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(indexes, 0, "the file is as the refusal left it");
+    }
+
+    /// A large catalog with half its order keys stale: the recompute makes every key this build's, and writes the rows
+    /// that changed (one transaction, paged by id). The wall clock is not asserted; the profile's budget gates it.
+    #[test]
+    fn a_large_catalog_has_its_stale_keys_recomputed() {
+        const FILES: i64 = 200_000;
+        let dir = pg_testkit::run_folder("scratch_key_version", "large").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
+        state::add_scan(&c, 1, "D:\\p").unwrap();
+        state::add_folder(&c, 1, "D:\\p").unwrap();
+        let folder_key: Vec<u8> = c.conn.query_row("SELECT key FROM folders WHERE id = 1", [], |r| r.get(0)).unwrap();
+        let tx = c.conn.unchecked_transaction().unwrap();
+        {
+            let mut insert = tx
+                .prepare(
+                    "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
+                     VALUES (1, ?1, 1, ?2, 'jpg', 'image', 1, 1, ?3)",
+                )
+                .unwrap();
+            for n in 0..FILES {
+                let name = format!("f{n:06}.jpg");
+                // Every other file's key is the stale one.
+                let key =
+                    if n % 2 == 0 { PATH_RULES.order_key(&folder_key, &Name::from(name.as_str())) } else { vec![0] };
+                insert.execute(params![n + 1, name.as_bytes(), key]).unwrap();
+            }
+        }
+        tx.commit().unwrap();
+        c.conn.execute("UPDATE meta SET value = 'an older key algorithm' WHERE key = 'key_version'", []).unwrap();
+        drop(c);
+        let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
+        let mut wrong = 0_i64;
+        let mut stmt = c.conn.prepare("SELECT name, order_key FROM files").unwrap();
+        for row in stmt.query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?))).unwrap() {
+            let (name, key) = row.unwrap();
+            if key != PATH_RULES.order_key(&folder_key, &Name::from_raw(&name)) {
+                wrong += 1;
+            }
+        }
+        assert_eq!(wrong, 0, "every key is this build's after the recompute");
+    }
 }
 
 #[cfg(test)]
@@ -438,6 +730,7 @@ mod tests {
         .unwrap();
         drop(old);
 
+        super::key_version_tests::seed_key_version(&path);
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         let disk = raw::on_disk(&path);
         assert!(is_current(&disk).unwrap());
@@ -586,6 +879,7 @@ mod tests {
         old.execute_batch(BEFORE_ORDER_KEY).unwrap();
         old.execute_batch(r"INSERT INTO roots VALUES ('D:\p', 1);").unwrap();
         drop(old);
+        super::key_version_tests::seed_key_version(&path);
         let c = Catalog::prepare(&path, versions(), PathRules::Posix).unwrap();
         let r = c.rebuilt().expect("moved aside");
         assert_eq!(r.carried, Carried::Nothing { reason: "made with the windows path rules".to_string() });
@@ -651,11 +945,14 @@ mod tests {
         // Files without the columns the current layout needs.
         let old_layout = |path: &Path| {
             let conn = Connection::open(path).unwrap();
+            // The key mark is seeded: a file without it is refused as one that predates it (the carry needs the mark).
             conn.execute_batch(&format!(
                 "CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL); INSERT INTO meta VALUES ('path_rules', '{}');
+                 INSERT INTO meta VALUES ('key_version', '{}');
                  CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
                  PRAGMA user_version = 1;",
-                rules_name(rules)
+                rules_name(rules),
+                crate::types::key_version_text()
             ))
             .unwrap();
         };
@@ -694,6 +991,7 @@ mod tests {
             )
             .unwrap();
         }
+        super::key_version_tests::seed_key_version(&path);
         let c = Catalog::prepare(&path, versions(), rules).expect("rebuilt, not refused");
         drop(c);
         let moved = raw::on_disk(&dir.join("catalog.sqlite.replaced"));

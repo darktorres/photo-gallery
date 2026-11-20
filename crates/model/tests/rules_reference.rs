@@ -3,6 +3,10 @@
 //! exactly; a folder key may differ only where the old key lower-cased a word-final Σ to ς (the old keys used
 //! `str::to_lowercase` on a whole component, the new ones lower-case per character, as names always did), and the
 //! difference is exactly that ς → σ.
+//!
+//! The last 26 rows (the Phase 3 widening) were recorded from the new keys, not the string keys, after each was checked
+//! by hand: the final and initial sigmas, dotted and dotless i, ẞ and ǅ, a ligature, combining marks against
+//! precomposed letters (the names are not normalized, so those keys differ), and the folder keys of each.
 
 use pg_model::name::Name;
 use pg_model::rules::PathRules;
@@ -84,8 +88,8 @@ fn components(merged: &str) -> Vec<Name> {
 #[test]
 fn the_corpus_has_its_rows() -> Fallible<()> {
     let rows = rows()?;
-    assert_eq!(rows.len(), 2033);
-    assert_eq!(rows.iter().filter(|r| r.kind == "folder").count(), 1015);
+    assert_eq!(rows.len(), 2059);
+    assert_eq!(rows.iter().filter(|r| r.kind == "folder").count(), 1023);
     Ok(())
 }
 

@@ -52,7 +52,7 @@ fn a_recording_of_another_format_is_refused_by_its_version() {
     // A start written before the format was recorded: its Init has no `format`, so it is format 1.
     let missing = r#"{"kind":"Init","listing":{},"row_height":220,"saved_row":220}"#;
     let error = parse(missing).expect_err("a recording with no format must be refused");
-    assert_eq!(error, format!("recorded by format 1, this build reads {REPLAY_FORMAT_VERSION}"));
+    assert_eq!(error, format!("line 1: the Init has no format; this build reads format {REPLAY_FORMAT_VERSION}"));
     // Explicit other formats, below and above this build's, are refused by their own number.
     for format in [0, 2] {
         let line = format!(r#"{{"kind":"Init","format":{format},"listing":{{}},"row_height":220,"saved_row":220}}"#);

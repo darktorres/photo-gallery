@@ -265,6 +265,14 @@ pub(crate) fn rules_name(rules: PathRules) -> &'static str {
     }
 }
 
+/// The `key_version` mark's value: the key algorithm's version and the toolchain's Unicode version, whose case folding the
+/// keys use (`char::to_lowercase`). Another value means the stored keys were made by another algorithm or another
+/// toolchain, and they are recomputed (`lifecycle::set_key_version`).
+pub(crate) fn key_version_text() -> String {
+    let (major, minor, patch) = char::UNICODE_VERSION;
+    format!("{}:unicode {major}.{minor}.{patch}", pg_model::versions::KEY_ALGO_VERSION)
+}
+
 /// The versions of what the build makes, which `files.pending`, `analysis.borders_due` and the failure ledger are kept
 /// against (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`, `pg_render::THUMBS_VERSION`). The library passes them
 /// to `Catalog::prepare`: the catalog doesn't depend on the analysis or the renderer.

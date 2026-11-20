@@ -4,22 +4,24 @@ Writes OUT/LAYOUT/catalog.sqlite (VACUUM INTO: compact, consistent with the WAL)
 cache's schema, its application id, entries, totals, limits, meta and checked, without the JPEGs). An existing LAYOUT
 folder is never overwritten, so the data a baseline was measured on stays. The sources are opened read-only.
 
-The data must be made by the build the benches run against: a catalog or cache of another schema is rebuilt by the
-app's start (the bench's open refuses it). Bump the LAYOUT name in crates/bench/benches/ir/catalog.rs with each schema
-change.
+The data must be made by the build the benches run against: a catalog or cache of another schema or mark is refused or
+started over by the app's start (the bench's open refuses it). Bump the BENCH_LAYOUT name in
+crates/bench/benches/ir/catalog.rs when the layout of the data changes (the reset's first layout is v1).
 
-    python tools/profiling/bench_data.py v3-windows-rules \\
-        $PG_ROOT\\synthetic\\catalog-v3 $PG_ROOT\\bench-data
+    mkdir $PG_ROOT\\bench-data
+    python tools/profiling/bench_data.py v1-windows-rules \\
+        $PG_ROOT\\synthetic\\catalog-v1 $PG_ROOT\\bench-data
 
 The large dataset (F0's `scan-walk`, `import-flush` and `inbox-refresh` benches) is made the same way, under its own
-layout name ending in `-large` (`v6-windows-rules-large` at schema v6), from `synthetic_library.py --profile large`
+layout name ending in `-large` (`v1-windows-rules-large`), from `synthetic_library.py --profile large`
 (200,000 files, 50,000 of them broken, so the import records 50,000 analysis failures):
 
     python tools/profiling/synthetic_library.py $PG_ROOT\\synthetic\\library-large --profile large
     gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large scan $PG_ROOT\\synthetic\\library-large
     gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large import
     gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large thumbs --height 256
-    python tools/profiling/bench_data.py v6-windows-rules-large \\
+    mkdir $PG_ROOT\\bench-data
+    python tools/profiling/bench_data.py v1-windows-rules-large \\
         $PG_ROOT\\synthetic\\catalog-large $PG_ROOT\\bench-data
 
 A `-large` layout also gets the failure ledger seeded (`seed_ledger`) to --ledger-rows rows (100,000 by default; 0 for
@@ -132,7 +134,7 @@ def seed_ledger(catalog: Path, rows: int) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    ap.add_argument("layout", help="the catalog layout's name, as the bench's LAYOUT constant has it")
+    ap.add_argument("layout", help="the catalog layout's name, as the bench's BENCH_LAYOUT constant has it")
     ap.add_argument("catalog_dir", type=Path, help="the folder with catalog.sqlite and thumbs.sqlite")
     ap.add_argument("out", type=Path, help="where the layouts' folders go")
     ap.add_argument(

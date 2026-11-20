@@ -158,7 +158,7 @@ jobs:
       - name: Lint (every check, as on Linux, and the QML)
         run: just lint
 
-      - name: Dependencies (cargo-deny: advisories, licences, sources)
+      - name: "Dependencies (cargo-deny: advisories, licences, sources)"
         # Its own step, outside `just lint`: it fetches the advisory database from GitHub, so it is retried, three times.
         run: |
           for attempt in 1 2 3; do
@@ -302,7 +302,7 @@ jobs:
       - name: Lint (every check, and the QML)
         run: just lint
 
-      - name: Dependencies (cargo-deny: advisories, licences, sources)
+      - name: "Dependencies (cargo-deny: advisories, licences, sources)"
         # Its own step, outside `just lint`: it fetches the advisory database from GitHub, so it is retried, three times.
         run: |
           for attempt in 1 2 3; do

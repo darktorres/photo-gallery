@@ -1,0 +1,1496 @@
+# Codebase review validation
+
+Validated 2026-11-20. The codebase review recovered 1,451 findings (RV-0001 to RV-1451). Each one was checked against the code it cites, and each got one verdict: CONFIRMED, PARTIAL or REFUTED. This page records the verdicts, and the reason for every partial or refuted one.
+
+The checks ran against the working tree at HEAD `3f9ae1b0`, which had uncommitted changes (the catalog classify work and others). A verdict can reflect those edits.
+
+## Result
+
+| Severity | CONFIRMED | PARTIAL | REFUTED | Total |
+|---|---|---|---|---|
+| high | 48 | 1 | 1 | 50 |
+| medium | 360 | 32 | 7 | 399 |
+| low | 883 | 105 | 14 | 1002 |
+| **Total** | **1291** | **138** | **22** | **1451** |
+
+The CONFIRMED count includes RV-0042, which is flagged for removal below.
+
+## Method
+
+- Each validation batch was read in full. Every cited site was checked against the tree with grep, sed or a build check, and every named path, symbol, count and quoted text was looked up. No spot-checks.
+- CONFIRMED: the live code or file supports the claim. PARTIAL: part of the claim holds, or a premise was not verified. REFUTED: the cited text resolves, or the premise is wrong.
+- Archived third-party HTML was judged as source text.
+
+## Flagged for removal
+
+- **RV-0042** (CONFIRMED): a doc comment in a test fixture (`crates/catalog/src/fixture/raw.rs`) carries personal identity data copied from shell output. The comment should be removed in a separate change. The values are not repeated here.
+
+## Open
+
+- **RV-0035** (PARTIAL): the "81 folders" count in the synthetic library comment is either unexplained or a typo. The generator writes 80 folders (`folder-00` to `folder-79`). Whether the catalog records the output root as a folder was not checked.
+- **Not covered**: the targeted pass over the 106 files that no security trace read. This report does not include it.
+
+## Refuted (22)
+
+| ID | Severity | Title | Reason |
+|---|---|---|---|
+| RV-0016 | low | pdq.rs module doc says bit-exact against Meta's Java hasher, tests use pdqhash | pdq.rs:4-5 says the pdqhash crate "is bit-exact with Meta's Java hasher (tested against it in tests)". "It" is the pdqhash crate, and matches\_reference\_crate (pdq.rs:370) tests against pdqhash. The sentence is consistent, so the claimed misattribution is not in the text. |
+| RV-0022 | low | env example says just run and dev pass PG\_CATALOG\_DIR | The Justfile sets dotenv-load (Justfile:6), which exports the .env values, including PG\_CATALOG\_DIR (.env.example:33 is the commented-out example), into every recipe's environment. So just run and just dev do pass the variable, and the comment at .env.example:7 is accurate. The finding's "mechanism is not what it says" does not hold. |
+| RV-0081 | medium | drop\_gone\_write deletes a recorded temp that the module doc says is never discarded | drop\_gone\_write (queue.rs:315) has no temp check, but its only caller (writeback/src/lib.rs ~line 418) reaches it only after `if let Some((temp, _)) = &job.temp` has returned early through write\_failed. So a recorded temp is never deleted by this path, and the module doc holds in practice. The function's lack of a guard is fragile but not a live bug. |
+| RV-0130 | low | Claim that the facet order is pinned by a test is not supported | facets.rs:3 says the order is pinned by a test. crates/client/tests/facets.rs:8-16 asserts ALL == [Types, Shapes, Status, Borders, Ratings, Exts], which pins the order. The QML side's hand-typed indices are a separate problem (see RV-0144), not an absence of a test for ALL. |
+| RV-0191 | low | Default wait of 10 seconds is written twice | The test at command\_line.rs:669-670 does check both defaults. none = read(&[], None).hooks goes through the parse default at command\_line.rs:276 (unwrap\_or(10.0)), and assert\_eq!(none, Hooks::default()) compares it with the Default impl at command\_line.rs:168. If either one changes, that equality fails. |
+| RV-0224 | high | Debug eprintln left in lane probe and coordinator route | There is no debug eprintln in lanes.rs or coordinator.rs, and no "DBG" marker anywhere in crates/\*.rs. The cited lines are normal code: probe\_place's error arms (lanes.rs:179-183) and the lane\_names() snapshot at coordinator.rs:424, which line 431 compares. git status shows neither file modified. The finding's premise does not hold. |
+| RV-0232 | low | Pairing pass has two perf span names | Every pass opens a pass.\* span in its own code: pass.borders (borders/lib.rs:63), pass.hashes (hashes.rs:43), pass.import (import/lib.rs:79), pass.scan (scan/lib.rs:831), pass.thumbs (thumbs/lib.rs:212), pass.placeholders (placeholders.rs:74), pass.crop and pass.cut. Control::begin opens phase.\* for every pass (control.rs:244-252), including phase.pairing. So pairs.rs:136 pass.pairing follows the same pattern as the other passes, and the "other passes use phase.\*" claim is wrong. |
+| RV-0239 | medium | Doc names hashes\_owed; the method is owed\_hashes | hashes\_owed is a SQL table (baseline.sql:184), and the queries at work.rs:527 read FROM hashes\_owed. passes.rs:154 says what is left "stays owed (`hashes_owed`)", which names the table, correctly. The method is owed\_hashes (work.rs:524), so the doc's name is the table's, not a stale method name. |
+| RV-0240 | medium | Doc names pairs\_owed; the method is owed\_pairs | pairs\_owed is a SQL table (baseline.sql:180), and work.rs:426 reads FROM pairs\_owed. tests/pairs.rs:1 says the import leaves the pictures' pairs owed (`pairs_owed`), which names the table. No function is claimed, so the doc is not stale. |
+| RV-0267 | low | UnreadableFiles drives: doc says 'not stored', serde stores non-empty drives | notice.rs:679-681 says drives are named "when the job has more than one; empty otherwise, and not stored". The attribute at notice.rs:685 (skip\_serializing\_if = Vec::is\_empty) does what the sentence says: an empty list is not stored and a non-empty one is. The wording is terse but accurate. |
+| RV-0286 | low | Version doc cites a scratch helper path for the registry check | The finding says no defect was found. The cited tool exists: tools/test\_versions.py is present. The doc's pointer at versions.rs:7 is valid, and the path is a repo tool, not a scratch helper. |
+| RV-0414 | low | Embedding row count used with two different images totals | The source of each count is given. OPEN\_ITEMS.md:45 names the embeddings file (eval\emb\_sscd\_fp16.npy, 187,806 rows). OPEN\_ITEMS.md:46 takes 187,808 from VERIFIER.md ("hours per run"). The doc does not leave either source unstated, and the two counts differ by 2 as the doc says. |
+| RV-0435 | low | README points to an INSTALL.md that the snapshot's file listing does not show | The README's link targets are "/blob/master/docs/INSTALL.md" (lines 527, 530). The file is at docs/INSTALL.md, not the top level, so the reference resolves. The top-level listing in the snapshot does not show it, which is what the finding describes as "either" case; the link settles it. |
+| RV-0438 | medium | Ledger says shamangary list has no code; page links code | The ledger row (REFERENCES\_LEDGER.md:43) says the list has "No code." The list is a reading list and ships no code of its own. The page's GitHub links point to the cited papers' repositories (for example Relja/netvlad, tensorflow/models delf). Read as the list's own code, "No code" is correct; the finding reads it as a claim about the cited papers. |
+| RV-0460 | low | Worker example uses a different open\_clip model string than the inference section | The two open\_clip examples (line 596 "open\_clip:ViT-B-32/laion2b\_s34b\_b79k" and line 649 "open\_clip:ViT-B-32-quickgelu") sit in two different option lists, and both are valid example tags for their own sections. They are not contradictory defaults; each section gives its own example. |
+| RV-0462 | low | MAE (ViT-L-16) rows in Table 1 and Table 2 are ambiguous against the text | The two MAE (ViT-L-16) rows in Table 1 are told apart by their second column: the first has "-" (line 618) and the second has "ImageNet" (line 625). Table 2's 0.810 maps to the ImageNet row by that column, so the labels are not ambiguous once the column is read. |
+| RV-1196 | medium | Ledger cites repo doc paths that do not exist at the stated location | docs/research/REFERENCES\_LEDGER.md has twelve papers/ links (for example :130, :133, :137). They are relative to docs/research/, and each of the twelve files exists under docs/research/papers/ (checked by name). The links resolve as written. |
+| RV-1197 | low | Same repo doc cited under two path prefixes in the ledger | The ledger uses only the papers/ prefix (12 links, all relative). It never writes docs/research/papers, so no doc is cited under two prefixes in it. The cited sites are a GitHub URL (:44) and one papers/ link (:133), which do not show the duplication. |
+| RV-1243 | medium | Facet order said to be pinned by a test; no test reads ALL | The finding says no test reads ALL. crates/client/tests/facets.rs:3 imports ALL, and :8-9 assert `assert_eq!(ALL, [ListFacet::Types, ListFacet::Shapes, ...])`. The order is pinned by a test, as the doc at crates/client/src/facets.rs:3 says. |
+| RV-1274 | low | Dangling 'trace' doc and placement: MAX\_RESTARTS note; see other low findings | crates/catalog/src/fixture/state.rs:240-241 has a closed parenthetical, "(The queue's own count, `Catalog::left_to_write`, ... comes.)". The parenthesis is balanced. The named function exists (crates/catalog/src/queue.rs:200), so the reference resolves. |
+| RV-1324 | low | Cut tooltip and cut question word the 8-or-16 px cut rule differently | The finding's title claims the cut tooltip and the cut question word the 8-or-16 px rule differently, and its own rationale says it was verified consistent. The rule appears only in ui-crop-tooltip (crates/client/locales/en/ui.ftl:32: "move inward to the next 8 or 16 px block"). The cut tooltip (:34) has no such rule. crates/edit/src/crop.rs:5 gives the same 8-or-16 px rule as the crop tooltip. No inconsistency exists. |
+| RV-1338 | medium | unreachable\_pub runs a cargo profile that is not defined | tools/modgraph/unreachable\_pub.py:34 uses `--profile check`. The Cargo.toml profiles are dev, release, release.build-override, dhat and relinc (:103-126), with no profile.check. Cargo nonetheless accepts the name: `cargo rustc -p pg-model --lib --profile check` ran ("Finished `dev` profile"). The built-in `check` profile resolves to dev, so the command runs. |
+
+## Partial (138)
+
+| ID | Severity | Title | Reason |
+|---|---|---|---|
+| RV-0012 | low | seam sharpness comment says +2 but code uses 6 times k | The code at seam.rs:106 is b &gt; 2\*a + 6\*k. Units are sums of 3 x gray over k lines, so the per-line +2 gray becomes 3\*2\*k = 6k. The arithmetic is consistent with the comment's units. The comment just does not say that the +2 is scaled, so a reader checking the literal constant can be misled. Real but low-value. |
+| RV-0026 | medium | Thumbnail failures are logged under different targets | The target names do differ: "thumbs" (images.rs:147, a failed decode), "thumbnails" (app.rs:208, the cache starting over, which is not a failure of one thumbnail) and "providers" (providers.rs:67, a failure to drop a thumbnail). Only two of the three are failed-thumbnail reports, so "the same concept" is overstated. The inconsistent naming itself is real. |
+| RV-0030 | low | Notices-lost count includes Clear and Resolve ops that the doc excludes | inbox.rs:726 does count a failed Clear or Resolve as one lost notice. The doc at inbox.rs:723 names marks, dismissals and Retries as not notices, but it does not exclude clears or resolves, so "the doc excludes" is wrong. The point that a failed clear or resolve is not a lost notice still holds, because a failed clear leaves the notice in place. |
+| RV-0035 | low | Bench data comment says 81 folders; the generator's default makes 80 folder-NN subfolders | tools/profiling/synthetic\_library.py writes folder-00..folder-79 (Profile.folders = 80, lines 44 and 133-134). The comment's "81 folders" would count the output root, which holds no images. Whether the catalog records the root as a folder was not checked, so the 81 is either an unexplained count or a typo. |
+| RV-0057 | low | Unknown-variant error text repeated across three probes | pairs\_load\_probe.rs:80 and pairs\_write\_probe.rs:76 use the same check, ensure!(VARIANTS.contains(v), "no variant {v}"). stmt\_journal\_probe.rs:217 validates differently (ran &gt; 0 with a different message), so the claim of three identical copies is overstated. Two are duplicates. |
+| RV-0058 | low | Schema-version mismatch messages use different phrasing | The three wordings differ (core.rs:140, :270 and :208). The claim that only line 140 explains the cause is wrong: line 208 appends {why} from mismatch(). Line 208 also reads "the catalog made is not this build's", which is a real phrasing problem. |
+| RV-0085 | medium | subtree membership is byte-based in mark\_missing but rules-based in removal | The mechanisms differ: under\_root (sql.rs:59) compares path bytes in a range, used by roots.rs:179 in mark\_missing, and folder\_ids\_under (removal.rs:349-357) matches by rules. types.rs:122 confirms SQL compares bytes. Whether a case-variant folder row can exist, which decides the consequence, was not traced, so the claimed unjudged rows are unconfirmed. |
+| RV-0091 | low | before\_page is documented as called before a batch is deleted, but it runs before checks that can end the batch without deleting | The doc at removal.rs:130-131 says before\_page is called before each batch is deleted, which is literally true. But before\_page runs at removal.rs:310, before the marker check (:313) and the overlapping-root check (:318), which can end the batch without deleting. Thumbnails are forgotten for rows that stay (the overlap case keeps them hidden). The doc does not promise otherwise, so this is a gap in the behavior, not a doc contradiction. |
+| RV-0099 | low | schema tests repeat the same two-row fixture SQL | The scans, folders and files inserts are repeated in both tests (schema.rs:498 and :712). The second test inserts one file, not two, so "the same two-row fixture" overstates it. The duplication is real but smaller. |
+| RV-0104 | low | module doc for the removal drop-of-marker says a removed folder's temp is kept, but before\_page forgets its thumbnails first | The removal module doc (removal.rs:1-20) does not say a removed folder's temp is kept at the marker check. It says before\_page forgets each batch's thumbnails before the batch is deleted, which is literally true. The real gap is that before\_page runs before the marker check (removal.rs:310-315) and the overlapping-root return (removal.rs:318-321), so kept rows lose their thumbnails. Thumbnails regenerate on demand, so the effect is small. |
+| RV-0118 | low | Pair timings 'idle' label is fed from the 'starved' counter | lib.rs:221 maps joins.starved to the label idle. The counter's doc (crates/dedup/src/join.rs:353) defines it as "waiting with nothing to take", which is the same thing idle names. The label is a plain gloss, not a contradiction, and a reader can resolve it from join.rs. The naming difference is real but the meaning is not hidden. |
+| RV-0138 | low | to\_pixels duplicated between resize and decode, with a wrong doc | The duplicate is real: resize.rs:124-127 and decode.rs:258-261 hold the same to\_pixels with the same doc. The doc claim does not hold. "Rounded toward zero" is what the cast does (truncation, per num.rs:107). The clamp is not mentioned in the doc, but the doc is not wrong about the rounding. |
+| RV-0149 | low | Viewport zoom tolerances differ across three checks | The tolerances do differ: viewport.rs:163 is relative (fit \* 0.0001), while :171 and :98 are absolute (0.0001 and 0.9999). But they compare different things: :163 asks whether zoom equals the fit, :171 asks whether the fit is 1:1, and :98 asks whether zoom is at 1:1. The "same kind of fitted decision" framing overstates it. |
+| RV-0164 | medium | Folder-dialog failure is only reported for the Yandex save picker | Main.qml:157-161 (addPicker) and :174-178 (cropPicker) have no onFailed handler, and picker.rs:96 and :165 emit failed(purpose, message) for them. The message is lost at the QML. But picker.rs:94 and :161 also post Notice::PickerFailed to the app's notice sink (notices.rs:68-69), so the failure does reach the inbox. What is missing is an immediate on-screen message, which YandexPanel.qml:125 gives its save picker. |
+| RV-0172 | low | Magenta used for borders has three different values | BorderOverlay.qml:21 (#ff00c8) and GridCell.qml:147 (#ff4ad8) both mark cropped borders, so their hues differ for one meaning. Viewer.qml:443 (#ff00ff) is a separate 1 px frame around the image "so black bars inside it stand out", not a cropped-border colour. Two of the three values share a meaning, and the third has a different one. |
+| RV-0178 | low | Request priority counter relies on signed wraparound | providers.cpp:148 says the priority "Wraps after 2^31 requests, harmlessly." The comment relies on signed wraparound in std::atomic&lt;int&gt;::fetch\_add, which C++ treats as undefined before C++20's two's-complement rule, and the standard text was not checked here. The impact is small, since the counter only orders requests. |
+| RV-0185 | low | Wheel notch accumulation and the 120-unit notch are repeated in three QML files | The 120 divisor is in three files: Viewer.qml:306, YandexPreview.qml:65 and WheelListView.qml:50. The remainder carry is only in two of them (Viewer.qml:306-309 and YandexPreview.qml:65-67). WheelListView.qml:50 divides without carrying the remainder, so "the same logic three times" overstates it. |
+| RV-0196 | medium | Row-height bound in pixel-size doc is 2048, code says 800 | The comment at shell.rs:64 says sizes are at most 2048 so px() never saturates. The 2048 bound is THUMB\_HEIGHT's maximum (model/size.rs:12), and ROW\_HEIGHT's is 800 (size.rs:10). The claim holds for both, but the comment names the thumb bound. Whether px() is used for other sizes was not traced, so "the stated reason is wrong" is not shown. |
+| RV-0206 | low | Int-conversion helpers disagree on overflow | The three conversions do disagree on overflow: shell.rs:61 (to\_i32) gives -1, which means none, rows.rs:10-11 (to\_row) saturates at i32::MAX, and lane\_model.rs:238 (qt\_int) saturates at i32::MAX. The rows.rs module doc (rows.rs:1-2) says -1 means none, not how overflow is handled, so the claim that the doc promises one overflow convention is not in the text. |
+| RV-0238 | low | Saturating u64 conversion of counts repeated | The inline saturating conversions are real: pairs.rs:177, pairs.rs:233-234, control.rs:549, and passes.rs:34 (count), which is a named helper. But pg\_model::num has no saturating u64 conversion for counts. Its only u64 function is f64\_to\_u64 (num.rs:96), which converts floats, so the claim that num "already exists for this kind of conversion in pairs.rs" is false. |
+| RV-0261 | medium | THUMBHASH\_MAX doc cites a MAX\_LEN constant and a pg-analysis test that are not in the repo | The finding's search missed the check. MAX\_LEN is the vendored thumbhash crate's constant, and render/src/maker.rs:368 asserts THUMBHASH\_MAX == thumbhash::MAX\_LEN, so the equality is checked. But the doc at analysis.rs:137 says the check is in "the analyze tests in pg-analysis", and no such test exists there; the check is in pg-render. The stale part is the pointer, not the missing check. |
+| RV-0304 | low | Lock doc says the name goes on drop, but on Unix only on delete | lock.rs:25-26 says a lock from create\_for\_delete or take\_for\_delete "removes its name when it goes ([HeldLock::delete])". The parenthetical points at delete(), and delete() (lock.rs:175-177) says it removes the name while the lock is held. So the reading that a drop removes the name is not what the link says, but "when it goes" is ambiguous, and the doc does not state the Unix and Windows difference in this file. The Windows side was not read. |
+| RV-0316 | low | Duplicate imports in scan test module | scan/src/lib.rs:63-64 imports Arc, Duration and Instant at file level, and the test module at :1302 has use super::\*. The re-imports at :1729 (Arc) and :1731 (Duration) are redundant only if the module that holds them sits inside tests or otherwise globs the parent. That enclosing module's header was not in the window and was not read. |
+| RV-0330 | low | Test scratch folder names differ across the thumbcache crate and its neighbours | The inconsistency is real: thumbcache uses "scratch\_thumbcache" (tests/other\_process.rs:48) and "scratch\_thumbs" (lib.rs:419, reader.rs:174), while thumbs uses "scratch\_rate" (thumbs/lib.rs:467). The claim that crates/README.md lists the scratch names per crate is not true: README.md mentions only scratch\_rate (line 232) and scratch\_video (line 246), so an extra name is not shown to be undocumented in a per-crate list. |
+| RV-0335 | low | Extension rule in hint\_name is looser than the doc says | hint\_name (ffi/io.rs:74-80) applies a stricter rule than its doc: the doc says the extension is used "when it is ASCII", and the filter at :80 requires non-empty and ASCII-alphanumeric. The doc is the looser one, so the finding's direction (the code is looser than the doc) is backwards. The doc omits the alphanumeric and non-empty conditions. |
+| RV-0337 | low | pg-thumbs Cargo comment says no analysis dependency, but dev-dependencies include it | thumbs/Cargo.toml:10 says the crate "Depends on the render and the thumbnail cache, not on the analysis or the writes". That is true of the normal [dependencies]. The [dev-dependencies] at :30 list pg-analysis, which the comment does not mention. The comment is scoped to normal deps, so the stale part is that it reads as the whole manifest. |
+| RV-0339 | low | Shrink comment says one page per step, code steps 4096 pages | maintenance.rs:70 says the step "frees one page per step (a row each)". The macro passes 4096 pages to incremental\_vacuum (maintenance.rs:17). The comment's per-step figure conflicts with the constant as written. Whether incremental\_vacuum returns one row per page (which would make "a row each" coherent) was not settled from the repo. The conflict is in the text as written. |
+| RV-0363 | low | SSCD-large cost multiple does not match the table | MODELS.md:144 says SSCD-large is "not enough to justify 7× the cost". The table (MODELS.md:10-13) gives GPU days 7.7 for SSCD large and 3.4, 2.0 and 1.2 for SSCD at fp32 320, fp16 320 and fp16 256. No pair of rows gives 7×: 7.7 / 2.0 = 3.9, 7.7 / 3.4 = 2.3, 7.7 / 1.2 = 6.4. The multiple is not a ratio the table shows. |
+| RV-0367 | low | Image count for the full set is given as two numbers | TEST\_SET.md:21 gives "187,614 .jpg" as the images in the 189,528-file set. VERIFIER.md:39 gives "the full 187,808-image k-NN set". The two counts differ by 194, which could be PNGs (not .jpg) being counted as images. The doc does not say what the difference is, so the two numbers are unexplained rather than contradictory. |
+| RV-0374 | low | webpki-root-certs is attributed to a ureq feature the workspace does not enable | deny.toml:25-26 attributes webpki-root-certs to "ureq's native-tls feature". Cargo.lock:2933-2948 shows ureq depends on webpki-root-certs, so the crate-level link exists. The lock does not show which feature activates the edge, so the attribution to native-tls specifically was not confirmed. |
+| RV-0380 | high | files\_changed index: CATALOG\_SIZE\_PLAN drops it, DECODE\_ONCE Phase 4 delta query depends on it | The conflict is real. DECODE\_ONCE\_PLAN.md:845 reads the changed ids through files\_changed, and CATALOG\_SIZE\_PLAN.md:94-102 drops that index (decided 2026-11-19), noting the web client will need it and that without it the query is about 310 ms. But the finding's "1000-row bound" is not in DECODE\_ONCE: its DELTA\_BOUND is 8,192 (DECODE\_ONCE\_PLAN.md:843). The bound is misstated in the finding, though the index conflict stands. |
+| RV-0392 | low | Clippy ledger levels contradict the adoption status | CLIPPY\_LEDGER.md:230 lists arithmetic\_side\_effects at Level "warn" with status "decided: adopt" and the work "Adopt ... at deny". Cargo.toml does not configure arithmetic\_side\_effects at all, so neither warn nor deny is the gate's level. The finding's premise that the gate reads the Level column is wrong: the gate reads Cargo.toml, clippy.toml and tools/lint.py. The Level column is ambiguous between current and target, which is the real defect. |
+| RV-0393 | low | GPU encoder status: feasibility says nothing is implemented, encoder plan says it was implemented | GPU\_BATCH\_FEASIBILITY.md:3 says "Status: evaluation, 2026-11-17. Nothing is implemented." That doc is about the four decoder options. GPU\_BATCHED\_ENCODER\_PLAN.md:100 says the encoder is implemented as a harness in eval/jpeg-encoder/, and that directory exists. The two statements cover different components (decode and encode). The feasibility doc's unqualified sentence reads as covering the encoder, so it is misleading, but the two docs do not contradict each other on the same component. |
+| RV-0395 | low | ExifTool file counts do not add up | EXIFTOOL\_PORT\_DESIGN.md:8 gives 238,416 lines for the 172 files and 248,731 with lib/Image/ExifTool.pm added. Line 9 and the inventory say "~249k Perl lines in ~172 modules", which is the 173-file total. The module count is off by one, and the document says its own counts "disagree with each other in places". The census total is not verified, so the finding is only partly supported. |
+| RV-0399 | low | Thumbnail-pass wording: GPU and decode plans cite the same decode differently | The sites cited (DECODE\_ONCE\_PLAN.md:1005, analyze.rs:28) do not show the same decode worded two ways. DECODE\_ONCE :1005 is the over-cap JPEG outcome, which has no decode wording at issue. analyze.rs:28 describes the hashing decode, and it agrees with README.md:350. The finding restates RV-0379 and does not add a separate defect. |
+| RV-0402 | medium | Thumbnail reader cache: tuned versus default | thumbcache/src/reader.rs:64 (pending\_for) does set PRAGMA cache\_size = -131072, which is 128 MiB. OPEN\_ITEMS.md:60 cites reader.rs:38 for that setting, but line 38 is an unrelated prepare. REVIEW.md:42 (R-107) says reader connections use the default page cache. CONNECTION\_PRAGMAS (thumbcache/src/schema.rs:85-86) sets no cache\_size, so R-107 is right for with\_reader connections and wrong for pending\_for's. The two plans describe different connections, and the cited line is wrong. |
+| RV-0409 | medium | MAX\_ATTEMPTS defined in more than one place | The code has one definition: catalog/src/queue.rs:32 (MAX\_ATTEMPTS = 5), and writeback defines none. REFACTOR\_LEDGER F-13 (:53) is right that there is one definition, but it cites writeback.rs literals at 353, 370, 453 and 805, and the literal 5 sits at writeback.rs:387, :404 and :848 (see RV-0251). IMPORT\_FAILURES\_PLAN.md:169 says writeback/src/queue.rs has its own MAX\_ATTEMPTS, which does not exist. IMPORT\_FAILURES\_PLAN.md:228 proposes a new MAX\_ATTEMPTS = 3 in pg\_model::retry, a second cap with a different value if it is built alongside queue.rs:32. |
+| RV-0413 | low | box\_1d 21% lead still open after its fix | Commit 81ad9256 ("PDQ: the tent filter's column pass goes down every column at once, row by row") is the box\_1d change NIGHTLY\_AND\_BUILD\_FLAGS\_PLAN.md:36 names. PROFILING\_PLAN.md:40 (P-02) still gives the 21% figure, but its status says "Open. Re-measure first" and notes that the PDQ buffers have changed. It does not cite 81ad9256. The lead is marked open pending re-measurement, which is defensible; the defect is that the row does not say the fix has landed. |
+| RV-0424 | low | Pinned FFmpeg location and second downloaded build not reconciled | STATIC\_BUILD.md:29 says the pinned FFmpeg is in .deps/ffmpeg (from just setup). VIDEO\_PLAYER.md:371 says the FFmpeg the app and tests use is at D:\PhotoGallery\tools\ffmpeg-9.0, and it says that is "the only FFmpeg on this machine's tools path". The two docs give two locations, and neither says whether they hold the same build. The "second downloaded build" is not shown in the text, so only the location conflict is supported. |
+| RV-0427 | low | Thumbs cache file name stated in the start profile is not where the code keeps it | The file name is right. thumbs.sqlite is the cache's name in the code (cli/src/lib.rs:984, bench/benches/ir/catalog.rs:60 and :166). The cited thumbcache/src/lib.rs:130 is the closing brace of set\_suspended, which does not support the name, so the citation fails. The finding's title (the name is not where the code keeps it) overstates it: the name matches; only the citation is wrong. |
+| RV-0428 | low | Scripts named in the profiling record are no longer in the repo | tools/profiling/scan-timing.sh and tools/profiling/wsl-bench.sh are gone. PROFILING.md:351 says the record was taken with scan-timing.sh and gives its successor, tools/profiling/scan\_timing.py, which exists. The doc names its successor in the same line, so the reference is historical, not missing. The wsl-bench.sh reference is the same kind of stale citation (see RV-0355). |
+| RV-0429 | low | Read budget written in MB while the code and sibling docs use MiB | IO.md:42 says "240 MB (12 MiB × (8 + 12), the default)". The parenthetical uses MiB, which matches BUFFER\_PER\_SLOT = 12 &lt;&lt; 20 (jobs/src/pipeline.rs:48). The table header and the other rows say MB, and the doc does not say whether they are binary. The 240 figure is correct in MiB; the unit of the other rows is unstated. |
+| RV-0431 | medium | LSH candidate threshold direction is inverted in the write-up | REFERENCES\_LEDGER.md:28 (the mendesk/image-ndd-lsh entry) says "threshold such as 0.8" with no direction. The defect is in the upstream README's wording (a Hamming-distance ratio "lower than t", against a similarity percentage in its output at line 585), which the ledger copies. The ledger's bare 0.8 is ambiguous, and that is a real gap in a summary. The snapshot itself is third-party archived content, and the repo's own text is not wrong about direction. |
+| RV-0432 | low | Snapshot meta publish dates disagree with the visible dates the ledger cites | The snapshot carries two dates: article:published\_time is 2018-12-25 and datePublished is 2018-11-25 (the 10\_web.archive.org TowardsDataScience snapshot). The two disagree inside the archived third-party HTML. It is a source-document inconsistency, not a repo document's claim, and it does not change any repo citation unless one cites the meta date. |
+| RV-0440 | low | License column holds non-license values | The License (Open/Closed) column does hold non-license values such as "Open (via API)" (line 671) and "Open but not free" (line 1075). The "Yes" the finding cites (line 795, "Yes (a set)") is in the External Image Query column, not the license column. The header problem is real; the "Yes" example is wrong. |
+| RV-0452 | low | Dataset path in the captured README disagrees with its own tree | The captured KhaLee2307 README tells the reader to put the data in "./data/" (data/paris, data/groundtruth, data/parisbuildings/), and its feature output goes to "dataset/feature". The directory diagram is at line 522 and its root name is not in the window, so whether the diagram gives a different location for the same data was not confirmed. The two documented roots (data/ and dataset/) do differ in the captured text. |
+| RV-0457 | medium | In-text citation surnames disagree with the reference list | The arXiv 2410.19437 snapshot cites "Thyagharajan et al." and "Liong et al." (lines 312, 315), which use surnames. The claim concerns three references where the first name is used as the surname and the ninth is misspelled; only the two in-text lines were visible in the window, and the bibliography entries for the other references were not compared, so the count of three and the misspelling were not verified. |
+| RV-0465 | low | nmslib link points to pre-move repository path | The Faiss snapshot links "github.com/searchivarius/nmslib" (line 313), and the nmslib snapshot's own title reads "nmslib/nmslib" (line 114). The two captured pages use different owners. The MANIFEST.tsv, which the finding cites as also using nmslib/nmslib, was not opened, so that half of the claim is unverified. |
+| RV-0471 | medium | Last.fm dataset metadata disagrees with HDF5 name | The captured table row for Last.fm (line 624) gives 65 dimensions (line 625), which the finding also cites. The filename that the finding says encodes 64 dimensions and a dot metric does not appear anywhere in the snapshot (no "lastfm" string matched), and the metric column is outside the window. The filename half is unverified. |
+| RV-0474 | low | NeurIPS year written three ways | The big-ann-benchmarks snapshot writes "NeurIPS 2023" in its headings (lines 450, 453) and "NeurIPS 23" in prose (line 454), and "NeurIPS 2021" for the other competition (line 455). The two forms for 2023 are confirmed; the third form the finding cites is not in the window. |
+| RV-0477 | low | Big ANN site URL scheme and description phrasing differ | The URL "`http://big-ann-benchmarks.com/"` is the same in the README (line 448) and the sidebar (line 452). The description-phrasing difference the finding cites is not in the window, so only the URL, which matches, was checked. |
+| RV-0480 | low | NearPy ships README.md and README.txt and a defunct CI badge | The cited line 0 is out of range (the file has 798 lines), a citation error. The snapshot does reference both README.md (12 times) and README.txt (10 times), so a duplicate source is present in the text. The "defunct CI badge" claim was not checked. |
+| RV-0481 | low | ScaNN Python version range differs between sections | The ScaNN snapshot says Python "3.9-3.13" for install (line 504) and "Python 3.9.x or later" for the source build (line 536). The source-build section gives a minimum and no maximum, so the two are not contradictory; the missing upper bound is a gap, not a conflict. |
+| RV-0482 | medium | big-ann-benchmarks baseline numbers disagree | Citation error: the cited line 0 is out of range (the file has 631 lines). The two baseline value sets were not located, so the claim is unverified. |
+| RV-0483 | medium | run time and memory for same setup disagree | Only the one cell at line 331 ("0.883 recall@10 (45mins)") is in the window. The second run time and memory value for the same setup were not located, so the contradiction is unverified. |
+| RV-0486 | low | Medium follower and reading-time values disagree with render | Citation error: the cited line 0 is out of range (the file has 64 lines). The Medium follower and reading-time values were not compared against the render, so the claim is unverified. |
+| RV-0487 | medium | pgvector example query vector has wrong dimension | The Supabase pgvector snapshot's table uses vector(384) (one occurrence). The example's insert and query literal sits in code blocks that are truncated in the window; the three-element literal the finding cites was not seen, so the mismatch is unverified. |
+| RV-0488 | low | Milvus heading and body disagree on fine-grained | Only "fine-grained access control" (two occurrences, both hyphenated) is visible in the Milvus snapshot. The heading-versus-body spelling the finding describes was not located in the window. |
+| RV-0489 | low | Milvus sidebar description differs from README lead | The Milvus sidebar description (line 451) is inside a truncated script and no description text is shown in the window; the sidebar and README-lead texts were not compared. |
+| RV-0490 | low | Ledger says about 32 ImageMagick filters; page lists 31 | The ImageMagick snapshot lists 29 quoted filter names on their own lines, by my count of its list. The finding's count of 31 was not reproduced, and the ledger's "about 32" is an approximation. Neither count matches the other, so the mismatch is unconfirmed. |
+| RV-0496 | low | UFFS capture names v0.5.120 as current yet shows a newer pin example | The capture calls v0.5.120 "current" (line 470) and its install section uses v0.6.5 as a pin example (line 669). The example is for pinning and rollback, so it may not claim v0.6.5 is the latest release. The inconsistency is possible but not established from the window. |
+| RV-0517 | low | Problem statements duplicated in JSON-LD and visible SEO markup | The snapshot has 15 "The Problem:" paragraphs (the same count as the finding). One pair was checked verbatim: the JSON-LD description at line 2276 matches the visible text at line 19990. The other fourteen pairs were not compared, so the "fifteen verbatim pairs" count is unverified beyond the count of paragraphs. |
+| RV-0520 | low | Two unrelated webfont families loaded on one page | Poppins (CSS lines 131, 142, 188, 223) and GilroyBold (lines 146, 270, 426 and others) are both present, as the finding says. The page also loads Inter and JetBrains Mono (line 19902) and DM Sans (line 22767) from Google Fonts. The "two unrelated families" framing understates the count, and the cited line 2030 was not located. |
+| RV-0547 | low | Change-notice coalescing window is 500 ms in one section and 250 ms elsewhere | DESIGN:502 coalesces ListingChanged notices to one per listing per 500 ms. DESIGN:1297 holds a poll up to 250 ms so bumps batch, and RECONCILED:263 batches bumps at 250 ms. The two values belong to two mechanisms (listing notices and poll hold), so they are not one coalescing window stated two ways. The 500 ms and 250 ms values do disagree for the notice, but the single-window framing is not supported. |
+| RV-0574 | low | Top-10 comparison can crash when search width is below ten | cpu\_worker.py:144 and :156 take ids[:, :10] from search\_usearch or search\_faiss, whose width is min(k, ef). Two sweep steps whose widths straddle 10 (an earlier width below 10 and a later one at or above 10) give comparison arrays of different shapes at :157. The code is as described. The comment at :152 says the params "widen the search in order", so the case needs a sweep whose early width is below 10. Not run; the sweep config was not checked. |
+| RV-0616 | low | EGPU\_ERR\_ARG documents a bad-option error that is never returned | encode\_gpu.cu:908 clamps the quality to 1..100 rather than rejecting it, as the finding says. EGPU\_ERR\_ARG is returned at nine sites in encode\_gpu.cu (lines 924 to 1057), and the finding claims none is for a bad option. The sites were not read one by one, so whether one of them is an option check is unverified. |
+| RV-0637 | low | Third-party licences ship only for the two patched projects | Licence texts are present only for jpeggpu and parajpeg, under eval/jpeg-decoders/patches/ (LICENSE-jpeggpu.txt, LICENSE-parajpeg.txt). No other licence file exists under eval/ for the other cloned upstreams. Whether the eval README states the other licences was not checked. |
+| RV-0655 | low | fuzz patch list is a subset of the root list, but the comment says it is the full list | The fuzz block (fuzz/Cargo.toml:76-) has ten entries. The root block (Cargo.toml) has fourteen, and the fuzz block omits four of them: cxx-qt-build, qt-build-utils, rusqlite and thumbhash. The comment at fuzz/Cargo.toml:74 says "the root Cargo.toml's [patch.crates-io] is the full list", which states that the root is the complete list. The subset is therefore signposted, and the finding's premise that the comment calls the fuzz block the full list is wrong. |
+| RV-0685 | low | The PG\_HOME-not-set message has three wordings | The three PG\_HOME messages are at build\_jpeg\_turbo.py:75 and build\_static\_ffmpeg.py:92, which are word-for-word identical, and build\_static\_qt.py:69, which differs. There are two wordings across the three sites, not three. The claim that Qt's version omits the static/ hint is correct (build\_static\_qt.py:69 has no "static/ goes under it"). |
+| RV-0690 | low | comment stripping and test-split logic is repeated across the modgraph scripts | The comment-strip function is in two files, tools/modgraph/api\_surface.py:41-43 (strip\_comments) and tools/modgraph/edges.py:22-24 (strip), not three. The two regexes are identical, not "slightly different". The cfg(test) split appears in edges.py:17-19 (split) and api\_surface.py:46-52 (prod\_text), also two copies. The cfg(test) differences the finding links to are in RV-0688. |
+| RV-0696 | low | A process timeout in compare\_shots records MISSING, not UNSETTLED, and puts a placeholder in the crops hash | The MISSING result is confirmed. tools/compare\_shots.py:375 calls Shot(name, None, "TIMEOUT", "timed out", ""), and the fields are scenario, png, crops, note, settle (:151-155). So settle is "" and timed\_out() (:157-158) is False, and judge() (:492-493) reports MISSING because png is None. The "crops placeholder is hashed and compared" part is not supported: "TIMEOUT" is a plain string, not a hash, and crops are compared only in the else branch (:499), which needs a png and is never reached on this path. |
+| RV-0707 | medium | unreachable\_pub runs a cargo profile that is not defined | Cargo.toml has no [profile.check] (the profile headers at :103-126 are dev.package, release, release.build-override, dhat and relinc). The claim that cargo rustc --profile check fails for every library crate was not run. Whether cargo accepts "check" as a built-in profile name was not tested, so the failure is inferred, not observed. |
+| RV-0708 | low | perf\_check docstring lists four budgets; the file has six | docs/perf/budgets.json defines seven budgets: scan-walk.again, scan-walk.first, import-flush, pending-import, inbox-refresh.closed, inbox-refresh.open and pending-thumbs. The perf\_check.py docstring (:9-12) names scan-walk, import-flush and inbox-refresh, and so covers five entries. pending-import and pending-thumbs are enforced but not named, as the finding says. The "four" and "six" counts in the title are wrong. |
+| RV-0710 | medium | Shot manifests use two different fixture schemas | The two schemas are real. Nine manifests under tools/shots/reference/ use one "fixture" hash (262004b119, 32bc9b7b9b, 3bd0829c34, 67cd351159, 88e780b82f, 8f980e17cf, a760ac6b20, c1e025319d, cae2f7a28c). Four use a "fixtures" map with shot.log (3edb43b63b, 56f09deda1, 914c44ca3c, c44fe07347). The finding's counts of eight and three are wrong. |
+| RV-0721 | low | Unsynchronised once-only flags in Pin callbacks | The code shape matches: callgraph.cpp:420 (on\_start) and :433 (on\_stop) each hold a function-local static bool done that is checked and then set with no lock, and on\_stop calls PIN\_StopApplicationThreads between the check and the set (:434-437). Whether Pin runs these callbacks on two threads at once was not checked against Pin's threading model, so the race is plausible but not established. |
+| RV-0724 | low | Profiling tools import numpy and Pillow with no declared requirement here | tools/profiling/make\_bench\_jpeg.py:15-16 imports numpy and PIL with no declared requirement (grep of the requirements files and the Justfile finds none for it). tools/profiling/synthetic\_library.py is declared: tools/shots/requirements.txt:1 says it lists the packages synthetic\_library.py needs, and pins numpy and pillow there. The claim that neither profiling script states its dependencies is therefore wrong for one of them. |
+| RV-0747 | low | Replay fixture accepts drive-relative file names that escape the session folder | crates/app/src/yandex/replay.rs:56 rejects names containing ".." or a slash or backslash, and nothing rejects a drive prefix. The read at :59 is file(name), so the path is built by the same join. Whether Path::join replaces the session folder for "C:name" depends on the drive: the Rust std push rule was not checked in source here. The escape is plausible only when the session folder is on another drive. |
+| RV-0751 | low | Out-of-order saves let an older change overwrite the file and clear the failure notice | store.rs:98 skips a save only when self.changes &lt;= \*written. An older save whose value was not superseded by a failed newer one is therefore written, and prefs.rs:197 then resolves the PrefsNotSaved notice on Ok, which matches the finding. The claim that the desktop serialises prefs writes through crates/desktop/src/worker.rs was not checked: the file exists, but its ordering was not read. |
+| RV-0753 | low | Bench data default is a hard-coded container path | crates/bench/benches/ir/catalog.rs:28-31 falls back to "/root/pg-bench" when PG\_BENCH\_DATA is not set at build time, as the finding says. The failure mode (a bare read error instead of a message naming the variable) was not run or traced. |
+| RV-0758 | low | Timing bound cannot catch the per-row regression the test names | crates/catalog/src/ledger.rs:1049 sets BOUND to 30 s and :1075 asserts the record and retry times fall under it. The claim that a per-row version would still pass within 30 s was not measured, so the test-gap part is unverified. |
+| RV-0768 | low | files\_changed index is maintained on every write but only a test helper queries it | baseline.sql:241 creates files\_changed. A grep of crates/ outside tests finds the filter "changed &gt; ?" only in crates/catalog/src/test\_support.rs:165 (changed\_since). The remaining changed references are struct fields and row counts (ledger.rs:462, writers.rs:880, library/passes.rs:79) and roots.rs:283 (a SELECT that does not filter on changed), so the index's only reader is the test helper. The claim that the helper's doc is out of date is not supported: test\_support.rs:160 says "nothing in the app reads the stamps yet", which matches the code. |
+| RV-0789 | low | Region crop bound is an exact f64 comparison that float rounding can break at the edge | crates/render/src/display.rs:120 passes (x \* iw, y \* ih, rw \* iw, rh \* ih) to resize\_region, and crates/codec/src/resize.rs:89 passes the crop to fast\_image\_resize. fast\_image\_resize 6.1.0 crop\_box.rs:116 rejects right &gt; img\_width with a strict comparison, as the finding says. Whether the rounded sums actually exceed the edge by one ulp was not measured, and the finding itself gives low confidence. |
+| RV-0791 | low | find panics on an empty needle | crates/container/src/lib.rs:1010 is haystack.windows(needle.len()).position(...), and slice::windows panics on a size of 0, so an empty needle panics. The one caller found by grep is crates/edit/src/rotate.rs:282 with the constant [0xFF, 0xDA]. The other callers the finding names (container/src/lib.rs:941-942) were not found by grep, so the claim that all current callers pass constants is only partly checked. |
+| RV-0792 | low | range\_in underflows when the part does not lie inside the buffer | crates/container/src/lib.rs:19-20 computes part.as\_ptr().addr() - bytes.as\_ptr().addr() before the debug\_assert, so a part that starts before bytes underflows, as the finding says. The six callers (crates/metadata/src/container.rs:42, 60, 101; crates/metadata/src/lib.rs:64; lib.rs:218; the search\_laws test) were not read, so the claim that they all pass subslices is unverified. |
+| RV-0812 | low | Saved-view and file-path catalog reads run synchronously on the Qt thread | crates/desktop/src/shell.rs:119-123 (view\_names) and crates/desktop/src/video\_source.rs:32 call catalogs().file\_path and views().all() on the Qt thread. That is confirmed. Whether pool.with blocks behind a writer or fails fast was not traced, so the UI-stall consequence is unverified. |
+| RV-0825 | low | A pass with zero readers or zero workers reports success without running | crates/jobs/src/pipeline.rs:238 (no readers spawned at 0), :279 (raw\_tx dropped) and :369-372 (the check passes when sent is 0) match the finding's mechanism. Reachability is ruled out for the CLI: crates/cli/src/args.rs:51-52 clamp readers and workers with .max(1). Only a direct caller that builds Options with zero fields can reach it, and no such caller was checked. |
+| RV-0845 | low | BMP sniffed from a two-byte prefix | crates/model/src/format.rs:22 returns Format::Bmp for any input starting with "BM", as the finding says. The callers (analysis analyze.rs lines 102, 118, 135, and app yandex.rs:250 as the still-image gate) were not read, so the misclassification and gate consequences are unverified. |
+| RV-0860 | low | Save dialog start folder canonicalized from a plain dotted path | crates/platform/src/picker.rs:44-50 applies canonicalize to the requested folder as given, so the mechanism matches the finding. Whether the photo path passed from crates/app/src/yandex.rs:520-526 arrives in plain form with a trailing dot was not traced, which the finding itself marks as unverified. |
+| RV-0889 | low | Result image URLs fetched without a host or scheme check | crates/yandex/src/parse.rs:154 takes img\_url straight from the response's query parameter, and crates/yandex/src/fetch.rs:36 requests it with the agent without any scheme or host check (grep finds none in crates/yandex/src). The 100 MB body cap is real (MAX\_DOWNLOAD\_BYTES, fetch.rs:12 and :53). The redirect count (ureq 3.5.2's default of 10) was not checked against the crate source. |
+| RV-0892 | medium | Failed source fetch leaves a half-made clone that later runs accept | eval/jpeg-decoders/linux\_build.py:48-52 creates the folder and runs git init, fetch and checkout inside `if not folder.is_dir()`, so a failed fetch leaves a folder that the next run skips. The claim that main() catches only BuildError (lines 208-212 of the file's main) was not read; linux\_build.py's own handlers (:82, :134) catch BuildError, and the subprocess errors from clone() are CalledProcessError. |
+| RV-0915 | medium | A decoupled backend that fails to set up aborts the whole nvJPEG comparison and leaks its handles | Abort confirmed: eval/jpeg-decoders/nvjpeg.py:289 builds Decoupled outside the try at :290, and Decoupled.\_\_init\_\_ calls parse() (:174) and ok() (:176), which raise. Leak not confirmed: close() (:193) runs only from the finally at :300, which does not cover the constructor. Whether the nvjpeg `new` helper registers handles for cleanup was not read. |
+| RV-0916 | low | Labeled-pair scoring is a Python double loop over all labeled images | Citation error: eval/jpeg-decoders/group.py does not exist. The code is at eval/group.py:133 (combinations(list(folder\_of), 2) over labeled images, in score()), so the quadratic pair loop matches. The claim that it repeats for every multicut setting was not traced. |
+| RV-0923 | low | Timing-only event failure fails the batch, contrary to the stated intent | Mechanism confirmed: encode\_gpu.cu:553-554 ignore cudaEventCreate results, and :881 applies CUDA\_TRY to cudaEventElapsedTime on a null event. The claim that the early return skips destroy\_spans was not traced beyond the call at :853. |
+| RV-0936 | low | Pretrained timm and open\_clip weights load without a pinned hash | eval/models.py:159 and :177 load timm and open\_clip pretrained weights with no hash check. SSCD is pinned with SHA-256 (models.py:39-56), as the finding says. The download formats for timm and open\_clip, which decide the risk, were not traced. |
+| RV-0949 | low | Interrupted extraction is treated as complete when configure.bat exists | tools/build\_static\_qt.py:99 skips extraction when only configure.bat exists, as the finding says. The claim that configure.bat is not the last member of the archive was not checked against the archive's member order. |
+| RV-0950 | low | Null stable version from crates.io escapes the handler | tools/fork-updates.py:46 can return a null max\_stable\_version. version\_key (:49-56) calls .split on it, and the except tuple at :100 (OSError, KeyError, ValueError) does not catch the resulting AttributeError, so the script exits 1 with a traceback. .github/workflows/fork-updates.yml:30-32 and :37 treat status 1 as "newer release" and open or update the issue. Whether crates.io ever returns null was not verified. |
+| RV-0972 | medium | profile.py and profile.ps1 report success when Pin fails | tools/profiling/callgraph/profile.py:67-68 prints the Pin exit code and never propagates it. :78 runs symbolize.py with check=False, and no sys.exit follows, so the script returns 0. profile.ps1's tail after line 40 was not read. |
+| RV-0973 | low | build.sh and profile.ps1 superseded by .py tools, still shipped | Dead-code part confirmed: the Justfile and .github do not run build.sh or profile.ps1 (grep). profile.ps1:29 does name build.sh in its error message. The finding's claim that tools/README.md calls them was not borne out: the grep does not list tools/README.md, and the mentions are in docs/plans/CONSISTENCY\_AUDIT.md and docs/plans/SECURITY\_FLOW\_REVIEW.md. |
+| RV-0991 | medium | Request body caps differ across routes and docs | WEB\_CLIENT\_DESIGN.md:1674 gives 16 KiB for JSON mutations, 4 KiB for login and 64 KiB for the WebSocket message, so the 64 KiB figure is not the selection body the finding names. WEB\_CLIENT\_RECONCILED.md:410 sets a 128 KiB body cap for selections and says 64 KiB would refuse a legal selection. WEB\_CLIENT\_TECH\_DECISIONS.md:95 sets 1 MiB for quarantine writes. The caps across the three docs do differ, but the finding's 64 KiB claim is not borne out. |
+| RV-0999 | medium | Scripts read env vars that .env.example does not list | .env.example has no entries for IMAGEREDUCE\_VIPS\_BIN, JPEGLI\_BUILD or CAMERA\_ROOT (grep count 0 for each). PG\_DATA\_ROOT is listed once, so the finding's claim that none of the four names appears is wrong. The three missing names are real. |
+| RV-1002 | medium | Test driver defaults point at a session scratch folder and a D: path | eval/jpeg-encoder/test\_encoder.cpp:41-43 hard-codes sample and work folders under one session scratchpad, plus an SSIM path under a D: tools checkout. eval/jpeg-encoder/README.md:41-43 documents the --ssim default path. It does not document the sample or work defaults, so "not documented" holds only in part. |
+| RV-1008 | medium | Thumbnail sweep failure posted as a folder-not-removed notice | crates/library/src/coordinator.rs:791-793 posts a thumbnail-sweep failure as Notice::FolderNotRemoved, with the message "the thumbnails of removed files weren't dropped". The misfiling is confirmed. The inbox's clear-by-trigger behaviour that the finding relies on was not traced. |
+| RV-1010 | low | Lost-notices count includes Clear and Resolve, which the doc excludes | crates/app/src/inbox.rs:723 says "a mark, a dismissal or a Retry is not a notice", and :726 counts StateOp::Clear and StateOp::Resolve as one lost notice each. The doc does not name Clear or Resolve, so the claim that the doc excludes them holds only if Clear is the dismissal, which was not established. |
+| RV-1019 | medium | Folder-dialog failures are shown on screen only for the Yandex save picker | Only YandexPanel.qml:125 handles the picker's failed signal (onFailed). Main.qml's addPicker (:157) and cropPicker (:174) do not. crates/desktop/src/picker.rs:94 posts Notice::PickerFailed for every purpose, so a reason reaches the notice stream. Whether that notice is displayed on screen was not traced. |
+| RV-1028 | low | Harness mode named 'scaled' in the bench but 'analyze scale' in the CLI | eval/jpeg-decoders/benches/ir.rs:55-59 names its functions scaled\_\*, and table.py:30 matches only full\|scaled. eval/jpeg-decoders/linux.py:134 passes the CLI mode "analyze scale" to ir(), and the file name it reads comes from the binary's output. Whether "analyze scale" reaches any file name was not traced. |
+| RV-1031 | low | Unopenable fake folder reported with different error kinds | crates/scan/src/synthetic.rs:86 returns PermissionDenied for an unreadable folder, and crates/scan/src/lib.rs:1417 returns NotFound for a folder missing from the fake tree. The kinds do differ, but the two fakes model different conditions (unreadable versus absent), so "the same condition" holds only in part. |
+| RV-1036 | low | dependabot header says eval/ has no manifest, but two eval workspaces are covered | The header line at dependabot.yml:9 says "eval/ (it has no manifest)". eval/Cargo.toml does not exist, so the statement holds for eval/ itself, and dependabot.yml:3-4 covers the two sub-workspaces by name. The sentence is misleading next to the covered entries, but it is not contradicted. Its "too broad" reading was not settled. |
+| RV-1058 | low | Tier1 crate graph in the bounded-memory plan names crates that are not in the workspace | Citation error: the cited site "crates:1" is not a file. The plan's text at docs/plans/BOUNDED\_MEMORY\_PLAN.md:1320 names pg-tier1 and pg-spill, and neither has a directory in crates/. Whether the plan describes a proposal or the current tree was not settled, which is the finding's own caveat. |
+| RV-1066 | low | Pending sub-span names put the phase in a different position | Substance confirmed: crates/thumbs/src/lib.rs:217 uses "thumbs.pending", the only phase-first form. The count is wrong: four other spans use pending.&lt;phase&gt; (pending.borders, pending.hashes, pending.import and pending.placeholders), not three. |
+| RV-1073 | medium | Stated rusqlite fork rev and bundled SQLite version disagree across docs | The rev claim is confirmed: rev 9d76035 appears in neither Cargo.toml nor Cargo.lock (grep count 0 in each), while Cargo.toml:145 pins 8ec47c7e. The SQLite version (3.54.1 in docs/webclient/scan-optimizations-validation.md:64, 3.50.2 in docs/webclient/WEB\_CLIENT\_RECONCILED.md:499) was not checked against the sqlite3.c source of either rev. |
+| RV-1104 | low | Plan cites LedgerKind::ALL at a path that holds only the kind\_code helper | docs/plans/DECODE\_ONCE\_PLAN.md:618 cites LedgerKind::ALL at crates/desktop/src/ledgers.rs:9, which is the kind\_code helper. The list itself is at crates/model/src/notice.rs:404-408. The "Duplicates code 4" part was not found in the plan's line 618 (the plan gives Duplicates as code 2 at line 61 and as a Phase 3 addition), so that claim was not confirmed. |
+| RV-1111 | low | THUMBS\_VERSION imported from two different paths | Most callers do use pg\_render::THUMBS\_VERSION (library/src/lib.rs:39, library/src/runner.rs:370, thumbs/src/lib.rs:494 and others), and the doc at thumbcache/src/lib.rs:93 names pg\_render. The claim that only a thumbcache test reads pg\_model directly is wrong: production code reads it at crates/catalog/src/types.rs:291-292 (Versions::current, a non-test fn) and crates/catalog/src/writers.rs:818 (no cfg(test) above that line). Tests read it too (thumbcache/src/lib.rs:735, catalog/src/lifecycle.rs:502). Both paths resolve to the same value today. |
+| RV-1148 | low | Two Python functions named ground\_truth with different meanings | The name collision is real: eval/common.py:120 and eval/ann/exact.py:78 both define ground\_truth, with different signatures and meanings. The "both imported into ANN modules" part is only half true: eval/ann/data.py:13 and eval/bench\_ann.py:24 import common's ground\_truth, but no grep match shows exact.py's ground\_truth being imported elsewhere. |
+| RV-1170 | medium | rusqlite user lists disagree with the enforced wrapper list | pg-thumbs is absent from both README lists (crates/README.md:184 and :270), and deny.toml:72 names it as a rusqlite wrapper. pg-bench is listed at crates/README.md:184 but absent from the second list at :270, so "absent from the README list" holds only for the second list. |
+| RV-1171 | medium | Row height maximum in shell.rs doc is 2048; model bound is 800 | crates/desktop/src/shell.rs:64 says "The sizes are at most 2048". 2048 is the thumbnail bound (crates/model/src/size.rs:12, THUMB\_HEIGHT). The grid row bound is 800 (size.rs:10, ROW\_HEIGHT). The no-saturation conclusion still holds because 2048 bounds both, but the doc cites the wrong bound for row heights. |
+| RV-1181 | low | Dependabot header says eval/ has no manifest; it does | eval/ has no Cargo.toml (checked), so the header's "eval/ (it has no manifest)" is literally true for eval/ itself. eval/jpeg-decoders/Cargo.toml and eval/png-decoders/Cargo.toml exist, and dependabot.yml:27 covers /eval/jpeg-decoders. The sentence reads as if no eval manifest is covered, which is misleading, but it is not contradicted. This matches the RV-1036 verdict. |
+| RV-1186 | low | crates/README dependency sentences omit pg-perf and pg-platform edges | crates/README.md:179 leaves out pg-perf from desktop's dependencies, and crates/desktop/Cargo.toml:22 includes pg-perf, so that part is confirmed. The pg-platform part is not: the sentence at :176-177 says platform depends on model alone (crates/platform/Cargo.toml:21 is the only pg- dependency), and log and dbfile lists include platform, which they do (crates/log/Cargo.toml:14, crates/dbfile/Cargo.toml:15). No pg-platform edge is missing from those sentences. |
+| RV-1194 | low | vendor/README dhat origin cites a phpstan-rs patches folder | vendor/README.md:397-398 names an earlier home, patches/dhat in phpstan-rs at commit 13675fd3. That repo and commit are not in this tree, so the reference could not be checked, and the sentence does say what the earlier location was. The claim that the reference is unexplained was not confirmed. |
+| RV-1200 | medium | LSH threshold direction inverted in the write-up and the ledger | The ledger row at docs/research/REFERENCES\_LEDGER.md:28 gives "threshold such as 0.8" with no unit. Read as a similarity, 0.8 would mean 80% similar. The archived page (docs/research/07\_github.com\_mendesk\_image-ndd-lsh.html:523-527) is internally consistent: it treats the Hamming distance divided by k² as lower-than-t, and its output reports a similarity threshold of 90%. The inversion is in the ledger's unitless wording, not in the write-up. |
+| RV-1249 | low | Inbox module header restates the work-log, failure and toast rules twice | crates/app/src/inbox.rs has the work-log paragraph twice, under "The work log" (:12) and "One work log" (:51), with different wording. The 100 ms BUSY\_TIMEOUT rule is stated once, under "Failures" at :70-71, not in a second copy. The duplication is confirmed for the work log only. |
+| RV-1270 | low | Pairing perf note cites 172 batches; WRITE\_BATCH is 1000 | crates/catalog/src/pair.rs:440 says the scan took "172 batches" for 85,071 rows. That is about 495 rows per batch, while WRITE\_BATCH is 1000 (crates/catalog/src/types.rs:129). The doc does not name the constant, and the measured run may predate it, so the figure cannot be checked against the current constant. |
+| RV-1281 | low | Test cleanup mixes ignored errors and unwraps | The mixed cleanup is confirmed: crates/app/src/reader.rs:456, crates/app/src/inbox.rs:1658 and crates/app/src/library.rs:506 discard the remove\_dir\_all result with `let _ =`, while crates/app/src/yandex/save.rs:115 and crates/app/src/yandex/replay.rs:197 unwrap it. The claim that a `listing_laws` test guards against a folder held open could not be confirmed: no test by that name exists in the tree. |
+| RV-1311 | medium | Magenta for borders has three different values | The cropped-border magenta has two values: BorderOverlay.qml:21 uses #ff00c8 (grey #a0a0a0 when marked) and GridCell.qml:147 uses #ff4ad8. The third value, #ff00ff at Viewer.qml:443, is the frame line just outside the image (Viewer.qml:435), not the cropped-border meaning. The duplication holds for the two border uses, and the viewer's colour has a different meaning. |
+| RV-1314 | low | Error box doc says it gives the window title, but the name is hardcoded | The hardcoded name is confirmed: crates/desktop/src/alert.rs:7 passes "Photo Gallery" to error\_box, and it is not from the catalog. The doc at alert.rs:1-2 says it is "the one place that gives the window's title", which is true for the error box. The main window's title is built in QML (crates/desktop/qml/Main.qml:21 uses words.phrase("ui-window-title", ...)). The doc is wrong only if "the window" means the main window. |
+| RV-1320 | low | Schema-version mismatch messages use different phrasing | The three messages are at crates/catalog/src/core.rs:140 ("made by another build"), :208 ("the catalog made is not this build's: {why}") and :270 ("not this build's {current}"). The wording differs. The claim that only line 140 explains the cause is not right, because :208 interpolates the mismatch reason `{why}`. |
+| RV-1328 | medium | jpegli and highway static libraries hard-coded with .a, while jpeggpu uses the CMake suffix variable | The mixed suffix is confirmed: eval/jpeg-decoders/harness/CMakeLists.txt:58-59 hard-codes libjpegli-static.a and libhwy.a, and :75 uses CMAKE\_STATIC\_LIBRARY\_SUFFIX for jpeggpu. MSVC names static libraries .lib, so the hard-coded .a names would fail there. The claim that the docs call the native Windows build "the main path" was not found in eval/jpeg-decoders/\*.md or docs/perf. |
+| RV-1349 | medium | Count-to-u64 and count-to-i64 helpers repeated in six modules | The count helper is at seven sites, not six modules: crates/app/src/inbox.rs:1084 (usize to u64), crates/catalog/src/inbox.rs:441 and crates/catalog/src/ledger.rs:481 (i64 to u64, 0 for negatives), crates/desktop/src/facet\_choices.rs:30 (i64 to i32, with max(0)), crates/library/src/passes.rs:33 and crates/library/src/tally.rs:46 (usize to u64), and a closure in crates/library/src/scans.rs:37. The signatures and the desktop's i32 return differ as stated. |
+| RV-1358 | medium | Quarantine move-aside helper implemented in three crates with different probing | The implementations are in two crates, not three: crates/platform/src/file.rs:270 (keep\_aside, a rename\_no\_replace loop) and crates/dbfile/src/remove.rs:21 (move\_aside, an exists() pre-check at :25, with the rename after it). The callers are in app (store.rs:111, keep\_aside), thumbcache (schema.rs:406) and catalog (rebuild.rs:94, move\_aside). The pre-check is racy as the finding says, but its later rename does not replace a file. |
+| RV-1362 | low | 16 MiB cache constant written under three names and a literal | The 16 MiB value is in crates/import/src/pairs.rs:34 (CACHE\_KIB, u32), crates/catalog/src/types.rs:133 (PREPARE\_CACHE\_KIB, i64), crates/catalog/examples/pairs\_load\_probe.rs:38 (CACHE\_KIB, i64), plus the literal -16384 in pairs\_write\_probe.rs:37. That is two distinct names and a literal, not three names. |
+| RV-1381 | low | Stored-count and clamp helpers and the PNG framing constant are spelled out inline | The PNG framing constant is confirmed: crates/container/src/lib.rs:385 (`at.checked_add(12)?`) and :452 (`self.len.saturating_add(12)`) both spell the 12-byte chunk framing as a literal. The title also names stored-count and clamp helpers, but no such helper appears in the cited sites and the rationale does not discuss them. |
+| RV-1389 | low | Test-only Win32 and Linux pixel-size error text duplicated | The duplicated message is confirmed: crates/testkit/src/lib.rs:51 writes "{} bytes are not {w} × {h} RGBA pixels" and :79 writes "... RGB pixels", with the same buffer check. The title's "Win32 and Linux" is wrong: the two messages differ by RGBA and RGB, not by platform. |
+| RV-1395 | low | Lint-expect reason text repeated in eight desktop state files | The reason text is copied, but not in eight files. `grep -rl "generated code names it"` over crates/desktop/src finds 20 files (for example animation/state.rs:13, command\_line/state.rs:6, gallery/state.rs:23). The count in the title is wrong; the duplication is not. |
+| RV-1398 | low | Shared tools duplicated between Python and PowerShell build scripts | The helpers are copied: `checked()` at tools/build\_jpeg\_turbo.py:36, tools/build\_static\_ffmpeg.py:60 and tools/build\_static\_qt.py:47, and `sha256()` at build\_jpeg\_turbo.py:64, build\_static\_ffmpeg.py:81, build\_static\_qt.py:58 and compare\_shots.py:161. All cited sites are Python. The title's claim of duplication between Python and PowerShell scripts is not shown by the sites. |
+| RV-1404 | low | Two positive-float newtypes repeat the same validation | There are three newtypes, not two: Scale (crates/model/src/size.rs:113), Factor (:145) and GridWidth (:176). The validation is already shared through one helper, `fn positive` at :108, which all six constructors call (:120, :132, :150, :162, :181, :193). What repeats is the constructor, getter and From/TryFrom impls, so the title's "repeat the same validation" is not accurate. |
+| RV-1413 | medium | NOTIFICATIONS\_DESIGN body contradicts its own override block (cascade, event count, log sites, migration names) | The cascade, event-count and log-site contradictions are confirmed. docs/reference/NOTIFICATIONS\_DESIGN.md:256 gives `AFTER DELETE ON roots: DELETE FROM notices`, while the override at :30-31 says ON DELETE CASCADE. :230 says five events, while the override at :13 says seven. :182 says 34 log::note sites, while :118 says 36. The migration-name contradiction was not checked. |
+| RV-1423 | low | Shot reference manifests use two fixture schemas, and one records the Qt path with forward slashes | The Qt-path finding holds: one manifest (tools/shots/reference/8f980e17cf/manifest.json:5) records "C:/Qt/..." and 12 use backslashes. The shape count does not: nine manifests use the single "fixture" key and four use a "fixtures" map, not eight and four. |
+| RV-1435 | low | qt\_int conversion helper written six times | There are five `fn qt_int` definitions, not six: failed\_files.rs:57, notices.rs:236 (both generic over TryInto&lt;i32&gt;), gallery/roles.rs:83, lane\_model.rs:238 and yandex.rs:68 (usize). The duplication holds; the count in the title does not. |
+| RV-1448 | low | Timed helpers return different units and use different budgets | The units differ: nvimgcodec\_bench.py:56 returns milliseconds (`* 1e3`), while gpu.py:54 and nvjpeg.py:219 return seconds. The budgets differ: nvimgcodec\_bench.py:22 BUDGET\_S = 2.0, and gpu.py:31 and nvjpeg.py:35 BUDGET\_S = 1.5. The claim that the two scripts time "the same job" was not checked. |
+
+## Confirmed (1290, excluding RV-0042)
+
+| ID | Severity | Title |
+|---|---|---|
+| RV-0001 | medium | dependabot does not cover the eval/png-decoders workspace |
+| RV-0002 | low | dependabot header says eval/ has no manifest |
+| RV-0003 | low | dependabot says ExifTool version lives in ci.yml |
+| RV-0004 | medium | Justfile says CI install steps name cargo-deny, cargo-machete and cargo-modules pins |
+| RV-0005 | low | eval tool tests run only in the Windows CI job |
+| RV-0006 | low | ci.yml says the pins step is the first step of each job |
+| RV-0007 | medium | crates/README lists the rusqlite users without pg-thumbs |
+| RV-0008 | low | crates/README dependency lists omit pg-perf (desktop) and pg-platform (gallery) |
+| RV-0009 | low | crates/README says just lint runs cargo-deny; it does not |
+| RV-0010 | low | crates/README points the rustdoc command at ci.yml; it lives in tools/lint.py |
+| RV-0011 | low | border test comment refers to the removed borders.py parity check |
+| RV-0013 | low | example hard-codes the analyzer's decode and PDQ sizes |
+| RV-0014 | low | thumbnail log messages use two different targets |
+| RV-0015 | low | analysis crate repeats the workspace print lints with a different mechanism |
+| RV-0017 | low | image failure key documented as turns, built from rotation |
+| RV-0018 | low | border histogram median and bin lookup repeated across modules |
+| RV-0019 | low | CI workflow keeps three diagnostics marked temporary |
+| RV-0020 | low | patch comment in Cargo.toml omits cxx-qt-build |
+| RV-0021 | low | App accessor list omits thumbs() |
+| RV-0023 | medium | NoticeSink doc lists `clear`, but the trait and its impl use `resolve` |
+| RV-0024 | low | Writer give-up described as after a few seconds; the backoff waits total about 35 s |
+| RV-0025 | low | Source doc says each save makes its own Source; saves never call the source factory |
+| RV-0027 | low | Same 'no search' condition has two wordings, and the missing-result case a third |
+| RV-0028 | low | Import batch size of 500 is repeated as a private constant in four places |
+| RV-0029 | low | Unix-seconds 'now' helper is copied in four crates |
+| RV-0031 | low | Post fold looks only at the first waiting post of a key, so posts after a resolve do not fold |
+| RV-0032 | low | Inbox module header restates the work log, failures and toast rule twice |
+| RV-0033 | low | Library test setup is written out twice |
+| RV-0034 | low | Test directory cleanup is inconsistent: some ignore errors, others unwrap |
+| RV-0036 | low | Code comments credit the predecessor app ImageRater for current behaviour |
+| RV-0037 | medium | Probe pairs write batch size differs from the pass's WRITE |
+| RV-0038 | medium | Probe lists an index that the schema does not define |
+| RV-0039 | medium | stmt\_journal\_probe claims the catalog's settings but uses a 256 MiB cache |
+| RV-0040 | low | Catalog connection SETTINGS string copied into two probes |
+| RV-0041 | medium | file\_failures.pass comment omits the 'import' pass |
+| RV-0043 | medium | raw.rs says tests never touch the connection, but tests do |
+| RV-0044 | low | Same raw SQL helpers defined twice in test fixtures |
+| RV-0045 | low | write\_row and write\_row\_of duplicate the same parse and mapping |
+| RV-0046 | low | median helper duplicated in both write and load probes |
+| RV-0047 | low | Same 'stored folder path has a NUL' error text in two modules |
+| RV-0048 | low | IMPORT\_VERSION and PLACEHOLDER\_VERSION reached through several paths |
+| RV-0049 | low | 16 MiB pass cache written as three different constants |
+| RV-0050 | low | Index and trigger share the name files\_changed |
+| RV-0051 | low | Some CREATE TABLE names are quoted and others are not |
+| RV-0052 | low | core.rs module doc omits progress from the modules it uses |
+| RV-0053 | low | Probe and schema docs refer to migrations that no longer exist |
+| RV-0054 | low | WAL size column labelled MB but computed as MiB |
+| RV-0055 | low | Probe output uses us where other probes print ms |
+| RV-0056 | low | Load probe doc says only the cached variant uses a warm connection |
+| RV-0059 | low | Folder helper in browse tests duplicates fixtures::folder\_of |
+| RV-0060 | high | Decode-failure retry flag: failure.rs doc contradicts the writer and ledger doc |
+| RV-0061 | medium | Import retry flag documented as --retry; the CLI defines --retry-errors |
+| RV-0062 | medium | mark\_unheld\_missing doc promises a count; the function returns unit |
+| RV-0063 | medium | recompute\_keys doc says unparseable folders keep their files' order keys; code recomputes them |
+| RV-0064 | low | Module doc names thumbs::pending\_in; the function lives in the thumbcache crate |
+| RV-0065 | low | Pairing perf note cites 172 batches, inconsistent with WRITE\_BATCH of 1000 |
+| RV-0066 | low | Upsert comment says every column keeps the old row's value; the ON CONFLICT clause overwrites several |
+| RV-0067 | low | FOLDER\_LEDGER\_COUNTS doc says ?1 is unused; the SQL reads it |
+| RV-0068 | low | Replacement doc says the row keeps its ratings; the code drops the file's own rating row |
+| RV-0069 | low | Tier-2 pairing doc omits the creation-time condition the query enforces |
+| RV-0070 | low | Dangling version reference '(3.4)' in a doc comment |
+| RV-0071 | low | Folder lookups silently turn an unparseable stored path into 'no folder' |
+| RV-0072 | low | Migration-room error text reads 'and N MB are: free some space' |
+| RV-0073 | low | Stale-state key SQL duplicated between inbox code and its test |
+| RV-0074 | low | Identical stored-count helper in inbox.rs and ledger.rs |
+| RV-0075 | low | meta mark read and upsert repeated in the i64 and generic mark setters |
+| RV-0076 | low | listing test fixture's session table lacks the production id column |
+| RV-0077 | low | writers comment says no other crate names the writers, but they are re-exported publicly |
+| RV-0078 | low | Phase::Backup and Phase::Copy docs both describe copying the catalog aside |
+| RV-0079 | low | Progress module cites a plan label that no doc in the crate defines |
+| RV-0080 | medium | queue module doc names writer functions that do not exist |
+| RV-0082 | low | set\_rating doc gives a 1 to 5 range but Rating accepts 0 |
+| RV-0083 | low | count accessors in the queue return different integer types |
+| RV-0084 | low | catalog doc says scans ids only grow, but scans.id is not AUTOINCREMENT and rows are deleted |
+| RV-0086 | medium | drive\_removals sums files but overwrites deferred across markers |
+| RV-0087 | low | remove\_root reports and drives every pending removal, not just its own |
+| RV-0088 | low | add\_root drops contained library folders without releasing their scan leases |
+| RV-0089 | low | removal module doc says a missing folder is not removed, but begin\_removal checks nothing of the kind |
+| RV-0090 | low | scan\_seen doc sits on folder\_rows\_on and ensure\_seen is undocumented |
+| RV-0092 | low | hard-coded benchmark numbers in work.rs docs |
+| RV-0093 | low | two functions named tidy with different signatures |
+| RV-0094 | low | the same 'has a NUL' path parse error is written out in nine places |
+| RV-0095 | low | the thumbs-failure predicate and the 'thumbs' pass literal are copied in three places, including a test |
+| RV-0096 | low | the volume-listing loose-scan SQL is copied into the thumbnail cache crate |
+| RV-0097 | low | the owed-hashes predicate is written twice in different forms |
+| RV-0098 | low | the WAL truncate checkpoint is written out in four places |
+| RV-0100 | low | test\_support begin() copies begin\_scan's statements |
+| RV-0101 | low | versions doc names the wrong home for the version constants, and test\_support imports them from a third path |
+| RV-0102 | low | the 'folders' field of the rebuild notice counts library folders |
+| RV-0103 | low | carry\_rows doc omits that vacuum\_owed is also kept from the new file |
+| RV-0105 | medium | changed\_file doc names the wrong parameter indices |
+| RV-0106 | low | under\_params placeholder numbering in doc disagrees with the statement |
+| RV-0107 | low | Doc of the picture helper sits above struct Picture |
+| RV-0108 | low | Change-number statement is built twice in writers.rs |
+| RV-0109 | low | Orphaned doc on hash\_and\_report, secs undocumented |
+| RV-0110 | low | Stacked doc blocks above lane helpers belong to other functions |
+| RV-0111 | medium | thumbs --cap-gb help says a new cache is 50 GB by default |
+| RV-0112 | low | Thumbnail-grid gap duplicated between Rust and QML |
+| RV-0113 | medium | client clippy.toml omits root disallowed-methods bans its header says it repeats |
+| RV-0114 | low | Same words under two ids for the failed-files link |
+| RV-0115 | low | Two empty-folder-list strings with different wording |
+| RV-0116 | low | Shift shown as a symbol in one hint and spelled out elsewhere |
+| RV-0117 | low | 'mbps' field name holds megabytes per second |
+| RV-0119 | low | Thumbnail event printer setup repeated in five command arms |
+| RV-0120 | low | Grid height range literal repeated outside its constant |
+| RV-0121 | medium | Rating chip and filter line name ratings differently |
+| RV-0122 | medium | Duplicates filter named two different ways in the same UI |
+| RV-0123 | low | Duration rounding: minutes round up, hour remainder rounds down |
+| RV-0124 | low | Count helper choice differs between notice and message code |
+| RV-0125 | low | First-failure extraction written twice in notice args |
+| RV-0126 | low | Fluent entry-id scanner duplicated in words.rs tests |
+| RV-0127 | low | Rating symbol list repeated in a QML test stub |
+| RV-0128 | low | Two match arms carry the same count shape in cli values |
+| RV-0129 | low | Message render test lacks the unset-value check that cli tests have |
+| RV-0131 | low | Update.height doc does not match the height rule in code |
+| RV-0132 | low | Modifier guards differ across grid letter keys |
+| RV-0133 | low | Grid view hint omits the Space key that also views |
+| RV-0134 | medium | Doc names a parajpeg crate that does not exist |
+| RV-0135 | low | Test name says reads as 0, assertion says None |
+| RV-0136 | low | Comment says format-less Init is format 1, test asserts refusal |
+| RV-0137 | low | Replay fixtures use an Init shape the recorder no longer writes |
+| RV-0139 | low | zune-jpeg decoder options chain repeated |
+| RV-0140 | low | Bench examples duplicate their helper code |
+| RV-0141 | low | Windows FILE\_FLAG values inline in one bench, named in the other |
+| RV-0142 | low | Client test helpers and lint attribute repeated across test files |
+| RV-0143 | low | Pause lengths repeated as literals in tests |
+| RV-0144 | low | Facet index 1 is Shapes in Rust, orientations in QML |
+| RV-0145 | low | TIFF big-or-classic writer branch repeated in tests |
+| RV-0146 | low | Test comment names a path that is not the one imported |
+| RV-0147 | low | Comments cite line numbers in an unnamed upstream crate |
+| RV-0148 | low | Fit minimum rounds up where the resizer rounds, under a doc saying it is one fit |
+| RV-0150 | low | Doc on fitted field describes the fit zoom |
+| RV-0151 | low | Flattening formula re-implemented in a test |
+| RV-0152 | low | Replay refusal messages word the format mismatch differently |
+| RV-0153 | medium | Doc cites a deleted plan file for the join's tuning gates |
+| RV-0154 | medium | Two helpers move a file aside to a free '.bad' name |
+| RV-0155 | low | Source-unchanged check written twice in pg-crop |
+| RV-0156 | low | Formats that come out without metadata are listed differently in two doc comments |
+| RV-0157 | low | Save-copies README says BMP keeps every chunk, but compressed BMP is re-encoded |
+| RV-0158 | low | CutStats.unsupported is never set but is carried into the notice and UI |
+| RV-0159 | low | Difference kind 'header' is used but not in the documented kinds |
+| RV-0160 | medium | The 5-second busy wait is set in three places with no shared constant |
+| RV-0161 | low | Subprocess holder tests use a different env prefix per crate |
+| RV-0162 | low | Build comment says qt-build-utils is vendored, but the build resolves it from a git fork |
+| RV-0163 | low | Print-lint deny attribute repeated per crate |
+| RV-0165 | medium | FilterBar names a facet type that does not exist |
+| RV-0166 | low | Orientation facet is named Shapes on the Rust side and Orientations in QML |
+| RV-0167 | low | PanelAction enum declared twice with identical values |
+| RV-0168 | low | Confirmation dialogs repeat the same boilerplate |
+| RV-0169 | low | Folder picker dialog wiring repeated per picker |
+| RV-0170 | low | Counts are localized in some QML and concatenated raw in others |
+| RV-0171 | low | Panel colours repeat Theme token values as literals |
+| RV-0173 | low | ImageLayers comment lists neighbour URLs it does not receive |
+| RV-0174 | low | Image-review dialogs report as the save-view panel kind |
+| RV-0175 | low | Mascot count duplicates the resource file count |
+| RV-0176 | low | Log level letters are hard-coded English while the rest of the panel is localized |
+| RV-0177 | low | Inbox ScanFolders ledger is a magic number in QML |
+| RV-0179 | medium | Animation doc names App::file\_path, which does not exist |
+| RV-0180 | low | Viewer doc says zoom is around the cursor for + and -, code zooms about the window centre |
+| RV-0181 | low | Doc comment for listing() is attached to options\_refused() |
+| RV-0182 | low | thumb\_url has two stacked doc comments, the first stale |
+| RV-0183 | low | Keymap code comment omits YandexPreview.qml as a PanelAction owner |
+| RV-0184 | medium | PanelAction enum is defined twice in QML |
+| RV-0186 | low | Same #[expect(unreachable\_pub)] reason text repeated in eight state files |
+| RV-0187 | low | Identical count-and-crop blocks in edits.rs |
+| RV-0188 | low | set\_thumb\_height and items\_changed repeat the same row loop |
+| RV-0189 | low | ROLE\_KIND arm written twice in folders data() |
+| RV-0190 | low | Generation counter and 'fails only when gone' comment repeated across models |
+| RV-0192 | low | Mascot count 40 is hard-coded in Rust and in QML |
+| RV-0193 | low | Result size and 1:1 label are literal text outside ui.ftl |
+| RV-0194 | low | Error box title is an English literal while the window title is localized |
+| RV-0195 | low | FolderPicker purposes are passed as bare integers |
+| RV-0197 | low | Ledger doc names Library.failedPass, which is a LaneModel row role |
+| RV-0198 | medium | Preference save helper duplicated in settings and shell |
+| RV-0199 | medium | Test replicates SaveSession handling instead of running the shell's code |
+| RV-0200 | medium | Hardcoded English notice text bypasses the text catalog |
+| RV-0201 | medium | Log and notice followers re-implement the change pump instead of using pump::start |
+| RV-0202 | low | Log-level and inbox-level code mapping written twice |
+| RV-0203 | low | Identical warning text written in both branches of LogModel::start |
+| RV-0204 | low | Doc comment and body duplicated in the two detect-setters |
+| RV-0205 | medium | File id crosses the bridge as f64 in one place and i64 in others |
+| RV-0207 | low | Trace stage example does not match the printed format |
+| RV-0208 | low | Panic log doc attributes gallery.json to the panic record |
+| RV-0209 | low | Session-save failure is formatted differently from the views failure |
+| RV-0210 | medium | Viewer tests and QML stub use a fit URL form the app never builds |
+| RV-0211 | medium | Test host comment and provider list omit the yandex image provider |
+| RV-0212 | low | yandex state doc refers to a nonexistent hits field |
+| RV-0213 | low | Two different ROW\_HEIGHT constants with unrelated meanings |
+| RV-0214 | low | exiftool test doc comments sit on the wrong function |
+| RV-0215 | medium | Failure text stored differently by the two import passes |
+| RV-0216 | low | Batch size 500 repeated across import passes and other crates |
+| RV-0217 | low | Store-batch transaction boilerplate repeated in hashes and import |
+| RV-0218 | low | Video disk-path resolution copied between hashes and import |
+| RV-0219 | low | JPEG header percentile given without a unit |
+| RV-0220 | low | Wheel test comment hardcodes a notch size the test does not use |
+| RV-0221 | low | Edit crate manifest says tests take fixtures from pg-testkit only |
+| RV-0222 | low | JPEG extension set spelled twice in different forms |
+| RV-0223 | low | Print-denial lint attribute copied into two library crates |
+| RV-0225 | medium | Governor doc names a path that does not exist |
+| RV-0226 | low | Pairs settings doc omits PG\_PROBE\_BLOCK |
+| RV-0227 | low | CPU-count default with fallback 4 repeated in three places |
+| RV-0228 | low | Reader count 8 is a literal repeated across pipeline and coordinator |
+| RV-0229 | low | Pause-toggle logic duplicated between Running and PauseClock |
+| RV-0230 | low | is\_cut notice branch written twice in run\_jobs |
+| RV-0231 | low | Options literal repeated across pipeline tests |
+| RV-0233 | low | Two unrelated functions named file\_failure |
+| RV-0234 | medium | Thumbnail-sweep failure reported as a folder-not-removed notice |
+| RV-0235 | low | Byte sizes in docs use MB where code uses MiB or KiB |
+| RV-0236 | low | Probe uses hard-coded Windows path rules while sibling probe uses native |
+| RV-0237 | low | Coordinator error retry reuses the placement cache lifetime |
+| RV-0241 | medium | shared.rs says runner re-exports the cells, but runner only imports them privately |
+| RV-0242 | medium | Thumbnail cache open-and-leak repeated five times in writeback tests beside a helper |
+| RV-0243 | medium | files\_under helper defined three times with diverging behaviour |
+| RV-0244 | medium | letterboxed test picture generator duplicated across crop tests |
+| RV-0245 | low | count-to-u64 helper written three times |
+| RV-0246 | low | opts() and ONE\_PASS guard repeated across library test files |
+| RV-0247 | low | Wait helpers and loops with differing timeouts and poll intervals |
+| RV-0248 | low | ExifTool availability probe repeated inline beside a helper |
+| RV-0249 | low | Tests probe exiftool on PATH while production honours PG\_EXIFTOOL |
+| RV-0250 | medium | Two tests in one binary set PG\_EXIFTOOL in parallel |
+| RV-0251 | low | Writeback tests hard-code the attempt cap that MAX\_ATTEMPTS names |
+| RV-0252 | low | Turns write kind has three names: rotation, turns and Turns |
+| RV-0253 | low | Scratch folder prefixes are not one convention |
+| RV-0254 | low | Doc comments split, stacked, or attached to the wrong item |
+| RV-0255 | low | Comments narrate what used to happen before the fix |
+| RV-0256 | low | Identical weak-reference listen closures in Runner::start\_with\_drives |
+| RV-0257 | low | Default layout file names repeated in resolve and in\_home |
+| RV-0258 | low | Public items without doc comments in library and log |
+| RV-0259 | medium | Docs say the import hashes files; model says it does not |
+| RV-0260 | medium | Doc cites pg\_render::thumbhash\_of, which does not exist |
+| RV-0262 | low | Cut-at-character-edge with ellipsis implemented twice |
+| RV-0263 | low | Hex name decoding accepts a leading '+' in each pair |
+| RV-0264 | low | Comments and a test name refer to kamadak-exif, which is no longer a dependency |
+| RV-0265 | low | Notice docs give repo paths that omit the crates/ prefix |
+| RV-0266 | low | Adding-a-kind checklist omits the root() match |
+| RV-0268 | low | WriteKind::Turns is stored and noticed as 'rotation' |
+| RV-0269 | low | Model crate's module list omits features, size and versions |
+| RV-0270 | low | model clippy.toml drops the root temp\_dir ban and its repeat note is incomplete |
+| RV-0271 | low | Log file order can differ from record number order across threads |
+| RV-0272 | low | Variant classification restated in several exhaustive matches |
+| RV-0273 | low | Placeholders pass reference missing its module |
+| RV-0274 | low | Scale, Factor and GridWidth repeat the same positive-float wrapper |
+| RV-0275 | low | Folder-from-stored-bytes parse repeated in tree.rs |
+| RV-0276 | low | Query range and day accessors re-match the facet enums |
+| RV-0277 | low | Orientation pixel map is written twice |
+| RV-0278 | low | Phase and Status enum names repeat across model modules |
+| RV-0279 | low | HUD spelled Hud in one doc and HUD in another |
+| RV-0280 | low | Serialized and Serialises both used in model docs |
+| RV-0281 | low | Crate names written two ways in model prose |
+| RV-0282 | low | Refusal notice field names are not kebab-case |
+| RV-0283 | low | WriteKind::Turns is persisted as the key rotation |
+| RV-0284 | low | TryFrom&lt;u8&gt; impls use different error types |
+| RV-0285 | low | Reference corpus repeats identical rows |
+| RV-0287 | medium | Verbatim-prefix constants defined twice |
+| RV-0288 | medium | FNV-1a hash implemented twice with identical constants |
+| RV-0289 | medium | Documented caller behaviour for unknown drive kind is not in the code |
+| RV-0290 | medium | Windows-only submodules named three different ways |
+| RV-0291 | low | Two modules named native in the same crate |
+| RV-0292 | low | Doc cites a private module as a public path |
+| RV-0293 | medium | Test-folder error blames PG\_TEST\_DIR when it is unset |
+| RV-0294 | low | Skip messages use two different shapes |
+| RV-0295 | low | list\_probe usage message omits its documented arguments |
+| RV-0296 | low | Print-lint attribute repeats the workspace lint |
+| RV-0297 | low | Same literal used for two different owner files |
+| RV-0298 | low | Perf-log t\_ms origin differs by platform |
+| RV-0299 | low | Perf log '-' echo is CLI-only, not the desktop app |
+| RV-0300 | low | Windows pick doc describes the off-Windows behaviour |
+| RV-0301 | low | Colon constant declared twice in one file |
+| RV-0302 | low | Absolute-folder env lookup written twice in dirs.rs |
+| RV-0303 | low | Two helpers that do the same conversion |
+| RV-0305 | low | NVMe bus value written as a bare literal |
+| RV-0306 | low | Non-English comment in an English-only test |
+| RV-0307 | medium | Decode margin documented as 4x pixels but applied per side |
+| RV-0308 | low | Scan crate Cargo comment omits pg-perf dependency |
+| RV-0309 | low | Hold-bound doc comment sits on the wrong test |
+| RV-0310 | low | Two stacked doc blocks on the fake Tree type |
+| RV-0311 | low | ScanStats counters mix usize and u64 |
+| RV-0312 | medium | Pseudo file system table copied into a test |
+| RV-0313 | low | Frame timing update repeated in the player loop |
+| RV-0314 | low | Run-then-trim pattern repeated across Maker methods |
+| RV-0315 | low | Duplicate pixel-size error text in test fixtures |
+| RV-0317 | low | Two tree-backed fake listings with the same shape |
+| RV-0318 | low | Scratch folder names use two conventions |
+| RV-0319 | low | Unopenable fake folder reported with different error kinds |
+| RV-0320 | low | Fixture frame-count and size parameters use different integer types |
+| RV-0321 | low | Maker doc says cache format is open while the cache stores JPEG |
+| RV-0322 | low | Checkpoint wait bound ignores the walk's renew interval parameter |
+| RV-0323 | low | unix\_now copied in three crates |
+| RV-0324 | medium | Placeholder cache threshold repeats the render decode side |
+| RV-0325 | medium | Failure classification duplicated between thumbs pass and placeholders |
+| RV-0326 | low | BATCH of 200 declared twice in the thumbs crate |
+| RV-0327 | low | Test height helper repeated |
+| RV-0328 | low | Read-only connection pragmas repeated in reader |
+| RV-0329 | low | Start-over messages repeated inside schema.rs |
+| RV-0331 | low | THUMBS\_VERSION imported from two different paths |
+| RV-0332 | low | Reader doc cites a catalog 'schema 19' that the catalog does not have |
+| RV-0333 | low | config.rs module doc lists a cache path that config.rs does not define |
+| RV-0334 | low | Misplaced doc comment: forget\_height\_entry's doc sits on FORGET\_CHUNK |
+| RV-0336 | low | Public probe() has no doc comment while its siblings do |
+| RV-0338 | low | rusqlite is a non-optional dependency whose only user is the fault feature |
+| RV-0340 | low | Pending span names put the pass name in different positions |
+| RV-0341 | low | Two unrelated structs named Writing |
+| RV-0342 | low | Cache byte counts typed as u64 in ThumbStats but i64 everywhere in the cache |
+| RV-0343 | low | Missing-item context messages name 'work item' in one pass and 'file' in the other |
+| RV-0344 | low | Same 'no picture size' error text used in two functions of the video crate |
+| RV-0345 | high | BACKGROUND plan's migration premise contradicts the code |
+| RV-0346 | medium | The two recorded plans disagree on the schema route |
+| RV-0347 | medium | BACKGROUND plan describes writeback returns that the code no longer has |
+| RV-0348 | medium | Cited guard tests and line numbers in the BACKGROUND plan are stale |
+| RV-0349 | low | Dangling fix reference B8 in the BACKGROUND plan |
+| RV-0350 | low | BACKGROUND plan says uncommitted TRACE edits exist that the tree does not have |
+| RV-0351 | low | Crate-layers citation points at the wrong line |
+| RV-0352 | medium | add\_root and pending removal behaviour differ between plans |
+| RV-0353 | low | root\_removals columns differ between plans |
+| RV-0354 | low | BOUNDED\_MEMORY\_PLAN cites an untracked-edits state that git status does not show |
+| RV-0355 | medium | Callgrind drill cites a profiling script that does not exist |
+| RV-0356 | low | Unresolved-symbol subtotal does not add up |
+| RV-0357 | low | folder\_flat table-seek count given two values |
+| RV-0358 | medium | Committed perf baseline disagrees with the callgrind drill for the same benches |
+| RV-0359 | low | Bench layout name differs between the drill and the bench source |
+| RV-0360 | low | Bench comment still says 81 folders; the generator defaults to 80 |
+| RV-0361 | low | Budget rationale cites schema versions the catalog no longer has |
+| RV-0362 | medium | Int8 entropy variant reported with two different cosine minimums |
+| RV-0364 | medium | Shortcut verifier agreement is reported two ways |
+| RV-0365 | low | k-NN and cross-group set sizes are given differently across VERIFIER sections |
+| RV-0366 | low | Labeled-set timing quoted does not match the throughput table |
+| RV-0368 | low | Eval docs refer to PLAN.md without a path |
+| RV-0369 | low | Docker README omits the cargo git volume |
+| RV-0370 | low | git is installed twice in the Linux image |
+| RV-0371 | low | Notice golden fixture uses a temp suffix the writer does not produce |
+| RV-0372 | low | Dropped-writes count uses two integer widths |
+| RV-0373 | low | Open-for-copy sequence is written three times |
+| RV-0375 | low | Download-limit doc says MB while the constant is MiB |
+| RV-0376 | high | Catalog schema numbering in three plans does not match the code (version 1, no migrations) |
+| RV-0377 | high | pdq\_dihedral stored size: code keeps 4 orientations (128 B), docs say 8 (256 B) |
+| RV-0378 | high | IMPORT\_VERSION: plan says HEAD is 2, code says 1 |
+| RV-0379 | high | DCT-scaled decode: GPU feasibility says removed, decode plan and code say still used |
+| RV-0381 | medium | Bench LAYOUT constant: plans cite LAYOUT v7 and v10, code has BENCH\_LAYOUT v1 |
+| RV-0382 | medium | rusqlite pin revision and bundled feature cited wrongly |
+| RV-0383 | medium | rarray feature claimed absent; Cargo.toml enables it and the catalog uses it |
+| RV-0384 | medium | Cited pairing types do not exist under crates/ |
+| RV-0385 | low | Referenced docs/gpu.md does not exist |
+| RV-0386 | low | Line citations in plans drifted from the code |
+| RV-0387 | low | thumbcache Cargo.toml names a view that no longer exists |
+| RV-0388 | medium | Duplicate-hash CLI flag: plan says --no-duplicates, code and README say --no-dups |
+| RV-0389 | low | DECODE\_ONCE Features shape differs between superseded note and Phase 5 constructor |
+| RV-0390 | low | just lint clippy command differs from tools/lint.py |
+| RV-0391 | low | Clippy hit counts disagree between the baseline list and the phase tables |
+| RV-0394 | medium | Encoder quality threshold: validation says set after the run, status says pre-registered |
+| RV-0396 | low | Same SQLite measurement reported as 284.8 and 285.1 MiB |
+| RV-0397 | low | Bundled SQLite version: 3.54.0 in one table, 3.54.1 elsewhere |
+| RV-0398 | low | set\_mark cited at two different lines in the GUI plan |
+| RV-0400 | medium | E: drive capacity differs between plans |
+| RV-0401 | high | SETTINGS page cache size stated as 8 MB and as 256 MB |
+| RV-0403 | medium | PDQ dihedral variant count: 8 versus 4 |
+| RV-0404 | medium | pdq\_index.rs cited as present and as removed |
+| RV-0405 | medium | Notifications ledger says no open rows and 22 open rows |
+| RV-0406 | low | Notification decision count: D1 to D8 versus D1 to D12 |
+| RV-0407 | low | Lane test count: 7 versus 8 |
+| RV-0408 | high | Latest migration number differs across plans |
+| RV-0410 | high | WASM check: absent in lint/CI versus run by lint.py |
+| RV-0411 | medium | REVIEW rows listed as open in one ledger and fixed in another |
+| RV-0412 | low | Cargo.toml line references disagree |
+| RV-0415 | low | Verification gap recorded twice in REVIEW\_LEDGER |
+| RV-0416 | medium | Probe scripts resolve paths one level above the checkout |
+| RV-0417 | medium | Static FFmpeg codec and demuxer lists miss formats the player is specified to handle |
+| RV-0418 | medium | Thumbnail resize filter described as Lanczos3 after the switch to Magic Kernel Sharp 2021 |
+| RV-0419 | medium | SQLite memstatus setting cited to a config file that does not exist, with conflicting values |
+| RV-0420 | medium | Notifications design cites companion docs that are not in the repo |
+| RV-0421 | medium | Notifications design body contradicts its own override block (migration names, cascade, counts) |
+| RV-0422 | low | PNG pass 4 says eleven files but its table has ten rows |
+| RV-0423 | low | VIDEO\_PLAYER points to the wrong file for the gpl-shared pin |
+| RV-0425 | low | Stale line and file citations in reference docs |
+| RV-0426 | low | REFACTOR\_DESIGN counts and sizes out of date |
+| RV-0430 | low | nvImageCodec and nvJPEG versions differ between the encoder and decoder docs |
+| RV-0433 | low | ResNet-50 feature-map dimensions in the Ingham article do not match the architecture |
+| RV-0434 | low | fast-near-duplicate CLI spells flags and subcommands differently across its README |
+| RV-0436 | low | The Postgres extension is called by two different names in one tutorial section |
+| RV-0437 | low | The twos\_complement helper is defined twice in the same tutorial |
+| RV-0439 | medium | Index Size column mixes numbers, spacing and non-numeric text |
+| RV-0441 | low | Section heading says open source but rows are closed |
+| RV-0442 | low | Lead says publicly available but list includes closed services |
+| RV-0443 | low | Albert-Ludwigs-Universitat name garbled |
+| RV-0444 | low | Repeated entries in the CBIR papers list |
+| RV-0445 | low | Joined words and misspellings in paper list |
+| RV-0446 | low | Venue and year formatting varies in paper list |
+| RV-0447 | low | Year tags that are not valid years in the saved page |
+| RV-0448 | low | Section numbering and casing differ in descriptor list |
+| RV-0449 | low | Misspellings in descriptor list entries |
+| RV-0450 | low | Project name casing differs between mention and citation |
+| RV-0451 | low | Same entries repeated across sections of descriptor list |
+| RV-0453 | low | Feature extractor names vary across the two CBIR pages |
+| RV-0454 | low | Metric label differs between ledger and captured page |
+| RV-0455 | low | Grammar error in captured README sentence |
+| RV-0456 | medium | Submodule removal commit message names dust3r; commands remove GlueStick |
+| RV-0458 | low | Inference throughput stated as 1500 and 1400 sample/s on a 3080 |
+| RV-0459 | low | clip-retrieval inference invoked with two different spellings |
+| RV-0461 | low | ViT-L/16 written with a slash in text and a hyphen in the tables |
+| RV-0463 | low | Upstream example line does not parse |
+| RV-0464 | low | Python 2 print statements in Faiss sample |
+| RV-0466 | low | Library name misspelled in nmslib license note |
+| RV-0467 | low | Stray word in encode\_images description |
+| RV-0468 | low | Annoy test command uses unmaintained nose runner |
+| RV-0469 | medium | ann-benchmarks maintenance status contradicts itself |
+| RV-0470 | medium | ann-benchmarks SIFT example uses glove dataset |
+| RV-0472 | low | sift result image alt says glove |
+| RV-0473 | low | pg\_embedding badge alt differs from link |
+| RV-0475 | low | requirements file version tags use mixed format |
+| RV-0476 | low | topic tag typo information-retrival |
+| RV-0478 | medium | NearPy prose dataset size differs from code |
+| RV-0479 | low | NearPy README typos |
+| RV-0484 | low | style.css linked twice |
+| RV-0485 | low | harshas-simhadri handle typo |
+| RV-0491 | low | AVIR page compares against AVIR 2.9 while its changelog's latest is 3.1 |
+| RV-0492 | low | nvJPEG sample lists Windows as supported OS but prerequisites say Linux only |
+| RV-0493 | low | Manifest records http fetch with failed https cert, ledger lists https source as Fetched |
+| RV-0494 | medium | REFERENCES\_LEDGER cites three doc paths that do not exist |
+| RV-0495 | low | UFFS capture's benchmark deltas do not match its own phase table |
+| RV-0497 | medium | Footer public-sector link has a double slash |
+| RV-0498 | medium | Cookie bar uses FontAwesome icons while FontAwesome CSS is commented out |
+| RV-0499 | low | Cookie consent bar is labelled as a Q&A popup |
+| RV-0500 | low | jQuery UI accordion init targets selectors the FAQ markup does not use |
+| RV-0501 | low | reCAPTCHA loader and last-visited-URLs script are included twice |
+| RV-0502 | low | Commented-out blocks duplicate live menu and hero content |
+| RV-0503 | low | JSON-LD description is empty while the meta description is set |
+| RV-0504 | low | Icon sprite referenced by absolute URL in one place and relative elsewhere |
+| RV-0505 | low | Ledger duplicate-handling list omits PiGallery2 |
+| RV-0506 | low | Upstream README spells the project name two ways |
+| RV-0507 | low | Support paragraph names GitHub Sponsors but gives only the Liberapay link |
+| RV-0508 | low | Hero sector keys do not match sector URL slugs |
+| RV-0509 | medium | Customer count differs within the saved page (118,000+ vs 110 000+) |
+| RV-0510 | low | Spine pager total 16 does not match the 15 domain articles |
+| RV-0511 | low | Same product labelled differently in menus and cards |
+| RV-0512 | low | Two default-consent calls set different wait\_for\_update values |
+| RV-0513 | low | Modal storage key hard-coded twice |
+| RV-0514 | low | Embedded modal still carries pre-launch placeholder notes |
+| RV-0515 | low | Typographic mismatch in one title (backtick for apostrophe) |
+| RV-0516 | low | Meta description and JSON-LD description disagree |
+| RV-0518 | low | Search form and menu ids repeated across desktop and mobile copies |
+| RV-0519 | low | Developers nav item has an empty href |
+| RV-0521 | medium | Ledger cites a PDQ module that does not exist |
+| RV-0522 | medium | Ledger cites repo docs at paths that do not exist |
+| RV-0523 | low | Same repo doc cited under two path prefixes |
+| RV-0524 | medium | ResourceSpace row cites a repo page that is not saved |
+| RV-0525 | low | Ledger describes Failed rows that do not exist |
+| RV-0526 | low | Double html suffix in some saved file names |
+| RV-0527 | low | PLAN pair-count figure does not match MMDS arithmetic |
+| RV-0528 | high | files.id AUTOINCREMENT premise contradicted by baseline schema |
+| RV-0529 | high | Trigger citations point to schema.rs; triggers now live in baseline.sql |
+| RV-0530 | high | pair.rs delete and unpaired-update citations are stale and disagree with each other |
+| RV-0531 | high | Thumbnail Cache-Control values differ across four docs |
+| RV-0532 | high | Thumbnail URL grammar has four variants |
+| RV-0533 | high | Image and view endpoint paths conflict |
+| RV-0534 | medium | Change poll is GET in one doc and POST in another |
+| RV-0535 | medium | Web fit and region size bounds differ: 4096, 8192 and 16384 |
+| RV-0536 | medium | CSRF and build header names conflict across docs |
+| RV-0537 | medium | Sign-in cookie name and SameSite conflict across designs |
+| RV-0538 | medium | Loopback discovery and launch file names conflict |
+| RV-0539 | medium | Server store file name and folder conflict |
+| RV-0540 | medium | Error body shape and code case differ |
+| RV-0541 | medium | Stop and cancel route names differ |
+| RV-0542 | high | Sign-in absolute lifetime is 90 days in one place and 180 in another |
+| RV-0543 | medium | Argon2id memory cost is 128 MiB in one doc and 64 MiB in others |
+| RV-0544 | medium | Login backoff schedule differs between sections |
+| RV-0545 | medium | HTTP/2 concurrent stream cap is 32 in one place and 128 in others |
+| RV-0546 | medium | Held long-poll cap per device is four in DESIGN and two in RECONCILED |
+| RV-0548 | medium | Per-device thumbnail miss queue cap is 2000 in one section and 256 in another |
+| RV-0549 | medium | Request body caps differ across routes and docs |
+| RV-0550 | medium | Quarantine plan cap differs: 5000 versus 4096, with different body caps |
+| RV-0551 | medium | Yandex result read route differs |
+| RV-0552 | medium | Settings write semantics differ: versioned or last-writer-wins |
+| RV-0553 | medium | Handshake and hello endpoint names and scopes conflict |
+| RV-0554 | low | Mutation request key named op in one doc and request\_id in another |
+| RV-0555 | medium | Logon task start rule differs from the decided text |
+| RV-0556 | medium | Decided status conflicts with later reconciled changes |
+| RV-0557 | medium | Native-tls ALPN claim is still stated in WEB\_CLIENT although other docs correct it |
+| RV-0558 | medium | 'Already configured' private CA claim has no in-repo support |
+| RV-0559 | medium | real\_size removed in WEB\_CLIENT but kept per device in later docs |
+| RV-0560 | medium | Bridge type count is 20 in code; docs say 19 and omit lane\_model\_bridge |
+| RV-0561 | medium | QML stub coverage count is stale against qmldir |
+| RV-0562 | medium | INCREMENTAL\_SYNC recommends the approach its own header withdraws |
+| RV-0563 | medium | Cited REFACTOR\_PLAN.md does not exist in the repo |
+| RV-0564 | medium | Cargo.toml line citations are stale |
+| RV-0565 | low | Cargo.lock line citations are stale |
+| RV-0566 | medium | SETTINGS constant cited at two different schema.rs lines, neither current |
+| RV-0567 | medium | SQLite version and rusqlite fork rev disagree |
+| RV-0568 | medium | Scan doc says probe examples are untracked but git tracks them |
+| RV-0569 | medium | eval README links to docs that do not exist |
+| RV-0570 | low | eval README says int8 is not used but lists int8 as runnable |
+| RV-0571 | low | embed --draft flag used by ann but not in the README run list |
+| RV-0572 | low | --workers default differs across eval scripts |
+| RV-0573 | low | ORTModule hard-codes the embedding width |
+| RV-0575 | low | Undocumented outputs and defaults in cpu\_worker |
+| RV-0576 | low | TRT10 directory prepended to PATH on every session |
+| RV-0577 | high | PG\_DATA\_ROOT means the datasets folder in ANN docs but the pinterest folder in common.py |
+| RV-0578 | medium | Rust decode-rule source cited at a path that does not exist |
+| RV-0579 | low | verify.py usage line omits the 'listed' pair set that run.py depends on |
+| RV-0580 | low | CAMERA\_ROOT defaults to a drive letter, which the common helper rules out |
+| RV-0581 | low | Scripts read env vars that .env.example does not list |
+| RV-0582 | medium | Same-quality byte interpolation uses log bytes in two tools and linear bytes in a third |
+| RV-0583 | low | Sample-name list copied between encoders.py and linux.py |
+| RV-0584 | low | Quality list copied between encoders.py and gpu\_encoders.py |
+| RV-0585 | low | Timing budget and timed() helper copied across GPU scripts with different budgets |
+| RV-0586 | low | k-NN floor and K defined separately in the ANN bake-off and its benchmark |
+| RV-0587 | low | ground\_truth name means two different things in common.py and ann/exact.py |
+| RV-0588 | low | Decode-rule constants (512, 320) hard-coded in three Python places and the Rust source |
+| RV-0589 | low | EXIF orientation swap set repeated in common.py and bench\_thumbs.py |
+| RV-0590 | low | Job folder tag uses Python hash(), so names differ per process and concurrent runs can collide |
+| RV-0591 | low | Failed configurations count as done, so a rerun never retries them |
+| RV-0592 | low | Two BANDS constants with different edges in the same bake-off family |
+| RV-0593 | low | Build instruction for gallery binary differs between eval README and imgload |
+| RV-0594 | low | jpeg-decoders benchmarks crates.io zune while the app uses a git fork |
+| RV-0595 | medium | JPEGLI static libs hard-coded with .a, while other static libs use the CMake suffix variable |
+| RV-0596 | low | Image::RGBX holds 4-byte RGBA pixels |
+| RV-0597 | low | Reference decoders picked by array index in the timing mode |
+| RV-0598 | low | Timing helpers return milliseconds in one bench and seconds in another |
+| RV-0599 | high | Eval libjpeg-turbo fork commit differs from the app's pinned rev |
+| RV-0600 | medium | Obsolete .cmd build and env scripts duplicate the Python versions |
+| RV-0601 | medium | win-build.cmd builds libjpeg-turbo from a vendor path that does not exist |
+| RV-0602 | medium | jpeggpu full build in win-build.cmd contradicts the Python fix |
+| RV-0603 | medium | Test driver defaults point at a session scratch folder and a D: path |
+| RV-0604 | medium | Hard-coded D:\PhotoGallery tool paths conflict with the PG\_ROOT/JPEG\_EVAL convention |
+| RV-0605 | medium | Encoder build uses jpegli's bundled libjpeg-turbo, not the fork the decoders build |
+| RV-0606 | medium | Visual Studio location hard-coded in build.ps1 but found by vswhere elsewhere |
+| RV-0607 | medium | linear\_resize.py cites source files and functions that do not exist |
+| RV-0608 | medium | common.py names a crate path that does not exist |
+| RV-0609 | high | Test 1 can PASS while GPU encodes fail |
+| RV-0610 | low | Test 1 failure label prints a constant instead of the bit offset |
+| RV-0611 | medium | Test 6 verdict ignores failed GPU batches and decode failures |
+| RV-0612 | low | Test 7 reports PASS after an encode error |
+| RV-0613 | low | Test driver header omits test 8 |
+| RV-0614 | low | Timing-event failure comment contradicts the code |
+| RV-0615 | low | Unexpected C++ exceptions reported as a CUDA error |
+| RV-0617 | low | Input name list and megapixel table duplicated across two files |
+| RV-0618 | low | Decoder display names differ between table.py and the Rust harness |
+| RV-0619 | low | Timing helpers return different units and use different budgets and warm-ups |
+| RV-0620 | low | CUDA blocking-sync setup and batch limits duplicated between the two nvJPEG benches |
+| RV-0621 | medium | Partially cloned sources are never repaired |
+| RV-0622 | low | Symlink refresh condition is always true |
+| RV-0623 | low | Parallel build width differs between Linux and Windows scripts |
+| RV-0624 | low | Build-error filtering repeated in linux\_build.py |
+| RV-0625 | low | Decoupled decoder construction is outside the try block |
+| RV-0626 | low | vips init failure is lost on a second init call |
+| RV-0627 | low | Size rounding comment says round-half-up but Python round() is half-to-even |
+| RV-0628 | medium | PDQ synthetic queries and database use different decode paths |
+| RV-0629 | low | pdq.py cites a scratchpad script that is not in the repo |
+| RV-0630 | low | The analyze decode denominator and minimum sizes are restated in several places |
+| RV-0631 | low | Per-block index arithmetic repeated across CUDA kernels |
+| RV-0632 | low | Test code repeats the encoder's zigzag table and Huffman code construction |
+| RV-0633 | low | libjpeg error-manager setup repeated in each test helper |
+| RV-0634 | low | Test 7 rebuilds the batch assembly that gpu\_encode already does |
+| RV-0635 | low | Unchecked CUDA and libjpeg return values in test driver |
+| RV-0636 | low | Process PATH mutated without restore in test 6 |
+| RV-0638 | low | requirements comment claims extras that the pins do not request |
+| RV-0639 | low | Two nvJPEG versions are in play for the same bench |
+| RV-0640 | low | Accelerator provider names in docstring differ from the runtime keys |
+| RV-0641 | low | Historical script names in eval headers no longer exist in the tree |
+| RV-0642 | low | Unknown harness library names are mixed with real config in table regex |
+| RV-0643 | medium | Site links to docs paths that do not exist |
+| RV-0644 | medium | Rust harness counts heap calls during timing; C harness does not |
+| RV-0645 | medium | C inflate command ignores PNG\_INFLATE\_NO\_CHECKSUM |
+| RV-0646 | low | Rust harness described as 8-bit but decodes and dumps 16-bit |
+| RV-0647 | low | Rust and C allocators compute realloc peak differently |
+| RV-0648 | low | zlib static library name documented two ways |
+| RV-0649 | low | make\_variants docstring says pixels are never re-encoded |
+| RV-0650 | low | pillow\_bench conversion rule described incompletely |
+| RV-0651 | low | Misplaced doc comment in main.rs |
+| RV-0652 | low | Usage text omits commands that are dispatched |
+| RV-0653 | low | README describes dump output that only the Rust harness writes |
+| RV-0654 | low | Duplicate #include &lt;cstdlib&gt; in dec\_wuffs.cpp |
+| RV-0656 | low | verify.py usage and docstring omit the 'listed' pair set |
+| RV-0657 | low | verify\_synth count default differs from synth count default |
+| RV-0658 | low | RANSAC\_PX name used for a MAGSAC call |
+| RV-0659 | low | viewer bench glob catches verify\_synth outputs |
+| RV-0660 | low | Scripts pick different compute devices |
+| RV-0661 | low | Worker and loader defaults differ across scripts |
+| RV-0662 | low | Verifier summary's last column header does not match its content |
+| RV-0663 | low | Hard-coded drive letter in UI copy |
+| RV-0664 | low | Misspelled folder name shown in UI and verifier docs |
+| RV-0665 | low | Decision-to-mark mapping and expected-decision table duplicated |
+| RV-0666 | low | 70M-file rate constant duplicated between bench and viewer |
+| RV-0667 | low | Stored-scanline size and IDAT joining duplicated in the C and Rust harnesses |
+| RV-0668 | low | Streaming window constants repeated in three files |
+| RV-0669 | low | Timing protocol and sample-diff logic repeated across harnesses |
+| RV-0670 | low | done() logic and 'correct' definition duplicated between verify.py and verify\_synth.py |
+| RV-0671 | low | Pair key format implemented in Python and JavaScript |
+| RV-0672 | low | Bulk mark endpoint not covered by the viewer tests |
+| RV-0673 | high | libjpeg-turbo fork commit differs from the app's turbojpeg-sys pin |
+| RV-0674 | medium | No check ties the libjpeg-turbo fork pin to the Cargo pin |
+| RV-0675 | medium | jpeg manifest lists one library in the Python port and two in the PowerShell original |
+| RV-0676 | low | fetch retry backoff exists in the Python port and the FFmpeg script but not the jpeg PowerShell script |
+| RV-0677 | medium | README lists compare-shots.ps1 as a kept original, but the file is not in tools/ |
+| RV-0678 | low | README says every script is Python, but tools/ holds PowerShell scripts that it also lists |
+| RV-0679 | medium | lint\_qml.py says it runs on Linux and macOS, but its own body and the Justfile say every OS |
+| RV-0680 | medium | dupes.py docstring describes function-body detection the code does not perform |
+| RV-0681 | medium | make\_test\_video.py --help description is a fragment of its docstring |
+| RV-0682 | medium | lint\_qml.py reimplements load\_env\_file, without pgtools' quote handling or container guard |
+| RV-0683 | medium | checked() and sha256() helpers are copied into the build scripts and compare\_shots.py |
+| RV-0684 | low | MSVC and MSYS2 PATH setup is written out twice in the Python builds |
+| RV-0686 | low | doctor.ps1 hard-codes the Qt version that doctor.py reads from the Justfile |
+| RV-0687 | low | Docker-not-running advice differs between tools |
+| RV-0688 | medium | cfg(test) detection is implemented four ways and only boundaries.py also recognises cfg(all(test, ...)) |
+| RV-0689 | low | Some modgraph scripts run their work at import time; others use main() |
+| RV-0691 | low | numpy is pinned at different versions in the shots venv and the eval venv |
+| RV-0692 | low | docker/check.py says lint.py runs supply-chain checks, which lint.py and the Justfile keep in just deny |
+| RV-0693 | low | fork-updates.py checks only the root Cargo.lock, but two other lockfiles pin the same forks |
+| RV-0694 | low | check\_ffmpeg\_pin reads only the Python build's commit, not the PowerShell original's |
+| RV-0695 | low | lint\_qml.py docstring gives build output paths without the target/ prefix the code uses |
+| RV-0697 | low | Scratch-free comparison threshold 40 \* W \* 0.6 in dupes.py has no stated basis |
+| RV-0698 | medium | setup\_ffmpeg skip rule documented wrongly |
+| RV-0699 | medium | Superseded callgraph scripts still in tree and cross-referenced |
+| RV-0700 | medium | Callgraph compile, link and path logic duplicated in shell and PowerShell |
+| RV-0701 | medium | .env quoted values read differently across tools |
+| RV-0702 | low | Five separate .env loaders |
+| RV-0703 | medium | qmltest.ps1 is superseded by qmltest.py and has drifted |
+| RV-0704 | medium | peak\_mem.ps1 cites a plan file that does not exist |
+| RV-0705 | medium | pdq\_dihedral comment says 8 orientations; code stores 4 |
+| RV-0706 | low | set\_owed.py keeps a dead v12 branch for a column no crate defines |
+| RV-0709 | medium | scan\_timing docstring says renumbered scan was removed but code runs it |
+| RV-0711 | low | One manifest records qt path with forward slashes |
+| RV-0712 | low | Pairing scripts measure CPU load two ways |
+| RV-0713 | low | pairs\_probe output parsed four different ways |
+| RV-0714 | low | Median helper written three times |
+| RV-0715 | low | Owed-drop SQL repeated in scripts |
+| RV-0716 | low | libavcodec version query repeated |
+| RV-0717 | low | QT\_DIR missing messages worded differently |
+| RV-0718 | low | Error message prefixes differ between tools |
+| RV-0719 | low | Missing PROGRAMFILES handled differently |
+| RV-0720 | low | Dead impl-Default branch in split\_check |
+| RV-0722 | low | Peak commit measured by a different counter than documented |
+| RV-0723 | low | Setup recipe runs the Windows-only FFmpeg fetch on every OS |
+| RV-0725 | low | unreachable\_pub always exits 0 |
+| RV-0726 | medium | vendor README places the dhat pin in crates/gallery/Cargo.toml |
+| RV-0727 | medium | vendor README says each fork is copied in this directory and updated by copy, but the directory holds only the README |
+| RV-0728 | low | vendor README says every fork is pinned in [patch.crates-io], but dhat and parajpeg are direct git dependencies |
+| RV-0729 | medium | tools/README.md says the static Qt build applies the patches, but no build step applies them |
+| RV-0730 | medium | static FFmpeg build exists as both a Python script and a PowerShell script with the same checks |
+| RV-0731 | low | MSVC toolset literal 14.44.35207 written in three places |
+| RV-0732 | low | static FFmpeg library list and system libraries repeated in the two static-Qt patches |
+| RV-0733 | low | empty PG\_QT\_STATIC and PG\_FFMPEG\_STATIC count as set, but an empty PG\_DESKTOP\_CONTENT\_KEY counts as unset |
+| RV-0734 | low | pg\_static\_qt\_link is described as an empty function, but it runs the Quick Controls resource initializers |
+| RV-0735 | low | pg-video.patch mixes single-colon and double-colon cargo directives in one block |
+| RV-0736 | low | numpy is pinned at 2.5.5 for the screenshot venv and at 2.5.4 for the eval venvs |
+| RV-0737 | low | vendor README dhat section cites a different project (phpstan-rs) as the origin of the patch |
+| RV-0738 | medium | Fork check: empty gh result becomes the text null, so no issue is opened or closed |
+| RV-0739 | low | Posts of one key after a resolve are not folded, so each post is its own write |
+| RV-0740 | medium | A thumbnail cache read error fails the request instead of falling back to the original |
+| RV-0741 | low | Writer's refresh stores the thumbnail-ledger flag from a stale read |
+| RV-0742 | low | Inbox::mark\_all\_read has no caller |
+| RV-0743 | low | Dropping App without stop() closes the catalog under still-running services |
+| RV-0744 | low | App::open returns early after the inbox writer thread has started |
+| RV-0745 | low | Blur search builds the whole detail table for each side before finding a seam |
+| RV-0746 | medium | Any non-NotFound read error quarantines the preferences file |
+| RV-0748 | medium | Save of picked Yandex results fsyncs preferences on the Qt thread |
+| RV-0749 | low | A panicking delivery callback kills the catalog reader thread and hangs every later read |
+| RV-0750 | low | JsonStore::update is referenced only by its own test |
+| RV-0752 | low | Catalog probes copy only the main database file, not its WAL |
+| RV-0754 | medium | Process-wide ledger write fault makes parallel tests fail |
+| RV-0755 | low | Local account name and uid committed in a doc comment |
+| RV-0756 | low | close() reports success when the WAL checkpoint did not complete |
+| RV-0757 | low | resolve\_notices deletes rows of its kind posted after its snapshot |
+| RV-0759 | medium | Pairing error drops temps and replaced ids of committed batches |
+| RV-0760 | medium | No catalog file at the path between move-aside and rename |
+| RV-0761 | low | hide\_pages does not re-check the marker from its caller's snapshot |
+| RV-0762 | low | Progress phases and bytes callback are never emitted |
+| RV-0763 | low | Failed metadata read counts as a zero-byte catalog in the room check |
+| RV-0764 | low | WAL-merge test passes when the -wal is absent or empty |
+| RV-0765 | medium | mark\_pending holds the write lock across every id in one transaction |
+| RV-0766 | medium | one malformed pdq blob fails the whole pairing load |
+| RV-0767 | low | Windows subtree bounds are byte-exact while library membership is case-insensitive |
+| RV-0769 | low | pairs\_again ignores the WAL checkpoint's busy result and reports success |
+| RV-0770 | low | synchronous=NORMAL under WAL can lose the most recent commits on power loss |
+| RV-0771 | low | Per-root cleanup of replaced files is skipped when a later result or cache open fails |
+| RV-0772 | low | CLI buffer and reader sizes wrap or overflow on large values |
+| RV-0773 | medium | One unreadable subfolder aborts the whole borders report |
+| RV-0774 | low | Rehearsal passes without checking the removal when no library folder exists |
+| RV-0775 | low | Swallowed query error makes the one-time VACUUM check pass on any failure |
+| RV-0776 | low | pair\_distance swallows query errors, so its None assertions pass on failure |
+| RV-0777 | low | Short-name test passes silently when its spelling cannot be made |
+| RV-0778 | low | discard-pending reports a failure after the removal has committed |
+| RV-0779 | low | Typed bound with a thousands separator reads as a decimal |
+| RV-0780 | low | arrive() scans the whole list once per edited file |
+| RV-0781 | low | frames() does not reject a NaN width, while plan() does |
+| RV-0782 | low | A Fit view size is unbounded, while a Region's output is capped |
+| RV-0783 | low | The grid hint test checks a hand-written list, not the key map |
+| RV-0784 | high | libjpeg-turbo JPEG decode allocates without the 512 MiB cap |
+| RV-0785 | high | Animated GIF and PNG frames decode with no memory limits |
+| RV-0786 | medium | BMP and TIFF crop silently clamps an out-of-range rectangle |
+| RV-0787 | medium | Zoomed view keeps an unclamped offset when a new image of another size arrives |
+| RV-0788 | low | JPEG\_FALLBACKS counter and Info.scale\_denom are written and never read |
+| RV-0790 | medium | move\_aside leaves main file without its sidecars on a later rename failure |
+| RV-0793 | low | JpegSegments::scan\_at has no caller |
+| RV-0794 | low | png\_read\_bench check mode passes when the gather returns None |
+| RV-0795 | low | failed tag copy deletes a prior good copy at the same output path |
+| RV-0796 | medium | Offscreen font-dir fix gated on env var, not the platform Qt picks |
+| RV-0797 | low | int64 deadline truncated to int before QTimer::start |
+| RV-0798 | low | Panic test's fault assertion is vacuous on the few-owed path |
+| RV-0799 | low | Vector suffix equivalence test silently passes without AVX2 |
+| RV-0800 | low | Info toast timer not restarted when a new info toast replaces the shown one |
+| RV-0801 | low | FilterBar.matching is declared but never read |
+| RV-0802 | low | B test hook only turns borders on, against its own toggle comment |
+| RV-0803 | low | Inbox entry expand is lost when expandRow changes before the view's count catches up |
+| RV-0804 | low | Folder removal acts on a stored row while the dialog names a folder |
+| RV-0805 | high | Details and turned-entry deliveries run on the reader thread and are dropped |
+| RV-0806 | medium | A failed facet count is shown as zero counts |
+| RV-0807 | low | Details read re-requested on every call until delivered |
+| RV-0808 | low | A failed folder-tree read empties the tree and marks it ready |
+| RV-0809 | medium | applyView reports a saved-view read failure as no such view |
+| RV-0810 | low | A made thumbnail is cached before its decode is checked, against the doc |
+| RV-0811 | low | QML label scanner treats an apostrophe in a comment as a string opener |
+| RV-0813 | medium | Randomized row test never reaches most rows, file swaps or scrolls |
+| RV-0814 | low | ExifTool tests pass silently when ExifTool is absent |
+| RV-0815 | low | gather\_check counts failing whole-file analyses only for gathered files |
+| RV-0816 | low | GIF with no image block is reported as animated and catalogued |
+| RV-0817 | low | Argument-route ExifTool run has no timeout |
+| RV-0818 | low | Idle-dead ExifTool is handed out, and its next write fails once |
+| RV-0819 | low | filesOf takes an unused again parameter |
+| RV-0820 | medium | Whole-file buffer reserved with infallible reserve\_exact from file length |
+| RV-0821 | medium | Dropping a Service whose body did not stop blocks forever |
+| RV-0822 | low | Pause clock is stamped from a state read outside the lock that applies it |
+| RV-0823 | low | Lane-tagged event bus has no production subscriber |
+| RV-0824 | low | Throttled progress notices have no trailing update |
+| RV-0826 | low | Unparseable probe environment values silently fall back to defaults |
+| RV-0827 | low | Busy wait in test has no bound |
+| RV-0828 | medium | Hold and stop can be cleared by a lane between its hold check and its round start |
+| RV-0829 | medium | Pairing gate stays running forever after a panic in the join |
+| RV-0830 | medium | Hashes pass leaves a stale unreadable-files notice when duplicates is off |
+| RV-0831 | medium | A retired lane that outlives its wait posts tally entries that are never cleared |
+| RV-0832 | low | Turned files with no known volume do not wake every lane when mixed with known ones |
+| RV-0833 | low | A failed presence check is read as the file being gone, so the cut skips it silently |
+| RV-0834 | low | The scanning path is not cleared when a scan panics |
+| RV-0835 | low | A command with only unplugged roots runs over every volume with no roots |
+| RV-0836 | low | The coordinator blocks up to ten seconds on retiring lanes, against its own doc |
+| RV-0837 | low | The hard-link test passes without running when the file system has no hard links |
+| RV-0838 | medium | Log rotation stops growing-check when shift keeps failing |
+| RV-0839 | low | Copy-aside that fails at truncation leaves duplicated history |
+| RV-0840 | low | Log fallback uses eprint! which panics on stderr write failure |
+| RV-0841 | low | XMP element text attributed after an empty element |
+| RV-0842 | low | set\_var SAFETY comment is false for this test binary |
+| RV-0843 | low | Rating-after-turn check only tests that a rating exists |
+| RV-0844 | low | Crate clippy.toml drops root's std::env::temp\_dir ban |
+| RV-0846 | low | Drive-relative Windows path parsed as drive root |
+| RV-0847 | low | Anchor string allocated for every folder row |
+| RV-0848 | medium | summarize\_session reads only the live perf file, not rotated files |
+| RV-0849 | low | A torn multi-byte tail fails the whole summary; torn line glues onto next record |
+| RV-0850 | low | pass\_above follows parent links with no cycle guard |
+| RV-0851 | low | Unchecked u64 sums over file-derived counts |
+| RV-0852 | low | capture leaves global state set if the closure panics, and races open |
+| RV-0853 | low | Perf sink calls LogFile::append from many threads without serialising |
+| RV-0854 | low | open reports success for a sink whose first write failed |
+| RV-0855 | low | Inertness test never calls span() while disabled |
+| RV-0856 | low | Self-time assertions pass without child time being subtracted |
+| RV-0857 | medium | Sigma test normalises away the difference it checks |
+| RV-0858 | low | Hex decoder drops an odd digit and accepts a sign |
+| RV-0859 | medium | Windows real\_path canonicalizes a plain dotted path into its sibling |
+| RV-0861 | medium | Crash between CreateDirectoryW and reparse set leaves an alias that is never repaired |
+| RV-0862 | low | Sweep errors abort the alias request for an unrelated folder |
+| RV-0863 | low | Hard-link fallback reports failure after the link is made |
+| RV-0864 | low | Unix mtime conversion can overflow for far-future timestamps |
+| RV-0865 | low | Job-object assignment result ignored, so kill-on-exit is not guaranteed |
+| RV-0866 | low | GetProcessTimes failure yields a huge process age |
+| RV-0867 | low | Test assumes the repository is on a fixed NTFS disk |
+| RV-0868 | low | Animation thread spawn failure is silently a no-op |
+| RV-0869 | low | Panic in the animation thread is swallowed on drop |
+| RV-0870 | low | FUSE and other server-inode file systems are not in the refused list |
+| RV-0871 | low | Windows NTFS acceptance test assumes the test binary runs from a fixed NTFS disk |
+| RV-0872 | medium | Video read I/O errors during probe are recorded as undecodable |
+| RV-0873 | medium | Read errors mid-stream are treated as end of file, yielding a wrong frame as success |
+| RV-0874 | low | Thread-local read connections survive close() on other threads |
+| RV-0875 | low | Final WAL merge ignores a busy checkpoint result |
+| RV-0876 | low | Failed touch flush on the put path is discarded without an event |
+| RV-0877 | low | Any application\_id-0 database with entries and limits tables is deleted as an earlier cache |
+| RV-0878 | low | Cached placeholder JPEGs are read from the cache twice |
+| RV-0879 | medium | Recovered copy recorded as done when its temp is missing |
+| RV-0880 | medium | Exact ground-truth cache is not tied to the base it was built from |
+| RV-0881 | medium | Validation gate does not check USearch, despite the docstring |
+| RV-0882 | medium | Interrupted base generation is skipped on rerun |
+| RV-0883 | low | Cache files written in place and trusted by existence |
+| RV-0884 | low | Append-only results file breaks resume after a torn last line |
+| RV-0885 | low | Loop-invariant ground truth rebuilt per rep and per target |
+| RV-0886 | low | Empty group folder crashes the audit after embedding |
+| RV-0887 | low | Chunk of unreadable originals makes an empty torch.stack |
+| RV-0888 | medium | Full N x N similarity matrix on the host |
+| RV-0890 | low | Strata with no decided samples drop out of the true-duplicate total |
+| RV-0891 | low | Recovered rating copies do not refresh thumbnails |
+| RV-0893 | low | Windows clone helper skips a folder whose checkout or patch step failed |
+| RV-0894 | medium | Timing run aborts on RGBA library images that the encode run accepts |
+| RV-0895 | medium | One file's uncaught error discards every completed row of the library run |
+| RV-0896 | medium | GPU encoders write outputs in place, so an interrupted run leaves a truncated JPEG that later runs keep |
+| RV-0897 | low | Missing gallery binary turns every image into a silent failed load |
+| RV-0898 | low | Empty labeled sets make torch.tensor index lists float and crash the evaluation |
+| RV-0899 | low | k-NN similarities are rounded to float16 while thresholds come from float32 values |
+| RV-0900 | low | Full P-by-P similarity matrix and triu index arrays for the negative pool |
+| RV-0901 | medium | score crashes when a partial encode left turbo outputs without Q75 |
+| RV-0902 | low | Score cache is keyed only by output filename |
+| RV-0903 | low | Interrupted input copy leaves a truncated benchmark input that is kept on later runs |
+| RV-0904 | low | Symlink check compares a Path to a string and never matches |
+| RV-0905 | low | win-build.cmd still builds libjpeg-turbo from a vendor folder that is not in the tree |
+| RV-0906 | low | Empty LLVM\_DIR from .env resolves clang-cl to a relative path |
+| RV-0907 | low | A timeout or missing output array stops the whole decode comparison |
+| RV-0908 | low | A failed turbo-yuv reference is reported as a plane-count mismatch |
+| RV-0909 | low | Colour stage treats 4:4:0 chroma with the h2v2 filter |
+| RV-0910 | low | A failed libvips init is reported as success on every later call |
+| RV-0911 | low | FFmpeg error path returns without flushing, leaving the decoder in end-of-stream |
+| RV-0912 | low | A negative or NaN --secs value panics in Duration::from\_secs\_f64 |
+| RV-0913 | low | Grayscale JPEGs abort the whole comparison run |
+| RV-0914 | low | A callgrind file without a totals line is recorded as zero instructions |
+| RV-0917 | low | Temporary root for the library run is never removed |
+| RV-0918 | medium | Test 1 passes while round-trip mismatches and GPU failures are only appended to the detail |
+| RV-0919 | medium | Test 6 drops failed GPU batches and undecodable images without failing |
+| RV-0920 | medium | Missing sample images are skipped silently, so tests 1, 3 and 4 pass on a subset |
+| RV-0921 | low | Test 1 failure message always reports bit 0 for the differing bit |
+| RV-0922 | low | Throughput test reports PASS when every encode batch failed |
+| RV-0924 | low | After a failed batch, output and coefficient accessors still return success with empty results |
+| RV-0925 | medium | Dihedral match materializes a (queries, 8, index) matrix for each transform |
+| RV-0926 | low | Full argsort of every query row just to take the top 10 |
+| RV-0927 | low | Per-image synchronous copies in the stuff and copy-out loops |
+| RV-0928 | low | Peak accounting in realloc counts the old block as well as the new one |
+| RV-0929 | low | sscanf reads a vector that has no terminating NUL |
+| RV-0930 | low | A failed size query makes read\_file resize to SIZE\_MAX |
+| RV-0931 | low | Iterator past the end when the IDAT stream is shorter than two bytes |
+| RV-0932 | low | Heap counter decides accounting by the flag at free time, not allocation time |
+| RV-0933 | low | Non-ASCII header written to redirected stdout on Windows |
+| RV-0934 | low | BadCase::extra\_bytes is never read |
+| RV-0935 | low | Default sample, work and tool paths are absolute and specific to one machine |
+| RV-0937 | low | Empty outputs directory divides by zero in the check summary |
+| RV-0938 | medium | Staged FFmpeg prefix nests inside a surviving old prefix |
+| RV-0939 | low | Download retry loop never retries a truncated body |
+| RV-0940 | low | Test-only module children in mod.rs layout are not skipped |
+| RV-0941 | low | Re-export rule misses pub(crate) and pub(super) use |
+| RV-0942 | low | tolerant\_diff wraps around the canvas edge |
+| RV-0943 | low | Corrupt marks file makes every read and save answer 400 |
+| RV-0944 | low | Content-Length from the request sizes the body read |
+| RV-0945 | low | Checkpoint resume accepts a truncated last row |
+| RV-0946 | low | Empty index lists become float arrays and fail as indices |
+| RV-0947 | low | dumpbin failure leaves the non-system DLL check silently passing |
+| RV-0948 | low | Output folders cleared with errors ignored |
+| RV-0951 | low | Missing artifacts folder turns a fuzz failure into a traceback |
+| RV-0952 | low | Motion analysis runs even when no change was found |
+| RV-0953 | low | Pair listing re-reads every image header on each request |
+| RV-0954 | low | Resume trusts pair ids without checking the sample or options |
+| RV-0955 | low | Partial MSYS2 upgrade before package install |
+| RV-0956 | medium | Text scan drops all code after the first inline test module |
+| RV-0957 | low | 'use ... as Alias' private imports are mangled by whitespace removal |
+| RV-0958 | medium | linux.py never rebuilds a stale image after pin changes |
+| RV-0959 | low | vcvars environment dump decoded with the locale codec, not the console codepage |
+| RV-0960 | low | qrc resource file written with unescaped paths |
+| RV-0961 | low | Deleted-but-tracked module files crash the module scan |
+| RV-0962 | low | Split checker misreads an impl header whose generic bound contains '-&gt;' |
+| RV-0963 | low | Unreachable 'impl Default' branch in split\_check |
+| RV-0964 | low | unreachable\_pub reports compile errors but exits 0 |
+| RV-0965 | low | Module graph page reruns the full force layout on every resize event |
+| RV-0966 | low | perf baseline written without an atomic replace |
+| RV-0967 | medium | Bench thumbs slim copy drops the checkpoints table |
+| RV-0968 | medium | Renumber renames in place, overwrites temps, exits midway |
+| RV-0969 | medium | Pairing scripts ignore set\_owed.py exit; oracle can pass unowed |
+| RV-0970 | medium | Missing probe fields parse as 0 and are reported as results |
+| RV-0971 | medium | Pairing scripts recursively delete any -Work folder |
+| RV-0974 | low | qmltest.ps1 hard-codes the Ratings singleton; qmltest.py detects pragma |
+| RV-0975 | low | CI setup pipes a fetched installer into sh unverified |
+| RV-0976 | low | Archive is written in place over the commit's previous archive |
+| RV-0977 | low | symbolize rewrites the raw profile in place |
+| RV-0978 | low | Thread names with control characters break the callgrind lines |
+| RV-0979 | low | grow\_catalog fails on an empty source catalog |
+| RV-0980 | low | setup\_ffmpeg rmtree on an unchecked --destination |
+| RV-0981 | medium | Failed ExifTool install leaves the mismatched program in place |
+| RV-0982 | low | Windows setup-python ordering check can pass without checking |
+| RV-0983 | low | Version scan accepts a read in a comment or test module |
+| RV-0984 | low | Test does not cover the already-set variable rule |
+| RV-0985 | high | Sign-in absolute lifetime is 90 days in one place and 180 in others |
+| RV-0986 | high | Argon2id memory cost is 128 MiB in the accepted decision and 64 MiB elsewhere |
+| RV-0987 | medium | Login backoff schedule differs between sections |
+| RV-0988 | medium | Held long-poll cap per device is four in DESIGN and two in RECONCILED |
+| RV-0989 | medium | HTTP/2 concurrent stream cap is 32 in one place and 128 in others |
+| RV-0990 | medium | Per-device thumbnail miss queue cap is 2000 in one section and 256 in another |
+| RV-0992 | medium | Quarantine plan cap differs: 5000 versus 4096, with different body caps |
+| RV-0993 | low | Change-notice coalescing window is 500 ms in one section and 250 ms elsewhere |
+| RV-0994 | medium | The 5-second busy wait is written in four places with no shared constant |
+| RV-0995 | medium | Probe pairs write batch size differs from the pass's WRITE |
+| RV-0996 | medium | stmt\_journal\_probe claims the catalog's settings but uses a 256 MiB cache |
+| RV-0997 | low | CutStats.unsupported is never set but is carried into the notice |
+| RV-0998 | low | STORAGE.md cites the wrong line for the reader count |
+| RV-1000 | medium | model and client clippy.toml drop the root temp\_dir ban, and the model comment is incomplete |
+| RV-1001 | low | --workers default differs across eval scripts |
+| RV-1003 | medium | Hard-coded D:\PhotoGallery tool paths conflict with the PG\_ROOT and JPEG\_EVAL convention |
+| RV-1004 | medium | C inflate command ignores PNG\_INFLATE\_NO\_CHECKSUM |
+| RV-1005 | low | Windows build parallelism is hard-coded at 4 while Linux uses every CPU |
+| RV-1006 | medium | Failed queued write is dropped, but the module doc says a recorded temp is never discarded |
+| RV-1007 | medium | Driven.deferred is overwritten per marker while files is summed |
+| RV-1009 | medium | Import ledger failure text is formatted two ways |
+| RV-1011 | low | Yandex 'no search' condition has two wordings, and the per-result case a third |
+| RV-1012 | medium | Replay refusals word the format mismatch differently, and only one carries a line number |
+| RV-1013 | low | Missing-item context messages say 'work item' in one pass and 'file' in others |
+| RV-1014 | low | 'a stored folder path has a NUL' literal repeated across five sites |
+| RV-1015 | low | Stored library and removal NUL messages repeated across files |
+| RV-1016 | low | 'no picture size' literal written twice in the video crate |
+| RV-1017 | low | Thumbcache start-over messages repeated inside schema.rs |
+| RV-1018 | low | Application-id mismatch wording differs between the cache and catalog schema checks |
+| RV-1020 | medium | A failed clone leaves a folder that the next run treats as complete |
+| RV-1021 | medium | Failed configurations count as done, so reruns never retry them |
+| RV-1022 | low | unreachable\_pub reports errors but always exits 0 |
+| RV-1023 | low | Decoupled decoder construction sits outside the try that catches its errors |
+| RV-1024 | medium | Error body shape and code case differ between the web client docs |
+| RV-1025 | low | Compare-shots process timeout is reported as MISSING, not UNSETTLED |
+| RV-1026 | low | Unexpected host exceptions reported as a CUDA runtime error |
+| RV-1027 | low | Unchecked CUDA and libjpeg return values in the test driver |
+| RV-1029 | low | Session-save and views-failure notices render the error chain differently |
+| RV-1030 | low | TryFrom error types differ across validated model newtypes |
+| RV-1032 | low | 'no variant' argument check repeated across probe examples |
+| RV-1033 | low | Coordinator error back-off reuses the placement cache TTL |
+| RV-1034 | low | Tool error messages disagree on whether they name the script |
+| RV-1035 | medium | dependabot does not cover the eval/png-decoders Cargo workspace |
+| RV-1037 | medium | client clippy.toml omits the root disallowed-methods bans |
+| RV-1038 | low | print-lint deny attribute copied into 17 library crates |
+| RV-1039 | low | just lint command in the ledger lacks --locked and --timings |
+| RV-1040 | low | clippy hit counts for the same lints differ within the ledger |
+| RV-1041 | low | ledger Level column says warn for lints whose decision is deny |
+| RV-1042 | low | numpy is pinned at 2.5.5 in the shots venv and 2.5.4 in the eval venvs |
+| RV-1043 | low | &lt;cstdlib&gt; included twice in dec\_wuffs.cpp |
+| RV-1044 | low | pg-thumbs links rusqlite unconditionally although its comment ties it to the fault feature |
+| RV-1045 | low | fuzz patch block is a subset of the root list, but its comment points to the root list as the full one |
+| RV-1046 | low | core.rs module doc omits progress from the modules it uses |
+| RV-1047 | low | writers comment says no other crate names the writers, but pg-import does |
+| RV-1048 | medium | subtree membership is byte-based in folders\_under but rules-based in removal |
+| RV-1049 | low | add\_root drops contained library folders without releasing their scan leases |
+| RV-1050 | low | Ctrl guard applied to F but not to the other grid letter keys |
+| RV-1051 | low | FolderPicker purposes are passed as bare integers across Rust and QML |
+| RV-1052 | medium | Rust harness counts heap calls during timing; C harness keeps counting inert |
+| RV-1053 | low | Reference decoders picked by array index in the timing mode |
+| RV-1054 | low | Some modgraph scripts run their work at import time; others use main() |
+| RV-1055 | low | Dead impl-Default branch in split\_check |
+| RV-1056 | low | REFACTOR\_DESIGN gives 34 crates; the workspace has 35 |
+| RV-1057 | medium | REFACTOR\_DESIGN lists seven runtime pg crates for the desktop; it has eight |
+| RV-1059 | medium | Thumbnail failures logged under two targets |
+| RV-1060 | low | Cache-reset notice logged under two targets |
+| RV-1061 | medium | Design doc says gallery.log is uncapped |
+| RV-1062 | low | Log call-site count and API name disagree with code |
+| RV-1063 | low | Notices table gives providers.rs 4 sites; code has 3 |
+| RV-1064 | low | PG\_PERF\_LOG opening and its failure message written twice |
+| RV-1065 | low | Pass-level perf span names do not share the pass. prefix |
+| RV-1067 | low | Pairing span prefix is pair. in catalog and pairs. in import |
+| RV-1068 | high | libjpeg-turbo fork commit differs between the eval/tools builds and the app |
+| RV-1069 | high | Build-script comments say the fork commit is the root Cargo.toml pin, but it is not |
+| RV-1070 | high | Eval Windows build uses two different libjpeg-turbo sources |
+| RV-1071 | medium | No check ties the libjpeg-turbo fork pin to the Cargo pin |
+| RV-1072 | high | parajpeg rev differs between the app and the eval harness |
+| RV-1074 | low | zune-core is crates.io in eval and a git fork in the app |
+| RV-1075 | low | numpy pinned at different versions in the two requirements files |
+| RV-1076 | low | MSVC toolset and FFmpeg commit written out in several scripts |
+| RV-1077 | low | Eval JPEG pins written out in both the .cmd and the .py build scripts |
+| RV-1078 | low | FFmpeg SHA-256 pin copied into a test instead of read from the Justfile |
+| RV-1079 | low | ExifTool source pins are passed to the images but not listed in docker/README.md |
+| RV-1080 | low | rustup installer is fetched unpinned, unlike the other tools |
+| RV-1081 | low | Pinned FFmpeg folder is documented in two places, one of them machine-local |
+| RV-1082 | high | Thumbnail Cache-Control values differ across the webclient docs |
+| RV-1083 | high | Thumbnail URL grammar has several incompatible key forms |
+| RV-1084 | high | Image and view endpoint paths conflict across the webclient docs |
+| RV-1085 | medium | Change poll is GET in one doc and POST in another |
+| RV-1086 | medium | Settings PUT is last-writer-wins in transport and versioned elsewhere |
+| RV-1087 | medium | Loopback handshake route name and scope conflict |
+| RV-1088 | medium | Viewer tests and QML stub use a fit URL form the app never builds |
+| RV-1089 | medium | Queue module doc names functions that do not exist |
+| RV-1090 | medium | Thumbs --cap-gb help says a new cache is 50 GB by default |
+| RV-1091 | medium | Governor doc cites a path that does not resolve |
+| RV-1092 | medium | shared.rs says runner re-exports the cells, but no re-export exists |
+| RV-1093 | medium | make\_test\_video --help text is a fragment of its docstring |
+| RV-1094 | low | pending\_in is documented under a crate path that does not exist |
+| RV-1095 | low | Pairs settings doc omits PG\_PROBE\_BLOCK |
+| RV-1096 | low | Formats that come out without metadata are listed differently in two doc comments |
+| RV-1097 | low | Misplaced doc: forget\_height\_entry's doc sits on the FORGET\_CHUNK constant |
+| RV-1098 | low | Lease-renewal test carries the doc for the 200 000-file hold test |
+| RV-1099 | low | Two stacked doc blocks describe the fake Tree type |
+| RV-1100 | low | App accessor list omits thumbs() |
+| RV-1101 | low | png-decoders usage text omits dispatched commands |
+| RV-1102 | low | EGPU\_ERR\_ARG comment lists a bad-option error the code never returns |
+| RV-1103 | low | Two KEEP\_BYTES constants with different values in different crates |
+| RV-1105 | high | EXIFTOOL plan says IMPORT\_VERSION is 2 at HEAD; code has 1 |
+| RV-1106 | medium | Code comments cite catalog schema versions 19 and 13; the code has schema version 1 |
+| RV-1107 | medium | Cargo.toml rusqlite rev differs from the rev the DECODE\_ONCE plan cites |
+| RV-1108 | medium | dhat pin location in vendor README is wrong |
+| RV-1109 | medium | Pillow is pinned in two requirements files, while CI says one place |
+| RV-1110 | low | Duplicate constant re-exports of the version registry |
+| RV-1112 | medium | Committed perf baseline disagrees with the callgrind drill for the same benches |
+| RV-1113 | medium | ExifTool version named in a doc differs from the pinned version |
+| RV-1114 | low | Features shape differs between superseded note and later code samples |
+| RV-1115 | low | Bundled SQLite version cited as 3.54.0 and 3.54.1 |
+| RV-1116 | low | Two nvJPEG versions cited for the same bench |
+| RV-1117 | low | nvImageCodec version differs between encoder and decoder docs |
+| RV-1118 | low | doctor.ps1 hard-codes the Qt version that doctor.py reads from the Justfile |
+| RV-1119 | low | SSCD embedding width hard-coded as 512 in the ORT runner |
+| RV-1120 | medium | Encoder build uses jpegli's bundled libjpeg-turbo, not the decoders' fork |
+| RV-1121 | low | TensorRT major version named differently across the eval tree |
+| RV-1122 | medium | Probe lists files\_fresh index that the schema never defines |
+| RV-1123 | low | Index and trigger share the name files\_changed |
+| RV-1124 | low | Phase::Backup and Phase::Copy docs both describe a catalog copy |
+| RV-1125 | low | Rebuild notice folders field counts library roots |
+| RV-1126 | low | Pair timings idle label is fed from the starved counter |
+| RV-1127 | low | Test name says reads\_as\_0 but the assertion expects None |
+| RV-1128 | low | Windows FILE\_FLAG values inline in one bench and named in the other |
+| RV-1129 | low | Orientation facet is facetOrientations in QML and Shapes in Rust |
+| RV-1130 | low | Difference kind header is produced but not in the documented kinds |
+| RV-1131 | medium | Subprocess holder tests use a different env prefix per crate |
+| RV-1132 | medium | CSRF header is named differently across the web client designs |
+| RV-1133 | medium | Sign-in cookie SameSite disagrees between the design and the reconciled doc |
+| RV-1134 | medium | Tech decisions still name the old stop route |
+| RV-1135 | low | Mutation request key named op in one doc and request\_id in another |
+| RV-1136 | medium | Write kind Turns is stored and noticed as rotation, but the temp file says turns |
+| RV-1137 | low | Two different ROW\_HEIGHT constants |
+| RV-1138 | low | Crate-private native module shadows the crate-level native module |
+| RV-1139 | medium | Windows-only submodules named three ways in platform |
+| RV-1140 | low | Two unrelated structs named Writing in neighbouring crates |
+| RV-1141 | low | Two unrelated functions named file\_failure |
+| RV-1142 | low | Pending span names put the pass name in different positions |
+| RV-1143 | low | Pairing pass has two perf span names |
+| RV-1144 | medium | Thumbcache manifest names a view the schema does not define |
+| RV-1145 | medium | Plans cite a bench LAYOUT name and value the code no longer has |
+| RV-1146 | medium | Plan says rusqlite's array feature is off; Cargo.toml enables it |
+| RV-1147 | medium | Duplicate-hash CLI flag is --no-dups in code and README, --no-duplicates in the plan |
+| RV-1149 | low | Two BANDS constants with different edges |
+| RV-1150 | low | RANSAC\_PX constant names an estimator the call does not use |
+| RV-1151 | low | RGBX layout name holds RGBA pixels |
+| RV-1152 | low | Median helper written three times in the pairing scripts |
+| RV-1153 | low | Owed-drop SQL written out in two scripts |
+| RV-1154 | low | The predecessor app ImageRater is named in code comments and docs |
+| RV-1155 | low | Ledger code 3 is a magic number in QML |
+| RV-1156 | low | Three dialogs report the SaveViewDialog panel kind |
+| RV-1157 | high | BACKGROUND plan assumes migrations that the code does not have |
+| RV-1158 | high | Trigger citations point at schema.rs; triggers live in baseline.sql |
+| RV-1159 | high | Delete and unpaired line citations disagree within INCREMENTAL\_SYNC and in code |
+| RV-1160 | high | Decode-failure retry flag documented as retried by the pass, but writer stores false |
+| RV-1161 | medium | Import retry flag documented as --retry; the CLI field is retry\_errors |
+| RV-1162 | high | PG\_DATA\_ROOT means the pinterest folder in common.py but the datasets folder in ANN docs |
+| RV-1163 | high | Private-data line in raw.rs doc: pasted shell identity output |
+| RV-1164 | high | Real-size setting described as removed in one doc and kept per device in others |
+| RV-1165 | medium | NoticeSink doc lists clear, but the trait has resolve |
+| RV-1166 | medium | Writer give-up described as a few seconds; the restart waits total about 35 s |
+| RV-1167 | medium | mark\_unheld\_missing doc promises a count; the function returns unit |
+| RV-1168 | medium | Synthetic library folder count: comment says 81, generator defaults to 80 |
+| RV-1169 | medium | Thumbnail resize documented as Lanczos3; the code uses Magic Kernel Sharp 2021 |
+| RV-1172 | medium | Rating range: queue doc says 1 to 5, Rating accepts 0 to 5 |
+| RV-1173 | medium | Viewer decode margin described as 4x pixels; code multiplies each side by 4 |
+| RV-1174 | medium | Settings and prefs say the import hashes files; the model says the Hashes pass does |
+| RV-1175 | medium | Cited pdq\_index.rs and thumbhash\_of do not exist |
+| RV-1176 | medium | Docs cite a deleted PAIRING\_PASS\_PLAN.md |
+| RV-1177 | medium | Animation path doc names App::file\_path, which does not exist |
+| RV-1178 | medium | FilterBar cites a facet type that does not exist |
+| RV-1179 | medium | Static Qt patches described as applied by the build; they are applied by hand |
+| RV-1180 | medium | Dependabot and Justfile claim CI names tool pins that ci.yml does not hold |
+| RV-1182 | low | Dependabot says the ExifTool version is in ci.yml; it is in the Justfile |
+| RV-1183 | low | CI header says the pins step is the first step of each job; Windows job runs setup-python first |
+| RV-1184 | low | crates/README says just lint runs cargo-deny; the Justfile excludes it |
+| RV-1185 | low | crates/README points the cargo doc command at ci.yml; the flags are in tools/lint.py |
+| RV-1187 | medium | parajpeg named as pg\_parajpeg, which does not exist |
+| RV-1188 | low | Build comment says qt-build-utils is vendored; it is built from a git fork |
+| RV-1189 | low | Patch comment in Cargo.toml omits cxx-qt-build |
+| RV-1190 | low | .env example says just run and dev pass PG\_CATALOG\_DIR; dotenv-load does it |
+| RV-1191 | medium | vendor/README says nothing is copied here, then says copy over this directory |
+| RV-1192 | medium | vendor/README places the dhat pin in crates/gallery/Cargo.toml; the rev is in the root |
+| RV-1193 | low | vendor/README says all forks are in patch.crates-io; dhat and parajpeg are direct git deps |
+| RV-1195 | medium | eval README and site link to docs files that are not in the repo |
+| RV-1198 | medium | ResourceSpace ledger row cites a GitHub page with no saved copy |
+| RV-1199 | low | Ledger describes Failed rows that do not exist |
+| RV-1201 | medium | PLAN candidate-pair figure does not follow from the MMDS arithmetic it cites |
+| RV-1202 | medium | Notifications design cites companion docs that are not in the repo |
+| RV-1203 | medium | Cache event count: body says five variants, override says seven |
+| RV-1204 | low | PNG pass 4 says eleven files; its table has ten rows |
+| RV-1205 | low | VIDEO\_PLAYER cites ci.yml for the gpl-shared pin; the pin is in the Justfile |
+| RV-1206 | low | Stale line and file citations in reference docs |
+| RV-1207 | low | REFACTOR\_DESIGN crate and QML line counts are out of date |
+| RV-1208 | high | BACKGROUND and BOUNDED plans disagree on the schema route and add\_root behaviour |
+| RV-1209 | medium | BACKGROUND plan guard tests and line citations cannot be found |
+| RV-1210 | low | BACKGROUND plan refers to fix B8, which does not exist; and to TRACE edits the tree lacks |
+| RV-1211 | low | BACKGROUND plan's crate-layers citation points at the wrong line |
+| RV-1212 | medium | Callgrind drill cites a profiling script that is not in tools/ |
+| RV-1213 | medium | SSCD-large cost multiple not in the table it cites |
+| RV-1214 | medium | Eval docstrings give the 512/320 decode rule from four places; one constant should serve |
+| RV-1215 | medium | Logon task described as started at logon always; design makes it opt-in |
+| RV-1216 | medium | native-tls server ALPN claim corrected in other docs but not in the decided text |
+| RV-1217 | medium | Private CA described as already configured; no CA tooling exists in the repo |
+| RV-1218 | medium | QML bridge type count and stub count disagree with the sources |
+| RV-1219 | medium | INCREMENTAL\_SYNC recommends the approach its own header withdraws |
+| RV-1220 | medium | Cited REFACTOR\_PLAN.md does not exist |
+| RV-1221 | medium | Cargo.toml line citations in web-client docs are out of date |
+| RV-1222 | low | Cargo.lock line citations are out of date |
+| RV-1223 | medium | SETTINGS pragmas cited at two line numbers, neither current |
+| RV-1224 | medium | Scan doc says probe examples are untracked; git tracks them |
+| RV-1225 | medium | Mutation and listing decided rules superseded in later docs but not marked |
+| RV-1226 | medium | Budget rationale cites schema versions the catalog no longer has |
+| RV-1227 | medium | Plan cites PLAN.md paths and a verifier decision that do not resolve from eval/docs |
+| RV-1228 | low | Dangling placeholder pass reference in progress.rs |
+| RV-1229 | low | Catalog schema version 19 cited in reader doc; the catalog is at schema 1 |
+| RV-1230 | low | config.rs doc lists a path the module does not define |
+| RV-1231 | low | hint\_name doc states a looser extension rule than the filter applies |
+| RV-1232 | low | pg-thumbs Cargo comment says no analysis dependency, but a dev-dependency exists |
+| RV-1233 | low | Shrink comment says one page per step; code steps 4096 pages |
+| RV-1234 | medium | Drive kind doc says a failed query reads as spinning; caller behaviour not in code |
+| RV-1235 | low | Doc cites pg\_scan::refusal, a private module |
+| RV-1236 | low | list\_probe usage message omits the documented arguments |
+| RV-1237 | low | PG\_PERF\_LOG dash target described generally; the desktop ignores it |
+| RV-1238 | low | Picker doc on the Windows function describes the other platform |
+| RV-1239 | low | HeldLock doc says the name goes on drop; on Unix only on delete |
+| RV-1240 | low | Notice UnreadableFiles doc says drives not stored; the serde attribute writes them when non-empty |
+| RV-1241 | low | Notice checklist omits root(), an exhaustive match |
+| RV-1242 | low | Notice doc paths omit the crates/ prefix |
+| RV-1244 | medium | Update.height doc does not match the height rule in code |
+| RV-1245 | low | Viewer header says + and - zoom about the cursor; code uses the window centre |
+| RV-1246 | low | Keymap comment lists one PanelAction owner; the test checks two |
+| RV-1247 | low | Yandex Source doc says each save makes its own Source; saves never call the factory |
+| RV-1248 | low | Inbox post-fold description disagrees with the code's latest-post lookup |
+| RV-1250 | low | Upsert comment says every column keeps the old row's value; the SQL overwrites several |
+| RV-1251 | low | FOLDER\_LEDGER\_COUNTS doc says ?1 is unused; the SQL reads it |
+| RV-1252 | low | Replacement doc says the file keeps its ratings; the code drops the file's rating row |
+| RV-1253 | low | Tier-2 pairing doc omits the creation-time condition the query enforces |
+| RV-1254 | low | Dangling version reference (3.4) in a lifecycle doc |
+| RV-1255 | medium | queue module doc uses short function names that do not exist |
+| RV-1256 | low | Scan ids said to only grow; scans.id is not AUTOINCREMENT and rows are deleted |
+| RV-1257 | medium | remove\_root finishes and counts every pending removal, not only its own |
+| RV-1258 | low | Removal module doc's missing-folder rule is not enforced in this file |
+| RV-1259 | low | scan\_seen doc sits on folder\_rows\_on; ensure\_seen, which creates the table, has none |
+| RV-1260 | medium | before\_page is documented as running before a batch is deleted, but it runs before checks that can skip the batch |
+| RV-1261 | low | Hard-coded measured figures in work.rs doc comments go stale |
+| RV-1262 | low | Version constants doc names the wrong home; test\_support imports from a third path |
+| RV-1263 | low | carry\_rows doc omits that vacuum\_owed is also kept from the new file |
+| RV-1264 | medium | changed\_file guard doc names ?11 and ?12; the SQL uses ?10 and ?11 |
+| RV-1265 | low | under\_params placeholder numbering in doc disagrees with the statement |
+| RV-1266 | low | Doc of fn picture sits above struct Picture |
+| RV-1267 | low | secs doc sits above hash\_and\_report; secs has no doc |
+| RV-1268 | low | Stacked doc blocks above lane helpers belong to other functions |
+| RV-1269 | medium | Notice doc on recompute\_keys says unparseable folder keeps its files' order keys; code recomputes them |
+| RV-1271 | medium | Test-access claim: raw.rs says tests never touch the connection, but tests do |
+| RV-1272 | low | Probe and schema docs refer to migration 16, which no longer exists |
+| RV-1273 | low | Load probe says only cached uses a warm connection; analysis-cached does too |
+| RV-1275 | high | Test 1 can PASS while GPU encodes fail |
+| RV-1276 | medium | Test 6 verdict ignores failed GPU batches and decode skips |
+| RV-1277 | low | Test 7 reports PASS after an encode error |
+| RV-1278 | medium | GPU encoder thresholds: set after the run or pre-registered |
+| RV-1279 | medium | QML test host omits the yandex image provider |
+| RV-1280 | low | Border test comment cites a removed parity check |
+| RV-1282 | low | Listing test fixture's session table lacks the production id column |
+| RV-1283 | low | Message render test lacks the unset-value check |
+| RV-1284 | low | Eval tool tests run only in the Windows CI job |
+| RV-1285 | low | Writeback test hard-codes the attempt cap that MAX\_ATTEMPTS names |
+| RV-1286 | medium | Int8 entropy variant reported with two cosine minimums |
+| RV-1287 | medium | Shortcut verifier agreement is stated two ways |
+| RV-1288 | low | Pair set sizes differ across VERIFIER sections |
+| RV-1289 | medium | PDQ queries and database hashes use different decode paths |
+| RV-1290 | medium | Plans name guard tests that no source file defines |
+| RV-1291 | low | Plans cite a stale schema.rs line for the carried-tables guard |
+| RV-1292 | medium | Test replicates the shell's SaveSession carry instead of running it |
+| RV-1293 | low | Test driver header omits diagnostic test 8 |
+| RV-1294 | medium | vips init failure is lost on a second init call |
+| RV-1295 | medium | Two tests in one binary set PG\_EXIFTOOL concurrently and claim exclusivity |
+| RV-1296 | low | Request priority counter wraps into negative values, flipping order |
+| RV-1297 | low | Checkpoint wait ignores the walk's renew\_every parameter |
+| RV-1298 | low | Log file order can differ from record number order across threads |
+| RV-1299 | low | ANN job folder tag uses per-process randomized hash() |
+| RV-1300 | low | Process PATH is mutated and never restored in test 6 |
+| RV-1301 | low | Unsynchronised once-only flags in Pin callbacks |
+| RV-1302 | low | Scan plan says the walk's seen set is a HashSet, but the code uses BTreeSet |
+| RV-1303 | low | Hash-collection ban is written out in three clippy.toml files |
+| RV-1304 | medium | Filter line doc says it matches the chip, but ratings differ |
+| RV-1305 | medium | Duplicates filter named two different ways |
+| RV-1306 | low | Shift written as a symbol in one hint, as Shift+R elsewhere |
+| RV-1307 | low | Grid view hint omits Space, which also views |
+| RV-1308 | low | Two empty-folder-list strings with different wording |
+| RV-1309 | low | Same words under two ids for the failed-files link |
+| RV-1310 | low | Cut tooltip and cut question say 'No backup' differently |
+| RV-1312 | low | Colour literals repeated in components that Theme already names |
+| RV-1313 | medium | Hardcoded English notice text bypasses the text catalog |
+| RV-1315 | medium | Test-folder error blames PG\_TEST\_DIR when it is unset |
+| RV-1316 | low | Test skip messages use two different shapes |
+| RV-1317 | low | PG\_HOME-not-set advice differs across build scripts |
+| RV-1318 | low | QT\_DIR missing messages have at least seven wordings |
+| RV-1319 | low | Docker-not-running advice differs between tools |
+| RV-1321 | low | Migration-room error reads as a fragment |
+| RV-1322 | low | 'isn't in the catalog' in Rust and 'is not in the catalog' in the CLI |
+| RV-1323 | low | Hud and HUD spelled two ways in comments and code |
+| RV-1325 | low | CI workflow keeps three diagnostics marked temporary |
+| RV-1326 | medium | Probe scripts resolve the target and scan root one or more levels above the checkout |
+| RV-1327 | low | Profiling docs cite scan-timing.sh and wsl-bench.sh, which are not in the repo |
+| RV-1329 | medium | win-build.cmd builds libjpeg-turbo from a vendor path that does not exist |
+| RV-1330 | medium | jpeggpu build target differs between win-build.cmd and win\_build.py |
+| RV-1331 | medium | Two Windows build scripts for the same jpeg-decoders build, one of them stale |
+| RV-1332 | medium | Visual Studio location hard-coded in build.ps1 but found by vswhere elsewhere |
+| RV-1333 | low | Symlink refresh condition is always true |
+| RV-1334 | low | git fetch retry in the PowerShell jpeg script has no backoff |
+| RV-1335 | medium | Superseded callgraph scripts still in tree and cross-referenced |
+| RV-1336 | medium | Callgraph compile flags, LLVM default and profile knobs repeated in shell, PowerShell and Python |
+| RV-1337 | medium | qmltest.ps1 is superseded by qmltest.py, is not run, and has drifted |
+| RV-1339 | low | Pairing scripts measure CPU load two ways |
+| RV-1340 | low | libavcodec version query repeated with different failure handling |
+| RV-1341 | low | Static-Qt patches mix single-colon and double-colon cargo directives |
+| RV-1342 | low | CLIPPY\_LEDGER states the lint clippy command without the flags the lint now passes |
+| RV-1343 | medium | GPU JPEG benches disagree on the per-batch memory cap |
+| RV-1344 | medium | Per-second timing budget and timed() helper copied across GPU scripts |
+| RV-1345 | medium | CUDA blocking-sync setup written in two nvJPEG benches |
+| RV-1346 | low | Decode draft size (512, 320) written out in Python and Rust tools |
+| RV-1347 | medium | Unix-seconds clock helper copied in four crates |
+| RV-1348 | low | Batch size 500 and 200 declared as private constants in several passes |
+| RV-1350 | low | qt\_int usize-to-i32 helper defined in five desktop modules with two signatures |
+| RV-1351 | low | Log and notice level-to-code mapping written twice |
+| RV-1352 | medium | Preference save-on-worker helper duplicated in settings and shell |
+| RV-1353 | medium | Verbatim and UNC Win32 path prefixes defined in two platform modules |
+| RV-1354 | low | Colon and slash unit constants declared more than once in native.rs |
+| RV-1355 | medium | FNV-1a hash implemented twice with the same constants |
+| RV-1356 | low | Absolute-folder env lookup written twice in dirs.rs |
+| RV-1357 | low | ms conversion helpers repeat the same division |
+| RV-1359 | medium | Stored-path NUL error written with five messages and two wrappers |
+| RV-1360 | medium | WAL truncate checkpoint written out in eight places, checked in one |
+| RV-1361 | medium | Catalog SETTINGS pragma list copied into probes, with the cache size written as a literal |
+| RV-1363 | low | Probe doc names the pass cache constant it does not use |
+| RV-1364 | medium | Placeholder cache threshold repeats the render decode side as a second literal |
+| RV-1365 | low | Failure classifier duplicated between thumbs pass and placeholders |
+| RV-1366 | low | Test height helper h() repeated in two crates |
+| RV-1367 | low | Read-only connection pragmas spelled three ways in the thumbcache reader |
+| RV-1368 | low | Thumbnail height range written as a literal in the error text |
+| RV-1369 | medium | Thumbnail event printer setup repeated in five command arms |
+| RV-1370 | low | Grid gap 4 px written in Rust and in QML |
+| RV-1371 | low | Rating symbol list copied into a QML test stub |
+| RV-1372 | low | Theme colour tokens repeated as literals in panel QML |
+| RV-1373 | low | PanelAction enum declared in two QML panels |
+| RV-1374 | low | Wheel notch divisor 120 repeated in three QML files |
+| RV-1375 | low | Source-unchanged check written twice in pg-crop |
+| RV-1376 | low | is\_cut notice branch written twice in run\_jobs |
+| RV-1377 | low | Reader count 8 and CPU fallback 4 repeated across the job pipeline and coordinator |
+| RV-1378 | low | Pause toggle state machine implemented twice |
+| RV-1379 | low | Pipeline test Options literal repeated seven times |
+| RV-1380 | low | FileNoLongerInLibrary posted at two sites in shell.rs |
+| RV-1382 | low | Jpeg-bench file flag literals duplicate the constants used in the PNG bench |
+| RV-1383 | low | Decoder options chain repeated in the jpeg codec |
+| RV-1384 | low | Duplicate thumb\_url doc block, the first describing an earlier signature |
+| RV-1385 | low | Orientation pixel map written twice as eight-arm tables |
+| RV-1386 | low | Pseudo file-system magic table copied into a test |
+| RV-1387 | low | Frame due-time advance written twice in the player loop |
+| RV-1388 | low | Run-then-trim tail repeated across Maker methods, skipped by decode\_file |
+| RV-1390 | low | Test module re-imports Arc and Duration already in scope |
+| RV-1391 | medium | Three crop test helpers duplicate files\_under and letterboxed with differing bodies |
+| RV-1392 | low | ExifTool availability probe repeated inline in library tests |
+| RV-1393 | medium | Thumbnail cache open-and-leak repeated in writeback tests beside a helper |
+| RV-1394 | low | Wait helpers with differing timeouts and poll intervals |
+| RV-1396 | low | Error-text formatting written three times in the desktop bridge |
+| RV-1397 | low | Git listed twice in the Linux image setup |
+| RV-1399 | medium | MSVC toolset pin 14.44.35207 repeated in PowerShell and Python |
+| RV-1400 | medium | Two .env loaders, one without quote handling or the container guard |
+| RV-1401 | medium | Static FFmpeg library list written in two static-Qt patches |
+| RV-1402 | low | PATH prepend for MSVC and MSYS2 written twice in the Python builds |
+| RV-1403 | low | Stored-folder parse repeated in model tree and rules |
+| RV-1405 | high | Catalog schema version numbering in docs does not match the code (version 1, no migrations) |
+| RV-1406 | high | Docs say files.id has no AUTOINCREMENT; the baseline declares it on roots, folders and files |
+| RV-1407 | high | pdq\_dihedral: code keeps 4 orientations (128 B); schema comment and several docs say 8 (256 B) |
+| RV-1408 | high | files\_changed index: CATALOG\_SIZE\_PLAN drops it while DECODE\_ONCE Phase 4 depends on it |
+| RV-1409 | medium | rusqlite pin revision cited wrongly in DECODE\_ONCE\_PLAN |
+| RV-1410 | medium | Web-client docs give three different discovery file names for the loopback launch file |
+| RV-1411 | medium | Web-client docs place the server store in four different locations and under three names |
+| RV-1412 | medium | File-failure and ledger-ack pass codes in baseline.sql omit values the code writes |
+| RV-1414 | medium | JPEG build manifest records one library in the Python port and two in the PowerShell original |
+| RV-1415 | low | set\_owed.py keeps a dups\_state branch for a column no crate defines |
+| RV-1416 | low | Replay test fixtures use an Init shape the recorder does not write |
+| RV-1417 | low | Hex name decoder accepts a leading '+' in each pair, against the stated rule |
+| RV-1418 | low | Refusal doc says kebab-case covers the notice fields, but serde renames only the variant tag |
+| RV-1419 | low | START\_PROFILE cites a line that is not the thumbs cache path |
+| RV-1420 | low | CATALOG\_SIZE\_PLAN says crates/README.md gives the backup as pre-v18; the README gives the pattern |
+| RV-1421 | low | Perf t\_ms origin differs by platform and the perf record does not say so |
+| RV-1422 | low | Viewer's verify\*.json glob also catches verify\_synth outputs |
+| RV-1424 | high | GPU feasibility says DCT scaling was removed; code and decode plan say it is kept |
+| RV-1425 | medium | folder\_flat table-seek count given as 7,400 and 7,623 |
+| RV-1426 | low | Unresolved-symbol subtotal does not add up |
+| RV-1427 | low | order\_key average size given as 121 B and 117 B |
+| RV-1428 | low | Same measured design size given as 284.8 and 285.1 MiB |
+| RV-1429 | low | ExifTool file counts do not add up |
+| RV-1430 | medium | Web image size bound: 16384, 8192 and 4096 px in three web-client docs |
+| RV-1431 | low | Stale file:line references in plan documents |
+| RV-1432 | low | Reference to a source path that does not exist |
+| RV-1433 | medium | Error text is tidied and capped by two implementations at different caps |
+| RV-1434 | low | Integer overflow maps to different sentinels across desktop bridges |
+| RV-1436 | medium | Mascot count 40 written in Rust and QML and in help text |
+| RV-1437 | low | Default --wait of 10 seconds written twice |
+| RV-1438 | low | Import, borders and hashes each define the 500-file batch |
+| RV-1439 | low | Thumbs crate defines the same batch size twice |
+| RV-1440 | low | Pairs probe copies the pass cache constant instead of using it |
+| RV-1441 | low | ETA minutes round up, hours remainder rounds down |
+| RV-1442 | low | Plural counts go through num::size in notices and num::count in messages |
+| RV-1443 | low | mbps field name holds megabytes per second |
+| RV-1444 | low | ScanStats mixes usize and u64 counters |
+| RV-1445 | low | Dropped-writes count held as usize in one place and u64 in another |
+| RV-1446 | low | Cache byte count typed u64 in ThumbStats but i64 in the cache |
+| RV-1447 | low | Download limit documented as MB, coded as MiB |
+| RV-1449 | low | Entropy-test first-difference label always reports bit 0 |
+| RV-1450 | low | Bound facet indices are unnamed literals that share numbers with the named facet constants |
+| RV-1451 | low | Magic pass number 3 for the scan-folders ledger in the inbox |

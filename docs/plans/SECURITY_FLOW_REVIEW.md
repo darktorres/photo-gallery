@@ -2,7 +2,7 @@
 
 This report lists the findings of a flow-based review of the photo-gallery repository. The review started from each untrusted input and each persistent or destructive write, then traced it end to end across the files it touches. It was run as a read-only workflow and produced 189 findings across 37 flows.
 
-**Status: unvalidated.** These findings have not yet been checked against the code. Each one is a claim to verify before it is acted on.
+**Status: validated.** Each finding was checked against the code it cites. Verdicts: 175 confirmed, 13 partial, 1 refuted. A confirmed verdict means the mechanism is in the cited code. Where a finding also claims a consequence that was not traced, the note says so. Duplicates are marked and point to the finding they repeat.
 
 ## Method
 
@@ -34,6 +34,14 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 |---|---:|
 | data-integrity | 148 |
 | security | 41 |
+
+## Verdicts
+
+| Verdict | Count |
+|---|---:|
+| CONFIRMED | 175 |
+| PARTIAL | 13 |
+| REFUTED | 1 |
 
 ## Flows
 
@@ -84,7 +92,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/scan/src/lib.rs:371 scan() writes file rows through crates/catalog/src/writers.rs
 - Summary: Folder names and entry names from the user's disk (including reparse points, junctions, symlinks and case variants) are listed, identified by volume and file id, checked against path rules and root volume (scan/src/lib.rs:354-361), then stored as catalog rows. Untrusted names and FS metadata cross into SQL writes.
 
-### SEC-001 [medium/security] Child and root folders opened by path after the reparse check, so a swapped junction or symlink is listed
+### SEC-001 [medium/security] Child and root folders opened by path after the reparse check, so a swapped junction or symlink is listed — CONFIRMED
+
+- Verdict: CONFIRMED. Open-by-path follows links (dir.rs:369 backup semantics, no reparse flag; dir.rs:505, 517). Reparse test is on the listing only. Race is real.
 
 - Confidence: medium
 - Kind: traversal
@@ -100,7 +110,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/scan/src/lib.rs:835` let root\1dir = open\1folder(lister, rules, root).with\1context(\1\1 format!("can't open {}", rules.display(root)))?;
   - `crates/scan/src/lib.rs:1062` stack.push(Frame { job: next, dir: None, pooled: !other });
 
-### SEC-002 [low/data-integrity] Non-regular files (FIFO, socket, device) with media names are recorded and queued for analysis
+### SEC-002 [low/data-integrity] Non-regular files (FIFO, socket, device) with media names are recorded and queued for analysis — PARTIAL
+
+- Verdict: PARTIAL. Listing keeps FIFOs and devices with media names (dir.rs:527, scan lib.rs:238); the write path has the is\1file check. Blocking open not checked.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -113,7 +125,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/scan/src/lib.rs:238` let ext = if e.folder { None } else { Ext::of\1name\1bytes(name.as\1bytes()) };
   - `crates/writeback/src/file.rs:50` if !std::fs::symlink\1metadata(&disk)?.is\1file() {
 
-### SEC-003 [low/security] A folder name holding U+0000 is cut short by CreateFileW and lists another folder
+### SEC-003 [low/security] A folder name holding U+0000 is cut short by CreateFileW and lists another folder — CONFIRMED
+
+- Verdict: CONFIRMED. Wide path set with an embedded NUL (dir.rs:360); CreateFileW stops at the NUL. Name check missing at scan lib.rs:234.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -126,7 +140,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/scan/src/lib.rs:267` lister.open(&units\1of(&rules.join(path)))
   - `crates/platform/src/names.rs:15` pub fn name\1from\1native(units: &\1Unit\1) -\1 Name {
 
-### SEC-004 [low/data-integrity] Volume identity for a symlink on another device can come from its target's file system
+### SEC-004 [low/data-integrity] Volume identity for a symlink on another device can come from its target's file system — CONFIRMED
+
+- Verdict: CONFIRMED. volume\1id falls through to ext\1fsid, which calls statfs on the probe path (dir.rs:611), following a symlink.
 
 - Confidence: low
 - Kind: wrong-target
@@ -139,7 +155,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/dir.rs:611` if unsafe { libc::statfs(c.as\1ptr(), st.as\1mut\1ptr()) } != 0 {
   - `crates/scan/src/lib.rs:1012` lister.volume\1of\1device(device, &probe)
 
-### SEC-005 [low/security] The identity probe opens an entry on another device before any refusal
+### SEC-005 [low/security] The identity probe opens an entry on another device before any refusal — PARTIAL
+
+- Verdict: PARTIAL. Probe opens foreign-device entries before refusal (dir.rs:573, scan lib.rs:1010 before 1040). Device side effects are speculative.
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -158,7 +176,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/codec/src/decode.rs:118 decode\1into and crates/thumbcache/src/writer.rs:358 put (thumbnail row written to cache)
 - Summary: Untrusted JPEG/PNG/TIFF/WebP/GIF bytes from the user's originals are decoded (with limits.rs size checks) into pixels, resized, and stored as thumbnails. Hostile dimensions or chunk structure reach hand-written decoders; output goes into the thumbnail cache file.
 
-### SEC-006 [medium/security] Whole original read into memory with no size cap before any decoder check
+### SEC-006 [medium/security] Whole original read into memory with no size cap before any decoder check — CONFIRMED
+
+- Verdict: CONFIRMED. Whole files read with no cap before decode: pipeline.rs:588-589, render maker.rs:131, thumbs placeholders.rs:131.
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -172,7 +192,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/render/src/maker.rs:131` let result = std::fs::File::open(path).and\1then(\1mut f\1 f.read\1to\1end(&mut self.file)).map(drop);
   - `crates/thumbs/src/placeholders.rs:131` read = std::fs::read(&disk)?;
 
-### SEC-007 [medium/security] Per-decode pixel buffers (up to 512 MiB each) sit outside the pipeline's memory budget
+### SEC-007 [medium/security] Per-decode pixel buffers (up to 512 MiB each) sit outside the pipeline's memory budget — CONFIRMED
+
+- Verdict: CONFIRMED. Pipeline budget counts read buffers only (pipeline.rs:228). Decode output of up to 512 MiB sits outside it (limits.rs:14, convert.rs:52-58).
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -186,7 +208,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/codec/src/codecs/png.rs:51` reserve(color, w, h)?;
   - `crates/jobs/src/pipeline.rs:228` let budget = opts.budget.clone().unwrap\1or\1else(\1\1 Arc::new(Budget::new(opts.buffer\1bytes)));
 
-### SEC-008 [low/data-integrity] Thumbnail stored in the cache, then failure cleared in the catalog in a separate commit
+### SEC-008 [low/data-integrity] Thumbnail stored in the cache, then failure cleared in the catalog in a separate commit — CONFIRMED
+
+- Verdict: CONFIRMED. put\1batch (thumbs lib.rs:337) and clear\1failures (lib.rs:342) are separate stores, so a crash between them leaves a stale failure row. The test cite was not checked.
 
 - Confidence: medium
 - Kind: crash-window
@@ -204,7 +228,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/metadata/src/lib.rs:55 Meta::read result stored by crates/import/src/lib.rs:58 import into catalog rows (crates/catalog/src/writers.rs)
 - Summary: EXIF date, orientation, XMP ratings and TIFF IFD offsets are parsed from attacker-controlled header bytes with manual offset arithmetic (tiff.rs entries/uint/ascii/bytes; xmp.rs xmp\1properties). Parsed values (dates, orientation, rating, pair keys) become catalog columns.
 
-### SEC-009 [low/data-integrity] BigTIFF Exif IFD pointer narrowed to 32 bits, dropping the Exif dates
+### SEC-009 [low/data-integrity] BigTIFF Exif IFD pointer narrowed to 32 bits, dropping the Exif dates — CONFIRMED
+
+- Verdict: CONFIRMED. tiff.rs:161 narrows IFD8 offsets to u32, so exif.rs:61 drops the Exif IFD above 4 GiB.
 
 - Confidence: high
 - Kind: overflow
@@ -223,7 +249,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/video/src/ffi.rs:191 av\1read\1frame / :388 avcodec\1receive\1frame frames returned to crates/thumbs/src/lib.rs and crates/render/src/player.rs
 - Summary: Untrusted video files are opened by an FFmpeg build loaded at runtime (unsafe function-pointer table, ffi/load.rs:167-176) and read through a Rust callback (io.rs:34-40, raw slice from C-supplied size). Frame data and metadata dictionaries come back across the unsafe FFI boundary.
 
-### SEC-010 [medium/data-integrity] Mid-file read error is taken as end of stream and a stale frame is cached
+### SEC-010 [medium/data-integrity] Mid-file read error is taken as end of stream and a stale frame is cached — CONFIRMED
+
+- Verdict: CONFIRMED. read\1source returns EIO (io.rs:44); read\1packet returns false (ffi.rs:191); the frame loop ends and picks the last earlier frame (lib.rs:207, 227).
 
 - Confidence: high
 - Kind: missing-check
@@ -238,7 +266,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/src/lib.rs:227` let f = picker.found.or(picker.last).context("no frame decoded")?;
   - `crates/thumbs/src/lib.rs:293` Ok(data) =\1 {
 
-### SEC-011 [medium/data-integrity] I/O error during open or probe is classified as Undecodable and recorded until the file changes
+### SEC-011 [medium/data-integrity] I/O error during open or probe is classified as Undecodable and recorded until the file changes — CONFIRMED
+
+- Verdict: CONFIRMED. Open and probe errors become plain bail strings (ffi.rs:138, 144); MakeError::of\1video only downcasts Unopened (maker.rs:58), so they are Undecodable.
 
 - Confidence: high
 - Kind: missing-check
@@ -252,7 +282,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/render/src/maker.rs:58` match e.downcast::\1pg\1video::Unopened\1() {
   - `crates/thumbs/src/lib.rs:126` Failed::Panicked \1 Failed::Undecodable =\1 Some(false),
 
-### SEC-012 [medium/security] Sample aspect ratio from the file sizes the RGB destination buffer without a cap
+### SEC-012 [medium/security] Sample aspect ratio from the file sizes the RGB destination buffer without a cap — PARTIAL
+
+- Verdict: PARTIAL. The poster path uses MinSize::Full (video lib.rs:177), so the destination is the full display width. FFmpeg buffer allocation returns an error (ffi.rs:425), not an abort. Thumbnail scales are smaller. The magnitude is overstated.
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -266,7 +298,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/src/lib.rs:303` let mut dst = Frame::video(AVPixelFormat\1AV\1PIX\1FMT\1RGB24, tw, th)?;
   - `crates/video/src/ffi.rs:425` let ret = (frame.api.av\1frame\1get\1buffer)(frame.ptr, 0);
 
-### SEC-013 [low/data-integrity] Frame time subtraction wraps in release builds
+### SEC-013 [low/data-integrity] Frame time subtraction wraps in release builds — CONFIRMED
+
+- Verdict: CONFIRMED. Time subtraction in lib.rs:254 is unchecked, and the release profile sets no overflow-checks (Cargo.toml).
 
 - Confidence: medium
 - Kind: overflow
@@ -277,7 +311,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/src/lib.rs:254` .map\1or(self.at\1ms, \1t\1 pg\1model::num::f64\1to\1i64(ticks\1ms(t - self.start, self.time\1base)));
   - `crates/video/src/lib.rs:197` let start = if stream.start\1time() == NOPTS\1VALUE { 0 } else { stream.start\1time() };
 
-### SEC-014 [low/security] Animation player reads the whole file into memory with no size check
+### SEC-014 [low/security] Animation player reads the whole file into memory with no size check — CONFIRMED
+
+- Verdict: CONFIRMED. player.rs:76-77 reads the whole animation file into memory.
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -295,7 +331,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/catalog/src/browse/read/\1.rs and crates/catalog/src/work.rs queries; schema checks in crates/catalog/src/schema.rs
 - Summary: The catalog file (and its -wal sidecar) is opened and queried; user\1version, schema objects and key\1version marks are read back from the file before use. A file edited by another program is accepted or refused by schema and version checks (core.rs:262-270), and its rows drive listing and write queries.
 
-### SEC-015 [high/security] Stored temp path is read, copied over the original and deleted unchecked
+### SEC-015 [high/security] Stored temp path is read, copied over the original and deleted unchecked — CONFIRMED
+
+- Verdict: CONFIRMED. Stored temp is read and removed without a check (writeback lib.rs:732-748). Needs a hostile or corrupted catalog row. Severity should be medium.
 
 - Confidence: high
 - Kind: missing-check
@@ -308,7 +346,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:733` match std::fs::read(&temp\1path) {
   - `crates/writeback/src/lib.rs:748` let \1 = std::fs::remove\1file(&temp\1path);
 
-### SEC-016 [high/security] Stored folder or file name is used as a path without checking separators or dot-dot parts
+### SEC-016 [high/security] Stored folder or file name is used as a path without checking separators or dot-dot parts — CONFIRMED
+
+- Verdict: CONFIRMED. Name::from\1raw does no validation (model name.rs:57) and file\1path\1of pushes the raw name (lookup.rs:103). Needs a corrupted catalog row. Severity should be medium.
 
 - Confidence: high
 - Kind: traversal
@@ -322,7 +362,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/import/src/lib.rs:121` let disk = pg\1platform::names::disk\1path\1of(&work.path(item.path, sep));
   - `crates/platform/src/native.rs:237` if (part.is\1empty() && !last) \1\1 part == \1DOT\1 \1\1 part == \1DOT, DOT\1 {
 
-### SEC-017 [medium/data-integrity] Rebuild moves the catalog aside before its replacement takes the name, with no file in between
+### SEC-017 [medium/data-integrity] Rebuild moves the catalog aside before its replacement takes the name, with no file in between — CONFIRMED
+
+- Verdict: CONFIRMED. move\1aside at rebuild.rs:94 precedes the rename at :96, with no file in between. core.rs:125 creates an empty file on the next open.
 
 - Confidence: high
 - Kind: crash-window
@@ -334,7 +376,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:96` std::fs::rename(&replacement, path).with\1context(\1\1 {
   - `crates/catalog/src/core.rs:177` conn = Connection::open(db\1file(path)?).with\1context(\1\1 format!("catalog {}", path.display()))?;
 
-### SEC-018 [medium/data-integrity] A missing recorded temp is treated as already copied and the write is recorded as done
+### SEC-018 [medium/data-integrity] A missing recorded temp is treated as already copied and the write is recorded as done — CONFIRMED
+
+- Verdict: CONFIRMED. NotFound on the recorded temp is treated as copied (writeback lib.rs:742), then write\1done runs (:747).
 
 - Confidence: medium
 - Kind: lost-update
@@ -345,7 +389,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:742` Err(e) if e.kind() == std::io::ErrorKind::NotFound =\1 {}
   - `crates/writeback/src/lib.rs:747` catalog.write\1done(&written, Self::rewrote(&written, rewrite))?;
 
-### SEC-019 [low/data-integrity] Upgrade backup is renamed into place without syncing its contents
+### SEC-019 [low/data-integrity] Upgrade backup is renamed into place without syncing its contents — CONFIRMED
+
+- Verdict: CONFIRMED. Backup copy is renamed into place with no sync (rebuild.rs:45-46). Latent: MIGRATIONS is empty.
 
 - Confidence: medium
 - Kind: partial-write
@@ -356,7 +402,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:45` std::fs::copy(db\1file(path)?, &partial)
   - `crates/catalog/src/rebuild.rs:46` .and\1then(\1\1\1 std::fs::rename(&partial, &backup))
 
-### SEC-020 [low/data-integrity] Catalog::open writes the WAL setting before it checks what it is opening
+### SEC-020 [low/data-integrity] Catalog::open writes the WAL setting before it checks what it is opening — CONFIRMED
+
+- Verdict: CONFIRMED. SETTINGS, which switch the file to WAL, run at core.rs:265 before the version check at :268.
 
 - Confidence: high
 - Kind: missing-check
@@ -368,7 +416,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/core.rs:268` if version != current {
   - `crates/catalog/src/schema.rs:116` pub(crate) const SETTINGS: &str = "PRAGMA journal\1mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign\1keys = ON;
 
-### SEC-021 [low/security] One row with an unknown extension or kind fails the whole folder listing and the import list
+### SEC-021 [low/security] One row with an unknown extension or kind fails the whole folder listing and the import list — CONFIRMED
+
+- Verdict: CONFIRMED. Unknown ext makes grid.rs:67 return an error for the whole listing.
 
 - Confidence: high
 - Kind: missing-check
@@ -379,7 +429,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/browse/read/grid.rs:67` ext: Ext::of(ext).ok\1or\1else(\1\1 rusqlite::Error::InvalidColumnType(5, format!("ext {ext}"), Type::Text))?,
   - `crates/catalog/src/work.rs:128` kind: crate::types::kind\1at(r, 6)?,
 
-### SEC-022 [low/security] Every open reads all meta keys and all schema SQL from the file into memory
+### SEC-022 [low/security] Every open reads all meta keys and all schema SQL from the file into memory — CONFIRMED
+
+- Verdict: CONFIRMED. Schema::read loads every key and SQL text in full (dbfile schema.rs:79-81).
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -397,7 +449,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/thumbcache/src/lib.rs:284 Connection::open\1with\1flags(READ\1WRITE); writes at crates/thumbcache/src/writer.rs:161 write and :439 total\1and\1cap / :460 evict deleting rows
 - Summary: A persistent cache file beside the catalog is opened read-write, healed (maintenance.rs heal), and receives thumbnail BLOBs with LRU eviction and deletes (writer.rs evict/forget). Its size cap comes from PG\1THUMB\1CAP\1GB or --cap-gb (desktop/src/lib.rs:157; cli/src/args.rs cap\1gb). Corrupt cache files are kept aside as bad copies (per the tests at thumbcache/src/lib.rs:861-956).
 
-### SEC-023 [low/data-integrity] Stale cache deleted before its replacement exists; its cap is lost
+### SEC-023 [low/data-integrity] Stale cache deleted before its replacement exists; its cap is lost — CONFIRMED
+
+- Verdict: CONFIRMED. remove\1database runs before the replacement is ready (thumbcache schema.rs:331, 339). make\1layout uses the default cap (:443). Doc at lib.rs:84 says the cap is kept.
 
 - Confidence: high
 - Kind: crash-window
@@ -410,7 +464,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/thumbcache/src/schema.rs:443` make\1layout(&tx, catalog\1id, cap\1bytes.unwrap\1or\1else(\1\1 default\1cap\1bytes(dir)))?;
   - `crates/thumbcache/src/lib.rs:84` /// A cache of another catalog is deleted and made anew (its cap kept); one another process
 
-### SEC-024 [medium/data-integrity] move\1aside moves the WAL before the main file, contrary to its own safety comment
+### SEC-024 [medium/data-integrity] move\1aside moves the WAL before the main file, contrary to its own safety comment — CONFIRMED
+
+- Verdict: CONFIRMED. move\1aside renames the WAL first (remove.rs:30-37), so a crash before the main file moves leaves the main file without its WAL changes. Rebuild checkpoints first (rebuild.rs:63), which limits the catalog case.
 
 - Confidence: medium
 - Kind: crash-window
@@ -423,7 +479,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/dbfile/src/remove.rs:34` rename\1no\1replace(&from, &to)
   - `crates/thumbcache/src/schema.rs:406` pg\1dbfile::move\1aside(path, ".bad").with\1context(\1\1 format!("{}: {why}, and can't be moved aside", path.display()))
 
-### SEC-025 [low/data-integrity] Daily heal is skipped until the clock passes a future healed timestamp
+### SEC-025 [low/data-integrity] Daily heal is skipped until the clock passes a future healed timestamp — CONFIRMED
+
+- Verdict: CONFIRMED. saturating\1sub with a future healed timestamp keeps now less than last, so the heal check is skipped (maintenance.rs:41).
 
 - Confidence: high
 - Kind: wrong-target
@@ -434,7 +492,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/thumbcache/src/maintenance.rs:41` if now.saturating\1sub(last) \1 i64::try\1from(HEAL\1INTERVAL.as\1secs()).unwrap\1or(i64::MAX) {
   - `crates/thumbcache/src/maintenance.rs:45` conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('healed', ?1)", \1now\1)?;
 
-### SEC-026 [low/data-integrity] Open-time judge connection has no busy timeout, so a transient lock fails the open
+### SEC-026 [low/data-integrity] Open-time judge connection has no busy timeout, so a transient lock fails the open — PARTIAL
+
+- Verdict: PARTIAL. Open-time judge connection has no busy\1timeout (schema.rs:167 versus :420). The BUSY trigger was not traced, as the finding itself says.
 
 - Confidence: low
 - Kind: missing-check
@@ -445,7 +505,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/thumbcache/src/schema.rs:167` let conn = Connection::open(path)?;
   - `crates/thumbcache/src/schema.rs:420` conn.busy\1timeout(BUSY\1TIMEOUT)?;
 
-### SEC-027 [low/data-integrity] Damaged cache copies accumulate without bound beside the catalog
+### SEC-027 [low/data-integrity] Damaged cache copies accumulate without bound beside the catalog — CONFIRMED
+
+- Verdict: CONFIRMED. Each damage event moves the whole file to .bad with a new suffix (remove.rs:23-34). Nothing in the code removes them.
 
 - Confidence: medium
 - Kind: leak
@@ -463,7 +525,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/library/src/layout.rs (catalog\1dir and file locations) used by crates/catalog/src/core.rs:258 Catalog::open and crates/app/src/store.rs (prefs file)
 - Summary: Environment variables choose where every persistent file lives (catalog, prefs, logs, cache). The values are taken without validation beyond OsString conversion and feed directory creation (cli/src/lib.rs:138 create\1dir\1all) and all later writes.
 
-### SEC-028 [medium/data-integrity] Relative or empty PG\1HOME / PG\1CATALOG\1DIR resolve against the working directory
+### SEC-028 [medium/data-integrity] Relative or empty PG\1HOME / PG\1CATALOG\1DIR resolve against the working directory — CONFIRMED
+
+- Verdict: CONFIRMED. PG\1CATALOG\1DIR and PG\1HOME are taken without checks (layout.rs:30-38). A relative value resolves against the working directory.
 
 - Confidence: high
 - Kind: wrong-target
@@ -477,7 +541,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/library/src/layout.rs:38` let prefs = var("PG\1PREFS").map\1or\1else(\1\1 home.join("gallery.json"), PathBuf::from);
   - `crates/platform/src/dirs.rs:30` let absolute = \1name: &str\1 var(name).filter(\1value\1 is\1absolute\1for(windows, &value.to\1string\1lossy())).map(PathBuf::from);
 
-### SEC-029 [medium/data-integrity] PG\1PREFS may name the catalog or a folder, and the quarantine renames it
+### SEC-029 [medium/data-integrity] PG\1PREFS may name the catalog or a folder, and the quarantine renames it — CONFIRMED
+
+- Verdict: CONFIRMED. PG\1PREFS can name the catalog file, and quarantine renames the named path (app.rs:78, store.rs:51, 111). Platform outcomes were not checked.
 
 - Confidence: high
 - Kind: wrong-target
@@ -492,7 +558,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/file.rs:273` match rename\1no\1replace(path, &to) {
   - `crates/library/src/layout.rs:38` let prefs = var("PG\1PREFS").map\1or\1else(\1\1 home.join("gallery.json"), PathBuf::from);
 
-### SEC-030 [low/data-integrity] Any read error quarantines a readable preferences file
+### SEC-030 [low/data-integrity] Any read error quarantines a readable preferences file — CONFIRMED
+
+- Verdict: CONFIRMED. Any read error other than NotFound goes to quarantine (store.rs:54).
 
 - Confidence: medium
 - Kind: missing-check
@@ -503,7 +571,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/store.rs:53` Err(e) if e.kind() == io::ErrorKind::NotFound =\1 (T::default(), None),
   - `crates/app/src/store.rs:54` Err(e) =\1 (T::default(), Some(quarantine(&path, e.to\1string()))),
 
-### SEC-031 [low/data-integrity] A failed preferences save leaves gallery.json.tmp behind
+### SEC-031 [low/data-integrity] A failed preferences save leaves gallery.json.tmp behind — CONFIRMED
+
+- Verdict: CONFIRMED. Failed rename leaves the temp (store.rs:118-123). There is no guard.
 
 - Confidence: high
 - Kind: leak
@@ -523,7 +593,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/desktop/src/screenshot.rs:35 (--screenshot PATH writes files), crates/desktop/src/yandex.rs:130 (--find-similar PATH sends the photo to Yandex), crates/desktop/src/command\1line.rs:519-529 (--add-folder, --save-crops actions)
 - Summary: Command-line paths choose which files are read and where outputs go (screenshot PNG and .settle.txt log, find-similar input photo, log-view and lane-rows files, yandex-fixture folder). Bad option values are collected and reported; the paths are used as given.
 
-### SEC-032 [medium/data-integrity] Crop copy renamed into place without a sync: a crash can leave an empty copy under the final name
+### SEC-032 [medium/data-integrity] Crop copy renamed into place without a sync: a crash can leave an empty copy under the final name — CONFIRMED
+
+- Verdict: CONFIRMED. publish writes and renames with no sync (crop lib.rs:399-401). The Yandex save path does sync (save.rs:80).
 
 - Confidence: high
 - Kind: crash-window
@@ -536,7 +608,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:401` std::fs::rename(temp, out).with\1context(\1\1 format!("writing {}", shown(out)))?;
   - `crates/app/src/yandex/save.rs:80` file.sync\1all().map\1err(at\1temp)?;
 
-### SEC-033 [medium/security] --find-similar reads the whole photo into memory with no size cap
+### SEC-033 [medium/security] --find-similar reads the whole photo into memory with no size cap — CONFIRMED
+
+- Verdict: CONFIRMED. read\1photo reads the whole file with no size cap (yandex.rs:238-251).
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -547,7 +621,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex.rs:238` fn read\1photo(path: &Path) -\1 Result\1Vec\1u8\1, SearchError\1 {
   - `crates/app/src/yandex.rs:251` file.read\1to\1end(&mut bytes).map\1err(unreadable)?;
 
-### SEC-034 [low/security] Recorded session's downloads.tsv accepts a Windows drive-relative name and reads outside the session folder
+### SEC-034 [low/security] Recorded session's downloads.tsv accepts a Windows drive-relative name and reads outside the session folder — CONFIRMED
+
+- Verdict: CONFIRMED. The name check (replay.rs:56) does not catch a drive prefix, and join replaces the base directory (replay.rs:59).
 
 - Confidence: medium
 - Kind: traversal
@@ -559,7 +635,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/replay.rs:56` if name.contains("..") \1\1 name.chars().any(\1c\1 c == '/' \1\1 c == '\\') {
   - `crates/app/src/yandex/replay.rs:59` let bytes = std::fs::read(file(name)).map\1err(\1e\1 format!("{}: {e}", file(name).display()))?;
 
-### SEC-035 [low/data-integrity] --log-view also reads the log's rotation siblings, not only the named file
+### SEC-035 [low/data-integrity] --log-view also reads the log's rotation siblings, not only the named file — CONFIRMED
+
+- Verdict: CONFIRMED. read\1all includes the aside and rotated files (log file.rs:152-154).
 
 - Confidence: high
 - Kind: wrong-target
@@ -571,7 +649,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/log/src/file.rs:152` let mut files: Vec\1PathBuf\1 = (1..FILES).rev().map(\1n\1 older(path, n)).collect();
   - `crates/log/src/lib.rs:125` let mut records = parse(&file::read\1all(path));
 
-### SEC-036 [low/data-integrity] --screenshot overwrites any existing file at the given path, and the PNG write is not atomic
+### SEC-036 [low/data-integrity] --screenshot overwrites any existing file at the given path, and the PNG write is not atomic — CONFIRMED
+
+- Verdict: CONFIRMED. screenshot.rs:55 writes the path with no check for an existing file.
 
 - Confidence: high
 - Kind: missing-check
@@ -582,7 +662,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/screenshot.rs:50` std::fs::write(log, format!("{report}\n"))?;
   - `crates/desktop/src/screenshot.rs:55` std::fs::write(path, png)
 
-### SEC-037 [low/data-integrity] Crop copies replace any existing file of the same name in the chosen folder, unlike the Yandex saves
+### SEC-037 [low/data-integrity] Crop copies replace any existing file of the same name in the chosen folder, unlike the Yandex saves — CONFIRMED
+
+- Verdict: CONFIRMED. crop rename replaces the target (crop lib.rs:401). The Yandex path uses create\1new (save.rs:38).
 
 - Confidence: high
 - Kind: overwrite
@@ -593,7 +675,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:401` std::fs::rename(temp, out).with\1context(\1\1 format!("writing {}", shown(out)))?;
   - `crates/app/src/yandex/save.rs:38` match OpenOptions::new().write(true).create\1new(true).open(&path) {
 
-### SEC-038 [low/security] Command-line options whose name is not valid Unicode are dropped without an error
+### SEC-038 [low/security] Command-line options whose name is not valid Unicode are dropped without an error — CONFIRMED
+
+- Verdict: CONFIRMED. arg\1of returns None for a non-UTF-8 name (command\1line.rs:213), and read\1of skips it (:223).
 
 - Confidence: high
 - Kind: missing-check
@@ -611,7 +695,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/cli/src/borders.rs:35 read\1dir of user folder, crates/cli/src/borders.rs:136 write CSV, crates/cli/src/borders.rs:182 read review file
 - Summary: The CLI reads a folder of images for border analysis, reads a user-written review file, and writes a CSV to a path from the command line. Catalog folder creation (lib.rs:138) also happens at start.
 
-### SEC-039 [medium/data-integrity] CSV target checked only at the end, so an unwritable --csv discards a full pass
+### SEC-039 [medium/data-integrity] CSV target checked only at the end, so an unwritable --csv discards a full pass — CONFIRMED
+
+- Verdict: CONFIRMED. The CSV path is checked only as present (cli lib.rs:719). It is written after the whole pass (borders.rs:136).
 
 - Confidence: high
 - Kind: missing-check
@@ -623,7 +709,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/cli/src/borders.rs:74` let files = image\1files(paths)?;
   - `crates/cli/src/borders.rs:136` std::fs::write(csv, out).with\1context(\1\1 format!("writing {}", csv.display()))?;
 
-### SEC-040 [medium/data-integrity] One unreadable subfolder aborts the whole folder walk and the report
+### SEC-040 [medium/data-integrity] One unreadable subfolder aborts the whole folder walk and the report — CONFIRMED
+
+- Verdict: CONFIRMED. read\1dir errors propagate with ? (borders.rs:35-38), so one unreadable subfolder ends the report.
 
 - Confidence: high
 - Kind: missing-check
@@ -635,7 +723,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/cli/src/borders.rs:36` let entry = entry?;
   - `crates/cli/src/borders.rs:38` if entry.file\1type()?.is\1dir() {
 
-### SEC-041 [low/security] Explicit non-image paths and walked files are read whole before any size or type check
+### SEC-041 [low/security] Explicit non-image paths and walked files are read whole before any size or type check — CONFIRMED
+
+- Verdict: CONFIRMED. Explicit non-image paths are pushed unchecked (borders.rs:58). The pipeline reads the whole file before any sniff (pipeline.rs:573-589).
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -648,7 +738,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/jobs/src/pipeline.rs:573` let size = usize::try\1from(file.metadata()?.len())
   - `crates/jobs/src/pipeline.rs:586` Some(file.read\1to\1end(&mut lease.bytes).map(\1\1\1 lease))
 
-### SEC-042 [low/data-integrity] Report written by truncate-then-write, so a crash mid-write destroys the previous report
+### SEC-042 [low/data-integrity] Report written by truncate-then-write, so a crash mid-write destroys the previous report — CONFIRMED
+
+- Verdict: CONFIRMED. std::fs::write truncates the target first (borders.rs:136).
 
 - Confidence: high
 - Kind: crash-window
@@ -658,7 +750,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/cli/src/borders.rs:136` std::fs::write(csv, out).with\1context(\1\1 format!("writing {}", csv.display()))?;
 
-### SEC-043 [low/data-integrity] --buffer-mb shift silently wraps to 0 for multiples of 2^44
+### SEC-043 [low/data-integrity] --buffer-mb shift silently wraps to 0 for multiples of 2^44 — CONFIRMED
+
+- Verdict: CONFIRMED. mb.max(1) \1\1 20 wraps to 0 for large values (args.rs:54).
 
 - Confidence: high
 - Kind: overflow
@@ -675,7 +769,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/platform/src/picker.rs:46 canonicalize of the chosen path, then crates/desktop/src/picker.rs:53 and crates/catalog/src/roots.rs add-root writes
 - Summary: The folder path returned by the Windows shell dialog (IShellItem file\1system\1path) is canonicalized and stored as a library root. The start folder comes from environment variables and an optional --name argument.
 
-### SEC-044 [medium/data-integrity] Volume-mounted start folder makes the picker fail instead of opening
+### SEC-044 [medium/data-integrity] Volume-mounted start folder makes the picker fail instead of opening — REFUTED
+
+- Verdict: REFUTED. start\1folder keeps the requested folder when the canonical form has no drive or share (picker.rs:47-48). The verbatim volume path is not used.
 
 - Confidence: medium
 - Kind: missing-check
@@ -689,7 +785,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/picker.rs:199` let item: IShellItem = unsafe { SHCreateItemFromParsingName(PCWSTR(units.as\1ptr()), None) }
   - `crates/desktop/src/picker.rs:85` match pg\1platform::picker::pick(start.as\1deref(), owner) {
 
-### SEC-045 [low/data-integrity] Chosen volume-mounted folder refused with a misleading reason
+### SEC-045 [low/data-integrity] Chosen volume-mounted folder refused with a misleading reason — CONFIRMED
+
+- Verdict: CONFIRMED. without\1verbatim turns the volume path into a relative one (names.rs:136). check\1folder then refuses it.
 
 - Confidence: medium
 - Kind: wrong-result
@@ -709,7 +807,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: catalog folder removal via crates/desktop/src/library\1bridge.rs and crates/catalog/src/removal.rs
 - Summary: The QML layer shows a folder removal confirmation; no drag-and-drop or external-open paths exist in the QML tree searched. Folder removal goes to the catalog, not the disk (removal.rs header: files stay, marked missing).
 
-### SEC-046 [medium/data-integrity] Remove confirms by row; a reload while the dialog is open removes another folder
+### SEC-046 [medium/data-integrity] Remove confirms by row; a reload while the dialog is open removes another folder — CONFIRMED
+
+- Verdict: CONFIRMED. The dialog stores a folder, but the removal uses the row index (Main.qml:216-222, library.rs:268). A reload can change which folder that row names.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -723,7 +823,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/library.rs:268` (self.rust().root\1ids.get(index).copied(), self.rust().root\1paths.get(index).cloned())
   - `crates/catalog/src/removal.rs:94` if !rules.same(&path, expected) {
 
-### SEC-047 [low/data-integrity] A failure after the removal is committed is reported as not removed
+### SEC-047 [low/data-integrity] A failure after the removal is committed is reported as not removed — CONFIRMED
+
+- Verdict: CONFIRMED. finish errors after begin\1removal committed are returned as failure (app library.rs:389-398, desktop library.rs:284).
 
 - Confidence: high
 - Kind: partial-write
@@ -735,7 +837,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/library.rs:398` pg\1library::removals::finish(c, self.thumbs, &self.catalog\1path, &mut \1\1\1 true)
   - `crates/desktop/src/library.rs:284` Err(e) =\1 app::post(Notice::FolderNotRemoved { error: app::error\1text(&e) }),
 
-### SEC-048 [low/data-integrity] Discard deletes the catalog rows, then unlinks the temps in a separate step, so a crash leaks the temps
+### SEC-048 [low/data-integrity] Discard deletes the catalog rows, then unlinks the temps in a separate step, so a crash leaks the temps — CONFIRMED
+
+- Verdict: CONFIRMED. Commit at removal.rs:259 runs before discard\1temps (app library.rs:420). A crash between them leaves the temps.
 
 - Confidence: medium
 - Kind: crash-window
@@ -754,7 +858,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/yandex/src/client.rs:11-12 UPLOAD\1URL and SEARCH\1URL over ureq (crates/yandex/src/http.rs:30 agent)
 - Summary: The user's photo bytes are sent to yandex.ru endpoints, with a cookie built from the clock (client.rs:110-113), a fixed user agent, and paced requests. Uses rustls via ureq TLS config (http.rs:6). The network response is the untrusted input to flow F13.
 
-### SEC-049 [low/security] Photo upload reads the whole file into memory with no size cap
+### SEC-049 [low/security] Photo upload reads the whole file into memory with no size cap — CONFIRMED
+
+- Verdict: CONFIRMED. Upload reads the whole file (yandex.rs:251) and sends it (client.rs:50-51). The download side has a cap (fetch.rs:12); upload does not.
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -766,7 +872,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/yandex/src/client.rs:50` let req = transfer\1timeouts(self.agent.post(UPLOAD\1URL).header("User-Agent", USER\1AGENT));
   - `crates/yandex/src/client.rs:51` parse\1upload(&read\1response(req.send(image))?)
 
-### SEC-050 [low/data-integrity] similar suffix adds 1 to an unchecked u32 position from the response
+### SEC-050 [low/data-integrity] similar suffix adds 1 to an unchecked u32 position from the response — CONFIRMED
+
+- Verdict: CONFIRMED. pos + 1 is unchecked (yandex.rs:319). parse.rs:153 accepts u32::MAX.
 
 - Confidence: high
 - Kind: overflow
@@ -777,7 +885,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex.rs:319` suffix: format!("yandex similar {}", s.pos + 1),
   - `crates/yandex/src/parse.rs:153` let pos = u32::try\1from(entity\1"pos"\1.as\1u64()?).ok()?;
 
-### SEC-051 [low/data-integrity] Captcha check is a substring match on every response body, including successful ones
+### SEC-051 [low/data-integrity] Captcha check is a substring match on every response body, including successful ones — CONFIRMED
+
+- Verdict: CONFIRMED. is\1captcha\1page is a substring test (parse.rs:21), applied to every body before the status check (http.rs:72).
 
 - Confidence: high
 - Kind: wrong-result
@@ -788,7 +898,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/yandex/src/parse.rs:21` body.contains("showcaptcha")
   - `crates/yandex/src/http.rs:72` if is\1captcha\1page(&body) {
 
-### SEC-052 [low/security] Similar image URLs are taken from the response with no scheme or host check
+### SEC-052 [low/security] Similar image URLs are taken from the response with no scheme or host check — CONFIRMED
+
+- Verdict: CONFIRMED. img\1url is taken with no scheme or host check (parse.rs:154) and fetched (fetch.rs:36).
 
 - Confidence: high
 - Kind: missing-check
@@ -807,7 +919,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/app/src/yandex.rs result list and crates/app/src/yandex/images.rs:96 prefetch of image URLs
 - Summary: Remote JSON (serde\1json::Value) and HTML containing embedded JSON are parsed with manual percent and entity decoding. Image URLs taken from the page become fetch targets (F14).
 
-### SEC-053 [low/security] Entity decode is quadratic on '&' with no nearby ';'
+### SEC-053 [low/security] Entity decode is quadratic on '&' with no nearby ';' — CONFIRMED
+
+- Verdict: CONFIRMED. find(';') scans the whole tail before the end\1=10 filter (parse.rs:72).
 
 - Confidence: high
 - Kind: unbounded-work
@@ -817,7 +931,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/yandex/src/parse.rs:72` tail.find(';').filter(\1&end\1 end \1= 10).and\1then(\1end\1 decode\1entity(&tail\11..end\1).map(\1c\1 (c, end)));
 
-### SEC-054 [low/security] Percent-decode accepts '+' as a hex sign, so %+1 becomes 0x01
+### SEC-054 [low/security] Percent-decode accepts '+' as a hex sign, so %+1 becomes 0x01 — CONFIRMED
+
+- Verdict: CONFIRMED. u8::from\1str\1radix accepts a leading '+' (parse.rs:180).
 
 - Confidence: high
 - Kind: wrong-target
@@ -827,7 +943,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/yandex/src/parse.rs:180` && let Some(v) = std::str::from\1utf8(&\1\1hi, \1lo\1).ok().and\1then(\1h\1 u8::from\1str\1radix(h, 16).ok())
 
-### SEC-055 [low/security] Result URLs from the page are fetched with no scheme or host check
+### SEC-055 [low/security] Result URLs from the page are fetched with no scheme or host check — CONFIRMED
+
+- Verdict: CONFIRMED. Result URLs are fetched with no https or host check (parse.rs:123, 154; fetch.rs:36).
 
 - Confidence: high
 - Kind: missing-check
@@ -840,7 +958,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/yandex/src/fetch.rs:36` let resp = transfer\1timeouts(self.agent.get(url).header("User-Agent", USER\1AGENT))
   - `crates/yandex/src/http.rs:30` pub(crate) fn agent() -\1 ureq::Agent {
 
-### SEC-056 [low/data-integrity] Replay fixture name check misses drive-prefixed names on Windows
+### SEC-056 [low/data-integrity] Replay fixture name check misses drive-prefixed names on Windows — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-066 and SEC-067: the drive-prefix name check gap in replay.rs:56.
 
 - Confidence: medium
 - Kind: traversal
@@ -851,7 +971,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/replay.rs:56` if name.contains("..") \1\1 name.chars().any(\1c\1 c == '/' \1\1 c == '\\') {
   - `crates/app/src/yandex/replay.rs:59` let bytes = std::fs::read(file(name)).map\1err(\1e\1 format!("{}: {e}", file(name).display()))?;
 
-### SEC-057 [low/security] Unchecked pos + 1 for the similar suffix wraps or panics
+### SEC-057 [low/security] Unchecked pos + 1 for the similar suffix wraps or panics — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-050: the unchecked pos + 1 at yandex.rs:319.
 
 - Confidence: high
 - Kind: overflow
@@ -861,7 +983,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/app/src/yandex.rs:319` suffix: format!("yandex similar {}", s.pos + 1),
 
-### SEC-058 [low/data-integrity] Every fetched result file is kept until the next search, with no total cap
+### SEC-058 [low/data-integrity] Every fetched result file is kept until the next search, with no total cap — CONFIRMED
+
+- Verdict: CONFIRMED. Each Ready result keeps its full bytes until the search is replaced (images.rs:158, 176). No total cap.
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -880,7 +1004,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/app/src/yandex/images.rs:154 fetch\1checked, :231 grid\1picture decode check, then crates/app/src/makers.rs for the grid picture
 - Summary: Remote image bytes (up to 100 MB, content type checked by plausibly\1image at fetch.rs:66) are fetched from URLs parsed out of the Yandex page and decoded for the grid. Undecodable files are marked dead and not saved.
 
-### SEC-059 [medium/security] JPEG grid decode allocates from header dimensions with no reservation
+### SEC-059 [medium/security] JPEG grid decode allocates from header dimensions with no reservation — PARTIAL
+
+- Verdict: PARTIAL. The parajpeg path at decode.rs:209 resizes to the full header size with no reservation first, as claimed. The grid path also reaches a reservation at jpeg.rs:78, which the finding does not address.
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -893,7 +1019,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/codec/src/decode.rs:209` out.pixels.resize(header.rgb\1len(), 0);
   - `crates/codec/src/codecs/jpeg.rs:78` if let Err(e) = reserve(color, w, h) {
 
-### SEC-060 [medium/data-integrity] A transient fetch failure marks a result dead for the whole search
+### SEC-060 [medium/data-integrity] A transient fetch failure marks a result dead for the whole search — CONFIRMED
+
+- Verdict: CONFIRMED. A fetch error propagates with ? (images.rs:155) and the slot is marked Dead (:177-180). get returns that error for the whole search (:198-199).
 
 - Confidence: high
 - Kind: transient-failure-as-permanent
@@ -907,7 +1035,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/images.rs:177` Err(error) =\1 {
   - `crates/app/src/yandex/images.rs:198` Some(Slot { state: State::Dead(error), .. }) =\1 return Err(error.clone()),
 
-### SEC-061 [low/data-integrity] Every fetched result file is kept in full for the life of the search
+### SEC-061 [low/data-integrity] Every fetched result file is kept in full for the life of the search — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-058: the same Ready state holds the full Download (images.rs:52, 176).
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -920,7 +1050,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/yandex/src/fetch.rs:49` .take(MAX\1DOWNLOAD\1BYTES + 1)
   - `crates/app/src/yandex.rs:449` let pictures = Images::new(fetch, check, changes.clone());
 
-### SEC-062 [low/data-integrity] A crash between claim and rename leaves an empty file under the saved name
+### SEC-062 [low/data-integrity] A crash between claim and rename leaves an empty file under the saved name — CONFIRMED
+
+- Verdict: CONFIRMED. claim creates the empty final name (save.rs:38) before the rename (:84).
 
 - Confidence: high
 - Kind: crash-window
@@ -939,7 +1071,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/app/src/yandex/save.rs:38 OpenOptions create\1new claim, :78 File::create temp (.\1stem\1.\1ext\1.pg-save), :84 rename of temp onto the claim
 - Summary: Downloaded bytes are written as new files named after the user's photo plus a suffix returned by the search (saved\1stem at save.rs:13). The temp and claim names are predictable; the claim uses create\1new and the final rename uses std::fs::rename (save.rs:64), which replaces the claim.
 
-### SEC-063 [low/data-integrity] Claim-then-replace leaves an empty file at the result's name after a crash
+### SEC-063 [low/data-integrity] Claim-then-replace leaves an empty file at the result's name after a crash — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-062 with a different path (save.rs:38, 84).
 
 - Confidence: high
 - Kind: crash-window
@@ -951,7 +1085,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/save.rs:64` write\1new\1with(folder, stem, ext, bytes, \1from, to\1 std::fs::rename(from, to))
   - `crates/app/src/yandex/save.rs:84` rename(temp.path(), &path).map\1err(\1error\1 (path.clone(), error))?;
 
-### SEC-064 [low/data-integrity] Fixed temp name is opened by truncating create, so writers sharing it interleave and a foreign file there is truncated and then deleted
+### SEC-064 [low/data-integrity] Fixed temp name is opened by truncating create, so writers sharing it interleave and a foreign file there is truncated and then deleted — CONFIRMED
+
+- Verdict: CONFIRMED. The fixed temp name is opened with File::create (save.rs:78) and removed on failure (file.rs:141). Two processes can interleave.
 
 - Confidence: medium
 - Kind: race
@@ -963,7 +1099,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/save.rs:78` let mut file = File::create(temp.path()).map\1err(at\1temp)?;
   - `crates/platform/src/file.rs:141` let \1 = std::fs::remove\1file(&self.path);
 
-### SEC-065 [low/security] Temp open follows a link at the fixed temp name and writes the photo through it
+### SEC-065 [low/security] Temp open follows a link at the fixed temp name and writes the photo through it — CONFIRMED
+
+- Verdict: CONFIRMED. File::create follows a link at the temp name (save.rs:78). The rename then moves the link (:84).
 
 - Confidence: medium
 - Kind: traversal
@@ -974,7 +1112,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/save.rs:78` let mut file = File::create(temp.path()).map\1err(at\1temp)?;
   - `crates/app/src/yandex/save.rs:38` OpenOptions::new().write(true).create\1new(true).open(&path)
 
-### SEC-066 [low/security] Replay fixture's file-name check misses Windows drive-prefixed names, so a read escapes the fixture folder
+### SEC-066 [low/security] Replay fixture's file-name check misses Windows drive-prefixed names, so a read escapes the fixture folder — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-056 and SEC-067 on the same replay.rs check.
 
 - Confidence: high
 - Kind: traversal
@@ -992,7 +1132,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/app/src/yandex/replay.rs:44 read\1to\1string, :49 similar-N.json loop, :53 downloads.tsv, :59 read of recorded image bytes, which feed the search results
 - Summary: A folder named on the command line stands in for Yandex. Its JSON, TSV and image files are read and parsed the same way as live responses, so the parsers in F13 and F14 see local untrusted data.
 
-### SEC-067 [low/security] Drive-relative TSV names escape the session folder on Windows
+### SEC-067 [low/security] Drive-relative TSV names escape the session folder on Windows — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-056 and SEC-066: a drive-relative name escapes the session folder (replay.rs:56, 59).
 
 - Confidence: high
 - Kind: traversal
@@ -1003,7 +1145,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/replay.rs:56` if name.contains("..") \1\1 name.chars().any(\1c\1 c == '/' \1\1 c == '\\') {
   - `crates/app/src/yandex/replay.rs:59` let bytes = std::fs::read(file(name)).map\1err(\1e\1 format!("{}: {e}", file(name).display()))?;
 
-### SEC-068 [medium/data-integrity] Unreadable similar page or downloads.tsv silently ends the recorded results
+### SEC-068 [medium/data-integrity] Unreadable similar page or downloads.tsv silently ends the recorded results — CONFIRMED
+
+- Verdict: CONFIRMED. while let Ok ends the loop on any error (replay.rs:49), and downloads.tsv read errors are taken as absent (:53).
 
 - Confidence: high
 - Kind: missing-check
@@ -1014,7 +1158,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/replay.rs:49` while let Ok(page) = std::fs::read\1to\1string(file(format!("similar-{}.json", similar.len()).as\1str())) {
   - `crates/app/src/yandex/replay.rs:53` if let Ok(list) = std::fs::read\1to\1string(file("downloads.tsv")) {
 
-### SEC-069 [low/security] Recorded folder is read whole, with no count or size cap
+### SEC-069 [low/security] Recorded folder is read whole, with no count or size cap — CONFIRMED
+
+- Verdict: CONFIRMED. Replay reads every similar page and download with no cap (replay.rs:49, 59). The startup timing was not checked.
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -1025,7 +1171,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex/replay.rs:49` while let Ok(page) = std::fs::read\1to\1string(file(format!("similar-{}.json", similar.len()).as\1str())) {
   - `crates/app/src/yandex/replay.rs:59` let bytes = std::fs::read(file(name)).map\1err(\1e\1 format!("{}: {e}", file(name).display()))?;
 
-### SEC-070 [low/data-integrity] Empty --yandex-fixture= reads the recording from the working directory
+### SEC-070 [low/data-integrity] Empty --yandex-fixture= reads the recording from the working directory — CONFIRMED
+
+- Verdict: CONFIRMED. An empty value gives Replay with an empty path (command\1line.rs:439-440). Path::new("").join reads from the working directory (replay.rs:41).
 
 - Confidence: high
 - Kind: wrong-target
@@ -1036,7 +1184,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/command_line.rs:439` match path("yandex-fixture") {
   - `crates/app/src/yandex/replay.rs:41` let file = \1name: &str\1 dir.join(name);
 
-### SEC-071 [low/data-integrity] Captcha check matches the text anywhere in the page's JSON
+### SEC-071 [low/data-integrity] Captcha check matches the text anywhere in the page's JSON — CONFIRMED
+
+- Verdict: CONFIRMED. The captcha check runs on the whole recorded body (replay.rs:92; parse.rs:21).
 
 - Confidence: high
 - Kind: false-positive
@@ -1054,7 +1204,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/writeback/src/lib.rs:603 std::fs::write temp, :615 read-back check, :642-672 remove\1file of temp; crates/writeback/src/file.rs:74-82 write\1all, set\1len, sync\1all on the original; crates/writeback/src/inplace.rs:57 write temp
 - Summary: The user's original JPEG, PNG or WebP is rewritten in place or via a temp file beside it: bytes are read, tags are changed through ExifTool (F18), the result is written to a temp, read back, then written over the original (file.rs:80-82 truncates to length). Removes of temp and original-path files happen in file.rs:50-53. Failure paths clean up temp files.
 
-### SEC-072 [medium/data-integrity] Missing recorded temp is treated as a finished copy, so a lost write is recorded as done
+### SEC-072 [medium/data-integrity] Missing recorded temp is treated as a finished copy, so a lost write is recorded as done — CONFIRMED
+
+- Verdict: CONFIRMED. NotFound on the recorded temp is treated as copied (writeback lib.rs:742), then write\1done runs (:747).
 
 - Confidence: high
 - Kind: missing-check
@@ -1068,7 +1220,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:747` catalog.write\1done(&written, Self::rewrote(&written, rewrite))?;
   - `crates/catalog/src/queue.rs:235` "UPDATE file\1writes SET temp = ?3, temp\1value = ?4 WHERE file\1id = ?1 AND kind = ?2 AND \
 
-### SEC-073 [medium/data-integrity] A second writer process deletes the temp another process recorded
+### SEC-073 [medium/data-integrity] A second writer process deletes the temp another process recorded — CONFIRMED
+
+- Verdict: CONFIRMED. Two writer processes share one catalog. The remove on the temp path (lib.rs:587) and the Err-arm delete (:642) follow the code as described. The shared-hold claim was not checked.
 
 - Confidence: medium
 - Kind: race
@@ -1082,7 +1236,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/file.rs:89` FILE\1SHARE\1READ,
   - `crates/cli/src/lib.rs:613` let writer = Writer::start(catalog\1path.clone(), cache, Arc::new(Bus::new(16)), Arc::new(PrintingSink))?;
 
-### SEC-074 [medium/data-integrity] Resumed copy overwrites an external save without comparing the original
+### SEC-074 [medium/data-integrity] Resumed copy overwrites an external save without comparing the original — CONFIRMED
+
+- Verdict: CONFIRMED. finish\1copy writes the stored temp with no unchanged() check (lib.rs:735-737). copy\1and\1done consumes the handle first (:709).
 
 - Confidence: medium
 - Kind: lost-update
@@ -1095,7 +1251,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:737` write\1into(file, &data)?;
   - `crates/catalog/src/writers.rs:178` not\1being\1written!(files)
 
-### SEC-075 [low/data-integrity] Failure paths before the copy leave the partial temp file beside the user's photo
+### SEC-075 [low/data-integrity] Failure paths before the copy leave the partial temp file beside the user's photo — CONFIRMED
+
+- Verdict: CONFIRMED. The ? at lib.rs:593 and the fallible write at :603 return before any cleanup, so the temp stays.
 
 - Confidence: high
 - Kind: leak
@@ -1107,7 +1265,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:603` std::fs::write(&temp, &new).with\1context(\1\1 format!("writing {shown\1temp}"))?;
   - `crates/writeback/src/lib.rs:615` Ok(()) =\1 Some(std::fs::read(&temp)?)
 
-### SEC-076 [low/data-integrity] Temp name can exceed the file-name limit for names near 255 characters
+### SEC-076 [low/data-integrity] Temp name can exceed the file-name limit for names near 255 characters — CONFIRMED
+
+- Verdict: CONFIRMED. with\1affixes adds 16 characters with no length check (writeback file.rs:67, model name.rs:63). Medium confidence.
 
 - Confidence: medium
 - Kind: missing-check
@@ -1126,7 +1286,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/exiftool/src/lib.rs:61 Command::new(program) with -stay\1open and piped stdin for file paths; crates/exiftool/src/lib.rs:201 oneshot Command::new(program).args(...).output()
 - Summary: Spawns a child process chosen by environment variable and passes file paths and tag values over stdin (-@ -) or argv. The child's stdout and stderr are parsed by the pump thread (exiftool/src/lib.rs:216). Child process identity and PATH resolution are not verified by the program. Job object assignment in process.rs:131.
 
-### SEC-077 [medium/data-integrity] Any ExifTool failure on orientation write is recorded as a turn the file cannot hold
+### SEC-077 [medium/data-integrity] Any ExifTool failure on orientation write is recorded as a turn the file cannot hold — CONFIRMED
+
+- Verdict: CONFIRMED. write\1orientation errors map to None (writeback lib.rs:614-617), and that goes to keep\1turn\1in\1catalog (:623).
 
 - Confidence: high
 - Kind: missing-check
@@ -1138,7 +1300,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:617` Err(\1) =\1 None,
   - `crates/writeback/src/lib.rs:623` return self.keep\1turn\1in\1catalog(catalog, job, turns);
 
-### SEC-078 [medium/data-integrity] Crop save publishes untagged bytes over the earlier copy, then deletes them if tagging fails
+### SEC-078 [medium/data-integrity] Crop save publishes untagged bytes over the earlier copy, then deletes them if tagging fails — CONFIRMED
+
+- Verdict: CONFIRMED. publish overwrites the earlier copy (crop lib.rs:382, 401). tag\1copy failure removes out (:125-128), so neither copy remains.
 
 - Confidence: high
 - Kind: crash-window
@@ -1151,7 +1315,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:128` let \1 = std::fs::remove\1file(&out);
   - `crates/crop/src/lib.rs:401` std::fs::rename(temp, out).with\1context(\1\1 format!("writing {}", shown(out)))?;
 
-### SEC-079 [medium/data-integrity] Copy path through an existing junction or symlink can rename over a library original
+### SEC-079 [medium/data-integrity] Copy path through an existing junction or symlink can rename over a library original — CONFIRMED
+
+- Verdict: CONFIRMED. The lexical containment check (crop lib.rs:79) does not see a junction. create\1dir\1all (:375) and the rename (:401) follow it. Needs a link in the user's chosen folder.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1164,7 +1330,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:375` std::fs::create\1dir\1all(dir).with\1context(\1\1 format!("creating {}", shown(dir)))?;
   - `crates/crop/src/lib.rs:401` std::fs::rename(temp, out).with\1context(\1\1 format!("writing {}", shown(out)))?;
 
-### SEC-080 [low/security] Bare exiftool name resolves to the app's own directory before PATH
+### SEC-080 [low/security] Bare exiftool name resolves to the app's own directory before PATH — CONFIRMED
+
+- Verdict: CONFIRMED. Bare exiftool resolves through std's Windows search, which checks the app directory first (std process/windows.rs:550). Needs write access to the install folder.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1176,7 +1344,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/exiftool/src/lib.rs:61` let mut cmd = Command::new(program);
   - `C:/Users/Torres/.rustup/toolchains/stable-x86_64-pc-windows-msvc/lib/rustlib/src/rust/library/std/src/sys/process/windows.rs:550` if let Ok(mut app\1path) = env::current\1exe() {
 
-### SEC-081 [low/data-integrity] The argument-route ExifTool run has no deadline and cannot be killed
+### SEC-081 [low/data-integrity] The argument-route ExifTool run has no deadline and cannot be killed — CONFIRMED
+
+- Verdict: CONFIRMED. The argv route calls cmd.output() with no deadline (exiftool lib.rs:122-123, 204).
 
 - Confidence: high
 - Kind: missing-check
@@ -1188,7 +1358,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/exiftool/src/lib.rs:123` return oneshot(&self.program, args);
   - `crates/exiftool/src/lib.rs:204` let out = cmd.output().with\1context(\1\1 format!("starting {} (ExifTool)", program.to\1string\1lossy()))?;
 
-### SEC-082 [low/security] ExifTool output has no cap per line or per answer
+### SEC-082 [low/security] ExifTool output has no cap per line or per answer — PARTIAL
+
+- Verdict: PARTIAL. Output is read with no per-line or per-answer cap (exiftool lib.rs:221-256). The volume claim was not checked, as the finding says.
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -1207,7 +1379,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/crop/src/lib.rs:339 write temp beside output, :375 create\1dir\1all, :396-401 publish (rename temp to out), :407-410 keep\1time on the copy
 - Summary: Crop and rotate write new files into a chosen folder: bytes are rewritten by the edit crate (per-format byte surgery on PNG, GIF, WebP and BMP), tags are copied with ExifTool (tags\1temp\1beside, tag\1copy), then renamed into place. The original's modification time is copied to the output (keep\1time).
 
-### SEC-083 [high/data-integrity] Copy path checked lexically; reparse point sends write into library
+### SEC-083 [high/data-integrity] Copy path checked lexically; reparse point sends write into library — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-079 with severity high. A junction in the user-chosen folder is required, so medium is the fitting severity.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1221,7 +1395,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:375` std::fs::create\1dir\1all(dir).with\1context(\1\1 format!("creating {}", shown(dir)))?;
   - `crates/crop/src/lib.rs:401` std::fs::rename(temp, out).with\1context(\1\1 format!("writing {}", shown(out)))?;
 
-### SEC-084 [medium/data-integrity] Copy renamed into place without fsync of its contents
+### SEC-084 [medium/data-integrity] Copy renamed into place without fsync of its contents — CONFIRMED
+
+- Verdict: CONFIRMED. publish writes and renames with no sync (crop lib.rs:399-401).
 
 - Confidence: high
 - Kind: crash-window
@@ -1232,7 +1408,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:399` std::fs::write(temp, bytes).with\1context(\1\1 format!("writing {}", shown(out)))?;
   - `crates/crop/src/lib.rs:401` std::fs::rename(temp, out).with\1context(\1\1 format!("writing {}", shown(out)))?;
 
-### SEC-085 [medium/data-integrity] Untagged copy published before its tags are written
+### SEC-085 [medium/data-integrity] Untagged copy published before its tags are written — CONFIRMED
+
+- Verdict: CONFIRMED. publish (crop lib.rs:382) runs before tag\1copy (:125). A crash between them leaves the untagged copy.
 
 - Confidence: high
 - Kind: crash-window
@@ -1243,7 +1421,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/crop/src/lib.rs:382` publish(&temp\1path, &out\1path, &cropped.bytes, &source\1path)?;
   - `crates/crop/src/lib.rs:125` if let Err(e) = tag\1copy(&mut exiftool, &source, &out) {
 
-### SEC-086 [medium/data-integrity] Crash during in-place cut leaves a corrupt original; full cut sits in an unread temp
+### SEC-086 [medium/data-integrity] Crash during in-place cut leaves a corrupt original; full cut sits in an unread temp — CONFIRMED
+
+- Verdict: CONFIRMED. write\1into writes, sets length, then syncs (writeback file.rs:79-83, inplace.rs:46). A crash mid-write corrupts the original.
 
 - Confidence: high
 - Kind: crash-window
@@ -1255,7 +1435,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/file.rs:80` file.write\1all(data)?;
   - `crates/writeback/src/file.rs:81` file.set\1len(u64::try\1from(data.len())?)?;
 
-### SEC-087 [low/data-integrity] Catalog-only turn not carried into compressed-BMP copies
+### SEC-087 [low/data-integrity] Catalog-only turn not carried into compressed-BMP copies — CONFIRMED
+
+- Verdict: CONFIRMED. BMP rotate returns Catalog when rewrite gives None (edit rotate.rs:76-78). Crop then reads stored pixels. Medium confidence.
 
 - Confidence: medium
 - Kind: wrong-result
@@ -1274,7 +1456,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/catalog/src/rebuild.rs:45-46 std::fs::copy to .partial then rename to catalog.pre-vN.bak; crates/catalog/src/rebuild.rs:96 std::fs::rename(replacement, path); pg\1dbfile::move\1aside of the old file to .replaced
 - Summary: On a version change or unreadable schema, the catalog is copied aside, checkpointed, and rebuilt into a .building file, then the old file is moved aside (kept, never deleted) and the new file renamed into the old name. Row carry-over reads the old database (F05). Replaced files stay on disk for the user to remove.
 
-### SEC-088 [medium/data-integrity] Catalog name left vacant between move-aside and rename
+### SEC-088 [medium/data-integrity] Catalog name left vacant between move-aside and rename — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-017: the empty name between move\1aside and rename (rebuild.rs:94-96, core.rs:180).
 
 - Confidence: high
 - Kind: crash-window
@@ -1286,7 +1470,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:96` std::fs::rename(&replacement, path).with\1context(\1\1 {
   - `crates/catalog/src/core.rs:180` if version == Some(0) && rebuilt.is\1none() {
 
-### SEC-089 [low/data-integrity] Pre-migration backup copy is never synced and a truncated copy is kept forever
+### SEC-089 [low/data-integrity] Pre-migration backup copy is never synced and a truncated copy is kept forever — CONFIRMED
+
+- Verdict: CONFIRMED. back\1up copies without sync and renames (rebuild.rs:45-46). Latent: MIGRATIONS is empty.
 
 - Confidence: high
 - Kind: partial-write
@@ -1298,7 +1484,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:45` std::fs::copy(db\1file(path)?, &partial)
   - `crates/catalog/src/rebuild.rs:46` .and\1then(\1\1\1 std::fs::rename(&partial, &backup))
 
-### SEC-090 [low/data-integrity] A stale pre-migration backup is kept and the error points at it
+### SEC-090 [low/data-integrity] A stale pre-migration backup is kept and the error points at it — CONFIRMED
+
+- Verdict: CONFIRMED. back\1up returns early when the backup exists (rebuild.rs:40-41). Latent: no migration yet.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1310,7 +1498,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:41` return Ok(());
   - `crates/catalog/src/core.rs:194` back\1up(&conn, path, found)?;
 
-### SEC-091 [low/data-integrity] std::fs::rename replaces its target where the layer's contract is no-replace
+### SEC-091 [low/data-integrity] std::fs::rename replaces its target where the layer's contract is no-replace — CONFIRMED
+
+- Verdict: CONFIRMED. Both renames (rebuild.rs:46, 96) use std::fs::rename, which replaces its target.
 
 - Confidence: medium
 - Kind: overwrite
@@ -1322,7 +1512,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:96` std::fs::rename(&replacement, path).with\1context(\1\1 {
   - `crates/platform/src/file.rs:216` /// Rename 'from' to 'to' unless 'to' exists, which is then 'AlreadyExists' and nothing moves. std's 'rename' replaces
 
-### SEC-092 [medium/data-integrity] Any carry error replaces the catalog with an empty one, with no room check before the copy
+### SEC-092 [medium/data-integrity] Any carry error replaces the catalog with an empty one, with no room check before the copy — CONFIRMED
+
+- Verdict: CONFIRMED. The fallback at rebuild.rs:78-86 runs on any carry error. ensure\1room\1to\1migrate covers only migrations (core.rs:192).
 
 - Confidence: high
 - Kind: missing-check
@@ -1342,7 +1534,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/dbfile/src/remove.rs:20-45 move\1aside via rename\1no\1replace (platform/src/file.rs:221 MoveFileExW on Windows) of each part to a free .N name
 - Summary: Deletes the building file and its sidecars before a rebuild (std::fs::remove\1file, NotFound ignored). Moves aside the live catalog with no-replace renames. Both run only under the exclusive lock (remove.rs doc comment), but the deletion targets are derived from the catalog path.
 
-### SEC-093 [medium/data-integrity] Crash between move-aside and promote leaves an empty live catalog
+### SEC-093 [medium/data-integrity] Crash between move-aside and promote leaves an empty live catalog — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-017 and SEC-098: the empty catalog path after move\1aside (rebuild.rs:94-96).
 
 - Confidence: high
 - Kind: crash-window
@@ -1355,7 +1549,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/core.rs:125` let mut conn = Connection::open(db\1file(path)?).with\1context(\1\1 format!("catalog {}", path.display()))?;
   - `crates/catalog/src/core.rs:180` if version == Some(0) && rebuilt.is\1none() {
 
-### SEC-094 [medium/data-integrity] Any carry error empties the live catalog, including disk full
+### SEC-094 [medium/data-integrity] Any carry error empties the live catalog, including disk full — CONFIRMED
+
+- Verdict: CONFIRMED. Carry errors take the same empty-catalog fallback (rebuild.rs:80-86, 94). Related to SEC-092 with a different trigger.
 
 - Confidence: high
 - Kind: lost-update
@@ -1368,7 +1564,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:82` remove\1database(&replacement)?;
   - `crates/catalog/src/rebuild.rs:84` Carried::Nothing { reason: format!("{e:#}") }
 
-### SEC-095 [low/data-integrity] Sidecars move before the main file; a failed main move strands committed WAL changes
+### SEC-095 [low/data-integrity] Sidecars move before the main file; a failed main move strands committed WAL changes — CONFIRMED
+
+- Verdict: CONFIRMED. move\1aside renames the sidecars first (remove.rs:30-37). A failed main rename leaves the WAL orphaned.
 
 - Confidence: medium
 - Kind: partial-write
@@ -1381,7 +1579,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/dbfile/src/remove.rs:34` rename\1no\1replace(&from, &to)
   - `crates/catalog/src/rebuild.rs:63` old.execute\1batch("PRAGMA wal\1checkpoint(TRUNCATE)")?;
 
-### SEC-096 [low/data-integrity] Derived .building name is deleted without an ownership check
+### SEC-096 [low/data-integrity] Derived .building name is deleted without an ownership check — CONFIRMED
+
+- Verdict: CONFIRMED. remove\1database deletes the .building name unconditionally (rebuild.rs:76, 136-138). The doc says the file is always this build's, and nothing checks that.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1394,7 +1594,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:138` pg\1dbfile::remove\1database(path).map\1err(\1e\1 Error::Other(anyhow!("{e}")))
   - `crates/dbfile/src/remove.rs:47` match std::fs::remove\1file(&file) {
 
-### SEC-097 [low/data-integrity] Final promote replaces any file that appears at the catalog path
+### SEC-097 [low/data-integrity] Final promote replaces any file that appears at the catalog path — CONFIRMED
+
+- Verdict: CONFIRMED. The rename at rebuild.rs:96 replaces any file at the catalog path, unlike the rename\1no\1replace calls elsewhere.
 
 - Confidence: medium
 - Kind: race
@@ -1412,7 +1614,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/log/src/file.rs:105 \1log\1.lock creation; lock state used by crates/catalog/src/lifecycle.rs:45-66 take\1lock / try\1exclusive / take\1shared
 - Summary: Lock files are created beside the catalog and log files and never removed by this code path. They are the cross-process mutual exclusion for the catalog (F20 rebuild depends on them).
 
-### SEC-098 [medium/data-integrity] Rebuild leaves no catalog at its path between the two renames
+### SEC-098 [medium/data-integrity] Rebuild leaves no catalog at its path between the two renames — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-017: no catalog file between move\1aside and the rename (rebuild.rs:94-96).
 
 - Confidence: high
 - Kind: crash-window
@@ -1424,7 +1628,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:96` std::fs::rename(&replacement, path).with\1context(\1\1 {
   - `crates/catalog/src/core.rs:125` let mut conn = Connection::open(db\1file(path)?).with\1context(\1\1 format!("catalog {}", path.display()))?;
 
-### SEC-099 [low/data-integrity] A failing shift of the older log files stops rotation for good, so the log grows without bound
+### SEC-099 [low/data-integrity] A failing shift of the older log files stops rotation for good, so the log grows without bound — CONFIRMED
+
+- Verdict: CONFIRMED. If rename of the older files fails, rotate returns early (log file.rs:78-80). The copy fallback at :92 is never reached.
 
 - Confidence: high
 - Kind: missing-check
@@ -1437,7 +1643,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/log/src/file.rs:88` let \1 = self.finish();
   - `crates/log/src/file.rs:92` Err(\1) if self.len() \1 self.cap.saturating\1mul(2) =\1 {
 
-### SEC-100 [low/data-integrity] Thread-local thumbnail read connections outlive the cache's shared hold
+### SEC-100 [low/data-integrity] Thread-local thumbnail read connections outlive the cache's shared hold — PARTIAL
+
+- Verdict: PARTIAL. READERS is cleared only on the calling thread (thumbcache lib.rs:378). Whether the worker's connection blocks removal depends on thread lifetimes not traced here.
 
 - Confidence: medium
 - Kind: race
@@ -1456,7 +1664,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/log/src/file.rs:129 std::fs::copy to aside, :130 truncate, :136 rename rotation, :188 rename; PG\1PERF\1LOG target written by crates/desktop/src/trace.rs:30 and crates/cli/src/lib.rs:106
 - Summary: The app log grows by append; past a cap it is copied, truncated and rotated to .N names. PG\1TRACE and PG\1PERF\1LOG (env) choose whether and where a perf log is written; the log view reads it back via --log-view (desktop/src/command\1line.rs:425).
 
-### SEC-101 [medium/data-integrity] A torn last line glues the next record onto it, so that record is lost as structure and shows twice
+### SEC-101 [medium/data-integrity] A torn last line glues the next record onto it, so that record is lost as structure and shows twice — CONFIRMED
+
+- Verdict: CONFIRMED. LogFile::append never checks for a final newline (log file.rs:59). parse treats the joined line as a plain record (record.rs:83, 98).
 
 - Confidence: high
 - Kind: partial-write
@@ -1468,7 +1678,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/log/src/record.rs:83` if line.starts\1with('{')
   - `crates/log/src/record.rs:98` (None, \1) =\1 records.push(plain\1record(String::new(), line.to\1string())),
 
-### SEC-102 [medium/data-integrity] A rotation whose shift keeps failing stops rotating altogether, so the log grows without bound
+### SEC-102 [medium/data-integrity] A rotation whose shift keeps failing stops rotating altogether, so the log grows without bound — CONFIRMED
+
+- Verdict: CONFIRMED. A failing shift keeps the aside file (file.rs:78-79, 120). The copy fallback is never reached.
 
 - Confidence: high
 - Kind: unbounded-growth
@@ -1481,7 +1693,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/log/src/file.rs:120` Err(e) =\1 return Err(e),
   - `crates/log/src/file.rs:92` Err(\1) if self.len() \1 self.cap.saturating\1mul(2) =\1 {
 
-### SEC-103 [medium/data-integrity] The perf summary reads only the current file, so records rotated into .1 or .2 are missing
+### SEC-103 [medium/data-integrity] The perf summary reads only the current file, so records rotated into .1 or .2 are missing — CONFIRMED
+
+- Verdict: CONFIRMED. summarize\1session reads only the named file (perf lib.rs:472) while rotation moves records to .1 (cli lib.rs:77).
 
 - Confidence: high
 - Kind: incomplete-read
@@ -1493,7 +1707,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/perf/src/lib.rs:472` let text = std::fs::read\1to\1string(path)?;
   - `crates/perf/src/lib.rs:466` let text = std::fs::read\1to\1string(path)?;
 
-### SEC-104 [low/data-integrity] The perf summary fails on the whole file when one torn UTF-8 byte is present, against its documented skip
+### SEC-104 [low/data-integrity] The perf summary fails on the whole file when one torn UTF-8 byte is present, against its documented skip — CONFIRMED
+
+- Verdict: CONFIRMED. read\1to\1string fails on any invalid UTF-8 (perf lib.rs:466, 472), against the skip the doc promises (:464).
 
 - Confidence: high
 - Kind: missing-check
@@ -1505,7 +1721,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/perf/src/lib.rs:466` let text = std::fs::read\1to\1string(path)?;
   - `crates/cli/src/lib.rs:79` Err(e) =\1 eprintln!("perf log: can't read {}: {e}", file.display()),
 
-### SEC-105 [low/data-integrity] The log view reads the files without the rotation lock, so a rotation between reads can drop a whole file's records from the view
+### SEC-105 [low/data-integrity] The log view reads the files without the rotation lock, so a rotation between reads can drop a whole file's records from the view — CONFIRMED
+
+- Verdict: CONFIRMED. read\1all reads without the rotation lock and in an order that can miss a rotated file (log file.rs:152-157). Medium confidence.
 
 - Confidence: medium
 - Kind: race
@@ -1517,7 +1735,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/log/src/file.rs:85` match (self.rename)(&self.path, &aside(&self.path)) {
   - `crates/desktop/src/log_model_bridge.rs:133` let from\1files = path.map(\1p\1 pg\1log::read(&p, pg\1log::RING\1RECORDS)).unwrap\1or\1default();
 
-### SEC-106 [low/data-integrity] A crash inside the copy-and-empty fallback duplicates history and drops an older file early
+### SEC-106 [low/data-integrity] A crash inside the copy-and-empty fallback duplicates history and drops an older file early — CONFIRMED
+
+- Verdict: CONFIRMED. copy\1aside writes the aside copy before the truncate (file.rs:129-130). A crash between them duplicates history on the next run.
 
 - Confidence: high
 - Kind: crash-window
@@ -1536,7 +1756,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/app/src/store.rs:119-123 write\1atomically (File::create \1name\1.tmp, sync\1all, rename over the file); quarantine at crates/app/src/store.rs:~112 via pg\1platform::file::keep\1aside (renames unreadable file to \1name\1.bad.N)
 - Summary: Preferences are read from a user-writable JSON file (folder values may be hex-encoded non-UTF-8 paths, prefs.rs:72-113). Unreadable content is renamed aside and defaults are used. Writes replace the file atomically.
 
-### SEC-107 [medium/data-integrity] Transient read error quarantines a readable prefs file
+### SEC-107 [medium/data-integrity] Transient read error quarantines a readable prefs file — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-030: any non-NotFound read error quarantines (store.rs:54).
 
 - Confidence: high
 - Kind: wrong-target
@@ -1546,7 +1768,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/app/src/store.rs:54` Err(e) =\1 (T::default(), Some(quarantine(&path, e.to\1string()))),
 
-### SEC-108 [low/data-integrity] Older successful save clears the notice of a newer failed save
+### SEC-108 [low/data-integrity] Older successful save clears the notice of a newer failed save — CONFIRMED
+
+- Verdict: CONFIRMED. A successful older save calls inbox.resolve(Save) (prefs.rs:197), and NextSave resolves PrefsNotSaved (notice.rs:840). Medium confidence.
 
 - Confidence: high
 - Kind: lost-update
@@ -1559,7 +1783,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/yandex.rs:555` let \1 = prefs.update(\1p\1 p.yandex\1folder = Some(chosen));
   - `crates/model/src/notice.rs:840` \1 (Resolver::NextSave, Trigger::Save) =\1 true,
 
-### SEC-109 [low/data-integrity] No parent-directory sync after the atomic rename
+### SEC-109 [low/data-integrity] No parent-directory sync after the atomic rename — CONFIRMED
+
+- Verdict: CONFIRMED. No parent-directory sync after the rename (store.rs:123).
 
 - Confidence: high
 - Kind: crash-window
@@ -1569,7 +1795,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/app/src/store.rs:123` std::fs::rename(&temp, path)
 
-### SEC-110 [low/data-integrity] Failed write leaves a partial gallery.json.tmp behind
+### SEC-110 [low/data-integrity] Failed write leaves a partial gallery.json.tmp behind — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-031 with a different write point (store.rs:119-121).
 
 - Confidence: high
 - Kind: leak
@@ -1580,7 +1808,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/store.rs:119` let mut file = File::create(&temp)?;
   - `crates/app/src/store.rs:120` file.write\1all(bytes)?;
 
-### SEC-111 [low/security] Prefs file read whole into memory with no size cap
+### SEC-111 [low/security] Prefs file read whole into memory with no size cap — CONFIRMED
+
+- Verdict: CONFIRMED. Prefs file read whole with no cap (store.rs:48).
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -1590,7 +1820,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/app/src/store.rs:48` let (value, unreadable) = match std::fs::read(&path) {
 
-### SEC-112 [low/data-integrity] One wrongly typed field discards the whole preferences file
+### SEC-112 [low/data-integrity] One wrongly typed field discards the whole preferences file — CONFIRMED
+
+- Verdict: CONFIRMED. One mistyped field fails from\1slice for the whole struct, and the file is quarantined (store.rs:49-51).
 
 - Confidence: high
 - Kind: missing-check
@@ -1601,7 +1833,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/store.rs:49` Ok(bytes) =\1 match serde\1json::from\1slice::\1T\1(&bytes) {
   - `crates/app/src/prefs.rs:21` #\1serde(default)\1
 
-### SEC-113 [low/data-integrity] Quarantine failure lets the next save overwrite the unreadable file
+### SEC-113 [low/data-integrity] Quarantine failure lets the next save overwrite the unreadable file — CONFIRMED
+
+- Verdict: CONFIRMED. If keep\1aside fails, the unreadable file stays and the next save replaces it (store.rs:102, 111).
 
 - Confidence: medium
 - Kind: missing-check
@@ -1612,7 +1846,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/app/src/store.rs:111` let kept = pg\1platform::file::keep\1aside(path, ".bad").map\1err(\1e\1 e.to\1string());
   - `crates/app/src/store.rs:102` write\1atomically(&self.path, &json)?;
 
-### SEC-114 [low/data-integrity] Hex name decoder accepts a leading '+' in each digit pair
+### SEC-114 [low/data-integrity] Hex name decoder accepts a leading '+' in each digit pair — CONFIRMED
+
+- Verdict: CONFIRMED. u8::from\1str\1radix accepts a leading '+' (model name.rs:285).
 
 - Confidence: high
 - Kind: missing-check
@@ -1629,7 +1865,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/desktop/src/controller.rs:61 std::fs::File::create(path) for the event recording; crates/desktop/src/screenshot.rs:50 write settle log and :55 write PNG bytes
 - Summary: Two sinks write to paths chosen by environment or command line: the controller recording and the screenshot PNG plus .settle.txt log. Both use std::fs::write or create without temp files or no-replace checks.
 
-### SEC-115 [low/data-integrity] Settle log written before a non-atomic PNG write
+### SEC-115 [low/data-integrity] Settle log written before a non-atomic PNG write — CONFIRMED
+
+- Verdict: CONFIRMED. The settle log is written before the PNG, and the PNG write is a plain truncate-and-write (screenshot.rs:50, 55).
 
 - Confidence: high
 - Kind: partial-write
@@ -1640,7 +1878,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/screenshot.rs:50` std::fs::write(log, format!("{report}\n"))?;
   - `crates/desktop/src/screenshot.rs:55` std::fs::write(path, png)
 
-### SEC-116 [low/data-integrity] Earlier PNG survives a run that produced no image
+### SEC-116 [low/data-integrity] Earlier PNG survives a run that produced no image — CONFIRMED
+
+- Verdict: CONFIRMED. write\1taken returns before the image write (screenshot.rs:51-53), so an earlier PNG at that path stays.
 
 - Confidence: medium
 - Kind: stale-artifact
@@ -1650,7 +1890,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/desktop/src/screenshot.rs:51` if png.is\1empty() {
 
-### SEC-117 [low/data-integrity] Failed screenshot write still exits with status 0
+### SEC-117 [low/data-integrity] Failed screenshot write still exits with status 0 — CONFIRMED
+
+- Verdict: CONFIRMED. screenshot\1taken reports the error only on stderr (screenshot.rs:39-40), and the process then quits (cpp screenshot.cpp:211).
 
 - Confidence: high
 - Kind: missing-check
@@ -1661,7 +1903,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/screenshot.rs:39` if let Err(e) = write\1taken(path, png, has\1window, report) {
   - `crates/desktop/cpp/screenshot.cpp:211` QCoreApplication::quit();
 
-### SEC-118 [low/data-integrity] Empty --screenshot= writes a stray .settle.txt into the working directory
+### SEC-118 [low/data-integrity] Empty --screenshot= writes a stray .settle.txt into the working directory — CONFIRMED
+
+- Verdict: CONFIRMED. An empty value makes the log path ".settle.txt" in the working directory (screenshot.rs:35, 49).
 
 - Confidence: high
 - Kind: wrong-target
@@ -1673,7 +1917,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/screenshot.rs:49` log.push(".settle.txt");
   - `crates/desktop/src/command_line.rs:418` pub(crate) fn path(name: &str) -\1 Option\1&'static Path\1 {
 
-### SEC-119 [low/data-integrity] Failed recorder write leaves a truncated line that later records join
+### SEC-119 [low/data-integrity] Failed recorder write leaves a truncated line that later records join — CONFIRMED
+
+- Verdict: CONFIRMED. Unbuffered writeln! can leave a fragment, and the next record joins it (controller.rs:80).
 
 - Confidence: high
 - Kind: partial-write
@@ -1690,7 +1936,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/desktop/src/lib.rs:188 add\1image\1provider (bytes from catalog served to QML); crates/desktop/src/live\1reload.rs:30 reload\1on\1change; crates/desktop/src/gallery\1bridge.rs and shell\1bridge.rs (unsafe paths into Rust state)
 - Summary: Rust state crosses into Qt through cxx-qt generated unsafe calls, and QML receives image bytes and paths from the catalog. The live reload watcher watches the QML folder in dev mode and reruns QML on change. Unsafe pointer parameters (animation.rs:45, video\1source.rs:25) are passed from C++.
 
-### SEC-120 [high/data-integrity] Cut-borders confirm rewrites originals the user never confirmed
+### SEC-120 [high/data-integrity] Cut-borders confirm rewrites originals the user never confirmed — CONFIRMED
+
+- Verdict: CONFIRMED. The confirm acts on the entries at confirm time (edits.rs:185, 195), not the count shown at open (Main.qml:199). Background reloads can change the set (passes.rs:240, controller.rs:326).
 
 - Confidence: high
 - Kind: wrong-target
@@ -1708,7 +1956,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/gallery/edits.rs:195` self.grid.entries().iter().filter(\1e\1 e.borders == Borders::Found).map(\1e\1 e.id).collect()
   - `crates/desktop/src/gallery/state.rs:170` self.mark\1writes.get(&file).and\1then(\1queue\1 queue.back().copied()).unwrap\1or(borders == Borders::Marked)
 
-### SEC-121 [medium/security] Yandex originals of every result are kept in memory for the whole search
+### SEC-121 [medium/security] Yandex originals of every result are kept in memory for the whole search — CONFIRMED
+
+- Verdict: CONFIRMED. Each search keeps all its fetched results in memory (images.rs:100, 158). Medium confidence.
 
 - Confidence: medium
 - Kind: unbounded-alloc
@@ -1722,7 +1972,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/src/providers.rs:100` let bytes = if original { &picture.file.bytes } else { &picture.grid };
   - `crates/yandex/src/client.rs:25` pub const DEFAULT\1MAX\1SIMILAR\1PAGES: u32 = 5;
 
-### SEC-122 [low/data-integrity] Shutdown waits on Yandex downloads that stop() does not cancel
+### SEC-122 [low/data-integrity] Shutdown waits on Yandex downloads that stop() does not cancel — CONFIRMED
+
+- Verdict: CONFIRMED. stop() sets a flag (images.rs:126) that get does not read. Provider threads can then hold shutdown (providers.cpp:134-135).
 
 - Confidence: high
 - Kind: race
@@ -1745,7 +1997,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/platform/src/file.rs:226 MoveFileExW (rename no replace), crates/platform/src/sqlite.rs:182 CreateDirectoryW and :249 RemoveDirectoryW, crates/platform/src/message.rs:11 MessageBoxW, crates/platform/src/picker.rs:177-255 COM dialog
 - Summary: Windows calls take paths from the scanner and the catalog as UTF-16 NUL-terminated buffers (native.rs). Errors and handles are wrapped (OwnedHandle, TempFile). These are the points where user-tree paths reach the OS with reparse and verbatim-prefix semantics.
 
-### SEC-123 [medium/data-integrity] Crash after CreateDirectoryW leaves a plain folder that blocks every later alias
+### SEC-123 [medium/data-integrity] Crash after CreateDirectoryW leaves a plain folder that blocks every later alias — CONFIRMED
+
+- Verdict: CONFIRMED. CreateDirectoryW runs before the reparse point is set (sqlite.rs:182-185). The None arm then refuses the empty folder (sqlite.rs:91-92), and sweep skips it (:104).
 
 - Confidence: high
 - Kind: crash-window
@@ -1758,7 +2012,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/sqlite.rs:91` None if link.symlink\1metadata().is\1ok() =\1 {
   - `crates/platform/src/sqlite.rs:104` let Some(substitute) = read\1mount\1point(&link)? else { continue };
 
-### SEC-124 [medium/data-integrity] Rebuild leaves no catalog file between moving the old one aside and renaming the replacement in
+### SEC-124 [medium/data-integrity] Rebuild leaves no catalog file between moving the old one aside and renaming the replacement in — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-017: no catalog file between move\1aside and the rename (rebuild.rs:94-96).
 
 - Confidence: medium
 - Kind: crash-window
@@ -1770,7 +2026,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/rebuild.rs:96` std::fs::rename(&replacement, path).with\1context(\1\1 {
   - `crates/catalog/src/core.rs:261` let live = if path == Path::new(":memory:") \1\1 !path.exists() { None } else { Some(take\1shared(path)?) };
 
-### SEC-125 [low/data-integrity] move\1aside renames sidecars first, so a failure mid-sequence breaks its documented guarantee
+### SEC-125 [low/data-integrity] move\1aside renames sidecars first, so a failure mid-sequence breaks its documented guarantee — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-024: sidecars move before the main file (remove.rs:11, 30-37).
 
 - Confidence: high
 - Kind: partial-write
@@ -1782,7 +2040,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/dbfile/src/remove.rs:16` the moved files when they are no longer wanted. The sidecars move first, so the main file is never left at 'path'
   - `crates/dbfile/src/remove.rs:34` rename\1no\1replace(&from, &to)
 
-### SEC-126 [low/data-integrity] finish\1copy records a part-written original as done when its recorded temp is missing
+### SEC-126 [low/data-integrity] finish\1copy records a part-written original as done when its recorded temp is missing — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-072: NotFound on the recorded temp is treated as copied (writeback lib.rs:742).
 
 - Confidence: medium
 - Kind: crash-window
@@ -1793,7 +2053,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/lib.rs:742` Err(e) if e.kind() == std::io::ErrorKind::NotFound =\1 {}
   - `crates/writeback/src/lib.rs:746` let rewrite = Rewrite { before: None, after, metadata\1only: None };
 
-### SEC-127 [medium/data-integrity] Crash during crop's in-place copy leaves a corrupt original and no recovery for the whole cut
+### SEC-127 [medium/data-integrity] Crash during crop's in-place copy leaves a corrupt original and no recovery for the whole cut — CONFIRMED
+
+- Verdict: CONFIRMED. A crash during the in-place cut leaves a part-written original. The whole cut sits in a temp that is not checked on restart (crop lib.rs:300-315, inplace.rs:46-57).
 
 - Confidence: high
 - Kind: crash-window
@@ -1807,7 +2069,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/writeback/src/inplace.rs:46` write\1into(file, bytes).map\1err(incomplete)?;
   - `crates/writeback/src/inplace.rs:57` std::fs::write(temp, bytes).with\1context(\1\1 format!("writing {}", pg\1platform::names::shown(temp)))?;
 
-### SEC-128 [low/security] Reparse check and the later open are separate steps, so a link swapped in between is followed
+### SEC-128 [low/security] Reparse check and the later open are separate steps, so a link swapped in between is followed — CONFIRMED
+
+- Verdict: CONFIRMED. The reparse check and the open are separate steps (refusal.rs:48-49, dir.rs:369). Medium confidence.
 
 - Confidence: medium
 - Kind: race
@@ -1820,7 +2084,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/file.rs:88` GENERIC\1WRITE \1 FILE\1READ\1ATTRIBUTES,
   - `crates/writeback/src/inplace.rs:60` unchanged(&shown, before, pg\1platform::file::stat\1of(&file)?)?;
 
-### SEC-129 [low/data-integrity] A failed AssignProcessToJobObject is ignored, so ExifTool can outlive the app
+### SEC-129 [low/data-integrity] A failed AssignProcessToJobObject is ignored, so ExifTool can outlive the app — CONFIRMED
+
+- Verdict: CONFIRMED. AssignProcessToJobObject's result is ignored (process.rs:131), and so is SetInformationJobObject (:123).
 
 - Confidence: medium
 - Kind: leak
@@ -1838,7 +2104,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/platform/src/drive.rs:437 rotational flag and dir.rs:580 ioctl FS\1IOC\1GETFSUUID; memory.rs:27 /proc/meminfo; process.rs:149 /proc/\1pid\1/stat (tests)
 - Summary: Device and volume facts (rotational, device number, FS uuid) are read from kernel-provided text files and used to pick scan parallelism and identity. Symlinks under /sys are canonicalized.
 
-### SEC-130 [medium/data-integrity] Volume identity claims are per scan, so two devices sharing a UUID collide across scans
+### SEC-130 [medium/data-integrity] Volume identity claims are per scan, so two devices sharing a UUID collide across scans — CONFIRMED
+
+- Verdict: CONFIRMED. Each scan starts a fresh Lister (scan lib.rs:381, 362). A shared filesystem UUID across two scans collides, and record\1file returns Foreign (writers.rs:278-279). Medium confidence.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1855,7 +2123,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/src/writers.rs:278` if !hit.missing && !hit.in\1root {
   - `crates/catalog/src/writers.rs:279` return Ok(Recorded::Foreign);
 
-### SEC-131 [low/data-integrity] A mounted device missing from sysfs reads as unplugged, not as unknown
+### SEC-131 [low/data-integrity] A mounted device missing from sysfs reads as unplugged, not as unknown — CONFIRMED
+
+- Verdict: CONFIRMED. A missing sysfs entry gives NotFound (drive.rs:401, 415). unplugged treats NotFound as unplugged (drive.rs:50), so the root gets no lane (lanes.rs:183).
 
 - Confidence: medium
 - Kind: missing-check
@@ -1868,7 +2138,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/platform/src/drive.rs:401` facts\1in(&top, 0, &mut disks)?;
   - `crates/library/src/lanes.rs:183` Err(e) =\1 return if unplugged(&e) { Place::Unplugged } else { Place::Unknown },
 
-### SEC-132 [low/data-integrity] One ext volume gets two different identities depending on which source answers
+### SEC-132 [low/data-integrity] One ext volume gets two different identities depending on which source answers — CONFIRMED
+
+- Verdict: CONFIRMED. Volume identity has three sources in order (dir.rs:567). Changes in environment can change which one answers. Medium confidence.
 
 - Confidence: medium
 - Kind: lost-update
@@ -1887,7 +2159,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/platform/src/audio.rs:36-97 unsafe extern C symbol table calls; crates/desktop/src/lib.rs:117-119 std::env::set\1var("QT\1AUDIO\1BACKEND") under unsafe
 - Summary: A shared library is loaded by name from the system search path and its symbols called through transmuted function pointers. The desktop app also writes a process environment variable (QT\1AUDIO\1BACKEND) before Qt starts.
 
-### SEC-133 [low/data-integrity] PipeWire init state never released before dlclose
+### SEC-133 [low/data-integrity] PipeWire init state never released before dlclose — CONFIRMED
+
+- Verdict: CONFIRMED. pw\1init is called with no pw\1deinit before the library is unloaded (audio.rs:53-67).
 
 - Confidence: medium
 - Kind: leak
@@ -1905,7 +2179,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/video/src/ffi/load.rs:176 dll::load of avformat/avcodec DLLs; crates/exiftool/src/lib.rs:61 Command::new
 - Summary: Libraries and helper executables are found from the executable's directory, a build-time bin path, and an environment override. Their resolved location decides what code runs in-process (FFmpeg) or as a child (ExifTool).
 
-### SEC-134 [low/security] Bare exiftool on Windows is searched in the app folder and System32 before PATH
+### SEC-134 [low/security] Bare exiftool on Windows is searched in the app folder and System32 before PATH — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-080 for Windows: bare exiftool is searched in the app folder first.
 
 - Confidence: high
 - Kind: wrong-target
@@ -1916,7 +2192,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/exiftool/src/lib.rs:31` std::env::var\1os("PG\1EXIFTOOL").unwrap\1or\1else(\1\1 "exiftool".into())
   - `crates/exiftool/src/lib.rs:61` let mut cmd = Command::new(program);
 
-### SEC-135 [low/security] FFmpeg DLL chosen by first existing file per library, with no fallback when it fails to load
+### SEC-135 [low/security] FFmpeg DLL chosen by first existing file per library, with no fallback when it fails to load — CONFIRMED
+
+- Verdict: CONFIRMED. resolve returns the first existing copy (dll.rs:27) and load then fails with no fallback (load.rs:173-176).
 
 - Confidence: medium
 - Kind: missing-check
@@ -1928,7 +2206,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/src/ffi/load.rs:173` let path = pg\1platform::dll::resolve(&file, &candidates)?;
   - `crates/video/src/ffi/load.rs:176` let lib = unsafe { pg\1platform::dll::load(&path) }.map\1err(\1e\1 format!("loading {}: {e}", path.display()))?;
 
-### SEC-136 [low/security] Relative FFMPEG\1DIR bakes a relative PG\1FFMPEG\1BIN that the Windows loader rejects
+### SEC-136 [low/security] Relative FFMPEG\1DIR bakes a relative PG\1FFMPEG\1BIN that the Windows loader rejects — PARTIAL
+
+- Verdict: PARTIAL. The relative FFMPEG\1DIR baking at build.rs:100 and :89 is confirmed. The loader rejecting a relative path is taken from library docs and was not checked.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -1941,7 +2221,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/src/ffi/load.rs:171` .chain(option\1env!("PG\1FFMPEG\1BIN").map(PathBuf::from))
   - `crates/platform/src/dll.rs:47` WinLibrary::load\1with\1flags(path, LOAD\1LIBRARY\1SEARCH\1DLL\1LOAD\1DIR \1 LOAD\1LIBRARY\1SEARCH\1DEFAULT\1DIRS)
 
-### SEC-137 [low/data-integrity] The argv route has no deadline, so a stalled ExifTool blocks the write worker forever
+### SEC-137 [low/data-integrity] The argv route has no deadline, so a stalled ExifTool blocks the write worker forever — CONFIRMED
+
+- Verdict: CONFIRMED. oneshot calls output() with no deadline (exiftool lib.rs:200-204), while the kept process has one (:25).
 
 - Confidence: medium
 - Kind: crash-window
@@ -1953,7 +2235,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/exiftool/src/lib.rs:204` let out = cmd.output().with\1context(\1\1 format!("starting {} (ExifTool)", program.to\1string\1lossy()))?;
   - `crates/exiftool/src/lib.rs:25` const COMMAND\1TIMEOUT: Duration = Duration::from\1secs(120);
 
-### SEC-138 [low/security] Build machine's absolute FFmpeg bin path is compiled into the executable
+### SEC-138 [low/security] Build machine's absolute FFmpeg bin path is compiled into the executable — CONFIRMED
+
+- Verdict: CONFIRMED. rustc-env embeds the absolute bin path (video build.rs:89), read back by option\1env (load.rs:171).
 
 - Confidence: medium
 - Kind: leak
@@ -1971,7 +2255,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/video/build.rs:133 Command::new("pkg-config"), :156 OUT\1DIR writes, generated bindings; crates/desktop/build.rs cargo rustc-env output
 - Summary: Build time reads env vars and a folder, runs pkg-config, and writes generated code into OUT\1DIR. Not run at user runtime, but the output (linked FFmpeg location) feeds F30.
 
-### SEC-139 [low/data-integrity] FFmpeg major not checked against the version Qt expects
+### SEC-139 [low/data-integrity] FFmpeg major not checked against the version Qt expects — PARTIAL
+
+- Verdict: PARTIAL. build.rs:109 checks only that the header exists, so no major-version check is made. The Qt Multimedia consequences were not checked.
 
 - Confidence: medium
 - Kind: missing-check
@@ -1982,7 +2268,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/build.rs:109` if !include.join("libavcodec").join("avcodec.h").is\1file() {
   - `crates/video/build.rs:207` let entries = std::fs::read\1dir(bin).unwrap\1or\1else(\1e\1 panic!("{}: {e}", bin.display()));
 
-### SEC-140 [low/data-integrity] DLL beside gallery.exe overwritten in place, can be left truncated
+### SEC-140 [low/data-integrity] DLL beside gallery.exe overwritten in place, can be left truncated — CONFIRMED
+
+- Verdict: CONFIRMED. DLLs are copied in place (build.rs:228-230). A killed copy can leave a truncated file.
 
 - Confidence: medium
 - Kind: crash-window
@@ -1993,7 +2281,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/video/build.rs:228` if !same(dll, &dest) {
   - `crates/video/build.rs:229` std::fs::copy(dll, &dest)
 
-### SEC-141 [low/data-integrity] setup deletes .deps/ffmpeg before the new build is moved in
+### SEC-141 [low/data-integrity] setup deletes .deps/ffmpeg before the new build is moved in — CONFIRMED
+
+- Verdict: CONFIRMED. rmtree of dest runs before move (setup\1ffmpeg.py:133-136). A crash between them leaves no FFmpeg.
 
 - Confidence: medium
 - Kind: crash-window
@@ -2004,7 +2294,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/setup_ffmpeg.py:136` if dest.exists():
   - `tools/setup_ffmpeg.py:137` shutil.rmtree(dest)
 
-### SEC-142 [low/data-integrity] Mascot folder read with no filter; any entry is embedded
+### SEC-142 [low/data-integrity] Mascot folder read with no filter; any entry is embedded — CONFIRMED
+
+- Verdict: CONFIRMED. Every entry in resources/mascots is added (desktop build.rs:11-15), with no filter. Latent.
 
 - Confidence: high
 - Kind: missing-check
@@ -2015,7 +2307,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/desktop/build.rs:11` let entries = std::fs::read\1dir("resources/mascots").map\1err(\1e\1 format!("reading resources/mascots: {e}"))?;
   - `crates/desktop/build.rs:15` .map(\1entry\1 format!("resources/mascots/{}", entry.file\1name().to\1string\1lossy()))
 
-### SEC-143 [low/security] QT\1DIR interpolated unquoted into a cmd.exe recipe line
+### SEC-143 [low/security] QT\1DIR interpolated unquoted into a cmd.exe recipe line — PARTIAL
+
+- Verdict: PARTIAL. The unquoted {{qt}} interpolation at Justfile:59 is confirmed. The claim that the recipe runs under cmd.exe (Justfile:11) was not checked.
 
 - Confidence: high
 - Kind: injection
@@ -2032,7 +2326,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: tools/install\1exiftool.py:30-31 tarfile extractall(filter=data) into a work folder, :36 shutil.rmtree(prefix/lib), :39 subprocess.run(prefix/exiftool -ver)
 - Summary: Downloads an archive, checks its digest before use, extracts with the data filter, and deletes a prefix subtree. Runs a freshly installed binary to confirm the version.
 
-### SEC-144 [low/security] Archive body read whole into memory with no size cap or total deadline
+### SEC-144 [low/security] Archive body read whole into memory with no size cap or total deadline — CONFIRMED
+
+- Verdict: CONFIRMED. The archive is read whole with only a per-read timeout (install\1exiftool.py:24-25).
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -2043,7 +2339,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/install_exiftool.py:24` with urllib.request.urlopen(url, timeout=120) as response: # noqa: S310 (the URL is the Justfile's pin)
   - `tools/install_exiftool.py:25` archive = response.read()
 
-### SEC-145 [low/data-integrity] Install replaces the live program and lib in place before verifying, so a kill leaves a mixed install
+### SEC-145 [low/data-integrity] Install replaces the live program and lib in place before verifying, so a kill leaves a mixed install — CONFIRMED
+
+- Verdict: CONFIRMED. copy2 (install\1exiftool.py:34) and copytree (:37) replace the live install before the -ver check (:39).
 
 - Confidence: high
 - Kind: crash-window
@@ -2056,7 +2354,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/install_exiftool.py:37` shutil.copytree(source / "lib", prefix / "lib")
   - `tools/install_exiftool.py:39` reported = subprocess.run(\1str(prefix / "exiftool"), "-ver"\1, capture\1output=True, text=True, check=True).stdout.strip()
 
-### SEC-146 [low/data-integrity] rmtree of prefix/lib deletes any lib folder under --prefix, not just ExifTool's
+### SEC-146 [low/data-integrity] rmtree of prefix/lib deletes any lib folder under --prefix, not just ExifTool's — CONFIRMED
+
+- Verdict: CONFIRMED. rmtree of prefix/lib runs with ignore\1errors (install\1exiftool.py:36) on whatever --prefix names (:50).
 
 - Confidence: high
 - Kind: wrong-target
@@ -2074,7 +2374,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: tools/setup\1ffmpeg.py:107-116 SHA-256 check then unlink on mismatch; :121-131 zipfile extractall(extract); :134 shutil.rmtree(dest)
 - Summary: Fetches the pinned FFmpeg zip, verifies SHA-256, then extracts it with zipfile.extractall (no member-name filter in this code) into the dependency folder, replacing the previous install with rmtree.
 
-### SEC-147 [medium/data-integrity] Unchecked rmtree of the old install can leave .deps/ffmpeg half-deleted on Windows
+### SEC-147 [medium/data-integrity] Unchecked rmtree of the old install can leave .deps/ffmpeg half-deleted on Windows — CONFIRMED
+
+- Verdict: CONFIRMED. rmtree of dest (setup\1ffmpeg.py:133-134) is unchecked, so a PermissionError escapes.
 
 - Confidence: medium
 - Kind: missing-check
@@ -2085,7 +2387,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/setup_ffmpeg.py:133` if dest.exists():
   - `tools/setup_ffmpeg.py:134` shutil.rmtree(dest)
 
-### SEC-148 [low/data-integrity] Crash between deleting the old install and moving the new one leaves no install
+### SEC-148 [low/data-integrity] Crash between deleting the old install and moving the new one leaves no install — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-141: no install between rmtree (line 134) and move (line 136).
 
 - Confidence: high
 - Kind: crash-window
@@ -2096,7 +2400,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/setup_ffmpeg.py:134` shutil.rmtree(dest)
   - `tools/setup_ffmpeg.py:136` shutil.move(str(extract / top), str(dest))
 
-### SEC-149 [low/data-integrity] Ignored rmtree errors let stale files from an earlier build reach dest with a fresh pin
+### SEC-149 [low/data-integrity] Ignored rmtree errors let stale files from an earlier build reach dest with a fresh pin — CONFIRMED
+
+- Verdict: CONFIRMED. rmtree of extract ignores errors (setup\1ffmpeg.py:121), so stale files can be moved in (:136).
 
 - Confidence: medium
 - Kind: missing-check
@@ -2108,7 +2414,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/setup_ffmpeg.py:136` shutil.move(str(extract / top), str(dest))
   - `tools/setup_ffmpeg.py:141` (dest / PIN\1FILE).write\1text(wanted + "\n", encoding="utf-8")
 
-### SEC-150 [low/data-integrity] Extraction on POSIX fails after dest is deleted when an archive uses backslash names
+### SEC-150 [low/data-integrity] Extraction on POSIX fails after dest is deleted when an archive uses backslash names — CONFIRMED
+
+- Verdict: CONFIRMED. Latent: entry\1parts normalises backslashes (setup\1ffmpeg.py:71), but extractall on POSIX keeps raw names (:131). The pin prevents it.
 
 - Confidence: medium
 - Kind: wrong-target
@@ -2120,7 +2428,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/setup_ffmpeg.py:131` archive.extractall(extract)
   - `tools/setup_ffmpeg.py:136` shutil.move(str(extract / top), str(dest))
 
-### SEC-151 [low/data-integrity] Two concurrent setup runs in one checkout share the .partial file and the extract folder
+### SEC-151 [low/data-integrity] Two concurrent setup runs in one checkout share the .partial file and the extract folder — CONFIRMED
+
+- Verdict: CONFIRMED. Both runs share the .partial name (setup\1ffmpeg.py:40) and the extract folder (:121).
 
 - Confidence: medium
 - Kind: race
@@ -2132,7 +2442,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/setup_ffmpeg.py:46` with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file: # noqa: S310
   - `tools/setup_ffmpeg.py:121` shutil.rmtree(extract, ignore\1errors=True)
 
-### SEC-152 [low/data-integrity] An operator-given --destination is deleted with rmtree and not limited to .deps
+### SEC-152 [low/data-integrity] An operator-given --destination is deleted with rmtree and not limited to .deps — CONFIRMED
+
+- Verdict: CONFIRMED. --destination is resolved (:95) and rmtree'd (:134). Latent through manual misuse.
 
 - Confidence: high
 - Kind: wrong-target
@@ -2150,7 +2462,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: tools/build\1static\1qt.py:201-204 rmtree build and prefix; tools/build\1static\1ffmpeg.py:244-246 rmtree prefix and staged; tools/build\1jpeg\1turbo.py:112 rmtree folder; manifest json writes
 - Summary: Build tools fetch pinned sources, apply patches, run compilers and shell commands by argument list, and delete build or prefix trees. Paths are derived from repository layout and environment.
 
-### SEC-153 [medium/data-integrity] FFmpeg promotion nests the new install inside a stale prefix
+### SEC-153 [medium/data-integrity] FFmpeg promotion nests the new install inside a stale prefix — CONFIRMED
+
+- Verdict: CONFIRMED. rmtree of prefix is ignore\1errors (build\1static\1ffmpeg.py:244), and move (:245) then nests inside the stale prefix.
 
 - Confidence: high
 - Kind: wrong-target
@@ -2162,7 +2476,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_ffmpeg.py:245` shutil.move(str(staged\1prefix), str(prefix))
   - `tools/build_static_ffmpeg.py:249` libs = sorted((prefix / "lib").glob("\1.lib"), key=lambda path: path.name)
 
-### SEC-154 [medium/data-integrity] Failed verification leaves unverified prefixes at the consumer path
+### SEC-154 [medium/data-integrity] Failed verification leaves unverified prefixes at the consumer path — CONFIRMED
+
+- Verdict: CONFIRMED. The move (build\1static\1ffmpeg.py:245) happens before the CRT and link checks (:254, :271). build\1static\1qt.py:118 checks only two files.
 
 - Confidence: high
 - Kind: missing-check
@@ -2176,7 +2492,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_qt.py:118` if not (ffmpeg / "include" / "libavcodec" / "avcodec.h").is\1file() or not (ffmpeg / "lib" / "avcodec.lib").is\1file():
   - `tools/build_static_qt.py:150` sys.exit(f"the install has DLLs, so it is not a static build: {', '.join(dlls)}")
 
-### SEC-155 [medium/data-integrity] Working Qt and jpeg prefixes are deleted before the rebuild
+### SEC-155 [medium/data-integrity] Working Qt and jpeg prefixes are deleted before the rebuild — CONFIRMED
+
+- Verdict: CONFIRMED. build\1static\1qt.py:204 deletes the prefix before configure. jpeg rmtree (build\1jpeg\1turbo.py:112) does the same.
 
 - Confidence: high
 - Kind: crash-window
@@ -2188,7 +2506,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_qt.py:214` \1\1(prefix / "lib").glob("\1.lib"), \1(prefix / "plugins").rglob("\1.lib")\1
   - `tools/build_jpeg_turbo.py:112` shutil.rmtree(folder, ignore\1errors=True)
 
-### SEC-156 [low/data-integrity] Manifests are written in place, not atomically
+### SEC-156 [low/data-integrity] Manifests are written in place, not atomically — CONFIRMED
+
+- Verdict: CONFIRMED. Manifests are written with write\1text in place (build\1static\1qt.py:229, ffmpeg :298, jpeg :145).
 
 - Confidence: high
 - Kind: partial-write
@@ -2200,7 +2520,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_ffmpeg.py:298` (work / "manifest.json").write\1text(json.dumps(manifest, indent=2), encoding="utf-8")
   - `tools/build_jpeg_turbo.py:145` (work / "manifest.json").write\1text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-### SEC-157 [low/data-integrity] Completed-extraction marker trusts zip member order
+### SEC-157 [low/data-integrity] Completed-extraction marker trusts zip member order — CONFIRMED
+
+- Verdict: CONFIRMED. Extraction is skipped when configure.bat exists (build\1static\1qt.py:99), and extractall order is not guaranteed (:103).
 
 - Confidence: medium
 - Kind: crash-window
@@ -2211,7 +2533,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_qt.py:99` if (source / "configure.bat").is\1file():
   - `tools/build_static_qt.py:103` zipped.extractall(work)
 
-### SEC-158 [low/security] MSYS2 package pins are advisory and installed with partial sync
+### SEC-158 [low/security] MSYS2 package pins are advisory and installed with partial sync — CONFIRMED
+
+- Verdict: CONFIRMED. pacman -Sy then -S (build\1static\1ffmpeg.py:127-128). A version mismatch is only a warning (:130-133).
 
 - Confidence: high
 - Kind: missing-check
@@ -2222,7 +2546,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_ffmpeg.py:127` checked("pacman -Sy", \1str(pacman), "-Sy", "--noconfirm"\1, logs / "pacman-sync.log")
   - `tools/build_static_ffmpeg.py:130` different = \1name for name in MSYS\1PACKAGES if installed.get(name) != MSYS\1PACKAGES\1name\1\1
 
-### SEC-159 [low/data-integrity] dumpbin failure makes the DLL-dependency check pass vacuously
+### SEC-159 [low/data-integrity] dumpbin failure makes the DLL-dependency check pass vacuously — CONFIRMED
+
+- Verdict: CONFIRMED. dumpbin's return code is not checked (build\1static\1ffmpeg.py:272-275), so an empty result passes.
 
 - Confidence: medium
 - Kind: missing-check
@@ -2233,7 +2559,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_ffmpeg.py:272` dumped = subprocess.run(
   - `tools/build_static_ffmpeg.py:275` dependents = \1line.strip() for line in dumped.stdout.splitlines() if re.match(r"^\s+\S+\.dll$", line, re.IGNORECASE)\1
 
-### SEC-160 [low/security] Operator-supplied paths reach cmd.exe and sh unquoted
+### SEC-160 [low/security] Operator-supplied paths reach cmd.exe and sh unquoted — PARTIAL
+
+- Verdict: PARTIAL. Only spaces are rejected (build\1static\1qt.py:185). Operator-supplied paths with & or quotes reach cmd and sh unquoted. The cmd-splitting consequence was not traced.
 
 - Confidence: medium
 - Kind: injection
@@ -2245,7 +2573,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build_static_qt.py:185` if " " in str(folder):
   - `tools/build_static_ffmpeg.py:217` f"cd '{posix(src)}'\n"
 
-### SEC-161 [low/data-integrity] No lock on the work folder for concurrent runs
+### SEC-161 [low/data-integrity] No lock on the work folder for concurrent runs — CONFIRMED
+
+- Verdict: CONFIRMED. No lock on the work folder. The rmtree of build (build\1static\1qt.py:202) and the shared .part (:79) collide.
 
 - Confidence: medium
 - Kind: race
@@ -2263,7 +2593,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: tools/build-jpeg-turbo.ps1:111 and tools/build-static-ffmpeg.ps1:215 Set-Content manifest.json; tools/profiling/pairing/keep.ps1:42 Set-Content; keep.ps1:55-56 python -I subprocess
 - Summary: Recursive deletes and moves are aimed at folders passed as parameters or derived from the repo root. docs/probes/win\1probe.ps1:1 takes -Dir (default target\pg-test\probe) and deletes its contents with Remove-Item -Force (lines 109, 141, 167). The probe scripts use CreateFileW through Add-Type P/Invoke.
 
-### SEC-162 [medium/data-integrity] Failed rmdir before Move-Item nests the new FFmpeg prefix in the stale one
+### SEC-162 [medium/data-integrity] Failed rmdir before Move-Item nests the new FFmpeg prefix in the stale one — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-153 in PowerShell: the rmdir result is ignored (build-static-ffmpeg.ps1:169) before Move-Item (:170).
 
 - Confidence: high
 - Kind: partial-write
@@ -2274,7 +2606,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build-static-ffmpeg.ps1:169` if (Test-Path $Prefix) { & cmd.exe /d /c "rmdir /s /q '"$Prefix'"" }
   - `tools/build-static-ffmpeg.ps1:170` Move-Item -LiteralPath $stagedPrefix -Destination $Prefix
 
-### SEC-163 [medium/data-integrity] Probe scripts resolve their test folder one level above the repo
+### SEC-163 [medium/data-integrity] Probe scripts resolve their test folder one level above the repo — CONFIRMED
+
+- Verdict: CONFIRMED. Join-Path from docs/probes with ..\..\.. resolves to D:\GitHub\target, outside the checkout (win\1probe.ps1:1, v1\1symlink.ps1:3, v1b\1junction.ps1:4).
 
 - Confidence: high
 - Kind: wrong-target
@@ -2287,7 +2621,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `docs/probes/v1_symlink.ps1:3` $testRoot = if ($env:PG\1TEST\1DIR) { $env:PG\1TEST\1DIR } else { Join-Path $PSScriptRoot '..\..\..\target\pg-test' }
   - `docs/probes/v1b_junction.ps1:4` $testRoot = if ($env:PG\1TEST\1DIR) { $env:PG\1TEST\1DIR } else { Join-Path $PSScriptRoot '..\..\..\target\pg-test' }
 
-### SEC-164 [medium/data-integrity] Recursive delete of a user-supplied work folder with no guard
+### SEC-164 [medium/data-integrity] Recursive delete of a user-supplied work folder with no guard — CONFIRMED
+
+- Verdict: CONFIRMED. oracle.ps1:57 and the other pairing scripts Remove-Item a user-given work folder recursively, with no check for the source catalog.
 
 - Confidence: high
 - Kind: missing-check
@@ -2301,7 +2637,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/sweep.ps1:40` if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
   - `tools/profiling/pairing/few_sweep.ps1:58` Remove-Item -LiteralPath $Work -Recurse -Force
 
-### SEC-165 [medium/data-integrity] Unchecked python exit codes let the oracle pass without owing any pairs
+### SEC-165 [medium/data-integrity] Unchecked python exit codes let the oracle pass without owing any pairs — CONFIRMED
+
+- Verdict: CONFIRMED. python exit codes are discarded with Out-Null (oracle.ps1:68, keep.ps1:55) and drop.py's result is not checked.
 
 - Confidence: medium
 - Kind: missing-check
@@ -2315,7 +2653,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/keep.ps1:56` python -I $dropPy $db
   - `tools/profiling/pairing/keep.ps1:57` $templates\1"$build$k"\1 = $db
 
-### SEC-166 [low/data-integrity] Owed count from set\1owed.py is discarded, so workload labels are not checked
+### SEC-166 [low/data-integrity] Owed count from set\1owed.py is discarded, so workload labels are not checked — CONFIRMED
+
+- Verdict: CONFIRMED. set\1owed.py's LIMIT can owe fewer pairs than requested (set\1owed.py:17), and the printed count is discarded (keep.ps1:55).
 
 - Confidence: medium
 - Kind: wrong-result
@@ -2327,7 +2667,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/keep.ps1:55` python -I (Join-Path $here 'set\1owed.py') $db $k \1 Out-Null
   - `tools/profiling/pairing/peak_mem.ps1:34` python -I $setOwed (Join-Path $Work 'catalog.sqlite') $n \1 Out-Null
 
-### SEC-167 [low/data-integrity] Deleting the old prefix before the new one is in place leaves no prefix on a crash
+### SEC-167 [low/data-integrity] Deleting the old prefix before the new one is in place leaves no prefix on a crash — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-153 and SEC-162: the old prefix is removed before the move (build-static-ffmpeg.ps1:169-170).
 
 - Confidence: high
 - Kind: crash-window
@@ -2338,7 +2680,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build-static-ffmpeg.ps1:169` if (Test-Path $Prefix) { & cmd.exe /d /c "rmdir /s /q '"$Prefix'"" }
   - `tools/build-static-ffmpeg.ps1:170` Move-Item -LiteralPath $stagedPrefix -Destination $Prefix
 
-### SEC-168 [low/data-integrity] Clean rebuild deletes the previous static libraries before the new build succeeds
+### SEC-168 [low/data-integrity] Clean rebuild deletes the previous static libraries before the new build succeeds — CONFIRMED
+
+- Verdict: CONFIRMED. build-jpeg-turbo.ps1:75 removes the prefix and link before the build. A failed build loses the last good output.
 
 - Confidence: high
 - Kind: crash-window
@@ -2349,7 +2693,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build-jpeg-turbo.ps1:75` if (Test-Path $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
   - `tools/build-jpeg-turbo.ps1:89` Invoke-Checked 'cmake configure' { & cmake @cmakeArgs \1\1 "$Work\logs\configure.log" }
 
-### SEC-169 [low/data-integrity] Leftover staged files from a crashed run are carried into the next prefix
+### SEC-169 [low/data-integrity] Leftover staged files from a crashed run are carried into the next prefix — CONFIRMED
+
+- Verdict: CONFIRMED. The staged folder is reused and not cleaned after a crash (build-static-ffmpeg.ps1:137). Latent with the same pin.
 
 - Confidence: medium
 - Kind: stale-output
@@ -2360,7 +2706,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/build-static-ffmpeg.ps1:137` $staged = Join-Path $Work 'staged'
   - `tools/build-static-ffmpeg.ps1:99` New-Item -ItemType Directory -Force -Path $Work, "$Work\logs", "$Work\test" \1 Out-Null
 
-### SEC-170 [low/data-integrity] Killed run leaves the system power plan capped at 99% with no record of the original
+### SEC-170 [low/data-integrity] Killed run leaves the system power plan capped at 99% with no record of the original — CONFIRMED
+
+- Verdict: CONFIRMED. PROCTHROTTLEMAX is set to 99 (keep.ps1:73-75). The restore is only in finally (:120), so a kill leaves it capped.
 
 - Confidence: high
 - Kind: crash-window
@@ -2371,7 +2719,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/keep.ps1:73` powercfg /setacvalueindex scheme\1current sub\1processor PROCTHROTTLEMAX 99
   - `tools/profiling/pairing/keep.ps1:120` if ($throttle) {
 
-### SEC-171 [low/data-integrity] Copying a WAL catalog without its -wal sidecar gives a stale snapshot
+### SEC-171 [low/data-integrity] Copying a WAL catalog without its -wal sidecar gives a stale snapshot — CONFIRMED
+
+- Verdict: CONFIRMED. Only catalog.sqlite is copied (keep.ps1:90, oracle.ps1:64), not the -wal file, and the catalog uses WAL (schema.rs:116).
 
 - Confidence: medium
 - Kind: partial-write
@@ -2382,7 +2732,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/keep.ps1:90` Copy-Item -LiteralPath $source (Join-Path $run 'catalog.sqlite')
   - `tools/profiling/pairing/oracle.ps1:64` Copy-Item -LiteralPath $Catalog $db
 
-### SEC-172 [low/data-integrity] Fixed scratch folder names let two concurrent runs delete each other's copies
+### SEC-172 [low/data-integrity] Fixed scratch folder names let two concurrent runs delete each other's copies — CONFIRMED
+
+- Verdict: CONFIRMED. Fixed scratch names (keep.ps1:35-36) collide between concurrent runs.
 
 - Confidence: medium
 - Kind: race
@@ -2393,7 +2745,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/keep.ps1:35` $base = Join-Path (\1IO.Path\1::GetTempPath()) 'pg\1keep'
   - `tools/profiling/pairing/keep.ps1:36` if (Test-Path $base) { Remove-Item -LiteralPath $base -Recurse -Force }
 
-### SEC-173 [low/data-integrity] A probe field missing from the output becomes 0 instead of failing the run
+### SEC-173 [low/data-integrity] A probe field missing from the output becomes 0 instead of failing the run — CONFIRMED
+
+- Verdict: CONFIRMED. A missing part becomes an empty string and then 0 (keep.ps1:104), and keep.py then reports it as below resolution (keep.py:126).
 
 - Confidence: medium
 - Kind: missing-check
@@ -2404,7 +2758,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/pairing/keep.ps1:104` foreach ($n in $parts) { $one\1$n\1 = \1int\1\1regex\1::Match($line, "\b$n (\d+)").Groups\11\1.Value }
   - `tools/profiling/pairing/keep.py:126` print(f"{workload}: {part} is 0 in some run, below the probe's resolution: not judged")
 
-### SEC-174 [low/data-integrity] Manifest written with a single non-atomic Set-Content
+### SEC-174 [low/data-integrity] Manifest written with a single non-atomic Set-Content — CONFIRMED
+
+- Verdict: CONFIRMED. Duplicate of SEC-156 for PowerShell: Set-Content writes manifest.json in place (build-jpeg-turbo.ps1:111, build-static-ffmpeg.ps1:215).
 
 - Confidence: high
 - Kind: partial-write
@@ -2422,7 +2778,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: eval/png-decoders/harness/harness.cpp:485 fwrite of decoded pixels; tools/profiling/callgraph/callgraph.cpp call-graph output; eval/\1.py bench writers (eval/bench\1thumbs.py, eval/bench\1decode.py, eval/verify.py)
 - Summary: Eval and profiling harnesses read a corpus of PNG and JPEG inputs (via directory walks and file lists) and write decoded output or reports to caller-named paths. They are developer tooling and not shipped with the app, but they decode untrusted corpus files with third-party C decoders.
 
-### SEC-175 [medium/data-integrity] Checkpoint resume appends onto a torn last line and glues two pairs together
+### SEC-175 [medium/data-integrity] Checkpoint resume appends onto a torn last line and glues two pairs together — CONFIRMED
+
+- Verdict: CONFIRMED. verify.py:865 appends after the last line with no newline check, and the next row glues onto a torn one.
 
 - Confidence: high
 - Kind: partial-write
@@ -2435,7 +2793,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/verify.py:874` self.\1writer.writerow(csv\1row(row))
   - `eval/verify.py:875` self.\1file.flush()
 
-### SEC-176 [medium/data-integrity] Stale checkpoint rows are reused for pair indexes after options change
+### SEC-176 [medium/data-integrity] Stale checkpoint rows are reused for pair indexes after options change — PARTIAL
+
+- Verdict: PARTIAL. Checkpoint rows are reused by pair index (verify.py:797-798). The checkpoint file name is built from prefix and model (:859), and whether prefix encodes the options was not checked.
 
 - Confidence: high
 - Kind: wrong-target
@@ -2448,7 +2808,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/verify.py:798` results\1pid\1 = row
   - `eval/verify.py:778` checkpoint = Checkpoint(prefix, args.model)
 
-### SEC-177 [medium/data-integrity] symbolize.py truncates the raw profile before writing its replacement
+### SEC-177 [medium/data-integrity] symbolize.py truncates the raw profile before writing its replacement — CONFIRMED
+
+- Verdict: CONFIRMED. open("w") truncates before the write (symbolize.py:336-337).
 
 - Confidence: high
 - Kind: crash-window
@@ -2459,7 +2821,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/callgraph/symbolize.py:336` with Path(path).open("w", encoding="utf-8", newline="\n") as f:
   - `tools/profiling/callgraph/symbolize.py:337` f.write("\n".join(out))
 
-### SEC-178 [medium/security] C harness sscanf reads past an unterminated .txt buffer
+### SEC-178 [medium/security] C harness sscanf reads past an unterminated .txt buffer — PARTIAL
+
+- Verdict: PARTIAL. The sscanf-past-end mechanism holds if the buffer has no terminator. Whether read\1file adds one was not found in harness.cpp.
 
 - Confidence: high
 - Kind: oob-read
@@ -2470,7 +2834,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/png-decoders/harness/harness.cpp:140` std::vector\1uint8\1t\1 txt;
   - `eval/png-decoders/harness/harness.cpp:143` if (std::sscanf(reinterpret\1cast\1const char\1\1(txt.data()), "%u %u %u %u", &w, &h, &c, &b) != 4) return false;
 
-### SEC-179 [medium/data-integrity] bench\1thumbs keeps all results in memory and writes them only at the very end
+### SEC-179 [medium/data-integrity] bench\1thumbs keeps all results in memory and writes them only at the very end — CONFIRMED
+
+- Verdict: CONFIRMED. Results are collected in memory and written only at line 376 (bench\1thumbs.py:344, 376).
 
 - Confidence: medium
 - Kind: lost-update
@@ -2482,7 +2848,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/bench_thumbs.py:375` report\1"sscd\1cosine"\1 = sscd\1reuse(files, heights)
   - `eval/bench_thumbs.py:376` (WORK\1DIR / "bench\1thumbs.json").write\1text(json.dumps(report, indent=1), encoding="utf-8")
 
-### SEC-180 [low/data-integrity] Same-stem inputs overwrite each other's dump outputs
+### SEC-180 [low/data-integrity] Same-stem inputs overwrite each other's dump outputs — CONFIRMED
+
+- Verdict: CONFIRMED. Stem-based names collide (png-decoders main.rs:102, 120; harness.cpp:482).
 
 - Confidence: high
 - Kind: wrong-target
@@ -2494,7 +2862,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/png-decoders/src/main.rs:120` std::fs::write(Path::new(dir).join(format!("{name}.raw")), &out)?;
   - `eval/png-decoders/harness/harness.cpp:482` const std::string path = dir + "/" + stem(args\1i\1) + "." + names()\1d\1 + ".raw";
 
-### SEC-181 [low/data-integrity] Result files are overwritten in place and not atomically
+### SEC-181 [low/data-integrity] Result files are overwritten in place and not atomically — CONFIRMED
+
+- Verdict: CONFIRMED. Reports and CSVs are rewritten in place (verify.py:883, bench\1decode.py:207, bench\1thumbs.py:376).
 
 - Confidence: high
 - Kind: partial-write
@@ -2507,7 +2877,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/bench_decode.py:207` (WORK\1DIR / "bench\1decode.json").write\1text(json.dumps(summary, indent=2), encoding="utf-8")
   - `eval/bench_thumbs.py:376` (WORK\1DIR / "bench\1thumbs.json").write\1text(json.dumps(report, indent=1), encoding="utf-8")
 
-### SEC-182 [low/data-integrity] bench\1thumbs cleanup deletes another run's live scratch folders
+### SEC-182 [low/data-integrity] bench\1thumbs cleanup deletes another run's live scratch folders — CONFIRMED
+
+- Verdict: CONFIRMED. The cleanup glob removes every thumbs\1\1 folder in CACHE\1DIR/tmp (bench\1thumbs.py:377-378).
 
 - Confidence: high
 - Kind: race
@@ -2518,7 +2890,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/bench_thumbs.py:377` for d in (CACHE\1DIR / "tmp").glob("thumbs\1\1"): # this process's and the workers'
   - `eval/bench_thumbs.py:378` shutil.rmtree(d, ignore\1errors=True)
 
-### SEC-183 [low/data-integrity] C dump's fwrite and fclose results are not checked, so a short write is reported as success
+### SEC-183 [low/data-integrity] C dump's fwrite and fclose results are not checked, so a short write is reported as success — CONFIRMED
+
+- Verdict: CONFIRMED. fwrite and fclose results are not checked (png-decoders harness.cpp:485-487).
 
 - Confidence: high
 - Kind: missing-check
@@ -2530,7 +2904,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/png-decoders/harness/harness.cpp:486` std::fclose(f);
   - `eval/png-decoders/harness/harness.cpp:487` std::printf("%s\n", path.c\1str());
 
-### SEC-184 [low/data-integrity] JPEG harness dump reports success without checking the PPM stream
+### SEC-184 [low/data-integrity] JPEG harness dump reports success without checking the PPM stream — CONFIRMED
+
+- Verdict: CONFIRMED. ofstream writes are not checked, and the function returns 0 (jpeg-decoders harness.cpp:206-210).
 
 - Confidence: high
 - Kind: missing-check
@@ -2542,7 +2918,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/jpeg-decoders/harness/harness.cpp:209` for (size\1t i = 0; i \1 size\1t(out.width) \1 out.height; i++) f.write(reinterpret\1cast\1const char\1\1(out.data + i \1 step), 3);
   - `eval/jpeg-decoders/harness/harness.cpp:210` return 0;
 
-### SEC-185 [low/data-integrity] Ignored PPM write failures in the JPEG encoder quality test
+### SEC-185 [low/data-integrity] Ignored PPM write failures in the JPEG encoder quality test — CONFIRMED
+
+- Verdict: CONFIRMED. write\1ppm's return value is discarded (test\1encoder.cpp:1019-1021).
 
 - Confidence: medium
 - Kind: missing-check
@@ -2553,7 +2931,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `eval/jpeg-encoder/test_encoder.cpp:1019` write\1ppm(base + "\1src.ppm", src\1i\1);
   - `eval/jpeg-encoder/test_encoder.cpp:943` return (bool)f;
 
-### SEC-186 [low/data-integrity] Callgraph profile writes ignore fclose and fprintf failures, and a truncated file is reported as written
+### SEC-186 [low/data-integrity] Callgraph profile writes ignore fclose and fprintf failures, and a truncated file is reported as written — CONFIRMED
+
+- Verdict: CONFIRMED. fclose and fprintf results are not checked (callgraph.cpp:390, 399-415).
 
 - Confidence: high
 - Kind: missing-check
@@ -2565,7 +2945,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `tools/profiling/callgraph/callgraph.cpp:399` FILE\1 f = fopen(path, "w");
   - `tools/profiling/callgraph/callgraph.cpp:415` fprintf(stderr, "callgraph: %llu instructions in %zu threads, written to %s.%d-\1\n", (unsigned long long)total,
 
-### SEC-187 [low/security] Inflate-only modes size their buffers from unchecked IHDR dimensions
+### SEC-187 [low/security] Inflate-only modes size their buffers from unchecked IHDR dimensions — CONFIRMED
+
+- Verdict: CONFIRMED. Buffers are sized from IHDR before inflate (png-decoders harness.cpp:358, 454, main.rs:375). The Rust-side bytes\116..26\1 claim was not checked.
 
 - Confidence: high
 - Kind: unbounded-alloc
@@ -2584,7 +2966,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Endpoint: crates/catalog/examples/pairs\1load\1probe.rs:108 and pairs\1write\1probe.rs:114 remove\1dir\1all(&dir)
 - Summary: Probe programs copy a user-named catalog into a work folder and remove that folder afterwards. Dev-only examples; the paths come from argv.
 
-### SEC-188 [low/data-integrity] Probe copies the catalog file without its -wal sidecar, or from a live catalog
+### SEC-188 [low/data-integrity] Probe copies the catalog file without its -wal sidecar, or from a live catalog — CONFIRMED
+
+- Verdict: CONFIRMED. The probes copy only the main file (pairs\1load\1probe.rs:84, pairs\1write\1probe.rs:80), with no -wal.
 
 - Confidence: high
 - Kind: race
@@ -2596,7 +2980,9 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
   - `crates/catalog/examples/pairs_write_probe.rs:80` std::fs::copy(source, &db).context("copy the catalog")?;
   - `crates/catalog/src/core.rs:55` /// Merge the WAL into the file, then close the connection (on drop, too, without the merge). The last connection
 
-### SEC-189 [low/data-integrity] Copy folder is removed only on the success path
+### SEC-189 [low/data-integrity] Copy folder is removed only on the success path — CONFIRMED
+
+- Verdict: CONFIRMED. The scratch folder is removed only on success (pairs\1load\1probe.rs:108). The error path skips it.
 
 - Confidence: high
 - Kind: leak

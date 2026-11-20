@@ -104,13 +104,15 @@ ModalOverlay {
         rowSelected(row);
     }
 
-    // Select `row` and bring it into view (a row past the list selects the nearest). Positioning first makes the row's
-    // delegate, at its row (the view applies the model's changes then).
+    // Select `row` and bring it into view (a row past the list selects the nearest). The selected row's delegate tells
+    // the panel its details, so the delegate must exist when the selection is made: forceLayout applies the model's
+    // changes and creates it now (a view that has not polished yet made it later, and a key in between saw no details).
     function moveTo(row: int) {
         if (list.count === 0)
             return;
         const at = Math.max(0, Math.min(list.count - 1, row));
         list.positionViewAtIndex(at, ListView.Contain);
+        list.forceLayout();
         select(at);
     }
 

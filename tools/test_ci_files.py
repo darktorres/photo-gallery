@@ -1,4 +1,4 @@
-"""Tests of the CI helpers (tools/ci): the GITHUB_ENV and GITHUB_PATH lines, the Pillow pin, and the pins: the Justfile is the
+"""Tests of the CI helpers (tools/ci): the GITHUB_ENV and GITHUB_PATH lines, the eval pins, and the pins: the Justfile is the
 one place a version is written, so CI's workflow holds no pinned literal and every consumer agrees with the Justfile."""
 
 import hashlib
@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from ci.github_files import env_line, path_line, pin_values
-from ci.pillow_pin import pin
+from ci.eval_pins import PACKAGES, REQUIREMENTS, pin
 from install_exiftool import install
 from pgtools import MSVC_TOOLSET, REPO, just_value
 
@@ -53,16 +53,31 @@ class PathLine(unittest.TestCase):
         self.assertEqual(path_line(absolute, Path("/work/repo")), absolute + "\n")
 
 
-class PillowPin(unittest.TestCase):
-    def test_finds_the_pin_among_the_other_lines(self):
-        text = "numpy==2.5.4\npillow==13.0.0\ntorch==2.8.0\n"
-        self.assertEqual(pin(text), "pillow==13.0.0")
+class EvalPins(unittest.TestCase):
+    def test_finds_each_pin_among_the_other_lines(self):
+        text = "torch==2.8.0\nnumpy==2.5.5\npillow==13.0.0\n"
+        self.assertEqual(pin(text, "numpy"), "numpy==2.5.5")
+        self.assertEqual(pin(text, "pillow"), "pillow==13.0.0")
 
     def test_no_pin_is_none(self):
-        self.assertIsNone(pin("numpy==2.5.4\n"))
+        self.assertIsNone(pin("pillow==13.0.0\n", "numpy"))
+
+    def test_another_package_whose_name_starts_with_it_is_not_it(self):
+        self.assertIsNone(pin("numpy-typing==1.0\n", "numpy"))
 
     def test_the_name_is_case_blind(self):
-        self.assertEqual(pin("Pillow==13.0.0\n"), "Pillow==13.0.0")
+        self.assertEqual(pin("Pillow==13.0.0\n", "pillow"), "Pillow==13.0.0")
+
+    def test_the_eval_requirements_pin_every_package_ci_installs(self):
+        text = REQUIREMENTS.read_text(encoding="utf-8")
+        for package in PACKAGES:
+            self.assertIsNotNone(pin(text, package), package)
+
+    def test_the_shots_requirements_agree_with_the_eval_pins(self):
+        eval_text = REQUIREMENTS.read_text(encoding="utf-8")
+        shots = (REPO / "tools" / "shots" / "requirements.txt").read_text(encoding="utf-8")
+        for package in PACKAGES:
+            self.assertEqual(pin(shots, package), pin(eval_text, package), package)
 
 
 class JustValue(unittest.TestCase):

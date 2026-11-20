@@ -26,7 +26,7 @@ arguments, where it has any.
 | `make_icon.py` | Makes the app icon from mascot 03, as a multi-size Windows icon | both | by hand, after changing the mascot |
 | `make_test_video.py` | The video reader's test input (`crates/video/tests/sample.mp4`), made with the FFmpeg on PATH | both | by hand |
 | `ci/github_files.py` | Writes `GITHUB_ENV` and `GITHUB_PATH` for the steps after it (the content keys, the FFmpeg `bin`) | CI | `.github/workflows/ci.yml` |
-| `ci/pillow_pin.py` | Installs the Pillow pin of `eval/requirements.txt` for CI's eval tests | CI | `.github/workflows/ci.yml` |
+| `ci/eval_pins.py` | Installs the Pillow and numpy pins of `eval/requirements.txt` for CI's eval tests | CI | `.github/workflows/ci.yml` |
 | `profiling/ci_setup.py` | The Linux system setup of CI: the apt packages, the FFmpeg and libclang links, Rust | Linux | `.github/workflows/ci.yml` |
 | `profiling/bench.py` | The callgrind benches of the committed HEAD, in the container | Linux (container) | `linux.py bench`, `perf_check.py` |
 | `profiling/bench_data.py` | The catalog benches' data, from a catalog folder; a `-large` layout gets its failure ledger seeded (`--ledger-rows`, 100,000 by default) | both | by hand, before `just perf` (`docs/reference/PROFILING.md`) |

@@ -201,11 +201,11 @@ jobs:
       - name: Python tools tests (stdlib unittest, tools/test_*.py)
         run: just test-tools
 
-      - name: Eval tools tests (stdlib unittest; the viewer imports Pillow)
+      - name: Eval tools tests (stdlib unittest; the viewer imports Pillow, the bench tests import numpy)
         run: |
-          # The Pillow pin is read from eval/requirements.txt, the one place it is written. The rest of that file is the
-          # GPU venv (torch, TensorRT, two extra indexes), which CI does not install.
-          python tools/ci/pillow_pin.py install
+          # The Pillow and numpy pins are read from eval/requirements.txt, the one place they are written. The rest of that
+          # file is the GPU venv (torch, TensorRT, two extra indexes), which CI does not install.
+          python tools/ci/eval_pins.py install
           just test-eval
 
       - name: Screenshot comparison against the newest committed reference

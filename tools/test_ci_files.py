@@ -12,8 +12,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from ci.github_files import env_line, path_line, pin_values
 from ci.eval_pins import PACKAGES, REQUIREMENTS, pin
+from ci.github_files import env_line, path_line, pin_values
 from install_exiftool import install
 from pgtools import MSVC_TOOLSET, REPO, just_value
 

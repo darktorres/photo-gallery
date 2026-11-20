@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "pg-codec"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "fast_image_resize",
@@ -376,14 +376,14 @@ dependencies = [
 
 [[package]]
 name = "pg-container"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "crc32fast",
 ]
 
 [[package]]
 name = "pg-edit"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image-webp",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "pg-metadata"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "miniz_oxide 0.9.1",
  "pg-container",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "pg-model"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "arrayvec",
  "blake3",

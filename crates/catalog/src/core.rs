@@ -17,6 +17,7 @@ use pg_dbfile::Schema;
 use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
 
+use crate::classify::{Action, Facts, RELEASED, Refusal, classify};
 use crate::error::{Error, Result};
 use crate::lease::HeldLease;
 use crate::lifecycle::{
@@ -133,15 +134,10 @@ impl<'a> Prepare<'a> {
                 &custom
             }
         };
+        // A later build's schema has no expected schema here: it is refused by `classify` below, before anything else.
         let why = match version {
             None => Some("not a database".to_string()),
-            Some(found) if found > current => {
-                return Err(Error::Other(anyhow!(
-                    "catalog {}: schema version {found}, which this build doesn't know (it has {current}): made by \
-                     another build",
-                    path.display()
-                )));
-            }
+            Some(found) if found > current => None,
             Some(found) if found == current => mismatch(&conn, found, current_schema)?,
             Some(found) => mismatch(&conn, found, &expected_for(set, found)?)?,
         };
@@ -155,17 +151,14 @@ impl<'a> Prepare<'a> {
         // A catalog whose `key_version` mark is another's (or missing) has its keys recomputed under the lock: a change.
         let key_text = key_version_text();
         let stored_key_version = meta_text(&conn, "key_version");
+        // What `classify` decides from the file's facts: a refusal is made before anything is written. A drift is carried
+        // only while nothing is released, and only from a catalog whose `key_version` says which keys its rows have.
+        let facts = Facts { version, current, drift: why.as_deref(), has_key_version: stored_key_version.is_some() };
+        if let Action::Refuse(refusal) = classify(&facts, RELEASED) {
+            return Err(refused(path, &conn, refusal));
+        }
         let key_stale =
             version.is_some_and(|found| found > 0) && stored_key_version.as_deref() != Some(key_text.as_str());
-        // A rebuild carries the rows, and the carry needs the mark to say which keys they have: a catalog that predates
-        // `key_version` and whose schema differs from this build's is refused, not carried.
-        if why.is_some() && version.is_some_and(|found| found > 0) && stored_key_version.is_none() {
-            return Err(Error::Other(anyhow!(
-                "catalog {}: its schema differs from this build's and it predates key_version: restore a .pre-v*.bak or \
-                 start fresh",
-                path.display()
-            )));
-        }
         let changes = why.is_some() || key_stale || version.is_some_and(|found| found != current);
         let exclusive = if memory { None } else { try_exclusive(path)? };
         if changes && !memory && exclusive.is_none() {
@@ -238,6 +231,11 @@ impl<'a> Prepare<'a> {
             );
         }
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
+        // The build that last changed the catalog is named by it, so a later refusal can say which build to open it with.
+        if changes {
+            conn.execute("UPDATE meta SET value = ?1 WHERE key = 'written_by'", [env!("CARGO_PKG_VERSION")])
+                .with_context(|| format!("catalog {}", path.display()))?;
+        }
         conn.execute_batch(SETTINGS)?;
         conn.release_memory()?;
         register(&conn)?;
@@ -247,6 +245,35 @@ impl<'a> Prepare<'a> {
         let live = if memory { None } else { Some(take_shared(path)?) };
         Ok(Catalog { conn, rules, rebuilt, _live: live })
     }
+}
+
+/// The error for a file `prepare` refuses (`classify`'s reason), with what the file says of the build that made it: the
+/// newer-schema case names it, so the user knows which build to open it with. Nothing here suggests deleting the file.
+fn refused(path: &Path, conn: &Connection, refusal: Refusal) -> Error {
+    let message = match refusal {
+        Refusal::NewerSchema { found, current } => {
+            let by = meta_text(conn, "written_by")
+                .filter(|b| !b.is_empty())
+                .map(|b| format!(" by build {b}"))
+                .unwrap_or_default();
+            format!(
+                "catalog {}: schema version {found}, which this build doesn't know (it has {current}): made by another \
+                 build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)",
+                path.display()
+            )
+        }
+        Refusal::Drift { found, why } => format!(
+            "catalog {}: its schema (version {found}) differs from this build's ({why}), and a released catalog is not \
+             rebuilt: restore a backup by hand (rename it over catalog.sqlite)",
+            path.display()
+        ),
+        Refusal::PredatesKeyVersion => format!(
+            "catalog {}: its schema differs from this build's and it predates key_version: restore a .pre-v*.bak or start \
+             fresh",
+            path.display()
+        ),
+    };
+    Error::Other(anyhow!(message))
 }
 
 impl Catalog {

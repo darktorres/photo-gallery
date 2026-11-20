@@ -26,6 +26,7 @@ pub mod pair;
 pub mod queue;
 
 mod borders;
+mod classify;
 mod convert;
 mod core;
 mod current;

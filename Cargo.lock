@@ -1616,7 +1616,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pg-analysis"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pdqhash",
@@ -1630,7 +1630,7 @@ dependencies = [
 
 [[package]]
 name = "pg-app"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-catalog",
@@ -1655,7 +1655,7 @@ dependencies = [
 
 [[package]]
 name = "pg-bench"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "gungraun",
  "pg-analysis",
@@ -1673,7 +1673,7 @@ dependencies = [
 
 [[package]]
 name = "pg-borders"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-analysis",
@@ -1686,7 +1686,7 @@ dependencies = [
 
 [[package]]
 name = "pg-catalog"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-analysis",
@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "pg-cli"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "clap",
@@ -1734,7 +1734,7 @@ dependencies = [
 
 [[package]]
 name = "pg-client"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "fluent-bundle",
  "pg-model",
@@ -1746,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "pg-codec"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "fast_image_resize",
@@ -1768,7 +1768,7 @@ dependencies = [
 
 [[package]]
 name = "pg-container"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "crc32fast",
  "proptest",
@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "pg-crop"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-catalog",
@@ -1792,7 +1792,7 @@ dependencies = [
 
 [[package]]
 name = "pg-dbfile"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-platform",
  "pg-testkit",
@@ -1801,14 +1801,14 @@ dependencies = [
 
 [[package]]
 name = "pg-dedup"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-model",
 ]
 
 [[package]]
 name = "pg-desktop"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "cxx",
@@ -1829,7 +1829,7 @@ dependencies = [
 
 [[package]]
 name = "pg-edit"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image-webp",
@@ -1846,7 +1846,7 @@ dependencies = [
 
 [[package]]
 name = "pg-exiftool"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-metadata",
@@ -1857,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "pg-gallery"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "dhat",
  "pg-cli",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "pg-import"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-analysis",
@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "pg-jobs"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "pg-jobs-testkit"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-jobs",
  "pg-model",
@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "pg-library"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image 0.25.10",
@@ -1932,7 +1932,7 @@ dependencies = [
 
 [[package]]
 name = "pg-log"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-model",
  "pg-platform",
@@ -1943,7 +1943,7 @@ dependencies = [
 
 [[package]]
 name = "pg-metadata"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "miniz_oxide 0.9.1",
  "pg-container",
@@ -1954,7 +1954,7 @@ dependencies = [
 
 [[package]]
 name = "pg-model"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -1967,7 +1967,7 @@ dependencies = [
 
 [[package]]
 name = "pg-perf"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-log",
  "pg-model",
@@ -1977,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "pg-platform"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "libc",
  "libloading 0.9.1",
@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "pg-query"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-model",
  "rusqlite",
@@ -1999,7 +1999,7 @@ dependencies = [
 
 [[package]]
 name = "pg-render"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-analysis",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "pg-scan"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-catalog",
@@ -2028,7 +2028,7 @@ dependencies = [
 
 [[package]]
 name = "pg-testkit"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image 0.25.10",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "pg-thumbcache"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-analysis",
@@ -2054,7 +2054,7 @@ dependencies = [
 
 [[package]]
 name = "pg-thumbs"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-analysis",
@@ -2074,14 +2074,14 @@ dependencies = [
 
 [[package]]
 name = "pg-trace"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-platform",
 ]
 
 [[package]]
 name = "pg-video"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "pg-writeback"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "pg-catalog",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "pg-yandex"
-version = "0.1.0"
+version = "0.1.0-dev"
 dependencies = [
  "pg-model",
  "serde_json",

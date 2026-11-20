@@ -246,7 +246,10 @@ fn refusal(bad: &[command_line::BadOption], out: &mut impl Write) -> i32 {
 /// in memory and lost with the process; the box is then the only record.
 #[expect(clippy::exit, reason = "the process ends here by design, after the message box")]
 fn fatal(message: &str) -> ! {
+    // Logged and printed: `error_box` is a no-op off Windows, so the message would otherwise be lost there.
     pg_log::error("startup", message);
+    // A console that can't take the line is no reason to skip the error box below.
+    let _ = writeln!(std::io::stderr(), "{message}");
     alert::error_box(message);
     std::process::exit(1);
 }

@@ -462,3 +462,4 @@ INSERT INTO meta(key, value) VALUES ('seq', 0);
 INSERT INTO meta(key, value) VALUES ('taken_zone', '');
 INSERT INTO meta(key, value) VALUES ('thumbs_version', 0);
 INSERT INTO meta(key, value) VALUES ('vacuum_owed', 0);
+INSERT INTO meta(key, value) VALUES ('written_by', '');

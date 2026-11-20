@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import shutil
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -20,6 +21,8 @@ from pgtools import REPO
 
 # A shared FFmpeg build has these headers; the check that the archive is one.
 HEADER = Path("include") / "libavcodec" / "avcodec.h"
+# The pin the build was fetched at, written beside it. The header alone says only that a build is there, not which.
+PIN_FILE = ".pin"
 CHUNK = 1 << 20
 
 
@@ -38,10 +41,29 @@ def download(url: str, target: Path) -> None:
     print(f"Downloading {url}", flush=True)
     if not url.startswith("https://"):
         sys.exit(f"the FFmpeg archive's URL is not https: {url}")
-    # An https URL, checked above: the pinned one, from the Justfile.
-    with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file:  # noqa: S310
-        shutil.copyfileobj(response, file, CHUNK)
+    try:
+        # An https URL, checked above: the pinned one, from the Justfile.
+        with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file:  # noqa: S310
+            shutil.copyfileobj(response, file, CHUNK)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            sys.exit(
+                f"the FFmpeg archive is not at {url} (404). BtbN removes its autobuilds after 14 days, except the last "
+                "build of each month, which it keeps for two years: repin the Justfile to a month-end build."
+            )
+        raise
     partial.replace(target)
+
+
+def installed_pin(dest: Path) -> str | None:
+    """The SHA-256 the build in `dest` was fetched at; None when no pin is recorded there."""
+    record = dest / PIN_FILE
+    return record.read_text(encoding="utf-8").strip() if record.is_file() else None
+
+
+def is_installed(dest: Path, sha256: str) -> bool:
+    """Whether `dest` holds a usable build fetched at `sha256`."""
+    return (dest / HEADER).is_file() and installed_pin(dest) == sha256
 
 
 def entry_parts(name: str) -> tuple[str, ...]:
@@ -71,19 +93,24 @@ def main() -> None:
     args = parser.parse_args()
 
     dest = (REPO / args.destination).resolve()
-    if (dest / HEADER).is_file():
-        print(f"FFmpeg is already in {dest}: nothing to do (delete the folder to fetch it again).")
+    wanted = args.sha256.lower()
+    if is_installed(dest, wanted):
+        print(f"FFmpeg is already in {dest} at this pin: nothing to do.")
         return
+    if (dest / HEADER).is_file():
+        held = installed_pin(dest)
+        was = f"was fetched at {held}" if held else "has no pin recorded"
+        print(f"FFmpeg in {dest} {was}: replacing it with the pin {wanted}.")
 
     downloads = REPO / ".deps" / "downloads"
     downloads.mkdir(parents=True, exist_ok=True)
     zip_path = downloads / PurePosixPath(urllib.parse.urlsplit(args.url).path).name
     # A download left from an earlier run is used if it is intact; otherwise it is fetched again.
-    if not (zip_path.is_file() and sha256_of(zip_path) == args.sha256.lower()):
+    if not (zip_path.is_file() and sha256_of(zip_path) == wanted):
         zip_path.unlink(missing_ok=True)
         download(args.url, zip_path)
         actual = sha256_of(zip_path)
-        if actual != args.sha256.lower():
+        if actual != wanted:
             zip_path.unlink()
             sys.exit(
                 f"the FFmpeg archive has SHA-256 {actual}, but the pin is {args.sha256}: the download was deleted "
@@ -102,7 +129,7 @@ def main() -> None:
         except ValueError as error:
             sys.exit(str(error))
         archive.extractall(extract)
-    # Only a partial or older copy is replaced: the header check above found no usable build here.
+    # A partial build, or one at another pin, is replaced: the check above found no build here at this pin.
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -111,7 +138,8 @@ def main() -> None:
 
     if not (dest / HEADER).is_file():
         sys.exit("the archive has no include/libavcodec/avcodec.h: it is not a shared FFmpeg build")
-    print(f"FFmpeg is in {dest}.")
+    (dest / PIN_FILE).write_text(wanted + "\n", encoding="utf-8")
+    print(f"FFmpeg is in {dest}, at the pin {wanted}.")
 
 
 if __name__ == "__main__":

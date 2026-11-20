@@ -104,14 +104,17 @@ pub fn canonical_of(path: &Path) -> Vec<u8> {
     }
 }
 
-/// `path` under `rules`, exactly, the verbatim prefix dropped (`\\?\D:\a.` is `D:\a.`: the catalog keeps the plain
-/// bytes, and [`disk_path`] puts the prefix back). `None` when it has no path form under them (a NUL, which no name
-/// holds). The command line takes a catalog's rules; the app's are the native ones ([`rule_path_of`]).
+/// `path` as typed, under `rules`: its bytes with the verbatim prefix dropped (`\\?\D:\a.` is `D:\a.`: the catalog keeps the
+/// plain bytes, and [`disk_path`] puts the prefix back). It is not the catalog's spelling of a folder: real case and
+/// 8.3 names are not resolved, so another spelling of the same folder gives another path. For the catalog's, use
+/// [`normalize_path`]. `None` when it has no path form under `rules` (a NUL, which no name holds). The command line takes
+/// a catalog's rules; the app's are the native ones ([`rule_path_of`]).
 pub fn rule_path_in(rules: PathRules, path: &Path) -> Option<RulePath> {
     rules.parse_bytes(&without_verbatim(canonical_of(path)))
 }
 
-/// [`rule_path_in`] the native rules.
+/// [`rule_path_in`] the native rules, as typed (see there: for the catalog's spelling, [`normalize_path`]).
+#[expect(clippy::disallowed_methods, reason = "the typed spelling itself: rule_path_in is its one definition")]
 pub fn rule_path_of(path: &Path) -> Option<RulePath> {
     rule_path_in(crate::native::PATH_RULES, path)
 }
@@ -171,7 +174,38 @@ impl std::error::Error for NormalizeError {
 pub fn normalize_path(root: &Path) -> Result<RulePath, NormalizeError> {
     let real = real_path(root).map_err(|error| NormalizeError::Unreadable { path: root.to_path_buf(), error })?;
     // Trailing and doubled separators are dropped by the parse.
-    rule_path_of(&real).ok_or(NormalizeError::NotAPath { path: real })
+    #[expect(clippy::disallowed_methods, reason = "the real path is already the catalog's spelling")]
+    let parsed = rule_path_of(&real);
+    parsed.ok_or(NormalizeError::NotAPath { path: real })
+}
+
+/// The folder as the disk spells it, for a folder that may not exist yet (a path typed for a folder to be made): the
+/// longest part that does exist is resolved ([`normalize_path`]), and the rest is taken as typed. Errors when the path
+/// has no path form under the native rules, or when the part that exists can't be opened.
+pub fn real_path_lenient(folder: &Path) -> Result<RulePath, NormalizeError> {
+    let mut missing = Vec::new();
+    let mut existing = folder;
+    while !existing.exists() {
+        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else { break };
+        missing.push(name);
+        existing = parent;
+    }
+    if !existing.exists() {
+        return typed_path(folder).ok_or(NormalizeError::NotAPath { path: folder.to_path_buf() });
+    }
+    let mut real = normalize_path(existing)?;
+    if !missing.is_empty() {
+        let tail: PathBuf = missing.iter().rev().collect();
+        let tail_path = typed_path(&tail).ok_or_else(|| NormalizeError::NotAPath { path: folder.to_path_buf() })?;
+        real.parts.extend(tail_path.parts);
+    }
+    Ok(real)
+}
+
+/// `path` taken as typed, for the parts of a path that no file system holds yet: nothing of them is there to resolve.
+#[expect(clippy::disallowed_methods, reason = "the parts that do not exist are taken as typed")]
+fn typed_path(path: &Path) -> Option<RulePath> {
+    rule_path_of(path)
 }
 
 /// The real path of an existing folder, as the catalog keys it: its names in the case the file system stores them, and
@@ -249,6 +283,7 @@ fn pick_stored<F: FnOnce() -> Option<(u64, u64)>>(
 }
 
 #[cfg(test)]
+#[expect(clippy::disallowed_methods, reason = "the tests check the typed spelling against the catalog's")]
 mod tests {
     use super::*;
 

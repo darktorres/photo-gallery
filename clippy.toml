@@ -18,6 +18,11 @@ disallowed-types = [
 
 # Test scratch goes through pg_testkit::run_folder, which owns its folder (pg-platform's testing module). The one read of
 # the temp folder is there, with its expect; any other use would make a folder no cleanup owns.
+# A path as typed is not the catalog's spelling of a folder (real case and 8.3 names are not resolved), and a comparison
+# of a typed path with the catalog's paths fails for another spelling of the same folder. The catalog's spelling is
+# pg_platform::names::normalize_path; a call of the typed one says why it is the path it means (an #[expect] at the call).
 disallowed-methods = [
     { path = "std::env::temp_dir", reason = "test scratch goes through pg_testkit::run_folder, which owns its folders" },
+    { path = "pg_platform::names::rule_path_in", reason = "the path as typed, not as the catalog spells it: use normalize_path" },
+    { path = "pg_platform::names::rule_path_of", reason = "the path as typed, not as the catalog spells it: use normalize_path" },
 ]

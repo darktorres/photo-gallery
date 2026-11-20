@@ -172,8 +172,9 @@ impl Timing {
 }
 
 /// Read each item's file, run `process(state, i, bytes)` (with per-worker state from `init`), and call
-/// `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on
-/// `ctl`, and reading waits while `ctl` is paused.
+/// `sink(i, result, bytes read)` in completion order. `sink` returning false ends the pass at once. A stop request on
+/// `ctl` ends the reading, and the pass ends once the results of the items in flight are sunk: the items not yet started
+/// are dropped unrun, and reading waits while `ctl` is paused.
 ///
 /// `read(item, wide)` says how the item is read ([`Read`]); for a file, it writes the path into `wide`, the reader's
 /// buffer, reused from file to file, so no path is made per file.
@@ -221,6 +222,8 @@ where
     let next = AtomicUsize::new(0);
     // The items the readers handed to the workers, to check that each came back with a result.
     let sent = AtomicUsize::new(0);
+    // The items a stopped pass dropped unrun: each was sent, and has no result.
+    let dropped = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
     let budget = opts.budget.clone().unwrap_or_else(|| Arc::new(Budget::new(opts.buffer_bytes)));
     let pool = Pool::with_budget(budget, opts.slots);
@@ -277,7 +280,7 @@ where
 
         for _ in 0..opts.workers {
             let (raw_rx, res_tx) = (raw_rx.clone(), res_tx.clone());
-            let (init, process, timing) = (&init, &process, timing);
+            let (init, process, timing, stop, dropped) = (&init, &process, timing, &stop, &dropped);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
                 // A worker whose setup failed (or panicked) sends its error, and stops.
@@ -293,6 +296,12 @@ where
                     let waiting = Instant::now();
                     let Ok((i, read, streamed)) = raw_rx.recv() else { break };
                     timing.work_wait.add(waiting);
+                    // A stopped pass runs nothing it has not started: the item's buffer goes back to the pool (`read` drops
+                    // here), and the item has no result.
+                    if stop.load(Ordering::SeqCst) {
+                        dropped.fetch_add(1, Ordering::SeqCst);
+                        continue;
+                    }
                     let (out, len, rebuild) = match read {
                         Ok(lease) => {
                             let len = lease.bytes.len().saturating_add(streamed);
@@ -330,6 +339,7 @@ where
         // The receiver is this closure's: an early return drops it, which ends the workers' waits before the scope joins them.
         let results = res_rx;
         let mut received = 0usize;
+        let mut halted = false;
         loop {
             let waiting = Instant::now();
             let Ok(outcome) = results.recv() else { break };
@@ -342,14 +352,25 @@ where
             let working = Instant::now();
             let go_on = sink(i, out, len)?;
             timing.sink.add(working);
-            if !go_on || ctl.stop_requested() {
+            if !go_on {
                 return Ok(());
             }
+            // A stop ends the reading, and the results still due are sunk: the items in flight finish, their results
+            // included, and the queued ones are dropped. The loop goes on until the workers have ended.
+            if !halted && ctl.stop_requested() {
+                halted = true;
+                halt(&stop, &pool, ctl);
+            }
         }
-        // Every worker has ended, and every reader before them: what was sent is final.
+        // Every worker has ended, and every reader before them: what was sent is final, and each item has a result or was
+        // dropped by a stopped pass.
         let sent = sent.load(Ordering::SeqCst);
-        if received < sent {
-            anyhow::bail!("the workers ended with {} of the {sent} items read and no result for them", sent - received);
+        let dropped = dropped.load(Ordering::SeqCst);
+        if received + dropped < sent {
+            anyhow::bail!(
+                "the workers ended with {} of the {sent} items read and no result for them",
+                sent - received - dropped
+            );
         }
         Ok(())
     })
@@ -369,6 +390,9 @@ pub struct Batch {
 /// write. The writer takes a batch only when it is waiting for one; while it is busy the kept results keep growing
 /// (commits coalesce), and the counting waits only when twice the batch size is kept. So at most three batches' worth
 /// of results are held: the writer's, the one kept, and the one at its limit.
+///
+/// A stop request on `ctl` ends the pass as [`run`] does: the results of the items in flight are counted and kept, and
+/// then written.
 ///
 /// `flush` returns false to stop the pass: the writer then discards what is queued, and the pass ends after the
 /// results counted are written. An error or a panic of `flush` ends the pass, which loses what is queued and kept; so
@@ -628,15 +652,21 @@ fn read_the_rest<'p>(
     Some(file.read_to_end(&mut lease.bytes).map(|_| lease))
 }
 
-/// Ends the pass: tells the readers, the pool, and the readers paused at a checkpoint (which look at the stop under
-/// the pause lock, so the wake can't come between their check and their wait).
+/// Stops the reading of a pass: the readers stop at their next checkpoint, a reader waiting for the pool stops waiting,
+/// and the readers paused at a checkpoint (which look at the stop under the pause lock, so the wake can't come between
+/// their check and their wait). The workers then drop what they have not started.
+fn halt(stop: &AtomicBool, pool: &Pool, ctl: &Control) {
+    stop.store(true, Ordering::SeqCst);
+    pool.stop();
+    ctl.wake();
+}
+
+/// Ends the pass when the scope's closure returns (done, stopped, an error from `sink`, or a sink that said stop).
 struct StopOnDrop<'a>(&'a AtomicBool, &'a Pool, &'a Control);
 
 impl Drop for StopOnDrop<'_> {
     fn drop(&mut self) {
-        self.0.store(true, Ordering::SeqCst);
-        self.1.stop();
-        self.2.wake();
+        halt(self.0, self.1, self.2);
     }
 }
 
@@ -1049,6 +1079,89 @@ mod tests {
         .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         (results, inits.into_inner())
+    }
+
+    /// A stop asked while item 5 is processed ends the reading, and the pass sinks every item that ran: item 5's result
+    /// too, which lands after the quick items' (it sleeps first). Nothing that had not started runs.
+    #[test]
+    fn a_stop_sinks_the_items_in_flight_and_runs_no_more() {
+        let (dir, items) = numbered_files("pg-pipeline-stop", 40);
+        let opts = Options {
+            readers: 2,
+            workers: 4,
+            slots: 8,
+            buffer_bytes: 1 << 20,
+            budget: None,
+            priority: Priority::Normal,
+        };
+        let ctl = Control::new();
+        let ran = Mutex::new(Vec::new());
+        let sunk = Mutex::new(Vec::new());
+        run(
+            &items,
+            |(_, p), wide| {
+                wide.set(&[&units(p)]);
+                Read::File
+            },
+            &opts,
+            &ctl,
+            || Ok(()),
+            |_, i, _| {
+                ran.lock().unwrap().push(i);
+                if i == 5 {
+                    ctl.request_stop();
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
+                Ok(i)
+            },
+            |i, out, _| {
+                out.unwrap();
+                sunk.lock().unwrap().push(i);
+                Ok(true)
+            },
+        )
+        .unwrap();
+        let mut ran = ran.into_inner().unwrap();
+        let mut sunk = sunk.into_inner().unwrap();
+        ran.sort_unstable();
+        sunk.sort_unstable();
+        assert_eq!(sunk, ran, "every item that ran has its result sunk");
+        assert!(sunk.contains(&5), "the item the stop was asked in has its result");
+        assert!(ran.len() < items.len(), "the items not started were not run");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A sink that says stop ends the pass at once: it is not called again, and nothing is drained after it.
+    #[test]
+    fn a_sink_that_says_stop_is_not_called_again() {
+        let (dir, items) = numbered_files("pg-pipeline-sink-stop", 20);
+        let opts = Options {
+            readers: 2,
+            workers: 2,
+            slots: 4,
+            buffer_bytes: 1 << 20,
+            budget: None,
+            priority: Priority::Normal,
+        };
+        let calls = AtomicUsize::new(0);
+        run(
+            &items,
+            |(_, p), wide| {
+                wide.set(&[&units(p)]);
+                Read::File
+            },
+            &opts,
+            &Control::new(),
+            || Ok(()),
+            |_, i, _| Ok(i),
+            |_, _, _| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(false)
+            },
+        )
+        .unwrap();
+        assert_eq!(calls.into_inner(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -27,7 +27,8 @@ MSYS2 is expected at `C:\tools\msys64`. Visual Studio Build Tools 18 (2026) is e
 also used CMake 4.4.4, Ninja 1.13.2, NASM 3.02 and Python 3.12.10.
 
 The pinned FFmpeg in `.deps/ffmpeg` (`just setup`, the BtbN `gpl-shared` build) is a MinGW build
-(`--target-os=mingw32`, from `ffmpeg -buildconf`). It cannot be linked into the MSVC app, which is why the static
+(`--target-os=mingw32`, from `ffmpeg -buildconf`). Its pin is a month-end BtbN build, at the commit above; `just lint`
+checks both (`tools/check_ffmpeg_pin.py`), and the build folder records the pin it was fetched at (`.pin`). It cannot be linked into the MSVC app, which is why the static
 FFmpeg is rebuilt with MSVC. Its DLLs still work through `libloading`, since they use the plain C ABI.
 
 ## One libjpeg for the whole process

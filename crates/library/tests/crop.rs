@@ -307,6 +307,55 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
     }
 }
 
+/// A stop asked while the first original is about to be written (in `present`, which the pass asks before each one) ends
+/// the pass with every original it rewrote recorded as cut: the in-flight writes are not lost, the files not started are
+/// `remaining`, and no file is both.
+#[test]
+fn a_stop_during_a_cut_records_every_original_it_rewrote() {
+    if exiftool_missing() {
+        return;
+    }
+    let dir = pg_testkit::run_folder_with("scratch_rate", "cut-stop", &["images/sub"]).unwrap();
+    let files = make_files(&dir).unwrap();
+    let (c, found) = library_with_borders(&dir);
+    let ctl = Control::new();
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
+    let originals: Vec<Vec<u8>> = files.iter().map(|p| std::fs::read(p).unwrap()).collect();
+
+    let asked = std::sync::atomic::AtomicBool::new(false);
+    let present = |_: FileId| {
+        if !asked.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            ctl.request_stop();
+        }
+        true
+    };
+    let s = pg_crop::cut(&c, &all, true, &opts, &ctl, &present).unwrap();
+
+    let rewritten: Vec<&(i64, String)> = found
+        .iter()
+        .filter(|(_, name)| {
+            let i = files
+                .iter()
+                .position(|p| Path::new(p).file_name().unwrap().to_string_lossy().into_owned() == *name)
+                .unwrap();
+            std::fs::read(&files[i]).unwrap() != originals[i]
+        })
+        .collect();
+    assert!(!rewritten.is_empty(), "the first original was written past the stop");
+    for (id, name) in rewritten {
+        assert!(s.cut.contains(&FileId::new(*id)), "{name}: rewritten, but not recorded as cut");
+        assert!(c.crop_source(FileId::new(*id), &mut PathArena::default()).unwrap().is_none(), "{name}: still to cut");
+    }
+    assert_eq!(s.cut.len(), s.saved, "every saved original is recorded");
+    assert!(s.remaining.iter().all(|id| !s.cut.contains(id)), "no file is both cut and remaining");
+    assert_eq!(
+        s.saved + s.skipped + s.unsupported + s.failed + s.remaining.len(),
+        all.len(),
+        "every file is accounted for"
+    );
+}
+
 /// A file a folder's removal takes away while the pass runs is not written: the pass counts it as skipped, its original
 /// is left as it was, and the others are cut.
 #[test]

@@ -84,6 +84,24 @@ pub fn skip(reason: &str) {
     eprintln!("skipped: {reason}");
 }
 
+/// `path` spelled with the 8.3 short names its parts have on their volume (`GetShortPathNameW`): a spelling a path typed by
+/// hand can be, and the one a temp folder's long name gets when short names are on. `None` when no part of it has a short
+/// name (short names off on the volume, or none made), so there is no other spelling to test.
+#[cfg(windows)]
+pub fn short_path(path: &Path) -> Option<PathBuf> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let long: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut buf = vec![0u16; 32_768];
+    let capacity = u32::try_from(buf.len()).ok()?;
+    // SAFETY: `long` ends in a NUL, and `buf` holds `capacity` units, the length the call is told.
+    let len = unsafe { GetShortPathNameW(long.as_ptr(), buf.as_mut_ptr(), capacity) };
+    let len = usize::try_from(len).ok().filter(|&len| len > 0 && len < buf.len())?;
+    buf.truncate(len);
+    let short = PathBuf::from(std::ffi::OsString::from_wide(&buf));
+    (!short.as_os_str().eq_ignore_ascii_case(path.as_os_str())).then_some(short)
+}
+
 /// `dir` with its forward slashes made the native separator. On Windows this is done on the UTF-16 units, so every other
 /// unit is kept, a lone surrogate included. On Unix a forward slash is already the separator: the path is kept as it is.
 #[cfg(windows)]

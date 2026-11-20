@@ -53,6 +53,8 @@ def main() -> None:
     # The crate boundaries (tools/boundaries.py): the crate layers, acyclic dev edges, re-exports, and the platform rule
     # (the OS calls and branches are in pg-platform).
     run([sys.executable, str(Path(__file__).resolve().parent / "boundaries.py")])
+    # The FFmpeg pin: a month-end build BtbN has not dropped, at the commit the static build uses (tools/check_ffmpeg_pin.py).
+    run([sys.executable, str(Path(__file__).resolve().parent / "check_ffmpeg_pin.py")])
     print("lint: every step passed")
 
 

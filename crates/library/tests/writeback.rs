@@ -1103,6 +1103,61 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     quiet.check();
 }
 
+/// A folder whose removal was begun, with nothing waiting to be written, and added again: the add finishes the removal
+/// first, and then adds the folder.
+#[test]
+fn an_add_over_a_pending_removal_finishes_it_and_adds_the_folder() {
+    let (dir, _files, catalog_path, c) = imported("addfinish").unwrap();
+    let images = dir.join("images");
+    let root = c.roots().unwrap().remove(0);
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    let mut finishes = 0;
+    let added = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
+        finishes += 1;
+        pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true)
+    })
+    .unwrap();
+    assert_eq!(finishes, 1, "the removal was finished once");
+    let finished = added.finished.expect("the removal finished first");
+    assert!(finished.driven.files > 0, "its files were deleted");
+    assert!(added.new, "the folder is added again");
+    assert!(c.removal_markers().unwrap().is_empty());
+    let roots = c.roots().unwrap();
+    assert_eq!(roots.len(), 1);
+    assert!(c.rules().same(&roots[0].path, &added.root));
+    drop(c);
+    quiet.check();
+}
+
+/// A folder whose removal is kept for a change still waiting to be written (here the folder is still there, and the
+/// writer is not running): the add finishes what it can, and adds nothing.
+#[test]
+fn an_add_over_a_removal_kept_for_a_write_adds_nothing() {
+    let (dir, _files, catalog_path, c) = imported("addkept").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
+    std::fs::copy(on_disk(&c, &db_path), on_disk(&c, &temp)).unwrap();
+    state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
+    let images = dir.join("images");
+    let root = c.roots().unwrap().remove(0);
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    let refused = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
+        pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true)
+    });
+    match refused {
+        Err(pg_library::folders::AddFinishError::StillPending(finished)) => {
+            assert_eq!(finished.driven.deferred, 1, "the file with the change is kept");
+        }
+        other => panic!("expected the removal still pending, got {other:?}"),
+    }
+    assert_eq!(c.removal_markers().unwrap().len(), 1, "the removal is still pending");
+    assert!(c.roots().unwrap().is_empty(), "nothing was added");
+    drop(c);
+    quiet.check();
+}
+
 /// A folder removed while a change to one of its files still waits for the writer, and the folder is not where it was
 /// (an unplugged drive, here moved away): the removal keeps that file's row and its temp, the writer keeps the change
 /// queued, and only the user's discard gives the change up (with its temp).

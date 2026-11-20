@@ -8,7 +8,7 @@
 # Inputs from outside the repository, and what each one is pinned to:
 #   - Qt (the Justfile's qt_version; msvc2022_64 on Windows), installed by jurplel/install-qt-action under QT_INSTALL_ROOT.
 #     The pins step sets QT_DIR to that kit, as a developer's .env does.
-#   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01): pinned in the Justfile, which `just setup` fetches and
+#   - FFmpeg 9.0 shared build, GPL (BtbN's month-end autobuild, the Justfile's ffmpeg_url): pinned in the Justfile, which `just setup` fetches and
 #     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
 #   - ExifTool at the Justfile's pins: Chocolatey's package (exiftool_version) on Windows, the release's source archive
 #     (exiftool_source_*, tools/install_exiftool.py) on Linux. The rest of the Linux packages are in docker/apt-packages.txt.
@@ -101,7 +101,7 @@ jobs:
       - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
         run: python tools/ci/github_files.py env PG_DESKTOP_CONTENT_KEY "${{ hashFiles('crates/desktop/**') }}"
 
-      - name: FFmpeg archive and build (cached; keyed on the Justfile, which holds the pin)
+      - name: FFmpeg archive and build (cached; keyed on the pin's SHA-256, which the pins step exports)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           # The extracted build too: pg-video's build script reruns when its include folder is newer than its last run, and
@@ -109,7 +109,7 @@ jobs:
           path: |
             .deps/downloads
             .deps/ffmpeg
-          key: ffmpeg-${{ hashFiles('Justfile') }}
+          key: ffmpeg-${{ env.FFMPEG_SHA256 }}
 
       - name: FFmpeg (the pinned shared build, for pg-video and its tests)
         # `just setup` checks the archive against the pin before it unpacks anything, so a mismatch fails here and nothing
@@ -173,7 +173,8 @@ jobs:
         run: just modgraph
 
       - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
-        run: just test
+        # --no-fail-fast: a red run names every failing test, not the first test binary's (cargo stops at that one otherwise).
+        run: just test --no-fail-fast
 
       - name: QML tests
         run: just qmltest
@@ -316,7 +317,8 @@ jobs:
         run: just modgraph
 
       - name: Tests (the whole workspace)
-        run: just test
+        # --no-fail-fast: a red run names every failing test, not the first test binary's (cargo stops at that one otherwise).
+        run: just test --no-fail-fast
 
       # A crash in the QML tests (a SIGSEGV in Qt Multimedia, seen on this job) leaves a core file: the kernel writes it
       # to this folder, set here because this runner's default hands cores to systemd-coredump. The failure steps below

@@ -68,6 +68,8 @@ def pin_values() -> list[tuple[str, str]]:
         ("QT_DIR", qt_dir),
         ("AQTINSTALL_COMMIT", just_value("aqtinstall_commit")),
         ("EXIFTOOL_VERSION", just_value("exiftool_version")),
+        # The FFmpeg archive's SHA-256: the FFmpeg cache's key, so a new pin is a new cache.
+        ("FFMPEG_SHA256", just_value("ffmpeg_sha256")),
         (
             "TAIKI_TOOLS",
             ",".join(

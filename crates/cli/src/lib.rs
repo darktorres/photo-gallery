@@ -15,7 +15,7 @@ mod report;
 
 use pg_client::text::cli::{Line, line};
 use pg_client::text::{self, Message};
-use pg_library::folders::AddError;
+use pg_library::folders::{AddError, AddFinishError, Finished};
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
@@ -160,6 +160,14 @@ fn say(l: &Line) {
     println!("{}", line(l));
 }
 
+/// What finishing a removal over a folder deleted, and what it kept for an unfinished write.
+fn say_finished(finished: &Finished) {
+    say(&Line::Removed { root: finished.folder.clone(), deleted: finished.driven.files.to_string() });
+    if finished.driven.deferred > 0 {
+        say(&Line::RemovalKept { root: finished.folder.clone(), deferred: finished.driven.deferred.to_string() });
+    }
+}
+
 /// Seconds as the command line shows them: one decimal.
 /// The Hashes pass, and its report: the files stored without their duplicate hashes, made now (`hashes::hash`), and how
 /// many of them stored.
@@ -283,50 +291,44 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let mut added = Vec::new();
                 for root in roots {
                     // A removal over this folder (begun, or kept for an unfinished write) is finished first: an add over it
-                    // is refused until then.
-                    let over: Vec<RulePath> = match pg_platform::names::rule_path_in(rules, &root) {
-                        Some(rule_root) => catalog
-                            .removal_markers()?
-                            .into_iter()
-                            .map(|m| m.path)
-                            .filter(|m| {
-                                rules.same(m, &rule_root)
-                                    || rules.is_under(&rule_root, m)
-                                    || rules.is_under(m, &rule_root)
-                            })
-                            .collect(),
-                        // Not a path the library can hold: the add says so.
-                        None => Vec::new(),
-                    };
-                    if let Some(first) = over.first() {
+                    // is refused until then. Its thumbnails are opened only for that finish.
+                    let mut finish = || -> Result<pg_catalog::Driven> {
                         let (events, printer) = thumb_events();
                         let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                         let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
                         drop(cache);
                         let _ = printer.join();
-                        let driven = driven?;
-                        say(&Line::Removed { root: rules.display(first), deleted: driven.files.to_string() });
-                        if driven.deferred > 0 {
-                            say(&Line::RemovalKept {
-                                root: rules.display(first),
-                                deferred: driven.deferred.to_string(),
-                            });
-                        }
-                    }
-                    match pg_library::folders::add_folder(&catalog, &root) {
-                        Ok((root, new)) => {
-                            if !new {
-                                let notice = Notice::FolderAlreadyAdded { folder: root.clone() };
+                        driven
+                    };
+                    match pg_library::folders::add_folder_finishing(&catalog, &root, &mut finish) {
+                        Ok(added_folder) => {
+                            if let Some(finished) = &added_folder.finished {
+                                say_finished(finished);
+                            }
+                            if !added_folder.new {
+                                let notice = Notice::FolderAlreadyAdded { folder: added_folder.root.clone() };
                                 println!("{}", text::render(&Message::NoticeTitle { notice, rules }));
                             }
-                            added.push(root);
+                            added.push(added_folder.root);
                         }
-                        // A refused folder is not added; the other folders still are.
-                        Err(AddError::Refused { folder, reason }) => {
-                            println!("{}", text::notice_line(&Notice::FolderRefused { folder, reason }, rules));
+                        Err(AddFinishError::Add { error, finished }) => {
+                            if let Some(finished) = &finished {
+                                say_finished(finished);
+                            }
+                            match error {
+                                // A refused folder is not added; the other folders still are.
+                                AddError::Refused { folder, reason } => {
+                                    println!("{}", text::notice_line(&Notice::FolderRefused { folder, reason }, rules));
+                                }
+                                AddError::Path(e) => bail!(path_words(&e)),
+                                AddError::Catalog(e) => return Err(e.into()),
+                            }
                         }
-                        Err(AddError::Path(e)) => bail!(path_words(&e)),
-                        Err(AddError::Catalog(e)) => return Err(e.into()),
+                        Err(AddFinishError::StillPending(finished)) => {
+                            say_finished(&finished);
+                            return Err(pg_catalog::Error::RemovalPending { path: finished.folder }.into());
+                        }
+                        Err(AddFinishError::Finish(e)) => return Err(e),
                     }
                 }
                 added
@@ -395,8 +397,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Remove { root, discard_pending: true } => {
             let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
-                Err(_) => pg_platform::names::rule_path_in(rules, &root)
-                    .ok_or_else(|| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
+                Err(_) => pg_platform::names::real_path_lenient(&root)
+                    .map_err(|_| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
             };
             let name = rules.display(&root);
             let Some(discarded) = catalog.discard_removal(&root)? else {
@@ -417,12 +419,12 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             say(&Line::Removed { root: name, deleted: discarded.rows.to_string() });
         }
         Command::Remove { root, discard_pending: false } => {
-            // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
-            // the catalog's, and the catalog says whether it is a library folder.
+            // A folder deleted from disk can't be normalized, and it is the one to remove: its real part is resolved and the
+            // rest taken as typed, which is the catalog's spelling, and the catalog says whether it is a library folder.
             let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
-                Err(_) => pg_platform::names::rule_path_in(rules, &root)
-                    .ok_or_else(|| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
+                Err(_) => pg_platform::names::real_path_lenient(&root)
+                    .map_err(|_| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
             };
             let name = rules.display(&root);
             // A removal begun by an earlier run (its marker left, the folder already out of the list) is finished here.
@@ -900,7 +902,31 @@ mod tests {
     /// removal first, then adds the folder and scans it.
     #[test]
     fn gallery_scan_finishes_a_removal_over_the_folder_first() {
+        readd_over_a_removal_typed_as(|folder| Some(folder.to_path_buf()));
+    }
+
+    /// The same, the folder typed with a `..` that goes out of it and back in: a spelling of the same folder.
+    #[test]
+    fn gallery_scan_finishes_a_removal_typed_with_dot_dot() {
+        readd_over_a_removal_typed_as(|folder| Some(folder.join("..").join(folder.file_name()?)));
+    }
+
+    /// The same, the folder typed by its 8.3 short name: the spelling the failing run had, from a temp folder with a long
+    /// name on a volume with short names. Skipped where the volume has none.
+    #[cfg(windows)]
+    #[test]
+    fn gallery_scan_finishes_a_removal_typed_by_its_short_name() {
+        readd_over_a_removal_typed_as(pg_platform::testing::short_path);
+    }
+
+    /// A folder added again over a removal begun and left unfinished (as a stopped app leaves one), typed as `spelling`
+    /// gives it: the scan finishes the removal first, then adds the folder and scans it.
+    fn readd_over_a_removal_typed_as(spelling: impl Fn(&Path) -> Option<PathBuf>) {
         let dir = pg_testkit::run_folder_with("scratch_cli", "cli-readd", &["a", "catalog"]).unwrap();
+        let Some(typed) = spelling(&dir.join("a")) else {
+            pg_testkit::skip("this volume gives the folder no other spelling: short names are off");
+            return;
+        };
         std::fs::write(dir.join("a").join("1.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
         let catalog_dir = dir.join("catalog").to_string_lossy().into_owned();
         let gallery = |args: &[&str]| {
@@ -920,7 +946,7 @@ mod tests {
         assert_eq!(catalog.removal_markers().unwrap().len(), 1);
         drop(catalog);
 
-        run_command(gallery(&["scan", &a]), &Control::new()).unwrap();
+        run_command(gallery(&["scan", &typed.to_string_lossy()]), &Control::new()).unwrap();
 
         let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
         assert!(catalog.removal_markers().unwrap().is_empty(), "the removal was finished first");

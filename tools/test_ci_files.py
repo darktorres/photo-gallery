@@ -27,6 +27,7 @@ PINNED = {
     "aqtinstall_commit": just_value("aqtinstall_commit"),
     "exiftool_version": just_value("exiftool_version"),
     "exiftool_source_sha256": just_value("exiftool_source_sha256"),
+    "ffmpeg_sha256": just_value("ffmpeg_sha256"),
 }
 
 
@@ -104,6 +105,11 @@ class Pins(unittest.TestCase):
         self.assertEqual(values["QT_DIR"], f"C:\\Qt\\{PINNED['qt_version']}\\msvc2022_64")
         self.assertEqual(values["QT_INSTALL_ROOT"], "C:\\")
         self.assertNotIn("QMAKE", values)
+
+    def test_the_ffmpeg_checksum_is_exported_as_the_cache_key(self):
+        # The FFmpeg cache's key is this value (ci.yml), so a new pin is a new cache.
+        self.assertRegex(PINNED["ffmpeg_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(dict(pin_values())["FFMPEG_SHA256"], PINNED["ffmpeg_sha256"])
 
     def test_the_linux_kit_is_under_the_runner_temp_folder(self):
         qt = PINNED["qt_version"]

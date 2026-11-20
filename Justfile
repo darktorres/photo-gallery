@@ -11,9 +11,11 @@ set dotenv-load := true
 set windows-shell := ["cmd.exe", "/d", "/c"]
 
 # The pinned third-party build `just setup` fetches: BtbN's GPL shared build of FFmpeg 9.0 (the release's asset, and its
-# SHA-256 as GitHub's digest). CI runs `just setup` too, so these are the only place the pin is written.
-ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-19-12-39/ffmpeg-n9.0.2-58-g8c7ef49002-win64-gpl-shared-9.0.zip"
-ffmpeg_sha256 := "08f4d6542510d35710631e1475e72f1a2e731700f35a701c84d7479893a7aa96"
+# SHA-256 as GitHub's digest). CI runs `just setup` too, so these are the only place the pin is written. BtbN keeps only
+# the last build of each month, for two years, so the pin is a month-end build (`just lint` checks it: tools/check_ffmpeg_pin.py),
+# and it is the commit tools/build_static_ffmpeg.py builds from.
+ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
+ffmpeg_sha256 := "1d9823c35c7a7e2f54d1438cf61030d6efabe3278de01c191309d1e828bb74df"
 
 # The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
 py := env('PG_PYTHON', if os() == "windows" { "python" } else { "python3" })
@@ -29,9 +31,9 @@ default:
     @just --list
 
 # The pinned FFmpeg (the two values above) is downloaded once, checked against its SHA-256, and unpacked to .deps/ffmpeg.
-# To move to another pin, delete .deps/ffmpeg and change the two values.
+# A build there at another pin (its .pin file) is replaced when the pin changes.
 
-# Fetch the pinned FFmpeg into .deps/ffmpeg (tools/setup_ffmpeg.py), unless it is already there.
+# Fetch the pinned FFmpeg into .deps/ffmpeg (tools/setup_ffmpeg.py), unless that pin is already there.
 setup:
     {{ py }} tools/setup_ffmpeg.py --url {{ ffmpeg_url }} --sha256 {{ ffmpeg_sha256 }} --destination .deps/ffmpeg
 

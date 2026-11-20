@@ -546,7 +546,12 @@ impl Search {
         self.changes.publish(());
         // A preferences file that can't be written keeps the folder in memory for this run; the save goes on. The app
         // reports that failure through its notes when it can be reported.
-        if let Some(chosen) = rule_path_of(&folder) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the folder the user picked, kept as they gave it: the preference has always been that"
+        )]
+        let chosen = rule_path_of(&folder);
+        if let Some(chosen) = chosen {
             let _ = prefs.update(|p| p.yandex_folder = Some(chosen));
         }
         let shared = self.shared.clone();

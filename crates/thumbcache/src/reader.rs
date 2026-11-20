@@ -168,12 +168,7 @@ mod checkpoint_tests {
         use pg_model::ids::FolderId;
         let dir = pg_testkit::run_folder("scratch_thumbs", "checkpoint-plan").unwrap();
         let catalog = dir.join("catalog.sqlite");
-        let versions = pg_catalog::Versions {
-            import: pg_analysis::analyze::IMPORT_VERSION,
-            borders: pg_analysis::borders::BORDERS_VERSION,
-            thumbs: 1,
-            pairing: pg_model::pdq::PAIRING_VERSION,
-        };
+        let versions = pg_catalog::Versions::current();
         let c = pg_catalog::Catalog::prepare(&catalog, versions, pg_model::rules::PathRules::Windows).unwrap();
         pg_catalog::fixture::state::add_scan(&c, 1, "D:\\p").unwrap();
         pg_catalog::fixture::state::add_folder(&c, 1, "D:\\p").unwrap();

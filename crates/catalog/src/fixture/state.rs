@@ -23,13 +23,15 @@ pub fn add_folder(c: &Catalog, id: i64, path: &str) -> Result<()> {
     Ok(())
 }
 
-/// An analysis row at version 1 for every file, with no pixel data: a stub for the tests that only need the row
-/// (the thumbnail pass reads its size, mtime, rotation and kind).
+/// An analysis row at this build's import version for every file, with no pixel data: a stub for the tests that only need
+/// the row (the thumbnail pass reads its size, mtime, rotation and kind). At the registry's version, so the import doesn't
+/// find it owed.
 pub fn stub_analysis_of_all(c: &Catalog) -> Result<()> {
-    c.conn.execute_batch(
+    c.conn.execute_batch(&format!(
         "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed)
-             SELECT id, 1, size, mtime, rotation, kind, 0 FROM files;",
-    )?;
+             SELECT id, {}, size, mtime, rotation, kind, 0 FROM files;",
+        pg_model::versions::IMPORT_VERSION
+    ))?;
     let ids: Vec<i64> =
         c.conn.prepare("SELECT id FROM files")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     for id in ids {

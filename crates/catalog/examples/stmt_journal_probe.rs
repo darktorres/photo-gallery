@@ -261,12 +261,7 @@ fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> 
 }
 
 fn versions() -> Versions {
-    Versions {
-        import: pg_analysis::analyze::IMPORT_VERSION,
-        borders: pg_analysis::borders::BORDERS_VERSION,
-        thumbs: pg_render::THUMBS_VERSION,
-        pairing: pg_model::pdq::PAIRING_VERSION,
-    }
+    Versions::current()
 }
 
 fn remove(conn: &Connection, removed: Removed) -> Result<()> {

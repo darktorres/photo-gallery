@@ -5,7 +5,6 @@ use crate::browse::fixtures::spelled;
 use crate::fixture::{self, raw};
 use crate::{Catalog, Prior, Recorded, ScanLease, ScannedFile, Versions, WorkItem, queue};
 use pg_analysis::analyze::IMPORT_VERSION;
-use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::{Analysis, ImageFacts, Media, Taken};
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
@@ -19,12 +18,7 @@ use std::path::Path;
 
 /// The versions this build's analyses are stamped with, as the library passes them to [`Catalog::prepare`].
 pub(crate) fn versions() -> Versions {
-    Versions {
-        import: IMPORT_VERSION,
-        borders: BORDERS_VERSION,
-        thumbs: pg_render::THUMBS_VERSION,
-        pairing: pg_model::pdq::PAIRING_VERSION,
-    }
+    Versions::current()
 }
 
 /// A path under `rules`, from its text as the tests write it, in the Windows form (`D:\p\sub`), which [`spelled`]

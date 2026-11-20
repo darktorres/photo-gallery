@@ -580,12 +580,7 @@ mod tests {
     }
 
     fn catalog(rules: PathRules) -> Catalog {
-        Catalog::prepare(
-            std::path::Path::new(":memory:"),
-            Versions { import: 1, borders: 1, thumbs: 1, pairing: pg_model::pdq::PAIRING_VERSION },
-            rules,
-        )
-        .unwrap()
+        Catalog::prepare(std::path::Path::new(":memory:"), Versions::current(), rules).unwrap()
     }
 
     /// A walk of D:\x begun, its lease kept (`test_support::begin`: the tests begin walks one after another).

@@ -469,17 +469,8 @@ mod tests {
             std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         }
         let catalog_path = dir.join("catalog.sqlite");
-        let mut c = Catalog::prepare(
-            &catalog_path,
-            pg_catalog::Versions {
-                import: pg_analysis::analyze::IMPORT_VERSION,
-                borders: pg_analysis::borders::BORDERS_VERSION,
-                thumbs: pg_render::THUMBS_VERSION,
-                pairing: pg_model::pdq::PAIRING_VERSION,
-            },
-            pg_platform::native::PATH_RULES,
-        )
-        .unwrap();
+        let mut c =
+            Catalog::prepare(&catalog_path, pg_catalog::Versions::current(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
         // The ledger's changes the pass announces (`Control::ledger_changed`).
         let announced = Arc::new(AtomicUsize::new(0));
@@ -809,11 +800,6 @@ mod tests {
     }
 
     fn versions() -> pg_catalog::Versions {
-        pg_catalog::Versions {
-            import: pg_analysis::analyze::IMPORT_VERSION,
-            borders: pg_analysis::borders::BORDERS_VERSION,
-            thumbs: pg_render::THUMBS_VERSION,
-            pairing: pg_model::pdq::PAIRING_VERSION,
-        }
+        pg_catalog::Versions::current()
     }
 }

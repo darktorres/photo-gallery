@@ -1488,7 +1488,7 @@ mod tests {
     }
 
     fn versions() -> pg_catalog::Versions {
-        pg_catalog::Versions { import: 1, borders: 1, thumbs: 1, pairing: pg_model::pdq::PAIRING_VERSION }
+        pg_catalog::Versions::current()
     }
 
     /// One scan of the fake tree into a catalog, under the catalog's rules.
@@ -2001,7 +2001,8 @@ mod tests {
         // The bump is made while sub is listed, so both batches are written after it.
         let hook_path = path.clone();
         let mut lister = FakeListing::new(1, &tree).on_listing("sub", move || {
-            let bumped = pg_catalog::Versions { import: 2, ..versions() };
+            // One newer than this build's: the import's version is bumped while the walk lists.
+            let bumped = pg_catalog::Versions { import: pg_model::versions::IMPORT_VERSION + 1, ..versions() };
             drop(Catalog::prepare(&hook_path, bumped, pg_platform::native::PATH_RULES).unwrap());
         });
         let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();

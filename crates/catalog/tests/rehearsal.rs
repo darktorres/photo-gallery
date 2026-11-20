@@ -19,12 +19,7 @@ use rusqlite::{Connection, OpenFlags};
 
 /// The versions the library passes for this build's analyses (`pg_library::versions`).
 fn versions() -> Versions {
-    Versions {
-        import: pg_analysis::analyze::IMPORT_VERSION,
-        borders: pg_analysis::borders::BORDERS_VERSION,
-        thumbs: pg_render::THUMBS_VERSION,
-        pairing: pg_model::pdq::PAIRING_VERSION,
-    }
+    Versions::current()
 }
 
 /// The row count of every table in the file, read without changing it.

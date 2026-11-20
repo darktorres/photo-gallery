@@ -48,17 +48,7 @@ pub(crate) fn spelled(rules: PathRules, windows: &str) -> String {
 /// format, rating). POSIX rules have one root, so there the second drive's file is in the first drive's folder (the
 /// merged folder is the same either way, and every merged result reads alike); the two drives are a Windows fixture.
 pub(crate) fn library(rules: PathRules) -> crate::core::Catalog {
-    let c = crate::core::Catalog::prepare(
-        std::path::Path::new(":memory:"),
-        crate::Versions {
-            import: pg_analysis::analyze::IMPORT_VERSION,
-            borders: pg_analysis::borders::BORDERS_VERSION,
-            thumbs: 1,
-            pairing: pg_model::pdq::PAIRING_VERSION,
-        },
-        rules,
-    )
-    .unwrap();
+    let c = crate::core::Catalog::prepare(std::path::Path::new(":memory:"), crate::Versions::current(), rules).unwrap();
     let second: i64 = if rules == PathRules::Windows { 2 } else { 1 };
     crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
     crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\p")).unwrap();

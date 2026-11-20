@@ -16,6 +16,10 @@ pub(crate) struct Cli {
     // Named explicitly: the field is `catalog_dir_arg`, and the flag is `--catalog-dir` (README, the screenshot script).
     #[arg(long = "catalog-dir", env = "PG_CATALOG_DIR")]
     catalog_dir_arg: Option<PathBuf>,
+    /// Make the catalog folder when it doesn't exist. The default folder (`catalog` under the data folder) is made without
+    /// it; another folder that is missing is refused, since it is most likely a drive that isn't connected.
+    #[arg(long)]
+    pub(crate) create: bool,
     #[command(subcommand)]
     pub(crate) command: Command,
 }

@@ -26,6 +26,32 @@ pub fn openable_folder(folder: &Path, aliases: &Path) -> io::Result<PathBuf> {
     }
 }
 
+/// The most UTF-16 units a path may have on Windows, the terminating NUL included (`MAX_PATH`). SQLite takes a Windows path
+/// as it is, without the `\\?\` prefix that lifts this limit for the standard library, so the files it makes beside a
+/// catalog must fit under it too.
+const WINDOWS_MAX_PATH: usize = 260;
+
+/// Whether a path of `path_units` UTF-16 units, with a file name of `name_units` added to it, fits the limit SQLite
+/// opens Windows paths under. Pure, so the boundary is tested on every platform.
+pub fn units_fit(path_units: usize, name_units: usize) -> bool {
+    path_units.saturating_add(name_units) < WINDOWS_MAX_PATH
+}
+
+/// Whether `path`, with the longest name the catalog makes beside it (`name`) added, fits what SQLite can open: on Unix
+/// always; on Windows the [`units_fit`] limit, which the standard library's long-path prefix does not lift for SQLite.
+pub fn fits_beside(path: &Path, name: &str) -> bool {
+    #[cfg(unix)]
+    {
+        let _ = (path, name);
+        true
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        units_fit(path.as_os_str().encode_wide().count(), name.encode_utf16().count())
+    }
+}
+
 /// The file name SQLite is given for an ATTACH of `path`, a path SQLite opens (under an [`openable_folder`]): on Unix
 /// the path's own bytes, which SQLite takes as they are; on Windows its UTF-8 (an error for a path with none). Bound as
 /// a BLOB, so no text conversion is made.
@@ -340,5 +366,18 @@ mod tests {
         let aliases = std::path::Path::new("/nonexistent/aliases");
         assert_eq!(openable_folder(&folder, aliases).unwrap(), folder);
         assert!(!aliases.exists());
+    }
+}
+
+#[cfg(test)]
+mod length_tests {
+    use super::units_fit;
+
+    /// The limit is `MAX_PATH` less its NUL: a path and a name whose units sum to 259 fit, 260 do not.
+    #[test]
+    fn a_path_with_its_longest_name_fits_up_to_259_units() {
+        assert!(units_fit(259 - 35, 35));
+        assert!(!units_fit(260 - 35, 35));
+        assert!(units_fit(0, 0));
     }
 }

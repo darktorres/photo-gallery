@@ -17,13 +17,13 @@ use pg_dbfile::Schema;
 use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::classify::{Action, Facts, RELEASED, Refusal, classify};
-use crate::error::{Error, Result};
+use crate::classify::{Action, Facts, LONGEST_NAME_SUFFIX, RELEASED, classify};
+use crate::error::{Error, Refusal, Result};
 use crate::lease::HeldLease;
 use crate::lifecycle::{
-    MarkChange, check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, meta_text, set_borders_version,
-    set_import_version, set_key_version, set_pairing_version, set_taken_zone, set_thumbs_version, take_lock,
-    take_shared, try_exclusive, vacuum_if_owed,
+    MarkChange, check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, meta_text, refuse_read_only,
+    set_borders_version, set_import_version, set_key_version, set_pairing_version, set_taken_zone, set_thumbs_version,
+    take_lock, take_shared, try_exclusive, vacuum_if_owed,
 };
 use crate::progress::{FreeSpace, NO_PROGRESS, Phase, Progress};
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
@@ -121,6 +121,11 @@ impl<'a> Prepare<'a> {
         progress.phase(Phase::Check);
         let set = schemas.unwrap_or(&SCHEMA);
         let memory = path == Path::new(":memory:");
+        // A path too long for its files is refused before the lock file or the database is named: SQLite would fail on it
+        // with no words for why. It is a fact of the path, not of the file, so it is not `classify`'s.
+        if !memory && !pg_platform::sqlite::fits_beside(path, LONGEST_NAME_SUFFIX) {
+            return Err(Error::Refused { path: path.display().to_string(), reason: Box::new(Refusal::PathTooLong) });
+        }
         let _lock = if memory { None } else { Some(take_lock(path)?) };
         let current = version_in(set)?;
         let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
@@ -134,32 +139,44 @@ impl<'a> Prepare<'a> {
                 &custom
             }
         };
-        // A later build's schema has no expected schema here: it is refused by `classify` below, before anything else.
-        let why = match version {
-            None => Some("not a database".to_string()),
+        // How the file's schema compares with the one this build expects for its version. A later build's schema has none
+        // here, and a file that is not a database has no version: `classify` decides those, not this comparison.
+        let drift = match version {
+            None => None,
             Some(found) if found > current => None,
             Some(found) if found == current => mismatch(&conn, found, current_schema)?,
             Some(found) => mismatch(&conn, found, &expected_for(set, found)?)?,
         };
-        // A catalog of this build's schema whose paths were stored under other rules is refused before anything is
-        // written to it: its migrations would convert its rows under these rules (a rebuild checks them itself).
-        if why.is_none() && version.is_some_and(|found| found > 0) {
-            check_rules(&conn, path, rules)?;
-        }
         // The lock order of a change: the exclusive hold first, kept through the change. Without it a change is refused
         // before anything is moved; a catalog that needs no change is held shared, below, as any open catalog is.
         // A catalog whose `key_version` mark is another's (or missing) has its keys recomputed under the lock: a change.
         let key_text = key_version_text();
         let stored_key_version = meta_text(&conn, "key_version");
-        // What `classify` decides from the file's facts: a refusal is made before anything is written. A drift is carried
+        // What `classify` decides from the file's facts. A refusal is made before anything is written; a drift is carried
         // only while nothing is released, and only from a catalog whose `key_version` says which keys its rows have.
-        let facts = Facts { version, current, drift: why.as_deref(), has_key_version: stored_key_version.is_some() };
-        if let Action::Refuse(refusal) = classify(&facts, RELEASED) {
-            return Err(refused(path, &conn, refusal));
+        let facts = Facts { version, current, drift: drift.as_deref(), has_key_version: stored_key_version.is_some() };
+        let action = match classify(&facts, RELEASED) {
+            Action::Refuse(refusal) => return Err(refused(path, &conn, refusal)),
+            action => action,
+        };
+        // A catalog of this build's schema whose paths were stored under other rules is refused before anything is
+        // written to it: its migrations would convert its rows under these rules (a rebuild checks them itself).
+        if matches!(action, Action::Open | Action::Upgrade { .. }) {
+            check_rules(&conn, path, rules)?;
         }
+        let why = match &action {
+            Action::MoveAsideThenCreate => Some("not a database".to_string()),
+            Action::RebuildCarry { why } => Some(why.clone()),
+            _ => None,
+        };
         let key_stale =
             version.is_some_and(|found| found > 0) && stored_key_version.as_deref() != Some(key_text.as_str());
         let changes = why.is_some() || key_stale || version.is_some_and(|found| found != current);
+        // A catalog marked read-only is not changed: refused by name before the hold is taken (the lock file may be made
+        // beside it, but nothing of the catalog is).
+        if changes && !memory && std::fs::metadata(path).is_ok_and(|m| m.permissions().readonly()) {
+            return Err(refuse_read_only(path));
+        }
         let exclusive = if memory { None } else { try_exclusive(path)? };
         if changes && !memory && exclusive.is_none() {
             return Err(in_use(path));
@@ -181,7 +198,11 @@ impl<'a> Prepare<'a> {
         // A catalog of this build's schema at an earlier version is copied aside before it is migrated (a rebuilt one
         // was: the old file is kept as it was).
         let mut upgraded_from = None;
-        if let Some(found) = version.filter(|&found| rebuilt.is_none() && found > 0 && found < current && !memory) {
+        let upgrade = match action {
+            Action::Upgrade { from } if !memory => Some(from),
+            _ => None,
+        };
+        if let Some(found) = upgrade {
             ensure_room_to_migrate(path, free_space)?;
             progress.phase(Phase::Backup);
             back_up(&conn, path, found)?;
@@ -247,33 +268,16 @@ impl<'a> Prepare<'a> {
     }
 }
 
-/// The error for a file `prepare` refuses (`classify`'s reason), with what the file says of the build that made it: the
-/// newer-schema case names it, so the user knows which build to open it with. Nothing here suggests deleting the file.
+/// The error for a file `prepare` refuses (`classify`'s reason). A newer schema names the build that last changed the file
+/// (`meta.written_by`), so the user knows which build to open it with; nothing suggests deleting the file.
 fn refused(path: &Path, conn: &Connection, refusal: Refusal) -> Error {
-    let message = match refusal {
-        Refusal::NewerSchema { found, current } => {
-            let by = meta_text(conn, "written_by")
-                .filter(|b| !b.is_empty())
-                .map(|b| format!(" by build {b}"))
-                .unwrap_or_default();
-            format!(
-                "catalog {}: schema version {found}, which this build doesn't know (it has {current}): made by another \
-                 build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)",
-                path.display()
-            )
+    let refusal = match refusal {
+        Refusal::NewerSchema { found, current, .. } => {
+            Refusal::NewerSchema { found, current, written_by: meta_text(conn, "written_by") }
         }
-        Refusal::Drift { found, why } => format!(
-            "catalog {}: its schema (version {found}) differs from this build's ({why}), and a released catalog is not \
-             rebuilt: restore a backup by hand (rename it over catalog.sqlite)",
-            path.display()
-        ),
-        Refusal::PredatesKeyVersion => format!(
-            "catalog {}: its schema differs from this build's and it predates key_version: restore a .pre-v*.bak or start \
-             fresh",
-            path.display()
-        ),
+        other => other,
     };
-    Error::Other(anyhow!(message))
+    Error::Refused { path: path.display().to_string(), reason: Box::new(refusal) }
 }
 
 impl Catalog {

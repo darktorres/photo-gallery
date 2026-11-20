@@ -5,7 +5,7 @@
 use std::io;
 
 use pg_model::refusal::{Fact, RefusedReason};
-use pg_platform::dir::{DriveType, ROOT_CHECK, RootCheck, RootFacts, SystemFacts};
+use pg_platform::dir::{DriveType, FsKind, ROOT_CHECK, RootCheck, RootFacts, SystemFacts, fs_kind};
 use pg_platform::names::units_of;
 use pg_platform::native::{SEP, Unit};
 
@@ -92,59 +92,22 @@ fn same_path(a: &[Unit], b: &[Unit]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| fold(*x) == fold(*y))
 }
 
-/// The Linux check: the file system's type, refused by [`FS_TYPES`].
+/// The Linux check: the file system's type, refused by [`fs_kind`].
 fn check_fs(path: &[Unit]) -> Result<(), RefusedReason> {
     let f_type = pg_platform::dir::fs_type(path).map_err(|e| unreadable(Fact::FileSystem, &e))?;
     check_fs_type(f_type)
 }
 
-/// A file system the Linux check refuses, by kind.
-#[derive(Clone, Copy)]
-enum Refused {
-    Nfs,
-    Smb,
-    Fat,
-    ExFat,
-    /// A pseudo file system, by its name.
-    Pseudo(&'static str),
-}
-
-/// The `f_type` magic numbers refused. The network file systems (kernel `uapi/linux/magic.h`) hand out inode numbers
-/// from the server. FAT (`vfat` and `msdos`, which share `MSDOS_SUPER_MAGIC`) and exFAT store no inode numbers: the
-/// kernel derives each from where the entry is found while the volume is mounted, so a file's number is not the same
-/// after the volume is mounted again, and the catalog would see every file as new. The pseudo file systems are the
-/// kernel's own entries, not files: a scan of `/proc` reads process state, and `/sys`'s entries are attributes. The
-/// numbers of the pseudo ones were read with `stat -f` on the kernel this was built on (7.0). `devtmpfs` is not here:
-/// it reports tmpfs's number, which is accepted.
-const FS_TYPES: &[(i64, Refused)] = &[
-    (0x6969, Refused::Nfs),
-    (0x517B, Refused::Smb),
-    (0xFF53_4D42, Refused::Smb),
-    (0xFE53_4D42, Refused::Smb),
-    (0x4D44, Refused::Fat),
-    (0x2011_BAB0, Refused::ExFat),
-    (0x9FA0, Refused::Pseudo("proc")),
-    (0x6265_6572, Refused::Pseudo("sysfs")),
-    (0x1CD1, Refused::Pseudo("devpts")),
-    (0x6367_7270, Refused::Pseudo("cgroup2")),
-    (0x6462_6720, Refused::Pseudo("debugfs")),
-    (0x7472_6163, Refused::Pseudo("tracefs")),
-    (0x7363_6673, Refused::Pseudo("securityfs")),
-    (0xCAFE_4A11, Refused::Pseudo("bpf")),
-    (0x6165_676C, Refused::Pseudo("pstore")),
-    (0x6265_6570, Refused::Pseudo("configfs")),
-];
-
 /// Refuses the network, FAT and pseudo file systems by their `f_type`; every other type is accepted, including `9p`
 /// (WSL's drvfs).
 fn check_fs_type(f_type: i64) -> Result<(), RefusedReason> {
-    let Some((_, refused)) = FS_TYPES.iter().find(|(magic, _)| *magic == f_type) else { return Ok(()) };
-    Err(match *refused {
-        Refused::Nfs => RefusedReason::Nfs,
-        Refused::Smb => RefusedReason::Smb,
-        Refused::Fat => RefusedReason::Fat,
-        Refused::ExFat => RefusedReason::ExFat,
-        Refused::Pseudo(name) => RefusedReason::Pseudo { file_system: name.to_string() },
+    let Some(kind) = fs_kind(f_type) else { return Ok(()) };
+    Err(match kind {
+        FsKind::Nfs => RefusedReason::Nfs,
+        FsKind::Smb => RefusedReason::Smb,
+        FsKind::Fat => RefusedReason::Fat,
+        FsKind::ExFat => RefusedReason::ExFat,
+        FsKind::Pseudo(name) => RefusedReason::Pseudo { file_system: name.to_string() },
     })
 }
 
@@ -174,7 +137,7 @@ mod fs_type_tests {
 
     #[test]
     fn the_kernels_pseudo_file_systems_are_refused_by_name() {
-        // The magic numbers measured on the kernel this was built on (see FS_TYPES).
+        // The magic numbers measured on the kernel this was built on (see `pg_platform::dir::fs_kind`).
         let pseudo = [
             (0x9FA0, "proc"),
             (0x6265_6572, "sysfs"),

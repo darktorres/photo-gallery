@@ -242,6 +242,22 @@ messages! {
     YandexUndecodable { reason: String } => "yandex-undecodable",
     /// The catalog couldn't be opened at start, for `error`: the app ends after the box.
     CatalogUnopened { error: String } => "catalog-unopened",
+    /// A catalog a later build made, at `path`: its schema is `found` and this build's is `current`. `built_by` is
+    /// " by build X" when the file names the build, and empty when it does not.
+    CatalogNewerSchema { path: String, found: String, current: String, built_by: String } => "catalog-newer-schema",
+    /// A catalog of a released version whose schema differs from this build's, at `path` (`found`: its version, `detail`:
+    /// the difference).
+    CatalogDrift { path: String, found: String, detail: String } => "catalog-drift",
+    /// A catalog without the `key_version` mark, whose schema differs from this build's, at `path`.
+    CatalogPredatesKeyVersion { path: String } => "catalog-predates-key-version",
+    /// Another program has the catalog at `path` open, so it can't be changed.
+    CatalogInUse { path: String } => "catalog-in-use",
+    /// The catalog's path at `path` is too long for the files it keeps beside it (Windows' limit).
+    CatalogPathTooLong { path: String } => "catalog-path-too-long",
+    /// The catalog at `path` needs a change, and can't be written (read-only, or permission denied).
+    CatalogReadOnly { path: String } => "catalog-read-only",
+    /// The catalog folder at `path` isn't there, and isn't made (most likely its drive isn't connected).
+    CatalogFolderMissing { path: String } => "catalog-folder-missing",
     /// The first line of the box for a panic that ends the app.
     InternalError => "internal-error",
     /// The box's last line when the panic's details were written to `log`.

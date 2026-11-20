@@ -20,7 +20,7 @@ use pg_thumbcache::{Effect, ThumbCache};
 use crate::catalogs::Catalogs;
 use crate::config::Config;
 use crate::edit::Edit;
-use crate::error::{Result, failed};
+use crate::error::{Error, Result, failed};
 use crate::images::Images;
 use crate::inbox::Inbox;
 use crate::library::LibraryService;
@@ -50,12 +50,42 @@ pub struct App {
     shut: AtomicBool,
 }
 
+/// The log line for a caution about the catalog's folder (`pg_platform::dir::folder_caution`).
+fn caution_text(folder: &std::path::Path, caution: pg_platform::dir::Caution) -> String {
+    use pg_platform::dir::Caution;
+    match caution {
+        Caution::NetworkDrive => format!(
+            "the catalog folder {} is on a network drive: SQLite's locks and write-ahead log are not reliable over one; keep \
+             the catalog on a local drive",
+            folder.display()
+        ),
+        Caution::FileSystem(kind) => format!(
+            "the catalog folder {} is on a {} file system, which the scanner does not take for its file numbers: keep the \
+             catalog on a local disk",
+            folder.display(),
+            kind.name()
+        ),
+        Caution::SyncFolder(name) => format!(
+            "the catalog folder {} is under {name}: a sync client can lock or move its files while the catalog is open; keep \
+             the catalog outside the synced folder",
+            folder.display()
+        ),
+    }
+}
+
 impl App {
     /// Open (and migrate) the catalog, the thumbnail cache, and the preferences. A cache that can't be opened only means
     /// thumbnails aren't kept (a notice says why). The library starts on first use ([`LibraryService::start`]).
     pub fn open(config: Config) -> Result<App> {
         let shown = config.layout.catalog_dir();
-        std::fs::create_dir_all(shown).map_err(|e| failed(format!("{}: {e}", shown.display())))?;
+        config.layout.ensure_catalog_dir(false).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Error::FolderMissing(shown.to_path_buf()),
+            _ => failed(format!("{}: {e}", shown.display())),
+        })?;
+        // A caution, not a refusal: the catalog opens on a network drive or in a sync folder, but its files are at risk there.
+        if let Some(caution) = pg_platform::dir::folder_caution(shown, |name| std::env::var_os(name)) {
+            pg_log::warn("catalog", &caution_text(shown, caution));
+        }
         // The catalog folder as SQLite opens it (an alias in the home for a folder it can't name).
         let layout = config.layout.for_sqlite().map_err(|e| failed(format!("{}: {e}", shown.display())))?;
         let catalog_path = layout.catalog_path();
@@ -221,7 +251,6 @@ fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox
 mod tests {
     use super::*;
     use crate::catalogs::path_of;
-    use crate::error::Error;
     use pg_model::ids::FileId;
 
     // A catalog path becomes the exact system path, a name with no UTF-8 form included, in the form that reaches the

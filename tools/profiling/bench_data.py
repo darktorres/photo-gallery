@@ -17,7 +17,7 @@ layout name ending in `-large` (`v1-windows-rules-large`), from `synthetic_libra
 (200,000 files, 50,000 of them broken, so the import records 50,000 analysis failures):
 
     python tools/profiling/synthetic_library.py $PG_ROOT\\synthetic\\library-large --profile large
-    gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large scan $PG_ROOT\\synthetic\\library-large
+    gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large --create scan $PG_ROOT\\synthetic\\library-large
     gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large import
     gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large thumbs --height 256
     mkdir $PG_ROOT\\bench-data

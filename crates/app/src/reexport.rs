@@ -7,6 +7,7 @@
 
 pub use pg_catalog::Begun;
 pub use pg_catalog::FolderFailure;
+pub use pg_catalog::Refusal as CatalogRefusal;
 pub use pg_catalog::browse::read::facets::Facets;
 pub use pg_catalog::inbox::{Entry as InboxEntry, EntryId as InboxEntryId};
 pub use pg_catalog::ledger::{Counts as InboxCounts, FailedFile, FailedFolder};

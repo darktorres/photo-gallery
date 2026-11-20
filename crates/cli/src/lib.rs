@@ -135,7 +135,11 @@ fn run(cli: Cli) -> Result<()> {
     {
         return borders_outside(paths, csv.as_deref(), *stdin, pipeline);
     }
-    std::fs::create_dir_all(cli.layout()?.catalog_dir())?;
+    let layout = cli.layout()?;
+    layout.ensure_catalog_dir(cli.create).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => anyhow!("{e} (--create makes the folder)"),
+        _ => e.into(),
+    })?;
     with_progress(|ctl| run_command(cli, ctl))
 }
 
@@ -954,6 +958,24 @@ mod tests {
         assert_eq!(roots.len(), 1, "the folder is in the library again");
         assert!(rules.same(&roots[0].path, &root_a));
         assert_eq!(catalog.status().unwrap().files, 1, "the folder is scanned again");
+    }
+
+    #[test]
+    fn a_missing_catalog_folder_is_refused_with_the_create_hint_unless_asked() {
+        let dir = pg_testkit::run_folder("scratch_cli", "missing-catalog-folder").unwrap();
+        let archive = dir.join("elsewhere").join("archive");
+        let words = |extra: &[&str]| {
+            let mut all = vec!["gallery", "--catalog-dir", archive.to_str().unwrap()];
+            all.extend_from_slice(extra);
+            all.push("status");
+            Cli::try_parse_from(all).unwrap()
+        };
+        let err = run(words(&[])).unwrap_err();
+        assert!(format!("{err:#}").contains("--create makes the folder"), "{err:#}");
+        assert!(!dir.join("elsewhere").exists(), "nothing is made without --create");
+        run(words(&["--create"])).unwrap();
+        assert!(archive.is_dir(), "with --create it is made");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -43,9 +43,19 @@ pub(crate) fn check_rules(conn: &Connection, path: &Path, rules: PathRules) -> R
 /// preparing one catalog do it one after the other, and the second finds the first's catalog current. It is not taken
 /// for `:memory:`.
 pub(crate) fn take_lock(path: &Path) -> Result<pg_dbfile::Lock> {
-    pg_dbfile::Lock::take(path)
-        .with_context(|| format!("catalog {}: its lock file", path.display()))?
-        .ok_or_else(|| Error::Other(anyhow!("catalog {}: another process is preparing it", path.display())))
+    match pg_dbfile::Lock::take(path) {
+        Ok(Some(lock)) => Ok(lock),
+        Ok(None) => Err(Error::Other(anyhow!("catalog {}: another process is preparing it", path.display()))),
+        // The lock file is made beside the catalog, so a folder that can't be written refuses it by name.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(refuse_read_only(path)),
+        Err(e) => Err(anyhow::Error::new(e).context(format!("catalog {}: its lock file", path.display())).into()),
+    }
+}
+
+/// The refusal of a catalog that can't be written (its folder or file is read-only, or permission is denied). Nothing has
+/// been changed.
+pub(crate) fn refuse_read_only(path: &Path) -> Error {
+    Error::Refused { path: path.display().to_string(), reason: Box::new(crate::error::Refusal::ReadOnly) }
 }
 
 /// The exclusive hold on the catalog file (`pg_dbfile::Live`), when no other process or connection holds it. It doesn't
@@ -56,10 +66,7 @@ pub(crate) fn try_exclusive(path: &Path) -> Result<Option<pg_dbfile::Live>> {
 
 /// The refusal of a change to a catalog that another program or connection has open. Nothing has been moved.
 pub(crate) fn in_use(path: &Path) -> Error {
-    Error::Other(anyhow!(
-        "catalog {}: another program or connection has it open, so it can't be changed until it is closed",
-        path.display()
-    ))
+    Error::Refused { path: path.display().to_string(), reason: Box::new(crate::error::Refusal::InUse) }
 }
 
 /// The shared hold a catalog keeps while it is open (`pg_dbfile::Live`). It waits for a change in progress to finish.

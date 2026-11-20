@@ -26,12 +26,26 @@ pub enum Error {
     /// `Message::PathUnreadable` and `Message::NotAPath`).
     #[error(transparent)]
     FolderPath(pg_platform::names::NormalizeError),
+    /// The catalog folder doesn't exist, and isn't made here (`Layout::ensure_catalog_dir`): most likely its drive isn't
+    /// connected. The folder is named; nothing was made.
+    #[error("{} not found - is the drive connected?", .0.display())]
+    FolderMissing(std::path::PathBuf),
     /// Anything else a lower layer failed with.
     #[error("{0}")]
     Failed(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl Error {
+    /// The catalog file's path and why it was refused, when the catalog failed that way (`pg_catalog::Error::refusal`).
+    pub fn catalog_refusal(&self) -> Option<(&str, &pg_catalog::Refusal)> {
+        match self {
+            Error::Catalog(e) => e.refusal(),
+            _ => None,
+        }
+    }
+}
 
 /// Why a catalog read gave no result (`crate::reader`): the catalog's error, or one of the reader's own two cases.
 #[derive(Debug, thiserror::Error)]

@@ -169,6 +169,13 @@ yandex-undecodable = a result's file is not an image this app can decode: { $rea
 # The boxes the app shows before it ends: the catalog that can't be opened, and a panic (`text::internal_error`: the
 # first line, the panic's message, then where its details are)
 catalog-unopened = Can't open the catalog: { $error }
+catalog-newer-schema = The catalog at { $path } was made by a later build (its schema is version { $found }; this build's is { $current }){ $built_by }. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite).
+catalog-drift = The catalog at { $path } has a schema (version { $found }) that differs from this build's: { $detail }. A released catalog is not rebuilt: restore a backup by hand (rename it over catalog.sqlite).
+catalog-predates-key-version = The catalog at { $path } has a schema that differs from this build's, and it predates key_version. Restore a .pre-v*.bak or start fresh.
+catalog-in-use = Another program has the catalog at { $path } open, so it can't be changed until it is closed.
+catalog-folder-missing = The catalog folder { $path } was not found. Is its drive connected? Choose a folder that exists, or use the default.
+catalog-read-only =The catalog at { $path } needs a change, but it can't be written (it, or its folder, is read-only or permission is denied). Make it writable, or open a copy of it.
+catalog-path-too-long =The catalog's folder path is too long for Windows: { $path }. Choose a shorter folder for the catalog (its files are kept beside it).
 internal-error = Photo Gallery hit an internal error:
 details-in-log = The details are in { $log }.
 details-not-logged = Writing them to { $log } failed ({ $error }).

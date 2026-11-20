@@ -2,10 +2,16 @@
 //! refusals first: a catalog this build cannot open is refused before anything is written, and a released catalog's
 //! drift is never rebuilt (the carry-rebuild is for development only, while nothing is released).
 
+use crate::error::Refusal;
+
 /// The catalog schema versions that have been released. Empty until the first release: every version is then the
 /// development one, and a catalog whose schema drifted from this build's may be rebuilt with its rows carried over.
 /// Appending a version is part of the release (`RELEASED`'s checklist, with the snapshot of that version's schema).
 pub(crate) const RELEASED: &[i64] = &[];
+
+/// The longest name the catalog writes beside its file: a backup's partial copy's journal, at the plan's widest numbers
+/// (`.pre-v<N>-<seq>.bak.partial-journal`). `prepare` refuses a path that cannot hold it on Windows (`fits_beside`).
+pub(crate) const LONGEST_NAME_SUFFIX: &str = ".pre-v99-999999.bak.partial-journal";
 
 /// What is known of a file for [`classify`].
 pub(crate) struct Facts<'a> {
@@ -36,30 +42,18 @@ pub(crate) enum Action {
     Refuse(Refusal),
 }
 
-/// Why a file is refused. Nothing is written to a refused file.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Refusal {
-    /// A version after this build's: made by another build.
-    NewerSchema { found: i64, current: i64 },
-    /// A schema that differs from this build's, of a catalog that may not be rebuilt (see [`RELEASED`]).
-    Drift { found: i64, why: String },
-    /// A schema that differs, of a catalog without the `key_version` mark the carry needs.
-    PredatesKeyVersion,
-}
-
 /// The action for a file with `facts`, given the released schema versions `released`.
 pub(crate) fn classify(facts: &Facts<'_>, released: &[i64]) -> Action {
     let Some(found) = facts.version else {
         return Action::MoveAsideThenCreate;
     };
     if found > facts.current {
-        return Action::Refuse(Refusal::NewerSchema { found, current: facts.current });
+        return Action::Refuse(Refusal::NewerSchema { found, current: facts.current, written_by: None });
     }
-    if found == 0 {
-        return Action::Create;
-    }
+    // A file of version 0 with objects in it is a foreign or damaged database, not an empty one: its drift is handled
+    // as any other's (it has no rows, so it needs no `key_version` to say how they are keyed).
     if let Some(why) = facts.drift {
-        if !facts.has_key_version {
+        if found > 0 && !facts.has_key_version {
             return Action::Refuse(Refusal::PredatesKeyVersion);
         }
         // Once anything is released, a catalog that drifted from its version's schema is never rebuilt: a drift at or below
@@ -68,6 +62,9 @@ pub(crate) fn classify(facts: &Facts<'_>, released: &[i64]) -> Action {
             return Action::Refuse(Refusal::Drift { found, why: why.to_string() });
         }
         return Action::RebuildCarry { why: why.to_string() };
+    }
+    if found == 0 {
+        return Action::Create;
     }
     if found < facts.current {
         return Action::Upgrade { from: found };
@@ -97,11 +94,11 @@ mod tests {
     fn a_later_build_schema_is_refused_whatever_else_differs() {
         assert_eq!(
             classify(&facts(Some(4), Some("a table"), true), &[]),
-            Action::Refuse(Refusal::NewerSchema { found: 4, current: 3 })
+            Action::Refuse(Refusal::NewerSchema { found: 4, current: 3, written_by: None })
         );
         assert_eq!(
             classify(&facts(Some(4), None, true), &[]),
-            Action::Refuse(Refusal::NewerSchema { found: 4, current: 3 })
+            Action::Refuse(Refusal::NewerSchema { found: 4, current: 3, written_by: None })
         );
     }
 
@@ -139,6 +136,65 @@ mod tests {
         }
     }
 
+    /// Every combination of the facts, each against the action its rule gives. The impossible ones are left out: a drift
+    /// needs a database (`version` is `Some`), and a later build's schema has no expected schema to drift from, so
+    /// versions above `CURRENT` have no drift. That leaves 10 (version, drift) pairs, each with 2 `key_version` states and
+    /// 2 release states: 40 cases.
+    #[test]
+    fn every_possible_combination_of_facts_gets_its_rule_s_action() {
+        const CURRENT: i64 = 3;
+        const DRIFT: &str = "a difference";
+        let pairs = [
+            (None, None),
+            (Some(0), None),
+            (Some(0), Some(DRIFT)),
+            (Some(1), None),
+            (Some(1), Some(DRIFT)),
+            (Some(2), None),
+            (Some(2), Some(DRIFT)),
+            (Some(3), None),
+            (Some(3), Some(DRIFT)),
+            (Some(4), None),
+        ];
+        let mut checked = 0;
+        for (version, drift) in pairs {
+            for has_key_version in [false, true] {
+                for released in [&[][..], &[2][..]] {
+                    let facts = Facts { version, current: CURRENT, drift, has_key_version };
+                    let expected = match (version, drift) {
+                        (None, _) => Action::MoveAsideThenCreate,
+                        (Some(found), _) if found > CURRENT => {
+                            Action::Refuse(Refusal::NewerSchema { found, current: CURRENT, written_by: None })
+                        }
+                        (Some(found), Some(_)) if found > 0 && !has_key_version => {
+                            Action::Refuse(Refusal::PredatesKeyVersion)
+                        }
+                        (Some(found), Some(why)) if !released.is_empty() => {
+                            Action::Refuse(Refusal::Drift { found, why: why.to_string() })
+                        }
+                        (Some(_), Some(why)) => Action::RebuildCarry { why: why.to_string() },
+                        (Some(0), None) => Action::Create,
+                        (Some(found), None) if found < CURRENT => Action::Upgrade { from: found },
+                        (Some(_), None) => Action::Open,
+                    };
+                    assert_eq!(
+                        classify(&facts, released),
+                        expected,
+                        "{version:?} {drift:?} key {has_key_version} released {released:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 40);
+    }
+
+    /// The longest name the catalog makes beside its file is the one `fits_beside` reserves room for.
+    #[test]
+    fn the_longest_name_is_the_widest_the_catalog_makes() {
+        assert_eq!(LONGEST_NAME_SUFFIX.len(), 35, "the plan's widest backup name, sequence and version included");
+    }
+
     #[test]
     fn nothing_is_released_in_a_development_build() {
         // The version string says so, and the release checklist changes both together (`RELEASED` and `-dev`).
@@ -150,6 +206,7 @@ mod tests {
 #[cfg(test)]
 mod prepare_tests {
     use crate::Catalog;
+    use crate::error::Refusal;
     use crate::test_support::versions;
     use pg_model::rules::PathRules;
     use pg_testkit::run_folder;
@@ -195,6 +252,49 @@ mod prepare_tests {
         assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), later);
         drop(conn);
         assert_eq!(meta(&path, "written_by"), "a-later-build");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A catalog that needs a change and is read-only is refused by name, and the file is left as it was.
+    #[test]
+    fn a_read_only_catalog_that_needs_a_change_is_refused_and_left_as_it_is() {
+        let dir = run_folder("scratch_catalog", "read-only").unwrap();
+        let path = dir.join("catalog.sqlite");
+        drop(Catalog::prepare(&path, versions(), PathRules::Windows).unwrap());
+        // A `key_version` another build wrote: a change that `prepare` makes, so the read-only file is refused.
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("UPDATE meta SET value = 'another-key-algo' WHERE key = 'key_version'", []).unwrap();
+        drop(conn);
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions.clone()).unwrap();
+
+        let err = Catalog::prepare(&path, versions(), PathRules::Windows).err().expect("refused");
+        assert_eq!(err.refusal().map(|(_, r)| r), Some(&Refusal::ReadOnly), "{err:#}");
+        assert_eq!(meta(&path, "key_version"), "another-key-algo", "nothing of the catalog is changed");
+
+        // The test's own folder is removed below: the file is made writable again first.
+        #[expect(
+            clippy::permissions_set_readonly_false,
+            reason = "a scratch file of this test, restored to remove its folder"
+        )]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A path too long for the files made beside it is refused by name before anything is made: no lock file, no folder.
+    #[cfg(windows)]
+    #[test]
+    fn a_path_too_long_for_its_files_is_refused_before_anything_is_made() {
+        let dir = run_folder("scratch_catalog", "path-too-long").unwrap();
+        let folder = dir.join("n".repeat(240));
+        let path = folder.join("catalog.sqlite");
+        let err = Catalog::prepare(&path, versions(), PathRules::Windows).err().expect("refused");
+        let (refused_path, reason) = err.refusal().expect("a typed refusal");
+        assert_eq!(reason, &Refusal::PathTooLong);
+        assert_eq!(refused_path, path.display().to_string());
+        assert!(!folder.exists(), "nothing is made under a path too long for its files");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

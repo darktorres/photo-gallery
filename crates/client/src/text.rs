@@ -735,6 +735,35 @@ mod tests {
     fn the_start_and_crash_boxes_are_worded() {
         assert_eq!(render(&Message::CatalogUnopened { error: "locked".into() }), "Can't open the catalog: locked");
         assert_eq!(
+            render(&Message::CatalogInUse { path: "D:/c/catalog.sqlite".into() }),
+            "Another program has the catalog at D:/c/catalog.sqlite open, so it can't be changed until it is closed."
+        );
+        assert_eq!(
+            render(&Message::CatalogFolderMissing { path: "E:/c".into() }),
+            "The catalog folder E:/c was not found. Is its drive connected? Choose a folder that exists, or use the default."
+        );
+        assert_eq!(
+            render(&Message::CatalogReadOnly { path: "D:/c".into() }),
+            "The catalog at D:/c needs a change, but it can't be written (it, or its folder, is read-only or permission is denied). Make it writable, or open a copy of it."
+        );
+        assert_eq!(
+            render(&Message::CatalogPathTooLong { path: "D:/c".into() }),
+            "The catalog's folder path is too long for Windows: D:/c. Choose a shorter folder for the catalog (its files are kept beside it)."
+        );
+        assert_eq!(
+            render(&Message::CatalogPredatesKeyVersion { path: "D:/c".into() }),
+            "The catalog at D:/c has a schema that differs from this build's, and it predates key_version. Restore a .pre-v*.bak or start fresh."
+        );
+        assert_eq!(
+            render(&Message::CatalogNewerSchema {
+                path: "D:/c".into(),
+                found: "4".into(),
+                current: "3".into(),
+                built_by: " by build 0.1.0-dev".into(),
+            }),
+            "The catalog at D:/c was made by a later build (its schema is version 4; this build's is 3) by build 0.1.0-dev. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)."
+        );
+        assert_eq!(
             internal_error("boom", r"C:\gallery.log", None),
             "Photo Gallery hit an internal error:\n\nboom\n\nThe details are in C:\\gallery.log."
         );

@@ -45,7 +45,7 @@ mod work;
 mod writers;
 
 mod error;
-pub use error::{Error, Result};
+pub use error::{Error, Refusal, Result};
 mod removal;
 pub use removal::{Begun, Discarded, Driven, Marker};
 mod schema;

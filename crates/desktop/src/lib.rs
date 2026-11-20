@@ -166,7 +166,11 @@ pub fn run(args: &[OsString]) -> i32 {
     });
     config.yandex = command_line::yandex_source();
     if let Err(e) = app::open(config) {
-        fatal(&pg_client::text::render(&pg_client::text::Message::CatalogUnopened { error: format!("{e:#}") }));
+        let message = e
+            .downcast_ref::<pg_app::Error>()
+            .and_then(catalog_refusal_message)
+            .unwrap_or_else(|| pg_client::text::Message::CatalogUnopened { error: format!("{e:#}") });
+        fatal(&pg_client::text::render(&message));
     }
     // The writes the window makes off its thread (`worker`); without the thread they are made where they are asked for.
     if let Err(e) = worker::start() {
@@ -239,6 +243,37 @@ fn refusal(bad: &[command_line::BadOption], out: &mut impl Write) -> i32 {
         let _ = writeln!(out, "screenshot: refused: {bad}");
     }
     2
+}
+
+/// The box's message for a catalog file that was refused: worded by its kind, and the file is left as it was. `None` for
+/// any other failure to open the catalog, which keeps its own text.
+fn catalog_refusal_message(e: &pg_app::Error) -> Option<pg_client::text::Message> {
+    use pg_app::reexport::CatalogRefusal;
+    use pg_client::text::Message;
+    if let pg_app::Error::FolderMissing(folder) = e {
+        return Some(Message::CatalogFolderMissing { path: folder.display().to_string() });
+    }
+    let (path, refusal) = e.catalog_refusal()?;
+    let path = path.to_string();
+    Some(match refusal {
+        CatalogRefusal::NewerSchema { found, current, written_by } => Message::CatalogNewerSchema {
+            path,
+            found: found.to_string(),
+            current: current.to_string(),
+            built_by: written_by
+                .as_deref()
+                .filter(|b| !b.is_empty())
+                .map(|b| format!(" by build {b}"))
+                .unwrap_or_default(),
+        },
+        CatalogRefusal::Drift { found, why } => {
+            Message::CatalogDrift { path, found: found.to_string(), detail: why.clone() }
+        }
+        CatalogRefusal::PredatesKeyVersion => Message::CatalogPredatesKeyVersion { path },
+        CatalogRefusal::InUse => Message::CatalogInUse { path },
+        CatalogRefusal::PathTooLong => Message::CatalogPathTooLong { path },
+        CatalogRefusal::ReadOnly => Message::CatalogReadOnly { path },
+    })
 }
 
 /// A GUI program has nowhere to print: log the error, show it, then quit. The log comes first, so the record is there

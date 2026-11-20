@@ -80,6 +80,73 @@ pub trait RootFacts {
     fn file_system(&self, handle: &Self::Handle) -> io::Result<String>;
 }
 
+/// A caution about where a folder is, for the log at startup. Neither stops anything: the catalog works on either, but
+/// these are the places its files are at risk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Caution {
+    /// The folder's drive is a network drive (`GetDriveType`): SQLite's locks and write-ahead log are not reliable over
+    /// one.
+    NetworkDrive,
+    /// The folder lies under one a sync client keeps (`OneDrive`, `Dropbox`): the client can lock or move its files while
+    /// the catalog is open.
+    SyncFolder(&'static str),
+    /// The folder's file system is one whose inode numbers are not stable (Linux: NFS, SMB, FAT, exFAT; see [`FsKind`]).
+    FileSystem(FsKind),
+}
+
+/// The caution for `folder`, if any: a folder under a sync client's root (the roots come from `env`: `OneDrive` and its
+/// variants, and `%USERPROFILE%\Dropbox`) first, then a network drive. `None` for an ordinary folder, and when the folder
+/// can't be read.
+pub fn folder_caution(folder: &std::path::Path, env: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<Caution> {
+    if let Some(name) = sync_folder(folder, &env) {
+        return Some(Caution::SyncFolder(name));
+    }
+    system_caution(&crate::names::units_of(&crate::names::canonical_of(folder)))
+}
+
+/// The system's caution for a folder's units: on Windows its drive is a network drive (`GetDriveType`).
+#[cfg(windows)]
+fn system_caution(units: &[Unit]) -> Option<Caution> {
+    let facts = SystemFacts;
+    let volume = facts.volume_root(units).ok()?;
+    (facts.drive_type(&volume) == DriveType::Remote).then_some(Caution::NetworkDrive)
+}
+
+/// The system's caution for a folder's units: on Linux its file system is one the scanner refuses for its inode numbers
+/// (NFS, SMB, FAT, exFAT). The pseudo file systems are not cautioned: nothing is stored under them.
+#[cfg(not(windows))]
+fn system_caution(units: &[Unit]) -> Option<Caution> {
+    match fs_kind(fs_type(units).ok()?)? {
+        FsKind::Pseudo(_) => None,
+        kind => Some(Caution::FileSystem(kind)),
+    }
+}
+
+/// The sync client's name when `folder` is under one of its roots, else `None`. Compared without case, with `\` and `/`
+/// alike, as Windows paths are.
+pub fn sync_folder(folder: &std::path::Path, env: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<&'static str> {
+    const ONE_DRIVE: [&str; 3] = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
+    if ONE_DRIVE.iter().any(|var| env(var).is_some_and(|root| under(folder, &root))) {
+        return Some("OneDrive");
+    }
+    env("USERPROFILE")
+        .map(|home| std::path::PathBuf::from(home).join("Dropbox"))
+        .filter(|dropbox| under(folder, dropbox.as_os_str()))
+        .map(|_| "Dropbox")
+}
+
+/// Whether `folder` is `root` or lies under it, compared as Windows compares paths.
+fn under(folder: &std::path::Path, root: &std::ffi::OsStr) -> bool {
+    let fold = |p: &std::ffi::OsStr| p.to_string_lossy().to_lowercase().replace('/', "\\");
+    let root = fold(root);
+    let root = root.trim_end_matches('\\');
+    if root.is_empty() {
+        return false;
+    }
+    let folder = fold(folder.as_os_str());
+    folder == root || folder.starts_with(&format!("{root}\\"))
+}
+
 /// The system's own facts: Win32's on Windows. Elsewhere ([`ROOT_CHECK`] is not [`RootCheck::Ntfs`]) none can be read,
 /// and each call says so.
 pub struct SystemFacts;
@@ -244,6 +311,61 @@ impl RootFacts for SystemFacts {
 #[cfg(windows)]
 fn until_nul(units: &[Unit]) -> Vec<Unit> {
     units.iter().copied().take_while(|&u| u != 0).collect()
+}
+
+/// A file system the Linux checks refuse, by kind (`fs_kind`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FsKind {
+    Nfs,
+    Smb,
+    Fat,
+    ExFat,
+    /// A pseudo file system, by its name: the kernel's own entries, not files.
+    Pseudo(&'static str),
+}
+
+impl FsKind {
+    /// The file system's name, for a message.
+    pub fn name(self) -> &'static str {
+        match self {
+            FsKind::Nfs => "NFS",
+            FsKind::Smb => "SMB",
+            FsKind::Fat => "FAT",
+            FsKind::ExFat => "exFAT",
+            FsKind::Pseudo(name) => name,
+        }
+    }
+}
+
+/// The `f_type` magic numbers refused. The network file systems (kernel `uapi/linux/magic.h`) hand out inode numbers
+/// from the server. FAT (`vfat` and `msdos`, which share `MSDOS_SUPER_MAGIC`) and exFAT store no inode numbers: the
+/// kernel derives each from where the entry is found while the volume is mounted, so a file's number is not the same
+/// after the volume is mounted again, and the catalog would see every file as new. The pseudo file systems are the
+/// kernel's own entries, not files: a scan of `/proc` reads process state, and `/sys`'s entries are attributes. The
+/// numbers of the pseudo ones were read with `stat -f` on the kernel this was built on (7.0). `devtmpfs` is not here:
+/// it reports tmpfs's number, which is accepted.
+const FS_TYPES: &[(i64, FsKind)] = &[
+    (0x6969, FsKind::Nfs),
+    (0x517B, FsKind::Smb),
+    (0xFF53_4D42, FsKind::Smb),
+    (0xFE53_4D42, FsKind::Smb),
+    (0x4D44, FsKind::Fat),
+    (0x2011_BAB0, FsKind::ExFat),
+    (0x9FA0, FsKind::Pseudo("proc")),
+    (0x6265_6572, FsKind::Pseudo("sysfs")),
+    (0x1CD1, FsKind::Pseudo("devpts")),
+    (0x6367_7270, FsKind::Pseudo("cgroup2")),
+    (0x6462_6720, FsKind::Pseudo("debugfs")),
+    (0x7472_6163, FsKind::Pseudo("tracefs")),
+    (0x7363_6673, FsKind::Pseudo("securityfs")),
+    (0xCAFE_4A11, FsKind::Pseudo("bpf")),
+    (0x6165_676C, FsKind::Pseudo("pstore")),
+    (0x6265_6570, FsKind::Pseudo("configfs")),
+];
+
+/// The refused kind of the file system with `f_type`, `None` for every other type (`9p`, WSL's drvfs, is accepted).
+pub fn fs_kind(f_type: i64) -> Option<FsKind> {
+    FS_TYPES.iter().find(|(magic, _)| *magic == f_type).map(|(_, kind)| *kind)
 }
 
 /// The `f_type` of the file system holding `path` (`statfs`), the fact the Linux checks read ([`RootCheck::FsType`]).
@@ -800,5 +922,45 @@ mod listing_tests {
         }
         let identities: std::collections::BTreeSet<_> = by_device.values().collect();
         assert_eq!(identities.len(), by_device.len(), "two devices share an identity: {by_device:?}");
+    }
+}
+
+#[cfg(test)]
+mod caution_tests {
+    use super::*;
+    use std::ffi::OsString;
+    use std::path::Path;
+
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+        move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| OsString::from(v))
+    }
+
+    /// The refused types are NFS, SMB, FAT, exFAT and the pseudo file systems; ext4 is not refused. A kind names itself.
+    #[test]
+    fn a_refused_file_system_type_has_its_kind_and_name() {
+        assert_eq!(fs_kind(0x6969), Some(FsKind::Nfs));
+        assert_eq!(fs_kind(0x4D44), Some(FsKind::Fat));
+        assert_eq!(fs_kind(0xEF53), None, "ext4 is accepted");
+        assert_eq!(fs_kind(0x9FA0).map(FsKind::name), Some("proc"));
+        assert_eq!(FsKind::ExFat.name(), "exFAT");
+    }
+
+    /// A folder under a sync client's root is named by its client, whatever the case of either and whichever separator.
+    #[test]
+    fn a_folder_under_a_sync_root_is_named_by_its_client() {
+        let roots = env(&[("OneDrive", r"C:\Users\Ana\OneDrive"), ("USERPROFILE", r"C:\Users\Ana")]);
+        assert_eq!(sync_folder(Path::new(r"c:\users\ana\onedrive\Photos\catalog"), &roots), Some("OneDrive"));
+        assert_eq!(sync_folder(Path::new("C:/Users/Ana/OneDrive"), &roots), Some("OneDrive"));
+        assert_eq!(sync_folder(Path::new(r"C:\Users\Ana\Dropbox\catalog"), &roots), Some("Dropbox"));
+    }
+
+    /// An ordinary folder, a folder that only shares a prefix with a root, and no roots at all are not sync folders.
+    #[test]
+    fn a_folder_that_is_not_under_a_root_is_no_caution() {
+        let roots = env(&[("OneDrive", r"C:\Users\Ana\OneDrive"), ("USERPROFILE", r"C:\Users\Ana")]);
+        assert_eq!(sync_folder(Path::new(r"C:\Users\Ana\OneDriveBackup\catalog"), &roots), None);
+        assert_eq!(sync_folder(Path::new(r"D:\PhotoGallery\catalog"), &roots), None);
+        assert_eq!(sync_folder(Path::new(r"C:\Users\Ana\Dropbox2"), &roots), None);
+        assert_eq!(sync_folder(Path::new(r"D:\catalog"), env(&[])), None);
     }
 }

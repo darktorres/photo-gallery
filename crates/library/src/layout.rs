@@ -65,6 +65,19 @@ impl Layout {
         &self.catalog_dir
     }
 
+    /// Makes the catalog folder where it may be made: when it exists, when it is the default `catalog` folder under the
+    /// home folder, or when `create` says so. Any other folder that is missing is not made, since it is most likely a
+    /// drive that isn't connected (or a mistyped path): the error is `NotFound`, with the folder in its message.
+    pub fn ensure_catalog_dir(&self, create: bool) -> std::io::Result<()> {
+        if create || self.catalog_dir.is_dir() || self.catalog_dir == self.home.join("catalog") {
+            return std::fs::create_dir_all(&self.catalog_dir);
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{} not found - is the drive connected?", self.catalog_dir.display()),
+        ))
+    }
+
     /// The catalog's database file.
     pub fn catalog_path(&self) -> PathBuf {
         self.catalog_dir.join("catalog.sqlite")
@@ -177,6 +190,29 @@ mod tests {
 
     /// A catalog folder SQLite can't name (Windows: no UTF-8 form) is opened through an alias in the home: with the
     /// home a scratch folder, opening a catalog there writes nothing outside it.
+    #[cfg(windows)]
+    /// The catalog folder is made where the rule allows: the default one under the home, or any with `create`. Another
+    /// missing folder is refused as `NotFound`, with nothing made (most likely its drive isn't connected).
+    #[test]
+    fn a_missing_catalog_folder_is_made_only_as_the_default_or_when_asked() {
+        let dir = pg_testkit::run_folder("scratch_library", "catalog-folder").unwrap();
+        let default = Layout::in_home(dir.join("home"));
+        default.ensure_catalog_dir(false).unwrap();
+        assert!(default.catalog_dir().is_dir(), "the default folder is made");
+
+        let other = Layout::resolve(|_| None, Some(dir.join("elsewhere").join("archive"))).unwrap();
+        let err = other.ensure_catalog_dir(false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+        assert!(err.to_string().contains("is the drive connected?"), "{err}");
+        assert!(!dir.join("elsewhere").exists(), "nothing is made for a folder that is not the default");
+
+        other.ensure_catalog_dir(true).unwrap();
+        assert!(other.catalog_dir().is_dir(), "with create, it is made");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The alias is a Windows mechanism (`pg_platform::sqlite::openable_folder`): on Unix SQLite takes the folder's bytes as
+    /// they are, and the folder is not aliased there. This test therefore runs on Windows only.
     #[cfg(windows)]
     #[test]
     fn a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home() {

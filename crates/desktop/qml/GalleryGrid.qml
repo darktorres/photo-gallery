@@ -44,6 +44,17 @@ Item {
         return del ? del.firstItem : -1;
     }
 
+    // Bumped when a row's waiting, place or pooling changes: the rows read the row above again (waitsForAbove), as they
+    // would not do on the row above's own change alone.
+    property int pendingRevision: 0
+
+    // Whether the row above `row` still waits for its pictures: a row asks for its own only after that one has them (see
+    // GridRow). A row above that is not made (out of the view's cache) waits for nothing.
+    function waitsForAbove(row: int): bool {
+        const above = row > 0 ? grid.itemAtIndex(row - 1) as GridRow : null;
+        return above !== null && above.pendingLoad;
+    }
+
     function positionAt(row: int, mode: int) {
         grid.positionViewAtIndex(row, mode);
     }
@@ -70,6 +81,8 @@ Item {
         reuseItems: true
         boundsBehavior: Flickable.StopAtBounds
         onWidthChanged: root.gridResized(width)
+        // Rows made or dropped by a change of the model: the rows above them are read again.
+        onCountChanged: root.pendingRevision++
         Keys.onPressed: e => root.keyPressed(e)
 
         WheelHandler {
@@ -82,6 +95,11 @@ Item {
             showBorders: root.showBorders
             current: root.current
             settling: root.settling
+            aboveWaiting: root.pendingRevision >= 0 && root.waitsForAbove(index)
+            onPendingLoadChanged: root.pendingRevision++
+            onIndexChanged: root.pendingRevision++
+            onPooledChanged: root.pendingRevision++
+            Component.onCompleted: root.pendingRevision++
             onCellClicked: itemIndex => {
                 root.cellClicked(itemIndex);
                 grid.forceActiveFocus();

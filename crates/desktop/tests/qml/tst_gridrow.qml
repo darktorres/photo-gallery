@@ -42,6 +42,8 @@ TestCase {
             property int rowTag: 0
             // Changing it gives the row its files again (new arrays, the same files).
             property int rowAgain: 0
+            // Whether the row above is still waiting for its pictures (GridRow.aboveWaiting): the default lets the row ask.
+            property bool rowAboveWaiting: false
             model: 1
             delegate: GridRow {
                 first: list.rowSpan.x
@@ -63,6 +65,7 @@ TestCase {
                 showBorders: false
                 current: -1
                 settling: list.rowSettling
+                aboveWaiting: list.rowAboveWaiting
             }
         }
     }
@@ -146,6 +149,29 @@ TestCase {
         verify(after[1] !== before[1], "the second cell is new");
         compare(after[0].item, 1);
         compare(after[1].item, 2);
+    }
+
+    // A row behind a row still waiting for its pictures asks for none; once that row has them, it asks, and then keeps
+    // asking, so a waiting row made above it later takes nothing away.
+    function test_a_row_behind_a_waiting_row_asks_once_it_is_clear() {
+        const list = createTemporaryObject(viewC, tc, {
+            rowAboveWaiting: true
+        });
+        verify(list !== null);
+        wait(20);
+        const r = rowOf(list);
+        compare(r.loadStarted, false);
+        compare(r.pendingLoad, true, "its pictures are still to come");
+        const cells = cellsOf(r);
+        compare(cells[0].loadNow, false);
+        compare(cells[0].thumbPending, true);
+        list.rowAboveWaiting = false;
+        wait(20);
+        compare(r.loadStarted, true);
+        compare(cells[0].loadNow, true);
+        list.rowAboveWaiting = true;
+        wait(20);
+        compare(r.loadStarted, true, "a row above that waits again takes nothing away");
     }
 
     function test_a_settling_view_keeps_its_cells() {
@@ -280,7 +306,6 @@ TestCase {
             property var lastRecords: []
             model: 40
             delegate: GridRow {
-                required property int index
                 readonly property var st: fz.rows[index]
                 first: st.first
                 count: st.count

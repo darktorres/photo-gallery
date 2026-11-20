@@ -30,6 +30,9 @@ Item {
     required property string itemThumbhashUrl
     required property bool showBorders
     required property int current
+    // Whether the cell's pictures may be asked for now (GridRow.loadStarted). Until they may, the images have no source, so
+    // the loader's queue is not filled from the bottom of the grid up.
+    property bool loadNow: true
 
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
@@ -41,6 +44,8 @@ Item {
     readonly property bool bordersMarked: cell.itemBordersMarked
     // The image's aspect as shown; the tile's may be narrower (clamped panoramas), and the thumbnail is then cropped to it.
     readonly property real imageAspect: cell.itemImageAspect
+    // The thumbnail is still to come: it has a URL, and is neither ready nor failed (GridRow counts these).
+    final readonly property bool thumbPending: cell.itemThumbUrl !== "" && thumb.status !== Image.Ready && thumb.status !== Image.Error
     // A turn changes the item's shape.
     width: cell.itemAspect * cell.rowHeight
     height: cell.rowHeight
@@ -51,7 +56,7 @@ Item {
         anchors.fill: parent
         // Cropped as the thumbnail is, so the two line up when they swap.
         fillMode: Image.PreserveAspectCrop
-        source: cell.itemThumbhashUrl
+        source: cell.loadNow ? cell.itemThumbhashUrl : ""
         asynchronous: true
         smooth: true
         visible: thumb.opacity < 1
@@ -64,7 +69,7 @@ Item {
         // Files not imported yet have no size: their cell is square until they are.
         fillMode: Image.PreserveAspectCrop
         clip: true
-        source: cell.itemThumbUrl
+        source: cell.loadNow ? cell.itemThumbUrl : ""
         asynchronous: true
         retainWhileLoading: true
         smooth: true

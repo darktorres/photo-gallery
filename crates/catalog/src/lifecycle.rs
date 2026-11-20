@@ -10,8 +10,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use pg_model::media::Ext;
 use pg_model::rules::PathRules;
 
-use crate::core::FreeSpace;
 use crate::error::{Error, Result};
+use crate::progress::FreeSpace;
 use crate::types::{TAKEN_ZONE_QUERY, rules_name};
 
 /// Why the paths of the catalog on `conn` don't read as paths under `rules` (`meta.path_rules`): they were stored under

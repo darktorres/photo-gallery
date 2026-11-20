@@ -2,6 +2,10 @@
 //! `Progress` can't stop the work. Quitting in the middle of a change is safe because every step is crash-atomic, and the
 //! next start resumes from the file's `user_version` (the plan's D1: there is no cancel, and no SQLite progress handler).
 
+/// The free bytes of a volume, as a test reports them in place of the volume's own (`Prepare::free_space`). Defined here,
+/// a leaf module, so the room check (`lifecycle`) and the builder (`core`) both name it without a cycle between them.
+pub type FreeSpace<'a> = dyn Fn(&std::path::Path) -> Option<u64> + Send + Sync + 'a;
+
 /// A phase of preparing a catalog, in the order a change makes them. The variants the change's later steps make (a copy
 /// aside, its checkpoint and fsync, the swap, the vacuum, the quick check) are defined here so the report's shape is
 /// fixed once; each is reported by the step that makes it.

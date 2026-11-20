@@ -23,7 +23,7 @@ use crate::lifecycle::{
     check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, set_borders_version, set_import_version,
     set_pairing_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, vacuum_if_owed,
 };
-use crate::progress::{NO_PROGRESS, Phase, Progress};
+use crate::progress::{FreeSpace, NO_PROGRESS, Phase, Progress};
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
 use crate::schema::{
     Hooks, SCHEMA, SETTINGS, SchemaSet, bring_to, current_expected, current_version, expected_for, mismatch,
@@ -79,9 +79,6 @@ impl Catalog {
         Prepare { path, versions, rules, schemas: None, progress: &NO_PROGRESS, free_space: None }
     }
 }
-
-/// The free bytes of a volume, as a test reports them in place of the volume's own ([`Prepare::free_space`]).
-pub type FreeSpace<'a> = dyn Fn(&Path) -> Option<u64> + Send + Sync + 'a;
 
 /// A preparation of a catalog ([`Catalog::preparing`]): the work [`Catalog::prepare`] does, with its options.
 pub struct Prepare<'a> {

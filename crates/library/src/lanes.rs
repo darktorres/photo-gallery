@@ -182,10 +182,14 @@ pub(crate) fn probe_place(rules: PathRules, root: &RulePath, drives: &dyn Drives
         Ok(drive) => drive,
         Err(e) => return if unplugged(&e) { Place::Unplugged } else { Place::Unknown },
     };
-    match i64::try_from(volume) {
-        Ok(volume) => Place::Mounted { volume, drive },
-        Err(_) => Place::Unknown,
-    }
+    place_on_volume(volume, drive)
+}
+
+/// A root on `volume` (the id the file system gives) and `drive`, with the volume as the catalog stores it: the scan writes
+/// an id's bits as a signed number (`cast_signed`), so every id is stored, and an id above `i64::MAX` is no reason to
+/// take the root as unknown.
+fn place_on_volume(volume: u64, drive: Drive) -> Place {
+    Place::Mounted { volume: volume.cast_signed(), drive }
 }
 
 #[cfg(test)]
@@ -195,6 +199,12 @@ mod tests {
     use pg_platform::drive::Kind;
 
     use super::*;
+
+    #[test]
+    fn a_volume_id_above_i64_max_is_mounted_as_the_catalog_stores_it() {
+        let drive = Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label: "virtual".to_string() };
+        assert!(matches!(place_on_volume(u64::MAX, drive), Place::Mounted { volume: -1, .. }));
+    }
 
     fn disks(numbers: &[u64]) -> RootDrive {
         Some(Drive {

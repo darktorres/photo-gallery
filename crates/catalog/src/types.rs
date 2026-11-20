@@ -30,10 +30,10 @@ pub enum VolumeSet {
 }
 
 impl VolumeSet {
-    /// The set of `volumes` (their ids as the catalog stores them), or `None` when one is above `i64::MAX`, which no stored
-    /// volume is.
-    pub fn only(volumes: &[u64]) -> Option<VolumeSet> {
-        volumes.iter().map(|&v| i64::try_from(v).ok()).collect::<Option<Vec<i64>>>().map(VolumeSet::Only)
+    /// The set of `volumes`, each id as the catalog stores it: its bits read as a signed number (`cast_signed`), which is how
+    /// the scan writes it. Every id has one, so the set is always made.
+    pub fn only(volumes: &[u64]) -> VolumeSet {
+        VolumeSet::Only(volumes.iter().map(|&v| v.cast_signed()).collect())
     }
 
     /// Whether the set holds `volume` (as the catalog stores it): every volume is in `All`.

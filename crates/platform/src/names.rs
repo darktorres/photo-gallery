@@ -283,7 +283,6 @@ fn pick_stored<F: FnOnce() -> Option<(u64, u64)>>(
 }
 
 #[cfg(test)]
-#[expect(clippy::disallowed_methods, reason = "the tests check the typed spelling against the catalog's")]
 mod tests {
     use super::*;
 
@@ -325,6 +324,7 @@ mod tests {
     /// A verbatim path is stored and shown as its plain bytes; the prefix is the opening's, not the path's.
     #[cfg(windows)]
     #[test]
+    #[expect(clippy::disallowed_methods, reason = "the test checks the typed spelling the verbatim prefix leaves")]
     fn the_verbatim_prefix_is_not_part_of_the_path() {
         let rules = crate::native::PATH_RULES;
         for (given, plain) in [(r"\\?\D:\a.\b", r"D:\a.\b"), (r"\\?\UNC\nas\p\a.", r"\\nas\p\a."), (r"D:\a", r"D:\a")] {
@@ -338,6 +338,7 @@ mod tests {
     /// by its joined bytes alike, and not the file in the sibling folder without the dot.
     #[cfg(windows)]
     #[test]
+    #[expect(clippy::disallowed_methods, reason = "the test checks the typed spelling against the catalog's, dotted")]
     fn a_stored_path_in_a_dotted_folder_is_reached_by_its_disk_path() {
         let dir = std::path::absolute(crate::testing::run_folder("scratch_names", "disk-path").unwrap()).unwrap();
         let dotted = dir.join("Acme Inc.");

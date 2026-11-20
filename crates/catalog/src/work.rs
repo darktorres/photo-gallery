@@ -723,10 +723,10 @@ mod tests {
     }
 
     #[test]
-    fn a_volume_set_takes_only_ids_a_catalog_can_store() {
-        assert_eq!(VolumeSet::only(&[1, 2]), Some(VolumeSet::Only(vec![1, 2])));
-        assert_eq!(VolumeSet::only(&[i64::MAX.unsigned_abs()]), Some(VolumeSet::Only(vec![i64::MAX])));
-        assert_eq!(VolumeSet::only(&[u64::MAX]), None);
+    fn a_volume_set_holds_each_id_as_the_scan_stores_it() {
+        assert_eq!(VolumeSet::only(&[1, 2]), VolumeSet::Only(vec![1, 2]));
+        assert_eq!(VolumeSet::only(&[i64::MAX.unsigned_abs()]), VolumeSet::Only(vec![i64::MAX]));
+        assert_eq!(VolumeSet::only(&[u64::MAX]), VolumeSet::Only(vec![-1]));
     }
 
     #[test]

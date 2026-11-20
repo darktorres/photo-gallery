@@ -36,7 +36,7 @@ pdqhash = "0.1"
 png = "0.18"
 proptest = "1"
 quick-xml = "0.42"
-rusqlite = { version = "0.41", features = ["array", "bundled", "collation", "fallible_uint", "functions", "hooks", "photo-gallery-defaults"] }
+rusqlite = { version = "0.43", features = ["array", "bundled", "collation", "fallible_uint", "functions", "hooks", "photo-gallery-defaults"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 specta = { version = "=2.0.0-rc.28", features = ["derive"] } # exact: a release candidate; the web client's types (pg-model)
@@ -142,7 +142,7 @@ png = { git = "https://github.com/darktorres/image-png", rev = "2f176edb0a07b488
 cxx-qt-build = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
 qt-build-utils = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
 quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
-rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "8ec47c7e9ee929d013c5945b4d244ec9762dd4d8" }
+rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "ac441bb8a2d679d9b6d11b25f845631cd1e7c827" }
 thumbhash = { git = "https://github.com/darktorres/thumbhash", rev = "a7bc11b868583c513ab3a5f0a1a37b93668adcbf" }
 tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
 turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "28b8b86af795d5e6f1402c978e62facd61952da2" }

@@ -62,16 +62,23 @@ and `fuzz/Cargo.toml`. Keep the `WITH_CRT_DLL` line and the optimized flags in `
 
 ## rusqlite
 
-Fork of `rusqlite/rusqlite` (`darktorres/rusqlite`), pinned by rev in the root `Cargo.toml`: rusqlite 0.41.1 with one
-local commit, marked `photo-gallery` in `src/cache.rs`: `StatementCache::get` sets a statement's cache key only when it
-prepares the statement. A statement taken from the cache still carries the key it was cached under, yet `get` set a
-new one on every call, copying the SQL into a new `Arc<str>` for each `prepare_cached` hit: one allocation per query,
-hit or miss (found by dhat's profile of the import, 2026-11-01). A test there (`test_cache_hit_keeps_key`) checks that a hit keeps the key;
-it fails without the change. Upstream still has it, in 0.41.1 and on master.
+Fork of `rusqlite/rusqlite` (`darktorres/rusqlite`, branch `photo-gallery-0.43.0`), pinned by rev in the root `Cargo.toml`:
+rusqlite 0.43.0 (libsqlite3-sys 0.40.0) with two local commits, both marked `photo-gallery`:
 
-To update: rebase the commit onto the new release tag (`git rebase --onto <tag> v0.41.1`), change the `rev` and the
-`version` requirement in the root `Cargo.toml`, then build and test. The fork's tests run from the fork:
-`cargo test --features bundled`.
+- `StatementCache::get` in `src/cache.rs` sets a statement's cache key only when it prepares the statement. A statement
+  taken from the cache still carries the key it was cached under, yet `get` set a new one on every call, copying the SQL
+  into a new `Arc<str>` for each `prepare_cached` hit: one allocation per query, hit or miss (found by dhat's profile of
+  the import, 2026-11-01). A test there (`test_cache_hit_keeps_key`) checks that a hit keeps the key; it fails without
+  the change. Upstream still has it, in 0.43.0 and on master.
+- The `photo-gallery-defaults` feature of `libsqlite3-sys` (with `bundled`): `SQLITE_DEFAULT_MEMSTATUS=0` and
+  `SQLITE_DEFAULT_LOOKASIDE=1200,200`, applied before `LIBSQLITE3_FLAGS`.
+
+The bundled SQLite is 3.54.1, which upstream's 0.43.0 already bundles (the 0.41.1 fork's own bump to it is dropped).
+
+To update: rebase the two commits onto the new release tag (`git rebase --onto <tag> v0.43.0 photo-gallery-0.43.0`, or
+cherry-pick them onto the tag, as in 0.43.0), push the branch, change the `rev` and the `version` requirement in the root
+`Cargo.toml`, then build and test. The fork's tests run from the fork: `cargo test --features bundled` and
+`cargo test --features bundled,photo-gallery-defaults --lib`.
 
 ## thumbhash
 

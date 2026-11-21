@@ -103,20 +103,8 @@ use crate::transaction::write_transaction;
 use crate::types::FolderFailure;
 use crate::writers::{clear_failures_on, failures_held, record_failures_on};
 
-/// A retry of the failed files of one pass, in the transaction `tx`: the pass's next run lists them again (`seq` moves
-/// on, `list` makes the listing), and their rows go, so what still fails is recorded anew.
-pub(crate) fn relist_failures(
-    tx: &rusqlite::Transaction<'_>,
-    pass_code: &str,
-    list: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<usize>,
-) -> Result<()> {
-    tx.execute_batch(next_seq!())?;
-    list(tx)?;
-    tx.execute("DELETE FROM file_failures WHERE pass = ?1", [pass_code])?;
-    Ok(())
-}
-
 pub(crate) mod failure;
+use failure::relist_failures;
 mod state;
 pub use failure::{ERROR_BYTES, Failure};
 pub use state::{Counts, FailedFolder, LedgerAck, LedgerRow, LedgerState};

@@ -4,6 +4,8 @@
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;
 
+use crate::error::Result;
+
 /// The longest error text kept (bytes; cut on a character's boundary).
 pub const ERROR_BYTES: usize = 1024;
 
@@ -31,4 +33,23 @@ pub(crate) fn tidy(error: &str) -> String {
         out.push('…');
     }
     out
+}
+
+/// The thumbnails' panicked files are listed again for their pass when the thumbnailer's version changes
+/// (`lifecycle::set_thumbs_version` takes this as its `relist`).
+pub(crate) fn relist_thumbs_panics(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    relist_failures(tx, "thumbs", |tx| Ok(tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?))
+}
+
+/// A retry of the failed files of one pass, in the transaction `tx`: the pass's next run lists them again (`seq` moves
+/// on, `list` makes the listing), and their rows go, so what still fails is recorded anew.
+pub(crate) fn relist_failures(
+    tx: &rusqlite::Transaction<'_>,
+    pass_code: &str,
+    list: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<usize>,
+) -> Result<()> {
+    tx.execute_batch(next_seq!())?;
+    list(tx)?;
+    tx.execute("DELETE FROM file_failures WHERE pass = ?1", [pass_code])?;
+    Ok(())
 }

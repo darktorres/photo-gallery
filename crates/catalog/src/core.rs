@@ -246,7 +246,8 @@ impl<'a> Prepare<'a> {
         set_import_version(&conn, versions.import).with_context(context)?;
         set_borders_version(&conn, versions.borders).with_context(context)?;
         set_pairing_version(&conn, versions.pairing).with_context(context)?;
-        set_thumbs_version(&conn, versions.thumbs).with_context(context)?;
+        set_thumbs_version(&conn, versions.thumbs, crate::ledger::failure::relist_thumbs_panics)
+            .with_context(context)?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}: its taken zone", path.display()))?;
         // The build that last changed the catalog is named by it, so a later refusal can say which build to open it with.
         if changes {

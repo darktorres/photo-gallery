@@ -40,8 +40,8 @@ use pg_writeback::Writer;
 
 use args::{Cli, Command, PipelineArgs};
 use report::{
-    Kept, PrintingSink, changed_while_read, join_printer, print_failures, report_pass, report_rebuilt, thumb_events,
-    with_progress,
+    Kept, PrintingSink, changed_while_read, join_printer, print_failures, report_pass, report_rebuilt, secs,
+    thumb_events, with_progress,
 };
 
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
@@ -237,12 +237,6 @@ fn pair_and_report(
         say(&Line::PairsLegacy { count: s.legacy.to_string() });
     }
     Ok(())
-}
-
-/// A whole pass's seconds, one decimal: the one rule for seconds on the command line (`report.rs` uses it too). The parts
-/// of a second are whole milliseconds (`millis`).
-pub(crate) fn secs(seconds: f64) -> String {
-    format!("{seconds:.1}")
 }
 
 /// A duration's part of a second as whole milliseconds.

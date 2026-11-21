@@ -277,7 +277,7 @@ pub(crate) fn older_thumbs_version(c: &Catalog) {
 
 /// This build starts on the catalog: its thumbnailer's version is taken, and a failure of an older one is listed again.
 pub(crate) fn start_thumbs_version(c: &Catalog) {
-    set_thumbs_version(&c.conn, THUMBS_VERSION).unwrap();
+    set_thumbs_version(&c.conn, THUMBS_VERSION, crate::ledger::failure::relist_thumbs_panics).unwrap();
 }
 
 /// The rating the catalog holds for a file (`ratings`), unrated as `None`.

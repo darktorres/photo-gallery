@@ -420,14 +420,14 @@ pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<u64> {
 /// (`pg_render::THUMBS_VERSION`, a decoder that may take what the old one failed on), the files whose thumbnail panicked
 /// are listed again for the pass (the others are, by the pass's own rule), and the rows go: the next pass records what
 /// still fails. The cache's checkpoint holds the panicked files back too, and keeps a mark of its own
-/// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`].
-pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<MarkChange> {
-    set_mark_i64(conn, "thumbs_version", current, |tx| {
-        crate::ledger::relist_failures(tx, "thumbs", |tx| {
-            Ok(tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?)
-        })?;
-        Ok(())
-    })
+/// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`]. `relist` does the listing: the
+/// caller passes `ledger::failure::relist_thumbs_panics`, so this module does not depend on the ledger.
+pub(crate) fn set_thumbs_version(
+    conn: &Connection,
+    current: i64,
+    relist: impl FnOnce(&Transaction) -> Result<()>,
+) -> Result<MarkChange> {
+    set_mark_i64(conn, "thumbs_version", current, relist)
 }
 
 /// Make `analysis.taken` follow this system's zone: when `meta.taken_zone` is another fingerprint (the zone changed,

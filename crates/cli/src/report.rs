@@ -14,6 +14,12 @@ use pg_model::notice::{KeyBuf, Notice, Trigger};
 use pg_model::progress::Progress;
 use pg_thumbcache::Effect;
 
+/// A whole pass's seconds, one decimal: the one rule for seconds on the command line (`lib.rs` uses it too). The parts
+/// of a second are whole milliseconds (`millis`).
+pub(crate) fn secs(seconds: f64) -> String {
+    format!("{seconds:.1}")
+}
+
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
 /// cache that holds the bus is dropped: joining it then means the last one is out. A cache that is leaked (`gallery
 /// write`, for the writer's `'static` borrow) never drops, so its thread runs until the process ends and is not joined.
@@ -115,7 +121,7 @@ fn progress_line(p: &Progress) -> String {
             pass: label,
             done: p.done.to_string(),
             rate: format!("{:.0}", p.rate()),
-            seconds: crate::secs(elapsed),
+            seconds: secs(elapsed),
         })
     } else {
         line(&Line::Progress {
@@ -127,8 +133,8 @@ fn progress_line(p: &Progress) -> String {
             // A rate, so decimal megabytes per second.
             mbps: format!("{:.0}", pg_model::num::size(p.bytes) / elapsed / 1e6),
             failed: p.failed.to_string(),
-            seconds: crate::secs(elapsed),
-            eta: crate::secs(p.eta()),
+            seconds: secs(elapsed),
+            eta: secs(p.eta()),
         })
     };
     format!("  {words}")

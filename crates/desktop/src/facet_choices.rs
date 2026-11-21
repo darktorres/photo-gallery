@@ -60,17 +60,32 @@ fn rows(facet: ListFacet, query: &Query, counts: &Counts) -> Vec<Row> {
         .collect()
 }
 
+/// The QML value of a list facet: the inverse of `list_facet`.
+fn choice_of(facet: ListFacet) -> ChoiceFacet {
+    match facet {
+        ListFacet::Types => ChoiceFacet::Types,
+        ListFacet::Shapes => ChoiceFacet::Shapes,
+        ListFacet::Status => ChoiceFacet::Status,
+        ListFacet::Borders => ChoiceFacet::Borders,
+        ListFacet::Ratings => ChoiceFacet::Ratings,
+        ListFacet::Exts => ChoiceFacet::Exts,
+    }
+}
+
 impl qobject::FacetChoices {
+    pub(crate) fn get_facet(&self) -> ChoiceFacet {
+        choice_of(self.facet)
+    }
+
     pub(crate) fn set_facet(mut self: Pin<&mut Self>, value: ChoiceFacet) {
-        self.as_mut().rust_mut().facet = value;
+        self.as_mut().rust_mut().facet = list_facet(value).unwrap_or(ListFacet::Types);
         self.refresh();
     }
 
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
         let counts = controller::counts();
-        let facet = list_facet(self.facet);
-        let rows = facet.map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
+        let rows = rows(self.facet, &query, &counts);
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.
         if rows == self.rows {
             return;

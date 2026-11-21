@@ -36,12 +36,13 @@ pub mod qobject {
         #[base = QAbstractListModel]
         #[qml_element]
         /// Which list the rows are. Set it once.
-        #[qproperty(ChoiceFacet, facet, READ, WRITE = set_facet, FINAL)]
+        #[qproperty(ChoiceFacet, facet, READ = get_facet, WRITE = set_facet, FINAL)]
         type FacetChoices = super::FacetChoicesRust;
     }
 
     unsafe extern "RustQt" {
         fn set_facet(self: Pin<&mut FacetChoices>, value: ChoiceFacet);
+        fn get_facet(self: &FacetChoices) -> ChoiceFacet;
 
         /// Rebuild the rows from the listing's query and the counts (after a change to either).
         #[qinvokable]

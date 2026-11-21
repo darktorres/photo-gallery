@@ -144,7 +144,7 @@ pub(crate) fn border_marks(c: &Catalog) -> i64 {
     c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap()
 }
 
-/// A placeholder for file uid=197609(Torres) gid=197121 groups=197121, made at its identity and the current version, as the Placeholders pass stores it.
+/// A placeholder for a file, made at its identity and the current version, as the Placeholders pass stores it.
 pub(crate) fn set_placeholder(c: &Catalog, id: FileId, bytes: &[u8]) {
     c.conn
         .execute(

@@ -400,7 +400,7 @@ mod tests {
             file_id: FileId::new(id),
             mtime: 0,
             size: 10,
-            rotation: Turns::NONE,
+            turns: Turns::NONE,
             error: "x".into(),
             retry: false,
         };

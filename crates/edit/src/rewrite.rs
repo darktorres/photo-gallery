@@ -25,8 +25,8 @@ mod tests {
     use super::raster::decoded_size;
     use super::{gif, png};
 
-    /// A header that declares a huge image is an error before anything that size is allocated (an allocation
-    /// failure would abort the process): a PNG's height, and a GIF's logical screen.
+    // A header that declares a huge image is an error before anything that size is allocated (an allocation
+    // failure would abort the process): a PNG's height, and a GIF's logical screen.
     #[test]
     fn a_huge_declared_size_is_an_error() {
         let mut file = Vec::new();

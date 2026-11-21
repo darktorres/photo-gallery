@@ -7,7 +7,6 @@
 //!
 //! Files are made in a scratch folder (`PG_TEST_DIR`, or the temp folder's `scratch_rate`), never in a dataset.
 
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use pg_catalog::Catalog;
@@ -20,42 +19,27 @@ use pg_model::ids::FileId;
 use pg_model::path::PathArena;
 use pg_model::query::{Query, Sort};
 use pg_model::turns::Turns;
+use pg_testkit::Encoding;
 
 const W: u32 = 320;
 const H: u32 = 240;
 /// The letterbox: black bars this deep at the top and bottom.
 const BAR: u32 = 40;
 
-/// Photo-like content (blocks of hashed colours with fine noise, as the detector's own tests) between two black
-/// bars.
-fn letterboxed() -> image::RgbImage {
-    let hash = |a: u32, b: u32| (a.wrapping_mul(2_654_435_761) ^ b.wrapping_mul(40_503)).wrapping_mul(2_246_822_519);
-    image::RgbImage::from_fn(W, H, |x, y| {
-        if !(BAR..H - BAR).contains(&y) {
-            return image::Rgb([0, 0, 0]);
-        }
-        let block = hash(x / 6, y / 6);
-        let noise = hash(x, y) % 24;
-        // 60 to 232, so it fits a channel.
-        let c = |shift: u32| u8::try_from(60 + (block >> shift) % 150 + noise).unwrap_or(u8::MAX);
-        image::Rgb([c(0), c(8), c(16)])
-    })
-}
-
 fn make_files(dir: &Path) -> anyhow::Result<Vec<String>> {
-    let img = letterboxed();
+    // Photo-like content between two black bars, as the detector's own tests have it.
+    let img = pg_testkit::letterboxed_rgb(W, H, BAR);
     let mut out = Vec::new();
-    for (name, format) in [
-        ("a.jpg", image::ImageFormat::Jpeg),
-        ("b.png", image::ImageFormat::Png),
-        ("c.webp", image::ImageFormat::WebP),
-        ("d.tif", image::ImageFormat::Tiff),
-        ("sub/e.bmp", image::ImageFormat::Bmp),
+    for (name, encoding) in [
+        ("a.jpg", Encoding::Jpeg),
+        ("b.png", Encoding::Png),
+        ("c.webp", Encoding::WebP),
+        ("d.tif", Encoding::Tiff),
+        ("sub/e.bmp", Encoding::Bmp),
     ] {
-        let mut bytes = Cursor::new(Vec::new());
-        img.write_to(&mut bytes, format)?;
+        let bytes = pg_testkit::encode(W, H, &img, encoding)?;
         let path = dir.join("images").join(name);
-        std::fs::write(&path, bytes.get_ref())?;
+        std::fs::write(&path, &bytes)?;
         out.push(path.to_string_lossy().into_owned());
     }
     Ok(out)
@@ -467,7 +451,7 @@ fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() {
     drop(holder);
 
     assert_eq!((s.saved, s.unsupported, s.failed), (4, 0, 1), "{:?}", s.failures);
-    assert!(s.failures[0].path.ends_with("a.jpg"), "{:?}", s.failures);
+    assert!(pg_platform::native::PATH_RULES.display(&s.failures[0].path).ends_with("a.jpg"), "{:?}", s.failures);
     assert_eq!(std::fs::read(&files[0]).unwrap(), originals[0], "the held original is intact");
     assert!(!dir.join("images").join(".a.jpg.cut.pg-write").exists(), "the temp is removed");
     assert_ne!(std::fs::read(&files[1]).unwrap(), originals[1], "the rest are cut");

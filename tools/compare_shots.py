@@ -36,7 +36,7 @@ settle log is <png>.settle.txt, with what the check saw.
 
 The script re-runs itself under target/shots/venv (Pillow and numpy, from tools/shots/requirements.txt), so the global
 Python is not changed. The Python that makes the venv is --python, else PG_PYTHON from the environment (or .env), else
-python on Windows and python3 elsewhere (the Justfile's default). The Qt kit is QT_DIR (from the environment or .env); the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
+python on Windows and python3 elsewhere (the Justfile's default). The Qt kit is PG_QT_DIR (from the environment or .env); the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
 """
 
 import argparse
@@ -659,14 +659,20 @@ def main() -> None:
         sys.exit("--record and --only do not go together: a subset would replace the whole reference")
 
     load_env_file()
-    qt = os.environ.get("QT_DIR")
+    qt = os.environ.get("PG_QT_DIR")
     if not qt:
-        not_set("QT_DIR", QT_DIR_HOW)
+        not_set("PG_QT_DIR", QT_DIR_HOW)
     qmake = Path(qt) / "bin" / ("qmake.exe" if WINDOWS else "qmake")
     if not qmake.is_file():
-        sys.exit(f"QT_DIR ({qt}) has no bin/qmake: point it at the Qt kit folder.")
-    ffmpeg = Path(os.environ["FFMPEG_DIR"]) if os.environ.get("FFMPEG_DIR") else REPO / ".deps" / "ffmpeg"
-    os.environ["PATH"] = os.pathsep.join([str(qmake.parent), str(ffmpeg / "bin"), os.environ.get("PATH", "")])
+        sys.exit(f"PG_QT_DIR ({qt}) has no bin/qmake: point it at the Qt kit folder.")
+    # The FFmpeg DLLs: FFMPEG_DIR's bin when it is set, else the pinned build's on Windows, else PATH is left alone (doctor.py
+    # and crates/video/build.rs find FFmpeg the same way).
+    path = [str(qmake.parent)]
+    if os.environ.get("FFMPEG_DIR"):
+        path.append(str(Path(os.environ["FFMPEG_DIR"]) / "bin"))
+    elif WINDOWS:
+        path.append(str(REPO / ".deps" / "ffmpeg" / "bin"))
+    os.environ["PATH"] = os.pathsep.join([*path, os.environ.get("PATH", "")])
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
     if os.environ.get("PG_SHOTS_CHILD") != "1":

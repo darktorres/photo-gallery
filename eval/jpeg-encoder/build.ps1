@@ -1,28 +1,35 @@
 # build.ps1 - builds build\test_encoder.exe natively: nvcc (CUDA 13.4, for this GPU's compute capability) with the MSVC host compiler.
 # Run from any PowerShell:  powershell -ExecutionPolicy Bypass -File build.ps1
-# Paths below are defaults for this machine; each can be overridden with a parameter.
+# The CUDA and Visual Studio paths below are defaults for this machine. The libjpeg-turbo folders default to PG_HOME's
+# (the data folder, from the environment; `just` loads it from .env). Each can be overridden with a parameter.
 
 param(
     [string]$CudaRoot  = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4',
     [string]$VcvarsDir = 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build',
     [string]$VsInstallerDir = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer',
-    [string]$JpegSrc   = 'D:\PhotoGallery\tools\jpeg-eval\src\jpegli\third_party\libjpeg-turbo',
-    [string]$JpegBuild = 'D:\PhotoGallery\tools\jpeg-eval\build\libjpeg-turbo',
+    [string]$JpegSrc,
+    [string]$JpegBuild,
     [string]$Arch
 )
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Unless -Arch is given, the compute capability comes as win_env.py and win-env.cmd take it: CUDA_ARCH (7.5 is 75), else the
+if ((-not $JpegSrc -or -not $JpegBuild) -and -not $env:PG_HOME) {
+    throw 'PG_HOME is not set: set it to the data folder, or pass -JpegSrc and -JpegBuild'
+}
+if (-not $JpegSrc) { $JpegSrc = Join-Path $env:PG_HOME 'tools\jpeg-eval\src\jpegli\third_party\libjpeg-turbo' }
+if (-not $JpegBuild) { $JpegBuild = Join-Path $env:PG_HOME 'tools\jpeg-eval\build\libjpeg-turbo' }
+
+# Unless -Arch is given, the compute capability comes as win_env.py and win-env.cmd take it: PG_CUDA_ARCH (7.5 is 75), else the
 # first GPU's from nvidia-smi.
 if (-not $Arch) {
-    $cap = $env:CUDA_ARCH
+    $cap = $env:PG_CUDA_ARCH
     if (-not $cap) {
         try { $cap = (& nvidia-smi --query-gpu=compute_cap --format=csv,noheader | Select-Object -First 1) } catch { $cap = '' }
     }
     $cap = ("$cap").Trim() -replace '\.', ''
-    if (-not $cap) { throw 'no compute capability: set CUDA_ARCH (7.5 is 75) or pass -Arch sm_NN' }
+    if (-not $cap) { throw 'no compute capability: set PG_CUDA_ARCH (7.5 is 75) or pass -Arch sm_NN' }
     $Arch = "sm_$cap"
 }
 

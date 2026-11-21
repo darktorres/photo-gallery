@@ -3,7 +3,6 @@
 //!
 //! Files are made in a scratch folder (`PG_TEST_DIR`, or the temp folder's `scratch_rate`), never in a dataset.
 
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,36 +24,34 @@ use pg_model::notice::{Notice, Trigger};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
+use pg_testkit::Encoding;
 use pg_testkit::held::{Access, hold};
 use pg_thumbcache::ThumbCache;
 use pg_writeback::fault::Fault;
 use pg_writeback::{WriteError, Writer};
 
-fn pattern(w: u32, h: u32) -> image::RgbImage {
-    image::RgbImage::from_fn(w, h, |x, y| {
-        // Each channel is below 256: x < w, y < h.
-        let byte = |v: u32| u8::try_from(v).unwrap_or(u8::MAX);
-        image::Rgb([byte(x * 255 / w), byte(y * 255 / h), byte((x * 7 + y * 13) % 256)])
-    })
+/// A `w` × `h` test picture, encoded as `encoding`: its channels step across it, so a crop or a turn moves pixels that
+/// differ from each other.
+fn pattern(w: u32, h: u32, encoding: Encoding) -> anyhow::Result<Vec<u8>> {
+    let rgb = pg_testkit::rgb_pattern(usize::try_from(w)?, usize::try_from(h)?);
+    pg_testkit::encode(w, h, &rgb, encoding)
 }
 
 /// One file per format, sized so the JPEG transform is perfect (multiples of 16).
 fn make_files(dir: &Path) -> anyhow::Result<Vec<(String, Format)>> {
-    let img = pattern(64, 48);
     let mut out = Vec::new();
-    for (name, format) in [
-        ("a.jpg", image::ImageFormat::Jpeg),
-        ("b.png", image::ImageFormat::Png),
-        ("c.webp", image::ImageFormat::WebP),
-        ("d.tif", image::ImageFormat::Tiff),
-        ("e.gif", image::ImageFormat::Gif),
-        ("f.bmp", image::ImageFormat::Bmp),
+    for (name, encoding) in [
+        ("a.jpg", Encoding::Jpeg),
+        ("b.png", Encoding::Png),
+        ("c.webp", Encoding::WebP),
+        ("d.tif", Encoding::Tiff),
+        ("e.gif", Encoding::Gif),
+        ("f.bmp", Encoding::Bmp),
     ] {
-        let mut bytes = Cursor::new(Vec::new());
-        img.write_to(&mut bytes, format)?;
+        let bytes = pattern(64, 48, encoding)?;
         let path = dir.join("images").join(name);
-        std::fs::write(&path, bytes.get_ref())?;
-        let sniffed = Format::sniff(bytes.get_ref()).ok_or_else(|| anyhow!("{name}: not a format the codec knows"))?;
+        std::fs::write(&path, &bytes)?;
+        let sniffed = Format::sniff(&bytes).ok_or_else(|| anyhow!("{name}: not a format the codec knows"))?;
         out.push((path.to_string_lossy().into_owned(), sniffed));
     }
     Ok(out)
@@ -209,9 +206,8 @@ fn ratings_and_turns_reach_the_files() {
         let turned = orient(original, pg_model::orientation::Orientation::new(6).unwrap());
         let rotation = state::file_rotation(&c, &Path::new(path).file_name().unwrap().to_string_lossy()).unwrap();
         let bytes = std::fs::read(path).unwrap();
-        let now = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, Turns::new(rotation))
-            .unwrap()
-            .image;
+        let now =
+            pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, rotation).unwrap().image;
         assert_eq!((now.width, now.height), (turned.width, turned.height), "{path}");
         if matches!(format, Format::Png | Format::Gif | Format::Bmp | Format::Tiff) {
             assert_eq!(now.pixels, turned.pixels, "{path}: lossless");
@@ -226,7 +222,7 @@ fn ratings_and_turns_reach_the_files() {
     // the turn is in the file, or kept in the catalog.
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "sizes right after the turn: {:?}", dims(&c));
     let placeholder_turns = |c: &Catalog| -> Vec<u8> {
-        before.iter().map(|(id, _)| c.placeholder(FileId::new(*id)).unwrap().unwrap().turns.get()).collect()
+        before.iter().map(|(id, _)| c.placeholder(FileId::new(*id)).unwrap().unwrap().shown_turns.get()).collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
     c.add_root(&root).unwrap();
@@ -281,9 +277,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     };
     let images = dir.join("images");
     let jpeg = images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(jpeg_name)));
-    let mut bytes = Cursor::new(Vec::new());
-    pattern(64, 48).write_to(&mut bytes, image::ImageFormat::Jpeg).unwrap();
-    std::fs::write(&jpeg, bytes.get_ref()).unwrap();
+    std::fs::write(&jpeg, pattern(64, 48, Encoding::Jpeg).unwrap()).unwrap();
     // The clip from the video crate's tests: 64x48, six frames.
     std::fs::write(
         images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(video_name))),
@@ -542,9 +536,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     let (dotted, sibling) = (dir.join("images").join("Acme Inc."), dir.join("images").join("Acme Inc"));
     std::fs::create_dir_all(verbatim(&dotted)).unwrap();
     std::fs::create_dir_all(&sibling).unwrap();
-    let mut jpeg = Cursor::new(Vec::new());
-    pattern(64, 48).write_to(&mut jpeg, image::ImageFormat::Jpeg).unwrap();
-    let jpeg = jpeg.into_inner();
+    let jpeg = pattern(64, 48, Encoding::Jpeg).unwrap();
     std::fs::write(verbatim(&dotted.join("a.jpg")), &jpeg).unwrap();
     std::fs::write(sibling.join("a.jpg"), &jpeg).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
@@ -592,9 +584,7 @@ fn a_file_saved_between_the_read_and_the_copy_is_read_again() {
     let (dir, files, catalog_path, c) = imported("saved").unwrap();
     let id = state::file_id(&c, "b.png").unwrap();
     // The other program's save: a smaller image, so its size differs whatever the clock's resolution.
-    let mut saved = Cursor::new(Vec::new());
-    pattern(32, 16).write_to(&mut saved, image::ImageFormat::Png).unwrap();
-    let saved: &'static [u8] = Box::leak(saved.into_inner().into_boxed_slice());
+    let saved: &'static [u8] = Box::leak(pattern(32, 16, Encoding::Png).unwrap().into_boxed_slice());
     c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
@@ -938,7 +928,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
     std::fs::copy(&files[1].0, pg_platform::names::disk_path(c.rules(), &temp)).unwrap();
-    state::set_analysis_rotation(&c, id, 1).unwrap();
+    state::set_analysis_rotation(&c, id, Turns::new(1)).unwrap();
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 
     let (events, quiet) = Quiet::bus();
@@ -964,7 +954,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
         std::thread::sleep(Duration::from_millis(200));
     }
     let rotation = state::analysis_rotation(&c, id).unwrap();
-    assert_eq!(rotation, 0, "the turn is in the file, so the analysis no longer shows it pending");
+    assert_eq!(rotation, Turns::NONE, "the turn is in the file, so the analysis no longer shows it pending");
     quiet.check();
 }
 
@@ -991,9 +981,7 @@ fn rapid_turns_of_one_file_are_all_made_once() {
     let turned = orient(original, pg_model::orientation::Orientation::new(3).unwrap());
     let rotation = state::file_rotation(&c, &name).unwrap();
     let bytes = std::fs::read(path).unwrap();
-    let now = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, Turns::new(rotation))
-        .unwrap()
-        .image;
+    let now = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, rotation).unwrap().image;
     assert_eq!((now.width, now.height), (turned.width, turned.height), "{path}");
     assert_eq!(now.pixels, turned.pixels, "{path}: lossless, turned by 2 in all");
     drop(writer);

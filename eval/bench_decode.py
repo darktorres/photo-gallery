@@ -29,6 +29,8 @@ from common import DATA_ROOT, WORK_DIR, image_list, vips_thumbnail
 
 SIDE = 320
 CPU_PIPELINES = ("pil_full", "pil_draft", "vips")
+# The seed of the sampled JPEGs. Dataset seed; changing it moves the sampled inputs.
+BENCH_SEED = 0
 
 
 def _pil(data: bytes, draft: bool) -> np.ndarray:
@@ -128,7 +130,7 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=1000)
     parser.add_argument("--processes", type=int, default=12)
     parser.add_argument("--batch", type=int, default=32)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=BENCH_SEED)
     args = parser.parse_args()
 
     jpegs = [f for f in image_list() if f.lower().endswith((".jpg", ".jpeg"))]
@@ -180,7 +182,7 @@ def main() -> None:
             "cpu_fallbacks": fallbacks,
         }
     )
-    print(f"  nvjpeg: {len(files) / seconds:.0f} img/s (1 process, batch {args.batch}), {fallbacks} CPU fallbacks", flush=True)
+    print(f"  nvjpeg: {len(files) / seconds:.0f} images/s (1 process, batch {args.batch}), {fallbacks} CPU fallbacks", flush=True)
 
     emb = {name: embed_inputs(outs) for name, outs in outputs.items()}
     ref = emb["pil_full"]
@@ -194,7 +196,7 @@ def main() -> None:
     (WORK_DIR / "bench_decode.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     multi_key = f"img_s_{args.processes}proc"
     print(
-        f"\n| pipeline | img/s, 1 process | img/s, {args.processes} processes | failed | "
+        f"\n| pipeline | images/s, 1 process | images/s, {args.processes} processes | failed | "
         "SSCD cosine vs pil_full: min / p1 / p50 |"
     )
     print("|---|---|---|---|---|")

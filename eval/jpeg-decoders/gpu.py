@@ -27,10 +27,12 @@ from PIL import Image
 from torchvision.io import ImageReadMode, decode_jpeg
 
 from common import analysis_denom
-from timing import timed
+from timing import timed_s
 
 pyvips.cache_set_max(0)  # otherwise decoding the same buffer again is a cache hit
-MAX_BATCH_BYTES = 2.5e9  # decoded RGB per batch; the 2060 has 6 GB, ~1.4 GB in use by the desktop
+# Decoded RGB per GPU batch. Sized for the 6 GB card this bench runs on (the 2060, ~1.4 GB of it in use by the desktop); the
+# other GPU benches cap with timing.py's MAX_BATCH_BYTES instead.
+GPU_BENCH_BATCH_BYTES = 2.5e9
 CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
 
 
@@ -40,9 +42,9 @@ def blocking_sync() -> None:
     Done through the driver's own DLL, so no torch is needed (the nvImageCodec venv has none)."""
     cuda = ctypes.CDLL("nvcuda.dll")
     if (rc := cuda.cuInit(0)) != 0:
-        raise RuntimeError(f"cuInit returned {rc}")
+        raise RuntimeError(f"cuInit: CUDA error (code {rc})")
     if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
-        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags returned {rc} (the context is already active?)")
+        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags: CUDA error (code {rc}); the context may already be active")
 
 
 
@@ -94,10 +96,10 @@ def main():
             ("libvips full", lambda data=data: vips(data)),
             (f"libvips 1/{d}", lambda data=data, d=d: vips(data, d)),
         ]:
-            wall, cpu = timed(fn)
+            wall, cpu = timed_s(fn)
             print(f"  {label:<22} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image")
 
-        cap = max(1, int(MAX_BATCH_BYTES // (w * h * 3)))
+        cap = max(1, int(GPU_BENCH_BATCH_BYTES // (w * h * 3)))
         for batch in [b for b in (1, 8, 32, 64) if b <= cap] or [1]:
             items = [cpu_tensor] * batch
 
@@ -112,7 +114,7 @@ def main():
                 torch.cuda.synchronize()
 
             for label, fn in (("on GPU", on_gpu), ("to host", to_host)):
-                wall, cpu = timed(fn, batch)
+                wall, cpu = timed_s(fn, batch)
                 rate = f"{1 / wall:7.0f} images/s"
                 print(f"  nvJPEG batch {batch:>2} {label:<8} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {rate}")
             torch.cuda.empty_cache()

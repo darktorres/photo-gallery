@@ -16,9 +16,9 @@ use pg_client::viewport::View;
 use pg_model::image::{self, ImageKey};
 use pg_model::turns::Turns;
 
-/// A device-pixel count as the model's `usize` (a view's size is never negative).
-fn px(n: i64) -> usize {
-    usize::try_from(n).unwrap_or(0)
+/// A device-pixel count as the `usize` that `image::View` takes (`pg_model::num::index`, which never saturates).
+fn px(n: u32) -> usize {
+    pg_model::num::index(n)
 }
 
 /// The `image://full/` URL of `view` of the file `key` names, or empty when the key doesn't read.
@@ -105,7 +105,7 @@ impl qobject::Viewport {
         self.as_mut().set_fit_height(p.fit_height);
     }
 
-    pub(crate) fn fit_source(&self, key: &QString, width: i64, height: i64) -> QString {
+    pub(crate) fn fit_source(&self, key: &QString, width: u32, height: u32) -> QString {
         full_url(key, image::View::Fit(px(width), px(height)))
     }
 

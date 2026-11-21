@@ -96,12 +96,14 @@ pub struct PixelHashes {
     pub pdq: pdq::Pdq,
 }
 
-/// A video's facts: its codec, its length, and where the frame its thumbnails and placeholder come from is.
+/// A video's facts: its codec, its length, and where the frame its thumbnails and placeholder come from is. The times are
+/// in milliseconds, held as the grid holds them (`u32`): a length that is not known is [`crate::grid::Entry::NO_DURATION`], which the
+/// catalog stores as NULL.
 #[derive(Clone)]
 pub struct VideoFacts {
     pub codec: &'static str,
-    pub duration_ms: i64,
-    pub poster_ms: i64,
+    pub duration_ms: u32,
+    pub poster_ms: u32,
 }
 
 impl Analysis {

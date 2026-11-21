@@ -35,13 +35,13 @@ OUT = REPO / "target" / "qmltest.txt"
 
 
 def qt_kit() -> Path:
-    """The Qt kit: QT_DIR (its bin and lib folders), from the environment or .env. Exits when it is not one."""
-    qt = os.environ.get("QT_DIR", "")
+    """The Qt kit: PG_QT_DIR (its bin and lib folders), from the environment or .env. Exits when it is not one."""
+    qt = os.environ.get("PG_QT_DIR", "")
     if not qt:
-        not_set("QT_DIR", QT_DIR_HOW)
+        not_set("PG_QT_DIR", QT_DIR_HOW)
     qmake = Path(qt) / "bin" / ("qmake.exe" if WINDOWS else "qmake")
     if not qmake.is_file():
-        sys.exit(f"QT_DIR ({qt}) has no bin/{qmake.name}: point it at the Qt kit folder.")
+        sys.exit(f"qmltest: PG_QT_DIR ({qt}) has no bin/{qmake.name}: point it at the Qt kit folder.")
     return Path(qt)
 
 
@@ -71,10 +71,10 @@ def mascot_bundle(qt: Path) -> Path:
     """
     rcc = next((p for p in (qt / "libexec" / "rcc", qt / "bin" / "rcc.exe", qt / "bin" / "rcc") if p.is_file()), None)
     if rcc is None:
-        sys.exit(f"no rcc in {qt} (libexec or bin): the Qt kit has the resource compiler; reinstall its tools.")
+        sys.exit(f"qmltest: no rcc in {qt} (libexec or bin): the Qt kit has the resource compiler; reinstall its tools.")
     files = sorted(MASCOTS.glob("*.png"))
     if not files:
-        sys.exit(f"no mascot images in {MASCOTS}")
+        sys.exit(f"qmltest: no mascot images in {MASCOTS}")
     entries = "\n".join(f'    <file alias="resources/mascots/{f.name}">{escape(str(f))}</file>' for f in files)
     qrc = STAGED / "mascots.qrc"
     bundle = STAGED / "mascots.rcc"
@@ -105,7 +105,7 @@ def build_host(env: dict[str, str], qt: Path) -> Path:
     """Configures and builds the test host (CMake, against the Qt kit's packages). Returns its executable."""
     cmake = shutil.which("cmake")
     if cmake is None:
-        sys.exit("cmake is not on PATH: install CMake (the QML test host is built with it)")
+        sys.exit("qmltest: cmake is not on PATH: install CMake (the QML test host is built with it)")
     run([cmake, "-S", str(HOST_SOURCE), "-B", str(HOST_BUILD), f"-DCMAKE_PREFIX_PATH={qt}"], env)
     run([cmake, "--build", str(HOST_BUILD), "--config", "Release"], env)
     return HOST_BUILD / ("Release" if WINDOWS else "") / ("qml_host.exe" if WINDOWS else "qml_host")

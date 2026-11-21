@@ -4,8 +4,8 @@ and the harness. It was win-build.cmd.
 
     python eval/jpeg-decoders/win_build.py [turbo jpeggpu gpujpeg parajpeg debesheedas harness]   (default: all)
 
-Sources go to %JPEG_EVAL%\\src at pinned commits (patches\\*.patch applied on a fresh clone), builds to %JPEG_EVAL%\\build. The
-toolchain comes from win_env.py: VS Build Tools, the CUDA toolkit (CUDA_PATH), CMake, Ninja, and LLVM's clang-cl (LLVM_DIR,
+Sources go to %PG_JPEG_EVAL%\\src at pinned commits (patches\\*.patch applied on a fresh clone), builds to
+%PG_JPEG_EVAL%\\build. The toolchain comes from win_env.py: VS Build Tools, the CUDA toolkit (CUDA_PATH), CMake, Ninja, and LLVM's clang-cl (PG_LLVM_DIR,
 default %ProgramFiles%\\LLVM). NASM is not set up here: it must already be on PATH. Windows only.
 """
 

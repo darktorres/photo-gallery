@@ -26,7 +26,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value, json};
 
 /// The most bytes of a perf file before it is rotated (its older files are kept beside it, as the app log's are).
-pub const FILE_CAP: u64 = 16 * 1024 * 1024;
+pub const PERF_FILE_CAP: u64 = 16 * 1024 * 1024;
 
 /// The `program` every perf log's meta names. The command line and the window are one executable, so both write this
 /// name (the CLI and the app's trace used to differ).
@@ -84,7 +84,7 @@ pub fn open(path: &Path, meta: Value) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file = pg_log::LogFile::new(path.to_path_buf(), FILE_CAP);
+    let file = pg_log::LogFile::new(path.to_path_buf(), PERF_FILE_CAP);
     install(Sink::File(file), meta)
 }
 

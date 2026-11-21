@@ -47,14 +47,6 @@ Pane {
         filters.reload();
     }
 
-    // The list facets, by index: the order of pg_client::facets::Facet (pinned by tests/facets.rs). A FacetChoices row
-    // set is made for each, in the flow below.
-    readonly property int facetTypes: 0
-    readonly property int facetOrientations: 1
-    readonly property int facetStatus: 2
-    readonly property int facetBorders: 3
-    readonly property int facetRatings: 4
-    readonly property int facetExts: 5
     // The bounded fields, by index: the order of pg_client::input::Field::ALL (pinned by its test). Each Bound names one
     // of these; a list facet's index above is a different namespace, so these are not facet indices.
     readonly property int fieldSize: 0
@@ -76,10 +68,6 @@ Pane {
     Filters {
         id: filters
         onEdited: bar.edited()
-    }
-
-    function count(n: int): string {
-        return Qt.locale().toString(n);
     }
 
     // A choice in a list facet, one row of a FacetChoices: highlighted while the query has it (`chosen`). Each
@@ -140,30 +128,31 @@ Pane {
                 spacing: 14
 
                 // The rows of each list facet (facet_choices.rs): a chip reads its row's key, label, count and chosen.
-                // They read the query and the counts themselves; each change to either asks for the rows again.
+                // They read the query and the counts themselves; each change to either asks for the rows again. A list
+                // is named by the bridge's enum (FacetChoices.Types and so on); Filters.toggle takes the same names.
                 FacetChoices {
                     id: typeChoices
-                    facet: bar.facetTypes
+                    facet: FacetChoices.Types
                 }
                 FacetChoices {
                     id: ratingChoices
-                    facet: bar.facetRatings
+                    facet: FacetChoices.Ratings
                 }
                 FacetChoices {
                     id: extChoices
-                    facet: bar.facetExts
+                    facet: FacetChoices.Exts
                 }
                 FacetChoices {
                     id: shapeChoices
-                    facet: bar.facetOrientations
+                    facet: FacetChoices.Shapes
                 }
                 FacetChoices {
                     id: statusChoices
-                    facet: bar.facetStatus
+                    facet: FacetChoices.Status
                 }
                 FacetChoices {
                     id: borderChoices
-                    facet: bar.facetBorders
+                    facet: FacetChoices.Borders
                 }
 
                 function refreshChoices() {
@@ -197,8 +186,8 @@ Pane {
                     Repeater {
                         model: typeChoices
                         delegate: Chip {
-                            text: label + "  " + bar.count(count)
-                            onClicked: filters.toggle(bar.facetTypes, key)
+                            text: label + " · " + words.count(count)
+                            onClicked: filters.toggle(Filters.Types, key)
                         }
                     }
                 }
@@ -213,7 +202,7 @@ Pane {
                         delegate: Chip {
                             required property int index
                             text: Ratings.symbol(index) + (index === 0 ? " " + words.text("ui-unrated") : "")
-                            onClicked: filters.toggle(bar.facetRatings, key)
+                            onClicked: filters.toggle(Filters.Ratings, key)
                         }
                     }
                 }
@@ -226,8 +215,8 @@ Pane {
                     Repeater {
                         model: extChoices
                         delegate: Chip {
-                            text: label + "  " + bar.count(count)
-                            onClicked: filters.toggle(bar.facetExts, key)
+                            text: label + " · " + words.count(count)
+                            onClicked: filters.toggle(Filters.Exts, key)
                         }
                     }
                 }
@@ -241,7 +230,7 @@ Pane {
                         model: shapeChoices
                         delegate: Chip {
                             text: label
-                            onClicked: filters.toggle(bar.facetOrientations, key)
+                            onClicked: filters.toggle(Filters.Shapes, key)
                         }
                     }
                 }
@@ -332,7 +321,7 @@ Pane {
                         model: statusChoices
                         delegate: Chip {
                             text: label
-                            onClicked: filters.toggle(bar.facetStatus, key)
+                            onClicked: filters.toggle(Filters.Status, key)
                         }
                     }
                 }
@@ -345,8 +334,8 @@ Pane {
                     Repeater {
                         model: borderChoices
                         delegate: Chip {
-                            text: label + "  " + bar.count(count)
-                            onClicked: bar.bordersOn ? filters.toggle(bar.facetBorders, key) : bar.bordersBlocked()
+                            text: label + " · " + words.count(count)
+                            onClicked: bar.bordersOn ? filters.toggle(Filters.Borders, key) : bar.bordersBlocked()
                         }
                     }
                     Caption {
@@ -370,7 +359,7 @@ Pane {
                         Layout.preferredWidth: 170
                     }
                     Button {
-                        text: words.phrase("ui-save-crops", 0, bar.count(bar.croppable), "")
+                        text: words.phrase("ui-save-crops", 0, words.count(bar.croppable), "")
                         font.pixelSize: 12
                         onClicked: {
                             if (!bar.bordersOn)

@@ -517,6 +517,10 @@ mod tests {
     #[test]
     fn the_sort_is_by_name_and_ascending_unless_told() {
         assert_eq!(Sort::default(), Sort { key: SortKey::Name, descending: false });
-        assert_eq!(SortKey::iter().count(), 14);
+        assert_eq!(
+            SortKey::iter().count(),
+            14,
+            "there are 14 sort keys: a new or removed key changes the sort menu and its stored views"
+        );
     }
 }

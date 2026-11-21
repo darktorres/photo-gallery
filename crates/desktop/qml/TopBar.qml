@@ -74,7 +74,7 @@ ToolBar {
         Label {
             textFormat: Text.PlainText
             color: "#999999"
-            text: bar.loading && bar.fileCount === 0 ? words.text("ui-loading") : bar.filterActive > 0 ? words.phrase("ui-files-of", 0, Qt.locale().toString(bar.fileCount), Qt.locale().toString(bar.filterTotal)) : words.phrase("ui-files", 0, Qt.locale().toString(bar.fileCount), "")
+            text: bar.loading && bar.fileCount === 0 ? words.text("ui-loading") : bar.filterActive > 0 ? words.phrase("ui-files-of", 0, words.count(bar.fileCount), words.count(bar.filterTotal)) : words.phrase("ui-files", 0, words.count(bar.fileCount), "")
         }
         BusyIndicator {
             running: bar.loading

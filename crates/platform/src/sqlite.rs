@@ -309,7 +309,7 @@ mod windows {
             folder
         }
 
-        /// A file made through the alias is in the folder; a second request reuses the same junction.
+        // A file made through the alias is in the folder; a second request reuses the same junction.
         #[test]
         fn a_folder_without_a_utf8_name_is_reached_through_an_alias() {
             let dir = crate::testing::run_folder("scratch_platform", "alias").unwrap();
@@ -323,7 +323,7 @@ mod windows {
             let _ = std::fs::remove_dir_all(&dir);
         }
 
-        /// A junction whose folder is gone is swept by the next alias made in its folder.
+        // A junction whose folder is gone is swept by the next alias made in its folder.
         #[test]
         fn a_stale_alias_is_swept() {
             let dir = crate::testing::run_folder("scratch_platform", "stale").unwrap();
@@ -337,10 +337,10 @@ mod windows {
             let _ = std::fs::remove_dir_all(&dir);
         }
 
-        /// The alias may point at a folder on another volume than the alias's own: the target is in the temp folder, and
-        /// the test folder is under `PG_TEST_DIR`. With `PG_TEST_DIR` on another volume the alias crosses volumes; without
-        /// it both are on the system drive, and the assertions hold there too. CI sets no `PG_TEST_DIR`, so CI runs that
-        /// single-volume case.
+        // The alias may point at a folder on another volume than the alias's own: the target is in the temp folder, and
+        // the test folder is under `PG_TEST_DIR`. With `PG_TEST_DIR` on another volume the alias crosses volumes; without
+        // it both are on the system drive, and the assertions hold there too. CI sets no `PG_TEST_DIR`, so CI runs that
+        // single-volume case.
         #[test]
         fn an_alias_can_point_at_a_folder_on_another_volume() {
             let dir = crate::testing::run_folder("scratch_platform", "volume").unwrap();
@@ -359,7 +359,7 @@ mod windows {
 mod tests {
     use super::openable_folder;
 
-    /// On Unix the folder is used as it is, with any bytes, and nothing is made in the alias folder.
+    // On Unix the folder is used as it is, with any bytes, and nothing is made in the alias folder.
     #[test]
     fn a_folder_is_used_as_it_is_on_unix() {
         let folder = crate::names::path_buf(b"/tmp/odd\xFF");
@@ -373,7 +373,7 @@ mod tests {
 mod length_tests {
     use super::units_fit;
 
-    /// The limit is `MAX_PATH` less its NUL: a path and a name whose units sum to 259 fit, 260 do not.
+    // The limit is `MAX_PATH` less its NUL: a path and a name whose units sum to 259 fit, 260 do not.
     #[test]
     fn a_path_with_its_longest_name_fits_up_to_259_units() {
         assert!(units_fit(259 - 35, 35));

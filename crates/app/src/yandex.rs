@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
+use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, YandexStatus};
 use pg_platform::names::{disk_path, rule_path_of, shown};
 use pg_platform::native::PATH_RULES;
@@ -116,10 +117,10 @@ impl Yandex {
         Yandex { search: Search::default(), factory, prefs, makers }
     }
 
-    /// Start a search for the photo at `photo`, a local path, its results' grid pictures `grid_height` px high (the
-    /// panel's rows). False when a search or a save is running, or the service has stopped (nothing changes); an error
-    /// when its thread couldn't start (nothing runs, and nothing stays busy).
-    pub fn start(&self, photo: &Path, grid_height: usize) -> io::Result<bool> {
+    /// Start a search for the photo at `photo`, a local path, its results' grid pictures `grid_height` high (the panel's
+    /// row height; `images::grid_picture` makes them that many pixels). False when a search or a save is running, or the
+    /// service has stopped (nothing changes); an error when its thread couldn't start (nothing runs, and nothing stays busy).
+    pub fn start(&self, photo: &Path, grid_height: RowHeight) -> io::Result<bool> {
         let makers = self.makers.clone();
         let check: Check = Arc::new(move |bytes| images::grid_picture(&makers, bytes, grid_height));
         self.search.start(photo, self.factory.clone(), check)

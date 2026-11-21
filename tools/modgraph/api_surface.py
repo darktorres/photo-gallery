@@ -14,7 +14,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from compiler_graph import library_packages
+from compiler_graph import library_packages, normal_pg_deps
 from testcut import production_part
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,12 +27,8 @@ crates = {}
 for manifest in sorted(ROOT.glob("crates/*/Cargo.toml")):
     data = tomllib.loads(manifest.read_text(encoding="utf-8"))
     name = data["package"]["name"]
-    deps = set()
-    for table in ("dependencies",):
-        for dep in data.get(table, {}):
-            if dep.startswith("pg-"):
-                deps.add(dep)
-    dev = {d for d in data.get("dev-dependencies", {}) if d.startswith("pg-")}
+    deps = set(normal_pg_deps(data))
+    dev ={d for d in data.get("dev-dependencies", {}) if d.startswith("pg-")}
     crates[name] = {"dir": manifest.parent, "deps": deps, "dev": dev}
 
 

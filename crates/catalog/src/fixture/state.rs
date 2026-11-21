@@ -7,6 +7,7 @@ use crate::core::Catalog;
 use crate::queue::MAX_ATTEMPTS;
 use anyhow::Result;
 use pg_model::ids::FileId;
+use pg_model::turns::Turns;
 use rusqlite::{OptionalExtension, params};
 
 /// A scan row. Ids are the test's own: [`super::insert`] needs scan 1, and the folders its files name.
@@ -29,7 +30,7 @@ pub fn add_folder(c: &Catalog, id: i64, path: &str) -> Result<()> {
 pub fn stub_analysis_of_all(c: &Catalog) -> Result<()> {
     c.conn.execute_batch(&format!(
         "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed)
-             SELECT id, {}, size, mtime, rotation, kind, 0 FROM files;",
+             SELECT id, {}, size, mtime, turns, kind, 0 FROM files;",
         pg_model::versions::IMPORT_VERSION
     ))?;
     let ids: Vec<i64> =
@@ -84,9 +85,10 @@ pub fn file_and_path(c: &Catalog, name: &str) -> Result<(FileId, pg_model::rules
     Ok((FileId::new(id), path))
 }
 
-/// The turn the file holds in the catalog (`files.rotation`), by name.
-pub fn file_rotation(c: &Catalog, name: &str) -> Result<u8> {
-    Ok(c.conn.query_row("SELECT rotation FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0))?)
+/// The turn the file holds in the catalog (`files.turns`), by name.
+pub fn file_rotation(c: &Catalog, name: &str) -> Result<Turns> {
+    let stored: i64 = c.conn.query_row("SELECT turns FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0))?;
+    Ok(Turns::of(stored))
 }
 
 /// Marks the file missing, as a scan that doesn't find it does.
@@ -186,13 +188,14 @@ pub fn analysis_sizes(c: &Catalog) -> Result<Vec<(u32, u32)>> {
 }
 
 /// The turn the analysis holds for the file (its pending turn, when a turn is queued and not yet analysed).
-pub fn analysis_rotation(c: &Catalog, id: FileId) -> Result<i64> {
-    Ok(c.conn.query_row("SELECT rotation FROM analysis WHERE file_id = ?1", [id.get()], |r| r.get(0))?)
+pub fn analysis_rotation(c: &Catalog, id: FileId) -> Result<Turns> {
+    let stored: i64 = c.conn.query_row("SELECT rotation FROM analysis WHERE file_id = ?1", [id.get()], |r| r.get(0))?;
+    Ok(Turns::of(stored))
 }
 
 /// Sets the turn the analysis holds for the file.
-pub fn set_analysis_rotation(c: &Catalog, id: FileId, turns: u8) -> Result<()> {
-    c.conn.execute("UPDATE analysis SET rotation = ?2 WHERE file_id = ?1", params![id.get(), turns])?;
+pub fn set_analysis_rotation(c: &Catalog, id: FileId, turns: Turns) -> Result<()> {
+    c.conn.execute("UPDATE analysis SET rotation = ?2 WHERE file_id = ?1", params![id.get(), turns.get()])?;
     Ok(())
 }
 

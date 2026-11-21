@@ -437,10 +437,11 @@ pub(crate) fn counts_on(conn: &Connection, kind: LedgerKind, ack: &LedgerAck) ->
         LedgerKind::File(pass) => (FILE_LEDGER_COUNTS, pass.code()),
         LedgerKind::ScanFolders => (FOLDER_LEDGER_COUNTS, kind.code()),
     };
-    let (total, new, since_dismissed): (i64, i64, i64) = conn
+    // Each count is read as a `u64`: a negative `COUNT(*)` is an error, not a 0.
+    let (total, new, since_dismissed): (u64, u64, u64) = conn
         .prepare_cached(sql)?
         .query_row(params![code, ack.seen_to, ack.dismissed_to], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-    Ok(Counts { total: count(total), new: count(new), since_dismissed: count(since_dismissed) })
+    Ok(Counts { total, new, since_dismissed })
 }
 
 /// [`Catalog::ledger_entries`] on `conn`, which the caller holds a snapshot on.
@@ -491,11 +492,6 @@ pub(crate) fn dismiss_ledger_on(conn: &Connection, kind: LedgerKind, seen: i64, 
     Ok(changed > 0)
 }
 
-/// A stored count (never negative).
-fn count(n: i64) -> u64 {
-    u64::try_from(n).unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,7 +532,7 @@ mod tests {
             file_id: FileId::new(id),
             mtime: 100,
             size: 10,
-            rotation: Turns::NONE,
+            turns: Turns::NONE,
             error: error.into(),
             retry: false,
         }
@@ -950,7 +946,8 @@ mod tests {
         assert!(raw::file_seq(&c, FileId::new(1)) > one, "the panicked file is listed again");
         assert_eq!(raw::file_seq(&c, FileId::new(2)), two);
         assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());
-        crate::lifecycle::set_borders_version(&c.conn, 0).unwrap();
+        // A later version is a raised mark, which starts its failures anew (a lower one is refused, not reset).
+        crate::lifecycle::set_borders_version(&c.conn, 2).unwrap();
         assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
     }
 
@@ -1066,7 +1063,7 @@ mod tests {
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
                  INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                                   rotation, order_key)
+                                   turns, order_key)
                  SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
                         CAST(printf('%08d', i) AS BLOB)
                  FROM n",

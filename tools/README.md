@@ -12,7 +12,7 @@ shape. The other tools end with `sys.exit(message)`, which exits 1.
 | Script | What it does | OS | How it runs |
 |---|---|---|---|
 | `pgtools.py` | The helpers the other tools share: the repository's folder, the `.env` loader, a command runner, the MSVC environment | both | imported |
-| `check_qt.py` | Fails with the fix when `QT_DIR` is not the Qt kit the Justfile pins (`qt_version`; its `bin/qmake` must report that version) | both | `_qt` in the recipes that need Qt |
+| `check_qt.py` | Fails with the fix when `PG_QT_DIR` is not the Qt kit the Justfile pins (`qt_version`; its `bin/qmake` must report that version) | both | `_qt` in the recipes that need Qt |
 | `check_lint_tools.py` | The lint tools at their pins: ruff and markdownlint from `.venv` and `.tools` (or PATH); `--install` makes them, from their lockfiles | both | `just lint-tools-setup`, `just lint` |
 | `lint.py` | The lint steps, the same list on every OS (fmt, clippy, wasm32, docs, the lockfiles, machete, ruff, markdownlint, the crate boundaries; cargo-deny is `just deny`, its own CI step) | both | `just lint`, `docker/check.py` |
 | `boundaries.py` | The workspace's structural rules: the crate layers (`crate-layers.txt`), acyclic dev edges, re-exports, and the platform rule (OS calls and branches only in pg-platform) | both | `lint.py` |
@@ -77,6 +77,6 @@ tests (`just test-eval`).
 These are not run by anything now. Each is removed once its replacement has run on Windows (the plan's rule):
 `doctor.ps1` (`doctor.py`), `qmltest.ps1` (`qmltest.py`),
 `compare-shots.ps1` (`compare_shots.py`), `build-jpeg-turbo.ps1` (`build_jpeg_turbo.py`),
-`build-static-ffmpeg.ps1` (`build_static_ffmpeg.py`), `profiling/callgraph/profile.ps1` (`profile.py`), and
-`profiling/callgraph/build.py`. `eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`,
+`build-static-ffmpeg.ps1` (`build_static_ffmpeg.py`), and `profiling/callgraph/profile.ps1` (`profile.py`).
+`eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`,
 `win_env.py`) are the same kind of original.

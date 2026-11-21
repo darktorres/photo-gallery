@@ -1,6 +1,6 @@
 """The timing the decoder harnesses share, in two methods that differ in cost, not in measurement:
 
-- `timed`: a GPU decode, repeated over at least BUDGET_S (3 warm-ups, then at least 5 calls): the median wall time, and
+- `timed_s`: a GPU decode, repeated over at least BUDGET_S (3 warm-ups, then at least 5 calls): the median wall time, and
   the process's CPU time per call.
 - `median_s`: a call too slow to repeat for BUDGET_S (an encoder, a whole program run): a fixed number of calls, with no
   warm-up, over `seconds_of`, which is the one clock every harness reads.
@@ -16,7 +16,7 @@ BUDGET_S = 1.5
 MAX_BATCH_BYTES = 2.0e9
 
 
-def timed(fn, per_call=1):
+def timed_s(fn, per_call=1):
     """Median seconds per item, and process CPU seconds per item, over at least BUDGET_S of calls."""
     for _ in range(3):
         fn()

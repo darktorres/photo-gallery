@@ -77,8 +77,8 @@ pub struct LaneLines {
     pub lanes: Vec<LaneProgress>,
 }
 
-/// What the library is doing now, for the status line and the progress.
-pub struct Status {
+/// What the library is doing now, for the status line and the progress: a snapshot the app's `Library::status` takes.
+pub struct LibraryActivity {
     /// The library's one progress: the crop's when it works, else the first lane that works (`lane_lines` has each row's).
     pub progress: Progress,
     pub paused: bool,
@@ -248,10 +248,10 @@ impl Library {
     }
 
     /// The job's and the writer's state now.
-    pub fn status(&self) -> Status {
+    pub fn status(&self) -> LibraryActivity {
         let mut slot = self.writer();
         self.tend(&mut slot);
-        Status {
+        LibraryActivity {
             progress: self.runner.progress(),
             paused: self.runner.is_paused(),
             writes: slot.writer.status(),
@@ -405,7 +405,7 @@ impl LibraryService {
     }
 
     /// The folders whose removal is not finished, with the rows each keeps for an unfinished write (`Catalog::removal_markers`).
-    pub fn pending_removals(&self) -> Result<Vec<(RulePath, usize)>> {
+    pub fn pending_removals(&self) -> Result<Vec<(RulePath, u64)>> {
         let markers = self.catalogs.with_catalog(|c| c.removal_markers())?;
         Ok(markers.into_iter().map(|m| (m.path, m.deferred)).collect())
     }

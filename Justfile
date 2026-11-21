@@ -20,9 +20,9 @@ ffmpeg_sha256 := "1d9823c35c7a7e2f54d1438cf61030d6efabe3278de01c191309d1e828bb74
 # The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
 py := env('PG_PYTHON', if os() == "windows" { "python" } else { "python3" })
 
-# Qt's kit folder (QT_DIR, Qt 6.12.0 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
+# Qt's kit folder (PG_QT_DIR, Qt 6.12.0 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
 # and the tests of the desktop crate need Qt's DLLs. Recipes that link Qt depend on `_qt`, which fails when it is unset.
-qt := env('QT_DIR', '')
+qt := env('PG_QT_DIR', '')
 path_sep := if os() == "windows" { ";" } else { ":" }
 export PATH := if qt == '' { env('PATH') } else { qt + '/bin' + path_sep + env('PATH') }
 
@@ -90,7 +90,7 @@ cargo_machete_version := "0.10.1"
 # The pins of the Linux container (docker/Dockerfile) and of CI, each written once, here. Python reads these lines from the
 # text (tools/pgtools.py just_value: one literal `NAME := "value"` line each), because CI reads them before `just` is
 # installed. CI's Linux job runs the same image, and its `just` is the one in the install step (just_version).
-# qt_version is the Qt kit for the Linux container and for CI's Windows job (QT_DIR is derived from it).
+# qt_version is the Qt kit for the Linux container and for CI's Windows job (PG_QT_DIR is derived from it).
 just_version := "1.59.0"
 cargo_fuzz_version := "0.13.2"
 # Python for CI's jobs (setup-python, which runs before the pins step, so ci.yml holds the literal; the tools test asserts it
@@ -115,7 +115,7 @@ aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"
 lint-tools-setup:
     {{ py }} tools/check_lint_tools.py --install
 
-# Fails with the fix when QT_DIR is missing or has no qmake (tools/check_qt.py).
+# Fails with the fix when PG_QT_DIR is missing or has no qmake (tools/check_qt.py).
 [private]
 _qt:
     {{ py }} tools/check_qt.py

@@ -11,9 +11,9 @@ Image {
     readonly property int count: 40
     // The mascot shown: 1 to count.
     property int number: 1
-    // The mascot to show from the start, instead of a random one (the screenshots pin one with --mascot=<n>). 0, or a
+    // The mascot to show from the start, instead of a random one (the screenshots pin one with --mascot=<n>). -1, or a
     // number out of 1 to count, is random.
-    property int pinned: 0
+    property int pinned: -1
 
     // Shows the mascot `d` places on (-1 the previous one, 1 the next), wrapping around.
     function step(d: int): void {

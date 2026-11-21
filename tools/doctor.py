@@ -79,8 +79,8 @@ def libclang_dirs() -> list[Path]:
     if os.environ.get("LIBCLANG_PATH"):
         dirs.append(Path(os.environ["LIBCLANG_PATH"]))
     if WINDOWS:
-        if os.environ.get("LLVM_DIR"):
-            dirs.append(Path(os.environ["LLVM_DIR"]) / "bin")
+        if os.environ.get("PG_LLVM_DIR"):
+            dirs.append(Path(os.environ["PG_LLVM_DIR"]) / "bin")
         if os.environ.get("PROGRAMFILES"):
             dirs.append(Path(os.environ["PROGRAMFILES"]) / "LLVM" / "bin")
         dirs.extend(Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p)
@@ -113,13 +113,13 @@ def main() -> None:
     )
 
     # Qt: the kit's qmake is what cxx-qt-build runs.
-    qt = os.environ.get("QT_DIR", "")
+    qt = os.environ.get("PG_QT_DIR", "")
     qmake = Path(qt) / "bin" / ("qmake.exe" if WINDOWS else "qmake") if qt else None
     doctor.require(
         qmake is not None and qmake.is_file(),
-        "Qt (QT_DIR)",
+        "Qt (PG_QT_DIR)",
         qt,
-        f"set QT_DIR in .env to the Qt {just_value('qt_version')} {qt_kit()} kit (the folder with bin/qmake), "
+        f"set PG_QT_DIR in .env to the Qt {just_value('qt_version')} {qt_kit()} kit (the folder with bin/qmake), "
         "from the Qt Online Installer",
     )
 
@@ -135,7 +135,7 @@ def main() -> None:
         fix = "install the FFmpeg development packages (docker/apt-packages.txt), or set FFMPEG_DIR in .env"
     doctor.require(ffmpeg_ok(prefix), "FFmpeg", where, fix)
 
-    # libclang: bindgen loads it. LIBCLANG_PATH names its folder; on Windows LLVM_DIR is the LLVM install.
+    # libclang: bindgen loads it. LIBCLANG_PATH names its folder; on Windows PG_LLVM_DIR is the LLVM install.
     clang = next((folder for folder in libclang_dirs() if libclang_in(folder)), None)
     if WINDOWS:
         clang_fix = (

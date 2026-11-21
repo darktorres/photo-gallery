@@ -209,7 +209,8 @@ void save_screenshot_later(QQmlApplicationEngine& engine, int max_ms) {
             : QStringLiteral("timed out after %1 ms (%2 ms since ready, quiet for %3 ms); %4")
                   .arg(state->total.elapsed()).arg(state->waited.elapsed()).arg(quiet).arg(busy.text());
         take(engine, poll, settled, report);
-        QCoreApplication::quit();
+        // A run that timed out unsettled fails, as the two no-window and not-ready exits above do.
+        QCoreApplication::exit(settled ? 0 : 1);
     });
     poll->start();
 }

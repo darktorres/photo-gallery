@@ -188,8 +188,8 @@ mod tests {
         }
     }
 
-    /// A still GIF whose frame is wholly off its screen has no pixels to turn: `rotate` keeps the turn in the
-    /// catalog (`Outcome::Catalog`), as it does for an animation, rather than failing.
+    // A still GIF whose frame is wholly off its screen has no pixels to turn: `rotate` keeps the turn in the
+    // catalog (`Outcome::Catalog`), as it does for an animation, rather than failing.
     #[test]
     fn a_still_gif_with_nothing_on_its_screen_is_catalogued() {
         let (w, h) = (4, 3);
@@ -280,8 +280,8 @@ mod tests {
         );
     }
 
-    /// A JPEG whose EXIF orientation 6 is a BYTE, a LONG, or a LONG array stored out of its entry turns once: the
-    /// patcher resets the tag the reader took, so the turned pixels are not turned again by it.
+    // A JPEG whose EXIF orientation 6 is a BYTE, a LONG, or a LONG array stored out of its entry turns once: the
+    // patcher resets the tag the reader took, so the turned pixels are not turned again by it.
     #[test]
     fn jpeg_byte_and_long_orientations_turn_once() {
         let mut c = turbojpeg::Compressor::new().unwrap();

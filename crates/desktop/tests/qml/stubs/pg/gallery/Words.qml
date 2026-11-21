@@ -1,5 +1,5 @@
-// A stub of the Words facade (crates/desktop/src/words.rs, over pg_client's text): the rating symbols and the timecode,
-// with the same names and the same answers as the Rust (text::RATING_SYMBOLS, text::timecode). The front end's own
+// A stub of the Words facade (crates/desktop/src/words.rs, over pg_client's text): the rating symbols, the timecode and
+// the count, with the same names and the same answers as the Rust (text::RATING_SYMBOLS, text::timecode, text::group_digits). The front end's own
 // literals (text, phrase) answer with their ui.ftl id: a phrase's value follows it after a colon, and its count (the number
 // it is about) after that. These tests check the QML's logic, not its words, but a test can tell which value it was given.
 import QtQuick
@@ -25,5 +25,10 @@ QtObject {
         const s = seconds % 60;
         const pad = n => (n < 10 ? "0" : "") + n;
         return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
+    }
+
+    // The thousands grouped, as text::group_digits groups them (1,234,567); a negative count is 0.
+    function count(n) {
+        return String(Math.max(n, 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     }
 }

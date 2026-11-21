@@ -31,7 +31,7 @@ use pg_model::rules::Path as RulePath;
 use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
 use pg_model::view::SavedView;
 
-use crate::rows::qt_int;
+use crate::rows::{file_id_of, qt_int};
 use crate::settings::save_prefs;
 use crate::{app, controller, deadline, folders, gallery, keymap, library, worker};
 
@@ -321,8 +321,8 @@ impl qobject::Shell {
     /// selects the file once its list is shown (`Command::Reveal`), and `revealShown` is emitted. A file the library
     /// no longer has is a toast instead; a newer Reveal supersedes this one, whose delivery is dropped.
     pub(crate) fn reveal(self: Pin<&mut Self>, file_id: f64) {
-        // The bridge's number becomes a file's id here, once: everything after it is typed.
-        let file = FileId::new(pg_model::num::f64_to_i64(file_id));
+        // The bridge's number becomes a file's id here, once: everything after it is typed. Not a file id: nothing to show.
+        let Some(file) = file_id_of(file_id) else { return };
         let shell = self.qt_thread();
         app::session().reveal_folder(file, move |folder| {
             // Fails only when the window is gone: nothing left to reveal in.

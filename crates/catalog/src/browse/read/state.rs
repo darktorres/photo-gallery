@@ -16,9 +16,9 @@ use pg_model::turns::Turns;
 macro_rules! file_state_columns {
     () => {
         concat!(
-            "f.mtime, f.rotation,
+            "f.mtime, f.turns,
         coalesce((SELECT value FROM file_writes WHERE file_id = f.id AND kind = '",
-            pg_model::write_rotation!(),
+            pg_model::write_turns!(),
             "'), 0),
         EXISTS(SELECT 1 FROM file_writes WHERE file_id = f.id AND temp IS NOT NULL),
         f.size"
@@ -82,18 +82,20 @@ impl Catalog {
         let conn = &self.conn;
         Ok(conn
             .prepare_cached(concat!(
-                "SELECT p.hash, (f.rotation - coalesce(p.rotation, f.rotation) + 4) % 4, ",
+                "SELECT p.hash, f.turns, coalesce(p.rotation, f.turns), ",
                 file_state_columns!(),
                 " FROM files f LEFT JOIN placeholders p ON p.file_id = f.id WHERE f.id = ?1"
             ))?
             .query_row([file_id.get()], |r| {
-                let kept: u8 = r.get(1)?;
+                // The turns the file is shown with since its hash was made: the stored turns less the turns it was hashed at.
+                let (stored, hashed): (i64, i64) = (r.get(1)?, r.get(2)?);
+                let kept = Turns::of(stored - hashed);
                 // Read in place: the blob isn't copied into a `Vec` first.
                 let hash = match r.get_ref(0)? {
                     ValueRef::Null => None,
                     v => ThumbHash::new(v.as_blob()?),
                 };
-                Ok(Placeholder { hash, turns: Turns::new(kept).plus(file_state_at(r, 2)?.pending_turns) })
+                Ok(Placeholder { hash, shown_turns: kept.plus(file_state_at(r, 3)?.pending_turns) })
             })
             .optional()?)
     }

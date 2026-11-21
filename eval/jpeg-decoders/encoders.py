@@ -1,6 +1,6 @@
 """JPEG encoders against each other: bytes at equal SSIMULACRA2, and encode speed.
 
-On Linux, with linux_build.py's tools in JPEG_EVAL/bin; in the container, each step is
+On Linux, with linux_build.py's tools in PG_JPEG_EVAL/bin; in the container, each step is
 `just linux-eval eval/jpeg-decoders/encoders.py STEP`, with PG_JPEG_ENC_DIR (.env) the host folder it works in:
     python3 eval/jpeg-decoders/encoders.py prepare      # the inputs decoded once (libjpeg-turbo) to PPM
     python3 eval/jpeg-decoders/encoders.py encode       # CPU encoders, every quality, in parallel

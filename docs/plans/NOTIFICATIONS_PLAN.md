@@ -12,7 +12,7 @@ It was revised on 2026-11-15 at HEAD `724a882` (after `354b736`), and corrected 
 A row stays while any part of its proper fix is missing. Rows whose fix is in and whose test passes are removed.
 
 The full workspace suite should pass now: `facets_filter` failed at `472eaf5` because the fixture wrote analysis
-version 1 against `IMPORT_VERSION` 2. `62abf68` makes the fixture write the current version. Re-run the suite to
+version 1 against `IMPORT_VERSION` 2 (as of this plan's revision; commit 7deed676 later reset `IMPORT_VERSION` to 1). `62abf68` makes the fixture write the current version. Re-run the suite to
 confirm. `just qmltest` passed (100 tests) at `472eaf5`.
 
 ## Summary

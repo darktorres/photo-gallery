@@ -17,13 +17,15 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         /// The item to select (`--select`): -1 when none.
-        #[qproperty(i32, select, cxx_name = "select", READ = read_select, FINAL)]
+        #[qproperty(i32, select, READ = read_select, FINAL)]
         /// The item to open in the viewer (`--view`): -1 when none.
-        #[qproperty(i32, view, cxx_name = "view", READ = read_view, FINAL)]
-        /// The viewer's zoom (`--zoom`): 0 when none.
-        #[qproperty(f64, zoom, cxx_name = "zoom", READ = read_zoom, FINAL)]
-        /// The mascot to show (`--mascot`): 0 for a random one.
-        #[qproperty(i32, mascot, cxx_name = "mascot", READ = read_mascot, FINAL)]
+        #[qproperty(i32, view, READ = read_view, FINAL)]
+        /// Whether a zoom was given (`--zoom`): `zoom` means nothing when it was not.
+        #[qproperty(bool, zoom_given, cxx_name = "zoomGiven", READ = read_zoom_given, FINAL)]
+        /// The viewer's zoom (`--zoom`, positive; see `zoomGiven`).
+        #[qproperty(f64, zoom, READ = read_zoom, FINAL)]
+        /// The mascot to show (`--mascot`): -1 for a random one.
+        #[qproperty(i32, mascot, READ = read_mascot, FINAL)]
         /// The search result to show at full size (`--yandex-preview`): -1 when none.
         #[qproperty(i32, yandex_preview, cxx_name = "yandexPreview", READ = read_yandex_preview, FINAL)]
         /// The ledger whose inbox entry to open (`--inbox-expand`): empty when none.
@@ -35,17 +37,17 @@ pub mod qobject {
         /// Open the views menu (`--menu=views`).
         #[qproperty(bool, menu_views, cxx_name = "menuViews", READ = read_menu_views, FINAL)]
         /// Open the library folders (`--library=1`).
-        #[qproperty(bool, library, cxx_name = "library", READ = read_library, FINAL)]
+        #[qproperty(bool, library, READ = read_library, FINAL)]
         /// Open the save-view dialog (`--save-view=1`).
         #[qproperty(bool, save_view, cxx_name = "saveView", READ = read_save_view, FINAL)]
         /// Open the log view (`--log=1`, in dev mode).
-        #[qproperty(bool, log, cxx_name = "log", READ = read_log, FINAL)]
+        #[qproperty(bool, log, READ = read_log, FINAL)]
         /// Open the inbox (`--inbox=1`).
-        #[qproperty(bool, inbox, cxx_name = "inbox", READ = read_inbox, FINAL)]
+        #[qproperty(bool, inbox, READ = read_inbox, FINAL)]
         /// A Yandex search is asked for (`--find-similar`, with a path).
         #[qproperty(bool, find_similar, cxx_name = "findSimilar", READ = read_find_similar, FINAL)]
         /// The window is being photographed (`--screenshot`): its carets are not drawn, since they blink.
-        #[qproperty(bool, screenshot, cxx_name = "screenshot", READ = read_screenshot, FINAL)]
+        #[qproperty(bool, screenshot, READ = read_screenshot, FINAL)]
         /// The folder picker opens (`--add-folder`, with a path).
         #[qproperty(bool, add_folder, cxx_name = "addFolder", READ = read_add_folder, FINAL)]
         /// The save picker opens (`--save-crops`, with a path).
@@ -56,6 +58,7 @@ pub mod qobject {
     unsafe extern "RustQt" {
         fn read_select(self: &CommandLine) -> i32;
         fn read_view(self: &CommandLine) -> i32;
+        fn read_zoom_given(self: &CommandLine) -> bool;
         fn read_zoom(self: &CommandLine) -> f64;
         fn read_mascot(self: &CommandLine) -> i32;
         fn read_yandex_preview(self: &CommandLine) -> i32;

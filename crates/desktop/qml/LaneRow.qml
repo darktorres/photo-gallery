@@ -68,7 +68,7 @@ RowLayout {
         color: Theme.statusWarning
         font.underline: laneRow.failedLinked
         Accessible.role: laneRow.failedLinked ? Accessible.Link : Accessible.StaticText
-        Accessible.name: laneRow.failedLinked ? words.text("ui-failed-link") : laneRow.failed
+        Accessible.name: laneRow.failedLinked ? words.text("ui-inbox-show-files") : laneRow.failed
         Accessible.description: laneRow.failedLinked ? "" : words.text("ui-failed-not-recorded")
         ToolTip.visible: failedHover.hovered && !laneRow.failedLinked && laneRow.failed.length > 0
         ToolTip.text: words.text("ui-failed-not-recorded")

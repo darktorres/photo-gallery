@@ -16,6 +16,12 @@ use pg_testkit::held::{Access, hold};
 
 use pg_testkit::ONE_PASS;
 
+/// The bytes of a 96 × 80 gradient PNG: the pictures these tests scan.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn gradient_png() -> Vec<u8> {
+    pg_testkit::encode(96, 80, &pg_testkit::gradient_rgb(96, 80), pg_testkit::Encoding::Png).unwrap()
+}
+
 /// A run folder with `images/a.png` (96x80, a gradient), scanned and imported into a catalog beside it: the image's path,
 /// its bytes, and the catalog.
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
@@ -23,9 +29,8 @@ fn imported(prefix: &str) -> (std::path::PathBuf, Vec<u8>, Catalog) {
     let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
-    let byte = |v: u32| u8::try_from(v % 256).unwrap();
     let a = images.join("a.png");
-    image::RgbImage::from_fn(96, 80, |x, y| image::Rgb([byte(x * 4), byte(y * 5), 128])).save(&a).unwrap();
+    std::fs::write(&a, gradient_png()).unwrap();
     let good = std::fs::read(&a).unwrap();
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -62,11 +67,8 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     // A channel wraps past 255.
-    let byte = |v: u32| u8::try_from(v % 256).unwrap();
     for name in ["a.png", "b.png"] {
-        image::RgbImage::from_fn(96, 80, |x, y| image::Rgb([byte(x * 4), byte(y * 5), 128]))
-            .save(images.join(name))
-            .unwrap();
+        std::fs::write(images.join(name), gradient_png()).unwrap();
     }
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -109,9 +111,8 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     let dir = pg_testkit::run_folder("scratch_library", "borders-ledger").unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
-    let byte = |v: u32| u8::try_from(v % 256).unwrap();
     let a = images.join("a.png");
-    image::RgbImage::from_fn(96, 80, |x, y| image::Rgb([byte(x * 4), byte(y * 5), 128])).save(&a).unwrap();
+    std::fs::write(&a, gradient_png()).unwrap();
     let good = std::fs::read(&a).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();

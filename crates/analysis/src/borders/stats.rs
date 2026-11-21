@@ -76,8 +76,8 @@ pub(super) fn run_length(mask: &[bool]) -> usize {
 mod tests {
     use super::*;
 
-    /// The median as a sort by `total_cmp` gives it, for every length up to 9 and random values, with ties, both
-    /// zeros, infinities and NaNs among them.
+    // The median as a sort by `total_cmp` gives it, for every length up to 9 and random values, with ties, both
+    // zeros, infinities and NaNs among them.
     #[test]
     fn median_is_the_sorted_one() {
         fn sorted_median(values: &[f64]) -> Option<f64> {

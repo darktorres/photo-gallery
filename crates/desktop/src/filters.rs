@@ -7,7 +7,7 @@
 pub(crate) mod state;
 use state::FiltersRust;
 
-use crate::filters_bridge::qobject;
+use crate::filters_bridge::qobject::{self, ListFacetKind};
 
 use core::pin::Pin;
 
@@ -16,9 +16,9 @@ use cxx_qt_lib::QString;
 use pg_app::reexport::Facets;
 use pg_client::input::parse_number;
 use pg_model::date::Day;
-use pg_model::query::Query;
+use pg_model::query::{ListFacet, Query};
 
-use pg_client::facets::{Counts, from_index};
+use pg_client::facets::Counts;
 use pg_client::input::{Edge, Field, bound_is_valid, choice, tri_index, tri_of_index};
 use pg_client::text;
 
@@ -113,16 +113,17 @@ impl qobject::Filters {
         }
     }
 
-    pub(crate) fn toggle(self: Pin<&mut Self>, facet: i32, value: &QString) {
+    pub(crate) fn toggle(self: Pin<&mut Self>, facet: ListFacetKind, value: &QString) {
         let value = value.to_string();
-        if let Some(choice) = row_of(facet).and_then(from_index).and_then(|facet| choice(facet, &value)) {
+        if let Some(choice) = list_facet(facet).and_then(|facet| choice(facet, &value)) {
             self.edit(|q| q.toggle(choice));
         }
     }
 
-    pub(crate) fn bound(&self, facet: i32, end: i32) -> QString {
+    /// `field` is the bound's field's index in `input::Field::ALL` (not a list facet).
+    pub(crate) fn bound(&self, field: i32, end: i32) -> QString {
         let query = controller::listing().query;
-        let text = match (row_of(facet).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
+        let text = match (row_of(field).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
             (Some(Field::Range(f)), Some(e)) => query.number(f, e.number()).map(|v| v.to_string()),
             (Some(Field::Day(f)), Some(e)) => query.day(f, e.day()).map(|d| d.to_string()),
             _ => None,
@@ -130,17 +131,17 @@ impl qobject::Filters {
         QString::from(&text.unwrap_or_default())
     }
 
-    pub(crate) fn set_bound(self: Pin<&mut Self>, facet: i32, end: i32, text: &QString) {
+    pub(crate) fn set_bound(self: Pin<&mut Self>, field: i32, end: i32, text: &QString) {
         let text = text.to_string();
-        match (row_of(facet).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
+        match (row_of(field).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
             (Some(Field::Range(f)), Some(e)) => self.edit(|q| q.set_number(f, e.number(), parse_number(&text))),
             (Some(Field::Day(f)), Some(e)) => self.edit(|q| q.set_day(f, e.day(), Day::parse(&text))),
             _ => {}
         }
     }
 
-    pub(crate) fn bound_valid(&self, facet: i32, text: &QString) -> bool {
-        row_of(facet).and_then(Field::from_index).is_some_and(|field| bound_is_valid(field, &text.to_string()))
+    pub(crate) fn bound_valid(&self, field: i32, text: &QString) -> bool {
+        row_of(field).and_then(Field::from_index).is_some_and(|f| bound_is_valid(f, &text.to_string()))
     }
 
     pub(crate) fn clear(mut self: Pin<&mut Self>) {
@@ -187,4 +188,19 @@ impl qobject::Filters {
 /// Publish what the list facets show (`Counts::new`): the catalog's counts for the query.
 fn publish_counts(facets: &Facets, q: &Query) {
     controller::set_counts(Counts::new(facets.types.clone(), facets.borders.clone(), &facets.exts, q));
+}
+
+/// The list facet a QML `Filters.ListFacetKind` value names (the bridge's enum, compared by its value).
+fn list_facet(kind: ListFacetKind) -> Option<ListFacet> {
+    [
+        (ListFacetKind::Types, ListFacet::Types),
+        (ListFacetKind::Shapes, ListFacet::Shapes),
+        (ListFacetKind::Status, ListFacet::Status),
+        (ListFacetKind::Borders, ListFacet::Borders),
+        (ListFacetKind::Ratings, ListFacet::Ratings),
+        (ListFacetKind::Exts, ListFacet::Exts),
+    ]
+    .into_iter()
+    .find(|(value, _)| *value == kind)
+    .map(|(_, facet)| facet)
 }

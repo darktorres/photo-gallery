@@ -39,8 +39,17 @@ using Microsoft::WRL::ComPtr;
 // D3D11_DECODER_PROFILE_AV1_VLD_PROFILE0. The SDK declares it with DEFINE_GUID, which needs dxguid.lib or INITGUID.
 constexpr GUID av1_main = {0xb8be4ccb, 0xcf53, 0x46ba, {0x8d, 0x59, 0xd6, 0xb8, 0xa6, 0xda, 0x5d, 0x2a}};
 
+// An on/off environment variable, read as pg_platform::flag reads it in Rust: 1, true, yes and on are on; 0, false, no
+// and off are off (case and surrounding spaces ignored). Unset, or another text, is `fallback`.
+bool env_flag(const char* name, bool fallback) {
+    const QString value = qEnvironmentVariable(name).trimmed().toLower();
+    if (value == u"1" || value == u"true" || value == u"yes" || value == u"on") return true;
+    if (value == u"0" || value == u"false" || value == u"no" || value == u"off") return false;
+    return fallback;
+}
+
 bool decodes_av1(ID3D11Device* device) {
-    if (qEnvironmentVariableIntValue("PG_FORCE_AV1")) return true;
+    if (env_flag("PG_FORCE_AV1", false)) return true;
     ComPtr<ID3D11VideoDevice> video;
     if (FAILED(device->QueryInterface(IID_PPV_ARGS(&video)))) return false;
     for (UINT i = 0, n = video->GetVideoDecoderProfileCount(); i < n; ++i) {
@@ -68,7 +77,7 @@ const char* missing_for_qt(ID3D11Device* device, ID3D11DeviceContext* context) {
 
 // Why Qt Quick should make its own device for `window`, or null when it can render with ours.
 const char* keep_qt_device(QQuickWindow* window) {
-    if (qEnvironmentVariable("PG_SHARED_DEVICE") == u"0") return "PG_SHARED_DEVICE=0";
+    if (!env_flag("PG_SHARED_DEVICE", true)) return "PG_SHARED_DEVICE is off";
     if (QQuickWindow::graphicsApi() != QSGRendererInterface::Direct3D11) return "Qt Quick doesn't render with D3D11";
     // Another adapter than the first: Qt reads it in QRhiD3D11::create, from the environment only.
     if (qEnvironmentVariableIsSet("QT_D3D_ADAPTER_INDEX")) return "QT_D3D_ADAPTER_INDEX is set";

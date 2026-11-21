@@ -113,7 +113,7 @@ struct Registry {
 }
 
 /// The indexes of the lanes whose volumes include one of `volumes`: the lanes that read the files on those volumes.
-pub(crate) fn lanes_with(sets: &[VolumeSet], volumes: &BTreeSet<i64>) -> Vec<usize> {
+pub(crate) fn lanes_with(sets: &[VolumeSet], volumes: &BTreeSet<u64>) -> Vec<usize> {
     sets.iter()
         .enumerate()
         .filter(|(_, set)| volumes.iter().any(|&volume| set.contains(volume)))
@@ -122,7 +122,7 @@ pub(crate) fn lanes_with(sets: &[VolumeSet], volumes: &BTreeSet<i64>) -> Vec<usi
 }
 
 /// The volume of `root` among `volumes`, if it has one.
-fn volume_of(volumes: &[(RulePath, i64)], root: &RulePath) -> Option<i64> {
+fn volume_of(volumes: &[(RulePath, u64)], root: &RulePath) -> Option<u64> {
     volumes.iter().find(|(path, _)| path == root).map(|(_, volume)| *volume)
 }
 
@@ -173,8 +173,7 @@ impl Lanes {
         let cpus = pg_jobs::pipeline::cpus();
         root.share_cpu(cpus);
         // The lanes together hold a quarter of the machine's memory for file buffers, each up to the measured knee.
-        let cap = pg_platform::memory::physical_bytes()
-            .map(|bytes| usize::try_from(bytes / MEMORY_SHARE).unwrap_or(usize::MAX));
+        let cap = pg_platform::memory::physical_bytes().map(|bytes| bytes / MEMORY_SHARE);
         let governor = Governor::new(Options::budget(pg_jobs::pipeline::READERS, cpus), cap);
         let lanes = Arc::new(Lanes {
             root,
@@ -379,7 +378,7 @@ impl Lanes {
         if !turned.is_empty() {
             // The volumes the turned files are on. A file with no volume (not in the catalog, or the lookup failed) wakes every
             // lane: the safe answer, since no lane can be shown to be unaffected.
-            let volumes: BTreeSet<i64> = conn.volumes_of(&turned).unwrap_or_default();
+            let volumes: BTreeSet<u64> = conn.volumes_of(&turned).unwrap_or_default();
             let reg = self.registry();
             let sets: Vec<VolumeSet> = reg.lanes.iter().map(|lane| lane.inner.volume_set()).collect();
             let wake = if volumes.is_empty() { (0..sets.len()).collect() } else { lanes_with(&sets, &volumes) };
@@ -412,7 +411,7 @@ impl Lanes {
                 .zip(&keys)
                 .map(|(root, key)| (root.clone(), reg.probes.get(key).and_then(|probe| probe.place(now))))
                 .collect();
-            let volumes: Vec<(RulePath, i64)> = places
+            let volumes: Vec<(RulePath, u64)> = places
                 .iter()
                 .filter_map(|(root, place)| match place {
                     Some(Place::Mounted { volume, .. }) => Some((root.clone(), *volume)),
@@ -449,7 +448,7 @@ impl Lanes {
         &self,
         reg: &mut Registry,
         groups: &[Vec<RulePath>],
-        volumes: &[(RulePath, i64)],
+        volumes: &[(RulePath, u64)],
     ) -> Result<Vec<Lane>> {
         let mut old: Vec<Option<Lane>> = std::mem::take(&mut reg.lanes).into_iter().map(Some).collect();
         let mut kept: Vec<Lane> = Vec::with_capacity(groups.len());
@@ -585,7 +584,7 @@ impl Lanes {
 
     /// Holds the lanes that own `volumes`, and waits until each has ended its round: a crop or a cut is about to change
     /// files on those volumes, which the lanes read. `None` when the crop is stopped first (the holds are given back).
-    fn park(&self, volumes: &BTreeSet<i64>) -> Option<Vec<Hold>> {
+    fn park(&self, volumes: &BTreeSet<u64>) -> Option<Vec<Hold>> {
         let all = self.all();
         let sets: Vec<VolumeSet> = all.iter().map(|lane| lane.inner.volume_set()).collect();
         let owners: Vec<Lane> =
@@ -836,7 +835,7 @@ impl Lanes {
             self.stop_scans_under(&marker.path);
         }
         self.wake_all(true);
-        let total = u64::try_from(catalog.removal_files().unwrap_or(0)).unwrap_or(u64::MAX);
+        let total = catalog.removal_files().unwrap_or(0);
         let _phase = self.removal_ctl.begin(Phase::Removing, total);
         let mut done = 0u64;
         let finished = removals::finish(catalog, self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
@@ -858,7 +857,7 @@ fn lane_names(lanes: &[Lane]) -> Vec<(usize, String)> {
 mod tests {
     use super::*;
 
-    fn volumes(of: &[i64]) -> BTreeSet<i64> {
+    fn volumes(of: &[u64]) -> BTreeSet<u64> {
         of.iter().copied().collect()
     }
 

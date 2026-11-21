@@ -42,7 +42,7 @@ fn source_of(v: Version) -> thumbs::Source {
 }
 
 /// The state a file's failure is remembered by: its id, mtime, size and turns.
-type FailureKey = (i64, i64, i64, u8);
+type FailureKey = (i64, i64, u64, u8);
 
 /// The state of `src`'s file a failure is remembered by ([`Recent`]).
 fn failure_key(file_id: FileId, src: &FileSource) -> FailureKey {
@@ -91,7 +91,7 @@ pub(crate) struct Decoded {
     file_id: FileId,
     mtime: i64,
     /// The file's size: a decode is reused only while the file still has it.
-    size: i64,
+    size: u64,
     /// With the turns not yet written.
     rotation: Turns,
     /// Upright, possibly DCT-scaled, with its full size.
@@ -150,7 +150,7 @@ impl Images {
                     file_id,
                     mtime: state.mtime,
                     size: state.size,
-                    rotation: state.rotation,
+                    turns: state.rotation,
                     error: text.clone(),
                     // Tried again once the file changes, as the Thumbs pass records an undecodable file.
                     retry: false,
@@ -303,7 +303,7 @@ impl Images {
     pub fn placeholder(&self, file_id: FileId) -> Result<Rgba> {
         let p = self.catalogs.with_catalog(|c| c.placeholder(file_id))?.ok_or(Error::UnknownFile(file_id))?;
         match p.hash {
-            Some(hash) => display::placeholder(hash.as_slice(), p.turns).map_err(failed),
+            Some(hash) => display::placeholder(hash.as_slice(), p.shown_turns).map_err(failed),
             None => Ok(Rgba::transparent()),
         }
     }

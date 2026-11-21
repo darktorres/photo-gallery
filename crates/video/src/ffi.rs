@@ -228,9 +228,12 @@ impl Stream<'_> {
         unsafe { (*self.ptr).duration }
     }
 
-    pub(crate) fn frames(&self) -> i64 {
+    /// The frame count the stream gives: 0 when it gives none (a negative count is none too). A count past what a `u32`
+    /// holds is an error, not clamped.
+    pub(crate) fn frames(&self) -> Result<u32> {
         // SAFETY: as above.
-        unsafe { (*self.ptr).nb_frames }
+        let frames = unsafe { (*self.ptr).nb_frames }.max(0);
+        u32::try_from(frames).map_err(|_| anyhow::anyhow!("a stream of {frames} frames"))
     }
 
     pub(crate) fn avg_frame_rate(&self) -> AVRational {

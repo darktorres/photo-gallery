@@ -13,7 +13,7 @@ use pg_model::rules::PathRules;
 use crate::error::{Error, Result};
 use crate::progress::FreeSpace;
 use crate::transaction::write_transaction;
-use crate::types::{TAKEN_ZONE_QUERY, key_version_text, rules_name};
+use crate::types::{TAKEN_ZONE_QUERY, Versions, key_version_text, rules_name};
 use pg_model::name::Name;
 use std::collections::BTreeMap;
 
@@ -81,34 +81,57 @@ pub(crate) fn take_shared(path: &Path) -> Result<pg_dbfile::Live> {
         .ok_or_else(|| Error::Held { path: path.display().to_string(), what: "another program is changing it" })
 }
 
-/// Which way an integer mark moved, against the catalog's own (3.4): `Raised` when the catalog's mark is older than this
-/// build's (or missing), `Lowered` when it is newer (a later build made or changed the catalog), `Same` when nothing
-/// changed. A `Lowered` mark is set back to this build's value too, so this build's rows count.
+/// Which way an integer mark moved, against this build's: `Raised` when the catalog's mark is older (or missing), `Same`
+/// when it is this build's. A newer mark is refused before any mark is set ([`newer_mark`], by `prepare`), so none is
+/// set back here: a newer one seen by [`direction`] is `Same`, and nothing is written for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MarkChange {
     Same,
     Raised,
-    Lowered,
 }
 
 /// The direction of a stored integer mark (`None`: not there) against `current`.
 fn direction(stored: Option<i64>, current: i64) -> MarkChange {
     match stored {
-        None => MarkChange::Raised,
-        Some(stored) if stored == current => MarkChange::Same,
-        Some(stored) if stored < current => MarkChange::Raised,
-        Some(_) => MarkChange::Lowered,
+        Some(stored) if stored >= current => MarkChange::Same,
+        _ => MarkChange::Raised,
     }
 }
 
-/// Set the integer mark `key` to `current` and, when it moved, make the rows follow it: `recompute` gets the direction
-/// (`Raised` or `Lowered`, never `Same`) and the same transaction, and decides what each direction means. Checked before
-/// and again inside one immediate write transaction, as [`set_mark`] is.
+/// An integer mark of the catalog that is above this build's: a later build made or changed the file. `prepare` refuses
+/// such a catalog, as it refuses a newer schema, before anything is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct NewerMark {
+    /// The `meta` key of the mark.
+    pub(crate) name: &'static str,
+    /// The stored value, and this build's.
+    pub(crate) found: i64,
+    pub(crate) current: i64,
+}
+
+/// The first of the integer marks (`meta`) that is above this build's `versions`, if any. A mark that is not there, or a
+/// file that the marks cannot be read from, has none.
+pub(crate) fn newer_mark(conn: &Connection, versions: Versions) -> Option<NewerMark> {
+    let marks = [
+        ("import_version", versions.import),
+        ("borders_version", versions.borders),
+        ("pairing_version", versions.pairing),
+        ("thumbs_version", versions.thumbs),
+    ];
+    marks.into_iter().find_map(|(name, current)| {
+        let found: i64 =
+            conn.query_row("SELECT value FROM meta WHERE key = ?1", [name], |r| r.get(0)).optional().ok().flatten()?;
+        (found > current).then_some(NewerMark { name, found, current })
+    })
+}
+
+/// Set the integer mark `key` to `current` and, when it moved, make the rows follow it: `recompute` runs in the same
+/// transaction. Checked before and again inside one immediate write transaction, as [`set_mark`] is.
 fn set_mark_i64(
     conn: &Connection,
     key: &str,
     current: i64,
-    recompute: impl FnOnce(&Transaction, MarkChange) -> Result<()>,
+    recompute: impl FnOnce(&Transaction) -> Result<()>,
 ) -> Result<MarkChange> {
     let stored = |c: &Connection| -> Result<Option<i64>> {
         match c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)) {
@@ -128,7 +151,7 @@ fn set_mark_i64(
             "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             rusqlite::params![current, key],
         )?;
-        recompute(&tx, change)?;
+        recompute(&tx)?;
     }
     tx.commit()?;
     Ok(change)
@@ -136,15 +159,10 @@ fn set_mark_i64(
 
 /// Make `files.pending` mean this build's IMPORT_VERSION: when the catalog's `meta.import_version` is older (a new
 /// catalog, or a build that analyzes differently), every file's is computed again, and every file's `seq` moves on, so
-/// the thumbnail pass looks at all of them once. A newer one (`Lowered`) has its mark set back, and every `pending` is
-/// computed again under the lower mark: the stale test is `>=`, so nothing is made due, and a file a newer build made
-/// due that this build's analysis already covers stops being due (the flags only clear). Checked and set in one write
-/// transaction.
+/// the thumbnail pass looks at all of them once. A newer one is refused before this runs ([`newer_mark`]). Checked and
+/// set in one write transaction.
 pub(crate) fn set_import_version(conn: &Connection, current: i64) -> Result<MarkChange> {
-    set_mark_i64(conn, "import_version", current, |tx, change| {
-        if change == MarkChange::Lowered {
-            return Ok(tx.execute_batch(concat!("UPDATE files SET pending = ", stale!(), ";"))?);
-        }
+    set_mark_i64(conn, "import_version", current, |tx| {
         Ok(tx.execute_batch(concat!(
             "UPDATE files SET pending = ",
             stale!(),
@@ -368,8 +386,8 @@ pub(crate) fn stamp_held_exts(tx: &Connection) -> Result<()> {
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
 /// every analysis that can have borders is due. Like [`set_import_version`], one [`set_mark`].
 pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<MarkChange> {
-    // Either direction recomputes: a borders detection of another version is not this build's, whichever is newer.
-    set_mark_i64(conn, "borders_version", current, |tx, _| {
+    // A change recomputes: a borders detection of another version is not this build's (a newer one is refused before this).
+    set_mark_i64(conn, "borders_version", current, |tx| {
         tx.execute_batch(concat!("UPDATE analysis SET borders_due = coalesce(", has_borders!(), ", 0)"))?;
         // Every file is looked at again by the new detector: what the old one failed on is not known to fail.
         tx.execute("DELETE FROM file_failures WHERE pass = 'borders'", [])?;
@@ -379,15 +397,14 @@ pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<Mar
 
 /// Make the pairs this build's: when the catalog's `meta.pairing_version` is another, every eligible analysis is due again
 /// (the pairing pass makes all of them) and the pairs go, with the changes stamped so the views read them again. A newer
-/// one does the same, and its change is reported (`MarkChange::Lowered`): the pairs of the later build are not kept.
 pub(crate) fn set_pairing_version(conn: &Connection, current: i64) -> Result<MarkChange> {
-    set_mark_i64(conn, "pairing_version", current, |tx, _| owe_pairs_again(tx).map(|_| ()))
+    set_mark_i64(conn, "pairing_version", current, |tx| owe_pairs_again(tx).map(|_| ()))
 }
 
 /// Every eligible analysis (orientation hashes and a reliable quality) owes its pairs again, and the pairs go, with the
 /// change stamped so the views read them again. Returns how many analyses owe their pairs now. The pairing version's
 /// change makes it (`set_pairing_version`), and `gallery pair --again` does too.
-pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<usize> {
+pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<u64> {
     // Only the rows not owed already are written: an analysis that owes its pairs keeps its row.
     tx.execute(
         "INSERT OR IGNORE INTO pairs_owed(file_id)
@@ -405,7 +422,7 @@ pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<usize> {
 /// still fails. The cache's checkpoint holds the panicked files back too, and keeps a mark of its own
 /// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`].
 pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<MarkChange> {
-    set_mark_i64(conn, "thumbs_version", current, |tx, _| {
+    set_mark_i64(conn, "thumbs_version", current, |tx| {
         crate::ledger::relist_failures(tx, "thumbs", |tx| {
             Ok(tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?)
         })?;
@@ -489,18 +506,22 @@ mod key_version_tests {
         (path, keys)
     }
 
-    /// A lowered import mark (a later build's catalog) is set back to this build's, so this build's rows count.
+    /// A later build's integer mark is refused by this build, as a newer schema is: the catalog is not changed, and the
+    /// mark stays the later build's.
     #[test]
-    fn a_lowered_import_mark_is_set_back() {
+    fn a_newer_import_mark_is_refused_and_the_catalog_is_left_as_it_was() {
+        use crate::error::Refusal;
         use pg_model::versions::IMPORT_VERSION;
-        let dir = pg_testkit::run_folder("scratch_catalog", "lowered-import").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "newer-import").unwrap();
         let path = dir.join("catalog.sqlite");
         let newer = crate::Versions { import: IMPORT_VERSION + 1, ..versions() };
         drop(Catalog::prepare(&path, newer, PATH_RULES).unwrap());
-        let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
-        let mark: i64 =
-            c.conn.query_row("SELECT value FROM meta WHERE key = 'import_version'", [], |r| r.get(0)).unwrap();
-        assert_eq!(mark, IMPORT_VERSION);
+        let err = Catalog::prepare(&path, versions(), PATH_RULES).err().expect("refused");
+        let (_, reason) = err.refusal().expect("a typed refusal");
+        assert!(matches!(reason, Refusal::NewerMark { mark: "import_version", .. }), "{reason:?}");
+        let raw = Connection::open(&path).unwrap();
+        let mark: i64 = raw.query_row("SELECT value FROM meta WHERE key = 'import_version'", [], |r| r.get(0)).unwrap();
+        assert_eq!(mark, IMPORT_VERSION + 1, "the later build's mark is kept");
     }
 
     /// A later build's mark for a pass refuses this build's records of that pass, and not another pass's.
@@ -625,12 +646,12 @@ mod tests {
     use pg_model::notice::Carried;
 
     use crate::{Catalog, Result, ScannedFile};
-    use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::Taken;
     use pg_model::ids::{FileId, FileIdentity, FolderId};
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::rules::PathRules;
+    use pg_model::versions::IMPORT_VERSION;
     use pg_testkit::run_folder;
     use rusqlite::Connection;
     use std::path::Path;

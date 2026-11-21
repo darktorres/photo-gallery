@@ -8,7 +8,7 @@ KCachegrind.
         [--stop pg_stage_ready] [--start STAGE] [--qt DIR] [-- gallery arguments]
 
 The app runs with this shell's environment: set PG_CATALOG_DIR and PG_PREFS for a scratch catalog first. Under Pin the start
-takes some 50 times longer; the window shows meanwhile. --stop '' runs until the app exits. Reads QT_DIR (the Qt kit folder;
+takes some 50 times longer; the window shows meanwhile. --stop '' runs until the app exits. Reads PG_QT_DIR (the Qt kit folder;
 --qt overrides it), PIN_EXE (Pin's pin.exe; default under the SDE kit's pinkit folder in LOCALAPPDATA) and the repo's .env for
 keys the environment does not set.
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 # pgtools is in tools/, two folders up: Python puts only this script's own folder on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pgtools import REPO, WINDOWS, default_pin_root, load_env_file, not_set
+from pgtools import QT_DIR_HOW, REPO, WINDOWS, default_pin_root, load_env_file, not_set
 
 HERE = Path(__file__).resolve().parent
 
@@ -37,14 +37,14 @@ def main() -> None:
     parser.add_argument("--stop", default="pg_stage_ready", help="the stage to stop at (empty: until the app exits)")
     parser.add_argument("--start", default="", help="the stage to start counting at")
     parser.add_argument("--exe", type=Path, default=REPO / "target" / "release" / "gallery.exe")
-    parser.add_argument("--qt", help="the Qt kit folder (default QT_DIR)")
+    parser.add_argument("--qt", help="the Qt kit folder (default PG_QT_DIR)")
     parser.add_argument("app_args", nargs="*", help="arguments for the app, after --")
     args = parser.parse_args()
 
     load_env_file()
-    qt = args.qt or os.environ.get("QT_DIR", "")
+    qt = args.qt or os.environ.get("PG_QT_DIR", "")
     if not qt:
-        not_set("QT_DIR", "point it at the Qt kit folder (the one with bin and lib), in the environment or in .env (or pass --qt)")
+        not_set("PG_QT_DIR", f"{QT_DIR_HOW} (or pass --qt)")
     pin = Path(os.environ["PIN_EXE"]) if os.environ.get("PIN_EXE") else default_pin_root() / "pin.exe"
     tool = REPO / "target" / "pin" / "callgraph.dll"
     if not tool.is_file():

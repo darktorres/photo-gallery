@@ -15,7 +15,7 @@ use pg_render::maker::{MakeError, Maker};
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
 use pg_jobs::control::Control;
-use pg_jobs::failure::{file_failure, keep_file_failure};
+use pg_jobs::failure::{file_failure, keep_file_failure, stored_path};
 use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::ids::FileId;
@@ -111,11 +111,11 @@ impl Failed {
             return Failed::Panicked;
         }
         match e.downcast_ref::<MakeError>() {
-            Some(MakeError::Unreadable(_)) => Failed::Unreadable,
+            // A decode's failure is the file's, even with an I/O error under it (a truncated file), so it is checked
+            // before the read's.
             Some(MakeError::Undecodable(_)) => Failed::Undecodable,
-            // The pipeline's read of the file.
-            None if pg_jobs::failure::is_io_read(e) => Failed::Unreadable,
-            None => Failed::Other,
+            _ if pg_jobs::failure::is_io_read(e) => Failed::Unreadable,
+            _ => Failed::Other,
         }
     }
 
@@ -310,13 +310,13 @@ pub fn run_while(
                     if !matches!(failed, Failed::Panicked | Failed::Undecodable) {
                         fold(first_failed, item.seq);
                     }
-                    let shown = file_failure(rules.display_stored(&work.path(item.path, sep)), &e);
+                    let shown = file_failure(stored_path(rules, &work.path(item.path, sep)), &e);
                     if let Some(retry) = retry {
                         let failure = LedgerFailure {
                             file_id: item.id,
                             mtime: item.source.mtime,
                             size: item.size,
-                            rotation: item.source.rotation,
+                            turns: item.source.rotation,
                             error: shown.error.clone(),
                             retry,
                         };
@@ -435,6 +435,7 @@ mod tests {
     use pg_catalog::fixture::state;
     use pg_jobs_testkit::Quiet;
     use pg_model::ids::FileId;
+    use pg_platform::file::ReadFailed;
     use pg_platform::priority::Priority;
 
     use super::*;
@@ -458,8 +459,8 @@ mod tests {
         }
     }
 
-    /// A panic is counted as a failure, but doesn't hold the pass's checkpoint back: the next pass doesn't list the
-    /// file again (it would only panic again, and log its backtrace every time), until it changes.
+    // A panic is counted as a failure, but doesn't hold the pass's checkpoint back: the next pass doesn't list the
+    // file again (it would only panic again, and log its backtrace every time), until it changes.
     #[test]
     fn a_file_whose_thumbnail_panics_is_not_listed_again() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -484,7 +485,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap();
@@ -543,15 +544,15 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(cap),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap();
         (dir, catalog_path, c, cache, quiet)
     }
 
-    /// A pass stopped after its batch (`still_wanted` false, as a zoom makes it) writes no `checked` row: the files it did
-    /// not make are listed again, and the pass that runs through writes the row and leaves nothing listed.
+    // A pass stopped after its batch (`still_wanted` false, as a zoom makes it) writes no `checked` row: the files it did
+    // not make are listed again, and the pass that runs through writes the row and leaves nothing listed.
     #[test]
     fn a_stopped_pass_writes_no_checked_row_and_the_next_one_makes_the_rest() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -577,9 +578,9 @@ mod tests {
         assert!(after.work.items.is_empty(), "nothing is listed after it");
     }
 
-    /// A ledger that can't be written (its writes fail, as an aborted statement would) is `Failed`; the pass goes on,
-    /// and the file it would have recorded holds the pass's checkpoint back, so the next pass lists it again (here, one
-    /// that panics, which a recorded failure would keep out of the next pass).
+    // A ledger that can't be written (its writes fail, as an aborted statement would) is `Failed`; the pass goes on,
+    // and the file it would have recorded holds the pass's checkpoint back, so the next pass lists it again (here, one
+    // that panics, which a recorded failure would keep out of the next pass).
     #[test]
     fn a_ledger_that_cant_be_written_fails_the_ledger_and_not_the_pass() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -599,7 +600,7 @@ mod tests {
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
     }
 
-    /// The failures are written however the pass ends: here, with the cache full at the first batch.
+    // The failures are written however the pass ends: here, with the cache full at the first batch.
     #[test]
     fn the_ledger_is_written_when_the_cache_fills() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -612,8 +613,8 @@ mod tests {
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
     }
 
-    /// The failures are written when the pass is stopped too, not only when it runs to its end: a file fails, and the
-    /// stop is asked in its thumbnail, so the pass ends with that failure waiting for the ledger.
+    // The failures are written when the pass is stopped too, not only when it runs to its end: a file fails, and the
+    // stop is asked in its thumbnail, so the pass ends with that failure waiting for the ledger.
     #[test]
     fn the_ledger_is_written_when_the_pass_is_stopped() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -631,10 +632,10 @@ mod tests {
         assert_eq!(failed.file_id, a);
     }
 
-    /// A pass that ends with an error (here, the cache refuses the batch it stores) writes the failures it has before
-    /// it returns the error, so the ledger holds the file that panicked, and the pass's checkpoint is not moved. The
-    /// next pass, the cache working, makes the file that was refused; the one that panicked is held by its row (not
-    /// tried again until it changes), so the ledger holds it once.
+    // A pass that ends with an error (here, the cache refuses the batch it stores) writes the failures it has before
+    // it returns the error, so the ledger holds the file that panicked, and the pass's checkpoint is not moved. The
+    // next pass, the cache working, makes the file that was refused; the one that panicked is held by its row (not
+    // tried again until it changes), so the ledger holds it once.
     #[test]
     fn a_pass_that_errors_writes_its_failures_before_it_returns_the_error() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -661,7 +662,7 @@ mod tests {
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
     }
 
-    /// A failure's kind, by its error's type, never its text: what the ledger records, and with which retry.
+    // A failure's kind, by its error's type, never its text: what the ledger records, and with which retry.
     #[test]
     fn a_failure_is_classified_by_its_type() {
         use std::io::{Error as IoError, ErrorKind};
@@ -671,7 +672,8 @@ mod tests {
         let truncated =
             anyhow::Error::from(MakeError::Undecodable(eof().context("decoding the JPEG"))).context("a.jpg");
         assert_eq!((Failed::of(&truncated), Failed::of(&truncated).recorded()), (Failed::Undecodable, Some(false)));
-        let unreadable = anyhow::Error::from(MakeError::Unreadable(IoError::new(ErrorKind::NotFound, "gone")));
+        let unreadable =
+            anyhow::Error::from(MakeError::Unreadable(ReadFailed::from(IoError::new(ErrorKind::NotFound, "gone"))));
         assert_eq!((Failed::of(&unreadable), Failed::of(&unreadable).recorded()), (Failed::Unreadable, None));
         let panicked = anyhow::Error::new(panics::Panicked("boom".into()));
         assert_eq!((Failed::of(&panicked), Failed::of(&panicked).recorded()), (Failed::Panicked, Some(false)));
@@ -693,9 +695,9 @@ mod tests {
         assert_eq!(outcome, LedgerOutcome::Failed("busy".into()));
     }
 
-    /// A file that doesn't decode is recorded, and not tried again until it changes (or Retry clears its row, as a panic
-    /// does); once it decodes it is made, and its row is gone. A file that can't be read (gone since the listing) is
-    /// counted apart, and not recorded.
+    // A file that doesn't decode is recorded, and not tried again until it changes (or Retry clears its row, as a panic
+    // does); once it decodes it is made, and its row is gone. A file that can't be read (gone since the listing) is
+    // counted apart, and not recorded.
     #[test]
     fn a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -723,7 +725,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap();
@@ -745,9 +747,9 @@ mod tests {
         assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());
     }
 
-    /// The placeholders follow the thumbnails: a file whose thumbnail is made gets its placeholder from its original (these
-    /// thumbnails are too small to serve one), and a file the thumbnails record as undecodable owes none (its row in the
-    /// Thumbs ledger holds it, as the owed query has it), so the owed count is what is left.
+    // The placeholders follow the thumbnails: a file whose thumbnail is made gets its placeholder from its original (these
+    // thumbnails are too small to serve one), and a file the thumbnails record as undecodable owes none (its row in the
+    // Thumbs ledger holds it, as the owed query has it), so the owed count is what is left.
     #[test]
     fn placeholders_follow_the_thumbnails_and_an_undecodable_file_owes_none() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -773,7 +775,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap();

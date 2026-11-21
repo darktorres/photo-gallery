@@ -10,10 +10,9 @@ workspace = true
 
 # The thumbnail cache: one SQLite file of the grid's JPEG thumbnails, keyed by (file, height) and capped in bytes, with
 # its writer thread. The storage only: making a thumbnail is `pg-render`'s, and the pass that makes them is the
-# library's. It reads the catalog through its views (`thumb_sources`, `thumb_clock`), and in two places through the
-# catalog's tables directly: the `files` ids and volumes of the orphan sweep and the volume list, and the id high-water
-# mark (`sqlite_sequence`), which no view exposes. It has no dependency on `pg-catalog`; the tests make catalogs with
-# its fixture. A view for those two reads would need a catalog schema version change, so that is not made here.
+# library's. The reads of the catalog are views only (`thumb_sources`, `thumb_clock`, `thumb_high_water`,
+# `thumb_file_ids`, `thumb_volumes`, `thumb_failures`, defined in the catalog's `baseline.sql`): it never names a catalog
+# table. It has no dependency on `pg-catalog`; the tests make catalogs with its fixture.
 [dependencies]
 anyhow.workspace = true
 pg-jobs = { path = "../jobs" }

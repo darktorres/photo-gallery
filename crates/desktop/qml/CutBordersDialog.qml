@@ -39,7 +39,7 @@ Dialog {
         width: dialog.availableWidth
         wrapMode: Text.WordWrap
         textFormat: Text.PlainText
-        text: words.phrase("ui-cut-borders-question", dialog.count, Qt.locale().toString(dialog.count), "")
+        text: words.phrase("ui-cut-borders-question", dialog.count, words.count(dialog.count), "")
     }
 
     footer: DialogButtonBox {

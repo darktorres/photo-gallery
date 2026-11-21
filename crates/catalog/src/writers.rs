@@ -5,7 +5,7 @@
 //! caller's. Uses `types`, `ledger::failure`, `error`, the lease (`HeldLease`, the scan's hold), `current` (whether a file
 //! is current) and `lifecycle` (the held extensions); its SQL macros are from `sql`.
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -14,11 +14,13 @@ use rusqlite::{CachedStatement, Connection, OptionalExtension, Statement, Transa
 
 use pg_model::analysis::{Analysis, FileHash, ImageHashes, PLACEHOLDER_VERSION, ThumbHash};
 use pg_model::detection::Detection;
+use pg_model::grid::Entry;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::notice::FilePass;
 use pg_model::rating::Rating;
 use pg_model::rules::{Path as RulePath, PathRules};
 
+use crate::convert::identity_to_sql;
 use crate::error::{Error, Result};
 use crate::ledger::failure::{Failure, tidy};
 use crate::types::PairingWork;
@@ -34,8 +36,7 @@ use crate::types::{
 /// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
 /// change number ([`change_number`]): the columns the insert sets itself, no trigger does.
 fn write_new(new_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, key: &[u8], change: i64) -> Result<usize> {
-    let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
-    let size = i64::try_from(f.size).context("a file's size")?;
+    let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
     let (ext, kind) = (f.ext.name(), f.ext.kind().key());
     Ok(new_file.execute(params![
         volume,
@@ -45,7 +46,7 @@ fn write_new(new_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, key
         f.name.as_bytes(),
         ext,
         kind,
-        size,
+        f.size,
         f.mtime,
         key,
         change
@@ -61,7 +62,6 @@ fn write_changed(
     key: &[u8],
     id: i64,
 ) -> Result<usize> {
-    let size = i64::try_from(f.size).context("a file's size")?;
     let (ext, kind) = (f.ext.name(), f.ext.kind().key());
     Ok(changed_file.execute(params![
         id,
@@ -69,7 +69,7 @@ fn write_changed(
         f.name.as_bytes(),
         ext,
         kind,
-        size,
+        f.size,
         f.mtime,
         key,
         f.created,
@@ -246,15 +246,15 @@ impl<'tx> ScanWriter<'tx> {
         key.clear();
         key.extend_from_slice(&folder.key);
         f.name.push_name_key(key);
-        let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
-        let (ext, kind, size) = (f.ext.name(), f.ext.kind().key(), i64::try_from(f.size).context("a file's size")?);
+        let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
+        let (ext, kind, size) = (f.ext.name(), f.ext.kind().key(), f.size);
         let hit = known
             .query_row(params![volume, file_ref, under[0], under[1], under[2]], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
                     && r.get_ref(2)?.as_blob()? == f.name.as_bytes()
                     && r.get_ref(3)?.as_str()? == ext
                     && r.get_ref(4)?.as_str()? == kind
-                    && r.get::<_, i64>(5)? == size
+                    && r.get::<_, u64>(5)? == size
                     && r.get::<_, i64>(6)? == f.mtime
                     && r.get::<_, i64>(7)? == 0
                     && r.get_ref(8)?.as_blob()? == &key[..];
@@ -301,7 +301,7 @@ impl<'tx> ScanWriter<'tx> {
     pub fn seen_identity(&mut self, identity: FileIdentity) -> Result<()> {
         let row: Option<(i64, i64)> = self
             .identity_row
-            .query_row(params![identity.volume.cast_signed(), identity.file_index.cast_signed()], |r| {
+            .query_row(params![identity_to_sql(identity.volume), identity_to_sql(identity.file_index)], |r| {
                 Ok((r.get(0)?, r.get(1)?))
             })
             .optional()?;
@@ -467,7 +467,8 @@ impl<'tx> AnalysisWriter<'tx> {
             a.frames,
             taken,
             taken_utc,
-            video.map(|v| v.duration_ms),
+            // An unknown length is `Entry::NO_DURATION` in the model, and NULL in the catalog.
+            video.and_then(|v| (v.duration_ms != Entry::NO_DURATION).then_some(v.duration_ms)),
             video.map(|v| v.poster_ms),
         ])?;
         self.touch_file(item.id)?;
@@ -677,8 +678,8 @@ impl<'tx> PairsWriter<'tx> {
 /// progress. A narrow upsert (`placeholders` is keyed to the file, so an analysis's REPLACE never touches it).
 const SET_PLACEHOLDER: &str = concat!(
     "INSERT INTO placeholders(file_id, size, mtime, rotation, version, hash)
-     SELECT files.id, files.size, files.mtime, files.rotation, ?5, ?6 FROM files
-     WHERE files.id = ?1 AND files.size = ?2 AND files.mtime = ?3 AND files.rotation = ?4 AND ",
+     SELECT files.id, files.size, files.mtime, files.turns, ?5, ?6 FROM files
+     WHERE files.id = ?1 AND files.size = ?2 AND files.mtime = ?3 AND files.turns = ?4 AND ",
     not_being_written!(files),
     " ON CONFLICT(file_id) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
          rotation = excluded.rotation, version = excluded.version, hash = excluded.hash"
@@ -868,16 +869,16 @@ pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[
     let rows: Vec<serde_json::Value> = failures
         .iter()
         .map(|f| {
-            serde_json::json!([f.file_id.get(), f.mtime, f.size, f.rotation.get(), tidy(&f.error), i64::from(f.retry)])
+            serde_json::json!([f.file_id.get(), f.mtime, f.size, f.turns.get(), tidy(&f.error), i64::from(f.retry)])
         })
         .collect();
     let rows = serde_json::to_string(&rows).map_err(anyhow::Error::from)?;
     let changed = conn
         .prepare_cached(
             "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)
-         SELECT f.id, ?1, f.mtime, f.size, f.rotation, j.value ->> 4, j.value ->> 5, ?3
+         SELECT f.id, ?1, f.mtime, f.size, f.turns, j.value ->> 4, j.value ->> 5, ?3
          FROM json_each(?2) j CROSS JOIN files f ON f.id = j.value ->> 0
-         WHERE f.mtime = j.value ->> 1 AND f.size = j.value ->> 2 AND f.rotation = j.value ->> 3 AND f.missing = 0
+         WHERE f.mtime = j.value ->> 1 AND f.size = j.value ->> 2 AND f.turns = j.value ->> 3 AND f.missing = 0
          ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error, retry = excluded.retry
          WHERE file_failures.error IS NOT excluded.error OR file_failures.retry IS NOT excluded.retry",
         )?
@@ -923,7 +924,6 @@ mod tests {
     use crate::test_support::*;
     use crate::writers::PairsWritten;
     use crate::{Catalog, PairingWork, PairsBatch, Recorded, ScannedFile, WorkItem, queue};
-    use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::{Analysis, FileHash, ImageHashes, PixelHashes, Taken};
     use pg_model::detection::Detection;
     use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
@@ -933,6 +933,7 @@ mod tests {
     use pg_model::rating::Rating;
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
+    use pg_model::versions::IMPORT_VERSION;
     use rusqlite::params;
     use std::path::Path;
 
@@ -2021,7 +2022,7 @@ mod tests {
     );
 
     /// [`PairingWork`]'s columns, to compare two reads.
-    fn columns(w: &crate::PairingWork) -> (Vec<FileId>, Vec<bool>, Vec<[pg_model::pdq::Hash; 4]>, usize) {
+    fn columns(w: &crate::PairingWork) -> (Vec<FileId>, Vec<bool>, Vec<[pg_model::pdq::Hash; 4]>, u64) {
         (w.ids.clone(), w.owed.clone(), w.hashes.clone(), w.legacy)
     }
 
@@ -2092,7 +2093,7 @@ mod tests {
         assert_eq!(work.legacy, 1);
         // Only the owed pictures the pass can make (those `owed` marks) are counted and open the pass; the others' rows
         // stay for their return.
-        assert_eq!(c.owed_pairs().unwrap(), work.owed.iter().filter(|&&o| o).count());
+        assert_eq!(c.owed_pairs().unwrap(), u64::try_from(work.owed.iter().filter(|&&o| o).count()).unwrap());
         assert_eq!(c.owed_pairs().unwrap(), 1);
         assert!(c.has_owed_pairs().unwrap());
         assert_eq!(state_owed(&c), vec![1, 5, 6, 7]);
@@ -2116,7 +2117,7 @@ mod tests {
          ORDER BY a.file_id";
 
     /// The load's columns, its qualities and its legacy count.
-    type Loaded = (Vec<FileId>, Vec<bool>, Vec<[pg_model::pdq::Hash; 4]>, Vec<u8>, usize);
+    type Loaded = (Vec<FileId>, Vec<bool>, Vec<[pg_model::pdq::Hash; 4]>, Vec<u8>, u64);
 
     fn loaded(w: &PairingWork) -> Loaded {
         (w.ids.clone(), w.owed.clone(), w.hashes.clone(), w.quality.clone(), w.legacy)

@@ -300,24 +300,45 @@ fn current_layout(conn: &Connection) -> rusqlite::Result<()> {
 /// The current schema, made once per process.
 static CURRENT: Expected = Expected::new(current_layout, SEEDS);
 
+/// How a file differs from this build's catalog ([`mismatch`]). Its text is its `Display`, the one wording of each condition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Mismatch {
+    /// Not a database at all.
+    NotADatabase,
+    /// Its layout differs from the expected one: the first difference (`pg_dbfile`'s).
+    Layout(pg_dbfile::Difference),
+    /// Its `application_id` is another program's.
+    ApplicationId(i64),
+}
+
+impl std::fmt::Display for Mismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mismatch::NotADatabase => f.write_str("not a catalog"),
+            Mismatch::Layout(difference) => std::fmt::Display::fmt(difference, f),
+            Mismatch::ApplicationId(id) => write!(f, "application id {id}, not a catalog's"),
+        }
+    }
+}
+
 /// Why the file at `conn` is not this build's catalog at `version`, given `want` (its [`expected_for`] schema): `None` when
 /// it is. It reads only. A file that is not a database is not a catalog, and neither is one whose `application_id` is
 /// another's, once it has objects or a version (a new file has neither, and no id yet).
-pub(crate) fn mismatch(conn: &Connection, want: &Schema) -> Result<Option<String>> {
+pub(crate) fn mismatch(conn: &Connection, want: &Schema) -> Result<Option<Mismatch>> {
     let found = match Schema::read(conn, SEEDS) {
         Ok(found) => found,
-        Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => return Ok(Some("not a catalog".to_string())),
+        Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => return Ok(Some(Mismatch::NotADatabase)),
         Err(e) => return Err(e.into()),
     };
     if let Some(difference) = found.difference(want) {
-        return Ok(Some(difference.to_string()));
+        return Ok(Some(Mismatch::Layout(difference)));
     }
     // The id is set with the version, in the transaction that creates the catalog. So a file with objects, or with a
     // version, but without the id was not made here. A file with neither is new, and has no id yet.
     if !found.is_empty() || pg_dbfile::user_version(conn)? > 0 {
         let id = pg_dbfile::application_id(conn)?;
         if id != APPLICATION_ID {
-            return Ok(Some(format!("application id {id}, not a catalog's")));
+            return Ok(Some(Mismatch::ApplicationId(id)));
         }
     }
     Ok(None)
@@ -796,7 +817,7 @@ mod tests {
             ("live_failures!", live_failures!()),
             ("kind_video!", pg_model::kind_video!()),
             ("write_rating!", pg_model::write_rating!()),
-            ("write_rotation!", pg_model::write_rotation!()),
+            ("write_turns!", pg_model::write_turns!()),
         ];
         for (name, text) in expansions {
             assert!(stored.contains(&normalized(text)), "{name} expands to {text:?}, not in the stored text");

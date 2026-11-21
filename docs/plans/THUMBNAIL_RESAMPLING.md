@@ -5,7 +5,7 @@ version is `git show a70d174:docs/temp/THUMBNAIL_RESAMPLING.md`.
 
 Checked 2026-11-14 by reading the code at HEAD `a70d174` (the resize code has no uncommitted changes) and by reading the
 catalog and thumbnail cache on disk, read-only. Removed as done: the linear-light resizer and its tests
-(`cargo test -p pg-codec --lib`: 25 passed, 1 ignored); `IMPORT_VERSION` 2; the recompute (the catalog is at import
+(`cargo test -p pg-codec --lib`: 25 passed, 1 ignored); `IMPORT_VERSION` 2 (as of HEAD `a70d174`, 2026-11-14; commit 7deed676 later reset it to 1, `crates/model/src/versions.rs:13`); the recompute (the catalog is at import
 version 2, all 189,520 analyses are at version 2, none pending, and 189,520 thumbnails at 220 px exist); the analysis
 `version` column, which holds the import version (`crates/analysis/src/analyze.rs:112`); the f32 precision decision;
 the edge-pixel difference from the fork's edge rule (explained, §4.13); and the PDQ and SSCD linear-light runs, whose

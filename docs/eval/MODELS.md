@@ -4,16 +4,16 @@ Measured results for the models: their speed, their retrieval quality, and the a
 
 ## Model speed (RTX 2060, GPU only, synthetic input, batch 64)
 
-| Model | img/s | GPU days for 70M |
+| Model | img/s | GPU hours for 70M |
 |---|---|---|
-| SSCD fp32 320px | 241 | 3.4 |
-| **SSCD fp16 320px** | **410** | **2.0** |
-| SSCD fp16 288px | 499 | 1.6 |
-| SSCD fp16 256px | 653 | 1.2 |
-| SSCD large (ResNeXt101) fp32 | 105 | 7.7 |
-| DINOv2-S fp16 224px | 1020 | 0.8 |
-| DINOv2-B fp16 224px | 356 | 2.3 |
-| CLIP B/32 fp16 224px | 1498 | 0.5 |
+| SSCD fp32 320px | 241 | 81 |
+| **SSCD fp16 320px** | **410** | **47** |
+| SSCD fp16 288px | 499 | 39 |
+| SSCD fp16 256px | 653 | 30 |
+| SSCD large (ResNeXt101) fp32 | 105 | 185 |
+| DINOv2-S fp16 224px | 1020 | 19 |
+| DINOv2-B fp16 224px | 356 | 55 |
+| CLIP B/32 fp16 224px | 1498 | 13 |
 
 ## Model quality
 
@@ -152,15 +152,15 @@ RTX 2060, batch 64, 320 px, GPU only. Measured first on the CUDA 12 stack (drive
 the driver update on CUDA 13 (driver 621.01: torch 2.15 cu132, onnxruntime-gpu 1.31.1, TensorRT 11.4 / 10.16
 cu13):
 
-| Runtime | img/s, CUDA 12 → 13 | GPU days for 70M | Cosine vs torch fp32 (9.3k subset): min / p1 |
+| Runtime | img/s, CUDA 12 → 13 | GPU hours for 70M (CUDA 13) | Cosine vs torch fp32 (9.3k subset): min / p1 |
 |---|---|---|---|
-| torch fp32 | 241 → 231 | 3.5 | – |
-| torch fp16 autocast | 410 → 459 | 1.8 | 0.9998 / 0.9999 |
-| ONNX Runtime CUDA provider, fp32 | 201 → 232 | 3.5 | 1.0000 |
-| ONNX Runtime CUDA provider, fp16 | 310 → 446 | 1.8 | 0.9998 (128 images) |
-| ONNX Runtime TensorRT provider (TensorRT 10), fp16 | 1,382 → 1,420 | 0.6 | 0.9997 (128 images) |
-| **TensorRT 11, fp16** | **1,390 → 1,438** | **0.6** | 0.9996 / 0.9999 |
-| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 → 2,893 | 0.3 | 0.7334 / 0.9293 |
+| torch fp32 | 241 → 231 | 84 | – |
+| torch fp16 autocast | 410 → 459 | 42 | 0.9998 / 0.9999 |
+| ONNX Runtime CUDA provider, fp32 | 201 → 232 | 84 | 1.0000 |
+| ONNX Runtime CUDA provider, fp16 | 310 → 446 | 44 | 0.9998 (128 images) |
+| ONNX Runtime TensorRT provider (TensorRT 10), fp16 | 1,382 → 1,420 | 14 | 0.9997 (128 images) |
+| **TensorRT 11, fp16** | **1,390 → 1,438** | **14** | 0.9996 / 0.9999 |
+| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 → 2,893 | 7 | 0.7334 / 0.9293 |
 
 - **TensorRT fp16 is 3.4× torch fp16, with the same embeddings.** On the subset its retrieval is
   identical to `sscd_fp16`: R@1 0.964, R@10 1.0, the same thresholds (±0.0004) and flagged pairs (±5),
@@ -215,10 +215,10 @@ ImageNet numbers: SigLIP 2 paper (arXiv 2502.14786, Table 1); CLIP B/32 from ope
 - **TensorRT fp16 is safe for all of them** (cosine ≥ 0.9994), at 1.5–1.8× torch fp16.
 - **Cost in the first pass:** SSCD on TensorRT is ~14 GPU hours for 70M, and the pass is CPU-bound (decoding ~1.5
   days). SigLIP 2 B/16 adds 26 GPU hours, so the GPU stays within the decode time (~40 h of ~36 h; about even).
-  B/32 is nearly free, and L/16 makes the GPU the limit (~5 days). PLAN's "roughly double GPU time" holds for B/16,
+  B/32 is nearly free, and L/16 makes the GPU the limit (~109 GPU hours). PLAN's "roughly double GPU time" holds for B/16,
   but the wall time barely changes because decoding dominates.
 - **Suggested:** SigLIP 2 B/16 in the first pass (12 points above CLIP B/32, within the decode budget). Given
-  "quality over speed", L/16 (+4.3 points, ~5 days) is the alternative. Both read the same decoded image, resized
+  "quality over speed", L/16 (+4.3 points, ~109 GPU hours) is the alternative. Both read the same decoded image, resized
   to their own input.
 
 #### NaFlex: native aspect ratio (2026-10-30)
@@ -277,15 +277,15 @@ position grid is resized to each image's grid. One model serves every N, and the
 - **No switch.** TensorRT 11 has no accumulation setting: it is strongly typed, and its builder flags only cover
   TF32 and strict NaNs. Writing the matmul in fp32 gets the precision back, but only through plain fp32 `sgemm`
   (no tensor cores), ~6–7× slower per matmul.
-- **The cost of fp32 accumulation**, each alone on the GPU (batch 64): TensorRT fp16 126 img/s (6.4 days for 70M),
-  **torch pure fp16 with SDPA 87 img/s (9.3 days)**, ONNX Runtime CUDA fp16 61 img/s (13 days). The earlier
+- **The cost of fp32 accumulation**, each alone on the GPU (batch 64): TensorRT fp16 126 img/s (154 hours for 70M),
+  **torch pure fp16 with SDPA 87 img/s (223 hours)**, ONNX Runtime CUDA fp16 61 img/s (319 hours). The earlier
   "1 img/s" for ONNX Runtime was a GPU-memory spill: the fp32 reference model was on the 6 GB GPU too.
 - SSCD and DISK on TensorRT keep their measured quality (cosine ≥ 0.9994, same retrieval and decisions), so for
   those models the fp16 accumulation is harmless.
 - **ONNX Runtime's transformer optimizer** (`optimize_model`, model types bert, vit and clip, then fp16 with fp32
   I/O; 512 random library images vs torch fp32, alone on the GPU, batch 64): every type fuses the 28 GELUs
   (`FastGelu`) and nothing else; **none fuses attention**, whose pattern in our NaFlex export (the padding mask) it
-  doesn't recognize. The GELU fusion alone: **63 → 84 img/s** (9.6 days for 70M, level with torch fp16), with
+  doesn't recognize. The GELU fusion alone: **63 → 84 img/s** (231 hours for 70M, level with torch fp16), with
   the same fidelity (nearest neighbour as fp32 0.979 vs 0.977; top-5 overlap 0.986 vs 0.988; worst cosine
   0.9956). Fused attention would need the export to write attention in the optimizer's pattern, or ONNX Runtime's
   `MultiHeadAttention` op directly.

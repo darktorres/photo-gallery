@@ -1,10 +1,10 @@
-//! The list facets' indices, which the filter bar's constants (FilterBar.qml, `facet…`) name: pinned here.
+//! The list facets' order, which the filter bar shows them in: pinned here.
 
-use pg_client::facets::{ALL, from_index};
+use pg_client::facets::ALL;
 use pg_model::query::ListFacet;
 
 #[test]
-fn the_facets_keep_their_indices() {
+fn the_facets_keep_the_bars_order() {
     assert_eq!(
         ALL,
         [
@@ -16,8 +16,4 @@ fn the_facets_keep_their_indices() {
             ListFacet::Exts
         ]
     );
-    for (i, facet) in ALL.into_iter().enumerate() {
-        assert_eq!(from_index(i), Some(facet));
-    }
-    assert_eq!(from_index(6), None);
 }

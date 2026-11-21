@@ -9,6 +9,7 @@
 
 use std::rc::Rc;
 
+use crate::convert::progress_count;
 use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::types::{Type, Value};
@@ -21,9 +22,9 @@ use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
 use pg_model::write::{Write, WriteKind};
-use pg_model::{write_rating, write_rotation};
+use pg_model::{write_rating, write_turns};
 
-use crate::types::{DELETE_FILE_RATING, DELETE_RATING, SET_FILE_RATING, SET_RATING};
+use crate::types::{DELETE_FILE_RATING, DELETE_RATING, SET_FILE_RATING, SET_RATING, bad_value};
 
 mod job;
 pub use job::{Job, Rewrite, WriteEffect};
@@ -105,21 +106,31 @@ impl Catalog {
     pub fn queue_rotation(&self, file_id: FileId, turns: Turns) -> Result<()> {
         let conn = &self.conn;
         let tx = crate::transaction::write_transaction(conn)?;
-        let (file_id, turns) = (file_id.get(), turns.get());
+        let file_id = file_id.get();
+        // The sum is taken as a `Turns` here, not by SQL's modulus: the queued turns, with these added, and the write is
+        // the one row of the file's queued turns.
+        let queued: Option<i64> = tx
+            .query_row(
+                concat!("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = '", write_turns!(), "'"),
+                [file_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let total = Turns::of(queued.unwrap_or(0)).plus(turns);
         tx.execute(
             concat!(
                 "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, '",
-                write_rotation!(),
-                "', ?2 % 4, unixepoch())
-             ON CONFLICT(file_id, kind) DO UPDATE SET value = (value + excluded.value) % 4, queued = excluded.queued,
+                write_turns!(),
+                "', ?2, unixepoch())
+             ON CONFLICT(file_id, kind) DO UPDATE SET value = excluded.value, queued = excluded.queued,
                 attempts = 0, error = NULL"
             ),
-            params![file_id, turns],
+            params![file_id, total.get()],
         )?;
         tx.execute(
             concat!(
                 "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
-                write_rotation!(),
+                write_turns!(),
                 "' AND value = 0 AND temp IS NULL"
             ),
             [file_id],
@@ -142,30 +153,28 @@ impl Catalog {
         let job = conn
             .query_row(NEXT_READY, params![MAX_ATTEMPTS, settle_secs, skip], |r| {
                 let kind: String = r.get(1)?;
-                let kind = WriteKind::from_key(&kind)
-                    .ok_or_else(|| rusqlite::Error::InvalidColumnType(1, kind, Type::Text))?;
+                let kind =
+                    WriteKind::from_key(&kind).ok_or_else(|| bad_value(1, Type::Text, "file_writes.kind", &kind))?;
                 // The value read with its kind: one out of the kind's range is a damaged row (the schema's CHECK).
-                let write_at = |i: usize| -> rusqlite::Result<Option<Write>> {
+                let write_at = |i: usize, column: &'static str| -> rusqlite::Result<Option<Write>> {
                     let Some(value) = r.get::<_, Option<i64>>(i)? else { return Ok(None) };
-                    Write::from_stored(kind, value).map(Some).ok_or_else(|| {
-                        rusqlite::Error::InvalidColumnType(i, format!("{} {value}", kind.key()), Type::Integer)
-                    })
+                    Write::from_stored(kind, value)
+                        .map(Some)
+                        .ok_or_else(|| bad_value(i, Type::Integer, column, &value.to_string()))
                 };
                 let temp: Option<Vec<u8>> = r.get(3)?;
-                let temp_value = write_at(4)?;
+                let temp_value = write_at(4, "file_writes.temp_value")?;
                 // The temp's path is the rules' bytes (`record_temp`); one that doesn't parse is a damaged row.
                 let temp = match temp {
-                    Some(bytes) => Some(
-                        self.rules()
-                            .parse_bytes(&bytes)
-                            .ok_or_else(|| rusqlite::Error::InvalidColumnType(3, "temp".into(), Type::Blob))?,
-                    ),
+                    Some(bytes) => Some(self.rules().parse_bytes(&bytes).ok_or_else(|| {
+                        bad_value(3, Type::Blob, "file_writes.temp", &String::from_utf8_lossy(&bytes))
+                    })?),
                     None => None,
                 };
                 Ok(Job {
                     file_id: FileId::new(r.get(0)?),
-                    write: write_at(2)?
-                        .ok_or_else(|| rusqlite::Error::InvalidColumnType(2, "value".into(), Type::Null))?,
+                    write: write_at(2, "file_writes.value")?
+                        .ok_or_else(|| bad_value(2, Type::Null, "file_writes.value", "NULL"))?,
                     temp: temp.zip(temp_value),
                     attempts: r.get(5)?,
                 })
@@ -191,13 +200,13 @@ impl Catalog {
     }
 
     /// Every queued write, failing or not.
-    pub fn writes_remaining(&self) -> Result<usize> {
+    pub fn writes_remaining(&self) -> Result<u64> {
         let conn = &self.conn;
         Ok(conn.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0))?)
     }
 
     /// The queued writes still to make now: those that have retries left, and aren't failing without a temp to finish.
-    pub fn left_to_write(&self) -> Result<i64> {
+    pub fn left_to_write(&self) -> Result<u64> {
         let conn = &self.conn;
         Ok(conn.query_row(
             "SELECT count(*) FROM file_writes WHERE attempts < ?1 AND (error IS NULL OR temp IS NOT NULL)",
@@ -262,18 +271,28 @@ impl Catalog {
         }
         match job.write {
             Write::Turns(turns) => {
-                tx.execute(
-                    concat!(
-                        "UPDATE file_writes SET value = (value - ?2 + 4) % 4 WHERE file_id = ?1 AND kind = '",
-                        write_rotation!(),
-                        "'"
-                    ),
-                    params![file_id, written],
-                )?;
+                // The queued turns less the ones written, as a `Turns` (what is left is the turns still to write).
+                let queued: Option<i64> = tx
+                    .query_row(
+                        concat!("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = '", write_turns!(), "'"),
+                        [file_id],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if let Some(queued) = queued {
+                    tx.execute(
+                        concat!(
+                            "UPDATE file_writes SET value = ?2 WHERE file_id = ?1 AND kind = '",
+                            write_turns!(),
+                            "'"
+                        ),
+                        params![file_id, Turns::of(queued - written).get()],
+                    )?;
+                }
                 tx.execute(
                     concat!(
                         "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
-                        write_rotation!(),
+                        write_turns!(),
                         "' AND value = 0"
                     ),
                     [file_id],
@@ -324,9 +343,11 @@ impl Catalog {
     /// The copies into the originals that failed up to the cap get their attempts back: the writer calls it when it starts,
     /// so each start tries a stuck copy again. Its temp is the only whole copy of the new content while the original may be
     /// part-written, so it is never given up. The number of rows reset.
-    pub fn retry_write_copies(&self) -> Result<usize> {
+    pub fn retry_write_copies(&self) -> Result<u64> {
         let conn = &self.conn;
-        Ok(conn.execute("UPDATE file_writes SET attempts = 0 WHERE temp IS NOT NULL AND attempts > 0", [])?)
+        Ok(progress_count(
+            conn.execute("UPDATE file_writes SET attempts = 0 WHERE temp IS NOT NULL AND attempts > 0", [])?,
+        ))
     }
 }
 
@@ -377,21 +398,31 @@ fn file_rewritten(tx: &Transaction, file_id: FileId, rewrite: Rewrite) -> Result
 /// Both are stale anyway (the mtime changed): until the import redoes the analysis and the Placeholders pass redoes the
 /// placeholder (the identity no longer matches), the placeholder shows the file as it is now.
 fn analysis_turned_back(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
-    tx.execute(
-        "UPDATE analysis SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
-        params![file_id.get(), turns.get()],
-    )?;
-    tx.execute(
-        "UPDATE placeholders SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
-        params![file_id.get(), turns.get()],
-    )?;
-    Ok(())
+    let back = |stored: Turns| Turns::of(i64::from(stored.get()) - i64::from(turns.get()));
+    change_turns(tx, ("analysis", "file_id", "rotation"), file_id.get(), back)?;
+    change_turns(tx, ("placeholders", "file_id", "rotation"), file_id.get(), back)
 }
 
 /// The turn is kept in the catalog (the file can't hold it): the analysis, made without it, is stale (`files.pending`),
 /// and the thumbnails no longer match (thumbs::Source).
 fn add_catalog_rotation(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
-    tx.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id.get(), turns.get()])?;
+    change_turns(tx, ("files", "id", "turns"), file_id.get(), |stored| stored.plus(turns))
+}
+
+/// Sets the quarter turns of the row `key` = `id` of `table` (its `column`, a `Turns`) to `change` of what it holds, when the
+/// row is there. The arithmetic is `Turns`'s, so the modulus is in one place and not in SQL.
+fn change_turns(
+    tx: &Transaction,
+    (table, key, column): (&'static str, &'static str, &'static str),
+    id: i64,
+    change: impl FnOnce(Turns) -> Turns,
+) -> Result<()> {
+    let stored: Option<i64> =
+        tx.query_row(&format!("SELECT {column} FROM {table} WHERE {key} = ?1"), [id], |r| r.get(0)).optional()?;
+    if let Some(stored) = stored {
+        let changed = change(Turns::of(stored));
+        tx.execute(&format!("UPDATE {table} SET {column} = ?2 WHERE {key} = ?1"), params![id, changed.get()])?;
+    }
     Ok(())
 }
 

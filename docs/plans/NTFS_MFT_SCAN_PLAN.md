@@ -768,17 +768,17 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
      list (already fixed; see the walker rule above).
    - **Decided:** the walk moves to `crates/library`, and `pg-scan` is folded into `pg-library`. The `Listing` trait, the filter,
      the refusals and the synthetic bench tree move with it. `pg_scan::scan`, `check_folder` and `ScanError` become `pg_library`
-     items. The callers change with them: `cli`; `bench` (the `bench` feature moves with `crates/bench/Cargo.toml:18`); and
+     items. The callers change with them: `cli`; `bench` (the `bench` feature moves with the `pg-scan` entry in `crates/bench/Cargo.toml`); and
      `library` (`src/runner.rs`, `src/scans.rs`, `src/folders.rs`, the `tests/*.rs` files).
    - **Decided: no test moves.** `thumbs` keeps its three tests (`crates/thumbs/src/lib.rs:414, :468, :618`, working-tree lines;
-     at HEAD the scan test is at `:582`) and its dev-dependency on the scan (`crates/thumbs/Cargo.toml:25`), which is now
+     at HEAD the scan test is at `:582`) and its dev-dependency on the scan (the `pg-scan` entry in `crates/thumbs/Cargo.toml`), which is now
      `pg-library`. Two things block a move: the `PANIC_ON` seam (`:311–312`, under `#[cfg(test)]`) cannot be reached from another
      crate, and the `imported` helper (`:459–470`, its scan call at `:468`) is shared by four more tests (`:488, :508, :522,
      :543`). The dev-only cycle (`pg-library` depends on `pg-thumbs` normally) is accepted by cargo for dev-dependencies. Open:
      step 2 confirms it with `cargo test -p pg-thumbs`.
    - Doc references to `pg_scan` change with the move: `crates/platform/src/dir.rs:7`, `crates/model/src/refusal.rs:1`,
      `crates/library/src/lib.rs:4`, `crates/README.md:73, 89`, `docs/reference/STORAGE.md:60`, `docs/reference/PROFILING.md:160–161`,
-     `docs/reference/NOTIFICATIONS_DESIGN.md:143`, `crates/library/src/folders.rs:15`, `crates/library/Cargo.toml:12`.
+     `docs/reference/NOTIFICATIONS_DESIGN.md:143`, `crates/library/src/folders.rs:15`, the `pg-scan` entry in `crates/library/Cargo.toml`.
    - Tests: the existing `crates/library/tests/*.rs`, plus hard-link, reparse and unreadable-folder cases (a folder with a
      deny-list ACL). New: the cloud tags on a fake listing, the OneDrive root refusal with a fake environment, duplicate serials on
      two fake volumes, the exact-walker test (after editing a file through its second link, the walker records the new size and

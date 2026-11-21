@@ -316,6 +316,8 @@ can be added later against the same crates.
   2 to 11; version 2 is the C-8 change-stamp triggers, `TO_2_CHANGE_STAMPS`), and the migration loop runs them. The
   plan's "a difference is a refusal, not a rebuild" is not in the code: a schema that differs at its version is still
   rebuilt, as above.
+  The version 11 above is a past figure: the current build's schema is version 1 with no migrations (`MIGRATIONS` is
+  empty, `crates/catalog/src/schema.rs`), so the next migration would be `TO_2`.
 - **Taken time frame (decided 2026-11-05, by the code's design, recorded here; not a user decision):** the date
   filters and the date sort compare `analysis.taken` as wall-clock time. A camera's clock is kept as it is. A
   video's UTC creation time is converted to this computer's zone at import and kept as the instant in

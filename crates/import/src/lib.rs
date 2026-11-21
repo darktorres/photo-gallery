@@ -98,7 +98,7 @@ pub fn import_while(
         |item, wide| {
             if item.kind == Kind::Video {
                 // A video is read by FFmpeg, from its path: its size is counted as read.
-                return Read::Streamed { bytes: u64::try_from(item.size).unwrap_or(0) };
+                return Read::Streamed { bytes: item.size };
             }
             let [folder, name] = work.parts(item.path);
             pg_platform::names::set_file(wide, folder, name);

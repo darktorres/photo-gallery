@@ -30,7 +30,7 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
   - At ~1,600 files/s the disk is no longer the bottleneck for a 70M pass; decoding is.
 - **Read buffers (`pipeline::Options::budget`, 2026-11-01): the pass's file buffers must cover a file per
   read in flight and per worker, since a worker holds its file while it decodes it.** `gallery import`,
-  8 readers, 12 workers, on the first 1,000 files (6.3 GB, 24 MP Sony A6000 JPEGs, 6 MB average) of
+  8 readers, 12 workers, on the first 1,000 files (5.9 GiB, 24 MP Sony A6000 JPEGs, 6 MiB average) of
   a camera folder on another drive, in on-disk order, purged from the file cache before each run (an unbuffered
   open drops a file's cached pages), three runs each in rotating order, medians:
 
@@ -45,8 +45,8 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
 
   - The disk, not the CPU, sets the pace: ~40 files/s. Below a file per slot, readers wait for workers to
     hand buffers back.
-  - Without a pool, the channel bounded files, not bytes: 52 camera files in flight is 300–600 MB, and a
-    folder of 100 MB panoramas held 5 GB.
+  - Without a pool, the channel bounded files, not bytes: 52 camera files in flight is 300–600 MiB, and a
+    folder of 100 MiB panoramas held 4.7 GiB.
   - One pass per block of files read once (no purge) was useless: the same build read 175–248 MB/s on
     different blocks of the folder, more than the budgets differ.
   - **Again with the pool that replaces a too-small idle buffer** (145ec5b; the runs above were of a pool that

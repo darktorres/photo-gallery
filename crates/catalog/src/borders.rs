@@ -27,7 +27,7 @@ impl Catalog {
     /// exact, so the file has no borders left: its detection is stored as none now, with no mark (the review's). Its
     /// analysis was made of the uncut pixels, and its size and mtime no longer match the file's, so the next import
     /// analyzes it again, and the borders pass looks at the cut file once more.
-    pub fn borders_cut(&self, file_id: FileId, after: (i64, i64)) -> Result<()> {
+    pub fn borders_cut(&self, file_id: FileId, after: (u64, i64)) -> Result<()> {
         let tx = crate::transaction::write_transaction(&self.conn)?;
         // A file removed from the library since its cut was made (absent, or hidden for a removal) has nothing to record:
         // that is not a failure of anything the user still has.

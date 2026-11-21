@@ -26,7 +26,11 @@ from common import ANALYSIS_DRAFT_SIDES, DATA_ROOT, WORK_DIR, image_list, load_r
 from edits import TRANSFORMS, edit_seed
 from linear_resize import FIT_SIDE, fit_within
 
-MEANINGFUL_D = 31  # Meta's recommended PDQ match threshold
+# Meta's recommended PDQ match threshold. Source: crates/model/src/pdq.rs MATCH_DISTANCE (keep the two in step).
+MEANINGFUL_D = 31
+# The default seed: the same as synth.py's default, so pdq's edits are synth.py's at the same seed. Dataset seed; changing
+# it moves the sampled inputs.
+DEFAULT_SEED = 0
 
 
 def prepare(im: Image.Image) -> np.ndarray:
@@ -150,7 +154,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--synth", action="store_true")
     parser.add_argument("--count", type=int, default=300)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--workers", type=int, default=6)
     args = parser.parse_args()
     if args.synth:

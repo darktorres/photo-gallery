@@ -32,6 +32,12 @@ pub(super) fn dimensions(scratch: &mut zune_jpeg::Scratch, bytes: &[u8]) -> Imag
     ))
 }
 
+/// A side of the size the decoder reports, as the 16 bits a JPEG's side fits in: the one narrowing of a size, at the
+/// decoder's boundary (a size is a `u32` everywhere else). `None` past 16 bits.
+fn decoder_side(side: usize) -> Option<u16> {
+    u16::try_from(side).ok()
+}
+
 /// `image`'s `JpegDecoder` (zune-jpeg), for the JPEGs libjpeg-turbo rejects. As there, one decoder reads the
 /// headers and another, set up from them, decodes: the colour conversion zune-jpeg uses is chosen as it reads
 /// the headers, from the output colour space it was given. Both decode in the buffers of the JPEG before
@@ -55,8 +61,8 @@ pub(super) fn decode(
         *scratch = headers.into_scratch();
         return Err(jpeg_error(e));
     }
-    // Known once the headers are read; a JPEG's sides fit 16 bits.
-    let size = headers.dimensions().and_then(|(w, h)| Some((u16::try_from(w).ok()?, u16::try_from(h).ok()?)));
+    // Known once the headers are read.
+    let size = headers.dimensions().and_then(|(w, h)| Some((decoder_side(w)?, decoder_side(h)?)));
     let input = headers.input_colorspace();
     let kept = headers.into_scratch();
     let (Some((w, h)), Some(input)) = (size, input) else {

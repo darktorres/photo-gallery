@@ -215,7 +215,7 @@ def quality(job: tuple[str, tuple[int, ...]]) -> dict | None:
 # --- Timing pass (one process) ---
 
 
-def timed(fn: Callable, *args) -> tuple:
+def timed_ms(fn: Callable, *args) -> tuple:
     """(fn(*args), milliseconds)."""
     start = time.perf_counter()
     result = fn(*args)
@@ -237,14 +237,14 @@ def timing(files: list[str], heights: tuple[int, ...]) -> dict:
                 print(f"skipping a file at height {row}: {e}", flush=True)
                 continue
             for m in RESIZE_METHODS:
-                resize_ms[m].append(timed(resize, m, data, size)[1])
+                resize_ms[m].append(timed_ms(resize, m, data, size)[1])
             for codec, (settings, encode, decode) in CODECS.items():
                 for s in settings:
-                    blob, enc_ms = timed(encode, thumb, s)
+                    blob, enc_ms = timed_ms(encode, thumb, s)
                     if codec.startswith("jpegli"):  # a process per call: use the tool's own speed report
                         enc_ms = thumb.shape[0] * thumb.shape[1] / 1e6 / _JPEGLI_MPS[0] * 1000
                     enc[codec][s].append(enc_ms)
-                    dec[codec][s].append(timed(decode, blob)[1])
+                    dec[codec][s].append(timed_ms(decode, blob)[1])
         out["resize"][row] = {m: float(np.median(v)) for m, v in resize_ms.items()}
         out["encode"][row] = {c: {str(s): float(np.nanmedian(v)) for s, v in d.items()} for c, d in enc.items()}
         out["decode"][row] = {c: {str(s): float(np.median(v)) for s, v in d.items()} for c, d in dec.items()}

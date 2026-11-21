@@ -18,7 +18,7 @@ PhotoGallery/symbols folder under LOCALAPPDATA).
     symbolize.py [--path DIR]... [--cache DIR] FILE...
 
 Needs the Windows SDK's x64 debugging tools (dbghelp.dll with symsrv.dll beside it, for the symbol server), and LLVM
-for the Rust names. The debugging tools are found through the SDK's KitsRoot10 registry value; LLVM is LLVM_DIR
+for the Rust names. The debugging tools are found through the SDK's KitsRoot10 registry value; LLVM is PG_LLVM_DIR
 (default %ProgramFiles%\\LLVM). PG_SYMBOL_CACHE sets the cache, and the repo's .env is read for keys the environment
 does not set.
 """
@@ -71,10 +71,10 @@ def debuggers_dir() -> Path:
 
 
 def llvm_dir() -> Path:
-    """LLVM_DIR, else %ProgramFiles%\\LLVM (pgtools.default_llvm_dir, the default build.py uses too)."""
+    """PG_LLVM_DIR, else %ProgramFiles%\\LLVM (pgtools.default_llvm_dir, the default build.py uses too)."""
     from pgtools import default_llvm_dir  # tools/ is on the path: _load_dotenv put it there at import
 
-    return Path(os.environ["LLVM_DIR"]) if os.environ.get("LLVM_DIR") else default_llvm_dir()
+    return Path(os.environ["PG_LLVM_DIR"]) if os.environ.get("PG_LLVM_DIR") else default_llvm_dir()
 
 
 def symbol_cache() -> str:

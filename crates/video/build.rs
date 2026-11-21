@@ -7,8 +7,6 @@
 //! videos (same major version), so gallery.exe needs them beside it. The test executables
 //! don't: pg-video finds them by their full path.
 
-#![expect(clippy::panic, reason = "a build script fails by panicking, and cargo prints the message")]
-
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -59,7 +57,7 @@ struct Headers {
     prefix: Option<PathBuf>,
 }
 
-/// A failure is an error (cargo prints it and the build stops) or a panic with its message.
+/// A failure is an error: `main` returns it, and cargo prints it and the build stops.
 fn main() -> Result<(), String> {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
     // pkg-config finds the system's headers through these.
@@ -204,7 +202,7 @@ fn copy_dlls_beside_app(bin: &Path) -> Result<(), String> {
         .find(|p| p.file_name().and_then(|n| n.to_str()) == Some("build"))
         .and_then(Path::parent)
         .ok_or_else(|| format!("{} has no target profile folder", out.display()))?;
-    let entries = std::fs::read_dir(bin).unwrap_or_else(|e| panic!("{}: {e}", bin.display()));
+    let entries = std::fs::read_dir(bin).map_err(|e| format!("{}: {e}", bin.display()))?;
     let dlls: Vec<(PathBuf, OsString)> = entries
         .filter_map(|e| e.ok().map(|e| (e.path(), e.file_name())))
         .filter(|(_, name)| {
@@ -212,12 +210,12 @@ fn copy_dlls_beside_app(bin: &Path) -> Result<(), String> {
             name.ends_with(".dll") && DLLS.iter().any(|d| name.starts_with(&format!("{d}-")))
         })
         .collect();
-    assert_eq!(
-        dlls.len(),
-        DLLS.len(),
-        "the FFmpeg DLLs are missing from {}: FFMPEG_DIR must be an FFmpeg build with a bin folder",
-        bin.display()
-    );
+    if dlls.len() != DLLS.len() {
+        return Err(format!(
+            "the FFmpeg DLLs are missing from {}: FFMPEG_DIR must be an FFmpeg build with a bin folder",
+            bin.display()
+        ));
+    }
     std::fs::create_dir_all(profile).map_err(|e| format!("creating {}: {e}", profile.display()))?;
     for (dll, name) in &dlls {
         let dest = profile.join(name);
@@ -227,7 +225,7 @@ fn copy_dlls_beside_app(bin: &Path) -> Result<(), String> {
         };
         if !same(dll, &dest) {
             std::fs::copy(dll, &dest)
-                .unwrap_or_else(|e| panic!("copying {} to {}: {e}", dll.display(), profile.display()));
+                .map_err(|e| format!("copying {} to {}: {e}", dll.display(), profile.display()))?;
         }
     }
     Ok(())

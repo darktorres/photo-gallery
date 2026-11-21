@@ -155,6 +155,16 @@ within a set become "same picture" marks, pairs across sets "different" (in `pai
 verifier tabs). The full view shows one member at a time in a fixed box: ← / → step through the group, Space
 returns to the previously shown image, Enter saves, PgUp / PgDn change group.
 
+## Errors
+
+Every script here fails one of two ways:
+
+- **A run that cannot start** (a missing path or variable, a tool that is not installed, a file that fails its SHA-256
+  pin, a provider or device that is not there, a bad command line): one message that names the script or setting and
+  says what to do, then `SystemExit` (or `parser.error` for the command line). No traceback.
+- **A harness bug** (an invariant the code relies on has broken, or a result that cannot be right): an exception, with
+  its traceback.
+
 ## Outputs (in the work dir)
 
 | File | Contents |

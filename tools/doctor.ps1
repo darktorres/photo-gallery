@@ -50,10 +50,10 @@ $cargo = Get-Command cargo -ErrorAction SilentlyContinue
 Require ($null -ne $cargo) 'cargo' $cargo.Source 'install Rust with rustup (https://rustup.rs); the toolchain comes from rust-toolchain.toml'
 
 # Qt: the kit's qmake is what cxx-qt-build runs.
-$qt = $env:QT_DIR
+$qt = $env:PG_QT_DIR
 $qmake = if ($qt) { Join-Path $qt 'bin/qmake.exe' } else { '' }
-Require ($qmake -and (Test-Path -LiteralPath $qmake -PathType Leaf)) 'Qt (QT_DIR)' $qt `
-    "set QT_DIR in .env to the Qt $qtVersion msvc2022_64 kit (the folder with bin/qmake), from the Qt Online Installer"
+Require ($qmake -and (Test-Path -LiteralPath $qmake -PathType Leaf)) 'Qt (PG_QT_DIR)' $qt `
+    "set PG_QT_DIR in .env to the Qt $qtVersion msvc2022_64 kit (the folder with bin/qmake), from the Qt Online Installer"
 
 # FFmpeg: the headers are what build.rs generates from, and the DLLs are what the app and the tests load.
 $ffmpeg = if ($env:FFMPEG_DIR) { $env:FFMPEG_DIR } else { Join-Path $repo '.deps/ffmpeg' }
@@ -61,10 +61,10 @@ $ffmpegOk = (Test-Path -LiteralPath (Join-Path $ffmpeg 'include/libavcodec/avcod
     (Test-Path -LiteralPath (Join-Path $ffmpeg 'bin') -PathType Container)
 Require $ffmpegOk 'FFmpeg' $ffmpeg ('run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg ' + $ffmpegPin + ' shared build')
 
-# libclang: bindgen (pg-video's build script) loads it. LIBCLANG_PATH names its folder; LLVM_DIR is the LLVM install.
+# libclang: bindgen (pg-video's build script) loads it. LIBCLANG_PATH names its folder; PG_LLVM_DIR is the LLVM install.
 $clangDirs = @(
     $env:LIBCLANG_PATH
-    if ($env:LLVM_DIR) { Join-Path $env:LLVM_DIR 'bin' }
+    if ($env:PG_LLVM_DIR) { Join-Path $env:PG_LLVM_DIR 'bin' }
     Join-Path $env:ProgramFiles 'LLVM/bin'
 ) + ($env:PATH -split ';')
 $clang = $clangDirs | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'libclang.dll') -PathType Leaf) } |

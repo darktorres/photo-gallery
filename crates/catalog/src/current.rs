@@ -12,7 +12,7 @@ use crate::types::Listed;
 /// removed from the library is not written), with no write of the app's into it in progress: the one rule for keeping
 /// what a pass read from a file (`is_current`).
 pub(crate) const IS_CURRENT: &str = concat!(
-    "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND size = ?2 AND mtime = ?3 AND rotation = ?4 AND missing = 0) AND ",
+    "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND size = ?2 AND mtime = ?3 AND turns = ?4 AND missing = 0) AND ",
     not_being_written!()
 );
 
@@ -20,7 +20,7 @@ pub(crate) const IS_CURRENT: &str = concat!(
 /// with their listed values (`id, size, mtime, rotation`). A file that is absent from the result is not current; the
 /// caller compares the values, which are what [`IS_CURRENT`] compares in SQL.
 pub(crate) const CURRENT_ROWS: &str = concat!(
-    "SELECT id, size, mtime, rotation FROM files WHERE id IN rarray(?1) AND missing = 0 AND ",
+    "SELECT id, size, mtime, turns FROM files WHERE id IN rarray(?1) AND missing = 0 AND ",
     not_being_written!(files)
 );
 

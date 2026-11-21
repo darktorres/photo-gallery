@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use rusqlite::{Connection, OpenFlags};
 
 use pg_dbfile::Schema;
@@ -21,7 +21,7 @@ use crate::classify::{Action, Facts, LONGEST_NAME_SUFFIX, RELEASED, classify};
 use crate::error::{Error, Refusal, Result};
 use crate::lease::HeldLease;
 use crate::lifecycle::{
-    MarkChange, check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, meta_text, refuse_read_only,
+    check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, meta_text, newer_mark, refuse_read_only,
     set_borders_version, set_import_version, set_key_version, set_pairing_version, set_taken_zone, set_thumbs_version,
     take_lock, take_shared, try_exclusive, vacuum_if_owed,
 };
@@ -67,7 +67,10 @@ impl Catalog {
     /// all) is rebuilt: a new catalog in this build's layout is made beside it, the old rows are copied into it with
     /// their ids (`carry_rows`), and the old file is moved aside (`pg_dbfile::move_aside`; see [`Catalog::rebuilt`]). A
     /// row the copy can't take (a column the new layout needs that the old one lacks) fails the copy, and the new catalog
-    /// is made empty, with the reason said. A catalog at a version after this build's is refused (made by another build).
+    /// is made empty, with the reason said. A catalog at a version after this build's is refused (made by another build),
+    /// and so is one whose integer mark (`import_version`, `borders_version`, `pairing_version`, `thumbs_version`) is above
+    /// this build's: a later build touched it, and an older one does not set its marks back. Both refusals are made before
+    /// anything is written. So a downgrade is a backup restored by hand, the only way back to an older build's catalog.
     /// Its version marks are set to `versions`. The library calls this once, before anything else opens the catalog. A
     /// change to the file (a rebuild, or a migration) needs no other process or connection to have it open: otherwise
     /// it fails with the catalog untouched, and the one that has it open is left as it is.
@@ -129,7 +132,8 @@ impl<'a> Prepare<'a> {
         }
         let _lock = if memory { None } else { Some(take_lock(path)?) };
         let current = version_in(set)?;
-        let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
+        let mut conn =
+            Connection::open(db_file(path)?).with_context(|| format!("catalog {}: opening it", path.display()))?;
         let version = version_of(&conn)?;
         // The build's current schema is built once per process; a custom one, and an earlier version, are built here.
         let custom;
@@ -147,7 +151,8 @@ impl<'a> Prepare<'a> {
             Some(found) if found > current => None,
             Some(found) if found == current => mismatch(&conn, current_schema)?,
             Some(found) => mismatch(&conn, &expected_for(set, found)?)?,
-        };
+        }
+        .map(|m| m.to_string());
         // The lock order of a change: the exclusive hold first, kept through the change. Without it a change is refused
         // before anything is moved; a catalog that needs no change is held shared, below, as any open catalog is.
         // A catalog whose `key_version` mark is another's (or missing) has its keys recomputed under the lock: a change.
@@ -155,7 +160,13 @@ impl<'a> Prepare<'a> {
         let stored_key_version = meta_text(&conn, "key_version");
         // What `classify` decides from the file's facts. A refusal is made before anything is written; a drift is carried
         // only while nothing is released, and only from a catalog whose `key_version` says which keys its rows have.
-        let facts = Facts { version, current, drift: drift.as_deref(), has_key_version: stored_key_version.is_some() };
+        let facts = Facts {
+            version,
+            current,
+            drift: drift.as_deref(),
+            has_key_version: stored_key_version.is_some(),
+            newer_mark: newer_mark(&conn, versions),
+        };
         let action = match classify(&facts, RELEASED) {
             Action::Refuse(refusal) => return Err(refused(path, &conn, refusal)),
             action => action,
@@ -185,7 +196,8 @@ impl<'a> Prepare<'a> {
         let mut rebuilt = None;
         if let Some(why) = why {
             rebuilt = Some(rebuild(conn, path, set, rules, why, version.is_some())?);
-            conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
+            conn = Connection::open(db_file(path)?)
+                .with_context(|| format!("catalog {}: reopening it after its rebuild", path.display()))?;
         }
         // An empty file takes incremental auto-vacuum before its first table (where it is a page-1 change, at once).
         if version == Some(0) && rebuilt.is_none() {
@@ -216,44 +228,30 @@ impl<'a> Prepare<'a> {
                 path.display(),
                 backup_path(path, found).display()
             ),
-            None => format!("catalog {}", path.display()),
+            None => format!("catalog {}: bringing it to this build's schema", path.display()),
         })?;
         if let Some(why) = mismatch(&conn, current_schema)? {
-            return Err(Error::NotThisBuild { path: path.display().to_string(), why });
+            return Err(refused(path, &conn, Refusal::Drift { found: current, why: why.to_string() }));
         }
         check_rules(&conn, path, rules)?;
         // The keys follow this build's key algorithm and toolchain (a copy carried the old file's mark; a change of it
         // recomputes them, under the exclusive hold taken above).
-        set_key_version(&conn, rules).with_context(|| format!("catalog {}", path.display()))?;
+        set_key_version(&conn, rules).with_context(|| format!("catalog {}: its key version", path.display()))?;
         // The one-time compaction (incremental auto-vacuum's conversion) only under the exclusive hold: it writes the whole
         // file, and a start that holds it shared must not make every other process wait for it.
         vacuum_if_owed(&conn, (!memory).then_some(path), exclusive.is_some() || memory)?;
-        mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
-        let context = || format!("catalog {}", path.display());
-        let marks = [
-            ("import_version", set_import_version(&conn, versions.import).with_context(context)?),
-            ("borders_version", set_borders_version(&conn, versions.borders).with_context(context)?),
-            ("pairing_version", set_pairing_version(&conn, versions.pairing).with_context(context)?),
-            ("thumbs_version", set_thumbs_version(&conn, versions.thumbs).with_context(context)?),
-        ];
-        // A mark above this build's was set by a later build: it is set back (so this build's rows count), and said.
-        let lowered: Vec<&str> =
-            marks.iter().filter(|(_, change)| *change == MarkChange::Lowered).map(|(name, _)| *name).collect();
-        if !lowered.is_empty() {
-            pg_log::warn(
-                "catalog",
-                &format!(
-                    "{}: {} above this build's (a later build made or changed this catalog); they are set back",
-                    path.display(),
-                    lowered.join(", ")
-                ),
-            );
-        }
-        set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
+        mark_unheld_missing(&conn).with_context(|| format!("catalog {}: its missing files", path.display()))?;
+        // The marks are this build's or older (a later build's were refused above, before anything was written).
+        let context = || format!("catalog {}: its version marks", path.display());
+        set_import_version(&conn, versions.import).with_context(context)?;
+        set_borders_version(&conn, versions.borders).with_context(context)?;
+        set_pairing_version(&conn, versions.pairing).with_context(context)?;
+        set_thumbs_version(&conn, versions.thumbs).with_context(context)?;
+        set_taken_zone(&conn).with_context(|| format!("catalog {}: its taken zone", path.display()))?;
         // The build that last changed the catalog is named by it, so a later refusal can say which build to open it with.
         if changes {
             conn.execute("UPDATE meta SET value = ?1 WHERE key = 'written_by'", [env!("CARGO_PKG_VERSION")])
-                .with_context(|| format!("catalog {}", path.display()))?;
+                .with_context(|| format!("catalog {}: recording the build that changed it", path.display()))?;
         }
         conn.execute_batch(SETTINGS)?;
         conn.release_memory()?;
@@ -266,12 +264,15 @@ impl<'a> Prepare<'a> {
     }
 }
 
-/// The error for a file `prepare` refuses (`classify`'s reason). A newer schema names the build that last changed the file
-/// (`meta.written_by`), so the user knows which build to open it with; nothing suggests deleting the file.
+/// The error for a file `prepare` refuses (`classify`'s reason). A newer schema or mark names the build that last changed
+/// the file (`meta.written_by`), so the user knows which build to open it with; nothing suggests deleting the file.
 fn refused(path: &Path, conn: &Connection, refusal: Refusal) -> Error {
     let refusal = match refusal {
         Refusal::NewerSchema { found, current, .. } => {
             Refusal::NewerSchema { found, current, written_by: meta_text(conn, "written_by") }
+        }
+        Refusal::NewerMark { mark, found, current, .. } => {
+            Refusal::NewerMark { mark, found, current, written_by: meta_text(conn, "written_by") }
         }
         other => other,
     };
@@ -290,15 +291,19 @@ impl Catalog {
         let live = if path == Path::new(":memory:") || !path.exists() { None } else { Some(take_shared(path)?) };
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(db_file(path)?, flags)
-            .with_context(|| format!("catalog {}", path.display()))?;
+            .with_context(|| format!("catalog {}: opening it", path.display()))?;
         conn.execute_batch(SETTINGS)?;
         let current = current_version()?;
         let version = pg_dbfile::user_version(&conn)?;
-        if version != current {
-            return Err(Error::SchemaVersion { path: path.display().to_string(), found: version, current });
+        // The conditions `prepare` refuses by, each with its one text (`Refusal`): this build's schema is opened as it is.
+        if version > current {
+            return Err(refused(path, &conn, Refusal::NewerSchema { found: version, current, written_by: None }));
+        }
+        if version < current {
+            return Err(refused(path, &conn, Refusal::OlderSchema { found: version, current }));
         }
         if let Some(why) = mismatch(&conn, current_expected()?)? {
-            return Err(Error::Other(anyhow!("catalog {}: {why}: it changed after it was prepared", path.display())));
+            return Err(refused(path, &conn, Refusal::Drift { found: version, why: why.to_string() }));
         }
         check_rules(&conn, path, rules)?;
         register(&conn)?;
@@ -398,7 +403,7 @@ const STATEMENT_CACHE: usize = 64;
 /// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s.
 pub(crate) fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}"))?;
+    let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}: opening it"))?;
     conn.busy_timeout(Duration::from_millis(crate::schema::BUSY_TIMEOUT_MS))?;
     conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
     Ok(conn)

@@ -229,7 +229,7 @@ The cited platform/src/lock.rs does not exist. The lock is in platform/src/testi
 
 ### DOC-036 [medium] video ffi doc says bindgen does not emit `AV_NOPTS_VALUE`; build allowlists it — PARTIAL
 
-**Disposition: Not verified.** Needs a bindgen run against the FFmpeg headers; no generated bindings exist in `target/`.
+**Disposition: Deferred.** Needs a bindgen run against the FFmpeg headers (no generated bindings in the tree).
 
 ffi.rs:38 says bindgen does not emit `AV_NOPTS_VALUE`, and ffi.rs:39 defines it by hand. build.rs:38 still allowlists `AV_NOPTS_VALUE` in VARS. If bindgen cannot parse the macro, the allowlist entry is dead. No code conflict was shown, and the bindgen output was not generated here.
 
@@ -439,7 +439,7 @@ crates/README.md:240 cites crates/video/src/ffi/load.rs, which exists and is whe
 
 ### DOC-072 [low] Measured timings in doc comments that the code or benches do not reproduce — PARTIAL
 
-**Disposition: Not verified.** These are recorded measurements and cannot be reproduced in this checkout.
+**Disposition: Deferred.** Timings need their source attached (run date, machine, bench) and reproduction on target hardware.
 
 The timing claims (modgraph 115 to 149 s, the HDD order speedup, the cold-read figures, the 0.8 s pairs pass) are measurements recorded in comments. They cannot be reproduced from the repo here, so they are unverified, not contradicted.
 
@@ -569,7 +569,7 @@ shell/state.rs:19 says the row bounds are `pg_model::size::ROW_HEIGHT`, which ma
 
 ### D-001 [high] Folder subtree membership computed two ways — CONFIRMED
 
-**Disposition: Deferred, a decision for you.** I first made `removal::folder_ids_under` delegate to `types::folders_under`, which selects by the bytes of the stored paths. That broke `removal::tests::a_folder_spelled_in_another_case_is_removed_only_by_the_windows_rules_windows`: the catalog can hold a folder spelled in another case (`d:\R\Case` under `D:\r`), and the Windows rules must still count it as the library folder's subtree. `folder_ids_under` is back to the rules-based filter, so the two selections still differ. To unify them, decide whether stored folder paths are canonical: if they are, the test's row is invalid and the byte selection can serve both; if not, `folders_under` must take the rules.
+**Disposition: Deferred.** Rules-based matching is kept (its test pins the Windows meaning); the two selections still differ. Unifying needs a folded key column, not done.
 
 removal.rs:351 `folder_ids_under` filters every folder in Rust with `rules.is_under` (rules-aware, so case-insensitive under Windows rules). types.rs:90 `folders_under` selects by byte range through `under_root!`. Two selections of the same subtree with different matching rules.
 
@@ -759,7 +759,7 @@ The selection blue is #4aa3ff at GridCell.qml:133, #2f5f93 at Main.qml:31 (palet
 
 ### D-033 [medium] Facet and folder kinds as hand-typed integers — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The facet kind travels from `FilterBar.qml` (`facetTypes: 0`) to Rust's `from_index` as a bare integer; `REFACTOR_LEDGER.md` (F-51) already records it as open. The fix changes the bridge, so it needs a choice first: expose the Rust kind enum to QML through the bridge (one source, checked by the compiler), or name the integers in QML and add a test that they match Rust's order. The first is the proper one; it needs a Qt build to check.
+**Disposition: Fixed.** Each bridge exports its own qenum (ChoiceFacet for FacetChoices, ListFacetKind for Filters); QML list facets carry names, not integers. Bound fields stay field indices, not list facets.
 
 FilterBar.qml:48 declares facetTypes: 0 and the bar passes it on as a plain integer (:126, :157). `REFACTOR_LEDGER.md:122` (F-51) records the hand-typed integers for facet and folder kinds as open.
 
@@ -777,7 +777,7 @@ RECONCILED.md:582 gives the lock order as fence mutex, then device gates, then w
 
 ### D-036 [medium] Windows build scripts exist in cmd and py forms — CONFIRMED
 
-**Disposition: Deferred.** The Python builds (`win_build.py`, `win_env.py`) are the ones the Justfile and CI use, and nothing runs the `.cmd` forms. `tools/README.md` keeps the originals until a Windows run confirms the port, so the `.cmd` pair stays for now, and the README says so. `win-build.cmd` also builds from a vendor folder that is not in the tree, so it cannot run as it stands. Remove the pair once that Windows run is confirmed.
+**Disposition: Deferred.** win-build.cmd and win-env.cmd stay until a Windows run confirms the Python ports; win-build.cmd cannot run as it stands (vendor/ is empty).
 
 eval/jpeg-decoders/win-env.cmd exists and parses nvidia-smi `compute_cap` at :29-30, and `win_env.py:1-5` says it was win-env.cmd, which win-build.cmd called. The .cmd is still in the tree beside the .py, so the same parse is kept in two languages.
 
@@ -811,7 +811,7 @@ eval/accel.py:246 sets `DISK_MAX_SIDE` = 1024 with the comment '`verify.WORK_SID
 
 ### D-042 [medium] Decoder registry in five places — CONFIRMED
 
-**Disposition: Fixed in part.** `harness_linux.py` has one `DECODERS` list; its timing list and its instruction list derive from it, and the one difference (`parajpeg-t6` is left out of the instruction table, as it always was) is now stated in a comment. The other three lists name different tools (libjpeg-turbo, libvips and jpeg-decoder rows in `linux.py`; the display names in `table.py`; the Rust `Dec` enum, which Python cannot import), so they are kept.
+**Disposition: No change.** harness_linux.py DECODERS is the single source for the harness decoders; the other lists name different tools.
 
 The decoder list is written in `harness_linux.py:25-26` (`CPU_DECODERS` and `IR_DECODERS`), linux.py:133 (a separate list), table.py:16 (DECS) and the Rust enum at eval/jpeg-decoders/src/lib.rs:20-22. harness.cpp:65 does not exist, so that cite is dropped.
 
@@ -841,13 +841,13 @@ The DCT denominator rule with (512, 320) is written at eval/jpeg-decoders/gpu.py
 
 ### D-047 [medium] Dotenv loader written five times — CONFIRMED
 
-**Disposition: Fixed in part.** `tools/lint_qml.py` now imports `pgtools.load_env_file`, which is the complete one (it honours `PG_CONTAINER` and unquotes values); its own copy was less complete. `qmltest.ps1`'s loader stays with the PowerShell original, which `tools/README.md` keeps until a Windows run confirms its port.
+**Disposition: Fixed in part.** pgtools.load_env_file is the one Python loader; qmltest.ps1 keeps its own until a Windows run.
 
 A dotenv loader with a regex is in tools/pgtools.py:42 `load_env_file` and `tools/lint_qml.py:32` (same regex), and tools/qmltest.ps1:12-15 has its own copy. The cited symbolize.py, profile.ps1 and build.sh do not exist, so those three cites are dropped. The three real copies stand.
 
 ### D-048 [medium] Doctor implemented twice — CONFIRMED
 
-**Disposition: Deferred.** The Justfile runs `tools/doctor.py`. `doctor.ps1` stays as the original until a Windows run confirms the port, which is the rule `tools/README.md` states for it. Remove it then.
+**Disposition: Deferred.** doctor.ps1 is removed after a Windows run of doctor.py.
 
 doctor.ps1:55 and doctor.py:67 both implement the libclang search and the checks, in PowerShell and Python.
 
@@ -865,7 +865,7 @@ The LLVM default is computed in build.py:66-68 and build.sh:22-24. The cgtab.py:
 
 ### D-051 [medium] Newest-version selection in three tools — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The three tools choose "newest" by three rules, and they should not be merged blindly: `callgraph/build.py`'s `newest` takes the highest digits of the matched folder's whole path; `fork-updates.py` compares the crates.io maximum stable version; `lint_qml.py`'s `newest_qmltypes` takes the most recently built module by modification time. The version comparison `fork-updates.py` already parses could move to `pgtools`, but the build-folder choice needs a decision: compare the version in the folder name, or keep the most recent build.
+**Disposition: Deferred.** The three "newest" rules differ on purpose; the shared version_key move to pgtools is not done.
 
 build.py:24 newest() sorts version digits in order, and build.sh:31 uses sort -V to pick the newest clang include folder. The fork-updates.py:49 cite does not exist.
 
@@ -875,37 +875,37 @@ tools/setup-ffmpeg.ps1 does not exist. The only FFmpeg fetch-and-check script is
 
 ### D-053 [medium] QML test staging differs between ps1 and py — CONFIRMED
 
-**Disposition: Deferred.** The Justfile and CI run `tools/qmltest.py` only. `qmltest.ps1` is the original, kept by `tools/README.md`'s rule until a Windows run confirms the port; then it goes, and the staging difference goes with it.
+**Disposition: Deferred.** qmltest.ps1 is removed after a Windows run of qmltest.py.
 
 qmltest.ps1:32 hard-codes the Ratings singleton by name, while qmltest.py:59 detects 'pragma Singleton' in the file. The two stagers decide what a singleton is in different ways.
 
 ### D-054 [medium] Toolset pin repeated in ps1 and py build scripts — CONFIRMED
 
-**Disposition: Fixed in part.** The Python builds take the MSVC toolset from one place, `pgtools.MSVC_TOOLSET`. The PowerShell originals (`build-jpeg-turbo.ps1`, `build-static-ffmpeg.ps1`) still hold their own literal; they go with the rest of the originals once a Windows run confirms the ports.
+**Disposition: Fixed in part.** The Python builds take MSVC_TOOLSET from pgtools; the ps1 originals keep their literal until removed.
 
 The toolset pin 14.44.35207 is written in build-static-ffmpeg.ps1:24, build-jpeg-turbo.ps1:24 and tools/pgtools.py. The cited `build_static_ffmpeg.py` does not hold it, so that cite is wrong; the ps1 and pgtools copies are the duplicates.
 
 ### D-055 [medium] FFmpeg and jpeg-turbo pins duplicated in ps1 and py — CONFIRMED
 
-**Disposition: Deferred.** The Python builds hold each pin once. The PowerShell originals hold their own copies until the originals are removed, which `tools/README.md`'s rule gates on a Windows run.
+**Disposition: Deferred.** The pins are identical today; the ps1 originals are removed after a Windows run.
 
 FFmpeg commit, release and SDK pins are in build-static-ffmpeg.ps1:22-23 and `build_static_ffmpeg.py:33-35`, with the same values. The jpeg-turbo fork URL and commit are in build-jpeg-turbo.ps1:22-23 and `build_jpeg_turbo.py:31-32`.
 
 ### D-056 [medium] FFmpeg configure flags in two languages — CONFIRMED
 
-**Disposition: Deferred.** The configure flags are in `build_static_ffmpeg.py`, the one the CI and `check_ffmpeg_pin.py` use. The PowerShell copy goes with the originals, under the same rule as D-053.
+**Disposition: Deferred.** Configure flags live in build_static_ffmpeg.py; the ps1 copy goes after a Windows run.
 
 `CONFIGURE_FLAGS` in `build_static_ffmpeg.py:43` and $ConfigureFlags in build-static-ffmpeg.ps1:31 list the same configure flags, with the same comment that each is the pilot's.
 
 ### D-057 [medium] System DLL allowlist in two places — CONFIRMED
 
-**Disposition: Deferred.** The allowlist is in `build_static_ffmpeg.py`. The PowerShell copy goes with the originals, under the same rule as D-053.
+**Disposition: Deferred.** System DLL allowlist lives in build_static_ffmpeg.py; the ps1 copy goes after a Windows run.
 
 `build_static_ffmpeg.py:57` `SYSTEM_DLL` regex and build-static-ffmpeg.ps1:194 non-system filter list the same prefixes (api-ms-win-, KERNEL32, USER32, bcrypt, VCRUNTIME140, MSVCP140).
 
 ### D-058 [medium] Static FFmpeg library list repeated — CONFIRMED
 
-**Disposition: Deferred.** The library list is in `build_static_ffmpeg.py`. The PowerShell copy goes with the originals, under the same rule as D-053.
+**Disposition: Fixed.** Test StaticFfmpegLibraries checks both patch lists against build_static_ffmpeg.py.
 
 The five static FFmpeg libraries are listed in tools/static-qt/pg-video.patch:33 and as `STATIC_FFMPEG_LIBS` in app-build.patch:118, with the same names in the same order.
 
@@ -921,7 +921,7 @@ const BATCH: usize = 200 is at thumbs lib.rs:31 and placeholders.rs:28, with no 
 
 ### D-061 [low] Drive-or-share test written three times — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The three checks answer different questions: `picker.rs` asks std's parse of a `Path` whether the shell's prefix is a drive or share; `native.rs`'s `form_of` classifies UTF-16 units to pick the verbatim form; `dirs.rs`'s `is_absolute_for` judges another OS's text. They also disagree on verbatim volume GUIDs (`\\?\Volume{…}\`). One shared rule would change which paths the shell is given, so it needs a choice of edge behaviour and a Windows run before it is merged. Decision needed: which of the three forms the shared rule follows for `\\?\Volume{…}\`.
+**Disposition: Deferred.** The owner's default (native.rs form_of for verbatim volume GUIDs) is not applied; it changes what the shell is given and needs a Windows test.
 
 Three drive-or-share predicates: platform dirs.rs:48 `is_absolute_for`, native.rs:215 `form_of`, and picker.rs:19 `has_drive_or_share`, each testing for a drive or UNC prefix in a slightly different way.
 
@@ -933,7 +933,7 @@ Theme.qml holds the tokens panelScrim #b0000000 (:9), captionBacking #b3000000 (
 
 ### D-063 [low] Desktop QML structural duplication — CONFIRMED
 
-**Disposition: Fixed in part.** `YandexPreview` uses `YandexPanel.PanelAction` instead of its own identical enum. The wheel accumulator and the neighbour preload in `Viewer.qml` and `YandexPreview.qml` are left as they are: each calls a different thing (`viewer.step`/`rate` versus the preview's notches; the viewer's neighbours versus the preview's), so a shared component needs a QML test run to check.
+**Disposition: No change.** PanelAction is shared; the wheel accumulators and the preloads call different things.
 
 enum PanelAction { Close, StepBack, StepForward, Pick } is declared at YandexPanel.qml:90 and identically at YandexPreview.qml:20. The wheel accumulator is at Viewer.qml:302 and YandexPreview.qml:59, and the neighbour preload is at Viewer.qml:396 and YandexPreview.qml:220.
 
@@ -963,7 +963,7 @@ tree.rs:197 `visible_count` repeats the `visible_in` walk, and notice.rs:22 isol
 
 ### D-068 [low] Hash-based pseudo-random generator copied across crates — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** Four test-only generators (`container/src/lib.rs`, `dedup/src/join.rs`, `metadata/src/container.rs`, `model/src/pdq.rs`) each have their own shift triple. One shared generator needs a crate all four can depend on for tests: `pg-model` is a leaf of the layers file, so `dedup` and `metadata` may use it, but `pg-model` cannot take a dev-dependency on `pg-testkit` (that would close a cycle through `platform`), and `container` is also a leaf. Decision needed: a `#[cfg(test)]`-gated module in `pg-model`, or a small new test-support crate that `container` and `model` can depend on.
+**Disposition: Fixed.** pg-testrng is the one leaf generator; pg-testkit re-exports it; dedup, container and model use it as a dev-dependency.
 
 A xorshift-style generator is written in container lib.rs:1201 (noise), dedup join.rs:2078 (Rng::draw), metadata container.rs:216 (xorshift) and model pdq.rs:157 inline. All are test helpers, each with its own shift triple.
 
@@ -1011,13 +1011,13 @@ The Qt kit names `msvc2022_64` and `gcc_64` are in `tools/check_qt.py:19` and `t
 
 ### D-076 [low] Modgraph and profiling tools repeat small helpers — CONFIRMED
 
-**Disposition: Fixed in part.** `unreachable_pub.py` drops its own `library_crates` and uses `compiler_graph.library_packages`, the one `cargo metadata` listing of library packages. The production-only cut before `#[cfg(test)]` is `edges.production_part`, used by `dupes.py` and `api_surface.py`. Two repeats stay: `split_check.py` counts lines up to the cut, a count the text helper would change at the end of a file with no test module, so it keeps its own; and each modgraph script keeps its `REPO` constant, since they run as plain scripts with no shared import path. Note: `library_packages` matches any target whose kinds include `lib`, where the old listing required exactly `["lib"]`.
+**Disposition: No change.** unreachable_pub uses compiler_graph.library_packages; the production cut is testcut.production_part.
 
 `library_crates` is defined in `tools/modgraph/compiler_graph.py:29` and `unreachable_pub.py`. The test-section cut is written in `module_graph.py:61` and the other modgraph tools, and REPO = parent.parent is in `tools/fuzz_smoke.py:14` beside other path logic.
 
 ### D-077 [low] Pairing scripts repeat SQL and invocation — CONFIRMED
 
-**Disposition: Fixed in part.** The owed-pair delete is `tools/profiling/pairing/drop_owed_pairs.py`; `keep.ps1` and `oracle.ps1` both run it instead of writing their own copy of the statement. The medians are not one repeated computation: `keep.py`'s figure is the Hodges–Lehmann estimate (the median of the Walsh averages), a different statistic by design, and `few_sweep.ps1`'s plain median is PowerShell's, while `medians.py` uses `statistics.median`.
+**Disposition: No change.** drop_owed_pairs.py is shared; the medians are different statistics by design.
 
 The owed-pair delete SQL is written in keep.ps1:38-40 and oracle.ps1:42, with the same DELETE FROM `pdq_pairs` WHERE a IN `pairs_owed` statement. The median is computed in `few_sweep.ps1:26` and keep.py:172 in different ways.
 
@@ -1031,7 +1031,7 @@ reader.rs:227 maps a caught panic to ReadError::Panicked. yandex.rs:465 maps a p
 
 ### E-002 [high] Exit status reports success on failure — CONFIRMED
 
-**Disposition: Fixed in part, one decision open.** `screenshot.cpp`'s timed-out-and-not-ready run exits 1 as its no-window sibling does (it had called `quit()`, which exits 0). `tools/modgraph/unreachable_pub.py` exits 1 when any crate's check reports errors (the lint could not run); the counts of findings still exit 0, as before. `colour_check.cu` still returns 0 with no threshold: the tool prints the mismatch rate, mean and maximum per file, and no document states what counts as a pass. Decision needed: the largest per-channel difference that is a pass (0 for exact, or 1 for the rounding of the GPU's conversion), and the exit status when a file is over it.
+**Disposition: Fixed in part.** screenshot.cpp exits 1 for a run that is not settled; colour_check.cu exits 1 over a threshold of 1 (both unverified: need a Qt or CUDA build). Unreachable-check exit done in unreachable_pub.py.
 
 screenshot.cpp:186 ends a timed-out-without-window run with QCoreApplication::quit(), which exits 0. The sibling no-window path at :174 uses exit(1). `unreachable_pub.py:48` exits 0 unconditionally after printing error counts. `colour_check.cu:62` returns 0 with no threshold. `REVIEW_LEDGER.md:86` records that the exit mapping has no test.
 
@@ -1043,7 +1043,7 @@ words.rs:40 keeps the partial resource on a Fluent syntax error. words.rs:43 dis
 
 ### E-004 [medium] Error chains formatted with {e} in some places and {e:#} in others — CONFIRMED
 
-**Disposition: Fixed in part.** The rule is: an `anyhow` chain is written with `{e:#}`, so its causes show; a plain error (an `io` or `serde_json` error, which has no chain) is written with `{e}`. The one site that broke the rule, the desktop's `app.stop()` warning, used `to_string()` (the top of the chain only) and now uses `{e:#}`. The other `{e}` sites format plain errors and are right as they are. The audit's line numbers for these sites had moved, so the call sites were found by their text.
+**Disposition: No change.** The {e:#} rule holds for anyhow chains; the desktop app.stop site now follows it.
 
 Plain Display ({e}) and the alternate chain ({e:#}) are both used for the same kind of error text: app.rs:58 and :217 use {e}, app.rs:74 uses {e:#}, desktop app.rs:63 uses `to_string(`), and yandex.rs:122 uses {err:#}. The mix is real.
 
@@ -1073,7 +1073,7 @@ Several discards are documented best-effort (thumbcache lib.rs:189 says best-eff
 
 ### E-009 [medium] Fallbacks hide missing or dropped data — CONFIRMED
 
-**Disposition: Fixed in part, the rest intended.** Each cited fallback was decided on its own:
+**Disposition: No change.** Each cited fallback was decided on its own (TreeFull, unreadable versions, the EXIF default).
 - `TreeBuilder::add` (`model/src/tree.rs`): a folder past the `u32` offsets was left out with no word. It now returns `Err(TreeFull)`, and the catalog's tree read fails with it, which the desktop reports through its existing `TreeFailed` notice. The callers in tests unwrap it.
 - `ImageKey::parse` (`model/src/image.rs`): an unreadable version after `@` was dropped, so the key was served as the current file. It is now refused (`None`), as an unreadable file id already was; the URL parser turns that into a rejected request.
 - `Write::from_stored` (`model/src/write.rs`): `None` for an out-of-range value, which the schema's `CHECK` makes impossible. The one reader, `catalog/src/queue.rs`, already turns the `None` into an error, so it is not silent.
@@ -1106,37 +1106,37 @@ At HEAD, setup-ffmpeg.ps1 has no https check (grep finds none). `setup_ffmpeg.py
 
 ### E-014 [medium] Retry and failure text for builds differ between ports — CONFIRMED
 
-**Disposition: Fixed in the Python ports; the PowerShell originals deferred.** The failure text of every Python build now comes from `pgtools.checked`, which names the step and the exit code (`<step> failed (exit N)`). The retry waits differ by design of each network step (the jpeg-turbo fetch waits 10 s times the attempt, the FFmpeg fetch its own schedule), and they stay as the two steps need them. The PowerShell `build-jpeg-turbo.ps1` (no wait between its three tries) is an original kept by `tools/README.md`'s rule, and it is removed with the rest of the originals.
+**Disposition: Fixed in part.** Python builds fail through checked() with the step and exit code; the ps1 originals keep their text until removed.
 
 build-jpeg-turbo.ps1:64 retries git fetch three times with no sleep. `build_jpeg_turbo.py:59-60` sleeps 10 times the attempt number. build-static-ffmpeg.ps1:118-119 sleeps, and `build_static_ffmpeg.py:156-157` sleeps too. The failure texts also differ: the py versions include the exit code, the jpeg-turbo ones do not.
 
 ### E-015 [medium] Tool error messages inconsistent in name prefix — CONFIRMED
 
-**Disposition: Partly fixed, one decision left.** Some tools prefix the messages they raise with their own name (`linux.py`, `win_env.py`, `symbolize.py`), and some do not (`pgtools.py`, `lint_qml.py`, `qmltest.py`). The `not_set` messages name the variable as their subject, so they are left unprefixed (E-011). The decision left: whether a script's own `sys.exit` messages always carry its name. My recommendation is yes, for the scripts that run on their own; that is a small edit to `lint_qml.py` and `qmltest.py`, not made here. The audit's cite `tools/ci_setup.py` is `tools/profiling/ci_setup.py`.
+**Disposition: Fixed.** pgtools, lint_qml and qmltest messages start with the script's name.
 
 linux.py:67 prefixes its fail() messages with linux.py:, while pgtools.py:35 has no prefix, `lint_qml.py:51` has none, and profile.ps1:26 has none. `win_env.py:50` uses `win_env`: and win-env.cmd uses its own prefix. The `tools/ci_setup.py` cite is missing (the file is `tools/profiling/ci_setup.py`).
 
 ### E-016 [medium] Python eval raises different exception kinds for the same class of failure — CONFIRMED
 
-**Disposition: Deferred (a convention to write down, no code changed).** The two forms the audit's sites use are a run that cannot start (a message and an exit: `SystemExit`, `parser.error`) and a bug the harness hit (an exception). Which form each named site should take has not been decided against the sites one by one: `accel.py`'s `RuntimeError` and `models.py`'s `ValueError` may be either. Decision needed: the convention for `eval/README`, then each site checked against it.
+**Disposition: Fixed.** eval/README has an Errors section; accel, models and verify sites follow it.
 
 Eval scripts raise different exception kinds for similar failures: `cpu_worker.py:137` raises SystemExit, run.py:304 raises SystemExit, accel.py:202 raises RuntimeError, models.py:56 raises ValueError, and verify.py:696 calls parser.error. Low severity; these are harness scripts.
 
 ### E-017 [medium] Per-item failure policy differs across harnesses and sweeps — CONFIRMED
 
-**Disposition: Deferred, pending a GPU run.** The harnesses differ: some record a failed item and go on (`ann/run.py`, `accel.py`, `verify.py`), and two catch broadly (`pdq.py`'s `Exception`, `nvimgcodec_bench.py`'s `Exception`) where `nvjpeg.py` catches only `RuntimeError`. Narrowing `nvimgcodec_bench.py` needs the exception its decode actually raises, and that is only known from a run on the GPU. No code changed; the one edit is known and waits for that run.
+**Disposition: Deferred.** The per-item policy is stated, but narrowing nvimgcodec_bench's catches needs the exception a GPU run raises.
 
 ann/run.py:343 records a failed configuration and continues. accel.py:130 skips a bad calibration image. `bench_decode.py:57` reads outside its try, while pdq.py:47 returns None on any Exception and verify.py:603 records the pair as error. `nvimgcodec_bench.py:87` catches Exception where nvjpeg.py:298 catches RuntimeError only. The failure policies differ across harnesses.
 
 ### E-018 [medium] String used as the error type in public functions — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The model's range conversions (`RowHeight`, `ThumbHeight`, `Scale`, `Factor`, `GridWidth`, `Rating`, `WriteKind`, `positive`) and the app's `Config::from_env` and `Layout::resolve` return `String` as their error. The fix is a typed error for each (keeping each message) or one shared `OutOfRange` (which rewords them). Both change callers that map the errors to text. Decision needed: per-type error types with their messages kept (my recommendation), or one shared range error with new wording.
+**Disposition: Fixed.** Typed error enums in pg-model (RowHeightError, ThumbHeightError, PositiveError, RatingError, WriteKindError), messages kept; callers mapped.
 
 config.rs:25 `Config::from_env` returns `Result<Config`, `String>`. layout.rs:29 Layout::resolve returns `Result<Layout`, `String>`. size.rs:44, rating.rs:11 and replay.rs:33 also use String error types. query.rs:98 uses u8 as the error type. These sit beside typed errors elsewhere.
 
 ### E-019 [medium] Crate error types: anyhow rule in the docs does not match the code — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The rule is in `docs/plans/REFACTOR_LEDGER.md` (F-14, status *decide*): `anyhow` lives only in `cli`, `desktop` and `gallery`, and it is in twenty crates with no lint enforcing the rule. Decision needed: enforce the rule (typed errors in the library crates, a lint for `anyhow` outside the front ends) or amend it to say where `anyhow` may be used. The code cannot be changed to match either until that is chosen.
+**Disposition: Deferred.** The owner's rule (no anyhow in a library's public API) is not yet written into REFACTOR_LEDGER F-14.
 
 `REFACTOR_LEDGER.md:59` (F-14, status decide) records that the plan says anyhow lives only in cli, desktop and gallery, but it appears in 20 crates and no lint enforces the rule. The gap is acknowledged and open, so the inconsistency is real. The lib.rs:27 and rebuild.rs:104 cites show the mixed return types.
 
@@ -1148,19 +1148,19 @@ Catalog code wraps conditions in Error::Other(anyhow) where typed variants exist
 
 ### E-021 [medium] Catalog path prefix convention applied inconsistently — CONFIRMED
 
-**Disposition: Deferred, pending a convention.** The catalog's messages name the catalog path inconsistently: `lifecycle.rs` and the typed variants add `catalog {path}:`, while `ledger.rs`, `lookup.rs` and `rebuild.rs` use their own forms, and `core.rs` repeats the path. The rows-level messages (`ledger`, `lookup`) do not describe a catalog at all, so they are not candidates for the prefix. Decision needed: whether catalog-level messages always begin `catalog {path}:` (my recommendation, which the new typed variants already follow), and whether `rebuild.rs`'s forms move to it.
+**Disposition: Fixed.** Catalog-level messages begin "catalog {path}: "; row-level messages stay unprefixed.
 
 lifecycle.rs:47 prefixes its lock messages with catalog path, while ledger.rs:269, :301 and lookup.rs:102 have no catalog prefix, and rebuild.rs:95 and :112 use their own forms. core.rs:125 repeats the same context, with the path alone.
 
 ### E-022 [medium] Catalog refusal texts for the same condition differ — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The same schema mismatch is worded in `core.rs` (`SchemaVersion`, `NotThisBuild`) and in `schema.rs` (its own reasons), and the `Refusal` texts describe the same conditions for `prepare`. Decision needed: whether `open`'s mismatches should return `Error::Refused` with the `Refusal` (one text for each condition, shown by every front end), or keep the typed variants with their own texts. The former is the more proper; it changes which error `open` returns.
+**Disposition: Fixed.** Open refuses through Refusal, one text per condition; OlderSchema and NewerMark messages added.
 
 core.rs:139 says the schema version is unknown to this build and was made by another build. core.rs:270 says schema version X, not this build's Y. core.rs:163 says the schema predates `key_version` and to restore a backup. schema.rs:302-313 gives its own mismatch reasons. The refusal for one condition is worded differently in each.
 
 ### E-023 [medium] Catalog InvalidColumnType payloads take four shapes — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** `InvalidColumnType`'s payloads take five shapes (the stored key in `borders.rs`, the raw kind text, a formatted kind and value, a column name, and a column name with a null type) across `queue.rs` and `borders.rs`. Decision needed: the payload shape: (table, column, stored text) for every site (my recommendation), which means the kind and value sites format their stored text into the column field.
+**Disposition: Fixed.** InvalidColumnType is a rusqlite FromSqlConversionFailure carrying the real column name.
 
 InvalidColumnType payloads take several shapes: borders.rs:90 uses the stored key, queue.rs:146 the raw kind text, queue.rs:151 a formatted kind and value, queue.rs:161 a column name, and queue.rs:168 a column name with a Null type. The grid.rs:67 cite is missing; the other five instances hold.
 
@@ -1184,7 +1184,7 @@ jpeg.rs:97 puts the zune-jpeg Debug form of the error into a GenericFeature mess
 
 ### E-027 [medium] Path rendering in error text uses three helpers — CONFIRMED
 
-**Disposition: Fixed in part, the rest by layer.** The catalog-facing error text renders a path with the catalog's path rules (`rules.display`, which `removal.rs` and `scan` use, and which `crop`'s `shown` wraps). `dbfile/src/remove.rs` renders `Path::display` because it sits below the path rules and has no rules to call; that is the only form it can give, and its message is for a file the catalog never named. The two forms are not interchangeable (the rules spell a path as the catalog does), so the layering, not a missing helper, is why there are two.
+**Disposition: No change.** dbfile keeps Path::display: it has no path rules, and shown() canonicalises through the filesystem.
 
 Paths in error text come from three helpers: crop/lib.rs uses shown(), dbfile/remove.rs:35 uses Path::display(), and removal.rs:243 uses rules.display(). scan/lib.rs:375 uses catalog.rules().display(). The mix is real; low severity.
 
@@ -1268,7 +1268,7 @@ The fatal path is deliberate: the doc comment at desktop lib.rs:244-246 says a G
 
 ### E-041 [medium] Read failure is classified four different ways
 
-**Disposition: Deferred, pending a decision.** The four sites answer one question with two idioms that differ on purpose. `borders` and `import` (`pg_jobs::failure::is_io_read`) look for an `io::Error` at the top of an `anyhow` error. `thumbs` matches `render`'s `MakeError::Unreadable`, which wraps the same `io::Error` with `#[error(transparent)]`: `pg-jobs` cannot name `MakeError` (it sits below render), and `is_io_read` cannot see through the wrapper. Decision needed: whether `MakeError` moves to `pg-jobs` (so one helper checks both), or the `io::Error` is wrapped in a type `pg-jobs` defines and `render` returns it. `render`'s `maker.rs` defines the variant, so it is not a fourth classifier. — CONFIRMED
+**Disposition: Fixed.** ReadFailed (an io::Error newtype in pg-platform); jobs::is_io_read is the one predicate; thumbs keeps its Undecodable arm first.
 
 Read failure is classified four ways: borders lib.rs:97 and import hashes.rs:114 downcast io::Error, thumbs lib.rs:112 matches MakeError variants, and maker.rs:43 defines MakeError with `of_video` downcasting Unopened. The two downcast sites are the same idiom in two crates and a third classifier beside them.
 
@@ -1310,13 +1310,13 @@ Edit crate messages vary: raster.rs:19 says is too large to decode, webp.rs:53 s
 
 ### E-048 [low] Spelling, case and symbol drift in user-facing messages — CONFIRMED
 
-**Disposition: Fixed in part.** The TIFF message says "colour" (as the JPEG ones do) and "not enough planes read from the TIFF image" (lower case, as the other messages are). The dimension sign is left: `×` in the fixtures and the crop's comments, `x` in the crop's size text. Both are readable, and changing the size text is a visible change to be decided with the UI, not a spelling fix.
+**Disposition: Fixed in part.** The planar TIFF message keeps image's spelling ("color") because the decode test compares against image; other codec messages use "colour".
 
 tiff.rs:132 uses color while jpeg.rs:36 and :66 use colour. tiff.rs:140 capitalises Not enough planes. crop.rs:102 and the size text use x and the multiplication sign inconsistently: fixtures.rs:20 and crop.rs:36 use the multiplication sign.
 
 ### E-049 [low] Contraction and modal wording varies — CONFIRMED
 
-**Disposition: Fixed in part.** "isn't in the catalog" is the form in `catalog/src/error.rs` (the typed `NotInCatalog`), in the fixture's message, and in the CLI's `cli-file-not-in-catalog`. The inbox's two messages are different sentences, not one failure worded two ways: "can't start the inbox" is a refusal to start, and "couldn't keep / couldn't be changed" report a failed change; both are kept.
+**Disposition: No change.** "isn't in the catalog" is the one form; the inbox sentences are different on purpose.
 
 borders.rs:47 uses isn't in the catalog and state.rs:83 uses is not in the catalog. inbox.rs:398 and :927 use different wording for the same kind of failure. Low severity.
 
@@ -1340,13 +1340,13 @@ NUL-in-path messages differ: ledger.rs:269 is a failed file's folder holds a NUL
 
 ### E-053 [low] Command-line and option error phrasing varies — CONFIRMED
 
-**Disposition: Fixed in part.** The two JSON-reading messages say "is not a query" and "is not a sort", as the neighbouring "is not a finite row height" and "is not a mascot" do. The per-option messages stay specific to their option, which is what makes them useful; the bare-option form is not changed.
+**Disposition: No change.** The cited command-line messages are already in the chosen form.
 
 `command_line.rs:233` says does not read as a query, :240 says is not a finite row height, :255 says is not a mascot: 1 to 40, and :291 says is not an option the window reads. The phrasing varies by option, and the error for a bare option is a fourth form.
 
 ### E-054 [low] Tool exit and unknown-step conventions vary — CONFIRMED
 
-**Disposition: Deferred, with E-015 (the same convention).** The scripts end two ways: printing to stderr and returning 1 (`bench_data.py`, `perf-compare.py`), and `sys.exit` with a message (`linux.py`, `win_build.py`). The exit convention for scripts is the decision E-015 asks for; once it is made, these are the edits.
+**Disposition: Fixed.** bench_data.py and perf-compare.py exit with named messages (the pillow_pin item does not exist).
 
 `bench_data.py:152` and perf-compare.py:105-107 print to stderr and return 1. `ci/pillow_pin.py:31` exits with the pip return code. linux.py:189 and `win_build.py:194` use sys.exit with a message, and `win_build.py` names the program while linux.py does not. Exit conventions differ.
 
@@ -1358,7 +1358,7 @@ perf/lib.rs:277 saturates a duration to u64::MAX on purpose, and platform clock.
 
 ### E-056 [low] Build script failure style varies — CONFIRMED
 
-**Disposition: Deferred (style only).** `video/build.rs` panics on some failures and returns an error string on others; `desktop/build.rs` returns `Result<(), String>` from `main`. Cargo fails the build and prints the message in each case, so the two styles behave the same; choosing one is a style decision left open.
+**Disposition: Fixed.** video build.rs returns Result from main; desktop build.rs already had no panics.
 
 video/build.rs:207 uses `unwrap_or_else` with panic! for `read_dir`, and :229-230 use panic! for copy, while :137 returns Err(String) for pkg-config failures. desktop/build.rs:4 returns `Result<(`), `String>` from main. Two failure styles are used in build scripts.
 
@@ -1370,7 +1370,7 @@ Test messages drift: controller listing.rs:20 expects a row height in range, siz
 
 ### E-058 [low] Win32 literal and hand-written Display conventions in platform — CONFIRMED
 
-**Disposition: Fixed in part.** The "not supported" stubs in `platform/src/dir.rs` and `drive.rs` construct their error with `io::Error::new(kind, message)`, as `drive.rs`'s other error does, instead of the bare kind. `NormalizeError`'s hand-written `Display` stays: `native.rs` and `picker.rs` write theirs by hand too, so there is no one convention that it departs from.
+**Disposition: Fixed.** dir.rs's non-Linux stub uses io::Error::new.
 
 NormalizeError in names.rs:148-150 has a hand-written Display, as native.rs and picker.rs do. dir.rs:93 builds Unsupported with ErrorKind.into(), while drive.rs:397 uses io::Error::new with a message. Low severity.
 
@@ -1382,7 +1382,7 @@ NormalizeError in names.rs:148-150 has a hand-written Display, as native.rs and 
 
 ### E-060 [low] Notice text overwrite on same-bytes refailure — CONFIRMED
 
-**Disposition: Deferred.** The design deviations this finding points at are recorded as open rows in `NOTIFICATIONS_PLAN.md` (N-35 to N-39), so they are known. The same-bytes overwrite itself needs the notice path that stores a refailure read against the design, which was not done here.
+**Disposition: Fixed.** A same-bytes refailure keeps the latest text and does not bump the count or count as news (test added and updated).
 
 `NOTIFICATIONS_PLAN.md:61-65` records the design's undeclared deviations as open rows: N-35 `dismiss_all` deletes events, N-37 the dismissed-entry test moved, N-38 the cascades, N-39 the seven cache events against the designed five. The plan tracks them, so the deviations are known; the same-bytes refailure overwrite is still open per the finding.
 
@@ -1394,13 +1394,13 @@ NormalizeError in names.rs:148-150 has a hand-written Display, as native.rs and 
 
 ### E-062 [low] ExifTool stderr interpolated in messages and English stdout parsed — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** `exiftool/src/lib.rs` puts ExifTool's stderr into the message a user reads when a rating can't be written. Whether that text belongs in the user's message (it can be long and is in English) or in the log with a short message is the decision. The English stdout that success is parsed from is documented as open in `LANGUAGES.md` (ExifTool runs with no `-lang` option); fixing it needs a test run against ExifTool.
+**Disposition: No change.** LANGUAGES.md:228 and :343 record the decision: stderr in the error, English stdout parsed.
 
 exiftool/lib.rs:153 interpolates ExifTool stderr into the user-visible bail. LANGUAGES.md:102 records that ExifTool runs with no lang option and that success is parsed from English stdout. The English dependency is documented and open.
 
 ### E-063 [low] CUDA error text formats differ across harnesses — CONFIRMED
 
-**Disposition: Deferred (harness convention).** The four harnesses word a CUDA error four ways (`cuInit returned N`, `X: status N`, the macro with `cudaGetErrorString`, "what failed: cudaGetErrorString"). They are developer output, and a shared form is worth writing once the eval convention is decided (see E-016). No code changed.
+**Disposition: Fixed in part.** The Python harnesses use one format; the .cpp and .cu macros need a CUDA build.
 
 CUDA error text differs across harnesses: gpu.py:42 and `nvimgcodec_bench.py:44` use cuInit returned N, nvjpeg.py:104 uses X: status N, `dec_gpu.cpp:16` uses the macro name plus cudaGetErrorString, and `encode_gpu.cu:40` uses what failed: cudaGetErrorString. Low severity; harness only.
 
@@ -1420,13 +1420,13 @@ pgtools.py:55 strips the quotes from a .env value, as just does. `lint_qml.py:40
 
 ### C-003 [high] Remembered-save debounce: accepted decision contradicts design and code — CONFIRMED
 
-**Disposition: Fixed; confirm the value.** `WEB_CLIENT_TECH_DECISIONS.md`'s B15 now says 1,000 ms, which is what the design (two documents) and `deadlines.rs` have. The accepted decision said 500 ms, so the value is changed to match the other two. If 500 ms was the intent, the design and the test change instead; that choice is yours.
+**Disposition: No change.** The decision doc and the design both say 1,000 ms; the owner should ratify the change to the accepted decision.
 
 `WEB_CLIENT_TECH_DECISIONS.md:113` sets the remembered-save debounce at 500 ms (B15). `WEB_CLIENT_DESIGN.md:1186` and `WEB_CLIENT_RECONCILED.md:796` say SaveSession debounces 1,000 ms, and deadlines.rs:25 asserts the 1000 ms pause. The accepted decision contradicts the design and the code.
 
 ### C-004 [high] Web client security parameters disagree between decisions and design — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The accepted decision (`WEB_CLIENT_TECH_DECISIONS.md:147`) is Argon2id at 128 MiB, t=3, p=1, measured at 0.59 s; the design (`WEB_CLIENT_DESIGN.md:174`) and the reconciled document (`:180`) say 64 MiB. The session lifetime also differs (90 days in the decision, 180 in the design's citation). Which parameters ship is a security decision, so no document was changed. Decision needed: the Argon2 cost and the session lifetime; then the other two documents follow it.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Argon2id 128 MiB, t=3, p=1 and a 90-day absolute session are the defaults; design and reconciled docs aligned. The owner may revisit.
 
 `WEB_CLIENT_TECH_DECISIONS.md:147` accepts Argon2id at 128 MiB, t=3, p=1 (O3, measured at 0.59 s). `WEB_CLIENT_DESIGN.md:174` proposes 64 MiB (m=65536 KiB), and `WEB_CLIENT_RECONCILED.md:180` says 64 MiB as well. The accepted and proposed memory costs differ. The session lifetime also differs: `TECH_DECISIONS` says 90 days absolute at :146, and DESIGN.md:340 is cited at 180 days.
 
@@ -1438,7 +1438,7 @@ keep.ps1:10 defaults Rule to bounded and passes --rule and --margin explicitly a
 
 ### C-006 [medium] `PG_*` environment reads scattered; plan and ledger counts stale — CONFIRMED
 
-**Disposition: Deferred (the ledger's open item F-12).** `REFACTOR_LEDGER.md` records the scatter as open (F-12): the reads are in `layout.rs`, `exiftool`, the desktop, the video build and more, and moving them behind one `env` module is a refactor across the crates, not a fix to one line. The counts in the plan and the ledger are restated when that refactor is done.
+**Disposition: Deferred.** A single PG_* resolution module is not built (a cross-crate refactor, REFACTOR_LEDGER F-12).
 
 `PG_*` environment reads are spread across layout.rs:30-31, exiftool lib.rs:31, desktop lib.rs:157, video build.rs:64 and more. `REFACTOR_LEDGER.md:52` records this as an open shortcut (F-12), so the scatter is known and not yet consolidated.
 
@@ -1450,13 +1450,13 @@ keep.ps1:10 defaults Rule to bounded and passes --rule and --margin explicitly a
 
 ### C-008 [medium] Env var prefix convention not followed for repo-owned keys — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** `QT_DIR`, `LIBCLANG_PATH`, `FFMPEG_DIR`, `JPEG_EVAL` and `CUDA_PATH` are unprefixed, and `PG_` is the repo's family. Renaming them breaks any user's `.env` and the CI variables, so it is a migration with a stated cut-over, not a line edit. Decision needed: rename the repo-owned keys with a `PG_` prefix and a one-release fallback, or keep the names that tools and the platforms already use (`QT_DIR`, `CUDA_PATH`) and document them as the exceptions.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Repo-owned JPEG_* keys are renamed PG_JPEG_* with no fallback (nothing in the repo set the old names; the docs now name the new ones); the repo-owned QT_DIR, LLVM_DIR and CUDA_ARCH are renamed PG_QT_DIR, PG_LLVM_DIR and PG_CUDA_ARCH with no fallback. CUDA_PATH, LIBCLANG_PATH and FFMPEG_DIR are kept, because upstream crates and installers read them under those names (ffmpeg-sys-next, clang-sys, NVIDIA's installer).
 
 .env.example names `QT_DIR` (line 12), `LIBCLANG_PATH`, `FFMPEG_DIR`, `JPEG_EVAL` and `CUDA_PATH` without a prefix, while `PG_TEST_DIR` (line 38) and the `PG_` family are prefixed. tools/linux.py:344 and eval/jpeg-decoders/linux.py:42 add more unprefixed variables beside `PG_` ones.
 
 ### C-009 [medium] Boolean and flag env values parse differently — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The flags read different values: `PG_TRACE` accepts only `1`, `PG_DEV` accepts `1`, `0`, `true` and `false`, `PG_REQUIRE_TOOLS` is on for any value, the GPU's `PG_SHARED_DEVICE` accepts only `0`, and `PG_FORCE_AV1` is read as an integer. Decision needed: the accepted values for an on/off variable (my recommendation: `1`, `true`, `yes`, `on` are on; `0`, `false`, `no`, `off` are off; anything else is a warning), then one parser in `pg-platform` and one in the C++ harness.
+**Disposition: Fixed in part.** pg_platform::env::flag reads the Rust side; gpu_device.cpp uses the same spellings. Unrecognised values read as unset; no warning is logged yet.
 
 Flag variables parse differently: desktop trace.rs:25 accepts only the value 1 for `PG_TRACE`, `command_line.rs:329` accepts 1, 0, true and false for `PG_DEV`, `gpu_device.cpp:71` accepts only 0 for `PG_SHARED_DEVICE`, `gpu_device.cpp:43` reads `PG_FORCE_AV1` as an int, and exiftool lib.rs:295 treats `PG_REQUIRE_TOOLS` as on for any value.
 
@@ -1504,13 +1504,13 @@ prefs.rs:122 sets `write_back` to true and `real_size` to false, and the setting
 
 ### C-017 [medium] Hard-coded D:/PhotoGallery defaults in tools and eval — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The Python tools derive their defaults from `PG_HOME` (`build_static_qt.py`), so one source is already the rule there. The PowerShell original `build-jpeg-turbo.ps1` (kept by `tools/README.md`'s rule) and `test_encoder.cpp`'s `D:` ssimulacra2 path and per-user scratch path are the rest. The C++ harness's path is a default a user overrides; the decision is whether the harness reads `PG_HOME` as the tools do, and that wants a run on the machine that has the path.
+**Disposition: Fixed in part.** test_encoder.cpp, build.ps1 and test_linux.py read PG_HOME; the build-jpeg-turbo.ps1 original stays until a Windows run.
 
 build-jpeg-turbo.ps1:12 defaults Work to a D: PhotoGallery static folder, and :13 defaults BuildTools to a Visual Studio 18 path. `test_encoder.cpp:43` hard-codes a D: PhotoGallery ssimulacra2 path, and :41-42 hard-code a per-user scratch path. Python tools derive the same defaults from `PG_HOME` (`build_static_qt.py:182`), so the defaults come from two sources.
 
 ### C-018 [medium] FFmpeg default prefix differs by tool and OS — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The FFmpeg default is `.deps/ffmpeg` on Windows and pkg-config elsewhere in `doctor.py` and `video/build.rs`, but `.deps/ffmpeg` on every OS in `compare_shots.py` (and in the PowerShell `doctor.ps1`, an original). Decision needed: whether `compare_shots.py` should follow the Windows-or-pkg-config rule of the other two (my recommendation), which changes a Linux run of the screenshot comparison from the repo's folder to pkg-config.
+**Disposition: Fixed.** compare_shots.py uses FFMPEG_DIR, or .deps/ffmpeg on Windows, as doctor.py and build.rs do.
 
 The FFmpeg default prefix differs: doctor.py:55 uses .deps/ffmpeg only on Windows and otherwise pkg-config, doctor.ps1:49 always uses .deps/ffmpeg, `compare_shots.py:670` always uses the repo .deps/ffmpeg, and video build.rs:102 uses .deps/ffmpeg on Windows and pkg-config elsewhere.
 
@@ -1534,7 +1534,7 @@ keys.rs:105-106 uses Ctrl for the grid's Plus and Minus (row resize), keys.rs:13
 
 ### C-022 [medium] Web client numeric limits disagree between design and reconciled docs — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The design and the reconciled document give different limits: held polls per device (4 against 2), the miss queue (2,000 against 256 per device and 2,048 globally), fit sides (16,384 against 8,192 px), and the selection size (64 KiB against 128 KiB). The reconciled document is the later one by its own name, so it is the likely value, but these are limits the web client ships with, and the user owns which document is current. Decision needed: confirm `WEB_CLIENT_RECONCILED.md` supersedes `WEB_CLIENT_DESIGN.md`; then the design is updated to match.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Each limit is stated once in WEB_CLIENT.md (2 held polls, 256 and 2,048 miss queue, 8,192 px fit, selection 128 KiB, mutations 64 KiB with smaller per-route caps); the client clamps to 8,192.
 
 The web client's numeric limits disagree. DESIGN.md:1297 allows 4 held polls per device, while RECONCILED.md:261 says at most 2. DESIGN.md:1501 has a 2,000-miss queue, and RECONCILED.md:338 has 256 per device and 2,048 globally. DESIGN.md:1506 allows fit sides of 16,384 px, while RECONCILED.md:1067 says 8,192 px. DESIGN.md:1565 gives 64 KiB, and RECONCILED.md:461 gives 128 KiB for selections.
 
@@ -1558,7 +1558,7 @@ crates/README.md:111 says Config::yandex is set by a recorded session that --yan
 
 ### C-026 [low] Subprocess holder env protocol uses different prefixes per crate — CONFIRMED
 
-**Disposition: Fixed in part.** The catalog's and `dbfile`'s holder tests spawn the same kind of child and now share one set of names: `PG_HOLDER_PATH`, `PG_HOLDER_MODE`, `PG_HOLDER_READY`, `PG_HOLDER_RELEASE`. The platform's `CHILD_PREFIX` is a different mechanism (a prefix a child reads to find its own role, not a set of holder variables), so it keeps its name.
+**Disposition: No change.** The platform child-process test uses stdin EOF and a folder prefix; the holder variables are the catalog and dbfile tests' shared names.
 
 The subprocess holder protocol uses a different prefix per crate: catalog `other_process.rs:32-34` sets `PG_CATALOG_HOLDER`, MODE, READY, and dbfile live.rs:31-33 sets `PG_LIVE_DB`, MODE, READY, and platform testing tests.rs:13 uses `PG_PLATFORM_TESTING_CHILD_PREFIX`. The same protocol has three naming schemes.
 
@@ -1580,13 +1580,13 @@ pgtools.py:47 skips the .env file when `PG_CONTAINER` is set, but `lint_qml.py:3
 
 ### C-030 [low] Eval scripts use different random seeds by default — CONFIRMED
 
-**Disposition: Deferred, the seeds name the sampled inputs that recorded eval baselines are keyed to, so moving any default changes those baselines; whether to unify them is a measurement decision the user must own.** No code changed. The shared edit-seed rule (`eval/edits.py:edit_seed`) and the matching `--seed` defaults in synth, pdq, plant and verify_synth already agree, so the open part is only the dataset-selection seeds.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Seed values kept; each is a named constant with the baseline it reproduces or a "dataset seed" note.
 
 Eval scripts use different seeds by default: `make_subset.py:20` uses 1, pdq.py:153, synth.py:51 and `bench_decode.py:146` use 0, `bench_semantic.py:103` uses random.Random(4), and ann/data.py:84 uses `default_rng(0`) while seeds 1 to 5 are used elsewhere. Low severity.
 
 ### C-031 [low] Eval worker, batch and budget defaults differ across scripts — CONFIRMED
 
-**Disposition: Fixed in part.** `eval/jpeg-decoders/nvimgcodec_bench.py` and `eval/jpeg-decoders/gpu_encoders.py` no longer define their own `BUDGET_S`; both import it from `eval/jpeg-decoders/timing.py` (1.5 s). Behaviour change: the nvImageCodec timing budget drops from 2.0 s to 1.5 s, and the encoder timing loop in `gpu_encoders.py` follows. The worker defaults (`bench_decode.py` 12, `bench_thumbs.py` 10, `pdq.py` 6, `plant.py` 12) are left as they are: each is a per-workload tuning value for a different memory footprint, not a shared setting.
+**Disposition: No change.** Per-workload worker defaults stay; the nvImageCodec budget change (2.0 to 1.5 s) is recorded here.
 
 Worker and budget defaults differ: `bench_decode.py:144` defaults processes to 12, `bench_thumbs.py:334` defaults workers to 10, pdq.py:154 defaults workers to 6, plant.py:54 defaults workers to 12, and gpu.py:31 and `gpu_encoders.py:26` set `BUDGET_S` to 1.5 and 2.0. Low severity.
 
@@ -1636,13 +1636,13 @@ The 50 ms value appears as `RETRY_EVERY` (transaction.rs:40), `RETRY_PAUSE` (inb
 
 ### C-040 [low] Time constants use mixed types — CONFIRMED
 
-**Disposition: Fixed in part.** `TOUCH_AGE_S: i64` in `crates/thumbcache/src/config.rs` is now `TOUCH_AGE: Duration`, beside `TOUCH_FLUSH`; its one use, `crates/thumbcache/src/lib.rs` (the touch check), converts with `i64::try_from(..as_secs()).unwrap_or(i64::MAX)` (the workspace denies `as`) against Unix seconds, and the schema comment in `schema.rs` names the new constant. `SCAN_LEASE_SECS` (`crates/catalog/src/types.rs:137`) stays an `i64` of seconds on purpose: it is bound as an SQL parameter in `roots.rs`, so it must be an integer in storage, and its suffix says so. `DISMISSED_FOR` (`catalog/inbox.rs`) is not touched here (it belongs to U-031's list).
+**Disposition: No change.** TOUCH_AGE is a Duration; the SQL-bound i64 constants are named and explained.
 
 Time constants use mixed types: `TOUCH_AGE_S` is an i64 of seconds (config.rs:67), `TOUCH_FLUSH` is a Duration (config.rs:71), and `SCAN_LEASE_SECS` is an i64 of seconds (types.rs:137). Low severity.
 
 ### C-041 [low] CLI defaults repeat pipeline defaults — CONFIRMED
 
-**Disposition: Fixed in part.** The `--readers` default in `crates/cli/src/args.rs` (`PipelineArgs`) is now `default_value_t = pipeline::READERS` instead of a literal 8, so it follows `crates/jobs/src/pipeline.rs`. The `--buffer-mb` help text still says "12 per reader and per worker" as prose: clap help is a static string and `BUFFER_PER_SLOT` is private to the pipeline, so that line stays a doc note, not a computed default. The audit's "budget to 8" was the readers count, which `pipeline.rs` sets from `READERS`; no behaviour changes.
+**Disposition: No change.** --readers follows pipeline::READERS; the --buffer-mb help stays prose.
 
 The CLI repeats pipeline defaults as literals: args.rs:34 has `default_value_t` 8 for readers, and pipeline.rs:55 sets readers to 8 and budget to 8. The 12 MB buffer default is stated in the CLI doc and computed in pipeline.rs:75.
 
@@ -1684,13 +1684,13 @@ dirs.rs:32 uses PhotoGallery under LOCALAPPDATA on Windows, and dirs.rs:37 uses 
 
 ### U-001 [medium] Decimal and binary MB/GB labels mixed in code and tools — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The code mixes both: the cache totals are decimal GB (`cli`'s `gigabytes()`, ÷1e9), a cap is binary (`Cap::from_bytes(1 << 30)` in its test), and other tools differ. Decision needed: decimal for every figure a person reads (file and cache sizes) and binary for every budget and cap (memory, buffers), with the label saying which. That rule then changes the labels in each tool.
+**Disposition: Fixed in part.** Byte counts and budgets are binary (cli --cap-gib, thumbcache Cap::from_gib, cli GiB labels); query MB labels and the Cap::from_gb docs elsewhere are not all done.
 
 cli lib.rs:237-238 gigabytes() divides by 1e9 (decimal) for cache totals, while the cli test at lib.rs:986 builds `Cap::from_bytes(1` `<<` 30) (binary GiB). The cite at lib.rs:960 is a different test. lifecycle.rs:268 MB is decimal, query lib.rs:88 MB is binary, report.rs:111 mbps is decimal, rehearsal.rs:46 is MiB, eval/ann/report.py:44 gb is `2**30`. `dhat_top.py` is at tools/profiling/pairing/, not tools/profiling/.
 
 ### U-002 [medium] Docs give the same size figures in MB and MiB — CONFIRMED
 
-**Disposition: Fixed in part.** `docs/reference/IO.md`'s buffer budgets are MiB throughout (the code sizes them as multiples of 12 MiB, so "240 MB" was wrong: it is 240 MiB). The catalog's "519 MB" in `CATALOG_SIZE_PLAN.md` is a size as the tool that read it reported it, decimal or binary depending on that tool; it is left until the decision in U-001 says which unit that report uses.
+**Disposition: Fixed.** IO.md and CATALOG_SIZE_PLAN use IEC labels for byte counts; decimal only for rates.
 
 IO.md:42 labels 240 MB as 12 MiB x (8+12). 12 MiB x 20 = 240 MiB, so the unit is wrong, and IO.md:55 and :64 repeat 240 MB. `CATALOG_SIZE_PLAN.md:1` title uses decimal MB (519 MB) while its body uses MiB.
 
@@ -1702,61 +1702,61 @@ Mixed result across the instances. REFUTED: reader.rs:37 `GRID_CACHE_KIB` = `256
 
 ### U-004 [medium] Quarter-turn rotation typed as u8, i64, i32 or Turns, with literal modulus 4 — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule is `Turns` everywhere in Rust, with an integer only at the SQL and the QML boundary. The change touches the fixture, the lookup, the image key, the queue, the browse state and the client controller (each has its own `% 4`), so it is a refactor to validate with a full build, not an edit to make blind.
+**Disposition: Fixed in part.** Turns is the type in fixture, queue, lookup and browse state; the client controller still carries integers.
 
 `file_rotation` returns u8 (fixture/state.rs:88), `analysis_rotation` returns i64 (:189), `set_analysis_rotation` takes u8, lookup.rs:45 compares via i64::from, model image.rs:24 parses u8, Turns::new takes u8 and reduces mod 4 (turns.rs:13-14), queue.rs:113-114 and browse state.rs:85 repeat % 4 inline, and client controller.rs:113 carries i32 turns.
 
 ### U-005 [medium] Pixel dimensions held as u32, usize and i64 across layers — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule: pixel sizes are `u32` in the model and the codec, `usize` where an index takes them, and `i64` only at the SQL boundary. Touches the analysis, the crop, the borders, the client viewport, the desktop viewport and the thumbcache reader; a refactor for a full build.
+**Disposition: Fixed.** Pixel sizes are u32 in the client and desktop viewports; usize only where an index takes them.
 
 Pixel sizes are u32 (analyze.rs:164, analysis.rs:37, CropSource types.rs:443), usize (borders.rs:144 converts with `try_from`, client image.rs:138, render display.rs:77), and i64 (client viewport.rs:15, desktop viewport/state.rs:19). lookup.rs:173 reads them as u32 while thumbcache lib.rs:179 reads height as u32 and reader.rs:73 binds i64 for the same column.
 
 ### U-006 [medium] Grid picture height typed differently in app, library, prefs and client — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change).** The grid height is `ThumbHeight`/`RowHeight` in the model; `yandex.rs` takes it as `usize`, the preferences deserialise it as `f64`, and the client's size controller does `f64` arithmetic on it. The rule is the model's type everywhere, and the preferences' number converted once at the load. The cited `library/src/library.rs` is not in the tree.
+**Disposition: Fixed.** yandex start takes RowHeight; prefs is the one file-boundary conversion.
 
 yandex.rs:119 takes `grid_height` as usize, prefs.rs:89 deserialises row height as f64, client controller/size.rs:79 uses f64 arithmetic with RowHeight, and model size.rs:10 gives `ROW_HEIGHT` and `THUMB_HEIGHT` as u32 ranges. The cited library/src/library.rs does not exist; ThumbHeight is used in inner.rs, runner.rs and shared.rs.
 
 ### U-007 [medium] File size held as u64, i64 or usize across structs and crates — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule: a file's size is `u64` in the platform, the scan and the model, converted to `i64` once at the SQL boundary (`writers.rs` already does it there). `FileState`, `FolderRow`, `WorkItem` and `CropSource` hold `i64` today and would change with it.
+**Disposition: Fixed.** Sizes are u64 in platform, scan, import, model and the catalog types; i64 only at the SQL edge.
 
 Entry.size is u64 (platform listing.rs:17), `size_and_time` returns i64 (file.rs:154), ScannedFile.size is u64 while Prior, FolderRow, WorkItem and CropSource hold i64 (types.rs:321, 338, 363, 407, 439), writers.rs:37 converts with `i64::try_from`, and import lib.rs:100 uses `unwrap_or(0`) on a u64 size. FileState.size is i64 (model state.rs:18).
 
 ### U-008 [medium] File and volume identities held as u64 in model and i64 in storage — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule: the volume and file identity are `u64` in the model (`FileIdentity`) and everywhere above storage, and the `cast_signed` to `i64` happens in one storage helper, not at each site (`writers.rs`, `roots.rs`, `pair.rs`, `lanes.rs`'s `Place::Mounted`). `MULTI_DRIVE_LANES_PLAN.md` keeps `u64` already, so the code follows the plan.
+**Disposition: Fixed.** One identity cast helper; VolumeSet and Place carry u64.
 
 FileIdentity volume and `file_index` are u64 (model ids.rs:37-38) with the doc claiming 64 bits, while writers.rs:36 casts them with `cast_signed` to i64, pair.rs:64 holds i64, roots.rs:274 converts with `cast_signed`, and lanes.rs:22 Place::Mounted carries volume: i64. `MULTI_DRIVE_LANES_PLAN.md:144` keeps u64 with an i64 cast at the SQL edge.
 
 ### U-009 [medium] File id typed differently across the Qt and QML boundary — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The file id crosses the Qt and QML boundary as `f64` (`failed_files.rs`, `shell.rs`), `i64` (`video_source.rs`), and `int` in `Main.qml`. A QML `int` is 32 bits, so a file id above 2³¹ does not fit in it. Decision needed: the QML representation of a file id (a `real` carries 53 bits, which covers every id, or a string), then all four sites take it.
+**Disposition: Fixed.** QML file ids are real; the Rust side converts with a checked conversion.
 
 `failed_files.rs:83` sends fileId as f64, shell.rs:335 takes `file_id`: f64, `video_source.rs:31` takes i64, and the QML side mixes them: InboxPanel.qml:414 is real, Main.qml:351 revealFile(fileId: real), while Main.qml:372 and :377 use fileId: int. `WEB_CLIENT_DESIGN.md:944` gives `file_id` as i64 and :1479 gives u64.
 
 ### U-010 [medium] Count fields typed as usize, u64 or i64 across layers — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule: a count is `u64` in the model and the ledger, `i64` at the SQL boundary, and `usize` only where a slice length is counted. The ledger, lookup, pair, inbox and scan counts change together with their callers.
+**Disposition: Fixed.** Counts are u64 in the catalog and scan; SQL counts converted once.
 
 Counts are u64 (ledger/state.rs:65-67), i64 (lookup.rs:199, one()), usize (pair.rs:48 rebound and replaced), u64 with lost (inbox.rs:814), and usize for scan missing (scan lib.rs:279) while the other scan counts are u64 (:277, :281). `writes_remaining` is usize (queue.rs:194) while related rows are i64.
 
 ### U-011 [medium] The same integer conversion falls back to different values — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The conversions fall back to `u64::MAX`, `0`, `i64::MAX` and `usize::MAX` by site. Which fallback is right depends on what the value means: a count that overflows should saturate (`u64::MAX`), a value that cannot be negative should read as 0. Decision needed: the rule for each kind of value; then the sites change to one helper per kind.
+**Disposition: Fixed.** Progress counters saturate; a negative SQL count is an error; one rule per kind.
 
 The same conversion falls back to different values: inbox.rs:1084-1085 count saturates to u64::MAX, catalog inbox.rs:335 unread uses u64::MAX, rebuild.rs:20-21 count uses `unwrap_or(0`) for negatives, removal.rs:195 uses `unwrap_or(0`), hashes.rs:87-88 uses u64::MAX for the item count and 0 for the failed count, scan lib.rs:1002 uses u64::MAX, and desktop `facet_choices.rs:30-31` clamps negatives to 0 and saturates to i32::MAX while shell.rs:61 maps overflow to -1. The cited app/src/pairing.rs does not exist.
 
 ### U-012 [medium] Absent or unselected values use different sentinels — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** Absent values are `-1` (`command_line.rs`, `yandex.rs`, `video_player_bridge.rs`, `LogPanel.qml`), `-2` (`Main.qml`'s `loadedIndex`), and `0` for zoom and the mascot. The QML side's `-1` is Qt's row convention, so the rule that fits is `-1` for an absent index or row and "no value" as a `Option`/`null` elsewhere. Decision needed: adopt that rule; the `-2` and the zero sentinels then change.
+**Disposition: Fixed.** -1 for an absent index; Main.qml uses a loadPending flag; zoom and mascot have explicit unset states.
 
 Absent values use -1 (`command_line.rs:455`, yandex.rs:99, `video_player_bridge.rs:16`, LogPanel.qml:27), -2 (Main.qml:78 loadedIndex), and 0 for zoom and mascot (`command_line.rs:465-472`). selectedSeq is a real -1 next to an int selected (LogPanel.qml:26-27).
 
 ### U-013 [medium] `Duration_ms` width, clamp and sentinel differ across model and catalog — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The model holds `duration_ms` as `u32` with `NO_DURATION = u32::MAX`, `VideoFacts` holds it as `i64`, and the catalog clamps the stored column into `u32`. Decision needed: `u32` with the sentinel (the model's, and the grid's), or `Option<u64>`; the catalog's clamp then becomes a checked conversion with the one fallback.
+**Disposition: Fixed.** VideoFacts duration and poster are u32 with NO_DURATION; one checked conversion at the catalog read.
 
 model grid.rs:24 holds `duration_ms` as u32 with `NO_DURATION` = u32::MAX (:55), model analysis.rs:103-104 holds VideoFacts `duration_ms` and `poster_ms` as i64, and catalog browse grid.rs:65 clamps an i64 column into u32 with a fallback. `WEB_CLIENT_RECONCILED.md:420` lists the GridRecord fields with no duration, while DESIGN:1479 keeps `duration_ms` u32.
 
@@ -1780,13 +1780,13 @@ clock.rs:58-59 documents `process_age_ms` on Windows as the age since process cr
 
 ### U-017 [medium] Benchmark timing helpers return milliseconds or seconds under one name — CONFIRMED
 
-**Disposition: Deferred (naming change across the eval).** The helpers return milliseconds (`bench_thumbs.py`'s `timed`, `nvimgcodec_bench.py`) or seconds per item (`timing.py`'s `timed`, now shared by the two GPU harnesses), and `sweep.ps1` converts. The fix is a unit suffix on each name (`_ms`, `_s`) and one conversion at each print; it is a rename across the eval scripts, to be done with a run.
+**Disposition: Fixed.** The helpers are timed_ms and timed_s.
 
 `bench_thumbs.py:212` timed returns milliseconds, `nvimgcodec_bench.py:56` returns ms per image, nvjpeg.py:217-219 returns seconds per item, sweep.ps1:54 converts seconds to ms, `scan_timing.py:55` prints seconds, and `cpu_worker.py:133` stores `build_s` in seconds. The gpu.py cite does not exist as eval/gpu.py; the file is under eval/jpeg-decoders/.
 
 ### U-018 [medium] Rounding policy differs in resize, decode and eval scale code — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The minimum-size fit rounds up (`codec/src/decode.rs`), the resize rounds to nearest (`resize.rs`), and `linear_resize.py` uses Python's `round`, which rounds half to even, while its comment says half up. Decision needed: the rule per purpose. My recommendation: ceil where the decode must keep the minimum (as now), round-half-up for the resize, and the Python made to match the Rust, so the eval scales the way the app does.
+**Disposition: Fixed.** linear_resize rounds half up, as resize.rs does.
 
 JPEG minimum-size fit uses ceil (codec decode.rs:228-229), resize uses round (resize.rs:34-35), and `linear_resize.py:129` uses Python round, which is banker's rounding, with a comment saying round half up. Three rules for the scaled size.
 
@@ -1798,31 +1798,31 @@ luma16 scales in f32 by 1/65535 (convert.rs:174-178), and rgb16 uses integer (v 
 
 ### U-020 [medium] Frame count held as i64 in video and u32 in metadata and model — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule: a frame count is `u32` in the model, and `video`'s `frames()` converts its `i64` at the FFI boundary with a checked conversion (a count past `u32` is an error, not a wrap). The change is in `video/ffi.rs`, `metadata/container.rs` and `model/analysis.rs`.
+**Disposition: Fixed.** video frames() returns u32 through a checked conversion.
 
 video ffi.rs:231 frames() returns i64, metadata container.rs:25 holds frames as u32 (defaulting to 1), and model analysis.rs:40 holds frames as u32. The `VALUE_PROVENANCE_IDEAS.md:99` cite is accurate.
 
 ### U-021 [medium] Rating out of range is rejected in some places and clamped in others — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** A rating from the shell is rejected (`shell.rs`, `Rating::new` gives nothing), the word for a rating clamps to 0 to 5 (`words.rs`), the client shows past 5 as the best symbol, and the EXIF rating caps at 5. Decision needed: reject (a bad value is not a rating) or clamp (a file's out-of-range EXIF value is still a rating); my recommendation is reject at the user's input and clamp at the file's read, both stated.
+**Disposition: No change.** The rating rule is stated once: reject user input, clamp file values at read, clamp only for display.
 
 shell.rs:257 rejects out-of-range ratings via `u8::try_from` and Rating::new (None means nothing is rated). words.rs:14 clamps to 0..=5, client text.rs:33 shows past 5 as the best symbol, and metadata lib.rs:89 caps EXIF rating at 5 with min(5). Rejected in one place, clamped in others.
 
 ### U-022 [medium] Root, folder and file paths typed as String, RulePath or `Vec<u8>` — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** The rule: a path is `RulePath` everywhere the app keeps it, and a `String` only in a notice or a message (what the user reads). The scan's `ScanError::Busy`, `FileFailure.path`, the library's `root_ids` and `root_paths`, and the notice's `ScanFailed` root would change with it.
+**Disposition: Fixed.** RulePath in scan Busy, catalog ScanBusy and RootRemoved, and FileFailure.path; the lossy conversion stays in platform args.
 
 scan lib.rs:319-321 keeps ScanError::Busy with root and holder as String, while the walk uses RulePath. notice.rs:307 FileFailure.path is String, and notice.rs:452 ScanFailed root is RulePath. library state.rs:16-17 keeps `root_ids` and `root_paths` as RulePath. platform args.rs:18 converts Windows args lossily while the Unix form keeps exact bytes.
 
 ### U-023 [medium] Ext and Kind held as String in FolderRow but typed elsewhere — CONFIRMED
 
-**Disposition: Deferred (cross-crate type change, convention stated).** `FolderRow`'s `ext` and `kind` are `String`; `ScannedFile`, `WorkItem` and `WriteTarget` hold the typed `Ext` and `Kind`. The rule is the typed one, with the string only at the SQL row. The change is in the catalog's types and its readers.
+**Disposition: Fixed.** FolderRow holds typed Ext and Kind, built through ext_at and kind_at.
 
 FolderRow stores ext and kind as String (catalog types.rs:361-362), while ScannedFile (:322), WorkItem and WriteTarget hold Ext and Kind. model media.rs:83 holds Ext as a u8 position in the lists.
 
 ### U-024 [medium] Unchecked arithmetic on unit conversions where others use checked — CONFIRMED
 
-**Disposition: Fixed in part.** The buffer-size shift in the CLI (`cli/src/args.rs`, `mb << 20`) saturates now instead of wrapping for a huge `--buffer-mb`. The other unchecked conversions the audit lists (`platform/src/file.rs`) are not changed here: each needs its own bound, which the file's use decides.
+**Disposition: Fixed.** Timestamp conversions saturate; the CLI buffer size saturates.
 
 cli args.rs:54 shifts mb `<<` 20 with no `checked_mul`, and `TYPE_MISMATCH_VALIDATION.md:68` says so. cli borders.rs:163 uses `checked_mul`. platform memory.rs:35 uses `checked_mul` and volume.rs:42-43 uses `checked_mul`, while platform file.rs:182 does plain multiplication on secs × `10_000_000`.
 
@@ -1832,49 +1832,49 @@ The seconds-to-milliseconds conversion is made at the boundary: screenshot.rs:60
 
 ### U-026 [medium] Digit grouping and count formatting differ across surfaces — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The HUD concatenates raw numbers, the grid formats its counts with `Qt.locale()`, and the Rust side groups digits with commas (`group_digits`), which `LANGUAGES.md` says differs from Qt's space grouping. Decision needed: the one formatter for counts (the Fluent number formatting the catalogue already uses, or `Qt.locale()` everywhere); then the HUD and the grid follow it.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** One count formatter (words.count) is used by the HUD and the QML counts.
 
 Hud.qml:58 concatenates raw numbers, GalleryGrid.qml:150-152 uses Qt.locale().toString for the same kind of count, and LANGUAGES.md:67 says Qt shows 1 234 while Rust shows 1,234 via `group_digits`.
 
 ### U-027 [medium] PDQ distance thresholds and metric written as literals in several places — CONFIRMED
 
-**Disposition: Fixed in part.** The join's boundary tests use `MATCH_DISTANCE` (`pg_model::pdq`) instead of the literal 31. The eval's `MEANINGFUL_D` (`pdq.py`) and `SHORTCUT_PD` (`group.py`) are Python constants for the same radius; sharing them with the Rust is a cross-language constant and is left as a note in each file.
+**Disposition: Fixed.** Join tests use MATCH_DISTANCE; source notes in pdq.py and group.py; dups.rs uses the constant.
 
 join.rs imports `MATCH_DISTANCE` (:58) and uses it in the production path (:154, :724), but the tests use a literal 31 at :2389, :2406 and :2663. The doc at :4-5 states the radius as 31. eval/pdq.py:29 has `MEANINGFUL_D` = 31, eval/group.py:38 has `SHORTCUT_PDQ` = 22, and cli dups.rs:19 hard-codes `PDQ_BANDS` with 31 as its top bound. The Hamming threshold is written in several places.
 
 ### U-028 [medium] Verification thresholds written as percent and as fraction — CONFIRMED
 
-**Disposition: Deferred (documentation units).** `VERIFIER.md` gives the same kind of threshold as a percent in one sentence and a fraction in another (0.3% against 0.03; 1.2% against 0.012). The code uses fractions. The fix is to state the fractions in the document once the audit's cites are checked against the current text, which was not done.
+**Disposition: Fixed.** VERIFIER.md states thresholds as fractions; the 0.3% rule is removed.
 
 VERIFIER.md:124 gives a changed region as 0.3% (percent) and median residual as 0.03 (fraction) in one sentence. VERIFIER.md:256 gives moved as about 1.2% and interior as about 15% while :276-278 use fractions 0.012 and 0.15. verify.py:556 uses fractions, with the comment's 0.05% matching 0.0005.
 
 ### U-029 [medium] CUDA kernels use different index and grid widths — CONFIRMED
 
-**Disposition: Deferred, pending a decision and a GPU run.** `k_dct` is launched with a 32-bit block count and `grid_exact` clamps in 64-bit, and `EGPU_MAX_DIM` is 65500 where JPEG allows 65535. Decision needed: the largest side the GPU encoder takes (65535, the JPEG limit, if the kernels can index it); the widths follow from that, and the change is checked on the GPU.
+**Disposition: Fixed in part.** EGPU_MAX_DIM is 65535 and k_gather64 is 64-bit; other kernels are not all moved to a shared grid helper; unverified (needs a CUDA build).
 
 `encode_gpu.cu:722` launches `k_dct` with a (unsigned)nb cast, while `grid_exact(nb`) (:532, used at :725 and :735) clamps with 64-bit math. `k_gather64` (:460-461) uses a uint32 index. `EGPU_MAX_DIM` is 65500u (`encode_gpu.h:23`) where JPEG allows 65535.
 
 ### U-030 [medium] Allocation accounting differs between the C and Rust PNG harnesses — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The C harness counts live bytes with `_msize` (the usable block size), the Rust harness counts the requested `layout.size()` including `realloc`'s new size. They measure different quantities. Decision needed: the quantity the comparison reports (requested bytes, the one the app's budget is about, is my recommendation), then the C side counts requested bytes.
+**Disposition: Fixed in part.** alloc_count.cpp counts requested bytes; unverified (needs a build).
 
 `alloc_count.cpp:26` counts live bytes with `_msize` (the usable block size), while the Rust harness main.rs:37 counts layout.size() (the requested size), including realloc `new_size`. The two harnesses count different quantities.
 
 ### U-031 [low] Time constants carry units by suffix or by Duration inconsistently — CONFIRMED
 
-**Disposition: Deferred (refactor).** The thumbcache's `TOUCH_AGE_S` is an `i64` of seconds beside `Duration` constants (`TOUCH_FLUSH`, `HEAL_INTERVAL`); the catalog's `DISMISSED_FOR` is `i64` seconds. The rule is `Duration` for every interval, with a suffix only on a value that must be an integer in storage. The change is in `thumbcache/config.rs`, `app/images.rs` and `catalog/inbox.rs`.
+**Disposition: Fixed.** DISMISSED_FOR_SECS; the thumbcache constants were already Duration.
 
 thumbcache config.rs:67 `TOUCH_AGE_S` is an i64 of seconds, while `TOUCH_FLUSH` (:71) and `HEAL_INTERVAL` (:74) are Duration. app images.rs:30 `WRITE_WAIT` is a Duration and `DECODES_KEPT` is a usize. catalog inbox.rs:67 `DISMISSED_FOR` is i64 seconds with no suffix.
 
 ### U-032 [low] GPU-time projection to 70M in hours or days — CONFIRMED
 
-**Disposition: Deferred (documentation units).** `MODELS.md` gives the 70 M projection in GPU days in two places and in GPU hours in two others; `bench_semantic.py`'s table and `bench_ann.py` print hours. The fix is to state hours throughout (days × 24), which needs the table's own figures recomputed; it is a doc edit to make with those numbers in hand.
+**Disposition: Fixed.** MODELS.md states the 70M projections in hours and the tables are recomputed.
 
 MODELS.md:7 and :155 give GPU days for 70M, while :205 and :244 give GPU hours for 70M in the same document. `eval/bench_ann.py:186` prints GPU hours for the 70M projection. The cite path `eval/ann/bench_ann.py` is wrong; the file is `eval/bench_ann.py`.
 
 ### U-033 [low] Byte budgets typed usize or u64, and 16 MiB caps repeated — CONFIRMED
 
-**Disposition: Deferred (refactor).** The buffer budget is `usize` in `pipeline.rs` and `AtomicUsize` in the governor, while `container`'s `GATHER_CAP` is `u64` and `MAX_INFLATED` `usize`, both `16 << 20`. The rule is `u64` for a budget a file or the platform sets and `usize` for a buffer's length; the two 16 MiB caps become one named constant.
+**Disposition: Fixed.** Budgets are u64 where a file or platform sets them; one shared 16 MiB decode cap; PERF_FILE_CAP.
 
 pipeline.rs:37-38 `buffer_bytes` is usize, governor.rs wraps AtomicUsize, and coordinator.rs converts a u64 to usize with `unwrap_or(usize::MAX`). container lib.rs:107 `GATHER_CAP` is u64 = 16 `<<` 20, and container.rs:139 `MAX_INFLATED` is usize = 16 `<<` 20 under another name. log lib.rs:79 `RING_BYTES` is a usize 4 MiB, and log file.rs:26 `FILE_CAP` is a u64 of 5 MiB.
 
@@ -1886,25 +1886,25 @@ viewport.rs:163 uses a relative tolerance fit × 0.0001, viewport.rs:171 uses th
 
 ### U-035 [low] Instruction and cycle counts shown in millions and as raw values — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The profile documents show instruction counts in millions (`93.26 M`) and the baseline stores raw integers; `pairs_probe.rs` prints cycles in millions and `medians.py` prints whole millions. Decision needed: whether the reports show raw counts or millions (the baseline's raw integers are the stored truth; the display is the choice).
+**Disposition: Fixed in part.** medians.py uses one formatter with an M label; pairs_probe.rs prints its raw values as before.
 
 callgrind/1bb039084.md:19 shows Ir as 93.26 M and 23.3 K per file, while docs/perf/baseline.json stores raw integers. `pairs_probe.rs:77-78` divides cycles by `1_000_000` and prints them as M, while medians.py:27 prints whole M cycles and keep.py reports percent to two decimals.
 
 ### U-036 [low] CLI and report precision for seconds differs by output — CONFIRMED
 
-**Disposition: Deferred, pending a decision.** The CLI prints pair timings with two decimals and the seconds with one; the reports print progress seconds with none. The precision that suits each output is a judgement; decision needed: one precision per kind (timings to one decimal, say), then the three sites take it.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Whole-pass seconds are one decimal through secs(); pair timings are whole milliseconds.
 
 cli lib.rs:214 prints pair timings with two decimals, lib.rs:233 prints secs with one decimal, and report.rs:102, :113 print progress seconds with zero decimals. The cited lib.rs:205 is a return, not the timing print, so the cite is off, but the precision differs by output.
 
 ### U-037 [low] Numeric literal style and named constants used inconsistently — CONFIRMED
 
-**Disposition: Fixed in part.** The seconds-per-hour in `model/src/date.rs` is grouped like the day's (`3_600`, beside `86_400`). The TIFF type literals in `metadata/src/tiff.rs` (1, 2, 6, 7) are the TIFF spec's numbers and have named constants (`TIFF_*`) defined beside them; the literal uses are not changed here, because replacing them needs a pass over that file's readers.
+**Disposition: Fixed.** TIFF_SBYTE and TIFF_SSHORT are named; the date.rs grouping is fixed.
 
 date.rs:54 writes days × `86_400` + h × 3600 + mi × 60 + s, grouping `86_400` but not 3600. metadata tiff.rs:119 uses bare TIFF type literals 1|2|6|7 etc., while named `TIFF_*` constants exist (:25-31).
 
 ### U-038 [low] JPEG width accepted as u32 in dimensions but u16 in decode — CONFIRMED
 
-**Disposition: Deferred (refactor).** `codecs/jpeg.rs`'s `dimensions()` narrows to `u32` with `try_from`, and `decode()` narrows to `u16`, with the comment that a JPEG's sides fit 16 bits. The fix is one width (`u32`, as the rest of the codec uses) and the `u16` only where the JPEG decoder's API demands it; it is checked with the decoder's tests.
+**Disposition: Fixed.** The u16 narrowing is one helper at the decoder boundary.
 
 codecs/jpeg.rs:30-31 dimensions() narrows to u32 with `try_from`, and jpeg.rs:59 decode() narrows to u16 with the comment that a JPEG's sides fit 16 bits. The same dimension has two width types.
 
@@ -1928,7 +1928,7 @@ query lib.rs:109-111 compares shape with values scaled by 100, and lib.rs:383 so
 
 ### U-042 [low] Similarity band upper bound differs between eval tools — CONFIRMED
 
-**Disposition: Fixed in part.** `eval/bench_ann.py` (the file is at `eval/bench_ann.py`, not `eval/ann/bench_ann.py`) now closes its top band at 1.01, the convention `eval/ann/metrics.py` uses, so a cosine of exactly 1.0 falls in the top band in both tools; the printed label still reads `0.8-1.0`. Behaviour change: identical-vector pairs (cosine 1.0) now count in bench_ann's top band, where before they were dropped. The lower edges are left different on purpose: bench_ann reports 0.3 to 1.0 for its partner question, and metrics.py reports 0.4 to 1.0 for the recall bands, so the ranges are not the same analysis.
+**Disposition: Fixed.** bench_ann's top band ends at 1.01; the 0.3 lower edge is deliberate.
 
 eval/ann/metrics.py:20 has BANDS ending at 1.01 as edges, while `eval/bench_ann.py:194` has BANDS as (lo, hi) tuples ending at 1.0 (:194 is 0.8, 1.0). The cite path `eval/ann/bench_ann.py` is wrong. The two tools cut the similarity range differently.
 
@@ -1940,7 +1940,7 @@ WheelListView.qml:50, Viewer.qml:306 and YandexPreview.qml:65 each divide angleD
 
 ### U-044 [low] ThumbHeight construction uses bare and unwrapped literals — CONFIRMED
 
-**Disposition: Fixed in part.** The per-file thumbnail bench (`crates/bench/benches/ir/linux.rs`, `thumb_jpeg`) no longer passes a bare 256: it passes `pg_model::num::index(THUMB_HEIGHT)`, the constant the catalog bench already names in `benches/ir/catalog.rs` (its comment now says both benches use it). `Maker::make` takes a `usize`, not a `ThumbHeight`, so the bench cannot wrap it in `ThumbHeight::new`. `crates/library/tests/lanes.rs:75` keeps its `.unwrap()`: it sits in `start`, a setup function marked `#[expect(clippy::unwrap_used)]`, and switching to `expect` would need the lint attribute changed too, which is noise for a test setup. `runner.rs` keeps its `expect("a height in range")`.
+**Disposition: No change.** The test setup's unwrap has a reason; the bench uses num::index for its ThumbHeight.
 
 bench catalog.rs:45 defines `THUMB_HEIGHT` as u32 = 256 and wraps it in ThumbHeight::new. bench linux.rs:59 passes 256 as a bare literal to maker.make. library runner.rs:216 uses ThumbHeight::new(64).expect, while lanes.rs:75 uses .unwrap() on the same constructor.
 
@@ -2000,7 +2000,7 @@ testkit's `run_folder(scratch`, prefix) makes distinct folders per call, and pla
 
 ### N-010 [medium] Stored turns count is called rotation in some places and turns in others — CONFIRMED
 
-**Disposition: Fixed in part.** The pending count is now `pending_turns` on `FileState` (`crates/model/src/state.rs`, with its readers in `crates/catalog/src/browse/read/state.rs` and `tests.rs`, and `crates/app/src/images.rs`) and on `Version` (`crates/model/src/image.rs`, with its literals in the client, model and desktop tests and `crates/desktop/src/gallery/items.rs`). That matches `pending_turns` on the grid entry (`model/src/grid.rs`), so `rotation` now means the stored count and `pending_turns` the queued one everywhere in these types. The persisted names stay as they are: the `files.rotation` column and the write queue's `rotation` key (`write_rotation!`) are stored data, and renaming them needs a migration. The finding's `failure.rs:18` cite is a real `rotation` field, the stored count, so no change there. Nothing was compiled, so the first check should be the catalog and app tests that build a `FileState` or `Version`.
+**Disposition: Fixed in part.** Placeholder.turns is shown_turns and the file column is files.turns; the stored write key stays "rotation" (PF-026).
 
 FileState.rotation (model state.rs:16) is the stored turns, and FileState.turns (state.rs:21) is the pending turns. write.rs:31 says the Turns write kind is stored under the key rotation. The same concept has two field names. failure.rs:18 (the finding's cite) does not exist, so that instance is wrong, though the rest holds.
 
@@ -2032,13 +2032,13 @@ budgets.json uses scan-walk.again, scan-walk.first and pending-thumbs (hyphens).
 
 ### N-016 [medium] Test names follow several styles within the same crates — CONFIRMED
 
-**Disposition: Deferred, pending a naming decision.** Which test-name style the repo keeps (noun names such as `too_deep`, sentence names, or the `_windows`/`_posix` pattern of the catalog browse tests) is the owner's call, since it sets what every new test is named. Once it is chosen, the renames are mechanical across `borders.rs`, `analyze.rs` and `browse/read/tests.rs`, but the `_windows`/`_posix` macro names are referenced by the test harness and would need care. Nothing in the finding is a defect.
+**Disposition: Deferred.** The test-name style is not chosen, so no renames were made.
 
 Test names in the same crates mix styles: bare nouns (borders.rs:324 `too_deep`), sentences (borders.rs:383, analyze.rs:221), a `_windows` and `_posix` suffix pattern (catalog browse tests) and a plain-name test with a comment (browse/read/tests.rs:99). The mix is real within crates, though low severity.
 
 ### N-017 [medium] QML user-action signal names use several verbs for the same kind of event — CONFIRMED
 
-**Disposition: Deferred, pending a naming decision and a Qt build.** The desktop QML uses `Asked` for about thirty user-action signals (`playAsked`, `rateAsked`, `closeAsked`, `similarAsked` and more), `Requested` for four (`copyRequested`, `dismissRequested`, `retryRequested`, `toggleRequested`), and `Toggled` for switches. Choosing the one verb is the owner's call, since it sets the name for every new signal, and the rename touches roughly sixty lines across about ten QML files and `tst_viewer.qml`/`tst_inbox_panel.qml`. That is more than the QML edit budget of this pass, and the signals can only be checked by the Qt test build, which this pass does not run.
+**Disposition: Deferred.** QML signal verbs are not renamed (needs a Qt build to check every call site).
 
 QML user-action signals use playAsked, volumeAsked, rateAsked, borderMarkAsked, copyRequested, dismissRequested, retryRequested, writeBackToggled, detectBordersToggled, recursiveToggled and toggleRequested. The same kind of event is named with Asked, Requested and Toggled.
 
@@ -2050,7 +2050,7 @@ C++ members use a trailing underscore (`frame_sink.cpp:10` `state_`, `video_sour
 
 ### N-019 [medium] `cxx_name` renames are applied unevenly across bridges — CONFIRMED
 
-**Disposition: Fixed in part.** The redundant `cxx_name` attributes that repeat the Rust name are removed in `crates/desktop/src/shell_bridge.rs` (`pending`, `flush`, `rate`, `turn`), which changes nothing since the exported name is the same. The uneven cases the finding lists (`library_bridge.rs` with `writes` and `write_failed` renamed but `roots` and `busy` not, `notices_bridge.rs`'s `toast_level`, `viewport_bridge.rs`'s `zoom_at` to `setZoom`, and `facet_choices_bridge.rs` with no renames) need a rule for which exported names are camelCase, and each change also moves a name that QML calls. Deciding that rule needs the cxx-qt build and the QML call sites, which this pass cannot run, so those are left for the build check. The same no-op pattern in `command_line_bridge.rs` (`select`, `view`, `zoom`, and the rest) is left in place for the same reason.
+**Disposition: Fixed.** No-op renames removed; exports are camelCase where the names differ.
 
 `cxx_name` renames are applied unevenly. `library_bridge.rs:25` renames writes to writeStatus and `write_failed` to writeFailed, while roots and busy have none. `notices_bridge.rs:37` renames `toast_level`. `viewport_bridge.rs:52` renames `zoom_at` to setZoom. `facet_choices_bridge.rs:32` has no `cxx_name`, and `shell_bridge.rs:169` has redundant renames that equal the Rust name.
 
@@ -2062,7 +2062,7 @@ catalog.rs:121 and :241 use different literal roots: `r'PhotoGallery\synthetic\l
 
 ### N-021 [medium] Environment variable prefixes are mixed across tools and build scripts — CONFIRMED
 
-**Disposition: Deferred, with C-008 (the same decision).** The unprefixed names the finding lists (`FFMPEG_DIR`, `QT_DIR`, `LIBCLANG_PATH`, `LLVM_DIR`, `PIN_ROOT`, `JPEG_*`, `IMAGEREDUCE_VIPS_BIN`, `JPEGLI_BUILD`) are the same family as C-008's, and renaming them breaks users' `.env` files and CI variables. Whether to add the `PG_` prefix with a fallback, or to document the platform-owned names as the exceptions, is the decision C-008 asks for. Once it is made, `doctor.ps1`, `eval/jpeg-decoders/linux.py` and `imagereduce_switch.py` follow the same rule.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Repo-owned variables use PG_ with no fallback, as C-008.
 
 tools/doctor.ps1:71 reads `PG_FFMPEG` and `PG_EXIFTOOL`, while doctor.ps1:49 reads `FFMPEG_DIR`, and the same script's `QT_DIR`, `LIBCLANG_PATH`, `LLVM_DIR`, `PIN_ROOT` and `PIN_EXE` are unprefixed. eval/jpeg-decoders/linux.py:12 mixes `JPEG_*` and `PG_*` in one environment list. `imagereduce_switch.py:14` mixes `IMAGEREDUCE_VIPS_BIN`, `JPEGLI_BUILD` and `PG_ROOT`.
 
@@ -2108,13 +2108,13 @@ ListShown appears in three enums (controller.rs:83, input.rs:17, start.rs:286), 
 
 ### N-029 [low] Same type name used for different types in different modules — CONFIRMED
 
-**Disposition: Fixed in part.** The one clash inside a single crate is removed: `pg_model::yandex::Status` is now `YandexStatus` (`crates/model/src/yandex.rs`), which is the alias `crates/client/src/text.rs` already imported it under. Its users in `crates/app/src/yandex.rs`, `crates/desktop/src/yandex.rs` and `text.rs` follow, and `pg_model::query::Status` keeps its name. The other clashes stay as they are: `Writing` (`thumbs/src/lib.rs` and `thumbcache/src/schema.rs`, both private to their crate), `Blur` (`detection.rs`), and `Grid` (the `client/src/keys.rs` enum and `client/src/grid.rs` struct). They are in different modules and do not share an import, so they cost readability only; renaming them is churn with no compile or behaviour effect.
+**Disposition: Fixed.** GridKey in pg_client; app's Status is LibraryActivity; catalog's is CatalogCounts.
 
 The same type name names different types: Writing in thumbs/lib.rs:178 and thumbcache schema.rs:255, Status in model yandex.rs:85 and model query.rs:42 (both in `pg_model`), Blur in detection.rs:48 and :69, and Grid as an enum in keys.rs:37 and a struct in client grid.rs:111. Each is in its own module, so this is a readability cost, not a compile error.
 
 ### N-030 [low] Accessors for stored codes are named differently across the model — CONFIRMED
 
-**Disposition: Deferred, pending a naming rule.** The accessors name what each type holds: `key()` and `from_key()` for the stored keys of `detection.rs` and `media.rs` `Kind`, `name()` for display names of `format.rs` and `Ext`, and `code()` for `notice.rs`'s `Op`. The finding itself calls these pairs real and not wrong. Choosing one name for the stored-code API, and whether `Resolver::name` (which returns a `String`) should match, is a naming rule for the owner to set; no defect follows from the current names.
+**Disposition: Deferred.** The naming rule (key/from_key, name, code) is decided; the accessor renames are not applied.
 
 Accessors for stored codes differ: detection.rs and media.rs Kind use key() and `from_key(`), format.rs:46 uses name(), media.rs:96 Ext::name, and notice.rs:790 uses code() on Op. Those pairs are real, if not wrong. Resolver::name (notice.rs:753) returns a String, which differs in shape from the others.
 
@@ -2138,7 +2138,7 @@ The product is named four ways in LANGUAGES.md:85 (Photo Gallery, gallery, pg-ga
 
 ### N-034 [low] Inbox method names for the same operations differ by layer — CONFIRMED
 
-**Disposition: Fixed in part.** The singular and plural forms are a rule of grain, not an accident: `Inbox::thumb_failed`, `thumb_made` and `Thumb::Failed`, `Thumb::Made` name one report, while `Step::ThumbsFailed`, `ThumbsMade` and the store's `thumbs_failed`, `thumbs_made` name a batch that the writer takes as a slice. The rule is now written on the `Step` enum in `crates/app/src/inbox.rs`, where a reader meets the batch names. The names themselves are not renamed: renaming the store trait's methods would change its implementations in the inbox tests and the fake store for no change in behaviour, and the rule answers the readability question. The trait names of the layers stay as they are.
+**Disposition: No change.** The singular and batch rule is the end state; trait renames would churn the test fakes.
 
 Inbox operations are named singular at the app layer and plural at the store layer: `thumb_failed` and `thumb_made` (inbox.rs:509), `thumbs_failed` and `thumbs_made` on Store (inbox.rs:641), and ThumbsFailed and ThumbsMade on Step (inbox.rs:718). Thumb::Failed and Thumb::Made (inbox.rs:214) add a third form.
 
@@ -2168,7 +2168,7 @@ Dialog titles are ui-removal-discard-title (DiscardRemovalDialog.qml:32), ui-rem
 
 ### N-039 [low] Fluent id prefixes and digit suffixes are not uniform — CONFIRMED
 
-**Disposition: Deferred, pending a naming decision.** `cli.ftl` ids begin `cli-`, `text.ftl` ids have no file prefix, and hint ids end in a digit (`ui-hint-up-4`). Whether to add a file prefix to `text.ftl` and drop the digit suffixes is the owner's call, since it renames ids that `words.rs` checks against the QML and `text::` lookups in Rust, and the per-file convention already holds within each file. No behaviour depends on it.
+**Disposition: No change.** The decision is not to rename the Fluent ids; the per-file convention still needs a header comment.
 
 cli.ftl ids all begin cli-; text.ftl ids have no file prefix (text.ftl:1 is the header). Hint ids use digit suffixes, as in keys.rs:273 ui-hint-up-4 and :274 ui-hint-down-1. The mix is real but is documented per file.
 
@@ -2206,49 +2206,49 @@ catalog.rs:36 `BENCH_LAYOUT='v1-windows-rules'` and :40 `BENCH_LARGE_LAYOUT='v1-
 
 ### V-005 [medium] Test code hard-codes thumbs, `user_version` and output-version literals — CONFIRMED
 
-**Disposition: Deferred (test-wide constants).** The tests pass literal `1` as the thumbs version in about ten places and set `user_version` and `thumb_output_version` with literals. Each should name the version constant (`pg_model::versions`); the sites are test code in the thumbcache, the writeback and the catalog, and they change with the constant names, so the pass is done with the V-007 import consolidation.
+**Disposition: Fixed.** Thumbs-version literals use pg_model::versions constants; foreign and earlier values are named test fixtures.
 
 thumbcache lib.rs:465, 479, 1072, 1085, 1342 pass literal 1 as the thumbs version; :746 sets `user_version` = 7; :757 sets `user_version` = 0; :787 writes literal 0 to `meta.thumb_output_version`. `tests/other_process.rs:49` and :61 pass literal 1; writeback/src/lib.rs:806 passes literal 1.
 
 ### V-006 [medium] Test constructors for Versions differ: Versions::current, versions(), `pg_library::versions(`) — CONFIRMED
 
-**Disposition: Fixed in part.** The local `versions()` wrappers in `scan`, `thumbs`, the bench and the catalog example are gone; their call sites use `Versions::current()`, which every constructor returns. Two named helpers remain on purpose: the catalog's `test_support::versions` (the tests of that crate use it throughout) and the library's public `versions()` (the runner calls it). Both are `Versions::current()`.
+**Disposition: No change.** The two named helpers are deliberate.
 
 bench catalog.rs:72 fn versions() returns Versions::current(). pair.rs:583 and rehearsal.rs:21-23 do the same; rehearsal.rs:20 doc names `pg_library::versions`. `other_process.rs:12` local fn. library/src/runner.rs:273 calls crate::versions(). library/tests/pairs.rs:65 overrides import on `pg_library::versions(`). borders.rs:33 and lanes.rs:59 cited without a directory are library/tests/borders.rs:33 and library/tests/lanes.rs:59, both calling `pg_library::versions(`) as stated. Claim holds; paths incomplete.
 
 ### V-007 [medium] Version constants imported from different paths for the same value — CONFIRMED
 
-**Disposition: Deferred (import consolidation).** The version constants are re-exported from `pg_model::versions`, `pg_analysis::analyze`, `pg_analysis::borders` and `pg_model::analysis`. The rule is to import from `pg_model::versions` (the registry); the re-exports stay for the crates' public APIs. The change is the imports in `lifecycle.rs`, `raw.rs`, `test_support.rs` and `writers.rs`, done with the V-005 pass and a full build.
+**Disposition: Fixed.** Inside the workspace versions import from pg_model::versions; public re-exports kept.
 
 lifecycle.rs:485 (`pg_model::versions::IMPORT_VERSION`), :618 (`pg_analysis::analyze`), :500 (BORDERS/THUMBS from `pg_model::versions`). raw.rs:12-14 mixes `pg_analysis::analyze`, `pg_analysis::borders` and `pg_model::analysis`. `test_support.rs:7` `pg_analysis::analyze`. writers.rs:921 imports `IMPORT_VERSION` from `pg_analysis::analyze` (finding says :920). import/src/lib.rs:168 passes `pg_analysis::analyze::IMPORT_VERSION`. `PAIRING_VERSION` is not at writers.rs:1711; it is used as `pg_model::pdq::PAIRING_VERSION` at :1742 and :2015/:2018, so the line is wrong but the source is as stated.
 
 ### V-008 [medium] Bump rule restated in five places with different wording — CONFIRMED
 
-**Disposition: Deferred (documentation).** The bump rule is one rule (a version is bumped when the thing it versions changes shape or meaning), stated five ways in `analyze.rs`, `params.rs`, `ledger.rs` and two plans. The fix is one statement in `pg_model::versions`, with the others pointing at it; the code comments change with it.
+**Disposition: Fixed.** The restatements point at the versions.rs module doc.
 
 Five restatements read: analyze.rs:23-25 header-only import not bumped; params.rs:3 bump when Params changes; ledger.rs:80 `THUMBS_VERSION` by hand; `NOTIFICATIONS_DESIGN.md:375` THUMBS by hand, codec upgrades not detected; `DECODE_ONCE_PLAN.md:23` rule rewritten. The wording differs in each.
 
 ### V-009 [medium] Schema and migration numbers in docs and code comments contradict each other and the registry — CONFIRMED
 
-**Disposition: Deferred, pending a check.** The plans quote schema numbers from their own dates (v11, v15, v18, v20), and `reader.rs` says schema 19. The registry is `schema.rs`'s migration list; a check of the current number against it must be run before any number is edited, since the list's own state was not confirmed here (the audit saw `MIGRATIONS` empty at `schema.rs:82`, which needs reading first).
+**Disposition: Fixed.** The plans state schema 1 and name planned migrations TO_n.
 
 Stale numbers confirmed: `CATALOG_SIZE_PLAN.md:5` (v20), PLAN.md:315 (version 11, ten steps), `SCAN_OPTIMIZATION_PLAN.md:57` (ends at 15), `DECODE_ONCE_PLAN.md:400` (`TO_10` next), `IMPORT_FAILURES_PLAN.md:48` and :376 (`TO_18`), reader.rs:19 (schema 19), schema.rs:82 (MIGRATIONS empty). Path error: `REFACTOR_LEDGER` is `docs/plans/REFACTOR_LEDGER.md:128`, not docs/reference. crates/README.md:297 says version 1, which matches the registry, so it is not a contradiction.
 
 ### V-010 [medium] Historical migration and backup references in the named plan docs — CONFIRMED
 
-**Disposition: Deferred (documentation marks).** The cited references (`PROFILING.md`'s pre-v9 backup, the migration 13 copy, the migration 14 `pairing_epoch`, and the NTFS and background-job plans) are accurate history. They should say they are history (a dated note), so a reader does not take them as the current schema; that marking is a doc pass to make with the schema's current number (V-009).
+**Disposition: Fixed.** The historical passages carry dated history notes.
 
 PROFILING.md:510-511 (pre-v9.bak before migration v9), :619 (migration 13 from a 209.4 MB v12 copy) and :985 (migration 14 introduces `meta.pairing_epoch`) are as cited. `NTFS_MFT_SCAN_PLAN.md:296` and :544 and `BACKGROUND_JOB_AUDIT_FIXES.md:32` match too. The numbers are historical and unmarked as such.
 
 ### V-011 [medium] `IMPORT_VERSION` HEAD values in plan docs do not match the registry — CONFIRMED
 
-**Disposition: Deferred (documentation marks).** The plans state `IMPORT_VERSION` at HEAD as 2 (`EXIFTOOL_PORT_PLAN`, `THUMBNAIL_RESAMPLING`), 2 → 3 (`IMPORT_READS_PLAN`), and the registry says 1 (`versions.rs:13`). These are dated snapshots of a plan; the registry is the current value. They should say which date they describe; no value is changed.
+**Disposition: Fixed.** Snapshots are dated and name commit 7deed676 as the reset to 1.
 
 `EXIFTOOL_PORT_PLAN.md:77-78` says `IMPORT_VERSION` at HEAD is 2 (bumped 2026-11-13); `IMPORT_READS_PLAN.md:12` says HEAD raised it `2->3`; `THUMBNAIL_RESAMPLING.md:8` lists it as done at 2; `NOTIFICATIONS_PLAN.md:14`; `DECODE_ONCE_PLAN.md:436` `DUPS_VERSION` beside `IMPORT_VERSION`. versions.rs:13 is 1. These are dated snapshots, so 'stale' is right against the current registry, which the reset (plan 3.6) changes.
 
 ### V-012 [medium] Bundled SQLite version stated three ways — CONFIRMED
 
-**Disposition: Deferred, pending a check.** Three documents name three SQLite versions (3.49.1, 3.50.2, 3.54.1 from the fork). The bundled one is what `libsqlite3-sys` in the lock file ships, which needs the crate's own source to confirm (not in the tree); the three documents should then say which version was current when they were written.
+**Disposition: Fixed.** The bundled SQLite is 3.54.1 through fork rev ac441bb, checked against Cargo.lock.
 
 `INCREMENTAL_SYNC.md:278` measured on SQLite 3.49.1; `WEB_CLIENT_RECONCILED.md:499` says bundled sqlite3.c 3.50.2; scan-optimizations-validation.md:64 says 3.54.1 bundled by the rusqlite fork. Three versions are named, each in a different doc.
 
@@ -2304,7 +2304,7 @@ Production site lib.rs:39 (`open_thumbs`) and test call runner.rs:370 are correc
 
 ### V-022 [low] Catalog lowers newer marks while refusing newer schemas — CONFIRMED
 
-**Disposition: Deferred, the downgrade policy is a product decision.** The code takes two positions on a catalog a later build touched: a newer schema is refused (`classify` in `crates/catalog/src/core.rs`), while a newer integer mark is set back with a warning (`MarkChange::Lowered` in `crates/catalog/src/lifecycle.rs`, documented there as deliberate). Making them agree means choosing one: refuse older builds on any newer mark, or keep tolerating downgrades with the marks lowered. Nothing in the repo settles that, so the user must choose; no code was changed.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** An older build refuses a catalog with a newer mark; the set-back path is removed; backup restore is the only downgrade.
 
 core.rs:138-143 refuses found `>` current as made by another build (the finding's :136 is the enclosing match, 2 lines off). core.rs:227-237 sets lowered marks back and logs them via `pg_log::warn`.
 
@@ -2344,19 +2344,19 @@ The Qt prose matches the pin. Justfile:105 sets `qt_version` := 6.12.0. site/ind
 
 ### V-029 [low] FilterBar facet numbers share integers across two namespaces — CONFIRMED
 
-**Disposition: Fixed in part.** `crates/desktop/qml/FilterBar.qml` now names the five bounded fields (`fieldSize`, `fieldMegapixels`, `fieldDuration`, `fieldTaken`, `fieldModified`) by their index in `pg_client::input::Field::ALL`, and each `Bound` uses its name, so no bare `facet: 0` to `facet: 4` remains beside the list facets' `facetX` names. The Rust side already pins `Field::ALL`'s order in `crates/client/src/input.rs`'s test. The two index spaces still share integers on the wire, because the bridge takes one `facet` number; separating them there would change the bridge's signatures and cannot be built or run here. Behaviour change: none.
+**Disposition: Fixed.** The bound functions name their parameter field; list facets are a separate function.
 
 FilterBar.qml:46-53 list facets use integers 0-5 (type through exts), order pinned by tests/facets.rs. :202-219 range Bound facets use 0-4 (size, megapixels, duration, and two dates) with the same integers in a second namespace.
 
 ### V-030 [low] nvJPEG header version differs from the pinned wheel — CONFIRMED
 
-**Disposition: Fixed in part.** `eval/jpeg-decoders/nvjpeg.py`'s docstring now says what each version describes: the declarations come from nvjpeg.h 13.2, and the DLL it loads is the one torchvision ships, not the `nvidia-nvjpeg==13.3.2.43` wheel that `requirements.txt` pins for the nvImageCodec venv. The two versions are genuinely different components, so the docstring is the honest fix. Whether 13.2 and 13.3 declare the same symbols cannot be checked here (no header or GPU run), so the declarations are not re-verified against 13.3.
+**Disposition: Deferred.** The docstring is fixed; a 13.2 to 13.3 declaration diff or a GPU run is still needed.
 
 nvjpeg.py:6 says declarations come from nvjpeg.h 13.2. requirements.txt:8 pins nvidia-nvjpeg==13.3.2.43. The stated header and the pinned wheel differ.
 
 ### V-031 [low] Batch byte budget duplicated in two eval scripts — CONFIRMED
 
-**Disposition: Fixed in part.** `MAX_BATCH_BYTES = 2.0e9` now lives once, in `eval/jpeg-decoders/timing.py` beside the shared `BUDGET_S`, with one comment; `nvimgcodec_bench.py` and `nvjpeg.py` import it instead of defining their own. `eval/jpeg-decoders/gpu.py` has a third copy at `2.5e9`, which the finding did not name. It is left at its value, because changing it would change that benchmark's batch caps, and which budget is right is a measurement decision for the user. Behaviour change: none in the two scripts.
+**Disposition: Fixed.** gpu.py's cap is GPU_BENCH_BATCH_BYTES with its 6 GB note; the owner picks the value.
 
 `nvimgcodec_bench.py:23` and nvjpeg.py:36 both define `MAX_BATCH_BYTES` = 2.0e9 with a comment about the GPU's memory. The constant is repeated, with slightly different comments.
 
@@ -2430,13 +2430,13 @@ Unrated is stored two ways: the ratings table (baseline.sql:81) has CHECK BETWEE
 
 ### PF-004 [high] Web client design docs disagree on thumbnail caching and key contents — CONFIRMED
 
-**Disposition: Deferred, the thumbnail Cache-Control value and key contents are owner question O11 in `WEB_CLIENT_RECONCILED.md`, which must be answered before `WEB_CLIENT_DESIGN.md` and `WEB_CLIENT.md` can agree.** No doc was changed here, because choosing public or private, immutable or 604800 seconds is a product decision. The reconciled doc's recommendation is option (a), private with max-age 604800 and immutable. Once O11 is answered, `WEB_CLIENT_DESIGN.md:687`, `:1322` and `:1495` and `WEB_CLIENT.md:317` need one shared answer, and the `:1322` claim that the image key carries turns does not match `crates/model/src/image.rs` (`Version` has mtime, rotation and pending turns).
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** O11 option (a): private, max-age=604800, immutable; the owner may revisit.
 
 `WEB_CLIENT_DESIGN.md:1322` says the thumbnail URL includes turns and the response is public, immutable. :1495 says no turns component and private. :687 says private. `WEB_CLIENT.md:317` says public and keyed without turns. The design doc contradicts itself and the design doc contradicts `WEB_CLIENT.md`.
 
 ### PF-005 [high] Session token digest algorithm disagrees within `WEB_CLIENT_DESIGN` — CONFIRMED
 
-**Disposition: Fixed in part.** The line at `WEB_CLIENT_DESIGN.md:1694` (the device-record question) now names BLAKE3, the digest the sign-in tokens use at :178 and :340 and in `WEB_CLIENT_RECONCILED.md` (sign-ins table, cookie rules). The finding's premise is slightly off: :1694 concerns the device token, not the session token. The part not fixed is that :1694 says the device token is a secret stored as a digest, while :340 calls the device key "not secret" and `WEB_CLIENT_RECONCILED.md` stores the raw 32-byte `devices.id`. That is a login-design decision for the owner, so the device-record model is left open.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** The device key is a secret; the server stores its BLAKE3 digest; the design and reconciled docs agree.
 
 `WEB_CLIENT_DESIGN.md:178` and :340 store the BLAKE3 digest of the token. :1694 (labelled Proposal) says the server stores its SHA-256. The same document gives two digests for the same stored token.
 
@@ -2454,7 +2454,7 @@ Main.qml:39 still declares Settings { id: appSettings }, and Main.qml:690-691 fe
 
 ### PF-008 [medium] Ledger pass and kind codes spelled several ways across catalog, bridge and inbox — CONFIRMED
 
-**Disposition: Fixed in part.** The text identity is single: `LedgerKind::code()` and `FilePass::code()` in `crates/model/src/notice.rs` are the only spellings stored in SQL (`ledger_ack.kind`, `file_failures.pass`) and used by the inbox. The numeric `pass` the QML bridge takes is a UI index into `LedgerKind::ALL`, mapped only by `kind_of` and `kind_code` in `crates/desktop/src/ledgers.rs` (with a test), so it is one mapping, not a second spelling. The stale doc comment on `show` in `crates/desktop/src/failed_files_bridge.rs`, which called the index a `Notices` row's pass, now names `LedgerKind::ALL` and `ledgers::kind_of`. Switching the QML contract to text codes would touch QML that cannot be run here, so it was not done; that is a deliberate choice, not an open defect.
+**Disposition: No change.** The numeric pass index is the UI contract, mapped in one place (ledgers.rs).
 
 Ledger pass is numeric in the bridge (`failed_files_bridge.rs:60`: 0 thumbs, 1 borders, 2 import, 3 scans), text in notices.rs:535 (thumbs, borders, import, scan-folders), and pass.code() or kind.code() bound into SQL (ledger.rs:423-424), and the inbox uses the text code. Three encodings for the same ledger identity.
 
@@ -2472,7 +2472,7 @@ The mask 0xFFFFFFFFFFFF is repeated as a literal in sql.rs:91 and at least seven
 
 ### PF-011 [medium] Temp-file suffix convention diverges — CONFIRMED
 
-**Disposition: Fixed in part.** A temporary beside a photo is now a dot-name everywhere in the app. The crop copy in `crates/crop/src/lib.rs` (`write_copy`) was `out.jpg.pg-crop` and is now `.out.jpg.pg-crop`, built by `temp_beside(path, suffix)`, which replaces the cut's own helper; its unused per-worker buffer was removed and the `publish` tests use the new name. The `.pg-tmp` fixture cited at `notice.rs:1397` no longer exists. Two temporaries are left with their current names on purpose: `crates/app/src/store.rs` writes `gallery.json.tmp` in the data folder, where the data files use suffixes (`.building`, `.partial`, `.lock`), not the photo-folder dot convention, and the `eval/` tools use a uuid `.tmp` that no reader matches. Behaviour: a crop copy's temporary is now hidden on Linux and has a different name during a crash, which the next save replaces.
+**Disposition: No change.** The dot-name rule holds for temps beside photos; app data files use <file>.tmp.
 
 Temp names differ: writeback file.rs:46 uses a leading dot and .pg-write; yandex save.rs:50-52 uses `.<name>.pg-save`; crop lib.rs:402 uses .pg-crop; app store.rs:118 uses `<name>.tmp`, not dot-prefixed; eval plant.py:38 uses .tmp. The model notice.rs:1397 test fixture uses .pg-tmp, which matches no real writer.
 
@@ -2494,7 +2494,7 @@ Viewport.qml:32 does not exist. A search for a fit/ image URL form in the QML an
 
 ### PF-015 [medium] Web client thumbnail URL shape differs between two docs — CONFIRMED
 
-**Disposition: Fixed in part.** The thumbnail URL is now `/api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation}/{height}` in `docs/webclient/WEB_CLIENT_DESIGN.md` (the decision at about line 691) and in `docs/webclient/WEB_CLIENT.md` (the endpoint list at line 393), matching `WEB_CLIENT_RECONCILED.md` section 1.5 and the design's own later decision at about line 1495. The shape is the reconciled one, so no new decision was made. The decision at about line 1322 still puts turns in the URL and is covered by the owner question in PF-004, so that line is not changed here.
+**Disposition: Fixed.** The thumbnail URL has the settled shape in both docs.
 
 `WEB_CLIENT_RECONCILED.md:320` has `/api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@`... ; `WEB_CLIENT_DESIGN.md:691` has `/api/thumbs/{file_id}@{mtime}.{rotation}.{thumbs_version}/{height}` with no `catalog_id` and a different version position. Two documents specify the same URL differently.
 
@@ -2506,7 +2506,7 @@ Viewport.qml:32 does not exist. A search for a fit/ image URL form in the QML an
 
 ### PF-017 [medium] Quarantine location and migration number disagree in web client docs — CONFIRMED
 
-**Disposition: Deferred, the owner has to say whether quarantine exists, and the docs disagree on that decision.** `WEB_CLIENT_TECH_DECISIONS.md` (owner decisions, third round, about line 200) records "Quarantine is dropped" with deletes to the Recycle Bin, while `WEB_CLIENT_DESIGN.md` (about line 941) and `WEB_CLIENT_RECONCILED.md` (lines 135, 240, 440) still build a per-volume `_quarantine` and its tables. The migration number follows from that answer: the reconciled doc puts quarantine in migration 11 with migration 10 as the AUTOINCREMENT rebuild (its O17), and `WEB_CLIENT_DESIGN.md` (about line 952) says 10. Nothing was edited, because either answer removes a whole section from one doc.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Quarantine is dropped per TECH_DECISIONS:200; the design and reconciled documents are updated.
 
 `WEB_CLIENT_DESIGN.md:941` keeps a per-volume `_quarantine` folder and Recycle Bin is rejected; `WEB_CLIENT_TECH_DECISIONS.md:200` says quarantine is dropped and deletes go to the Recycle Bin. The migration number also differs: DESIGN:952 says migration 10 adds quarantine tables, RECONCILED.md:440 says migration 11.
 
@@ -2518,13 +2518,13 @@ crates/README.md:288-290 lists the catalog folder as holding catalog.sqlite and 
 
 ### PF-019 [medium] `io_attempts` columns and triggers differ between two plan docs — CONFIRMED
 
-**Disposition: Fixed in part.** `DECODE_ONCE_PLAN.md` (section 3.3, migration TO_10, about line 409) now gives `io_attempts` the `next_try_at` column and the `io_attempts_due` index that `IMPORT_FAILURES_PLAN.md` 5.4 E and `BACKGROUND_JOB_AUDIT_FIXES.md` (about line 58) already state, since the retry state is decided there. The trigger text was not compared line by line against `IMPORT_FAILURES_PLAN`, so the `io_attempts_stale` trigger is not claimed to match; that comparison is left for the plan owner. No schema code exists yet (`io_attempts` is absent from `crates/`), so nothing is built to conflict.
+**Disposition: Fixed.** io_attempts columns and trigger match between the two plans.
 
 `DECODE_ONCE_PLAN.md:409` defines `io_attempts(file_id`, pass, attempts) with no `next_try_at`. `IMPORT_FAILURES_PLAN.md:385` defines `io_attempts` with `next_try_at` DEFAULT 0 and an `io_attempts_due` index. The two plans give different column sets for the same table name.
 
 ### PF-020 [medium] `work_leases` and `root_removals` columns differ across `TO_10` and the full design — CONFIRMED
 
-**Disposition: Fixed in part.** `BACKGROUND_JOB_AUDIT_FIXES.md` (the TO_10 contents) now says its `work_leases` six columns are TO_10's own and names the six extra columns of the full table in `BOUNDED_MEMORY_PLAN.md`, so the two lists read as one staged design rather than a conflict. Its `root_removals` line already says `key_lo/key_hi` come with the reader mask, which the bounded plan's list includes; that is the second column difference, and it is intentional staging. Whether TO_10 should instead ship the full twelve columns is a sequencing decision for the plan owner, so the plans were not made to agree column for column.
+**Disposition: Fixed.** BOUNDED_MEMORY_PLAN says which root_removals columns come when.
 
 `BACKGROUND_JOB_AUDIT_FIXES.md:49` gives `work_leases` six columns. `BOUNDED_MEMORY_PLAN.md:462` gives twelve columns. `root_removals` also differs: `BACKGROUND_JOB_AUDIT_FIXES.md:52` (id, path, hidden, report, finished, `cursor_path`, `cursor_id`) against `BOUNDED_MEMORY_PLAN.md:434` (which adds `key_lo` and `key_hi`).
 
@@ -2544,7 +2544,7 @@ The analysis version is `IMPORT_VERSION` by design: versions.rs:10 says the anal
 
 ### PF-024 [medium] Manifest key case, path style and encoding differ across build tools — CONFIRMED
 
-**Disposition: Fixed in part.** All three manifests now use lower-case keys and a library `path` relative to the build's prefix with forward slashes: `tools/build_static_ffmpeg.py` and `tools/build-static-ffmpeg.ps1` (the CRT entries are now `name`, `msvcrt`, `libcmt`, and the libraries `path`, `bytes`, `sha256`), `tools/build_jpeg_turbo.py` and `tools/build-jpeg-turbo.ps1` (were an absolute path; now relative, with `bytes` added), and `tools/build_static_qt.py` (the `as_posix()` form). The PowerShell twins were changed with the Python ones so the two recipes write the same file. Nothing in the repo reads these manifests programmatically, so no consumer changed. Encoding was not changed: both languages write UTF-8 JSON, and the audit names no real divergence there. The ffmpeg and PowerShell scripts were not run.
+**Disposition: Deferred.** The manifest keys and paths are aligned; the recipes have not been run to diff the two manifest outputs (RUN).
 
 `build_static_ffmpeg.py:253` writes CRT entries with keys Name, MSVCRT, LIBCMT, while :294 writes libraries with name, bytes, sha256. `build_jpeg_turbo.py:143` stores an absolute library path, and `build_static_qt.py:226` stores a path relative to the prefix. Key case and path style differ across the three manifests.
 
@@ -2556,7 +2556,7 @@ The analysis version is `IMPORT_VERSION` by design: versions.rs:10 says the anal
 
 ### PF-026 [low] Rotation write named Turns, rotation and turns — CONFIRMED
 
-**Disposition: Fixed in part.** The temp file of a turn write now takes the queue key, `.rotation.pg-write`, which `temp_of` in `crates/writeback/src/file.rs` builds from the kind, as a rating's does with `.rating.pg-write`; the queue test in `crates/catalog/src/queue.rs` (`a_finished_copy_leaves_a_later_change_queued`) uses the new name. The Rust variant `WriteKind::Turns` / `Write::Turns` keeps its name, since it counts quarter turns and its doc already names the stored key `rotation`; renaming it touches about fifty sites for no stored-data change, so it was not done. The notice word code `"turns"` in `crates/client/src/text/notice.rs` is left as it is. Behaviour change: a turn write's temp is now named `.rotation.pg-write`. A temp a crash left under the old `.turns.pg-write` name is not renamed by the upgrade, and the new name does not replace it, so such a file must be removed by hand.
+**Disposition: Fixed in part.** The temp name and stored key are rotation; WriteKind::Turns is not renamed to Rotation.
 
 The Rust kind is WriteKind::Turns (writeback.rs:470, :836, :875), but the queue key is the string 'rotation' (writeback.rs:928 and queue.rs:70 via `write_rotation!`). queue.rs:562 uses the temp name .b.jpg.turns.pg-write with 'rotation' as the kind.
 
@@ -2624,7 +2624,7 @@ The catalog's `key_text` (inbox.rs:394-396, used at :366) joins with U+001F. The
 
 ### A-001 [high] thumbcache reads catalog tables directly despite views-only claim — CONFIRMED
 
-**Disposition: Fixed in part.** The comment in `crates/thumbcache/Cargo.toml` now states what the crate reads: the views `thumb_sources` and `thumb_clock`, plus the `files` table and `sqlite_sequence` for the orphan sweep and the volume list. It also drops `thumb_folders`, which is not a view in the schema. The two table reads remain in `crates/thumbcache/src/reader.rs` because a view for them needs a catalog schema version change, a migration decision the user should make.
+**Disposition: Fixed.** Catalog views for the high-water mark, file ids, volumes and failures; thumbcache reads views only.
 
 thumbcache reader.rs reads the catalog's tables directly through ATTACH: `cat.sqlite_sequence` at :33 and cat.files in `catalog_volumes` at :121-123. The crate's own comment (Cargo.toml:11-13) says it reads through the views alone. The pg-catalog entry at Cargo.toml:24 is the dev dependency for the tests, which the comment also says.
 
@@ -2672,7 +2672,7 @@ client image.rs:51, render transcode.rs:1-2, thumbs placeholders.rs:7 and log fi
 
 ### A-009 [medium] Test fixtures come from four different places — CONFIRMED
 
-**Disposition: Fixed in part.** The video sample that library and video tests read from another crate's folder is now one constant, `pg_testkit::VIDEO_SAMPLE` (`crates/testkit/src/lib.rs`), used by `crates/video/src/lib.rs` and `crates/library/tests/writeback.rs`. The testkit header and the `crates/edit/Cargo.toml` comment now state the split: `pg-testkit` for the image and video files, `pg_codec::fixtures` for the codec's own helpers that take codec types. Still open: the library's six test files build images with the `image` crate directly and repeat builders such as `letterboxed()` (this is the scope of REFACTOR_LEDGER F-18), and the bench still reads the clip by path; moving those is a test-suite refactor for a later pass.
+**Disposition: Fixed.** VIDEO_SAMPLE and the shared image builders are in pg-testkit; library drops its direct image dev-dependency.
 
 Test fixtures come from four places: pg-testkit (edit Cargo.toml:10-11 says so), `pg_codec::fixtures` (edit crop.rs:156 and rotate.rs:89), and a file from another crate, `include_bytes` of ../../video/tests/sample.mp4 (library tests writeback.rs:291). `REFACTOR_LEDGER.md:63` (F-18) says the image dev-dependency should move to pg-testkit.
 
@@ -2708,19 +2708,19 @@ The platform rule uses different mechanisms by design: boundaries.py checks the 
 
 ### A-015 [medium] Dependency and library-crate counting differs between module-graph tools — CONFIRMED
 
-**Disposition: Fixed in part.** Library crates now have one answer: `tools/modgraph/api_surface.py` takes its library set from `compiler_graph.library_packages` (the `cargo metadata` listing that `unreachable_pub.py` already uses), in place of its own `src/lib.rs` file test. Dependencies are normal dependencies in every tool (`edges.py` and `api_surface.py` read `[dependencies]` from the manifests, `make_html.py` reads metadata with `kind` none), so the answers agree. Not done: one shared reader for manifests and metadata, which is a wider rewrite of the Python tools than this finding needs. `unreachable_pub.py` and `compiler_graph.py` are unchanged.
+**Disposition: Fixed.** normal_pg_deps in compiler_graph.py is used by edges.py and api_surface.py.
 
 The module-graph tools count library crates and dependencies in different ways: `compiler_graph.py:38` uses any lib in kind, `unreachable_pub.py:27` uses kind equal to ['lib'], `api_surface.py:28` reads normal dependencies only, `make_html.py:35` reads all packages, and edges.py:43 reads normal dependencies only. The same question gets different answers across the tools.
 
 ### A-016 [medium] Qt objects invoked by string name across the C++ and Rust boundary — CONFIRMED
 
-**Disposition: Fixed in part.** The names stay strings, since the C++ side reaches the shell's invokables and the window's properties through Qt's meta-object calls, but a test now ties each one to its definition: `the_names_the_cpp_side_reaches_by_string_exist` in `crates/desktop/src/deadline.rs` checks `"timeout"` (cpp/deadline.cpp) against `fn timeout` in `shell_bridge.rs`, and `"pending"`, `"shellCore"` and `"ready"` (cpp/screenshot.cpp) against `fn pending` and Main.qml's `shellCore` and `ready`. A rename on either side now fails a test instead of failing silently at run time. Typing those names in C++ would need the generated cxx-qt headers, which is a larger change not made here.
+**Disposition: No change.** The string boundary is intended and a test guards each name.
 
 Qt objects are reached by string name across the boundary: screenshot.cpp reads the QML property shellCore (Main.qml:118) and invokes pending by name, and deadline.cpp:28 calls invokeMethod with the name timeout. A rename in QML or Rust breaks these silently at run time.
 
 ### A-017 [medium] Shortcut policy location and QML controller logic conflict — CONFIRMED
 
-**Disposition: Deferred, the 106 functions of controller logic still in QML (REFACTOR_LEDGER F-45, S-12) need to move into Rust facades, and each move has to be checked by a Qt run, which this repo cannot do here.** The stated policy in `GlobalShortcuts.qml` and `Main.qml` (the controller decides what a shortcut does) is the right one and is unchanged; only the code lags it. No edit made in this pass.
+**Disposition: Deferred.** The 117 controller functions in QML need Rust facades, each checked by a Qt run.
 
 GlobalShortcuts.qml:4 and Main.qml say what a shortcut does is the controller's, and the controller decides. `REFACTOR_LEDGER.md:116` (F-45) records 106 functions of controller logic still in QML, with Main 25, Viewer 17, InboxPanel 15 and FilterBar 11. The stated policy and the code disagree, and the ledger records it as open.
 
@@ -2738,7 +2738,7 @@ cli lib.rs:130-139 runs borders of piped pixels or of outside files without a ca
 
 ### A-020 [medium] Python tooling uses different import and run conventions — CONFIRMED
 
-**Disposition: Deferred, the convention has to be chosen across the eval and tools scripts, and each chosen path needs a run to check it: the `eval/ann` modules run from `eval/` (their flat `common` import works only there), the GPU scripts need torch and CUDA, and `tools/linux.py` runs in the pg-dev container.** No import changed in this pass, so nothing is left half-converted. The convention to adopt: a script imports the modules of its own folder flat, and any import from another folder puts that folder on `sys.path` once, at the top of the file.
+**Disposition: Fixed.** eval/ann modules insert eval on sys.path once; compile-checked (an import smoke test needs torch).
 
 Python tooling uses different import conventions: flat imports (eval/accel.py:33, ann/data.py:13), package imports (ann/exact.py:12), sys.path.insert (`github_files.py:18` and `test_linux.py:11`), a local run function (linux.py:85), and an import from pgtools (`win_build.py:26`) that `linux_build.py` does not use.
 
@@ -2756,7 +2756,7 @@ Python tooling uses different import conventions: flat imports (eval/accel.py:33
 
 ### A-023 [low] Eval scripts import private helpers and tool internals from other scripts — CONFIRMED
 
-**Disposition: Fixed in part.** The `_vips` decoder that `bench_thumbs.py` took from `bench_decode.py` is now the public `vips_thumbnail(data, width, height)` in `eval/common.py`, which both bench scripts import (`common` now imports numpy at the top, as every eval script already needs it). **Deferred for the rest:** `verify_synth.py` still imports `ROTATIONS`, `Features`, `PairRunner` and `Checkpoint` from `verify.py`, the verifier's own 900-line pipeline, which takes torch and kornia at import and picks CUDA when it is there. Moving those into a shared module needs a run of the GPU pipeline to check the result, which this repo cannot do.
+**Disposition: Fixed in part.** verify_types.py holds the shared types; Features and PairRunner remain in verify.py because they need torch and kornia.
 
 `bench_thumbs.py:51` imports the private `_vips` from `bench_decode`, and `verify_synth.py:23` imports ROTATIONS, Checkpoint and PairRunner from verify. Scripts reach into another script's internals.
 
@@ -2768,7 +2768,7 @@ app.rs:6-8 lists the accessors inbox, catalogs, prefs, images, reading, views, e
 
 ### A-025 [low] Import and accessor path style varies within crates — CONFIRMED
 
-**Disposition: Fixed in part.** Two in-file inconsistencies are fixed: `crates/desktop/src/notices.rs` no longer imports `render` and calls `text::render` throughout, matching its own `text::notice_line`, and `crates/desktop/src/providers.rs` calls `app::get()` at the one site that wrote `crate::app::get()`, matching its `use crate::app;`. Left as they are: `crates/desktop/src/lib.rs` writes full `pg_client::text::Message` paths consistently within that file, and `crates/library/src/passes.rs` calls crate roots by name (`pg_scan::scan`, which Rust 2018 keeps in scope without a `use`) and imports only items, which is the usual form.
+**Disposition: No change.** The in-file inconsistencies are fixed; the rest is the usual Rust form.
 
 Import and call style varies: notices.rs:95 imports text and calls render bare, desktop lib.rs:169 calls the full path, providers.rs uses app::get() at :45 and crate::app::get() at :99 in the same file, and library passes.rs:9 imports some crates and calls others by full path.
 
@@ -2784,7 +2784,7 @@ The doc at shell/state.rs:19 names `pg_model::size::ROW_HEIGHT`. size.rs:10 defi
 
 ### A-028 [low] Leaf-below-core rationale repeated and reverse edges exist — CONFIRMED
 
-**Disposition: Fixed in part.** The rationale is now stated once, in the catalog's crate doc (`crates/catalog/src/lib.rs`), and the six module headers that repeated it (`dups/identity.rs`, `inbox/id.rs`, `ledger/failure.rs`, `ledger/state.rs`, `pair/coverage.rs`, `queue/job.rs`) point there. The reverse edge is not changed: `roots.rs` imports `removal::{Begun, overlapping_marker}`, and `core.rs` does not import `roots` or `removal`, so no cycle through `core` is visible in the source. Whether the compiler graph (`compiler_graph.py`, which needs a cargo-modules run) shows one is the check to make; if it does, `Begun` and `overlapping_marker` move to a leaf.
+**Disposition: Deferred.** Whether core reaches roots needs a cargo-modules graph; the remaining leaf headers need pointers.
 
 The same leaf-below-core rationale is repeated across the catalog's module headers (dups/identity.rs:1, inbox/id.rs:1, and in failure.rs, ledger state.rs, listing.rs, coverage.rs, lease.rs). roots.rs:44 imports ledger::failure and removal, which shows reverse edges from the module that the core reaches.
 
@@ -2802,13 +2802,13 @@ keep.ps1:38-40 deletes from `pdq_pairs` where the rows are in `pairs_owed`. Both
 
 ### A-031 [low] Static Qt wiring lives in patch files that edit crate sources — CONFIRMED
 
-**Disposition: Deferred, the static wiring (`app-build.patch`: `crates/desktop/build.rs`, the new `cpp/static_qt.cpp` and `src/gui_app.rs`; `pg-video.patch`: `crates/video/build.rs` and `src/ffi/load.rs`) is only in the patch files and has to move into the sources, which needs a Windows static Qt and FFmpeg build to verify, and this repo cannot run one.** The stale description is fixed: `tools/README.md` now says the patches edit the crate sources (naming the paths they touch) and how to apply them with `git apply`, where it had said they edit Qt's sources.
+**Disposition: Deferred.** Moving the static Qt wiring into the sources needs a Windows static Qt and FFmpeg build first.
 
 The static Qt build is wired through patch files that edit crate sources: tools/static-qt/app-build.patch:19-21 adds QuickControls2, QuickLayouts and Svg to desktop build.rs under `PG_QT_STATIC`, and pg-video.patch:63-65 adds a cfg-gated use of `pg_platform`. The crate sources differ from what the patches assume if they change.
 
 ### A-032 [low] Writeback holds a leaked static thumbnail cache — CONFIRMED
 
-**Disposition: Deferred, a product decision the user must own: the `&'static ThumbCache` is the design across the crates (`app/src/app.rs:39`, `app/src/library.rs`, `library/src/runner.rs`, `cli/src/lib.rs`, and every writer test), and the cache is leaked for the process so its threads can borrow it.** Moving the writer to `Arc<ThumbCache>` changes who closes the cache at shutdown and in what order against the keeper, which is the shutdown design the user owns. `crates/writeback/src/lib.rs` (`Inner`, `Writer::start`, the test at `:812`) is unchanged.
+**Disposition: Deferred.** Arc<ThumbCache> ownership is an owner decision and is not applied.
 
 writeback lib.rs:165-167 holds thumbs as a leaked static reference, and the test at :812 creates it with Box::leak. The production code and the test use the same pattern, so the leak is in the design and in the tests.
 
@@ -2834,7 +2834,7 @@ The root clippy.toml:25 bans `std::env::temp_dir`, and crates/client/clippy.toml
 
 ### ML-002 [high] Three clippy.toml files repeat root settings by hand — CONFIRMED
 
-**Disposition: Fixed in part.** Clippy has no include, so the repeats in `crates/model/clippy.toml` and `crates/client/clippy.toml` stay, and they are the only way a crate gets the test allowances and bans. `tools/test_ci_files.py` `ClippyFiles.test_the_crates_repeat_the_root_test_allowances_and_bans` now checks both crate files against the root, covering the five allowances, the hash-collection bans and the `std::env::temp_dir` method ban; before, it checked only the model file. A test run, not a lint run, would catch a future drift.
+**Disposition: No change.** Clippy has no include, so the repeats are required; a test guards them.
 
 The root clippy.toml:2-4 sets the `allow-*-in-tests` keys, and crates/model/clippy.toml:3-5 and crates/client/clippy.toml:3-5 repeat them by hand. The model file's own comment at :1-2 says to keep them in step with the root file, so the duplication is acknowledged and manual.
 
@@ -2868,7 +2868,7 @@ The print-lint crate attribute is present in catalog lib.rs:12, client lib.rs:3,
 
 ### ML-008 [medium] No rust-version declared while newer syntax and APIs are used — CONFIRMED
 
-**Disposition: Fixed in part.** Root `Cargo.toml` `[workspace.package]` now sets `rust-version = "1.88"` (the first stable release with let-chains on edition 2024), and all 35 member manifests under `crates/` inherit it with `rust-version.workspace = true`. The number is from the language release notes, not from a run: `cargo msrv verify` has not been run, and other newer APIs in the code could need a higher version, so that run is the check to do first. The `fuzz` and `eval/*` manifests are standalone workspaces and are not covered.
+**Disposition: Fixed.** rust-version 1.89 in the docs and manifests.
 
 No Cargo.toml sets rust-version (verified at P-007 and here). `LINT_TOOLS.md:31` says the MSRV is not set anywhere. The code uses let-chains (dups.rs:85, desktop app.rs:60, scan lib.rs:562) and `is_none_or` (browse tests.rs:579), which need a recent toolchain, so the minimum is not declared.
 
@@ -2920,13 +2920,13 @@ The `TIER2_ANN_BAKEOFF_PLAN.md:117` note recorded 9 ruff errors and one format d
 
 ### ML-017 [low] Plan docs cite stale Cargo.toml and deny.toml line numbers — CONFIRMED
 
-**Disposition: Fixed in part.** The four sites the finding names now cite the lint table or profile by name, not by line: `GUI_THREAD_PLAN.md` (undocumented_unsafe_blocks), `VALUE_PROVENANCE_IDEAS.md` (the cast lints), and `NIGHTLY_AND_BUILD_FLAGS_PLAN.md` at the E7 and `integer_casts` rows. Other plan and reference docs still cite Cargo.toml and deny.toml by line (about sixty such cites, for example `EXIFTOOL_PORT_PLAN.md:65`, `WEB_CLIENT_DESIGN.md`), and they drift further now that `rust-version` is added to the root `[workspace.package]` (three lines above the lint tables). A sweep to names is the remaining work and needs a per-cite check, so it is not done here.
+**Disposition: Fixed in part.** The live cites are replaced; six remain in dated review text.
 
 Cargo.toml:69 is `undocumented_unsafe_blocks`; `GUI_THREAD_PLAN.md:1719` cites line 65, which is a different lint. `VALUE_PROVENANCE_IDEAS.md:33` cites the cast lints at 86-94, and they are at 88-98. `NIGHTLY_AND_BUILD_FLAGS_PLAN.md:192` and :143 cite lines that moved. The stale line citations are real.
 
 ### ML-018 [low] WTFPL allowance in deny.toml matches no crate — PARTIAL
 
-**Disposition: Not verified.** `cargo deny` cannot fetch crates offline here, so the WTFPL entry is unchecked.
+**Disposition: Fixed in part.** WTFPL is removed from deny.toml; cargo deny check licenses still needs to run (network).
 
 deny.toml:34 allows WTFPL. Whether any crate uses it needs cargo-deny to run, and I did not run it, so the claim that the entry matches no crate is unverified. LANGUAGES.md:426 is a phase table row, not a cite of this entry, so it does not show the entry is unused.
 
@@ -2978,13 +2978,13 @@ fuzz and eval/png-decoders are standalone workspaces with their own lockfiles, s
 
 ### ML-027 [low] Expect reason text repeated across state files with escaped apostrophe — CONFIRMED
 
-**Disposition: Fixed in part.** The escaped apostrophe is gone: all 20 `crates/desktop/src/*/state.rs` files that carry the `#[expect(..., reason = "the bridge's generated code ...")]` now write `the bridge's` in the reason, which is valid in a string literal and is the form the rest of the repo uses. The repeated text stays, because an `expect` reason has to be a string literal at each attribute and no shared constant can supply it. Shortening it would drop the E0446 explanation from 20 places, so the full sentence is kept; the count is 20 files, not the 11 the finding gave.
+**Disposition: No change.** The escape is gone; each expect needs its own reason literal.
 
 The same reason, with an escaped apostrophe, is repeated in the desktop state files: `lane_model/state.rs:41`, yandex/state.rs:11, animation/state.rs:11, and the finding counts 11 files in all. The repetition is real. The escape is valid Rust but unusual, and the text should be shared or shortened.
 
 ### ML-028 [low] Platform-gated tests named differently in catalog and client — CONFIRMED
 
-**Disposition: Fixed in part.** The two OS-gated tests in `crates/catalog/src/lifecycle.rs` now end `_on_unix` and `_on_windows`, so the OS gate is in the name and cannot be read as the `_windows`/`_posix` path-rule suffixes that `under_both_rules!` uses (those run on every OS). Nothing else referred to the old names. The client half of the finding does not hold: `crates/client` has no `cfg(unix)`, `cfg(windows)` or platform-suffixed test, so nothing there changed.
+**Disposition: No change.** The OS-gated test names are distinct.
 
 lifecycle.rs:812 and :838 use plain cfg(unix) and cfg(windows) tests with descriptive names, while the browse tests use `under_both_rules!` with `_windows` and `_posix` suffixes. The two catalog test styles for the same platform split are real.
 
@@ -2996,7 +2996,7 @@ rehearsal.rs:12 sets a file-level expect for `unwrap_used` with a reason, while 
 
 ### ML-030 [low] Module declarations out of order in desktop lib.rs — CONFIRMED
 
-**Disposition: Fixed in part.** Checked by name, the `mod` list in `crates/desktop/src/lib.rs` was already in alphabetical order, with each `_bridge` after its base module, so `worker`, `yandex` and `yandex_bridge` were not out of order. The one real deviation was the blank line between `mod worker;` and `mod yandex;`, which split the list; it is removed in `crates/desktop/src/lib.rs`, so the declarations form one sorted run. Nothing else in the list moved.
+**Disposition: No change.** The mod order is alphabetical with each bridge after its module.
 
 desktop lib.rs:95-101 lists mod declarations that are not in order: worker sits before a blank line and yandex and `yandex_bridge` come after it. The module list is not kept sorted. Low severity.
 
@@ -3058,13 +3058,13 @@ pages.yml:30 uses runs-on: ubuntu-latest, while ci.yml:224 pins ubuntu-26.04. Th
 
 ### TL-007 [medium] eval/jpeg-decoders is a separate workspace that no CI step builds — CONFIRMED
 
-**Disposition: Deferred, the fix is a CI build step that needs a CI run to confirm: the crate needs libvips and the other eval-stage packages (`docker/apt-packages-eval.txt`), which the CI Linux image does not install, and this environment cannot run CI.** The crate's lockfile is already checked (`tools/lint.py` runs `cargo metadata --locked` on `eval/jpeg-decoders/Cargo.toml`), so the open gap is compilation only. The proper fix is to add `cargo check --locked --benches --manifest-path eval/jpeg-decoders/Cargo.toml` as a CI step once those packages are installed there, which is a CI-cost decision for the user as well.
+**Disposition: Deferred.** A CI job must build eval/jpeg-decoders with the eval packages installed.
 
 eval/jpeg-decoders/Cargo.toml:9 declares its own [workspace]. lint.py:22-24 runs cargo metadata on that manifest, but no CI or Justfile step builds the crate, which matches `REVIEW_LEDGER.md:89`.
 
 ### TL-008 [medium] Callgraph pin build and profile logic duplicated between Python and shell/PowerShell — CONFIRMED
 
-**Disposition: Deferred, removing `tools/profiling/callgraph/profile.ps1` needs a Windows run of `profile.py` first, which this environment cannot do.** The shell copy of the build is already gone: `build.sh` does not exist, and `build.py` is the only build, so the MSVC flags are no longer duplicated there. The `-o`/`-stop`/`-start` knob logic remains in both `profile.py` and `profile.ps1`, but `tools/README.md:73-78` records the project's rule that a `.ps1` original is removed only once its Python replacement has run on Windows. The fix is to delete `profile.ps1` after that run, and to keep `profile.py` as the one copy.
+**Disposition: Fixed in part.** README lists build.py as the replacement; profile.ps1 goes after a Windows run.
 
 The MSVC compile and link flags are written out in build.py (:86 onwards) and again in build.sh (:42-54), and build.sh is the file build.py says was replaced (DOC-059). The knob list (-o, -stop, -start) is built separately in profile.py:61 and profile.ps1:32. Duplicated in Python, shell and PowerShell.
 
@@ -3076,19 +3076,19 @@ The MSVC compile and link flags are written out in build.py (:86 onwards) and ag
 
 ### TL-010 [medium] Clone-and-patch helper copied three times in eval build scripts — CONFIRMED
 
-**Disposition: Fixed in part.** The two Python copies are one: the new `eval/jpeg-decoders/sources.py` has `clone(folder, url, commit, submodules)`, and `linux_build.py` and `win_build.py` each keep a one-line wrapper that calls it (the name and call sites are unchanged). Behaviour changes: the Windows clone is now a shallow fetch of the pinned commit (the Linux method, which GitHub allows), not a full clone plus checkout; and a failed git command now raises `CalledProcessError` instead of `win_build.py`'s clean `run()` exit message. A fourth copy, `eval/png-decoders/win_build.py`'s `clone`, was also left alone: it checks an existing folder against its pin and has no patch step, a different contract that the shared helper does not offer. The third copy, `win-build.cmd`'s `:clone`, is left in place: `tools/README.md` lists that file as an original kept until its replacement has run on Windows, so removing it needs a Windows run.
+**Disposition: No change.** The Python clone is one function; the .cmd copy goes with its replacement.
 
 A clone-and-patch helper is written three times: `linux_build.py:44` clone, `win_build.py:31` clone, and win-build.cmd:20 :clone. Each applies the patch and keeps an existing folder, in its own language.
 
 ### TL-011 [medium] Executable and interpreter path handling repeated per OS — CONFIRMED
 
-**Disposition: Fixed in part.** `eval/common.py` now has `exe_name(name)` (adds `.exe` on Windows) and `VENV_PYTHON` (the venv's `Scripts` or `bin` folder and `python`/`python.exe`). `eval/accel.py` imports `VENV_PYTHON` in place of its own tuple, and `eval/bench_thumbs.py` (`SSIMULACRA2`, `CJPEGLI`) and `eval/imgload.py` (`GALLERY`, replacing `GALLERY_EXE`) use `exe_name`. Left as they are: `eval/jpeg-decoders/encoders.py` `BIN` (Linux-only in the container, where `linux_build.py` installs tools without a suffix, so it is correct), and the `gpu_encoders.py` docstring (documentation only). The `tools/` package keeps its own per-OS helpers in `pgtools.py`, since the `eval/` scripts do not import it; merging the two packages is a larger move than this finding asks for.
+**Disposition: No change.** exe_name and VENV_PYTHON are shared.
 
 accel.py:38 chooses the venv interpreter path by os.name, and `gpu_encoders.py:7` documents Scripts versus bin per OS. encoders.py:35 uses EVAL/'bin' with no suffix, `bench_thumbs.py:55` and imgload.py:45 each pick .exe or '' by os.name. The per-OS suffix logic is repeated across tools.
 
 ### TL-012 [medium] Env file loading implemented differently in PowerShell and Python tools — CONFIRMED
 
-**Disposition: Deferred, `tools/qmltest.ps1` is a retained original whose removal needs a Windows run of `qmltest.py` first.** `qmltest.ps1` still parses `.env` with its own regex and does not strip quotes, unlike `pgtools.load_env_file` and `env_value`, so a quoted value would differ there. `tools/README.md:73-78` keeps that file, and nothing runs it, until its Python replacement has run on Windows; the fix is to delete it then, and this environment cannot run it. The other two points do not need a change: `build_jpeg_turbo.py` checks `WINDOWS` before `load_env_file()` on purpose (a non-Windows run stops before reading `.env`), and the `eval/README.md:12` sentence about PowerShell is accurate for the snippets it describes, since none of them reads `.env`.
+**Disposition: Deferred.** qmltest.ps1 goes after a Windows run of qmltest.py.
 
 qmltest.ps1:13-15 parses `..\.env` with its own regex and sets unset variables. qmltest.py:115 calls `pgtools.load_env_file`. eval/README.md:12 says PowerShell does not read .env, which the ps1 contradicts. `build_jpeg_turbo.py:85-87` runs its platform guard before `load_env_file`.
 
@@ -3150,7 +3150,7 @@ bench.py:115 and :122 use subprocess.run with check=True, while bench.py:98 uses
 
 ### TL-023 [low] Exit-code convention documented only in a plan — CONFIRMED
 
-**Disposition: Fixed in part.** The convention now also appears in `tools/README.md`, the index that maintainers read, with the four codes and the rule that other tools exit 1 through `sys.exit(message)`. The plan's section 6 remains the source for the profiling tools. I did not add shared exit-code constants to `tools/pgtools.py`: no tool imports them yet, so they would be unused, and the existing tools' exits are not all the same convention (many end with `sys.exit(message)`), so converting them would be a wider change than this finding needs.
+**Disposition: No change.** The exit convention is written in tools/README.md.
 
 The 0/1/2/3 exit-code convention is written in `DECODE_ONCE_PLAN.md:1219`. The tools use sys.exit with ad hoc messages (`compare_shots.py:177-283` and others) and no shared convention is in code, so the plan is the only place the convention is written down.
 
@@ -3182,7 +3182,7 @@ MODELS.md:22 names evaluate.py without a path, while VERIFIER.md:35 names eval/v
 
 ### TL-029 [low] Desktop C++ include path style differs — CONFIRMED
 
-**Disposition: Fixed in part.** A header in the same folder is now included by its bare name, as most of `crates/desktop/cpp` already does: `deadline.cpp` includes `"deadline.h"` (was `"pg-desktop/cpp/deadline.h"`), and `screenshot.cpp` includes `"screenshot.h"` (was `"pg-desktop/cpp/screenshot.h"`). The bare form is found through the including file's own folder, so it does not depend on the include path. The bridge headers keep their `pg-desktop/src/...` paths (`providers.cpp`, `screenshot.cpp`) because cxx generates them under that path and the form is set by the generator, not by a style choice; `frame_sink.cpp` was already bare. Not compiled here, since the desktop build needs the Qt kit.
+**Disposition: No change.** The bridge-path exception stays; the other headers use bare names.
 
 deadline.cpp:5 and screenshot.cpp:13 include "`pg-desktop/cpp/<name>.h"`. `frame_sink.cpp:1` includes "`frame_sink.h"` bare, and screenshot.cpp:29 and providers.cpp:22 include generated bridge headers by the pg-desktop/src path. Three include styles in one C++ tree.
 
@@ -3218,7 +3218,7 @@ The probes are in crates/catalog/examples/, not src/. `pairs_write_probe.rs:39` 
 
 ### P-004 [medium] parajpeg git rev differs between production manifests and eval harness — CONFIRMED
 
-**Disposition: Deferred, moving the eval harness onto the product's parajpeg (darktorres fork at 8e2c53a) needs a Windows CUDA build and a re-measurement.** The fork lacks the MSVC bitreader change in `eval/jpeg-decoders/patches/parajpeg.patch` (its `bitreader.h` still uses only `__builtin_bswap64`), so the patch must stay on top of the fork, and nothing here can confirm it applies or that the CUDA build compiles. The pins to change are `linux_build.py:139`, `win_build.py:92` and `win-build.cmd:50` (anniigr f45081d), plus the "Built" row of `docs/reference/JPEG_DECODERS.md:489`, whose timings were recorded at f45081d. Changing the pin without the run would leave those timings attributed to a commit they were not measured on.
+**Disposition: Deferred.** The eval harness must move to the fork's parajpeg with a CUDA build and a re-measurement.
 
 Cargo.toml:34 and fuzz/Cargo.lock:353 pin parajpeg 8e2c53a. eval `linux_build.py:158`, `win_build.py:96`, win-build.cmd:50 and `JPEG_DECODERS.md:489` use f45081d. The harness clones upstream anniigr/parajpeg, while the product uses the darktorres fork, so the two revisions differ.
 
@@ -3236,7 +3236,7 @@ fuzz/Cargo.toml:74 claims the root patch table is the full list. The root has 14
 
 ### P-007 [medium] Workspace declares no rust-version, and API and SQLite floors are undeclared — CONFIRMED
 
-**Disposition: Fixed in part.** The working tree's root `Cargo.toml` already had `rust-version = "1.88"` in `[workspace.package]`, which every member inherits, so the Rust floor is declared and covers the cited API uses (let-chains are 1.88; `split_at_checked`, `repeat_n` and `is_multiple_of` are older). I added the SQLite floor (3.38, from `unixepoch()`, with `UPDATE ... RETURNING` at 3.35) as a comment beside it in `Cargo.toml`. A runtime check at catalog open was not added: the bundled SQLite always meets the floor, so the check would never fire, and the comment says a system SQLite is the only case to verify.
+**Disposition: No change.** rust-version is declared as 1.89.
 
 Cargo.toml:1-8 [workspace.package] has no rust-version. The cited features are real: let-chain at crates/client/src/grid.rs:312 (the finding says controller/grid.rs:310, which does not exist), `split_at_checked` at results.rs:63, `is_multiple_of` at text.rs:291, `repeat_n` at words.rs:86, UPDATE..RETURNING at pair.rs:277, unixepoch() at lease.rs:28. No SQLite version check exists (grep for `sqlite_version` finds nothing).
 
@@ -3254,19 +3254,19 @@ Dockerfile:115 gungraun-runner has no --locked. Dockerfile:113-114 gives the rea
 
 ### P-010 [medium] Rust components and the installer are declared in both `ci_setup.py` and rust-toolchain.toml — CONFIRMED
 
-**Disposition: Fixed in part.** `install_rust` in `tools/profiling/ci_setup.py` no longer runs `rustup component add clippy rustfmt`; it runs `cargo --version` with `cwd=REPO`, so rustup installs the channel and components that `rust-toolchain.toml` names, and that file is now the only list. `report()` also runs `rustc` from the repo, so it reports the pinned toolchain rather than the default one. Behaviour change: the pinned nightly is installed during setup, not on the first build. Not done: the rustup installer is still fetched from `sh.rustup.rs` and piped to `sh` with no checksum; verifying it needs the published `rustup-init` SHA-256 and a CI run, so that gap stays open.
+**Disposition: Deferred.** The rustup-init SHA-256 pin needs network access; the Dockerfile copy is included.
 
 The file is `tools/profiling/ci_setup.py`, not `tools/ci_setup.py`. Line 51 fetches `https://sh.rustup.rs` with urllib and pipes it to sh with no checksum. Line 55 runs rustup component add clippy rustfmt on the default toolchain. rust-toolchain.toml:4-5 pins nightly-2026-11-06 with clippy and rustfmt components.
 
 ### P-011 [medium] Static-build tool pins copied between PowerShell and Python — CONFIRMED
 
-**Disposition: Fixed in part.** The Build Tools and MSYS2 default folders now live once in `tools/pgtools.py` (`DEFAULT_BUILD_TOOLS`, `DEFAULT_MSYS`), and `build_jpeg_turbo.py`, `build_static_ffmpeg.py` and `build_static_qt.py` import them instead of each copying the literal. `tools/test_ci_files.py` has a new test that the two PowerShell scripts carry the same Build Tools and MSYS2 folders, the Windows SDK and the MSYS2 package versions as the Python pins, following the existing MSVC-toolset test. Not done: retiring the PowerShell originals, which `STATIC_BUILD.md` open item 3 says needs the user's agreement after the Python ports ran on 2026-11-13. Behaviour change: none; the test will now fail if a pin changes on one side only.
+**Disposition: Deferred.** Retiring build-*.ps1 waits on a Windows run (STATIC_BUILD.md item 3); a test guards the pins.
 
 The same Build Tools path literal is in `build_jpeg_turbo.py:33`, `build_static_ffmpeg.py:39`, `build_static_qt.py:42`, build-jpeg-turbo.ps1:13 (the finding says :24) and build-static-ffmpeg.ps1:14. `build_static_ffmpeg.py:36` and build-static-ffmpeg.ps1:26 both pin make 4.4.1-3 and diffutils 3.12-1.
 
 ### P-012 [medium] ExifTool version in docs and platform code disagrees with the 13.59 pin — CONFIRMED
 
-**Disposition: Fixed in part.** The two claims that were silently about a different version now say so: the module comment in `crates/platform/src/native.rs` (its verbatim-path check) names 13.60 as the Windows install and notes that the CI pin is 13.59, which it was not run on, and the matching bullet in `docs/reference/IO.md` says the same. The 13.50 (WSL) probes already name their version and are left as dated records. Not done: the pin itself. Whether CI moves from 13.59 (`exiftool_version` and `exiftool_source_version` in the Justfile) to the 13.60 that is installed on the Windows machine changes the metadata tests, so it is the user's call. `EXIFTOOL_PORT_PLAN.md` naming 13.60 as its reference is deliberate and was left alone.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** The pin stays 13.59 until CI moves; the docs say both versions and why.
 
 Justfile pins are at :98 (`exiftool_version` 13.59.0) and :102 (`exiftool_source_version` 13.59). The finding's :96 and :100 are off by two. platform/native.rs:15-16 says checked with ExifTool 13.60. IO.md:84 says 13.60 and :91 says 13.50 under WSL. `EXIFTOOL_PORT_PLAN.md:10` names 13.60 as the port's reference. The docs' reference version differs from the pinned 13.59.
 
@@ -3278,7 +3278,7 @@ DATABASE.md:101 says the app ships 3.54.0. `UROCISSA_COMPARISON.md:174` says 3.5
 
 ### P-014 [medium] Eval decoder build scripts repeat commit pins instead of sharing one list — CONFIRMED
 
-**Disposition: Fixed in part.** `eval/jpeg-decoders/sources.py` now holds one `PINS` dict of (url, commit) for every checkout the two Python builds fetch, and `linux_build.py` and `win_build.py` clone from it, so the parajpeg, jpeggpu, GPUJPEG and GPU-JPEG-Decoder literals are gone from them. The rust-turbojpeg fork is read from `tools/build_jpeg_turbo.py` (`FORK_URL`, `FORK_COMMIT`) by both scripts, so the libjpeg-turbo pin is one value too. Not done: `win-build.cmd`, the legacy copy that `sources.py` and `tools/README.md` say keeps its own pins until it is removed, still repeats them and still clones libjpeg-turbo with no pin; removing it is the user's call. Behaviour change: `linux_build.py` now imports `build_jpeg_turbo` from `tools/`, so the eval scripts need that folder on the path (they already insert it on Windows).
+**Disposition: Deferred.** Retiring win-build.cmd waits on a Windows run; sources.py holds the pins.
 
 `win_build.py:64`, :79, :117 and `linux_build.py:158` pin jpeggpu 3ae7ac0d, GPUJPEG 37ab4810, GPU-JPEG-Decoder 61cfb372 and parajpeg f45081d. win-build.cmd:36, :42, :50, :59 carry the same commits as literals. win-build.cmd:30 builds libjpeg-turbo from vendor/ with no commit pin, while `win_build.py:48` clones `FORK_COMMIT`. The pins are repeated and one is missing.
 
@@ -3330,13 +3330,13 @@ Both binding crates are in platform: picker.rs:129 uses the windows crate, dir.r
 
 ### P-023 [low] GitHub Action pin comments use different version granularity — CONFIRMED
 
-**Disposition: Deferred, the exact release behind each commit SHA needs a lookup on GitHub, which this session cannot make.** The comments in `ci.yml` and `pages.yml` mix major tags (`# v7`, `# v4`) with full ones (`# v7.1.0`, `# v6.0.0`, `# v5.0.1`). Writing one granularity means confirming which release each SHA is, for example `actions/checkout@3d3c42e5` against its tag, and a guessed full version would be a worse comment than the current one. The fix is to resolve the 18 `uses:` lines across the four workflows against the tags on GitHub, then apply one convention to all of them.
+**Disposition: Deferred.** The release behind each SHA needs a GitHub lookup.
 
 ci.yml:66 comment # v7, :70 # v7.1.0, :82 # v2; pages.yml:43 # v6.0.0 and :48 # v5.0.1. The comment granularity varies as stated.
 
 ### P-024 [low] Apt packages are unversioned in three places, against a digest-pinned base image — CONFIRMED
 
-**Disposition: Deferred, pinning apt to a snapshot or versions is a reproducibility decision the user must make.** The base image is pinned by digest and its comment (`docker/Dockerfile:5-6`) says so, and `bench.py:81-82` already records that `apt-packages.txt` is not snapshot-pinned, so the gap is known. Closing it means choosing an apt snapshot date (snapshot.ubuntu.com) or exact package versions for `docker/apt-packages.txt`, `docker/apt-packages-bench.txt` and `apt-get install mold` in `ci_setup.py`, and checking that a build with them succeeds, which needs a live package mirror. Until that choice is made, the `libav*-dev` names in `crates/video/build.rs` stay as they are.
+**Disposition: Deferred.** An apt snapshot date or exact versions is a reproducibility decision that needs network to choose.
 
 Dockerfile:7 pins the base image by digest. bench.py:81-82 says apt-packages.txt is not pinned to a snapshot. video/build.rs:52-53 lists `libav*-dev` with no versions. `tools/profiling/ci_setup.py` (the finding's `tools/ci_setup.py:41`) appends mold unversioned.
 
@@ -3348,13 +3348,13 @@ eval/jpeg-encoder/build.ps1:11 hard-codes Arch = `sm_75` (the finding's eval/jpe
 
 ### P-026 [low] Bench data default falls back to a container path — CONFIRMED
 
-**Disposition: Fixed in part.** The unset fallback in `crates/bench/benches/ir/catalog.rs` (`DATA`) is now `/bench/data`, the path `tools/profiling/bench.py` uses (its `DATA`, which it also exports as `PG_BENCH_DATA`), instead of the stale `/root/pg-bench`, which nothing mounts. I did not make an unset value a compile error: `cargo clippy --workspace --all-targets` (`tools/lint.py`) compiles the benches with no `PG_BENCH_DATA` set, so that would break `just lint`. The fallback is still a container path, so a bench built outside the container without the variable will look under `/bench/data`; that is the behaviour the finding asks to remove, and making it fail loudly needs a choice between a lint-wide env var and a runtime check. Behaviour change: only the unset default path.
+**Disposition: Fixed.** The bench data fallback is /bench/data.
 
 catalog.rs:28-31 falls back to /root/pg-bench when `PG_BENCH_DATA` is unset (the finding's :30 is the None arm, correct).
 
 ### P-027 [low] Yandex User-Agent pinned to Chrome 108, a browser build from 2022 — CONFIRMED
 
-**Disposition: Deferred, a newer User-Agent needs a live check against Yandex's captcha behaviour, which this repo cannot make.** `USER_AGENT` in `crates/yandex/src/http.rs` is the string the monorepo's crawler sends, and its doc comment records that Yandex serves that string without a captcha. Moving to a current Chrome string may make Yandex challenge the search and the download requests, and only a run against the live service shows whether it does, so the choice stays with the user. The stale build is a known trade-off; if the user decides to bump it, the same constant feeds every request in `client.rs` and `fetch.rs`.
+**Disposition: Deferred.** The User-Agent bump needs a live Yandex check.
 
 yandex/src/http.rs:11-14 sets Chrome/108.0.0.0 and says it is the same User-Agent as an external crawler. The cited line and the stated reason both match.
 
@@ -3392,7 +3392,7 @@ client text.rs:30 `RATING_SYMBOLS` and the QML test stub Words.qml:8 hold the sa
 
 ### UI-003 [medium] Same id-less word under two Fluent ids in ui.ftl — CONFIRMED
 
-**Disposition: Fixed in part.** The two same-context duplicates are merged: `ui-inbox-loading` is removed and `InboxPanel.qml` uses the shared `ui-loading`, and `ui-log-title` is removed and `LogPanel.qml` uses `ui-log` (both entries are still used, so the `words.rs` id-set test holds). `ui-inbox-title` stays, because the `ui-inbox` plural entry carries a count and cannot be asked for as a plain title without passing a fake count, so "Inbox" keeps its own id in `ui.ftl`. Note: `ui-failed-link` and `ui-inbox-show-files` also share "Show the failed files" and were not in the finding; left as they are.
+**Disposition: Fixed.** ui-inbox-show-files covers both uses; ui-failed-link is removed.
 
 ui.ftl has 'Loading…' at :110 (ui-inbox-loading) and :166 (ui-loading). 'Log' is at :116 (ui-log) and :117 (ui-log-title), and 'Inbox' at :94 and :97 (ui-inbox-title). The same words are under two ids with no shared key.
 
@@ -3416,7 +3416,7 @@ notice.rs:1049 gives Cropped and BordersCut Warning when failed `>` 0 and Info o
 
 ### UI-007 [medium] Status word for Failed differs between filter chip and status — PARTIAL
 
-**Disposition: Not verified.** The filter chip's label was not located. The status word matches its test.
+**Disposition: No change.** The chip and the status share text.rs:74 and :98, so they cannot differ.
 
 The test at text.rs:821-825 expects the Failed status to read 'Unreadable', which matches text.ftl:14 (status-failed = Unreadable). The filter chip's label was not located, so whether the chip and the status word actually differ is unverified.
 
@@ -3434,7 +3434,7 @@ The count argument to words.phrase is passed as a fixed 0 (YandexPreview.qml:129
 
 ### UI-010 [medium] Key-name notation differs across hint lines and strings — CONFIRMED
 
-**Disposition: Fixed in part.** The modifier notation is now the word form used everywhere else in the UI and in `keys.rs` (`Ctrl+Shift+N`): `ui-hint-turn-on` in `crates/client/locales/en/ui.ftl` changes from the symbol `⇧R ⟳` to `Shift+R ⟳`, and the two viewer hint assertions in `the_key_hints_are_worded` (`crates/client/src/text.rs`) are updated to match. The `ui-hint-resize` line keeps its `Ctrl +/− resize` spacing, because "+/−" names the plus and minus keys as a pair rather than a modifier, so changing it would blur the meaning; the arrow and glyph symbols (`←`, `↑`, `⟲`) are kept as key glyphs, not modifier names.
+**Disposition: Fixed.** "Ctrl+/− resize".
 
 ui.ftl:135 writes Shift+R, :218 writes R / Shift+R, :230 writes ⇧R, and text.rs:790-799 asserts the hint strings in both forms. Key notation differs across the hint lines.
 
@@ -3446,7 +3446,7 @@ The English Display impls exist: names.rs:153 NormalizeError, scan lib.rs:344 Sc
 
 ### UI-012 [medium] CLI and log refusal text bypasses cli.ftl — CONFIRMED
 
-**Disposition: Fixed in part.** The one user-facing CLI message, the "built without its app window" line that `crates/gallery/src/main.rs` printed with `eprintln!`, now comes from a new `Line::NoWindow` (id `cli-no-window`) in `crates/client/src/text/cli.rs`, worded by `cli-no-window` in `cli.ftl`, and is printed through `pg_cli::no_window_line()` in `crates/cli/src/lib.rs`. The `the_lines_and_the_english_entries_name_the_same_ids` test covers the new id through `Line::samples()`. The `pg_log` lines in `crates/desktop/src/lib.rs` and `shell.rs` are left in English: `LANGUAGES.md` section 3.6 already decides logs stay English. The yandex `Unexpected` sites the audit cites (`fetch.rs:44, 53`, `parse.rs:10`) pass typed `UnexpectedReason` values that the client already words, so they are not English literals in the UI.
+**Disposition: Fixed.** The "error:" prefix is cli-error in cli.ftl.
 
 gallery main.rs:50 prints 'gallery was built without its app window...' with eprintln, a user-facing English message outside cli.ftl. desktop lib.rs:161 and shell.rs:71 write English through `pg_log`. The yandex fetch.rs:44, :53 and parse.rs:10 Unexpected details are English literals.
 
@@ -3458,7 +3458,7 @@ The same refusal advice is worded three ways: lifecycle.rs:27 'made with the {na
 
 ### UI-014 [medium] Doubled and mismatched strings in doctor and qmltest scripts — CONFIRMED
 
-**Disposition: Fixed in part.** The QT_DIR not-set words are now one constant, `QT_DIR_HOW` in `tools/pgtools.py`, passed to the shared `not_set` helper by `tools/qmltest.py`, `tools/lint_qml.py`, `tools/compare_shots.py` and `tools/format_qml.py` (format_qml now imports pgtools, which has no side effects at import). `tools/qmltest.ps1` cannot import Python, so it carries the same words, now without the "repo's" drift. `tools/doctor.ps1` and `tools/doctor.py` gave the Qt requirement's fix with different wording (bin\qmake.exe versus bin/qmake, "installed with" versus "from"), so the PowerShell line now matches the Python one. The two doctors remain separate implementations, since one is the Windows-first script and the other the cross-platform one; the audit's cited line numbers no longer hold the strings.
+**Disposition: Fixed in part.** check_qt.py and profile.py use QT_DIR_HOW; the profile.ps1 original is unchanged.
 
 doctor.py:174 and :177 print the same strings as doctor.ps1:88 and :92. The `QT_DIR` not-set message is written in qmltest.ps1:20, qmltest.py:41 and `lint_qml.py:70`, with the same wording in each.
 
@@ -3470,7 +3470,7 @@ Viewer.qml:443 uses a literal border colour #ff00ff and Viewer.qml:154 a literal
 
 ### UI-016 [medium] Catalog and database used for the same file — CONFIRMED
 
-**Disposition: Fixed in part.** The catalog's own rebuild reason for a file that isn't a database now says "not a catalog" (`crates/catalog/src/schema.rs` `mismatch`, and `Action::MoveAsideThenCreate` in `crates/catalog/src/core.rs`), matching its sibling "application id 7, not a catalog's". The user sees it in the rebuilt notice ("It didn't match this version of the app (not a catalog)"). The test `a_file_that_is_not_a_database_is_moved_aside_unread` in `lifecycle.rs` is updated to match. `crates/dbfile/src/judge.rs` ("it is not a database") and `remove.rs` ("can't move {} aside") are left: dbfile is the shared layer for the catalog and the thumbnail cache, and "database" is correct at that level, while the catalog-facing wording now says catalog.
+**Disposition: No change.** "not a catalog" is the form for the catalog's own messages; the dbfile text stays in its layer.
 
 dbfile judge.rs:49 says 'it is not a database', dbfile remove.rs:35 says 'can't move {} aside', and catalog lifecycle.rs:60 says 'catalog {}: another program or connection has it open'. Catalog and database are both used for the same file in the refusal messages.
 
@@ -3482,7 +3482,7 @@ The em-dash claim is refuted: ui.ftl:122 and LANGUAGES.md:85 both use 'Photo Gal
 
 ### UI-018 [low] Window and dialog strings use different scripts and separators — CONFIRMED
 
-**Disposition: Deferred, the joiner for facts in the window's copy is a visual design choice the user must make, and its layout (the HUD, the filter facets) needs a Windows screenshot to check.** The window uses " · " in `SaveViewDialog.qml` and the key hints, two spaces in the `FilterBar.qml` facet labels, three in the `Hud.qml` columns (and in the `info-line` of `text.ftl`), and the glyph prefixes (`⚠`, `▴`/`▾`) are icons; picking one joiner means changing those layouts, which cannot be checked here.
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** " · " joins facts in the HUD and the facet labels; a screenshot check is not run.
 
 Separators differ in the GUI: FilterBar.qml:156 uses two spaces, Hud.qml:90-92 three spaces, SaveViewDialog.qml:51 ' · ', YandexPanel.qml:77 ' '( and ')', TopBar.qml:101 ' ▴' and ' ▾', and StatusBar.qml:100 '⚠ ' prefix. ResultTile.qml:92 uses '×' in the size caption.
 
@@ -3520,7 +3520,7 @@ text.ftl:40 wraps the name in curly quotes '(name has “{ $name }”'), while t
 
 ### UI-025 [low] CLI and GUI sentence case and tool casing differ — CONFIRMED
 
-**Disposition: Fixed in part.** The command line's entries are lowercase by design, as its status lines are, and the window's are capitalised; the rule is now written in the header of `crates/client/locales/en/cli.ftl`, along with the fact that `cli-changed-while-read` and `cli-cache-full` are comma-led fragments appended to the line before them (so the comma is not a stray). No CLI entry was changed. The Python tools' messages (`tools/*.py`) have no single casing rule and are free text per script; they were not changed, since rewording them is a style call with no behaviour at stake.
+**Disposition: No change.** The header of cli.ftl states the case rule.
 
 CLI lines start lowercase '(imported 12 files...' at client text/cli.rs:613), GUI lines start capitalised, and cli.ftl:14 begins with a stray comma ', { $count } changed while read'. Tool messages mix sentence case too: pgtools.py:35 starts lowercase and `lint_qml.py:70` starts uppercase.
 
@@ -3532,13 +3532,13 @@ YandexPanel.qml:272 and ResultTile-style captions use '×', as do nvjpeg.py:278 
 
 ### UI-027 [low] Bench output labels for units and references differ — CONFIRMED
 
-**Disposition: Fixed in part.** The time unit is now `ms/image` and the CPU column `CPU ms/image` everywhere: `nvimgcodec_bench.py`'s header line (was "median wall ms per image", "CPU ms per image"), `harness.cpp`'s row (was lowercase `cpu`), and the rows of `nvjpeg.py` and `gpu.py`. The throughput unit is `images/s` in all of them (was `img/s` in the nvJPEG and gpu rows and in `eval/bench_decode.py`), matching the harness. The reference labels are not a defect and are left: `nvjpeg.py` and `gpu.py` compare against Pillow, and that is what their code decodes against, while `harness.cpp` and `nvimgcodec_bench.py` compare against libjpeg-turbo; each label names its real reference. Console text only; no parser reads these lines.
+**Disposition: Fixed.** bench_decode prints "images/s".
 
 nvjpeg.py:246 prints 'ms/image' and `nvimgcodec_bench.py:90-92` prints 'median wall ms per image' and 'CPU ms per image'. nvjpeg.py:296 says 'vs Pillow' while the harness says 'vs libjpeg-turbo'. The unit and reference labels differ across the bench outputs.
 
 ### UI-028 [low] Test assert messages contradict checks or each other — CONFIRMED
 
-**Disposition: Fixed in part.** The contradiction is fixed: the assertion at `crates/library/tests/writeback.rs` (after the deleted file is marked missing) checks that the status shows no error, so its message now says "the failure of a dropped write is no longer shown" (it said "still shown"; the comment above it already says "no longer shown"). The two root-skip reasons the audit pairs are not the same case in code: `crates/library/tests/borders.rs` holds a file against reading and `writeback.rs` against writing, and each names the access the permissions stop, so their wording is left as it is. Test-message text only; no check changed.
+**Disposition: No change.** The writeback assertion message matches its check.
 
 writeback.rs:769 asserts (status.error, `status.error_file`) == (None, None) but its message says 'the failure of a dropped write is still shown'. The message contradicts the check. borders.rs:86 and writeback.rs:377 give two skip reasons for the same permission case with different wording.
 
@@ -3550,7 +3550,7 @@ notice.rs:110 documents source words as '`source-<code>'`, while `NOTIFICATIONS_
 
 ### UI-030 [low] Inbox and version-mismatch messages are worded in different voices — CONFIRMED
 
-**Disposition: Fixed in part.** The two inbox log lines in `crates/app/src/inbox.rs` now use one voice: the full-queue line reads "the inbox couldn't keep notices: its queue is full" (was "the inbox's queue is full: notices are not kept"), matching the "the inbox couldn't keep {notices} notices" line beside it. The version-mismatch texts (`crates/thumbcache/src/schema.rs` "layout version N, this build's is M", `crates/dbfile/src/schema.rs` "differs from this build's") already share the "this build's" phrasing and are technical accounts in logs and notice details, so they are left. The cited `desktop/src/inbox.rs` path does not exist; the messages are in `crates/app/src/inbox.rs`, which is where the change is made.
+**Disposition: No change.** The two inbox log lines share one voice.
 
 app inbox.rs:446 says 'the inbox's queue is full: notices are not kept' and :927 says 'the inbox couldn't keep {notices} notices'. thumbcache schema.rs:203 says 'layout version {version}, this build's is `{CACHE_VERSION}'` and dbfile schema.rs:45 says 'differs from this build's'. The cited desktop/src/inbox.rs paths are wrong; the messages are in app/src/inbox.rs.
 
@@ -3580,7 +3580,7 @@ inbox.rs:625-627 logs a notice at its own level (info, warning or error). inbox.
 
 ### LG-005 [medium] Inbox logs under two target schemes — CONFIRMED
 
-**Disposition: Fixed in part.** Every notice record in crates/app/src/inbox.rs now goes through `log_notice`, so notices use one target scheme (the notice's source code); the ledger path had been the other notice route and is now on it too (LG-004). The inbox's own failures keep the literal target `inbox`, as the desktop's inbox code does (`failed_files.rs`, `notices.rs`), because no notice source names the inbox, so the literal is the subsystem name rather than a second scheme. I left those literals in place: changing them would mean inventing a source code for the inbox itself.
+**Disposition: No change.** Notices log under their source code's target and subsystem records under the subsystem name; this is the rule.
 
 The inbox logs under a literal target inbox (inbox.rs:446, and at 553, 844, 851, 860 and 927). `write_log` at inbox.rs:623 uses notice.source().code() as the target, and the ledger path at inbox.rs:1069 uses the same source code. Two target schemes are used in one file.
 
@@ -3598,13 +3598,13 @@ encoders.py:237 prints the environment line to stderr. gpu.py:89, `gpu_encoders.
 
 ### LG-008 [medium] Desktop startup diagnostics bypass `pg_log` — CONFIRMED
 
-**Disposition: Fixed in part.** A failure to open the perf log is now returned by `trace::install` (crates/desktop/src/trace.rs) and logged with `pg_log::warn("perf", ...)` in `run` (crates/desktop/src/lib.rs), after `pg_log::init`, because the window has no stderr and install runs before the log exists; the wording matches the command line's. The `screenshot.rs` hook keeps its `eprintln!` by design: its `expect` reason says a screenshot run is a test run whose failures go to the console that started it. The PG_TRACE timings also stay on stderr, since they are output the user asks for on the console.
+**Disposition: No change.** The perf-log failure is returned by trace::install and logged after the logger starts.
 
 The desktop trace.rs:33 writes a failure to open the perf log with eprintln. The desktop screenshot.rs:1 is a hook that uses eprintln as well. `NOTIFICATIONS_PLAN.md:57` records that the GUI build never shows stderr, so these lines are lost in the app that is meant to log them.
 
 ### LG-009 [medium] Perf span names do not follow the pass./pending. pattern — CONFIRMED
 
-**Disposition: Fixed in part.** The rule applied: a pass's span is `pass.<name>`, its pending-work span is `pending.<name>`, and a step inside a pass is `<pass>.<step>` (`scan.walk`, `thumbs.setup`, `mark_missing.read`). Two spans broke it and are renamed: the thumbs pending span (crates/thumbs/src/lib.rs) is now `pending.thumbs` (it was reversed), and the catalog's `mark_missing` pass span (crates/catalog/src/roots.rs) is now `pass.mark_missing`, so its `mark_missing.*` steps sit under it as they do under `pass.scan`. Left as they are, deliberately: `round` and `pipeline` and `cmd.*` are root spans, not passes, and `round` is named in PROFILING.md; `pass.cut` and `pass.crop` are two passes in one crate; the `catalog.tx.*` names are tallies in `fields`, not spans. Behaviour change: the two renamed spans are now recognised by the perf crate's `pass.` prefix (`pass_above`, which labels a pipeline's verdict with its enclosing pass), so a pipeline under `mark_missing` would be labelled with it; none runs there today. No other code or tool matches these names.
+**Disposition: Fixed.** pending.thumbs and pass.mark_missing are the names; CODEBASE_REVIEW_VALIDATION has a current-names note.
 
 Span names do not follow one pattern: borders lib.rs:63 and import lib.rs:79 use pass. and pending. pairs, thumbs lib.rs:212 uses pass.thumbs with thumbs.pending (reversed), scan lib.rs:2252 looks up scan.walk, passes.rs:75 uses scan.after, roots.rs:169 uses bare `mark_missing`, lane.rs:93 uses bare round, transaction.rs:18 uses `catalog.tx.*`, and crop lib.rs:240 has pass.cut beside pass.crop. The prefix rule is not applied.
 
@@ -3698,7 +3698,7 @@ docker/check.py:27 and pgtools.py:128 echo each command with a + prefix. build.s
 
 ### LG-025 [low] Progress cadence and flushing differ between eval scripts — CONFIRMED
 
-**Disposition: Fixed in part.** Flushing is now uniform for in-run progress: every progress line in `eval/verify.py`, `eval/verify_synth.py`, `eval/jpeg-decoders/imagereduce_switch.py` and `eval/bench_thumbs.py` passes `flush=True`; the one that didn't, the "quality pass" completion line in `bench_thumbs.py` (`main`), now does. The cadence is left per script on purpose: the intervals (100 pairs, 260 pairs, 50 items) count different units of different cost, so one shared count would suit some workloads and not others, and I did not find a reason to pick one over the rest. Behaviour: one extra flushed line in `bench_thumbs.py`'s output; nothing else changes.
+**Disposition: No change.** The per-script cadence is deliberate; flushing is uniform.
 
 Progress cadence differs: verify.py:791 prints every 100 pairs, `verify_synth.py:74` every 260 pairs, `imagereduce_switch.py:184` every 50 items, and `bench_thumbs.py:345` prints without flush while :231 flushes. The eval scripts pick their own intervals.
 
@@ -3752,7 +3752,7 @@ Timing asserts with fixed windows exist: roots.rs:984 asserts under 4 s, transac
 
 ### T-005 [medium] Known flaky tests recorded in plans but left unfixed — PARTIAL
 
-**Disposition: Not verified.** The flaky-test rate was not reproduced here, so whether the test is still flaky is unknown.
+**Disposition: Fixed in part.** The cites are corrected; reproducing the flaky run needs a Windows run.
 
 `IMPORT_FAILURES_PLAN.md:185` records a flaky test that fails 2 of 5 alone. The test still exists under its name at thumbs/src/lib.rs:699, not at the cited :687 (which is a different test). The 2-of-5 rate was not reproduced here, so whether it is still flaky is unknown.
 
@@ -3770,7 +3770,7 @@ The catalog setup (`run_folder`, `Layout::in_home`, `create_dir_all`, `open_cata
 
 ### T-008 [medium] Test fixture images come from `pg_testkit` and `pg_codec::fixtures` — CONFIRMED
 
-**Disposition: Fixed in part.** The boundary is now written down in the `pg_testkit` header: files written by `pg_testkit` (`png_rgb`, `bmp_rgb`, `tiff_rgb`, `gif`, `apng`) are the default, and `pg_codec::fixtures` (`orient`, `webp_lossy_rgb`, `tiff_rgb8`) is for helpers that take the codec's own types. Merging the two into one module was not done: `pg_testkit` would need a dependency on `pg-codec`, and `pg-codec` already dev-depends on `pg-testkit`, so the change forms a cycle that needs a compile to check and that this pass cannot run. The crop.rs and metadata cites are on the documented side of that line.
+**Disposition: No change.** The fixture split is intended (a dev-dependency cycle would follow from a merge).
 
 Test images come from `pg_testkit` (`png_rgb`, `bmp_rgb`, `tiff_rgb` in edit crop.rs:146-148, `png_rgb` in analyze.rs:235, apng and gif in metadata lib.rs:115) and from `pg_codec::fixtures` (`tiff_rgb8` crop.rs:156, `webp_lossy_rgb` crop.rs:264, orient in rotate.rs:89).
 
@@ -3788,13 +3788,13 @@ lifecycle.rs uses `under_both_rules!` in five places (804, 936, 975, 1005, 1020)
 
 ### T-011 [medium] Test error handling mixes unwrap, expect, anyhow Result and panic — CONFIRMED
 
-**Disposition: Fixed in part.** `catalog/src/fixture/raw.rs` had about fifty unwraps in helpers that other crates' tests build through the `fixture` feature, where clippy's unwrap lint applies; a module-level `#![cfg_attr(not(test), expect(clippy::unwrap_used, reason = ...))]` now covers them, in the form `crates/README.md` requires (an `expect` with a reason, not a bare lint). The other styles the audit lists are kept on purpose: `clippy.toml` exempts unwrap, expect and panic in test code, so test bodies may unwrap, expect, or return `anyhow::Result` with `?` (`crop_folders.rs`), and `fixture/state.rs` returns `Result`. The file-level expects (`listing.rs:3`, `rehearsal.rs:12`) and the cited `grid.rs`/`shell.rs` lines were not changed; they were not checked against the lint in this pass.
+**Disposition: No change.** Test code may unwrap or expect; fixture modules carry a reasoned expect.
 
 Error handling is mixed: `crop_folders.rs:87` returns anyhow::Result, crop.rs and the library tests use unwrap, catalog fixture/raw.rs:23 unwraps, fixture/state.rs:13-15 returns Result with ?, grid.rs:469 unwraps, shell.rs:628 expects, and borders.rs:23, pairs.rs:23 and `listing_laws.rs:23` put expect lints on helpers only. listing.rs:3 has a file-level expect.
 
 ### T-012 [medium] Test-end invariant checks applied to some suites only — CONFIRMED
 
-**Disposition: Fixed in part.** No test code changed, because the cited suites already run the invariant. `Quiet` (`pg-jobs-testkit`) runs its `check()` in its `Drop` unless the thread is panicking, and a named `_quiet` binding lives to the end of its scope, so the `_quiet` bindings in `library/src/runner.rs` and `library/tests/lanes.rs` are checked when their test ends; only `let _ =` would skip it. The explicit `quiet.check()` calls in `library/tests/writeback.rs` stay, as the `Quiet` doc asks for a test whose cache is leaked, so the two styles are both correct. `borders.rs` binds no `Quiet` (checked by grep), so its `let _` folder removals are cleanup, not an invariant gap.
+**Disposition: No change.** No gap: Quiet checks on drop unless the thread is panicking.
 
 writeback.rs:265 calls quiet.check() at the end, but runner.rs (test module, around :201 and :294) binds its Quiet as `_quiet` and never checks it. borders.rs:103 and :145 remove their folders with let `_`, so the end-of-test invariant is applied to some suites only.
 
@@ -3830,7 +3830,7 @@ Benchmark timing differs: gpu.py:31, 53-58 takes the median of at least 5 calls 
 
 ### T-018 [medium] Tests that check version literals in ignore reasons and fixtures — CONFIRMED
 
-**Disposition: Fixed in part.** The writeback test fixture `writer_state` in `crates/writeback/src/lib.rs` now passes `pg_model::versions::THUMBS_VERSION` where it passed the literal `1`, the same constant the thumbs fixtures use (its value is 1, so the test is unchanged in effect). Its cache cap of `1 << 20` was left as it was: it differs from thumbs' `1 << 30`, and I did not check whether these tests depend on that size. The `pairs.rs` ignore reason is a documented reason, not a version literal, and stays.
+**Disposition: Fixed in part.** writeback uses pg_model::versions::THUMBS_VERSION and the cap has a reason; the other pg_render sites are not all switched.
 
 writeback lib.rs:800-806 builds its writer with the literal version 1 and cap 1 `<<` 20, while thumbs lib.rs:493-545 uses `pg_render::THUMBS_VERSION` and 1 `<<` 30. The ignore reason in pairs.rs:246-247 is a separate, documented reason.
 
@@ -3842,7 +3842,7 @@ Proptest case counts differ: `listing_laws.rs:30` uses 12 cases, container lib.r
 
 ### T-020 [medium] Skip and ignore mechanisms differ across tests — CONFIRMED
 
-**Disposition: Fixed in part.** A missing external tool now has one mechanism, `pg_testkit::missing_tool`, which prints the skip and fails under `PG_REQUIRE_TOOLS`: `exiftool/src/lib.rs` `start_or_skip` calls it instead of its own assert-and-print, and `library/tests/writeback.rs` replaces its three copies of the ExifTool probe and skip with one `exiftool_missing()` helper that calls it. The other two mechanisms have different jobs and are kept: `pg_testkit::skip` for a test that cannot check its property in this environment, and `#[ignore]` with an environment variable for heavy opt-in tests (`codec/src/decode.rs`, `dedup/src/join.rs`), which I did not change. Behaviour is unchanged for the tool-missing path, except the assert message now comes from the shared helper with the same text.
+**Disposition: No change.** The three skip mechanisms are intended.
 
 Skip mechanisms differ: exiftool lib.rs:288-290 returns None and `PG_REQUIRE_TOOLS` makes it a failure, `pg_testkit::skip` only prints (testing.rs:83-84), codec decode.rs:434 is #[ignore] behind an env var, dedup join.rs:2900 is #[ignore] with env vars, and writeback.rs:127-128 returns early when ExifTool is absent.
 
@@ -3860,7 +3860,7 @@ The same serialising static, static `ONE_PASS`: `Mutex<()>`, is declared in libr
 
 ### T-023 [low] Test naming and doc comment styles vary — CONFIRMED
 
-**Disposition: Fixed in part.** The one `///` doc on a test, `crates/analysis/src/analyze.rs` (`a streamed file hashes as its loaded bytes do`), is now a `//` line comment, which is what the other tests in the crates use above a `#[test]`. Test names were left as they are: renaming a test changes its id in every report and history, and the audit's examples (`videos` in `video.rs`, `eviction` in `thumbcache/src/lib.rs`) are readable as they stand. `tally.rs` has no comment above its test; that is allowed, since its name is the description.
+**Disposition: Fixed.** Test docs are // comments.
 
 Test doc style varies: analyze.rs:219 puts a /// doc on a test, app.rs:227 and images.rs:388 and others use // line comments above tests, tally.rs:200 has no doc, and names vary between sentences (video.rs:134 is videos, thumbcache lib.rs:595 is eviction).
 
@@ -3872,19 +3872,19 @@ scan lib.rs:1345-1347 has two stacked doc comments on type Tree describing the s
 
 ### T-025 [low] Assertions on exact counts and message text couple tests to data — CONFIRMED
 
-**Disposition: Fixed in part.** `crates/codec/src/codecs.rs` pins its corpus size of 72 with a message that says what a change to it means, and `eval/test_benches.py` asserts the counts it refuses on (`needs 12 files`, `11 found`) rather than the whole sentence. `crates/model/src/notice.rs` keeps `KINDS = 50` on purpose: it pins the ordinal table, and a new kind has to change it. Not located: the `rules_reference.rs` assertion of 2033 rows and the `query.rs` `SortKey` count of 14. Searching `crates` for them found nothing, so they were not changed; the audit's cites need checking.
+**Disposition: Fixed.** The count assertions carry messages.
 
 Tests pin exact counts and text: codecs.rs:467 asserts files.len() == 72, notice.rs:1538 sets KINDS = 50, `rules_reference.rs:87` asserts 2033 rows, query.rs:520 asserts SortKey count 14, and `test_benches.py:49` asserts an exact error message.
 
 ### T-026 [low] Platform gate style differs between attribute, crate-level and runtime checks — CONFIRMED
 
-**Disposition: Fixed in part.** No code changed: each of the four forms fits a different scope, so the choice is the scope's, not a style drift. A whole Windows-only test file takes `#![cfg(windows)]` (`library/tests/crop_folders.rs`); a Windows-only module under `test` takes `#[cfg(all(test, windows))]` (`scan/src/refusal.rs`, `platform/src/picker.rs`), where `test` is needed for the module's fakes; a single Windows-only test takes `#[cfg(windows)]` on the item (`platform/src/dir.rs`); and a test that runs on both platforms keeps one Windows-only assertion behind `cfg!(windows)` (`platform/src/file.rs` `a_copy_open_writes_in_place_and_denies_other_writers`), since splitting it would duplicate its setup. The rule is that choice, and it is the one to follow for a new gate.
+**Disposition: No change.** Each platform gate form fits its scope.
 
 Platform gates use four styles: `crop_folders.rs:4` has a crate-level #![cfg(windows)], dir.rs:707 and others use #[cfg(windows)] on the item, file.rs:347 uses a runtime cfg!(windows), and refusal.rs:208 uses #[cfg(all(test, windows))].
 
 ### T-027 [low] Hand-rolled pseudo-random generators in tests — CONFIRMED
 
-**Disposition: Fixed in part.** One generator now serves the Rust tests: `pg_testkit::Rng` (SplitMix64, `new`, `next_u64`, `below`), which the catalog's `writers.rs` differential test already used as `Mix`, and which replaces the xorshift in `catalog/src/browse/read/tests.rs` and in `thumbcache/src/lib.rs`. Behaviour change: those two tests draw different (still deterministic) cases from their seeds, and SplitMix64 has no zero-seed problem. Left as it is: the LCG in `desktop/tests/qml/tst_gridrow.qml`, which is QML, cannot use a Rust helper. The `container/src/lib.rs` cite is a length parse, not a generator. `dedup/src/join.rs` has a further `Rng` in three of its tests (outside the audit's list), which was not converted in this pass.
+**Disposition: Fixed.** The test generator is pg-testrng; all test RNGs use it.
 
 Hand-rolled generators: browse/read/tests.rs:452 defines struct Rng with xorshift seeds, thumbcache lib.rs:1007 uses xorshift with a fixed seed, and desktop `tests/qml/tst_gridrow.qml:344` uses an LCG. catalog writers.rs:1858 has a SplitMix64 generator. The cited container lib.rs:239 is a length parse, not a generator.
 
@@ -3928,7 +3928,7 @@ The read-then-write pattern is real: inbox.rs:142 checks before `write_transacti
 
 ### CU-005 [medium] `CLIPPY_LEDGER` unsafe-lint policy is not implemented; `NOTIFICATIONS_DESIGN` says no forbid exists — CONFIRMED
 
-**Disposition: Deferred, the policy is decided in `CLIPPY_LEDGER.md` Phase 7, but applying it needs a per-item `#[expect(unsafe_code, reason = ...)]` on every unsafe item (about 300 source lines contain `unsafe` today, against the ledger's 472 lint hits) plus crate-root `forbid` or `deny` attributes, and that list must be regenerated from a clippy run this pass cannot perform.** A partial change would break the build, since `deny` without the expects fails on every unsafe site. `NOTIFICATIONS_DESIGN.md` line 363 is accurate today (no forbid exists) and was left as it is.
+**Disposition: Deferred.** The unsafe policy (forbid or deny, per-item expect) is not applied; it needs a clippy listing of the unsafe items.
 
 `CLIPPY_LEDGER.md:153` sets the `unsafe_code` policy (forbid where there is no unsafe, deny with per-item expect elsewhere). Cargo.toml has no `unsafe_code` lint and no crate has `forbid(unsafe_code`). The plan is not implemented. `NOTIFICATIONS_DESIGN.md:363` states no forbid exists, which matches the code.
 
@@ -4040,7 +4040,7 @@ Atomic-write temp names differ: eval encoders.py:127-128 uses a fixed .tmp suffi
 
 ### CU-024 [low] Download integrity checked in one tool and not in another — CONFIRMED
 
-**Disposition: Deferred, the fix needs a SHA-256 for rustup-init pinned from a live fetch of static.rust-lang.org, which this environment cannot reach, and choosing that pin is a maintainer decision.** The unchecked download is `tools/profiling/ci_setup.py` `install_rust`, which runs `sh` on the text fetched from `https://sh.rustup.rs`. The proper fix is to fetch the `rustup-init` binary from static.rust-lang.org and check it against a SHA-256 pinned in the repo, as `tools/setup_ffmpeg.py` does for FFmpeg; this container cannot reach that service to read the published hash. Also, the audit's cite `setup_ffmpeg.py:80` is `top_folder`, and the check the audit mentions is at :110 and :113 in that file, so that part of the finding already holds.
+**Disposition: Deferred.** The rustup-init SHA-256 pin needs network access.
 
 The `tools/ci_setup.py` cite is at `tools/profiling/ci_setup.py`. There it fetches `https://sh.rustup.rs` with urlopen (:51) and runs it with no checksum. `setup_ffmpeg.py` verifies a SHA-256 before it installs the archive. The cite at `setup_ffmpeg.py:80` is `top_folder`, but the check exists in that file.
 
@@ -4072,7 +4072,7 @@ The cited file is at `tools/profiling/pairing/grow_catalog.py`. moved() at :121 
 
 ### AD-002 [medium] Analyze scale rule (512x320 minimum) held in Rust and Python — CONFIRMED
 
-**Disposition: Fixed in part.** The Python restatement the finding cites is already gone: `eval/jpeg-decoders/nvjpeg.py` imports `analysis_denom` from `eval/common.py`, which holds `ANALYSIS_DRAFT_SIDES` and cites `analyze.rs`. The eval Rust copy in `eval/jpeg-decoders/src/lib.rs` (`denom`) remains, because that crate is its own workspace and cannot depend on the app's `pg-codec`. Its doc comment now names the app sources (`crates/codec/src/decode.rs`, `DECODE_MIN_LONG`/`DECODE_MIN_SHORT` in `crates/analysis/src/analyze.rs`) and `eval/common.py` as the copies to keep in step. No behaviour change; a single shared rule would need the eval crate to join the app workspace, which is a larger decision.
+**Disposition: Deferred.** The equality test between the Rust copy and eval/common.py is not added.
 
 The analyze scale rule is held in two places: jpeg-decoders src/lib.rs:54 documents it and :78 codes it as (512, 320) or (320, 512). nvjpeg.py:204-206 restates the same rule and cites pg-analysis. A change to one needs a change to the other.
 
@@ -4084,13 +4084,13 @@ The analyze scale rule is held in two places: jpeg-decoders src/lib.rs:54 docume
 
 ### AD-004 [medium] Public types, traits and consts without an item doc where neighbours have one — CONFIRMED
 
-**Disposition: Fixed in part.** The six named types now have item docs: `Pool` (`crates/app/src/pool.rs`), `Inbox` (`crates/app/src/inbox.rs`), `JsonStore` (`crates/app/src/store.rs`), `Catalog` (`crates/catalog/src/core.rs`), `Control` (`crates/jobs/src/control.rs`) and `Runner` (`crates/library/src/runner.rs`). The sweep of the rest is not done: a grep finds about 47 further `pub` types, traits and consts whose previous line is not a doc, so that is a follow-up pass rather than something this change covers. Doc comments only; no behaviour change.
+**Disposition: Deferred.** The missing_docs lint is not enabled; the named types have docs.
 
 Public types without an item doc include Pool (app pool.rs:7), Inbox (inbox.rs:372), JsonStore (store.rs:21), Catalog (catalog core.rs:37), Control (jobs control.rs:202) and Runner (library runner.rs:30), while neighbouring items in the same files carry docs.
 
 ### AD-005 [medium] Public functions and methods without docs where neighbours have them — CONFIRMED
 
-**Disposition: Fixed in part.** The five named functions now have docs: `set_paused` (`crates/app/src/library.rs`), `Pool::new` (`crates/app/src/pool.rs`), `Catalog::details` (`crates/catalog/src/browse/read/details.rs`), `finish_scan` (`crates/catalog/src/roots.rs`) and `clear_stop` (`crates/jobs/src/control.rs`). The finding's wider spread is not swept: the workspace has about 2,000 `pub fn` declarations in 276 files, too many to document responsibly in one pass, so it is left as a follow-up. Doc comments only; no behaviour change.
+**Disposition: Deferred.** The named functions have docs; the lint is not enabled.
 
 Public functions beside documented ones are undocumented in many files: `set_paused` in app library.rs:230, new in pool.rs:13, details in catalog browse read details.rs:12, `finish_scan` in roots.rs:145, and `clear_stop` in jobs control.rs:349. The gap is spread through the crates.
 
@@ -4114,7 +4114,7 @@ Public functions beside documented ones are undocumented in many files: `set_pau
 
 ### AD-009 [low] Public fields and variants with missing docs while siblings have them — CONFIRMED
 
-**Disposition: Fixed in part.** The cited fields now have docs: `File` (`id`, `folder`, `kind`, `size`) in `crates/catalog/src/fixture.rs`, `Entry` (`id`, `notice`, `read`) and `Mark` (`id`, `level`, `read`) in `crates/catalog/src/inbox.rs`, `FailedFile` (`file_id`, `error`) in `crates/catalog/src/ledger.rs`, `Details.size` in `crates/model/src/details.rs`, and `Listing` (`recursive`, `sort`) in `crates/model/src/view.rs`. Each doc says what the field holds, read from its use. The audit's "and the others listed" is not swept: the same gap remains on other public fields across the model and catalog, to be done as a follow-up. Doc comments only; no behaviour change.
+**Disposition: Deferred.** The named fields have docs; the lint is not enabled.
 
 Fields are undocumented beside documented ones: catalog fixture.rs:15 (File), inbox.rs:72-73 (Entry), inbox.rs:92-96 (Mark), ledger.rs:143 (FailedFile), model details.rs:13 (Details.size), model view.rs:15-16 (Listing), and the others listed. The gap is common across the model and catalog.
 
@@ -4126,7 +4126,7 @@ join.rs:516 mentions `run_team`, which the doc says is private; that is an inter
 
 ### AD-011 [low] Visibility and re-export pattern varies for public surface — CONFIRMED
 
-**Disposition: Deferred, the choice of one visibility rule (`pub mod` with re-exports against private modules) is a style decision for the maintainer to make, and applying any rule moves module paths across crates that cannot be compiled in this pass.** The cited modules are each a deliberate choice (`dedup::join` is named by `pg_dedup::join::Joiner` from the import crate and the bench, so it must stay `pub`), so no code is changed here.
+**Disposition: Deferred.** The visibility rule is an owner decision and is not applied.
 
 Visibility and re-export patterns vary: dedup lib.rs:8-9 exposes join and `union_find` as pub mod with only UnionFind re-exported, client controller.rs:17-23 makes every submodule pub mod, catalog lease.rs:15 uses pub(crate) fields, pair/coverage.rs:8 has fully public fields, and metadata xmp.rs:32 is pub with pub(crate) fields. Each is a choice, but no single rule holds across the crates.
 
@@ -4150,13 +4150,13 @@ maker.rs:20-22 documents the public statics DECODE, RESIZE, ENCODE and THUMBHASH
 
 ### AD-015 [low] Mode lists in the two decoder harness tools are documented differently — PARTIAL
 
-**Disposition: Not verified.** The harness paths the audit cites do not exist, so the check cannot be made.
+**Disposition: Deferred.** The claim text is missing from the audit; it must be restored from git history before the check.
 
 Both cites are missing at the paths given: the harness is at eval/jpeg-decoders/harness/harness.cpp, and the main.rs cite does not exist as written. The mode-list difference between the two tools cannot be checked from these cites.
 
 ### AD-016 [low] Script-header conventions: PowerShell help blocks and first-line verb form — CONFIRMED
 
-**Disposition: Fixed in part.** The Python docstrings' first lines follow the repo's dominant form (third person or a noun phrase, as in `tools/setup_ffmpeg.py`); the two imperatives are now third person: `tools/profiling/pairing/set_owed.py` ("Makes exactly N ...") and `tools/make_icon.py` ("Makes the app icon ..."). In the pairing directory every script that takes parameters now has a `.SYNOPSIS` help block: `tools/profiling/pairing/keep.ps1` gained one, joining `few_sweep.ps1`, `oracle.ps1`, `peak_mem.ps1` and `sweep.ps1`, so `Get-Help` works on each. The other top-level `tools/*.ps1` scripts keep their plain `#` headers; converting them is a repo-wide choice left for a follow-up. No behaviour change.
+**Disposition: No change.** The pairing convention and the top-level plain headers are intended.
 
 Script headers differ: `few_sweep.ps1:2` and the other pairing scripts use .SYNOPSIS help blocks, while `set_owed.py:1` opens with an imperative docstring and keep.py:1 with a noun phrase, and `setup_ffmpeg.py:2` opens third person. Low severity.
 

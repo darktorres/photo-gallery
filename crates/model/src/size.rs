@@ -40,10 +40,27 @@ impl RowHeight {
     }
 }
 
+/// Why a row height is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowHeightError {
+    /// The pixel count is outside [`ROW_HEIGHT`].
+    OutOfRange(u32),
+}
+
+impl std::fmt::Display for RowHeightError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfRange(px) => write!(f, "row height {px} is outside {ROW_HEIGHT:?}"),
+        }
+    }
+}
+
+impl std::error::Error for RowHeightError {}
+
 impl TryFrom<u32> for RowHeight {
-    type Error = String;
-    fn try_from(px: u32) -> Result<RowHeight, String> {
-        RowHeight::new(px).ok_or_else(|| format!("row height {px} is outside {ROW_HEIGHT:?}"))
+    type Error = RowHeightError;
+    fn try_from(px: u32) -> Result<RowHeight, RowHeightError> {
+        RowHeight::new(px).ok_or(RowHeightError::OutOfRange(px))
     }
 }
 
@@ -85,10 +102,27 @@ impl ThumbHeight {
     }
 }
 
+/// Why a thumbnail height is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThumbHeightError {
+    /// The pixel count is outside [`THUMB_HEIGHT`].
+    OutOfRange(u32),
+}
+
+impl std::fmt::Display for ThumbHeightError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfRange(px) => write!(f, "thumbnail height {px} is outside {THUMB_HEIGHT:?}"),
+        }
+    }
+}
+
+impl std::error::Error for ThumbHeightError {}
+
 impl TryFrom<u32> for ThumbHeight {
-    type Error = String;
-    fn try_from(px: u32) -> Result<ThumbHeight, String> {
-        ThumbHeight::new(px).ok_or_else(|| format!("thumbnail height {px} is outside {THUMB_HEIGHT:?}"))
+    type Error = ThumbHeightError;
+    fn try_from(px: u32) -> Result<ThumbHeight, ThumbHeightError> {
+        ThumbHeight::new(px).ok_or(ThumbHeightError::OutOfRange(px))
     }
 }
 
@@ -104,9 +138,26 @@ impl From<ThumbHeight> for u32 {
     }
 }
 
+/// Why a float is refused as a positive finite number.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PositiveError {
+    /// The value is NaN, an infinity, zero or negative.
+    NotPositive(f64),
+}
+
+impl std::fmt::Display for PositiveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotPositive(v) => write!(f, "{v} is not a positive finite number"),
+        }
+    }
+}
+
+impl std::error::Error for PositiveError {}
+
 /// A positive finite number: the scale, a factor, or a width. Each wrapper below adds its own name.
-fn positive(v: f64) -> Result<f64, String> {
-    if v.is_finite() && v > 0.0 { Ok(v) } else { Err(format!("{v} is not a positive finite number")) }
+fn positive(v: f64) -> Result<f64, PositiveError> {
+    if v.is_finite() && v > 0.0 { Ok(v) } else { Err(PositiveError::NotPositive(v)) }
 }
 
 /// A screen's scale (its device pixel ratio): positive and finite.
@@ -127,8 +178,8 @@ impl Scale {
 }
 
 impl TryFrom<f64> for Scale {
-    type Error = String;
-    fn try_from(v: f64) -> Result<Scale, String> {
+    type Error = PositiveError;
+    fn try_from(v: f64) -> Result<Scale, PositiveError> {
         positive(v).map(Scale)
     }
 }
@@ -157,8 +208,8 @@ impl Factor {
 }
 
 impl TryFrom<f64> for Factor {
-    type Error = String;
-    fn try_from(v: f64) -> Result<Factor, String> {
+    type Error = PositiveError;
+    fn try_from(v: f64) -> Result<Factor, PositiveError> {
         positive(v).map(Factor)
     }
 }
@@ -188,8 +239,8 @@ impl GridWidth {
 }
 
 impl TryFrom<f64> for GridWidth {
-    type Error = String;
-    fn try_from(v: f64) -> Result<GridWidth, String> {
+    type Error = PositiveError;
+    fn try_from(v: f64) -> Result<GridWidth, PositiveError> {
         positive(v).map(GridWidth)
     }
 }

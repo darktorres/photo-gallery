@@ -192,7 +192,7 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() {
     check(&copy, "after the removal");
     let files_after = counts(&copy).into_iter().find(|(t, _)| t == "files").unwrap().1;
     assert_eq!(
-        usize::try_from(files_before - files_after).unwrap(),
+        u64::try_from(files_before - files_after).unwrap(),
         driven.files,
         "the rows that went are the rows the removal counted"
     );

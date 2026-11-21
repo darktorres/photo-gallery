@@ -12,15 +12,18 @@ use std::time::Duration;
 pub const CACHE_VERSION: i64 = pg_model::versions::CACHE_VERSION;
 
 /// The largest cap a new cache gets when none is set (`ThumbCache::open`), and the cap where the volume's size can't be
-/// read.
-pub const MAX_DEFAULT_CAP_BYTES: i64 = 50_000_000_000;
+/// read: 50 GiB.
+pub const MAX_DEFAULT_CAP_BYTES: i64 = 50 * GIB;
 
-/// The smallest cap a new cache gets by default.
-const MIN_DEFAULT_CAP_BYTES: i64 = 1_000_000_000;
+/// The smallest cap a new cache gets by default: 1 GiB.
+const MIN_DEFAULT_CAP_BYTES: i64 = GIB;
 
-/// The cap of a new cache in `dir` when none is set: a twentieth (5%) of the volume `dir` is on, between 1 GB
-/// (`MIN_DEFAULT_CAP_BYTES`) and 50 GB (`MAX_DEFAULT_CAP_BYTES`). A cache on a small disk can't fill it; one on a large
-/// disk gets the 50 GB it always had.
+/// One gibibyte (2^30 bytes): the unit of a cap the front ends name.
+const GIB: i64 = 1 << 30;
+
+/// The cap of a new cache in `dir` when none is set: a twentieth (5%) of the volume `dir` is on, between 1 GiB
+/// (`MIN_DEFAULT_CAP_BYTES`) and 50 GiB (`MAX_DEFAULT_CAP_BYTES`). A cache on a small disk can't fill it; one on a large
+/// disk gets the 50 GiB it always had.
 pub fn default_cap_bytes(dir: &Path) -> i64 {
     pg_platform::volume::space(dir)
         .and_then(|space| i64::try_from(space.total / 20).ok())
@@ -28,7 +31,7 @@ pub fn default_cap_bytes(dir: &Path) -> i64 {
 }
 
 /// A cache's size limit, in bytes: above zero and under `i64::MAX`, so no cap evicts every thumbnail or saturates. The
-/// front ends read the number (the command line's `--cap-gb`, the app's `PG_THUMB_CAP_GB`) and word their own errors.
+/// front ends read the number (the command line's `--cap-gib`, the app's `PG_THUMB_CAP_GIB`) and word their own errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cap(i64);
 
@@ -36,9 +39,10 @@ pub struct Cap(i64);
 const MAX_CAP_BYTES: f64 = 9.0e18;
 
 impl Cap {
-    /// `gb` GB as a cap, the fraction of a byte dropped; `None` for zero, negative, NaN, infinite and absurd sizes.
-    pub fn from_gb(gb: f64) -> Option<Cap> {
-        let bytes = gb * 1e9;
+    /// `gib` GiB (2^30 bytes) as a cap, the fraction of a byte dropped; `None` for zero, negative, NaN, infinite and
+    /// absurd sizes.
+    pub fn from_gib(gib: f64) -> Option<Cap> {
+        let bytes = gib * 1_073_741_824.0;
         (1.0..MAX_CAP_BYTES).contains(&bytes).then(|| Cap(pg_model::num::f64_to_i64(bytes)))
     }
 

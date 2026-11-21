@@ -4,7 +4,7 @@ encoders.py names its own outputs. Then encoders.py score rates them with the CP
 megapixel at Q75 (in-process for nvJPEG: host pixels in, JPEG bytes on the host out; gpujpegtool's own per-iteration
 encode time for GPUJPEG).
 
-    $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/gpu_encoders.py --gpujpeg EXE   (bin/python on Linux)
+    $PG_JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/gpu_encoders.py --gpujpeg EXE   (bin/python on Linux)
 """
 
 import argparse

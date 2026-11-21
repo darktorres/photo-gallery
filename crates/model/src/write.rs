@@ -1,6 +1,6 @@
 //! What a queued write changes in a file: the kinds the write queue (`file_writes`) holds. The queue stores them as
-//! their keys (`rating`, `rotation`: [`write_rating!`](crate::write_rating!), [`write_rotation!`](crate::write_rotation!)), and a notice
-//! (`notice::Notice::WriteDropped`) by the same keys. A write's value is [`Write`].
+//! their keys (`rating`, `turns`: [`write_rating!`](crate::write_rating!), [`write_turns!`](crate::write_turns!)), and a
+//! notice (`notice::Notice::WriteDropped`) by the same keys. A write's value is [`Write`].
 
 use crate::rating::Rating;
 use crate::turns::Turns;
@@ -14,9 +14,11 @@ macro_rules! write_rating {
     };
 }
 
-/// The write queue's key of quarter turns (see [`write_rating!`](crate::write_rating!)).
+/// The write queue's key of quarter turns (see [`write_rating!`](crate::write_rating!)). `rotation` is what the queue
+/// stores and what a finished copy's temp file is named for (`.name.rotation.pg-write`); it is the key's name, not the
+/// variant's.
 #[macro_export]
-macro_rules! write_rotation {
+macro_rules! write_turns {
     () => {
         "rotation"
     };
@@ -37,14 +39,14 @@ impl WriteKind {
     pub fn key(self) -> &'static str {
         match self {
             WriteKind::Rating => write_rating!(),
-            WriteKind::Turns => write_rotation!(),
+            WriteKind::Turns => write_turns!(),
         }
     }
 
     pub fn from_key(key: &str) -> Option<WriteKind> {
         match key {
             write_rating!() => Some(WriteKind::Rating),
-            write_rotation!() => Some(WriteKind::Turns),
+            write_turns!() => Some(WriteKind::Turns),
             _ => None,
         }
     }
@@ -56,11 +58,28 @@ impl From<WriteKind> for &'static str {
     }
 }
 
-impl TryFrom<String> for WriteKind {
-    type Error = String;
+/// Why a key is refused as a write's kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WriteKindError {
+    /// The key names no kind (see [`WriteKind::from_key`]).
+    NotAKind(String),
+}
 
-    fn try_from(key: String) -> Result<WriteKind, String> {
-        WriteKind::from_key(&key).ok_or_else(|| format!("not a write's kind: {key}"))
+impl std::fmt::Display for WriteKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotAKind(key) => write!(f, "not a write's kind: {key}"),
+        }
+    }
+}
+
+impl std::error::Error for WriteKindError {}
+
+impl TryFrom<String> for WriteKind {
+    type Error = WriteKindError;
+
+    fn try_from(key: String) -> Result<WriteKind, WriteKindError> {
+        WriteKind::from_key(&key).ok_or(WriteKindError::NotAKind(key))
     }
 }
 

@@ -11,7 +11,7 @@ use pg_model::turns::Turns;
 
 pub const FORMAT_JPEG: &str = "jpeg";
 
-/// What a thumbnail was made from: the file's mtime and its catalog rotation (`files.rotation`). A thumbnail is
+/// What a thumbnail was made from: the file's mtime and its catalog turns (`files.turns`). A thumbnail is
 /// current while both still match the file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Source {
@@ -34,7 +34,7 @@ pub struct ThumbWork {
     pub path: FilePath,
     pub source: Source,
     /// The file's size when the work was listed: a thumbnail is kept only if the file still has it.
-    pub size: i64,
+    pub size: u64,
     /// For a video, the time of its poster frame (`video::poster_ms`).
     pub poster_ms: Option<i64>,
     /// The catalog's change number for it (`files.seq`).

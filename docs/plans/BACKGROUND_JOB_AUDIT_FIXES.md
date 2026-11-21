@@ -268,7 +268,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
 ## Verification
 
 - `cargo test` over catalog, scan, jobs, import, borders, thumbs, thumbcache, dedup, writeback, library, model, cli
-  (native PowerShell, `QT_DIR` on PATH), then `just lint`; Linux CI pass in the pg-dev container only.
+  (native PowerShell, `PG_QT_DIR` on PATH), then `just lint`; Linux CI pass in the pg-dev container only.
 - Manual in the app: start a large scan, remove the folder mid-scan (job stops, nothing reappears, grid empties); remove,
   then re-add (analyses and ratings return); add a folder during a round (scanned); remove a root from the CLI while the app
   runs (the app's round stops); rename the catalog file and restore it (recovers without a manual wake); unplug a drive for

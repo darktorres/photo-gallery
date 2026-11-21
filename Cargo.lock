@@ -1771,6 +1771,7 @@ name = "pg-container"
 version = "0.1.0-dev"
 dependencies = [
  "crc32fast",
+ "pg-testrng",
  "proptest",
 ]
 
@@ -1804,6 +1805,7 @@ name = "pg-dedup"
 version = "0.1.0-dev"
 dependencies = [
  "pg-model",
+ "pg-testrng",
 ]
 
 [[package]]
@@ -1861,6 +1863,7 @@ version = "0.1.0-dev"
 dependencies = [
  "dhat",
  "pg-cli",
+ "pg-client",
  "pg-desktop",
  "pg-platform",
  "winres",
@@ -1909,7 +1912,6 @@ name = "pg-library"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
- "image 0.25.10",
  "pg-analysis",
  "pg-borders",
  "pg-catalog",
@@ -1960,6 +1962,7 @@ version = "0.1.0-dev"
 dependencies = [
  "arrayvec",
  "blake3",
+ "pg-testrng",
  "proptest",
  "serde",
  "serde_json",
@@ -2009,6 +2012,7 @@ dependencies = [
  "pg-metadata",
  "pg-model",
  "pg-perf",
+ "pg-platform",
  "pg-testkit",
  "pg-video",
  "thiserror 2.0.21",
@@ -2035,8 +2039,13 @@ dependencies = [
  "anyhow",
  "image 0.25.10",
  "pg-platform",
+ "pg-testrng",
  "png 0.18.1",
 ]
+
+[[package]]
+name = "pg-testrng"
+version = "0.1.0-dev"
 
 [[package]]
 name = "pg-thumbcache"

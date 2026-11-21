@@ -226,7 +226,7 @@ parajpeg's C++ (the viewer's full-size JPEG decoder, `crates/codec`) is built wi
 GCC/Clang attributes that MSVC lacks. `CLANG_CL` names another `clang-cl.exe`; the build fails with the install's name
 if none is found at `C:\Program Files\LLVM\bin`. The clang-cl the build uses is the one LLVM installs, the same as
 libclang's. Qt, at the Justfile's `qt_version`, for MSVC
-(the `msvc2022_64` kit, whose folder `QT_DIR` in `.env` names; `just doctor` checks it), with the **Qt Image Formats** add-on: the Yandex panel
+(the `msvc2022_64` kit, whose folder `PG_QT_DIR` in `.env` names; `just doctor` checks it), with the **Qt Image Formats** add-on: the Yandex panel
 shows remote previews through Qt's decoders, and without its `qwebp` plugin WebP results stay blank. Writing ratings into files needs
 [ExifTool](https://exiftool.org) on `PATH` (or `PG_EXIFTOOL`); without it they stay queued and the bottom bar
 says why. Its test (`crates/library/tests/writeback.rs`) works on generated files in
@@ -246,7 +246,7 @@ the same DLLs: the pinned Qt is built against FFmpeg 9, the same major version. 
 found at `PG_FFMPEG` if that is set, else in the pinned build's `bin` (`.deps/ffmpeg/bin`), else on `PATH`. The clips go in
 the temp folder's `scratch_video` (`PG_TEST_DIR` moves it), and the test skips itself without an ffmpeg.
 
-On a new machine, copy `.env.example` to `.env` and set `QT_DIR` and any path that differs from the defaults. Then `just doctor`
+On a new machine, copy `.env.example` to `.env` and set `PG_QT_DIR` and any path that differs from the defaults. Then `just doctor`
 says what is still missing, and `just setup` fetches the pinned FFmpeg into `.deps/ffmpeg`. `just` reads `.env` for every
 recipe, and the Python and cmd tools read it too; a plain `cargo` command sees only the real environment. The commands are in the `Justfile` ([just](https://just.systems); `just` lists them):
 
@@ -360,7 +360,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped. The cap is kept
   in the cache, so the app and `gallery thumbs` keep to the same one: a twentieth of its drive (1 to 50 GB) for a new cache, changed by
-  `gallery thumbs --cap-gb` or the app's `PG_THUMB_CAP_GB`, and shown by `gallery status`. The background job (or `gallery thumbs`) fills it at idle CPU
+  `gallery thumbs --cap-gib` or the app's `PG_THUMB_CAP_GIB`, and shown by `gallery status`. The background job (or `gallery thumbs`) fills it at idle CPU
   priority for the grid's current height, evicting only other heights, and starts over when the size changes.
   The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
   A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB without tone mapping, so

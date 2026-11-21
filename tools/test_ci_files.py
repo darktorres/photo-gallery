@@ -119,7 +119,7 @@ class Pins(unittest.TestCase):
     def test_the_windows_kit_is_under_the_drive_root(self):
         with mock.patch.object(sys, "platform", "win32"):
             values = dict(pin_values())
-        self.assertEqual(values["QT_DIR"], f"C:\\Qt\\{PINNED['qt_version']}\\msvc2022_64")
+        self.assertEqual(values["PG_QT_DIR"], f"C:\\Qt\\{PINNED['qt_version']}\\msvc2022_64")
         self.assertEqual(values["QT_INSTALL_ROOT"], "C:\\")
         self.assertNotIn("QMAKE", values)
 
@@ -134,7 +134,7 @@ class Pins(unittest.TestCase):
         with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"RUNNER_TEMP": runner}):
             values = dict(pin_values())
         kit = f"{runner}/Qt/{qt}/gcc_64"
-        self.assertEqual(values["QT_DIR"], kit)
+        self.assertEqual(values["PG_QT_DIR"], kit)
         self.assertEqual(values["QMAKE"], f"{kit}/bin/qmake")
         self.assertEqual(values["LD_LIBRARY_PATH"], f"{kit}/lib")
         self.assertEqual(values["EXIFTOOL_SOURCE_SHA256"], PINNED["exiftool_source_sha256"])
@@ -268,6 +268,31 @@ class Consumers(unittest.TestCase):
         self.assertIn(f"find_package(Qt6 {minor} ", cmake)
         example = (REPO / ".env.example").read_text(encoding="utf-8")
         self.assertIn(f"Qt/{PINNED['qt_version']}/msvc2022_64", example)
+
+
+class StaticFfmpegLibraries(unittest.TestCase):
+    """The FFmpeg libraries the static build links (build_static_ffmpeg.py's link check) are the ones the two Qt patches
+    name: pg-video.patch opens them, app-build.patch lists them. The patches' lists are literals, so each is read from its
+    text; a change to one list that the others miss fails here."""
+
+    @staticmethod
+    def quoted(text: str) -> list[str]:
+        return sorted(name.removesuffix(".lib") for name in re.findall(r'"([^"]+)"', text))
+
+    def test_the_patches_name_the_libraries_the_link_check_names(self):
+        build = (REPO / "tools" / "build_static_ffmpeg.py").read_text(encoding="utf-8")
+        link = re.search(r"libraries = \[([^\]]*)\]", build)
+        assert link is not None, "build_static_ffmpeg.py has no `libraries = [...]` list"
+        expected = self.quoted(link.group(1))  # the literal names; SYSTEM_LIBS (*SYSTEM_LIBS) are not FFmpeg's and are not quoted here
+        self.assertEqual(len(expected), 5)
+        app = (REPO / "tools" / "static-qt" / "app-build.patch").read_text(encoding="utf-8")
+        app_list = re.search(r"STATIC_FFMPEG_LIBS: &\[&str\] = &\[([^\]]*)\]", app)
+        assert app_list is not None, "app-build.patch has no STATIC_FFMPEG_LIBS list"
+        self.assertEqual(self.quoted(app_list.group(1)), expected, "app-build.patch STATIC_FFMPEG_LIBS")
+        video = (REPO / "tools" / "static-qt" / "pg-video.patch").read_text(encoding="utf-8")
+        video_list = re.search(r"for lib in \[([^\]]*)\]", video)
+        assert video_list is not None, "pg-video.patch has no `for lib in [...]` loop"
+        self.assertEqual(self.quoted(video_list.group(1)), expected, "pg-video.patch the library loop")
 
 
 if __name__ == "__main__":

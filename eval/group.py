@@ -35,7 +35,7 @@ from common import DEFAULT_MODEL, WORK_DIR, ground_truth, image_list
 
 PDQ_MIN_QUALITY = 50  # Meta: hashes below this quality are unreliable (flat or tiny images)
 MIN_EVIDENCE = 0.05  # weight of a verifier decision right at the noise threshold
-SHORTCUT_PDQ = 22  # accept without the verifier: PDQ distance <= this ...
+SHORTCUT_PDQ = 22  # under crates/model/src/pdq.rs MATCH_DISTANCE (31). Accept without the verifier: distance <= this ...
 SHORTCUT_SIM = 0.95  # ... or SSCD cosine >= this
 
 

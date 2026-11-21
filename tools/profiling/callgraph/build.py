@@ -3,8 +3,8 @@
 clang-cl): it was build.sh, which needed Git Bash.
 
 Pin 4's wrappers (pinrt/bin/pin-clang-cl++, pin-ld) around LLVM's clang-cl and lld-link, with Pin's own C and C++ runtime.
-SDE's mbuild scripts do the same but don't know Visual Studio 18. Needs LLVM (LLVM_DIR, default %ProgramFiles%\\LLVM) and the
-Windows SDK's kernel32.lib (KitsRoot10 in the registry). LLVM_DIR and PIN_ROOT (the SDE kit's pinkit folder, default under
+SDE's mbuild scripts do the same but don't know Visual Studio 18. Needs LLVM (PG_LLVM_DIR, default %ProgramFiles%\\LLVM) and the
+Windows SDK's kernel32.lib (KitsRoot10 in the registry). PG_LLVM_DIR and PIN_ROOT (the SDE kit's pinkit folder, default under
 LOCALAPPDATA) can come from the repo's .env, for keys the environment does not set.
 """
 
@@ -55,7 +55,7 @@ def tool(path: Path) -> str:
     """The program at `path`, with the extension Windows uses for it (.exe, .cmd, .bat); exits when it is not there."""
     found = shutil.which(str(path))
     if found is None:
-        sys.exit(f"build.py: {path} is not there: check the Pin kit (PIN_ROOT) and LLVM (LLVM_DIR)")
+        sys.exit(f"build.py: {path} is not there: check the Pin kit (PIN_ROOT) and LLVM (PG_LLVM_DIR)")
     return found
 
 
@@ -63,12 +63,12 @@ def main() -> None:
     if not WINDOWS:
         sys.exit("build.py: Windows only (Intel Pin and clang-cl)")
     load_env_file()
-    if os.environ.get("LLVM_DIR"):
-        llvm = Path(os.environ["LLVM_DIR"])
+    if os.environ.get("PG_LLVM_DIR"):
+        llvm = Path(os.environ["PG_LLVM_DIR"])
     elif os.environ.get("PROGRAMFILES"):
         llvm = default_llvm_dir()
     else:
-        sys.exit("build.py: LLVM_DIR is unset and ProgramFiles is unavailable: set LLVM_DIR")
+        sys.exit("build.py: PG_LLVM_DIR is unset and ProgramFiles is unavailable: set PG_LLVM_DIR")
     pin = Path(os.environ["PIN_ROOT"]) if os.environ.get("PIN_ROOT") else default_pin_root()
     here = Path(__file__).resolve().parent
     out = REPO / "target" / "pin"

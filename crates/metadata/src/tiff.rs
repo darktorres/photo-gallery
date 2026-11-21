@@ -26,7 +26,9 @@ pub(crate) const TIFF_BYTE: u16 = 1;
 pub(crate) const TIFF_ASCII: u16 = 2;
 pub(crate) const TIFF_SHORT: u16 = 3;
 pub(crate) const TIFF_LONG: u16 = 4;
+pub(crate) const TIFF_SBYTE: u16 = 6;
 pub(crate) const TIFF_UNDEFINED: u16 = 7;
+pub(crate) const TIFF_SSHORT: u16 = 8;
 pub(crate) const TIFF_LONG8: u16 = 16;
 pub(crate) const TIFF_IFD8: u16 = 18;
 
@@ -117,8 +119,8 @@ impl<'a> Tiff<'a> {
     /// block.
     fn value_range(&self, e: &Entry) -> Option<Range<usize>> {
         let unit: usize = match e.kind {
-            1 | 2 | 6 | 7 => 1,
-            3 | 8 => 2,
+            TIFF_BYTE | TIFF_ASCII | TIFF_SBYTE | TIFF_UNDEFINED => 1,
+            TIFF_SHORT | TIFF_SSHORT => 2,
             4 | 9 | 11 => 4,
             5 | 10 | 12 => 8,
             // LONG8, SLONG8 and IFD8: BigTIFF only.

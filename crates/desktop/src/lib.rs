@@ -154,14 +154,16 @@ pub fn run(args: &[OsString]) -> i32 {
     for bad in command_line::bad_options() {
         pg_log::warn("args", &bad.to_string());
     }
-    // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
+    // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gib` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
-    config.thumb_cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|text| {
-        let cap = text.trim().parse::<f64>().ok().and_then(pg_app::reexport::ThumbCap::from_gb);
+    config.thumb_cap = std::env::var("PG_THUMB_CAP_GIB").ok().and_then(|text| {
+        let cap = text.trim().parse::<f64>().ok().and_then(pg_app::reexport::ThumbCap::from_gib);
         if cap.is_none() {
             pg_log::warn(
                 "config",
-                &format!("PG_THUMB_CAP_GB: {text} isn't a number of GB above zero; the thumbnail cache keeps its cap"),
+                &format!(
+                    "PG_THUMB_CAP_GIB: {text} isn't a number of GiB above zero; the thumbnail cache keeps its cap"
+                ),
             );
         }
         cap
@@ -275,6 +277,20 @@ fn catalog_refusal_message(e: &pg_app::Error) -> Option<pg_client::text::Message
         CatalogRefusal::PathRules { detail, wanted } => {
             Message::CatalogPathRules { path, detail: detail.clone(), wanted: wanted.to_string() }
         }
+        CatalogRefusal::OlderSchema { found, current } => {
+            Message::CatalogOlderSchema { path, found: found.to_string(), current: current.to_string() }
+        }
+        CatalogRefusal::NewerMark { mark, found, current, written_by } => Message::CatalogNewerMark {
+            path,
+            mark: mark.to_string(),
+            found: found.to_string(),
+            current: current.to_string(),
+            built_by: written_by
+                .as_deref()
+                .filter(|b| !b.is_empty())
+                .map(|b| format!(" by build {b}"))
+                .unwrap_or_default(),
+        },
         CatalogRefusal::InUse => Message::CatalogInUse { path },
         CatalogRefusal::PathTooLong => Message::CatalogPathTooLong { path },
         CatalogRefusal::ReadOnly => Message::CatalogReadOnly { path },

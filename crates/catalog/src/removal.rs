@@ -27,6 +27,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use pg_model::ids::{FileId, RootId};
 use pg_model::rules::{Path as RulePath, PathRules};
 
+use crate::convert::progress_count;
 use crate::core::Catalog;
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
@@ -49,8 +50,8 @@ pub enum Begun {
 /// was stopped before the end (the removal goes on at the next drive).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Driven {
-    pub files: usize,
-    pub deferred: usize,
+    pub files: u64,
+    pub deferred: u64,
     pub stopped: bool,
 }
 
@@ -58,14 +59,14 @@ pub struct Driven {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Marker {
     pub path: RulePath,
-    pub deferred: usize,
+    pub deferred: u64,
 }
 
 /// What [`Catalog::discard_removal`] deleted: the rows, and the temp files their writes had recorded, as the rules' bytes.
 /// The temps are the only copies of the edits they held; the caller unlinks them and says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Discarded {
-    pub rows: usize,
+    pub rows: u64,
     pub temps: Vec<Vec<u8>>,
 }
 
@@ -105,20 +106,20 @@ impl Catalog {
 
     /// Step B: hides the files under `path`, in batches. Idempotent: a batch that is hidden already changes nothing, so
     /// the resume of a removal can run it again. Returns the files hidden by this call.
-    pub fn hide_pages(&self, path: &RulePath) -> Result<usize> {
+    pub fn hide_pages(&self, path: &RulePath) -> Result<u64> {
         let folders = folder_ids_under(&self.conn, self.rules, path)?;
         let ids: Vec<i64> = {
             let mut stmt = self.conn.prepare("SELECT id FROM files WHERE missing = 0 AND folder_id IN rarray(?1)")?;
             let rows = stmt.query_map([Rc::new(values(&folders))], |r| r.get(0))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
-        let mut hidden = 0;
+        let mut hidden: u64 = 0;
         for batch in ids.chunks(WRITE_BATCH) {
             let tx = write_transaction(&self.conn)?;
             {
                 let mut hide = tx.prepare_cached("UPDATE files SET missing = 1 WHERE id = ?1 AND missing = 0")?;
                 for &id in batch {
-                    hidden += hide.execute([id])?;
+                    hidden += progress_count(hide.execute([id])?);
                 }
             }
             tx.commit()?;
@@ -146,7 +147,7 @@ impl Catalog {
     /// older build left when it hid a removed folder's files and kept no marker. Their removal then finishes them like any
     /// other, deleting their rows and thumbnails. A folder that overlaps a library folder is left alone (its scan keeps
     /// its files), and so is one under a marker already. Returns how many markers were made.
-    pub fn adopt_hidden_folders(&self) -> Result<usize> {
+    pub fn adopt_hidden_folders(&self) -> Result<u64> {
         let rules = self.rules;
         let mut covering: Vec<RulePath> = self.removal_markers()?.into_iter().map(|m| m.path).collect();
         let tx = write_transaction(&self.conn)?;
@@ -159,7 +160,7 @@ impl Catalog {
             )?;
             stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
-        let mut made = 0;
+        let mut made: u64 = 0;
         for bytes in candidates {
             let Some(folder) = rules.parse_bytes(&bytes) else { continue };
             let overlaps_root = roots.iter().any(|r| overlaps(rules, r, &folder));
@@ -180,7 +181,7 @@ impl Catalog {
     /// The removals not finished, with the files each keeps.
     pub fn removal_markers(&self) -> Result<Vec<Marker>> {
         let rules = self.rules;
-        let rows: Vec<(Vec<u8>, i64)> = self
+        let rows: Vec<(Vec<u8>, u64)> = self
             .conn
             .prepare("SELECT path, deferred FROM root_removals ORDER BY id")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -188,13 +189,13 @@ impl Catalog {
         let mut markers = Vec::with_capacity(rows.len());
         for (bytes, deferred) in rows {
             let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a removal's folder has a NUL" })?;
-            markers.push(Marker { path, deferred: usize::try_from(deferred).unwrap_or(0) });
+            markers.push(Marker { path, deferred });
         }
         Ok(markers)
     }
 
     /// The files under the removals not finished (kept ones included): the total of their progress.
-    pub fn removal_files(&self) -> Result<usize> {
+    pub fn removal_files(&self) -> Result<u64> {
         let mut folders = Vec::new();
         for marker in self.removal_markers()? {
             folders.extend(folder_ids_under(&self.conn, self.rules, &marker.path)?);
@@ -202,12 +203,11 @@ impl Catalog {
         if folders.is_empty() {
             return Ok(0);
         }
-        let count: i64 = self.conn.query_row(
+        Ok(self.conn.query_row(
             "SELECT count(*) FROM files WHERE folder_id IN rarray(?1)",
             [Rc::new(values(&folders))],
             |r| r.get(0),
-        )?;
-        Ok(usize::try_from(count).unwrap_or(0))
+        )?)
     }
 
     /// Whether `file` is under a removal not finished: its files are going, and no write of the app's may change them.
@@ -250,7 +250,7 @@ impl Catalog {
         let rows = tx.execute("DELETE FROM files WHERE folder_id IN rarray(?1)", [Rc::new(values(&folders))])?;
         finish_folders(&tx, rules, path, &folders)?;
         tx.commit()?;
-        Ok(Some(Discarded { rows, temps }))
+        Ok(Some(Discarded { rows: progress_count(rows), temps }))
     }
 
     /// Gives the free pages of the catalog file back to the file system (step E). Only with incremental auto-vacuum,
@@ -316,18 +316,18 @@ fn drive_one(
         let deleted =
             tx.prepare_cached(DELETE_FILES)?.execute(params![Rc::new(values(&ids)), Rc::new(values(&folders))])?;
         tx.commit()?;
-        driven.files += deleted;
+        driven.files += progress_count(deleted);
     }
     // Step D: the folders that hold no file, the walks under the folder, and the marker, once nothing is kept.
     let tx = write_transaction(&catalog.conn)?;
     if !marker_present(&tx, &bytes)? {
         return Ok(true);
     }
-    let kept: i64 =
+    let kept: u64 =
         tx.query_row("SELECT count(*) FROM files WHERE folder_id IN rarray(?1)", [Rc::new(values(&folders))], |r| {
             r.get(0)
         })?;
-    driven.deferred = usize::try_from(kept).unwrap_or(0);
+    driven.deferred = kept;
     if kept == 0 {
         finish_folders(&tx, rules, path, &folders)?;
     } else {
@@ -690,11 +690,11 @@ mod tests {
             })
             .unwrap();
         assert!(stopped.stopped);
-        assert_eq!(stopped.files, WRITE_BATCH);
+        assert_eq!(stopped.files, u64::try_from(WRITE_BATCH).unwrap());
         assert_eq!(rows(&c, "files"), total - i64::try_from(WRITE_BATCH).unwrap());
         assert_eq!(c.removal_markers().unwrap().len(), 1);
         let rest = resume(&c, rules);
-        assert_eq!(rest.files, usize::try_from(total).unwrap() - WRITE_BATCH);
+        assert_eq!(rest.files, u64::try_from(total).unwrap() - u64::try_from(WRITE_BATCH).unwrap());
         assert_eq!((rows(&c, "files"), rows(&c, "folders")), (0, 0));
     }
 

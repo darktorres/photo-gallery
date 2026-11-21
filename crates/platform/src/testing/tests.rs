@@ -270,8 +270,8 @@ fn a_folder_another_process_holds_is_kept_until_that_process_ends() {
     assert!(!folder.exists(), "once that process has ended, its folder is removed");
 }
 
-/// The child of [`a_folder_another_process_holds_is_kept_until_that_process_ends`]: it claims a folder, says so, and holds
-/// it until its stdin ends. Run only by that test.
+// The child of [`a_folder_another_process_holds_is_kept_until_that_process_ends`]: it claims a folder, says so, and holds
+// it until its stdin ends. Run only by that test.
 #[test]
 #[ignore = "run by a_folder_another_process_holds_is_kept_until_that_process_ends"]
 fn child_holds_a_run_folder() {

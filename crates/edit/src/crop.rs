@@ -203,8 +203,8 @@ mod tests {
         assert!(crop(&file, Format::Jpeg, sw, sh, [60, 0, 40, 0]).is_err());
     }
 
-    /// The cut of a JPEG is exact (no MCU grid: the left and top cuts stay where they were), at the quality the file was
-    /// made at, with its subsampling; its pixels are the source's cut, to the loss of one more encode.
+    // The cut of a JPEG is exact (no MCU grid: the left and top cuts stay where they were), at the quality the file was
+    // made at, with its subsampling; its pixels are the source's cut, to the loss of one more encode.
     #[test]
     fn jpeg_cut_is_exact_at_the_source_quality() {
         let (w, h) = (100, 70);
@@ -244,8 +244,8 @@ mod tests {
         }
     }
 
-    /// A lossy WebP stays lossy: the cut is smaller than the lossless encoding of the same pixels, and it decodes to the
-    /// source's cut pixels, to the loss of the encode.
+    // A lossy WebP stays lossy: the cut is smaller than the lossless encoding of the same pixels, and it decodes to the
+    // source's cut pixels, to the loss of the encode.
     #[test]
     fn lossy_webp_cut_stays_lossy_and_keeps_its_pixels() {
         let (w, h) = (64, 48);
@@ -275,7 +275,7 @@ mod tests {
         assert!(mean < 10.0 && worst <= 60, "mean {mean:.2}, worst {worst}");
     }
 
-    /// Every other format is cut as the copies are cut: the same bytes from `cut` as from `crop`.
+    // Every other format is cut as the copies are cut: the same bytes from `cut` as from `crop`.
     #[test]
     fn the_other_formats_cut_as_the_copies_do() {
         let (w, h) = (37, 23);

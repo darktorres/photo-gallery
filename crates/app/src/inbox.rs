@@ -657,7 +657,7 @@ trait Store {
     fn entries(&self, viewing: bool) -> pg_catalog::Result<Vec<Entry>>;
     fn thumb_failures(&self) -> pg_catalog::Result<bool>;
     fn version(&self) -> pg_catalog::Result<i64>;
-    fn prune(&self, now: i64) -> pg_catalog::Result<usize>;
+    fn prune(&self, now: i64) -> pg_catalog::Result<u64>;
 
     /// Whether `e` is worth trying again: another connection held the lock past the busy timeout.
     fn is_busy(&self, e: &pg_catalog::Error) -> bool {
@@ -718,7 +718,7 @@ impl Store for Catalog {
         self.data_version()
     }
 
-    fn prune(&self, now: i64) -> pg_catalog::Result<usize> {
+    fn prune(&self, now: i64) -> pg_catalog::Result<u64> {
         self.prune_inbox(now)
     }
 }
@@ -1163,7 +1163,7 @@ mod tests {
         fixture::state::add_scan(&c, 1, folder).unwrap();
         fixture::state::add_folder(&c, 1, folder).unwrap();
         fixture::insert(&c, &[File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 0)]).unwrap();
-        Failure { file_id: FileId::new(1), mtime: 0, size: 10, rotation: Turns::NONE, error: "x".into(), retry: false }
+        Failure { file_id: FileId::new(1), mtime: 0, size: 10, turns: Turns::NONE, error: "x".into(), retry: false }
     }
 
     /// A writer on its own `Work`, as the inbox's thread has it, and a subscription to what it publishes.
@@ -1269,7 +1269,7 @@ mod tests {
         fn version(&self) -> pg_catalog::Result<i64> {
             self.catalog.data_version()
         }
-        fn prune(&self, now: i64) -> pg_catalog::Result<usize> {
+        fn prune(&self, now: i64) -> pg_catalog::Result<u64> {
             self.catalog.prune_inbox(now)
         }
         fn is_busy(&self, e: &pg_catalog::Error) -> bool {
@@ -1285,14 +1285,8 @@ mod tests {
     #[test]
     fn the_ops_come_in_one_sequence_across_kinds() {
         let mut work = Work::default();
-        let x = Failure {
-            file_id: FileId::new(7),
-            mtime: 0,
-            size: 1,
-            rotation: Turns::NONE,
-            error: "x".into(),
-            retry: false,
-        };
+        let x =
+            Failure { file_id: FileId::new(7), mtime: 0, size: 1, turns: Turns::NONE, error: "x".into(), retry: false };
         work.thumb(x.file_id, Thumb::Failed(x));
         work.mutation(Mutation::Retry(FilePass::Thumbs, Box::new(|| {})));
         work.event(event(1), 0);
@@ -1396,7 +1390,7 @@ mod tests {
             file_id: FileId::new(id),
             mtime: 0,
             size: 1,
-            rotation: Turns::NONE,
+            turns: Turns::NONE,
             error: "x".into(),
             retry: false,
         };
@@ -1654,7 +1648,8 @@ mod tests {
         inbox.post(failed("a"));
         let (toasts, listing) = next(&sub);
         assert!(toasts.is_empty());
-        assert_eq!(total(&listing.entries[0]), Some(2));
+        // A same-bytes refailure is not news and does not count again (E-060): the count stays at the first failure's.
+        assert_eq!(total(&listing.entries[0]), Some(1));
         inbox.mark_read(vec![listing.entries[0].id]);
         assert_eq!(next(&sub).1.unread, 0);
         inbox.clear(Key::all("edit-failed", None).to_buf());

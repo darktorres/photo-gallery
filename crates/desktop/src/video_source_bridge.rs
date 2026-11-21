@@ -24,10 +24,10 @@ pub mod qobject {
         #[qinvokable]
         unsafe fn attach(self: Pin<&mut VideoSource>, player: *mut QMediaPlayer);
 
-        /// Plays the video of the catalog's file `file_id` from the start. A file the catalog doesn't have clears the
-        /// player instead.
+        /// Plays the video of the catalog's file `file_id` (a real, as QML holds file ids) from the start. A file the
+        /// catalog doesn't have clears the player instead.
         #[qinvokable]
-        fn play(self: Pin<&mut VideoSource>, file_id: i64);
+        fn play(self: Pin<&mut VideoSource>, file_id: f64);
 
         /// Stops the video: the player's source is cleared.
         #[qinvokable]

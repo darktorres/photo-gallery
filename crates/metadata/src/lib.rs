@@ -367,8 +367,8 @@ mod tests {
         }
     }
 
-    /// The patcher sets every orientation entry the reader could take, each at its own width, so what it wrote is
-    /// what the reader reads back: a BYTE, a LONG, a LONG out of its entry, a repeated tag, and LONG8 in BigTIFF.
+    // The patcher sets every orientation entry the reader could take, each at its own width, so what it wrote is
+    // what the reader reads back: a BYTE, a LONG, a LONG out of its entry, a repeated tag, and LONG8 in BigTIFF.
     #[test]
     fn orientation_patch_round_trips_every_kind_the_reader_takes() {
         for (big, le) in [(false, true), (false, false), (true, true), (true, false)] {
@@ -422,7 +422,7 @@ mod tests {
         }
     }
 
-    /// A JPEG's EXIF block with a BYTE or a LONG orientation is patched too (the case that turned a picture twice).
+    // A JPEG's EXIF block with a BYTE or a LONG orientation is patched too (the case that turned a picture twice).
     #[test]
     fn jpeg_byte_and_long_orientations_patch() {
         for entry in [

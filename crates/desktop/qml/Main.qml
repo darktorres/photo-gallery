@@ -78,8 +78,10 @@ ApplicationWindow {
     property int inboxExpandPass: -1
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
     property bool ready: false
-    // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
-    property int loadedIndex: -2
+    // A list that arrived before the grid had a width: positioned once it is laid out (`loadPending` says there is one;
+    // `loadedIndex` is its index, -1 for none).
+    property bool loadPending: false
+    property int loadedIndex: -1
     readonly property real gap: 4
 
     // Both read the catalog off the GUI thread: what they were asked for arrives later (onLoaded).
@@ -248,7 +250,7 @@ ApplicationWindow {
         const anchor = current >= 0 ? current : grid.topItem();
         grid.settling = true;
         galleryModel.relayout(grid.gridWidth, rowHeight, gap);
-        if (loadedIndex > -2) {
+        if (loadPending) {
             gridLoaded(loadedIndex);
             return;
         }
@@ -264,9 +266,10 @@ ApplicationWindow {
         // Laid out only once the grid has a width (relayout() comes back here). The grid has no rows meanwhile.
         if (galleryModel.count > 0 && galleryModel.rowOf(0) < 0) {
             loadedIndex = index;
+            loadPending = true;
             return;
         }
-        loadedIndex = -2;
+        loadPending = false;
         shell.listShown(galleryModel.count);
         if (current >= 0)
             grid.positionAt(galleryModel.rowOf(current), ListView.Contain);
@@ -281,7 +284,7 @@ ApplicationWindow {
     // The folder tree is in. At the start, the open folder is shown in it (its parents expanded); after a scan it
     // is only found again, the tree left as the user left it. The folder listed is the view's (the saved one, or the
     // applied view's): when the tree doesn't have it, the controller lists all folders.
-    // The folder model works out the listed folder's row (-1: under a folder the user collapsed; -2: not in the tree).
+    // The folder model works out the listed folder's row (-1: under a folder the user collapsed, or not in the tree).
     // The shell keeps the folder as the tree spells it and tells the controller whether the folder is known.
     function treeLoaded() {
         // The view is placed once, on the first tree; the model opens the folders above the listed one then (treeLoaded).
@@ -293,16 +296,23 @@ ApplicationWindow {
             if (first)
                 tree.positionViewAtIndex(row, ListView.Contain);
         } else {
-            tree.currentIndex = row === -1 ? -1 : 0;
+            tree.currentIndex = currentRowOf(row);
         }
-        shell.treeLoaded(row !== -2);
+        shell.treeLoaded(folderModel.listedKnown());
+    }
+
+    // The tree's current row for the listed folder, given its row (`revealListing`): the row when it has one; else -1
+    // under a folder the user collapsed, and the first row when the tree doesn't have the folder at all.
+    function currentRowOf(row: int): int {
+        if (row >= 0)
+            return row;
+        return folderModel.listedKnown() ? -1 : 0;
     }
 
     // The subfolders were switched: for the empty folder that moves the listing between "All" (with them) and "Drive
-    // roots" (without), so the tree's current row follows the listing (-1: under a folder the user collapsed).
+    // roots" (without), so the tree's current row follows the listing (currentRowOf).
     function followListedRow() {
-        const row = folderModel.revealListing(false);
-        tree.currentIndex = row === -1 ? -1 : Math.max(row, 0);
+        tree.currentIndex = currentRowOf(folderModel.revealListing(false));
     }
 
     // The folder tree changed (a scan): read it again, and the open folder's files.
@@ -375,12 +385,12 @@ ApplicationWindow {
 
     // To the panel made when first needed (Yandex's Loader, below): what it is asked to do comes as a signal once it
     // is made (a Loader not loading asynchronously makes its item at once).
-    signal similarAsked(fileId: int)
+    signal similarAsked(fileId: real)
     // The command line's `--find-similar`: the photo is the path it names, not a catalog file.
     signal similarCommandLineAsked
 
     // The viewer's "find similar": search Yandex for the photo's file (by its id).
-    function findSimilar(fileId: int) {
+    function findSimilar(fileId: real) {
         yandexLoader.active = true;
         similarAsked(fileId);
     }
@@ -788,7 +798,7 @@ ApplicationWindow {
                     onPreviewOpenChanged: win.modalShown(PanelKind.YandexPreview, previewOpen)
                     Connections {
                         target: win
-                        function onSimilarAsked(fileId: int) {
+                        function onSimilarAsked(fileId: real) {
                             yandexPanel.show(fileId);
                         }
                         function onSimilarCommandLineAsked() {

@@ -45,13 +45,13 @@ pub use coverage::Coverage;
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Pairing {
     /// Old rows that took the identity of a new row on another volume (tiers 1 and 2).
-    pub rebound: usize,
+    pub rebound: u64,
     /// Rows that took the identity of the file that replaced them.
-    pub replaced: usize,
+    pub replaced: u64,
     /// Fresh rows still unpaired at the end whose candidates, in some tier, were several: nothing was bound to them.
-    pub ambiguous: usize,
+    pub ambiguous: u64,
     /// Unpaired rows with children, which no tier pairs; counted on every scan.
-    pub unpaired_with_data: usize,
+    pub unpaired_with_data: u64,
     /// The rows whose content state was reset: their thumbnails are deleted by the caller, after the commit.
     pub replaced_ids: Vec<FileId>,
     /// The temp files of queued writes that were dropped with a replacement: deleted by the caller, after the commit.
@@ -106,7 +106,7 @@ impl ScanLease<'_> {
         // Tier 1: the same folder and name, on another volume. Each tier has its own steps and its own span, which carries
         // the rows it found and changed and its transactions.
         let steps1 = Steps::new();
-        let mut found1 = 0usize;
+        let mut found1 = 0u64;
         let (rebound1, tx1) = (out.rebound, crate::transaction::tx_mark());
         let tier1 = pg_perf::span("pair.tier1");
         in_batches(conn, held, &under, &skipped, &steps1, |tx, fresh| {
@@ -151,7 +151,7 @@ impl ScanLease<'_> {
             let mut seen: Option<BTreeSet<i64>> = None;
             let steps2 = Steps::new();
             let volumes = pg_perf::Tally::new("volumes");
-            let mut found2 = 0usize;
+            let mut found2 = 0u64;
             let (rebound2, tx2) = (out.rebound, crate::transaction::tx_mark());
             let mut tier2 = pg_perf::span("pair.tier2");
             in_batches(conn, held, &under, &skipped, &steps2, |tx, fresh| {
@@ -230,7 +230,7 @@ impl ScanLease<'_> {
             // the file coming back under its identity is paired with its row (and its data) rather than taken for a
             // new file. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
             let steps_r = Steps::new();
-            let mut found_r = 0usize;
+            let mut found_r = 0u64;
             let (replaced0, txr) = (out.replaced, crate::transaction::tx_mark());
             let replace_clear = pg_perf::span("pair.replace_clear");
             in_batches(conn, held, &under, &skipped, &steps_r, |tx, fresh| {
@@ -322,14 +322,14 @@ impl ScanLease<'_> {
                 has_children!()
             ),
             params![under[0], under[1], under[2]],
-            |r| r.get::<_, usize>(0),
+            |r| r.get::<_, u64>(0),
         )?;
         drop(close);
         pass.field("unpaired_with_data", out.unpaired_with_data);
         pass.field("ambiguous", out.ambiguous);
         pass.field("replaced", out.replaced);
         pass.field("rebound", out.rebound);
-        pass.items(u64::try_from(out.rebound.saturating_add(out.replaced)).unwrap_or(u64::MAX));
+        pass.items(out.rebound.saturating_add(out.replaced));
         crate::transaction::attach_tx(&mut pass, tx_at);
         Ok(out)
     }
@@ -360,7 +360,7 @@ impl Steps {
     }
 
     /// Closes a tier's span: the rows it read (its items), its batches, its steps, its transactions, and `counts`.
-    fn close(&self, mut span: pg_perf::Span, tx: crate::transaction::TxMark, counts: &[(&str, usize)]) {
+    fn close(&self, mut span: pg_perf::Span, tx: crate::transaction::TxMark, counts: &[(&str, u64)]) {
         let (batches, rows) = self.read.totals();
         span.items(rows);
         span.field("batches", batches);
@@ -498,7 +498,7 @@ macro_rules! take_identity {
 /// [`rebind`]'s take: the old row keeps its creation time when the fresh one has none, and its rotation.
 const REBIND: &str = take_identity!("coalesce(?4, created)", "");
 /// [`replace`]'s take: the new file's creation time, and no rotation (the old file's turns are not the new one's).
-const REPLACE: &str = take_identity!("?4", ", rotation = 0");
+const REPLACE: &str = take_identity!("?4", ", turns = 0");
 
 /// Runs `sql` (a take of [`take_identity!`]) for the row `id` and the fresh row `from`. The taken row is seen by the walk,
 /// and paired (`unpaired = 0`), so it joins the walk's set as paired.
@@ -539,7 +539,7 @@ fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mu
         }
     }
     tx.execute(
-        concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_rotation!(), "'"),
+        concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_turns!(), "'"),
         [id],
     )?;
     tx.execute(
@@ -662,7 +662,7 @@ mod tests {
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
                  INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                                   rotation, order_key, unpaired)
+                                   turns, order_key, unpaired)
                  SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
                         CAST(printf('%08d', i) AS BLOB), 1
                  FROM n",
@@ -787,7 +787,7 @@ mod tests {
         c.conn
             .execute(
                 "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)
-                 SELECT id, 'thumbs', mtime, size, rotation, 'it panicked', 0, 0 FROM files WHERE id = ?1",
+                 SELECT id, 'thumbs', mtime, size, turns, 'it panicked', 0, 0 FROM files WHERE id = ?1",
                 [id],
             )
             .unwrap();

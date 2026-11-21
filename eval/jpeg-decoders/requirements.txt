@@ -1,4 +1,4 @@
-# The Python packages of the nvImageCodec bench's venv (`$JPEG_EVAL\venv`, eval/jpeg-decoders/nvimgcodec_bench.py), pinned to
+# The Python packages of the nvImageCodec bench's venv (`$PG_JPEG_EVAL\venv`, eval/jpeg-decoders/nvimgcodec_bench.py), pinned to
 # the latest release of each on the package index (Python 3.12). The nvidia-nvimgcodec-cu13[all] extras come with it (nvcomp, nvjpeg, nvjpeg2k, nvtiff).
 # Install into a fresh venv with:
 #   python -m pip install -r eval/jpeg-decoders/requirements.txt

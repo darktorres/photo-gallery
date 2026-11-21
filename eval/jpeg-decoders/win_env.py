@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The build environment of the GPU decoder builds on Windows: MSVC from the Visual Studio
 Build Tools (found by vswhere), the CUDA toolkit, and the paths win_build.py reads. It was win-env.cmd, which win-build.cmd
-called; win_build.py calls setup() here. The repo's .env supplies the keys the environment does not set (PG_ROOT, LLVM_DIR,
-CUDA_ARCH, JPEG_EVAL, and CUDA_PATH when NVIDIA's installer has not set it in this shell). Windows only.
+called; win_build.py calls setup() here. The repo's .env supplies the keys the environment does not set (PG_ROOT, PG_LLVM_DIR,
+PG_CUDA_ARCH, PG_JPEG_EVAL, and CUDA_PATH when NVIDIA's installer has not set it in this shell). Windows only.
 """
 
 import os
@@ -71,17 +71,17 @@ def setup() -> Toolchain:
         sys.exit("win_env: CUDA_PATH is not set; NVIDIA's CUDA installer sets it, or set it in .env")
     os.environ["PATH"] = os.pathsep.join([f"{cuda}\\bin", f"{cuda}\\bin\\x64", os.environ.get("PATH", "")])
 
-    # CUDA_ARCH is the compute capability without the dot. Unset, it comes from the first GPU.
-    cuda_arch = os.environ.get("CUDA_ARCH") or nvidia_compute_capability()
+    # PG_CUDA_ARCH is the compute capability without the dot. Unset, it comes from the first GPU.
+    cuda_arch = os.environ.get("PG_CUDA_ARCH") or nvidia_compute_capability()
     if not cuda_arch:
-        sys.exit("win_env: CUDA_ARCH is not set and nvidia-smi reported no compute capability")
+        sys.exit("win_env: PG_CUDA_ARCH is not set and nvidia-smi reported no compute capability")
 
-    llvm_dir = Path(os.environ.setdefault("LLVM_DIR", str(Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "LLVM")))
-    jpeg_eval = os.environ.get("JPEG_EVAL")
+    llvm_dir = Path(os.environ.setdefault("PG_LLVM_DIR", str(Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "LLVM")))
+    jpeg_eval = os.environ.get("PG_JPEG_EVAL") or None
     if not jpeg_eval and os.environ.get("PG_ROOT"):
         jpeg_eval = str(Path(os.environ["PG_ROOT"]) / "tools" / "jpeg-eval")
     if not jpeg_eval:
-        sys.exit("win_env: JPEG_EVAL or PG_ROOT must be set, for example in the repo's .env")
+        sys.exit("win_env: PG_JPEG_EVAL or PG_ROOT must be set, for example in the repo's .env")
 
     return Toolchain(
         jpeg_eval=Path(jpeg_eval),

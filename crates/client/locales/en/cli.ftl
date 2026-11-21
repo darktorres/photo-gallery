@@ -11,6 +11,8 @@ cli-progress = { $pass }: { $done }/{ $total } ({ $percent }%), { $rate } files/
 cli-with-detail = { $line } ({ $detail })
 # A build without the app window, started with no command: the one line it prints
 cli-no-window = gallery was built without its app window (the `desktop` feature): give it a command
+# A command's failure: its error chain, after the prefix
+cli-error = error: { $error }
 # A file a pass kept as failed: skipped by the scan, or failed by the thumbnails
 cli-skipped = skipped: { $path }: { $error }
 cli-failed = failed: { $path }: { $error }
@@ -41,7 +43,7 @@ cli-hashes-owed = { $count } files not hashed yet (run `gallery hash`)
 cli-placeholders-done = placeholders made for { $made } files ({ $failed } failed), { $seconds } s
 cli-placeholders-owed = { $count } files without a placeholder yet (run `gallery thumbs`)
 cli-pair-done = paired { $files } files: { $pairs } PDQ pairs, { $seconds } s
-cli-pair-timings = load { $load } s, store { $store } s, join { $join } s (threads' time: sorts { $sort } s, scans { $scan } s, idle { $idle } s, paused { $paused } s), writes { $write } s, commits { $commit } s
+cli-pair-timings = load { $load } ms, store { $store } ms, join { $join } ms (threads' time: sorts { $sort } ms, scans { $scan } ms, idle { $idle } ms, paused { $paused } ms), writes { $write } ms, commits { $commit } ms
 cli-pairs-again = { $count } files owe their pairs again (their pairs are dropped)
 cli-pairs-legacy = { $count } analyses have no orientation hashes (made by an older build): `gallery import --again` analyzes them again
 cli-pairs-owed = { $count } files not paired yet (run `gallery pair`)
@@ -49,8 +51,8 @@ cli-pairs-owed = { $count } files not paired yet (run `gallery pair`)
 cli-no-file-there = { $path }: no file of the library there
 
 # gallery thumbs
-cli-thumbs-needed = { $needed } files needed a { $height } px thumbnail; the cache held { $held } GB
-cli-thumbs-done = { $made } thumbnails at { $height } px ({ $failed } failed{ $changed }){ $full }; cache { $used } of { $cap } GB, { $seconds } s
+cli-thumbs-needed = { $needed } files needed a { $height } px thumbnail; the cache held { $held } GiB
+cli-thumbs-done = { $made } thumbnails at { $height } px ({ $failed } failed{ $changed }){ $full }; cache { $used } of { $cap } GiB, { $seconds } s
 # After the thumbnails' failed count, when the cache filled up
 cli-cache-full = , stopped: cache full
 
@@ -67,7 +69,7 @@ cli-status-library = library: { $folder }
 cli-status-removing = { $folder }: removal not finished, { $deferred } changes kept, waiting to be written
 cli-status-files = { $files } files ({ $missing } missing), { $analyzed } analyzed, { $failed } failed, { $pending } pending, { $pairs } PDQ pairs
 cli-status-writes = { $queued } changes to write into files ({ $failing } failing)
-cli-status-cache = thumbnail cache: { $count } thumbnails, { $used } of { $cap } GB
+cli-status-cache = thumbnail cache: { $count } thumbnails, { $used } of { $cap } GiB
 cli-status-no-cache = thumbnail cache: none yet
 
 # gallery write

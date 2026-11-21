@@ -10,7 +10,7 @@ Facts the plan now rests on (verified 2026-11-17):
 
 - The tree is clean at HEAD 59d496ec; the perf work is committed (f687d0b7: `crates/perf`, `PG_PERF_LOG`, the
   `import.store` tally, `gallery perf`). HEAD raised `IMPORT_VERSION` 2 -> 3, so baselines and scratch catalogs are
-  built at HEAD.
+  built at HEAD. (A snapshot of 2026-11-17. Commit 7deed676 ("Versions: key version, mark policy, writer guards, reset to 1 (phase 3)") later reset `IMPORT_VERSION` to 1; `crates/model/src/versions.rs:13` says 1 now.)
 - The library is one root, `D:\PhotoGallery\datasets\pinterest` (690 folders), all on D: (Kingston NV2 NVMe):
   187,616 JPEGs (27.8 GB, avg 148 KB), 875 WebM + 837 MP4 (4.1 GB), 141 PNG, 51 WebP, no GIF/TIFF/BMP. Hard disks:
   G: (Toshiba MQ01ABD100 laptop HDD, holds `wallhere`) and E: (Seagate Exos 24 TB, the HDD the 70M-library notes in
@@ -94,7 +94,7 @@ The round-2 value review recommends cutting both: they save under a second on NV
     sizes rewritten. Its own RIFF header reader.
   - BMP: a `min(size, 16 KiB)` prefix when the file starts with `BM` (checked inline: `pg-container` has no internal
     dependencies, `tools/crate-layers.txt:8`).
-  - Tests: fixtures in `pg_codec::fixtures` behind its `fixture` feature (`deny.toml:56,62` allow `webp`/`image`
+  - Tests: fixtures in `pg_codec::fixtures` behind its `fixture` feature (the `[bans]` `image` and `webp` entries allow `webp`/`image`
     only there), including files written by the app's own WebP rewrite (`crates/edit/src/rewrite/webp.rs`);
     analysis-equality tests in `pg-import` (new dev-dependencies: `pg-codec` with `fixture`, `proptest`), comparing
     error texts too; proptest case count pinned as `container/src/lib.rs:1295`.
@@ -110,7 +110,7 @@ The round-2 value review recommends cutting both: they save under a second on NV
 - Docs: `IO.md` (entries say where and when, newest first, cite the base commit and that the change was uncommitted),
   `STORAGE.md:17,33`, `crates/README.md:336-341`, `pipeline.rs:4-6`, `args.rs:32-33`, `import/src/lib.rs:7-9,140`,
   `video/src/ffi/io.rs:13` comment as each change lands.
-- Constraints: native PowerShell build with `.env` and QT_DIR, no WSL, no full Qt build; examples and the baseline
+- Constraints: native PowerShell build with `.env` and PG_QT_DIR, no WSL, no full Qt build; examples and the baseline
   binaries are built up front for Step 1 (measurement needs them), product code per change built once; no commits or
   branches until asked.
 

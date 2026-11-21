@@ -155,7 +155,7 @@ mod fs_type_tests {
         }
     }
 
-    /// Real calls, where the system checks the file system's type: `/` is a local file system; `/proc` is procfs.
+    // Real calls, where the system checks the file system's type: `/` is a local file system; `/proc` is procfs.
     #[test]
     fn this_systems_root_is_accepted_and_proc_is_refused() {
         if ROOT_CHECK != RootCheck::FsType {
@@ -313,7 +313,7 @@ mod ntfs_tests {
         assert_eq!(f.calls.get(), 0, "the text is refused without asking the system");
     }
 
-    /// A real call: the test binary's folder is on a fixed NTFS disk.
+    // A real call: the test binary's folder is on a fixed NTFS disk.
     #[test]
     fn a_folder_on_a_fixed_ntfs_disk_is_accepted() {
         let dir = std::env::current_dir().unwrap();

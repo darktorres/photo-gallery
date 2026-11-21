@@ -25,6 +25,8 @@ SIZES = (12_500, 25_000, 50_000)
 MAIN = 50_000
 VALIDATE = 25_000
 EDITS = list(TRANSFORMS)
+# The seed of the nested subsets' rank order. Dataset seed; changing it moves the sampled inputs.
+RANK_SEED = 0
 
 
 @dataclass
@@ -81,7 +83,7 @@ def load_base() -> Base:
 
     rank = np.zeros(n, dtype=np.int64)
     test = np.flatnonzero(planted_edit < 0)
-    rank[test] = np.random.default_rng(0).permutation(len(test))
+    rank[test] = np.random.default_rng(RANK_SEED).permutation(len(test))
     copies = planted_source >= 0
     rank[copies] = rank[planted_source[copies]]
     return Base(files, rows, x, planted_edit, planted_source, group, rank)

@@ -201,7 +201,7 @@ fn flush(
                         file_id: item.id,
                         mtime: item.mtime,
                         size: item.size,
-                        rotation: item.rotation,
+                        turns: item.rotation,
                         error: pg_jobs::failure::Cause::of(&e).to_string(),
                         retry: false,
                     });

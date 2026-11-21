@@ -1,0 +1,12 @@
+[package]
+name = "pg-testrng"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The one deterministic generator the tests' random cases draw from (SplitMix64). It is a leaf with no dependencies, so
+# any crate can take it as a dev-dependency, the layered crates included, without a cycle. `pg-testkit` re-exports it.

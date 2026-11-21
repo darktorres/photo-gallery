@@ -108,7 +108,7 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
             conn.query_row("UPDATE meta SET value = value + 1 WHERE key = 'seq' RETURNING value", [], |r| r.get(0))?;
         conn.execute(
             "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                               rotation, order_key, pending, seq, changed)
+                               turns, order_key, pending, seq, changed)
              VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?12)",
             params![
                 f.id.get(),

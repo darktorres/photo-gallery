@@ -17,6 +17,7 @@ pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-perf = { path = "../perf" }
+pg-platform = { path = "../platform" }
 pg-video = { path = "../video" }
 thiserror.workspace = true
 thumbhash.workspace = true

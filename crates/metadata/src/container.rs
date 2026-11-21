@@ -77,7 +77,7 @@ impl Container {
                             Some(ItxtXmp::Compressed(text)) => {
                                 let inflater = inflater.get_or_insert_with(Box::default);
                                 // The budget is for the file: what its earlier packets left of it.
-                                let left = MAX_INFLATED.saturating_sub(assembled.len());
+                                let left = max_inflated().saturating_sub(assembled.len());
                                 packets.extend(inflate_zlib(text, inflater, assembled, left).map(Packet::Assembled));
                             }
                             None => {}
@@ -149,14 +149,17 @@ fn extended_packets(bytes: &[u8], chunks: &mut [ExtendedChunk], assembled: &mut 
     }
 }
 
-/// The most the inflated XMP packets of one file may be, together. A packet is a few kilobytes; a larger one (a
-/// compressed bomb in a small file), or one past what the file's earlier packets left, is treated as absent, so the
-/// import doesn't grow to gigabytes for it, however many compressed chunks the file holds.
-const MAX_INFLATED: usize = 16 << 20;
+/// The most the inflated XMP packets of one file may be, together: the decode cap every container shares
+/// (`pg_container::DECODE_CAP`). A packet is a few kilobytes; a larger one (a compressed bomb in a small file), or one
+/// past what the file's earlier packets left, is treated as absent, so the import doesn't grow to gigabytes for it,
+/// however many compressed chunks the file holds.
+fn max_inflated() -> usize {
+    usize::try_from(pg_container::DECODE_CAP).unwrap_or(usize::MAX)
+}
 
 /// zlib data inflated onto the end of `out`, as `miniz_oxide::inflate::decompress_to_vec_zlib` would give it (the
 /// same output, the same failures), with a kept decompressor. Its range in `out`; `None`, and `out` as it was, if it
-/// doesn't inflate or inflates to more than `limit` bytes (the budget left of [`MAX_INFLATED`]; none left, it is
+/// doesn't inflate or inflates to more than `limit` bytes (the budget left of [`max_inflated`]; none left, it is
 /// absent).
 fn inflate_zlib(
     mut input: &[u8],
@@ -228,52 +231,35 @@ mod tests {
     use super::*;
     use crate::test_support::png_chunk;
     use pg_container::JPEG_XMP_EXTENSION;
+    use pg_testkit::Rng;
 
-    fn xorshift(state: &mut u64) -> u64 {
-        *state ^= *state << 13;
-        *state ^= *state >> 7;
-        *state ^= *state << 17;
-        *state
-    }
-
-    /// The next [`xorshift`] value, less than `n`.
-    fn below(state: &mut u64, n: usize) -> usize {
-        usize::try_from(xorshift(state) % u64::try_from(n).unwrap()).unwrap()
-    }
-
-    /// The next [`xorshift`] value's low byte.
-    fn byte(state: &mut u64) -> u8 {
-        xorshift(state).to_le_bytes()[0]
-    }
-
-    /// Extended packets are reassembled as the map of maps did it (the first chunk's length, the last chunk at an
-    /// offset, contiguous from 0, by GUID): random chunk lists of up to 3 packets, chunks shuffled, repeated with other
-    /// data, missing, or with another length.
+    // Extended packets are reassembled as the map of maps did it (the first chunk's length, the last chunk at an
+    // offset, contiguous from 0, by GUID): random chunk lists of up to 3 packets, chunks shuffled, repeated with other
+    // data, missing, or with another length.
     #[test]
     fn extended_packets_as_the_maps_made_them() {
         use std::collections::BTreeMap;
-        let mut st = 0x853C49E6748FEA9Bu64;
+        let mut st = Rng::new(0x853C49E6748FEA9B);
         let mut scratch = MetaScratch::default();
         for _ in 0..3000 {
             let mut file = Vec::new();
             let mut segments: Vec<Vec<u8>> = Vec::new();
-            for g in 0..1 + xorshift(&mut st) % 3 {
-                let parity = u8::try_from(xorshift(&mut st) % 2).unwrap();
+            for g in 0..1 + st.below(3) {
+                let parity = u8::try_from(st.below(2)).unwrap();
                 let guid = [b'A' + (u8::try_from(g).unwrap() + parity); 32];
-                let full = 1 + usize::try_from(xorshift(&mut st) % 40).unwrap();
-                let packet: Vec<u8> = (0..full).map(|_| byte(&mut st)).collect();
+                let full = 1 + st.below(40);
+                let packet: Vec<u8> = (0..full).map(|_| st.next_u64().to_le_bytes()[0]).collect();
                 let mut at = 0;
                 while at < full {
-                    let bound = u64::try_from(full - at).unwrap();
-                    let len = usize::try_from((1 + xorshift(&mut st) % 12).min(bound)).unwrap();
-                    let r = xorshift(&mut st) % 10;
+                    let len = (1 + st.below(12)).min(full - at);
+                    let r = st.below(10);
                     let (offset, said, data) = match r {
                         0 => (at + 1, full, packet[at..at + len].to_vec()),
                         1 => (at, full + 1, packet[at..at + len].to_vec()),
                         2 => (at, full, vec![0xEE; len]),
                         _ => (at, full, packet[at..at + len].to_vec()),
                     };
-                    if r != 3 || !xorshift(&mut st).is_multiple_of(4) {
+                    if r != 3 || !st.next_u64().is_multiple_of(4) {
                         segments.push(
                             [
                                 JPEG_XMP_EXTENSION,
@@ -302,7 +288,7 @@ mod tests {
                 }
             }
             for i in (1..segments.len()).rev() {
-                segments.swap(i, below(&mut st, i + 1));
+                segments.swap(i, st.below(i + 1));
             }
             for seg in &segments {
                 file.extend_from_slice(seg);
@@ -354,19 +340,19 @@ mod tests {
         }
     }
 
-    /// A kept decompressor inflates as `decompress_to_vec_zlib` does: the same bytes, the same failures (truncated,
-    /// corrupted, empty), each onto what `out` already holds.
+    // A kept decompressor inflates as `decompress_to_vec_zlib` does: the same bytes, the same failures (truncated,
+    // corrupted, empty), each onto what `out` already holds.
     #[test]
     fn an_inflated_packet_over_the_limit_is_absent() {
         // A bomb: 16 MB of zeros packs to a few kilobytes, and inflates past the limit.
-        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; MAX_INFLATED + 1], 6);
+        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; max_inflated() + 1], 6);
         assert!(zlib.len() < 1 << 20, "{}", zlib.len());
         let mut out = b"before".to_vec();
-        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out, MAX_INFLATED).is_none());
+        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out, max_inflated()).is_none());
         assert_eq!(out, b"before");
         // Just within the limit: taken.
-        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; MAX_INFLATED], 6);
-        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out, MAX_INFLATED).is_some());
+        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; max_inflated()], 6);
+        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out, max_inflated()).is_some());
         // No budget left: absent, and `out` as it was.
         let small = miniz_oxide::deflate::compress_to_vec_zlib(b"<x/>", 6);
         let before = out.len();
@@ -374,8 +360,8 @@ mod tests {
         assert_eq!(out.len(), before);
     }
 
-    /// The budget is the file's, not each packet's: a PNG of many compressed iTXt chunks, each within the limit
-    /// alone, inflates no more than [`MAX_INFLATED`] in all, and the packets past it are absent.
+    // The budget is the file's, not each packet's: a PNG of many compressed iTXt chunks, each within the limit
+    // alone, inflates no more than [`max_inflated`] in all, and the packets past it are absent.
     #[test]
     fn many_compressed_packets_share_one_budget() {
         // Over 4 MiB in each, a few kilobytes packed: 3 fit in the budget, the rest don't.
@@ -390,34 +376,35 @@ mod tests {
         png.extend(png_chunk(b"IEND", b""));
         let mut scratch = MetaScratch::default();
         Container::walk(&png, Format::Png, &mut scratch);
-        assert!(scratch.assembled.len() <= MAX_INFLATED, "{}", scratch.assembled.len());
+        assert!(scratch.assembled.len() <= max_inflated(), "{}", scratch.assembled.len());
         let inflated = scratch.packets.iter().filter(|p| matches!(p, Packet::Assembled(_))).count();
-        assert_eq!(inflated, MAX_INFLATED / packet.len());
+        assert_eq!(inflated, max_inflated() / packet.len());
     }
 
     #[test]
     fn inflate_as_decompress_to_vec_zlib() {
-        let mut st = 0x2545F4914F6CDD1Du64;
+        let mut st = Rng::new(0x2545F4914F6CDD1D);
         let mut decompressor = Box::<DecompressorOxide>::default();
         let mut out = b"before".to_vec();
         for i in 0..2000 {
-            let len = usize::try_from(xorshift(&mut st) % 5000).unwrap();
+            let len = st.below(5000);
             let repetitive = i % 2 == 0;
-            let data: Vec<u8> =
-                (0..len).map(|k| if repetitive { u8::try_from(k % 7).unwrap() } else { byte(&mut st) }).collect();
+            let data: Vec<u8> = (0..len)
+                .map(|k| if repetitive { u8::try_from(k % 7).unwrap() } else { st.next_u64().to_le_bytes()[0] })
+                .collect();
             let mut zlib = miniz_oxide::deflate::compress_to_vec_zlib(&data, u8::try_from(i % 10).unwrap());
             match i % 5 {
-                1 if !zlib.is_empty() => zlib.truncate(below(&mut st, zlib.len())),
+                1 if !zlib.is_empty() => zlib.truncate(st.below(zlib.len())),
                 2 if !zlib.is_empty() => {
-                    let at = below(&mut st, zlib.len());
-                    zlib[at] ^= 1 << (xorshift(&mut st) % 8);
+                    let at = st.below(zlib.len());
+                    zlib[at] ^= 1 << st.below(8);
                 }
                 3 => zlib.clear(),
                 _ => {}
             }
             let want = miniz_oxide::inflate::decompress_to_vec_zlib(&zlib).ok();
             let before = out.len();
-            let got = inflate_zlib(&zlib, &mut decompressor, &mut out, MAX_INFLATED).map(|r| out[r].to_vec());
+            let got = inflate_zlib(&zlib, &mut decompressor, &mut out, max_inflated()).map(|r| out[r].to_vec());
             assert_eq!(got, want, "case {i}");
             if got.is_none() {
                 assert_eq!(out.len(), before);

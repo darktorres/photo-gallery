@@ -21,13 +21,13 @@ Output of the reconciliation workflow (`wf_f8d5054f-26c`). Each of five clusters
 - CSRF header is named three ways. Transport requires X-Pg-Client on every unsafe method. Writes uses X-Pg-Bundle as the non-simple header and rejects X-Pg-Client. Identity uses X-Gallery-Request. The login POST is not build-gated, so it needs a caller marker, which X-Pg-Client supplies; the others must conform.
 - Ops ledger and migration 10 disagree. Transport puts a catalog ops table and the job tables in migration 10, written in the same transaction as each mutation, and uses op as the key. Writes uses a server.db request_ledger with pending and done rows and no ATTACH, and its migration 10 is only the AUTOINCREMENT rebuild plus the seq columns. The job tables are in the catalog in transport and in server.db (job_reports) in writes. The field op is retired by writes in favour of request_id.
 - Migration 10 timing is opposite across clusters. Transport owner question 8 recommends shipping 10 with the cutover, and transport's post-flip desktop writes depend on the guards. Writes Q-T2 recommends the release after the cutover. Both cannot hold; transport's claim that desktop writes after the flip are guarded rests on the first.
-- Quarantine and bulk caps differ. Writes allows a quarantine plan of 5,000 FileIds with a 1 MiB body cap; transport's selection cap is 4,096 entries with 128 KiB. Transport's body-cap table (section 14) has no quarantine route, but its route-table test fails on any undeclared cap. The reserved DELETE /api/items/{file_id} and POST /api/items/{file_id}/move in transport must be retired, as writes does.
+- Quarantine and bulk caps differ. Quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`), so its 5,000-FileId plan and 1 MiB body are gone; the selection caps are stated once in `WEB_CLIENT.md` (Limits). The reserved DELETE /api/items/{file_id} and POST /api/items/{file_id}/move in transport are retired, as writes does.
 - Route names differ on the same operations. CLI cancel: transport DELETE /api/jobs/{job}; writes POST /api/jobs/{job}/cancel. Stop: transport POST /api/server/stop (build-exempt); writes POST /api/stop (no exemption, so a stale build cannot be stopped). Library roots and scans: transport /api/library/roots and /api/library/scans; writes /api/folders and /api/jobs. Inbox viewing: transport PUT /api/inbox/viewing with {viewing}; writes PUT /api/inbox/viewing/{client}.
 - Yandex folder is not reconciled. Transport and identity say owner-wide, with GET /api/yandex/save-folder. Writes stores yandex_folder per desktop row. Transport also requires a folder token from the server's listing, while writes has the desktop send a chosen path that the server normalises. Desktop and phone must use one rule.
 - Held polls are counted per device, but the device identity is undefined in transport (remaining item 'Device identity'). Adopt identity's device id (32 lowercase hex, minted by the server) now, so the two-held-poll cap and the per-device budgets have a key.
 - Attach has no server.lock probe. Writes and identity both probe server.lock first, so a stale launch or server file alone never attaches. Transport's attach rule must include that step.
 - Turn form is incomplete before migration 10. Transport gives only the versioned form {delta, version, op}. Writes gives an at-most-once form with request_id before 10 and the versioned form from 10. Transport's resolution must state the pre-10 phase and the request_id name.
-- Not verified or not checked here: the Qt wasm WebSocket has no ping (qwebsocket_wasm_p.cpp, taken from the validators, not read); ureq holding the 25 s long poll (Cargo.lock:2888 is present, the hold is untested); axum, hyper, h2 and tokio are not in Cargo.lock, so the rapid-reset and stream-cap facts are unchecked; whether HTTP/2 negotiates under native-tls on Windows is unchecked; Chrome behaviour (cancellation, placeholder reuse, Clear-Site-Data) is untested. Verified by reading: sql.rs:17-21 (meta.seq), render lib.rs:14, thumbcache lib.rs:89-91 (version mismatch forgets marks), lib.rs:25-27 (catalog_id start-over, which already exists), grid.rs:41 (56-byte assert), inbox.rs:62 (POLL 30 s), inbox.rs:431 (set_viewing, process-wide), schema.rs:377 (NORMAL), reader.rs:92 (READERS thread-local), images.rs:275 (full_image applies unwritten turns), Qt qnetworkreplywasmimpl.cpp:259 (LOAD_TO_MEMORY) and :276 (timeoutMSecs).
+- Not verified or not checked here: the Qt wasm WebSocket has no ping (qwebsocket_wasm_p.cpp, taken from the validators, not read); ureq holding the 25 s long poll (the `ureq` package is in Cargo.lock; the hold is untested); axum, hyper, h2 and tokio are not in Cargo.lock, so the rapid-reset and stream-cap facts are unchecked; whether HTTP/2 negotiates under native-tls on Windows is unchecked; Chrome behaviour (cancellation, placeholder reuse, Clear-Site-Data) is untested. Verified by reading: sql.rs:17-21 (meta.seq), render lib.rs:14, thumbcache lib.rs:89-91 (version mismatch forgets marks), lib.rs:25-27 (catalog_id start-over, which already exists), grid.rs:41 (56-byte assert), inbox.rs:62 (POLL 30 s), inbox.rs:431 (set_viewing, process-wide), schema.rs:377 (NORMAL), reader.rs:92 (READERS thread-local), images.rs:275 (full_image applies unwritten turns), Qt qnetworkreplywasmimpl.cpp:259 (LOAD_TO_MEMORY) and :276 (timeoutMSecs).
 
 ### identity
 
@@ -68,7 +68,7 @@ Output of the reconciliation workflow (`wf_f8d5054f-26c`). Each of five clusters
 - Stop route is blocked by the build gate. Writes section 2.6 step 5 requires X-Pg-Build on every route, so the desktop's POST /api/stop against an older build gets 409 build-changed before any handler. Section 2.3 relies on that route. Transport exempts POST /api/server/stop from the build gate; writes must do the same and must use the same route name.
 - Handshake in pre-login: writes keeps GET /api/handshake public on the LAN, which breaks the decided item that login comes before any request other than login (WEB_CLIENT.md:274-275). The handshake is loopback-only for the desktop; writes must say so.
 - Attach trust: writes reads the bearer from server.token and then calls GET /api/handshake, with no proof that the answering process is ours. A squatter on a stale port returns envelope 1 and the matching build_id, and the desktop then sends the bearer. Identity's keyed proof closes this; writes must adopt it or state the order (no bearer before the proof).
-- Quarantine plan cap and body cap: writes allows 5,000 FileIds and a 1 MiB body. Transport's selection cap is 4,096 and 128 KiB, and transport's body-cap table has no quarantine route. The caps must be one set in both clusters.
+- Quarantine plan cap and body cap: moot, since quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`). The selection cap and body cap are one set, stated once in `WEB_CLIENT.md` (Limits).
 - Route names differ from transport: writes POST /api/stop vs transport POST /api/server/stop; writes POST /api/jobs/{job}/cancel vs transport DELETE /api/jobs/{job}; writes PUT /api/inbox/viewing/{client} vs transport PUT /api/inbox/viewing; writes POST /api/folders vs transport POST /api/library/roots.
 - Yandex save: writes has the desktop send the chosen folder path, normalised by pg_platform::names::normalize_path, and records it as a device/desktop row. Transport requires a folder token issued from the server's own listing. The rule must be one, and the desktop's native picker must have a stated route to a token.
 - Q-CLI recommends refusing a CLI write while an in-process desktop holds server.lock. The decided processes rule says CLI writes go to the server while it runs and otherwise write directly, with no refusal (WEB_CLIENT.md:280-282). Writes must state the refusal as an owner question with the decided text, not as the recommended behaviour.
@@ -85,13 +85,13 @@ Output of the reconciliation workflow (`wf_f8d5054f-26c`). Each of five clusters
 - Stamp coverage (2.7 a and b) misses tables the replica and sorts read. Not stamped: ratings.rating (grid.rs:42 join, rating read at grid.rs:27; ratings table schema.rs:647-651, no trigger); file_writes.value, which is read as pending_turns and changes shown_size (grid.rs:43 and 69; schema.rs:664); border_marks presence (grid.rs:46, entry column 15; schema.rs:607-610); and analysis.error, which the join filters on (grid.rs:41 'a.error IS NULL'; trigger (b) omits error). The section 6 stamp test would fail on these.
 - The rebuild as written drops triggers. DROP TABLE files removes every trigger on files: files_added (schema.rs:707), files_changed (719), files_source_changed (728), files_failures_stale (136 and 278), files_failures_hidden (283). Step 2.7(f) recreates only indexes at schema.rs:528 and 535-543, and misses files_folder and files_ref (530, 532) and files_fresh (351, from TO_9). Missed triggers stop stamps and failure rows silently.
 - Rebuild transaction shape cannot be built as written. Step 2.7(f) turns foreign_keys off outside the transaction, but SETTINGS turns it on (schema.rs:377), prepare applies SETTINGS before bring_to (core.rs:101 and 107), and each migration runs in one transaction (schema.rs:23-26). PRAGMA foreign_keys is a no-op inside a transaction, and Step::Rust (schema.rs:19-22) also runs inside it.
-- listing_key is build-scoped and the design does not say so. It is BLAKE3 over serde_json of the parsed Listing (view.rs:11-19; serde_json float_roundtrip at Cargo.toml:38). Any change to the Listing serialised form changes every key on upgrade, so a replica held across an upgrade is orphaned, not repaired.
+- listing_key is build-scoped and the design does not say so. It is BLAKE3 over serde_json of the parsed Listing (view.rs:11-19; serde_json's float_roundtrip feature in `[workspace.dependencies]`). Any change to the Listing serialised form changes every key on upgrade, so a replica held across an upgrade is orphaned, not repaired.
 - Poll description is incomplete against lan. Section 2.8 gives the 250 ms window but not the 25 s hold, the cap of four held polls per device, or the 429 (lan 8). The two clusters must state the same poll contract.
 - Citation errors. schema.rs:514 is the kind column; the seq comment is schema.rs:523 and changed is 524. The index recreate range is 530-543, not 528 and 535-543. The doc cites are: SameSite Lax at WEB_CLIENT.md:153 (not 155); the 'not a new behaviour' rating claim at doc:222-224 (not 224-226).
 
 ### lan
 
-- TLS premise is false. The TLS-stack resolution says 'ureq already uses ring, so one provider serves both'. Cargo.toml:46 has ureq with features native-tls and cookies, and WEB_CLIENT.md:384 says ureq goes through native-tls (Cargo.lock:1434). The rustls change moves ureq off native-tls; it does not reuse an existing provider.
+- TLS premise is false. The TLS-stack resolution says 'ureq already uses ring, so one provider serves both'. The `ureq` entry in `[workspace.dependencies]` has features native-tls and cookies, and WEB_CLIENT.md:384 says ureq goes through native-tls (the `native-tls` package in Cargo.lock). The rustls change moves ureq off native-tls; it does not reuse an existing provider.
 - Logon trigger default conflicts with a decided item. The decided text is 'an always-running per-user background process, started at logon' (WEB_CLIENT.md:266-267). Q1 options (b) and (c) contradict it, and the recommendation (b) is presented as satisfying the decided login-while-closed rule. Only (a) matches the decided text.
 - Post-cutover CLI writes can block the server. Section 2.3 holds server.lock shared for a whole CLI write, and says a server start during it exits 75 and 'this delay is accepted'. After cutover the desktop has no catalog and needs the server for every read (cutover; section 2.4), and the server is the sole data authority (WEB_CLIENT.md:29-30). A long CLI scan would then leave the desktop without reads for its whole length.
 - 'Ledger' collides with existing code. The catalog already has a ledger module for failure ledgers (crates/catalog/src/ledger.rs:1-11) and a ledger_ack table (schema.rs:125, 256), carried by rebuild (rebuild.rs:152). The new operation ledger is also called 'ledger'.
@@ -132,7 +132,7 @@ Output of the reconciliation workflow (`wf_f8d5054f-26c`). Each of five clusters
 - (writes) The exclusive hold on the catalog is taken only for layout changes; ordinary SQLite writes share the catalog
 - (writes) Login works while the desktop is closed; the logon task is a separate opt-in (WEB_CLIENT.md:276-277)
 - (writes) Only the server writes the catalog (WEB_CLIENT.md:26-27) and CLI writes go through the server while it runs (WEB_CLIENT.md:280-282)
-- (writes) Moves are in version 1 once quarantine exists (decided: deletes and moves are in version 1)
+- (writes) Moves are in version 1 once quarantine exists (decided: deletes and moves are in version 1). Quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`); whether a move is in version 1 is open (O40).
 - (listing) WEB_CLIENT.md Status and State model: listings are stamped (listing_id, generation) and every listing message carries it (doc:26-28, 205-206)
 - (listing) Decided: real_size is not a setting for the web client (doc:193 and the State model Preferences sentence)
 - (listing) WEB_CLIENT.md:211-227 snapshot lifetime (grace, 10-minute idle, cap of four, release on disconnect)
@@ -176,16 +176,16 @@ Each line gives the question, the options, the recommendation, and the sources i
 Access and devices
 
 - O1. Does changing write_back from a phone, or revoking another device, need the owner password re-entered? Options: (a) both, and bulk forms; (b) write_back enabling only, single revoke without password, bulk revoke with password; (c) neither. Recommendation: (b). Enabling write_back lets the server write into originals; a single revoke is the lost-phone action and must work without a password. Sources: identity Q1-Q2, lan Q16, writes Q-WB, transport decided-conflict list. Lan and writes recommend (a) for write_back.
-- O2. Session lifetimes. Idle is 30 days (agreed). Absolute: 90 days or 180 days. Recommendation: 90 days. Sources: transport 16, identity Q3, lan Q2.
-- O3. Password minimum (15 characters, agreed in recommendations) and Argon2id cost (proposed m=64 MiB, t=3, p=1). Options: fix now; or choose the memory cost by measuring one verification on the owner's desktop at about 1 s, not above 64 MiB; or the OWASP floor of 19 MiB. Recommendation: 15 characters, then measure. Sources: identity Q5, lan Q9.
+- O2. Session lifetimes. Idle is 30 days (agreed). Absolute: 90 days or 180 days. Recommendation: 90 days. Sources: transport 16, identity Q3, lan Q2. Accepted at 90 days (`WEB_CLIENT_TECH_DECISIONS.md:146`, 2026-11-14); the 180-day device-design value is void.
+- O3. Password minimum (15 characters, agreed in recommendations) and Argon2id cost (proposed m=64 MiB, t=3, p=1). Options: fix now; or choose the memory cost by measuring one verification on the owner's desktop at about 1 s, not above 64 MiB; or the OWASP floor of 19 MiB. Recommendation: 15 characters, then measure. Sources: identity Q5, lan Q9. Decided by default in this pass: Argon2id 128 MiB, t=3, p=1, the cost accepted in `WEB_CLIENT_TECH_DECISIONS.md:147` (0.59 s measured there); the owner may revisit.
 - O4. Revoke and the password: (a) accept and document; (b) revoke always changes the password; (c) a choice at revoke time. Recommendation: (c). Source: identity Q9.
 - O5. Logon start. The decided text is an always-running per-user background process started at logon (WEB_CLIENT.md:266-267). Options: (a) logon trigger always on (matches the decided text); (b) trigger only while the LAN is enabled (lan's recommendation; amends the decided text); (c) off. Restart policy: 3 restarts at 1 minute, or none. Recommendation: (a) with 3 restarts. Sources: writes Q-LOGON, identity Q8, lan Q1.
 - O6. The WSL refusal for the offline credential command (identity). Options: keep the refusal; allow. Recommendation: keep, and state it as an exception to the decided no-refusal text.
-- O7. Quarantine purge over the LAN in v1. Options: disabled, loopback only, typed confirmation above 100 items; or elevated over the LAN (confirmation above 500). Recommendation: disabled. Sources: identity Q11, writes Q-PURGE.
+- O7. Quarantine purge over the LAN in v1. Options: disabled, loopback only, typed confirmation above 100 items; or elevated over the LAN (confirmation above 500). Recommendation: disabled. Sources: identity Q11, writes Q-PURGE. Moot: quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`), so there is no purge command anywhere.
 - O8. Session listing and last_file: per user (follows the owner, version-checked) or per device. Recommendation: per user. Sources: transport 10, identity Q10, writes Q-SCOPE.
 - O9. Remembered listing save timing: at once (recommended, 250 ms floor) or debounced by 1 s. Source: transport 11.
 - O10. Accept up to 1 s of last-file and session changes lost when Android kills the page with no event (keepalive flush on hidden and pagehide). Recommendation: accept. Source: writes Q-KILL.
-- O11. Cache-Control for keyed image responses (thumbnails, fitted views, tiles, regions, Yandex images). Options: (a) private, max-age=604800, immutable; (b) private, max-age=31536000, immutable (transport's working value); (c) private, no-cache with ETag (lan Q3); (d) public (rejected: a shared cache could hold authenticated bytes). Recommendation: (a). The key includes mtime, which cannot detect a same-mtime, same-size replacement; the catalog already has that limit. Sources: transport 2, identity Q4, lan Q3, listing 4.6.
+- O11. Cache-Control for keyed image responses (thumbnails, fitted views, tiles, regions, Yandex images). Options: (a) private, max-age=604800, immutable; (b) private, max-age=31536000, immutable (transport's working value); (c) private, no-cache with ETag (lan Q3); (d) public (rejected: a shared cache could hold authenticated bytes). Recommendation: (a). The key includes mtime, which cannot detect a same-mtime, same-size replacement; the catalog already has that limit. Sources: transport 2, identity Q4, lan Q3, listing 4.6. Decided by default in this pass: option (a), private, max-age=604800, immutable (`WEB_CLIENT.md`, `WEB_CLIENT_DESIGN.md`); the owner may change it.
 - O12. Thumbnail miss answer. Working value: 307 to the nearest cached height in S, or a 1x1 placeholder; work queued only by the want list. Alternative: 200 nearest body with an X-Thumb header (wire). Recommendation: the working value; confirm the 307 and the placeholder on Chrome Android. Sources: transport 3, writes, identity.
 - O13. Desktop thumbnail heights: quantised to S for every client (recommended) or an unquantised desktop cache (a second cache writer). Sources: transport 4, writes Q-THUMBH.
 - O14. Turn form: (a) relative delta with turn_seq guard from migration 10 (recommended); (b) relative delta with request_id and no guard (the only form before migration 10); (c) absolute set with expected_version. Sources: transport 5, writes Q-T1, listing (viewstate).
@@ -194,7 +194,7 @@ Access and devices
 Catalog, schema and cutover
 
 - O16. Listing model. (A) client-held replica: stamp becomes (listing_key, seq), no server listing state, no cap or budget (listing cluster's recommendation). (B) server-held frozen membership: the decided stamp (listing_id, generation) stands, cap of 4 per device (transport and identity working value). Recommendation: A, which changes a decided item and needs approval; section 4 gives both. Sources: transport 7, identity Q13, listing 1, writes Q-LIST, lan Q17.
-- O17. Timing of migration 10 (AUTOINCREMENT rebuild, seq columns, stamps, tombstones, ops and job tables). Options: (a) with the cutover release (transport); (b) the release before cutover (listing Q7); (c) a release after cutover, before the first phone mutation and before quarantine Q1 (writes Q-T2; lan Q14). Recommendation: (c). The cutover release stays schema-neutral, the FileId reuse exposure exists today (pair.rs:345, 434), and the cost is stated: desktop writes stay unversioned until that release.
+- O17. Timing of migration 10 (AUTOINCREMENT rebuild, seq columns, stamps, tombstones, ops and job tables). Options: (a) with the cutover release (transport); (b) the release before cutover (listing Q7); (c) a release after cutover, before the first phone mutation (writes Q-T2; lan Q14). Recommendation: (c). The cutover release stays schema-neutral, the FileId reuse exposure exists today (pair.rs:345, 434), and the cost is stated: desktop writes stay unversioned until that release.
 - O18. Binary rollback once migration 10 has shipped (a pre-migration build refuses the catalog, core.rs:75-80). Options: forward fix only; restore the pre-migration backup, losing later writes; or both. Recommendation: both, with the backup as last resort. Source: writes Q-T3.
 - O19. An unmodified pre-cutover build run beside a running server is not stopped by any lock. Options: accept and document (the rollback procedure stops the server first); or amend the decided rule with a momentary exclusive probe at server start only. Recommendation: accept and document. Source: writes Q-OLD.
 - O20. A CLI write while an in-process desktop holds server.lock shared (before the flip). Options: allow (ordinary writes share the catalog; SQLite serialises them); refuse with a message. Recommendation: allow. Sources: transport 13, lan Q10 (allow); identity Q12 and writes Q-CLI (refuse). The recommendations differ; the owner decides.
@@ -214,14 +214,14 @@ Desktop and phone behaviour
 - O31. Yandex result folder: owner-wide (recommended: start and save act on the server host, yandex.rs:520-527, 533-550) or per device (rejected). Sources: identity Q6, transport decided-item conflict.
 - O32. Yandex 1:1 on the web. Options: hidden in v1 (recommended); host-URL source; server proxy of result images. Source: listing Q8.
 - O33. Yandex revocation change: online end-certificate checks, soft-fail on unknown status, connect-time wait up to about 10 s. Options: accept, gated by a paired live measurement (recommended); or keep the schannel cache-only check on Windows. Source: lan Q4.
-- O34. Bulk destructive action from a phone (select-all delete or move) needs password re-entry? Options: no, quarantine is the safety net (recommended); yes. Source: listing Q9.
+- O34. Bulk destructive action from a phone (select-all delete or move) needs password re-entry? Options: no, quarantine is the safety net (recommended); yes. Source: listing Q9. Moot for the safety net: quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`), so a bulk delete goes to the Recycle Bin; whether it needs re-entry is still open.
 - O35. A Delta that moves the list while the viewer is open or the grid is scrolling: apply on viewer close or 300 ms after scrolling stops (recommended); apply at once; or only on reopen. Source: listing Q2.
 - O36. When the selected file leaves the list: the next surviving FileId in the old order (recommended; a desktop change); the next in the new order; or the clamp at the old index (current desktop). Source: listing Q3.
 - O37. Provisional rows (unpaired = 1) listed? Recommendation: not listed until pairing ends (a desktop change). Options: listed (current desktop). Source: listing Q4.
 - O38. Restore the open viewer and modal panels after a reload. Recommendation: no in version 1. Source: writes Q-VIEWER.
 - O39. May a Start override (--query, --sort, --size, --borders, --dev, --filters) reach the saved session? Recommendation: no; the current leak is at client controller.rs:218 and :533 and contradicts the comment at :34-36. Source: writes Q-OVR.
-- O40. Version-1 moves. Options: quarantine and restore to home only (recommended); same-volume folder-picking moves (Q3) in version 1 only if stated. Cross-volume moves are refused in every case. Source: writes Q-MOVE.
-- O41. Quarantine UI numbers (proposal, unmeasured): 30-day age offer that never runs purge; warning at 10 percent of the volume's held bytes; undo for 10 s until the next batch or restart; typed confirmation above 100 items. Options: as proposed (recommended) or measured values. Source: writes Q-QUI.
+- O40. Version-1 moves. Options: quarantine and restore to home only (recommended); same-volume folder-picking moves (Q3) in version 1 only if stated. Cross-volume moves are refused in every case. Source: writes Q-MOVE. Moot for quarantine: it is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`); whether any version-1 move exists is still open.
+- O41. Quarantine UI numbers (proposal, unmeasured): 30-day age offer that never runs purge; warning at 10 percent of the volume's held bytes; undo for 10 s until the next batch or restart; typed confirmation above 100 items. Options: as proposed (recommended) or measured values. Source: writes Q-QUI. Closed: quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`).
 - O42. Sleep. Options: job-scoped keep-awake, with a permanent setting off by default (recommended); permanent setting on by default; no keep-awake. Source: lan Q8.
 - O43. LAN default and network profile. Options: off by default; Private profile and LocalSubnet rule required (recommended); on by default; Public allowed with warning. Source: lan Q6.
 - O44. Private CA structure. Options: three levels with the root key kept off the server (recommended); two levels with the root on the server (rejected). Source: lan Q7.
@@ -237,7 +237,7 @@ Desktop and phone behaviour
 - While the server runs, CLI writing commands go through its API; no refusal is needed (WEB_CLIENT.md:280-282). Before any server runs, CLI writes go direct.
 - The exclusive hold on the catalog is taken only for layout changes; ordinary SQLite writes share the catalog.
 - The desktop cutover moves reads and writes together, in one step. Afterwards the server is the only writer.
-- Deletes and moves are in version 1. Quarantine is built and shipped first, before any delete or move.
+- Deletes go to the Windows Recycle Bin and are in version 1; whether a move is in version 1 is open (O40). Quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`, recorded in this pass on 2026-11-21), so there is no purge command and no held-file store.
 - A thumbnail cache miss queues the work and returns a placeholder. The queue trigger is the want list (O12).
 - write_back is server-wide, changeable by the owner from any client, and on by default.
 - Scan-driven changes reach clients live. A phone can start scans and imports.
@@ -258,7 +258,7 @@ Desktop and phone behaviour
 - One channel: `POST /api/changes`. Body `{epoch?, scopes: {scope: gen}, listings?: [{listing, seq, catalog_id}]}`. The `listings` field is used only under option A (O16). Fixed scopes: tree, items, thumbs, inbox, jobs, settings, yandex. Under option B the listing scopes `listing:L:membership` and `listing:L:shape` (L is the 32-hex listing id) join the map. The first request omits `epoch`.
 - Answer 200 `{epoch, scopes: {...}, moved: [listing_key]}`. A held answer covers every named scope that still exists and every fixed scope.
 - Answer at once if the epoch differs, a named scope's generation differs, or a listing entry is moved. Otherwise hold up to 25 s (P). A bump is held 250 ms more so that bursts batch. The client's transfer watchdog is 35 s.
-- At most two held polls per device. A third gets 429 rate-limited with Retry-After. Revocation, session expiry and stop answer that device's held polls with 401 (stop answers the current vector).
+- At most two held polls per device (the limit stated once in `WEB_CLIENT.md`, Limits). A third gets 429 rate-limited with Retry-After. Revocation, session expiry and stop answer that device's held polls with 401 (stop answers the current vector).
 - Clocks. `meta.seq` (sql.rs:17-23) is a durable row stamp: it sets record versions and the `as_of` guard, and nothing streams or replays it. Each scope has an in-memory u64 generation, from 0 in each epoch. The epoch is 128 random bits drawn at each start and never persisted.
 - Bumps happen after COMMIT, batched 250 ms; `jobs` coalesces to 1 Hz. `items` moves whenever a commit moves meta.seq (read inside the transaction before and after). `thumbs` moves after a fill's commit or a NotStored. `yandex` moves on any search change. `tree`, `inbox` and `settings` move on their writes. Listing scopes (option B) follow section 4.
 - Client. It reads a scope's generation before its data and adopts it only after that scope's refetch succeeds; adoption is monotonic. A record applies only if its `changed` is greater than the one held. Refetch rounds are at least 250 ms apart. Backoff after a failed poll: full jitter, base 500 ms, factor 2, cap 30 s (P), reset on the first good answer. Visibility or online aborts a held poll and polls at once. A 401 stops polling and shows login.
@@ -335,7 +335,7 @@ The want list: `POST /api/thumbs/wants {viewport: [paths], background: [paths]}`
 
 Queue and decode:
 
-- One fill queue keyed by (catalog_id, file_id, mtime, rotation, THUMBS_VERSION, height); duplicates merge. Per device 256 queued and globally 2,048 (P).
+- One fill queue keyed by (catalog_id, file_id, mtime, rotation, THUMBS_VERSION, height); duplicates merge. The per-device and global queue caps are the limits stated once in `WEB_CLIENT.md` (Limits).
 - Priority: lane first (viewport before background), then the best list position across devices, ties LIFO.
 - One fixed decode pool of min(4, cores). Viewport entries are taken first. The background pass (thumbs lib.rs:173-179) and background entries run on the same workers. Lanes are priorities, not separate pools, so the decoder count stays bounded. Background CPU priority is open.
 - Each fill re-checks the cache before it decodes.
@@ -354,7 +354,6 @@ Cache identity and maintenance:
 - Readers: a bounded pool of N read connections (4 to 8), checked out per read; web reads run in spawn_blocking under a semaphore of N. The thread-local READERS (reader.rs:92-108) is removed. close() drains the readers, then stops the writer (lib.rs:307-313).
 - Eviction spares heights wanted in the last 10 minutes and the pass height, with `height NOT IN (spared)`. On-demand puts record their height (writer.rs:255-257 keeps none today).
 - Desktop: heights quantised to S for every client (O13). The Loopback backend fetches bytes through the trait over loopback with the bearer and never writes the cache. The Direct backend keeps make-on-read until it is retired (a listed parity exception).
-- Rows in a quarantine phase or held never enqueue and never write (section 3.11). Purge calls ThumbCache::forget.
 
 HTTP/2 (only where negotiated; section 5.12): SETTINGS_MAX_CONCURRENT_STREAMS 128; a connection resetting more than 100 streams in 10 s is closed (P). Both need hyper and h2 versions that carry the rapid-reset fixes, which are not in Cargo.lock.
 
@@ -378,7 +377,7 @@ Rule. Each mutation runs in one IMMEDIATE transaction on the mutation connection
 
 Ledger split (by where the effect lands):
 
-- Catalog ops table (migration 10), written in the same transaction as every catalog write: ratings, marks, turns, quarantine batches, deletes, moves, selection chunks. It is in the same database, so the two commit together.
+- Catalog ops table (migration 10), written in the same transaction as every catalog write: ratings, marks, turns, selection chunks. It is in the same database, so the two commit together.
 - Server request_ledger in server.db, for effects outside the catalog: crop saves, Yandex saves, and POST commands that have no catalog row. Pending then done (section 3.5).
 - No ledger: scan and import starts (a second start joins the running job), and versioned settings and session writes (idempotent by version).
 - Retention: 24 hours or 10,000 rows per scope, whichever is smaller (P).
@@ -394,7 +393,7 @@ Resolved in 1.6:
 
 - Versioned sets with a guard, not last writer wins, for ratings and marks (after migration 10). Lens A's unguarded turn and lens B's last-writer rating are rejected.
 - Turn form: section 3.6 and O14.
-- The reserved routes DELETE /api/items/{file_id} and POST /api/items/{file_id}/move are retired; quarantine uses typed command routes (section 3.11).
+- The reserved routes DELETE /api/items/{file_id} and POST /api/items/{file_id}/move are retired; there are no quarantine routes (quarantine is dropped, `WEB_CLIENT_TECH_DECISIONS.md:200`).
 - Request keys are named request_id everywhere. The name `op` is retired (writes); transport's op is renamed.
 
 ### 1.7 Selections and jobs
@@ -407,13 +406,13 @@ Option B keeps transport's range form: `{listing, base, ranges, add, remove, cha
 
 Common rules:
 
-- Body cap 128 KiB. (A maximal selection of six-digit ranges is about 65.5 KB; 64 KiB would refuse a legal selection.)
+- Body cap 128 KiB, the selection body cap in `WEB_CLIENT.md` (Limits). (A maximal selection of six-digit ranges is about 65.5 KB; 64 KiB would refuse a legal selection.)
 - Members are materialised into job-owned catalog rows at creation (8 bytes each; about 1.5 MB at 189,518 members, arithmetic), so the job does not depend on the snapshot.
 - Per member, the job applies only if its field stamp is at most as_of; otherwise the member is skipped and counted as a conflict, and a sample of 100 is kept.
 - `change` is rating(value), mark(marked), turn(delta) or save_crops(folder token). save_crops has no per-member guard; its count is the guard. Its ledger rows go to server.db.
 - Status moves on the `jobs` scope and in GET /api/jobs/{job}. `POST /api/jobs/{job}/cancel` stops at the next chunk boundary; committed chunks stay. One running job per device and two per server (P).
 
-Resolved in 1.7: the 4,096 cap is shared with quarantine plans (ASSEMBLER; writes' 5,000 is rejected for one cap, as validators asked). Lens A's 64 KiB and ops' 16 KiB are rejected (they refuse legal selections). Lan's 1 MiB is rejected (no use at 4,096 entries). Check-then-materialise races are rejected in favour of collecting in one read transaction.
+Resolved in 1.7: the 4,096 cap is the selection cap (ASSEMBLER; writes' 5,000 is rejected for one cap, as validators asked; the quarantine plan that shared it is dropped, `WEB_CLIENT_TECH_DECISIONS.md:200`). Lens A's 64 KiB and ops' 16 KiB are rejected (they refuse legal selections). Lan's 1 MiB is rejected (no use at 4,096 entries). Check-then-materialise races are rejected in favour of collecting in one read transaction.
 
 ### 1.8 Records, items, settings, views, inbox, tree, library, Yandex
 
@@ -426,7 +425,6 @@ Resolved in 1.7: the 4,096 cap is shared with quarantine plans (ASSEMBLER; write
 - Folders a phone names: opaque 128-bit tokens issued for an entry of the server's own folder listing (`GET /api/fs/roots`, `GET /api/fs/folders?at=<token>`, folders only under the scanner's refusal rules), bound to the device and expiring after 10 minutes (P). The desktop's native picker obtains a token by asking the server for the picked entry. Raw paths are never sent, since library.rs:188 and yandex.rs:144 write into the folder they are given.
 - Library: `GET /api/library/status`; `PUT /api/library/paused`; `GET` and `POST /api/library/roots` (POST takes a folder token); `DELETE /api/library/roots/{root}`; `POST /api/library/scans {roots}`; `POST /api/library/scans/stop {root}`; `POST /api/library/rescan`; `GET /api/library/write-errors`. Status moves on `jobs`.
 - Yandex: `POST /api/yandex/searches {file_id}` answers `{sid}` (the server resolves the path); `GET /api/yandex/searches/{sid}` answers the status and the full result list so far, non-consuming (yandex.rs:485-489 consumes today); `DELETE /api/yandex/searches/{sid}` cancels; `GET /api/yandex/searches/{sid}/results/{id}/image` is private and immutable for that sid and id; `POST /api/yandex/saves {sid, results: [decimal ids], folder: token}`, where the server takes each URL from its own map (yandex.rs:336-341 fetched a supplied URL, an SSRF); `GET /api/yandex/save-folder`. A deleted search answers 404. The `yandex` scope bumps on any change. A result folder is owner-wide (O31).
-- Quarantine routes: section 3.11.
 
 ### 1.9 Schema and migrations
 
@@ -437,7 +435,6 @@ Numbering follows TO_9 (schema.rs:36-44, 350). Migration 10 is the union of the 
 - Stamp extensions to files.changed (never files.seq): membership and shape columns, file_writes, border_marks and analysis.error (section 4.6).
 - `file_tombstones`, meta rows `bulk_seq`, `tombstone_floor`, `move_seq`, and `taken_zone`.
 - Catalog ops table (section 1.6); job state and cursor tables in the catalog, so each chunk's cursor and writes commit together. The outcome report of a job is `job_reports` in server.db (writes).
-- Migration 11 (ships with quarantine Q1): quarantine_batches and quarantine tables with triggers (section 3.11). CARRIED is updated (rebuild.rs:134-153).
 - The replacement rule: the rating row is kept (O24); the mark is removed by a plain DELETE, which fires its trigger.
 
 ### 1.10 Route table and body caps
@@ -467,7 +464,6 @@ Numbering follows TO_9 (schema.rs:36-44, 350). Migration 10 is the union of the 
 | Library routes (status, roots, scans, rescan, paused, write-errors) | session or bearer | 4 KiB; 0 |
 | GET /api/fs/roots, GET /api/fs/folders | session or bearer | 0 |
 | Yandex searches and saves; GET save-folder | session or bearer | 16 KiB; 64 KiB; 0 |
-| Quarantine plans, commit, retry, forget, undo | session or bearer | 128 KiB; 4 KiB |
 | GET /notices | session | 0 |
 
 Every route declares its cap. The table is the input to the route-table test. Reads of bodies use the cap plus one byte (fetch.rs:49-52 pattern).
@@ -493,10 +489,10 @@ Every route declares its cap. The table is the input to the route-table test. Re
 - Chrome on Android (untested): whether an img reuses a displayed 1x1 placeholder for the same URL (a nonce may be needed); whether an img is cancelled when its element is removed; whether Clear-Site-Data with the page open takes effect; a 307 to an immutable target, including a chain if the target was evicted between the two (bounded by the browser's redirect limit).
 - Whether a ready signal can precede the placeholder response on Chrome; the race rule removes the hazard, and its frequency is unmeasured.
 - Qt wasm held fetch: the 25 s hold with the screen off, and the order of visibilitychange, pageshow and online on resume (read in source, qnetworkreplywasmimpl.cpp:259, 276; not run).
-- ureq holding a 25 s poll on a worker thread (Cargo.lock:2888); the desktop's image path to loopback thumbnails.
+- ureq holding a 25 s poll on a worker thread (the `ureq` package in Cargo.lock); the desktop's image path to loopback thumbnails.
 - axum, hyper, h2 and tokio are not in Cargo.lock: the rapid-reset fixed versions, hyper's stream default and the blocking-pool default are unchecked. The stream cap and reset rule depend on them.
 - The Qt wasm WebSocket has no ping (validator; not read here, and not relied on after O27).
-- SQLite atomicity across an attached database under WAL: the bundled sqlite3.c (3.50.2) shows no super-journal count for WAL, so ATTACH is treated as non-atomic. No catalog write depends on it.
+- SQLite atomicity across an attached database under WAL: the bundled sqlite3.c (3.54.1, the fork rev ac441bb; `Cargo.lock` libsqlite3-sys 0.40.0, rusqlite 0.43.0) shows no super-journal count for WAL, so ATTACH is treated as non-atomic. No catalog write depends on it.
 - The AFTER UPDATE trigger with WHEN on an upsert: untested. The mark path uses ON CONFLICT DO NOTHING.
 - Stamp completeness and scanner rebinds (pair.rs:355-363); same-size, same-mtime replacement is the catalog's own limit.
 - Heights S, their ratio and mean sizes at each height (only 29.6 KB at 384 px is known, THUMBNAILS.md:34).
@@ -530,7 +526,7 @@ The catalog meta row server_store is set once, when the server first creates ser
 
 - `meta(key, value)`: schema marker and the cutover import marker.
 - `owner(id CHECK id = 1, phc, epoch, changed_ms)`: one row. Its existence is the owner-set marker. `epoch` changes on every password change.
-- `devices(id CHECK length 32, kind CHECK in (this_computer, browser), name, created_ms, last_seen_ms NULL, revoked_at_ms NULL)`.
+- `devices(id CHECK length 32, kind CHECK in (this_computer, browser), name, created_ms, last_seen_ms NULL, revoked_at_ms NULL)`. `id` is the BLAKE3 digest of the 32-byte device key (the key itself is the device cookie's value and is never stored).
 - `sign_ins(digest BLOB PRIMARY KEY, device_id UNIQUE REFERENCES devices ON DELETE CASCADE, owner_epoch, created_ms, last_used_ms, elevated_until_ms NULL)`. `digest` is the BLAKE3 of the 32-byte secret; one sign-in per device.
 - `login_failures(source PRIMARY KEY, failures, last_failure_ms, next_allowed_ms)`.
 - `remembered(scope_kind, scope_id, field, version INTEGER NOT NULL, value JSON, updated, PRIMARY KEY (scope_kind, scope_id, field))` (section 3.4). Preferences, LAN settings and write_back live here.
@@ -540,7 +536,7 @@ Catalog data stays in the catalog. Views are CARRIED by rebuild (rebuild.rs:148-
 ### 2.4 Cookies and CSRF (ASSEMBLER reconciliation)
 
 - `__Host-gallery_session`: 32 random bytes, base64url; stored only as the BLAKE3 digest. Path=/, Secure, HttpOnly, SameSite=Lax, no Domain. Max-Age equals the absolute lifetime (O2: 7776000 s at 90 days). The server enforces idle and absolute lifetimes from the row.
-- `gallery_device`: the device id (not secret; grants nothing). Path=/api/auth/login, Secure, HttpOnly, SameSite=Lax, Max-Age 34560000 s (400 days, refreshed at login). It has no `__Host-` prefix because its Path is not /.
+- `gallery_device`: the device key itself, which is a secret (the server stores only its BLAKE3 digest in `devices.id`); it grants nothing on its own. Path=/api/auth/login, Secure, HttpOnly, SameSite=Lax, Max-Age 34560000 s (400 days, refreshed at login). It has no `__Host-` prefix because its Path is not /.
 - Why two cookies. Logout clears the session cookie. Without gallery_device, the next login cannot find the device, its preferences and its budget, and it would create a new device (the gap the validators found in the single-cookie design). Rejected: one cookie (transport and lan) for this reason; device's `__Host-pg_sign` and `pg_device`; identity's SameSite=Strict.
 - SameSite=Lax on both. Strict is rejected: it withholds the cookie on top-level cross-site navigation, which forces a login on every external link (writes), and the decode amplifier is closed by the Sec-Fetch-Site refusal (1.2 step 4), not by SameSite. Lax is also what cluster 4 and cluster 5 assume.
 - CSRF: no derived token (X-Gallery-Csrf is rejected). The unsafe-method rules are 1.2 steps 3 and 4: Origin, application/json and X-Pg-Client. A cross-origin page cannot send X-Pg-Client without a preflight the server never answers.
@@ -608,7 +604,7 @@ Queued thumbnail work is not cancelled by revocation: it fills the shared cache,
 
 - Per source address, persisted in login_failures so a restart keeps the budget. After 5 consecutive failures the address waits 30 s, doubling per further failure to a 15-minute cap (P). A success clears the row; a row with no failure for 24 hours expires. Login, elevate and change share one budget.
 - Globally, verifications are serialised; a failed verification delays the next by at least 1 s. A correct password is delayed, never refused.
-- Verification (Argon2id, m=64 MiB proposal, t=3, p=1; O3) runs on one dedicated blocking thread with a queue of 4. A full queue answers 429 with Retry-After before any hashing. A throttled address gets 429.
+- Verification (Argon2id, m=128 MiB, t=3, p=1, the default made in this pass; O3) runs on one dedicated blocking thread with a queue of 4. A full queue answers 429 with Retry-After before any hashing. A throttled address gets 429.
 - If the failure row cannot be written, an in-memory counter applies for the process; the response is the same generic 401.
 - Password: NFC-normalised; at least 15 characters after normalisation (O3); at most 1024 bytes; no composition rules; never logged or echoed.
 
@@ -671,11 +667,11 @@ The remembered table in server.db (section 3.4) holds everything below; the mirr
 ### 2.18 Could not verify (cluster 2)
 
 - The argon2 0.5.3 closure (not in Cargo.lock; unicode-normalization not locked); getrandom and constant_time_eq are locked but not direct dependencies; blake3 keyed_hash and derive_key signatures; no build was run.
-- Windows owner-only DACL and DPAPI calls: Win32_Security_Authorization is not enabled (Cargo.toml:50); the SDDL calls are unwritten; PG_HOME on another disk is untested.
+- Windows owner-only DACL and DPAPI calls: Win32_Security_Authorization is not enabled (the `windows-sys` entry in `[workspace.dependencies]`); the SDDL calls are unwritten; PG_HOME on another disk is untested.
 - LockFileEx between two handles of one process (cutover design:890).
 - The desktop machine name for the this_computer row: no hostname call exists in crates/; COMPUTERNAME and GetComputerNameExW are unverified.
 - Android Chrome: acceptance of `__Host-` Secure SameSite=Lax cookies under the private CA; Clear-Site-Data storage effects; how many connections the login page opens.
-- Argon2id time and peak memory at 64 MiB; the OWASP figures were recalled, not checked.
+- Argon2id time and peak memory at 128 MiB; the OWASP figures were recalled, not checked.
 - The 400-day device cookie lifetime (general knowledge, not checked).
 - WAL with synchronous FULL is assumed safe on power loss; WAL on removable or network folders is assumed to fail.
 - Two Windows accounts with one catalog folder: the second fails the instance lock. Not tested.
@@ -683,7 +679,7 @@ The remembered table in server.db (section 3.4) holds everything below; the mirr
 
 ---
 
-## 3. Writes, cutover, view state and quarantine
+## 3. Writes, cutover and view state
 
 ### 3.1 Cutover phases
 
@@ -696,9 +692,9 @@ The remembered table in server.db (section 3.4) holds everything below; the mirr
 - C7: CLI routing (3.8).
 - C8, the flip: the default becomes Loopback in one step (reads and writes together). The first start imports gallery.json and the catalog session row into the remembered table, with the import marker in the same server.db transaction. The logon task ships (O5). The Direct lever is selected by environment variable (O23).
 - C9: the Direct lever and the desktop's pg-app dependency are removed; tools/crate-layers.txt:48 and the boundary check change in the same commit.
-- Quarantine: Q1 ships after C8 and after migration 10 (and 11 with it); Q2 is purge, after the AUTOINCREMENT migration is proven; Q3 is same-volume user moves under O40. Cross-volume is refused in every phase.
+- Quarantine: dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`, recorded in this pass). The Q1 to Q3 build phases no longer exist.
 
-Resolved: "phase" is used for cutover steps (C1 to C9) and quarantine build phases (Q1 to Q3) with separate names. Lens A's ambiguous phase 5 is removed. Quarantine before C8 is rejected (a desktop-side second writer).
+Resolved: "phase" is used for cutover steps (C1 to C9). Lens A's ambiguous phase 5 is removed.
 
 ### 3.2 Locks, prepare and attach
 
@@ -717,11 +713,11 @@ Migration timing is O17; contents are section 1.9. The AUTOINCREMENT rebuild and
 
 | Store | Owner from C8 | Contents |
 |---|---|---|
-| catalog.sqlite | server | files, folders, views, inbox rows, analysis, ratings, border marks, pairs, job tables, ops table, quarantine tables (10 and 11) |
+| catalog.sqlite | server | files, folders, views, inbox rows, analysis, ratings, border marks, pairs, job tables, ops table |
 | server.db | server | remembered (preferences, LAN settings, session listing, cutover marker), login and credential tables (section 2.3), request_ledger, job_reports |
 | gallery.json | server writes a mirror; read only by a rollback build and by the first import | the seven keys: write_back, real_size, row_height, dev_mode, yandex_folder, show_borders, last_file |
 | thumbs cache | server | thumbnails |
-| library files | server | crop copies, XMP and turn copies, Yandex saves, quarantine moves |
+| library files | server | crop copies, XMP and turn copies, Yandex saves |
 
 Remembered table: `remembered(scope_kind, scope_id, field, version INTEGER NOT NULL, value JSON, updated, PRIMARY KEY (scope_kind, scope_id, field))`, version 0 meaning never written. Each applied write is one FULL transaction that sets value and version + 1. After commit the server rewrites gallery.json through the JsonStore pattern (temp, sync, rename, temp removed on failure). A mirror failure after commit posts a notice and the write stays applied; the mirror is retried at the next write and at start.
 
@@ -736,7 +732,7 @@ Settings that are one typed key per row (write_back, LAN) follow the same table.
 Three classes:
 
 - Sets, by value and version: PUT rating, PUT mark, PUT settings, PUT session listing. A set whose value already equals the stored value answers unchanged and counts as applied, so a resend is safe. Otherwise 200 `{applied, version, record}`, or 409 version-mismatch with the current value.
-- Commands, with request_id: POST turns (after migration 10 with a version), crop saves, Yandex saves, folder add and remove, job cancel, quarantine plan commit, retry, forget and undo.
+- Commands, with request_id: POST turns (after migration 10 with a version), crop saves, Yandex saves, folder add and remove, job cancel.
 - Views: PUT and DELETE with If-Match (section 1.8).
 
 The request ledger (server.db table `request_ledger(request_id PRIMARY KEY, kind, state pending|done, params JSON, result JSON, created)`) runs in this order for each command:
@@ -761,7 +757,7 @@ Resolved: the cutover's attached ledger in server.db and the quarantine request 
 
 ### 3.7 Durability and atomicity
 
-- User-mutation commits, quarantine intent, commit and purge rows, and request_ledger rows run on a dedicated pool connection with PRAGMA synchronous = FULL (ops decision 36). The setting is per connection, so the mutation connection is separate.
+- User-mutation commits and request_ledger rows run on a dedicated pool connection with PRAGMA synchronous = FULL (ops decision 36). The setting is per connection, so the mutation connection is separate.
 - Catalog read and scanner connections stay NORMAL (SETTINGS, schema.rs:377). Batch writes and thumbnail puts stay NORMAL. server.db is FULL on every connection except login_failures (NORMAL).
 - No ATTACH. A WAL database contributes no super-journal count (aMJNeeded WAL = 0, sqlite3.c:88841-88850), and two WAL files commit per file (sqlite3.c:88889), so an ATTACH across catalog.sqlite and server.db is not atomic on crash for this build. Writes that span both use the ordered pending and done protocol (3.5).
 
@@ -807,73 +803,12 @@ Resolved: the cutover's whole-value flush at exit is rejected (a stale copy reve
 
 Desktop writes after the flip are sets and commands over loopback with the same guards. Exit waits a bounded time for unacknowledged writes, then drops unsent ones with a notice; a write still unknown at timeout is shown as unknown. No whole Preferences value is ever sent.
 
-### 3.11 Quarantine
+### 3.11 Quarantine (dropped)
 
-Store:
+Quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`, recorded in this pass). The store, the quarantine tables and triggers (migration 11), the three-step executor, recovery, purge, the quarantine routes, the UI and the test plan that stood here are removed. A user delete goes to the Windows Recycle Bin.
 
-- Per volume, never across volumes. The volume root comes from GetVolumePathNameW on the verbatim path (pg_platform::names::disk_path). A file goes to `<volume root>/_quarantine/<batch folder>/<path relative to volume root>`. The batch folder is named by the batch id, a UTC time and a random suffix. `_quarantine` is created at first use; a volume that refuses it is refused with a reason.
-- Remote drives (dir.rs:137-144) and volumes without a stable identity (ScanNote::VolumeFallback) are refused. The Recycle Bin is rejected: restore needs the catalog's own record.
-- The scanner skips `_quarantine` (scan lib.rs:112, 124).
-- No copy fallback. Rename uses MoveFileExW flags 0 (file.rs:200); a cross-volume rename fails, and ERROR_NOT_SAME_DEVICE is surfaced as a defect.
 
-Catalog (migration 11):
 
-- The files row holds where the file is. During a move-in the home location stays until commit, and the quarantine row holds the intent. Every held or in-transit row has files.missing = 1; the partial indexes (schema.rs:535, 537, 539) keep grids and counts clean.
-- quarantine_batches(id, plan_id TEXT NOT NULL UNIQUE, kind quarantine|restore|purge, created, volume, folder, state running|done). plan_id is the exactly-once guard. There is no request column.
-- quarantine(file_id PRIMARY KEY REFERENCES files ON DELETE CASCADE, batch_id, phase moving|restoring|purging or NULL for held, home, target, problem blocked|offline|conflict or NULL, attempts, error, since, volume, file_ref captured at intent).
-- Triggers: BEFORE INSERT on quarantine aborts unless files.missing = 1; AFTER UPDATE on files deletes the quarantine row when missing goes 1 to 0.
-- Pairing candidates (pair.rs:98-100, 134-136, 197-201) gain AND NOT EXISTS against quarantine. file_gone (lookup.rs:31-37) then reads true for held rows.
-
-Three steps for one item, in chunks of WRITE_BATCH (types.rs:85, 1,000):
-
-- (a) One FULL transaction: refuse if the file has a file_writes row with temp set (sql.rs:141-149); set files.missing = 1; insert the quarantine row with phase moving, home, target, the captured volume and file_ref; delete this file's file_writes rows whose temp is NULL (a concurrent record_write_temp then returns false, queue.rs:211-219).
-- (b) Outside any transaction: the identity-verified handle rename.
-- (c) One FULL transaction whose WHERE requires files.volume and file_ref to equal the captured identity: set folder and name to the target; set size, mtime and created from the handle; clear the phase (the row becomes held). No match: the item is reconciled, not committed.
-Intent first, so a crash after the rename is recognisable by identity. A shutdown stops at a step boundary, never between (a) and (b) on purpose.
-
-Handle rules: each operation that moves or deletes a user file opens it by verbatim path with CreateFileW (DELETE and FILE_READ_ATTRIBUTES; share read, write and delete; FILE_FLAG_OPEN_REPARSE_POINT). On that handle: refuse a reparse point (dir.rs:181-192) and a link count above one; compare the volume serial and 64-bit file id (dir.rs:296-310) and created with the captured values. The rename is SetFileInformationByHandle(FileRenameInfo) with ReplaceIfExists FALSE. Purge clears the read-only attribute if set, sets FileDispositionInfo on the same handle (non-POSIX disposition, so the name goes at once and space is held only until close), then closes it. None of these Win32 calls has been run. Linux tests use a fake identity provider.
-
-Recovery (reads the disk, never a log):
-
-- Found at target with identity, not at home: the rename happened. Commit by phase: moving sets folder and name and leaves the row held; restoring sets missing = 0; purging goes to the purge rule.
-- Found at home, not at target: the rename did not happen. Moving resumes if the batch runs; restoring resumes toward home; purging retries.
-- Found at both: conflict; nothing is done; a notice.
-- Found at neither, volume present: lost. Delete the quarantine row, leave files.missing = 1 as an ordinary missing file, post a notice.
-- Volume absent: problem = offline; the batch pauses for that volume.
-- Timing: the recovery job starts after the listeners bind. Rows with a phase set are refused as in transit for plan and restore until checked. A returning volume re-checks its rows. Held rows are checked lazily, never all at startup.
-
-Scan guards:
-
-- The scanner's upsert (writers.rs:109-118) and displace statement (writers.rs:101-102) gain AND NOT EXISTS against quarantine. A guarded write that updates no row returns Recorded::Same (writers.rs:209, 213).
-- An identity hit on a held or in-transit row returns Recorded::Held (types.rs:350-358). The scan does not adopt it and enqueues a server check of the path.
-
-Restore and move-back (one path): a held row returns only through a server-side identity-verified check. The server opens the file at the seen path (or at home, for restore), checks identity and created, checks that the file is not at target, and in one transaction sets missing = 0 with the folder and name where the file is (the trigger deletes the quarantine row) and posts a notice ("came back at `<path>`" for a manual move-back). The scan only reports the sighting and enqueues the check.
-
-- Restore is refused if home is not under a present library root (roots.rs:55-72); missing folders are created only beneath a present root.
-- If a file exists at home, the row becomes conflict and nothing is overwritten. The user may restore under a server-chosen alternate name, "`<stem> (n)<ext>`" (file.rs:244-254).
-- Restore re-queues the rating and rotation writes from the catalog's values in its commit.
-
-Plans, commits and routes:
-
-- `POST /api/quarantine/plans {kind: quarantine|restore|purge, files or listing_id}` returns `{plan, count, bytes, refusals, expires}`. Not a mutation; no request_id. Cap 4,096 FileIds (ASSEMBLER: the shared bulk cap); body 128 KiB. The plan is frozen in server memory for 10 minutes (P) and lists FileIds with their files.changed. Under option A it also carries the listing set_digest, and the commit re-checks it in one read transaction.
-- `POST /api/quarantine/plans/{plan}/commit {request_id}` returns 202 `{batch}` at once. The batch row (plan_id UNIQUE) is written in its own catalog transaction; the chunks run as a pg-library job; progress and results arrive on the jobs scope; membership bumps follow section 4.9. The commit refuses and reports any item whose files.changed differs from the plan.
-- `POST /api/quarantine/retry {files, request_id}`; `POST /api/quarantine/forget {files, request_id}`; `POST /api/quarantine/batches/{batch}/undo {request_id}` (a restore plan over the batch's still-held items, committed at once; offered until the next batch starts or the server restarts); `GET /api/quarantine/batches` and `GET /api/quarantine/batches/{batch}`.
-- Typed replies: quarantined and restoring 202 with a batch; conflict, offline, not-in-library and refused 422 refused; in-use 409; plan-expired 410. A lost plan (restart or expiry) answers plan-expired and the client re-plans.
-- No request carries a path; the server derives every path from catalog rows under library roots. Restore, retry, forget and quarantine are open to a logged-in device; purge is loopback only (O7; the LAN answers 403 purge-lan-disabled).
-
-Forget: applies only to conflict and lost rows. It deletes the quarantine row, leaves files.missing = 1, touches nothing on disk, and posts a notice. Manifests are never imported automatically.
-
-Purge (loopback only, O7): one transaction sets phase purging; the identity-verified handle compares identity, created, size and mtime (a mismatch sets conflict, reverts to held, notifies, deletes nothing); a match clears the read-only attribute if set, sets disposition delete, and closes the handle; ThumbCache::forget(file_id) (thumbcache lib.rs:217); one transaction deletes the files row, cascading to analysis, ratings, file_writes, border marks, pair rows and failures; the batch folder is removed with RemoveDirectory only if empty. The disk is deleted before the row, so a crash leaves a file the catalog still believes in.
-
-Manifest: each batch folder holds manifest.json, written atomically before the batch's first rename, listing per item the volume serial, file id, created, size, mtime, home and target. It is a recovery copy only.
-
-Edits to held rows: rating, rotation and border marks on a held or in-transit file are refused with NotInLibrary and never queued. The thumbnail make refuses a row with a phase set and writes nothing; held rows serve cached thumbnails only.
-
-Phases: Q1 (ships after C8 and migration 10): tables, handle primitives, the three-step order, recovery, scan and pairing guards, Recorded::Held, restore to home, the typed API, and the UI on desktop and phone, tested on scratch volumes. The executor runs only behind the server; the desktop never calls it in-process. Q2: purge. Q3: same-volume folder-picking moves (O40).
-
-UI. Desktop: a Quarantine entry in the folder tree beside the Inbox, showing count and bytes per volume, with a held listing and a query field. Rows show moving, held, blocked, offline, conflict, restoring or purging. Actions: Quarantine (after confirmation with count and bytes), Restore (selected or all in view, through a plan), Retry, Forget, Purge (Q2, typed confirmation above 100 items). The UI states that quarantine does not free space on the library drive. Problems are inbox notices. The desktop never renames or deletes a file itself. The keyboard shortcut is open (Delete belongs to the Inbox, InboxPanel.qml:231). Phone: quarantine a selection (plan, then commit), view the held listing with cached thumbnails, restore selected or all in view, undo while the undo lasts, retry blocked and offline items. No purge in v1. Nothing is queued offline.
-
-Test plan (summary): fault points after (a), after (b), after (c), during recovery, after the pending ledger row with no batch row, after the batch row before the first rename, between a purge's disk delete and its commit, and a kill during retry or forget. Cases include a scan that lists before a quarantine and writes after (Recorded::Held), a locked file, a volume removed mid-batch, a hard link and a reparse point (refused at plan), restore onto an existing name (conflict), a replaced file in `_quarantine` (purge conflict), and disk full. Real NTFS scratch folders on Windows; a fake identity provider on Linux.
 
 ### 3.12 Resolved conflicts (cluster 3)
 
@@ -902,14 +837,13 @@ The desktop keeps the native folder picker. The picked entry becomes a folder to
 - Win32, none run: the token DACL (no DACL code exists in the repo); SetFileInformationByHandle with FileRenameInfo and ReplaceIfExists FALSE on a DELETE handle; FILE_DISPOSITION_INFO with the read-only attribute; sharing and error-code classes (32, 33, 5, 112, 39, 3, 21, 1167 are proposals); ERROR_NOT_SAME_DEVICE from MoveFileExW with flags 0; NTFS rename durability; MOVEFILE_WRITE_THROUGH for the mirror; LockFileEx between two handles of one process.
 - Whether Rust std's try_lock on Windows locks the whole file (so a held server.lock's body cannot be read). The design avoids the question with the unlocked server.holder.
 - The AUTOINCREMENT rebuild with foreign keys on (rebuild.rs:181-210 not read); the meta sequence name used to seed the seq columns.
-- Folder add idempotency by normalised path (roots.rs not read); folder rows under `_quarantine` leaking into the tree or the scanner's in_root logic (browse/read/tree.rs and writers.rs:96-97 not read); whether a file replaced in `_quarantine` is caught by created on NTFS.
+- Folder add idempotency by normalised path (roots.rs not read).
 - The turn attribution case (3.6).
 - ureq holding the GET /api/changes long poll; the browser's fetch keepalive with a custom header on pagehide; whether Android Chrome delivers pagehide before a kill; sessionStorage survival.
 - Whether the pre-cutover readers accept the gallery.json mirror as written (prefs.rs:147-156 not re-read).
 - Request ledger retention and growth under scan-rate volume (unmeasured).
 - Pairing: the unpaired stamp gap at pair.rs:355-362 is the listing cluster's; a held file that becomes listable through pairing can be missed by a delta until a digest check.
 - The Start payload in a real run, the serde compile of ViewState and Fraction, the replay test, and the replay.rs:16-21 Init embed.
-- Quarantine key binding (InboxPanel.qml:231); the keybinding design picks the shortcut.
 - The old-build residual (O19): no test or lock stops a pre-cutover process that takes a shared hold beside a running server.
 
 ---
@@ -922,7 +856,7 @@ Option A (O16, recommended by this cluster): a client-held replica. No server li
 
 ### 4.2 Identity
 
-- listing_key: the first 32 lowercase hex characters (128 bits) of BLAKE3 over the serde_json bytes of the server-parsed Listing (crates/model/src/view.rs:11-19). BLAKE3 is a workspace dependency (Cargo.toml:14). The client never supplies it.
+- listing_key: the first 32 lowercase hex characters (128 bits) of BLAKE3 over the serde_json bytes of the server-parsed Listing (crates/model/src/view.rs:11-19). BLAKE3 is a workspace dependency (`blake3` in `[workspace.dependencies]`). The client never supplies it.
 - The key is build-scoped: a new build may serialise a Listing differently, so a replica held across an upgrade is orphaned and the next request is Full. A byte-pinning test on a fixed Listing guards this.
 - Parsing is strict: an unknown field or unparseable date is 400 bad-listing. The lenient date defaults (query.rs:199-201, 211-214) are not used for keys. A key over 4 KB is 413.
 - seq is meta.seq, read in the same read transaction as the rows it describes (sql.rs:17-23). catalog_id is meta.catalog_id (schema.rs:702).
@@ -1017,7 +951,6 @@ Under option B the same moves are the listing scopes of section 1.1.
 - Selection follows FileId. If the selected id leaves before a Delta is applied, the client selects the next surviving FileId in its old order, or the previous one (O36). The scroll anchor is the selected item's row after the Delta (grid.rs:183). This replaces the clamp at grid.rs:391-395 and the doc rule at doc:216-218.
 - Select-all: section 1.7 (count and set_digest verified in one read transaction; collected ids go into the job).
 - Explicit ids: each probed against the membership condition in one read transaction; any non-member gives 409 selection-changed.
-- Quarantine plans use the same predicate (section 3.11).
 - Facets: `POST /api/listings/facets` returns counts over current membership with the seq read in the same transaction. The client shows them only when that seq equals its replica's seq; otherwise it pulls first.
 - Rating edits: the record updates at once. Under a rating sort the list order waits for the pull gate (O35). The desktop edits in place (crates/desktop/src/gallery/edits.rs:75-92) and reorders on the next reload (Main.qml:255-265); the doc claim at doc:224-226 is withdrawn.
 - Held pulls mean scan changes reach the viewer as a notice within 250 ms, and the list update waits for the gate. The decided "live" rule is met by the notice and by the held list update (O35).
@@ -1064,7 +997,7 @@ View URLs (option A and the web; cluster 1's key rules):
 - The full-image form is not a web route. Video gets 415.
 - Replaces: wire's /api/items/{file}/view (design:1475), realsize's /api/files/{key}, the doc sketch (doc:395), and /api/views (taken by saved views).
 
-Bounds: each fit side and each region output side is at most 8192 px; each product is at most 64 megapixels (P). A larger request is 400 bad-request; the server never clamps. The client parser stops clamping to 16384 (image.rs:134). A DPR-3 portrait phone window (3240 by 7200 device px) is inside 8192 on each side and at 23.3 MP. A 64 MP RGBA decode is 256 MB, inside the 512 MiB codec cap (crates/codec/src/codecs/limits.rs:5-10). Transport's 16384 px bound is rejected.
+Bounds: the fit and region limits stated once in `WEB_CLIENT.md` (Limits). A larger request is 400 bad-request; the server never clamps. The client parser stops clamping to 16384 (image.rs:134). A DPR-3 portrait phone window (3240 by 7200 device px) is inside the per-side bound and at 23.3 MP. A 64 MP RGBA decode is 256 MB, inside the 512 MiB codec cap (crates/codec/src/codecs/limits.rs:5-10). Transport's 16384 px bound is rejected.
 
 Cache: fit, tile and region 200s use O11's value. Errors and unversioned requests are no-store. Listing and record replies are private, no-store. Auth's no-store on view endpoints (auth:247) is replaced for versioned views. Images load through plain img tags, which need no header (1.2 step 8 exempts them), so the fetch-to-object-URL path is not used.
 
@@ -1147,15 +1080,15 @@ Admission numbers are in section 2.11: 5 failures, a 30 s doubling wait to 15 mi
 
 - rustls 0.23 with the ring provider named in code, through tokio-rustls 0.26 for the LAN listener. TLS 1.2 and 1.3 only; no client authentication. ServerConfig's certificate resolver is backed by an atomic swap so the leaf can change. ALPN offers h2 and http/1.1; dispatch follows the negotiated ALPN; no plaintext and no redirect on the LAN port. The chain served is [leaf, intermediate]. Handshake timeout 10 s (P).
 - The key-match check runs when the certified key is built; the API names are unverified.
-- ureq 3 (Yandex and the desktop's HTTP): default features off, with rustls-no-provider, platform-verifier and cookies (Cargo.toml:46 today uses native-tls). The provider is passed explicitly to ureq and to ServerConfig; no process-wide default is installed.
-- native-tls, openssl and openssl-sys are banned in deny.toml (deny.toml:68-70 gains the bans).
-- Corrections: ureq already uses native-tls (WEB_CLIENT.md:384; Cargo.lock:1434), so the change moves it to rustls with one explicit provider; it does not reuse an existing provider. rustls is pure Rust only for the crate; ring carries C and assembly. WEB_CLIENT.md:380-387 says native-tls has no server ALPN; its schannel accept path exists behind alpn-accept (schannel.rs:334-375), which this build does not enable. The reasons against native-tls still stand: a blocking acceptor, the chain FIXME at schannel.rs:360, and a per-process CryptoAPI container.
+- ureq 3 (Yandex and the desktop's HTTP): default features off, with rustls-no-provider, platform-verifier and cookies (the `ureq` entry in `[workspace.dependencies]` uses native-tls today). The provider is passed explicitly to ureq and to ServerConfig; no process-wide default is installed.
+- native-tls, openssl and openssl-sys are banned in deny.toml (the `[bans]` deny list in deny.toml gains the bans).
+- Corrections: ureq already uses native-tls (WEB_CLIENT.md:384; the `native-tls` package in Cargo.lock), so the change moves it to rustls with one explicit provider; it does not reuse an existing provider. rustls is pure Rust only for the crate; ring carries C and assembly. WEB_CLIENT.md:380-387 says native-tls has no server ALPN; its schannel accept path exists behind alpn-accept (schannel.rs:334-375), which this build does not enable. The reasons against native-tls still stand: a blocking acceptor, the chain FIXME at schannel.rs:360, and a per-process CryptoAPI container.
 - The server negotiates TLS 1.2 and 1.3 only; the ring provider covers both.
 - Rejected: two TLS stacks (two trust policies, OpenSSL stays in CI); native-tls for the listener; aws-lc-rs (needs NASM and gives nothing while ureq uses ring); a reverse proxy; axum-server.
 
 ### 5.8 Yandex TLS (its own commit, first)
 
-- The Yandex change ships before the LAN code, as its own commit: Cargo.toml:46 and the workspace rustls entry (ring, std, tls12, logging); crates/yandex/src/http.rs with one constructor serving client.rs:38 and fetch.rs:29 (the comment at http.rs:26-29 rewritten, and a cfg(test) read-back test asserting PlatformVerifier and a Some provider); deny.toml; Cargo.lock; libssl-dev removed from docker/apt-packages.txt:11, tools/profiling/ci_setup.py:36 and docs/reference/PROFILING.md:218, only after Linux CI passes without it.
+- The Yandex change ships before the LAN code, as its own commit: the `ureq` entry and the workspace rustls entry (ring, std, tls12, logging); crates/yandex/src/http.rs with one constructor serving client.rs:38 and fetch.rs:29 (the comment at http.rs:26-29 rewritten, and a cfg(test) read-back test asserting PlatformVerifier and a Some provider); deny.toml; Cargo.lock; libssl-dev removed from docker/apt-packages.txt:11, tools/profiling/ci_setup.py:36 and docs/reference/PROFILING.md:218, only after Linux CI passes without it.
 - Behaviour changes, gated by O33 and a paired live measurement: online end-certificate revocation with soft-fail on unknown status; a connect-time wait of up to about 10 s per new end certificate; Linux roots from rustls-native-certs; changed error text.
 - Checks: `cargo tree -i` for native-tls, openssl, openssl-sys and schannel (none present) and ring (rustls only); cargo deny; Linux CI without libssl-dev; a manual root check with a test CA; paired live searches and downloads on old and new builds (about 50 per build, P).
 
@@ -1261,7 +1194,7 @@ build_id is defined in section 1.3 (source-based, over the workspace sources, ma
 - rustls 0.23 and tokio-rustls 0.26 API names: ResolvesServerCert and CertifiedKey key-match at build; the ALPN accessor; the ring provider export path; unversioned_rustls_crypto_provider stability in ureq 3.5.1.
 - The ring MSVC build on windows-2025; rcgen's licence and deny.toml compliance.
 - axum, hyper, h2 and tokio are not in Cargo.lock: the CVE-2023-44487 fixed versions, hyper's stream default and the blocking-pool default (512, from memory) are unchecked.
-- windows-sys features at 0.61: Win32_Security_Authorization (absent, Cargo.toml:50), Win32_Security_Cryptography (DPAPI), the IP Helper feature for NotifyIpInterfaceChange and GetAdaptersAddresses, and Win32_System_Power for SetThreadExecutionState.
+- windows-sys features at 0.61: Win32_Security_Authorization (absent from the `windows-sys` entry), Win32_Security_Cryptography (DPAPI), the IP Helper feature for NotifyIpInterfaceChange and GetAdaptersAddresses, and Win32_System_Power for SetThreadExecutionState.
 - DPAPI and ACL calls: CryptProtectData round trip at user scope; SetSecurityInfo owner-only DACL on the bundle, the token and the lan folder.
 - Task Scheduler: per-user task creation from XML without administrator rights (if it needs elevation, the O5 fallback applies and Direct is the only route back); restart-on-failure applies only to non-zero exits; logoff behaviour; the default execution time limit; behaviour across sleep and hibernate.
 - Firewall: whether creating an inbound rule needs elevation; whether a new network defaults to Public (believed).
@@ -1271,7 +1204,7 @@ build_id is defined in section 1.3 (source-based, over the workspace sources, ma
 - Android Chrome (the phone trust gate): acceptance of a user-installed root for the stable name and the IP; enforcement of name constraints on the intermediate; acceptance of a 90-day leaf; Origin and Sec-Fetch-Site on same-origin POSTs and media requests; a `__Host-` Secure cookie on an IP host.
 - Network: whether the owner's router resolves the stable LAN name; whether Android Chrome resolves .local names; NotifyIpInterfaceChange and its 30 s poll; a laptop moved to a different prefix (proposal only).
 - hyper-util and tower-http: header_read_timeout, max_concurrent_streams and keep_alive_timeout as cited; ServeDir precompressed Vary: Accept-Encoding; the rapid-reset-fixed hyper and h2 versions.
-- Argon2id time and peak memory at 64 MiB, t=3, p=1 and at the OWASP floor: not measured.
+- Argon2id time and peak memory at 128 MiB, t=3, p=1 and at the OWASP floor: not measured here (0.59 s is recorded in `WEB_CLIENT_TECH_DECISIONS.md:147`).
 - Qt and the bundle: whether the Qt loader needs unsafe-eval or a relaxed CSP; the Qt WASM secure-context rule for the desktop's 127.0.0.1 pre-screen; whether serving the bundle to the owner's own phone counts as distribution; GPL FFmpeg obligations for the server (crates/README.md:218-226, PLAN.md:327).
 - Desktop code: the panic hook at panic_log.rs:1-10; the pg-log rotation parameters (cited, not re-read); whether the desktop's own loopback client sends an Origin (assumed not); the kill-on-close claim was read on the flag (process.rs:104-115), not on every spawn path.
 - Yandex: whether every result host validates under rustls-platform-verifier as under schannel; whether the accumulated revocation timeout stays inside the 30 s whole-request bound; the rustls-platform-verifier-android 0.2.0 crate is absent from the local cache.
@@ -1285,10 +1218,9 @@ build_id is defined in section 1.3 (source-based, over the workspace sources, ma
 
 - Auth and device: adopt the two-cookie rule (2.4), SameSite=Lax, `/api/auth/*` routes, the store in home, the desktop key, the narrow prune, and the loopback hello with proof. Drop `__Host-pg_sign`, pg_device, /api/login, /api/me, launch.json and X-Gallery-Request.
 - Events: drop the frozen-route Origin exemption for the login POST, the build-id input rule in favour of section 1.3, public caching, and the WebSocket rules (if O27 is approved).
-- Wire: retire X-Gallery-Request and the reserved item routes; use request_id in place of op; use the 4,096 and 128 KiB selection caps and the 4,096-entry quarantine plan cap; accept the cache-control value chosen under O11.
+- Wire: retire X-Gallery-Request and the reserved item routes; use request_id in place of op; use the selection caps stated in `WEB_CLIENT.md` (Limits); accept the cache-control value chosen under O11.
 - Ops: the 16 KiB JSON cap and the 256 MB budget are superseded by section 1.10 and option A; the four-per-client cap is void under A.
 - Cutover: server.lock semantics are section 3.2; the startup exclusive probe is removed; the attach rule is envelope 1 plus build_id plus proof; migration 10 timing is O17; the logon task ships in C8 (O5); gallery.json is a mirror.
-- Quarantine: request keys are request_id; the plan cap is 4,096; purge is loopback only (O7); its migration is 11 (3.11).
 - Thumbs: the cache-identity rule, the want-list queue, the 1x1 placeholder, and the lane-priority queue (1.5).
 - Realsize: real_size is this_computer only (4.12); the view URLs and bounds are section 4.12; the sign-in cookie is Lax.
 - Snapshot: the replica is option A (O16); the budget follows the owner's choice.

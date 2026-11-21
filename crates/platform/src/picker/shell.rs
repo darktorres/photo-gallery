@@ -46,7 +46,7 @@ mod tests {
     use super::{path_of_units, shell_path};
     use crate::names::path_buf;
 
-    /// The units of a folder with an unpaired surrogate come back as that folder's path, exactly.
+    // The units of a folder with an unpaired surrogate come back as that folder's path, exactly.
     #[test]
     fn a_folder_from_its_units_keeps_an_unpaired_surrogate() {
         let units = [0x43, 0x3A, 0x5C, 0x61, 0xD800, 0x62];
@@ -54,8 +54,8 @@ mod tests {
         assert_eq!(path_of_units(&[0x43, 0x3A]), path_buf(b"C:"));
     }
 
-    /// A start folder reaches the shell in the form it takes: the forward slashes and the verbatim prefix the shell
-    /// refuses are written as backslashes and dropped.
+    // A start folder reaches the shell in the form it takes: the forward slashes and the verbatim prefix the shell
+    // refuses are written as backslashes and dropped.
     #[test]
     fn a_start_folder_is_in_the_form_the_shell_takes() {
         let units = |s: &str| s.encode_utf16().collect::<Vec<u16>>();

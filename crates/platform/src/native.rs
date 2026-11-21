@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(path.units(), nul(r"D:\a/b.jpg"), "a slash anywhere keeps it plain");
     }
 
-    /// The volume calls get the plain form of a drive or UNC path, verbatim or not, and a volume's GUID path as it is.
+    // The volume calls get the plain form of a drive or UNC path, verbatim or not, and a volume's GUID path as it is.
     #[cfg(windows)]
     #[test]
     fn the_volume_calls_get_the_plain_form() {
@@ -367,8 +367,8 @@ mod tests {
         assert_eq!(verbatim(Path::new("D:/a/b.jpg")), Path::new("D:/a/b.jpg"));
     }
 
-    /// A folder whose name ends in a dot is the folder it names in the verbatim form, and not its sibling without the
-    /// dot, which the plain form reaches.
+    // A folder whose name ends in a dot is the folder it names in the verbatim form, and not its sibling without the
+    // dot, which the plain form reaches.
     #[cfg(windows)]
     #[test]
     fn a_folder_with_a_trailing_dot_is_reached_verbatim() {

@@ -10,6 +10,18 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
     }
 
+    /// A list facet of the filter bar, as QML names it (`Filters.Types`); maps to `pg_model::query::ListFacet` in
+    /// `filters::list_facet`. Its values are in the bar's order (`pg_client::facets::ALL`).
+    #[qenum(Filters)]
+    enum ListFacetKind {
+        Types,
+        Shapes,
+        Status,
+        Borders,
+        Ratings,
+        Exts,
+    }
+
     extern "RustQt" {
         #[qobject]
         #[qml_element]
@@ -62,24 +74,24 @@ pub mod qobject {
         #[qinvokable]
         fn reload(self: Pin<&mut Filters>);
 
-        /// Choose a value of a list facet (its index in `pg_client::facets::ALL`), or unchoose it.
+        /// Choose a value of a list facet, or unchoose it.
         #[qinvokable]
-        fn toggle(self: Pin<&mut Filters>, facet: i32, value: &QString);
+        fn toggle(self: Pin<&mut Filters>, facet: ListFacetKind, value: &QString);
 
-        /// One end of a bound as text, `""` when open: `facet` is the bound's field's index in `input::Field::ALL`
+        /// One end of a bound as text, `""` when open: `field` is the bound's field's index in `input::Field::ALL`
         /// (the range facets' numbers and the day facets' days), `end` its `input::Edge` index (0 low, 1 high).
         #[qinvokable]
-        fn bound(self: &Filters, facet: i32, end: i32) -> QString;
+        fn bound(self: &Filters, field: i32, end: i32) -> QString;
 
         /// Set one end of a bound from what was typed; text that doesn't parse leaves it open.
         #[qinvokable]
         #[cxx_name = "setBound"]
-        fn set_bound(self: Pin<&mut Filters>, facet: i32, end: i32, text: &QString);
+        fn set_bound(self: Pin<&mut Filters>, field: i32, end: i32, text: &QString);
 
         /// Whether text typed for a bound's field is empty or parses (`input::bound_is_valid`).
         #[qinvokable]
         #[cxx_name = "boundValid"]
-        fn bound_valid(self: &Filters, facet: i32, text: &QString) -> bool;
+        fn bound_valid(self: &Filters, field: i32, text: &QString) -> bool;
 
         /// Filter nothing.
         #[qinvokable]

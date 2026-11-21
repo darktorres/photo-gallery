@@ -52,7 +52,7 @@
 //! | Site | Target, level | What | Recorded as |
 //! | --- | --- | --- | --- |
 //! | `lib.rs` `run` | `session`, info | The run's start: the build and the data folder | log |
-//! | `lib.rs` `run` | `config`, warning | `PG_THUMB_CAP_GB` didn't parse | log |
+//! | `lib.rs` `run` | `config`, warning | `PG_THUMB_CAP_GIB` didn't parse | log |
 //! | `panic_log.rs` hook | `panic`, error | A panic, with its backtrace | log (the box, for a fatal one) |
 //! | `app.rs` `stop` | `app`, warning | The background work didn't stop | log |
 //! | `controller.rs` `Core` (3) | `record`, warning | `PG_RECORD` couldn't be written | log |

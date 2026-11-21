@@ -163,7 +163,7 @@ Item {
             font.pixelSize: 12
             text: {
                 const f = gridBar.size < 1 ? Math.min(1, gridBar.position / (1 - gridBar.size)) : 0;
-                return words.phrase("ui-grid-position", 0, Qt.locale().toString(Math.round(f * (root.gallery.count - 1)) + 1), Qt.locale().toString(root.gallery.count));
+                return words.phrase("ui-grid-position", 0, words.count(Math.round(f * (root.gallery.count - 1)) + 1), words.count(root.gallery.count));
             }
         }
     }

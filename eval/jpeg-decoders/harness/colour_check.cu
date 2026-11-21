@@ -11,7 +11,11 @@
 #include <vector>
 #include "colour.h"
 
+// The largest per-channel difference from libjpeg-turbo's RGB that passes, in any file. Over it, the exit status is 1.
+static const int kMaxDiff = 1;
+
 int main(int argc, char** argv) {
+    bool failed = false;
     for (int f = 1; f < argc; f++) {
         std::ifstream in(argv[f], std::ios::binary);
         std::vector<unsigned char> jpg((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -54,10 +58,12 @@ int main(int argc, char** argv) {
             sum += d;
             if (d > mx) mx = d;
         }
+        if (mx > kMaxDiff) failed = true;
         std::printf("%s %dx%d subsamp=%d (h%d v%d): mismatched channels %.4f%%, mean %.5f, max %d\n", argv[f], w, hgt,
                     subsamp, hs, vs, 100.0 * diff / n, double(sum) / n, mx);
         cudaFree(dy); cudaFree(dcb); cudaFree(dcr); cudaFree(drgb);
         tjDestroy(th);
     }
-    return 0;
+    std::printf("threshold: max per-channel difference <= %d: %s\n", kMaxDiff, failed ? "FAILED" : "ok");
+    return failed ? 1 : 0;
 }

@@ -68,10 +68,10 @@ pub mod qobject {
 
         fn set_gap(self: Pin<&mut YandexSearch>, value: f64);
 
-        /// Upload the catalog's file `file_id` (the photo) and read its other sizes and similar images.
+        /// Upload the catalog's file `file_id` (a real, as QML holds file ids) and read its other sizes and similar images.
         #[qinvokable]
         #[cxx_name = "searchFile"]
-        fn search_file(self: Pin<&mut YandexSearch>, file_id: i64);
+        fn search_file(self: Pin<&mut YandexSearch>, file_id: f64);
 
         /// Upload the photo the command line names (`--find-similar=<path>`), as `searchFile` does for a catalog file.
         #[qinvokable]

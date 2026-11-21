@@ -35,7 +35,6 @@ thiserror.workspace = true
 [dev-dependencies]
 # The catalog's test fixture (files as the scanner inserts them).
 pg-catalog = { path = "../catalog", features = ["fixture"] }
-image.workspace = true
 # The codec's test fixtures (`fixtures::orient`).
 pg-codec = { path = "../codec", features = ["fixture"] }
 pg-metadata = { path = "../metadata" }

@@ -95,9 +95,15 @@ pub mod qobject {
         fn tree_loaded(self: Pin<&mut FolderModel>) -> i32;
 
         /// The row of the listed folder once the tree is in: `first` opens the folders above it (the start's reveal).
-        /// The row, or -1 for a folder under one the user collapsed, or -2 for a folder the tree doesn't have.
+        /// The row, or -1 for none: a folder under one the user collapsed, or one the tree doesn't have (`listedKnown`
+        /// tells those apart).
         #[qinvokable]
         #[cxx_name = "revealListing"]
         fn reveal_listing(self: Pin<&mut FolderModel>, first: bool) -> i32;
+
+        /// Whether the listed folder is in the tree at all, collapsed or not.
+        #[qinvokable]
+        #[cxx_name = "listedKnown"]
+        fn listed_known(self: &FolderModel) -> bool;
     }
 }

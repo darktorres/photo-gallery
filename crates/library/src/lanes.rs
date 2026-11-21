@@ -21,7 +21,7 @@ pub type RootDrive = Option<Drive>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Place {
     /// On a volume (as the catalog stores it), on a drive that could be told.
-    Mounted { volume: i64, drive: Drive },
+    Mounted { volume: u64, drive: Drive },
     /// Not there (unplugged, not ready, the path gone): no lane until it is back.
     Unplugged,
     /// Can't be told, or the probe ran past its deadline: fails closed.
@@ -98,7 +98,7 @@ pub fn groups(rules: PathRules, roots: &[RulePath], serial: bool) -> Vec<Group> 
 
 /// The volume set of a lane: every volume when it is the only lane, else the volumes its roots are on. The one rule the
 /// planner and the coordinator both apply.
-pub(crate) fn lane_volumes(single: bool, volumes: impl Iterator<Item = i64>) -> pg_catalog::VolumeSet {
+pub(crate) fn lane_volumes(single: bool, volumes: impl Iterator<Item = u64>) -> pg_catalog::VolumeSet {
     if single { pg_catalog::VolumeSet::All } else { pg_catalog::VolumeSet::Only(volumes.collect()) }
 }
 
@@ -202,11 +202,11 @@ pub(crate) fn probe_place(rules: PathRules, root: &RulePath, drives: &dyn Drives
     place_on_volume(volume, drive)
 }
 
-/// A root on `volume` (the id the file system gives) and `drive`, with the volume as the catalog stores it: the scan writes
-/// an id's bits as a signed number (`cast_signed`), so every id is stored, and an id above `i64::MAX` is no reason to
-/// take the root as unknown.
+/// A root on `volume` (the id the file system gives) and `drive`. The id is held as the file system gives it; the catalog
+/// stores its bits as a signed number at the SQL edge (`cast_signed`), so an id above `i64::MAX` is no reason to take the
+/// root as unknown.
 fn place_on_volume(volume: u64, drive: Drive) -> Place {
-    Place::Mounted { volume: volume.cast_signed(), drive }
+    Place::Mounted { volume, drive }
 }
 
 #[cfg(test)]
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn a_volume_id_above_i64_max_is_mounted_as_the_catalog_stores_it() {
         let drive = Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label: "virtual".to_string() };
-        assert!(matches!(place_on_volume(u64::MAX, drive), Place::Mounted { volume: -1, .. }));
+        assert!(matches!(place_on_volume(u64::MAX, drive), Place::Mounted { volume: u64::MAX, .. }));
     }
 
     fn disks(numbers: &[u64]) -> RootDrive {
@@ -278,7 +278,7 @@ mod tests {
         pg_model::rules::PathRules::Posix.parse(path).unwrap()
     }
 
-    fn mounted(volume: i64, numbers: &[u64]) -> Option<Place> {
+    fn mounted(volume: u64, numbers: &[u64]) -> Option<Place> {
         let drive = disks(numbers).unwrap();
         Some(Place::Mounted { volume, drive })
     }

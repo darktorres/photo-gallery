@@ -149,8 +149,7 @@ def main() -> int:
 
     target = args.out / args.layout
     if target.exists():
-        print(f"{target} exists: a baseline may have been measured on it; pick another layout name", file=sys.stderr)
-        return 1
+        sys.exit(f"bench_data: {target} exists: a baseline may have been measured on it; pick another layout name")
     target.mkdir(parents=True)
 
     src = read_only(args.catalog_dir / "catalog.sqlite")

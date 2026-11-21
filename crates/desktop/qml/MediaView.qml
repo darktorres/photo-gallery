@@ -25,7 +25,7 @@ Item {
     required property int playRequests
     onPlayRequestsChanged: togglePlay()
     // The file (its catalog id): a video plays it as a device (VideoSource), an animation is read by AnimationPlayer.
-    required property int fileId
+    required property real fileId
     required property bool muted
     required property real volume
     // The height of the rating bar, which the transport sits above.

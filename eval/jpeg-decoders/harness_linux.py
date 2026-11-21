@@ -7,7 +7,7 @@ Steps:
   ir          callgrind, every thread: (repeat 3 - repeat 1) / 2 = instructions for one decode, setup excluded
   time        median wall ms and CPU ms per decode (needs an idle machine)
   throughput  12 workers, one image each at a time: images/s and CPU ms per image (needs an idle machine)
-Inputs: JPEG_RESTART_OUT (restart.py; default ~/jpeg-restart): each file as it is (.orig), the progressive one converted
+Inputs: PG_JPEG_RESTART_OUT (restart.py; default ~/jpeg-restart): each file as it is (.orig), the progressive one converted
 losslessly to baseline (.base), and each with a restart marker every MCU row (.rstrow).
 """
 

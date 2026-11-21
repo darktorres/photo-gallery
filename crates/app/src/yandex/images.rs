@@ -10,6 +10,7 @@ use std::thread;
 
 use pg_jobs::events::Bus;
 use pg_model::format::Format;
+use pg_model::size::RowHeight;
 use pg_model::turns::Turns;
 use pg_yandex::{Download, Fetcher, YandexError};
 
@@ -229,12 +230,14 @@ impl Images {
 
 /// The grid picture of `bytes`, an image this app decodes: a JPEG `height` px high (the panel's rows), made by the
 /// gallery's thumbnail pipeline with one of the app's makers. The reason when the bytes are not such an image.
-pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: usize) -> Result<Vec<u8>, &'static str> {
+pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: RowHeight) -> Result<Vec<u8>, &'static str> {
     if Format::sniff(bytes).is_none() {
         return Err("the file is not a picture");
     }
+    // The row's height in pixels, as the maker takes it.
+    let px = pg_model::num::index(height.get());
     makers
-        .with_maker(|maker| Ok(maker.make(bytes, height, Turns::NONE).map_err(|_| "the picture does not decode")))
+        .with_maker(|maker| Ok(maker.make(bytes, px, Turns::NONE).map_err(|_| "the picture does not decode")))
         .map_err(|_| "no maker")?
 }
 
@@ -274,7 +277,10 @@ mod tests {
     /// Bytes that are no picture make no grid picture.
     #[test]
     fn a_file_that_is_no_picture_makes_no_grid_picture() {
-        assert_eq!(grid_picture(&Makers::new(), b"not a picture at all", 220), Err("the file is not a picture"));
+        assert_eq!(
+            grid_picture(&Makers::new(), b"not a picture at all", RowHeight::DEFAULT),
+            Err("the file is not a picture")
+        );
     }
 
     fn images(fetch: Arc<Counting>, check: fn(&[u8]) -> Result<Vec<u8>, &'static str>) -> Arc<Images> {

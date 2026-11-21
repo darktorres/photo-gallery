@@ -7,7 +7,7 @@
 #
 # Inputs from outside the repository, and what each one is pinned to:
 #   - Qt (the Justfile's qt_version; msvc2022_64 on Windows), installed by jurplel/install-qt-action under QT_INSTALL_ROOT.
-#     The pins step sets QT_DIR to that kit, as a developer's .env does.
+#     The pins step sets PG_QT_DIR to that kit, as a developer's .env does.
 #   - FFmpeg 9.0 shared build, GPL (BtbN's month-end autobuild, the Justfile's ffmpeg_url): pinned in the Justfile, which `just setup` fetches and
 #     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
 #   - ExifTool at the Justfile's pins: Chocolatey's package (exiftool_version) on Windows, the release's source archive
@@ -68,7 +68,7 @@ jobs:
         with:
           python-version: "3.12.10"
 
-      # The Justfile's pins, for every later step: QT_VERSION, QT_DIR (the kit the recipes and the desktop crate find qmake
+      # The Justfile's pins, for every later step: QT_VERSION, PG_QT_DIR (the kit the recipes and the desktop crate find qmake
       # in, as a developer's .env sets it), the install-action's tool list and the aqtinstall commit (tools/ci/github_files.py).
       - name: Pins (the Justfile's versions, into the environment)
         run: python tools/ci/github_files.py pins
@@ -100,7 +100,7 @@ jobs:
           # Pinned in the Justfile: a new release of these can change what the lint reports. `just lint` checks the same versions.
           tool: ${{ env.TAIKI_TOOLS }}
 
-      - name: "Qt ${{ env.QT_VERSION }} (at QT_DIR)"
+      - name: "Qt ${{ env.QT_VERSION }} (at PG_QT_DIR)"
         uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
         with:
           version: ${{ env.QT_VERSION }}
@@ -109,7 +109,7 @@ jobs:
           # can (issue miurahr/aqtinstall#959). The commit is the Justfile's aqtinstall_commit, the one that installs this Qt.
           aqtsource: git+https://github.com/miurahr/aqtinstall.git@${{ env.AQTINSTALL_COMMIT }}
           arch: ${{ env.QT_ARCH }}
-          # The action installs to <dir>\Qt\<version>\<arch>: QT_INSTALL_ROOT is the drive root, so QT_DIR is the kit.
+          # The action installs to <dir>\Qt\<version>\<arch>: QT_INSTALL_ROOT is the drive root, so PG_QT_DIR is the kit.
           dir: ${{ env.QT_INSTALL_ROOT }}
           modules: qtmultimedia
           cache: true
@@ -286,7 +286,7 @@ jobs:
           LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
           echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
 
-      # The kit's QMAKE (cxx-qt) and LD_LIBRARY_PATH (the test binaries) are written by the pins step, with QT_DIR.
+      # The kit's QMAKE (cxx-qt) and LD_LIBRARY_PATH (the test binaries) are written by the pins step, with PG_QT_DIR.
       - name: Qt (linux, under QT_INSTALL_ROOT, as the Windows job's kit)
         uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
         with:
@@ -294,7 +294,7 @@ jobs:
           # The same aqtinstall commit as the Windows job (see there for why).
           aqtsource: git+https://github.com/miurahr/aqtinstall.git@${{ env.AQTINSTALL_COMMIT }}
           arch: ${{ env.QT_ARCH }}
-          # The action installs to <dir>/Qt/<version>/<arch>: the kit under RUNNER_TEMP, where QT_DIR is.
+          # The action installs to <dir>/Qt/<version>/<arch>: the kit under RUNNER_TEMP, where PG_QT_DIR is.
           dir: ${{ env.QT_INSTALL_ROOT }}
           modules: qtmultimedia
           cache: true

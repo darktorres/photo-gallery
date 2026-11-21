@@ -147,7 +147,7 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
     let rows = match variant {
         "today" => {
             let work = catalog.reader(CACHE_KIB)?.pairing_work()?;
-            work.ids.len() + work.legacy
+            work.ids.len() + usize::try_from(work.legacy).unwrap_or(usize::MAX)
         }
         "split" => {
             let threads = std::env::var("PG_PROBE_WORKERS")
@@ -156,7 +156,7 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
                 .or_else(|| std::thread::available_parallelism().ok().map(std::num::NonZero::get))
                 .unwrap_or(1);
             let work = catalog.reader(CACHE_KIB)?.pairing_work_split(threads, &|| {})?;
-            work.ids.len() + work.legacy
+            work.ids.len() + usize::try_from(work.legacy).unwrap_or(usize::MAX)
         }
         "open" => {
             drop(open(db, CACHE_KIB)?);

@@ -231,7 +231,7 @@ mod tests {
         }
     }
 
-    /// A decode covers a view when it is the full size, or at least the decode the view asks for.
+    // A decode covers a view when it is the full size, or at least the decode the view asks for.
     #[test]
     fn a_decode_covers_the_views_it_is_big_enough_for() {
         use super::{Rgb, Shown, View};

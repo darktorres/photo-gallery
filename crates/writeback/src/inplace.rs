@@ -33,8 +33,8 @@ pub fn replace(
     native: &NativePath,
     temp: &Path,
     bytes: &[u8],
-    before: (i64, i64),
-) -> std::result::Result<(i64, i64), ReplaceError> {
+    before: (u64, i64),
+) -> std::result::Result<(u64, i64), ReplaceError> {
     let file = match prepare(path, native, temp, bytes, before) {
         Ok(file) => file,
         Err(e) => {
@@ -51,7 +51,7 @@ pub fn replace(
 
 /// The steps before the copy: the original as it was read, the new content written and synced to `temp`, and the
 /// original opened for the copy and checked again under its lock. The file is returned open for the copy.
-fn prepare(path: &Path, native: &NativePath, temp: &Path, bytes: &[u8], before: (i64, i64)) -> Result<File> {
+fn prepare(path: &Path, native: &NativePath, temp: &Path, bytes: &[u8], before: (u64, i64)) -> Result<File> {
     let shown = pg_platform::names::shown(path);
     unchanged(&shown, before, stat(path)?)?;
     std::fs::write(temp, bytes).with_context(|| format!("writing {}", pg_platform::names::shown(temp)))?;
@@ -66,7 +66,7 @@ mod tests {
     use super::*;
 
     /// A folder with an original in it (`original`), its (size, mtime), and the native path of the original.
-    fn original(name: &str, content: &[u8]) -> (PathBuf, PathBuf, (i64, i64), NativePath) {
+    fn original(name: &str, content: &[u8]) -> (PathBuf, PathBuf, (u64, i64), NativePath) {
         let dir = pg_testkit::run_folder("scratch_writeback", name).unwrap();
         let path = dir.join("a.bin");
         std::fs::write(&path, content).unwrap();
@@ -76,7 +76,7 @@ mod tests {
         (dir, path, before, native)
     }
 
-    /// The copy replaces the original's bytes, keeps the file (the same path, no temp left), and reports its new time.
+    // The copy replaces the original's bytes, keeps the file (the same path, no temp left), and reports its new time.
     #[test]
     fn the_copy_replaces_the_original_in_place() {
         let (dir, path, before, native) = original("inplace-copy", b"original bytes");
@@ -88,7 +88,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// An original changed since it was read is not written; nor is it touched when the temp can't be written.
+    // An original changed since it was read is not written; nor is it touched when the temp can't be written.
     #[test]
     fn a_changed_or_unwritable_original_is_left_as_it_is() {
         let (dir, path, before, native) = original("inplace-changed", b"original bytes");
@@ -107,8 +107,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// An original another program holds open with a share mode that denies writers is not opened for the copy: the
-    /// attempt fails before the copy, the original is intact, and the temp is removed.
+    // An original another program holds open with a share mode that denies writers is not opened for the copy: the
+    // attempt fails before the copy, the original is intact, and the temp is removed.
     #[cfg(windows)]
     #[test]
     fn an_original_held_by_another_program_is_left_intact() {

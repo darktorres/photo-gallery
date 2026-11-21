@@ -312,12 +312,14 @@ impl ThumbCache {
     }
 
     /// [`ThumbCache::pending`] over the given catalog volumes only: a lane reads and checks its own volumes' work.
-    pub fn pending_on(&self, catalog: &Path, height: ThumbHeight, volumes: &[i64]) -> Result<Pending> {
+    pub fn pending_on(&self, catalog: &Path, height: ThumbHeight, volumes: &[u64]) -> Result<Pending> {
+        // A volume id is stored as the SQL integer of its bits, the catalog's identity edge (`convert::identity_to_sql`).
+        let volumes: Vec<i64> = volumes.iter().map(|&v| v.cast_signed()).collect();
         let Some(store) = &self.store else {
-            let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false, volumes: volumes.to_vec() };
+            let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false, volumes };
             return Ok(Pending { work: WorkList::default(), snapshot });
         };
-        reader::pending_on(&store.path, catalog, height, volumes)
+        reader::pending_on(&store.path, catalog, height, &volumes)
     }
 
     /// A pass went through all the work `pending` gave it: files changed after its snapshot are the next pass's
@@ -402,10 +404,10 @@ mod tests {
 
     #[test]
     fn a_cap_is_refused_when_it_would_be_no_cache() {
-        assert_eq!(Cap::from_gb(2.0).map(Cap::bytes), Some(2_000_000_000));
-        assert_eq!(Cap::from_gb(0.5).map(Cap::bytes), Some(500_000_000));
-        for gb in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e-12, 1e12] {
-            assert_eq!(Cap::from_gb(gb), None, "{gb} is refused");
+        assert_eq!(Cap::from_gib(2.0).map(Cap::bytes), Some(2 * 1_073_741_824));
+        assert_eq!(Cap::from_gib(0.5).map(Cap::bytes), Some(536_870_912));
+        for gib in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e-12, 1e12] {
+            assert_eq!(Cap::from_gib(gib), None, "{gib} is refused");
         }
         assert_eq!(Cap::from_bytes(-1), None);
         assert_eq!(Cap::from_bytes(0), None);
@@ -460,7 +462,8 @@ mod tests {
     fn open_quiet(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Opened {
         let (events, watch) = Quiet::bus();
         let cap = cap_bytes.map(|bytes| Cap::from_bytes(bytes).expect("a cap"));
-        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap, 1, events).unwrap();
+        let cache =
+            ThumbCache::open(&cache_path(dir), catalog_id, cap, pg_model::versions::THUMBS_VERSION, events).unwrap();
         Opened { cache, _events: watch }
     }
 
@@ -474,7 +477,8 @@ mod tests {
         let bus = Arc::new(Bus::new(8));
         let events = bus.subscribe();
         let cap = cap_bytes.map(|bytes| Cap::from_bytes(bytes).expect("a cap"));
-        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap, 1, bus).unwrap();
+        let cache =
+            ThumbCache::open(&cache_path(dir), catalog_id, cap, pg_model::versions::THUMBS_VERSION, bus).unwrap();
         let mut taken = events.take().items.into_iter();
         let first = taken.next();
         assert!(taken.next().is_none(), "one event expected");
@@ -741,10 +745,18 @@ mod tests {
     fn a_newer_layout_is_left_alone() {
         let dir = run_folder(SCRATCH, "newer-layout").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, None));
-        Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
+        // A layout version a later build wrote (this build's is 1): a foreign value, named as a fixture.
+        const FOREIGN_USER_VERSION: i64 = 7;
+        Connection::open(cache_path(&dir))
+            .unwrap()
+            .execute_batch(&format!("PRAGMA user_version = {FOREIGN_USER_VERSION};"))
+            .unwrap();
         let why = refused(&dir);
         assert!(why.contains("made by a later build"), "{why}");
-        assert_eq!(pg_dbfile::user_version(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 7);
+        assert_eq!(
+            pg_dbfile::user_version(&Connection::open(cache_path(&dir)).unwrap()).unwrap(),
+            FOREIGN_USER_VERSION
+        );
     }
 
     /// A cache of an earlier layout starts over, with its totals reset and its cap kept.
@@ -752,9 +764,14 @@ mod tests {
     fn another_layout_version_starts_over() {
         let dir = run_folder(SCRATCH, "layout").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
-        Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 0;").unwrap();
+        // A layout version an earlier build wrote: a foreign value, named as a fixture.
+        const FOREIGN_USER_VERSION: i64 = 0;
+        Connection::open(cache_path(&dir))
+            .unwrap()
+            .execute_batch(&format!("PRAGMA user_version = {FOREIGN_USER_VERSION};"))
+            .unwrap();
         let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
-        assert!(why.contains("layout version 0"), "{why}");
+        assert!(why.contains(&format!("layout version {FOREIGN_USER_VERSION}")), "{why}");
         assert_eq!(
             (reason, cache.totals().unwrap(), cache.cap().unwrap()),
             (StartOverReason::OtherBuild, (0, 0), 12345)
@@ -782,10 +799,12 @@ mod tests {
         drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
         Connection::open(cache_path(&dir))
             .unwrap()
-            .execute("UPDATE meta SET value = 0 WHERE key = 'thumb_output_version'", [])
+            .execute("UPDATE meta SET value = ?1 WHERE key = 'thumb_output_version'", [EARLIER_OUTPUT_VERSION])
             .unwrap();
+        // An output version an earlier build wrote: a foreign value, named as a fixture.
+        const EARLIER_OUTPUT_VERSION: i64 = 0;
         let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
-        assert!(why.contains("thumbnail output version 0"), "{why}");
+        assert!(why.contains(&format!("thumbnail output version {EARLIER_OUTPUT_VERSION}")), "{why}");
         assert_eq!(
             (reason, cache.totals().unwrap(), cache.cap().unwrap()),
             (StartOverReason::OtherBuild, (0, 0), 12345)
@@ -825,7 +844,15 @@ mod tests {
         let dir = run_folder(SCRATCH, "app-id-cache").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(999)));
         Connection::open(cache_path(&dir)).unwrap().pragma_update(None, "application_id", 9).unwrap();
-        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(
+            &cache_path(&dir),
+            CATALOG_ID,
+            None,
+            pg_model::versions::THUMBS_VERSION,
+            Arc::new(Bus::new(1)),
+        )
+        .err()
+        .expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(pg_dbfile::application_id(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 9);
         let _ = std::fs::remove_dir_all(&dir);
@@ -837,7 +864,15 @@ mod tests {
         let dir = run_folder(SCRATCH, "foreign-db").unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute_batch("CREATE TABLE notes(text TEXT);").unwrap();
         let before = std::fs::read(cache_path(&dir)).unwrap();
-        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(
+            &cache_path(&dir),
+            CATALOG_ID,
+            None,
+            pg_model::versions::THUMBS_VERSION,
+            Arc::new(Bus::new(1)),
+        )
+        .err()
+        .expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), before);
         assert!(!bad_path(&dir).exists());
@@ -963,7 +998,15 @@ mod tests {
         let dir = run_folder(SCRATCH, "damaged-held").unwrap();
         std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
         let held = pg_dbfile::Live::shared(&cache_path(&dir)).unwrap().unwrap();
-        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(
+            &cache_path(&dir),
+            CATALOG_ID,
+            None,
+            pg_model::versions::THUMBS_VERSION,
+            Arc::new(Bus::new(1)),
+        )
+        .err()
+        .expect("refused");
         assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), vec![b'x'; 8192]);
         assert!(!bad_path(&dir).exists());
@@ -1062,7 +1105,14 @@ mod tests {
         file.execute("UPDATE meta SET value = 0 WHERE key = 'healed'", []).unwrap();
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(&cache_path(&dir), CATALOG_ID, Cap::from_bytes(1 << 30), 1, bus).unwrap();
+        let cache = ThumbCache::open(
+            &cache_path(&dir),
+            CATALOG_ID,
+            Cap::from_bytes(1 << 30),
+            pg_model::versions::THUMBS_VERSION,
+            bus,
+        )
+        .unwrap();
         assert_eq!(events.take().items, vec![Event::TotalsFixed { kept: (999, 7), actual: (0, 0) }]);
         drop(cache);
     }
@@ -1075,7 +1125,16 @@ mod tests {
         // Within the day of the last check, an open doesn't check: the drift stays until the next day's open.
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        drop(ThumbCache::open(&cache_path(&dir), CATALOG_ID, Cap::from_bytes(1 << 30), 1, bus).unwrap());
+        drop(
+            ThumbCache::open(
+                &cache_path(&dir),
+                CATALOG_ID,
+                Cap::from_bytes(1 << 30),
+                pg_model::versions::THUMBS_VERSION,
+                bus,
+            )
+            .unwrap(),
+        );
         assert!(events.take().items.is_empty());
         let file = Connection::open(cache_path(&dir)).unwrap();
         assert_eq!(file.query_row("SELECT count FROM totals", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
@@ -1332,7 +1391,15 @@ mod tests {
         assert!(reopened.get_nearest(FileId::new(1), h(100), src(5)).unwrap().is_none(), "file 1 is another file now");
         assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
         // Open elsewhere: it can't be deleted, so it isn't used.
-        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(
+            &cache_path(&dir),
+            CATALOG_ID,
+            None,
+            pg_model::versions::THUMBS_VERSION,
+            Arc::new(Bus::new(1)),
+        )
+        .err()
+        .expect("refused");
         assert!(format!("{e:#}").contains("another catalog"), "{e:#}");
     }
 

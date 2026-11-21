@@ -4,7 +4,6 @@
 use crate::browse::fixtures::spelled;
 use crate::fixture::{self, raw};
 use crate::{Catalog, Prior, Recorded, ScanLease, ScannedFile, Versions, WorkItem, queue};
-use pg_analysis::analyze::IMPORT_VERSION;
 use pg_model::analysis::{Analysis, ImageFacts, Media, Taken};
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
@@ -13,6 +12,7 @@ use pg_model::name::Name;
 use pg_model::orientation::Orientation;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
+use pg_model::versions::IMPORT_VERSION;
 use std::mem::ManuallyDrop;
 use std::path::Path;
 

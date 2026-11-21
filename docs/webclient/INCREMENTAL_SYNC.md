@@ -153,7 +153,7 @@ is O(changed) in one place and O(N) in another; migration 10 "keeps ids so no re
 - **Client memory.** One index replica is 1.12 GB at 70M. Two replicas plus a spare for the merge is about 3.4 GB on the
   phone, against the bounded plan's grid target of about 11 MiB client (`BOUNDED_MEMORY_PLAN.md:78`).
 - **Session extension (added approach).** Not enabled: rusqlite is built with `bundled, collation, fallible_uint,
-  functions, hooks` (`Cargo.toml:39`). It needs every writer connection attached, and does not solve retention or bulk.
+  functions, hooks` (the `rusqlite` entry in `[workspace.dependencies]`). It needs every writer connection attached, and does not solve retention or bulk.
 - **Model results.** `scratchpad\semantics\model.py` (Python model of RECONCILED 4.4, not the Rust code): S1 unpaired flip
   diverges; S2 unstamped rename diverges; S3 move-then-delete diverges; S4 bulk pending flip diverges; S0, S2b, S3b (in-scope
   delete) converge. The SQLite behaviour is in `scratchpad\semantics\sem.py` (REPLACE fires the insert half only, upserts
@@ -275,7 +275,7 @@ replica-equals-fresh-read check until the Rust model test exists (`WEB_CLIENT_DE
 Verdicts on P1–P10: P1 partly; P2 partly; P3 partly; P4 partly; P5 refuted as stated; P6 partly; P7 partly; P8 partly;
 P9 partly (rank refuted); P10 partly (restore detection refuted). Scratch: `scratchpad\window_validation\`.
 
-Measured (SQLite 3.49.1, 70M rows, 69,297,918 present, warm OS cache):
+Measured (SQLite 3.49.1, 70M rows, 69,297,918 present, warm OS cache; the run date is not recorded in the source, and the bundled SQLite is now 3.54.1 at fork rev ac441bb, so these numbers are from an older build):
 
 - Keyset window of 60: 0.15 ms warm, 0.26 ms cold.
 - OFFSET 1,000,000: 10.8 ms warm, 58 ms cold.
@@ -596,7 +596,7 @@ Citation errors found by the validator:
 - `pair.rs:204` is a comment, not a SELECT (my earlier A1 note was wrong). The UPDATE at `pair.rs:227` is correct.
 - `relayout` is not in `grid.rs`.
 - `rebuild.rs` has no `catalog_id` text; survival is through the meta copy at rebuild.rs:204-208.
-- `Cargo.toml:137` overrides rusqlite with a git fork (the doc's `Cargo.toml:39` for features is still right).
+- The `rusqlite` entry in `[patch.crates-io]` overrides rusqlite with a git fork (the features are still those of the `rusqlite` entry in `[workspace.dependencies]`).
 
 Unmeasured claims (each needs a test or measurement):
 

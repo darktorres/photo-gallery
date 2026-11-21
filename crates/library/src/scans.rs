@@ -34,14 +34,13 @@ impl ScanNotices {
 /// The folders it couldn't read and the mounts it refused are not notices (the catalog's folder ledger has them), nor
 /// are its kept failures (the files it skipped).
 pub fn scan_notices(root: &RulePath, stats: &ScanStats) -> ScanNotices {
-    let count = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
     let notes = [
         (ScanNote::Duplicates, stats.duplicates),
         (ScanNote::SkippedReparse, stats.skipped_reparse),
-        (ScanNote::Ambiguous, count(stats.pairing.ambiguous)),
-        (ScanNote::UnpairedWithData, count(stats.pairing.unpaired_with_data)),
-        (ScanNote::Replaced, count(stats.pairing.replaced)),
-        (ScanNote::Rebound, count(stats.pairing.rebound)),
+        (ScanNote::Ambiguous, stats.pairing.ambiguous),
+        (ScanNote::UnpairedWithData, stats.pairing.unpaired_with_data),
+        (ScanNote::Replaced, stats.pairing.replaced),
+        (ScanNote::Rebound, stats.pairing.rebound),
         (ScanNote::VolumeFallback, stats.volume_fallbacks),
     ];
     let mut found = ScanNotices::default();

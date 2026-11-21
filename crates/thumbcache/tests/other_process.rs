@@ -28,8 +28,14 @@ fn spawn_holder(dir: &Path, catalog_id: &str, ready: &Path, release: &Path) -> s
 fn holder() {
     let Some(dir) = std::env::var_os("PG_THUMB_HOLDER") else { return };
     let catalog = std::env::var("PG_THUMB_CATALOG").unwrap();
-    let _cache = ThumbCache::open(&Path::new(&dir).join("thumbs.sqlite"), &catalog, None, 1, Arc::new(Bus::new(1)))
-        .expect("the holder opens it");
+    let _cache = ThumbCache::open(
+        &Path::new(&dir).join("thumbs.sqlite"),
+        &catalog,
+        None,
+        pg_model::versions::THUMBS_VERSION,
+        Arc::new(Bus::new(1)),
+    )
+    .expect("the holder opens it");
     std::fs::write(std::env::var_os("PG_THUMB_READY").unwrap(), b"").unwrap();
     pg_testkit::wait_for_path(Path::new(&std::env::var_os("PG_THUMB_RELEASE").unwrap()), Duration::from_secs(60));
 }
@@ -37,17 +43,42 @@ fn holder() {
 #[test]
 fn a_cache_of_another_catalog_is_not_started_over_while_another_process_has_it_open() {
     let dir = pg_testkit::run_folder("scratch_thumbcache", "other-process").unwrap();
-    drop(ThumbCache::open(&dir.join("thumbs.sqlite"), "first", None, 1, Arc::new(Bus::new(1))).unwrap());
+    drop(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            "first",
+            None,
+            pg_model::versions::THUMBS_VERSION,
+            Arc::new(Bus::new(1)),
+        )
+        .unwrap(),
+    );
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut other = spawn_holder(&dir, "first", &ready, &release).unwrap();
     pg_testkit::wait_for_path(&ready, Duration::from_secs(60));
 
     // Another catalog's cache: it would be started over, which needs the file to be nobody's.
-    let err =
-        ThumbCache::open(&dir.join("thumbs.sqlite"), "second", None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+    let err = ThumbCache::open(
+        &dir.join("thumbs.sqlite"),
+        "second",
+        None,
+        pg_model::versions::THUMBS_VERSION,
+        Arc::new(Bus::new(1)),
+    )
+    .err()
+    .expect("refused");
     assert!(format!("{err:#}").contains("another catalog"), "{err:#}");
 
     std::fs::write(&release, b"").unwrap();
     assert!(other.wait().unwrap().success(), "the holder ends");
-    drop(ThumbCache::open(&dir.join("thumbs.sqlite"), "second", None, 1, Arc::new(Bus::new(1))).unwrap());
+    drop(
+        ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            "second",
+            None,
+            pg_model::versions::THUMBS_VERSION,
+            Arc::new(Bus::new(1)),
+        )
+        .unwrap(),
+    );
 }

@@ -10,6 +10,8 @@
 use std::ffi::OsString;
 use std::process::ExitCode;
 
+use pg_client::text::cli::{Line, line};
+
 // The heap profiler's build. It sees Rust's allocations only: Qt's and FFmpeg's go
 // to the C runtime's heap.
 #[cfg(feature = "dhat-heap")]
@@ -28,7 +30,7 @@ fn main() -> ExitCode {
     if pg_cli::wants_cli(args.get(1..).unwrap_or_default()) {
         pg_platform::console::attach_to_parent();
         if let Err(e) = pg_cli::main(args) {
-            eprintln!("error: {e:#}");
+            eprintln!("{}", line(&Line::Error { error: format!("{e:#}") }));
             std::process::exit(1);
         }
         return ExitCode::SUCCESS;

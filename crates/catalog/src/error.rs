@@ -5,6 +5,13 @@
 //! another connection past the busy timeout. Every other failure is one of the sources the catalog reads or writes
 //! through (SQLite, a stored value, a file), or [`Error::Other`]: an `anyhow` error that carries its context.
 
+use pg_model::rules::Path as RulePath;
+
+/// A library folder's path as the errors show it, under this platform's path rules.
+fn root_text(root: &RulePath) -> String {
+    pg_platform::native::PATH_RULES.display(root)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A statement stopped before it finished: the reader gave up on it (its cancel flag was set).
@@ -16,8 +23,8 @@ pub enum Error {
     /// A walk of `root` was refused: a walk of a folder that overlaps it (one is inside the other) holds an unexpired
     /// lease (`Catalog::begin_scan`), `holder` says whose. Nothing was written. It can be tried again once that walk ends,
     /// or its lease expires (`SCAN_LEASE_SECS` without a heartbeat).
-    #[error("a scan of {root} is running ({holder})")]
-    ScanBusy { root: String, holder: String },
+    #[error("a scan of {} is running ({holder})", root_text(.root))]
+    ScanBusy { root: RulePath, holder: String },
     /// A walk of `root` lost its lease: it had no heartbeat for `SCAN_LEASE_SECS` (the walk was held up), so it expired,
     /// and another walk of an overlapping folder may have begun. The write that found it gone wrote nothing: the walk
     /// can no longer tell that it is alone.
@@ -26,8 +33,8 @@ pub enum Error {
     /// The folder `root` was removed from the library while a walk of it ran: the removal took its lease
     /// (`Catalog::remove_root`), and the walk's write that found it gone wrote nothing, so nothing of the folder is
     /// written again after its removal.
-    #[error("{root} was removed from the library while it was scanned")]
-    RootRemoved { root: String },
+    #[error("{} was removed from the library while it was scanned", root_text(.root))]
+    RootRemoved { root: RulePath },
     /// A library folder overlapping `path` is being removed (its marker is there, `Catalog::begin_removal`): it can't be
     /// added until the removal is finished (or discarded), since its files are still going.
     #[error("{path} is still being removed from the library: try again when it is gone")]
@@ -44,12 +51,6 @@ pub enum Error {
     /// The catalog at `path` is held by another process or program, so `what` (preparing it, changing it) cannot go on.
     #[error("catalog {path}: {what}")]
     Held { path: String, what: &'static str },
-    /// The catalog at `path` is not this build's to change: `why` says how it differs.
-    #[error("catalog {path}: the catalog made is not this build's: {why}")]
-    NotThisBuild { path: String, why: String },
-    /// The catalog at `path` has schema version `found`, not this build's `current`.
-    #[error("catalog {path}: schema version {found}, not this build's {current}")]
-    SchemaVersion { path: String, found: i64, current: i64 },
     /// A migration of the catalog at `path` needs `needed` MB free on its drive (a copy aside and the migration's log), and
     /// `free` MB are.
     #[error(
@@ -82,6 +83,11 @@ pub enum Refusal {
     /// A schema after this build's: made by another build. `written_by` is the build that last changed the file, when
     /// the file says (`meta.written_by`, empty when it is not known).
     NewerSchema { found: i64, current: i64, written_by: Option<String> },
+    /// A schema of an earlier version than this build's, which [`Catalog::open`] does not bring forward (`prepare` does).
+    OlderSchema { found: i64, current: i64 },
+    /// An integer mark of the file (`mark`, a `meta` key) above this build's: a later build made or changed the file,
+    /// whatever its schema. Refused like a newer schema, so no mark is set back. `written_by` as for `NewerSchema`.
+    NewerMark { mark: &'static str, found: i64, current: i64, written_by: Option<String> },
     /// A schema that differs from this build's, of a catalog that may not be rebuilt (a released one). `why` is the
     /// difference.
     Drift { found: i64, why: String },
@@ -114,6 +120,20 @@ impl Refusal {
                 format!(
                     "catalog {path}: schema version {found}, which this build doesn't know (it has {current}): made by \
                      another build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)"
+                )
+            }
+            Refusal::OlderSchema { found, current } => {
+                format!("catalog {path}: schema version {found}, not this build's {current}")
+            }
+            Refusal::NewerMark { mark, found, current, written_by } => {
+                let by = written_by
+                    .as_deref()
+                    .filter(|b| !b.is_empty())
+                    .map(|b| format!(" by build {b}"))
+                    .unwrap_or_default();
+                format!(
+                    "catalog {path}: its {mark} is {found}, a later build's (this build's is {current}): made by another \
+                     build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)"
                 )
             }
             Refusal::Drift { found, why } => format!(
@@ -179,8 +199,6 @@ impl Error {
             | Error::BeingWritten { .. }
             | Error::OtherBuildsBorders { .. }
             | Error::Held { .. }
-            | Error::NotThisBuild { .. }
-            | Error::SchemaVersion { .. }
             | Error::MigrationRoom { .. }
             | Error::RootAgain { .. }
             | Error::ForeignKeysOn

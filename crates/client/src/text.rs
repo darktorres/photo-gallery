@@ -319,7 +319,7 @@ fn round_u64(v: f64) -> u64 {
 }
 
 /// The write-back line: the changes not yet in the files, or the latest failure; empty when there are none.
-pub fn write_status(queued: usize, error: Option<&str>) -> String {
+pub fn write_status(queued: u64, error: Option<&str>) -> String {
     match (queued, error) {
         (0, None) => String::new(),
         (n, None) => render(&Message::WritingChanges { count: n }),
@@ -602,11 +602,14 @@ mod tests {
             |failed, failures| Notice::Cropped { folder: "D:/out".into(), saved: 2, skipped: 1, failed, failures };
         let out = iso("D:/out");
         assert_eq!(worded(&cropped(0, Vec::new())).1, format!("2 saved in {out}; 1 had nothing to crop; none failed"));
-        let first =
-            pg_model::notice::FileFailure { path: "D:/a.jpg".into(), error: "disk full".into(), panicked: false };
+        let first = pg_model::notice::FileFailure {
+            path: PathRules::Windows.parse(r"D:\a.jpg").unwrap(),
+            error: "disk full".into(),
+            panicked: false,
+        };
         assert_eq!(
             worded(&cropped(1, vec![first])).1,
-            format!("2 saved in {out}; 1 had nothing to crop; 1 failed, the first: {}: disk full", iso("D:/a.jpg"))
+            format!("2 saved in {out}; 1 had nothing to crop; 1 failed, the first: {}: disk full", iso(r"D:\a.jpg"))
         );
     }
 
@@ -851,7 +854,7 @@ mod tests {
         assert_eq!(
             hint(&keys::grid_hint()),
             "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
-             B borders · N not a border · Ctrl+wheel or Ctrl +/− resize"
+             B borders · N not a border · Ctrl+wheel or Ctrl+/− resize"
         );
         let still = Shown { has_borders: false, still: true, video: false };
         assert_eq!(

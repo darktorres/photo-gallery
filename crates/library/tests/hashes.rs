@@ -17,14 +17,11 @@ fn scanned(prefix: &str) -> (Catalog, Control, PathBuf) {
     let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
-    let byte = |v: u32| u8::try_from(v % 256).unwrap();
-    let same = image::RgbImage::from_fn(96, 80, |x, y| {
-        image::Rgb([byte(x * x + y * 31), byte(x * 7 + y * y), byte((x ^ y) * 5)])
-    });
-    same.save(images.join("a.png")).unwrap();
-    same.save(images.join("b.png")).unwrap();
-    image::RgbImage::from_fn(96, 80, |x, y| image::Rgb([byte(y * y + 3 * x), byte(x * 13 + 5), byte(y * 3)]))
-        .save(images.join("c.png"))
+    let png = pg_testkit::Encoding::Png;
+    let same = pg_testkit::encode(96, 80, &pg_testkit::textured_rgb(96, 80), png).unwrap();
+    std::fs::write(images.join("a.png"), &same).unwrap();
+    std::fs::write(images.join("b.png"), &same).unwrap();
+    std::fs::write(images.join("c.png"), pg_testkit::encode(96, 80, &pg_testkit::other_rgb(96, 80), png).unwrap())
         .unwrap();
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();

@@ -9,6 +9,7 @@ use pg_model::view::Listing;
 use pg_query::{from_json, to_json};
 
 use crate::error::{Error, Result};
+use crate::types::bad_value;
 
 /// The listing in the four columns from `first` on (`folder`, `recursive`, `query`, `sort`), the folder stored under
 /// `rules`. A query or a sort that doesn't read is the column's conversion error: the reader reports it, and the
@@ -17,22 +18,25 @@ pub(crate) fn listing_at(r: &Row<'_>, first: usize, rules: PathRules) -> rusqlit
     let stored: Vec<u8> = r.get(first)?;
     let folder = rules
         .parse_merged(&stored)
-        .ok_or_else(|| rusqlite::Error::InvalidColumnType(first, "folder".into(), Type::Blob))?;
+        .ok_or_else(|| bad_value(first, Type::Blob, "folder", &String::from_utf8_lossy(&stored)))?;
     Ok(Listing {
         folder,
         recursive: r.get(first + 1)?,
-        query: json_column(r, first + 2, from_json)?,
-        sort: json_column(r, first + 3, from_json)?,
+        query: json_column(r, first + 2, "query", from_json)?,
+        sort: json_column(r, first + 3, "sort", from_json)?,
     })
 }
 
-/// A JSON column, read by `read`: text that doesn't read is the column's conversion failure.
-fn json_column<T, E>(r: &Row<'_>, column: usize, read: fn(&str) -> std::result::Result<T, E>) -> rusqlite::Result<T>
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
+/// A JSON column (`name`, as the table names it), read by `read`: text that doesn't read is the column's conversion failure,
+/// with the stored text.
+fn json_column<T, E>(
+    r: &Row<'_>,
+    column: usize,
+    name: &'static str,
+    read: fn(&str) -> std::result::Result<T, E>,
+) -> rusqlite::Result<T> {
     let text: String = r.get(column)?;
-    read(&text).map_err(|e| rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(e)))
+    read(&text).map_err(|_| bad_value(column, Type::Text, name, &text))
 }
 
 /// A listing's column values, `folder` (stored under `rules`), `recursive`, `query` and `sort`, in that order.

@@ -4,7 +4,7 @@
 //! Permits are granted in arrival order. A worker that finishes gives its permit back and the next arrival takes it, so no
 //! lane starves another; priorities alone don't make two pools fair.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 
 /// The CPU permits the run's workers share.
@@ -69,21 +69,21 @@ impl Drop for Permit {
 /// (and every wait, so a change is seen within the pool's wait step). Shrinking it holds back grants until the buffers
 /// held come back; it never frees a buffer in use.
 #[derive(Debug)]
-pub struct Budget(AtomicUsize);
+pub struct Budget(AtomicU64);
 
 impl Budget {
     /// A budget of `bytes` (at least one byte).
-    pub fn new(bytes: usize) -> Budget {
-        Budget(AtomicUsize::new(bytes.max(1)))
+    pub fn new(bytes: u64) -> Budget {
+        Budget(AtomicU64::new(bytes.max(1)))
     }
 
     /// The budget now.
-    pub fn get(&self) -> usize {
+    pub fn get(&self) -> u64 {
         self.0.load(Ordering::SeqCst)
     }
 
     /// Sets the budget (at least one byte).
-    pub fn set(&self, bytes: usize) {
+    pub fn set(&self, bytes: u64) {
         self.0.store(bytes.max(1), Ordering::SeqCst);
     }
 }
@@ -93,14 +93,14 @@ impl Budget {
 /// holds together) binds, the cap split evenly among the lanes. A lane that is retired drops its budget, and the next
 /// [`Governor::rebalance`] gives its share to the others.
 pub struct Governor {
-    knee: usize,
-    cap: Option<usize>,
+    knee: u64,
+    cap: Option<u64>,
     lanes: Mutex<Vec<Weak<Budget>>>,
 }
 
 impl Governor {
     /// A governor of lanes that each want `knee` bytes, and together hold at most `cap` (`None`: no cap).
-    pub fn new(knee: usize, cap: Option<usize>) -> Governor {
+    pub fn new(knee: u64, cap: Option<u64>) -> Governor {
         Governor { knee: knee.max(1), cap, lanes: Mutex::new(Vec::new()) }
     }
 
@@ -133,9 +133,9 @@ impl Governor {
 
 /// One lane's budget when `lanes` lanes each want `knee` bytes and together may hold `cap`: the knee, unless the cap split
 /// evenly among them is less.
-pub fn split(knee: usize, cap: Option<usize>, lanes: usize) -> usize {
+pub fn split(knee: u64, cap: Option<u64>, lanes: usize) -> u64 {
     match cap {
-        Some(cap) => knee.min(cap / lanes.max(1)).max(1),
+        Some(cap) => knee.min(cap / u64::try_from(lanes.max(1)).unwrap_or(u64::MAX)).max(1),
         None => knee,
     }
 }

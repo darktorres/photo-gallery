@@ -80,7 +80,7 @@ pub struct PairStats {
     /// The pairs stored.
     pub pairs: usize,
     /// The analyses left out for having no stored hashes (`PairingWork::legacy`).
-    pub legacy: usize,
+    pub legacy: u64,
     /// The write transactions that read their pictures' analyses (`PairsWritten::guarded`): something the pairs depend
     /// on changed after the load.
     pub guarded: usize,

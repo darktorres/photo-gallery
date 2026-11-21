@@ -202,7 +202,7 @@ in three places: `ffi.rs` split into `ffi/load.rs` (the loader), `gui_app::new` 
 `build.rs` gained per-OS FFmpeg headers. The static branches were rewritten against those, and the loader's dynamic
 half is compiled out under `pg_ffmpeg_static`.
 
-Checks on 2026-11-13, in a clean checkout of the commit the patches were rebased onto (`43ee58a`), with `QT_DIR` set to
+Checks on 2026-11-13, in a clean checkout of the commit the patches were rebased onto (`43ee58a`), with `PG_QT_DIR` set to
 the shared Qt 6.12.0 kit:
 
 - `cargo check -p pg-video`: passes, shared and with `PG_FFMPEG_STATIC` set.
@@ -217,7 +217,7 @@ Build, with a separate target folder:
 with these environment variables:
 
 - `PG_QT_STATIC=1`: only this build sets it. The shared build's `build.rs` path is unchanged.
-- `QT_DIR`: the static Qt prefix.
+- `PG_QT_DIR`: the static Qt prefix.
 - `PG_FFMPEG_STATIC`: the static FFmpeg's `lib` folder.
 - `FFMPEG_DIR`: the static FFmpeg prefix, for its headers.
 - `TURBOJPEG_SOURCE=explicit`, `TURBOJPEG_STATIC=1`, `TURBOJPEG_LIB_DIR=<jpeg work>\link`,

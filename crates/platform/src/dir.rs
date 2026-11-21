@@ -385,7 +385,7 @@ pub fn fs_type(path: &[Unit]) -> io::Result<i64> {
 /// No `statfs` type to read off Linux.
 #[cfg(not(target_os = "linux"))]
 pub fn fs_type(_path: &[Unit]) -> io::Result<i64> {
-    Err(io::ErrorKind::Unsupported.into())
+    Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
 }
 
 #[cfg(unix)]
@@ -823,7 +823,7 @@ mod facts_tests {
     use super::*;
     use crate::names::units_of;
 
-    /// Real calls: the test binary's folder is on a fixed NTFS disk, not a link, and really where it is.
+    // Real calls: the test binary's folder is on a fixed NTFS disk, not a link, and really where it is.
     #[cfg(windows)]
     #[test]
     fn the_facts_of_a_folder_on_a_fixed_ntfs_disk() {
@@ -839,7 +839,7 @@ mod facts_tests {
         assert_eq!(ROOT_CHECK, RootCheck::Ntfs);
     }
 
-    /// Real calls: `/` and `/proc` have the type numbers of their file systems.
+    // Real calls: `/` and `/proc` have the type numbers of their file systems.
     #[cfg(target_os = "linux")]
     #[test]
     fn the_file_system_type_of_proc_is_procfs() {
@@ -933,7 +933,7 @@ mod caution_tests {
         move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| OsString::from(v))
     }
 
-    /// The refused types are NFS, SMB, FAT, exFAT and the pseudo file systems; ext4 is not refused. A kind names itself.
+    // The refused types are NFS, SMB, FAT, exFAT and the pseudo file systems; ext4 is not refused. A kind names itself.
     #[test]
     fn a_refused_file_system_type_has_its_kind_and_name() {
         assert_eq!(fs_kind(0x6969), Some(FsKind::Nfs));
@@ -943,7 +943,7 @@ mod caution_tests {
         assert_eq!(FsKind::ExFat.name(), "exFAT");
     }
 
-    /// A folder under a sync client's root is named by its client, whatever the case of either and whichever separator.
+    // A folder under a sync client's root is named by its client, whatever the case of either and whichever separator.
     #[test]
     fn a_folder_under_a_sync_root_is_named_by_its_client() {
         let roots = env(&[("OneDrive", r"C:\Users\Ana\OneDrive"), ("USERPROFILE", r"C:\Users\Ana")]);
@@ -952,7 +952,7 @@ mod caution_tests {
         assert_eq!(sync_folder(Path::new(r"C:\Users\Ana\Dropbox\catalog"), &roots), Some("Dropbox"));
     }
 
-    /// An ordinary folder, a folder that only shares a prefix with a root, and no roots at all are not sync folders.
+    // An ordinary folder, a folder that only shares a prefix with a root, and no roots at all are not sync folders.
     #[test]
     fn a_folder_that_is_not_under_a_root_is_no_caution() {
         let roots = env(&[("OneDrive", r"C:\Users\Ana\OneDrive"), ("USERPROFILE", r"C:\Users\Ana")]);

@@ -59,8 +59,14 @@ fn thumb_jpeg((bytes, mut maker): (Vec<u8>, Maker)) -> Vec<u8> {
     black_box(or_stop(maker.make(black_box(&bytes), pg_model::num::index(THUMB_HEIGHT), Turns::NONE), "make"))
 }
 
-/// The committed clip the video tests use: its poster frame is what the viewer shows of a video until it plays.
-const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../video/tests/sample.mp4");
+/// The committed clip the video tests use (`pg_testkit::VIDEO_SAMPLE`), written to a file in setup: its poster frame is what
+/// the viewer shows of a video until it plays, and the poster is read from a path.
+fn for_poster() -> std::path::PathBuf {
+    let dir = or_stop(pg_testkit::run_folder("scratch_bench", "poster"), "the scratch folder");
+    let path = dir.join("sample.mp4");
+    or_stop(std::fs::write(&path, pg_testkit::VIDEO_SAMPLE), "the clip");
+    path
+}
 
 /// The viewer's window, in device pixels: the image is fitted into it. Its decode keeps 4× the window (the viewer's
 /// margin), so the sample decodes at full size.
@@ -95,9 +101,9 @@ fn viewer_still((bytes, mut decoder): (Vec<u8>, Decoder)) -> Option<Rgb> {
 
 // The viewer's image of a video: its poster frame, then the fit.
 #[library_benchmark]
-#[bench::mp4(CLIP)]
-fn viewer_poster(clip: &str) -> Option<Rgb> {
-    let frame = or_stop(display::poster(black_box(Path::new(clip)), 0, Turns::NONE), "the poster frame");
+#[bench::mp4(setup = for_poster)]
+fn viewer_poster(clip: std::path::PathBuf) -> Option<Rgb> {
+    let frame = or_stop(display::poster(black_box(&clip), 0, Turns::NONE), "the poster frame");
     black_box(fitted(&frame))
 }
 

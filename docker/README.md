@@ -53,7 +53,7 @@ device, so masked paths under `/proc` are correct, not a failure.
 - A volume made by another user cannot be written by `pg`. The fix is to hand it to `pg` once:
   `docker run --rm --user root --entrypoint chown -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/home/pg/.cargo/registry pg-dev -R pg:pg /cargo-target /home/pg/.cargo/registry`
 - The eval's sources, builds, inputs and clone are in `pg-eval`, mounted at `/eval`. Two folders from `.env` are mounted
-  when set: `JPEG_SRC_DIR` (the JPEG comparison's photos, read-only) and `PG_JPEG_ENC_DIR` (the encoder comparison's work
+  when set: `PG_JPEG_SRC_DIR` (the JPEG comparison's photos, read-only) and `PG_JPEG_ENC_DIR` (the encoder comparison's work
   folder, which Windows' `gpu_encoders.py` writes into too).
 - The ANN bake-off's CPU worker (`eval/ann/cpu_worker.py`) runs in `pg-eval` through `tools/linux.py ann-worker`, which
   `eval/ann/methods.py` calls with a job file: the folders the job names are mounted (its output folder read-write, its
@@ -63,7 +63,7 @@ device, so masked paths under `/proc` are correct, not a failure.
   `FilesharingDirectories`). For any other folder, `docker run` waits, printing nothing, until the "share this
   folder?" prompt in Docker Desktop's window is answered. `tools/linux.py` checks each host folder against that list
   before it starts a container, and fails at once on one that isn't shared. The folders the recipes mount: the checkout,
-  `PG_BENCH_DATA_SOURCE`, `JPEG_SRC_DIR`, `PG_JPEG_ENC_DIR`, and the folders of an ANN job (by default under
+  `PG_BENCH_DATA_SOURCE`, `PG_JPEG_SRC_DIR`, `PG_JPEG_ENC_DIR`, and the folders of an ANN job (by default under
   `PG_CACHE_DIR`'s `ann`).
 
 ## Scope

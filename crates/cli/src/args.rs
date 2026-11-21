@@ -42,7 +42,7 @@ pub(crate) struct PipelineArgs {
     workers: Option<usize>,
     /// Megabytes of file buffers the pass holds at most (default: 12 per reader and per worker).
     #[arg(long)]
-    buffer_mb: Option<usize>,
+    buffer_mb: Option<u64>,
     /// Files in flight at most: being read, waiting, or being processed (default: one per reader and two per
     /// worker).
     #[arg(long)]
@@ -130,9 +130,9 @@ pub(crate) enum Command {
         /// Grid row height in device pixels: the thumbnail cache's heights, 16 to 2048.
         #[arg(long, value_parser = thumb_height)]
         height: ThumbHeight,
-        /// Set the cache's size limit in GB, kept in the cache: the app keeps to it too. Without it, the limit
-        /// stays as it is (50 GB for a new cache).
-        #[arg(long = "cap-gb", value_parser = cap_gb)]
+        /// Set the cache's size limit in GiB (2^30 bytes), kept in the cache: the app keeps to it too. Without it, the
+        /// limit stays as it is (a new cache's default: a twentieth of its volume, at most 50 GiB).
+        #[arg(long = "cap-gib", value_parser = cap_gib)]
         cap: Option<pg_thumbcache::Cap>,
         #[command(flatten)]
         pipeline: PipelineArgs,
@@ -186,14 +186,15 @@ pub(crate) enum Command {
     },
 }
 
-/// `--cap-gb`: a number of GB above zero, as the thumbnail cache's cap.
+/// `--height`: a height in pixels the thumbnail cache holds.
 fn thumb_height(text: &str) -> Result<ThumbHeight, String> {
     let px: u32 = text.trim().parse().map_err(|_| format!("{text} isn't a number of pixels"))?;
     ThumbHeight::new(px).ok_or_else(|| format!("{text} px isn't a height the thumbnail cache holds (16 to 2048)"))
 }
 
-fn cap_gb(text: &str) -> Result<pg_thumbcache::Cap, String> {
-    let gb: f64 = text.trim().parse().map_err(|_| format!("{text} isn't a number of GB"))?;
-    pg_thumbcache::Cap::from_gb(gb)
-        .ok_or_else(|| format!("{text} GB isn't a size a cache can have (a number of GB above zero)"))
+/// `--cap-gib`: a number of GiB above zero, as the thumbnail cache's cap.
+fn cap_gib(text: &str) -> Result<pg_thumbcache::Cap, String> {
+    let gib: f64 = text.trim().parse().map_err(|_| format!("{text} isn't a number of GiB"))?;
+    pg_thumbcache::Cap::from_gib(gib)
+        .ok_or_else(|| format!("{text} GiB isn't a size a cache can have (a number of GiB above zero)"))
 }

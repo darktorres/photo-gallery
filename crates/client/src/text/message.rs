@@ -52,6 +52,19 @@ impl Arg for usize {
     }
 }
 
+/// A count held as a `u64` (a catalog's): the same form as a `usize`; a count past `usize::MAX` is not a count a
+/// machine holds, so it saturates to it for the plural form.
+impl Arg for u64 {
+    fn set<'a>(&'a self, key: &'static str, a: &mut FluentArgs<'a>) {
+        a.set(key, pg_model::num::count(usize::try_from(*self).unwrap_or(usize::MAX)));
+        a.set("text", self.to_string());
+    }
+    #[cfg(test)]
+    fn sample() -> Self {
+        1
+    }
+}
+
 /// The messages, from one table: each variant, its fields and its entry. A field's value is its entry's argument of the
 /// same name ([`Arg`]). The notices' title and body and the inbox's categories are added by hand: their entries are
 /// their kinds'.
@@ -178,8 +191,8 @@ messages! {
     EtaSeconds { seconds: String } => "eta-seconds",
     EtaMinutes { minutes: String } => "eta-minutes",
     EtaHours { hours: String, minutes: String } => "eta-hours",
-    WritingChanges { count: usize } => "writing-changes",
-    ChangesUnwritten { count: usize, error: String } => "changes-unwritten",
+    WritingChanges { count: u64 } => "writing-changes",
+    ChangesUnwritten { count: u64, error: String } => "changes-unwritten",
     WriteQueueFailed { error: String } => "write-queue-failed",
     /// Why a folder is refused (`pg_model::refusal::RefusedReason`): its code, which selects the words, with the file
     /// system's name or the system's error where the reason has one.
@@ -260,6 +273,12 @@ messages! {
     /// A catalog a later build made, at `path`: its schema is `found` and this build's is `current`. `built_by` is
     /// " by build X" when the file names the build, and empty when it does not.
     CatalogNewerSchema { path: String, found: String, current: String, built_by: String } => "catalog-newer-schema",
+    /// A catalog a later build marked with an integer mark this build does not know the meaning of, at `path`: `mark` is
+    /// the mark's name, `found` its value and `current` the highest this build knows. `built_by` as for the schema.
+    CatalogNewerMark { path: String, mark: String, found: String, current: String, built_by: String } => "catalog-newer-mark",
+    /// A catalog whose schema is older than this build's, at `path`: `found` is its version and `current` this build's.
+    /// A released catalog is not migrated, so it is restored from a backup.
+    CatalogOlderSchema { path: String, found: String, current: String } => "catalog-older-schema",
     /// A catalog of a released version whose schema differs from this build's, at `path` (`found`: its version, `detail`:
     /// the difference).
     CatalogDrift { path: String, found: String, detail: String } => "catalog-drift",

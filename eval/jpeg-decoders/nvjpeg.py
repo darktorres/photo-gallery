@@ -33,7 +33,7 @@ import numpy as np
 import torch
 import torchvision
 from common import analysis_denom
-from timing import MAX_BATCH_BYTES, timed
+from timing import MAX_BATCH_BYTES, timed_s
 from PIL import Image
 
 BATCHES = (1, 8, 32, 64, 128)
@@ -106,7 +106,7 @@ def blocking_sync():
 
 def ok(status, what):
     if status != 0:
-        raise RuntimeError(f"{what}: status {status}")
+        raise RuntimeError(f"{what}: returned an error (code {status})")
 
 
 CUDART = blocking_sync()
@@ -229,7 +229,7 @@ def report(label, dec, batch, host):
         dec.stream.synchronize()
 
     for mode, fn in (("on GPU", on_gpu), ("to host", to_host)):
-        wall, cpu = timed(fn, batch)
+        wall, cpu = timed_s(fn, batch)
         print(f"  {label:<40} {mode:<8} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {1 / wall:6.0f} images/s")
 
 
@@ -268,7 +268,7 @@ def main():
             ("Pillow full", lambda data=data: pillow(data)),
             (f"Pillow 1/{d} ({sw}x{sh})", lambda data=data, d=d: pillow(data, d)),
         ):
-            wall, cpu = timed(fn)
+            wall, cpu = timed_s(fn)
             print(f"  {label:<49} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {1 / wall:6.0f} images/s")
 
         outputs = {}

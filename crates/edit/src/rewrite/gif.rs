@@ -137,8 +137,8 @@ mod tests {
             .unwrap()
     }
 
-    /// A minimum code size the app's GIF decoder refuses is a damaged GIF, not a panic in weezl (above 12) or a
-    /// rewrite of a file the viewer can't show (0 and 12).
+    // A minimum code size the app's GIF decoder refuses is a damaged GIF, not a panic in weezl (above 12) or a
+    // rewrite of a file the viewer can't show (0 and 12).
     #[test]
     fn a_gif_with_a_bad_minimum_code_size_is_an_error() {
         let rgb: Vec<u8> = (0..4 * 3 * 3).map(|i| u8::try_from(i * 7 % 256).unwrap()).collect();
@@ -156,7 +156,7 @@ mod tests {
         }
     }
 
-    /// The decoded image is held to the frame's size, and its stream must end with an end code.
+    // The decoded image is held to the frame's size, and its stream must end with an end code.
     #[test]
     fn decoded_indices_are_held_to_the_frame_and_need_the_end_code() {
         let pixels: Vec<u8> = (0..64u8).map(|i| i % 4).collect();
@@ -184,8 +184,8 @@ mod tests {
         (d, [at(1), at(3), at(5), at(7)])
     }
 
-    /// A turned GIF frame is clipped to the logical screen, once, in `Op::frame`: a frame with no pixels or wholly
-    /// past the screen keeps nothing (no underflow), and one that sticks out keeps the part on the screen.
+    // A turned GIF frame is clipped to the logical screen, once, in `Op::frame`: a frame with no pixels or wholly
+    // past the screen keeps nothing (no underflow), and one that sticks out keeps the part on the screen.
     #[test]
     fn a_turned_gif_frame_is_clipped_to_the_screen() {
         let six = Op::Orient(Orientation::new(6).unwrap());

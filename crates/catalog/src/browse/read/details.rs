@@ -2,6 +2,7 @@
 
 use crate::core::Catalog;
 use crate::error::Result;
+use crate::types::bad_value;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -24,7 +25,7 @@ impl Catalog {
                 Ok((
                     r.get::<_, Vec<u8>>(0)?,
                     r.get::<_, Vec<u8>>(1)?,
-                    r.get::<_, i64>(2)?,
+                    r.get::<_, u64>(2)?,
                     crate::types::kind_at(r, 3)?,
                     crate::types::format_at(r, 4)?,
                     r.get::<_, bool>(5)?,
@@ -61,20 +62,22 @@ pub(crate) fn border_sides_on(conn: &Connection, file_id: FileId) -> Result<dete
     let mut rows = stmt.query([file_id.get()])?;
     let mut sides = detection::Sides::new();
     while let Some(r) = rows.next()? {
-        let unknown = |i: usize, v: &str| rusqlite::Error::InvalidColumnType(i, v.to_string(), Type::Text);
         let (edge, kind) = (r.get_ref(1)?.as_str()?, r.get_ref(2)?.as_str()?);
         let color: Option<i64> = r.get(4)?;
         let side = detection::Side {
             pass: r.get(0)?,
-            edge: detection::Edge::from_key(edge).ok_or_else(|| unknown(1, edge))?,
-            kind: detection::Kind::from_key(kind).ok_or_else(|| unknown(2, kind))?,
+            edge: detection::Edge::from_key(edge).ok_or_else(|| bad_value(1, Type::Text, "border_sides.edge", edge))?,
+            kind: detection::Kind::from_key(kind).ok_or_else(|| bad_value(2, Type::Text, "border_sides.kind", kind))?,
             depth: r.get(3)?,
             color: color.map(detection::Side::unpacked_color),
             straight: r.get(5)?,
             dev: r.get(6)?,
             drift: r.get(7)?,
             rejected: match r.get_ref(8)?.as_str_or_null()? {
-                Some(k) => Some(detection::Reason::from_key(k).ok_or_else(|| unknown(8, k))?),
+                Some(k) => Some(
+                    detection::Reason::from_key(k)
+                        .ok_or_else(|| bad_value(8, Type::Text, "border_sides.rejected", k))?,
+                ),
                 None => None,
             },
         };

@@ -71,7 +71,7 @@ WheelListView {
             }
             Label {
                 textFormat: Text.PlainText
-                text: Qt.locale().toString(node.total, "f", 0)
+                text: words.count(node.total)
                 color: "#888888"
                 font.pixelSize: 11
             }

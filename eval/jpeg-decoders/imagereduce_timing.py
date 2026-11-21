@@ -6,7 +6,7 @@ a process per file, so its wall time includes process start; the 8x8 baseline is
     python eval/jpeg-decoders/imagereduce_timing.py WORK --n 500
 
 WORK holds library.csv and camera.csv from imagereduce_switch.py's run; timing.csv is written there. Settings as in
-imagereduce_switch.py (IMAGEREDUCE_VIPS_BIN, JPEGLI_BUILD). VIPS_CONCURRENCY is 1; cjpegli's threads can't be set from
+imagereduce_switch.py (PG_IMAGEREDUCE_VIPS_BIN, PG_JPEGLI_BUILD). VIPS_CONCURRENCY is 1; cjpegli's threads can't be set from
 its command line, so its wall time may use more cores.
 """
 

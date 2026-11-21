@@ -223,8 +223,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(older(&path, 1)).unwrap(), "a line longer than the cap\n");
     }
 
-    /// A file that can't be renamed once is not rotated for that record, and nothing older moves; the next record
-    /// rotates it, and no line is lost.
+    // A file that can't be renamed once is not rotated for that record, and nothing older moves; the next record
+    // rotates it, and no line is lost.
     #[test]
     fn a_failed_rename_skips_the_rotation_and_the_next_record_rotates() {
         let path = folder("skip");
@@ -247,8 +247,8 @@ mod tests {
         assert_eq!(all, (0..6).map(|i| line(i).trim_end().to_string()).collect::<Vec<_>>());
     }
 
-    /// A file that can't be renamed at all grows past its cap, until twice the cap: then it is copied aside and
-    /// emptied, and the history shifts as for a rename.
+    // A file that can't be renamed at all grows past its cap, until twice the cap: then it is copied aside and
+    // emptied, and the history shifts as for a rename.
     #[test]
     fn a_rename_that_keeps_failing_falls_back_to_copy_and_empty_past_twice_the_cap() {
         let path = folder("fallback");
@@ -268,8 +268,8 @@ mod tests {
         assert_eq!(all, (0..6).map(|i| line(i).trim_end().to_string()).collect::<Vec<_>>());
     }
 
-    /// A crash between the renames leaves the aside file: it is read in its place, and finished before the next
-    /// rotation, so nothing is overwritten.
+    // A crash between the renames leaves the aside file: it is read in its place, and finished before the next
+    // rotation, so nothing is overwritten.
     #[test]
     fn a_rotation_left_half_done_is_read_and_finished_first() {
         let path = folder("leftover");
@@ -288,8 +288,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), format!("{}{}", line(3), line(4)));
     }
 
-    /// While another process holds the rotation's lock, a rotation is skipped (the record is still written), and
-    /// taken once it is let go.
+    // While another process holds the rotation's lock, a rotation is skipped (the record is still written), and
+    // taken once it is let go.
     #[test]
     fn a_rotation_held_by_another_is_skipped() {
         let path = folder("locked");

@@ -330,7 +330,7 @@ mod tests {
         common.into_iter().chain(unix_only).collect()
     }
 
-    /// A command's lines up to its marker are its answer; a marker that doesn't come by the deadline fails it.
+    // A command's lines up to its marker are its answer; a marker that doesn't come by the deadline fails it.
     #[test]
     fn a_command_is_read_up_to_its_marker_or_times_out() {
         let (tx, rx) = mpsc::channel::<String>();
@@ -347,8 +347,8 @@ mod tests {
         assert!(err.to_string().contains("exited"), "{err}");
     }
 
-    /// A line that isn't UTF-8 (ExifTool's message about a name with no UTF-8 form) doesn't end the answer: it is shown
-    /// with U+FFFD, and the answer still ends at its marker.
+    // A line that isn't UTF-8 (ExifTool's message about a name with no UTF-8 form) doesn't end the answer: it is shown
+    // with U+FFFD, and the answer still ends at its marker.
     #[test]
     fn a_line_that_is_not_utf8_does_not_end_the_answer() {
         let lines = pump(std::io::Cursor::new(b"ab\xff\r\n{ready1}\n".to_vec())).unwrap();
@@ -356,8 +356,8 @@ mod tests {
         assert_eq!(answer, "ab\u{FFFD}\n");
     }
 
-    /// A name with a line break, or ending in whitespace, takes the argument route; the others go through the argument
-    /// file as they are (the probe's cases, on either side of the rule).
+    // A name with a line break, or ending in whitespace, takes the argument route; the others go through the argument
+    // file as they are (the probe's cases, on either side of the rule).
     #[test]
     fn a_name_the_argument_file_cannot_carry_takes_the_argument_route() {
         for name in ["a\nb.jpg", "a.jpg\n", "a.jpg ", "a.jpg\t", "a.jpg\r", "a.jpg\x0b", "a.jpg\x0c"] {
@@ -368,8 +368,8 @@ mod tests {
         }
     }
 
-    /// A process that died is replaced by the next command, instead of failing every later write. Needs
-    /// ExifTool; skipped without it.
+    // A process that died is replaced by the next command, instead of failing every later write. Needs
+    // ExifTool; skipped without it.
     #[test]
     fn a_dead_exiftool_is_replaced() {
         let program = OsString::from("exiftool");
@@ -388,9 +388,9 @@ mod tests {
         assert!(tool.run(&[b"-ver".as_slice()]).is_ok());
     }
 
-    /// A rating is written into a copy of a file of each name, the names' own bytes: the spaces, a leading `#` or `-`,
-    /// a quote (Unix), a lone surrogate (Windows) or raw non-UTF-8 bytes (Unix), and a line break (Unix; the argument route).
-    /// The original is left as it was. Needs ExifTool; skipped without it.
+    // A rating is written into a copy of a file of each name, the names' own bytes: the spaces, a leading `#` or `-`,
+    // a quote (Unix), a lone surrogate (Windows) or raw non-UTF-8 bytes (Unix), and a line break (Unix; the argument route).
+    // The original is left as it was. Needs ExifTool; skipped without it.
     #[test]
     fn a_rating_is_written_into_a_file_of_each_name() {
         let program = OsString::from("exiftool");
@@ -409,10 +409,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A name whose last byte is whitespace or a CR can't be written by either route: the argument file trims it, and
-    /// the argument route passes the exact bytes, but ExifTool then takes the type from the extension (`png `), which it
-    /// doesn't write. The write fails with an error, no copy is left beside the original, and the original is unchanged.
-    /// Unix only (Windows can't hold such a name). Needs ExifTool; skipped without it.
+    // A name whose last byte is whitespace or a CR can't be written by either route: the argument file trims it, and
+    // the argument route passes the exact bytes, but ExifTool then takes the type from the extension (`png `), which it
+    // doesn't write. The write fails with an error, no copy is left beside the original, and the original is unchanged.
+    // Unix only (Windows can't hold such a name). Needs ExifTool; skipped without it.
     #[cfg(unix)]
     #[test]
     fn a_name_whose_extension_ends_in_whitespace_is_refused_and_leaves_no_copy() {
@@ -431,9 +431,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// An orientation is written into a copy of a file of each name, and the tags of a rated file are copied into the
-    /// file of each name in place, and out of it into a plain file: the names' own bytes, as the rating's test. The
-    /// original of each copy is left as it was. Needs ExifTool; skipped without it.
+    // An orientation is written into a copy of a file of each name, and the tags of a rated file are copied into the
+    // file of each name in place, and out of it into a plain file: the names' own bytes, as the rating's test. The
+    // original of each copy is left as it was. Needs ExifTool; skipped without it.
     #[test]
     fn an_orientation_and_the_tags_are_written_for_a_file_of_each_name() {
         use pg_model::format::Format;

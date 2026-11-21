@@ -30,10 +30,9 @@ impl HeldLease<'_> {
         if held > 0 {
             return Ok(());
         }
-        let root = self.rules.display(self.root);
         Err(match crate::types::covering_root(conn, self.rules, self.root)? {
-            None => Error::RootRemoved { root },
-            Some(_) => Error::LeaseLost { root },
+            None => Error::RootRemoved { root: self.root.clone() },
+            Some(_) => Error::LeaseLost { root: self.rules.display(self.root) },
         })
     }
 }

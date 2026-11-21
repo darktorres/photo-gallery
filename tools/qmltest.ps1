@@ -15,10 +15,10 @@ foreach ($line in Get-Content (Join-Path $PSScriptRoot "..\.env") -ErrorAction S
         [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])
     }
 }
-# The Qt kit: QT_DIR (its bin and lib folders), from the environment or .env.
-$Qt = $env:QT_DIR
-if (-not $Qt) { throw "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env" }
-if (-not (Test-Path (Join-Path $Qt "bin\qmake.exe"))) { throw "QT_DIR ($Qt) has no bin\qmake.exe: point it at the Qt kit folder." }
+# The Qt kit: PG_QT_DIR (its bin and lib folders), from the environment or .env.
+$Qt = $env:PG_QT_DIR
+if (-not $Qt) { throw "PG_QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env" }
+if (-not (Test-Path (Join-Path $Qt "bin\qmake.exe"))) { throw "PG_QT_DIR ($Qt) has no bin\qmake.exe: point it at the Qt kit folder." }
 $root = Split-Path $PSScriptRoot -Parent
 $staged = Join-Path $root "target\qmltest"
 if (Test-Path $staged) { Remove-Item -Recurse -Force $staged }

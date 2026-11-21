@@ -220,8 +220,8 @@ fn pair_and_report(
         pairs: s.pairs.to_string(),
         seconds: secs(start.elapsed().as_secs_f64()),
     });
-    // Two decimals: the parts are fractions of a second.
-    let (t, part) = (s.timings, |d: std::time::Duration| format!("{:.2}", d.as_secs_f64()));
+    // The parts are fractions of a second: whole milliseconds.
+    let (t, part) = (s.timings, millis);
     say(&Line::PairTimings {
         load: part(t.load),
         store: part(t.store),
@@ -239,13 +239,23 @@ fn pair_and_report(
     Ok(())
 }
 
-fn secs(seconds: f64) -> String {
+/// A whole pass's seconds, one decimal: the one rule for seconds on the command line (`report.rs` uses it too). The parts
+/// of a second are whole milliseconds (`millis`).
+pub(crate) fn secs(seconds: f64) -> String {
     format!("{seconds:.1}")
 }
 
-/// Gigabytes as the command line shows them, from bytes: two decimals.
-fn gigabytes(bytes: f64) -> String {
-    format!("{:.2}", bytes / 1e9)
+/// A duration's part of a second as whole milliseconds.
+fn millis(d: std::time::Duration) -> String {
+    d.as_millis().to_string()
+}
+
+/// Bytes of 2^30 (a GiB): the cache's sizes and caps are binary, so the command line shows them in GiB.
+const GIB: f64 = 1_073_741_824.0;
+
+/// Bytes as the command line shows them in GiB, two decimals.
+fn gibibytes(bytes: f64) -> String {
+    format!("{:.2}", bytes / GIB)
 }
 
 /// What `gallery scan` says of a root it scanned in `seconds`: its counts, then the notes its result carries
@@ -374,7 +384,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     }
                     // Another process walks a folder that overlaps this one: said, and the command fails (`--wait`
                     // waits for it instead).
-                    Err(pg_scan::ScanError::Busy { root, holder }) => bail!(line(&Line::ScanBusy { root, holder })),
+                    Err(pg_scan::ScanError::Busy { root, holder }) => {
+                        let root = pg_platform::native::PATH_RULES.display(&root);
+                        bail!(line(&Line::ScanBusy { root, holder }))
+                    }
                     // Another process removed the folder from the library meanwhile (`gallery remove`, or the app):
                     // said, and the command fails, as the scan asked for didn't happen.
                     Err(pg_scan::ScanError::Removed { root }) => bail!(line(&Line::ScanRemoved { root })),
@@ -520,7 +533,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 say(&Line::ThumbsNeeded {
                     needed: s.needed.to_string(),
                     height: height.to_string(),
-                    held: gigabytes(pg_model::num::size(s.cache_bytes)),
+                    held: gibibytes(pg_model::num::size(s.cache_bytes)),
                 });
                 print_failures(Kept::Failed, &s.failures);
                 say(&Line::ThumbsDone {
@@ -529,8 +542,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     failed: s.failed.to_string(),
                     changed: changed_while_read(s.changed),
                     full: if s.cache_full { line(&Line::CacheFull) } else { String::new() },
-                    used: gigabytes(pg_model::num::signed(cache.totals()?.0)),
-                    cap: gigabytes(pg_model::num::signed(cache.cap()?)),
+                    used: gibibytes(pg_model::num::signed(cache.totals()?.0)),
+                    cap: gibibytes(pg_model::num::signed(cache.cap()?)),
                     seconds: secs(start.elapsed().as_secs_f64()),
                 });
                 let ledger_error = match &s.ledger {
@@ -604,8 +617,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             match ThumbCache::read_usage(&layout.thumbs_path())? {
                 Some(u) => say(&Line::StatusCache {
                     count: u.count.to_string(),
-                    used: gigabytes(pg_model::num::signed(u.bytes)),
-                    cap: gigabytes(pg_model::num::signed(u.cap)),
+                    used: gibibytes(pg_model::num::signed(u.bytes)),
+                    cap: gibibytes(pg_model::num::signed(u.cap)),
                 }),
                 None => say(&Line::StatusNoCache),
             }

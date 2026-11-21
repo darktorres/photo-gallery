@@ -46,7 +46,7 @@ Rectangle {
     // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
     readonly property int playerTurns: gallery.viewedPlayerTurns
     // The file (its catalog id), for the players and the Yandex search; a line about it for the bar.
-    readonly property int fileId: gallery.viewedFileId
+    readonly property real fileId: gallery.viewedFileId
     readonly property string info: gallery.viewedInfo
     // Its borders: what is left without them, as fractions of the image as shown (empty: none found); where a
     // rejected candidate would have cut at each edge (a fraction from that edge, -1: none); whether they are marked as
@@ -115,7 +115,7 @@ Rectangle {
     signal bordersToggled
     signal borderMarkToggled(int index, bool marked)
     // The bar's "find similar" button: the photo's file (its id), for the Yandex panel (Main.qml).
-    signal findSimilar(int fileId)
+    signal findSimilar(real fileId)
 
     // The view (Rust: pg_client's View, behind the Viewport object): `zoom` device pixels per image pixel, the image's
     // top-left corner at (ox, oy) in logical pixels, fitted to the window or not. The numbers are the Viewport's; this

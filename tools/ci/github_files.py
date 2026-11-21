@@ -48,7 +48,7 @@ def append(variable: str, text: str) -> None:
 def pin_values() -> list[tuple[str, str]]:
     """The pins the jobs use, as (NAME, VALUE) for the later steps' environment, read from the Justfile (pgtools.just_value)
     and from the platform this runs on. The Qt kit is installed under QT_INSTALL_ROOT (the install step's `dir`): C:\\ on
-    Windows, the runner's temp folder on Linux. QT_DIR is the kit folder inside it, the one `just` recipes and cxx-qt use.
+    Windows, the runner's temp folder on Linux. PG_QT_DIR is the kit folder inside it, the one `just` recipes and cxx-qt use.
     """
     from pgtools import just_value
 
@@ -67,7 +67,7 @@ def pin_values() -> list[tuple[str, str]]:
         ("QT_VERSION", qt),
         ("QT_ARCH", arch),
         ("QT_INSTALL_ROOT", root),
-        ("QT_DIR", qt_dir),
+        ("PG_QT_DIR", qt_dir),
         ("AQTINSTALL_COMMIT", just_value("aqtinstall_commit")),
         ("EXIFTOOL_VERSION", just_value("exiftool_version")),
         # The FFmpeg archive's SHA-256: the FFmpeg cache's key, so a new pin is a new cache.

@@ -1,7 +1,7 @@
 //! Traces of the grid's input policy.
 
 use pg_client::controller::input::{Command, Event, Input};
-use pg_client::keys::Grid;
+use pg_client::keys::GridKey;
 
 fn run(events: &[Event]) -> (Input, Vec<Vec<Command>>) {
     let mut input = Input::default();
@@ -13,33 +13,33 @@ fn run(events: &[Event]) -> (Input, Vec<Vec<Command>>) {
 fn keys_act_on_the_current_item_only_once_one_is_selected() {
     let (_, out) = run(&[
         Event::ListShown { count: 10 },
-        Event::Key(Grid::Open),
-        Event::Key(Grid::Rate(4)),
-        Event::Key(Grid::MarkBorder),
+        Event::Key(GridKey::Open),
+        Event::Key(GridKey::Rate(4)),
+        Event::Key(GridKey::MarkBorder),
         Event::CurrentChanged(Some(3)),
-        Event::Key(Grid::Open),
-        Event::Key(Grid::Rate(4)),
-        Event::Key(Grid::Turn { forward: true }),
+        Event::Key(GridKey::Open),
+        Event::Key(GridKey::Rate(4)),
+        Event::Key(GridKey::Turn { forward: true }),
     ]);
     assert_eq!(out[1], vec![]);
     assert_eq!(out[2], vec![]);
     assert_eq!(out[3], vec![]);
     assert_eq!(out[5], vec![Command::ShowViewer(3)]);
-    assert_eq!(out[6], vec![Command::Act(Grid::Rate(4))]);
-    assert_eq!(out[7], vec![Command::Act(Grid::Turn { forward: true })]);
+    assert_eq!(out[6], vec![Command::Act(GridKey::Rate(4))]);
+    assert_eq!(out[7], vec![Command::Act(GridKey::Turn { forward: true })]);
 }
 
 #[test]
 fn steps_are_left_to_the_layout_and_first_and_last_resolve_by_count() {
     let (_, out) = run(&[
-        Event::Key(Grid::Step { dx: 1, dy: 0 }),
-        Event::Key(Grid::First),
-        Event::Key(Grid::Last),
+        Event::Key(GridKey::Step { dx: 1, dy: 0 }),
+        Event::Key(GridKey::First),
+        Event::Key(GridKey::Last),
         Event::ListShown { count: 0 },
-        Event::Key(Grid::First),
-        Event::Key(Grid::Last),
+        Event::Key(GridKey::First),
+        Event::Key(GridKey::Last),
         Event::ListShown { count: 5 },
-        Event::Key(Grid::Last),
+        Event::Key(GridKey::Last),
     ]);
     assert_eq!(out[0], vec![Command::Step { dx: 1, dy: 0 }]);
     assert_eq!(out[1], vec![]);
@@ -56,7 +56,7 @@ fn a_list_that_shrinks_past_the_current_item_clears_it() {
         Event::ListShown { count: 10 },
         Event::CurrentChanged(Some(7)),
         Event::ListShown { count: 5 },
-        Event::Key(Grid::Open),
+        Event::Key(GridKey::Open),
     ]);
     assert!(!input.has_current());
     assert_eq!(out[3], vec![]);
@@ -65,10 +65,10 @@ fn a_list_that_shrinks_past_the_current_item_clears_it() {
 #[test]
 fn size_and_panel_keys_are_forwarded() {
     let (_, out) =
-        run(&[Event::Key(Grid::Resize { grow: true }), Event::Key(Grid::Filters), Event::Key(Grid::Borders)]);
-    assert_eq!(out[0], vec![Command::Forward(Grid::Resize { grow: true })]);
-    assert_eq!(out[1], vec![Command::Forward(Grid::Filters)]);
-    assert_eq!(out[2], vec![Command::Forward(Grid::Borders)]);
+        run(&[Event::Key(GridKey::Resize { grow: true }), Event::Key(GridKey::Filters), Event::Key(GridKey::Borders)]);
+    assert_eq!(out[0], vec![Command::Forward(GridKey::Resize { grow: true })]);
+    assert_eq!(out[1], vec![Command::Forward(GridKey::Filters)]);
+    assert_eq!(out[2], vec![Command::Forward(GridKey::Borders)]);
 }
 
 #[test]

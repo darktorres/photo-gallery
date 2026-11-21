@@ -70,10 +70,11 @@ pub fn odd_name(text: &str) -> std::ffi::OsString {
 }
 
 /// A test needs an external tool that is not installed: the test returns after this call. Without `PG_REQUIRE_TOOLS`
-/// it prints that it skipped and passes; with it (CI sets it) the test fails, so a missing tool can't pass silently.
+/// (or with it set to a false value) it prints that it skipped and passes; with it set to a true value (CI sets it) the
+/// test fails, so a missing tool can't pass silently.
 #[expect(clippy::print_stderr, reason = "a skipped test says so on stderr, where the test runner prints it")]
 pub fn missing_tool(tool: &str) {
-    assert!(std::env::var_os("PG_REQUIRE_TOOLS").is_none(), "{tool} not found, and PG_REQUIRE_TOOLS is set");
+    assert!(crate::env::flag("PG_REQUIRE_TOOLS") != Some(true), "{tool} not found, and PG_REQUIRE_TOOLS is set");
     eprintln!("{tool} not found: skipped");
 }
 

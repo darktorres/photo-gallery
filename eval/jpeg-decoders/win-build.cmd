@@ -3,7 +3,7 @@ rem The Windows side of the JPEG decoder comparison: GPU decoders, the vendored 
 rem   eval\jpeg-decoders\win-build.cmd [turbo jpeggpu gpujpeg parajpeg debesheedas harness]   (default: all)
 rem Sources go to %JPEG_EVAL%\src at pinned commits (patches\*.patch applied on a fresh clone), builds to
 rem %JPEG_EVAL%\build. Needs win-env.cmd's toolchain: VS Build Tools, the CUDA toolkit (CUDA_PATH), CMake, Ninja,
-rem LLVM's clang-cl (LLVM_DIR, default %ProgramFiles%\LLVM). NASM is not set up here: it must already be on PATH.
+rem LLVM's clang-cl (PG_LLVM_DIR, default %ProgramFiles%\LLVM). NASM is not set up here: it must already be on PATH.
 setlocal
 call "%~dp0win-env.cmd" || exit /b 1
 set "HERE=%~dp0"
@@ -48,7 +48,7 @@ exit /b
 rem clang-cl for its C++ (GCC/Clang attributes and builtins), nvcc on cl for the .cu; the CUDA build has the CPU
 rem backend too. __builtin_cpu_supports needs clang's builtins runtime, which lld-link doesn't add by itself.
 call :clone parajpeg https://github.com/anniigr/parajpeg f45081d7f75fdab809e7170c15fd806f42deb375 || exit /b 1
-for /d %%v in ("%LLVM_DIR%\lib\clang\*") do set "LIB=%%v\lib\windows;%LIB%"
+for /d %%v in ("%PG_LLVM_DIR%\lib\clang\*") do set "LIB=%%v\lib\windows;%LIB%"
 cmake -G Ninja -S "%JPEG_EVAL%\src\parajpeg" -B "%JPEG_EVAL%\build\parajpeg-cuda" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_COMPILER=%CLANG_CL%" "-DCMAKE_CXX_COMPILER=%CLANG_CL%" "-DCMAKE_CXX_FLAGS=/EHsc -O2" -DCMAKE_EXE_LINKER_FLAGS=clang_rt.builtins-x86_64.lib -DPARAJPEG_WITH_CUDA=ON -DCMAKE_CUDA_HOST_COMPILER=cl -DCMAKE_CUDA_FLAGS=-Xcompiler=/Zc:preprocessor -DPARAJPEG_BUILD_TESTS=OFF -DPARAJPEG_BUILD_BENCH=OFF -DPARAJPEG_BUILD_TOOLS=ON >nul || exit /b 1
 rem the fuzz replay tool links the kernels' CPU emulator beside the kernels (duplicate symbols on Windows): skip it
 cmake --build "%JPEG_EVAL%\build\parajpeg-cuda" -j %NUMBER_OF_PROCESSORS% --target parajpeg pjdec
@@ -59,7 +59,7 @@ rem debesheedas/GPU-JPEG-Decoder (a course project): its Makefile's one nvcc lin
 call :clone GPU-JPEG-Decoder https://github.com/debesheedas/GPU-JPEG-Decoder 61cfb3726691fe2436a84696d6a977d5bd8c6123 || exit /b 1
 if not exist "%JPEG_EVAL%\build\debesheedas" mkdir "%JPEG_EVAL%\build\debesheedas"
 pushd "%JPEG_EVAL%\src\GPU-JPEG-Decoder\cuda-decoder"
-nvcc -O3 -std=c++17 -arch=sm_%CUDA_ARCH% --relocatable-device-code true -Xcompiler "/Zc:preprocessor /EHsc /O2" -o "%JPEG_EVAL%\build\debesheedas\decoder.exe" main.cu src/parser.cu src/huffmanTree.cpp utils/stream.cpp utils/utils.cu
+nvcc -O3 -std=c++17 -arch=sm_%PG_CUDA_ARCH% --relocatable-device-code true -Xcompiler "/Zc:preprocessor /EHsc /O2" -o "%JPEG_EVAL%\build\debesheedas\decoder.exe" main.cu src/parser.cu src/huffmanTree.cpp utils/stream.cpp utils/utils.cu
 set "RC=%ERRORLEVEL%"
 popd
 exit /b %RC%

@@ -12,12 +12,15 @@ from pathlib import Path
 
 from common import DATA_ROOT, GROUPS_DIR, IMAGE_EXTS, NEGATIVES_DIR, pg_path
 
+# The seed of the random "others" in the subset. Dataset seed; changing it moves the sampled inputs.
+SUBSET_SEED = 1
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=pg_path(None, "eval_smoke"), help="default: PG_ROOT/eval_smoke")
     parser.add_argument("--others", type=int, default=3000)
-    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=SUBSET_SEED)
     args = parser.parse_args()
 
     files = sorted(

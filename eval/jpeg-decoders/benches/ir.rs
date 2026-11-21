@@ -1,5 +1,5 @@
 //! Instruction counts (callgrind, through gungraun) of each decoder on each input, full size and at the scale
-//! `analyze` asks for. Linux only, like the app's benches; the inputs are in `JPEG_INPUTS` (default
+//! `analyze` asks for. Linux only, like the app's benches; the inputs are in `PG_JPEG_INPUTS` (default
 //! /root/jpeg-inputs), named as below. Setup (reading the file, creating the decoders) isn't measured.
 
 #[cfg(target_os = "linux")]
@@ -9,7 +9,8 @@ mod linux {
     use gungraun::prelude::*;
     use jpeg_decoders::{Dec, Decoders, Mode, Rgb};
 
-    const DIR: &str = match option_env!("JPEG_INPUTS") {
+    // PG_JPEG_INPUTS, set by linux.py; the container's default if it isn't.
+    const DIR: &str = match option_env!("PG_JPEG_INPUTS") {
         Some(d) => d,
         None => "/root/jpeg-inputs",
     };

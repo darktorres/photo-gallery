@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""The CPU side of the JPEG decoder comparison, on Linux (it was wsl-build.sh): the decoders and encoders under JPEG_EVAL
+"""The CPU side of the JPEG decoder comparison, on Linux (it was wsl-build.sh): the decoders and encoders under PG_JPEG_EVAL
 (default ~/jpeg-eval), and the harness (harness/) with libjpeg-turbo, parajpeg, jpegli and Wuffs. Usage, from the
 repository: `just linux-eval eval/jpeg-decoders/linux_build.py [STEP...]` (the container, whose pg-eval volume keeps the
 builds), or natively:
     python3 eval/jpeg-decoders/linux_build.py [STEP...]
 Steps (default: all): turbo mozjpeg jpegli guetzli wuffs parajpeg harness. Sources are cloned once at the pinned commits
-below; the command-line tools land in JPEG_EVAL/bin. Natively it needs the apt packages of docker/apt-packages.txt and
+below; the command-line tools land in PG_JPEG_EVAL/bin. Natively it needs the apt packages of docker/apt-packages.txt and
 docker/apt-packages-eval.txt, which the container's eval image has.
 """
 

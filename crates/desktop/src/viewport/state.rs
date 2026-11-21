@@ -16,6 +16,6 @@ pub struct ViewportRust {
     pub(crate) dh: f64,
     pub(crate) zoomed: bool,
     pub(crate) pixels: bool,
-    pub(crate) fit_width: i64,
-    pub(crate) fit_height: i64,
+    pub(crate) fit_width: u32,
+    pub(crate) fit_height: u32,
 }

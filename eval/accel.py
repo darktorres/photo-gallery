@@ -22,6 +22,7 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -144,7 +145,7 @@ def calibration_batch(size: int) -> Path:
         if len(batch) == CALIB_IMAGES:
             break
     if len(batch) < CALIB_IMAGES:
-        raise RuntimeError(f"only {len(batch)} calibration images outside files.txt: run on a subset work dir")
+        sys.exit(f"accel: only {len(batch)} calibration images outside files.txt: run on a subset work dir")
     np.save(path, np.stack(batch).astype(np.float32))
     return path
 
@@ -209,7 +210,7 @@ def build_engine(onnx: Path, path: Path, shapes: tuple[tuple[int, ...], ...]) ->
     config.add_optimization_profile(profile)
     plan = builder.build_serialized_network(network, config)
     if plan is None:
-        raise RuntimeError(f"TensorRT build failed for {path.name}")
+        sys.exit(f"accel: TensorRT build failed for {path.name} (the engine cannot be built here)")
     path.write_bytes(bytes(plan))
 
 
@@ -329,7 +330,7 @@ def _ort_session(path: Path, provider: str, precision: str, size: int):
         os.environ["PATH"] = previous_path
     want ="TensorrtExecutionProvider" if provider == "trt" else "CUDAExecutionProvider"
     if session.get_providers()[0] != want:
-        raise RuntimeError(f"{want} unavailable: {session.get_providers()}")
+        sys.exit(f"accel: {want} unavailable: {session.get_providers()}")
     return session
 
 

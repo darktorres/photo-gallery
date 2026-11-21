@@ -115,7 +115,8 @@ pub fn view_path(view: &View) -> String {
 }
 
 /// The view the part after the key names, or `None` when it doesn't read, or a region is out of the image. A region is
-/// cut to the image, and its output size to 16384 px a side.
+/// cut to the image, and its output size to 8,192 px a side. The image limits are those and 64 megapixels in all
+/// (`docs/webclient/WEB_CLIENT.md`, "Limits"); this clamps the sides, and the product is the server's to refuse.
 pub fn view_of(rest: &str) -> Option<View> {
     if rest == "full" {
         return Some(View::Full);
@@ -131,7 +132,7 @@ pub fn view_of(rest: &str) -> Option<View> {
     };
     let (ow, oh) = size(out)?;
     let ok = (0.0..1.0).contains(&x) && (0.0..1.0).contains(&y) && w > 0.0 && h > 0.0;
-    ok.then_some(View::Region((x, y, w.min(1.0 - x), h.min(1.0 - y)), ow.min(16384), oh.min(16384)))
+    ok.then_some(View::Region((x, y, w.min(1.0 - x), h.min(1.0 - y)), ow.min(8192), oh.min(8192)))
 }
 
 /// `<width>x<height>` in device pixels.
@@ -168,7 +169,7 @@ mod tests {
     #[test]
     fn a_region_is_cut_to_the_image_and_its_output_capped() {
         let view = view_of("region/0.5,0.5,0.9,0.9/20000x7").expect("reads");
-        assert_eq!(view, View::Region((0.5, 0.5, 0.5, 0.5), 16384, 7));
+        assert_eq!(view, View::Region((0.5, 0.5, 0.5, 0.5), 8192, 7));
     }
 
     #[test]

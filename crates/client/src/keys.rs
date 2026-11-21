@@ -34,7 +34,7 @@ pub struct Mods {
 
 /// A grid action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Grid {
+pub enum GridKey {
     /// Ctrl +/−: the rows grow or shrink.
     Resize {
         grow: bool,
@@ -100,22 +100,22 @@ pub enum Viewer {
 }
 
 /// The grid's action for a key, given whether an item is selected (the keys that act on it need one).
-pub fn grid(key: Key, mods: Mods, has_current: bool) -> Option<Grid> {
+pub fn grid(key: Key, mods: Mods, has_current: bool) -> Option<GridKey> {
     Some(match key {
-        Key::Plus if mods.ctrl => Grid::Resize { grow: true },
-        Key::Minus if mods.ctrl => Grid::Resize { grow: false },
-        Key::Left => Grid::Step { dx: -1, dy: 0 },
-        Key::Right => Grid::Step { dx: 1, dy: 0 },
-        Key::Up => Grid::Step { dx: 0, dy: -1 },
-        Key::Down => Grid::Step { dx: 0, dy: 1 },
-        Key::Home => Grid::First,
-        Key::End => Grid::Last,
-        Key::Enter | Key::Space if has_current => Grid::Open,
-        Key::Digit(n) if n <= 5 && has_current => Grid::Rate(n),
-        Key::Letter('R') if has_current => Grid::Turn { forward: mods.shift },
-        Key::Letter('F') if !mods.ctrl => Grid::Filters,
-        Key::Letter('B') => Grid::Borders,
-        Key::Letter('N') if has_current => Grid::MarkBorder,
+        Key::Plus if mods.ctrl => GridKey::Resize { grow: true },
+        Key::Minus if mods.ctrl => GridKey::Resize { grow: false },
+        Key::Left => GridKey::Step { dx: -1, dy: 0 },
+        Key::Right => GridKey::Step { dx: 1, dy: 0 },
+        Key::Up => GridKey::Step { dx: 0, dy: -1 },
+        Key::Down => GridKey::Step { dx: 0, dy: 1 },
+        Key::Home => GridKey::First,
+        Key::End => GridKey::Last,
+        Key::Enter | Key::Space if has_current => GridKey::Open,
+        Key::Digit(n) if n <= 5 && has_current => GridKey::Rate(n),
+        Key::Letter('R') if has_current => GridKey::Turn { forward: mods.shift },
+        Key::Letter('F') if !mods.ctrl => GridKey::Filters,
+        Key::Letter('B') => GridKey::Borders,
+        Key::Letter('N') if has_current => GridKey::MarkBorder,
         _ => return None,
     })
 }
@@ -321,16 +321,16 @@ mod tests {
 
     #[test]
     fn the_arrows_move_the_grid_with_or_without_a_selection() {
-        assert_eq!(grid(Key::Left, NONE, false), Some(Grid::Step { dx: -1, dy: 0 }));
-        assert_eq!(grid(Key::Down, NONE, true), Some(Grid::Step { dx: 0, dy: 1 }));
+        assert_eq!(grid(Key::Left, NONE, false), Some(GridKey::Step { dx: -1, dy: 0 }));
+        assert_eq!(grid(Key::Down, NONE, true), Some(GridKey::Step { dx: 0, dy: 1 }));
     }
 
     #[test]
     fn keys_that_act_on_the_selection_need_one() {
         assert_eq!(grid(Key::Enter, NONE, false), None);
-        assert_eq!(grid(Key::Enter, NONE, true), Some(Grid::Open));
+        assert_eq!(grid(Key::Enter, NONE, true), Some(GridKey::Open));
         assert_eq!(grid(Key::Digit(3), NONE, false), None);
-        assert_eq!(grid(Key::Digit(3), NONE, true), Some(Grid::Rate(3)));
+        assert_eq!(grid(Key::Digit(3), NONE, true), Some(GridKey::Rate(3)));
         assert_eq!(grid(Key::Letter('N'), NONE, false), None);
     }
 
@@ -342,15 +342,15 @@ mod tests {
 
     #[test]
     fn ctrl_plus_and_minus_resize_the_grid_and_plain_ones_do_nothing() {
-        assert_eq!(grid(Key::Plus, CTRL, false), Some(Grid::Resize { grow: true }));
-        assert_eq!(grid(Key::Minus, CTRL, false), Some(Grid::Resize { grow: false }));
+        assert_eq!(grid(Key::Plus, CTRL, false), Some(GridKey::Resize { grow: true }));
+        assert_eq!(grid(Key::Minus, CTRL, false), Some(GridKey::Resize { grow: false }));
         assert_eq!(grid(Key::Plus, NONE, false), None);
     }
 
     #[test]
     fn r_turns_back_or_forward_by_shift() {
-        assert_eq!(grid(Key::Letter('R'), NONE, true), Some(Grid::Turn { forward: false }));
-        assert_eq!(grid(Key::Letter('R'), SHIFT, true), Some(Grid::Turn { forward: true }));
+        assert_eq!(grid(Key::Letter('R'), NONE, true), Some(GridKey::Turn { forward: false }));
+        assert_eq!(grid(Key::Letter('R'), SHIFT, true), Some(GridKey::Turn { forward: true }));
         assert_eq!(viewer(Key::Letter('R'), SHIFT, STILL), Some(Viewer::Turn { forward: true }));
     }
 

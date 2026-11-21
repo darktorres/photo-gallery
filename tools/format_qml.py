@@ -2,7 +2,7 @@
 """Formats the tracked QML files in place with the Qt kit's qmlformat (`just fmt`, every OS). The files are the repository's
 own (git ls-files, vendor/ left out), so an untracked scratch file is not touched.
 
-The kit is QT_DIR (from the environment or .env), and qmlformat is read from its bin folder, never from PATH, as
+The kit is PG_QT_DIR (from the environment or .env), and qmlformat is read from its bin folder, never from PATH, as
 tools/lint_qml.py reads its tools: another Qt on PATH cannot format against a different version.
 """
 
@@ -20,7 +20,7 @@ def qmlformat_path(qt: Path) -> str:
     exe = "qmlformat" + (".exe" if os.name == "nt" else "")
     tool = qt / "bin" / exe
     if not tool.is_file():
-        sys.exit(f"{exe} is not in {qt / 'bin'}: QT_DIR must be the Qt kit folder (the one with bin and lib)")
+        sys.exit(f"{exe} is not in {qt / 'bin'}: PG_QT_DIR must be the Qt kit folder (the one with bin and lib)")
     return str(tool)
 
 
@@ -32,10 +32,10 @@ def tracked_qml() -> list[str]:
 
 
 def main() -> int:
-    # `just` loads .env into the environment (dotenv-load), so QT_DIR is set here.
-    qt_dir = os.environ.get("QT_DIR")
+    # `just` loads .env into the environment (dotenv-load), so PG_QT_DIR is set here.
+    qt_dir = os.environ.get("PG_QT_DIR")
     if not qt_dir:
-        not_set("QT_DIR", QT_DIR_HOW)
+        not_set("PG_QT_DIR", QT_DIR_HOW)
     files = tracked_qml()
     if not files:
         print("format_qml: no tracked QML files")

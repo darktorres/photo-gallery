@@ -126,7 +126,9 @@ def _check(inputs: Path, outputs: Path, height: int) -> int:
     for out_path in sorted(outputs.iterdir()):
         src = Image.open(inputs / out_path.name).convert("RGB")
         ref = np.asarray(Image.open(out_path).convert("RGB"), dtype=np.int16)
-        out_w = round(src.width * height / src.height)  # the probe's size rule (round half up here: no .5 cases)
+        # The probe's size rule is Rust's f64::round (half away from zero, crates/codec/src/resize.rs); Python's round() is
+        # half to even. For positive values, floor(x + 0.5) is half away from zero.
+        out_w = int(src.width * height / src.height + 0.5)
         mine = resize_linear(np.asarray(src), height, out_w).astype(np.int16)
         if mine.shape != ref.shape:
             print(f"{out_path.name}: size {mine.shape} vs app {ref.shape}")

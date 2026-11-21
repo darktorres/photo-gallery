@@ -18,8 +18,8 @@ pub struct Region {
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    pub px_w: i64,
-    pub px_h: i64,
+    pub px_w: u32,
+    pub px_h: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,9 +60,9 @@ fn six_places(v: f64) -> f64 {
     (v * 1e6).round() / 1e6
 }
 
-/// `v` rounded to a whole number of device pixels; the conversion saturates at `i64`'s range (NaN gives 0).
-fn round_i64(v: f64) -> i64 {
-    pg_model::num::f64_to_i64(v.round())
+/// `v` rounded to a whole number of device pixels; the conversion saturates at `u32`'s range (NaN and negatives give 0).
+fn round_px(v: f64) -> u32 {
+    pg_model::num::f64_to_u32(v.round())
 }
 
 impl View {
@@ -105,8 +105,8 @@ impl View {
     }
 
     /// The window in device pixels, rounded: the size the fitted image is rendered at.
-    pub fn fit_px(&self) -> (i64, i64) {
-        (round_i64(self.width * self.dpr), round_i64(self.height * self.dpr))
+    pub fn fit_px(&self) -> (u32, u32) {
+        (round_px(self.width * self.dpr), round_px(self.height * self.dpr))
     }
 
     /// Whether the image is still (for zooming) without a size change: its own flag, no reset.
@@ -200,8 +200,8 @@ impl View {
             y: six_places((y0 - self.oy) / dh),
             w: six_places((x1 - x0) / dw),
             h: six_places((y1 - y0) / dh),
-            px_w: round_i64((x1 - x0) * self.dpr),
-            px_h: round_i64((y1 - y0) * self.dpr),
+            px_w: round_px((x1 - x0) * self.dpr),
+            px_h: round_px((y1 - y0) * self.dpr),
         })
     }
 }
@@ -312,7 +312,7 @@ mod tests {
         v.set_zoom(2.0, 250.0, 200.0);
         let r = v.region().expect("some of the image shows");
         assert!(r.x >= 0.0 && r.y >= 0.0 && r.x + r.w <= 1.0 + 1e-6 && r.y + r.h <= 1.0 + 1e-6);
-        assert_eq!(r.px_w, round_i64(r.w * v.fw * v.zoom));
+        assert_eq!(r.px_w, round_px(r.w * v.fw * v.zoom));
 
         assert_eq!(v.fit_px(), (500, 400));
     }

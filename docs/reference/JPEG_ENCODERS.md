@@ -161,8 +161,8 @@ with the vips metadata (573 Pinterest files, 39 camera files carry ICC or EXIF) 
   in the tables. One PNG is over the 65,500-pixel limit: ImageReduce skips any image with a side over 65,500
   (`mainwindow.cpp` line 114) before encoding, so jpegli never sees it.
 
-To rerun (Windows, native, not the container): set `IMAGEREDUCE_VIPS_BIN` to ImageReduce's `vips-dev-8.18\bin`,
-`JPEGLI_BUILD` to jpegli's build folder, and `PG_DATA_ROOT` and `CAMERA_ROOT` to the library and camera folders, then
+To rerun (Windows, native, not the container): set `PG_IMAGEREDUCE_VIPS_BIN` to ImageReduce's `vips-dev-8.18\bin`,
+`PG_JPEGLI_BUILD` to jpegli's build folder, and `PG_DATA_ROOT` and `CAMERA_ROOT` to the library and camera folders, then
 
 ```sh
 python eval/jpeg-decoders/imagereduce_switch.py run library --out WORK/library.csv

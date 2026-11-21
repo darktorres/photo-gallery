@@ -31,7 +31,7 @@ index 05d235a..49413c2 100644
      Ok(())
  }
  
-+/// The static Qt's libraries beyond the modules cxx-qt links: the plugins and QML plugins (paths under QT_DIR, the static
++/// The static Qt's libraries beyond the modules cxx-qt links: the plugins and QML plugins (paths under PG_QT_DIR, the static
 +/// Qt's prefix), the Windows libraries Qt's static libraries need, and the static FFmpeg that Qt's FFmpeg plugin uses
 +/// (PG_FFMPEG_STATIC, its lib folder). The lists are the static link line of the check program.
 +///
@@ -40,7 +40,7 @@ index 05d235a..49413c2 100644
 +/// its platform plugin). The `pg_static_qt` cfg tells gui_app.rs to keep cpp/static_qt.cpp's registrations linked.
 +fn static_qt_links() -> Result<(), String> {
 +    let qt = std::path::PathBuf::from(
-+        std::env::var_os("QT_DIR").ok_or("PG_QT_STATIC needs QT_DIR, the static Qt's prefix")?,
++        std::env::var_os("PG_QT_DIR").ok_or("PG_QT_STATIC needs PG_QT_DIR, the static Qt's prefix")?,
 +    );
 +    let ffmpeg = std::path::PathBuf::from(
 +        std::env::var_os("PG_FFMPEG_STATIC")
@@ -71,7 +71,7 @@ index 05d235a..49413c2 100644
 +    Ok(())
 +}
 +
-+/// Qt's static plugin and QML plugin libraries the app imports (cpp/static_qt.cpp), relative to QT_DIR.
++/// Qt's static plugin and QML plugin libraries the app imports (cpp/static_qt.cpp), relative to PG_QT_DIR.
 +const STATIC_QT_LIBS: &[&str] = &[
 +    "lib/Qt6FFmpegMediaPluginImpl.lib",
 +    // The modules the QML plugins below are built on (their .prl files name them, and qt-build-utils reads only the

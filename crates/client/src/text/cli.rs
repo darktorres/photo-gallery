@@ -278,6 +278,10 @@ pub enum Line {
         id: String,
     },
     NoWindow,
+    /// A command's failure, as the command line prints it: its error chain, one line.
+    Error {
+        error: String,
+    },
 }
 
 impl Line {
@@ -339,6 +343,7 @@ impl Line {
             Line::DupsGroup { .. } => "cli-dups-group",
             Line::FileNotInCatalog { .. } => "cli-file-not-in-catalog",
             Line::NoWindow => "cli-no-window",
+            Line::Error { .. } => "cli-error",
         }
     }
 
@@ -471,6 +476,7 @@ impl Line {
                 vec![("distance", distance), ("groups", groups), ("files", files), ("largest", largest)]
             }
             Line::FileNotInCatalog { id } => vec![("id", id)],
+            Line::Error { error } => vec![("error", error)],
             Line::CacheFull | Line::CsvMissing | Line::StatusNoCache | Line::DupsPdq | Line::NoWindow => Vec::new(),
         }
     }
@@ -580,6 +586,7 @@ impl Line {
             Line::DupsGroup { count: s() },
             Line::FileNotInCatalog { id: s() },
             Line::NoWindow,
+            Line::Error { error: s() },
         ]
     }
 }
@@ -632,24 +639,25 @@ mod tests {
         let paired = Line::PairDone { files: "12".into(), pairs: "3".into(), seconds: "0.5".into() };
         assert_eq!(line(&paired), "paired 12 files: 3 PDQ pairs, 0.5 s");
         let timings = Line::PairTimings {
-            load: "0.21".into(),
-            store: "0.04".into(),
-            join: "0.62".into(),
-            sort: "0.10".into(),
-            scan: "0.48".into(),
-            idle: "0.03".into(),
-            paused: "0.00".into(),
-            write: "0.33".into(),
-            commit: "0.08".into(),
+            load: "210".into(),
+            store: "40".into(),
+            join: "620".into(),
+            sort: "100".into(),
+            scan: "480".into(),
+            idle: "30".into(),
+            paused: "0".into(),
+            write: "330".into(),
+            commit: "80".into(),
         };
         assert_eq!(
             line(&timings),
-            "load 0.21 s, store 0.04 s, join 0.62 s (threads' time: sorts 0.10 s, scans 0.48 s, idle 0.03 s, \
-             paused 0.00 s), writes 0.33 s, commits 0.08 s"
+            "load 210 ms, store 40 ms, join 620 ms (threads' time: sorts 100 ms, scans 480 ms, idle 30 ms, \
+             paused 0 ms), writes 330 ms, commits 80 ms"
         );
         let tier = Line::DupsIdentical { tier: Tier::Pixels, groups: "2".into(), files: "5".into() };
         assert_eq!(line(&tier), "tier 0b identical pixels: 2 groups, 5 files");
         let tier = Line::DupsIdentical { tier: Tier::File, groups: "3".into(), files: "7".into() };
         assert_eq!(line(&tier), "tier 0a identical files: 3 groups, 7 files");
+        assert_eq!(line(&Line::Error { error: "no such file".into() }), "error: no such file");
     }
 }

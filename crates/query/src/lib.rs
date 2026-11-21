@@ -507,10 +507,10 @@ mod tests {
         assert!(key_sql(borders).unwrap().contains(concat!("IN (", swapping_orientations!(), ")")));
     }
 
-    /// Every name of up to 3 and text of up to 2 characters from a set chosen for their lower cases: ASCII,
-    /// İ (2 characters in lower case), Σ σ ς (the final sigma), Kelvin K (lower case ASCII), ß ẞ, a combining dot,
-    /// a space and a digit; and some longer ones. The function, and the same through SQL with the text as a
-    /// parameter, against `str::to_lowercase` on both.
+    // Every name of up to 3 and text of up to 2 characters from a set chosen for their lower cases: ASCII,
+    // İ (2 characters in lower case), Σ σ ς (the final sigma), Kelvin K (lower case ASCII), ß ẞ, a combining dot,
+    // a space and a digit; and some longer ones. The function, and the same through SQL with the text as a
+    // parameter, against `str::to_lowercase` on both.
     #[test]
     fn a_name_contains_a_text_as_their_lower_cases_do() {
         let set = ['a', 'B', 'i', 'I', 'İ', 'Σ', 'σ', 'ς', '\u{212A}', 'k', 'ß', 'ẞ', '\u{307}', ' ', '1'];
@@ -550,9 +550,9 @@ mod tests {
         assert!(one("SELECT pg_contains(x'61EDA080', char(65533))"));
     }
 
-    /// A name that is no UTF-8 is matched as its display text: its valid parts are found, and its bad bytes show as
-    /// U+FFFD. A query is text, so it can't name the bad bytes; it can find the text on either side of them only when
-    /// they are not between the two halves it asks for (`o.j` is not in `photo` + the bad bytes + `.jpg`).
+    // A name that is no UTF-8 is matched as its display text: its valid parts are found, and its bad bytes show as
+    // U+FFFD. A query is text, so it can't name the bad bytes; it can find the text on either side of them only when
+    // they are not between the two halves it asks for (`o.j` is not in `photo` + the bad bytes + `.jpg`).
     #[test]
     fn a_name_that_is_no_utf8_is_matched_by_its_valid_parts() {
         let conn = Connection::open_in_memory().unwrap();
@@ -679,9 +679,9 @@ mod tests {
         }
     }
 
-    /// The local day's first instant, for every day from 2000 to 2030, in this machine's zone: the instant before it
-    /// reads earlier than midnight, and it reads midnight or later. A zone's changes at midnight (where the day has a
-    /// skipped or a repeated hour) are among these days wherever they fall.
+    // The local day's first instant, for every day from 2000 to 2030, in this machine's zone: the instant before it
+    // reads earlier than midnight, and it reads midnight or later. A zone's changes at midnight (where the day has a
+    // skipped or a repeated hour) are among these days wherever they fall.
     #[test]
     fn a_local_day_starts_where_its_clock_first_reads_midnight() {
         use rusqlite::params_from_iter;

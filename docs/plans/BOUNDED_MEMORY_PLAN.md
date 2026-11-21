@@ -432,6 +432,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 - **Scan tables:**
   - `file_seen(id PK → files CASCADE, last_scan, last_claim)`, `scan_skipped`, `pair_ambiguous`, `scan_cleanup`.
   - `root_removals(id, path, key_lo, key_hi, hidden, cursor_path, cursor_id, report, finished)`.
+    - Which columns come when: `id`, `path`, `started` and `deferred` are in the schema-1 baseline (`crates/catalog/src/baseline.sql`). `hidden`, `report`, `finished`, `cursor_path` and `cursor_id` come in TO_10 with the unique index on `path WHERE finished IS NULL`, as `BACKGROUND_JOB_AUDIT_FIXES.md` (the `root_removals` line, 54) states. `key_lo` and `key_hi` come with the reader mask, later.
   - `scans` gains `pair_tier`, `pair_cursor` (the pairing continuation, 3.2), `finished`, `kind` (0 walk, 1 journal, 9 sentinel), `floor` (D38; NULL means its own id), and `usn_state BLOB` (phase, committed walk_key position, seal id, E, fingerprint).
   - Seed the sentinel `scans(id 0, root X'', started 0, finished 0, kind 9)`. Readers that list scans use `id > 0`.
 - **USN journal tables:**

@@ -71,7 +71,7 @@ const IDLE_CHECK: Duration = Duration::from_secs(30);
 /// What the app shows about the queue.
 #[derive(Clone, Default)]
 pub struct WriteStatus {
-    pub queued: usize,
+    pub queued: u64,
     /// The latest failure, until the next success (or until the write it names is dropped), which the app words.
     pub error: Option<WriteError>,
     /// The file `error` is about, when it is a job's.
@@ -158,7 +158,7 @@ impl std::fmt::Display for CopyStarted {
 struct CopyInto<'a> {
     file: File,
     data: &'a [u8],
-    before: (i64, i64),
+    before: (u64, i64),
     new_hash: Option<FileHash>,
 }
 
@@ -692,7 +692,7 @@ impl Inner {
         temp: &Path,
         shown: &str,
         shown_temp: &str,
-        before: (i64, i64),
+        before: (u64, i64),
     ) -> Result<File> {
         let file = pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
         unchanged(shown, before, pg_platform::file::stat_of(&file)?)?;
@@ -703,7 +703,7 @@ impl Inner {
     /// The copy into the original, then the write recorded as done: the steps after a fresh job's temp is recorded.
     /// Every failure here is one where the copy may have started; the caller gives it `CopyStarted`. Returns the file's
     /// (size, mtime) after the copy.
-    fn copy_and_done(&self, catalog: &Catalog, job: &Job, path: &Path, copy: CopyInto<'_>) -> Result<(i64, i64)> {
+    fn copy_and_done(&self, catalog: &Catalog, job: &Job, path: &Path, copy: CopyInto<'_>) -> Result<(u64, i64)> {
         #[cfg(any(test, feature = "fault"))]
         fault::in_copy(self.fault, job.file_id)?;
         write_into(copy.file, copy.data)?;
@@ -799,6 +799,8 @@ mod tests {
     fn writer_state(prefix: &str, sink: Arc<RecordingSink>) -> (Inner, Quiet<pg_thumbcache::Event>) {
         let dir = pg_testkit::run_folder("scratch_writeback", prefix).unwrap();
         let (events, quiet) = Quiet::bus();
+        // A 1 MiB cap, not the thumbs' 1 GiB: this state holds a few small test thumbnails, far below either cap, so the
+        // cap's size is not what its tests cover.
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             "a catalog",
@@ -821,8 +823,8 @@ mod tests {
         (inner, quiet)
     }
 
-    /// The status's one choke point tells a failure when it comes or changes, not again while it holds, and clears it
-    /// when it goes; the drops are told as one event, with their count and the latest's kind.
+    // The status's one choke point tells a failure when it comes or changes, not again while it holds, and clears it
+    // when it goes; the drops are told as one event, with their count and the latest's kind.
     #[test]
     fn the_status_tells_a_failure_once_and_its_end_and_the_drops_as_one_event() {
         let sink = RecordingSink::new();

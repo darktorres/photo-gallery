@@ -22,6 +22,9 @@ import torch
 import accel
 from common import CACHE_DIR, DATA_ROOT, LIBRARY_SIZE, WORK_DIR, image_list, load_rgb
 
+# The seed of the sampled real images. Dataset seed; changing it moves the sampled inputs.
+SAMPLE_SEED = 4
+
 # name: (open_clip architecture, pretrained tag, published zero-shot ImageNet-1k top-1 %, source of that number)
 CANDIDATES = {
     "clip_b32": ("ViT-B-32", "laion2b_s34b_b79k", 66.6, "open_clip results table"),
@@ -101,7 +104,7 @@ def main() -> None:
     parser.add_argument("--images", type=int, default=128)
     args = parser.parse_args()
 
-    files = random.Random(4).sample(image_list(), args.images)
+    files = random.Random(SAMPLE_SEED).sample(image_list(), args.images)
     out_path = WORK_DIR / "bench_semantic.json"
     report = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else {}
     for name in args.models:

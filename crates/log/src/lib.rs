@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(records[2].level, Level::Error);
     }
 
-    /// The ring holds this run's newest records, bounded by their count and by their bytes.
+    // The ring holds this run's newest records, bounded by their count and by their bytes.
     #[test]
     fn the_ring_is_bounded_by_count_and_bytes() {
         let log = Logger::new();
@@ -409,8 +409,8 @@ mod tests {
         assert!(kept.len() < (RING_BYTES / MESSAGE_CAP) + 5);
     }
 
-    /// A subscriber that reads the files after it subscribed gets each record once: the files' records of this run
-    /// that the feed holds are left out, and the ones it has dropped (older) are kept.
+    // A subscriber that reads the files after it subscribed gets each record once: the files' records of this run
+    // that the feed holds are left out, and the ones it has dropped (older) are kept.
     #[test]
     fn the_feed_and_the_files_merge_without_a_gap_or_a_double() {
         let (log, path) = logger("merge", FILE_CAP);
@@ -487,8 +487,8 @@ mod tests {
         assert_eq!(records.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["7", "8", "9"]);
     }
 
-    /// A record logged while another thread holds the ring waits for it, and then is kept, sent and merged like any
-    /// other, once each.
+    // A record logged while another thread holds the ring waits for it, and then is kept, sent and merged like any
+    // other, once each.
     #[test]
     fn a_record_logged_while_another_thread_holds_the_ring_arrives_once() {
         let (log, path) = logger("ring_held", FILE_CAP);
@@ -516,8 +516,8 @@ mod tests {
         panic!("panicked in keep");
     }
 
-    /// A panic raised while its thread holds the ring is written to the file only (taking the ring again could
-    /// deadlock), and a subscriber's merge shows it once; the unwinding lets the ring go, and the log goes on.
+    // A panic raised while its thread holds the ring is written to the file only (taking the ring again could
+    // deadlock), and a subscriber's merge shows it once; the unwinding lets the ring go, and the log goes on.
     #[test]
     fn a_panic_inside_keep_is_written_to_the_file_and_merged_once() {
         let (log, path) = logger("keep_panic", FILE_CAP);
@@ -544,8 +544,8 @@ mod tests {
         assert!(merged.iter().all(|r| r.message != "after"), "a kept record is not taken from the files");
     }
 
-    /// Panics written without the file's lock (another thread holds it): each is one append of one line, so every line
-    /// reads back whole.
+    // Panics written without the file's lock (another thread holds it): each is one append of one line, so every line
+    // reads back whole.
     #[test]
     fn panic_writes_without_the_lock_are_each_one_line() {
         let (log, path) = logger("panic_threads", FILE_CAP);

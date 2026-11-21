@@ -32,8 +32,8 @@ impl Job {
 /// did, so the analysis is redone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rewrite {
-    pub before: Option<(i64, i64)>,
-    pub after: (i64, i64),
+    pub before: Option<(u64, i64)>,
+    pub after: (u64, i64),
     pub metadata_only: Option<pg_model::analysis::FileHash>,
 }
 

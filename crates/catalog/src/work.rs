@@ -10,6 +10,7 @@ use pg_model::path::WorkList;
 use pg_model::turns::Turns;
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::convert::progress_count;
 use crate::core::{Catalog, ReadOnly, Reader};
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
@@ -39,12 +40,13 @@ fn borders_statement(from: &str) -> String {
 impl Catalog {
     /// The volumes the files `ids` are on, as the catalog stores them (the ids that are not in the catalog are none). A job
     /// that changes those files holds the lanes of those volumes while it does.
-    pub fn volumes_of(&self, ids: &[FileId]) -> Result<BTreeSet<i64>> {
+    pub fn volumes_of(&self, ids: &[FileId]) -> Result<BTreeSet<u64>> {
         let mut stmt = self.conn.prepare_cached("SELECT volume FROM files WHERE id = ?1")?;
         let mut volumes = BTreeSet::new();
         for id in ids {
+            // A volume id is stored as the SQL integer of its bits: the identity edge (`convert::identity_to_sql`).
             let found: Option<i64> = stmt.query_row([id.get()], |row| row.get(0)).optional()?;
-            volumes.extend(found);
+            volumes.extend(found.map(i64::cast_unsigned));
         }
         Ok(volumes)
     }
@@ -150,7 +152,7 @@ const OWED_PLACEHOLDERS: &str = concat!(
     "FROM files f
      JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
      LEFT JOIN placeholders p ON p.file_id = f.id AND p.size = f.size AND p.mtime = f.mtime
-         AND p.rotation = f.rotation AND p.version = ?1
+         AND p.rotation = f.turns AND p.version = ?1
      WHERE ",
     present_ready!(f),
     " AND p.file_id IS NULL
@@ -339,7 +341,7 @@ fn pairing_work_on(
     let owes: Vec<bool> =
         columns.ids.iter().map(|&id| present_w.has(id) && !pending_w.has(id) && owed_w.has(id)).collect();
     let (mut present_w, mut pending_w) = (present.walk(), pending.walk());
-    let legacy = legacy.iter().filter(|&&id| present_w.has(id) && !pending_w.has(id)).count();
+    let legacy = progress_count(legacy.iter().filter(|&&id| present_w.has(id) && !pending_w.has(id)).count());
     tx.commit()?;
     let Grown { ids, hashes, quality } = columns;
     Ok(PairingWork { ids: ids.into_iter().map(FileId::new).collect(), owed: owes, hashes, quality, legacy, marks })
@@ -523,13 +525,13 @@ impl Catalog {
     }
 
     /// How many files the Placeholders pass still owes a placeholder (the rows `pending_placeholders` gives).
-    pub fn owed_placeholders(&self) -> Result<usize> {
+    pub fn owed_placeholders(&self) -> Result<u64> {
         Ok(self.conn.query_row(&format!("SELECT count(*) {OWED_PLACEHOLDERS}"), [PLACEHOLDER_VERSION], |r| r.get(0))?)
     }
 
     /// How many present, non-pending files are stored without their duplicate hashes (`hashes_owed`): the status's count
     /// of what duplicates detection, while it was off, left for the Hashes pass.
-    pub fn owed_hashes(&self) -> Result<usize> {
+    pub fn owed_hashes(&self) -> Result<u64> {
         Ok(self.conn.query_row(
             concat!(
                 "SELECT count(*) FROM hashes_owed h CROSS JOIN files f WHERE f.id = h.file_id AND ",
@@ -555,7 +557,7 @@ impl Catalog {
     /// then makes is all of them again. Returns how many are owed. The WAL this write leaves is merged into the file
     /// before returning: otherwise the pass's first commits merge it, which took about a second on the 187,804-picture
     /// library (the pass alone takes 0.8 s after a merge).
-    pub fn pairs_again(&mut self) -> Result<usize> {
+    pub fn pairs_again(&mut self) -> Result<u64> {
         let tx = write_transaction(&self.conn)?;
         let owed = crate::lifecycle::owe_pairs_again(&tx)?;
         tx.commit()?;
@@ -564,7 +566,7 @@ impl Catalog {
     }
 
     /// How many pictures owe their pairs: the files the pairing pass has yet to pair (present and not pending).
-    pub fn owed_pairs(&self) -> Result<usize> {
+    pub fn owed_pairs(&self) -> Result<u64> {
         Ok(self.conn.query_row(&format!("SELECT count(*) {OWED}"), [], |r| r.get(0))?)
     }
 
@@ -726,14 +728,15 @@ mod tests {
     #[test]
     fn a_volume_set_holds_each_id_as_the_scan_stores_it() {
         assert_eq!(VolumeSet::only(&[1, 2]), VolumeSet::Only(vec![1, 2]));
-        assert_eq!(VolumeSet::only(&[i64::MAX.unsigned_abs()]), VolumeSet::Only(vec![i64::MAX]));
-        assert_eq!(VolumeSet::only(&[u64::MAX]), VolumeSet::Only(vec![-1]));
+        assert_eq!(VolumeSet::only(&[i64::MAX.unsigned_abs()]), VolumeSet::Only(vec![i64::MAX.unsigned_abs()]));
+        assert_eq!(VolumeSet::only(&[u64::MAX]), VolumeSet::Only(vec![u64::MAX]));
     }
 
     #[test]
     fn the_volume_clause_is_a_literal_list() {
         assert_eq!(VolumeSet::All.and_in("f.volume"), "");
-        assert_eq!(VolumeSet::Only(vec![3, -1]).and_in("f.volume"), " AND f.volume IN (3,-1)");
+        // A volume id is stored as the SQL integer of its bits: u64::MAX is -1.
+        assert_eq!(VolumeSet::Only(vec![3, u64::MAX]).and_in("f.volume"), " AND f.volume IN (3,-1)");
         assert_eq!(VolumeSet::Only(vec![]).and_in("f.volume"), " AND f.volume IN ()");
     }
 
@@ -749,8 +752,8 @@ mod tests {
     fn a_volume_set_limits_each_pending_list_to_its_volumes() {
         let (c, id) = crate::test_support::one_file(pg_model::rules::PathRules::Posix);
         let volume: i64 = c.conn.query_row("SELECT volume FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
-        let here = VolumeSet::Only(vec![volume]);
-        let elsewhere = VolumeSet::Only(vec![volume + 1]);
+        let here = VolumeSet::Only(vec![volume.cast_unsigned()]);
+        let elsewhere = VolumeSet::Only(vec![volume.cast_unsigned() + 1]);
         assert_eq!(c.pending_import(false, &VolumeSet::All).unwrap().len(), 1);
         assert_eq!(c.pending_import(false, &here).unwrap().len(), 1, "its own volume lists it");
         assert!(c.pending_import(false, &elsewhere).unwrap().is_empty(), "another volume does not");

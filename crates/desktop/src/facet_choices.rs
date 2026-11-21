@@ -1,20 +1,20 @@
 //! One list facet of the filter bar as a model: a row per choice (a media type, a shape, an import status, a borders
 //! value, a rating, or an extension of the folder), with the choice's count (how many files choosing it would show,
-//! `countFacets()`, or 0 where the bar shows none) and whether the query has it. `facet` is the list's index in
-//! `pg_client::facets::ALL`, whose `choices` decides the rows. The query and the counts are both read from
+//! `countFacets()`, or 0 where the bar shows none) and whether the query has it. `facet` is the list (a `ChoiceFacet`
+//! QML names), which `pg_client::facets::choices` turns into the rows. The query and the counts are both read from
 //! `controller.rs` (the counts as `Filters` last set them): `refresh` rebuilds the rows, and the filter bar calls it when
 //! the query or the counts change.
 
 pub(crate) mod state;
 use state::Row;
 
-use crate::facet_choices_bridge::qobject;
+use crate::facet_choices_bridge::qobject::{self, ChoiceFacet};
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
 
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_client::facets::{Counts, choices, from_index};
+use pg_client::facets::{Counts, choices};
 use pg_client::input::key_of;
 use pg_client::text;
 use pg_model::query::{ListFacet, Query};
@@ -32,6 +32,21 @@ pub(crate) fn count(n: i64) -> i32 {
     qt_int(n.max(0))
 }
 
+/// The list facet a QML `FacetChoices.ChoiceFacet` value names (the bridge's enum, compared by its value).
+pub(crate) fn list_facet(kind: ChoiceFacet) -> Option<ListFacet> {
+    [
+        (ChoiceFacet::Types, ListFacet::Types),
+        (ChoiceFacet::Shapes, ListFacet::Shapes),
+        (ChoiceFacet::Status, ListFacet::Status),
+        (ChoiceFacet::Borders, ListFacet::Borders),
+        (ChoiceFacet::Ratings, ListFacet::Ratings),
+        (ChoiceFacet::Exts, ListFacet::Exts),
+    ]
+    .into_iter()
+    .find(|(value, _)| *value == kind)
+    .map(|(_, facet)| facet)
+}
+
 /// The rows of `facet` for a query and counts.
 fn rows(facet: ListFacet, query: &Query, counts: &Counts) -> Vec<Row> {
     choices(facet, counts)
@@ -46,7 +61,7 @@ fn rows(facet: ListFacet, query: &Query, counts: &Counts) -> Vec<Row> {
 }
 
 impl qobject::FacetChoices {
-    pub(crate) fn set_facet(mut self: Pin<&mut Self>, value: i32) {
+    pub(crate) fn set_facet(mut self: Pin<&mut Self>, value: ChoiceFacet) {
         self.as_mut().rust_mut().facet = value;
         self.refresh();
     }
@@ -54,7 +69,7 @@ impl qobject::FacetChoices {
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
         let counts = controller::counts();
-        let facet = crate::rows::row_of(self.facet).and_then(from_index);
+        let facet = list_facet(self.facet);
         let rows = facet.map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.
         if rows == self.rows {

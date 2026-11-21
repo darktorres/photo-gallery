@@ -340,13 +340,10 @@ fn env_flag(env: Option<&OsStr>, bad: &mut Vec<BadOption>) -> Option<bool> {
     }
 }
 
-/// A boolean option: `1` or `true` is on, `0` or `false` is off (trimmed); another text is not one.
+/// A boolean option, spelled as the environment flags are (`pg_platform::env::parse`): `1`, `true`, `yes` or `on` is on,
+/// `0`, `false`, `no` or `off` is off; another text is not one.
 fn flag(text: &str) -> Result<bool, String> {
-    match text.trim() {
-        "1" | "true" => Ok(true),
-        "0" | "false" => Ok(false),
-        _ => Err("is not 1, 0, true or false".to_string()),
-    }
+    pg_platform::env::parse(text).ok_or_else(|| "is not on or off (1, true, yes, on, 0, false, no or off)".to_string())
 }
 
 /// A number, trimmed.
@@ -447,8 +444,8 @@ fn index_for_qml(index: Option<usize>, none: i32) -> i32 {
 }
 
 /// The `CommandLine` object's typed properties, read by TestHooks.qml. Where QML has no type for "not given", the
-/// property says so with a value QML checks for, documented on each: `-1` for an index, `0` for a zoom or a mascot,
-/// empty for a text.
+/// property says so: `-1` for an index or a mascot, empty for a text, and a separate flag (`zoomGiven`) for a zoom,
+/// whose number is then meaningless.
 impl qobject::CommandLine {
     /// The item to select: `-1` when none.
     pub(crate) fn read_select(&self) -> i32 {
@@ -460,14 +457,19 @@ impl qobject::CommandLine {
         index_for_qml(hooks().view, -1)
     }
 
-    /// The viewer's zoom: `0` when none (a given zoom is positive).
+    /// Whether a zoom was given (`--zoom`); `read_zoom` is 0 and means nothing when it was not.
+    pub(crate) fn read_zoom_given(&self) -> bool {
+        hooks().zoom.is_some()
+    }
+
+    /// The viewer's zoom, given by `--zoom` (positive; see `read_zoom_given`).
     pub(crate) fn read_zoom(&self) -> f64 {
         hooks().zoom.unwrap_or(0.0)
     }
 
-    /// The mascot to show: `0` for a random one.
+    /// The mascot to show: `-1` for a random one.
     pub(crate) fn read_mascot(&self) -> i32 {
-        hooks().mascot.map_or(0, |m| i32::try_from(m).unwrap_or(0))
+        hooks().mascot.map_or(-1, |m| i32::try_from(m).unwrap_or(-1))
     }
 
     /// The Yandex result to show at full size: `-1` when none.
@@ -613,22 +615,27 @@ mod tests {
         assert_eq!(read(&[], Some("1")).start.dev_mode, Some(true));
         assert_eq!(read(&[], Some("0")).start.dev_mode, Some(false));
         assert_eq!(read(&[], Some("true")).start.dev_mode, Some(true), "true is a flag too");
-        let bad = read(&["--dev=yes"], Some("0"));
+        assert_eq!(read(&["--dev=yes"], None).start.dev_mode, Some(true), "yes is a flag too");
+        let bad = read(&["--dev=maybe"], Some("0"));
         assert_eq!(bad.start.dev_mode, Some(false), "not a flag: the environment decides");
-        assert_eq!(bad_names(&bad), ["--dev=yes"]);
-        let env = read(&[], Some("yes"));
+        assert_eq!(bad_names(&bad), ["--dev=maybe"]);
+        let env = read(&[], Some("maybe"));
         assert_eq!(env.start.dev_mode, None);
         assert_eq!(bad_names(&env), ["PG_DEV"], "a bad PG_DEV is named");
         assert_eq!(read(&["--dev=1", "--dev=0"], None).start.dev_mode, Some(true), "the first is read");
     }
 
     #[test]
-    fn a_flag_is_one_or_true_on_and_zero_or_false_off() {
+    fn a_flag_is_on_or_off_in_the_environment_spellings() {
         assert_eq!(flag("1"), Ok(true));
         assert_eq!(flag(" true "), Ok(true));
+        assert_eq!(flag("yes"), Ok(true));
+        assert_eq!(flag("on"), Ok(true));
         assert_eq!(flag("0"), Ok(false));
         assert_eq!(flag("false"), Ok(false));
-        assert!(flag("yes").is_err());
+        assert_eq!(flag("no"), Ok(false));
+        assert_eq!(flag("off"), Ok(false));
+        assert!(flag("maybe").is_err());
         assert!(flag("").is_err());
     }
 

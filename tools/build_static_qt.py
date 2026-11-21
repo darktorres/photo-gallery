@@ -9,7 +9,7 @@ backend). The source is Qt's single-archive zip, checked by SHA-256 before it is
     python tools/build_static_qt.py --jpeg ... --ffmpeg ... --configure-only              # stop after configure
 
 The work folder (default: PG_HOME's static\\qt, or --work) holds downloads\\, the source, build\\ (CMake's build tree),
-prefix\\ (the install: the app's QT_DIR), logs\\ and manifest.json. Put it on a short path: the source's paths are long.
+prefix\\ (the install: the app's PG_QT_DIR), logs\\ and manifest.json. Put it on a short path: the source's paths are long.
 """
 
 import argparse

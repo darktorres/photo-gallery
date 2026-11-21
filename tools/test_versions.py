@@ -22,6 +22,10 @@ READ = r"versions::{name}\b"
 NOT_REGISTERED = {
     # The catalog's baseline stamp: the base of the migration index, private to the schema (crates/catalog/src/schema.rs).
     "BASELINE_VERSION",
+    # A test fixture: another build's SQLite user_version, set in the thumbcache's tests (crates/thumbcache/src/lib.rs).
+    "FOREIGN_USER_VERSION",
+    # A test fixture: an earlier thumbnail output version, stored to see the cache refuse it (crates/thumbcache/src/lib.rs).
+    "EARLIER_OUTPUT_VERSION",
 }
 
 

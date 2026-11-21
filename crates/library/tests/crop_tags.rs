@@ -2,7 +2,6 @@
 //! output, nor a temporary beside it; a cut whose tags can't be copied leaves its original as it was. In its own test
 //! binary: it sets `PG_EXIFTOOL` for the whole process, which the other crop tests must not see.
 
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use pg_catalog::Catalog;
@@ -11,22 +10,10 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::path::PathArena;
 
-const W: u32 = 320;
-const H: u32 = 240;
-/// The letterbox: black bars this deep at the top and bottom, photo-like content between them (as `crop.rs`'s).
-const BAR: u32 = 40;
-
-fn letterboxed() -> image::RgbImage {
-    let hash = |a: u32, b: u32| (a.wrapping_mul(2_654_435_761) ^ b.wrapping_mul(40_503)).wrapping_mul(2_246_822_519);
-    image::RgbImage::from_fn(W, H, |x, y| {
-        if !(BAR..H - BAR).contains(&y) {
-            return image::Rgb([0, 0, 0]);
-        }
-        let block = hash(x / 6, y / 6);
-        let noise = hash(x, y) % 24;
-        let c = |shift: u32| u8::try_from(60 + (block >> shift) % 150 + noise).unwrap_or(u8::MAX);
-        image::Rgb([c(0), c(8), c(16)])
-    })
+/// The letterboxed picture (320 × 240, black bars 40 deep, as `crop.rs`'s) written as a TIFF.
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn letterboxed_tiff() -> Vec<u8> {
+    pg_testkit::encode(320, 240, &pg_testkit::letterboxed_rgb(320, 240, 40), pg_testkit::Encoding::Tiff).unwrap()
 }
 
 /// Every file under `dir`, at any depth.
@@ -48,9 +35,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags", &["images"]).unwrap();
     // A TIFF: the copy has no metadata of its own, so the crop copies the tags with ExifTool.
-    let mut bytes = Cursor::new(Vec::new());
-    letterboxed().write_to(&mut bytes, image::ImageFormat::Tiff).unwrap();
-    std::fs::write(dir.join("images").join("d.tif"), bytes.get_ref()).unwrap();
+    std::fs::write(dir.join("images").join("d.tif"), letterboxed_tiff()).unwrap();
 
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -78,11 +63,9 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
 #[test]
 fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
     let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags-cut", &["images"]).unwrap();
-    let mut bytes = Cursor::new(Vec::new());
-    letterboxed().write_to(&mut bytes, image::ImageFormat::Tiff).unwrap();
     let images = dir.join("images");
     let path = images.join("d.tif");
-    std::fs::write(&path, bytes.get_ref()).unwrap();
+    std::fs::write(&path, letterboxed_tiff()).unwrap();
 
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();

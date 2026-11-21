@@ -153,7 +153,7 @@ did not change on the stand-ins. jpeg-decoder changed by 0.2 M on one of the fou
 the fix, 88.5 at HEAD).
 
 The stand-in run used the bench at the pre-C-50 commit (`262004b^`, built with the same `build.rs`) and at HEAD, in the
-same container, with the same inputs (`JPEG_NAMES` limits the run to these four):
+same container, with the same inputs (`PG_JPEG_NAMES` limits the run to these four):
 
 | Stand-in (size) | FFmpeg full, pre → HEAD | FFmpeg scaled, pre → HEAD |
 |---|---:|---:|
@@ -702,10 +702,10 @@ otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full
 ## To rerun
 
 - **CPU decoders (Rust harness)**, in the container: `just linux-eval eval/jpeg-decoders/linux.py inputs check compare
-  time bench marginal`, with `JPEG_SRC_DIR` in `.env` naming the folder of the seven photos (mounted read-only). The
+  time bench marginal`, with `PG_JPEG_SRC_DIR` in `.env` naming the folder of the seven photos (mounted read-only). The
   inputs are library photos, so they're copied into the `pg-eval` volume (`/eval/jpeg-inputs`) and never into the repo.
   Natively on Linux, `python3 eval/jpeg-decoders/linux.py ...` with the packages of `docker/apt-packages-eval.txt`.
-  `JPEG_NAMES` (comma-separated, from the names in `linux.py`) runs a subset.
+  `PG_JPEG_NAMES` (comma-separated, from the names in `linux.py`) runs a subset.
 - **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
   (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
   backends).

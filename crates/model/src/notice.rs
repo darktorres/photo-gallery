@@ -5,9 +5,8 @@
 //!
 //! Each kind is one variant: its code (permanent, the stored tag and the words' ids), its level, its source (the inbox's
 //! category), its lifecycle (how the inbox keeps it) and its actions. A new kind is one variant here, its words, and the
-//! call that posts it (the checklist is in the module docs below). Paths of the library are [`RulePath`]s, exact; files
-//! of the app's own (the preferences, a kept catalog) are the text the system gave. A [`FileFailure`]'s path is the text
-//! the user sees, a `String`: the one library path that is not a `RulePath`.
+//! call that posts it (the checklist is in the module docs below). Paths of the library are [`RulePath`]s, exact, and so is
+//! a [`FileFailure`]'s path; files of the app's own (the preferences, a kept catalog) are the text the system gave.
 //!
 //! Serialised internally tagged by `kind`, kebab-case. A field added later is `#[serde(default)]`, so an older row still
 //! reads. A row of a kind this build doesn't know is [`Notice::Unknown`], which the decoder in `pg-app` makes; it is never
@@ -322,11 +321,10 @@ pub struct ThumbnailLag {
     pub error: String,
 }
 
-/// A file a pass or the writer failed on: its path as the user sees it, and why (the error's text, or a caught panic's
-/// message).
+/// A file a pass or the writer failed on: its path, and why (the error's text, or a caught panic's message).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileFailure {
-    pub path: String,
+    pub path: RulePath,
     pub error: String,
     /// The pass panicked on the file (caught): `error` is the panic's message.
     #[serde(default)]
@@ -1397,8 +1395,11 @@ impl Notice {
     /// stored form's (every kind reads back).
     pub fn samples() -> Vec<Notice> {
         let root = sample_path(&["Photos"]);
-        let failure =
-            FileFailure { path: r"D:\Photos\a.jpg".into(), error: "unexpected end of file".into(), panicked: false };
+        let failure = FileFailure {
+            path: sample_path(&["Photos", "a.jpg"]),
+            error: "unexpected end of file".into(),
+            panicked: false,
+        };
         let error = || "access is denied".to_string();
         vec![
             Notice::ScanFailed { root: root.clone(), error: error() },
@@ -1472,7 +1473,7 @@ impl Notice {
                 unsupported: 1,
                 failed: 1,
                 failures: vec![FileFailure {
-                    path: r"D:\Photos\c.png".into(),
+                    path: sample_path(&["Photos", "c.png"]),
                     error: "may be incomplete".into(),
                     panicked: false,
                 }],
@@ -1725,7 +1726,7 @@ mod tests {
     #[test]
     fn an_older_row_without_a_later_field_reads() {
         let old = r#"{"kind":"cropped","folder":"D:\\Crops","saved":1,"skipped":0,"failed":1,
-            "first_error":{"path":"a.jpg","error":"bad"}}"#;
+            "first_error":{"path":{"anchor":"D:","parts":["Photos","a.jpg"]},"error":"bad"}}"#;
         let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(old).unwrap() else {
             panic!("not a crop");
         };
@@ -1737,7 +1738,7 @@ mod tests {
         };
         assert!(failures.is_empty());
         let list = r#"{"kind":"cropped","folder":"D:\\Crops","saved":0,"skipped":0,"failed":2,
-            "failures":[{"path":"a.jpg","error":"bad"},{"path":"b.jpg","error":"worse","panicked":true}]}"#;
+            "failures":[{"path":{"anchor":"D:","parts":["Photos","a.jpg"]},"error":"bad"},{"path":{"anchor":"D:","parts":["Photos","b.jpg"]},"error":"worse","panicked":true}]}"#;
         let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(list).unwrap() else {
             panic!("not a crop");
         };

@@ -9,7 +9,7 @@ macro_rules! stale {
     () => {
         "NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
         AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
-        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind)"
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.turns AND a.kind = files.kind)"
     };
 }
 
@@ -62,7 +62,7 @@ macro_rules! under_root {
     };
 }
 
-/// No thumbnail failure is recorded for the `files` alias `$file` at its current size, mtime and rotation: the Thumbs
+/// No thumbnail failure is recorded for the `files` alias `$file` at its current size, mtime and turns: the Thumbs
 /// pass does not list such a file again until it changes or Retry clears its row. Inside a `WHERE`.
 macro_rules! thumbs_not_failed {
     ($file:literal) => {
@@ -75,7 +75,7 @@ macro_rules! thumbs_not_failed {
             $file,
             ".mtime AND x.rotation = ",
             $file,
-            ".rotation)"
+            ".turns)"
         )
     };
 }
@@ -84,7 +84,7 @@ macro_rules! thumbs_not_failed {
 /// an analysis or a queued write. Inside a statement over `files`.
 macro_rules! has_children {
     () => {
-        "(files.rotation <> 0 OR EXISTS (SELECT 1 FROM ratings WHERE file_id = files.id)
+        "(files.turns <> 0 OR EXISTS (SELECT 1 FROM ratings WHERE file_id = files.id)
           OR EXISTS (SELECT 1 FROM file_ratings WHERE file_id = files.id)
           OR EXISTS (SELECT 1 FROM analysis WHERE file_id = files.id)
           OR EXISTS (SELECT 1 FROM file_writes WHERE file_id = files.id))"
@@ -95,7 +95,7 @@ macro_rules! has_children {
 /// `work_list` makes its path from.
 macro_rules! work_columns {
     () => {
-        "f.id, f.folder_id, f.name, f.size, f.mtime, f.rotation, f.kind"
+        "f.id, f.folder_id, f.name, f.size, f.mtime, f.turns, f.kind"
     };
 }
 

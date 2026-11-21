@@ -10,7 +10,7 @@
 use pg_client::controller::listing as listing_event;
 use pg_client::controller::size;
 use pg_client::controller::{Command, Controller, Event, Start};
-use pg_client::keys::Grid;
+use pg_client::keys::GridKey;
 use pg_model::ids::FileId;
 use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
@@ -54,12 +54,12 @@ fn size_event() -> impl Strategy<Value = size::Event> {
 }
 
 /// The grid keys that act on the current item, or need it: without one, they do nothing.
-fn item_key() -> impl Strategy<Value = Grid> {
+fn item_key() -> impl Strategy<Value = GridKey> {
     prop_oneof![
-        (0u8..=5).prop_map(Grid::Rate),
-        any::<bool>().prop_map(|forward| Grid::Turn { forward }),
-        Just(Grid::MarkBorder),
-        Just(Grid::Open),
+        (0u8..=5).prop_map(GridKey::Rate),
+        any::<bool>().prop_map(|forward| GridKey::Turn { forward }),
+        Just(GridKey::MarkBorder),
+        Just(GridKey::Open),
     ]
 }
 
@@ -182,7 +182,7 @@ proptest! {
         let events = [
             Event::Size(size),
             Event::CurrentChanged(index.then_some(item)),
-            Event::Key(Grid::Step { dx: -1, dy: 2 }),
+            Event::Key(GridKey::Step { dx: -1, dy: 2 }),
             Event::SetBorderMark { item, marked: index },
             Event::Listing(listing_event::Event::OpenFolder(odd.clone())),
             Event::Listing(listing_event::Event::OpenAll),

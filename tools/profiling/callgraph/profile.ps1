@@ -6,7 +6,7 @@
 #
 # The app runs with this shell's environment: set PG_CATALOG_DIR and PG_PREFS for a scratch catalog first. Under Pin
 # the start takes some 50 times longer; the window shows meanwhile. -Stop '' runs until the app exits.
-# Reads QT_DIR (the Qt kit folder; -Qt overrides it), PIN_EXE (Pin's pin.exe; default under the SDE kit's pinkit
+# Reads PG_QT_DIR (the Qt kit folder; -Qt overrides it), PIN_EXE (Pin's pin.exe; default under the SDE kit's pinkit
 # folder in LOCALAPPDATA) and the repo's .env for keys the environment does not set.
 param(
     [Parameter(Mandatory)][string]$Out,
@@ -22,8 +22,8 @@ foreach ($line in Get-Content (Join-Path $PSScriptRoot "..\..\..\.env") -ErrorAc
         [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])
     }
 }
-if (-not $Qt) { $Qt = $env:QT_DIR }
-if (-not $Qt) { throw "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in the repo's .env (or pass -Qt)." }
+if (-not $Qt) { $Qt = $env:PG_QT_DIR }
+if (-not $Qt) { throw "PG_QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in the repo's .env (or pass -Qt)." }
 $pin = if ($env:PIN_EXE) { $env:PIN_EXE } else { "$env:LOCALAPPDATA\Programs\sde\pinkit\pin.exe" }
 $tool = "$PSScriptRoot\..\..\..\target\pin\callgraph.dll"
 if (-not (Test-Path $tool)) { throw "no ${tool}: run tools/profiling/callgraph/build.py first" }

@@ -112,7 +112,7 @@ Checked against the code and the eval outputs on 2026-11-12. Items that name 202
     - Set globally, they would make build 2 measure every C dependency's compiler change, and `-flto=thin` would turn
       all of them into bitcode.
     - So the fork's `libsqlite3-sys/build.rs` picks the compiler and flags behind a variable or feature only it reads,
-      as the scan plan's Phase 2 does for its defines. (2026-11-18: rusqlite comes from a git fork, `Cargo.toml:145`; `vendor/` has no `libsqlite3-sys` to edit.)
+      as the scan plan's Phase 2 does for its defines. (2026-11-18: rusqlite comes from a git fork, the rusqlite entry in `[patch.crates-io]`; `vendor/` has no `libsqlite3-sys` to edit.)
   - **The link.** The MSVC linker can't read bitcode, so the LTO builds also need `-Clinker=lld-link`.
   - **What it can gain.** SQLite is one translation unit, so its own code is already optimized as a whole. The gain is at
     the Rust-to-SQLite boundary: inlining the per-row bind, step, column and reset calls into rusqlite.

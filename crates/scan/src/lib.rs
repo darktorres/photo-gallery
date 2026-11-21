@@ -73,7 +73,7 @@ use pg_model::media::Ext;
 use pg_model::name::Name;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::dir::{Entry, Lister};
-use pg_platform::native::Unit;
+use pg_platform::native::{PATH_RULES, Unit};
 
 use pg_jobs::control::{Checkpoint, Control};
 use pg_jobs::failure::{FAILURES_KEPT, keep_failure};
@@ -276,7 +276,7 @@ pub struct ScanStats {
     /// Files new, moved, renamed, rewritten or back from missing.
     pub changed: u64,
     /// Files marked missing.
-    pub missing: usize,
+    pub missing: u64,
     /// Folders that couldn't be read (each is in the catalog's folder ledger).
     pub errors: u64,
     /// False when stopped early; nothing is marked missing then.
@@ -315,9 +315,9 @@ pub struct RefusedMount {
 pub enum ScanError {
     Refused(RefusedReason),
     /// Another walk of `root` (a folder that overlaps the one asked for) is running; `holder` says whose
-    /// (`pg_catalog::Error::ScanBusy`).
+    /// (`pg_catalog::Error::ScanBusy`). The root is kept as its path, so it is shown and compared as the catalog holds it.
     Busy {
-        root: String,
+        root: RulePath,
         holder: String,
     },
     /// The library folder that holds `root` was removed while the walk ran, in this process or another
@@ -340,7 +340,9 @@ impl std::fmt::Display for ScanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScanError::Refused(reason) => write!(f, "refused: {reason}"),
-            ScanError::Busy { root, holder } => write!(f, "a scan of {root} is running ({holder})"),
+            ScanError::Busy { root, holder } => {
+                write!(f, "a scan of {} is running ({holder})", PATH_RULES.display(root))
+            }
             ScanError::Removed { root } => write!(f, "{root} was removed from the library while it was scanned"),
             ScanError::Failed(e) => write!(f, "{e:#}"),
         }
@@ -882,7 +884,7 @@ static RENEW: pg_perf::Tally = pg_perf::Tally::new("scan.renew");
 /// chain), if that is what ended it.
 fn removed(e: &anyhow::Error) -> Option<String> {
     e.chain().find_map(|cause| match cause.downcast_ref::<pg_catalog::Error>() {
-        Some(pg_catalog::Error::RootRemoved { root }) => Some(root.clone()),
+        Some(pg_catalog::Error::RootRemoved { root }) => Some(pg_platform::native::PATH_RULES.display(root)),
         _ => None,
     })
 }
@@ -988,7 +990,7 @@ fn walk_leased<L: Listing>(
             let listed = match outcome {
                 Outcome::Listed(listed) => listed,
                 Outcome::Unreadable(e) => {
-                    unreadable(&mut stats, &mut skipped, &mut batch, rules, job.path, &e);
+                    unreadable(&mut stats, &mut skipped, &mut batch, job.path, &e);
                     continue;
                 }
                 Outcome::Failed(e) => return Err(e),
@@ -1178,16 +1180,9 @@ fn walk_leased<L: Listing>(
 
 /// A folder the walk couldn't open or list: counted, kept for the report, skipped (its files aren't judged), and
 /// recorded in the folder ledger with the next batch.
-fn unreadable(
-    stats: &mut ScanStats,
-    skipped: &mut Vec<Skip>,
-    batch: &mut Batch,
-    rules: PathRules,
-    path: RulePath,
-    error: &io::Error,
-) {
+fn unreadable(stats: &mut ScanStats, skipped: &mut Vec<Skip>, batch: &mut Batch, path: RulePath, error: &io::Error) {
     let error = format!("{error:#}");
-    keep_failure(&mut stats.failures, rules.display(&path), error.clone());
+    keep_failure(&mut stats.failures, path.clone(), error.clone());
     stats.errors += 1;
     batch.failed.push((path.clone(), FolderFailure::Unreadable, error));
     skipped.push(Skip { path, reason: SkipReason::Unreadable });
@@ -1884,7 +1879,7 @@ mod tests {
         state::stub_analysis_of_all(&c).unwrap();
         let f = state::file_id(&c, "f.jpg").unwrap();
         assert_eq!(c.status().unwrap().pending, 0);
-        let row = |c: &Catalog, size: i64, mtime: i64| c.is_current(f, &Listed { size, mtime, rotation: Turns::NONE });
+        let row = |c: &Catalog, size: u64, mtime: i64| c.is_current(f, &Listed { size, mtime, rotation: Turns::NONE });
 
         // The root (and f.jpg in it) is listed, then the app rewrites f.jpg's metadata as sub is listed: the batch,
         // written after, leaves the row the write-back made, and nothing is due.
@@ -1910,9 +1905,9 @@ mod tests {
         assert!(row(&c, 5, 1).unwrap(), "a real change was blocked by a change number");
     }
 
-    /// A write-back that commits once a folder's entries are given, before the walk goes on (the hook after the root's
-    /// listing): the batch keeps the row the write-back made. The folder's rows were read before its listing, so the
-    /// row no longer equals them, and the file is only marked seen.
+    // A write-back that commits once a folder's entries are given, before the walk goes on (the hook after the root's
+    // listing): the batch keeps the row the write-back made. The folder's rows were read before its listing, so the
+    // row no longer equals them, and the file is only marked seen.
     #[test]
     fn a_write_back_while_its_own_folder_is_listed_is_kept() {
         let path = on_disk("scan-write-back-own-folder");
@@ -1930,10 +1925,10 @@ mod tests {
         assert!(c.is_current(f, &rewritten).unwrap(), "the write-back's row was undone by an older listing");
     }
 
-    /// A file with two names (hard links) in two folders, listed first by the name its row doesn't have, and rewritten
-    /// by the app through the row's name once that folder is listed, before the walk looks the file up by its identity:
-    /// the batch keeps the row the write-back made. The row changed after the walk began listing the folder (its change
-    /// number is past the folder's mark), so the file is only marked seen.
+    // A file with two names (hard links) in two folders, listed first by the name its row doesn't have, and rewritten
+    // by the app through the row's name once that folder is listed, before the walk looks the file up by its identity:
+    // the batch keeps the row the write-back made. The row changed after the walk began listing the folder (its change
+    // number is past the folder's mark), so the file is only marked seen.
     #[test]
     fn a_write_back_through_another_name_of_a_file_is_kept() {
         let path = on_disk("scan-write-back-hard-link");
@@ -1957,8 +1952,8 @@ mod tests {
         assert!(c.is_current(f, &rewritten).unwrap(), "the write-back's row was undone by an older listing");
     }
 
-    /// The folder removed from the library while it is walked, by another process (which can't stop this walk): the
-    /// walk ends at its next write, writing nothing, and the folder's files are gone from the catalog.
+    // The folder removed from the library while it is walked, by another process (which can't stop this walk): the
+    // walk ends at its next write, writing nothing, and the folder's files are gone from the catalog.
     #[test]
     fn a_folder_removed_while_it_is_walked_is_not_written_again() {
         let path = on_disk("scan-removed");
@@ -1982,9 +1977,9 @@ mod tests {
         assert_eq!((status.files, status.missing), (0, 0), "the removed folder's files were written again");
     }
 
-    /// A new import version between a folder's listing and the batch that writes its files: the bump makes the analysed
-    /// files pending (their analyses are older than the version), and the batch, which finds them unchanged, keeps
-    /// neither analysed.
+    // A new import version between a folder's listing and the batch that writes its files: the bump makes the analysed
+    // files pending (their analyses are older than the version), and the batch, which finds them unchanged, keeps
+    // neither analysed.
     #[test]
     fn a_version_bump_between_the_listing_and_the_batch_is_not_undone() {
         let path = on_disk("scan-version-bump");
@@ -2018,9 +2013,9 @@ mod tests {
         );
     }
 
-    /// A Retry (the user's, or a pass's) between a folder's listing and the batch that writes its files. It moves the
-    /// files' change numbers (`files.seq`), which the walk does not compare (only size and mtime are), so the batch
-    /// keeps what it read: nothing changed on disk, nothing is due, and the Retry's own work is not undone.
+    // A Retry (the user's, or a pass's) between a folder's listing and the batch that writes its files. It moves the
+    // files' change numbers (`files.seq`), which the walk does not compare (only size and mtime are), so the batch
+    // keeps what it read: nothing changed on disk, nothing is due, and the Retry's own work is not undone.
     #[test]
     fn a_retry_between_the_listing_and_the_batch_is_not_undone() {
         use pg_catalog::ledger::Failure;
@@ -2035,14 +2030,8 @@ mod tests {
         // f.jpg is 1 byte (`file`'s third argument), mtime 1.
         let listed = Listed { size: 1, mtime: 1, rotation: Turns::NONE };
         // f.jpg's thumbnail failed; the user retries it while sub is listed.
-        let failure = Failure {
-            file_id: f,
-            mtime: 1,
-            size: 1,
-            rotation: Turns::NONE,
-            error: "does not decode".into(),
-            retry: true,
-        };
+        let failure =
+            Failure { file_id: f, mtime: 1, size: 1, turns: Turns::NONE, error: "does not decode".into(), retry: true };
         c.record_failures(FilePass::Thumbs, &[failure], 1).unwrap();
         assert!(c.any_failures(FilePass::Thumbs).unwrap());
         let hook_path = path.clone();
@@ -2125,9 +2114,9 @@ mod tests {
         assert_eq!((status.files, status.missing), (1, 0), "the row moved to b; no second row");
     }
 
-    /// A listing that outlasts the lease keeps it: each record renews it once `renew_every` has passed. A minute passes
-    /// before the folder's first record; when its listing is done the lease is fresh, so another walk of the root is
-    /// refused rather than let in on the old lease.
+    // A listing that outlasts the lease keeps it: each record renews it once `renew_every` has passed. A minute passes
+    // before the folder's first record; when its listing is done the lease is fresh, so another walk of the root is
+    // refused rather than let in on the old lease.
     #[test]
     fn a_listing_that_outlasts_the_lease_keeps_it() {
         let path = on_disk("scan-long-listing");
@@ -2144,9 +2133,9 @@ mod tests {
         assert_eq!((stats.files, stats.complete), (3, true));
     }
 
-    /// A walk whose lease another walk took (it expired while this one was listing, and the other walk ran to its end)
-    /// ends with an error at its next renewal, and gives nothing back: the lease is not its own. Nothing of it is left
-    /// behind, and the next walk runs.
+    // A walk whose lease another walk took (it expired while this one was listing, and the other walk ran to its end)
+    // ends with an error at its next renewal, and gives nothing back: the lease is not its own. Nothing of it is left
+    // behind, and the next walk runs.
     #[test]
     fn a_walk_whose_lease_was_taken_ends_with_an_error() {
         let path = on_disk("scan-lease-taken");
@@ -2170,8 +2159,8 @@ mod tests {
     /// pause inside a hold (seconds, or for ever) fails the test, and a slow machine doesn't.
     const HOLD_BOUND: Duration = Duration::from_secs(3);
 
-    /// Every write transaction of a walk of 200 000 files, the pairing and the missing marks included, holds the write
-    /// lock for at most this long (wall clock, in a debug build, whose SQLite is optimized: `profile.dev.package."*"`).
+    // Every write transaction of a walk of 200 000 files, the pairing and the missing marks included, holds the write
+    // lock for at most this long (wall clock, in a debug build, whose SQLite is optimized: `profile.dev.package."*"`).
     #[test]
     fn no_write_transaction_of_a_200_000_file_walk_holds_the_lock_long() {
         let mut c = catalog();
@@ -2235,7 +2224,7 @@ mod tests {
     }
 
     /// The walk's stats and the catalog's file count and missing count after one walk of `tree` in a new catalog.
-    fn walk_of_tree(prefix: &str, tree: &[(&str, Vec<FakeEntry>)], workers: usize) -> (ScanStats, i64, i64) {
+    fn walk_of_tree(prefix: &str, tree: &[(&str, Vec<FakeEntry>)], workers: usize) -> (ScanStats, u64, u64) {
         let path = on_disk(prefix);
         let mut c = open(&path);
         let mut lister = FakeListing::new(1, tree).refusing(pg_platform::native::PATH_RULES, "mnt");

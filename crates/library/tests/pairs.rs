@@ -24,14 +24,11 @@ fn imported(prefix: &str) -> (Catalog, Control, PathBuf) {
     let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
-    let byte = |v: u32| u8::try_from(v % 256).unwrap();
-    let same = image::RgbImage::from_fn(96, 80, |x, y| {
-        image::Rgb([byte(x * x + y * 31), byte(x * 7 + y * y), byte((x ^ y) * 5)])
-    });
-    same.save(images.join("a.png")).unwrap();
-    same.save(images.join("b.png")).unwrap();
-    image::RgbImage::from_fn(96, 80, |x, y| image::Rgb([byte(y * y + 3 * x), byte(x * 13 + 5), byte(y * 3)]))
-        .save(images.join("c.png"))
+    let png = pg_testkit::Encoding::Png;
+    let same = pg_testkit::encode(96, 80, &pg_testkit::textured_rgb(96, 80), png).unwrap();
+    std::fs::write(images.join("a.png"), &same).unwrap();
+    std::fs::write(images.join("b.png"), &same).unwrap();
+    std::fs::write(images.join("c.png"), pg_testkit::encode(96, 80, &pg_testkit::other_rgb(96, 80), png).unwrap())
         .unwrap();
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -66,10 +63,15 @@ fn reopened(c: Catalog, dir: &Path, import: i64) -> Catalog {
 }
 
 /// `a.png` analysed again (made due, then imported): it owes its pairs, and the ones it had are gone.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn analysed_again(c: &mut Catalog, ctl: &Control) {
-    let a = state::file_id(c, "a.png").unwrap();
-    assert_eq!(c.mark_pending(&[a]).unwrap(), 1);
+    analysed_file_again(c, "a.png", ctl);
+}
+
+/// The file called `name` analysed again (made due, then imported and hashed).
+#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
+fn analysed_file_again(c: &mut Catalog, name: &str, ctl: &Control) {
+    let id = state::file_id(c, name).unwrap();
+    assert_eq!(c.mark_pending(&[id]).unwrap(), 1);
     pg_import::import(c, &opts(), false, &pg_catalog::VolumeSet::All, ctl).unwrap();
     pg_import::hashes::hash(c, &opts(), &pg_catalog::VolumeSet::All, &|| true, ctl).unwrap();
 }
@@ -253,12 +255,23 @@ fn a_pair_made_while_another_build_found_its_analysis_stale_is_there_when_the_fi
         &|mut c, dir, ctl| {
             analysed_again(&mut c, ctl);
             state::set_analysis_version(&c, state::file_id(&c, "b.png").unwrap(), older).unwrap();
-            let c = reopened(reopened(c, dir, older), dir, ours);
+            let c = reopened(c, dir, ours);
             assert!(due(&c, "b.png") && !due(&c, "a.png"));
             c
         },
-        // The older build opens it again: b.png's analysis is current for it.
-        &|c, dir, _| reopened(c, dir, older),
+        // The older build refuses a catalog a later build has marked (its marks are newer than its own): it cannot open
+        // it. This build opens it, and analyses b.png again, since the older build's analysis is not this build's.
+        &|c, dir, ctl| {
+            let older_versions = pg_catalog::Versions { import: older, ..pg_library::versions() };
+            assert!(
+                Catalog::prepare(&dir.join("catalog.sqlite"), older_versions, pg_platform::native::PATH_RULES).is_err(),
+                "an older build refuses a catalog a later build marked"
+            );
+            let mut c = reopened(c, dir, ours);
+            analysed_file_again(&mut c, "b.png", ctl);
+            assert!(pg_import::pairs::pair(&mut c, &opts(), ctl).unwrap().complete);
+            c
+        },
     );
 }
 

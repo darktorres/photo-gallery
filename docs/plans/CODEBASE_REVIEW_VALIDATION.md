@@ -4,6 +4,8 @@ Validated 2026-11-20. The codebase review recovered 1,451 findings (RV-0001 to R
 
 The checks ran against the working tree at HEAD `3f9ae1b0`, which had uncommitted changes (the catalog classify work and others). A verdict can reflect those edits.
 
+This is a dated snapshot, not kept current: the verdicts and the line cites in them are as of 2026-11-20. Later renames are not reflected in them. For example, the thumbs pending span is now `pending.thumbs` (`crates/thumbs/src/lib.rs:217`), and the mark_missing spans are `pass.mark_missing` and `mark_missing.*` (`crates/catalog/src/roots.rs`).
+
 ## Result
 
 | Severity | CONFIRMED | PARTIAL | REFUTED | Total |

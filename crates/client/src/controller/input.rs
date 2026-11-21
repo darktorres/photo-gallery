@@ -3,14 +3,14 @@
 //! so it is a command the desktop resolves; the first and the last item are known from the count, so they are resolved
 //! here. Facts about the list come in as events. Nothing here calls Qt.
 
-use crate::keys::Grid;
+use crate::keys::GridKey;
 use serde::{Deserialize, Serialize};
 
 /// A fact about the grid, reported by the desktop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     /// A grid key, already decided by the key map (`keys::grid`) against the current item.
-    Key(Grid),
+    Key(GridKey),
     /// The current item changed (`None`: no item is current).
     CurrentChanged(Option<usize>),
     /// A list of `count` items is shown.
@@ -24,12 +24,12 @@ pub enum Command {
     Select(usize),
     /// Select the neighbour of the current item `dx` columns and `dy` rows away: the model's layout resolves it.
     Step { dx: i32, dy: i32 },
-    /// A model action on the current item (rate, turn, mark its border): the desktop carries out `Grid` for it.
-    Act(Grid),
+    /// A model action on the current item (rate, turn, mark its border): the desktop carries out `GridKey` for it.
+    Act(GridKey),
     /// Show the viewer at this item.
     ShowViewer(usize),
     /// Not the grid's to decide: the size or the panels take it (`Shell` passes it on).
-    Forward(Grid),
+    Forward(GridKey),
 }
 
 /// The grid's current item and the list's count, as the core knows them.
@@ -75,21 +75,21 @@ impl Input {
         }
     }
 
-    fn key(&self, grid: Grid) -> Vec<Command> {
+    fn key(&self, grid: GridKey) -> Vec<Command> {
         match grid {
-            Grid::Step { dx, dy } => vec![Command::Step { dx, dy }],
-            Grid::First if self.count > 0 => vec![Command::Select(0)],
-            Grid::Last if self.count > 0 => vec![Command::Select(self.count - 1)],
-            Grid::First | Grid::Last => Vec::new(),
-            Grid::Open => self.current.map(Command::ShowViewer).into_iter().collect(),
-            Grid::Rate(_) | Grid::Turn { .. } | Grid::MarkBorder => {
+            GridKey::Step { dx, dy } => vec![Command::Step { dx, dy }],
+            GridKey::First if self.count > 0 => vec![Command::Select(0)],
+            GridKey::Last if self.count > 0 => vec![Command::Select(self.count - 1)],
+            GridKey::First | GridKey::Last => Vec::new(),
+            GridKey::Open => self.current.map(Command::ShowViewer).into_iter().collect(),
+            GridKey::Rate(_) | GridKey::Turn { .. } | GridKey::MarkBorder => {
                 if self.current.is_some() {
                     vec![Command::Act(grid)]
                 } else {
                     Vec::new()
                 }
             }
-            Grid::Resize { .. } | Grid::Filters | Grid::Borders => vec![Command::Forward(grid)],
+            GridKey::Resize { .. } | GridKey::Filters | GridKey::Borders => vec![Command::Forward(grid)],
         }
     }
 }

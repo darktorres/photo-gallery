@@ -99,6 +99,7 @@ ui-inbox-clear = Clear all
 ui-inbox-copy = Copy
 ui-inbox-dismiss = Dismiss
 ui-inbox-retry = Retry
+# Shows a pass's failed files: the inbox's button, and the status bar's link to them (the pass line's words are pass-failed)
 ui-inbox-show-files = Show the failed files
 ui-inbox-reveal = Reveal
 # A ledger's entry lists its newest failed files: how many it holds ($text) and how many are listed ($other)
@@ -107,8 +108,6 @@ ui-inbox-more = The newest { $other } of { $text } files
 ui-inbox-more-folders = { $other } of { $text } folders
 # A ledger's list when it couldn't be read ($text: why); while it is read, the shared ui-loading
 ui-inbox-unreadable = The list couldn't be read: { $text }
-# The status bar's link to the pass's failed files: its words are the pass line's (pass-failed); this names it
-ui-failed-link = Show the failed files
 # The pass's "N failed" when the inbox lists nothing of it yet (its failures aren't recorded yet): plain text, this its tooltip
 ui-failed-not-recorded = Not recorded in the inbox yet
 # The log view (dev mode): its button in the status bar, which is also its title, and what it shows with no record
@@ -219,7 +218,7 @@ ui-hint-arrows = arrows move
 ui-hint-filters = F filters
 ui-hint-borders = B borders
 ui-hint-not-border = N not a border
-ui-hint-resize = Ctrl+wheel or Ctrl +/− resize
+ui-hint-resize = Ctrl+wheel or Ctrl+/− resize
 ui-hint-step = ← → step
 ui-hint-play = K play/pause
 ui-hint-mute = M mute

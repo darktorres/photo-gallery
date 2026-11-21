@@ -3,6 +3,7 @@
 //! drift is never rebuilt (the carry-rebuild is for development only, while nothing is released).
 
 use crate::error::Refusal;
+use crate::lifecycle::NewerMark;
 
 /// The catalog schema versions that have been released. Empty until the first release: every version is then the
 /// development one, and a catalog whose schema drifted from this build's may be rebuilt with its rows carried over.
@@ -23,6 +24,8 @@ pub(crate) struct Facts<'a> {
     pub(crate) drift: Option<&'a str>,
     /// Whether the file has a `key_version` mark: a rebuild carries the rows, and the carry needs to know their keys.
     pub(crate) has_key_version: bool,
+    /// An integer mark above this build's, which a later build set (`lifecycle::newer_mark`): refused as a newer schema is.
+    pub(crate) newer_mark: Option<NewerMark>,
 }
 
 /// What `prepare` does with the file.
@@ -49,6 +52,14 @@ pub(crate) fn classify(facts: &Facts<'_>, released: &[i64]) -> Action {
     };
     if found > facts.current {
         return Action::Refuse(Refusal::NewerSchema { found, current: facts.current, written_by: None });
+    }
+    if let Some(mark) = facts.newer_mark {
+        return Action::Refuse(Refusal::NewerMark {
+            mark: mark.name,
+            found: mark.found,
+            current: mark.current,
+            written_by: None,
+        });
     }
     // A file of version 0 with objects in it is a foreign or damaged database, not an empty one: its drift is handled
     // as any other's (it has no rows, so it needs no `key_version` to say how they are keyed).
@@ -77,7 +88,7 @@ mod tests {
     use super::*;
 
     fn facts(version: Option<i64>, drift: Option<&str>, has_key_version: bool) -> Facts<'_> {
-        Facts { version, current: 3, drift, has_key_version }
+        Facts { version, current: 3, drift, has_key_version, newer_mark: None }
     }
 
     #[test]
@@ -99,6 +110,16 @@ mod tests {
         assert_eq!(
             classify(&facts(Some(4), None, true), &[]),
             Action::Refuse(Refusal::NewerSchema { found: 4, current: 3, written_by: None })
+        );
+    }
+
+    #[test]
+    fn a_later_build_mark_is_refused_as_a_newer_schema_is() {
+        let mark = NewerMark { name: "import_version", found: 5, current: 4 };
+        let facts = Facts { newer_mark: Some(mark), ..facts(Some(3), None, true) };
+        assert_eq!(
+            classify(&facts, &[]),
+            Action::Refuse(Refusal::NewerMark { mark: "import_version", found: 5, current: 4, written_by: None })
         );
     }
 
@@ -127,7 +148,13 @@ mod tests {
     #[test]
     fn once_released_a_drifted_schema_is_refused_not_carried() {
         for found in [1, 2, 3] {
-            let facts = Facts { version: Some(found), current: 3, drift: Some("an index"), has_key_version: true };
+            let facts = Facts {
+                version: Some(found),
+                current: 3,
+                drift: Some("an index"),
+                has_key_version: true,
+                newer_mark: None,
+            };
             assert_eq!(
                 classify(&facts, &[1]),
                 Action::Refuse(Refusal::Drift { found, why: "an index".to_string() }),
@@ -160,7 +187,7 @@ mod tests {
         for (version, drift) in pairs {
             for has_key_version in [false, true] {
                 for released in [&[][..], &[2][..]] {
-                    let facts = Facts { version, current: CURRENT, drift, has_key_version };
+                    let facts = Facts { version, current: CURRENT, drift, has_key_version, newer_mark: None };
                     let expected = match (version, drift) {
                         (None, _) => Action::MoveAsideThenCreate,
                         (Some(found), _) if found > CURRENT => {

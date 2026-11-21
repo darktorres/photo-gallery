@@ -95,16 +95,14 @@ def main() -> int:
 
     run = measure(args.run_dir)
     if not run:
-        print(f"no callgrind.*.out under {args.run_dir}: run the benches first", file=sys.stderr)
-        return 1
+        sys.exit(f"perf-compare: no callgrind.*.out under {args.run_dir}: run the benches first")
     if args.update:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
         args.baseline.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"wrote {len(run)} bench(es) to {args.baseline}")
         return 0
     if not args.baseline.exists():
-        print(f"no baseline at {args.baseline}: measure it and run with --update", file=sys.stderr)
-        return 1
+        sys.exit(f"perf-compare: no baseline at {args.baseline}: measure it and run with --update")
 
     base = json.loads(args.baseline.read_text(encoding="utf-8"))
     failed = 0

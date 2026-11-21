@@ -23,7 +23,7 @@ impl qobject::Stages {
 /// to open, if it failed: the window has no stderr, so the caller logs it once the log exists.
 #[expect(clippy::print_stderr, reason = "PG_TRACE=1 asks for the timings on the console")]
 pub(crate) fn install() -> Option<String> {
-    if std::env::var_os("PG_TRACE").is_some_and(|v| v == "1") {
+    if pg_platform::env::flag("PG_TRACE") == Some(true) {
         pg_trace::set_sink(|stage, ms| eprintln!("stage {ms:>9.1} ms  {stage}"));
     }
     // The perf log, when `PG_PERF_LOG` names a file: the background job's rounds and their passes are appended to it as

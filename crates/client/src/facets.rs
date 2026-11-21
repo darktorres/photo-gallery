@@ -1,19 +1,15 @@
 //! The list facets of the filter bar (`pg_model::query::ListFacet`): which choices each offers, in the bar's order, with
-//! the counts the bar shows beside them. The desktop's FacetChoices and Filters take a facet by its index in [`ALL`]
-//! (Qt's int at the bridge, where the bar names each one by a constant); the order is pinned by a test. Each choice is
-//! sent to the bar as a key (`input::key_of`; `input::choice` reads it back) and named by `text::choice_label`.
+//! the counts the bar shows beside them. The desktop's FacetChoices and Filters take a facet as a CXX-Qt enum (the
+//! bridge's `ListFacetKind`, named by QML), which maps to a [`ListFacet`] by name; [`ALL`] is the bar's order, pinned by a
+//! test. Each choice is sent to the bar as a key (`input::key_of`; `input::choice` reads it back) and named by
+//! `text::choice_label`.
 
 use pg_model::media::MediaType;
 use pg_model::query::{BorderFacet, Choice, ListFacet, Query, RatingFilter, Shape, Status};
 
-/// Every list facet, in the filter bar's index order.
+/// Every list facet, in the filter bar's order.
 pub const ALL: [ListFacet; 6] =
     [ListFacet::Types, ListFacet::Shapes, ListFacet::Status, ListFacet::Borders, ListFacet::Ratings, ListFacet::Exts];
-
-/// The facet at `index` (its position in [`ALL`]); `None` out of range.
-pub fn from_index(index: usize) -> Option<ListFacet> {
-    ALL.get(index).copied()
-}
 
 /// The counts the list facets show: a media type's and a borders value's, and the folder's extensions in the order the
 /// bar shows them (most files first, then any chosen one the folder doesn't have, at 0, so it can be unchosen).

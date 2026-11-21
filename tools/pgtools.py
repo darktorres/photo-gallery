@@ -15,8 +15,8 @@ from typing import NoReturn
 
 if sys.version_info < (3, 12):  # noqa: UP036 (the target is the floor; this guard is for an older Python)
     sys.exit(
-        f"these tools need Python 3.12 or later (this is {sys.version.split()[0]}): install it, and set PG_PYTHON in .env "
-        "to its path"
+        f"pgtools: these tools need Python 3.12 or later (this is {sys.version.split()[0]}): install it, and set PG_PYTHON "
+        "in .env to its path"
     )
 
 REPO = Path(__file__).resolve().parent.parent
@@ -34,7 +34,7 @@ DEFAULT_MSYS = Path(r"C:\tools\msys64")
 # The profiling tools' defaults, shared by build.py, profile.py and symbolize.py. profile.ps1 keeps its own copy of the Pin
 # default (it cannot import this module). Each raises KeyError when its environment variable is unset: callers check first.
 def default_llvm_dir() -> Path:
-    """LLVM's default folder, %ProgramFiles%\\LLVM (the LLVM_DIR default)."""
+    """LLVM's default folder, %ProgramFiles%\\LLVM (the PG_LLVM_DIR default)."""
     return Path(os.environ["PROGRAMFILES"]) / "LLVM"
 
 
@@ -56,10 +56,10 @@ def just_value(name: str) -> str:
     assign = re.compile(rf"{re.escape(name)}\s*:=")
     lines = [line for line in (REPO / "Justfile").read_text(encoding="utf-8").splitlines() if assign.match(line)]
     if len(lines) != 1:
-        sys.exit(f"the Justfile must assign {name} exactly once, found {len(lines)}")
+        sys.exit(f"pgtools: the Justfile must assign {name} exactly once, found {len(lines)}")
     match = re.fullmatch(rf'{re.escape(name)}\s*:=\s*"([^"\\]*)"\s*(?:#.*)?', lines[0])
     if not match:
-        sys.exit(f"the Justfile's {name} is not a plain double-quoted literal: {lines[0]!r}")
+        sys.exit(f"pgtools: the Justfile's {name} is not a plain double-quoted literal: {lines[0]!r}")
     return match.group(1)
 
 
@@ -82,6 +82,7 @@ def env_value(raw: str) -> str:
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
         return raw[1:-1]
     return raw
+
 
 
 def venv_exe(name: str) -> Path:
@@ -108,7 +109,7 @@ def lint_pins() -> dict[str, str]:
     lock = json.loads((LINT_DIR / "package-lock.json").read_text(encoding="utf-8"))
     pins["markdownlint"] = lock["packages"]["node_modules/markdownlint-cli"]["version"]
     if "ruff" not in pins:
-        sys.exit("tools/lint/requirements.txt pins no ruff version")
+        sys.exit("pgtools: tools/lint/requirements.txt pins no ruff version")
     return pins
 
 
@@ -128,7 +129,7 @@ def import_msvc_environment(build_tools: Path, toolset: str | None = None) -> st
     the path of its cl.exe. With a toolset, cl.exe must be that toolset's. Windows only. A failure ends this program."""
     vcvars = build_tools / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
     if not vcvars.is_file():
-        sys.exit(f"vcvars64.bat not found: {vcvars} (Visual Studio Build Tools, see the pins)")
+        sys.exit(f"pgtools: vcvars64.bat not found: {vcvars} (Visual Studio Build Tools, see the pins)")
     pin = f" -vcvars_ver={toolset}" if toolset else ""
     # A string, not a list: a list would have its quotes escaped with backslashes, which cmd.exe does not read.
     dump = subprocess.run(
@@ -138,26 +139,26 @@ def import_msvc_environment(build_tools: Path, toolset: str | None = None) -> st
         check=False,
     )
     if dump.returncode != 0:
-        sys.exit(f"vcvars64.bat failed (exit {dump.returncode})")
+        sys.exit(f"pgtools: vcvars64.bat failed (exit {dump.returncode})")
     for line in dump.stdout.splitlines():
         key, sep, value = line.partition("=")
         if sep and key:
             os.environ[key] = value
     cl = shutil.which("cl.exe")
     if cl is None:
-        sys.exit("cl.exe is not on PATH after vcvars64.bat")
+        sys.exit("pgtools: cl.exe is not on PATH after vcvars64.bat")
     if toolset and f"\\{toolset}\\" not in cl:
-        sys.exit(f"cl.exe is not toolset {toolset}: {cl}")
+        sys.exit(f"pgtools: cl.exe is not toolset {toolset}: {cl}")
     return cl
 
 
 def not_set(name: str, how: str) -> NoReturn:
     """Ends the program: the environment variable `name` is not set. `how` says what to give it, and where (the environment
     or the repository's `.env`). Every tool words this one message the same way."""
-    sys.exit(f"{name} is not set: {how}")
+    sys.exit(f"pgtools: {name} is not set: {how}")
 
 
-# What QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives. The PowerShell scripts repeat them
+# What PG_QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives. The PowerShell scripts repeat them
 # (qmltest.ps1), since they cannot import this module.
 QT_DIR_HOW = "point it at the Qt kit folder (the one with bin and lib), in the environment or in .env"
 
@@ -170,7 +171,7 @@ def checked(what: str, command: list[str], log: Path | None = None, cwd: Path | 
         with log.open("w", encoding="utf-8") as file:
             result = subprocess.run(command, cwd=cwd, stdout=file, stderr=subprocess.STDOUT, check=False)
     if result.returncode != 0:
-        sys.exit(f"{what} failed (exit {result.returncode})")
+        sys.exit(f"pgtools: {what} failed (exit {result.returncode})")
 
 
 def sha256(path: Path) -> str:

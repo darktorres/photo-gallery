@@ -27,6 +27,12 @@ pub mod qobject {
         #[cxx_name = "timecode"]
         fn timecode(self: &Words, seconds: i32) -> QString;
 
+        /// A count with its thousands grouped (1,234,567): the one formatter every count on screen goes through. A
+        /// negative count shows as 0.
+        #[qinvokable]
+        #[cxx_name = "count"]
+        fn count(self: &Words, n: i32) -> QString;
+
         /// The words of the literal `id` (an entry of `ui.ftl`, which starts with `ui-`).
         #[qinvokable]
         #[cxx_name = "text"]

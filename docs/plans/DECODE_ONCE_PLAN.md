@@ -20,7 +20,7 @@ The plan makes one full decode per new file (Phase 3 moves the import to the ful
 
 ## Phase 1: remove the "no version bumps before release" rule (docs and comments only)
 
-No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERSION == 1` or `CACHE_VERSION == 1`); `.claude/worktrees/` is git-excluded stale copies (exclude from greps). Rewrite to "a change to what a version covers bumps it" (IMPORT_VERSION redoes files in place; BORDERS_VERSION re-looks for borders; DUPS_VERSION (new, Phase 3) re-hashes; CACHE_VERSION starts the cache over; catalog schema changes are migrations) in:
+No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERSION == 1` or `CACHE_VERSION == 1`); `.claude/worktrees/` is git-excluded stale copies (exclude from greps). In each place below, replace the rule with a pointer to the module doc of `crates/model/src/versions.rs` (lines 1-9), which states the bump rule once; do not restate it:
 
 - the `IMPORT_VERSION` doc in `crates/analysis/src/analyze.rs` (the constant is at `:27`);
 - the `CACHE_VERSION` doc (`crates/thumbcache/src/config.rs`);
@@ -296,7 +296,7 @@ When a feature is switched off, its pass returns `Done` before `ctl.begin`. The 
 
 ### 2.10 Thread priorities
 
-- `Priority::AboveNormal` is added to `pg_platform::priority::Priority` (`crates/platform/src/priority.rs:6-10`; today `Normal`, `BelowNormal`, `Idle`). Windows: `THREAD_PRIORITY_ABOVE_NORMAL` (value 1 in windows-sys 0.61, which the workspace pins at `Cargo.toml:50`); the match at `:18-22` gains the arm. Linux: `AboveNormal` is a no-op, like `Normal`. Setting nice 0 would reset a thread that an earlier call had lowered, and a negative nice needs privilege. Other platforms: no-op (`:53-54`).
+- `Priority::AboveNormal` is added to `pg_platform::priority::Priority` (`crates/platform/src/priority.rs:6-10`; today `Normal`, `BelowNormal`, `Idle`). Windows: `THREAD_PRIORITY_ABOVE_NORMAL` (value 1 in windows-sys 0.61, which the workspace pins in `[workspace.dependencies]`); the match at `:18-22` gains the arm. Linux: `AboveNormal` is a no-op, like `Normal`. Setting nice 0 would reset a thread that an earlier call had lowered, and a negative nice needs privilege. Other platforms: no-op (`:53-54`).
 
 ```rust
 let nice = match priority {
@@ -397,7 +397,7 @@ PNG and TIFF keep their decoder caps as errors, as today. The over-cap rule appl
 
 ### 3.3 Migration TO_10
 
-`TO_10` is the next free number (`TO_2` to `TO_9` exist, `schema.rs:36-45`; migration N takes the version from N-1 to N, so TO_10 takes 9 to 10). It is one `MIGRATIONS` entry after `&[Step::Sql(TO_9_CHEAPER_WRITES)],` (`schema.rs:44`), with its const after `TO_9_CHEAPER_WRITES` (`schema.rs:365`):
+`TO_10` was the next free number when this section was written (against schema 9: `TO_2` to `TO_9` existed, and migration N takes the version from N-1 to N, so TO_10 takes 9 to 10). The current build's schema is version 1 with no migrations (`MIGRATIONS` is empty; see `crates/catalog/src/schema.rs`), so the next migration is `TO_2` (1 to 2) and the number here must be renumbered when it is written. The steps below are unchanged. It is one `MIGRATIONS` entry after `&[Step::Sql(TO_9_CHEAPER_WRITES)],` (the line numbers were `schema.rs:44`, `:365` when written):
 
 ```sql
 ALTER TABLE analysis ADD COLUMN dups_state TEXT NOT NULL DEFAULT 'done'
@@ -408,7 +408,7 @@ INSERT INTO meta (key, value) VALUES ('dups_version', 1);
 -- pass whenever it stores a result for the file, or writes the terminal failure at the third attempt.
 CREATE TABLE io_attempts(
     file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-    pass        TEXT    NOT NULL,
+    pass        TEXT    NOT NULL,           -- 'thumbs' | 'placeholders' | 'borders' | 'import' | 'duplicates'
     attempts    INTEGER NOT NULL,
     next_try_at INTEGER NOT NULL DEFAULT 0,  -- as IMPORT_FAILURES_PLAN 5.4 E: the worklists skip rows with next_try_at > unixepoch()
     PRIMARY KEY(file_id, pass)
@@ -435,7 +435,7 @@ END;
 
 ### 3.4 The version bump: `DUPS_VERSION` = 2
 
-`pub const DUPS_VERSION: i64 = 2;` goes beside `IMPORT_VERSION` (`analyze.rs:27`). The catalog already depends on `pg-analysis` (`catalog/Cargo.toml:29`). `set_dups_version(conn, current)` goes in `lifecycle.rs` beside `set_borders_version` (`:137`). It runs from `Catalog::prepare` after `set_borders_version` (`core.rs:117`) through `set_mark`, in one transaction:
+`pub const DUPS_VERSION: i64 = 2;` goes beside `IMPORT_VERSION` (`analyze.rs:27`). The catalog already depends on `pg-analysis` (its `pg-analysis` dev-dependency in `crates/catalog/Cargo.toml`). `set_dups_version(conn, current)` goes in `lifecycle.rs` beside `set_borders_version` (`:137`). It runs from `Catalog::prepare` after `set_borders_version` (`core.rs:117`) through `set_mark`, in one transaction:
 
 ```sql
 UPDATE analysis
@@ -850,8 +850,8 @@ DELETE FROM files_log WHERE seq IN (                                            
   5. `Delta::Changes { stamp: Stamp { seq: <meta.seq read at the start>, epoch }, upserts, removed }`.
 
   This is one transaction, not paged. The bound is the reason: a delta bigger than the bound is a `Reload`, so no page cursor, no convergence argument and no snapshot across pages is needed. A change of listing (a filter, a sort, a folder) is a new list, so it asks for a full list, not a delta.
-- **Temp table, not `rarray`.** A `rarray` needs rusqlite's `array` feature, which `Cargo.toml:36` does not enable. The temp table needs no feature and no dependency.
-- **Planner.** The planned outcomes are: the changed-ids query `SEARCH files USING COVERING INDEX files_changed`, and the listing query on `delta_ids` by rowid. They are written for the bundled build, which is SQLite 3.54.1 (`libsqlite3-sys` 0.39.1, rusqlite 0.41.1 at rev `9d76035`, `Cargo.lock:1330-1332, 2329-2332`, patch at `Cargo.toml:133`). They are not run here; the test in 4.12 runs `EXPLAIN QUERY PLAN` on that build once the queries are written; the outcomes are checked then, not now.
+- **Temp table, not `rarray`.** A `rarray` needs rusqlite's `array` feature, which the workspace's rusqlite entry did not enable when this was written (it does now, in `[workspace.dependencies]`). The temp table needs no feature and no dependency.
+- **Planner.** The planned outcomes are: the changed-ids query `SEARCH files USING COVERING INDEX files_changed`, and the listing query on `delta_ids` by rowid. They are written for the bundled build, which is SQLite 3.54.1 (`libsqlite3-sys` 0.40.0, rusqlite 0.43.0 at the fork rev `ac441bb`: the `Cargo.lock` entries for those two packages, and the `[patch.crates-io]` rusqlite entry). They are not run here; the test in 4.12 runs `EXPLAIN QUERY PLAN` on that build once the queries are written; the outcomes are checked then, not now.
 
 ### 4.7 Shared ordering
 
@@ -938,9 +938,9 @@ The layout test in 4.12 checks that the incremental result equals `justify_into`
 - The duplicates listings equal a full reload after each change of a mate: a hash mate imported, gone missing, back, removed, and re-analyzed with another hash; a pair inserted and deleted; a partner gone missing; groups of two, three and many.
 - A bulk rewrite by another process's `prepare` answers `Reload` (the epoch moved).
 - `Reload` for a `since` below `log_horizon`, on another `view_epoch`, and over the bound.
-- **Coverage test** (by behaviour, not by a hand list): each `grid_sql` variant (every sort key, both directions, every filter) is prepared under SQLite's authorizer (`sqlite3_set_authorizer`; rusqlite's `authorizer` is behind the `hooks` feature, which `Cargo.toml:36` enables). It reports every `(table, column)` the statement reads. For each column, the test changes it on a fixture row and checks that the row's `changed` advanced, a `files_log` row was written, or `view_epoch` moved. A column changed only by a bulk rewrite is listed with the rewrite that bumps the epoch. A trigger missing on a new column fails the test. It covers `dups_state` (4.4).
+- **Coverage test** (by behaviour, not by a hand list): each `grid_sql` variant (every sort key, both directions, every filter) is prepared under SQLite's authorizer (`sqlite3_set_authorizer`; rusqlite's `authorizer` is behind the `hooks` feature, which the workspace's rusqlite entry enables). It reports every `(table, column)` the statement reads. For each column, the test changes it on a fixture row and checks that the row's `changed` advanced, a `files_log` row was written, or `view_epoch` moved. A column changed only by a bulk rewrite is listed with the rewrite that bumps the epoch. A trigger missing on a new column fails the test. It covers `dups_state` (4.4).
 - **Trigger behaviour pins**: the bundled SQLite fires `AFTER UPDATE` triggers on an upsert conflict (`ON CONFLICT DO UPDATE` is an UPDATE for triggers); a test pins it. A test fails on any `INSERT OR REPLACE` into `analysis` or `pdq_pairs`.
-- **Cascade**: delete a `files` row that has an analysis row and pairs; check the stamps of the mates and partners. Settled 2026-11-13 by an experiment on SQLite 3.49.1 with these trigger shapes: the cascade fires the child tables' delete triggers, so the pair trigger stamps the mates, and the analysis trigger's update of the deleted parent does nothing and raises no error. This test keeps the result on the bundled build (SQLite 3.54.1: `rusqlite` rev 9d76035, `libsqlite3-sys/sqlite3/sqlite3.h`).
+- **Cascade**: delete a `files` row that has an analysis row and pairs; check the stamps of the mates and partners. Settled 2026-11-13 by an experiment on SQLite 3.49.1 (the bundled build of that date, since replaced by 3.54.1) with these trigger shapes: the cascade fires the child tables' delete triggers, so the pair trigger stamps the mates, and the analysis trigger's update of the deleted parent does nothing and raises no error. This test keeps the result on the bundled build (SQLite 3.54.1: the fork rev `ac441bb`, `libsqlite3-sys/sqlite3/sqlite3.h`).
 - **Incremental layout equals full layout**: random inserts, removals and aspect changes, including edits at the first and last items, and runs that resync at once or never. The rows equal `justify_into` of the new list (exact `first`, `count` and `height`).
 - Selection and anchor stability when rows insert above; the viewer open; memory (the id index and the positions, 32 bytes per row for the positions, plus the index's entries, measured in Phase 6).
 
@@ -1142,7 +1142,7 @@ thumbs_height: Option<ThumbHeight>,
 The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, duplicates: !no_dups, thumbnails: thumbs_height.is_some() };` and the options carry the height: `ImportOptions { features, thumb_height: thumbs_height, .. }`. `Features` stays bool-only (2.1), and the height is a separate value of the import options. The import takes `import(catalog, &opts, retry_errors, ctl)`, with the features and the height inside the options. `ThumbHeight` is already imported (`args.rs:7`).
 
 - The doc comment of `fn thumb_height` (`args.rs:137`, its body at `:138-141`) names `--cap-gb`; that text belongs to `fn cap_gb` (`:143-146`). It is fixed in the same commit.
-- The `import` crate's `Cargo.toml` comment (`crates/import/Cargo.toml:10`, "not on the thumbnails or the writes") is updated. The crate gains `pg-render`, `pg-thumbcache` and `pg-trace`, which are on earlier lines of `crate-layers.txt` (5.13), so the edges are allowed.
+- The `import` crate's `Cargo.toml` header comment (`crates/import/Cargo.toml`, "not on the thumbnails or the writes") is updated. The crate gains `pg-render`, `pg-thumbcache` and `pg-trace`, which are on earlier lines of `crate-layers.txt` (5.13), so the edges are allowed.
 - The `cli.ftl` help lines for the three flags (Phase 5).
 
 ### 5.12 Tests
@@ -1201,7 +1201,7 @@ Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpe
 
 ## Phase 6: validation (the only validation in the plan)
 
-1. **Build and lint.** Build natively in PowerShell with `QT_DIR` on PATH (no WSL). Then the Linux pass in the `pg-dev` container (the Linux nice mapping in `priority.rs` runs there). Fix compile errors and test failures in a closing commit. Run all new and existing tests; `just lint` (`tools/boundaries.py`: layers, dev-edge cycles, re-exports, platform cfg; and `unreachable_pub`); `just modgraph` (module cycles, now in CI). The build in this step also checks `Catalog: Send` (5.5).
+1. **Build and lint.** Build natively in PowerShell with `PG_QT_DIR` on PATH (no WSL). Then the Linux pass in the `pg-dev` container (the Linux nice mapping in `priority.rs` runs there). Fix compile errors and test failures in a closing commit. Run all new and existing tests; `just lint` (`tools/boundaries.py`: layers, dev-edge cycles, re-exports, platform cfg; and `unreachable_pub`); `just modgraph` (module cycles, now in CI). The build in this step also checks `Catalog: Send` (5.5).
 
 2. **Benches and the callgrind baseline.**
    - Bump the bench data's `LAYOUT` (`crates/bench/benches/ir/catalog.rs:40`, `v7-windows-rules`) when the schema changes, as its comment (`:35`) and `tools/profiling/bench_data.py:7-9` require. The schema is at version 9 today (`schema.rs:35-45`: the baseline plus eight migrations); it is at 10 after TO_10 (Phase 3) and 11 after TO_11 (Phase 4). The bump is made at the commit that changes the schema.

@@ -430,9 +430,9 @@ mod parallel_tests {
         assert_eq!((out.width, out.height), (160, 120));
     }
 
-    /// Every JPEG under `PG_JPEG_COMPARE_DIR`: parajpeg's full decode against libjpeg-turbo's, pixel by pixel, on the
-    /// files libjpeg-turbo decodes. Ignored by default, since it reads a folder of photos: `cargo test -p pg-codec --
-    /// --ignored compares_real_jpegs`.
+    // Every JPEG under `PG_JPEG_COMPARE_DIR`: parajpeg's full decode against libjpeg-turbo's, pixel by pixel, on the
+    // files libjpeg-turbo decodes. Ignored by default, since it reads a folder of photos: `cargo test -p pg-codec --
+    // --ignored compares_real_jpegs`.
     #[test]
     #[ignore = "reads a folder of real photos: set PG_JPEG_COMPARE_DIR"]
     fn compares_real_jpegs() {

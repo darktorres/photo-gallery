@@ -11,6 +11,7 @@ import tomllib
 from collections import defaultdict
 from pathlib import Path
 
+from compiler_graph import normal_pg_deps
 from testcut import production_part
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,7 +43,7 @@ rows = []
 for manifest in sorted(ROOT.glob("crates/*/Cargo.toml")):
     data = tomllib.loads(manifest.read_text(encoding="utf-8"))
     me = data["package"]["name"]
-    deps = [d for d in data.get("dependencies", {}) if d.startswith("pg-")]
+    deps = normal_pg_deps(data)
     files = list((manifest.parent / "src").rglob("*.rs"))
     for dep in deps:
         ident = dep.replace("-", "_")

@@ -1,6 +1,6 @@
 //! The types and functions the catalog's modules share: the rows and values `core`, `lifecycle`, `work` and `writers`
 //! pass between them (the pairing pass's load, which its writer takes), the SQL constants they share, and the helpers for a folder's subtree. A leaf: it uses no module of
-//! the crate but `error`.
+//! the crate but `error` and `convert`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -18,6 +18,7 @@ use pg_model::path::{FilePath, PathArena, PathRef};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
 
+use crate::convert::identity_to_sql;
 use crate::error::Result;
 
 /// The volumes a work list covers: every one, or some of them, as the catalog stores them (`files.volume`).
@@ -26,31 +27,30 @@ pub enum VolumeSet {
     /// Every volume: the whole catalog.
     All,
     /// These volumes only.
-    Only(Vec<i64>),
+    Only(Vec<u64>),
 }
 
 impl VolumeSet {
-    /// The set of `volumes`, each id as the catalog stores it: its bits read as a signed number (`cast_signed`), which is how
-    /// the scan writes it. Every id has one, so the set is always made.
+    /// The set of `volumes`. Every id has its stored form (`convert::identity_to_sql`), so the set is always made.
     pub fn only(volumes: &[u64]) -> VolumeSet {
-        VolumeSet::Only(volumes.iter().map(|&v| v.cast_signed()).collect())
+        VolumeSet::Only(volumes.to_vec())
     }
 
-    /// Whether the set holds `volume` (as the catalog stores it): every volume is in `All`.
-    pub fn contains(&self, volume: i64) -> bool {
+    /// Whether the set holds `volume`: every volume is in `All`.
+    pub fn contains(&self, volume: u64) -> bool {
         match self {
             VolumeSet::All => true,
             VolumeSet::Only(volumes) => volumes.contains(&volume),
         }
     }
 
-    /// ` AND <column> IN (…)` for the set, or nothing for every volume. The ids are integers written as literals, so a set
-    /// gives the same statement text each time.
+    /// ` AND <column> IN (…)` for the set, or nothing for every volume. The ids are integers written as literals (as the
+    /// catalog stores them), so a set gives the same statement text each time.
     pub(crate) fn and_in(&self, column: &str) -> String {
         match self {
             VolumeSet::All => String::new(),
             VolumeSet::Only(volumes) => {
-                let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
+                let list: Vec<String> = volumes.iter().map(|&v| identity_to_sql(v).to_string()).collect();
                 format!(" AND {column} IN ({})", list.join(","))
             }
         }
@@ -225,16 +225,40 @@ impl Rebuilt {
         }
     }
 }
+/// A stored value its column can't hold, as the error of a failed read: rusqlite's `FromSqlConversionFailure`, at the
+/// column's index and type, with this as its source. The source's text names the column and the stored value.
+#[derive(Debug)]
+pub(crate) struct BadValue {
+    /// The column, as the table names it (`files.kind`).
+    pub(crate) column: &'static str,
+    /// The stored value, as read.
+    pub(crate) value: String,
+}
+
+impl std::fmt::Display for BadValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} holds {:?}, which this build does not read", self.column, self.value)
+    }
+}
+
+impl std::error::Error for BadValue {}
+
+/// The read error of a stored value that its column can't hold (see [`BadValue`]); `index` is the column's index in the
+/// statement, `ty` the type the column was read as.
+pub(crate) fn bad_value(index: usize, ty: Type, column: &'static str, value: &str) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(index, ty, Box::new(BadValue { column, value: value.to_string() }))
+}
+
 /// The kind in column `i` (`files.kind`): an error for one that doesn't read, as an unknown extension is.
 pub(crate) fn kind_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Kind> {
     let key = r.get_ref(i)?.as_str()?;
-    Kind::from_key(key).ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("kind {key}"), Type::Text))
+    Kind::from_key(key).ok_or_else(|| bad_value(i, Type::Text, "files.kind", key))
 }
 
 /// The extension in column `i` (`files.ext`): an error for one the library doesn't hold.
 pub(crate) fn ext_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Ext> {
     let ext = r.get_ref(i)?.as_str()?;
-    Ext::of(ext).ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("ext {ext}"), Type::Text))
+    Ext::of(ext).ok_or_else(|| bad_value(i, Type::Text, "files.ext", ext))
 }
 
 /// The analyzed format in column `i` (`analysis.format`): `None` when there is none (no analysis, or a failed one), and
@@ -243,9 +267,7 @@ pub(crate) fn format_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Option<Format
     let Some(name) = r.get_ref(i)?.as_str_or_null()? else {
         return Ok(None);
     };
-    Format::from_name(name)
-        .map(Some)
-        .ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("format {name}"), Type::Text))
+    Format::from_name(name).map(Some).ok_or_else(|| bad_value(i, Type::Text, "analysis.format", name))
 }
 
 /// What a queued write needs of its file ([`crate::core::Catalog::write_target`]): its path, its analyzed format (`None`
@@ -335,7 +357,7 @@ pub struct ScannedFile<'a> {
 /// A file's row as a walk read it when it listed the file's folder: its size and mtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Prior {
-    pub size: i64,
+    pub size: u64,
     pub mtime: i64,
 }
 
@@ -358,9 +380,9 @@ pub(crate) struct FolderRow {
     pub(crate) unpaired: bool,
     pub(crate) missing: bool,
     pub(crate) name: Vec<u8>,
-    pub(crate) ext: String,
-    pub(crate) kind: String,
-    pub(crate) size: i64,
+    pub(crate) ext: Ext,
+    pub(crate) kind: Kind,
+    pub(crate) size: u64,
     pub(crate) mtime: i64,
     pub(crate) order_key: Vec<u8>,
     pub(crate) created: Option<i64>,
@@ -371,7 +393,7 @@ impl FolderRows {
     /// listing's name, extension, kind, size, mtime and order key, and a creation time that needs neither a displacement
     /// nor a backfill (`ScanWriter::record_file`). Its id, and whether it is unpaired. `key` is a buffer for the order key.
     pub fn unchanged(&self, f: &ScannedFile, key: &mut Vec<u8>) -> Option<(i64, bool)> {
-        let row = self.rows.get(&(f.identity.volume.cast_signed(), f.identity.file_index.cast_signed()))?;
+        let row = self.rows.get(&(identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index)))?;
         let created = match (row.created, f.created) {
             (Some(a), Some(b)) => a == b,
             (None, Some(_)) => false,
@@ -383,11 +405,10 @@ impl FolderRows {
         key.clear();
         key.extend_from_slice(&self.key);
         f.name.push_name_key(key);
-        let size = i64::try_from(f.size).ok()?;
         let same = row.name == f.name.as_bytes()
-            && row.ext == f.ext.name()
-            && row.kind == f.ext.kind().key()
-            && row.size == size
+            && row.ext == f.ext
+            && row.kind == f.ext.kind()
+            && row.size == f.size
             && row.mtime == f.mtime
             && row.order_key == *key;
         same.then_some((row.id, row.unpaired))
@@ -406,9 +427,9 @@ pub struct WorkItem {
     pub id: FileId,
     /// In its list.
     pub path: FilePath,
-    pub size: i64,
+    pub size: u64,
     pub mtime: i64,
-    /// Catalog rotation (`files.rotation`), applied when decoding.
+    /// Catalog rotation (`files.turns`), applied when decoding.
     pub rotation: Turns,
     pub kind: Kind,
 }
@@ -425,7 +446,7 @@ impl WorkItem {
 /// A file as a pass listed it: what the pass read must still be the file's for it to be kept (`Catalog::is_current`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Listed {
-    pub size: i64,
+    pub size: u64,
     pub mtime: i64,
     /// The catalog's rotation, which the pass applied.
     pub rotation: Turns,
@@ -436,7 +457,7 @@ pub struct CropSource {
     /// In the arena `crop_source` was given.
     pub path: PathRef,
     /// The file as analyzed.
-    pub size: i64,
+    pub size: u64,
     pub mtime: i64,
     pub format: Format,
     /// The stored size.
@@ -446,16 +467,25 @@ pub struct CropSource {
     pub cut: [u32; 4],
 }
 
-pub struct Status {
-    pub files: i64,
-    pub missing: i64,
-    pub analyzed: i64,
-    pub failed: i64,
-    pub pending: i64,
-    pub pdq_pairs: i64,
+/// The catalog's counts of its files, pairs and queued writes (`Catalog::status`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CatalogCounts {
+    /// The present files (not missing).
+    pub files: u64,
+    /// The files the catalog holds that were not found where they were.
+    pub missing: u64,
+    /// The present files with an analysis that is not a failure.
+    pub analyzed: u64,
+    /// The present files whose analysis failed.
+    pub failed: u64,
+    /// The present files with an import still due.
+    pub pending: u64,
+    /// The pairs of present pictures.
+    pub pdq_pairs: u64,
     /// Ratings and turns not yet written into the files, and those that keep failing.
-    pub queued_writes: i64,
-    pub failed_writes: i64,
+    pub queued_writes: u64,
+    /// The queued writes whose last attempt failed.
+    pub failed_writes: u64,
 }
 
 pub(crate) const DELETE_SIDES: &str = "DELETE FROM border_sides WHERE file_id = ?1";
@@ -512,7 +542,7 @@ pub struct PairingWork {
     /// orientation hashes, or whose hashes failed their check), of present, non-pending files: not
     /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
     /// files, so only they are counted.
-    pub legacy: usize,
+    pub legacy: u64,
     /// The catalog's pairing marks in the load's snapshot, which the writes compare theirs with (`PairsWriter::write`).
     pub marks: PairingMarks,
 }

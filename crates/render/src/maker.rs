@@ -14,6 +14,7 @@ use pg_codec::encode::{Chroma, JpegEncoder};
 use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_model::orientation::Orientation;
+use pg_platform::file::ReadFailed;
 
 use crate::display::{self, DECODE_MARGIN, Shown};
 
@@ -48,7 +49,7 @@ pub enum MakeError {
     /// The file couldn't be read: an I/O failure (an offline drive, a file in use, a file gone), which the next try may
     /// not have. Only a video's open is read here; an image's bytes are read before ([`Maker::make_of_file`]).
     #[error(transparent)]
-    Unreadable(std::io::Error),
+    Unreadable(ReadFailed),
     /// The file was read and doesn't decode (damaged, truncated, a format the decoder can't take), or the encoder failed:
     /// it fails again until the file changes, or the decoder does ([`crate::THUMBS_VERSION`]).
     #[error(transparent)]
@@ -59,7 +60,7 @@ impl MakeError {
     /// A video's frame error: [`MakeError::Unreadable`] when its file couldn't be opened ([`pg_video::Unopened`]).
     fn of_video(e: anyhow::Error) -> MakeError {
         match e.downcast::<pg_video::Unopened>() {
-            Ok(unopened) => MakeError::Unreadable(unopened.0),
+            Ok(unopened) => MakeError::Unreadable(ReadFailed::from(unopened.0)),
             Err(e) => MakeError::Undecodable(e),
         }
     }
@@ -114,14 +115,14 @@ impl Maker {
     /// and made in this one call, so the buffer holds this file's bytes for all of it. A file that can't be read is
     /// [`MakeError::Unreadable`].
     pub fn make_of_file(&mut self, path: &Path, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
-        self.read_file(path).map_err(MakeError::Unreadable)?;
+        self.read_file(path).map_err(|e| MakeError::Unreadable(ReadFailed::from(e)))?;
         self.make_from_file(height, turns)
     }
 
     /// A one-off decode of the file at `path` for the viewer's `view` ([`display::min_size`]), read and decoded in this
     /// one call as [`Maker::make_of_file`] reads it. Its pixels go to new buffers.
     pub fn decode_of_file(&mut self, path: &Path, view: View, turns: Turns) -> Result<Shown, MakeError> {
-        self.read_file(path).map_err(MakeError::Unreadable)?;
+        self.read_file(path).map_err(|e| MakeError::Unreadable(ReadFailed::from(e)))?;
         self.decode_file(view, turns)
     }
 
@@ -333,8 +334,8 @@ mod tests {
         (r.format(), r.orientation, r.width, r.height, r.frames)
     }
 
-    /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a
-    /// file leaves in their buffers changes nothing of the next one's results.
+    // One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a
+    // file leaves in their buffers changes nothing of the next one's results.
     #[test]
     fn kept_buffers_give_what_new_ones_do() {
         let files = [
@@ -365,14 +366,14 @@ mod tests {
         }
     }
 
-    /// The model's longest ThumbHash is the encoder's own: the literal the model writes must be the encoder's length.
+    // The model's longest ThumbHash is the encoder's own: the literal the model writes must be the encoder's length.
     #[test]
     fn thumbhash_max_is_the_encoders_longest() {
         assert_eq!(THUMBHASH_MAX, thumbhash::MAX_LEN);
     }
 
-    /// The placeholder of a file and of the thumbnail the cache keeps of it are both ThumbHashes of the same picture:
-    /// each decodes to the same size, and to the same mean colour within a few levels.
+    // The placeholder of a file and of the thumbnail the cache keeps of it are both ThumbHashes of the same picture:
+    // each decodes to the same size, and to the same mean colour within a few levels.
     #[test]
     fn a_placeholder_of_the_file_and_of_its_thumbnail_are_the_same_picture() {
         let bytes = jpeg(1200, 800, 1);
@@ -391,8 +392,8 @@ mod tests {
 
     const SCRATCH: &str = "scratch_render";
 
-    /// Files read into the maker make the thumbnails and decodes their bytes make, file after file (larger, smaller,
-    /// missing, not an image), and a missing file fails as `std::fs::read` does.
+    // Files read into the maker make the thumbnails and decodes their bytes make, file after file (larger, smaller,
+    // missing, not an image), and a missing file fails as `std::fs::read` does.
     #[test]
     fn files_read_into_the_maker_are_their_bytes() {
         let dir = run_folder(SCRATCH, "read-file").unwrap();
@@ -427,15 +428,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// What a failure is decides whether it is tried again: a video whose file can't be opened is unreadable (an offline
-    /// drive), an image that is cut short doesn't decode, though the codec's own error under it is an I/O one.
+    // What a failure is decides whether it is tried again: a video whose file can't be opened is unreadable (an offline
+    // drive), an image that is cut short doesn't decode, though the codec's own error under it is an I/O one.
     #[test]
     fn a_file_that_cant_be_opened_is_unreadable_and_a_damaged_one_undecodable() {
         let dir = run_folder(SCRATCH, "make-errors").unwrap();
         let mut maker = Maker::new().unwrap();
         let gone = maker.load_frame(&dir.join("gone.mp4"), 0, Turns::NONE, 64);
         assert!(
-            matches!(gone, Err(MakeError::Unreadable(ref e)) if e.kind() == std::io::ErrorKind::NotFound),
+            matches!(gone, Err(MakeError::Unreadable(ref e)) if e.io().kind() == std::io::ErrorKind::NotFound),
             "{gone:?}"
         );
         let whole = jpeg(640, 480, 1);

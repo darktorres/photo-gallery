@@ -9,6 +9,7 @@ use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params_from_iter};
 
 use super::scope::scope;
+use crate::types::bad_value;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::media::Ext;
@@ -24,7 +25,7 @@ use pg_query::{condition, key_sql};
 macro_rules! entry_columns {
     () => {
         "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
-    f.rotation, coalesce(w.value, 0), r.rating, coalesce(a.frames, 1), coalesce(a.orientation, 1),
+    f.turns, coalesce(w.value, 0), r.rating, coalesce(a.frames, 1), coalesce(a.orientation, 1),
     a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL"
     };
 }
@@ -41,7 +42,7 @@ macro_rules! file_joins {
             "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
     LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = '",
-            pg_model::write_rotation!(),
+            pg_model::write_turns!(),
             "'
     LEFT JOIN border_marks m ON m.file_id = f.id"
         )
@@ -60,11 +61,14 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         mtime: r.get(1)?,
         width: r.get(2)?,
         height: r.get(3)?,
-        duration_ms: r
-            .get::<_, Option<i64>>(4)?
-            .map_or(Entry::NO_DURATION, |ms| u32::try_from(ms.clamp(0, i64::from(u32::MAX) - 1)).unwrap_or(u32::MAX)),
+        duration_ms: match r.get::<_, Option<i64>>(4)? {
+            None => Entry::NO_DURATION,
+            // A length past `u32`'s range (49 days) is held just below the sentinel: the clamp keeps it in range.
+            Some(ms) => u32::try_from(ms.clamp(0, i64::from(Entry::NO_DURATION) - 1))
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(4, ms))?,
+        },
         // The scan records only files with these extensions.
-        ext: Ext::of(ext).ok_or_else(|| rusqlite::Error::InvalidColumnType(5, format!("ext {ext}"), Type::Text))?,
+        ext: Ext::of(ext).ok_or_else(|| bad_value(5, Type::Text, "files.ext", ext))?,
         rotation: Turns::new(r.get(6)?),
         pending_turns: Turns::new(r.get(7)?),
         rating: r.get::<_, Option<u8>>(8)?.and_then(Rating::new),

@@ -185,6 +185,8 @@ yandex-undecodable = a result's file is not an image this app can decode: { $rea
 # first line, the panic's message, then where its details are)
 catalog-unopened = Can't open the catalog: { $error }
 catalog-newer-schema = The catalog at { $path } was made by a later build (its schema is version { $found }; this build's is { $current }){ $built_by }. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite).
+catalog-newer-mark = The catalog at { $path } was marked by a later build ({ $mark } is { $found }; this build knows up to { $current }){ $built_by }. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite).
+catalog-older-schema = The catalog at { $path } has schema version { $found }, and this build needs version { $current }. A released catalog is not migrated: restore a backup by hand (rename it over catalog.sqlite).
 catalog-drift = The catalog at { $path } has a schema (version { $found }) that differs from this build's: { $detail }. A released catalog is not rebuilt: restore a backup by hand (rename it over catalog.sqlite).
 catalog-predates-key-version = The catalog at { $path } has a schema that differs from this build's, and it predates key_version. Restore a .pre-v*.bak or start fresh.
 catalog-path-rules = The catalog at { $path } was { $detail }, but this build uses the { $wanted } path rules. Open it on the platform that made it, or move it aside and scan again.

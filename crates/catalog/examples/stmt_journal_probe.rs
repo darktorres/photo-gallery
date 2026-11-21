@@ -102,7 +102,7 @@ const FILES_ADDED: &str = "CREATE TRIGGER files_added AFTER INSERT ON files BEGI
     UPDATE meta SET value = value + 1 WHERE key = 'seq';
     UPDATE files SET pending = NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
         AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
-        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind),
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.turns AND a.kind = files.kind),
         seq = (SELECT value FROM meta WHERE key = 'seq'), changed = (SELECT value FROM meta WHERE key = 'seq')
         WHERE id = new.id;
 END;";

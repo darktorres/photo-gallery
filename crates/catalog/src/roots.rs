@@ -39,6 +39,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use pg_model::ids::{FileIdentity, RootId, ScanId};
 use pg_model::rules::{Path as RulePath, PathRules};
 
+use crate::convert::{identity_to_sql, progress_count};
 use crate::core::{Catalog, ScanLease};
 use crate::error::{Error, Result};
 use crate::ledger::failure::tidy;
@@ -46,7 +47,7 @@ use crate::removal::{Begun, overlapping_marker};
 use crate::transaction::write_transaction;
 use crate::types::{
     FOLDER_FAILED, FolderFailure, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH,
-    covering_root, folders_under, roots_on, skipped_folders, under_params,
+    covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, under_params,
 };
 
 impl Catalog {
@@ -93,7 +94,7 @@ impl Catalog {
     ///
     /// The walks of the folder, or of folders inside it, end: their leases go in the same transaction as the root, so
     /// each walk's next write finds its lease gone and writes nothing ([`Error::RootRemoved`]).
-    pub fn remove_root(&self, root: RootId) -> Result<Option<usize>> {
+    pub fn remove_root(&self, root: RootId) -> Result<Option<u64>> {
         let Some(path) = self.roots()?.into_iter().find(|r| r.id == root).map(|r| r.path) else { return Ok(None) };
         match self.begin_removal(root, &path)? {
             Begun::Started(path) => {
@@ -117,7 +118,7 @@ impl Catalog {
         // A walk is of a library folder, or of one below it: a folder the library no longer holds (removed, or never
         // added) is not walked, and nothing is written for it.
         if covering_root(&tx, rules, root)?.is_none() {
-            return Err(Error::RootRemoved { root: rules.display(root) });
+            return Err(Error::RootRemoved { root: root.clone() });
         }
         tx.execute("DELETE FROM scan_leases WHERE heartbeat < unixepoch() - ?1", [SCAN_LEASE_SECS])?;
         let held: Vec<(Vec<u8>, String)> = tx
@@ -127,7 +128,7 @@ impl Catalog {
         for (other, holder) in held {
             let other = rules.parse_bytes(&other).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
             if rules.is_under(root, &other) || rules.is_under(&other, root) {
-                return Err(Error::ScanBusy { root: rules.display(&other), holder });
+                return Err(Error::ScanBusy { root: other, holder });
             }
         }
         tx.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [&bytes])?;
@@ -164,7 +165,7 @@ impl ScanLease<'_> {
     /// Each transaction holds the lease first ([`ScanLease::renew`]'s check): one that is gone (the folder removed
     /// from the library, which took it) writes nothing, and the marks end with [`Error::RootRemoved`] or
     /// [`Error::LeaseLost`]. Another walk of the folder may have begun then, whose rows these marks would hide.
-    pub fn mark_missing(&self, skipped: &[Skip]) -> Result<usize> {
+    pub fn mark_missing(&self, skipped: &[Skip]) -> Result<u64> {
         let (rules, root, scan) = (self.rules, self.root(), self.id());
         let held = self.held();
         let mut pass = pg_perf::span("pass.mark_missing");
@@ -195,7 +196,7 @@ impl ScanLease<'_> {
         };
         drop(read);
         let mut write = pg_perf::span("mark_missing.write");
-        let mut marked = 0;
+        let mut marked: u64 = 0;
         for batch in unseen.chunks(WRITE_BATCH) {
             let tx = write_transaction(&self.conn)?;
             held.hold(&tx)?;
@@ -205,12 +206,12 @@ impl ScanLease<'_> {
                     not_seen!()
                 ))?;
                 for &(id, folder) in batch {
-                    marked += mark.execute(params![id, folder])?;
+                    marked += progress_count(mark.execute(params![id, folder])?);
                 }
             }
             tx.commit()?;
         }
-        write.items(u64::try_from(marked).unwrap_or(u64::MAX));
+        write.items(marked);
         drop(write);
         let sweep = pg_perf::span("mark_missing.sweep");
         let tx = write_transaction(&self.conn)?;
@@ -220,7 +221,7 @@ impl ScanLease<'_> {
         tx.execute("DELETE FROM temp.scan_seen", [])?;
         tx.commit()?;
         drop(sweep);
-        pass.items(u64::try_from(marked).unwrap_or(u64::MAX));
+        pass.items(marked);
         crate::transaction::attach_tx(&mut pass, tx_at);
         Ok(marked)
     }
@@ -272,7 +273,7 @@ impl Catalog {
     /// is `None` too: the file is only marked seen, and the next walk records it. An import or a rating in that
     /// window bumps the number as well, and recording the file's move waits for the next walk; nothing is lost.
     pub fn prior_states(&self, rows: &FolderRows, identities: &[FileIdentity]) -> Result<Vec<Option<Prior>>> {
-        let key = |identity: &FileIdentity| (identity.volume.cast_signed(), identity.file_index.cast_signed());
+        let key = |identity: &FileIdentity| (identity_to_sql(identity.volume), identity_to_sql(identity.file_index));
         let mut out: Vec<Option<Prior>> =
             identities.iter().map(|i| rows.rows.get(&key(i)).map(|r| Prior { size: r.size, mtime: r.mtime })).collect();
         if out.iter().all(Option::is_some) {
@@ -317,8 +318,8 @@ pub(crate) fn folder_rows_on(conn: &Connection, rules: PathRules, folder: &RuleP
                     unpaired: r.get::<_, i64>(3)? != 0,
                     missing: r.get::<_, i64>(4)? != 0,
                     name: r.get(5)?,
-                    ext: r.get(6)?,
-                    kind: r.get(7)?,
+                    ext: ext_at(r, 6)?,
+                    kind: kind_at(r, 7)?,
                     size: r.get(8)?,
                     mtime: r.get(9)?,
                     order_key: r.get(10)?,
@@ -739,7 +740,7 @@ mod tests {
         a.add_root(&p(rules, r"D:\r")).unwrap();
         let scans = |c: &Catalog| raw::rows_of(c, "SELECT count(*) FROM scans", [], |r| r.get::<_, i64>(0)).remove(0);
         // The holder's folder when `b`'s walk of `text` is refused; `None` when it may begin (it ends at once).
-        let busy = |b: &mut Catalog, text: &str| -> Option<String> {
+        let busy = |b: &mut Catalog, text: &str| -> Option<pg_model::rules::Path> {
             let before = scans(&*b);
             // The lease of a walk that may begin is dropped at once (given back).
             let began = b.begin_scan(&p(rules, text)).map(drop);
@@ -755,7 +756,7 @@ mod tests {
         };
         {
             let _lease = a.begin_scan(&p(rules, r"D:\r\sub")).unwrap();
-            assert_eq!(busy(&mut b, r"D:\r\sub"), Some(rules.display(&p(rules, r"D:\r\sub"))));
+            assert_eq!(busy(&mut b, r"D:\r\sub"), Some(p(rules, r"D:\r\sub")));
             assert!(busy(&mut b, r"D:\r").is_some(), "a folder above");
             assert!(busy(&mut b, r"D:\r\sub\deep").is_some(), "a folder below");
             assert_eq!(busy(&mut b, r"D:\r\sub2"), None, "a sibling");
@@ -848,7 +849,7 @@ mod tests {
         let prior = listed(&c);
         fixture::state::stub_analysis_of_all(&c).unwrap();
         let failure =
-            Failure { file_id: id, mtime: 102, size: 12, rotation: Turns::NONE, error: "no".into(), retry: false };
+            Failure { file_id: id, mtime: 102, size: 12, turns: Turns::NONE, error: "no".into(), retry: false };
         c.record_failures(FilePass::Thumbs, &[failure], 1).unwrap();
         c.retry_failures(FilePass::Thumbs).unwrap();
         raw::older_import_version(&c);
@@ -884,7 +885,7 @@ mod tests {
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
                  INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                                   rotation, order_key)
+                                   turns, order_key)
                  SELECT i, 1, i, i % ?2 + 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
                         CAST(printf('%08d', i) AS BLOB)
                  FROM n",

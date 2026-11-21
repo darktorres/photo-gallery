@@ -271,7 +271,7 @@ mod tests {
     use super::{FolderDialog, ShellItem, pick_with};
     use crate::names::path_buf;
 
-    /// A failed call of the dialog names the call for the log, and its message is the system's text alone.
+    // A failed call of the dialog names the call for the log, and its message is the system's text alone.
     #[test]
     fn a_failed_call_is_named_for_the_log_and_not_in_the_message() {
         // ERROR_INVALID_PARAMETER (87), the "Parâmetro incorreto" of the dialog's failure: 0x80070057.
@@ -341,8 +341,8 @@ mod tests {
         assert_eq!(pick_with(&mut fake, None, None).unwrap(), Some(folder.to_path_buf()));
     }
 
-    /// A folder whose name ends in a dot, or one under it, starts the dialog at the nearest folder without one: the
-    /// shell would take `a.` for its sibling `a`, or refuse its verbatim form.
+    // A folder whose name ends in a dot, or one under it, starts the dialog at the nearest folder without one: the
+    // shell would take `a.` for its sibling `a`, or refuse its verbatim form.
     #[test]
     fn a_dotted_folder_starts_the_dialog_at_its_nearest_plain_ancestor() {
         use crate::native::verbatim;
@@ -365,7 +365,7 @@ mod tests {
 mod start_tests {
     use std::path::{Component, Path};
 
-    /// A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
+    // A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
     #[test]
     fn a_start_folder_is_given_in_its_real_form() {
         let tree = crate::testing::run_folder("scratch_platform", "start-real").unwrap();
@@ -376,7 +376,7 @@ mod start_tests {
         let _ = std::fs::remove_dir_all(&tree);
     }
 
-    /// Without a folder, the dialog opens in the user's own.
+    // Without a folder, the dialog opens in the user's own.
     #[test]
     fn without_a_folder_the_dialog_opens_in_the_users() {
         let home = std::env::current_dir().unwrap().into_os_string();
@@ -386,8 +386,8 @@ mod start_tests {
         assert_eq!(super::start_folder(None, |_| None), None);
     }
 
-    /// A path under a volume with no drive letter is not a drive or share, so the start folder keeps its path as given;
-    /// the drive and share forms are.
+    // A path under a volume with no drive letter is not a drive or share, so the start folder keeps its path as given;
+    // the drive and share forms are.
     #[cfg(windows)]
     #[test]
     fn only_a_drive_or_a_share_is_given_in_its_canonical_form() {

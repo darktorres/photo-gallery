@@ -75,7 +75,8 @@ impl qobject::FailedFiles {
             (Shown::Folder(folder), ROLE_PATH) => QVariant::from(&QString::from(&rules.display(&folder.path))),
             (Shown::File(file), ROLE_ERROR) => QVariant::from(&QString::from(&file.error)),
             (Shown::Folder(folder), ROLE_ERROR) => QVariant::from(&QString::from(&folder.error)),
-            // A number QML holds exactly (ids are far below 2^53); a folder has none (-1).
+            // A real, which QML holds exactly for a file id (a whole number below 2^53; `rows::file_id_of` takes it back); a
+            // folder has none (-1).
             (Shown::File(file), ROLE_FILE_ID) => QVariant::from(&pg_model::num::signed(file.file_id.get())),
             (Shown::Folder(_), ROLE_FILE_ID) => QVariant::from(&-1.0_f64),
             (Shown::File(file), ROLE_FIRST_SEEN) => QVariant::from(&pg_model::num::signed(file.first_seen)),

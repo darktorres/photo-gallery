@@ -62,7 +62,8 @@ Item {
     signal gridKeyRequested(int key)
 
     // The test hooks, read by Rust (command_line.rs) and given to this component as typed properties of CommandLine:
-    // a "not given" value is -1 for an index, 0 for a zoom or a mascot, empty for a text, false for a flag.
+    // a "not given" value is -1 for an index or a mascot, empty for a text, false for a flag, and a zoom has its own flag
+    // (zoomGiven).
     CommandLine {
         id: commandLine
     }
@@ -74,7 +75,7 @@ Item {
     // The rating keys (--viewer-keys): "r3" rates 3.
     readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
-    // The mascot the window shows from the start (--mascot): 0 when not given, which is a random one.
+    // The mascot the window shows from the start (--mascot): -1 when not given, which is a random one.
     readonly property int mascot: commandLine.mascot
     // The window is being photographed (--screenshot): its text carets are not drawn, since they blink.
     readonly property bool screenshot: commandLine.screenshot
@@ -121,7 +122,7 @@ Item {
                 else if (ratingKeys.indexOf(c) >= 0)
                     viewerRateRequested(ratingKeys.indexOf(c));
             }
-            if (commandLine.zoom > 0)
+            if (commandLine.zoomGiven)
                 viewerSetZoomRequested(commandLine.zoom, viewer.width / 2, viewer.height / 2);
         }
         if (commandLine.menuViews)

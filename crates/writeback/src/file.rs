@@ -10,13 +10,13 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::write::WriteKind;
 
 /// The size and mtime of the file at `path` (its disk path), with the file named in the error.
-pub(crate) fn stat(path: &Path) -> Result<(i64, i64)> {
+pub(crate) fn stat(path: &Path) -> Result<(u64, i64)> {
     pg_platform::file::stat(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))
 }
 
 /// The original, opened for the copy (`now`, its size and mtime), is as it was when it was read (`before`): another
 /// program's save in between fails the attempt, which counts, and the next one reads the file again.
-pub(crate) fn unchanged(shown: &str, before: (i64, i64), now: (i64, i64)) -> Result<()> {
+pub(crate) fn unchanged(shown: &str, before: (u64, i64), now: (u64, i64)) -> Result<()> {
     if before != now {
         bail!("{shown} changed while its change was being prepared: it is read again at the next try");
     }

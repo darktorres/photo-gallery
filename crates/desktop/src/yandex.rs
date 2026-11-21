@@ -16,7 +16,7 @@ use crate::yandex_bridge::qobject;
 use std::path::Path;
 use std::pin::Pin;
 
-use crate::rows::qt_int;
+use crate::rows::{file_id_of, qt_int};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::yandex::Hit;
@@ -24,7 +24,7 @@ use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::results::Results;
 use pg_client::text::{self, Message, render};
-use pg_model::ids::FileId;
+use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, YandexStatus};
 
 /// A status line's text. A panic's line names the log's file as it is on disk: the log is open before the window is made.
@@ -44,9 +44,9 @@ const ROLE_FRAME_HEIGHT: i32 = 263;
 /// Whether the row is one of the first group's (the other sizes): the panel's two groups show their own rows by it.
 const ROLE_IS_OTHER: i32 = 264;
 
-/// The height a row of results is laid out at, in px: fixed, at the size the gallery's rows start at. The search makes
-/// its grid pictures at this height.
-const ROW_HEIGHT: u16 = 220;
+/// The height a row of results is laid out at: fixed, at the size the gallery's rows start at. The search makes its grid
+/// pictures at this height.
+const ROW_HEIGHT: RowHeight = RowHeight::DEFAULT;
 
 /// The app's search, which the panel shows.
 fn search() -> &'static pg_app::yandex::Yandex {
@@ -112,11 +112,12 @@ fn turn_after_removal(turn: i32, runs: &[std::ops::Range<usize>]) -> i32 {
 }
 
 impl qobject::YandexSearch {
-    pub(crate) fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
-        match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
+    pub(crate) fn search_file(mut self: Pin<&mut Self>, file_id: f64) {
+        let Some(file) = file_id_of(file_id) else { return };
+        match crate::app::get().catalogs().file_path(file) {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
-                pg_log::warn("yandex", &format!("file {file_id}: {err:#}"));
+                pg_log::warn("yandex", &format!("file {}: {err:#}", file.get()));
                 self.as_mut()
                     .set_status(QString::from(&render(&Message::YandexUnreadablePhoto { error: format!("{err:#}") })));
             }
@@ -133,7 +134,7 @@ impl qobject::YandexSearch {
     /// one's progress.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
         self.as_mut().ensure_pump();
-        match search().start(path, usize::from(ROW_HEIGHT)) {
+        match search().start(path, ROW_HEIGHT) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => return self.not_started("search", &e),
@@ -277,7 +278,7 @@ impl qobject::YandexSearch {
     fn compute_layout(mut self: Pin<&mut Self>) {
         let other_aspects: Vec<f64> = self.results.first().iter().map(hit_aspect).collect();
         let similar_aspects: Vec<f64> = self.results.second().iter().map(hit_aspect).collect();
-        let (width, height, gap) = (self.layout_width, f64::from(ROW_HEIGHT), self.gap);
+        let (width, height, gap) = (self.layout_width, f64::from(ROW_HEIGHT.get()), self.gap);
         let (mut frames, other_height) = layout::frames(&other_aspects, width, height, gap);
         let (similar, similar_height) = layout::frames(&similar_aspects, width, height, gap);
         frames.extend(similar);

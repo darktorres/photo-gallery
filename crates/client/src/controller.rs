@@ -12,7 +12,7 @@ use pg_model::size::{GridWidth, RowHeight};
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
 
-use crate::keys::{Global, Grid};
+use crate::keys::{Global, GridKey};
 
 pub mod deadlines;
 pub mod input;
@@ -90,7 +90,7 @@ pub enum Event {
     /// The selection (the current item) changed, or none is selected now.
     CurrentChanged(Option<usize>),
     /// A grid key, already decided by the key map against the current item.
-    Key(Grid),
+    Key(GridKey),
     /// The grid's width changed, in pixels. `None` when the list has no width yet (the shell's width of zero or less).
     GridResized(Option<GridWidth>),
     /// The filter bar's query was typed: the list is shown once the typing rests.
@@ -384,8 +384,8 @@ impl Controller {
                 let item = self.input.current()?;
                 match grid {
                     // The key map rates 0 to 5 only.
-                    Grid::Rate(stars) => Command::Rate { item, rating: Rating::new(stars)? },
-                    Grid::Turn { forward } => Command::Turn { item, turns: if forward { 1 } else { -1 } },
+                    GridKey::Rate(stars) => Command::Rate { item, rating: Rating::new(stars)? },
+                    GridKey::Turn { forward } => Command::Turn { item, turns: if forward { 1 } else { -1 } },
                     _ => Command::ToggleBorderMark(item),
                 }
             }
@@ -393,11 +393,11 @@ impl Controller {
         })
     }
 
-    fn key(&mut self, now_ms: u64, grid: Grid) -> Vec<Command> {
+    fn key(&mut self, now_ms: u64, grid: GridKey) -> Vec<Command> {
         match grid {
-            Grid::Resize { grow } => self.size(now_ms, size::Event::Resize { grow }),
-            Grid::Filters => self.panel(panels::Event::ToggleFilters),
-            Grid::Borders => self.panel(panels::Event::ToggleBorders),
+            GridKey::Resize { grow } => self.size(now_ms, size::Event::Resize { grow }),
+            GridKey::Filters => self.panel(panels::Event::ToggleFilters),
+            GridKey::Borders => self.panel(panels::Event::ToggleBorders),
             _ => self.input_update(input::Event::Key(grid)),
         }
     }

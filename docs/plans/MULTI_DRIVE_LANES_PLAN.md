@@ -47,7 +47,7 @@ the listing workers; none was built (no `IOCTL_STORAGE_QUERY_PROPERTY` in `crate
 
 - Plan-doc style of `docs/plans/*.md`; this plan is copied to `docs/plans/MULTI_DRIVE_LANES_PLAN.md` when work starts.
 - Implement a phase fully, then build and test once (no cargo between steps). Native Windows build in PowerShell with
-  `QT_DIR` on PATH; the pg-dev container only for the Linux pass (`just check-linux`). No new branch: commit on `main`, only
+  `PG_QT_DIR` on PATH; the pg-dev container only for the Linux pass (`just check-linux`). No new branch: commit on `main`, only
   when asked, only the phase's files, `Cargo.lock` with any manifest change.
 - Layering (`tools/crate-layers.txt`, `tools/boundaries.py`): `cfg(windows)`/`windows_sys`/`libc` only in `pg-platform`;
   `jobs` may not depend on `catalog` or `scan`; `unreachable_pub`; no `HashMap`/`HashSet`; no unwrap/index/panic in production
@@ -132,7 +132,7 @@ that result goes to the user before any code is written.
   beside the visible physical drives. USB disks are distinct physical drives and keep their own keys.
 - Linux: `stat` → `major:minor` → `/sys/dev/block/M:m`, a partition's parent disk, `slaves/*` recursively for `dm`/`md`,
   `queue/rotational`; major 0 (btrfs, overlay, ZFS) → error. Other targets → error.
-- `Cargo.toml:54` windows-sys features gain `Win32_System_Ioctl` (+ `Cargo.lock`).
+- The `windows-sys` entry in `[workspace.dependencies]` gains `Win32_System_Ioctl` (+ `Cargo.lock`); it lists that feature now.
 - Callers run `of` on a probe thread with a deadline, **one in-flight probe per root**, never respawned while pending (a
   probe on a dead drive can't be cancelled; `GUI_THREAD_PLAN.md:1134`), and never on the GUI thread.
 - Tests: real call on a `pg_testkit::run_folder` scratch folder; the extent-buffer parser as a pure function (1 extent, 2,
@@ -453,4 +453,4 @@ per-lane pause reaches only its lane (L7, partly).
 | N16 | `crates/platform/src/drive.rs` | The module cycle `drive <-> drive::facts <-> drive::linux <-> drive::win <-> drive::windows_facts`, in `79e3010f` (in HEAD). Fix: move the types `Drive`, `DriveKey` and `Kind` into a leaf module that the parts import, so the parent only calls them | done (uncommitted): the types are in `drive/types.rs`, which the probes import; no cycle in the text scan or the Windows and Linux compiler graphs |
 | N17 | `crates/catalog/src` | The Windows compiler graph's cycle `core <-> work` (the Linux graph is clean). cargo-modules files the `Catalog` methods of `work.rs` under `core`, and those methods use `VolumeSet` and `PlaceholderWork`, which lived in `work`. Fix: both types moved to `types.rs`, a leaf (`pg_catalog::VolumeSet` and `PlaceholderWork` keep their paths) | done (uncommitted); the Windows compiler graph reports no cycle |
 | F2 | `crates/app/src/inbox.rs` test `the_close_gives_up_after_its_deadline` | Timing-dependent: it asserts the close returns within a 3 s window after the drain. It failed once in the parallel workspace run and passes 3 of 3 alone. `inbox.rs` is not changed here | open |
-| F1 | `crates/thumbs/src/lib.rs` test `a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not` | Flaky: run alone, it fails 2 of 5 times with `left: (2, 2)`, `right: (1, 1)` at the second run (a recorded failing file is listed again). It fails the same way on an export of HEAD, so it predates this work. It passed in the full workspace run. Not traced yet | open |
+| F1 | `crates/thumbs/src/lib.rs:700` test `a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not` | Flaky: run alone, it fails 2 of 5 times with `left: (2, 2)`, `right: (1, 1)` at the second run (a recorded failing file is listed again). It fails the same way on an export of HEAD, so it predates this work. It passed in the full workspace run. Not traced yet | open |

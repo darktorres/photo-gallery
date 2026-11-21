@@ -7,6 +7,7 @@ would throw away exactly the borders that distinguish crops of the same picture.
 
 import hashlib
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,7 +54,7 @@ def _sscd_torchscript_path(variant: str) -> Path:
     with path.open("rb") as f:
         digest = hashlib.file_digest(f, "sha256").hexdigest()
     if digest != SSCD_SHA256[variant]:
-        raise ValueError(f"{path}: SHA-256 {digest} does not match the pinned {SSCD_SHA256[variant]}; delete it and rerun")
+        sys.exit(f"models: {path}: SHA-256 {digest} does not match the pinned {SSCD_SHA256[variant]}; delete it and rerun")
     return path
 
 

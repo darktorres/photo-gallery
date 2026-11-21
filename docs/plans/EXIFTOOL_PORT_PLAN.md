@@ -62,8 +62,9 @@ The metadata code is in `crates/metadata/` (package `pg-metadata`, 1,459 lines i
   `crates/library/tests/writeback.rs` (lines 170, 202, 295, 313, 416, 535 and 671), and
   `crates/analysis/examples/stage_times.rs:42`.
 - **XMP:** parsed by quick-xml (`xmp_properties`, `crates/metadata/src/xmp.rs:55`). Outside the library code, quick-xml
-  is also declared in `fuzz/Cargo.toml:82` on the same fork rev, and `deny.toml` names it at `:53` and `:84`. The
-  workspace patches it to the `darktorres/quick-xml` fork (`Cargo.toml:132`).
+  is also declared in `fuzz/Cargo.toml` (its quick-xml entry) on the same fork rev, and `deny.toml` names it in the
+  `[bans]` quick-xml entry and the `[sources]` `allow-git` list. The workspace patches it to the `darktorres/quick-xml`
+  fork (the quick-xml entry in `[patch.crates-io]`).
 - **Shared chunk walkers:** `png_chunks`, `webp_chunks`, `gif_blocks`, `gif_header_len`, `GifBlock` and `Chunk` live
   in `pg-container` (`crates/container/src/lib.rs`). They are used by pg-edit's rewrite code
   (`crates/edit/src/rewrite/{chunk,gif,png,webp}.rs`), and by pg-metadata's `orientation.rs` and `container.rs`.
@@ -74,7 +75,7 @@ The metadata code is in `crates/metadata/` (package `pg-metadata`, 1,459 lines i
   limited to the first SHORT×1 entry; that changed in cb123b9 (2026-11-08), see Step 0.
 - **Tests:** a test builder, `tiff_block` (`crates/metadata/src/lib.rs:192`, in the tests module; it delegates to
   `tiff_block_as`, defined at `lib.rs:197`).
-- **`IMPORT_VERSION` at HEAD is 2** (it is 1 at e428ab2; `crates/analysis/src/analyze.rs:27`), bumped by a70d174 (2026-11-13). That
+- **`IMPORT_VERSION` was 2 at HEAD when this was written** (snapshot of the plan's revision, not re-checked; it was 1 at e428ab2; `crates/analysis/src/analyze.rs:26`), bumped by a70d174 (2026-11-13). Commit 7deed676 ("Versions: key version, mark policy, writer guards, reset to 1 (phase 3)") later reset `IMPORT_VERSION` to 1; the registry, `crates/model/src/versions.rs:13`, says 1 now. That
   commit's message says the next open of a catalog marks every analysis pending and re-analyses the library in place.
   The 6 files from 29c4d5e's run, which gained a Rating of 4, aren't settled yet.
 
@@ -376,7 +377,7 @@ Each mismatch is fixed in the port, and its minimized input becomes a builder te
     stored, since `sync_file_rating` (`crates/catalog/src/writers.rs:371`) has run on those files.
   - The 6 files of 29c4d5e are covered by the exception above.
 - **Then remove** `legacy` and quick-xml from the workspace `Cargo.toml` (including its quick-xml fork patch),
-  `crates/metadata/Cargo.toml`, `fuzz/Cargo.toml` (`:82`) and the quick-xml entries in `deny.toml` (`:53`, `:84`),
+  `crates/metadata/Cargo.toml`, `fuzz/Cargo.toml` (its quick-xml entry) and the quick-xml entries in `deny.toml` (`[bans]` and `[sources]`),
   the lock files (`Cargo.lock` at `:1921` and `:2214–2216`, `fuzz/Cargo.lock` at `:393` and `:446–448`) change in the same commit, since `just test` runs `--locked`. Then `cargo deny` and `cargo machete` check the result.
 
 ### 7. ImageRater's metadata fixer for rating writes (pg-exiftool `lib.rs`, used by pg-writeback `crates/writeback/src/lib.rs`)

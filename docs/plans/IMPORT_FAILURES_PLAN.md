@@ -45,7 +45,8 @@ Decisions made with the user: the lost failures are **thumbnail / placeholder fa
 > (not retry rows in `file_failures`), a three-attempt cap, `next_try_at` spacing, NotFound not counted, worklists skipping
 > `next_try_at > unixepoch()`, the third attempt writing the terminal row. Section 5 is **reconciled with them** (see
 > "Relationship to the recorded plans"). The audit text is itself stale in places (it says the next migration is `TO_10`;
-> it is `TO_18`; its "runner deadline table" predates lanes), so it needs the amendments listed under 5.4.
+> at revision 9 (rebased onto `1150d3b6`) it was `TO_18`, against schema 17; the current build's schema is version 1 with
+> no migrations, so the next one is `TO_2`; its "runner deadline table" predates lanes), so it needs the amendments listed under 5.4.
 
 This is revision 9: six adversarial reviews (eighteen reviewers), a reconciliation with the recorded plans, and a rebase
 onto `1150d3b6`. "(review)" marks what a review changed; "(recorded)" marks a decision taken from a recorded plan;
@@ -182,7 +183,7 @@ resolver-table test 1836. `import/src/lib.rs`: `ImportStats` 38-45, `batched` 94
   one shared deadline for the coordinator, the cropper and every lane); make the app wrapper's wait injectable only for the
   shutdown-ordering test.
 - **Trace the known flake first (lanes-plan ledger F1):** `thumbs` test `a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not`
-  (`thumbs/src/lib.rs:687`) fails 2 of 5 runs alone (`left: (2,2) right: (1,1)`, "a recorded failing file is listed
+  (`crates/thumbs/src/lib.rs:700`; it was `:687` when this was written) fails 2 of 5 runs alone (`left: (2,2) right: (1,1)`, "a recorded failing file is listed
   again"), predating the lanes. This plan edits that exact test and the `Unwritten`/`fold` code it exercises, so find the
   cause before changing either (trace, do not guess).
 
@@ -373,7 +374,7 @@ step now; the proper fix, if wanted, is a resolver for `CacheFull` that does not
 
 **5.4 E: retry state in `io_attempts`, classify by cause** (its own change set; recorded design, with the additions below).
 
-*Schema* (one migration at the next free number: **`TO_18`** (the latest is `TO_17_PLACEHOLDERS`, `schema.rs:526`; the
+*Schema* (one migration at the next free number: **`TO_18`** at revision 9, rebased onto `1150d3b6` (the latest then was `TO_17_PLACEHOLDERS`, `schema.rs:526`; now the schema is version 1 with no migrations, so this would be `TO_2`; the
 `MIGRATIONS` array is l.51-68; the audit's "next is `TO_10`" is stale; the baseline `schema.rs:705` is frozen, comments
 only); if the audit's slice lands first it owns the table and this plan adds only what is below; the schema check compares
 against baseline + migrations, so it matches by construction; test the migration on a pristine schema; `lifecycle.rs`
@@ -430,12 +431,12 @@ semantics; the reset trigger makes identity comparison unnecessary in the exclus
   `hashes_statement`; `work.rs:694-747`): the `EXISTS` must not change the plan. Re-check the `files_to_import` plan pins
   (`lifecycle.rs:1237-1243` with `VolumeSet::All`, `work.rs:694-698` with `VolumeSet::Only`: `files_to_import (volume=?)`,
   no `TEMP B-TREE`). The `retry_errors` UNION branch (`work.rs:56-63`) overrides the back-off (an explicit `--retry`).
-- **Thumbs views** (the thumbcache reads the catalog "through views alone", `thumbcache/Cargo.toml:12`, `schema.rs:185`, and
+- **Thumbs views** (the thumbcache reads the catalog "through views alone", its manifest's header comment, `schema.rs:185`, and
   does not depend on `catalog`; today's three views are `thumb_sources` (`schema.rs:191-206` v6, original l.844-851: it
   already filters `f.missing = 0` and requires a clean `analysis` row), `thumb_clock` (l.854) and `thumb_folders` (v6)):
   `thumb_backoff(file_id)` = `io_attempts` for `pass = 'thumbs'` with `next_try_at > unixepoch()`, and (D-A, decided)
   `thumb_due(file_id)` = `pass = 'thumbs'` and `next_try_at <= unixepoch()`, both created in the `TO_18` migration. Update
-  the list at `thumbcache/Cargo.toml:12` and the view-contract tests / `EXPLAIN QUERY PLAN` pins at
+  the list in the header comment of `crates/thumbcache/Cargo.toml` and the view-contract tests / `EXPLAIN QUERY PLAN` pins at
   `thumbcache/src/lib.rs` (~1020, ~1080) and `reader.rs:146-179`.
 - **Thumbs `pending_sql`** (landed shape, `thumbcache/src/reader.rs:187-198`: `pending_sql(since_checked, volumes) ->
   String`, columns 0-8 `id, folder_id, name, mtime, rotation, poster_ms, seq, folder, size` read positionally at
@@ -500,7 +501,7 @@ inside views does not block index use and is constant per statement; the due bra
 when nothing is pending. Hash-load and peak-memory of the `+volume` sorter: measure.
 
 *Edit (not just add):* docs `catalog/src/ledger.rs:24, 38, 46-51, 83-86, 149-150`, `schema.rs` comments,
-`thumbcache/Cargo.toml:12`, `thumbcache/src/lib.rs` (checkpoint doc), `NOTIFICATIONS_DESIGN.md:296,351,357`; the recorded
+the header comment of `thumbcache/Cargo.toml`, `thumbcache/src/lib.rs` (checkpoint doc), `NOTIFICATIONS_DESIGN.md:296,351,357`; the recorded
 plans' own amendments (AUDIT "Docs to amend", DO 3.3/5.6: add `next_try_at`, `classify`, the typed `Unreadable`; AUDIT
 D.2 migration number `TO_10` -> `TO_18`; AUDIT B.2/B.7 "one deadline table in the runner" -> per-lane idle wait,
 `idle_work()` dropped; AUDIT E.2 / BM 4.7 `first_failed` is deleted by this plan's due branch, so D35 later replaces the due
@@ -508,7 +509,7 @@ branch, not `fold`); `docs/plans/MULTI_DRIVE_LANES_PLAN.md` (a line on how `io_a
 offline-file notice") and `docs/reference/STORAGE.md`/`IO.md` where they describe offline files; tests
 `runner.rs:394-411` `an_offline_file_is_said_not_recorded_and_a_complete_pass_clears_it` (it posts
 `UnreadableFiles { pass: Thumbs, count: 1, drives: [] }`), `runner.rs:336-351` (cache error), `:415-430`, `:521-532`,
-`thumbs/src/lib.rs:446-504, 543, 626, 653-669, 687-`, `library/tests/borders.rs:91` (an unreadable file stays due: now backs
+`thumbs/src/lib.rs:446-504, 543, 626, 653-669, 700-`, `library/tests/borders.rs:91` (an unreadable file stays due: now backs
 off), `stop_at_batch.rs:74-83`, `work.rs:654-672, 694-747`, `writers.rs` tests from l.1172 (the borders-after-import tests,
 which call `pending_borders(&VolumeSet::All)`), the `b4515c7b` cache-error test, `tally.rs:195-279`, the `EXPLAIN QUERY
 PLAN` pins.
@@ -581,7 +582,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
 - Placeholders get no observer (point 1 above).
 - Whether `Control` can hand the sink an `Arc<AtomicBool>` for `wait_for_writers(Patience { stop, until })` (5.2), and the
   `until` bound.
-- The trace of the F1 flake (`thumbs` test at `lib.rs:687`) before the `Unwritten`/`fold` rewrite.
+- The trace of the F1 flake (`thumbs` test at `lib.rs:700`) before the `Unwritten`/`fold` rewrite.
 - Whether `CacheFull` should get a resolver that does not clear `UnreadableFiles(Thumbs)` (5.3, optional).
 - Which setup phase holds the stop (build-1 numbers) and the shutdown grace/skip rule; whether a slow open on a dead share
   is the cause of "still running at exit" (then the breaker moves up).
@@ -602,7 +603,7 @@ sticky `analysis.error` (DO: a ledger row, not `store_failure`, once the Dups pa
   `crates/writeback/src/lib.rs` (`folder_present` moves), `tools/crate-layers.txt`
 - Recorded plans to amend: `docs/plans/BACKGROUND_JOB_AUDIT_FIXES.md`, `DECODE_ONCE_PLAN.md`, `BOUNDED_MEMORY_PLAN.md`,
   `docs/reference/NOTIFICATIONS_DESIGN.md`.
-- Lints to respect: `unwrap_used`/`expect_used` deny (`Cargo.toml:84-85`), `HashMap`/`HashSet` disallowed (`clippy.toml`;
+- Lints to respect: `unwrap_used`/`expect_used` deny (`[workspace.lints.clippy]`), `HashMap`/`HashSet` disallowed (`clippy.toml`;
   use `BTreeMap`/`BTreeSet`), `too_many_arguments` expects carry a reason, `checked_mul`/`saturating_mul` for backoff.
 
 ## Verification

@@ -10,7 +10,7 @@ pub struct Details {
     /// The file's path, exact (the viewer's details show it as text, `PathRules::display`).
     pub path: rules::Path,
     /// The file's size in bytes.
-    pub size: i64,
+    pub size: u64,
     /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
     pub rating_in_file: bool,
     /// Every side the border detector found, accepted and rejected (`borders::detect`).

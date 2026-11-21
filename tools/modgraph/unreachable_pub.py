@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Counts rustc's `unreachable_pub` warnings for each crate's library target, and any compile
 errors (a crate that does not build here is reported, with its first error lines). Run it on the target you want counted:
-Windows on the host (with QT_DIR and its bin folder on PATH), Linux in the pg-dev container.
+Windows on the host (with PG_QT_DIR and its bin folder on PATH), Linux in the pg-dev container.
 
     python tools/modgraph/unreachable_pub.py
 

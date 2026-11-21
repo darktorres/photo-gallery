@@ -24,6 +24,9 @@ from edits import TRANSFORMS, edit_seed
 from imgload import ImageDataset, TrimmedSource, embed
 from models import SPECS, build_transform, load_model
 
+# The default seed of the sample and its edits (run seed + transform index). Dataset seed; changing it moves the sampled inputs.
+SYNTH_SEED = 0
+
 
 class TransformSource:
     """Picklable source: loads sample image i and applies one transform deterministically."""
@@ -48,7 +51,7 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=1000)
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--workers", type=int, default=10)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=SYNTH_SEED)
     parser.add_argument(
         "--trim", action="store_true", help="cut borders from originals and edited copies (needs embed.py --trim)"
     )

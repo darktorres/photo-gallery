@@ -28,7 +28,7 @@ not the one `cargo` uses here).
 |---|---|---|---|
 | `cargo miri` | Undefined behaviour at run time | Not installed. The `miri` component is absent on every toolchain here, and the `cargo-miri.exe` in `~/.cargo/bin` does not run. | Targeted at the `unsafe` and FFI code. Slow, so run on demand, not per commit. Install with `rustup component add miri --toolchain nightly-2026-11-06`. |
 | `cargo outdated` | Dependencies with newer versions | Installed (0.19.0) | Informational. |
-| `cargo msrv` | Minimum supported Rust version | Installed (0.20.0-beta.4) | `rust-version` is set once, in the root `Cargo.toml` `[workspace.package]` (1.88), and the members inherit it. Not yet checked with `cargo msrv verify`. |
+| `cargo msrv` | Minimum supported Rust version | Installed (0.20.0-beta.4) | `rust-version` is set once, in the root `Cargo.toml` `[workspace.package]` (1.89: let-chains need 1.88, `File::try_lock` needs 1.89), and the members inherit it. Not yet checked with `cargo msrv verify`. |
 | `cargo modules` | The module graph | Installed (0.28.0, the version pinned in `Justfile`) | Used by `just modgraph`, which CI runs and `just lint` does not. |
 | `cargo report future-incompat` | Upcoming breakage from the compiler | Built in | Run after toolchain upgrades. |
 

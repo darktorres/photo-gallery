@@ -1,8 +1,9 @@
-# Plan: shrink the catalog (519 MB -> about 200 MiB on this library)
+# Plan: shrink the catalog (495 MiB -> about 200 MiB on this library)
 
 ## Context
 
-The user's catalog (`D:\PhotoGallery\catalog\catalog.sqlite`, 519 MB, 715,051 files, 334 folders, 1 volume, schema v20,
+The user's catalog (`D:\PhotoGallery\catalog\catalog.sqlite`, 495 MiB (519 MB), 715,051 files, 334 folders, 1 volume, schema v20
+when measured (the current build's schema is version 1, with no migrations; see `crates/catalog/src/schema.rs`),
 `path_rules = windows`) was analysed with `dbstat` (file 495.1 MiB; 155 pages are pointer-map pages because
 `auto_vacuum = incremental`; `freelist_count` 0):
 
@@ -268,7 +269,7 @@ CREATE INDEX files_seq ON files(seq);                               -- files_to_
 
 - **`analysis` stamp** (D4) and the cost of 26 columns (each NULL is a header byte): splitting the NULL-heavy columns saves only
   about 3.6 MiB; hash columns in their own table is larger (184.6 vs 180.4 MiB). Merging `analysis` into `files` (1:1) would
-  make every `seq`/`changed` stamp rewrite a wide row once hashes are stored (`TO_13`: 98.7 MB of WAL as updates against
+  make every `seq`/`changed` stamp rewrite a wide row once hashes are stored (`TO_13`: 94.1 MiB (98.7 MB) of WAL as updates against
   3.4 MB as deletes).
 - **`WITHOUT ROWID` clustered by `(mid, key)`**: every secondary index and every `files(id)` reference carries the key; larger.
 - **`files_seq`**: thumbnail pass `f.seq > ?` (pins at `thumbcache/src/reader.rs:197` and `thumbcache/src/lib.rs`); cannot merge into
@@ -294,7 +295,7 @@ The borders (8.1) and hashes (5.5) queues are inside these totals and leave by t
 
 ## Verification
 
-Build natively in PowerShell with `QT_DIR` on PATH (not WSL; the `pg-dev` container only for the Linux CI pass). Implement every
+Build natively in PowerShell with `PG_QT_DIR` on PATH (not WSL; the `pg-dev` container only for the Linux CI pass). Implement every
 phase, then compile once. Never migrate the live catalog: use a copy.
 
 1. Gates G1-G4 first (they decide the key mechanism).
@@ -321,7 +322,7 @@ phase, then compile once. Never migrate the live catalog: use a copy.
    becomes this key), `NTFS_MFT_SCAN_PLAN.md:499-533`, `UROCISSA_COMPARISON.md:83-84` (keyset paging on `order_key` becomes
    `(mid, key, id)`), `docs/reference/REFACTOR_MEASUREMENTS.md:81`, `docs/webclient/INCREMENTAL_SYNC.md`, `docs/webclient/WEB_CLIENT_*`,
    `docs/reference/PROFILING.md:337`, `START_PROFILE.md:56`, `NOTIFICATIONS_DESIGN.md:262`, `docs/perf/callgrind/1bb039084.md`,
-   `crates/thumbcache/Cargo.toml:12` (stale `thumb_folders`), and the `schema.rs` header comments.
+   the header comment of `crates/thumbcache/Cargo.toml` (stale `thumb_folders`), and the `schema.rs` header comments.
 
 ## Evidence
 

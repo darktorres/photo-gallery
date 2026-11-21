@@ -134,13 +134,13 @@ pub fn probe(path: &Path) -> Result<Probe> {
         input.duration().max(0) / 1000
     };
     let rate = stream.avg_frame_rate();
-    let frames = match stream.frames() {
-        n if n > 0 => n,
-        _ if rate.num > 0 && rate.den > 0 => {
+    let frames = match stream.frames()? {
+        0 if rate.num > 0 && rate.den > 0 => {
             let frames = pg_model::num::signed(duration_ms) / 1000.0 * f64::from(rate.num) / f64::from(rate.den);
             pg_model::num::f64_to_i64(frames.round())
         }
-        _ => 1,
+        0 => 1,
+        n => i64::from(n),
     };
 
     let tag = |key: &str| input.metadata(key).or_else(|| stream.metadata(key));
@@ -330,8 +330,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// The eight matrices ffmpeg writes for `-display_rotation` and `-display_hflip`/`-display_vflip`, with the
-    /// orientation that shows the picture as ffmpeg's own autorotate does (checked on a four-colour clip).
+    // The eight matrices ffmpeg writes for `-display_rotation` and `-display_hflip`/`-display_vflip`, with the
+    // orientation that shows the picture as ffmpeg's own autorotate does (checked on a four-colour clip).
     #[test]
     fn display_matrix_orientations() {
         const ONE: i32 = 1 << 16;
@@ -370,8 +370,8 @@ mod tests {
         path
     }
 
-    /// A video whose name has no UTF-8 form is read as the same video: the probe and a frame (which seeks) agree with
-    /// the ordinary name's, so the reader's bytes are the file's.
+    // A video whose name has no UTF-8 form is read as the same video: the probe and a frame (which seeks) agree with
+    // the ordinary name's, so the reader's bytes are the file's.
     #[test]
     fn a_video_with_a_name_that_is_not_utf8_is_read_as_its_own_bytes() {
         let dir = scratch_dir("names");
@@ -386,7 +386,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A file that is not a video, and a file that isn't there, are errors (the reader's open fails cleanly).
+    // A file that is not a video, and a file that isn't there, are errors (the reader's open fails cleanly).
     #[test]
     fn a_file_that_is_not_a_video_or_is_missing_is_an_error() {
         let dir = scratch_dir("errors");

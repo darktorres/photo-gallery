@@ -10,6 +10,10 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import linux
+from pgtools import load_env_file
+
+load_env_file()
+PG_HOME = os.environ.get("PG_HOME", "")
 
 
 class MountSources(unittest.TestCase):
@@ -19,14 +23,15 @@ class MountSources(unittest.TestCase):
 
 
 @unittest.skipUnless(sys.platform == "win32", "Docker Desktop's shared folders are a Windows host's")
+@unittest.skipUnless(PG_HOME, "PG_HOME is not set: in the environment, or in the repository's .env")
 class Unshared(unittest.TestCase):
-    shared = (r"D:\GitHub\photo-gallery", r"D:\PhotoGallery\bench-data")
+    shared = (r"D:\GitHub\photo-gallery", os.path.join(PG_HOME, "bench-data"))
 
     def test_a_folder_under_a_shared_one_is_shared_whatever_the_case_or_separator(self):
         self.assertEqual(linux.unshared(["d:/github/photo-gallery/target/x", "D:/GitHub/photo-gallery"], self.shared), [])
 
     def test_a_folder_outside_them_or_with_a_shared_prefix_only_is_not(self):
-        sources = ["D:/PhotoGallery/cache/ann", "D:/GitHub/photo-gallery-old"]
+        sources = [f"{PG_HOME}/cache/ann", "D:/GitHub/photo-gallery-old"]
         self.assertEqual(linux.unshared(sources, self.shared), sources)
 
     def test_the_settings_file_gives_the_list_and_its_absence_checks_nothing(self):
@@ -37,7 +42,7 @@ class Unshared(unittest.TestCase):
             settings.write_text(json.dumps({"FilesharingDirectories": list(self.shared)}), encoding="utf-8")
             self.assertEqual(linux.docker_desktop_shared(), list(self.shared))
             with self.assertRaises(SystemExit):
-                linux.shared_or_fail(["-v", "D:/PhotoGallery/cache/ann:/ann/0"])
+                linux.shared_or_fail(["-v", f"{PG_HOME}/cache/ann:/ann/0"])
             linux.shared_or_fail(["-v", "D:/GitHub/photo-gallery:/work"])
 
 

@@ -6,12 +6,12 @@ Steps: inputs (copy the 7 files to the inputs folder), check (clippy, rustfmt), 
 (median wall ms), bench (callgrind through gungraun, then the table), marginal (callgrind on whole runs, all threads: libvips
 and jpeg-decoder decode in their own threads, which gungraun doesn't count).
 Needs the container's eval image (or, natively, tools/profiling/ci_setup.py's toolchain and docker/apt-packages-eval.txt),
-and linux_build.py's decoders in JPEG_EVAL.
-Environment (the container sets each to a folder of its pg-eval volume): JPEG_EVAL (default ~/jpeg-eval, linux_build.py's
-sources, builds and tools), JPEG_INPUTS (default ~/jpeg-inputs), JPEG_SRC_DIR (for `inputs`: one <name>.jpg per NAMES
-entry), JPEG_RESTART_OUT (default ~/jpeg-restart, restart.py's variants), PG_JPEG_ENC_DIR (default ~/jpeg-enc,
+and linux_build.py's decoders in PG_JPEG_EVAL.
+Environment (the container sets each to a folder of its pg-eval volume): PG_JPEG_EVAL (default ~/jpeg-eval, linux_build.py's
+sources, builds and tools), PG_JPEG_INPUTS (default ~/jpeg-inputs), PG_JPEG_SRC_DIR (for `inputs`: one <name>.jpg per NAMES
+entry), PG_JPEG_RESTART_OUT (default ~/jpeg-restart, restart.py's variants), PG_JPEG_ENC_DIR (default ~/jpeg-enc,
 encoders.py's work folder), PG_BENCH_CLONE (default ~/photo-gallery, a clone of this repository that the benches are built
-in).
+in). PG_JPEG_NAMES runs a subset of NAMES.
 """
 
 import os
@@ -22,11 +22,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 REPO = Path(__file__).resolve().parent.parent.parent
 CLONE = Path(os.environ.get("PG_BENCH_CLONE", Path.home() / "photo-gallery"))
-INPUTS = Path(os.environ.get("JPEG_INPUTS", Path.home() / "jpeg-inputs"))
-EVAL = Path(os.environ.get("JPEG_EVAL", Path.home() / "jpeg-eval"))
-RESTART = Path(os.environ.get("JPEG_RESTART_OUT", Path.home() / "jpeg-restart"))
+INPUTS = Path(os.environ.get("PG_JPEG_INPUTS") or Path.home() / "jpeg-inputs")
+EVAL = Path(os.environ.get("PG_JPEG_EVAL") or Path.home() / "jpeg-eval")
+RESTART = Path(os.environ.get("PG_JPEG_RESTART_OUT") or Path.home() / "jpeg-restart")
 ENCODES = Path(os.environ.get("PG_JPEG_ENC_DIR", Path.home() / "jpeg-enc"))
 # Its Cargo.toml takes turbojpeg-sys from the darktorres fork by rev.
 DST = CLONE / "eval" / "jpeg-decoders"
@@ -39,9 +40,9 @@ NAMES = [
     "sony-base422-7mp",
     "a6000-base422-24mp",
 ]
-# JPEG_NAMES (comma-separated, from NAMES) runs the comparison on a subset, for when some of the photos aren't at hand.
-if os.environ.get("JPEG_NAMES"):
-    chosen = set(os.environ["JPEG_NAMES"].split(","))
+# PG_JPEG_NAMES (comma-separated, from NAMES) runs the comparison on a subset, for when some of the photos aren't at hand.
+if subset := os.environ.get("PG_JPEG_NAMES"):
+    chosen = set(subset.split(","))
     NAMES = [name for name in NAMES if name in chosen]
 FILES = [INPUTS / f"{name}.jpg" for name in NAMES]
 
@@ -75,7 +76,7 @@ def environment() -> dict[str, str]:
     env = dict(os.environ)
     env["FFMPEG_DIR"] = str(ffmpeg_prefix())
     env["LIBCLANG_PATH"] = libclang_path()
-    env["JPEG_INPUTS"] = str(INPUTS)
+    env["PG_JPEG_INPUTS"] = str(INPUTS)  # read at compile time by benches/ir.rs
     # The crate's own target folder, which marginal, restart.py and table.py read, whatever CARGO_TARGET_DIR says (the
     # container sets it to the workspace's).
     env["CARGO_TARGET_DIR"] = str(DST / "target")
@@ -149,10 +150,10 @@ def marginal(env: dict[str, str]) -> None:
 
 
 def inputs() -> None:
-    """Copies the source photos in: they are not in the repository, and $JPEG_SRC_DIR holds one <name>.jpg per NAMES entry."""
-    source = os.environ.get("JPEG_SRC_DIR")
+    """Copies the source photos in: they are not in the repository, and $PG_JPEG_SRC_DIR holds one <name>.jpg per NAMES entry."""
+    source = os.environ.get("PG_JPEG_SRC_DIR")
     if not source:
-        sys.exit("set JPEG_SRC_DIR to a directory with <name>.jpg for each entry in NAMES")
+        sys.exit("linux.py: set PG_JPEG_SRC_DIR to a directory with <name>.jpg for each entry in NAMES")
     INPUTS.mkdir(parents=True, exist_ok=True)
     for name in NAMES:
         target = INPUTS / f"{name}.jpg"

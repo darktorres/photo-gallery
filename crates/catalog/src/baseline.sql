@@ -16,7 +16,7 @@ CREATE TABLE analysis(
     version     INTEGER NOT NULL,  -- analyze::IMPORT_VERSION
     size        INTEGER NOT NULL,  -- the file as analyzed
     mtime       INTEGER NOT NULL,
-    rotation    INTEGER NOT NULL,  -- files.rotation it was decoded with
+    rotation    INTEGER NOT NULL,  -- files.turns it was decoded with
     kind        TEXT NOT NULL,     -- files.kind it was analyzed as
     analyzed    INTEGER NOT NULL,  -- Unix seconds
     error       TEXT,              -- set when the file couldn't be read or decoded; the rest is then NULL
@@ -205,7 +205,7 @@ CREATE TABLE "roots"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL UN
 
 CREATE TABLE "folders"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL UNIQUE, key BLOB NOT NULL);
 
-CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER, file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL REFERENCES folders(id), name BLOB NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, rotation INTEGER NOT NULL DEFAULT 0, order_key BLOB NOT NULL, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref));
+CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER, file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL REFERENCES folders(id), name BLOB NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, order_key BLOB NOT NULL, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref));
 
 -- indexes
 CREATE INDEX analysis_file_hash ON analysis(file_hash);
@@ -258,12 +258,23 @@ CREATE VIEW thumb_clock AS SELECT value AS seq FROM meta WHERE key = 'seq';
 CREATE VIEW thumb_sources AS
     SELECT f.id, f.volume, f.file_ref, f.folder_id,
            (SELECT path FROM folders WHERE id = f.folder_id) AS folder,
-           f.name, f.mtime, f.rotation, f.size, f.seq,
+           f.name, f.mtime, f.turns, f.size, f.seq,
            CASE WHEN f.kind = 'video' THEN coalesce((SELECT poster_ms FROM analysis WHERE file_id = f.id), 0)
            END AS poster_ms
     FROM files f
     WHERE f.missing = 0
       AND EXISTS (SELECT 1 FROM analysis WHERE file_id = f.id AND error IS NULL AND mtime = f.mtime);
+
+-- The thumbnail cache reads the catalog through these views only (`pg_thumbcache`'s reader, with `thumb_clock` and
+-- `thumb_sources` above): the id high-water mark (the ids are never reissued), the ids that exist, the volumes the
+-- catalog holds, and the thumbnail failures.
+CREATE VIEW thumb_high_water AS SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name = 'files'), 0) AS high;
+
+CREATE VIEW thumb_file_ids AS SELECT id FROM files;
+
+CREATE VIEW thumb_volumes AS SELECT volume FROM files WHERE volume IS NOT NULL;
+
+CREATE VIEW thumb_failures AS SELECT file_id, pass, mtime, size, rotation, retry FROM file_failures;
 
 CREATE VIEW present_pdq_pairs AS
     SELECT p.* FROM pdq_pairs p JOIN files fa ON fa.id = p.a JOIN files fb ON fb.id = p.b
@@ -278,7 +289,7 @@ BEGIN
     UPDATE meta SET value = value + 1 WHERE key = 'seq';
     UPDATE files SET pending = NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
         AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
-        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind), seq = (SELECT value FROM meta WHERE key = 'seq'), changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = new.file_id;
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.turns AND a.kind = files.kind), seq = (SELECT value FROM meta WHERE key = 'seq'), changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = new.file_id;
 END;
 
 CREATE TRIGGER analysis_removed AFTER DELETE ON analysis BEGIN
@@ -421,13 +432,13 @@ BEGIN
     UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = new.file_id;
 END;
 
-CREATE TRIGGER files_pending_changed AFTER UPDATE OF size, mtime, rotation, kind ON files
-WHEN old.size IS NOT new.size OR old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation
+CREATE TRIGGER files_pending_changed AFTER UPDATE OF size, mtime, turns, kind ON files
+WHEN old.size IS NOT new.size OR old.mtime IS NOT new.mtime OR old.turns IS NOT new.turns
     OR old.kind IS NOT new.kind
 BEGIN
     UPDATE files SET pending = NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
         AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
-        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind) WHERE id = new.id;
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.turns AND a.kind = files.kind) WHERE id = new.id;
 END;
 
 CREATE TRIGGER file_failures_hidden AFTER UPDATE OF pending, missing ON files
@@ -437,14 +448,14 @@ BEGIN
     WHERE file_id = new.id AND hidden IS NOT (new.missing OR (pass = 'import' AND new.pending));
 END;
 
-CREATE TRIGGER file_failures_stale AFTER UPDATE OF mtime, size, rotation ON files
-WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation
+CREATE TRIGGER file_failures_stale AFTER UPDATE OF mtime, size, turns ON files
+WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.turns IS NOT new.turns
 BEGIN
     DELETE FROM file_failures WHERE file_id = new.id AND pass <> 'import';
 END;
 
-CREATE TRIGGER files_source_changed AFTER UPDATE OF mtime, rotation, missing, size ON files
-WHEN old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation OR old.missing IS NOT new.missing
+CREATE TRIGGER files_source_changed AFTER UPDATE OF mtime, turns, missing, size ON files
+WHEN old.mtime IS NOT new.mtime OR old.turns IS NOT new.turns OR old.missing IS NOT new.missing
     OR old.size IS NOT new.size
 BEGIN
     UPDATE meta SET value = value + 1 WHERE key = 'seq';

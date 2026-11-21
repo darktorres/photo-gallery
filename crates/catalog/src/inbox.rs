@@ -28,7 +28,7 @@
 //! - A **state** is one row per key, bounded by its keys (codes × library folders × parts, all finite). Posted again it is
 //!   counted and holds the latest; if it says something new (its data changed) its `rev` rises and it is unread again,
 //!   even if it was dismissed, and if not it keeps its marks: a problem that holds is not news each time. A dismissed state
-//!   is kept, so a repost of the same data stays dismissed, for 30 days (`DISMISSED_FOR`, `Catalog::prune_inbox`). Its
+//!   is kept, so a repost of the same data stays dismissed, for 30 days (`DISMISSED_FOR_SECS`, `Catalog::prune_inbox`). Its
 //!   resolver clears it (`inbox::clear`), or replaces the whole set of a kind and folder (`Catalog::replace_notices`: a
 //!   complete walk of a library folder posts what it found and clears the rest).
 //! - A notice about a folder no longer in the library is not kept.
@@ -50,6 +50,7 @@ use rusqlite::{Connection, params};
 use pg_model::notice::{Key, Level, Lifecycle, Notice, Part, Trigger, resolves};
 use pg_model::rules::PathRules;
 
+use crate::convert::progress_count;
 use crate::core::Catalog;
 use crate::error::Result;
 use crate::ledger::{Counts, dismiss_ledger_on, ledger_entries_on, mark_ledger_read_on};
@@ -63,8 +64,8 @@ pub use id::EntryId;
 /// are bounded by their keys.
 pub const KEPT_EVENTS: i64 = kept_events!();
 
-/// How long a dismissed state is kept (seconds): a same-data repost of it stays dismissed meanwhile.
-pub const DISMISSED_FOR: i64 = 30 * 24 * 60 * 60;
+/// How long a dismissed state is kept (seconds, an SQL-bound `i64`): a same-data repost of it stays dismissed meanwhile.
+pub const DISMISSED_FOR_SECS: i64 = 30 * 24 * 60 * 60;
 
 /// An entry as the inbox lists it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -225,7 +226,7 @@ impl Catalog {
                     notice,
                     decode_error: error,
                     seen_to: None,
-                    counts: Some(Counts { total: count(r.get(5)?), ..Counts::default() }),
+                    counts: Some(Counts { total: r.get(5)?, ..Counts::default() }),
                     created: r.get(6)?,
                     updated: r.get(7)?,
                     read: r.get(8)?,
@@ -262,7 +263,7 @@ impl Catalog {
             let rows = stmt.query_map([], |r| {
                 let mark = Mark {
                     id: EntryId::Row { id: r.get(0)?, uid: r.get(1)?, rev: r.get(2)? },
-                    count: count(r.get(3)?),
+                    count: r.get(3)?,
                     level: Level::from_code(r.get(4)?),
                     read: r.get(5)?,
                 };
@@ -339,17 +340,19 @@ impl Catalog {
 
     /// How many entries are listed and not read.
     pub fn unread(&self) -> Result<u64> {
-        Ok(u64::try_from(self.inbox_marks()?.iter().filter(|m| !m.read).count()).unwrap_or(u64::MAX))
+        Ok(progress_count(self.inbox_marks()?.iter().filter(|m| !m.read).count()))
     }
 
-    /// Dismissed states older than [`DISMISSED_FOR`] go (events are bounded by `notices_uid`, and deleted when
+    /// Dismissed states older than [`DISMISSED_FOR_SECS`] go (events are bounded by `notices_uid`, and deleted when
     /// dismissed). How many went.
-    pub fn prune_inbox(&self, now: i64) -> Result<usize> {
+    pub fn prune_inbox(&self, now: i64) -> Result<u64> {
         let tx = write_transaction(&self.conn)?;
-        let n =
-            tx.execute("DELETE FROM notices WHERE dismissed IS NOT NULL AND dismissed < ?1", [now - DISMISSED_FOR])?;
+        let n = tx.execute(
+            "DELETE FROM notices WHERE dismissed IS NOT NULL AND dismissed < ?1",
+            [now - DISMISSED_FOR_SECS],
+        )?;
         tx.commit()?;
-        Ok(n)
+        Ok(progress_count(n))
     }
 }
 
@@ -373,11 +376,14 @@ fn upsert(rules: PathRules, tx: &Connection, notice: &Notice, times: u64, now: i
     let key = state.map(|k| key_text(k.code, root, part.as_deref()));
     let data = serde_json::to_string(notice).map_err(anyhow::Error::from)?;
     let times = if key.is_some() { i64::try_from(times).unwrap_or(i64::MAX) } else { 1 };
-    // In the update every column is the old row's: a repeat that says the same keeps the row's marks and revision.
+    // A repeat keeps the row's latest text (`data`), but it is news, and counts again, only when the stored bytes differ: a
+    // same-bytes refailure keeps its count, its revision and its read or dismissed marks. In the SET clause the column
+    // references are the old row's, so `data IS excluded.data` compares the stored and the new bytes.
     tx.prepare_cached(
         "INSERT INTO notices(key, part, root, level, source, kind, data, created, updated, count)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)
-         ON CONFLICT(key) DO UPDATE SET level = excluded.level, data = excluded.data, count = count + excluded.count,
+         ON CONFLICT(key) DO UPDATE SET level = excluded.level, data = excluded.data,
+             count = CASE WHEN data IS excluded.data THEN count ELSE count + excluded.count END,
              updated = excluded.updated,
              rev = CASE WHEN data IS excluded.data THEN rev ELSE rev + 1 END,
              read = CASE WHEN data IS excluded.data THEN read END,
@@ -426,11 +432,6 @@ fn decode(kind: &str, data: &str) -> Decoded {
             error: Notice::CODES.contains(&kind).then(|| e.to_string()),
         },
     }
-}
-
-/// A stored count (never negative).
-fn count(n: i64) -> u64 {
-    u64::try_from(n).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -501,7 +502,8 @@ mod tests {
         assert!(c.inbox_entries(10, false).unwrap().is_empty(), "the same data stays dismissed");
         c.post_notice(&failed("b"), 12).unwrap();
         let again = c.inbox_entries(10, false).unwrap()[0].clone();
-        assert_eq!((again.id.entry(), again.read, total(&again)), (first.entry(), false, Some(3)));
+        // The same bytes posted again did not count (`a` once); the new bytes do (`b`, twice in all).
+        assert_eq!((again.id.entry(), again.read, total(&again)), (first.entry(), false, Some(2)));
         assert_ne!(again.id, first, "a new revision");
         // A mark sent for the old revision doesn't land on the new one.
         assert!(!c.mark_read(&[first], 12).unwrap());
@@ -531,6 +533,30 @@ mod tests {
         a_repeat_is_new_again_and_a_stale_mark_does_nothing_posix
     );
 
+    // A same-bytes refailure keeps the row: its count, its revision and its read mark stay, so it is not news. New bytes
+    // count again, at a new revision that is unread.
+    fn a_same_bytes_refailure_is_not_news_and_does_not_count(rules: PathRules) {
+        let c = catalog(rules);
+        c.post_notice(&failed("a"), 10).unwrap();
+        let first = c.inbox_entries(10, false).unwrap()[0].clone();
+        assert!(c.mark_read(&[first.id], 11).unwrap());
+        c.post_notice(&failed("a"), 12).unwrap();
+        let same = c.inbox_entries(10, false).unwrap()[0].clone();
+        assert_eq!((total(&same), same.id, same.read), (Some(1), first.id, true), "same bytes: no count, no news");
+        assert_eq!(c.unread().unwrap(), 0);
+        c.post_notice(&failed("b"), 13).unwrap();
+        let news = c.inbox_entries(10, false).unwrap()[0].clone();
+        assert_eq!((total(&news), news.read), (Some(2), false), "new bytes: counted, and unread");
+        assert_ne!(news.id, first.id, "a new revision");
+        assert_eq!(c.unread().unwrap(), 1);
+    }
+
+    under_both_rules!(
+        a_same_bytes_refailure_is_not_news_and_does_not_count,
+        a_same_bytes_refailure_is_not_news_and_does_not_count_windows,
+        a_same_bytes_refailure_is_not_news_and_does_not_count_posix
+    );
+
     // A dismissed event's row goes at once; a dismissed state's stays (dismissed) until its time is up.
     fn a_dismissed_event_goes_and_a_dismissed_state_is_kept(rules: PathRules) {
         let c = catalog(rules);
@@ -540,8 +566,8 @@ mod tests {
         assert!(c.dismiss_all(&ids, 12).unwrap());
         let rows: i64 = c.conn.query_row("SELECT count(*) FROM notices", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 1, "the state's row is kept, dismissed");
-        assert_eq!(c.prune_inbox(12 + DISMISSED_FOR).unwrap(), 0);
-        assert_eq!(c.prune_inbox(13 + DISMISSED_FOR).unwrap(), 1);
+        assert_eq!(c.prune_inbox(12 + DISMISSED_FOR_SECS).unwrap(), 0);
+        assert_eq!(c.prune_inbox(13 + DISMISSED_FOR_SECS).unwrap(), 1);
     }
 
     under_both_rules!(
@@ -686,7 +712,7 @@ mod tests {
             file_id: file,
             mtime: 100,
             size: 10,
-            rotation: pg_model::turns::Turns::NONE,
+            turns: pg_model::turns::Turns::NONE,
             error: "x".into(),
             retry: false,
         };

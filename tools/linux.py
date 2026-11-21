@@ -345,12 +345,12 @@ def fuzz(seconds):
 
 # The eval's folders in the container: the pg-eval volume (or PG_LINUX_CACHE/eval) at /eval, which keeps the sources,
 # builds, inputs and clone the scripts make between runs. Two host folders from .env are mounted when set: the photos the
-# JPEG comparison starts from (JPEG_SRC_DIR, read-only) and the JPEG encoder comparison's work folder (PG_JPEG_ENC_DIR), which
+# JPEG comparison starts from (PG_JPEG_SRC_DIR, read-only) and the JPEG encoder comparison's work folder (PG_JPEG_ENC_DIR), which
 # gpu_encoders.py on Windows writes into too.
 EVAL_ENV = [
-    "JPEG_EVAL=/eval/jpeg-eval",
-    "JPEG_INPUTS=/eval/jpeg-inputs",
-    "JPEG_RESTART_OUT=/eval/jpeg-restart",
+    "PG_JPEG_EVAL=/eval/jpeg-eval",
+    "PG_JPEG_INPUTS=/eval/jpeg-inputs",
+    "PG_JPEG_RESTART_OUT=/eval/jpeg-restart",
     "PG_BENCH_CLONE=/eval/photo-gallery",
 ]
 
@@ -371,14 +371,15 @@ def eval_mounts_and_env():
         env.append("PG_JPEG_ENC_DIR=/jpeg-enc")
     else:
         env.append("PG_JPEG_ENC_DIR=/eval/jpeg-enc")
-    source = os.environ.get("JPEG_SRC_DIR", "")
+    source = os.environ.get("PG_JPEG_SRC_DIR") or ""
     if source:
         if not Path(source).is_dir():
-            fail(f"JPEG_SRC_DIR is not a folder: {source}")
+            fail(f"PG_JPEG_SRC_DIR is not a folder: {source}")
         mounts_list += ["-v", f"{posix(source)}:/jpeg-src:ro"]
-        env.append("JPEG_SRC_DIR=/jpeg-src")
-    if os.environ.get("JPEG_NAMES"):  # a subset of linux.py's NAMES (eval/jpeg-decoders/linux.py)
-        env.append(f"JPEG_NAMES={os.environ['JPEG_NAMES']}")
+        env.append("PG_JPEG_SRC_DIR=/jpeg-src")
+    names = os.environ.get("PG_JPEG_NAMES") or None  # a subset of linux.py's NAMES (eval/jpeg-decoders/linux.py)
+    if names:
+        env.append(f"PG_JPEG_NAMES={names}")
     return mounts_list, env
 
 

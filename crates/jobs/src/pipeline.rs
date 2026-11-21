@@ -37,7 +37,7 @@ pub struct Options {
     pub slots: usize,
     /// The bytes of file buffers the pass holds at most (read, waiting, being processed, or idle in the pool). A
     /// file larger than all of it is read alone. [`Options::budget`] by default.
-    pub buffer_bytes: usize,
+    pub buffer_bytes: u64,
     /// The budget a governor shares among a run's lanes ([`crate::governor::Governor`]): when set, the pool reads it as it
     /// changes, in place of `buffer_bytes`.
     pub budget: Option<Arc<Budget>>,
@@ -47,7 +47,7 @@ pub struct Options {
 }
 
 /// The budget per read in flight and per worker: a large camera JPEG (24 MP at high quality).
-const BUFFER_PER_SLOT: usize = 12 << 20;
+const BUFFER_PER_SLOT: u64 = 12 << 20;
 
 /// The reads in flight of a pipeline (`Options::new`), and the default the other pools are sized by.
 pub const READERS: usize = 8;
@@ -82,8 +82,8 @@ impl Options {
     /// file while it processes it. Less starves the readers (24 MP JPEGs on the HDD, 8 readers and
     /// 12 workers, read 4% slower with 128 MB at the default slots, and no faster with 512 MB than with this,
     /// 240 MB).
-    pub fn budget(readers: usize, workers: usize) -> usize {
-        (readers + workers) * BUFFER_PER_SLOT
+    pub fn budget(readers: usize, workers: usize) -> u64 {
+        u64::try_from(readers + workers).unwrap_or(u64::MAX).saturating_mul(BUFFER_PER_SLOT)
     }
 }
 
@@ -752,7 +752,7 @@ impl Drop for Lease<'_> {
 
 impl Pool {
     #[cfg(test)]
-    fn new(budget: usize, slots: usize) -> Pool {
+    fn new(budget: u64, slots: usize) -> Pool {
         Pool::with_budget(Arc::new(Budget::new(budget)), slots)
     }
 
@@ -775,7 +775,9 @@ impl Pool {
             if st.stopped {
                 return None;
             }
-            let budget = self.budget.get();
+            // The budget is bytes the platform sets (a u64); the buffers are counted in usize. A budget past the address
+            // space holds every buffer there is.
+            let budget = usize::try_from(self.budget.get()).unwrap_or(usize::MAX);
             if st.serving == i && st.lent < self.slots {
                 // Largest first, so the smallest is last.
                 st.idle.sort_unstable_by_key(|b| std::cmp::Reverse(b.capacity()));
@@ -886,7 +888,7 @@ mod tests {
         assert!(st.idle.len() + st.lent <= pool.slots);
     }
 
-    /// Grants come in list order, within the budget, and a file larger than it alone.
+    // Grants come in list order, within the budget, and a file larger than it alone.
     #[test]
     fn pool_grants_in_order_within_the_budget() {
         let pool = Pool::new(100, 4);
@@ -916,7 +918,7 @@ mod tests {
         check(&pool, &[]);
     }
 
-    /// Files of growing and shrinking sizes read one after another: one buffer, grown when a file needs more.
+    // Files of growing and shrinking sizes read one after another: one buffer, grown when a file needs more.
     #[test]
     fn a_pool_reuses_its_buffers_whatever_the_sizes() {
         let pool = Pool::new(1 << 20, 8);
@@ -938,7 +940,7 @@ mod tests {
         assert_eq!(pool.state.lock().unwrap().idle.len(), 0);
     }
 
-    /// However far ahead the readers are, there are never more buffers than slots: a reader waits for a slot.
+    // However far ahead the readers are, there are never more buffers than slots: a reader waits for a slot.
     #[test]
     fn a_pool_lends_no_more_buffers_than_slots() {
         let pool = Pool::new(1 << 30, 3);
@@ -955,7 +957,7 @@ mod tests {
         assert_eq!(pool.state.lock().unwrap().idle.len(), 3);
     }
 
-    /// A growth that doesn't fit the budget frees the larger idle buffers first, and only as many as it needs.
+    // A growth that doesn't fit the budget frees the larger idle buffers first, and only as many as it needs.
     #[test]
     fn a_pool_frees_idle_buffers_to_fit_a_growth() {
         let pool = Pool::new(1000, 4);
@@ -985,8 +987,8 @@ mod tests {
         drop(held);
     }
 
-    /// A whole pass of small files with one slow worker, the readers far ahead of it: every file is read whole and
-    /// processed once, through slots and a channel far smaller than the pass.
+    // A whole pass of small files with one slow worker, the readers far ahead of it: every file is read whole and
+    // processed once, through slots and a channel far smaller than the pass.
     #[test]
     fn a_pass_reads_every_file_within_its_slots() {
         let dir = pg_testkit::run_folder("scratch_jobs", "pipeline").unwrap();
@@ -1096,8 +1098,8 @@ mod tests {
         (results, inits.into_inner())
     }
 
-    /// A stop asked while item 5 is processed ends the reading, and the pass sinks every item that ran: item 5's result
-    /// too, which lands after the quick items' (it sleeps first). Nothing that had not started runs.
+    // A stop asked while item 5 is processed ends the reading, and the pass sinks every item that ran: item 5's result
+    // too, which lands after the quick items' (it sleeps first). Nothing that had not started runs.
     #[test]
     fn a_stop_sinks_the_items_in_flight_and_runs_no_more() {
         let (dir, items) = numbered_files("pipeline-stop", 40);
@@ -1146,7 +1148,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A sink that says stop ends the pass at once: it is not called again, and nothing is drained after it.
+    // A sink that says stop ends the pass at once: it is not called again, and nothing is drained after it.
     #[test]
     fn a_sink_that_says_stop_is_not_called_again() {
         let (dir, items) = numbered_files("pipeline-sink-stop", 20);
@@ -1231,8 +1233,8 @@ mod tests {
         assert!(error.contains("worker setup") && error.contains("no state"), "{error}");
     }
 
-    /// `sink` fails while the job is paused: the readers paused at their checkpoint (two of them) stop waiting, and
-    /// the pass returns its error without a resume.
+    // `sink` fails while the job is paused: the readers paused at their checkpoint (two of them) stop waiting, and
+    // the pass returns its error without a resume.
     #[test]
     fn a_sink_error_while_paused_returns_without_a_resume() {
         let outcome = within_timeout(|| {
@@ -1269,7 +1271,7 @@ mod tests {
         assert_eq!(outcome, (Err("the sink fails".to_string()), true));
     }
 
-    /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
+    // A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
     #[test]
     fn files_open_as_std_opens_them() {
         let root = pg_testkit::run_folder("scratch_jobs", "open").unwrap();
@@ -1349,7 +1351,7 @@ mod tests {
         assert_eq!(within_timeout(a_gather_pass), [10, 6000, 7000, 300]);
     }
 
-    /// A lease grown past its admission is counted by the pool as it grew, and given back as one buffer.
+    // A lease grown past its admission is counted by the pool as it grew, and given back as one buffer.
     #[test]
     fn a_grown_lease_is_counted_once() {
         let pool = Pool::new(1 << 20, 4);
@@ -1372,8 +1374,8 @@ mod tests {
         rx
     }
 
-    /// A shrink under buffers in use holds grants back: nothing in use is freed, and a take waits until enough buffers
-    /// come back, then is granted.
+    // A shrink under buffers in use holds grants back: nothing in use is freed, and a take waits until enough buffers
+    // come back, then is granted.
     #[test]
     fn a_shrink_with_buffers_held_waits_for_them_to_come_back() {
         within_timeout(|| {
@@ -1395,8 +1397,8 @@ mod tests {
         });
     }
 
-    /// A grow is seen by a take already waiting on the budget, with no grant or give to wake it: the timed wait
-    /// picks the new budget up within a few of its periods.
+    // A grow is seen by a take already waiting on the budget, with no grant or give to wake it: the timed wait
+    // picks the new budget up within a few of its periods.
     #[test]
     fn a_grow_is_seen_by_a_waiting_take_within_a_few_periods() {
         within_timeout(|| {
@@ -1418,7 +1420,7 @@ mod tests {
         });
     }
 
-    /// A stop ends a take that waits on the budget: it returns `None`.
+    // A stop ends a take that waits on the budget: it returns `None`.
     #[test]
     fn a_stop_ends_a_take_waiting_on_the_budget() {
         within_timeout(|| {
@@ -1436,8 +1438,8 @@ mod tests {
         });
     }
 
-    /// A budget of one byte (the least it can be) still grants a file larger than it, alone, and the files after it
-    /// are granted in turn: the pool never deadlocks at the minimum.
+    // A budget of one byte (the least it can be) still grants a file larger than it, alone, and the files after it
+    // are granted in turn: the pool never deadlocks at the minimum.
     #[test]
     fn a_budget_of_one_byte_grants_an_oversize_file_alone() {
         within_timeout(|| {
@@ -1483,7 +1485,7 @@ mod batched_tests {
         Read::Streamed { bytes: 0 }
     }
 
-    /// Every result reaches the writer, in batches, and the writer's state comes back with the pass's `Ok`.
+    // Every result reaches the writer, in batches, and the writer's state comes back with the pass's `Ok`.
     #[test]
     fn every_result_is_written_and_the_writer_comes_back() {
         let items: Vec<usize> = (0..1000).collect();
@@ -1509,7 +1511,7 @@ mod batched_tests {
         assert_eq!(ctl.snapshot().done, 1000);
     }
 
-    /// The count goes on while a write waits: a count held behind the write would stop at one batch.
+    // The count goes on while a write waits: a count held behind the write would stop at one batch.
     #[test]
     fn the_count_goes_on_while_a_write_waits() {
         let items: Vec<usize> = (0..400).collect();
@@ -1539,7 +1541,7 @@ mod batched_tests {
         assert_eq!(ctl.snapshot().done, 400);
     }
 
-    /// A write that asks to stop ends the pass: nothing is written after it, and the pass is `Ok`.
+    // A write that asks to stop ends the pass: nothing is written after it, and the pass is `Ok`.
     #[test]
     fn a_stop_from_the_writer_writes_nothing_more() {
         let items: Vec<usize> = (0..1000).collect();
@@ -1564,7 +1566,7 @@ mod batched_tests {
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
-    /// A write that fails ends the pass with its error, and the writer's state still holds what was written before.
+    // A write that fails ends the pass with its error, and the writer's state still holds what was written before.
     #[test]
     fn an_error_from_the_writer_keeps_what_was_written_before() {
         let items: Vec<usize> = (0..1000).collect();
@@ -1590,7 +1592,7 @@ mod batched_tests {
         assert!(written.len() >= 100);
     }
 
-    /// A panic in a write is the pass's error, not a crash, and the writer's state comes back.
+    // A panic in a write is the pass's error, not a crash, and the writer's state comes back.
     #[test]
     fn a_panic_in_the_writer_is_the_passes_error() {
         let items: Vec<usize> = (0..300).collect();
@@ -1613,7 +1615,7 @@ mod batched_tests {
         assert!(panics::is_panic(&error), "{error:#}");
     }
 
-    /// A batch is never held longer than twice the batch size, however slow the writes are.
+    // A batch is never held longer than twice the batch size, however slow the writes are.
     #[test]
     fn no_batch_grows_past_twice_the_size() {
         let items: Vec<usize> = (0..2000).collect();

@@ -14,13 +14,12 @@ use std::path::Path;
 use crate::core::Catalog;
 use crate::lifecycle::{set_borders_version, set_import_version, set_thumbs_version};
 use crate::queue;
-use pg_analysis::analyze::IMPORT_VERSION;
-use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::PLACEHOLDER_VERSION;
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
 use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
+use pg_model::versions::{BORDERS_VERSION, IMPORT_VERSION, THUMBS_VERSION};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Params, Row, params};
 
 /// A connection of the test's own to the catalog file at `path`.
@@ -81,9 +80,9 @@ pub(crate) fn set_size(c: &Catalog, id: FileId, size: i64) {
     c.conn.execute("UPDATE files SET size = ?2 WHERE id = ?1", params![id.get(), size]).unwrap();
 }
 
-/// The turns the catalog keeps for a file (its `files.rotation`).
+/// The turns the catalog keeps for a file (its `files.turns`).
 pub(crate) fn set_rotation(c: &Catalog, id: FileId, turns: Turns) {
-    c.conn.execute("UPDATE files SET rotation = ?2 WHERE id = ?1", params![id.get(), turns.get()]).unwrap();
+    c.conn.execute("UPDATE files SET turns = ?2 WHERE id = ?1", params![id.get(), turns.get()]).unwrap();
 }
 
 pub(crate) fn file_size(c: &Catalog, id: FileId) -> i64 {
@@ -94,7 +93,7 @@ pub(crate) fn file_size(c: &Catalog, id: FileId) -> i64 {
 pub(crate) fn rotation_and_width(c: &Catalog, id: FileId) -> (i64, i64) {
     c.conn
         .query_row(
-            "SELECT f.rotation, a.width FROM files f JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
+            "SELECT f.turns, a.width FROM files f JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
             [id.get()],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -154,7 +153,7 @@ pub(crate) fn set_placeholder(c: &Catalog, id: FileId, bytes: &[u8]) {
     c.conn
         .execute(
             "INSERT OR REPLACE INTO placeholders(file_id, size, mtime, rotation, version, hash)
-             SELECT id, size, mtime, rotation, ?2, ?3 FROM files WHERE id = ?1",
+             SELECT id, size, mtime, turns, ?2, ?3 FROM files WHERE id = ?1",
             params![id.get(), PLACEHOLDER_VERSION, bytes],
         )
         .unwrap();
@@ -273,12 +272,12 @@ pub(crate) fn newer_borders_version(c: &Catalog) {
 /// The thumbnails' version as an older build left it: the stored mark (`meta.thumbs_version`), older than this build's
 /// thumbnailer.
 pub(crate) fn older_thumbs_version(c: &Catalog) {
-    c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'thumbs_version'", [pg_render::THUMBS_VERSION - 1]).unwrap();
+    c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'thumbs_version'", [THUMBS_VERSION - 1]).unwrap();
 }
 
 /// This build starts on the catalog: its thumbnailer's version is taken, and a failure of an older one is listed again.
 pub(crate) fn start_thumbs_version(c: &Catalog) {
-    set_thumbs_version(&c.conn, pg_render::THUMBS_VERSION).unwrap();
+    set_thumbs_version(&c.conn, THUMBS_VERSION).unwrap();
 }
 
 /// The rating the catalog holds for a file (`ratings`), unrated as `None`.

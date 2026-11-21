@@ -113,8 +113,14 @@ pub fn jpeg_exif(s: &Segment) -> Option<std::ops::Range<usize>> {
     (s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0")).then(|| s.start + 6..s.start + s.data.len())
 }
 
-/// Most bytes [`jpeg_import_bytes`] and [`png_import_bytes`] read of a file: past them, the file is read whole.
-pub const GATHER_CAP: u64 = 16 << 20;
+/// The most bytes a decode takes from one file, the one cap the containers and the metadata share: 16 MiB. Past it, a
+/// gather gives up and the file is read whole, and a compressed packet that would inflate past what is left is absent
+/// (`pg_metadata`).
+pub const DECODE_CAP: u64 = 16 << 20;
+
+/// Most bytes [`jpeg_import_bytes`] and [`png_import_bytes`] read of a file: past them, the file is read whole. This is
+/// [`DECODE_CAP`].
+pub const GATHER_CAP: u64 = DECODE_CAP;
 
 /// The bytes the import's reads take at a time: a JPEG's first read (its header, as a rule), a PNG's head and tail.
 /// Measured, cold: about as fast as 4 or 32 KiB on an NVMe disk, and as 64 KiB on a hard disk.
@@ -1208,15 +1214,8 @@ mod tests {
 
     /// Bytes that look like compressed data (no chunk headers in them, but for the odd chance).
     fn noise(len: usize, seed: u64) -> Vec<u8> {
-        let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
-        (0..len)
-            .map(|_| {
-                x ^= x << 13;
-                x ^= x >> 7;
-                x ^= x << 17;
-                x.to_le_bytes()[0]
-            })
-            .collect()
+        let mut rng = pg_testrng::Rng::new(seed);
+        (0..len).map(|_| rng.next_u64().to_le_bytes()[0]).collect()
     }
 
     /// A PNG laid out as an encoder writes one: chunks before the image data, the image data's chunks of these lengths,

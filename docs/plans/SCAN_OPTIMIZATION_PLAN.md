@@ -55,12 +55,12 @@ premises changed, and each is taken in below. This is one pass against the code,
   `scan_walk.again` 341,125,554 (they were 1,961,442,750 and 364,267,992). That commit also carries the pairing and
   import changes, so F's own cost is not isolated, and it is not measured.
 - **Migrations 14 and 15 belong to the pairing work:** `TO_14_PAIRING_EPOCH` (`meta.pairing_epoch`, with triggers on
-  `analysis` only) and `TO_15_HASHES_OWED`. `MIGRATIONS` ends at 15, so this plan's migration is 16. The MFT plan's
+  `analysis` only) and `TO_15_HASHES_OWED`. As of this reevaluation (2026-11-17), `MIGRATIONS` ended at 15, so this plan's migration was 16. The current build's schema is version 1 with no migrations (`crates/catalog/src/schema.rs`), so those steps are not in the code now; the numbers are kept as written. The MFT plan's
   "reaches version 13" was stale; its text is fixed.
 - **Memory statistics are off, by another route.** `bed9346` sets `LIBSQLITE3_FLAGS = "SQLITE_DEFAULT_MEMSTATUS=0"` in
   `.cargo/config.toml`. Phase 2 had rejected that route. See Phase 2.
 - **`rarray` is loaded on every catalog connection** (`core.rs:240`, `register`), and `rusqlite`'s `array` feature is on
-  (`Cargo.toml:39`). The precondition of Phase 5's items 6 and 8 holds for the catalog. The walk's workers don't have it.
+  (the workspace's rusqlite entry). The precondition of Phase 5's items 6 and 8 holds for the catalog. The walk's workers don't have it.
 - **A read-only connection opener exists:** `read_only(file, cache_kib)` (`core.rs:247`), which `Catalog::reader`
   (`core.rs:215`) uses. `Reader` still borrows the `Catalog`, so Phase 4's reason for a new owned type stands.
 - **`HeldLease` moved** to `lease.rs`. `ScanLease::held()` is at `core.rs:413`.
@@ -102,8 +102,8 @@ The main anchors now:
 | Walk: `folder_rows` and `prior_states` calls | `scan/src/lib.rs:508`; `:605` |
 | Walk: `seen_identity` and `upsert_file` calls | `scan/src/lib.rs:719`; `:733` |
 | Walk: `pair_after_scan` and `mark_missing` calls | `scan/src/lib.rs:624`; `:627` |
-| `LIBSQLITE3_FLAGS` | `.cargo/config.toml:7` |
-| `rusqlite` `array` feature; fork rev | `Cargo.toml:39`; `Cargo.toml:137` |
+| `LIBSQLITE3_FLAGS` | `.cargo/config.toml`, `[env]` table |
+| `rusqlite` `array` feature; fork rev | the rusqlite entry in `[workspace.dependencies]`; the rusqlite entry in `[patch.crates-io]` |
 
 **Open for you:**
 
@@ -455,7 +455,7 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
 
 - **The defines go in the fork's `libsqlite3-sys/build.rs`, behind a Cargo feature** (for example
   `photo-gallery-defaults`).
-  - The workspace depends on `rusqlite`, which passes features on to `libsqlite3-sys` (the fork's `Cargo.toml:53`:
+  - The workspace depends on `rusqlite`, which passes features on to `libsqlite3-sys` (the fork's `Cargo.toml`, its `bundled` feature:
     `bundled = ["libsqlite3-sys?/bundled", …]`).
   - So the fork's `rusqlite` gets a forwarding feature too, `photo-gallery-defaults =
     ["libsqlite3-sys?/photo-gallery-defaults"]`. The workspace enables it where it names `rusqlite`.
@@ -465,7 +465,7 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
   - But Cargo finds that config from the working directory of each invocation, not from the manifest. A build started
     elsewhere (`--manifest-path`, an IDE, a tool) would silently lose the flags.
   - A feature is part of the dependency graph, so it reaches every build.
-- The fork already carries this workspace's patches (the statement cache that doesn't copy the SQL, `Cargo.toml:124`),
+- The fork already carries this workspace's patches (the statement cache that doesn't copy the SQL, the rusqlite entry in `[patch.crates-io]`),
   so one more is in keeping.
 
 ### Phase 2: changes
@@ -479,7 +479,7 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
    - the forwarding feature in `rusqlite`;
    - a note in its README.
 
-   Then bump the `rev` in the workspace `Cargo.toml` (`:137`) and enable the feature.
+   Then bump the `rev` in the rusqlite entry of `[patch.crates-io]` in the workspace `Cargo.toml` and enable the feature.
 2. **A test** in `crates/catalog`: `PRAGMA compile_options` lists `DEFAULT_MEMSTATUS=0` and `DEFAULT_LOOKASIDE=1200,200`
    (`sqlite3.c:23438-23445`).
 3. **The variant probe's lookaside and statistics variants** set their values explicitly, through

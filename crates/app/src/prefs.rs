@@ -91,7 +91,9 @@ mod yandex_folder {
 }
 
 /// `row_height` as the file holds it: a whole number of pixels. A file written before it was whole reads its float, rounded
-/// and clamped into the grid's range, so an old value is kept as the nearest one the grid takes.
+/// and clamped into the grid's range, so an old value is kept as the nearest one the grid takes. This module is the file
+/// boundary for a row height: the one place its number is converted to and from `RowHeight`. Everything else in the app
+/// takes the typed value.
 mod row_height {
     use pg_model::size::RowHeight;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

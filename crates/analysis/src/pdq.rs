@@ -338,8 +338,8 @@ mod tests {
         decimate(&luma, width, height)
     }
 
-    /// The same bits as before, every coefficient and the quality, on noise (every pixel different) at the sizes
-    /// where the windows' phases meet the edges, and at random sizes.
+    // The same bits as before, every coefficient and the quality, on noise (every pixel different) at the sizes
+    // where the windows' phases meet the edges, and at random sizes.
     #[test]
     fn columns_at_once_change_no_bit() {
         let mut x: u64 = 0x2545_F491_4F6C_DD1D;
@@ -376,8 +376,8 @@ mod tests {
         }
     }
 
-    /// Each derived variant must be close to the hash of the actually transformed pixels (not exact: the
-    /// decimation grid isn't perfectly symmetric).
+    // Each derived variant must be close to the hash of the actually transformed pixels (not exact: the
+    // decimation grid isn't perfectly symmetric).
     #[test]
     fn dihedral_matches_transformed_pixels() {
         let (w, h) = (320, 240);
@@ -408,8 +408,8 @@ mod tests {
         }
     }
 
-    /// The kept orientations are the first four variants, and the other four are their transposes bit for bit: what
-    /// the catalog (`analysis.pdq_dihedral` holds four) and the join (it transposes the queries) rely on.
+    // The kept orientations are the first four variants, and the other four are their transposes bit for bit: what
+    // the catalog (`analysis.pdq_dihedral` holds four) and the join (it transposes the queries) rely on.
     #[test]
     fn the_kept_orientations_and_their_transposes_are_the_eight_variants() {
         for (w, h) in [(512, 384), (300, 512), (64, 64), (97, 211), (320, 240)] {

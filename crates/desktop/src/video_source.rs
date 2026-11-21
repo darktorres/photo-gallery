@@ -3,6 +3,7 @@
 
 pub(crate) mod state;
 
+use crate::rows::file_id_of;
 use crate::video_player;
 use crate::video_player_bridge::ffi::VideoPlayer;
 use state::VideoSourceRust;
@@ -12,7 +13,6 @@ use crate::video_source_bridge::qobject;
 use core::pin::Pin;
 
 use cxx_qt::CxxQtType;
-use pg_model::ids::FileId;
 
 /// The player, when one is attached.
 fn player_of(rust: &mut VideoSourceRust) -> Option<Pin<&mut VideoPlayer>> {
@@ -28,13 +28,19 @@ impl qobject::VideoSource {
         self.as_mut().rust_mut().get_mut().player = player;
     }
 
-    pub(crate) fn play(mut self: Pin<&mut Self>, file_id: i64) {
-        let path = crate::app::get().catalogs().file_path(FileId::new(file_id));
+    pub(crate) fn play(mut self: Pin<&mut Self>, file_id: f64) {
+        let Some(file) = file_id_of(file_id) else {
+            if let Some(player) = player_of(self.as_mut().rust_mut().get_mut()) {
+                player.clear();
+            }
+            return;
+        };
+        let path = crate::app::get().catalogs().file_path(file);
         let Some(player) = player_of(self.as_mut().rust_mut().get_mut()) else { return };
         match path {
             Ok(path) => video_player::play_path(player, &path),
             Err(err) => {
-                pg_log::warn("video", &format!("file {file_id}: {err:#}"));
+                pg_log::warn("video", &format!("file {}: {err:#}", file.get()));
                 player.clear();
             }
         }

@@ -313,8 +313,8 @@ mod tests {
         (d.colortype().unwrap(), d.dimensions().unwrap(), d.read_image().unwrap())
     }
 
-    /// A CMYK TIFF is cropped in its CMYK samples, at its depth and in its kind: no conversion to RGB, and a
-    /// BigTIFF stays one.
+    // A CMYK TIFF is cropped in its CMYK samples, at its depth and in its kind: no conversion to RGB, and a
+    // BigTIFF stays one.
     #[test]
     fn a_cmyk_tiff_crops_as_cmyk_in_its_own_kind() {
         let (w, h) = (7u32, 5u32);
@@ -361,7 +361,7 @@ mod tests {
         assert!(cropped(&file.into_inner(), Format::Tiff, 5, 0, 3, 1).is_err());
     }
 
-    /// An RGB BigTIFF stays a BigTIFF, with its pixels.
+    // An RGB BigTIFF stays a BigTIFF, with its pixels.
     #[test]
     fn an_rgb_bigtiff_crops_as_a_bigtiff() {
         let (w, h) = (6u32, 4u32);
@@ -389,7 +389,7 @@ mod tests {
             .unwrap()
     }
 
-    /// The quality read from a libjpeg-turbo JPEG is the one it was encoded at, for every quality from 1 to 100.
+    // The quality read from a libjpeg-turbo JPEG is the one it was encoded at, for every quality from 1 to 100.
     #[test]
     fn jpeg_quality_reads_the_quality_libjpeg_wrote() {
         for q in 1..=100 {
@@ -397,7 +397,7 @@ mod tests {
         }
     }
 
-    /// A JPEG cut exactly keeps its colour space and subsampling, and its size is the crop's, on no block grid.
+    // A JPEG cut exactly keeps its colour space and subsampling, and its size is the crop's, on no block grid.
     #[test]
     fn jpeg_cropped_is_exact_and_keeps_the_subsampling() {
         for subsamp in [Subsamp::Sub2x2, Subsamp::Sub2x1, Subsamp::None, Subsamp::Gray] {
@@ -412,8 +412,8 @@ mod tests {
         assert!(jpeg_cropped(&jpeg_at(85, Subsamp::Sub2x2), [21, 0, 4, 1], 85).is_err(), "a crop outside the image");
     }
 
-    /// A file with no luminance table to read has no quality; a table that no quality gives still reads as the
-    /// nearest one.
+    // A file with no luminance table to read has no quality; a table that no quality gives still reads as the
+    // nearest one.
     #[test]
     fn jpeg_quality_needs_a_luminance_table() {
         assert_eq!(jpeg_quality(&[0xFF, 0xD8, 0xFF, 0xD9]), None);
@@ -432,7 +432,7 @@ mod tests {
         assert!((45..=55).contains(&q), "{q}");
     }
 
-    /// A 16-bit RGB TIFF is cropped in its 16-bit samples, at its depth and in its kind, classic or BigTIFF.
+    // A 16-bit RGB TIFF is cropped in its 16-bit samples, at its depth and in its kind, classic or BigTIFF.
     #[test]
     fn an_rgb16_tiff_crops_as_rgb16_in_its_own_kind() {
         let (w, h) = (6u32, 4u32);

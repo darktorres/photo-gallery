@@ -25,8 +25,8 @@ pub mod qobject {
         #[qproperty(bool, pixels, READ, WRITE, NOTIFY, FINAL)]
         /// The fitted image's size, in device pixels (the window's size times the device pixel ratio). The viewer
         /// renders the fit at it once it has settled after a resize (`fitSource` takes the size it settled on).
-        #[qproperty(i64, fit_width, cxx_name = "fitWidth", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i64, fit_height, cxx_name = "fitHeight", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(u32, fit_width, cxx_name = "fitWidth", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(u32, fit_height, cxx_name = "fitHeight", READ, WRITE, NOTIFY, FINAL)]
         type Viewport = super::ViewportRust;
     }
 
@@ -70,7 +70,7 @@ pub mod qobject {
         /// viewer settled on): its URL. The size is an argument, so a QML binding to the URL follows it.
         #[qinvokable]
         #[cxx_name = "fitSource"]
-        fn fit_source(self: &Viewport, key: &QString, width: i64, height: i64) -> QString;
+        fn fit_source(self: &Viewport, key: &QString, width: u32, height: u32) -> QString;
 
         /// The region of the image on screen, rendered at the zoom: its URL, or "" when none of it shows. Its
         /// fractions are `regionX`, `regionY`, `regionW` and `regionH`.

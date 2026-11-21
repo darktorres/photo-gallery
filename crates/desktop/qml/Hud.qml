@@ -55,7 +55,7 @@ Item {
         color: "#999999"
         style: Text.Outline
         styleColor: "black"
-        text: (hud.index + 1) + " / " + hud.count
+        text: words.count(hud.index + 1) + " / " + words.count(hud.count)
     }
     Label {
         textFormat: Text.PlainText
@@ -86,7 +86,7 @@ Item {
         color: "#cccccc"
         style: Text.Outline
         styleColor: "black"
-        text: hud.info + (hud.rating > 0 ? "   " + Ratings.symbol(hud.rating) : "") + (hud.zoomable ? "   " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.settings.realSize ? "   " + words.text("ui-real-size") : "") + (hud.loupe ? "   " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? "   " + words.text("ui-turning") : "") + (hud.fitFailed ? "   " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? "   " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
+        text: hud.info + (hud.rating > 0 ? " · " + Ratings.symbol(hud.rating) : "") + (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.fitFailed ? " · " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
     }
 
     RatingBar {

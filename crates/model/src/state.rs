@@ -15,8 +15,8 @@ pub struct FileState {
     /// the platform listing's unit: FILETIME ticks (100 ns since 1601-01-01 UTC, `pg_platform::dir::listing`'s `mtime`).
     pub mtime: i64,
     pub rotation: Turns,
-    /// The file's size (`files.size`): with `mtime`, what the scanner decides a file changed by.
-    pub size: i64,
+    /// The file's size in bytes (`files.size`): with `mtime`, what the scanner decides a file changed by.
+    pub size: u64,
     /// Quarter turns clockwise asked for and not yet written (`queue_rotation`): what is made from the file is shown
     /// turned by them. Its name is `pending_turns`, as the grid's entry and `Version` name the same count; `rotation`
     /// above is the stored count.
@@ -42,5 +42,6 @@ pub struct FileSource {
 pub struct Placeholder {
     /// `None` before the import.
     pub hash: Option<ThumbHash>,
-    pub turns: Turns,
+    /// The quarter turns the file is shown turned by (its stored turns, plus the pending ones).
+    pub shown_turns: Turns,
 }

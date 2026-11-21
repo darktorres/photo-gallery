@@ -21,8 +21,6 @@ import numpy as np
 from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
 from verify import (
-    ROTATIONS,
-    Checkpoint,
     Features,
     PairRunner,
     Prefetcher,
@@ -33,6 +31,7 @@ from verify import (
     work_image,
     write_outputs,
 )
+from verify_types import ROTATIONS, Checkpoint
 
 
 def main() -> None:

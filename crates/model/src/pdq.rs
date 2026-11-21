@@ -151,14 +151,11 @@ mod tests {
 
     #[test]
     fn the_word_transpose_is_the_bit_transpose_and_an_involution() {
-        let mut x = 0x9E37_79B9_7F4A_7C15u64;
+        let mut rng = pg_testrng::Rng::new(0x9E37_79B9_7F4A_7C15);
         for _ in 0..500 {
             let mut b = [0u8; 32];
             for byte in &mut b {
-                x ^= x << 13;
-                x ^= x >> 7;
-                x ^= x << 17;
-                *byte = x.to_le_bytes()[0];
+                *byte = rng.next_u64().to_le_bytes()[0];
             }
             let h = Hash(b);
             assert_eq!(h.transpose(), transpose_bits(&h));

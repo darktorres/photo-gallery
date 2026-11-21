@@ -8,16 +8,16 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::ids::FileId;
 
-/// A letterboxed picture (black bars at the top and bottom, the content between them).
-fn letterboxed() -> image::RgbImage {
-    image::RgbImage::from_fn(320, 240, |x, y| {
-        if !(40..200).contains(&y) {
-            image::Rgb([0, 0, 0])
-        } else {
-            let byte = |v: u32| u8::try_from(v % 256).unwrap_or(u8::MAX);
-            image::Rgb([byte(x * 7), byte(y * 13), byte((x + y) * 3)])
-        }
-    })
+/// A letterboxed picture, 320 × 240 as RGB bytes (black bars at the top and bottom, the content between them).
+fn letterboxed() -> Vec<u8> {
+    let byte = |v: u32| u8::try_from(v % 256).unwrap_or(u8::MAX);
+    (0..240u32)
+        .flat_map(|y| {
+            (0..320u32).flat_map(move |x| {
+                if !(40..200).contains(&y) { [0, 0, 0] } else { [byte(x * 7), byte(y * 13), byte((x + y) * 3)] }
+            })
+        })
+        .collect()
 }
 
 /// Every file under `dir`, recursively.
@@ -43,12 +43,14 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
     let opts = Options::new(pg_platform::priority::Priority::Normal);
 
     // Two folders, both called "images", with different pictures (the same bars, so both are cut the same way).
-    for (sub, pixel) in [("one", [255, 0, 0]), ("two", [0, 0, 255])] {
+    for (sub, pixel) in [("one", [255u8, 0, 0]), ("two", [0u8, 0, 255])] {
         let folder = dir.join(sub).join("images");
         std::fs::create_dir_all(&folder).unwrap();
         let mut img = letterboxed();
-        img.put_pixel(160, 120, image::Rgb(pixel));
-        img.save(folder.join("a.png")).unwrap();
+        let at = (120 * 320 + 160) * 3;
+        img[at..at + 3].copy_from_slice(&pixel);
+        std::fs::write(folder.join("a.png"), pg_testkit::encode(320, 240, &img, pg_testkit::Encoding::Png).unwrap())
+            .unwrap();
         let root = pg_platform::names::normalize_path(&folder).unwrap();
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();

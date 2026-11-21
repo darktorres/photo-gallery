@@ -20,12 +20,12 @@ extern "C" {
 #endif
 
 /* Largest accepted width or height. */
-#define EGPU_MAX_DIM 65500u
+#define EGPU_MAX_DIM 65535u
 
 typedef enum EgpuStatus {
     EGPU_OK = 0,
     EGPU_ERR_ARG = 1,     /* null pointer, zero count, bad option, index out of range */
-    EGPU_ERR_SIZE = 2,    /* a width or height is outside 1..65500 */
+    EGPU_ERR_SIZE = 2,    /* a width or height is outside 1..65535 */
     EGPU_ERR_RANGE = 3,   /* an image's pixels fall outside the device RGB buffer */
     EGPU_ERR_MEMORY = 4,  /* a device or host allocation failed */
     EGPU_ERR_CUDA = 5     /* a CUDA runtime call failed; see egpu_last_error() */

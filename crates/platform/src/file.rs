@@ -14,6 +14,37 @@ pub fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 use crate::native::NativePath;
 
+/// A file that couldn't be read, as the I/O error of the read (its kind and OS code kept whole). It is the one read
+/// failure the library names: `MakeError::Unreadable` holds it, and an error chain that holds it also holds the I/O
+/// error, as its [`std::error::Error::source`], so a check for either finds it.
+#[derive(Debug)]
+pub struct ReadFailed(io::Error);
+
+impl ReadFailed {
+    /// The I/O error of the read.
+    pub fn io(&self) -> &io::Error {
+        &self.0
+    }
+}
+
+impl From<io::Error> for ReadFailed {
+    fn from(error: io::Error) -> ReadFailed {
+        ReadFailed(error)
+    }
+}
+
+impl std::fmt::Display for ReadFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the file can't be read")
+    }
+}
+
+impl std::error::Error for ReadFailed {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 /// Open the file at `path` for reading, with every sharing mode and no flags: the call std makes, without std's
 /// conversion of the path into a new buffer for each file.
 #[cfg(windows)]
@@ -158,27 +189,29 @@ pub fn last_write_time(meta: &Metadata) -> i64 {
     i64::try_from(meta.last_write_time()).unwrap_or(i64::MAX)
 }
 
-/// A file's size and last write time ([`last_write_time`]), as the scanner records them, from its metadata.
-pub fn size_and_time(meta: &Metadata) -> io::Result<(i64, i64)> {
-    let size = i64::try_from(meta.len()).map_err(io::Error::other)?;
-    Ok((size, last_write_time(meta)))
+/// A file's size in bytes and last write time ([`last_write_time`]), as the scanner records them, from its metadata.
+pub fn size_and_time(meta: &Metadata) -> io::Result<(u64, i64)> {
+    Ok((meta.len(), last_write_time(meta)))
 }
 
 /// [`size_and_time`] of the file at `path` (a `names::disk_path`, which names it exactly).
-pub fn stat(path: &Path) -> io::Result<(i64, i64)> {
+pub fn stat(path: &Path) -> io::Result<(u64, i64)> {
     size_and_time(&std::fs::metadata(path)?)
 }
 
 /// [`size_and_time`] of an open file, from its handle.
-pub fn stat_of(file: &File) -> io::Result<(i64, i64)> {
+pub fn stat_of(file: &File) -> io::Result<(u64, i64)> {
     size_and_time(&file.metadata()?)
 }
 
-/// Elsewhere, the same count from the Unix time.
+/// Elsewhere, the same count from the Unix time. A time too far out for an i64 of ticks saturates at the bound.
 #[cfg(unix)]
 pub fn last_write_time(meta: &Metadata) -> i64 {
     use std::os::unix::fs::MetadataExt;
-    meta.mtime() * 10_000_000 + meta.mtime_nsec() / 100 + pg_model::date::FILETIME_UNIX_EPOCH_TICKS
+    meta.mtime()
+        .saturating_mul(10_000_000)
+        .saturating_add(meta.mtime_nsec() / 100)
+        .saturating_add(pg_model::date::FILETIME_UNIX_EPOCH_TICKS)
 }
 
 /// The birth time in FILETIME ticks, where the file system gives one (`statx` with `STATX_BTIME`, which std asks for in
@@ -187,7 +220,11 @@ pub fn last_write_time(meta: &Metadata) -> i64 {
 pub fn created_time(meta: &Metadata) -> Option<i64> {
     let since = meta.created().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
     let secs = i64::try_from(since.as_secs()).ok()?;
-    Some(pg_model::date::FILETIME_UNIX_EPOCH_TICKS + secs * 10_000_000 + i64::from(since.subsec_nanos() / 100))
+    Some(
+        pg_model::date::FILETIME_UNIX_EPOCH_TICKS
+            .saturating_add(secs.saturating_mul(10_000_000))
+            .saturating_add(i64::from(since.subsec_nanos() / 100)),
+    )
 }
 
 /// The file at `path` (a `names::disk_path`), open for reading, as the raw handle the video player takes over and
@@ -292,7 +329,7 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
 
-    /// A rename onto an existing name is refused and moves nothing; onto a free one it moves the file.
+    // A rename onto an existing name is refused and moves nothing; onto a free one it moves the file.
     #[test]
     fn a_rename_never_replaces() {
         let dir = crate::testing::run_folder("scratch_platform", "no-replace").unwrap();
@@ -308,7 +345,7 @@ mod tests {
         assert!(!from.exists());
     }
 
-    /// Each file kept aside takes the next free name, so an earlier one kept is never overwritten.
+    // Each file kept aside takes the next free name, so an earlier one kept is never overwritten.
     #[test]
     fn a_file_kept_aside_takes_the_next_free_name() {
         let dir = crate::testing::run_folder("scratch_platform", "keep-aside").unwrap();
@@ -322,7 +359,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("gallery.json.bad.2")).unwrap(), "3");
     }
 
-    /// The video player's handle is the file, open for reading, through a folder whose name ends in a dot.
+    // The video player's handle is the file, open for reading, through a folder whose name ends in a dot.
     #[cfg(windows)]
     #[test]
     fn the_player_handle_is_the_file_in_a_dotted_folder() {
@@ -341,8 +378,8 @@ mod tests {
         assert_eq!(io::read_to_string(file).unwrap(), "dotted");
     }
 
-    /// The copy's open writes the file in place; other programs may read it meanwhile, and on Windows a writer of theirs
-    /// is refused until the handle closes. Its size is read from the handle.
+    // The copy's open writes the file in place; other programs may read it meanwhile, and on Windows a writer of theirs
+    // is refused until the handle closes. Its size is read from the handle.
     #[test]
     fn a_copy_open_writes_in_place_and_denies_other_writers() {
         let dir = crate::testing::run_folder("scratch_platform", "open-copy").unwrap();
@@ -367,7 +404,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A temporary is removed when its guard drops, unless it was persisted; one never made is no error.
+    // A temporary is removed when its guard drops, unless it was persisted; one never made is no error.
     #[test]
     fn a_temp_file_is_removed_unless_persisted() {
         let dir = crate::testing::run_folder("scratch_platform", "temp-file").unwrap();

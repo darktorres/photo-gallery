@@ -24,7 +24,7 @@ proptest! {
         kind in 0u8..5,
         (x, y) in (0.0f64..1.0, 0.0f64..1.0),
         (w, h) in (0.001f64..=1.0, 0.001f64..=1.0),
-        (pw, ph) in (1usize..=16384, 1usize..=16384),
+        (pw, ph) in (1usize..=8192, 1usize..=8192),
         height in 16u32..=2048,
         id in any::<u64>(),
         original in any::<bool>(),

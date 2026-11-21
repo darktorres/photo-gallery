@@ -14,4 +14,5 @@ workspace = true
 crc32fast.workspace = true
 
 [dev-dependencies]
+pg-testrng = { path = "../testrng" }
 proptest.workspace = true

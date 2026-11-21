@@ -208,7 +208,12 @@ fn analyze_video(path: &Path, turns: Turns) -> Result<Analysis> {
         height,
         frames: p.frames,
         taken: p.taken,
-        media: Media::Video(VideoFacts { codec: p.codec, duration_ms: p.duration_ms, poster_ms: poster }),
+        // An unknown length is the grid's sentinel; the poster is clamped to 0..=POSTER_MAX_MS by `poster_ms`.
+        media: Media::Video(VideoFacts {
+            codec: p.codec,
+            duration_ms: u32::try_from(p.duration_ms).unwrap_or(pg_model::grid::Entry::NO_DURATION),
+            poster_ms: u32::try_from(poster).unwrap_or(0),
+        }),
     })
 }
 
@@ -228,8 +233,8 @@ mod tests {
         assert!(file_hash_of(&dir.join("missing.bin")).is_err());
     }
 
-    /// The duplicate hashes are the same whenever they are made: the decode at the hashing size is deterministic, and the
-    /// import stores none.
+    // The duplicate hashes are the same whenever they are made: the decode at the hashing size is deterministic, and the
+    // import stores none.
     #[test]
     fn the_hashes_are_made_from_the_same_decode_each_time() {
         let bytes = pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap();

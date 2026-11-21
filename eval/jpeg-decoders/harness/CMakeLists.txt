@@ -41,11 +41,11 @@ if(PARAJPEG_SRC)
                               COMPILE_DEFINITIONS HAVE_PARAJPEG)
   target_link_libraries(harness PRIVATE "${PARAJPEG_LIB}")
   if(WIN32)  # built with clang-cl: __builtin_cpu_supports needs clang's builtins runtime
-    # the LLVM install: LLVM_DIR from the environment (win_env.py sets it), default ProgramFiles\LLVM
-    if("$ENV{LLVM_DIR}" STREQUAL "")
+    # the LLVM install: PG_LLVM_DIR from the environment (win_env.py sets it), default ProgramFiles\LLVM
+    if("$ENV{PG_LLVM_DIR}" STREQUAL "")
       set(LLVM_ROOT "$ENV{ProgramFiles}/LLVM")
     else()
-      set(LLVM_ROOT "$ENV{LLVM_DIR}")
+      set(LLVM_ROOT "$ENV{PG_LLVM_DIR}")
     endif()
     file(GLOB CLANG_RT "${LLVM_ROOT}/lib/clang/*/lib/windows/clang_rt.builtins-x86_64.lib")
     target_link_libraries(harness PRIVATE ${CLANG_RT})

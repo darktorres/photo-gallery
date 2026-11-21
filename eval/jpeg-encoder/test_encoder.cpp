@@ -38,9 +38,16 @@ namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------- options and reporting
 
-static std::string g_sample_dir = "C:/Users/Torres/AppData/Local/Temp/claude/2c16f13ff155207f/1d1a3c2b-7598-4f16-b017-c47c7c340cad/scratchpad/gpu_sample";
-static std::string g_work_dir = "C:/Users/Torres/AppData/Local/Temp/claude/2c16f13ff155207f/1d1a3c2b-7598-4f16-b017-c47c7c340cad/scratchpad/jpeg_encoder_work";
-static std::string g_ssim_exe = "D:/PhotoGallery/tools/jpeg-eval/build/jpegli/tools/ssimulacra2.exe";
+// Defaults: scratch under the OS temp folder, and ssimulacra2 from PG_HOME's libjxl build (PG_HOME is read from the
+// environment; `just` loads it from .env). --sample, --work and --ssim override them.
+static std::string default_ssim_exe() {
+    const char* home = std::getenv("PG_HOME");
+    if (!home || !*home) return "";
+    return (fs::path(home) / "tools" / "jpeg-eval" / "build" / "jpegli" / "tools" / "ssimulacra2.exe").string();
+}
+static std::string g_sample_dir = (fs::temp_directory_path() / "pg_gpu_sample").string();
+static std::string g_work_dir = (fs::temp_directory_path() / "pg_jpeg_encoder_work").string();
+static std::string g_ssim_exe = default_ssim_exe();
 static bool g_use_ssim = true;
 static int g_failures = 0;
 
@@ -1253,6 +1260,10 @@ int main(int argc, char** argv) {
         }
     }
     if (which.empty()) which = {1, 2, 3, 4, 5, 6, 7};
+    if (g_use_ssim && g_ssim_exe.empty() && which.count(6)) {
+        printf("PG_HOME is not set and no --ssim EXE given: set PG_HOME, pass --ssim, or pass --no-ssim\n");
+        return 2;
+    }
 
     int dev = 0;
     cudaDeviceProp prop{};

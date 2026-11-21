@@ -3,7 +3,6 @@
 //! the plain path names) is neither read nor written. Windows only: the names are normalized there alone.
 #![cfg(windows)]
 
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -16,17 +15,15 @@ use pg_platform::native::verbatim;
 
 /// A letterboxed picture; `seed` changes its content, so that two files' bytes differ.
 fn jpeg(seed: u32) -> Result<Vec<u8>> {
-    let img = image::RgbImage::from_fn(320, 240, |x, y| {
-        if !(40..200).contains(&y) {
-            image::Rgb([0, 0, 0])
-        } else {
-            let byte = |v: u32| u8::try_from((v + seed) % 256).unwrap_or(u8::MAX);
-            image::Rgb([byte(x * 7), byte(y * 13), byte((x + y) * 3)])
-        }
-    });
-    let mut bytes = Cursor::new(Vec::new());
-    img.write_to(&mut bytes, image::ImageFormat::Jpeg)?;
-    Ok(bytes.into_inner())
+    let byte = |v: u32| u8::try_from((v + seed) % 256).unwrap_or(u8::MAX);
+    let rgb: Vec<u8> = (0..240u32)
+        .flat_map(|y| {
+            (0..320u32).flat_map(move |x| {
+                if !(40..200).contains(&y) { [0, 0, 0] } else { [byte(x * 7), byte(y * 13), byte((x + y) * 3)] }
+            })
+        })
+        .collect();
+    pg_testkit::encode(320, 240, &rgb, pg_testkit::Encoding::Jpeg)
 }
 
 /// Every file under `dir`, recursively.

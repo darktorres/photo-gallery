@@ -12,6 +12,15 @@ import sys
 from pathlib import Path
 
 
+# The CSV's `cycles` column holds millions of cycles; the other timed parts are in ms. The values are stored and compared raw.
+MILLIONS = ("cycles",)
+
+
+def shown(part: str, value: float) -> str:
+    """A part's median for display: millions carry an M label, so the unit is never implied."""
+    return f"{value:.0f} M" if part in MILLIONS else f"{value:.0f}"
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -24,7 +33,7 @@ def main() -> None:
             if not runs:
                 continue
             medians = {p: statistics.median(float(r[p].replace(",", ".")) for r in runs) for p in parts}
-            print(workload, build, " ".join(f"{p} {medians[p]:.0f}" for p in parts))
+            print(workload, build, " ".join(f"{p} {shown(p, medians[p])}" for p in parts))
 
 
 if __name__ == "__main__":

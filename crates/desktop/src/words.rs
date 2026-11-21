@@ -19,6 +19,10 @@ impl qobject::Words {
         QString::from(&text::timecode(u64::try_from(seconds).unwrap_or(0)))
     }
 
+    pub(crate) fn count(&self, n: i32) -> QString {
+        QString::from(&text::group_digits(u64::try_from(n).unwrap_or(0)))
+    }
+
     pub(crate) fn text(&self, id: &QString) -> QString {
         QString::from(&text::ui(&String::from(id), 0.0, "", ""))
     }

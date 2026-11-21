@@ -64,29 +64,8 @@ pub fn wait_for_path(path: &Path, within: Duration) {
     wait_until(within, || format!("{} to appear", path.display()), || path.exists());
 }
 
-/// A deterministic generator for the tests' random cases (SplitMix64): one seed draws the same cases on every run.
-pub struct Rng(u64);
-
-impl Rng {
-    /// A generator from `seed`.
-    pub fn new(seed: u64) -> Rng {
-        Rng(seed)
-    }
-
-    /// The next 64 random bits.
-    pub fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    /// A number below `n` (a range of at least one).
-    pub fn below(&mut self, n: usize) -> usize {
-        usize::try_from(self.next_u64() % u64::try_from(n.max(1)).unwrap_or(1)).unwrap_or(0)
-    }
-}
+/// The tests' deterministic generator (`pg-testrng`, the one every test draws its cases from).
+pub use pg_testrng::Rng;
 
 /// The interleaved RGB bytes of a `w` × `h` picture whose channels step across it, so a crop or a turn moves pixels that
 /// differ from each other.
@@ -152,6 +131,72 @@ fn still(w: u32, h: u32, rgb: &[u8], format: image::ImageFormat) -> Result<Vec<u
     let mut file = std::io::Cursor::new(Vec::new());
     img.write_to(&mut file, format).with_context(|| format!("encode the {format:?}"))?;
     Ok(file.into_inner())
+}
+
+/// The encoders a test writes a picture with: the tests name none of the `image` crate's types, so this is theirs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Encoding {
+    Jpeg,
+    Png,
+    WebP,
+    Tiff,
+    Gif,
+    Bmp,
+}
+
+/// `rgb` (`w` × `h` pixels, three bytes each) written with `encoding`.
+pub fn encode(w: u32, h: u32, rgb: &[u8], encoding: Encoding) -> Result<Vec<u8>> {
+    let format = match encoding {
+        Encoding::Jpeg => image::ImageFormat::Jpeg,
+        Encoding::Png => image::ImageFormat::Png,
+        Encoding::WebP => image::ImageFormat::WebP,
+        Encoding::Tiff => image::ImageFormat::Tiff,
+        Encoding::Gif => image::ImageFormat::Gif,
+        Encoding::Bmp => image::ImageFormat::Bmp,
+    };
+    still(w, h, rgb, format)
+}
+
+/// A channel value: `v` wrapped to a byte (the pictures' steps wrap past 255).
+fn wrap(v: u32) -> u8 {
+    u8::try_from(v % 256).unwrap_or(u8::MAX)
+}
+
+/// The interleaved RGB bytes of a `w` × `h` picture, each pixel from `pixel(x, y)`.
+fn picture(w: u32, h: u32, pixel: impl Fn(u32, u32) -> [u8; 3]) -> Vec<u8> {
+    let pixel = &pixel;
+    (0..h).flat_map(|y| (0..w).flat_map(move |x| pixel(x, y))).collect()
+}
+
+/// A textured `w` × `h` picture, the same bytes on every call: the duplicate pair's `a.png` and `b.png`.
+pub fn textured_rgb(w: u32, h: u32) -> Vec<u8> {
+    picture(w, h, |x, y| [wrap(x * x + y * 31), wrap(x * 7 + y * y), wrap((x ^ y) * 5)])
+}
+
+/// Another `w` × `h` picture, not a duplicate of [`textured_rgb`].
+pub fn other_rgb(w: u32, h: u32) -> Vec<u8> {
+    picture(w, h, |x, y| [wrap(y * y + 3 * x), wrap(x * 13 + 5), wrap(y * 3)])
+}
+
+/// A `w` × `h` gradient: red and green step across it, blue is 128.
+pub fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
+    picture(w, h, |x, y| [wrap(x * 4), wrap(y * 5), 128])
+}
+
+/// A `w` × `h` letterboxed picture: black bars `bar` deep at the top and bottom, photo-like content (blocks of hashed
+/// colours with fine noise) between them.
+pub fn letterboxed_rgb(w: u32, h: u32, bar: u32) -> Vec<u8> {
+    let hash = |a: u32, b: u32| (a.wrapping_mul(2_654_435_761) ^ b.wrapping_mul(40_503)).wrapping_mul(2_246_822_519);
+    picture(w, h, |x, y| {
+        if !(bar..h - bar).contains(&y) {
+            return [0, 0, 0];
+        }
+        let block = hash(x / 6, y / 6);
+        let noise = hash(x, y) % 24;
+        // 60 to 232, so it fits a channel.
+        let c = |shift: u32| u8::try_from(60 + (block >> shift) % 150 + noise).unwrap_or(u8::MAX);
+        [c(0), c(8), c(16)]
+    })
 }
 
 /// An animated PNG of `frames` 2 × 2 frames of one grey, or a still PNG for one frame.

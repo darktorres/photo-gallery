@@ -1,8 +1,7 @@
 #include "alloc_count.h"
 
-#include <malloc.h>
-
 #include <atomic>
+#include <cstdint>
 #include <cstdlib>
 #include <new>
 
@@ -19,15 +18,78 @@ void raise_peak() {
     if (live.load(relaxed) > peak.load(relaxed)) peak.store(live.load(relaxed), relaxed);
 }
 
-// A block of n bytes was allocated at p.
+// The requested size of every block counted while counting was on, by pointer, so that a free subtracts the size the
+// allocation added (the requested bytes on both sides, not the allocator's rounded size). The table is the C library's
+// (calloc, not the counted operator new, which would recurse into here); a spinlock guards it, since operator new runs on
+// any thread. Open addressing with tombstones; it doubles past half full.
+struct Slot {
+    void* p;
+    size_t n;
+};
+void* const kTombstone = reinterpret_cast<void*>(uintptr_t(1));  // no allocation has this address
+std::atomic_flag guard{};
+Slot* slots = nullptr;
+size_t capacity = 0;  // a power of two; 0 until the first block is counted
+size_t occupied = 0;  // slots holding a block or a tombstone
+
+struct Lock {
+    Lock() {
+        while (guard.test_and_set(std::memory_order_acquire)) {
+        }
+    }
+    ~Lock() { guard.clear(std::memory_order_release); }
+};
+
+size_t home(const void* p) { return (reinterpret_cast<uintptr_t>(p) >> 4) & (capacity - 1); }  // blocks are 16-byte aligned
+
+// Places a block that has no entry (the caller holds the lock, and the table has room).
+void place(void* p, size_t n) {
+    size_t i = home(p);
+    while (slots[i].p && slots[i].p != kTombstone) i = (i + 1) & (capacity - 1);
+    if (!slots[i].p) occupied++;
+    slots[i] = {p, n};
+}
+
+void grow() {  // the caller holds the lock
+    Slot* old = slots;
+    const size_t old_capacity = capacity;
+    capacity = old_capacity ? 2 * old_capacity : 1024;
+    slots = static_cast<Slot*>(std::calloc(capacity, sizeof(Slot)));
+    if (!slots) std::abort();
+    occupied = 0;
+    for (size_t i = 0; i < old_capacity; i++) {
+        if (old[i].p && old[i].p != kTombstone) place(old[i].p, old[i].n);
+    }
+    std::free(old);
+}
+
+void track(void* p, size_t n) {
+    Lock lock;
+    if (2 * (occupied + 1) > capacity) grow();
+    place(p, n);
+}
+
+// Removes p's entry; returns the size it was recorded with, or 0 when p was not counted.
+size_t untrack(void* p) {
+    Lock lock;
+    if (!capacity) return 0;
+    for (size_t i = home(p);; i = (i + 1) & (capacity - 1)) {
+        if (!slots[i].p) return 0;
+        if (slots[i].p == p) {
+            slots[i].p = kTombstone;
+            return slots[i].n;
+        }
+    }
+}
+
+// A block of n bytes was allocated at p, while counting.
 void grew(void* p, size_t n) {
     calls.fetch_add(1, relaxed);
     requested.fetch_add(n, relaxed);
-    live.fetch_add(int64_t(_msize(p)), relaxed);
+    track(p, n);
+    live.fetch_add(int64_t(n), relaxed);
     raise_peak();
 }
-
-void shrank(void* p) { live.fetch_sub(int64_t(_msize(p)), relaxed); }
 
 // Used by operator new and delete: a non-null block or a throw.
 void* checked_new(size_t n) {
@@ -63,20 +125,22 @@ void* calloc_counted(size_t count, size_t size) {
 }
 
 void* realloc_counted(void* p, size_t n) {
-    if (!counting.load(relaxed)) return std::realloc(p, n);
-    const int64_t before = p ? int64_t(_msize(p)) : 0;
+    // p's entry leaves the count here; the block that replaces it is counted again below, as a new block.
+    const size_t before = p ? untrack(p) : 0;
     void* q = std::realloc(p, n);
-    if (!q) return nullptr;  // p is still valid and nothing changed
-    calls.fetch_add(1, relaxed);
-    requested.fetch_add(n, relaxed);
-    live.fetch_add(int64_t(_msize(q)) - before, relaxed);
-    raise_peak();
+    if (!q && n) {  // failed: p is still valid and unchanged
+        if (before) track(p, before);
+        return nullptr;
+    }
+    if (before) live.fetch_sub(int64_t(before), relaxed);
+    if (q && counting.load(relaxed)) grew(q, n);
     return q;
 }
 
 void free_counted(void* p) {
     if (!p) return;
-    if (counting.load(relaxed)) shrank(p);
+    const size_t n = untrack(p);  // 0 for a block allocated before counting was on
+    if (n) live.fetch_sub(int64_t(n), relaxed);
     std::free(p);
 }
 

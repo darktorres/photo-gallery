@@ -190,7 +190,7 @@ impl qobject::GalleryModel {
             };
             let kept = e.rating.is_some() && !d.rating_in_file;
             let path = pg_platform::native::PATH_RULES.display(&d.path);
-            QString::from(&text::info(&path, e.shown_size(), u64::try_from(d.size).unwrap_or(0), kept, borders))
+            QString::from(&text::info(&path, e.shown_size(), d.size, kept, borders))
         })
         .unwrap_or_default()
     }

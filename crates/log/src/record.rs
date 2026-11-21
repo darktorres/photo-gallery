@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(records[0].t_ms, None);
     }
 
-    /// The panic hook of an older build wrote the backtrace on the lines after its report.
+    // The panic hook of an older build wrote the backtrace on the lines after its report.
     #[test]
     fn a_plain_panics_backtrace_is_its_detail() {
         let text = "2026-10-30 17:04:16 gallery 0.1.0, thread 'main': panicked at x\n   0: std::panic\n   1: main\n\n";
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(messages, ["old", "record 0", "older build again"]);
     }
 
-    /// The app ended in the middle of a line: the part written is kept, as a plain record.
+    // The app ended in the middle of a line: the part written is kept, as a plain record.
     #[test]
     fn a_truncated_last_line_is_kept_as_text() {
         let whole = record(0).line();
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(records[1].t_ms, None);
     }
 
-    /// A file-only record says so in its line; any other writes no field, and an older line reads as not file-only.
+    // A file-only record says so in its line; any other writes no field, and an older line reads as not file-only.
     #[test]
     fn a_file_only_record_says_so_and_no_other_does() {
         assert!(!record(1).line().contains("file_only"));
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(capped("éa", 1), "");
     }
 
-    /// At every cap, a capped text is at most the cap, and is the text's start (with the mark when cut).
+    // At every cap, a capped text is at most the cap, and is the text's start (with the mark when cut).
     #[test]
     fn a_capped_text_is_never_past_its_cap() {
         for text in ["", "abc", "ééé€a", "a€é\nb", "€€€€", "😀a😀"] {

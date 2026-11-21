@@ -109,7 +109,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("failed", pg_model::num::size(*failed));
             // The entry shows the first failure; the list is kept for the rest.
             let (path, error) = match failures.first() {
-                Some(FileFailure { path, error, .. }) => (isolated(path), error.clone()),
+                Some(FileFailure { path, error, .. }) => (shown(rules, path), error.clone()),
                 None => (String::new(), String::new()),
             };
             a.set("path", path);
@@ -123,7 +123,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("failed", pg_model::num::size(*failed));
             // The entry shows the first failure; the list is kept for the rest.
             let (path, error) = match failures.first() {
-                Some(FileFailure { path, error, .. }) => (isolated(path), error.clone()),
+                Some(FileFailure { path, error, .. }) => (shown(rules, path), error.clone()),
                 None => (String::new(), String::new()),
             };
             a.set("path", path);
@@ -176,7 +176,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             // A selector, not shown: the entry has the words for each kind.
             let kind = match write {
                 WriteKind::Rating => "rating",
-                WriteKind::Turns => "turns",
+                WriteKind::Turns => "rotation",
             };
             a.set("kind", kind);
         }

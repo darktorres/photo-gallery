@@ -384,8 +384,8 @@ mod tests {
         out
     }
 
-    /// The one difference skipping a GIF's metadata makes: XMP over the 50 MB limit of `image`'s gif decoder fails
-    /// `image`'s decode, and this one decodes the pixels as `image` decodes the same file without it.
+    // The one difference skipping a GIF's metadata makes: XMP over the 50 MB limit of `image`'s gif decoder fails
+    // `image`'s decode, and this one decodes the pixels as `image` decodes the same file without it.
     #[test]
     fn gif_metadata_over_the_memory_limit_is_skipped() {
         let mut gif = Vec::new();
@@ -403,9 +403,9 @@ mod tests {
         [&png[..idat], &chunk, &png[idat..]].concat()
     }
 
-    /// The text and ICC chunks are skipped, where `image` reads them. The damaged ones here (bad zlib, a truncated
-    /// stream, an empty or over-long keyword or name, a missing terminator, a bad compression method or flag, text
-    /// that isn't UTF-8) must decode as `image` decodes them: the same pixels, or the same error.
+    // The text and ICC chunks are skipped, where `image` reads them. The damaged ones here (bad zlib, a truncated
+    // stream, an empty or over-long keyword or name, a missing terminator, a bad compression method or flag, text
+    // that isn't UTF-8) must decode as `image` decodes them: the same pixels, or the same error.
     #[test]
     fn png_damaged_text_and_icc_chunks_decode_as_image_does() {
         let mut file = Cursor::new(Vec::new());
@@ -445,8 +445,8 @@ mod tests {
         }
     }
 
-    /// Every kind of file decodes to what `image` gave, or fails with its error, with one `Codecs` reused across
-    /// them all, forwards and backwards, so that state left by one file would show in another.
+    // Every kind of file decodes to what `image` gave, or fails with its error, with one `Codecs` reused across
+    // them all, forwards and backwards, so that state left by one file would show in another.
     #[test]
     fn files_decode_as_image_did() {
         let files = files();
@@ -464,7 +464,12 @@ mod tests {
         }
         // Every kind made it. What fails fails as it did: gray with alpha, which the tiff crate reads as two bands
         // (`Multiband`, a colour type `image` doesn't take), and planar CMYK.
-        assert_eq!(files.len(), 72, "the corpus is 72 files: a change to it changes what this test covers");
+        assert_eq!(
+            files.len(),
+            72,
+            "the corpus is 72 files: a change to its count changes the kinds this test covers, so re-check the expected \
+             failures below against the new corpus before the count is pinned again"
+        );
         let tiff = |kind: &str| [false, true].map(|planar| format!("tiff {kind} planar {planar}"));
         let mut expected = [tiff("1 8x2"), tiff("1 16x2")].concat();
         expected.extend(["tiff 5 8x4 planar true".to_string(), "tiff 5 16x4 planar true".to_string()]);

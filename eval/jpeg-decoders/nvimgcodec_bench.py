@@ -3,7 +3,7 @@ batches, each with the pixels copied to host memory; CPU time per image; output 
 
 Run with its own venv (python -m pip install -r eval/jpeg-decoders/requirements.txt; bin/python on
 Linux), not the shared eval venv:
-    $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/nvimgcodec_bench.py \
+    $PG_JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/nvimgcodec_bench.py \
         --ref-dir DIR FILE...
 DIR holds the harness's libjpeg-turbo decodes (`harness dump turbo FILE DIR/NAME.ppm`), one per FILE.
 Timing as the harness: warm-up, then samples until 5 and the budget; the median, and process CPU time per image.
@@ -40,12 +40,13 @@ def blocking_sync() -> None:
     Must run before the first CUDA call. Done through the driver's DLL: this venv has no torch (see gpu.py)."""
     cuda = ctypes.CDLL("nvcuda.dll")
     if (rc := cuda.cuInit(0)) != 0:
-        raise RuntimeError(f"cuInit returned {rc}")
+        raise RuntimeError(f"cuInit: CUDA error (code {rc})")
     if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
-        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags returned {rc} (the context is already active?)")
+        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags: CUDA error (code {rc}); the context may already be active")
 
 
-def timed(fn, per_call, budget):
+def timed_ms(fn, per_call, budget):
+    """Median milliseconds per item, and process CPU milliseconds per item (samples until 5 and the budget)."""
     for _ in range(3):
         fn()
     samples, c0, t0 = [], time.process_time(), time.perf_counter()
@@ -113,7 +114,7 @@ def main():
                     batch = [data] * b
                     fn = lambda dec=dec, batch=batch: [i.cpu() for i in dec.decode(batch)]  # noqa: E731 (a closure over this loop's decoder and batch)
                 try:
-                    wall, cpu = timed(fn, b, args.secs)
+                    wall, cpu = timed_ms(fn, b, args.secs)
                 except Exception as e:  # noqa: BLE001 (reported, and the run goes on)
                     print(f"{f.name:34} {name:15} batch {b:3}: error: {e}")
                     continue

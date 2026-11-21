@@ -1,7 +1,7 @@
 # ExifTool 13.60 to Rust: architecture design
 
 Status: design, revised 2026-11-13 to the most proper choices (section 9; section 10 answered). No Rust written, nothing compiled. The repo copy is this file.
-Sources: the 14 group inventories (the JSON in the task), the repo at `D:/GitHub/photo-gallery/crates` (checked: crate list, `crates/metadata/src/lib.rs`, `crates/exiftool/src/lib.rs`, `crates/writeback/Cargo.toml:21`), and the installed tree `C:/Program Files/ExifTool/exiftool_files/lib`. The installed `C:/Program Files/ExifTool/exiftool.exe` is the oracle.
+Sources: the 14 group inventories (the JSON in the task), the repo at `D:/GitHub/photo-gallery/crates` (checked: crate list, `crates/metadata/src/lib.rs`, `crates/exiftool/src/lib.rs`, the `pg-exiftool` dependency of `crates/writeback/Cargo.toml`), and the installed tree `C:/Program Files/ExifTool/exiftool_files/lib`. The installed `C:/Program Files/ExifTool/exiftool.exe` is the oracle.
 
 ## 0. Scope in numbers
 
@@ -14,7 +14,7 @@ Sources: the 14 group inventories (the JSON in the task), the repo at `D:/GitHub
 
 ### 1.1 Naming and placement
 
-Everything lives under `crates/`, prefix `pg-et-*` (ExifTool), so it does not collide with `pg-exiftool` (the subprocess driver that `pg-writeback` uses, `crates/writeback/Cargo.toml:21`). `pg-exiftool` stays as the migration fallback until the write phases (P13) pass; then `pg-writeback` switches over, and `pg-exiftool` stays as the oracle driver (D13). `crates/README.md` holds the repo's crate rules; read it before adding crates.
+Everything lives under `crates/`, prefix `pg-et-*` (ExifTool), so it does not collide with `pg-exiftool` (the subprocess driver that `pg-writeback` uses, its `pg-exiftool` dependency). `pg-exiftool` stays as the migration fallback until the write phases (P13) pass; then `pg-writeback` switches over, and `pg-exiftool` stays as the oracle driver (D13). `crates/README.md` holds the repo's crate rules; read it before adding crates.
 
 ### 1.2 Proposed crates (dependency order top to bottom)
 
@@ -468,5 +468,5 @@ Status as of 2026-11-13. "Chosen" means the most proper option, applied in this 
 - **O16 The `.ExifTool_config` search path. Resolved from source (2026-11-13).** `ExifTool.pm` 10230–10312 looks for `$home/.ExifTool_config`, where `$home` is `EXIFTOOL_HOME`, else `HOME`, else `HOMEDRIVE` plus `HOMEPATH`, else `.`. If that file is not readable and the name is not absolute, it looks in the program's own directory (`$0`). The port uses the same order, so D3's subset loads the same files. P0 confirms with a config file in each location.
 - **O17 Composite dependency cycle detection. Resolved from source (2026-11-13).** `ExifTool.pm` 4150–4158: a pass that defers every Composite tag retries once, ignoring Composite Inhibit tags. If the next pass also defers everything, it warns `Circular dependency in Composite tags` and stops, and the tags already built stay. The port does the same, with the same text. P2 checks it on a constructed cycle.
 - **O18 Memory and recursion limits. Chosen (2026-11-13): D17.** The source has one explicit depth limit: PGF re-entry above depth 10 warns `PGF nesting too deep` and returns (`PGF.pm:97–98`). It has no general limit. Its other guards are the cyclic-directory guard (`ExifTool.pm:9111`) and the Composite recursion note (`ExifTool.pm:9671`). The port keeps all of them.
-- **O19 Time-zone source on Windows. Chosen (2026-11-13): the OS zone, with the `TimeZone` option overriding it, as the oracle does.** `ExifTool.pm:2670` sets `$ENV{TZ}` when that option is given. The port reads the zone through `windows-sys`'s time zone API, which applies the DST rules for the date in question. The oracle child process gets `TZ` pinned (section 8.3). P0 checks one DST date in two zones. `Cargo.toml:50` does not enable `Win32_System_Time`, which `GetTimeZoneInformationForYear` needs; the feature must be added.
+- **O19 Time-zone source on Windows. Chosen (2026-11-13): the OS zone, with the `TimeZone` option overriding it, as the oracle does.** `ExifTool.pm:2670` sets `$ENV{TZ}` when that option is given. The port reads the zone through `windows-sys`'s time zone API, which applies the DST rules for the date in question. The oracle child process gets `TZ` pinned (section 8.3). P0 checks one DST date in two zones. The `windows-sys` entry in `[workspace.dependencies]` does not enable `Win32_System_Time`, which `GetTimeZoneInformationForYear` needs; the feature must be added.
 - **O20 Estimates from line ranges. Partly checked (2026-11-13) against files on disk:** `Lytro.pm` 214 lines, `Other.pm` 93, `Unknown.pm` 66, `Import.pm` 377, `File/RandomAccess.pm` 447. The estimates for Lytro (P6a, 180), Other.pm (P6a, 50) and Unknown.pm (P4, 30) stand on these counts. The P8a/P8b split stays provisional until its inventory exists, and the other rows are re-inventoried before the phase estimate is used.

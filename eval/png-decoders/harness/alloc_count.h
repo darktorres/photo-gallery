@@ -11,7 +11,8 @@ namespace heap {
 void enable(bool on);
 
 // calls: allocation and reallocation calls since reset(); requested: the bytes they asked for; live: the bytes
-// allocated and not yet freed (each block's usable size, from _msize); peak: the largest live since reset().
+// allocated while counting and not yet freed (each block's requested size, as recorded at its allocation); peak: the
+// largest live since reset().
 struct Totals {
     uint64_t calls;
     uint64_t requested;

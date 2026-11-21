@@ -103,7 +103,7 @@ pub fn find_while(
                                 file_id: item.id,
                                 mtime: item.mtime,
                                 size: item.size,
-                                rotation: item.rotation,
+                                turns: item.rotation,
                                 error: format!("{e:#}"),
                                 retry: false,
                             });
@@ -144,7 +144,7 @@ pub fn find_while(
             let item = items.get(i).context("an item outside the pass")?;
             #[cfg(feature = "fault")]
             fault::in_detector(item.id);
-            analyzer.borders(bytes, item.rotation)
+            analyzer.borders(bytes, item.rotation).map_err(pg_jobs::failure::undecoded)
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),

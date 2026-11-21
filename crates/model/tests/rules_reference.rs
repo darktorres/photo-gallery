@@ -88,7 +88,11 @@ fn components(merged: &str) -> Vec<Name> {
 #[test]
 fn the_corpus_has_its_rows() -> Fallible<()> {
     let rows = rows()?;
-    assert_eq!(rows.len(), 2059);
+    assert_eq!(
+        rows.len(),
+        2059,
+        "the corpus has 2059 rows: a change to the reference corpus changes what this test covers"
+    );
     assert_eq!(rows.iter().filter(|r| r.kind == "folder").count(), 1023);
     Ok(())
 }

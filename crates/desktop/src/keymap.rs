@@ -12,7 +12,7 @@ use crate::keymap_bridge::qobject;
 
 use cxx_qt_lib::QString;
 use pg_client::controller::panels::PanelKind;
-use pg_client::keys::{self, Global, Grid, Key, Media, Mods, Panel, Shown, Viewer};
+use pg_client::keys::{self, Global, GridKey, Key, Media, Mods, Panel, Shown, Viewer};
 use pg_client::text;
 
 // Qt's key codes (`Qt::Key`) and modifier flags (`Qt::KeyboardModifier`): the values of Qt's stable ABI.
@@ -131,7 +131,7 @@ pub(crate) fn panel_kind_code(kind: PanelKind) -> i32 {
 }
 
 /// The grid's action for a key press, as the key map decides it (`None` when the grid doesn't use the key).
-pub(crate) fn grid_key(key: i32, modifiers: i32, has_current: bool) -> Option<Grid> {
+pub(crate) fn grid_key(key: i32, modifiers: i32, has_current: bool) -> Option<GridKey> {
     key_of(key).and_then(|k| keys::grid(k, mods_of(modifiers), has_current))
 }
 

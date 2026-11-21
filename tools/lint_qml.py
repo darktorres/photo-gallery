@@ -12,7 +12,7 @@ as they are now, so the QML can be linted again without a rebuild. qmllint match
 singleton only through it) by the path it was given, so the copies are linted.
 
 Run with the same command on every OS (`just lint-qml`). The qmllint and qmlcachegen calls, and the warnings, are printed as
-crates/desktop/qml paths. The Qt kit is QT_DIR (from the environment or .env); its tools are read from its bin folder only,
+crates/desktop/qml paths. The Qt kit is PG_QT_DIR (from the environment or .env); its tools are read from its bin folder only,
 never from PATH, so another Qt on PATH cannot lint against the wrong types.
 """
 
@@ -39,7 +39,9 @@ def qt_tool(qt: Path, name: str) -> str:
         tool = qt / folder / exe
         if tool.is_file():
             return str(tool)
-    sys.exit(f"{exe} is not in {qt / 'bin'} or {qt / 'libexec'}: QT_DIR must be the Qt kit folder (the one with bin and lib)")
+    sys.exit(
+        f"lint_qml: {exe} is not in {qt / 'bin'} or {qt / 'libexec'}: PG_QT_DIR must be the Qt kit folder (the one with bin and lib)"
+    )
 
 
 def newest_qmltypes() -> Path:
@@ -50,15 +52,15 @@ def newest_qmltypes() -> Path:
     ]
     found = [p for pattern in patterns for p in REPO.glob(pattern)]
     if not found:
-        sys.exit("No pg.gallery module in target/: build the app first (just build).")
+        sys.exit("lint_qml: no pg.gallery module in target/: build the app first (just build).")
     return max(found, key=lambda p: p.stat().st_mtime)
 
 
 def main() -> int:
     load_env_file()
-    qt_dir = os.environ.get("QT_DIR")
+    qt_dir = os.environ.get("PG_QT_DIR")
     if not qt_dir:
-        not_set("QT_DIR", QT_DIR_HOW)
+        not_set("PG_QT_DIR", QT_DIR_HOW)
     qt = Path(qt_dir)
     qmllint = qt_tool(qt, "qmllint")
     qmlcachegen = qt_tool(qt, "qmlcachegen")
@@ -99,7 +101,7 @@ def main() -> int:
     try:
         data = json.loads(report.stdout)
     except json.JSONDecodeError:
-        sys.exit(f"qmllint printed no JSON report (exit {report.returncode}):\n{report.stderr}")
+        sys.exit(f"lint_qml: qmllint printed no JSON report (exit {report.returncode}):\n{report.stderr}")
     for file in data.get("files", []):
         for w in file.get("warnings", []):
             add_warning(file["filename"], str(w["line"]), str(w["column"]), f"{w['message']} [{w['id']}]")
@@ -134,7 +136,7 @@ def main() -> int:
         # Its findings come on stderr, which isn't an error here; a failed run is.
         log = (run.stdout + run.stderr).splitlines()
         if run.returncode != 0:
-            sys.exit(f"qmlcachegen failed on {name}:\n" + "\n".join(log))
+            sys.exit(f"lint_qml: qmlcachegen failed on {name}:\n" + "\n".join(log))
         # Each finding is one "Warning:"/"Error:" line (the source line and a caret under it follow).
         for line in log:
             match = WARNING.match(line)

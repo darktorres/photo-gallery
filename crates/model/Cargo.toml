@@ -23,5 +23,6 @@ specta = ["dep:specta"]
 
 # The laws of the pure types (tests/laws.rs), checked over generated inputs.
 [dev-dependencies]
+pg-testrng = { path = "../testrng" }
 proptest.workspace = true
 serde_json.workspace = true

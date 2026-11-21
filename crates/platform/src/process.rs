@@ -163,8 +163,8 @@ mod tests {
         child.wait().unwrap();
     }
 
-    /// The helper for the next test: starts a child and exits at once, without running destructors. It does nothing
-    /// unless the test below runs it in a process of its own.
+    // The helper for the next test: starts a child and exits at once, without running destructors. It does nothing
+    // unless the test below runs it in a process of its own.
     #[test]
     #[expect(clippy::exit, reason = "the helper must end without running destructors, which is what it tests")]
     fn spawn_helper() {

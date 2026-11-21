@@ -7,6 +7,8 @@
 # Leaves: the shared model and the file formats.
 container:
 model:
+# The tests' generator: no dependencies, so any crate may take it as a dev-dependency.
+testrng:
 
 # On the model alone.
 client: model
@@ -14,7 +16,7 @@ codec: model
 dedup: model
 metadata: container model
 platform: model
-testkit: platform
+testkit: platform testrng
 query: model
 yandex: model
 
@@ -30,7 +32,7 @@ trace: platform
 video: codec model platform
 analysis: codec metadata model video
 jobs-testkit: jobs model
-render: codec metadata model perf video
+render: codec metadata model perf platform video
 
 # The passes, each its own crate.
 scan: catalog jobs model perf platform
@@ -47,4 +49,4 @@ library: analysis borders catalog crop import jobs model perf platform render sc
 app: catalog jobs library log model platform query render thumbcache writeback yandex
 cli: analysis borders catalog client codec dedup import jobs library model perf platform scan thumbcache thumbs writeback
 desktop: app client log model perf platform render trace
-gallery: cli desktop platform
+gallery: cli client desktop platform

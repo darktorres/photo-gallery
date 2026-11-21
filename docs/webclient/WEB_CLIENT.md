@@ -28,7 +28,7 @@ process that writes the catalog; the desktop talks to the server over loopback; 
 identified by `FileId` on the wire; listings are stamped with a generation and freeze membership and order. From the latest
 review: the server is async (`axum` on `tokio`); the CLI's writes go through the server while it runs; access is by login,
 not pairing; a cache miss queues the work and returns a placeholder; `write_back` is a server-wide setting that the owner can
-change from any client, on by default; deletes and moves are in version 1, once quarantine exists; scan changes reach clients
+change from any client, on by default; deletes and moves are in version 1 (quarantine is dropped, see WEB_CLIENT_TECH_DECISIONS.md); scan changes reach clients
 live, and a phone can start scans and imports; the layout runs in a Web Worker; the phone target is Android (Chrome) for now;
 Yandex is in version 1; a server-side folder browser can add library folders; the budgets are set by measurement.
 
@@ -314,7 +314,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   - Everything else (path, rating, flags, details) by index range.
   - Compressed (PiGallery2 #437).
 - **Thumbnails:** served from the cache only, at `…/<file_id>@<mtime>.<rotation>/<height>`,
-  `Cache-Control: public, max-age=31536000, immutable`. A height the cache lacks gets the nearest
+  `Cache-Control: private, max-age=604800, immutable` (O11 option (a), decided by default in this pass; the owner may change it). A height the cache lacks gets the nearest
   (`ThumbCache::get_nearest`).
 - **Batching:** a `multipreview`-style stream, with requests in viewport-priority order and cancellation.
   - Carried on the one WebSocket, which also carries events, so plain HTTP on the LAN never runs out of sockets.
@@ -381,7 +381,7 @@ thumbnails. `REFACTOR_PLAN.md:136` already says "the axum server later", which a
 no server-side ALPN (`native-tls-0.2.18/src/imp/schannel.rs` has no server accept path), so it cannot negotiate HTTP/2 on
 Windows. `rustls` is pure Rust and supports server-side ALPN. It does not read the Windows certificate store by default, which
 the LAN setup does not need, because the server loads its own certificate from a file. The repo's only current TLS user is
-`ureq`, through `native-tls` (`Cargo.lock:1434`). Choosing `rustls` adds a second TLS stack beside it.
+`ureq`, through `native-tls` (the `native-tls` package in Cargo.lock). Choosing `rustls` adds a second TLS stack beside it.
 
 The LAN listener needs a connection cap, and thumbnail reads need a handoff from the async runtime to the blocking pool.
 
@@ -390,8 +390,8 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
 - `POST /api/listings`: a `Query` and `Sort`. Freezes the result under an id and returns the count.
 - `GET /api/listings/{id}/ratios`: the aspect ratios as one binary column, 2 to 4 bytes each.
 - `GET /api/listings/{id}/items?from=&to=`: the rest of each item as columnar JSON, gzip-compressed.
-- `GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation}/{height}`: cache only, `Cache-Control: public, max-age=31536000,
-  immutable`. A missing height gets the nearest one (`ThumbCache::get_nearest`).
+- `GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation}/{height}`: cache only, `Cache-Control: private, max-age=604800,
+  immutable` (O11 option (a)). A missing height gets the nearest one (`ThumbCache::get_nearest`). Turns are not in the key; the client applies them in CSS.
 - `GET /api/files/{id}/view?w=&h=`: a fitted image, or the original bytes with `Range` for video.
 - `POST /api/login`: login, which sets the httpOnly cookie.
 - `POST /api/items/{file_id}/set`: `field`, `value`, `expected_version`. Returns the new version, or `VersionMismatch`.
@@ -399,6 +399,15 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
 - Listing endpoints carry the generation (see State model).
 - `GET /ws` (WebSocket): events as JSON, and the thumbnail batch as binary frames with request ids, in viewport order,
   with cancellation.
+
+**Limits (stated once here; DESIGN and RECONCILED point to this list):**
+
+- Held polls: at most 2 per device. A third gets 429 with Retry-After.
+- Thumbnail miss queue: 256 queued per device and 2,048 globally; a duplicate key merges.
+- Image fit sides: at most 8,192 px per side and 64 megapixels per product. A larger request is 400; the server never clamps.
+- Selection entries: at most 4,096 per request, with a body cap of 128 KiB.
+- Mutation bodies: 64 KiB, the default cap for JSON mutation routes. A route may declare a smaller cap in the route table (`WEB_CLIENT_RECONCILED.md` 1.10).
+- Login body: 4 KiB.
 
 **Behaviour the server must have:**
 
@@ -556,7 +565,7 @@ did not settle.
 | Point | Status | Decision or proposal | Still open |
 |---|---|---|---|
 | P1 Preference scope | Proposed; mostly decided | Per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `dev_mode`, `yandex_folder`. `write_back` server-wide, owner-changeable, on by default. | No `desktop.json` exists in code, although `REFACTOR_PLAN.md:785` records the split as done (`crates/desktop/src/settings.rs:1-3`). |
-| P2 Deletes and moves | Decided | Delete and move are in version 1, once quarantine exists. Library folder removal and rating-driven sort are membership changes in v1. | Quarantine is not built (`REFACTOR_PLAN.md:511`); it is the first piece of work. |
+| P2 Deletes and moves | Decided | Delete and move are in version 1, with deletes to the Recycle Bin (quarantine is dropped, `WEB_CLIENT_TECH_DECISIONS.md`, owner decisions, third round). Library folder removal and rating-driven sort are membership changes in v1. | Nothing to build for quarantine. |
 | P3 View-state split | Proposed (H on blockers) | A plain `ViewState` struct for user-visible state, validated on read. Exclude `initial`, `StartGate` and `Deadlines`; rebuild timers on reconnect; add scroll to client state. | Where the `Listing` spec sits; mid-start snapshots; serde compile not checked. |
 | P4 Snapshot lifetime | Proposed (L–M) | Released after disconnect, with a grace period; 10-minute idle backstop; cap of four per client. | The grace length for a sleeping phone; the client key; every number is unmeasured. |
 | P5 Desktop cutover | Proposed (M) | In-process timings, then server and conformance suite, benchmark, cutover. The in-process server beside the desktop is rejected. | Whether writes move in the same step as reads (otherwise two writers). |

@@ -225,7 +225,7 @@ mod tests {
     use super::*;
     use crate::codecs::test_support::{flattened, ne_bytes, noise};
 
-    /// Each colour type's samples, every value of every channel (16-bit included), against `image`'s conversion.
+    // Each colour type's samples, every value of every channel (16-bit included), against `image`'s conversion.
     #[test]
     fn conversions_are_images() {
         let check = |raw: Vec<u8>, color: ColorType, img: DynamicImage| {
@@ -293,7 +293,7 @@ mod tests {
         check(float_bytes, ColorType::Rgba32F, rgba);
     }
 
-    /// Planes give what the same samples interleaved give.
+    // Planes give what the same samples interleaved give.
     #[test]
     fn planes_convert_as_interleaved() {
         let pixels = 300;

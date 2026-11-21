@@ -41,20 +41,17 @@ FORK_COMMIT = "28b8b86af795d5e6f1402c978e62facd61952da2"
 
 
 def fetch_pinned(src: Path, log: Path) -> None:
-    """Fetches the pinned commit into `src`, retrying: the network drops connections now and then. Three tries, then exits."""
-    for attempt in range(1, 4):
+    """Fetches the pinned commit into `src`, retrying: the network drops connections now and then. Three tries; the last
+    one runs through checked(), so when every try has failed the program ends in checked()'s message (`git fetch failed
+    (exit N)`), and its output is in `log`."""
+    command = ["git", "-C", str(src), "fetch", "-q", "--depth", "1", FORK_URL, FORK_COMMIT]
+    for attempt in range(1, 3):
         with log.open("w", encoding="utf-8") as file:
-            result = subprocess.run(
-                ["git", "-C", str(src), "fetch", "-q", "--depth", "1", FORK_URL, FORK_COMMIT],
-                stdout=file,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
+            result = subprocess.run(command, stdout=file, stderr=subprocess.STDOUT, check=False)
         if result.returncode == 0:
             return
-        if attempt < 3:
-            time.sleep(10 * attempt)
-    sys.exit(f"git fetch failed after 3 attempts: see {log}")
+        time.sleep(10 * attempt)
+    checked("git fetch", command, log)
 
 
 def default_work() -> Path:

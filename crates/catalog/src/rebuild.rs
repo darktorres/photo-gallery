@@ -16,11 +16,6 @@ use crate::error::{Error, Result};
 use crate::schema::{Hooks, SETTINGS, SchemaSet, Step, bring_to, version_in};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
 
-/// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
-fn count(rows: i64) -> u64 {
-    u64::try_from(rows).unwrap_or(0)
-}
-
 /// Where the replacement for the catalog at `path` is made before it takes the name ([`rebuild`]).
 fn building_path(path: &Path) -> PathBuf {
     beside(path, ".building")
@@ -76,7 +71,7 @@ pub(crate) fn rebuild(
     remove_database(&replacement)?;
     let carried = match source {
         Ok(()) => match make_replacement(&replacement, set, rules, Some(path)) {
-            Ok((files, folders)) => Carried::Rows { files: count(files), folders: count(folders) },
+            Ok((files, folders)) => Carried::Rows { files, folders },
             Err(e) => {
                 // The copy is one transaction, so an error leaves no rows; the replacement is made again without them.
                 remove_database(&replacement)?;
@@ -108,19 +103,21 @@ pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
 /// Make the catalog file `path` in this build's layout, with the rows of `from` copied into it when given
 /// ([`carry_rows`]). Returns its file and library folder counts (zero without `from`). The file is closed, with its
 /// changes in the main file.
-fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Option<&Path>) -> Result<(i64, i64)> {
-    let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
+fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Option<&Path>) -> Result<(u64, u64)> {
+    let mut conn = Connection::open(db_file(path)?)
+        .with_context(|| format!("catalog {}: making its replacement", path.display()))?;
     // An empty file takes incremental auto-vacuum at once; a catalog made here is then compacted in place, never as a whole.
     conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
     conn.execute_batch(SETTINGS)?;
     // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
     conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
     bring_to(&conn, set, rules, version_in(set)?, &Hooks::none())
-        .with_context(|| format!("catalog {}", path.display()))?;
+        .with_context(|| format!("catalog {}: bringing its replacement to this build's schema", path.display()))?;
     let counts = match from {
         Some(old) => {
             carry_rows(&mut conn, old, set, rules)?;
-            let count = |table: &str| -> rusqlite::Result<i64> {
+            // A `COUNT(*)` is a `u64` read: a negative one is an error, not a 0.
+            let count = |table: &str| -> rusqlite::Result<u64> {
                 conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
             };
             (count("files")?, count("roots")?)

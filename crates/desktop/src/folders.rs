@@ -243,6 +243,12 @@ impl qobject::FolderModel {
         if let Some(row) = row {
             return row_index(row);
         }
-        if with(|tree| tree.find(&folder)).is_some() { -1 } else { -2 }
+        -1
+    }
+
+    /// Whether the listed folder is in the tree at all, under a collapsed folder or not (`revealListing` gives -1 for both).
+    pub(crate) fn listed_known(&self) -> bool {
+        let folder = controller::listing().folder;
+        with(|tree| tree.find(&folder)).is_some()
     }
 }

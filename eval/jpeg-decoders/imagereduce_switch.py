@@ -11,9 +11,10 @@ pixels it was encoded from. Both outputs are decoded by the same libvips, so dec
 
 Windows only, run from the eval's venv (pyvips installed). Settings come from the environment (the repo's .env):
 
-- IMAGEREDUCE_VIPS_BIN: ImageReduce's vips-dev bin folder (libvips 8.18.x DLLs). Required.
-- JPEGLI_BUILD: jpegli's build folder, with tools\\cjpegli.exe and tools\\ssimulacra2.exe, and lib\\ for their DLLs.
+- PG_IMAGEREDUCE_VIPS_BIN: ImageReduce's vips-dev bin folder (libvips 8.18.x DLLs). Required.
+- PG_JPEGLI_BUILD: jpegli's build folder, with tools\\cjpegli.exe and tools\\ssimulacra2.exe, and lib\\ for their DLLs.
   Default PG_ROOT\\tools\\jpeg-eval\\build\\jpegli.
+  warning.
 - PG_DATA_ROOT: the Pinterest library (default PG_ROOT\\datasets\\pinterest). Its originals are the files without
   "mozjpeg" in the name: ImageReduce never reprocesses its own outputs.
 - CAMERA_ROOT: the camera originals (default E:\\Cameras).
@@ -38,6 +39,7 @@ BIG_W, BIG_H = 3840, 2160  # ImageReduce's thumbnail box for images over this si
 
 
 def _env_path(name: str, default: Path | None) -> Path:
+    """The path in the environment variable `name`, else `default`."""
     value = os.environ.get(name)
     if value:
         return Path(value)
@@ -53,8 +55,8 @@ def _root() -> Path | None:
 def _setup_paths() -> tuple[Path, Path, Path]:
     """Put libvips and jpegli's DLLs on PATH before pyvips loads; returns (cjpegli, ssimulacra2, Pinterest root)."""
     root = _root()
-    vips = _env_path("IMAGEREDUCE_VIPS_BIN", None)
-    jpegli = _env_path("JPEGLI_BUILD", root and root / "tools" / "jpeg-eval" / "build" / "jpegli")
+    vips = _env_path("PG_IMAGEREDUCE_VIPS_BIN", None)
+    jpegli = _env_path("PG_JPEGLI_BUILD", root and root / "tools" / "jpeg-eval" / "build" / "jpegli")
     os.environ["PATH"] = os.pathsep.join([str(vips), str(jpegli / "lib"), os.environ["PATH"]])
     pinterest = _env_path("PG_DATA_ROOT", root and root / "datasets" / "pinterest")
     return jpegli / "tools" / "cjpegli.exe", jpegli / "tools" / "ssimulacra2.exe", pinterest

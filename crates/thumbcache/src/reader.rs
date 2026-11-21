@@ -16,9 +16,10 @@ use crate::schema::{BUSY_TIMEOUT, CONNECTION_PRAGMAS};
 use crate::types::{Pending, Snapshot, Source, ThumbWork};
 
 /// The files whose thumbnails the cache at `cache` holds and the catalog at `catalog` no longer does (`ThumbCache::
-/// sweep_orphans`). The catalog's id high-water mark (its `sqlite_sequence`: the ids are never reused, schema 19) is read
-/// first. An entry at or below it whose file is absent was deleted for good; a file inserted meanwhile has a higher id,
-/// and is not among them. Read on one connection with `query_only`, so no write of the cache waits for it.
+/// sweep_orphans`). The catalog's id high-water mark (`thumb_high_water`: the ids are never reused) is read first. An
+/// entry at or below it whose file is absent was deleted for good; a file inserted meanwhile has a higher id, and is not
+/// among them. Read on one connection with `query_only`, so no write of the cache waits for it. The catalog is read
+/// through its views only (`thumb_high_water`, `thumb_file_ids`, `thumb_volumes`, `thumb_clock`, `thumb_sources`).
 pub(crate) fn orphans_in(cache: &Path, catalog: &Path) -> Result<Vec<FileId>> {
     // ATTACH makes an empty file at a path with none, so a missing catalog is an error here, not a new catalog beside
     // the cache (the sweep's caller logs it).
@@ -29,12 +30,9 @@ pub(crate) fn orphans_in(cache: &Path, catalog: &Path) -> Result<Vec<FileId>> {
     conn.busy_timeout(BUSY_TIMEOUT)?;
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;")?;
     conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(catalog)?])?;
-    let high: i64 =
-        conn.query_row("SELECT coalesce((SELECT seq FROM cat.sqlite_sequence WHERE name = 'files'), 0)", [], |r| {
-            r.get(0)
-        })?;
+    let high: i64 = conn.query_row("SELECT high FROM cat.thumb_high_water", [], |r| r.get(0))?;
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT file_id FROM main.entries WHERE file_id <= ?1 AND file_id NOT IN (SELECT id FROM cat.files) \
+        "SELECT DISTINCT file_id FROM main.entries WHERE file_id <= ?1 AND file_id NOT IN (SELECT id FROM cat.thumb_file_ids) \
          ORDER BY file_id",
     )?;
     let ids: Vec<i64> = stmt.query_map([high], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
@@ -121,7 +119,7 @@ fn checkpoint_since(tx: &Connection, height: i64, volumes: &[i64]) -> Result<Opt
 /// The catalog's volumes, by a loose index scan over `files`'s `(volume, file_ref)` index: a step per volume, not per
 /// file. A displaced row (no volume) is none.
 fn catalog_volumes(tx: &Connection) -> Result<Vec<i64>> {
-    let mut stmt = tx.prepare(pg_query::volumes_sql!("cat.files"))?;
+    let mut stmt = tx.prepare(pg_query::volumes_sql!("cat.thumb_volumes"))?;
     Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
@@ -136,6 +134,7 @@ mod checkpoint_tests {
              ATTACH DATABASE ':memory:' AS cat;
              CREATE TABLE cat.files(volume INTEGER, file_ref INTEGER);
              CREATE INDEX cat.files_volume ON files(volume, file_ref);
+             CREATE VIEW cat.thumb_volumes AS SELECT volume FROM files WHERE volume IS NOT NULL;
              INSERT INTO cat.files VALUES (1, 1), (1, 2), (3, 1), (3, 2), (7, 9), (NULL, 4);",
         )
         .unwrap();
@@ -201,12 +200,12 @@ pub(crate) fn pending_sql(since_checked: bool, volumes: &[i64]) -> String {
     let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
     let (changed, volume) = if since_checked { ("f.seq > ?2 AND ", "+f.volume") } else { ("", "f.volume") };
     format!(
-        "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, f.poster_ms, f.seq, f.folder, f.size
+        "SELECT f.id, f.folder_id, f.name, f.mtime, f.turns, f.poster_ms, f.seq, f.folder, f.size
          FROM cat.thumb_sources f
          LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
-         WHERE {changed}{volume} IN ({}) AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
-           AND NOT EXISTS (SELECT 1 FROM cat.file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
-                           AND x.retry = 0 AND x.mtime = f.mtime AND x.size = f.size AND x.rotation = f.rotation)
+         WHERE {changed}{volume} IN ({}) AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.turns)
+           AND NOT EXISTS (SELECT 1 FROM cat.thumb_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
+                           AND x.retry = 0 AND x.mtime = f.mtime AND x.size = f.size AND x.rotation = f.turns)
          ORDER BY {volume}, f.file_ref & 0xFFFFFFFFFFFF",
         list.join(",")
     )

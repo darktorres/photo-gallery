@@ -220,6 +220,6 @@ Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
 - **What's left in `engine.load` is Qt's.** Creating the viewer's `MediaPlayer`, `AudioOutput` and
   `VideoOutput` (which loads the FFmpeg plugin) made no measurable difference in Qt's `qml` tool: 0.61–0.82 s from
   process start to the first frame with them, 0.64–0.80 s without, over three runs each. So they aren't deferred.
-- **The cache's totals held** through a `gallery thumbs --cap-gb 1.9 --height 100` run killed after 20 s: 1.897 GB
+- **The cache's totals held** through a `gallery thumbs --cap-gib 1.769 --height 100` run killed after 20 s (that cap is the 1.9 GB of the run as first recorded): 1.897 GB (1.766 GiB)
   in 187,068 entries, equal to the entries' sum, no JPEG without its entry; the 11,000 new 100 px thumbnails had
   evicted 220 px ones, the least recently used first.

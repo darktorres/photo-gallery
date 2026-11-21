@@ -48,6 +48,12 @@ def library_packages():
     ]
 
 
+def normal_pg_deps(manifest):
+    """The workspace's crates a parsed Cargo.toml lists under its normal [dependencies] (dev and build dependencies are not
+    included); the names start with pg-."""
+    return [name for name in manifest.get("dependencies", {}) if name.startswith("pg-")]
+
+
 def tool_versions():
     """What shapes every graph besides the crate's files: cargo-modules, rustc, and the target."""
     cm = subprocess.run(["cargo", "modules", "--version"], capture_output=True, text=True, check=True)

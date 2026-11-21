@@ -106,7 +106,7 @@ pub(crate) fn join_printer(printer: JoinHandle<()>) {
 
 /// The command line's progress line for a phase.
 fn progress_line(p: &Progress) -> String {
-    let secs = p.elapsed.as_secs_f64().max(1e-3);
+    let elapsed = p.elapsed.as_secs_f64().max(1e-3);
     // The pass by the client's words, a scanned folder under this machine's rules (the command's catalogs are made
     // under them).
     let label = text::pass_name(&p.phase, pg_platform::native::PATH_RULES);
@@ -115,7 +115,7 @@ fn progress_line(p: &Progress) -> String {
             pass: label,
             done: p.done.to_string(),
             rate: format!("{:.0}", p.rate()),
-            seconds: format!("{secs:.0}"),
+            seconds: crate::secs(elapsed),
         })
     } else {
         line(&Line::Progress {
@@ -124,10 +124,11 @@ fn progress_line(p: &Progress) -> String {
             total: p.total.to_string(),
             percent: format!("{:.1}", 100.0 * p.fraction()),
             rate: format!("{:.0}", p.rate()),
-            mbps: format!("{:.0}", pg_model::num::size(p.bytes) / secs / 1e6),
+            // A rate, so decimal megabytes per second.
+            mbps: format!("{:.0}", pg_model::num::size(p.bytes) / elapsed / 1e6),
             failed: p.failed.to_string(),
-            seconds: format!("{secs:.0}"),
-            eta: format!("{:.0}", p.eta()),
+            seconds: crate::secs(elapsed),
+            eta: crate::secs(p.eta()),
         })
     };
     format!("  {words}")
@@ -161,7 +162,7 @@ pub(crate) enum Kept {
 /// The first failures a pass kept, one per line on stderr.
 pub(crate) fn print_failures(kept: Kept, failures: &[pg_model::notice::FileFailure]) {
     for f in failures {
-        let (path, error) = (f.path.clone(), f.error.clone());
+        let (path, error) = (pg_platform::native::PATH_RULES.display(&f.path), f.error.clone());
         let words = match kept {
             Kept::Skipped => Line::Skipped { path, error },
             Kept::Failed => Line::Failed { path, error },

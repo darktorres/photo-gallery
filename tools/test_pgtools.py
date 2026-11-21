@@ -18,7 +18,7 @@ def read(line: str):
 
 class EnvFile(unittest.TestCase):
     def test_a_quoted_value_loses_its_quotes(self):
-        self.assertEqual(read('LLVM_DIR="C:/Program Files/LLVM"'), ("LLVM_DIR", "C:/Program Files/LLVM"))
+        self.assertEqual(read('PG_LLVM_DIR="C:/Program Files/LLVM"'), ("PG_LLVM_DIR", "C:/Program Files/LLVM"))
         self.assertEqual(read("PG_ROOT='D:/Photo Gallery'"), ("PG_ROOT", "D:/Photo Gallery"))
 
     def test_a_bare_value_is_kept_as_it_is(self):
@@ -31,7 +31,7 @@ class EnvFile(unittest.TestCase):
         self.assertEqual(env_value("\"mixed'"), "\"mixed'")
 
     def test_a_comment_line_sets_nothing(self):
-        self.assertIsNone(read("# QT_DIR=C:/Qt"))
+        self.assertIsNone(read("# PG_QT_DIR=C:/Qt"))
 
 
 class LoadEnvFile(unittest.TestCase):

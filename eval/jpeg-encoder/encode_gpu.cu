@@ -457,8 +457,8 @@ __global__ void k_wcount(const uint32_t* words, uint32_t* wff, uint64_t W) {
     wff[w] = c;
 }
 
-__global__ void k_gather64(const uint64_t* src, const uint64_t* idx, uint32_t cnt, uint64_t* dst) {
-    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void k_gather64(const uint64_t* src, const uint64_t* idx, uint64_t cnt, uint64_t* dst) {
+    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;  // 64-bit, like the counts and tables it indexes
     if (i < cnt) dst[i] = src[idx[i]];
 }
 

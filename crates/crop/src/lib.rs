@@ -17,7 +17,7 @@ use pg_model::rules::Path as RulePath;
 
 use pg_exiftool::ExifTool;
 use pg_jobs::control::Control;
-use pg_jobs::failure::{FAILURES_KEPT, file_failure};
+use pg_jobs::failure::{FAILURES_KEPT, file_failure, stored_path};
 use pg_jobs::pipeline::{self, Options, Read};
 use pg_model::notice::FileFailure;
 use pg_model::progress::Phase;
@@ -138,7 +138,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Err(e) => {
                     stats.failed += 1;
                     if stats.failures.len() < FAILURES_KEPT {
-                        stats.failures.push(file_failure(rules.display_stored(paths.get(job.source.path)), &e));
+                        stats.failures.push(file_failure(stored_path(rules, paths.get(job.source.path)), &e));
                     }
                 }
             }
@@ -183,7 +183,7 @@ struct CutJob {
 /// What writing one original came to.
 enum CutWritten {
     Saved {
-        after: (i64, i64),
+        after: (u64, i64),
     },
     /// Changed since its borders were found.
     Skipped,
@@ -269,7 +269,7 @@ pub fn cut(
                 Err(e) => {
                     stats.failed += 1;
                     if stats.failures.len() < FAILURES_KEPT {
-                        stats.failures.push(file_failure(rules.display_stored(paths.get(job.source.path)), &e));
+                        stats.failures.push(file_failure(stored_path(rules, paths.get(job.source.path)), &e));
                     }
                 }
             }
@@ -420,7 +420,7 @@ mod tests {
         (dir, source)
     }
 
-    /// Published: the copy is in place with the source's time, and no temporary is left.
+    // Published: the copy is in place with the source's time, and no temporary is left.
     #[test]
     fn publish_renames_the_temp_into_place() {
         let (dir, source) = folder("crop-publish");
@@ -433,7 +433,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A rename that fails (the copy's folder is gone) leaves no temporary, and no copy.
+    // A rename that fails (the copy's folder is gone) leaves no temporary, and no copy.
     #[test]
     fn a_failed_rename_leaves_no_temp() {
         let (dir, source) = folder("crop-rename");
@@ -444,8 +444,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A failure after the write (the source's time can't be read: it is gone) leaves no temporary; nor does a
-    /// write that fails.
+    // A failure after the write (the source's time can't be read: it is gone) leaves no temporary; nor does a
+    // write that fails.
     #[test]
     fn a_failed_write_or_time_leaves_no_temp() {
         let (dir, source) = folder("crop-write");

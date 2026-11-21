@@ -15,11 +15,12 @@ use pg_model::name::Name;
 use pg_model::orientation::Orientation;
 use pg_model::path::PathArena;
 use pg_model::rules::Path as RulePath;
+use pg_model::turns::Turns;
 
 use crate::core::Catalog;
 use crate::current::{CURRENT_BATCH, CURRENT_ROWS, IS_CURRENT, query_current};
 use crate::error::Result;
-use crate::types::{CropSource, Listed, Status, WriteTarget, under_params};
+use crate::types::{CatalogCounts, CropSource, Listed, WriteTarget, under_params};
 
 impl Catalog {
     /// Whether the file is still as it was listed, with no write of the app's into it in progress: only then is what
@@ -37,12 +38,12 @@ impl Catalog {
         let mut stmt = self.conn.prepare_cached(CURRENT_ROWS)?;
         for batch in files.chunks(CURRENT_BATCH) {
             let ids: Vec<Value> = batch.iter().map(|(id, _)| Value::Integer(id.get())).collect();
-            let rows: BTreeMap<i64, (i64, i64, i64)> = stmt
-                .query_map([Rc::new(ids)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))?
+            let rows: BTreeMap<i64, (u64, i64, Turns)> = stmt
+                .query_map([Rc::new(ids)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, Turns::of(r.get(3)?)))))?
                 .collect::<rusqlite::Result<_>>()?;
             out.extend(batch.iter().map(|(id, listed)| {
-                rows.get(&id.get()).is_some_and(|&(size, mtime, rotation)| {
-                    size == listed.size && mtime == listed.mtime && rotation == i64::from(listed.rotation.get())
+                rows.get(&id.get()).is_some_and(|&(size, mtime, turns)| {
+                    size == listed.size && mtime == listed.mtime && turns == listed.rotation
                 })
             }));
         }
@@ -197,17 +198,17 @@ impl Catalog {
     }
 
     /// The counts, each a query over the catalog's tables. SQLite picks an index where one covers a query (the indexes
-    /// are in `baseline.sql`).
-    pub fn status(&self) -> Result<Status> {
+    /// are in `baseline.sql`). A count SQL returns negative is an error (rusqlite's checked `u64` read).
+    pub fn status(&self) -> Result<CatalogCounts> {
         // One read snapshot: the counts agree with each other while a scan writes.
         let snapshot = self.conn.unchecked_transaction()?;
-        let one = |sql: &str| -> Result<i64> { Ok(snapshot.query_row(sql, [], |r| r.get(0))?) };
+        let one = |sql: &str| -> Result<u64> { Ok(snapshot.query_row(sql, [], |r| r.get(0))?) };
         let files = one("SELECT count(*) FROM files WHERE missing = 0")?;
         let failed = one("SELECT count(*) FROM analysis a CROSS JOIN files f
              WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0")?;
-        Ok(Status {
+        Ok(CatalogCounts {
             files,
-            missing: one("SELECT count(*) FROM files")? - files,
+            missing: one("SELECT count(*) FROM files WHERE missing <> 0")?,
             // Present files with an analysis that isn't a failure, current or not: the one count that reads them all.
             analyzed: one(
                 "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.missing = 0 AND a.error IS NULL",
@@ -234,7 +235,7 @@ mod tests {
     fn currents_is_is_current_over_a_batch() {
         let (c, _) = one_file(PathRules::Windows);
         let id = FileId::new(1);
-        let listed = |size: i64, rotation: u8| Listed { size, mtime: 100, rotation: Turns::new(rotation) };
+        let listed = |size: u64, rotation: u8| Listed { size, mtime: 100, rotation: Turns::new(rotation) };
         let files = [(id, listed(10, 0)), (id, listed(11, 0)), (id, listed(10, 1)), (FileId::new(9), listed(10, 0))];
         let want: Vec<bool> = files.iter().map(|(f, l)| c.is_current(*f, l).unwrap()).collect();
         assert_eq!(c.currents(&files).unwrap(), want);

@@ -6,7 +6,7 @@ decode (best of 3 runs of N decodes). It was restart.sh. Run after `linux.py inp
 (which copy the inputs and build the decoder binary), in the container (`just linux-eval eval/jpeg-decoders/restart.py`) or
 natively:
     python3 eval/jpeg-decoders/restart.py      (natively, needs libjpeg-turbo-progs, for jpegtran and djpeg)
-Environment: JPEG_INPUTS (default ~/jpeg-inputs), JPEG_RESTART_OUT (default ~/jpeg-restart), PG_BENCH_CLONE.
+Environment: PG_JPEG_INPUTS (default ~/jpeg-inputs), PG_JPEG_RESTART_OUT (default ~/jpeg-restart), PG_BENCH_CLONE.
 """
 
 import subprocess

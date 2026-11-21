@@ -58,6 +58,7 @@ main thread, steps 3-5 on --workers CPU threads (PairRunner).
 import argparse
 import csv
 import json
+import sys
 import time
 import zlib
 from collections import deque
@@ -72,6 +73,7 @@ from PIL import Image
 
 from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, WORK_SIDE, ground_truth, image_list, load_rgb
 from group import SHORTCUT_PDQ, SHORTCUT_SIM, pdq_distances, shortcut
+from verify_types import COLUMNS, ROTATIONS, Checkpoint, csv_row
 
 # isort: split
 import kornia as K  # after common: weights download under CACHE_DIR
@@ -144,7 +146,6 @@ def decide(m: dict, params: Params) -> str:
 # ---------- features ----------
 
 FEATURES = ("disk", "aliked", "sift")  # local features (each with its own LightGlue weights)
-ROTATIONS = {"none": (), "90": (90, 180, 270), "45": (45, 90, 135, 180, 225, 270, 315)}
 
 
 DISK_RUNTIMES = ("trt", "torch")
@@ -696,12 +697,18 @@ def main() -> None:
         if not args.list:
             parser.error("--pairs listed needs --list")
         prefix = f"verify_{args.list}"
-        with (WORK_DIR / f"pairs_{args.list}.csv").open(newline="", encoding="utf-8") as f:
+        list_csv = WORK_DIR / f"pairs_{args.list}.csv"
+        if not list_csv.is_file():
+            parser.error(f"--list {args.list}: no {list_csv}")
+        with list_csv.open(newline="", encoding="utf-8") as f:
             listed = [(r["label"], int(r["a"]), int(r["b"])) for r in csv.DictReader(f)]
         labels = tuple(sorted({label for label, _, _ in listed}))
 
     if args.rescore:
-        with (WORK_DIR / f"{prefix}_{args.model}.csv").open(newline="", encoding="utf-8") as f:
+        scored_csv = WORK_DIR / f"{prefix}_{args.model}.csv"
+        if not scored_csv.is_file():
+            sys.exit(f"verify: --rescore needs {scored_csv}: run the verifier on these pairs first")
+        with scored_csv.open(newline="", encoding="utf-8") as f:
             results = [{k: v for k, v in r.items() if v != ""} for r in csv.DictReader(f)]
         for row in results:
             row["decision"] = decide(row, params)
@@ -817,69 +824,6 @@ def main() -> None:
     prefetch.close()
     write_outputs(prefix, args, params, labels, results, round(time.time() - start, 1))
     checkpoint.finish()
-
-
-COLUMNS = [
-    "id",
-    "label",
-    "similarity",
-    "decision",
-    "correct",
-    "inliers",
-    "matches",
-    "flipped",
-    "rotation",
-    "reference",
-    "cover_a",
-    "cover_b",
-    "overlap",
-    "color_to",
-    "noise",
-    "res_p99",
-    "changed_frac",
-    "blob_frac",
-    "interior_changed_frac",
-    "interior_regions",
-    "moved_frac",
-    "moved_share",
-    "shortcut",
-    "error",
-    "path_a",
-    "path_b",
-]
-
-
-def csv_row(r: dict) -> dict:
-    return {k: (f"{v:.4f}" if isinstance(v, float) else v) for k, v in r.items()}
-
-
-class Checkpoint:
-    """Appends every finished pair to <prefix>_<model>.partial.csv, so an interrupted run resumes where it
-    stopped instead of starting over. Pair ids must be stable across runs (same inputs and options);
-    delete the file to start fresh. Removed once the run completes."""
-
-    def __init__(self, prefix: str, model: str) -> None:
-        self.path = WORK_DIR / f"{prefix}_{model}.partial.csv"
-        self.rows: dict[str, dict] = {}
-        if self.path.exists():
-            with self.path.open(newline="", encoding="utf-8") as f:
-                self.rows = {r["id"]: {k: v for k, v in r.items() if v != ""} for r in csv.DictReader(f)}
-            print(f"resuming: {len(self.rows)} pairs already done ({self.path.name})", flush=True)
-        self._file = self.path.open("a", newline="", encoding="utf-8")  # kept open for the run
-        self._writer = csv.DictWriter(self._file, COLUMNS, extrasaction="ignore")
-        if not self.rows:
-            self._writer.writeheader()
-
-    def done(self, pid) -> dict | None:
-        return self.rows.get(str(pid))
-
-    def add(self, row: dict) -> None:
-        self._writer.writerow(csv_row(row))
-        self._file.flush()
-
-    def finish(self) -> None:
-        self._file.close()
-        self.path.unlink()
 
 
 def write_outputs(prefix: str, args, params: Params, labels: tuple, results: list[dict], seconds: float) -> None:

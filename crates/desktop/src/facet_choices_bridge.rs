@@ -19,17 +19,29 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
     }
 
+    /// A list facet of the filter bar, as QML names it (`FacetChoices.Types`); maps to `pg_model::query::ListFacet` in
+    /// `facet_choices::list_facet`. Its values are in the bar's order (`pg_client::facets::ALL`).
+    #[qenum(FacetChoices)]
+    enum ChoiceFacet {
+        Types,
+        Shapes,
+        Status,
+        Borders,
+        Ratings,
+        Exts,
+    }
+
     extern "RustQt" {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
-        /// Which list, by its index in `pg_client::facets::ALL` (the filter bar names them). Set it once.
-        #[qproperty(i32, facet, READ, WRITE = set_facet, FINAL)]
+        /// Which list the rows are. Set it once.
+        #[qproperty(ChoiceFacet, facet, READ, WRITE = set_facet, FINAL)]
         type FacetChoices = super::FacetChoicesRust;
     }
 
     unsafe extern "RustQt" {
-        fn set_facet(self: Pin<&mut FacetChoices>, value: i32);
+        fn set_facet(self: Pin<&mut FacetChoices>, value: ChoiceFacet);
 
         /// Rebuild the rows from the listing's query and the counts (after a change to either).
         #[qinvokable]

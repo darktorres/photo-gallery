@@ -28,7 +28,7 @@ Rectangle {
     required property real dpr
 
     // The viewer's photo: the catalog's file, by its id.
-    function show(fileId: int) {
+    function show(fileId: real) {
         openPanel();
         yandex.searchFile(fileId);
     }

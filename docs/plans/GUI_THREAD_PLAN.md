@@ -947,7 +947,7 @@ If they do stall, an automatic checkpoint runs on the writer's thread after a co
 behind it, an edit included. So the writer decides when, and runs it itself; the checkpoint gets no thread of its own:
 
 - The writer's connection registers a WAL hook (`Connection::wal_hook`, verified in the locked rusqlite revision
-  `9d76035` behind the `hooks` feature, `Cargo.toml:36`; it takes `&mut Connection`). Registering a hook replaces
+  `9d76035` (since moved to `ac441bb`) behind the `hooks` feature, which the workspace's rusqlite entry enables; it takes `&mut Connection`). Registering a hook replaces
   SQLite's default hook, which is the automatic checkpoint (`sqlite3_wal_autocheckpoint` is itself a `sqlite3_wal_hook`
   call in the bundled `sqlite3.c`), so no pragma is needed. The hook runs only on a commit. It receives the frame count
   and, at 1000 frames or more (SQLite's default), marks a checkpoint as due. It does no SQL and always returns `Ok(())`,

@@ -44,21 +44,21 @@ Not run: the full 187,808-image k-NN set (hours per run); `verify_synth.py` afte
 
 | Hamming distance ≤ | 0 | 8 | 16 | 22 | **31** (Meta's default) | 50 |
 |---|---|---|---|---|---|---|
-| Labeled pairs found | 32.6% | 65.7% | 74.8% | 80.1% | **82.8%** | 86.8% |
+| Labeled pairs found (share) | 0.326 | 0.657 | 0.748 | 0.801 | **0.828** | 0.868 |
 
-- **Precise but narrow.** At d ≤ 22 (80% recall) it flags 0 cross-group pairs, and at d ≤ 78 only 1.
-  But it can't reach 95% recall (that needs d ≤ 98, which flags 345 cross-group pairs and 18.8k
+- **Precise but narrow.** At d ≤ 22 (0.80 recall) it flags 0 cross-group pairs, and at d ≤ 78 only 1.
+  But it can't reach 0.95 recall (that needs d ≤ 98, which flags 345 cross-group pairs and 18.8k
   unlabeled pairs).
 - **Breaks on the Pinterest edits:** crop 80% → R@10 0.33, 60% → 0.02, 10% letterbox → 0.11
   (synthetic edits table in MODELS.md). Mirrors and 90° rotations are found only with the 8-variant dihedral query.
 - Hashing: 100 img/s with 6 processes in Python (decode-bound; the hash itself is cheap).
-- **Role:** a cheap exact/near-exact tier (re-encodes, resizes, grading). ~80% of the labeled pairs
+- **Role:** a cheap exact/near-exact tier (re-encodes, resizes, grading). ~0.80 of the labeled pairs
   are this kind of copy, so PDQ (with dihedral queries) could settle those before the embedding
   stage. It can't replace SSCD, and isn't needed for SSCD to work: an optional fast path.
 
 ### Shortcut and grouping (`eval/group.py`, k-NN set, subset, 2026-10-29)
 
-**Shortcut** (PDQ ≤ 22 with both hashes reliable, or SSCD ≥ 0.95): 2,896 of the 8,344 k-NN pairs (35%), and
+**Shortcut** (PDQ ≤ 22 with both hashes reliable, or SSCD ≥ 0.95): 2,896 of the 8,344 k-NN pairs (0.35), and
 the fixed verifier matched **every one** of them, so skipping it changes nothing. `verify.py --shortcut` now
 does that in pipeline mode (decision "match", `shortcut` = pdq / sscd, no image work).
 
@@ -121,24 +121,25 @@ are therefore not the basis of the current `--max-noise`; the re-pick this secti
 2. MAGSAC homography.
 3. Warp onto a 512 px canvas.
 4. Robust quadratic color fit.
-5. Analyze the residual: a changed region ≥ 0.3% of the overlap, or a median residual > 0.03, means
-   variant.
+5. Analyze the residual: a median residual > 0.03 means variant. The changed-region size rule (a region of 0.003 of
+   the overlap) was removed 2026-11-21 (U-028): no verdict uses region size (`eval/verify.py` counts `interior_regions`
+   only above a 0.0005 speck floor), and the variant measures are the moved and interior values below.
 
 Ran on all 702 labeled duplicate pairs + the 345 `similiar_but_not_dups` pairs with SSCD ≥ 0.4,
 at 1.3 pairs/s:
 
 | Label | → duplicate | → variant | → unrelated |
 |---|---|---|---|
-| duplicate (702) | 666 (94.9%) | 36 | 0 |
+| duplicate (702) | 666 (0.949) | 36 | 0 |
 | not duplicate (345) | 40 | 305 | 0 |
 
 - ~~Every non-duplicate above 0.4 aligns geometrically (0 unrelated)~~: wrong, the "≥ 20 inliers"
   alignment test also passes unrelated pictures (see "match vs unrelated" below). With the
   corrected rule, 253 of these 345 match (variants) and 92 don't.
-- **Not yet better than SSCD alone** at the same recall (SSCD at 95% recall: 42 non-duplicates
+- **Not yet better than SSCD alone** at the same recall (SSCD at 0.95 recall: 42 non-duplicates
   through). The errors fall into three groups:
   - **Small face edits pass as duplicates** (e.g. eyes opened/closed, smile changed, AI face
-    retouch). The changed regions are ~0.01–0.05% of the image, smaller than the spurious
+    retouch). The changed regions are ~0.0001–0.0005 of the image, smaller than the spurious
     regions on true duplicates. Re-running at full resolution doesn't fix it: the change is
     found, but a size threshold can't separate it.
   - **Overlays make duplicates look like variants:** a TikTok watermark added to one copy.
@@ -161,7 +162,7 @@ at 1.3 pairs/s:
 reach SSCD 0.4 and 4 reach 0.8. Used every pair ≥ 0.3: 4,628 pairs, 57 min.
 
 - **Inlier count alone fails badly.** With "≥ 20 inliers = match", **2,720 of 4,628 cross-group
-  pairs matched (59%)**. DISK + LightGlue + MAGSAC finds a homography with 20–120 inliers between
+  pairs matched (0.59)**. DISK + LightGlue + MAGSAC finds a homography with 20–120 inliers between
   unrelated pictures (similar poses, backgrounds, AI style).
 - **The residual after alignment separates them:**
 
@@ -171,7 +172,7 @@ reach SSCD 0.4 and 4 reach 0.8. Used every pair ≥ 0.3: 4,628 pairs, 57 min.
 | Inlier ratio | .66 / .89 / .96 / .99 / 1.0 | .15 / .23 / .45 / .92 / .98 | 0 / 0 / .22 / .33 / .50 |
 | Median residual (aligned only) | .001 / .003 / .006 / .009 / .025 | .005 / .010 / .046 / .111 / .263 | .092 / .187 / .255 / .343 / .427 |
 
-- **New rule:** match if median residual ≤ 0.06, **or** ≥ 150 inliers making up ≥ 50% of the
+- **New rule:** match if median residual ≤ 0.06, **or** ≥ 150 inliers making up ≥ 0.50 of the
   matches (the second clause catches extreme grades the color model can't undo, e.g. dups2/090).
   ~~e.g. dups2/090~~ **Correction 2026-10-29:** dups2/090 was not a color grade but two pairs of
   different frames of one shoot (residual 0.13, see "Same-shoot frames" below). The second clause
@@ -198,12 +199,12 @@ are *different pictures*, not matches. dups2/090 held two such pairs and was spl
   labeled duplicate needs it (all have median residual ≤ 0.051); it matched only 090's cross-frame
   pairs (residual 0.13), 21 similar-folder pairs (residual 0.06–0.13) and 125 vs 673.
 - **Still matched: 670 vs 671**, same beach, different pose. The median residual is low (0.019)
-  because the background dominates. The changed area does not separate it by itself: 9% changed vs
-  up to 14% on real duplicates. But **where** differs:
+  because the background dominates. The changed area does not separate it by itself: 0.09 changed vs
+  up to 0.14 on real duplicates. But **where** differs:
   - On duplicates, large changed areas sit **at the frame edges**: phone status bars, UI icons,
-    frame lines (dups2/426 with 14% changed is a screenshot with a status bar).
+    frame lines (dups2/426 with 0.14 changed is a screenshot with a status bar).
   - On 670/671 the changes are **inside**: the body, the hat strings, palm leaves in the wind.
-- `verify.py` now measures `interior_changed_frac` (changed share of the overlap, minus an 8% edge
+- `verify.py` now measures `interior_changed_frac` (changed share of the overlap, minus a 0.08 edge
   band) and `interior_regions` (separate changed regions inside). Diagnostic until the reruns show
   whether a threshold separates same-shoot frames from local-edit variants (a face retouch also
   changes the interior, but in one compact region).
@@ -222,7 +223,7 @@ the strong clause: unlabeled 2,985 / 4,134.)
 
 **Interior changes don't separate same-shoot frames on their own:**
 
-- 670/671 have 25–32 changed regions inside; labeled duplicates at most 13. "≥ 15 regions or > 15%
+- 670/671 have 25–32 changed regions inside; labeled duplicates at most 13. "≥ 15 regions or > 0.15
   interior change" flips 0 duplicates, 52 similar-folder and 58 unlabeled k-NN matches to unrelated.
 - Looking at 20 of the 58 flipped k-NN pairs: **~11 correct** (front vs back of a cosplay, other
   poses, other outfit in the same room: matched only because the background dominates the median
@@ -253,20 +254,20 @@ the strong clause: unlabeled 2,985 / 4,134.)
     zero on every plain duplicate.
   - **It misses big changes**: when the whole subject differs, flow can't explain it, so nothing
     "moves". Those have a large interior change instead (0.17–0.30), so the two measures complement
-    each other: roughly "unrelated if moved > ~1.2% or interior change > ~15%" gets 16 of 17
+    each other: roughly "unrelated if moved > ~0.012 or interior change > ~0.15" gets 16 of 17
     different-picture pairs here.
   - **Gray zone:** 448 is a body-reshape (liquify) edit, a real local geometric change, so it moves
-    like a pose change; a hair recolor (5152) changes 18% of the interior. Whether such edits are
+    like a pose change; a hair recolor (5152) changes 0.18 of the interior. Whether such edits are
     "the same picture" is a definition question, and 63 pairs are too few to set thresholds.
 - **Rerun of all three sets with motion (subset, 2026-10-29; decisions unchanged, rules off).** Among
   pairs the verifier matches:
 
   | Set / label | Matched | moved > 0 | moved p99 / max | interior change p99 / max |
   |---|---|---|---|---|
-  | Labeled duplicates | 698 | 1.3% | 0.000 / 0.074 (448) | 0.041 / 0.132 |
-  | Cross-group (different pictures) | 5 | 100% | all 0.027–0.037 | 0.196 / 0.200 |
-  | Similar folder | 231 | 81% | 0.061 / 0.129 | 0.208 / 0.393 |
-  | k-NN unlabeled | 2,973 | 6.8% | 0.013 / 0.195 | 0.135 / 0.363 |
+  | Labeled duplicates | 698 | 0.013 | 0.000 / 0.074 (448) | 0.041 / 0.132 |
+  | Cross-group (different pictures) | 5 | 1.00 | all 0.027–0.037 | 0.196 / 0.200 |
+  | Similar folder | 231 | 0.81 | 0.061 / 0.129 | 0.208 / 0.393 |
+  | k-NN unlabeled | 2,973 | 0.068 | 0.013 / 0.195 | 0.135 / 0.363 |
 
   Candidate rules, pairs flipped from match to unrelated (k-NN set; cross-group = known errors,
   duplicate = known losses, the rest unknown until marked):
@@ -281,7 +282,7 @@ the strong clause: unlabeled 2,985 / 4,134.)
 
   - **Motion alone removes every known false match** (all 5, including 125 vs 673, a different photo
     of the same person) at the cost of one labeled duplicate, 448, the liquify edit.
-  - Plain duplicates almost never move (98.7% exactly 0). The similar folder moves a lot (81%), as it
+  - Plain duplicates almost never move (0.987 exactly 0). The similar folder moves a lot (0.81), as it
     holds AI regenerations and other shots, whose truth is unknown.
   - Whether the 56 unlabeled pairs the combined rule flips are right is the open question: the
     hand marks answer it.
@@ -309,13 +310,13 @@ copy (all should match). 3,900 pairs, 39 min.
 | **Rotate 90°** | **28** | No rotation attempts (only mirror); the 28 are near-symmetric images |
 
 - **Crops, overlays and letterboxing are solved:** the stage SSCD's threshold failed on (a 25% crop scores ~0.54) the
-  verifier accepts 99–100% of the time, so k-NN rank + verifier works as designed.
+  verifier accepts 0.99–1.00 of the time, so k-NN rank + verifier works as designed.
 - **Fixes needed** (the first two done, see "Verifier fixes and speed"):
   - **Color fit in both directions** (copy → original and original → copy, keep the better). Also explains the
     real k-NN miss 5172, a heavy grade (white wall → yellow) at PDQ distance 12.
   - **Scale normalization for very different sizes:** match a tiny copy against the original at a comparable
     size, not 1024 px vs ~215 px. Also explains the real miss 6041 (236 px copy of a 1340 px original).
-  - **Rotations:** better left to PDQ's 8-orientation query (exact rotated copies, 99.7% within d ≤ 31) than to
+  - **Rotations:** better left to PDQ's 8-orientation query (exact rotated copies, 0.997 within d ≤ 31) than to
     4× the local-feature work; revisit if the full set shows rotated *edited* copies.
 - **The candidate motion rule rarely hurts real copies:** 19 of ~3,500 matched edited copies would flip (6
   downscale and 6 rotation by motion, 4 grayscale and 2 text overlays by interior change, 1 crop).
@@ -326,23 +327,23 @@ copy (all should match). 3,900 pairs, 39 min.
 > in the lines below) are from before the fix. The post-fix k-NN figures, on a 9,307-image subset, are in "Verifier
 > after the resampling fix" at the end of this file.
 
-8,344 k-NN pairs over 9,307 images = **0.9 pairs per image**; 28% of images have none (p90 4, max 48).
+8,344 k-NN pairs over 9,307 images = **0.9 pairs per image**; 0.28 of images have none (p90 4, max 48).
 
-| PDQ distance | Pairs | Verifier match | | SSCD cosine | Pairs | Verifier match |
+| PDQ distance | Share of pairs | Verifier match rate | | SSCD cosine | Share of pairs | Verifier match rate |
 |---|---|---|---|---|---|---|
-| ≤ 8 | 27.7% | 100% | | 0.40–0.50 | **48.5%** | **1.2%** |
-| 9–22 | 4.7% | 99.5% | | 0.50–0.70 | 6.9% | 26% |
-| 23–31 | 1.7% | 98.6% | | 0.70–0.88 | 4.9% | 96% |
-| 32–60 | 3.3% | 95.3% | | 0.88–0.95 | 7.1% | 99.8% |
-| > 60 | 62.5% | 15.2% | | ≥ 0.95 | 32.7% | 100% |
+| ≤ 8 | 0.277 | 1.00 | | 0.40–0.50 | **0.485** | **0.012** |
+| 9–22 | 0.047 | 0.995 | | 0.50–0.70 | 0.069 | 0.26 |
+| 23–31 | 0.017 | 0.986 | | 0.70–0.88 | 0.049 | 0.96 |
+| 32–60 | 0.033 | 0.953 | | 0.88–0.95 | 0.071 | 0.998 |
+| > 60 | 0.625 | 0.152 | | ≥ 0.95 | 0.327 | 1.00 |
 
-- **Shortcut: accept PDQ ≤ 22 or SSCD ≥ 0.95 without verifying.** 35% of pairs. The verifier (with the motion
+- **Shortcut: accept PDQ ≤ 22 or SSCD ≥ 0.95 without verifying.** 0.35 of pairs. The verifier (with the motion
   rule) disagreed on 5 of 2,896, and by eye **the shortcut was right every time**: a heavy grade and a 236 px copy
   the verifier can't handle yet, a FaceApp edit and two AI variants the motion rule flagged. After the shortcut,
-  only 31% of images need local features at all.
-- **The low band is the cost sink:** SSCD 0.40–0.50 is half the pairs but 1.2% matches; it can't be dropped
+  only 0.31 of images need local features at all.
+- **The low band is the cost sink:** SSCD 0.40–0.50 is half the pairs but 0.012 of them match; it can't be dropped
   (heavy crops live there). Rejecting on inlier count before the dense stage doesn't help: < 40 inliers removes
-  28% of pairs but loses verifier matches and edited copies, and pairs under 20 already skip it.
+  0.28 of pairs but loses verifier matches and edited copies, and pairs under 20 already skip it.
 - **Cost (`profile_verify`, 200 pairs, RTX 2060):**
 
   | Stage | Cost |
@@ -379,12 +380,12 @@ Changes in `eval/verify.py`, all four pair sets rerun:
   Measured fit ratios: those false matches ≤ 1.56×; grayscale copies ≥ 5.1×; real heavy grades 6–8×; a
   washed-out real copy 2.7×.
 - **Mirror only when needed:** the mirrored image is aligned only if the as-is alignment has < 200 inliers
-  (45% of k-NN pairs skip it), and retried when a skipped pair then doesn't match: a mirrored copy of a
+  (0.45 of k-NN pairs skip it), and retried when a skipped pair then doesn't match: a mirrored copy of a
   near-symmetric picture can align as-is with ~280 inliers and fail.
 - **Speed:** color fit by weighted normal equations, the tolerant residual on the GPU (240 → 8 ms), and
   the comparison (color fit, residual, flow) on 4 CPU threads while the main thread extracts and matches
   the next pair. Per image 239 → 127 ms, per pair 334 → 265 ms serial. More workers don't help: the GPU
-  main thread is the limit (DISK 61% of it, LightGlue 29%).
+  main thread is the limit (DISK 0.61 of it, LightGlue 0.29).
 
 | Set | Baseline | Now (DISK) | ALIKED |
 |---|---|---|---|
@@ -400,7 +401,7 @@ Changes in `eval/verify.py`, all four pair sets rerun:
 | Throughput (pairs/s; synth / labeled / cross / k-NN) | 1.7 / – / – / 1.5 | 4.9 / 3.4 / 5.0 / 3.7 | 6.5 / 5.4 / 3.0* / 4.9 |
 
 \* the GPU was likely shared during that run; ALIKED extraction alone is 42 ms vs DISK's 116 ms per image
-(LightGlue ~30 ms per pair for both; DISK under fp16 autocast is 6× slower, ALIKED fp16 only 8% faster).
+(LightGlue ~30 ms per pair for both; DISK under fp16 autocast is 6× slower, ALIKED fp16 only 0.08 faster).
 
 - **Both real k-NN misses are fixed:** 5172 (heavy grade) and 6041 (236 px copy) now match, so the shortcut
   disagreements above were the verifier's limits, not the shortcut's.
@@ -417,7 +418,7 @@ Changes in `eval/verify.py`, all four pair sets rerun:
 > verifier; the figures stand as the record of the pre-fix run.
 
 **DISK on TensorRT.** Only DISK's U-Net runs as a TensorRT 11 fp16 engine (`accel.DiskUnetTRT`, dynamic sides
-up to 1024 px); kornia's keypoint selection and LightGlue stay in PyTorch. Per image 35 ms vs 113 ms, 98% the same
+up to 1024 px); kornia's keypoint selection and LightGlue stay in PyTorch. Per image 35 ms vs 113 ms, 0.98 the same
 keypoints, descriptor cosine 0.9999 (a TensorRT fp32 engine gives no speedup, 108 ms). `--disk-runtime trt` is now
 the default. All four sets rerun:
 
@@ -432,7 +433,7 @@ the default. All four sets rerun:
 - **The flips show a fragile measurement, not TensorRT drift.** Rerunning the two new cross-group matches (group
   125 vs 673, one shoot) in torch reproduces torch's numbers exactly, so the difference comes from the features.
   For some pairs the median residual swings far more than the threshold margin when a few keypoints change:
-  k-NN 978 (similar-folder) 0.272 → 0.033 and 4157 0.014 → 0.076, at equal inlier counts. About 0.3% of pairs
+  k-NN 978 (similar-folder) 0.272 → 0.033 and 4157 0.014 → 0.076, at equal inlier counts. About 0.003 of pairs
   sit there. That belongs to the decision rule (hand marks), not to the runtime.
 
 **Throughput** (labeled set, 1,043 pairs, quiet machine; the four-set runs above overlapped the M1 session's CPU
@@ -458,7 +459,7 @@ load and read 4.3–4.7 pairs/s):
 - **768 px / 2,048 keypoints, cross-group and k-NN sets (2026-10-31): not adopted, 1024 px stays.** Cross-group
   (4,632 pairs, floor 0.3): 8 false matches vs 7; the new one (groups 162 vs 572) has SSCD similarity 0.339, below
   the 0.4 k-NN floor, the rest are the known one-shoot pairs (670/671, 125/673). k-NN set (8,344 pairs): 52 decisions
-  flip (0.6%); duplicates 698 / 698, similar-folder 222 matches (224), unlabeled 3,000 (2,989). The gain is only ~9%
+  flip (0.006); duplicates 698 / 698, similar-folder 222 matches (224), unlabeled 3,000 (2,989). The gain is only ~0.09
   on a quiet machine (labeled 169 s vs 185 s), because LightGlue and the comparison, not DISK, dominate.
 
 **Rotations.** New synthetic edits (`edits.py`, appended so the older edits keep their seeds): a 3–15° tilt cropped to

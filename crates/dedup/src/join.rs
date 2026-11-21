@@ -2075,14 +2075,17 @@ mod tests {
         out
     }
 
-    struct Rng(u64);
+    /// The tests' generator (`pg-testrng`, shared by every test), with the draws the join's cases make their hashes and
+    /// words from.
+    struct Rng(pg_testrng::Rng);
 
     impl Rng {
+        fn new(seed: u64) -> Rng {
+            Rng(pg_testrng::Rng::new(seed))
+        }
+
         fn draw(&mut self) -> u64 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            self.0
+            self.0.next_u64()
         }
 
         fn hash(&mut self) -> Hash {
@@ -2209,7 +2212,7 @@ mod tests {
 
     #[test]
     fn the_permutation_is_a_bijection_on_diagonals_that_keeps_distances() {
-        let mut rng = Rng(7);
+        let mut rng = Rng::new(7);
         for _ in 0..200 {
             let (a, b) = (rng.hash(), rng.hash());
             let (pa, pb) = (permuted(&a), permuted(&b));
@@ -2233,7 +2236,7 @@ mod tests {
 
     #[test]
     fn the_transpose_of_a_permuted_hash_is_a_renaming_of_its_chunks() {
-        let mut rng = Rng(11);
+        let mut rng = Rng::new(11);
         let mut hashes: Vec<Hash> = (0..2000).map(|_| rng.hash()).collect();
         hashes.extend([Hash([0; 32]), Hash([0xFF; 32])]);
         // Each single bit, so every cell's place is checked on its own.
@@ -2247,10 +2250,10 @@ mod tests {
         }
     }
 
-    /// The store's permutation undone gives back every hash, and `Joiner::original` every picture's orientations.
+    // The store's permutation undone gives back every hash, and `Joiner::original` every picture's orientations.
     #[test]
     fn the_original_hashes_come_back_from_the_store() {
-        let mut rng = Rng(12);
+        let mut rng = Rng::new(12);
         let mut hashes: Vec<Hash> = (0..2000).map(|_| rng.hash()).collect();
         hashes.extend([Hash([0; 32]), Hash([0xFF; 32])]);
         for k in 0..256 {
@@ -2312,7 +2315,7 @@ mod tests {
 
     #[test]
     fn the_radix_sort_is_a_stable_sort_by_the_chunk() {
-        let mut rng = Rng(99);
+        let mut rng = Rng::new(99);
         // Few distinct chunk values, so the buckets are long and stability shows; more entries than a block of the
         // first pass, so the runs of several blocks are merged.
         let crowded = |rng: &mut Rng, n: u32| -> Vec<([u64; 4], u32)> {
@@ -2364,10 +2367,10 @@ mod tests {
         }
     }
 
-    /// The head test's bound is exact: a pair at the radius whose first chunk within one bit is stage `c`, with every
-    /// bit it may spend placed in the head (so the head is at the bound), is found at every stage, every width, every
-    /// kind of probe (the value itself, a low bit flipped in the bucket's own region, a high bit flipped in another),
-    /// on every kernel and path; one bit more is over the radius.
+    // The head test's bound is exact: a pair at the radius whose first chunk within one bit is stage `c`, with every
+    // bit it may spend placed in the head (so the head is at the bound), is found at every stage, every width, every
+    // kind of probe (the value itself, a low bit flipped in the bucket's own region, a high bit flipped in another),
+    // on every kernel and path; one bit more is over the radius.
     #[test]
     fn the_head_test_is_exact_at_every_stage_width_and_probe() {
         // Where each bit of a hash lands: chunk and bit of the chunk's value.
@@ -2379,7 +2382,7 @@ mod tests {
             let c = (0..CHUNKS).find(|&c| chunk(&words, c) != 0).unwrap();
             place[c][index(chunk(&words, c).trailing_zeros())] = k;
         }
-        let mut rng = Rng(23);
+        let mut rng = Rng::new(23);
         for w in 1..=MAX_HEAD_WORDS {
             let mut lib = Library { hashes: Vec::new(), owed: Vec::new() };
             for c in 0..CHUNKS {
@@ -2432,8 +2435,8 @@ mod tests {
         }
     }
 
-    /// The binomial tail against exact counts, and the widths it chooses: those the measurements found fastest (stage
-    /// 10's best was 3 by a margin within the noise, at the same full tests as 2).
+    // The binomial tail against exact counts, and the widths it chooses: those the measurements found fastest (stage
+    // 10's best was 3 by a margin within the noise, at the same full tests as 2).
     #[test]
     fn the_widths_are_the_fewest_words_worth_their_cost() {
         // Exact counts (each product in u128, the sums below 2^63), their f64 within 2^-52 of them.
@@ -2451,10 +2454,10 @@ mod tests {
         }
         assert_eq!(WIDTHS, [3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1]);
     }
-    /// Every head width, the same at every stage and mixed, finds the pairs brute force does, on every kernel and path.
+    // Every head width, the same at every stage and mixed, finds the pairs brute force does, on every kernel and path.
     #[test]
     fn every_head_width_matches_brute_force() {
-        let mut rng = Rng(0xC0FF_EE00_D15E_A5E5);
+        let mut rng = Rng::new(0xC0FF_EE00_D15E_A5E5);
         let lib = corpus(&mut rng, 300, 4);
         let want = brute(&lib, 0..lib.hashes.len());
         assert!(want.len() > 10, "the corpus must have pairs to find");
@@ -2478,11 +2481,11 @@ mod tests {
         }
     }
 
-    /// Buckets of hundreds of entries: hundreds of copies of one picture, owed and not, so a query bucket spans a low
-    /// byte's worth of entries and many loads of eight, and the stored entries' suffixes start anywhere in it.
+    // Buckets of hundreds of entries: hundreds of copies of one picture, owed and not, so a query bucket spans a low
+    // byte's worth of entries and many loads of eight, and the stored entries' suffixes start anywhere in it.
     #[test]
     fn buckets_of_hundreds_of_entries_match_brute_force() {
-        let mut rng = Rng(77);
+        let mut rng = Rng::new(77);
         let base = rng.four();
         let mut lib = Library { hashes: Vec::new(), owed: Vec::new() };
         for i in 0..500 {
@@ -2515,12 +2518,12 @@ mod tests {
         }
     }
 
-    /// The few-owed path's lists are the probes: for every chunk value, the query entries listed under it are exactly
-    /// those whose own value is it or one bit from it, each once. With queries whose values are one bit apart (each in
-    /// the other's probes), two bits apart (sharing neighbours), and equal (two entries of one value).
+    // The few-owed path's lists are the probes: for every chunk value, the query entries listed under it are exactly
+    // those whose own value is it or one bit from it, each once. With queries whose values are one bit apart (each in
+    // the other's probes), two bits apart (sharing neighbours), and equal (two entries of one value).
     #[test]
     fn the_few_owed_lists_are_the_probes() {
-        let mut rng = Rng(41);
+        let mut rng = Rng::new(41);
         let mut words: Vec<[u64; 4]> = (0..40).map(|_| [rng.draw(), rng.draw(), rng.draw(), rng.draw()]).collect();
         let base = words[0];
         for k in [0, 5, 6, 15] {
@@ -2545,7 +2548,7 @@ mod tests {
     fn the_vector_suffix_starts_where_the_walk_does() {
         #[cfg(target_arch = "x86_64")]
         if std::arch::is_x86_feature_detected!("avx2") {
-            let mut rng = Rng(7);
+            let mut rng = Rng::new(7);
             let code = |rng: &mut Rng, picture: u32| (picture << 4) | u32::try_from(rng.below(16)).unwrap();
             // Buckets of 0 - 40 queries in picture order (a picture repeats: several of its orientations share a
             // bucket), with pictures near 0 and near MAX_PICTURES (the vector compare is signed). The last bucket
@@ -2583,7 +2586,7 @@ mod tests {
 
     #[test]
     fn matches_brute_force_at_every_owed_share_and_kernel() {
-        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let mut rng = Rng::new(0x9E37_79B9_7F4A_7C15);
         for owed_in_ten in [10, 5, 1, 0] {
             let lib = corpus(&mut rng, 400, owed_in_ten);
             let want = brute(&lib, 0..lib.hashes.len());
@@ -2594,12 +2597,12 @@ mod tests {
         }
     }
 
-    /// The ordering rule's suffix, where it is easy to get wrong: buckets full of one picture's orientations and of
-    /// copies of it, owed and not, interleaved, so a stored picture's queries start mid-bucket and the pointer passes
-    /// several entries of one picture.
+    // The ordering rule's suffix, where it is easy to get wrong: buckets full of one picture's orientations and of
+    // copies of it, owed and not, interleaved, so a stored picture's queries start mid-bucket and the pointer passes
+    // several entries of one picture.
     #[test]
     fn crowded_buckets_of_owed_and_not_owed_copies_match_brute_force() {
-        let mut rng = Rng(31);
+        let mut rng = Rng::new(31);
         let base = rng.four();
         let mut lib = Library { hashes: Vec::new(), owed: Vec::new() };
         for i in 0..120 {
@@ -2633,7 +2636,7 @@ mod tests {
 
     #[test]
     fn slices_of_the_queries_add_up_to_the_whole() {
-        let mut rng = Rng(42);
+        let mut rng = Rng::new(42);
         let lib = corpus(&mut rng, 300, 6);
         let whole = run(best_kernel(), &lib, 0..lib.hashes.len(), 2);
         assert_eq!(whole, brute(&lib, 0..lib.hashes.len()));
@@ -2650,7 +2653,7 @@ mod tests {
 
     #[test]
     fn threads_do_not_change_the_pairs() {
-        let mut rng = Rng(5);
+        let mut rng = Rng::new(5);
         let lib = corpus(&mut rng, 250, 10);
         let one = run(best_kernel(), &lib, 0..lib.hashes.len(), 1);
         for threads in [2, 4, 12] {
@@ -2660,7 +2663,7 @@ mod tests {
 
     #[test]
     fn the_radius_is_inclusive_and_exact() {
-        let mut rng = Rng(11);
+        let mut rng = Rng::new(11);
         let base = rng.four();
         // Only the first orientation is near: the others are unrelated, so no other combination is within the radius.
         let unrelated_rest = [rng.hash(), rng.hash(), rng.hash()];
@@ -2680,10 +2683,10 @@ mod tests {
         }
     }
 
-    /// A picture that matches another only through a transpose: the query's transposed orientations are what find it.
+    // A picture that matches another only through a transpose: the query's transposed orientations are what find it.
     #[test]
     fn a_transposed_copy_is_found_through_the_query_transposes() {
-        let mut rng = Rng(17);
+        let mut rng = Rng::new(17);
         let a = rng.four();
         let b = [flip(&a[2].transpose(), 9), rng.hash(), rng.hash(), rng.hash()];
         for owed in [[true, false], [false, true], [true, true]] {
@@ -2698,7 +2701,7 @@ mod tests {
 
     #[test]
     fn a_stop_returns_none() {
-        let mut rng = Rng(3);
+        let mut rng = Rng::new(3);
         let lib = corpus(&mut rng, 50, 10);
         for tuning in tunings() {
             let joiner = Joiner::new(&lib.hashes, &lib.owed).unwrap().tuned(tuning);
@@ -2706,11 +2709,11 @@ mod tests {
         }
     }
 
-    /// A stop at any point (before the first task, mid-sort, mid-scan, mid-pass over the store) ends the join, with
-    /// every thread joined: the call returns, with nothing.
+    // A stop at any point (before the first task, mid-sort, mid-scan, mid-pass over the store) ends the join, with
+    // every thread joined: the call returns, with nothing.
     #[test]
     fn a_stop_at_any_point_returns_none() {
-        let mut rng = Rng(23);
+        let mut rng = Rng::new(23);
         let lib = corpus(&mut rng, 600, 8);
         for tuning in tunings() {
             for after in [1, 5, 40, 300, 3000] {
@@ -2728,11 +2731,11 @@ mod tests {
         }
     }
 
-    /// A thread paused in `control` while the others take the work, and while they wait at the end for nothing: the
-    /// join's pairs are the same.
+    // A thread paused in `control` while the others take the work, and while they wait at the end for nothing: the
+    // join's pairs are the same.
     #[test]
     fn a_pause_while_the_others_wait_changes_nothing() {
-        let mut rng = Rng(29);
+        let mut rng = Rng::new(29);
         let lib = corpus(&mut rng, 400, 5);
         let want = brute(&lib, 0..400);
         for tuning in tunings() {
@@ -2755,12 +2758,12 @@ mod tests {
         }
     }
 
-    /// A panic in a task of either kind, in `start` or in `control` resumes on the caller once every thread is joined,
-    /// and a task's panic calls `abort`: no thread is left waiting for what the panicked one held. Also with another
-    /// thread paused in `control` until `abort` wakes it.
+    // A panic in a task of either kind, in `start` or in `control` resumes on the caller once every thread is joined,
+    // and a task's panic calls `abort`: no thread is left waiting for what the panicked one held. Also with another
+    // thread paused in `control` until `abort` wakes it.
     #[test]
     fn a_panic_anywhere_resumes_on_the_caller() {
-        let mut rng = Rng(31);
+        let mut rng = Rng::new(31);
         let lib = corpus(&mut rng, 300, 5);
         for tuning in tunings() {
             for (kind, nth) in [(Kind::Sort, 1), (Kind::Sort, 40), (Kind::Scan, 1), (Kind::Scan, 30)] {
@@ -2817,11 +2820,11 @@ mod tests {
         }
     }
 
-    /// Many threads on tiny stages, again and again: most of them wait for nothing most of the time, and the join
-    /// still ends, with the same pairs. And `start` runs on every thread before it asks for work.
+    // Many threads on tiny stages, again and again: most of them wait for nothing most of the time, and the join
+    // still ends, with the same pairs. And `start` runs on every thread before it asks for work.
     #[test]
     fn many_threads_on_tiny_stages_end_with_the_same_pairs() {
-        let mut rng = Rng(37);
+        let mut rng = Rng::new(37);
         let lib = corpus(&mut rng, 40, 5);
         let want = brute(&lib, 0..40);
         for tuning in tunings() {
@@ -2845,12 +2848,12 @@ mod tests {
         }
     }
 
-    /// All of a join's work runs at the caller's priority: the store's build on one thread or several, and every task
-    /// of every path, each on a thread that ran `start` first (with `CHECK_START` on, the build and each task assert
-    /// it). Without a `start` that marks its thread, the build and the join fail: the check is live.
+    // All of a join's work runs at the caller's priority: the store's build on one thread or several, and every task
+    // of every path, each on a thread that ran `start` first (with `CHECK_START` on, the build and each task assert
+    // it). Without a `start` that marks its thread, the build and the join fail: the check is live.
     #[test]
     fn start_runs_before_the_build_and_every_task() {
-        let mut rng = Rng(41);
+        let mut rng = Rng::new(41);
         let lib = corpus(&mut rng, 300, 5);
         let want = brute(&lib, 0..300);
         CHECK_START.set(true);
@@ -2871,11 +2874,11 @@ mod tests {
         CHECK_START.set(false);
     }
 
-    /// The sorted path and the few-owed path find the same pairs as brute force, on every
-    /// kernel and at every owed share (the few-owed path forced on and off by its threshold).
+    // The sorted path and the few-owed path find the same pairs as brute force, on every
+    // kernel and at every owed share (the few-owed path forced on and off by its threshold).
     #[test]
     fn every_path_matches_brute_force() {
-        let mut rng = Rng(0x51_7CC1_B727_220A);
+        let mut rng = Rng::new(0x51_7CC1_B727_220A);
         for owed_in_ten in [10, 3, 1] {
             let lib = corpus(&mut rng, 350, owed_in_ten);
             let want = brute(&lib, 0..lib.hashes.len());
@@ -2897,10 +2900,10 @@ mod tests {
         }
     }
 
-    /// The full library's join, from a dump of a catalog's hashes (`PG_JOIN_DUMP`: records of an id as `i64`
-    /// little-endian, an owed byte and the four kept orientations, 137 bytes, by id). The pairs go to `PG_JOIN_OUT` as
-    /// `id_a id_b distance`. `PG_JOIN_THREADS` sets the workers (default: the processor's). Prints the timing of each
-    /// kernel on one thread, then of the best kernel on the workers.
+    // The full library's join, from a dump of a catalog's hashes (`PG_JOIN_DUMP`: records of an id as `i64`
+    // little-endian, an owed byte and the four kept orientations, 137 bytes, by id). The pairs go to `PG_JOIN_OUT` as
+    // `id_a id_b distance`. `PG_JOIN_THREADS` sets the workers (default: the processor's). Prints the timing of each
+    // kernel on one thread, then of the best kernel on the workers.
     #[test]
     #[ignore = "needs a catalog dump: PG_JOIN_DUMP and PG_JOIN_OUT (see the test's doc comment)"]
     fn dump_join() {

@@ -57,11 +57,11 @@ fn an_import_stops_after_its_batch_and_leaves_the_rest_pending() {
 fn the_hashes_pass_stops_after_its_batch_and_keeps_the_rest_owed() {
     let (mut c, ctl, _dir) = scanned("hashes");
     pg_import::import_while(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
-    assert_eq!(c.owed_hashes().unwrap(), N, "every picture owes its hashes");
+    assert_eq!(c.owed_hashes().unwrap(), u64::try_from(N).unwrap(), "every picture owes its hashes");
     let stats = pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| false, &ctl).unwrap();
     assert!(!stats.complete, "a stopped pass is not complete");
     assert!(stats.stored > 0 && stats.stored < N, "one batch was hashed: {}", stats.stored);
-    assert_eq!(c.owed_hashes().unwrap(), N - stats.stored, "the files not reached stay owed");
+    assert_eq!(c.owed_hashes().unwrap(), u64::try_from(N - stats.stored).unwrap(), "the files not reached stay owed");
     let done = pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     assert!(done.complete);
     assert_eq!(c.owed_hashes().unwrap(), 0, "the next run hashes the rest");

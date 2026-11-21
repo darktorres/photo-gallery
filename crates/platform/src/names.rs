@@ -321,7 +321,7 @@ mod tests {
         }
     }
 
-    /// A verbatim path is stored and shown as its plain bytes; the prefix is the opening's, not the path's.
+    // A verbatim path is stored and shown as its plain bytes; the prefix is the opening's, not the path's.
     #[cfg(windows)]
     #[test]
     #[expect(clippy::disallowed_methods, reason = "the test checks the typed spelling the verbatim prefix leaves")]
@@ -334,8 +334,8 @@ mod tests {
         }
     }
 
-    /// A stored path reaches the file in a folder whose name ends in a dot through `disk_path`, by its rule path and
-    /// by its joined bytes alike, and not the file in the sibling folder without the dot.
+    // A stored path reaches the file in a folder whose name ends in a dot through `disk_path`, by its rule path and
+    // by its joined bytes alike, and not the file in the sibling folder without the dot.
     #[cfg(windows)]
     #[test]
     #[expect(clippy::disallowed_methods, reason = "the test checks the typed spelling against the catalog's, dotted")]

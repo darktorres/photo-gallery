@@ -110,8 +110,8 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rule
     let c = library(rules);
     raw::set_placeholder(&c, FileId::new(1), &[1]);
     let state = || c.file_state(FileId::new(1)).unwrap().unwrap();
-    let turns = || c.placeholder(FileId::new(1)).unwrap().unwrap().turns;
-    let size = raw::file_size(&c, FileId::new(1));
+    let turns = || c.placeholder(FileId::new(1)).unwrap().unwrap().shown_turns;
+    let size = u64::try_from(raw::file_size(&c, FileId::new(1))).unwrap();
     assert_eq!(
         state(),
         FileState { mtime: 3, size, rotation: Turns::new(0), pending_turns: Turns::new(0), writing: false }

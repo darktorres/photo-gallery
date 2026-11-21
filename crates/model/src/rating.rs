@@ -8,11 +8,28 @@
 #[serde(try_from = "u8", into = "u8")]
 pub struct Rating(u8);
 
-impl TryFrom<u8> for Rating {
-    type Error = String;
+/// Why a star count is refused as a rating.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RatingError {
+    /// The count is past [`Rating::MAX`].
+    TooManyStars(u8),
+}
 
-    fn try_from(stars: u8) -> Result<Rating, String> {
-        Rating::new(stars).ok_or_else(|| format!("{stars} stars: a rating has at most {}", Rating::MAX))
+impl std::fmt::Display for RatingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooManyStars(stars) => write!(f, "{stars} stars: a rating has at most {}", Rating::MAX),
+        }
+    }
+}
+
+impl std::error::Error for RatingError {}
+
+impl TryFrom<u8> for Rating {
+    type Error = RatingError;
+
+    fn try_from(stars: u8) -> Result<Rating, RatingError> {
+        Rating::new(stars).ok_or(RatingError::TooManyStars(stars))
     }
 }
 

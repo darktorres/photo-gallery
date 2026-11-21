@@ -700,6 +700,12 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
     hpb[n] = plane_total;
     hbb[n] = blk_total;
     const uint64_t nb = blk_total;
+    // k_dct launches one block per JPEG block (`<<<(unsigned)nb, 64>>>`): the count must fit that unsigned grid. The size
+    // check in the batch entry keeps any real input far below it; this makes the cast checked rather than assumed.
+    if (nb > 0xFFFFFFFFull) {
+        snprintf(g_error, sizeof g_error, "%llu JPEG blocks: more than one launch's grid holds", (unsigned long long)nb);
+        return EGPU_ERR_SIZE;
+    }
 
     ALLOC(c->info, n * sizeof(ImgInfo));
     CUDA_TRY(cudaMemcpy(c->info.p, hinfo.data(), n * sizeof(ImgInfo), cudaMemcpyHostToDevice));

@@ -15,7 +15,7 @@ namespace {
 #define CU(x)                                                                     \
     do {                                                                          \
         cudaError_t e_ = (x);                                                     \
-        if (e_ != cudaSuccess) return std::string(#x ": ") + cudaGetErrorString(e_); \
+        if (e_ != cudaSuccess) return std::string(#x " failed: ") + cudaGetErrorString(e_); \
     } while (0)
 
 struct Pinned {

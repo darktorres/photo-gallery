@@ -1,5 +1,5 @@
 // The catalog's work for the grid, the tree and the background job, on a copy of a synthetic catalog (4,000 files,
-// 81 folders: tools/profiling/synthetic_library.py, scanned, imported and thumbnailed at 256 px; included from
+// 80 folders (the root holds no pictures, so it has no folder row): tools/profiling/synthetic_library.py, scanned, imported and thumbnailed at 256 px; included from
 // linux.rs). The data is prepared once by tools/profiling/bench_data.py into PG_BENCH_DATA/<BENCH_LAYOUT>/: the catalog and
 // a cache without its JPEGs, each compacted with VACUUM INTO. Setup copies both to PG_BENCH_DATA/run/ and opens the
 // catalog, so the measured function starts with the schema parsed and every page cold, like the app's first list.

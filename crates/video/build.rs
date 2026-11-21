@@ -33,7 +33,6 @@ const TYPES: &[&str] = &[
 
 /// The constants pg-video uses: no-timestamp, the log level, the enum values, and each library's major version.
 const VARS: &[&str] = &[
-    "AV_NOPTS_VALUE",
     "AV_LOG_FATAL",
     "AV_PKT_DATA_DISPLAYMATRIX",
     "AVMEDIA_TYPE_VIDEO",

@@ -74,9 +74,10 @@ pub mod qobject {
         #[qinvokable]
         fn reload(self: Pin<&mut Filters>);
 
-        /// Choose a value of a list facet, or unchoose it.
+        /// Choose a value of a list facet, or unchoose it. `facet` is the `Filters.ListFacetKind` value as an int (QML's
+        /// type checker cannot resolve the enum as a method parameter; `filters::kind_of` maps it back).
         #[qinvokable]
-        fn toggle(self: Pin<&mut Filters>, facet: ListFacetKind, value: &QString);
+        fn toggle(self: Pin<&mut Filters>, facet: i32, value: &QString);
 
         /// One end of a bound as text, `""` when open: `field` is the bound's field's index in `input::Field::ALL`
         /// (the range facets' numbers and the day facets' days), `end` its `input::Edge` index (0 low, 1 high).

@@ -113,9 +113,9 @@ impl qobject::Filters {
         }
     }
 
-    pub(crate) fn toggle(self: Pin<&mut Self>, facet: ListFacetKind, value: &QString) {
+    pub(crate) fn toggle(self: Pin<&mut Self>, facet: i32, value: &QString) {
         let value = value.to_string();
-        if let Some(choice) = list_facet(facet).and_then(|facet| choice(facet, &value)) {
+        if let Some(choice) = kind_of(facet).and_then(list_facet).and_then(|facet| choice(facet, &value)) {
             self.edit(|q| q.toggle(choice));
         }
     }
@@ -188,6 +188,20 @@ impl qobject::Filters {
 /// Publish what the list facets show (`Counts::new`): the catalog's counts for the query.
 fn publish_counts(facets: &Facets, q: &Query) {
     controller::set_counts(Counts::new(facets.types.clone(), facets.borders.clone(), &facets.exts, q));
+}
+
+/// The `ListFacetKind` a QML `Filters.ListFacetKind` value names: the int of the enum's value, in declaration order.
+fn kind_of(value: i32) -> Option<ListFacetKind> {
+    [
+        ListFacetKind::Types,
+        ListFacetKind::Shapes,
+        ListFacetKind::Status,
+        ListFacetKind::Borders,
+        ListFacetKind::Ratings,
+        ListFacetKind::Exts,
+    ]
+    .into_iter()
+    .nth(usize::try_from(value).ok()?)
 }
 
 /// The list facet a QML `Filters.ListFacetKind` value names (the bridge's enum, compared by its value).

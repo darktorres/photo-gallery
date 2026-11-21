@@ -49,6 +49,10 @@ doctor:
 build profile="release": _qt
     cargo build --locked {{ if profile == "release" { "--release" } else { "" } }}
 
+# Type-check every target of the workspace (G-check in docs/plans/CONSISTENCY_PROGRAM_PLAN.md) against the lockfile.
+check: _qt
+    cargo check --workspace --all-targets --locked
+
 # Build, then put the Qt DLLs and QML modules next to gallery.exe (needed once per profile, and after Qt updates).
 # qoffscreen is included on purpose: the test hooks run the window offscreen (QT_QPA_PLATFORM=offscreen), and windeployqt
 # otherwise deploys only qwindows.

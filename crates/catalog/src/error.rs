@@ -83,7 +83,7 @@ pub enum Refusal {
     /// A schema after this build's: made by another build. `written_by` is the build that last changed the file, when
     /// the file says (`meta.written_by`, empty when it is not known).
     NewerSchema { found: i64, current: i64, written_by: Option<String> },
-    /// A schema of an earlier version than this build's, which [`Catalog::open`] does not bring forward (`prepare` does).
+    /// A schema of an earlier version than this build's, which [`crate::Catalog::open`] does not bring forward (`prepare` does).
     OlderSchema { found: i64, current: i64 },
     /// An integer mark of the file (`mark`, a `meta` key) above this build's: a later build made or changed the file,
     /// whatever its schema. Refused like a newer schema, so no mark is set back. `written_by` as for `NewerSchema`.

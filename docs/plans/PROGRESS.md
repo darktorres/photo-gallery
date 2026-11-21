@@ -1,6 +1,6 @@
 # Progress: consistency-audit program
 
-Status as of 2026-11-21, against the commit that holds this file (the Phase 0 fixes are `24681a94` and `f1348b95`). The
+Status as of 2026-11-21, against the commit that holds this file (the Phase 0 fixes are `1d6af48d` and `f1348b95`). The
 plan is `docs/plans/CONSISTENCY_PROGRAM_PLAN.md`. This file is scratch state: delete it when the program ends.
 
 Phase 0 is open. Its runs are done except those noted; two baseline gates are red and need an owner decision (see below).
@@ -9,15 +9,15 @@ Phase 0 is open. Its runs are done except those noted; two baseline gates are re
 |---|---|---|
 | Backup: catalog folder and gallery.json to `D:/PhotoGallery/backups/pre-consistency-program-2026-11-21` | verified copy, outside the repo | byte sizes match; gallery.json identical |
 | `just lint-tools-setup`, `rustup target add wasm32-unknown-unknown`, `just setup` | done | tools at their pins; FFmpeg already at the pin |
-| `check` recipe in the Justfile (the plan's G-check) | `24681a94` | `just check` green, no warnings |
+| `check` recipe in the Justfile (the plan's G-check) | `1d6af48d` | `just check` green, no warnings |
 | `just build debug` | done | green |
 | G-lint (`just lint`) | fixed this pass: doc link in `crates/catalog/src/error.rs`; 17 files of ruff format; 27 ruff check findings; 11 markdownlint findings; the QML lint regression from `1b361db7` (`Filters.toggle` took a typed enum, which QML cannot resolve; now an int mapped in Rust by `filters::kind_of`); `deny.toml` `pg-import` wrapper for rusqlite | green (`just lint`, `lint-qml` clean) |
 | G-full: `cargo test --workspace --locked` and `just test-tools` | done | 1451 Rust tests passed; 95 Python tests passed, 3 skipped |
 | G-qt: `just qmltest` | done | 143 passed, 0 failed |
 | `just doctor` | done | every required part in place |
 | `just deny` | fixed this pass (the `pg-import` wrapper) | advisories, bans, licences and sources ok |
-| `just modgraph` | RED: three module cycles. Catalog: classify, core, ledger, lifecycle, rebuild, writers. Cli: crate root and report. Desktop: facet_choices::state and facet_choices_bridge::qobject. The allowlist is empty. The cycles come from the audit-fix commits. | owner decision: break the cycles now, or accept them as Phase 6 debt |
-| `just shots` | RED: the inbox fixture changed since reference `914c44ca` was recorded (inbox, inbox-expanded). Fixing it needs `just shots --record`, which rewrites tracked reference images. | owner decision: re-record |
+| `just modgraph` | was red with three cycles from the audit-fix commits. Fixed: catalog (the relist of panicked thumbnails moved to the `ledger::failure` leaf, and `lifecycle::set_thumbs_version` takes it as a parameter); cli (`secs` moved into `report`, which was the only user); desktop (the facet backing struct stores the model's `ListFacet`, and the bridge reads the property through a getter that converts to `ChoiceFacet`). The allowlist stays empty. | green: 0 cycle groups, text scan and compiler graph |
+| `just shots` | was red: the inbox fixture changed since reference `914c44ca` was recorded. Re-recorded from `f4bbb484` into `tools/shots/reference/f4bbb48419` (26 scenarios). The verification run found `viewer-turn` different by about 196k pixels once; the rerun matched all 29. | green on rerun; `viewer-turn` is timing-sensitive, to watch |
 | T-005 (`a_file_that_doesnt_decode...`, two tests) | 20 of 20 runs each pass; each filter matched one test | no flake observed |
 | AD-015 (mode lists) | audit disposition rewritten: No change | the cites resolve; the two tools are different tools |
 | DOC-036 (`AV_NOPTS_VALUE`) | audit disposition rewritten: Fixed; dead allowlist entry removed from `crates/video/build.rs` | `pg-video` checks green; the generated bindings contain no `AV_NOPTS_VALUE` |

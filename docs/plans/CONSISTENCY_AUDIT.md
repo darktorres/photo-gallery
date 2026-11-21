@@ -777,7 +777,7 @@ RECONCILED.md:582 gives the lock order as fence mutex, then device gates, then w
 
 ### D-036 [medium] Windows build scripts exist in cmd and py forms — CONFIRMED
 
-**Disposition: Deferred.** win-build.cmd and win-env.cmd stay until a Windows run confirms the Python ports; win-build.cmd cannot run as it stands (vendor/ is empty).
+**Disposition: Fixed.** win-build.cmd and win-env.cmd are removed. win_build.py replaces them, and its harness step ran on this machine on 2026-11-21.
 
 eval/jpeg-decoders/win-env.cmd exists and parses nvidia-smi `compute_cap` at :29-30, and `win_env.py:1-5` says it was win-env.cmd, which win-build.cmd called. The .cmd is still in the tree beside the .py, so the same parse is kept in two languages.
 
@@ -841,13 +841,13 @@ The DCT denominator rule with (512, 320) is written at eval/jpeg-decoders/gpu.py
 
 ### D-047 [medium] Dotenv loader written five times — CONFIRMED
 
-**Disposition: Fixed in part.** pgtools.load_env_file is the one Python loader; qmltest.ps1 keeps its own until a Windows run.
+**Disposition: Fixed.** pgtools.load_env_file is the one Python loader, and qmltest.ps1 is removed (qmltest.py ran green here: 143 passed).
 
 A dotenv loader with a regex is in tools/pgtools.py:42 `load_env_file` and `tools/lint_qml.py:32` (same regex), and tools/qmltest.ps1:12-15 has its own copy. The cited symbolize.py, profile.ps1 and build.sh do not exist, so those three cites are dropped. The three real copies stand.
 
 ### D-048 [medium] Doctor implemented twice — CONFIRMED
 
-**Disposition: Deferred.** doctor.ps1 is removed after a Windows run of doctor.py.
+**Disposition: Fixed.** doctor.ps1 is removed; `just doctor` (doctor.py) ran green on this machine on 2026-11-21.
 
 doctor.ps1:55 and doctor.py:67 both implement the libclang search and the checks, in PowerShell and Python.
 
@@ -875,31 +875,31 @@ tools/setup-ffmpeg.ps1 does not exist. The only FFmpeg fetch-and-check script is
 
 ### D-053 [medium] QML test staging differs between ps1 and py — CONFIRMED
 
-**Disposition: Deferred.** qmltest.ps1 is removed after a Windows run of qmltest.py.
+**Disposition: Fixed.** qmltest.ps1 is removed; `just qmltest` (qmltest.py) ran green here: 143 passed.
 
 qmltest.ps1:32 hard-codes the Ratings singleton by name, while qmltest.py:59 detects 'pragma Singleton' in the file. The two stagers decide what a singleton is in different ways.
 
 ### D-054 [medium] Toolset pin repeated in ps1 and py build scripts — CONFIRMED
 
-**Disposition: Fixed in part.** The Python builds take MSVC_TOOLSET from pgtools; the ps1 originals keep their literal until removed.
+**Disposition: Fixed.** The Python builds take MSVC_TOOLSET from pgtools; the ps1 copies are removed, and the tests that compared them with the Python pins are removed with them.
 
 The toolset pin 14.44.35207 is written in build-static-ffmpeg.ps1:24, build-jpeg-turbo.ps1:24 and tools/pgtools.py. The cited `build_static_ffmpeg.py` does not hold it, so that cite is wrong; the ps1 and pgtools copies are the duplicates.
 
 ### D-055 [medium] FFmpeg and jpeg-turbo pins duplicated in ps1 and py — CONFIRMED
 
-**Disposition: Deferred.** The pins are identical today; the ps1 originals are removed after a Windows run.
+**Disposition: Fixed.** The pins are one copy, in the Python recipes; the ps1 originals are removed.
 
 FFmpeg commit, release and SDK pins are in build-static-ffmpeg.ps1:22-23 and `build_static_ffmpeg.py:33-35`, with the same values. The jpeg-turbo fork URL and commit are in build-jpeg-turbo.ps1:22-23 and `build_jpeg_turbo.py:31-32`.
 
 ### D-056 [medium] FFmpeg configure flags in two languages — CONFIRMED
 
-**Disposition: Deferred.** Configure flags live in build_static_ffmpeg.py; the ps1 copy goes after a Windows run.
+**Disposition: Fixed.** Configure flags live in build_static_ffmpeg.py; the ps1 copy is removed.
 
 `CONFIGURE_FLAGS` in `build_static_ffmpeg.py:43` and $ConfigureFlags in build-static-ffmpeg.ps1:31 list the same configure flags, with the same comment that each is the pilot's.
 
 ### D-057 [medium] System DLL allowlist in two places — CONFIRMED
 
-**Disposition: Deferred.** System DLL allowlist lives in build_static_ffmpeg.py; the ps1 copy goes after a Windows run.
+**Disposition: Fixed.** The system DLL allowlist lives in build_static_ffmpeg.py; the ps1 copy is removed.
 
 `build_static_ffmpeg.py:57` `SYSTEM_DLL` regex and build-static-ffmpeg.ps1:194 non-system filter list the same prefixes (api-ms-win-, KERNEL32, USER32, bcrypt, VCRUNTIME140, MSVCP140).
 
@@ -1031,7 +1031,7 @@ reader.rs:227 maps a caught panic to ReadError::Panicked. yandex.rs:465 maps a p
 
 ### E-002 [high] Exit status reports success on failure — CONFIRMED
 
-**Disposition: Fixed in part.** screenshot.cpp exits 1 for a run that is not settled; colour_check.cu exits 1 over a threshold of 1 (both unverified: need a Qt or CUDA build). Unreachable-check exit done in unreachable_pub.py.
+**Disposition: Fixed in part.** colour_check.cu exits 1 over a threshold of 1; the binary builds (nvcc 13.4, MSVC, turbojpeg-static.lib) and ran on two 4:4:4 inputs on 2026-11-21 with 0 mismatched channels. The 4:2:0 and 4:2:2 results are from 2026-11-14 and were not re-run. screenshot.cpp exits 1 for a run that is not settled; that exit is not exercised, since a normal `just shots` always settles. Unreachable-check exit done in unreachable_pub.py.
 
 screenshot.cpp:186 ends a timed-out-without-window run with QCoreApplication::quit(), which exits 0. The sibling no-window path at :174 uses exit(1). `unreachable_pub.py:48` exits 0 unconditionally after printing error counts. `colour_check.cu:62` returns 0 with no threshold. `REVIEW_LEDGER.md:86` records that the exit mapping has no test.
 
@@ -1089,7 +1089,7 @@ ledger.rs:199-201 says `retry_failures` does nothing for the import, and that th
 
 ### E-011 [medium] Missing-configuration messages worded differently across tools — CONFIRMED
 
-**Disposition: Fixed (Python tools).** `pgtools.not_set(name, how)` words the one message, `NAME is not set: <how>`, and the Python tools that report `PG_HOME` or `QT_DIR` missing now call it (the builds, `check_qt`, `compare_shots`, `lint_qml`, `qmltest`, `profile`). Each keeps its specific hint. The PowerShell originals (`profile.ps1`, `qmltest.ps1`) keep their own wording until the originals are removed, under the rule in `tools/README.md`.
+**Disposition: Fixed (Python tools).** `pgtools.not_set(name, how)` words the one message, `NAME is not set: <how>`, and the Python tools that report `PG_HOME` or `QT_DIR` missing now call it (the builds, `check_qt`, `compare_shots`, `lint_qml`, `qmltest`, `profile`). Each keeps its specific hint. `qmltest.ps1` is removed. `profile.ps1` keeps its own wording until `profile.py` can run (`tools/README.md`).
 
 The `PG_HOME` message is worded differently in `build_static_qt.py:69`, `build_jpeg_turbo.py:75` and `build_static_ffmpeg.py:92`. The `QT_DIR` message is worded differently in `compare_shots.py:666`, `check_qt.py:21`, `lint_qml.py:70`, profile.ps1:26, qmltest.ps1:20 and qmltest.py:41.
 
@@ -1107,7 +1107,7 @@ At HEAD, setup-ffmpeg.ps1 has no https check (grep finds none). `setup_ffmpeg.py
 
 ### E-014 [medium] Retry and failure text for builds differ between ports — CONFIRMED
 
-**Disposition: Fixed in part.** Python builds fail through checked() with the step and exit code; the ps1 originals keep their text until removed.
+**Disposition: Fixed.** Python builds fail through checked() with the step and exit code; the ps1 originals that kept their own text are removed.
 
 build-jpeg-turbo.ps1:64 retries git fetch three times with no sleep. `build_jpeg_turbo.py:59-60` sleeps 10 times the attempt number. build-static-ffmpeg.ps1:118-119 sleeps, and `build_static_ffmpeg.py:156-157` sleeps too. The failure texts also differ: the py versions include the exit code, the jpeg-turbo ones do not.
 
@@ -1125,7 +1125,7 @@ Eval scripts raise different exception kinds for similar failures: `cpu_worker.p
 
 ### E-017 [medium] Per-item failure policy differs across harnesses and sweeps — CONFIRMED
 
-**Disposition: Deferred.** The per-item policy is stated, but narrowing nvimgcodec_bench's catches needs the exception a GPU run raises.
+**Disposition: Deferred.** The per-item policy is stated, but narrowing nvimgcodec_bench's catches needs the exception a GPU run raises. The pinned venv (`tools/jpeg-eval/venv`, nvimgcodec 0.10.0.9) is in place on 2026-11-21, so that run is the only step left.
 
 ann/run.py:343 records a failed configuration and continues. accel.py:130 skips a bad calibration image. `bench_decode.py:57` reads outside its try, while pdq.py:47 returns None on any Exception and verify.py:603 records the pair as error. `nvimgcodec_bench.py:87` catches Exception where nvjpeg.py:298 catches RuntimeError only. The failure policies differ across harnesses.
 
@@ -1401,7 +1401,7 @@ exiftool/lib.rs:153 interpolates ExifTool stderr into the user-visible bail. LAN
 
 ### E-063 [low] CUDA error text formats differ across harnesses — CONFIRMED
 
-**Disposition: Fixed in part.** The Python harnesses use one format; the .cpp and .cu macros need a CUDA build.
+**Disposition: Fixed in part.** The C and C++ macros now write one format, `<expr> failed: <error>`: dec_gpu.cpp's CU() wrote `<expr>: <error>` and changed on 2026-11-21, and encode_gpu.cu already wrote this form. Both builds compile. The Python harnesses still differ (`cuInit returned N` in gpu.py and nvimgcodec_bench.py, `status N` in nvjpeg.py).
 
 CUDA error text differs across harnesses: gpu.py:42 and `nvimgcodec_bench.py:44` use cuInit returned N, nvjpeg.py:104 uses X: status N, `dec_gpu.cpp:16` uses the macro name plus cudaGetErrorString, and `encode_gpu.cu:40` uses what failed: cudaGetErrorString. Low severity; harness only.
 
@@ -1409,7 +1409,7 @@ CUDA error text differs across harnesses: gpu.py:42 and `nvimgcodec_bench.py:44`
 
 ### C-001 [high] dotenv quote handling differs between tools — CONFIRMED
 
-**Disposition: Fixed (Python tools).** `lint_qml.py` and `symbolize.py` now call `pgtools.load_env_file`, which strips quotes and honours `PG_CONTAINER`, as `profile.py` and the build tools already do. The PowerShell original `profile.ps1` keeps its own loader until the originals are removed under `tools/README.md`'s rule.
+**Disposition: Fixed in part.** `lint_qml.py` and `symbolize.py` now call `pgtools.load_env_file`, which strips quotes and honours `PG_CONTAINER`, as `profile.py` and the build tools already do. The PowerShell original `profile.ps1` keeps its own loader until `profile.py` can run (`tools/README.md`).
 
 pgtools.py:55 strips the quotes from a .env value, as just does. `lint_qml.py:40` keeps the raw quoted value, symbolize.py:60 keeps the raw value with setdefault, and profile.ps1:22 keeps the raw value. A value written in quotes reads differently in these tools.
 
@@ -1505,7 +1505,7 @@ prefs.rs:122 sets `write_back` to true and `real_size` to false, and the setting
 
 ### C-017 [medium] Hard-coded D:/PhotoGallery defaults in tools and eval — CONFIRMED
 
-**Disposition: Fixed in part.** test_encoder.cpp, build.ps1 and test_linux.py read PG_HOME; the build-jpeg-turbo.ps1 original stays until a Windows run.
+**Disposition: Fixed in part.** test_encoder.cpp, build.ps1 and test_linux.py read PG_HOME; the build-jpeg-turbo.ps1 original is removed.
 
 build-jpeg-turbo.ps1:12 defaults Work to a D: PhotoGallery static folder, and :13 defaults BuildTools to a Visual Studio 18 path. `test_encoder.cpp:43` hard-codes a D: PhotoGallery ssimulacra2 path, and :41-42 hard-code a per-user scratch path. Python tools derive the same defaults from `PG_HOME` (`build_static_qt.py:182`), so the defaults come from two sources.
 
@@ -1851,13 +1851,13 @@ VERIFIER.md:124 gives a changed region as 0.3% (percent) and median residual as 
 
 ### U-029 [medium] CUDA kernels use different index and grid widths — CONFIRMED
 
-**Disposition: Fixed in part.** EGPU_MAX_DIM is 65535 and k_gather64 is 64-bit; other kernels are not all moved to a shared grid helper; unverified (needs a CUDA build).
+**Disposition: Fixed in part.** EGPU_MAX_DIM is 65535 and k_gather64 is 64-bit. The k_dct launch's `(unsigned)nb` cast is now checked in `encode_chunk`: a block count over 0xFFFFFFFF is refused with EGPU_ERR_SIZE. test_encoder.exe builds on 2026-11-21. The other launches still use grid_exact or grid_colour (colour clamps with a grid-stride loop), so the two helpers stay; the encoder test run is not done.
 
 `encode_gpu.cu:722` launches `k_dct` with a (unsigned)nb cast, while `grid_exact(nb`) (:532, used at :725 and :735) clamps with 64-bit math. `k_gather64` (:460-461) uses a uint32 index. `EGPU_MAX_DIM` is 65500u (`encode_gpu.h:23`) where JPEG allows 65535.
 
 ### U-030 [medium] Allocation accounting differs between the C and Rust PNG harnesses — CONFIRMED
 
-**Disposition: Fixed in part.** alloc_count.cpp counts requested bytes; unverified (needs a build).
+**Disposition: Fixed in part.** alloc_count.cpp counts requested bytes. The C harness builds on 2026-11-21 (png-c-harness.exe, with alloc_count.cpp), so the two allocation counts can now be compared; that comparison is not run.
 
 `alloc_count.cpp:26` counts live bytes with `_msize` (the usable block size), while the Rust harness main.rs:37 counts layout.size() (the requested size), including realloc `new_size`. The two harnesses count different quantities.
 
@@ -3065,7 +3065,7 @@ eval/jpeg-decoders/Cargo.toml:9 declares its own [workspace]. lint.py:22-24 runs
 
 ### TL-008 [medium] Callgraph pin build and profile logic duplicated between Python and shell/PowerShell — CONFIRMED
 
-**Disposition: Fixed in part.** README lists build.py as the replacement; profile.ps1 goes after a Windows run.
+**Disposition: Deferred.** profile.py needs callgraph/build.py, which cannot run the Pin 4.3 kit's extensionless wrappers (`tools/README.md`); profile.ps1 stays until it can.
 
 The MSVC compile and link flags are written out in build.py (:86 onwards) and again in build.sh (:42-54), and build.sh is the file build.py says was replaced (DOC-059). The knob list (-o, -stop, -start) is built separately in profile.py:61 and profile.ps1:32. Duplicated in Python, shell and PowerShell.
 
@@ -3089,7 +3089,7 @@ accel.py:38 chooses the venv interpreter path by os.name, and `gpu_encoders.py:7
 
 ### TL-012 [medium] Env file loading implemented differently in PowerShell and Python tools — CONFIRMED
 
-**Disposition: Deferred.** qmltest.ps1 goes after a Windows run of qmltest.py.
+**Disposition: Fixed.** qmltest.ps1 is removed; qmltest.py ran green here: 143 passed.
 
 qmltest.ps1:13-15 parses `..\.env` with its own regex and sets unset variables. qmltest.py:115 calls `pgtools.load_env_file`. eval/README.md:12 says PowerShell does not read .env, which the ps1 contradicts. `build_jpeg_turbo.py:85-87` runs its platform guard before `load_env_file`.
 
@@ -3219,7 +3219,7 @@ The probes are in crates/catalog/examples/, not src/. `pairs_write_probe.rs:39` 
 
 ### P-004 [medium] parajpeg git rev differs between production manifests and eval harness — CONFIRMED
 
-**Disposition: Deferred.** The eval harness must move to the fork's parajpeg with a CUDA build and a re-measurement.
+**Disposition: Deferred.** The eval harness must move to the fork's parajpeg with a CUDA build and a re-measurement. The pin is also in `docs/reference/JPEG_DECODERS.md:489`, and the harness clones github.com/anniigr/parajpeg while the pinned commit is on the darktorres fork, so the URL changes with the SHA. The re-measurement needs the win_build chain (clang-cl, network), which is not run.
 
 Cargo.toml:34 and fuzz/Cargo.lock:353 pin parajpeg 8e2c53a. eval `linux_build.py:158`, `win_build.py:96`, win-build.cmd:50 and `JPEG_DECODERS.md:489` use f45081d. The harness clones upstream anniigr/parajpeg, while the product uses the darktorres fork, so the two revisions differ.
 
@@ -3261,7 +3261,7 @@ The file is `tools/profiling/ci_setup.py`, not `tools/ci_setup.py`. Line 51 fetc
 
 ### P-011 [medium] Static-build tool pins copied between PowerShell and Python — CONFIRMED
 
-**Disposition: Deferred.** Retiring build-*.ps1 waits on a Windows run (STATIC_BUILD.md item 3); a test guards the pins.
+**Disposition: Fixed.** The build-*.ps1 originals are removed; the Python recipes hold the pins, and the two tests that compared the PowerShell copies are removed.
 
 The same Build Tools path literal is in `build_jpeg_turbo.py:33`, `build_static_ffmpeg.py:39`, `build_static_qt.py:42`, build-jpeg-turbo.ps1:13 (the finding says :24) and build-static-ffmpeg.ps1:14. `build_static_ffmpeg.py:36` and build-static-ffmpeg.ps1:26 both pin make 4.4.1-3 and diffutils 3.12-1.
 
@@ -3279,7 +3279,7 @@ DATABASE.md:101 says the app ships 3.54.0. `UROCISSA_COMPARISON.md:174` says 3.5
 
 ### P-014 [medium] Eval decoder build scripts repeat commit pins instead of sharing one list — CONFIRMED
 
-**Disposition: Deferred.** Retiring win-build.cmd waits on a Windows run; sources.py holds the pins.
+**Disposition: Fixed.** win-build.cmd and win-env.cmd are removed; win_build.py holds the build and sources.py the pins.
 
 `win_build.py:64`, :79, :117 and `linux_build.py:158` pin jpeggpu 3ae7ac0d, GPUJPEG 37ab4810, GPU-JPEG-Decoder 61cfb372 and parajpeg f45081d. win-build.cmd:36, :42, :50, :59 carry the same commits as literals. win-build.cmd:30 builds libjpeg-turbo from vendor/ with no commit pin, while `win_build.py:48` clones `FORK_COMMIT`. The pins are repeated and one is missing.
 

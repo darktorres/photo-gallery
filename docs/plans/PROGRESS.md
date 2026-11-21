@@ -1,9 +1,10 @@
 # Progress: consistency-audit program
 
-Status as of 2026-11-21, against the commit that holds this file (the Phase 0 fixes are `1d6af48d` and `f1348b95`). The
-plan is `docs/plans/CONSISTENCY_PROGRAM_PLAN.md`. This file is scratch state: delete it when the program ends.
+Status as of 2026-11-21, against the commit that holds this file (`261ea501` and the commits after it). The plan is
+`docs/plans/CONSISTENCY_PROGRAM_PLAN.md`. This file is scratch state: delete it when the program ends.
 
-Phase 0 is open. Its runs are done except those noted; two baseline gates are red and need an owner decision (see below).
+Phase 0 is finished. Its one open item is `profile.ps1`, which stays because `profile.py` cannot run here (see below).
+Phase 1 has not started.
 
 | Step | Commit or state | Gate result |
 |---|---|---|
@@ -11,18 +12,23 @@ Phase 0 is open. Its runs are done except those noted; two baseline gates are re
 | `just lint-tools-setup`, `rustup target add wasm32-unknown-unknown`, `just setup` | done | tools at their pins; FFmpeg already at the pin |
 | `check` recipe in the Justfile (the plan's G-check) | `1d6af48d` | `just check` green, no warnings |
 | `just build debug` | done | green |
-| G-lint (`just lint`) | fixed this pass: doc link in `crates/catalog/src/error.rs`; 17 files of ruff format; 27 ruff check findings; 11 markdownlint findings; the QML lint regression from `1b361db7` (`Filters.toggle` took a typed enum, which QML cannot resolve; now an int mapped in Rust by `filters::kind_of`); `deny.toml` `pg-import` wrapper for rusqlite | green (`just lint`, `lint-qml` clean) |
-| G-full: `cargo test --workspace --locked` and `just test-tools` | done | 1451 Rust tests passed; 95 Python tests passed, 3 skipped |
+| G-lint (`just lint`) | fixed in `1d6af48d` and `f1348b95`: doc link, QML toggle regression, ruff format and check, markdownlint, `deny.toml` `pg-import` wrapper, dead `AV_NOPTS_VALUE` entry | green, including `lint-qml` (no warnings, 1745 bindings compiled) |
+| G-full: `cargo test --workspace --locked` and `just test-tools` | done | 1451 Rust tests passed; 93 Python tests passed, 3 skipped |
 | G-qt: `just qmltest` | done | 143 passed, 0 failed |
 | `just doctor` | done | every required part in place |
-| `just deny` | fixed this pass (the `pg-import` wrapper) | advisories, bans, licences and sources ok |
-| `just modgraph` | was red with three cycles from the audit-fix commits. Fixed: catalog (the relist of panicked thumbnails moved to the `ledger::failure` leaf, and `lifecycle::set_thumbs_version` takes it as a parameter); cli (`secs` moved into `report`, which was the only user); desktop (the facet backing struct stores the model's `ListFacet`, and the bridge reads the property through a getter that converts to `ChoiceFacet`). The allowlist stays empty. | green: 0 cycle groups, text scan and compiler graph |
-| `just shots` | was red: the inbox fixture changed since reference `914c44ca` was recorded. Re-recorded from `f4bbb484` into `tools/shots/reference/f4bbb48419` (26 scenarios). The verification run found `viewer-turn` different by about 196k pixels once; the rerun matched all 29. | green on rerun; `viewer-turn` is timing-sensitive, to watch |
+| `just deny` | green after the `pg-import` wrapper | advisories, bans, licences and sources ok |
+| `just modgraph` | was red with three cycles from the audit-fix commits; fixed in `4b0f9ea3` (catalog, cli, desktop), no allowlist entry | green: 0 cycle groups, text scan and compiler graph |
+| `just shots` | re-recorded from `f4bbb484` into `tools/shots/reference/f4bbb48419` (commit `0f5fc14a`), 26 scenarios | green on rerun; `viewer-turn` differed once by about 196k pixels and is timing-sensitive |
 | T-005 (`a_file_that_doesnt_decode...`, two tests) | 20 of 20 runs each pass; each filter matched one test | no flake observed |
 | AD-015 (mode lists) | audit disposition rewritten: No change | the cites resolve; the two tools are different tools |
 | DOC-036 (`AV_NOPTS_VALUE`) | audit disposition rewritten: Fixed; dead allowlist entry removed from `crates/video/build.rs` | `pg-video` checks green; the generated bindings contain no `AV_NOPTS_VALUE` |
-| PF-024 (static manifests) | not run: no `manifest.json` from the 2026-11-13 builds was found, and `PG_HOME` is `D:/PhotoGallery` | stays Deferred until a manifest exists |
-| Retained originals: `doctor.ps1`, `qmltest.ps1`, `build-jpeg-turbo.ps1`, `build-static-ffmpeg.ps1`, `win-build.cmd`, `win-env.cmd`, `profile.ps1` | not deleted. Deleting the two build scripts needs `tools/test_ci_files.py` `class Consumers` rewritten; the stale references are listed in the plan | next session |
-| GPU track: packages and binaries (PNG C harness, `colour_check.exe`, `test_encoder.exe`, decoder harness, nvimgcodec venv at `tools/jpeg-eval/venv`) | done, outside Phase 0 | encoder fix committed as `ea0db5ae`; `venv-nv10` is a leftover (owner to delete) |
-| GPU track: U-029 code change in `encode_gpu.cu` | not started | |
+| PF-024 (static manifests) | the static builds are not in use: `D:/PhotoGallery/static` was deleted (4.3 GB) on the owner's instruction, manifests included | closed as not verifiable here; the finding stays Deferred |
+| Retained originals: `doctor.ps1`, `qmltest.ps1`, `build-jpeg-turbo.ps1`, `build-static-ffmpeg.ps1`, `win-build.cmd`, `win-env.cmd` | removed; `test_ci_files.py` `Consumers` drops the two PowerShell-agreement tests and their now-unused imports; the stale references in `tools/README.md`, `pgtools.py`, `sources.py`, `gui_app.cpp`, `STATIC_BUILD.md` and `build.ps1` are reworded; the dispositions of D-036, D-047/048, D-053..057, E-011, E-014, C-001, C-017, TL-012, P-011, P-014 are rewritten | `just lint` and `just test-tools` green |
+| `profile.ps1` (TL-008, UI-014, C-001) | kept: `profile.py` needs `callgraph/build.py`, which fails on the Pin 4.3 kit's extensionless wrappers (`pinrt/bin/pin-clang-cl++`, `pin-ld`); build.py looks only for `.exe`, `.cmd` and `.bat` | open: fix build.py's wrapper lookup, then run profile.py and delete the script |
+| GPU track: packages and binaries (PNG C harness, `colour_check.exe`, `test_encoder.exe`, decoder harness, nvimgcodec venv at `tools/jpeg-eval/venv`) | done; `venv-nv10` removed | encoder fix committed as `ea0db5ae`; the venv imports nvimgcodec 0.10.0 |
+| GPU track: U-029 (`encode_gpu.cu`) | the k_dct block-count cast is checked in `encode_chunk` (refused over 0xFFFFFFFF); `test_encoder.exe` builds | Fixed in part; the encoder test run is not done |
+| GPU track: E-063 (macro format) | `dec_gpu.cpp`'s CU() now writes `<expr> failed: <error>`, as encode_gpu.cu does; the decoder harness and the encoder build compile | Fixed in part: the Python harnesses still differ |
+| GPU track: E-002 (`colour_check`) | `colour_check.exe` ran on two 4:4:4 inputs: 0 mismatched channels | Fixed in part: 4:2:0 and 4:2:2 are from 2026-11-14, not re-run |
+| GPU track: U-030 (PNG allocation counts) | the C harness builds with `alloc_count.cpp` | Fixed in part: the comparison is not run |
+| GPU track: E-017, P-004, V-030 | not run: E-017 needs a GPU run of nvimgcodec_bench; P-004 needs the win_build chain and a pin change (its URL changes with the SHA); V-030 needs both nvJPEG toolkits | Deferred, with the reasons in the audit |
 | Phase 1 (renames and rule text) | not started | |

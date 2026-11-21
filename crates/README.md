@@ -157,6 +157,12 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 - **`cargo-modules` is a tool, not a dependency.** It is pinned in `docker/Dockerfile` and the Justfile (`cargo_modules_version`, which `just modgraph` checks and installs at the pin). The Linux graph runs in `pg-dev`; the Windows graph runs on the host through `just modgraph`.
 - **The command line does not depend on `pg-app`.** It opens catalogs and thumbnail caches through `pg-library`'s shared open functions (`open_catalog`, `open_thumbs`).
 
+### Naming
+
+- **Keys, names and codes.** `key()` and `from_key()` give a value's stored spelling: a catalog column, a queue key, a JSON tag. `name()` gives display text. `code()` gives a number only (`Level::code`, `Purpose::code`). A type with a stored spelling has `key()` and never `code()`, even when a front end also shows the text. `Resolver::token()` gives the composite text a resolver's notice carries, since it is neither a stored key nor a display name. The `Notice` macro's `code()` is the one exception: `Notice::key()` already returns the `Key` type, so the macro keeps the old name.
+- **Turns and rotation.** `turns` names a count of quarter turns and the `Turns` type. `rotation` is the write queue's key (`write_rotation!`, the `rotation` columns, the `.rotation.pg-write` temp name) and only that: a Rust field that holds quarter turns is named `turns`.
+- **Test names are sentences** that say what holds (`a_write_reads_back_from_its_columns_and_a_value_out_of_range_does_not`). A bare noun names a helper, not a test. A platform-specific test keeps its `_windows` or `_posix` suffix.
+
 ### Review rules
 
 These two rules came out of the fourth modularity review (its full text is in git at `e428ab2`, `docs/temp/MODULARITY_REVIEW_4.md`).

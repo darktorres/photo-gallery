@@ -29,7 +29,7 @@ proptest! {
         id in any::<u64>(),
         original in any::<bool>(),
     ) {
-        let version = versioned.then_some(Version { mtime, rotation, pending_turns: pending });
+        let version = versioned.then_some(Version { mtime, turns: rotation, pending_turns: pending });
         let key = ImageKey { file: FileId::new(file), version };
         let request = match kind {
             0 => ImageRequest::thumb(key, pg_model::size::ThumbHeight::new(height).expect("a height in the cache's range")),
@@ -41,7 +41,7 @@ proptest! {
         prop_assert_eq!(ImageRequest::parse(request.provider(), &request.id()), Some(request));
         let url = request.url();
         let (name, rest) = url.strip_prefix("image://").and_then(|u| u.split_once('/')).expect("a URL");
-        prop_assert_eq!(Provider::from_name(name), Some(request.provider()));
+        prop_assert_eq!(Provider::from_key(name), Some(request.provider()));
         prop_assert_eq!(rest, request.id());
     }
 

@@ -72,7 +72,7 @@ pub fn hash(
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
                 analyzer.video_file_hash(&disk).map(OwedHashes::Video)
             } else {
-                analyzer.hash_image(bytes, item.rotation).map_err(pg_jobs::failure::undecoded).map(OwedHashes::Image)
+                analyzer.hash_image(bytes, item.turns).map_err(pg_jobs::failure::undecoded).map(OwedHashes::Image)
             }
         },
         Batch { size: BATCH, every: None },

@@ -394,7 +394,7 @@ fn upsert(rules: PathRules, tx: &Connection, notice: &Notice, times: u64, now: i
         part,
         root,
         notice.level().code(),
-        notice.source().code(),
+        notice.source().key(),
         notice.code(),
         data,
         now,

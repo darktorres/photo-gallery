@@ -23,8 +23,8 @@ impl Provider {
     /// Every provider.
     pub const ALL: [Provider; 4] = [Provider::Thumb, Provider::Thumbhash, Provider::Full, Provider::Yandex];
 
-    /// Its name in the scheme: `image://<name>/…`.
-    pub fn name(self) -> &'static str {
+    /// Its key in the scheme: `image://<key>/…`.
+    pub fn key(self) -> &'static str {
         match self {
             Provider::Thumb => "thumb",
             Provider::Thumbhash => "thumbhash",
@@ -33,9 +33,9 @@ impl Provider {
         }
     }
 
-    /// The provider named `name`, if there is one.
-    pub fn from_name(name: &str) -> Option<Provider> {
-        Self::ALL.into_iter().find(|p| p.name() == name)
+    /// The provider with `key`, if there is one.
+    pub fn from_key(key: &str) -> Option<Provider> {
+        Self::ALL.into_iter().find(|p| p.key() == key)
     }
 }
 
@@ -82,7 +82,7 @@ impl ImageRequest {
 
     /// The request's `image://<provider>/<id>` URL.
     pub fn url(&self) -> String {
-        format!("image://{}/{}", self.provider().name(), self.id())
+        format!("image://{}/{}", self.provider().key(), self.id())
     }
 
     /// The request `provider` gets for `id` (the URL's part after the provider's name), or `None` when it doesn't
@@ -152,7 +152,7 @@ mod tests {
     /// The request a URL names: its provider by name, then the rest.
     fn read(url: &str) -> Option<ImageRequest> {
         let (provider, id) = url.strip_prefix("image://")?.split_once('/')?;
-        ImageRequest::parse(Provider::from_name(provider)?, id)
+        ImageRequest::parse(Provider::from_key(provider)?, id)
     }
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn an_unknown_provider_or_key_does_not_read() {
-        assert_eq!(Provider::from_name("video"), None);
+        assert_eq!(Provider::from_key("video"), None);
         assert_eq!(ImageRequest::parse(Provider::Full, "not-a-number/full"), None);
         assert_eq!(ImageRequest::parse(Provider::Yandex, "x/original"), None);
     }
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn each_provider_has_its_own_name() {
         for p in Provider::ALL {
-            assert_eq!(Provider::from_name(p.name()), Some(p));
+            assert_eq!(Provider::from_key(p.key()), Some(p));
         }
     }
 }

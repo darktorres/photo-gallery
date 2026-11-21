@@ -1,11 +1,11 @@
 //! The versions of every persisted artifact, in one place. Each is an `i64` named `<OWNER>_VERSION`, and the name is the
 //! upper-cased mark it drives in `meta` (`import_version` is `IMPORT_VERSION`, `thumb_output_version` is
-//! `THUMB_OUTPUT_VERSION`; `KEY_ALGO_VERSION` is the one exception: it drives the `key_version` mark, and its doc says why). The owning crate re-exports its constant under the same name with a pointer to this module:
-//! `pub const IMPORT_VERSION: i64 = pg_model::versions::IMPORT_VERSION;`.
+//! `THUMB_OUTPUT_VERSION`; `KEY_ALGO_VERSION` is the one exception: it drives the `key_version` mark, and its doc says why).
 //!
 //! A bump is a change to what the artifact stores, or to what its stored values mean. Its rule is written beside each
 //! constant. `tools/test_versions.py` fails on a `*VERSION` constant anywhere in the workspace that is not in this
 //! module, and on a constant here that no owner reads, so a new version is registered here or it is not a version.
+//! Owners name these constants as `pg_model::versions::NAME`; no crate re-exports one under its own path.
 
 /// The analysis pipeline's version (`pg_analysis::analyze::IMPORT_VERSION`): an analysis made at another is redone. Bump
 /// it when the import computes a different value from the same file: the pixel or file hash, the decode bounds, the PDQ
@@ -21,9 +21,14 @@ pub const BORDERS_VERSION: i64 = 1;
 /// it at compile time and its schema test checks the stored seed.
 pub const PAIRING_VERSION: i64 = 1;
 
-/// The version of the thumbnails' pass state (`pg_render::THUMBS_VERSION`): the retry semantics of a thumbnail the pass
-/// made. Bump it when the pass must look at every file again.
+/// The version of the thumbnails' pass state: the retry semantics of a thumbnail the pass made. It is bumped by hand when
+/// a change to the decoders or the maker makes a file that failed before decode now (a codec upgrade is not detected). A
+/// catalog's or a cache's mark that differs (`pg_catalog::Versions::thumbs`, `pg_thumbcache::ThumbCache::open`) tries
+/// again the files whose thumbnail panicked, and the next pass looks at every file again.
 pub const THUMBS_VERSION: i64 = 1;
+
+// Zero is the mark of a catalog or a cache that has none: this build's thumbnails must differ from it, or a bump is missed.
+const _: () = assert!(THUMBS_VERSION > 0);
 
 /// The version of a placeholder's definition (`pg_model::analysis::PLACEHOLDER_VERSION`): a placeholder made at another
 /// is owed again. Bump it when the ThumbHash of a picture changes for the same pixels.
@@ -40,7 +45,7 @@ pub const REPLAY_FORMAT_VERSION: i64 = 1;
 /// migration. The catalog checks it against its baseline and migrations (`schema.rs`).
 pub const CATALOG_SCHEMA_VERSION: i64 = 1;
 
-/// The version of the thumbnail pixels this build makes (`pg_render::THUMB_OUTPUT_VERSION`): the resize, the JPEG and
+/// The version of the thumbnail pixels this build makes: the resize, the JPEG and
 /// WebP settings, the chroma. A cache whose `meta.thumb_output_version` is another starts over; a newer one is left
 /// alone. Bump it when a thumbnail's bytes change for the same source.
 pub const THUMB_OUTPUT_VERSION: i64 = 1;

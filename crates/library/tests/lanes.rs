@@ -70,7 +70,8 @@ fn two_folders(prefix: &str) -> (PathBuf, PathBuf, RulePath, RulePath) {
 fn start(dir: &Path, catalog_path: &Path, drives: Fake, features: Features) -> (Runner, Quiet<pg_thumbcache::Event>) {
     let id = Catalog::open(catalog_path, PATH_RULES).unwrap().catalog_id().unwrap();
     let (events, quiet) = Quiet::bus();
-    let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &id, None, pg_render::THUMBS_VERSION, events).unwrap();
+    let cache =
+        ThumbCache::open(&dir.join("thumbs.sqlite"), &id, None, pg_model::versions::THUMBS_VERSION, events).unwrap();
     let heights = HeightCell::default();
     heights.set(ThumbHeight::new(64).unwrap());
     let runner = Runner::start_with_drives(

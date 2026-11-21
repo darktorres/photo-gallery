@@ -151,7 +151,7 @@ TestCase {
         verify(hud !== null);
         similarSpy.target = v;
         similarSpy.clear();
-        hud.findSimilarAsked();
+        hud.findSimilarRequested();
         compare(similarSpy.count, 1);
         compare(similarSpy.signalArguments[0][0], 42);
         galleryStub.viewedFileId = 0;

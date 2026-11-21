@@ -278,7 +278,7 @@ pub fn run_while(
                 let item = items.get(*i)?;
                 result.is_ok().then_some((
                     item.id,
-                    Listed { size: item.size, mtime: item.source.mtime, rotation: item.source.rotation },
+                    Listed { size: item.size, mtime: item.source.mtime, turns: item.source.turns },
                 ))
             })
             .collect();
@@ -316,7 +316,7 @@ pub fn run_while(
                             file_id: item.id,
                             mtime: item.source.mtime,
                             size: item.size,
-                            turns: item.source.rotation,
+                            turns: item.source.turns,
                             error: shown.error.clone(),
                             retry,
                         };
@@ -384,10 +384,10 @@ pub fn run_while(
                     let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
                     let height = pg_model::num::index(thumb.get());
                     maker
-                        .load_frame(&disk, at, item.source.rotation, height)
+                        .load_frame(&disk, at, item.source.turns, height)
                         .and_then(|()| maker.encode_frame_into(height, &mut out))
                 }
-                None => maker.make_into(bytes, pg_model::num::index(thumb.get()), item.source.rotation, &mut out),
+                None => maker.make_into(bytes, pg_model::num::index(thumb.get()), item.source.turns, &mut out),
             };
             match made {
                 Ok(()) => Ok(out),

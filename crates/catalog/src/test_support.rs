@@ -51,7 +51,7 @@ pub(crate) fn one_file_at(rules: PathRules, path: &Path) -> (Catalog, i64) {
 /// A turn the file can't hold, written by the writer: the catalog keeps it.
 pub(crate) fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
     let turns = Turns::new(u8::try_from(turns).unwrap());
-    let job = queue::Job { file_id: id, write: pg_model::write::Write::Turns(turns), temp: None, attempts: 0 };
+    let job = queue::Job { file_id: id, write: pg_model::write::Write::Rotation(turns), temp: None, attempts: 0 };
     c.write_done(&job, queue::WriteEffect::KeptInCatalog(turns)).unwrap();
 }
 

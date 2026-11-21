@@ -168,7 +168,7 @@ impl Source {
     ];
 
     /// The source's code, as the words' ids name it (`source-<code>`).
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             Source::Scan => "scan",
             Source::Import => "import",
@@ -226,7 +226,7 @@ impl ScanNote {
     ];
 
     /// The note's code: what it is stored as, and what its words select on.
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             ScanNote::Duplicates => "duplicates",
             ScanNote::SkippedReparse => "reparse",
@@ -292,7 +292,7 @@ impl StartOverReason {
     ];
 
     /// The reason's code, which the words select on.
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             StartOverReason::Damaged => "damaged",
             StartOverReason::NotADatabase => "not-a-database",
@@ -358,7 +358,7 @@ pub enum EditOp {
 impl EditOp {
     pub const ALL: [EditOp; 3] = [EditOp::Rate, EditOp::Rotate, EditOp::MarkBorder];
 
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             EditOp::Rate => "rate",
             EditOp::Rotate => "rotate",
@@ -379,7 +379,7 @@ pub enum ViewOp {
 impl ViewOp {
     pub const ALL: [ViewOp; 3] = [ViewOp::List, ViewOp::Save, ViewOp::Delete];
 
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             ViewOp::List => "list",
             ViewOp::Save => "save",
@@ -401,7 +401,7 @@ pub enum FilePass {
 impl FilePass {
     pub const ALL: [FilePass; 3] = [FilePass::Thumbs, FilePass::Borders, FilePass::Import];
 
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             FilePass::Thumbs => "thumbs",
             FilePass::Borders => "borders",
@@ -429,16 +429,16 @@ impl LedgerKind {
     ];
 
     /// The ledger's code: a pass's own, or `scan-folders`.
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
-            LedgerKind::File(pass) => pass.code(),
+            LedgerKind::File(pass) => pass.key(),
             LedgerKind::ScanFolders => "scan-folders",
         }
     }
 
-    /// The ledger with `code` ([`LedgerKind::code`]), if any.
-    pub fn from_code(code: &str) -> Option<LedgerKind> {
-        LedgerKind::ALL.into_iter().find(|kind| kind.code() == code)
+    /// The ledger with `key` ([`LedgerKind::key`]), if any.
+    pub fn from_key(key: &str) -> Option<LedgerKind> {
+        LedgerKind::ALL.into_iter().find(|kind| kind.key() == key)
     }
 
     /// The ledger's entry, with its counts.
@@ -774,11 +774,11 @@ pub enum Resolver {
 }
 
 impl Resolver {
-    /// The resolver's name, as the golden table `notice/resolver_table.golden` writes it: `next-success(edit-rate)`.
-    pub fn name(self) -> String {
+    /// The resolver's token, as the golden table `notice/resolver_table.golden` writes it: `next-success(edit-rate)`.
+    pub fn token(self) -> String {
         match self {
-            Resolver::NextSuccess(op) => format!("next-success({})", op.code()),
-            Resolver::CompletePass(pass) => format!("complete-pass({})", pass.code()),
+            Resolver::NextSuccess(op) => format!("next-success({})", op.key()),
+            Resolver::CompletePass(pass) => format!("complete-pass({})", pass.key()),
             Resolver::StatusPoll => "status-poll".to_string(),
             Resolver::TouchesRecovered => "touches-recovered".to_string(),
             Resolver::StoreRecovered => "store-recovered".to_string(),
@@ -812,7 +812,7 @@ pub enum Op {
 
 impl Op {
     /// The operation's code.
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             Op::Round => "round",
             Op::LedgerWrite(FilePass::Thumbs) => "ledger-write-thumbs",
@@ -1196,17 +1196,17 @@ impl Notice {
     pub fn lifecycle(&self) -> Lifecycle<'_> {
         match self {
             Notice::ScanNote { root, note, .. } => match note.lifecycle() {
-                NoteLifecycle::Condition => self.key(Some(root), Some(Part::Code(note.code())), Resolver::RootWalk),
+                NoteLifecycle::Condition => self.key(Some(root), Some(Part::Code(note.key())), Resolver::RootWalk),
                 NoteLifecycle::Event => Lifecycle::Event,
             },
             Notice::ViewsFailed { op, .. } => {
-                self.key(None, Some(Part::Code(op.code())), Resolver::NextSuccess(Op::Views(*op)))
+                self.key(None, Some(Part::Code(op.key())), Resolver::NextSuccess(Op::Views(*op)))
             }
             Notice::EditFailed { op, .. } => {
-                self.key(None, Some(Part::Code(op.code())), Resolver::NextSuccess(Op::Edit(*op)))
+                self.key(None, Some(Part::Code(op.key())), Resolver::NextSuccess(Op::Edit(*op)))
             }
             Notice::UnreadableFiles { pass, .. } => {
-                self.key(None, Some(Part::Code(pass.code())), Resolver::CompletePass(*pass))
+                self.key(None, Some(Part::Code(pass.key())), Resolver::CompletePass(*pass))
             }
             Notice::LedgerNotWritten { .. } => {
                 self.key(None, None, Resolver::NextSuccess(Op::LedgerWrite(FilePass::Thumbs)))
@@ -1300,7 +1300,7 @@ impl Notice {
         let mut text = String::from("| Kind | Part | Cleared by |\n|---|---|---|\n");
         for row in Notice::resolver_table() {
             let part = row.part.map_or_else(|| "—".to_string(), |part| format!("`{part}`"));
-            let resolvers: Vec<String> = row.resolvers.iter().map(|r| format!("`{}`", r.name())).collect();
+            let resolvers: Vec<String> = row.resolvers.iter().map(|r| format!("`{}`", r.token())).collect();
             text.push_str(&format!("| `{}` | {part} | {} |\n", row.code, resolvers.join(", ")));
         }
         text
@@ -1690,7 +1690,7 @@ mod tests {
                 r#"{"kind":"catalog-rebuilt","kept":"k","why":"w","carried":{"carried":"nothing","reason":"r"}}"#,
             ),
             (
-                Notice::WriteDropped { write: WriteKind::Turns, count: 2 },
+                Notice::WriteDropped { write: WriteKind::Rotation, count: 2 },
                 r#"{"kind":"write-dropped","write":"rotation","count":2}"#,
             ),
             (Notice::ThumbsFailed { counts: None }, r#"{"kind":"thumbs-failed","counts":null}"#),
@@ -1770,14 +1770,14 @@ mod tests {
     /// Each ledger's entry is its own notice, and its code names it.
     #[test]
     fn each_ledger_has_its_entry() {
-        let codes: BTreeSet<&str> = LedgerKind::ALL.iter().map(|k| k.code()).collect();
-        assert_eq!(codes.len(), LedgerKind::ALL.len());
+        let keys: BTreeSet<&str> = LedgerKind::ALL.iter().map(|k| k.key()).collect();
+        assert_eq!(keys.len(), LedgerKind::ALL.len());
         for kind in LedgerKind::ALL {
-            assert_eq!(LedgerKind::from_code(kind.code()), Some(kind));
+            assert_eq!(LedgerKind::from_key(kind.key()), Some(kind));
             assert_eq!(kind.notice(None).lifecycle(), Lifecycle::Ledger(kind));
         }
-        assert_eq!(LedgerKind::from_code("scan-folders"), Some(LedgerKind::ScanFolders));
-        assert_eq!(LedgerKind::from_code("nothing"), None);
+        assert_eq!(LedgerKind::from_key("scan-folders"), Some(LedgerKind::ScanFolders));
+        assert_eq!(LedgerKind::from_key("nothing"), None);
     }
 
     /// A kept notice's key names its kind by its code, and its folder is the notice's own.
@@ -1818,7 +1818,7 @@ mod tests {
             let notice = Notice::ScanNote { root: root.clone(), note, count: 2 };
             match (note.lifecycle(), notice.lifecycle()) {
                 (NoteLifecycle::Condition, Lifecycle::State(key, Resolver::RootWalk)) => {
-                    assert_eq!(key, Key { code: "scan-note", root: Some(&root), part: Some(Part::Code(note.code())) });
+                    assert_eq!(key, Key { code: "scan-note", root: Some(&root), part: Some(Part::Code(note.key())) });
                 }
                 (NoteLifecycle::Event, Lifecycle::Event) => {}
                 (_, lifecycle) => panic!("{note:?} is kept as {lifecycle:?}"),
@@ -1960,26 +1960,26 @@ mod tests {
     }
 
     #[test]
-    fn every_code_list_is_complete() {
-        assert_eq!(ScanNote::ALL.iter().map(|n| n.code()).collect::<BTreeSet<_>>().len(), ScanNote::ALL.len());
-        assert_eq!(Source::ALL.iter().map(|s| s.code()).collect::<BTreeSet<_>>().len(), Source::ALL.len());
+    fn every_key_list_is_complete() {
+        assert_eq!(ScanNote::ALL.iter().map(|n| n.key()).collect::<BTreeSet<_>>().len(), ScanNote::ALL.len());
+        assert_eq!(Source::ALL.iter().map(|s| s.key()).collect::<BTreeSet<_>>().len(), Source::ALL.len());
         for note in ScanNote::ALL {
-            assert_eq!(serde_json::to_value(note).unwrap(), note.code());
+            assert_eq!(serde_json::to_value(note).unwrap(), note.key());
         }
         for reason in StartOverReason::ALL {
-            assert_eq!(serde_json::to_value(reason).unwrap(), reason.code());
+            assert_eq!(serde_json::to_value(reason).unwrap(), reason.key());
         }
         for source in Source::ALL {
-            assert_eq!(serde_json::to_value(source).unwrap(), source.code());
+            assert_eq!(serde_json::to_value(source).unwrap(), source.key());
         }
         for op in EditOp::ALL {
-            assert_eq!(serde_json::to_value(op).unwrap(), op.code());
+            assert_eq!(serde_json::to_value(op).unwrap(), op.key());
         }
         for op in ViewOp::ALL {
-            assert_eq!(serde_json::to_value(op).unwrap(), op.code());
+            assert_eq!(serde_json::to_value(op).unwrap(), op.key());
         }
         for pass in FilePass::ALL {
-            assert_eq!(serde_json::to_value(pass).unwrap(), pass.code());
+            assert_eq!(serde_json::to_value(pass).unwrap(), pass.key());
         }
     }
 

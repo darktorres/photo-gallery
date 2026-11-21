@@ -110,7 +110,7 @@ impl Analysis {
     /// The format's name for an image, or the codec for a video (the catalog's `format` column).
     pub fn format(&self) -> &'static str {
         match &self.media {
-            Media::Image(image) => image.format.name(),
+            Media::Image(image) => image.format.key(),
             Media::Video(video) => video.codec,
         }
     }

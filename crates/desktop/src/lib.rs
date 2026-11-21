@@ -193,7 +193,7 @@ pub fn run(args: &[OsString]) -> i32 {
             for provider in pg_client::image::Provider::ALL {
                 let image_provider = providers_bridge::ffi::new_image_provider(providers::kind_of(provider));
                 // SAFETY: a new provider, which the engine takes ownership of.
-                unsafe { qml.as_mut().add_image_provider(&QString::from(provider.name()), image_provider) };
+                unsafe { qml.as_mut().add_image_provider(&QString::from(provider.key()), image_provider) };
             }
         }
         let main_qml = QUrl::from("qrc:/qt/qml/pg/gallery/qml/Main.qml");

@@ -531,7 +531,7 @@ mod tests {
             "A queued rating was dropped: its file is no longer in the library"
         );
         assert_eq!(
-            worded(&Notice::WriteDropped { write: WriteKind::Turns, count: 3 }).1,
+            worded(&Notice::WriteDropped { write: WriteKind::Rotation, count: 3 }).1,
             "3 queued changes were dropped, the latest a turn: their files are no longer in the library"
         );
         assert_eq!(

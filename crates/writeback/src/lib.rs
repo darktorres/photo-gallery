@@ -535,7 +535,7 @@ impl Inner {
         // one (`queue::rating_in_file_possible` asks for an image first); one queued before that rule is done here.
         if kind == Kind::Video && job.temp.is_none() {
             match job.write {
-                Write::Turns(turns) => self.keep_turn_in_catalog(catalog, job, turns)?,
+                Write::Rotation(turns) => self.keep_turn_in_catalog(catalog, job, turns)?,
                 Write::Rating(_) => catalog.write_done(job, WriteEffect::Nothing)?,
             }
             return Ok(());
@@ -564,7 +564,7 @@ impl Inner {
         let before = stat(&path)?;
         // The original's bytes are read only where they are used: a turn rewrites them, and a format the analysis
         // didn't give is sniffed from them. A rating's new content is ExifTool's, made from the file on disk.
-        let bytes = if known.is_none() || job.kind() == WriteKind::Turns {
+        let bytes = if known.is_none() || job.kind() == WriteKind::Rotation {
             std::fs::read(&path).with_context(|| format!("reading {shown}"))?
         } else {
             Vec::new()
@@ -598,7 +598,7 @@ impl Inner {
                 }
                 (written, false)
             }
-            Write::Turns(turns) => {
+            Write::Rotation(turns) => {
                 let write_temp = |new: Vec<u8>| -> Result<Vec<u8>> {
                     std::fs::write(&temp, &new).with_context(|| format!("writing {shown_temp}"))?;
                     Ok(new)
@@ -746,7 +746,7 @@ impl Inner {
         let rewrite = Rewrite { before: None, after, metadata_only: None };
         catalog.write_done(&written, Self::rewrote(&written, rewrite))?;
         let _ = std::fs::remove_file(&temp_path);
-        if job.kind() == WriteKind::Turns {
+        if job.kind() == WriteKind::Rotation {
             self.pixels_changed(job.file_id);
         }
         Ok(())
@@ -756,7 +756,7 @@ impl Inner {
     fn rewrote(job: &Job, rewrite: Rewrite) -> WriteEffect {
         match job.write {
             Write::Rating(rating) => WriteEffect::FileRating { rewrite, rating },
-            Write::Turns(turns) => WriteEffect::TurnedBack { rewrite, turns },
+            Write::Rotation(turns) => WriteEffect::TurnedBack { rewrite, turns },
         }
     }
 
@@ -848,9 +848,9 @@ mod tests {
         let mut dropped = Dropped::default();
         inner.tell_dropped(&mut dropped);
         assert!(sink.take().is_empty(), "nothing dropped, nothing told");
-        dropped = Dropped { count: 2, last: Some(WriteKind::Turns) };
+        dropped = Dropped { count: 2, last: Some(WriteKind::Rotation) };
         inner.tell_dropped(&mut dropped);
-        assert_eq!(sink.take(), [Call::Post(Notice::WriteDropped { write: WriteKind::Turns, count: 2 })]);
+        assert_eq!(sink.take(), [Call::Post(Notice::WriteDropped { write: WriteKind::Rotation, count: 2 })]);
         assert_eq!(dropped.count, 0, "told once");
     }
 

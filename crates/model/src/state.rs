@@ -11,10 +11,10 @@ use crate::turns::Turns;
 /// ([`FileState::writing`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FileState {
-    /// With `rotation`, what the thumbnail cache keeps a file's thumbnails under (`thumbs::Source`). The last write time in
+    /// With `turns`, what the thumbnail cache keeps a file's thumbnails under (`thumbs::Source`). The last write time in
     /// the platform listing's unit: FILETIME ticks (100 ns since 1601-01-01 UTC, `pg_platform::dir::listing`'s `mtime`).
     pub mtime: i64,
-    pub rotation: Turns,
+    pub turns: Turns,
     /// The file's size in bytes (`files.size`): with `mtime`, what the scanner decides a file changed by.
     pub size: u64,
     /// Quarter turns clockwise asked for and not yet written (`queue_rotation`): what is made from the file is shown

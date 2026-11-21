@@ -18,7 +18,7 @@ macro_rules! file_state_columns {
         concat!(
             "f.mtime, f.turns,
         coalesce((SELECT value FROM file_writes WHERE file_id = f.id AND kind = '",
-            pg_model::write_turns!(),
+            pg_model::write_rotation!(),
             "'), 0),
         EXISTS(SELECT 1 FROM file_writes WHERE file_id = f.id AND temp IS NOT NULL),
         f.size"
@@ -29,7 +29,7 @@ macro_rules! file_state_columns {
 fn file_state_at(r: &rusqlite::Row, first: usize) -> rusqlite::Result<FileState> {
     Ok(FileState {
         mtime: r.get(first)?,
-        rotation: Turns::new(r.get(first + 1)?),
+        turns: Turns::new(r.get(first + 1)?),
         pending_turns: Turns::new(r.get(first + 2)?),
         writing: r.get(first + 3)?,
         size: r.get(first + 4)?,

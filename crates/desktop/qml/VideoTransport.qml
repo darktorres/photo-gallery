@@ -21,11 +21,11 @@ Rectangle {
     required property bool muted
     required property real volume
 
-    signal playAsked
-    signal muteAsked
-    signal volumeAsked(real value)
+    signal playRequested
+    signal muteRequested
+    signal volumeRequested(real value)
     // A position dragged to (ms).
-    signal seekAsked(real ms)
+    signal seekRequested(real ms)
 
     Words {
         id: words
@@ -54,7 +54,7 @@ Rectangle {
         ToolButton {
             text: transport.playing ? "⏸" : "▶"
             font.pixelSize: 18
-            onClicked: transport.playAsked()
+            onClicked: transport.playRequested()
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-play-pause")
         }
@@ -69,7 +69,7 @@ Rectangle {
             from: 0
             to: Math.max(1, transport.duration)
             enabled: transport.seekable
-            onMoved: transport.seekAsked(value)
+            onMoved: transport.seekRequested(value)
             // Follows the playback except while dragged.
             Binding on value {
                 when: !seek.pressed
@@ -84,7 +84,7 @@ Rectangle {
         ToolButton {
             text: transport.muted || transport.volume === 0 ? "🔇" : "🔊"
             font.pixelSize: 16
-            onClicked: transport.muteAsked()
+            onClicked: transport.muteRequested()
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-mute")
         }
@@ -92,7 +92,7 @@ Rectangle {
             from: 0
             to: 1
             value: transport.volume
-            onMoved: transport.volumeAsked(value)
+            onMoved: transport.volumeRequested(value)
             Layout.preferredWidth: 100
         }
     }

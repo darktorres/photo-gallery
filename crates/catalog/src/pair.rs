@@ -184,7 +184,7 @@ impl ScanLease<'_> {
                                 f.file_ref,
                                 f.size,
                                 f.mtime,
-                                f.ext.name(),
+                                f.ext.key(),
                                 f.created,
                                 f.id
                             ],
@@ -512,7 +512,7 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh) -> Result<(
             from.created,
             from.folder_id,
             from.name,
-            from.ext.name(),
+            from.ext.key(),
             from.kind.key(),
             from.size,
             from.mtime,
@@ -539,7 +539,7 @@ fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mu
         }
     }
     tx.execute(
-        concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_turns!(), "'"),
+        concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_rotation!(), "'"),
         [id],
     )?;
     tx.execute(

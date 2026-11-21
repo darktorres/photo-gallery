@@ -136,7 +136,7 @@ pub(crate) fn work_list_mapped<T>(
             path,
             size: r.get(3)?,
             mtime: r.get(4)?,
-            rotation: Turns::new(r.get(5)?),
+            turns: Turns::new(r.get(5)?),
             kind: crate::types::kind_at(r, 6)?,
         };
         list.items.push(make(item, r)?);

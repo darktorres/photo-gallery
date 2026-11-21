@@ -112,7 +112,7 @@ pub fn run_while(
             if item.kind == Kind::Video {
                 // FFmpeg opens the file by its disk path, as the import does.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                let hash = worker.maker.placeholder_of_frame(&disk, pw.poster_ms, item.rotation)?;
+                let hash = worker.maker.placeholder_of_frame(&disk, pw.poster_ms, item.turns)?;
                 return Ok((hash, false));
             }
             if cached(cache, item, &mut worker.jpeg)? {
@@ -128,7 +128,7 @@ pub fn run_while(
             } else {
                 bytes
             };
-            Ok((worker.maker.placeholder(whole, item.rotation)?, false))
+            Ok((worker.maker.placeholder(whole, item.turns)?, false))
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
@@ -149,7 +149,7 @@ pub fn run_while(
 /// Whether the cache holds a thumbnail of `item` as it is, at least [`CACHED_MIN_SIDE`] high, and reads its bytes into
 /// `jpeg` if so. An error reading the cache is an error of the file (the pass tries it again).
 fn cached(cache: &ThumbCache, item: &WorkItem, jpeg: &mut Vec<u8>) -> Result<bool> {
-    let source = Source { mtime: item.mtime, rotation: item.rotation };
+    let source = Source { mtime: item.mtime, turns: item.turns };
     let height = ThumbHeight::new(CACHED_HEIGHT).unwrap_or(ThumbHeight::DEFAULT);
     Ok(cache.get_nearest_into(item.id, height, source, jpeg)?.is_some_and(|h| h.get() >= CACHED_MIN_SIDE))
 }
@@ -201,7 +201,7 @@ fn flush(
                         file_id: item.id,
                         mtime: item.mtime,
                         size: item.size,
-                        turns: item.rotation,
+                        turns: item.turns,
                         error: pg_jobs::failure::Cause::of(&e).to_string(),
                         retry: false,
                     });

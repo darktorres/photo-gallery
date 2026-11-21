@@ -170,7 +170,7 @@ pub enum FolderFailure {
 
 impl FolderFailure {
     /// The stored `folder_failures.reason`.
-    pub fn code(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             FolderFailure::Unreadable => "unreadable",
             FolderFailure::MountRefused => "mount-refused",
@@ -179,9 +179,9 @@ impl FolderFailure {
     }
 
     /// The failure of a stored reason; `None` for one this build doesn't know.
-    pub fn from_code(code: &str) -> Option<FolderFailure> {
+    pub fn from_key(key: &str) -> Option<FolderFailure> {
         let all = [FolderFailure::Unreadable, FolderFailure::MountRefused, FolderFailure::Refused];
-        all.into_iter().find(|f| f.code() == code)
+        all.into_iter().find(|f| f.key() == key)
     }
 }
 
@@ -267,7 +267,7 @@ pub(crate) fn format_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Option<Format
     let Some(name) = r.get_ref(i)?.as_str_or_null()? else {
         return Ok(None);
     };
-    Format::from_name(name).map(Some).ok_or_else(|| bad_value(i, Type::Text, "analysis.format", name))
+    Format::from_key(name).map(Some).ok_or_else(|| bad_value(i, Type::Text, "analysis.format", name))
 }
 
 /// What a queued write needs of its file ([`crate::core::Catalog::write_target`]): its path, its analyzed format (`None`
@@ -296,7 +296,7 @@ pub(crate) fn key_version_text() -> String {
 }
 
 /// The versions of what the build makes, which `files.pending`, `analysis.borders_due` and the failure ledger are kept
-/// against (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`, `pg_render::THUMBS_VERSION`). The library passes them
+/// against (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`, `pg_model::versions::THUMBS_VERSION`). The library passes them
 /// to `Catalog::prepare`: the catalog doesn't depend on the analysis or the renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Versions {
@@ -430,7 +430,7 @@ pub struct WorkItem {
     pub size: u64,
     pub mtime: i64,
     /// Catalog rotation (`files.turns`), applied when decoding.
-    pub rotation: Turns,
+    pub turns: Turns,
     pub kind: Kind,
 }
 
@@ -439,7 +439,7 @@ impl WorkItem {
     ///
     /// [`Catalog::is_current`]: crate::core::Catalog::is_current
     pub fn listed(&self) -> Listed {
-        Listed { size: self.size, mtime: self.mtime, rotation: self.rotation }
+        Listed { size: self.size, mtime: self.mtime, turns: self.turns }
     }
 }
 
@@ -449,7 +449,7 @@ pub struct Listed {
     pub size: u64,
     pub mtime: i64,
     /// The catalog's rotation, which the pass applied.
-    pub rotation: Turns,
+    pub turns: Turns,
 }
 
 /// A file with borders to crop off (`Catalog::crop_source`).

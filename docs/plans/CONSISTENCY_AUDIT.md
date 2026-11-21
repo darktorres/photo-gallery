@@ -2001,7 +2001,7 @@ testkit's `run_folder(scratch`, prefix) makes distinct folders per call, and pla
 
 ### N-010 [medium] Stored turns count is called rotation in some places and turns in others — CONFIRMED
 
-**Disposition: Fixed in part.** Placeholder.turns is shown_turns and the file column is files.turns; the stored write key stays "rotation" (PF-026).
+**Disposition: Fixed.** The Rust fields named `rotation` (on `FileState`, `Version`, `Entry`, `thumbs::Source`, `WorkItem`, `Listed`, the fixture's `File` and the app's `Decoded`) are `turns`. The SQL columns, the write key `rotation` and the temp names are unchanged. The rule is in `crates/README.md` (Naming).
 
 FileState.rotation (model state.rs:16) is the stored turns, and FileState.turns (state.rs:21) is the pending turns. write.rs:31 says the Turns write kind is stored under the key rotation. The same concept has two field names. failure.rs:18 (the finding's cite) does not exist, so that instance is wrong, though the rest holds.
 
@@ -2033,13 +2033,13 @@ budgets.json uses scan-walk.again, scan-walk.first and pending-thumbs (hyphens).
 
 ### N-016 [medium] Test names follow several styles within the same crates — CONFIRMED
 
-**Disposition: Deferred.** The test-name style is not chosen, so no renames were made.
+**Disposition: Fixed.** The style is in `crates/README.md` (Naming): a test name is a sentence that states what holds, a bare noun names a helper, and a platform-specific test keeps its suffix. `videos` became `each_pass_gives_the_frames_whole_with_their_delays` and `eviction` became `the_cache_stays_under_its_cap_by_evicting`; the helpers the finding listed are not tests and keep their names.
 
 Test names in the same crates mix styles: bare nouns (borders.rs:324 `too_deep`), sentences (borders.rs:383, analyze.rs:221), a `_windows` and `_posix` suffix pattern (catalog browse tests) and a plain-name test with a comment (browse/read/tests.rs:99). The mix is real within crates, though low severity.
 
 ### N-017 [medium] QML user-action signal names use several verbs for the same kind of event — CONFIRMED
 
-**Disposition: Deferred.** QML signal verbs are not renamed (needs a Qt build to check every call site).
+**Disposition: Fixed.** The QML event signals and their handlers that ended in `Asked` now end in `Requested` (`Hud`, `RatingBar`, `MediaView`, `VideoTransport`, `Viewer`, `Main`, and `tst_viewer.qml`). `Main`'s `similarAsked` became `similarSearchRequested`, since `TestHooks.qml` already has `similarRequested`. `showAsked` (a function) and the `*Toggled` signals are unchanged.
 
 QML user-action signals use playAsked, volumeAsked, rateAsked, borderMarkAsked, copyRequested, dismissRequested, retryRequested, writeBackToggled, detectBordersToggled, recursiveToggled and toggleRequested. The same kind of event is named with Asked, Requested and Toggled.
 
@@ -2115,7 +2115,7 @@ The same type name names different types: Writing in thumbs/lib.rs:178 and thumb
 
 ### N-030 [low] Accessors for stored codes are named differently across the model — CONFIRMED
 
-**Disposition: Deferred.** The naming rule (key/from_key, name, code) is decided; the accessor renames are not applied.
+**Disposition: Fixed.** The rule is in `crates/README.md` (Naming): `key()`/`from_key()` give the stored spelling, `name()` display text, and `code()` a number only. Renamed to `key()`: `Source`, `ScanNote`, `StartOverReason`, `EditOp`, `ViewOp`, `FilePass`, `LedgerKind` (`from_key`), `Op`, `FolderFailure` (`from_key`), `RefusedReason`, `Format` (`from_key`), `Ext`, `Provider` (`from_key`); `Resolver::name` became `Resolver::token`. Kept: `Level::code`, `Purpose::code`, `FsKind::name`, and the `Notice` macro's `code()`.
 
 Accessors for stored codes differ: detection.rs and media.rs Kind use key() and `from_key(`), format.rs:46 uses name(), media.rs:96 Ext::name, and notice.rs:790 uses code() on Op. Those pairs are real, if not wrong. Resolver::name (notice.rs:753) returns a String, which differs in shape from the others.
 
@@ -2139,7 +2139,7 @@ The product is named four ways in LANGUAGES.md:85 (Photo Gallery, gallery, pg-ga
 
 ### N-034 [low] Inbox method names for the same operations differ by layer — CONFIRMED
 
-**Disposition: No change.** The singular and batch rule is the end state; trait renames would churn the test fakes.
+**Disposition: No change.** The names follow the grain: singular names at the app layer, plural and batch names at the store layer. That rule is documented beside the inbox code in `app/src/inbox.rs`, and the code follows it. Unifying the layers would erase the distinction.
 
 Inbox operations are named singular at the app layer and plural at the store layer: `thumb_failed` and `thumb_made` (inbox.rs:509), `thumbs_failed` and `thumbs_made` on Store (inbox.rs:641), and ThumbsFailed and ThumbsMade on Step (inbox.rs:718). Thumb::Failed and Thumb::Made (inbox.rs:214) add a third form.
 
@@ -2557,7 +2557,7 @@ The analysis version is `IMPORT_VERSION` by design: versions.rs:10 says the anal
 
 ### PF-026 [low] Rotation write named Turns, rotation and turns — CONFIRMED
 
-**Disposition: Fixed in part.** The temp name and stored key are rotation; WriteKind::Turns is not renamed to Rotation.
+**Disposition: Fixed.** `WriteKind::Turns` and `Write::Turns` are renamed to `Rotation`, and the `write_turns!` macro to `write_rotation!`. The stored key and the temp name stay `rotation` (the variant and the key now agree in name), and `the_rotation_kind_is_still_stored_as_rotation` pins the key.
 
 The Rust kind is WriteKind::Turns (writeback.rs:470, :836, :875), but the queue key is the string 'rotation' (writeback.rs:928 and queue.rs:70 via `write_rotation!`). queue.rs:562 uses the temp name .b.jpg.turns.pg-write with 'rotation' as the kind.
 
@@ -3831,7 +3831,7 @@ Benchmark timing differs: gpu.py:31, 53-58 takes the median of at least 5 calls 
 
 ### T-018 [medium] Tests that check version literals in ignore reasons and fixtures — CONFIRMED
 
-**Disposition: Fixed in part.** writeback uses pg_model::versions::THUMBS_VERSION and the cap has a reason; the other pg_render sites are not all switched.
+**Disposition: Fixed.** The `pg_render` aliases `THUMBS_VERSION` and `THUMB_OUTPUT_VERSION` are removed. Every use names `pg_model::versions::` directly, and the assert moved to `crates/model/src/versions.rs`, which now states that owners do not re-export their constants.
 
 writeback lib.rs:800-806 builds its writer with the literal version 1 and cap 1 `<<` 20, while thumbs lib.rs:493-545 uses `pg_render::THUMBS_VERSION` and 1 `<<` 30. The ignore reason in pairs.rs:246-247 is a separate, documented reason.
 
@@ -3885,7 +3885,7 @@ Platform gates use four styles: `crop_folders.rs:4` has a crate-level #![cfg(win
 
 ### T-027 [low] Hand-rolled pseudo-random generators in tests — CONFIRMED
 
-**Disposition: Fixed.** The test generator is pg-testrng; all test RNGs use it.
+**Disposition: Fixed.** Every test generator is `pg_testkit::Rng` (SplitMix64 in `pg-testrng`), including the codec's convert and the analysis's borders stats and pdq tests, and the bench's pairing draws. Two exceptions stay, documented: the hash mixer in `analysis/src/borders.rs` (a hash, not a stream) and the QML generator in `tst_gridrow.qml`, which cannot use Rust.
 
 Hand-rolled generators: browse/read/tests.rs:452 defines struct Rng with xorshift seeds, thumbcache lib.rs:1007 uses xorshift with a fixed seed, and desktop `tests/qml/tst_gridrow.qml:344` uses an LCG. catalog writers.rs:1858 has a SplitMix64 generator. The cited container lib.rs:239 is a length parse, not a generator.
 

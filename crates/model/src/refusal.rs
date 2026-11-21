@@ -3,7 +3,7 @@
 //! refusal is shown in the reader's language, whichever one the scan ran in.
 
 /// Why a folder can't be scanned for its identities, or walked into under a scanned root. A notice stores it as
-/// `{"reason": "<variant>", ...its fields}` (kebab-case); the words select on [`RefusedReason::code`].
+/// `{"reason": "<variant>", ...its fields}` (kebab-case); the words select on [`RefusedReason::key`].
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "reason", rename_all = "kebab-case")]
 pub enum RefusedReason {
@@ -58,7 +58,7 @@ pub enum Fact {
 
 impl RefusedReason {
     /// The reason's stored name (kebab-case, like the notices' tags), which the words select on.
-    pub fn code(&self) -> &'static str {
+    pub fn key(&self) -> &'static str {
         match self {
             RefusedReason::NetworkPath => "network-path",
             RefusedReason::Unreadable { fact: Fact::Volume, .. } => "unreadable-volume",
@@ -87,11 +87,11 @@ impl RefusedReason {
 impl std::fmt::Display for RefusedReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RefusedReason::Unreadable { error, .. } => write!(f, "{} ({error})", self.code()),
+            RefusedReason::Unreadable { error, .. } => write!(f, "{} ({error})", self.key()),
             RefusedReason::NotNtfs { file_system } | RefusedReason::Pseudo { file_system } => {
-                write!(f, "{} ({file_system})", self.code())
+                write!(f, "{} ({file_system})", self.key())
             }
-            _ => f.write_str(self.code()),
+            _ => f.write_str(self.key()),
         }
     }
 }

@@ -19,10 +19,10 @@ Rectangle {
     required property bool borderMarked
     required property int rating
 
-    signal rateAsked(int r)
-    signal turnAsked(int d)
-    signal borderMarkAsked(bool marked)
-    signal findSimilarAsked
+    signal rateRequested(int r)
+    signal turnRequested(int d)
+    signal borderMarkRequested(bool marked)
+    signal findSimilarRequested
 
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
@@ -42,7 +42,7 @@ Rectangle {
             font.pixelSize: 22
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-find-similar-tooltip")
-            onClicked: bar.findSimilarAsked()
+            onClicked: bar.findSimilarRequested()
         }
         // Borders found: marked as not a border while checked.
         ToolButton {
@@ -54,14 +54,14 @@ Rectangle {
             font.strikeout: bar.borderMarked
             ToolTip.visible: hovered
             ToolTip.text: bar.borderMarked ? words.text("ui-unmark-not-border") : words.text("ui-not-a-border")
-            onClicked: bar.borderMarkAsked(!bar.borderMarked)
+            onClicked: bar.borderMarkRequested(!bar.borderMarked)
         }
         ToolButton {
             text: "⟲"
             font.pixelSize: 22
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-turn-left")
-            onClicked: bar.turnAsked(-1)
+            onClicked: bar.turnRequested(-1)
         }
         Repeater {
             model: 6
@@ -78,7 +78,7 @@ Rectangle {
                     border.color: "#ffd24a"
                     border.width: bar.rating === star.index ? 2 : 0
                 }
-                onClicked: bar.rateAsked(star.index)
+                onClicked: bar.rateRequested(star.index)
             }
         }
         ToolButton {
@@ -86,7 +86,7 @@ Rectangle {
             font.pixelSize: 22
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-turn-right")
-            onClicked: bar.turnAsked(1)
+            onClicked: bar.turnRequested(1)
         }
     }
 }

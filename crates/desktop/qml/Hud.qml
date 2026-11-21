@@ -37,11 +37,11 @@ Item {
     // The rating bar's height (the root's transport sits above it).
     readonly property real barHeight: ratingBar.height
 
-    signal closeAsked
-    signal rateAsked(int r)
-    signal turnAsked(int d)
-    signal borderMarkAsked(bool marked)
-    signal findSimilarAsked
+    signal closeRequested
+    signal rateRequested(int r)
+    signal turnRequested(int d)
+    signal borderMarkRequested(bool marked)
+    signal findSimilarRequested
 
     KeyMap {
         id: keymap
@@ -73,7 +73,7 @@ Item {
         anchors.top: parent.top
         anchors.margins: 4
         text: "✕"
-        onClicked: hud.closeAsked()
+        onClicked: hud.closeRequested()
     }
 
     Label {
@@ -95,9 +95,9 @@ Item {
         hasBorders: hud.hasBorders
         borderMarked: hud.borderMarked
         rating: hud.rating
-        onRateAsked: r => hud.rateAsked(r)
-        onTurnAsked: d => hud.turnAsked(d)
-        onBorderMarkAsked: marked => hud.borderMarkAsked(marked)
-        onFindSimilarAsked: hud.findSimilarAsked()
+        onRateRequested: r => hud.rateRequested(r)
+        onTurnRequested: d => hud.turnRequested(d)
+        onBorderMarkRequested: marked => hud.borderMarkRequested(marked)
+        onFindSimilarRequested: hud.findSimilarRequested()
     }
 }

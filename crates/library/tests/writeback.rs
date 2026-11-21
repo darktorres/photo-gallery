@@ -97,7 +97,7 @@ fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(&'static ThumbCache, Quiet
         &dir.join("thumbs.sqlite"),
         &c.catalog_id()?,
         pg_thumbcache::Cap::from_bytes(1 << 30),
-        pg_render::THUMBS_VERSION,
+        pg_model::versions::THUMBS_VERSION,
         events,
     )?));
     Ok((thumbs, quiet))
@@ -164,7 +164,7 @@ fn ratings_and_turns_reach_the_files() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -303,7 +303,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -463,7 +463,7 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
     let (dir, files, catalog_path, c) = imported("kinds").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let rating_temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
-    let turns_temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    let turns_temp = pg_writeback::temp_of(&db_path, WriteKind::Rotation);
     assert_ne!(rating_temp, turns_temp);
     std::fs::copy(&files[1].0, on_disk(&c, &rating_temp)).unwrap();
     state::queue_finished_copy(&c, id, "rating", 3, &rating_temp).unwrap();
@@ -500,7 +500,7 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
 fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     let (dir, files, catalog_path, c) = imported("refused").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rotation);
     c.queue_rotation(id, Turns::new(1)).unwrap();
     let Some(held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
         pg_testkit::skip("the permissions don't stop this process from writing (root)");
@@ -833,7 +833,7 @@ fn a_copy_that_may_have_started_is_kept_while_its_file_is_missing() {
 fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
     let (dir, _files, catalog_path, c) = imported("failcopy").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rotation);
     c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
@@ -876,7 +876,7 @@ fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
 fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
     let (dir, files, catalog_path, c) = imported("cancelled").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rotation);
     let before = std::fs::read(&files[1].0).unwrap();
     c.queue_rotation(id, Turns::new(1)).unwrap();
 
@@ -926,7 +926,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
     // shows the turn pending (rotation 1).
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rotation);
     std::fs::copy(&files[1].0, pg_platform::names::disk_path(c.rules(), &temp)).unwrap();
     state::set_analysis_rotation(&c, id, Turns::new(1)).unwrap();
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
@@ -937,7 +937,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -1024,7 +1024,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap(),
@@ -1080,7 +1080,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
             pg_thumbcache::Cap::from_bytes(1 << 30),
-            pg_render::THUMBS_VERSION,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap(),

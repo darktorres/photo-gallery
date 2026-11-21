@@ -81,7 +81,7 @@ fn the_cut_is_described_as_shown() {
         height: 736,
         duration_ms: Entry::NO_DURATION,
         ext: Ext::of("jpg").unwrap(),
-        rotation: Turns::new(0),
+        turns: Turns::new(0),
         pending_turns: Turns::NONE,
         rating: None,
         animated: false,
@@ -114,7 +114,7 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rule
     let size = u64::try_from(raw::file_size(&c, FileId::new(1))).unwrap();
     assert_eq!(
         state(),
-        FileState { mtime: 3, size, rotation: Turns::new(0), pending_turns: Turns::new(0), writing: false }
+        FileState { mtime: 3, size, turns: Turns::new(0), pending_turns: Turns::new(0), writing: false }
     );
     assert_eq!(c.file_source(FileId::new(1)).unwrap().unwrap().state, state());
     assert_eq!((turns(), c.placeholder(FileId::new(1)).unwrap().unwrap().hash), (Turns::NONE, ThumbHash::new(&[1])));
@@ -124,17 +124,17 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rule
     // One kept in the catalog since the analysis, and one more asked for.
     raw::set_rotation(&c, FileId::new(1), Turns::new(1));
     c.queue_rotation(FileId::new(1), Turns::new(2)).unwrap();
-    assert_eq!((state().rotation, state().pending_turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
+    assert_eq!((state().turns, state().pending_turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
     let job = queue::Job {
         file_id: FileId::new(1),
-        write: pg_model::write::Write::Turns(Turns::new(2)),
+        write: pg_model::write::Write::Rotation(Turns::new(2)),
         temp: None,
         attempts: 0,
     };
     let temp = rules.parse(&spelled(rules, r"D:\p\b.jpg.tmp")).unwrap();
-    c.record_write_temp(&job, &temp, pg_model::write::Write::Turns(Turns::new(1))).unwrap();
+    c.record_write_temp(&job, &temp, pg_model::write::Write::Rotation(Turns::new(1))).unwrap();
     assert!(state().writing);
     assert_eq!(c.file_state(FileId::new(99)).unwrap(), None);
     assert!(c.placeholder(FileId::new(99)).unwrap().is_none());
@@ -799,8 +799,8 @@ fn grid_lists_sort_as_sqlite_did(rules: PathRules) {
     let entries = c.list_grid(&folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
     let get = |id: i64| *entries.iter().find(|e| e.id == FileId::new(id)).unwrap();
     let (clip, gif, broken) = (get(5), get(6), get(7));
-    assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
-    assert_eq!((gif.media_type(), gif.duration_ms(), gif.ext.name()), (MediaType::Animated, None, "gif"));
+    assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.key()), (MediaType::Video, Some(12000), "mp4"));
+    assert_eq!((gif.media_type(), gif.duration_ms(), gif.ext.key()), (MediaType::Animated, None, "gif"));
     // Not imported (its analysis failed): no size yet, square.
     assert_eq!((broken.shown_size(), broken.aspect()), ((0, 0), 1.0));
     assert_eq!(c.grid_entry(FileId::new(99)).unwrap(), None);

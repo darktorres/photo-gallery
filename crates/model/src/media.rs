@@ -93,7 +93,7 @@ impl Ext {
         u8::try_from(position).ok().map(Ext)
     }
 
-    pub fn name(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         // Every `Ext` is a position in the two lists, so the name is always found.
         IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS).nth(usize::from(self.0)).copied().unwrap_or_default()
     }
@@ -152,20 +152,20 @@ mod tests {
             assert_eq!(Ext::of_name(name), reference(name), "{name}");
             assert_eq!(Ext::of_name_bytes(name.as_bytes()), reference(name), "{name}");
         }
-        assert_eq!(Ext::of_name("a.mozjpeg.JPG").map(Ext::name), Some("jpg"));
+        assert_eq!(Ext::of_name("a.mozjpeg.JPG").map(Ext::key), Some("jpg"));
         assert_eq!(Ext::of_name("x.WebP").map(Ext::kind), Some(Kind::Image));
         assert_eq!(Ext::of_name("clip.MP4").map(Ext::kind), Some(Kind::Video));
-        assert_eq!(Ext::of_name("clip.M\u{212A}V").map(Ext::name), Some("mkv"));
+        assert_eq!(Ext::of_name("clip.M\u{212A}V").map(Ext::key), Some("mkv"));
         assert_eq!(Ext::of_name("README"), None);
         assert_eq!(Ext::of_name("jpg"), None);
         // An unpaired surrogate (WTF-8: three bytes no UTF-8 sequence holds) before the dot leaves the extension
         // found; one inside the extension is no extension the library holds.
         let lone = [&[0xED, 0xA0, 0x80][..], b".Png"].concat();
-        assert_eq!(Ext::of_name_bytes(&lone).map(Ext::name), Some("png"));
+        assert_eq!(Ext::of_name_bytes(&lone).map(Ext::key), Some("png"));
         assert_eq!(Ext::of_name_bytes(b"a.p\xED\xA0\x80"), None);
         for ext in IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS) {
             let e = Ext::of(ext).unwrap();
-            assert_eq!((e.name(), Ext::of_name(&format!("a.{}", ext.to_uppercase()))), (*ext, Some(e)));
+            assert_eq!((e.key(), Ext::of_name(&format!("a.{}", ext.to_uppercase()))), (*ext, Some(e)));
         }
         assert_eq!(Ext::of("txt"), None);
         assert_eq!(Kind::from_key(Kind::Video.key()), Some(Kind::Video));

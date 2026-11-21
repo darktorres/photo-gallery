@@ -1,5 +1,5 @@
 //! What a queued write changes in a file: the kinds the write queue (`file_writes`) holds. The queue stores them as
-//! their keys (`rating`, `turns`: [`write_rating!`](crate::write_rating!), [`write_turns!`](crate::write_turns!)), and a
+//! their keys (`rating`, `rotation`: [`write_rating!`](crate::write_rating!), [`write_rotation!`](crate::write_rotation!)), and a
 //! notice (`notice::Notice::WriteDropped`) by the same keys. A write's value is [`Write`].
 
 use crate::rating::Rating;
@@ -15,10 +15,10 @@ macro_rules! write_rating {
 }
 
 /// The write queue's key of quarter turns (see [`write_rating!`](crate::write_rating!)). `rotation` is what the queue
-/// stores and what a finished copy's temp file is named for (`.name.rotation.pg-write`); it is the key's name, not the
-/// variant's.
+/// stores and what a finished copy's temp file is named for (`.name.rotation.pg-write`); the variant,
+/// [`WriteKind::Rotation`], is named for the same thing.
 #[macro_export]
-macro_rules! write_turns {
+macro_rules! write_rotation {
     () => {
         "rotation"
     };
@@ -31,7 +31,7 @@ pub enum WriteKind {
     /// The file's rating (`XMP:Rating`).
     Rating,
     /// Quarter turns clockwise, in the file's pixels or its orientation tag (the queue's key is `rotation`).
-    Turns,
+    Rotation,
 }
 
 impl WriteKind {
@@ -39,14 +39,14 @@ impl WriteKind {
     pub fn key(self) -> &'static str {
         match self {
             WriteKind::Rating => write_rating!(),
-            WriteKind::Turns => write_turns!(),
+            WriteKind::Rotation => write_rotation!(),
         }
     }
 
     pub fn from_key(key: &str) -> Option<WriteKind> {
         match key {
             write_rating!() => Some(WriteKind::Rating),
-            write_turns!() => Some(WriteKind::Turns),
+            write_rotation!() => Some(WriteKind::Rotation),
             _ => None,
         }
     }
@@ -89,14 +89,14 @@ impl TryFrom<String> for WriteKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Write {
     Rating(Rating),
-    Turns(Turns),
+    Rotation(Turns),
 }
 
 impl Write {
     pub fn kind(self) -> WriteKind {
         match self {
             Write::Rating(_) => WriteKind::Rating,
-            Write::Turns(_) => WriteKind::Turns,
+            Write::Rotation(_) => WriteKind::Rotation,
         }
     }
 
@@ -104,7 +104,7 @@ impl Write {
     pub fn stored(self) -> i64 {
         match self {
             Write::Rating(rating) => i64::from(rating.get()),
-            Write::Turns(turns) => i64::from(turns.get()),
+            Write::Rotation(turns) => i64::from(turns.get()),
         }
     }
 
@@ -114,8 +114,8 @@ impl Write {
         let small = u8::try_from(value).ok()?;
         match kind {
             WriteKind::Rating => Rating::new(small).map(Write::Rating),
-            WriteKind::Turns if small <= 3 => Some(Write::Turns(Turns::new(small))),
-            WriteKind::Turns => None,
+            WriteKind::Rotation if small <= 3 => Some(Write::Rotation(Turns::new(small))),
+            WriteKind::Rotation => None,
         }
     }
 }
@@ -129,18 +129,24 @@ mod tests {
         for write in [
             Write::Rating(Rating::new(0).unwrap()),
             Write::Rating(Rating::new(5).unwrap()),
-            Write::Turns(Turns::new(3)),
+            Write::Rotation(Turns::new(3)),
         ] {
             assert_eq!(Write::from_stored(write.kind(), write.stored()), Some(write));
         }
         assert_eq!(Write::from_stored(WriteKind::Rating, 6), None);
-        assert_eq!(Write::from_stored(WriteKind::Turns, 4), None);
-        assert_eq!(Write::from_stored(WriteKind::Turns, -1), None);
+        assert_eq!(Write::from_stored(WriteKind::Rotation, 4), None);
+        assert_eq!(Write::from_stored(WriteKind::Rotation, -1), None);
+    }
+
+    #[test]
+    fn the_rotation_kind_is_still_stored_as_rotation() {
+        assert_eq!(WriteKind::Rotation.key(), "rotation");
+        assert_eq!(serde_json::to_string(&WriteKind::Rotation).unwrap(), "\"rotation\"");
     }
 
     #[test]
     fn a_kind_reads_back_from_its_key_and_its_json() {
-        for kind in [WriteKind::Rating, WriteKind::Turns] {
+        for kind in [WriteKind::Rating, WriteKind::Rotation] {
             assert_eq!(WriteKind::from_key(kind.key()), Some(kind));
             let json = serde_json::to_string(&kind).unwrap();
             assert_eq!(json, format!("\"{}\"", kind.key()));

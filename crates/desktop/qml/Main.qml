@@ -385,19 +385,19 @@ ApplicationWindow {
 
     // To the panel made when first needed (Yandex's Loader, below): what it is asked to do comes as a signal once it
     // is made (a Loader not loading asynchronously makes its item at once).
-    signal similarAsked(fileId: real)
+    signal similarSearchRequested(fileId: real)
     // The command line's `--find-similar`: the photo is the path it names, not a catalog file.
-    signal similarCommandLineAsked
+    signal similarCommandLineRequested
 
     // The viewer's "find similar": search Yandex for the photo's file (by its id).
     function findSimilar(fileId: real) {
         yandexLoader.active = true;
-        similarAsked(fileId);
+        similarSearchRequested(fileId);
     }
 
     function findSimilarFromCommandLine() {
         yandexLoader.active = true;
-        similarCommandLineAsked();
+        similarCommandLineRequested();
     }
 
     // The save-view dialog (saveViewLoader) opens each time this rises: made at the first ask, then kept.
@@ -798,10 +798,10 @@ ApplicationWindow {
                     onPreviewOpenChanged: win.modalShown(PanelKind.YandexPreview, previewOpen)
                     Connections {
                         target: win
-                        function onSimilarAsked(fileId: real) {
+                        function onSimilarSearchRequested(fileId: real) {
                             yandexPanel.show(fileId);
                         }
-                        function onSimilarCommandLineAsked() {
+                        function onSimilarCommandLineRequested() {
                             yandexPanel.showCommandLine();
                         }
                     }

@@ -26,9 +26,9 @@ impl Format {
         })
     }
 
-    /// The inverse of [`Format::name`].
-    pub fn from_name(name: &str) -> Option<Format> {
-        name.parse().ok()
+    /// The inverse of [`Format::key`].
+    pub fn from_key(key: &str) -> Option<Format> {
+        key.parse().ok()
     }
 
     /// The extension a file of the format is saved under, without the dot.
@@ -43,7 +43,7 @@ impl Format {
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         self.into()
     }
 }
@@ -90,10 +90,10 @@ mod tests {
 
     #[test]
     fn the_names_are_the_catalog_names() {
-        assert_eq!(Format::iter().map(Format::name).collect::<Vec<_>>(), ["jpeg", "png", "gif", "webp", "bmp", "tiff"],);
+        assert_eq!(Format::iter().map(Format::key).collect::<Vec<_>>(), ["jpeg", "png", "gif", "webp", "bmp", "tiff"],);
         for f in Format::iter() {
-            assert_eq!(Format::from_name(f.name()), Some(f));
+            assert_eq!(Format::from_key(f.key()), Some(f));
         }
-        assert_eq!(Format::from_name("jpg"), None);
+        assert_eq!(Format::from_key("jpg"), None);
     }
 }

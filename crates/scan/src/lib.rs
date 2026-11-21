@@ -1879,7 +1879,7 @@ mod tests {
         state::stub_analysis_of_all(&c).unwrap();
         let f = state::file_id(&c, "f.jpg").unwrap();
         assert_eq!(c.status().unwrap().pending, 0);
-        let row = |c: &Catalog, size: u64, mtime: i64| c.is_current(f, &Listed { size, mtime, rotation: Turns::NONE });
+        let row = |c: &Catalog, size: u64, mtime: i64| c.is_current(f, &Listed { size, mtime, turns: Turns::NONE });
 
         // The root (and f.jpg in it) is listed, then the app rewrites f.jpg's metadata as sub is listed: the batch,
         // written after, leaves the row the write-back made, and nothing is due.
@@ -1921,7 +1921,7 @@ mod tests {
         });
         let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
         assert_eq!((stats.changed, stats.missing), (0, 0));
-        let rewritten = Listed { size: 1, mtime: 999, rotation: Turns::NONE };
+        let rewritten = Listed { size: 1, mtime: 999, turns: Turns::NONE };
         assert!(c.is_current(f, &rewritten).unwrap(), "the write-back's row was undone by an older listing");
     }
 
@@ -1948,7 +1948,7 @@ mod tests {
         });
         let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
         assert_eq!((stats.changed, stats.duplicates), (0, 1));
-        let rewritten = Listed { size: 1, mtime: 999, rotation: Turns::NONE };
+        let rewritten = Listed { size: 1, mtime: 999, turns: Turns::NONE };
         assert!(c.is_current(f, &rewritten).unwrap(), "the write-back's row was undone by an older listing");
     }
 
@@ -2028,7 +2028,7 @@ mod tests {
         state::stub_analysis_of_all(&c).unwrap();
         let f = state::file_id(&c, "f.jpg").unwrap();
         // f.jpg is 1 byte (`file`'s third argument), mtime 1.
-        let listed = Listed { size: 1, mtime: 1, rotation: Turns::NONE };
+        let listed = Listed { size: 1, mtime: 1, turns: Turns::NONE };
         // f.jpg's thumbnail failed; the user retries it while sub is listed.
         let failure =
             Failure { file_id: f, mtime: 1, size: 1, turns: Turns::NONE, error: "does not decode".into(), retry: true };

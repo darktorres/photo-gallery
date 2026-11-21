@@ -68,7 +68,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         }
         Notice::ScanNote { root, note, count } => {
             a.set("root", shown(rules, root));
-            a.set("kind", note.code());
+            a.set("kind", note.key());
             plural(a, *count);
         }
         Notice::RoundFailed { error }
@@ -161,7 +161,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("count", count.to_string());
         }
         Notice::CacheStartedOver { reason, path, .. } => {
-            a.set("reason", reason.code());
+            a.set("reason", reason.key());
             a.set("path", isolated(path));
         }
         Notice::WriteFailed { error, panicked, file, temp } => {
@@ -176,7 +176,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             // A selector, not shown: the entry has the words for each kind.
             let kind = match write {
                 WriteKind::Rating => "rating",
-                WriteKind::Turns => "rotation",
+                WriteKind::Rotation => "rotation",
             };
             a.set("kind", kind);
         }
@@ -192,11 +192,11 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("temp", shown(rules, temp));
         }
         Notice::ViewsFailed { op, error } => {
-            a.set("op", op.code());
+            a.set("op", op.key());
             a.set("error", error.clone());
         }
         Notice::EditFailed { op, error } => {
-            a.set("op", op.code());
+            a.set("op", op.key());
             a.set("error", error.clone());
         }
         Notice::ThumbsFailed { counts }
@@ -211,7 +211,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             None => a.set("counted", "no"),
         },
         Notice::UnreadableFiles { pass, count, drives } => {
-            a.set("pass", pass.code());
+            a.set("pass", pass.key());
             plural(a, *count);
             // " on E:" or " on E: and D:": the drives the files are on, when the job has named them.
             a.set(

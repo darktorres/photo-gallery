@@ -120,9 +120,9 @@ pub fn import_while(
                 // FFmpeg opens the file by its disk path: the plain one would lose a trailing dot or space in a folder's
                 // name, and open a sibling's file.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                analyzer.video(&disk, item.rotation)
+                analyzer.video(&disk, item.turns)
             } else {
-                analyzer.analyze(bytes, item.rotation)
+                analyzer.analyze(bytes, item.turns)
             }
         },
         Batch { size: BATCH, every: None },

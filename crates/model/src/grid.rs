@@ -15,7 +15,7 @@ use crate::turns::Turns;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Entry {
     pub id: FileId,
-    /// With `rotation`, what makes an image URL current.
+    /// With `turns`, what makes an image URL current.
     pub mtime: i64,
     /// As analyzed, without `pending_turns`; 0 until the file is imported.
     pub width: u32,
@@ -23,8 +23,8 @@ pub struct Entry {
     /// Videos, once imported; `Entry::NO_DURATION` otherwise.
     pub duration_ms: u32,
     pub ext: Ext,
-    /// Catalog rotation (quarter turns clockwise).
-    pub rotation: Turns,
+    /// Catalog turns (quarter turns clockwise).
+    pub turns: Turns,
     /// Quarter turns clockwise asked for but not yet written (`queue_rotation`): the grid shows them already.
     pub pending_turns: Turns,
     /// The rating in stars, `None` when unrated (the catalog keeps no row for it).

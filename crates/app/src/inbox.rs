@@ -633,7 +633,7 @@ fn write_log(notice: &Notice) {
 
 /// Log `text` about `notice`: under the notice's source, at the notice's level.
 fn log_notice(notice: &Notice, text: &str) {
-    let target = notice.source().code();
+    let target = notice.source().key();
     match notice.level() {
         Level::Info => pg_log::info(target, text),
         Level::Warning => pg_log::warn(target, text),
@@ -1328,7 +1328,7 @@ mod tests {
         assert_eq!(shape, ["clear edit-failed", "post prefs-not-saved", "post edit-failed"]);
         // A clear of one part leaves the others, and a scope with every part covers a narrower one.
         let mut work = Work::default();
-        let part = |op: EditOp| KeyBuf { code: "edit-failed", root: None, part: Some(Part::Code(op.code())) };
+        let part = |op: EditOp| KeyBuf { code: "edit-failed", root: None, part: Some(Part::Code(op.key())) };
         work.state(StateOp::Post {
             key: part(EditOp::Rate),
             notice: Notice::EditFailed { op: EditOp::Rate, error: "r".into() },

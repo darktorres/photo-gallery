@@ -417,7 +417,7 @@ pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<u64> {
 }
 
 /// Make the thumbnails' failure ledger this build's: when the catalog's `meta.thumbs_version` is another
-/// (`pg_render::THUMBS_VERSION`, a decoder that may take what the old one failed on), the files whose thumbnail panicked
+/// (`pg_model::versions::THUMBS_VERSION`, a decoder that may take what the old one failed on), the files whose thumbnail panicked
 /// are listed again for the pass (the others are, by the pass's own rule), and the rows go: the next pass records what
 /// still fails. The cache's checkpoint holds the panicked files back too, and keeps a mark of its own
 /// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`]. `relist` does the listing: the

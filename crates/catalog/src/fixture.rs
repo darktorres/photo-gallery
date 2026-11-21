@@ -27,7 +27,7 @@ pub struct File {
     pub mtime: i64,
     pub file_ref: i64,
     pub missing: bool,
-    pub rotation: Turns,
+    pub turns: Turns,
 }
 
 impl File {
@@ -38,7 +38,7 @@ impl File {
 
     /// [`File::new`] for a name given as its exact bytes, which a `&str` can't hold (a lone surrogate, a raw byte).
     pub fn named(id: FileId, folder: FolderId, name: &'static [u8], size: i64, mtime: i64) -> File {
-        File { id, folder, name, kind: "image", size, mtime, file_ref: id.get(), missing: false, rotation: Turns::NONE }
+        File { id, folder, name, kind: "image", size, mtime, file_ref: id.get(), missing: false, turns: Turns::NONE }
     }
 }
 
@@ -115,12 +115,12 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
                 f.file_ref,
                 f.folder.get(),
                 f.name,
-                ext.name(),
+                ext.key(),
                 f.kind,
                 f.size,
                 f.mtime,
                 f.missing,
-                f.rotation.get(),
+                f.turns.get(),
                 order_key,
                 change
             ],

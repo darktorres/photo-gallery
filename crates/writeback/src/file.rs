@@ -60,7 +60,7 @@ fn remove_temp(rules: PathRules, temp: &RulePath) -> std::io::Result<()> {
 pub fn temp_of(path: &RulePath, kind: WriteKind) -> RulePath {
     let suffix = match kind {
         WriteKind::Rating => ".rating.pg-write",
-        WriteKind::Turns => ".rotation.pg-write",
+        WriteKind::Rotation => ".rotation.pg-write",
     };
     let mut temp = path.clone();
     if let Some(name) = temp.parts.pop() {
@@ -101,7 +101,7 @@ mod tests {
     fn each_kind_of_write_has_its_own_temp() {
         let path = PathRules::Windows.parse(r"D:\p\a.jpg").unwrap();
         let rating = temp_of(&path, WriteKind::Rating);
-        let turns = temp_of(&path, WriteKind::Turns);
+        let turns = temp_of(&path, WriteKind::Rotation);
         assert_eq!(PathRules::Windows.display(&rating), r"D:\p\.a.jpg.rating.pg-write");
         assert_eq!(PathRules::Windows.display(&turns), r"D:\p\.a.jpg.rotation.pg-write");
     }

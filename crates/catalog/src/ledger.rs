@@ -77,7 +77,7 @@
 //! opening the inbox never hides an entry, and a dismissed entry comes back with its next row, saying how many came since
 //! it was dismissed. The counts (`Catalog::ledger_counts`) are read only while the inbox is open.
 //!
-//! **`THUMBS_VERSION`** (`pg_render`) is the thumbnailer's version, bumped by hand when a change of the decoder or the maker
+//! **`THUMBS_VERSION`** (`pg_model::versions`) is the thumbnailer's version, bumped by hand when a change of the decoder or the maker
 //! could make a file that failed work. The catalog keeps the version it last ran under (`meta.thumbs_version`): a new one
 //! relists the thumbnails that won't be tried again (`retry = 0`) and empties the thumbnails' ledger. The cache keeps its
 //! own mark, and a new one makes every height forget how far it was checked, so the next pass looks at every file once. A
@@ -174,7 +174,7 @@ impl Catalog {
     /// then makes.
     pub fn recorded_failures(&self, pass: FilePass) -> Result<BTreeSet<FileId>> {
         let mut stmt = self.conn.prepare_cached("SELECT file_id FROM file_failures WHERE pass = ?1")?;
-        let ids = stmt.query_map([pass.code()], |r| r.get::<_, i64>(0))?;
+        let ids = stmt.query_map([pass.key()], |r| r.get::<_, i64>(0))?;
         Ok(ids.map(|id| id.map(FileId::new)).collect::<rusqlite::Result<_>>()?)
     }
 
@@ -182,7 +182,7 @@ impl Catalog {
     pub fn any_failures(&self, pass: FilePass) -> Result<bool> {
         Ok(self
             .conn
-            .query_row("SELECT EXISTS(SELECT 1 FROM file_failures WHERE pass = ?1)", [pass.code()], |r| r.get(0))?)
+            .query_row("SELECT EXISTS(SELECT 1 FROM file_failures WHERE pass = ?1)", [pass.key()], |r| r.get(0))?)
     }
 
     /// The results of `files` were made by `pass` (the thumbnails' or the borders'): their failures are gone. Nothing is
@@ -208,7 +208,7 @@ impl Catalog {
             return Ok(());
         }
         let tx = write_transaction(&self.conn)?;
-        relist_failures(&tx, pass.code(), |tx| Ok(tx.execute(failures_relisted!(""), [pass.code()])?))?;
+        relist_failures(&tx, pass.key(), |tx| Ok(tx.execute(failures_relisted!(""), [pass.key()])?))?;
         tx.commit()?;
         Ok(())
     }
@@ -261,7 +261,7 @@ impl Catalog {
             " ORDER BY l.serial DESC LIMIT ?2"
         ))?;
         let rows = stmt
-            .query_map(params![seen_to, limit, pass.code()], |r| {
+            .query_map(params![seen_to, limit, pass.key()], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
             })?
             .collect::<rusqlite::Result<Vec<FailedRow>>>()?;
@@ -305,7 +305,7 @@ impl Catalog {
         let mut out = Vec::with_capacity(rows.len());
         for (root, root_path, path, reason, error, first_seen, new) in rows {
             let failure =
-                FolderFailure::from_code(&reason).ok_or_else(|| anyhow!("a failed folder's reason {reason:?}"))?;
+                FolderFailure::from_key(&reason).ok_or_else(|| anyhow!("a failed folder's reason {reason:?}"))?;
             out.push(FailedFolder {
                 root: RootId::new(root),
                 root_path: parse(&root_path)?,
@@ -342,7 +342,7 @@ type FolderRow = (i64, Vec<u8>, Vec<u8>, String, String, i64, bool);
 pub(crate) fn ack_on(conn: &Connection, kind: LedgerKind) -> Result<LedgerAck> {
     Ok(conn
         .prepare_cached("SELECT seen_to, dismissed_to, read IS NOT NULL FROM ledger_ack WHERE kind = ?1")?
-        .query_row([kind.code()], |r| Ok(LedgerAck { seen_to: r.get(0)?, dismissed_to: r.get(1)?, read: r.get(2)? }))
+        .query_row([kind.key()], |r| Ok(LedgerAck { seen_to: r.get(0)?, dismissed_to: r.get(1)?, read: r.get(2)? }))
         .optional()?
         .unwrap_or_default())
 }
@@ -401,7 +401,7 @@ fn ledger_end(conn: &Connection, kind: LedgerKind, sql: &str) -> Result<Option<L
     let row = |r: &rusqlite::Row<'_>| Ok(LedgerRow { serial: r.get(0)?, first_seen: r.get(1)? });
     let mut stmt = conn.prepare_cached(sql)?;
     Ok(match kind {
-        LedgerKind::File(pass) => stmt.query_row([pass.code()], row),
+        LedgerKind::File(pass) => stmt.query_row([pass.key()], row),
         LedgerKind::ScanFolders => stmt.query_row([], row),
     }
     .optional()?)
@@ -422,8 +422,8 @@ pub(crate) fn state_on(conn: &Connection, kind: LedgerKind, ack: &LedgerAck) -> 
 /// [`Catalog::ledger_counts`] on `conn`.
 pub(crate) fn counts_on(conn: &Connection, kind: LedgerKind, ack: &LedgerAck) -> Result<Counts> {
     let (sql, code) = match kind {
-        LedgerKind::File(pass) => (FILE_LEDGER_COUNTS, pass.code()),
-        LedgerKind::ScanFolders => (FOLDER_LEDGER_COUNTS, kind.code()),
+        LedgerKind::File(pass) => (FILE_LEDGER_COUNTS, pass.key()),
+        LedgerKind::ScanFolders => (FOLDER_LEDGER_COUNTS, kind.key()),
     };
     // Each count is read as a `u64`: a negative `COUNT(*)` is an error, not a 0.
     let (total, new, since_dismissed): (u64, u64, u64) = conn
@@ -461,7 +461,7 @@ pub(crate) fn mark_ledger_read_on(conn: &Connection, kind: LedgerKind, seen: i64
              ON CONFLICT(kind) DO UPDATE SET seen_to = max(seen_to, excluded.seen_to), read = coalesce(read, excluded.read)
              WHERE excluded.seen_to > seen_to OR read IS NULL",
         )?
-        .execute(params![kind.code(), seen, now])?;
+        .execute(params![kind.key(), seen, now])?;
     Ok(changed > 0)
 }
 
@@ -476,7 +476,7 @@ pub(crate) fn dismiss_ledger_on(conn: &Connection, kind: LedgerKind, seen: i64, 
              WHERE excluded.seen_to > seen_to OR read IS NULL OR dismissed_to IS NULL
                  OR excluded.dismissed_to > dismissed_to",
         )?
-        .execute(params![kind.code(), seen, now])?;
+        .execute(params![kind.key(), seen, now])?;
     Ok(changed > 0)
 }
 
@@ -769,7 +769,7 @@ mod tests {
         assert_eq!(rotations(&c), [0]);
         let job = queue::Job {
             file_id: FileId::new(1),
-            write: pg_model::write::Write::Turns(Turns::new(1)),
+            write: pg_model::write::Write::Rotation(Turns::new(1)),
             temp: None,
             attempts: 0,
         };

@@ -87,13 +87,8 @@ mod tests {
             (n > 0).then(|| if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
         }
         let specials = [0.0, -0.0, 1.0, 1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN, -f64::NAN, 0.5, 1e-300];
-        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
-        let mut next = || {
-            seed ^= seed << 13;
-            seed ^= seed >> 7;
-            seed ^= seed << 17;
-            seed
-        };
+        let mut rng = pg_testkit::Rng::new(0x9E37_79B9_7F4A_7C15);
+        let mut next = || rng.next_u64();
         for _ in 0..20_000 {
             let n = usize::try_from(next() % 10).unwrap();
             let values: Vec<f64> = (0..n)

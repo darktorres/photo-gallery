@@ -4,18 +4,6 @@
 //! [`player`] plays an animation's frames into a [`player::Sink`] at their delays. [`transcode`] re-encodes a photo
 //! as a JPEG for a service that doesn't take its format.
 
-/// The version of the thumbnails this build makes: bumped by hand when a change to the decoders or the maker makes a
-/// file that failed before decode now (a codec upgrade is not detected). A catalog's or a cache's mark that differs
-/// (`pg_catalog::Versions::thumbs`, `pg_thumbcache::ThumbCache::open`) tries again the files whose thumbnail panicked,
-/// and the next pass looks at every file again.
-pub const THUMBS_VERSION: i64 = pg_model::versions::THUMBS_VERSION;
-
-/// The version of the thumbnail pixels (`pg_model::versions::THUMB_OUTPUT_VERSION`): what a cache's pixels are made by.
-pub const THUMB_OUTPUT_VERSION: i64 = pg_model::versions::THUMB_OUTPUT_VERSION;
-
-// Zero is the mark of a catalog or a cache that has none: this build's thumbnails must differ from it, or a bump is missed.
-const _: () = assert!(THUMBS_VERSION > 0);
-
 pub mod display;
 pub mod maker;
 pub mod player;

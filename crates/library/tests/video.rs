@@ -131,7 +131,7 @@ const BLUE: [u8; 3] = [0, 0, 255];
 const GREEN: [u8; 3] = [0, 128, 0];
 
 #[test]
-fn videos() {
+fn each_pass_gives_the_frames_whole_with_their_delays() {
     let Some(exe) = ffmpeg() else {
         pg_testkit::missing_tool("ffmpeg");
         return;
@@ -238,7 +238,7 @@ fn videos() {
         &dir.join("thumbs.sqlite"),
         &catalog.catalog_id().unwrap(),
         pg_thumbcache::Cap::from_bytes(1 << 30),
-        pg_render::THUMBS_VERSION,
+        pg_model::versions::THUMBS_VERSION,
         events,
     )
     .unwrap();

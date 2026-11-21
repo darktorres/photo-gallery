@@ -289,11 +289,11 @@ notice-write-dropped-title = Queued changes were dropped
 notice-write-dropped-body = { $count ->
     [one] { $kind ->
         [rating] A queued rating was dropped: its file is no longer in the library
-       *[turns] A queued turn was dropped: its file is no longer in the library
+       *[rotation] A queued turn was dropped: its file is no longer in the library
     }
    *[other] { $kind ->
         [rating] { $text } queued changes were dropped, the latest a rating: their files are no longer in the library
-       *[turns] { $text } queued changes were dropped, the latest a turn: their files are no longer in the library
+       *[rotation] { $text } queued changes were dropped, the latest a turn: their files are no longer in the library
     }
 }
 notice-folder-already-added-title = { $folder } is already in the library

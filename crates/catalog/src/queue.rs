@@ -22,7 +22,7 @@ use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
 use pg_model::write::{Write, WriteKind};
-use pg_model::{write_rating, write_turns};
+use pg_model::{write_rating, write_rotation};
 
 use crate::types::{DELETE_FILE_RATING, DELETE_RATING, SET_FILE_RATING, SET_RATING, bad_value};
 
@@ -111,7 +111,7 @@ impl Catalog {
         // the one row of the file's queued turns.
         let queued: Option<i64> = tx
             .query_row(
-                concat!("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = '", write_turns!(), "'"),
+                concat!("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = '", write_rotation!(), "'"),
                 [file_id],
                 |r| r.get(0),
             )
@@ -120,7 +120,7 @@ impl Catalog {
         tx.execute(
             concat!(
                 "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, '",
-                write_turns!(),
+                write_rotation!(),
                 "', ?2, unixepoch())
              ON CONFLICT(file_id, kind) DO UPDATE SET value = excluded.value, queued = excluded.queued,
                 attempts = 0, error = NULL"
@@ -130,7 +130,7 @@ impl Catalog {
         tx.execute(
             concat!(
                 "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
-                write_turns!(),
+                write_rotation!(),
                 "' AND value = 0 AND temp IS NULL"
             ),
             [file_id],
@@ -270,11 +270,15 @@ impl Catalog {
             WriteEffect::Nothing => {}
         }
         match job.write {
-            Write::Turns(turns) => {
+            Write::Rotation(turns) => {
                 // The queued turns less the ones written, as a `Turns` (what is left is the turns still to write).
                 let queued: Option<i64> = tx
                     .query_row(
-                        concat!("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = '", write_turns!(), "'"),
+                        concat!(
+                            "SELECT value FROM file_writes WHERE file_id = ?1 AND kind = '",
+                            write_rotation!(),
+                            "'"
+                        ),
                         [file_id],
                         |r| r.get(0),
                     )
@@ -283,7 +287,7 @@ impl Catalog {
                     tx.execute(
                         concat!(
                             "UPDATE file_writes SET value = ?2 WHERE file_id = ?1 AND kind = '",
-                            write_turns!(),
+                            write_rotation!(),
                             "'"
                         ),
                         params![file_id, Turns::of(queued - written).get()],
@@ -292,7 +296,7 @@ impl Catalog {
                 tx.execute(
                     concat!(
                         "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
-                        write_turns!(),
+                        write_rotation!(),
                         "' AND value = 0"
                     ),
                     [file_id],
@@ -479,7 +483,7 @@ mod tests {
         assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
         // The turn can't go in the file: the catalog keeps it, and the upright size swaps at once.
         let turn = c.next_write(0).unwrap().unwrap();
-        assert_eq!((turn.file_id, turn.write), (FileId::new(2), Write::Turns(Turns::new(1))));
+        assert_eq!((turn.file_id, turn.write), (FileId::new(2), Write::Rotation(Turns::new(1))));
         c.write_done(&turn, WriteEffect::KeptInCatalog(Turns::new(1))).unwrap();
         assert_eq!(raw::queued(&c, 2, "rotation"), None);
         assert_eq!(raw::rotation_and_width(&c, FileId::new(2)), (1, 3));
@@ -596,7 +600,7 @@ mod tests {
         c.queue_rotation(FileId::new(1), Turns::new(3)).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
         let temp = PathRules::Windows.parse(r"D:\p\.b.jpg.rotation.pg-write").unwrap();
-        let three = Write::Turns(Turns::new(3));
+        let three = Write::Rotation(Turns::new(3));
         c.record_write_temp(&job, &temp, three).unwrap();
         c.queue_rotation(FileId::new(1), Turns::new(1)).unwrap();
         assert_eq!(raw::queued(&c, 1, "rotation"), Some(0), "kept while its temp is recorded");
@@ -666,7 +670,7 @@ mod tests {
         assert_eq!(attempts(&c, 2, "rating"), 0);
         // A failing write without a temp is not a copy: it keeps its attempts.
         c.queue_rotation(FileId::new(1), Turns::new(1)).unwrap();
-        let turn = Job { file_id: FileId::new(1), write: Write::Turns(Turns::new(1)), temp: None, attempts: 0 };
+        let turn = Job { file_id: FileId::new(1), write: Write::Rotation(Turns::new(1)), temp: None, attempts: 0 };
         c.write_failed(&turn, "locked", false).unwrap();
         assert_eq!(c.retry_write_copies().unwrap(), 0);
         assert_eq!(attempts(&c, 1, "rotation"), 1);

@@ -38,7 +38,7 @@ const DECODES_KEPT: usize = 2;
 
 /// The thumbnail cache's source of a key's version: the file as the grid showed it when the key was made.
 fn source_of(v: Version) -> thumbs::Source {
-    thumbs::Source { mtime: v.mtime, rotation: v.rotation }
+    thumbs::Source { mtime: v.mtime, turns: v.turns }
 }
 
 /// The state a file's failure is remembered by: its id, mtime, size and turns.
@@ -46,7 +46,7 @@ type FailureKey = (i64, i64, u64, u8);
 
 /// The state of `src`'s file a failure is remembered by ([`Recent`]).
 fn failure_key(file_id: FileId, src: &FileSource) -> FailureKey {
-    (file_id.get(), src.state.mtime, src.state.size, src.state.rotation.get())
+    (file_id.get(), src.state.mtime, src.state.size, src.state.turns.get())
 }
 
 /// A thumbnail that didn't decode, as its file was then, with the error it gave.
@@ -93,7 +93,7 @@ pub(crate) struct Decoded {
     /// The file's size: a decode is reused only while the file still has it.
     size: u64,
     /// With the turns not yet written.
-    rotation: Turns,
+    turns: Turns,
     /// Upright, possibly DCT-scaled, with its full size.
     image: Arc<Shown>,
 }
@@ -150,7 +150,7 @@ impl Images {
                     file_id,
                     mtime: state.mtime,
                     size: state.size,
-                    turns: state.rotation,
+                    turns: state.turns,
                     error: text.clone(),
                     // Tried again once the file changes, as the Thumbs pass records an undecodable file.
                     retry: false,
@@ -216,7 +216,7 @@ impl Images {
             }
         }
         let (src, found) = self.consistent(file_id, |src| {
-            let current = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
+            let current = thumbs::Source { mtime: src.state.mtime, turns: src.state.turns };
             let kept_smaller = if named.is_some_and(|n| source_of(n) == current) {
                 // Looked for already.
                 None
@@ -244,12 +244,12 @@ impl Images {
                 // A video: its poster frame.
                 self.makers.with_maker(|m| {
                     let height = pg_model::num::index(height.get());
-                    Ok(m.load_frame(&path, at, current.rotation, height).and_then(|()| m.encode_frame(height)))
+                    Ok(m.load_frame(&path, at, current.turns, height).and_then(|()| m.encode_frame(height)))
                 })?
             } else {
                 // Read and made on one maker: its buffer holds this file's bytes until the thumbnail is made.
                 self.makers
-                    .with_maker(|m| Ok(m.make_of_file(&path, pg_model::num::index(height.get()), current.rotation)))?
+                    .with_maker(|m| Ok(m.make_of_file(&path, pg_model::num::index(height.get()), current.turns)))?
             };
             Ok(match made {
                 Ok(made) => Found::Made(made),
@@ -264,7 +264,7 @@ impl Images {
             Found::Made(made) => {
                 // A file whose thumbnail failed (in a pass, or here) and is made now leaves the ledger.
                 self.inbox.thumb_made(file_id);
-                let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
+                let source = thumbs::Source { mtime: src.state.mtime, turns: src.state.turns };
                 Ok(Thumbnail { turns, made: Some((made, Keep { file_id, height, source })), kept_at: None })
             }
             Found::Unavailable(e, None) => {
@@ -335,14 +335,14 @@ impl Images {
     /// viewer's neighbours are preloaded as fits, so keeping those would push out the decode the image on screen zooms in
     /// on.
     fn decode(&self, file_id: FileId, src: &FileSource, view: View) -> Result<(Arc<Shown>, Option<Decoded>)> {
-        let rotation = src.state.rotation.plus(src.state.pending_turns);
+        let rotation = src.state.turns.plus(src.state.pending_turns);
         {
             let last = self.last_decodes.lock().unwrap_or_else(PoisonError::into_inner);
             if let Some(d) = last.iter().find(|d| {
                 d.file_id == file_id
                     && d.mtime == src.state.mtime
                     && d.size == src.state.size
-                    && d.rotation == rotation
+                    && d.turns == rotation
                     && d.image.covers(view)
             }) {
                 return Ok((d.image.clone(), None));
@@ -365,7 +365,7 @@ impl Images {
             file_id,
             mtime: src.state.mtime,
             size: src.state.size,
-            rotation,
+            turns: rotation,
             image: Arc::clone(&image),
         });
         Ok((image, kept))
@@ -547,7 +547,7 @@ mod tests {
         let (app, images, dir) = app_with("thumb-fallback", ID, "bad.png");
         std::fs::write(images.join("bad.png"), b"not a picture").unwrap();
         let file = FileId::new(ID);
-        let source = thumbs::Source { mtime: 0, rotation: Turns::NONE };
+        let source = thumbs::Source { mtime: 0, turns: Turns::NONE };
         let fifty = ThumbHeight::new(50).expect("a height in range");
         app.images().keep(Keep { file_id: file, height: fifty, source }, b"a smaller thumbnail".to_vec());
         let deadline = Instant::now() + Duration::from_secs(10);

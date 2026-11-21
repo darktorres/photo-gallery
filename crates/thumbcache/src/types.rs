@@ -16,7 +16,7 @@ pub const FORMAT_JPEG: &str = "jpeg";
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Source {
     pub mtime: i64,
-    pub rotation: Turns,
+    pub turns: Turns,
 }
 
 pub struct Thumb {

@@ -271,13 +271,10 @@ mod tests {
             let edge = (f32::from(k) + 0.5) / 255.0;
             floats.extend([edge.next_down(), edge, edge.next_up()]);
         }
-        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut rng = pg_testkit::Rng::new(0x2545_F491_4F6C_DD1D);
         floats.extend((0..1_000_000).map(|_| {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
             // A 24-bit value, as its high 16 and low 8 bits: each is exact in an f32, and so is their sum.
-            let sample = state >> 40;
+            let sample = rng.next_u64() >> 40;
             let hi = f32::from(u16::try_from(sample >> 8).unwrap());
             let lo = f32::from(u8::try_from(sample & 0xFF).unwrap());
             let unit = (hi * 256.0 + lo) / 16_777_216.0;

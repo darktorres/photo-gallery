@@ -38,9 +38,9 @@ Item {
     signal sourceSwitched
     signal playerFailed(string text)
     // The transport asks: play or pause, mute, the volume.
-    signal playAsked
-    signal muteAsked
-    signal volumeAsked(real value)
+    signal playRequested
+    signal muteRequested
+    signal volumeRequested(real value)
 
     // Play or pause the video or animation shown.
     function togglePlay() {
@@ -126,13 +126,13 @@ Item {
         position: player.position
         duration: player.duration
         seekable: player.seekable
-        onSeekAsked: ms => player.position = ms
+        onSeekRequested: ms => player.position = ms
         showTransport: media.kind === GalleryModel.Video && !media.zen
         barHeight: media.barHeight
         muted: media.muted
         volume: media.volume
-        onPlayAsked: media.playAsked()
-        onMuteAsked: media.muteAsked()
-        onVolumeAsked: value => media.volumeAsked(value)
+        onPlayRequested: media.playRequested()
+        onMuteRequested: media.muteRequested()
+        onVolumeRequested: value => media.volumeRequested(value)
     }
 }

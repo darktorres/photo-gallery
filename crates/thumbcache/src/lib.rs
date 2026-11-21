@@ -88,7 +88,7 @@ impl ThumbCache {
     /// `thumbs.sqlite.bad` and made anew (an [`Event::StartedOver`] says so): damage in the file's header or layout is
     /// found here; damage SQLite finds in the entries' pages only at the day's check of the totals, so up to a day
     /// late. No check reads a JPEG's bytes: a thumbnail that doesn't decode is found by the reader.
-    /// `thumbs_version` is the thumbnailer's (`pg_render::THUMBS_VERSION`): a file whose mark is
+    /// `thumbs_version` is the thumbnailer's (`pg_model::versions::THUMBS_VERSION`): a file whose mark is
     /// another forgets how far each height was checked, so the next passes look at every file again.
     pub fn open(
         path: &Path,
@@ -169,7 +169,7 @@ impl ThumbCache {
                      WHERE e.file_id = ?1 AND e.mtime = ?3 AND e.rotation = ?4
                      ORDER BY e.height < ?2, abs(e.height - ?2) LIMIT 1",
                 )?
-                .query_row(params![file_id.get(), height.get(), source.mtime, source.rotation.get()], |r| {
+                .query_row(params![file_id.get(), height.get(), source.mtime, source.turns.get()], |r| {
                     // An entry without its JPEG (another process deleting it now) is a miss.
                     let Some(bytes) = r.get_ref(3)?.as_blob_or_null()? else { return Ok(None) };
                     jpeg.clear();
@@ -437,7 +437,7 @@ mod tests {
         Thumb {
             file_id: FileId::new(file_id),
             height: h(height),
-            source: Source { mtime, rotation: Turns::new(0) },
+            source: Source { mtime, turns: Turns::new(0) },
             data: vec![file_id.to_le_bytes()[0]; bytes],
         }
     }
@@ -493,7 +493,7 @@ mod tests {
     }
 
     fn src(mtime: i64) -> Source {
-        Source { mtime, rotation: Turns::new(0) }
+        Source { mtime, turns: Turns::new(0) }
     }
 
     /// The totals as a second connection sees them, and the entries' actual sum.
@@ -521,7 +521,7 @@ mod tests {
         // Made from another version of the file, or another rotation: a miss.
         assert!(cache.get_nearest(FileId::new(1), h(100), src(6)).unwrap().is_none());
         assert!(
-            cache.get_nearest(FileId::new(1), h(100), Source { mtime: 5, rotation: Turns::new(1) }).unwrap().is_none()
+            cache.get_nearest(FileId::new(1), h(100), Source { mtime: 5, turns: Turns::new(1) }).unwrap().is_none()
         );
         assert!(cache.get_nearest(FileId::new(2), h(100), src(5)).unwrap().is_none());
         // An entry whose JPEG is gone (another process deleting it right now) is a miss too.
@@ -594,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn eviction() {
+    fn the_cache_stays_under_its_cap_by_evicting() {
         let dir = run_folder(SCRATCH, "evict").unwrap();
         // Room for 10 thumbnails of 100 bytes (the slack is 1% of the cap: 10 bytes).
         let cache = open(&dir, 1000);
@@ -1155,7 +1155,7 @@ mod tests {
                 File { file_ref: 10, ..File::new(FileId::new(2), FolderId::new(1), "b.jpg", 1, 5) },
                 File {
                     file_ref: 20,
-                    rotation: Turns::new(1),
+                    turns: Turns::new(1),
                     ..File::new(FileId::new(3), FolderId::new(1), "c.jpg", 1, 5)
                 },
                 File { file_ref: 40, missing: true, ..File::new(FileId::new(4), FolderId::new(1), "d.jpg", 1, 5) },

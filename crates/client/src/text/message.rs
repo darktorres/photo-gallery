@@ -327,7 +327,7 @@ pub fn refused_reason(reason: &RefusedReason) -> String {
         RefusedReason::Unreadable { error, .. } => (String::new(), error.as_str()),
         _ => (String::new(), ""),
     };
-    render(&Message::RefusedReason { code: reason.code().to_string(), file_system, error: error.to_string() })
+    render(&Message::RefusedReason { code: reason.key().to_string(), file_system, error: error.to_string() })
 }
 
 /// A file a job panicked on (caught, so the job went on), with the panic's message.

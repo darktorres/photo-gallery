@@ -165,7 +165,7 @@ fn key_of(id: InboxEntryId) -> String {
 
 /// The key of `kind`'s entry ([`key_of`]).
 fn ledger_key(kind: LedgerKind) -> String {
-    format!("ledger:{}", kind.code())
+    format!("ledger:{}", kind.key())
 }
 
 /// The ledgers that something listed is about, as `Notices.passes`' bits (bit [`kind_code`]): a ledger's own entry, or a
@@ -207,7 +207,7 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
                 words.push_str("\n  ");
                 words.push_str(&text::render(&Message::FailedFolderLine {
                     path: rules.display(&folder.path),
-                    why: text::render(&Message::FailedFolderReason { reason: folder.failure.code().to_string() }),
+                    why: text::render(&Message::FailedFolderReason { reason: folder.failure.key().to_string() }),
                     error: folder.error.clone(),
                 }));
             }
@@ -523,7 +523,7 @@ impl qobject::Notices {
 
     /// The `pass` code of a ledger's code (`thumbs`, `borders`, `import`, `scan-folders`: `--inbox-expand`), -1 for none.
     pub(crate) fn pass_of_code(&self, code: &QString) -> i32 {
-        kind_code(LedgerKind::from_code(&code.to_string()))
+        kind_code(LedgerKind::from_key(&code.to_string()))
     }
 
     /// Try the failed files of the entry at `row` again (a pass's ledger with Retry): one command of the inbox's writer,

@@ -367,7 +367,8 @@ mod tests {
         let id = Catalog::open(catalog_path, PATH_RULES).unwrap().catalog_id().unwrap();
         let (events, quiet) = Quiet::bus();
         let cap = cap.and_then(pg_thumbcache::Cap::from_bytes);
-        let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &id, cap, pg_render::THUMBS_VERSION, events).unwrap();
+        let cache =
+            ThumbCache::open(&dir.join("thumbs.sqlite"), &id, cap, pg_model::versions::THUMBS_VERSION, events).unwrap();
         (Box::leak(Box::new(cache)), quiet)
     }
 

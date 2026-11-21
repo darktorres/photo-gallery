@@ -243,7 +243,7 @@ impl Catalog {
                 root.id.get(),
                 self.rules.join(&root.path),
                 self.rules.join(path),
-                FolderFailure::Refused.code(),
+                FolderFailure::Refused.key(),
                 tidy(error),
                 walk
             ],

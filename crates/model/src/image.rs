@@ -12,7 +12,7 @@ use crate::turns::Turns;
 pub struct Version {
     /// The file's modification time and the quarter turns it was stored with (the thumbnail cache's source).
     pub mtime: i64,
-    pub rotation: Turns,
+    pub turns: Turns,
     /// The quarter turns clockwise asked for and not yet written then (`pending_turns`, as `FileState` and the grid name them).
     pub pending_turns: Turns,
 }
@@ -23,7 +23,7 @@ impl Version {
         let mtime = parts.next()?.parse().ok()?;
         let rotation = Turns::new(parts.next()?.parse::<u8>().ok()?);
         let pending_turns = Turns::new(parts.next()?.parse::<u8>().ok()?);
-        Some(Version { mtime, rotation, pending_turns })
+        Some(Version { mtime, turns: rotation, pending_turns })
     }
 }
 
@@ -52,7 +52,7 @@ impl fmt::Display for ImageKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.file.get())?;
         match self.version {
-            Some(v) => write!(f, "@{}.{}.{}", v.mtime, v.rotation.get(), v.pending_turns.get()),
+            Some(v) => write!(f, "@{}.{}.{}", v.mtime, v.turns.get(), v.pending_turns.get()),
             None => Ok(()),
         }
     }

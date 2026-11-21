@@ -42,7 +42,7 @@ impl qobject::GalleryModel {
         self.entry(item).map_or_else(QString::default, |e| {
             let key = ImageKey {
                 file: e.id,
-                version: Some(Version { mtime: e.mtime, rotation: e.rotation, pending_turns: e.pending_turns }),
+                version: Some(Version { mtime: e.mtime, turns: e.turns, pending_turns: e.pending_turns }),
             };
             // Formatted on the stack: the id and mtime at most 20 bytes each, the rotation and the turns one digit each
             // (0–3), so 20 + 1 + 20 + 1 + 1 + 1 + 1 = 45 bytes.
@@ -114,7 +114,7 @@ impl qobject::GalleryModel {
     /// format of an animated image (`GIF`, `APNG`, `WEBP`), or nothing.
     pub(super) fn badge(&self, item: i32) -> QString {
         let Some(e) = self.entry(item) else { return QString::default() };
-        QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.name()))
+        QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.key()))
     }
 
     /// What is left of the image without its borders, as fractions of the image as shown (pending turns included);
@@ -174,7 +174,7 @@ impl qobject::GalleryModel {
     /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the turns not
     /// yet written. (A video's own rotation tag is applied by the player.)
     pub(super) fn player_turns(&self, item: i32) -> i32 {
-        self.entry(item).map_or(0, |e| i32::from(e.rotation.plus(e.pending_turns).get()))
+        self.entry(item).map_or(0, |e| i32::from(e.turns.plus(e.pending_turns).get()))
     }
 
     /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file (the

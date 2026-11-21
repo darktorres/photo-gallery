@@ -471,7 +471,7 @@ mod tests {
             height: h,
             duration_ms: Entry::NO_DURATION,
             ext: Ext::of("jpg").unwrap(),
-            rotation: Turns::NONE,
+            turns: Turns::NONE,
             pending_turns: Turns::NONE,
             rating: None,
             animated: false,
@@ -637,7 +637,7 @@ mod tests {
         let (ids, revision) = g.turned_request().expect("one turn waits");
         assert_eq!(ids, vec![FileId::new(1)]);
         // The turn is written: the file is stored turned, so it shows the same shape and no row changes.
-        let fresh = Entry { rotation: Turns::new(1), ..entry(1, 50, 100) };
+        let fresh = Entry { turns: Turns::new(1), ..entry(1, 50, 100) };
         assert_eq!(g.refresh_turned(revision, vec![fresh]), Some(Turned { changed: vec![1], reshaped: false }));
         // Nothing waits any more, so nothing is read.
         assert_eq!(g.turned_request(), None);
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(g.refresh_turned(revision, vec![entry(1, 100, 50)]), None);
         let (_, revision) = g.turned_request().expect("the turn still waits");
         // The turn is stored as well: the file is turned, so it shows the shape the grid already has.
-        let fresh = Entry { rating: Rating::new(4), rotation: Turns::new(1), ..entry(1, 50, 100) };
+        let fresh = Entry { rating: Rating::new(4), turns: Turns::new(1), ..entry(1, 50, 100) };
         assert_eq!(g.refresh_turned(revision, vec![fresh]), Some(Turned { changed: vec![0], reshaped: false }));
         assert_eq!(g.turned_request(), None);
     }

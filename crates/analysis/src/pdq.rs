@@ -342,13 +342,8 @@ mod tests {
     // where the windows' phases meet the edges, and at random sizes.
     #[test]
     fn columns_at_once_change_no_bit() {
-        let mut x: u64 = 0x2545_F491_4F6C_DD1D;
-        let mut next = move || {
-            x ^= x << 13;
-            x ^= x >> 7;
-            x ^= x << 17;
-            x
-        };
+        let mut rng = pg_testkit::Rng::new(0x2545_F491_4F6C_DD1D);
+        let mut next = || rng.next_u64();
         let mut sizes = vec![(1, 1), (1, 300), (300, 1), (127, 128), (128, 129), (129, 127), (512, 407), (97, 211)];
         sizes.extend(
             (0..40).map(|_| (1 + usize::try_from(next() % 900).unwrap(), 1 + usize::try_from(next() % 900).unwrap())),

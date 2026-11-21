@@ -311,7 +311,7 @@ fn library() -> Result<Vec<File>> {
                 folder: f - 1,
                 file_ref: 100_000 + index,
                 name: text.into_bytes(),
-                ext: ext.name(),
+                ext: ext.key(),
                 kind: ext.kind().key(),
                 size: 1_000 + index,
                 mtime: 133_000_000_000_000_000 + index,

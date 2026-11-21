@@ -17,7 +17,7 @@ fn entry(id: i64, w: u32, h: u32, ext: Ext) -> Entry {
         height: h,
         duration_ms: Entry::NO_DURATION,
         ext,
-        rotation: Turns::NONE,
+        turns: Turns::NONE,
         pending_turns: Turns::NONE,
         rating: None,
         animated: false,

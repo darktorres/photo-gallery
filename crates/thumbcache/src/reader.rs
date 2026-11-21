@@ -88,7 +88,7 @@ fn pending_for(cache: &Path, catalog: &Path, height: ThumbHeight, volumes: Optio
             work.items.push(ThumbWork {
                 id: FileId::new(r.get(0)?),
                 path,
-                source: Source { mtime: r.get(3)?, rotation: Turns::new(r.get(4)?) },
+                source: Source { mtime: r.get(3)?, turns: Turns::new(r.get(4)?) },
                 size: r.get(8)?,
                 poster_ms: r.get(5)?,
                 seq: r.get(6)?,

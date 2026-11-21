@@ -317,7 +317,7 @@ Resolved in 1.2:
 
 ### 1.5 Thumbnails
 
-URL: `GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation}/{height}`. THUMBS_VERSION is the render constant (crates/render/src/lib.rs:14). No turns in the key (the client applies them in CSS). height must be in S, the server's served-height set (geometric, 96 to 1024 at about 1.25, P); outside S or 16..2048 is 400 bad-request. Unknown query parameters are ignored.
+URL: `GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation}/{height}`. THUMBS_VERSION is `pg_model::versions::THUMBS_VERSION`. No turns in the key (the client applies them in CSS). height must be in S, the server's served-height set (geometric, 96 to 1024 at about 1.25, P); outside S or 16..2048 is 400 bad-request. Unknown query parameters are ignored.
 
 Responses (after gate steps 1, 2, 4, 6, 7; the request never reads an original, never waits and never queues):
 

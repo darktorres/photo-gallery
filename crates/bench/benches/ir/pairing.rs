@@ -15,39 +15,24 @@ const PICTURES: usize = 20_000;
 /// The owed pictures of `few`: one in this many (100 of 20,000).
 const FEW_EVERY: usize = 200;
 
-/// A fixed sequence of numbers (xorshift64*), so every run measures the same library.
-struct Draws(u64);
-
-impl Draws {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+/// A random hash drawn from `draws`, so every run measures the same library.
+fn random_hash(draws: &mut pg_testkit::Rng) -> Hash {
+    let mut bytes = [0u8; 32];
+    for chunk in bytes.chunks_mut(8) {
+        chunk.copy_from_slice(&draws.next_u64().to_le_bytes());
     }
-
-    fn below(&mut self, n: usize) -> usize {
-        usize::try_from(self.next() % u64::try_from(n).unwrap_or(1)).unwrap_or(0)
-    }
-
-    fn hash(&mut self) -> Hash {
-        let mut bytes = [0u8; 32];
-        for chunk in bytes.chunks_mut(8) {
-            chunk.copy_from_slice(&self.next().to_le_bytes());
-        }
-        Hash(bytes)
-    }
+    Hash(bytes)
 }
 
 /// The library: a third of the pictures random, the others copies of an earlier one with up to 47 bits flipped in each
 /// orientation, so some are pairs within the radius and some just outside it (the tests' corpus, at this size).
 fn library() -> Vec<[Hash; ORIENTATIONS]> {
-    let mut draws = Draws(0x9E37_79B9_7F4A_7C15);
+    let mut draws = pg_testkit::Rng::new(0x9E37_79B9_7F4A_7C15);
     let mut hashes: Vec<[Hash; ORIENTATIONS]> = Vec::with_capacity(PICTURES);
     for _ in 0..PICTURES {
         let original = if hashes.is_empty() || draws.below(3) == 0 { None } else { hashes.get(draws.below(hashes.len())) };
         let picture = match original.copied() {
-            None => std::array::from_fn(|_| draws.hash()),
+            None => std::array::from_fn(|_| random_hash(&mut draws)),
             Some(mut copy) => {
                 let flips = draws.below(48);
                 for hash in &mut copy {

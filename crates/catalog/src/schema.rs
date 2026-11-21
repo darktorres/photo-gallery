@@ -692,7 +692,7 @@ mod tests {
         // Written: the turn is taken off the row, which a zero deletes (`write_done`).
         let job = crate::queue::Job {
             file_id: FileId::new(3),
-            write: pg_model::write::Write::Turns(Turns::new(3)),
+            write: pg_model::write::Write::Rotation(Turns::new(3)),
             temp: None,
             attempts: 0,
         };
@@ -817,7 +817,7 @@ mod tests {
             ("live_failures!", live_failures!()),
             ("kind_video!", pg_model::kind_video!()),
             ("write_rating!", pg_model::write_rating!()),
-            ("write_turns!", pg_model::write_turns!()),
+            ("write_rotation!", pg_model::write_rotation!()),
         ];
         for (name, text) in expansions {
             assert!(stored.contains(&normalized(text)), "{name} expands to {text:?}, not in the stored text");

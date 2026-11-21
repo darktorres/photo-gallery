@@ -37,7 +37,7 @@ use crate::types::{
 /// change number ([`change_number`]): the columns the insert sets itself, no trigger does.
 fn write_new(new_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, key: &[u8], change: i64) -> Result<usize> {
     let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
-    let (ext, kind) = (f.ext.name(), f.ext.kind().key());
+    let (ext, kind) = (f.ext.key(), f.ext.kind().key());
     Ok(new_file.execute(params![
         volume,
         file_ref,
@@ -62,7 +62,7 @@ fn write_changed(
     key: &[u8],
     id: i64,
 ) -> Result<usize> {
-    let (ext, kind) = (f.ext.name(), f.ext.kind().key());
+    let (ext, kind) = (f.ext.key(), f.ext.kind().key());
     Ok(changed_file.execute(params![
         id,
         folder.id.get(),
@@ -196,7 +196,7 @@ impl<'tx> ScanWriter<'tx> {
             root,
             root_bytes,
             self.rules.join(path),
-            failure.code(),
+            failure.key(),
             tidy(error),
             self.scan
         ])?;
@@ -247,7 +247,7 @@ impl<'tx> ScanWriter<'tx> {
         key.extend_from_slice(&folder.key);
         f.name.push_name_key(key);
         let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
-        let (ext, kind, size) = (f.ext.name(), f.ext.kind().key(), f.size);
+        let (ext, kind, size) = (f.ext.key(), f.ext.kind().key(), f.size);
         let hit = known
             .query_row(params![volume, file_ref, under[0], under[1], under[2]], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
@@ -458,7 +458,7 @@ impl<'tx> AnalysisWriter<'tx> {
             a.version,
             item.size,
             item.mtime,
-            item.rotation.get(),
+            item.turns.get(),
             item.kind.key(),
             a.format(),
             a.orientation.get(),
@@ -522,7 +522,7 @@ impl<'tx> AnalysisWriter<'tx> {
             self.import,
             item.size,
             item.mtime,
-            item.rotation.get(),
+            item.turns.get(),
             item.kind.key(),
             error
         ])?;
@@ -702,7 +702,7 @@ impl<'tx> PlaceholderWriter<'tx> {
             item.id.get(),
             item.size,
             item.mtime,
-            item.rotation.get(),
+            item.turns.get(),
             PLACEHOLDER_VERSION,
             hash.as_slice(),
         ])?;
@@ -882,7 +882,7 @@ pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[
          ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error, retry = excluded.retry
          WHERE file_failures.error IS NOT excluded.error OR file_failures.retry IS NOT excluded.retry",
         )?
-        .execute(params![pass.code(), rows, now])?;
+        .execute(params![pass.key(), rows, now])?;
     Ok(changed > 0)
 }
 
@@ -896,7 +896,7 @@ pub(crate) fn clear_failures_on(conn: &Connection, pass: FilePass, files: &[File
     }
     let gone = conn
         .prepare_cached("DELETE FROM file_failures WHERE pass = ?1 AND file_id IN (SELECT value FROM json_each(?2))")?
-        .execute(params![pass.code(), file_ids_json(files)?])?;
+        .execute(params![pass.key(), file_ids_json(files)?])?;
     Ok(gone > 0)
 }
 
@@ -909,7 +909,7 @@ pub(crate) fn failures_held(conn: &Connection, pass: FilePass, files: &[FileId])
         .prepare_cached(
             "SELECT EXISTS(SELECT 1 FROM file_failures WHERE pass = ?1 AND file_id IN (SELECT value FROM json_each(?2)))",
         )?
-        .query_row(params![pass.code(), file_ids_json(files)?], |r| r.get(0))?)
+        .query_row(params![pass.key(), file_ids_json(files)?], |r| r.get(0))?)
 }
 
 /// The ids of `files`, as the JSON array the ledger's statements read with `json_each`.
@@ -1062,7 +1062,7 @@ mod tests {
         c.queue_rotation(item.id, Turns::new(3)).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
         let temp = rules.parse(&spelled(rules, r"D:\x\a.jpg.tmp")).unwrap();
-        c.record_write_temp(&job, &temp, pg_model::write::Write::Turns(Turns::new(3))).unwrap();
+        c.record_write_temp(&job, &temp, pg_model::write::Write::Rotation(Turns::new(3))).unwrap();
         assert!(!stored(&mut c, &item));
         assert!(due(&c, item.id), "still due");
         c.write_done(&job, queue::WriteEffect::Nothing).unwrap();
@@ -1072,8 +1072,8 @@ mod tests {
         // Turned in the catalog since.
         turn_kept(&c, item.id, 1);
         let listed = next_work(&c);
-        assert_eq!(listed.rotation, Turns::new(1));
-        let unturned = WorkItem { rotation: Turns::new(0), ..listed };
+        assert_eq!(listed.turns, Turns::new(1));
+        let unturned = WorkItem { turns: Turns::new(0), ..listed };
         assert!(!stored(&mut c, &unturned));
         // As listed.
         assert!(stored(&mut c, &listed));

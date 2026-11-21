@@ -51,7 +51,7 @@ pub enum MakeError {
     #[error(transparent)]
     Unreadable(ReadFailed),
     /// The file was read and doesn't decode (damaged, truncated, a format the decoder can't take), or the encoder failed:
-    /// it fails again until the file changes, or the decoder does ([`crate::THUMBS_VERSION`]).
+    /// it fails again until the file changes, or the decoder does ([`pg_model::versions::THUMBS_VERSION`]).
     #[error(transparent)]
     Undecodable(anyhow::Error),
 }

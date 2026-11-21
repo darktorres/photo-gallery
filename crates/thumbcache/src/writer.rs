@@ -420,7 +420,7 @@ fn put(
                     file_id.get(),
                     height.get(),
                     source.mtime,
-                    source.rotation.get(),
+                    source.turns.get(),
                     FORMAT_JPEG,
                     i64::try_from(jpeg.len()).unwrap_or(i64::MAX)
                 ],

@@ -29,5 +29,5 @@ pub(crate) const CURRENT_BATCH: usize = 200;
 
 /// [`IS_CURRENT`], prepared as `stmt`, for file `id` as `listed`.
 pub(crate) fn query_current(stmt: &mut Statement<'_>, id: FileId, listed: &Listed) -> Result<bool> {
-    Ok(stmt.query_row(params![id.get(), listed.size, listed.mtime, listed.rotation.get()], |r| r.get(0))?)
+    Ok(stmt.query_row(params![id.get(), listed.size, listed.mtime, listed.turns.get()], |r| r.get(0))?)
 }

@@ -478,9 +478,9 @@ Rectangle {
                         onFrameDrawn: viewer.videoStarted = true
                         onSourceSwitched: viewer.videoStarted = false
                         onPlayerFailed: text => viewer.playerError = text
-                        onPlayAsked: viewer.togglePlay()
-                        onMuteAsked: viewer.muted = !viewer.muted
-                        onVolumeAsked: value => viewer.volume = value
+                        onPlayRequested: viewer.togglePlay()
+                        onMuteRequested: viewer.muted = !viewer.muted
+                        onVolumeRequested: value => viewer.volume = value
                     }
                 }
 
@@ -556,11 +556,11 @@ Rectangle {
                     playerError: viewer.playerError
                     settings: viewer.settings
                     viewport: viewportItem
-                    onCloseAsked: viewer.close()
-                    onRateAsked: r => viewer.rate(r)
-                    onTurnAsked: d => viewer.turn(d)
-                    onBorderMarkAsked: marked => viewer.borderMarkToggled(viewer.index, marked)
-                    onFindSimilarAsked: viewer.findSimilar(viewer.fileId)
+                    onCloseRequested: viewer.close()
+                    onRateRequested: r => viewer.rate(r)
+                    onTurnRequested: d => viewer.turn(d)
+                    onBorderMarkRequested: marked => viewer.borderMarkToggled(viewer.index, marked)
+                    onFindSimilarRequested: viewer.findSimilar(viewer.fileId)
                 }
 
                 // The rating just given, for half a second (over the next picture).

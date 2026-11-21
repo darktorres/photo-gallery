@@ -729,12 +729,12 @@ mod tests {
         let (pending, after) = state(&c, id);
         assert!(pending && after > seq);
         let turned = next_work(&c);
-        assert_eq!(turned.rotation, Turns::new(1));
+        assert_eq!(turned.turns, Turns::new(1));
         analyzed(&mut c, &turned);
         // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
         let rewritten = |c: &Catalog, before, after, metadata_only| {
             // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
-            let write = pg_model::write::Write::Turns(Turns::NONE);
+            let write = pg_model::write::Write::Rotation(Turns::NONE);
             let job = queue::Job { file_id: id, write, temp: None, attempts: 0 };
             let rewrite = queue::Rewrite { before: Some(before), after, metadata_only };
             c.write_done(&job, queue::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();

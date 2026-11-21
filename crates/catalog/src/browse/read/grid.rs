@@ -42,7 +42,7 @@ macro_rules! file_joins {
             "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
     LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = '",
-            pg_model::write_turns!(),
+            pg_model::write_rotation!(),
             "'
     LEFT JOIN border_marks m ON m.file_id = f.id"
         )
@@ -69,7 +69,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         },
         // The scan records only files with these extensions.
         ext: Ext::of(ext).ok_or_else(|| bad_value(5, Type::Text, "files.ext", ext))?,
-        rotation: Turns::new(r.get(6)?),
+        turns: Turns::new(r.get(6)?),
         pending_turns: Turns::new(r.get(7)?),
         rating: r.get::<_, Option<u8>>(8)?.and_then(Rating::new),
         animated: r.get::<_, i64>(9)? > 1,

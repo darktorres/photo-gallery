@@ -377,7 +377,7 @@ fn ready(
 }
 
 /// Make the passes' checkpoints this build's: when the file's `meta.thumbs_version` is another (a thumbnailer that may
-/// make what the old one failed on, `pg_render::THUMBS_VERSION`), every height forgets how far it was checked, as an
+/// make what the old one failed on, `pg_model::versions::THUMBS_VERSION`), every height forgets how far it was checked, as an
 /// eviction makes it, so the next pass at each looks at every file again: the files that panicked are behind the
 /// checkpoint. The catalog's failure ledger has a mark of its own (`pg_catalog::Versions::thumbs`); each is set once,
 /// whatever order and whichever process opens them. In one write transaction.

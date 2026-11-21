@@ -43,7 +43,7 @@ impl Catalog {
                 .collect::<rusqlite::Result<_>>()?;
             out.extend(batch.iter().map(|(id, listed)| {
                 rows.get(&id.get()).is_some_and(|&(size, mtime, turns)| {
-                    size == listed.size && mtime == listed.mtime && turns == listed.rotation
+                    size == listed.size && mtime == listed.mtime && turns == listed.turns
                 })
             }));
         }
@@ -175,7 +175,7 @@ impl Catalog {
                     (Orientation::from_tag(r.get(5)?), r.get(6)?, r.get(7)?);
                 let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
                 let format = r.get_ref(4)?.as_str()?;
-                let format = Format::from_name(format).ok_or_else(|| {
+                let format = Format::from_key(format).ok_or_else(|| {
                     rusqlite::Error::FromSqlConversionFailure(
                         4,
                         Type::Text,
@@ -235,7 +235,7 @@ mod tests {
     fn currents_is_is_current_over_a_batch() {
         let (c, _) = one_file(PathRules::Windows);
         let id = FileId::new(1);
-        let listed = |size: u64, rotation: u8| Listed { size, mtime: 100, rotation: Turns::new(rotation) };
+        let listed = |size: u64, rotation: u8| Listed { size, mtime: 100, turns: Turns::new(rotation) };
         let files = [(id, listed(10, 0)), (id, listed(11, 0)), (id, listed(10, 1)), (FileId::new(9), listed(10, 0))];
         let want: Vec<bool> = files.iter().map(|(f, l)| c.is_current(*f, l).unwrap()).collect();
         assert_eq!(c.currents(&files).unwrap(), want);

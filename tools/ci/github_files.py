@@ -17,7 +17,7 @@ from pathlib import Path
 # The Justfile's pins for CI come from pgtools (the Justfile's text, before `just` is installed).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pgtools import LINUX_QT_KIT, WINDOWS_QT_KIT  # noqa: E402 (tools/ is on the path above)
+from pgtools import LINUX_QT_KIT, WINDOWS_QT_KIT
 
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 

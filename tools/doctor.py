@@ -127,10 +127,7 @@ def main() -> None:
     prefix = ffmpeg_prefix()
     where = str(prefix) if prefix is not None else "pkg-config (the FFmpeg development packages)"
     if WINDOWS:
-        fix = (
-            "run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg "
-            f"{ffmpeg_pin()} shared build"
-        )
+        fix = f"run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg {ffmpeg_pin()} shared build"
     else:
         fix = "install the FFmpeg development packages (docker/apt-packages.txt), or set FFMPEG_DIR in .env"
     doctor.require(ffmpeg_ok(prefix), "FFmpeg", where, fix)

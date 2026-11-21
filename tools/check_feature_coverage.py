@@ -49,9 +49,7 @@ def closure(features: dict[str, list[str]], start: set[str]) -> set[str]:
         if name in seen or name not in features:
             continue
         seen.add(name)
-        for entry in features[name]:
-            if not entry.startswith("dep:") and "/" not in entry:
-                todo.append(entry)
+        todo.extend(entry for entry in features[name] if not entry.startswith("dep:") and "/" not in entry)
     return seen
 
 
@@ -118,9 +116,7 @@ def check(meta: dict, steps: list[list[str]]) -> tuple[list[tuple[str, str]], li
         for feature in package["features"]
         if feature != "default" and feature not in by_steps[name] | by_deps[name] and (name, feature) not in ALLOWED
     )
-    stale = sorted(
-        key for key in ALLOWED if key[0] not in members or key[1] not in members[key[0]]["features"]
-    )
+    stale = sorted(key for key in ALLOWED if key[0] not in members or key[1] not in members[key[0]]["features"])
     return uncovered, stale
 
 

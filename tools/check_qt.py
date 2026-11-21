@@ -26,7 +26,9 @@ def main() -> None:
     query = subprocess.run([str(qmake), "-query", "QT_VERSION"], capture_output=True, text=True, check=False)
     found = query.stdout.strip()
     if query.returncode != 0 or found != wanted:
-        sys.exit(f"{qmake} reports Qt {found or 'nothing'}, the Justfile pins Qt {wanted}: PG_QT_DIR must be the {wanted} {kit} kit")
+        sys.exit(
+            f"{qmake} reports Qt {found or 'nothing'}, the Justfile pins Qt {wanted}: PG_QT_DIR must be the {wanted} {kit} kit"
+        )
 
 
 if __name__ == "__main__":

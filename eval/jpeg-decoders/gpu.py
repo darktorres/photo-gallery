@@ -24,10 +24,10 @@ import numpy as np
 import pyvips
 import torch
 from PIL import Image
+from timing import timed_s
 from torchvision.io import ImageReadMode, decode_jpeg
 
 from common import analysis_denom
-from timing import timed_s
 
 pyvips.cache_set_max(0)  # otherwise decoding the same buffer again is a cache hit
 # Decoded RGB per GPU batch. Sized for the 6 GB card this bench runs on (the 2060, ~1.4 GB of it in use by the desktop); the
@@ -45,7 +45,6 @@ def blocking_sync() -> None:
         raise RuntimeError(f"cuInit: CUDA error (code {rc})")
     if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
         raise RuntimeError(f"cuDevicePrimaryCtxSetFlags: CUDA error (code {rc}); the context may already be active")
-
 
 
 def pillow(data, d=1):

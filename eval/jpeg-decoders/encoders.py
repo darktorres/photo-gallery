@@ -27,10 +27,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import env
+from timing import median_s, seconds_of
 
 from linux import ENCODES as W
 from linux import EVAL, INPUTS
-from timing import median_s, seconds_of
 
 BIN = EVAL / "bin"
 NAMES = [
@@ -149,7 +149,11 @@ def speed():
                 continue
             out = W / "speed.jpg"
             reps = 1 if enc == "guetzli" else 3
-            secs = median_s(reps, lambda: seconds_of(lambda: run(expand(cmd(q), ppm, out))))
+
+            def timed(cmd=cmd, q=q, ppm=ppm, out=out):
+                return seconds_of(lambda: run(expand(cmd(q), ppm, out)))
+
+            secs = median_s(reps, timed)
             line.append(f"{secs * 1e3 / mp:.1f}")
         rows.append(line)
         print(*line, sep="\t", flush=True)

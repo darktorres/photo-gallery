@@ -32,9 +32,10 @@ import env
 import numpy as np
 import torch
 import torchvision
-from common import analysis_denom
-from timing import MAX_BATCH_BYTES, timed_s
 from PIL import Image
+from timing import MAX_BATCH_BYTES, timed_s
+
+from common import analysis_denom
 
 BATCHES = (1, 8, 32, 64, 128)
 HYBRID, GPU_HYBRID = 1, 2  # nvjpegBackend_t
@@ -203,7 +204,6 @@ class Decoupled:
         NV.nvjpegBufferPinnedDestroy(self.pinned)
         NV.nvjpegDecoderDestroy(self.decoder)
         NV.nvjpegDestroy(self.handle)
-
 
 
 def pillow(data, d=1):

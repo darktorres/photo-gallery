@@ -283,7 +283,9 @@ class StaticFfmpegLibraries(unittest.TestCase):
         build = (REPO / "tools" / "build_static_ffmpeg.py").read_text(encoding="utf-8")
         link = re.search(r"libraries = \[([^\]]*)\]", build)
         assert link is not None, "build_static_ffmpeg.py has no `libraries = [...]` list"
-        expected = self.quoted(link.group(1))  # the literal names; SYSTEM_LIBS (*SYSTEM_LIBS) are not FFmpeg's and are not quoted here
+        expected = self.quoted(
+            link.group(1)
+        )  # the literal names; SYSTEM_LIBS (*SYSTEM_LIBS) are not FFmpeg's and are not quoted here
         self.assertEqual(len(expected), 5)
         app = (REPO / "tools" / "static-qt" / "app-build.patch").read_text(encoding="utf-8")
         app_list = re.search(r"STATIC_FFMPEG_LIBS: &\[&str\] = &\[([^\]]*)\]", app)

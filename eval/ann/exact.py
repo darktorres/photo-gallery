@@ -1,6 +1,9 @@
 """Exact k-NN self-join on the GPU: the ground truth, and the exact method's own timing.
 
-The ground truth is the fp16 join with fp32 accumulation (`topk(..., fp16=True)`, as `run.py`'s exact family uses), checked against float64 by `validate`; plain `topk` is fp32. Self is excluded by id. Each row keeps its TOP most similar
+The ground truth is the fp16 join with fp32 accumulation (`topk(..., fp16=True)`, as `run.py`'s exact family uses),
+checked against float64 by `validate`; plain `topk` is fp32.
+Self is excluded by id.
+Each row keeps its TOP most similar
 rows; a row whose TOP-th neighbour is still >= FLOOR (a hub) also gets every neighbour >= FLOOR (radius).
 """
 

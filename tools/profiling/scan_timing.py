@@ -3,7 +3,8 @@
   first      a fresh catalog, the library scanned from nothing;
   unchanged  the same library scanned again, nothing changed;
   renumbered every file renamed to another number in its own folder (its folder and content kept), then scanned again:
-             each file is paired with its row, not made new (the S-17.7 plan that asked for it was removed 2026-11-14; the step stays here, last committed at 7086cc5).
+             each file is paired with its row, not made new (the S-17.7 plan that asked for it was removed 2026-11-14;
+             the step stays here, last committed at 7086cc5).
 Not gated: perf-compare.py reads callgrind outputs only. The numbers go into the profiling reference, with the commit, the binary,
 the drive the library is on and whether the caches were dropped.
 

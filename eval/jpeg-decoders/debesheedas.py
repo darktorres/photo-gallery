@@ -54,7 +54,7 @@ def main():
         for f in files:
             ref = read_ppm(ref_dir / (f.stem + ".ppm"))
             try:
-                wall = median_s(3, lambda: run(exe, f, work))
+                wall = median_s(3, lambda f=f: run(exe, f, work))
             except subprocess.CalledProcessError as e:
                 print(f"{f.name:34} error: exit {e.returncode}")
                 continue

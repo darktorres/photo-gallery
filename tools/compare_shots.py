@@ -36,7 +36,8 @@ settle log is <png>.settle.txt, with what the check saw.
 
 The script re-runs itself under target/shots/venv (Pillow and numpy, from tools/shots/requirements.txt), so the global
 Python is not changed. The Python that makes the venv is --python, else PG_PYTHON from the environment (or .env), else
-python on Windows and python3 elsewhere (the Justfile's default). The Qt kit is PG_QT_DIR (from the environment or .env); the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
+python on Windows and python3 elsewhere (the Justfile's default). The Qt kit is PG_QT_DIR (from the environment or .env);
+the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
 """
 
 import argparse

@@ -211,7 +211,8 @@ def main() -> None:
         "configure_log": str(logs / "configure.log"),
         "install": install,
         "libraries": [
-            {"path": path.relative_to(prefix).as_posix(), "bytes": path.stat().st_size, "sha256": sha256(path)} for path in libraries
+            {"path": path.relative_to(prefix).as_posix(), "bytes": path.stat().st_size, "sha256": sha256(path)}
+            for path in libraries
         ],
     }
     (work / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

@@ -11,7 +11,6 @@ import statistics
 import sys
 from pathlib import Path
 
-
 # The CSV's `cycles` column holds millions of cycles; the other timed parts are in ms. The values are stored and compared raw.
 MILLIONS = ("cycles",)
 

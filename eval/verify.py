@@ -1,6 +1,7 @@
 """Second-stage verifier prototype: align two images, undo global edits, look at what is left.
 
-Usage: python verify.py [--pairs labeled|cross_groups|knn|listed] [--list NAME] [--model sscd_fp16] [--floor 0.4] [--k 10] [--limit N]
+Usage: python verify.py [--pairs labeled|cross_groups|knn|listed] [--list NAME] [--model sscd_fp16] [--floor 0.4]
+         [--k 10] [--limit N]
 
 Pair sets (only pairs whose embedding similarity from emb_<model>.npy clears --floor, i.e. the
 pairs a k-NN candidate stage would actually hand to this verifier; labeled duplicates always):
@@ -675,9 +676,7 @@ def params_from(args: argparse.Namespace) -> Params:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pairs", choices=tuple(PAIR_SETS), default="labeled")
-    parser.add_argument(
-        "--model", default=DEFAULT_MODEL, help="embedding used for similarities and candidate selection"
-    )
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="embedding used for similarities and candidate selection")
     parser.add_argument("--floor", type=float, default=0.4, help="min similarity for an unlabeled or negative pair to be checked")
     parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
     parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")

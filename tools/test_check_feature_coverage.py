@@ -13,9 +13,7 @@ def package(name, features, deps=()):
     return {
         "name": name,
         "features": features,
-        "dependencies": [
-            {"name": n, "kind": kind, "optional": optional, "features": feats} for n, kind, optional, feats in deps
-        ],
+        "dependencies": [{"name": n, "kind": kind, "optional": optional, "features": feats} for n, kind, optional, feats in deps],
     }
 
 

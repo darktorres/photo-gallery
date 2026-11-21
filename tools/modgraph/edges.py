@@ -12,7 +12,6 @@ from collections import defaultdict
 from pathlib import Path
 
 from compiler_graph import normal_pg_deps
-from testcut import production_part
 
 ROOT = Path(__file__).resolve().parents[2]
 

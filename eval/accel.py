@@ -328,7 +328,7 @@ def _ort_session(path: Path, provider: str, precision: str, size: int):
         session = ort.InferenceSession(str(path), so, providers=providers)
     finally:
         os.environ["PATH"] = previous_path
-    want ="TensorrtExecutionProvider" if provider == "trt" else "CUDAExecutionProvider"
+    want = "TensorrtExecutionProvider" if provider == "trt" else "CUDAExecutionProvider"
     if session.get_providers()[0] != want:
         sys.exit(f"accel: {want} unavailable: {session.get_providers()}")
     return session

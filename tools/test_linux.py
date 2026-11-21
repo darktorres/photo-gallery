@@ -25,7 +25,7 @@ class MountSources(unittest.TestCase):
 @unittest.skipUnless(sys.platform == "win32", "Docker Desktop's shared folders are a Windows host's")
 @unittest.skipUnless(PG_HOME, "PG_HOME is not set: in the environment, or in the repository's .env")
 class Unshared(unittest.TestCase):
-    shared = (r"D:\GitHub\photo-gallery", os.path.join(PG_HOME, "bench-data"))
+    shared = (r"D:\GitHub\photo-gallery", str(Path(PG_HOME) / "bench-data"))
 
     def test_a_folder_under_a_shared_one_is_shared_whatever_the_case_or_separator(self):
         self.assertEqual(linux.unshared(["d:/github/photo-gallery/target/x", "D:/GitHub/photo-gallery"], self.shared), [])

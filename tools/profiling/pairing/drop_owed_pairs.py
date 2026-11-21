@@ -14,7 +14,9 @@ conn = sqlite3.connect(sys.argv[1])
 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 missing = sorted({"pdq_pairs", "pairs_owed"} - tables)
 if missing:
-    sys.exit(f"{sys.argv[1]}: no {', '.join(missing)} table, so this catalog's pairing schema is not the one this script drops from")
+    sys.exit(
+        f"{sys.argv[1]}: no {', '.join(missing)} table, so this catalog's pairing schema is not the one this script drops from"
+    )
 conn.execute("PRAGMA foreign_keys = ON")
 deleted = conn.execute(
     "DELETE FROM pdq_pairs WHERE a IN (SELECT file_id FROM pairs_owed) OR b IN (SELECT file_id FROM pairs_owed)"

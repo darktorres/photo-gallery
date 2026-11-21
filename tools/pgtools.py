@@ -84,7 +84,6 @@ def env_value(raw: str) -> str:
     return raw
 
 
-
 def venv_exe(name: str) -> Path:
     """A program of the repository's `.venv` (its `Scripts` folder on Windows, `bin` elsewhere)."""
     folder = "Scripts" if WINDOWS else "bin"

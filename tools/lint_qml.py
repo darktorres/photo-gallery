@@ -40,12 +40,14 @@ def qt_tool(qt: Path, name: str) -> str:
         if tool.is_file():
             return str(tool)
     sys.exit(
-        f"lint_qml: {exe} is not in {qt / 'bin'} or {qt / 'libexec'}: PG_QT_DIR must be the Qt kit folder (the one with bin and lib)"
+        f"lint_qml: {exe} is not in {qt / 'bin'} or {qt / 'libexec'}: "
+        "PG_QT_DIR must be the Qt kit folder (the one with bin and lib)"
     )
 
 
 def newest_qmltypes() -> Path:
-    """The build script's output: target/*/build/pg-desktop-<hash>/ with stable cargo, target/*/build/pg-desktop/<hash>/ with the pinned nightly."""
+    """The build script's output: target/*/build/pg-desktop-<hash>/ with stable cargo,
+    target/*/build/pg-desktop/<hash>/ with the pinned nightly."""
     patterns = [
         "target/*/build/pg-desktop-*/out/qt-build-utils/qml_modules/pg/gallery/plugin.qmltypes",
         "target/*/build/pg-desktop/*/out/qt-build-utils/qml_modules/pg/gallery/plugin.qmltypes",

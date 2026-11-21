@@ -32,7 +32,6 @@ Writes WORK_DIR/bench_thumbs.json.
 import argparse
 import io
 import json
-import os
 import random
 import re
 import shutil
@@ -160,7 +159,7 @@ _RUN: Path | None = None  # this run's scratch folder: set by main() and by each
 
 
 def _start_run(run: Path) -> None:
-    global _RUN
+    global _RUN  # noqa: PLW0603 (set once per process: by main(), and by each pool worker's initializer)
     _RUN = run
 
 

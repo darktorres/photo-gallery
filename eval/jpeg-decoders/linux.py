@@ -22,7 +22,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parent.parent.parent
 CLONE = Path(os.environ.get("PG_BENCH_CLONE", Path.home() / "photo-gallery"))
 INPUTS = Path(os.environ.get("PG_JPEG_INPUTS") or Path.home() / "jpeg-inputs")
@@ -104,9 +103,7 @@ def callgrind_total(path: Path) -> int | None:
     return None
 
 
-def callgrind_instructions(
-    command: list[str], out: Path, *, cwd: Path = DST, env: dict[str, str] | None = None
-) -> int | None:
+def callgrind_instructions(command: list[str], out: Path, *, cwd: Path = DST, env: dict[str, str] | None = None) -> int | None:
     """The instructions `command` executes under valgrind's callgrind, its profile written to `out`; None when valgrind
     fails. Every harness that counts instructions goes through here, so the flags and the total read are one."""
     result = run(

@@ -28,7 +28,7 @@ for manifest in sorted(ROOT.glob("crates/*/Cargo.toml")):
     data = tomllib.loads(manifest.read_text(encoding="utf-8"))
     name = data["package"]["name"]
     deps = set(normal_pg_deps(data))
-    dev ={d for d in data.get("dev-dependencies", {}) if d.startswith("pg-")}
+    dev = {d for d in data.get("dev-dependencies", {}) if d.startswith("pg-")}
     crates[name] = {"dir": manifest.parent, "deps": deps, "dev": dev}
 
 
@@ -69,7 +69,7 @@ dev_users = {n: [m for m, c in crates.items() if n in c["dev"]] for n in crates}
 
 lib_names = {name for name, _ in library_packages()}
 result = {}
-for name, c in crates.items():
+for name in crates:
     if name not in lib_names:
         continue
     proc = subprocess.run(

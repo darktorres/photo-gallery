@@ -91,6 +91,7 @@ def analysis_denom(w: int, h: int) -> int:
     mw, mh = ANALYSIS_DRAFT_SIDES if w >= h else ANALYSIS_DRAFT_SIDES[::-1]
     return next((d for d in (8, 4, 2) if -(-w // d) >= mw and -(-h // d) >= mh), 1)
 
+
 # Local, trusted files; some Pinterest originals are huge.
 Image.MAX_IMAGE_PIXELS = None
 

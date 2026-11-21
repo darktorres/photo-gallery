@@ -57,9 +57,7 @@ def install_rust() -> None:
 
 
 def report() -> None:
-    rustc = subprocess.run(
-        [str(CARGO_BIN / "rustc"), "--version"], capture_output=True, text=True, check=True, cwd=REPO
-    )
+    rustc = subprocess.run([str(CARGO_BIN / "rustc"), "--version"], capture_output=True, text=True, check=True, cwd=REPO)
     version = " ".join(rustc.stdout.split()[:2])
     modversion = subprocess.run(["pkg-config", "--modversion", "libavcodec"], capture_output=True, text=True, check=True)
     print(f"{version}, FFmpeg libavcodec {modversion.stdout.strip()}")

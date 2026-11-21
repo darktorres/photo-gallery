@@ -2,5 +2,5 @@
 # compiler. Change the channel on purpose: a new stable can add a clippy lint, and CI's clippy runs with -D warnings.
 [toolchain]
 channel = "nightly-2026-11-06"
-components = ["clippy", "rustfmt"]
+components = ["clippy", "rustfmt", "rust-analyzer"]
 targets = ["wasm32-unknown-unknown"]

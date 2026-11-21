@@ -163,6 +163,12 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 - **Turns and rotation.** `turns` names a count of quarter turns and the `Turns` type. `rotation` is the write queue's key (`write_rotation!`, the `rotation` columns, the `.rotation.pg-write` temp name) and only that: a Rust field that holds quarter turns is named `turns`.
 - **Test names are sentences** that say what holds (`a_write_reads_back_from_its_columns_and_a_value_out_of_range_does_not`). A bare noun names a helper, not a test. A platform-specific test keeps its `_windows` or `_posix` suffix.
 
+### Environment
+
+- **Variables are read through `pg_platform::env`.** `read`, `value`, `flag` and `process` are the readers: `process` is the process's own lookup, which a crate takes as a parameter (`Layout::resolve`), and the others take a variable from [`Var`](pg_platform::env::Var). A `PG_*` variable the app reads has a `Var` and a row in `VARS` there, which says what it holds and who reads it; `.env.example` documents the ones an operator sets. An empty value is unset.
+- **Flags have one set of spellings.** `pg_platform::env::parse` says which texts are on and which are off. `flag` gives `Parsed::Invalid` for any other text, and the caller says so once (`PG_DEV` is a bad option, `PG_TRACE` and `PG_REQUIRE_TOOLS` say it at start). The C++ desktop reads its flags with the same set (a test holds the two to one set).
+- **The exceptions are named.** The build scripts read the variables of the build, and `desktop` sets `QT_AUDIO_BACKEND` once, before its threads start: both are in the boundaries check's allowlist with their reasons (`tools/boundaries.py`, `ENV_READERS`).
+
 ### Review rules
 
 These two rules came out of the fourth modularity review (its full text is in git at `e428ab2`, `docs/temp/MODULARITY_REVIEW_4.md`).

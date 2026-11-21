@@ -4,7 +4,7 @@ Status as of 2026-11-21, against the commit that holds this file (`261ea501` and
 `docs/plans/CONSISTENCY_PROGRAM_PLAN.md`. This file is scratch state: delete it when the program ends.
 
 Phase 0 is finished. Its last item, `profile.ps1`, is removed: `profile.py` runs now that `callgraph/build.py` runs the Pin kit's wrappers.
-Phase 1 is committed as `e2c3b4a5`. Phase 2 is done in the working tree, uncommitted (no commit was asked for); its gates ran once at the end of the phase and are green (the last row of the table).
+Phase 1 is committed as `e2c3b4a5`, and Phase 2 as `3f8f8cbd`. Phase 3 is done in the working tree, uncommitted (no commit was asked for); its gates ran once at the end of the phase and are green (the last row of the table).
 
 | Step | Commit or state | Gate result |
 |---|---|---|
@@ -36,5 +36,7 @@ Phase 1 is committed as `e2c3b4a5`. Phase 2 is done in the working tree, uncommi
 | Phase 1: T-018 (`pg_render` aliases removed; `pg_model::versions::` everywhere) and T-027 (generators to `pg_testkit::Rng`) | `e2c3b4a5` | green (see the gates row below) |
 | Phase 1: N-017 (QML `*Asked` to `*Requested`) | `e2c3b4a5` | green: `just build debug`, `just qmltest` (143 passed) |
 | Phase 1 gates, run once at the end of the phase | `e2c3b4a5` | `just check` green, no warnings; `just lint` green (rustfmt fixes in `queue.rs`, `runner.rs`, `lanes.rs`; a doc link in `refusal.rs`); `just test` 1452 Rust tests passed; `just test-tools` 93 passed, 3 skipped |
-| Phase 2: U-004 (client turns end to end) | uncommitted | `Turns` carries `Event::Turn`/`Command::Turn`; the QML's signed count is converted once in `Shell::turn`; `Turns` serde reads a signed count and writes a bare number |
-| Phase 2 gates, run once at the end of the phase | uncommitted | `just check` green; `just lint` green; `just build debug` and `just qmltest` (143 passed); `just test` 1455 Rust tests passed (3 new: the serde test in `model`, and two controller law tests); `just test-tools` 93 passed, 3 skipped |
+| Phase 2: U-004 (client turns end to end) | `3f8f8cbd` | `Turns` carries `Event::Turn`/`Command::Turn`; the QML's signed count is converted once in `Shell::turn`; `Turns` serde reads a signed count and writes a bare number |
+| Phase 2 gates, run once at the end of the phase | `3f8f8cbd` | `just check` green; `just lint` green; `just build debug` and `just qmltest` (143 passed); `just test` 1455 Rust tests passed (3 new: the serde test in `model`, and two controller law tests); `just test-tools` 93 passed, 3 skipped |
+| Phase 3: C-006 (typed `PG_*` environment module) and C-009 (flag spellings and bad values) | uncommitted | `pg_platform::env` has the readers, the `Var` enum and the `VARS` registry; `Layout`, the CLI, the desktop, the thumbnail cap (`Cap::parse_gib`), the ExifTool program (`pg_exiftool::Program`, read once per run; `save_with`/`cut_with` for the tests), and the trace and command-line flags all read through it; the crop tests no longer set the environment; `boundaries.py` has the environment rule; `test_ci_files.py` has the registry check and the C++ spelling check; `.env.example` documents the registered names |
+| Phase 3 gates, run once at the end of the phase | uncommitted | `just check` green, no warnings; `just lint` green (rustfmt fixes in `controller.rs` and `trace.rs`); `just build debug` and `just qmltest` (143 passed); `just test` 1459 Rust tests passed; `just test-tools` 97 passed, 3 skipped |

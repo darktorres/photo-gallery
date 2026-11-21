@@ -12,7 +12,7 @@ pub(crate) mod state;
 
 use crate::command_line_bridge::qobject;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fmt;
 use std::path::Path;
 use std::sync::OnceLock;
@@ -20,6 +20,7 @@ use std::sync::OnceLock;
 use cxx_qt_lib::{QString, QStringList};
 use pg_model::query::{Query, Sort};
 use pg_model::size::RowHeight;
+use pg_platform::env::Parsed;
 
 /// Every option the window reads, by name (without the `--`). Another `--name` is an error.
 pub(crate) const OPTIONS: &[&str] = &[
@@ -196,7 +197,7 @@ static READ: OnceLock<Read> = OnceLock::new();
 /// Read the command line's arguments: once, at start, from the arguments `main` read (the program's name first). The
 /// application is made from the same arguments (gui_app.rs). An error when they were read before.
 pub(crate) fn init(args: &[OsString]) -> anyhow::Result<()> {
-    let read = read_of(args, std::env::var_os("PG_DEV").as_deref());
+    let read = read_of(args, pg_platform::env::flag(pg_platform::env::Var::Dev));
     ARGS.set(parse(args)).map_err(|_| anyhow::anyhow!("the command line was read twice"))?;
     READ.set(read).map_err(|_| anyhow::anyhow!("the command line was read twice"))
 }
@@ -215,7 +216,7 @@ fn arg_of(arg: &OsString) -> Option<Arg> {
 }
 
 /// The arguments read to what the window uses ([`Read`]), given the program's arguments and the environment's `PG_DEV`.
-fn read_of(args: &[OsString], dev_env: Option<&OsStr>) -> Read {
+fn read_of(args: &[OsString], dev_env: Parsed) -> Read {
     let parsed = parse(args);
     let mut bad = Vec::new();
     // A `--name` with no `=` is no option's value: it is named, not silently skipped.
@@ -324,17 +325,15 @@ fn typed<T>(
     }
 }
 
-/// A boolean from the environment (`PG_DEV`), read as an option's flag. Another value is bad, and reads as not given.
-fn env_flag(env: Option<&OsStr>, bad: &mut Vec<BadOption>) -> Option<bool> {
-    let env = env?;
-    match env.to_str().map(flag) {
-        Some(Ok(on)) => Some(on),
-        Some(Err(reason)) => {
-            bad.push(BadOption::new("PG_DEV", format!("{} {reason}", env.to_string_lossy())));
-            None
-        }
-        None => {
-            bad.push(BadOption::new("PG_DEV", "its value is not valid Unicode"));
+/// `PG_DEV` as an option's flag: on or off, read as the environment reads every flag. Another value is bad, and reads
+/// as not given.
+fn env_flag(env: Parsed, bad: &mut Vec<BadOption>) -> Option<bool> {
+    match env {
+        Parsed::On => Some(true),
+        Parsed::Off => Some(false),
+        Parsed::Unset => None,
+        Parsed::Invalid(text) => {
+            bad.push(BadOption::new("PG_DEV", format!("{text} is not on or off")));
             None
         }
     }
@@ -407,7 +406,7 @@ pub(crate) fn bad_options() -> &'static [BadOption] {
 
 /// What the arguments read to. Before `init` there are no arguments, so the defaults.
 fn read() -> &'static Read {
-    READ.get_or_init(|| read_of(&[], None))
+    READ.get_or_init(|| read_of(&[], Parsed::Unset))
 }
 
 /// The value of `--name=…`, exactly as given (the first, if given twice). `None` without one.
@@ -542,7 +541,7 @@ mod tests {
 
     /// The read of `words`, with `PG_DEV` as `dev_env`.
     fn read(words: &[&str], dev_env: Option<&str>) -> Read {
-        read_of(&args_of(words), dev_env.map(OsStr::new))
+        read_of(&args_of(words), pg_platform::env::flag_in(|_| dev_env.map(OsString::from), pg_platform::env::Var::Dev))
     }
 
     /// The parsed arguments as (name, value) text, for the comparisons.
@@ -578,7 +577,7 @@ mod tests {
         assert_eq!(parsed[0].exact, pg_testkit::odd_name("a"));
         let mut query = OsString::from("--query=");
         query.push(pg_testkit::odd_name("a"));
-        let read = read_of(&[OsString::from("program"), query], None);
+        let read = read_of(&[OsString::from("program"), query], Parsed::Unset);
         assert_eq!(bad_names(&read), ["--query"]);
     }
 

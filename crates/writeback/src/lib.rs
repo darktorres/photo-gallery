@@ -164,6 +164,8 @@ struct CopyInto<'a> {
 
 struct Inner {
     catalog_path: PathBuf,
+    /// The ExifTool program the writes start: read once, when the writer starts.
+    exiftool: pg_exiftool::Program,
     thumbs: &'static ThumbCache,
     status: Watch<WriteStatus>,
     /// Files turned so far: their pixels changed, so the app reloads them and the job re-analyzes them.
@@ -233,6 +235,7 @@ impl Writer {
     ) -> Result<Writer> {
         Writer::spawn(Inner {
             catalog_path,
+            exiftool: pg_exiftool::Program::from_env(),
             thumbs,
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
@@ -258,6 +261,7 @@ impl Writer {
     ) -> Result<Writer> {
         Writer::spawn(Inner {
             catalog_path,
+            exiftool: pg_exiftool::Program::from_env(),
             thumbs,
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
@@ -589,7 +593,7 @@ impl Inner {
         // Step 1: the new content, complete, in the temp.
         let (data, pixels_changed) = match job.write {
             Write::Rating(rating) => {
-                let tool = ExifTool::running(exiftool, &pg_exiftool::program())?;
+                let tool = ExifTool::running(exiftool, self.exiftool.as_os_str())?;
                 tool.write_rating(&path, &temp, rating.get())?;
                 let written = std::fs::read(&temp).with_context(|| format!("reading {shown_temp}"))?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
@@ -610,7 +614,7 @@ impl Inner {
                         None => {
                             // No tag to change: ExifTool adds one. A format it can't add EXIF to keeps the turn in
                             // the catalog.
-                            let tool = ExifTool::running(exiftool, &pg_exiftool::program())?;
+                            let tool = ExifTool::running(exiftool, self.exiftool.as_os_str())?;
                             let written = match tool.write_orientation(&path, &temp, o.get()) {
                                 Ok(()) => Some(std::fs::read(&temp)?)
                                     .filter(|written| pg_metadata::orientation(written, format) == o),
@@ -811,6 +815,7 @@ mod tests {
         .unwrap();
         let inner = Inner {
             catalog_path: dir.join("catalog.sqlite"),
+            exiftool: pg_exiftool::Program::from_env(),
             thumbs: Box::leak(Box::new(cache)),
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),

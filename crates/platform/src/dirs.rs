@@ -1,7 +1,7 @@
 //! The per-user folders: the one the app keeps its data in when nothing says where (`%LOCALAPPDATA%\PhotoGallery` on
 //! Windows, and `$XDG_DATA_HOME/photo-gallery` or `~/.local/share/photo-gallery` elsewhere), and the user's own, where a
 //! folder dialog opens by default ([`user_folder`]). The environment is read through a lookup, so the tests give it one;
-//! the callers pass `std::env::var_os`.
+//! the callers pass [`crate::env::process`].
 
 use std::ffi::OsString;
 use std::path::PathBuf;

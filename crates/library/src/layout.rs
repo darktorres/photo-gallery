@@ -13,6 +13,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use pg_platform::env::Var;
+
 /// The data folders of one run. Build it with [`Layout::resolve`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
@@ -27,15 +29,15 @@ impl Layout {
     /// default), and `catalog_dir` when the caller was given one (the `--catalog-dir` flag, which wins over
     /// `PG_CATALOG_DIR`). An error when no home can be found; it is never the temporary folder.
     pub fn resolve(var: impl Fn(&str) -> Option<OsString>, catalog_dir: Option<PathBuf>) -> Result<Layout, String> {
-        let catalog_dir = catalog_dir.or_else(|| var("PG_CATALOG_DIR").map(PathBuf::from));
-        let home = match var("PG_HOME") {
+        let catalog_dir = catalog_dir.or_else(|| pg_platform::env::path(&var, Var::CatalogDir));
+        let home = match pg_platform::env::value(&var, Var::Home) {
             Some(home) => PathBuf::from(home),
             None => match &catalog_dir {
                 Some(dir) => dir.parent().unwrap_or(dir).to_path_buf(),
                 None => pg_platform::dirs::default_home(&var)?,
             },
         };
-        let prefs = var("PG_PREFS").map_or_else(|| home.join("gallery.json"), PathBuf::from);
+        let prefs = pg_platform::env::path(&var, Var::Prefs).unwrap_or_else(|| home.join("gallery.json"));
         Ok(Layout {
             catalog_dir: catalog_dir.unwrap_or_else(|| home.join("catalog")),
             prefs,

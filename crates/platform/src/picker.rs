@@ -40,7 +40,7 @@ fn has_drive_or_share(_: &Path) -> bool {
 /// as given is kept. The shell also normalizes every path it parses, which drops a folder's trailing dot or space, so
 /// a folder with such a name (or under one) starts the dialog at its nearest ancestor without one: the shell would
 /// otherwise open a sibling (`a` for `a.`), or refuse the verbatim form. Without a folder that is one now, the user's
-/// own, under the environment `var` gives (`dirs::user_folder`; the callers pass `std::env::var_os`).
+/// own, under the environment `var` gives (`dirs::user_folder`; the callers pass [`crate::env::process`]).
 pub fn start_folder(requested: Option<PathBuf>, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     requested
         .map(|folder| match std::fs::canonicalize(&folder) {

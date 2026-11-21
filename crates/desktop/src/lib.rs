@@ -113,7 +113,7 @@ pub fn run(args: &[OsString]) -> i32 {
     // Qt uses PipeWire for audio when its library is installed, and crashes when PipeWire cannot start (pg_platform::audio).
     // Then the app asks Qt for PulseAudio instead. Qt reads the variable when it makes the audio devices, so it is set here,
     // first, before any thread of the app's own starts. A choice the user made in the environment is kept.
-    if std::env::var_os("QT_AUDIO_BACKEND").is_none() && pg_platform::audio::pipewire_context_fails() {
+    if pg_platform::env::process("QT_AUDIO_BACKEND").is_none() && pg_platform::audio::pipewire_context_fails() {
         // SAFETY: no other thread is running yet: this is the first thing `run` does.
         unsafe { std::env::set_var("QT_AUDIO_BACKEND", "pulseaudio") };
     }
@@ -156,8 +156,9 @@ pub fn run(args: &[OsString]) -> i32 {
     }
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gib` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
-    config.thumb_cap = std::env::var("PG_THUMB_CAP_GIB").ok().and_then(|text| {
-        let cap = text.trim().parse::<f64>().ok().and_then(pg_app::reexport::ThumbCap::from_gib);
+    config.thumb_cap = pg_platform::env::read(pg_platform::env::Var::ThumbCapGib).and_then(|text| {
+        let text = text.to_string_lossy().into_owned();
+        let cap = pg_app::reexport::ThumbCap::parse_gib(&text);
         if cap.is_none() {
             pg_log::warn(
                 "config",

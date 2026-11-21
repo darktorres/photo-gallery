@@ -129,8 +129,8 @@ pub fn sync_folder(folder: &std::path::Path, env: impl Fn(&str) -> Option<std::f
     if ONE_DRIVE.iter().any(|var| env(var).is_some_and(|root| under(folder, &root))) {
         return Some("OneDrive");
     }
-    env("USERPROFILE")
-        .map(|home| std::path::PathBuf::from(home).join("Dropbox"))
+    crate::dirs::user_folder(&env)
+        .map(|home| home.join("Dropbox"))
         .filter(|dropbox| under(folder, dropbox.as_os_str()))
         .map(|_| "Dropbox")
 }

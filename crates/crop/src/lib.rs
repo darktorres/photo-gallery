@@ -6,7 +6,7 @@
 //!   original this crate makes, and it refuses to run without that confirmation.
 
 use pg_model::ids::FileId;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -15,7 +15,7 @@ use pg_edit::crop::{self, crop};
 use pg_model::path::{PathArena, PathRef};
 use pg_model::rules::Path as RulePath;
 
-use pg_exiftool::ExifTool;
+use pg_exiftool::{ExifTool, Program};
 use pg_jobs::control::Control;
 use pg_jobs::failure::{FAILURES_KEPT, file_failure, stored_path};
 use pg_jobs::pipeline::{self, Options, Read};
@@ -46,8 +46,21 @@ struct Job {
     out: PathRef,
 }
 
-/// Save cropped copies of `ids` under `folder`.
+/// Save cropped copies of `ids` under `folder`, their tags copied by the ExifTool the environment names.
 pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
+    save_with(Program::from_env().as_os_str(), catalog, ids, folder, opts, ctl)
+}
+
+/// [`save`], with the ExifTool program named (a path, or a name on PATH): the tests name a program that cannot run, to
+/// see a failed tag copy.
+pub fn save_with(
+    program: &OsStr,
+    catalog: &Catalog,
+    ids: &[FileId],
+    folder: &Path,
+    opts: &Options,
+    ctl: &Control,
+) -> Result<Stats> {
     // The pass's span in the perf log: its phase is its child, and the phase records what it did.
     let _pass = pg_perf::span("pass.crop");
     let rules = catalog.rules();
@@ -122,7 +135,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                     // ExifTool reads and writes by the disk paths too, so a folder whose name ends in a dot is the
                     // one it reaches.
                     let (source, out) = (disk_path_of(paths.get(job.source.path)), disk_path_of(paths.get(job.out)));
-                    if let Err(e) = tag_copy(&mut exiftool, &source, &out) {
+                    if let Err(e) = tag_copy(&mut exiftool, program, &source, &out) {
                         // The copy was published before it had its tags: a failure leaves no untagged copy at the
                         // output, since the job reports a failure and the output is not what it asked for.
                         let _ = std::fs::remove_file(&out);
@@ -190,10 +203,10 @@ enum CutWritten {
 }
 
 /// What a worker of `cut` keeps from one original to the next: its ExifTool, started for the first original that needs
-/// its tags copied over.
-#[derive(Default)]
+/// its tags copied over, and the program that starts it.
 struct CutWorker {
     exiftool: Option<ExifTool>,
+    program: OsString,
 }
 
 /// Cut the borders off the originals of `ids`, in place: each file's borders as the catalog has them, cut exactly into
@@ -207,6 +220,19 @@ struct CutWorker {
 /// `present` says whether a file is still in the library. It is asked before each original is written, since a folder
 /// can be removed while the pass runs: a file that is not is skipped, and its original is left as it is.
 pub fn cut(
+    catalog: &Catalog,
+    ids: &[FileId],
+    confirmed: bool,
+    opts: &Options,
+    ctl: &Control,
+    present: &(dyn Fn(FileId) -> bool + Sync),
+) -> Result<CutStats> {
+    cut_with(Program::from_env().as_os_str(), catalog, ids, confirmed, opts, ctl, present)
+}
+
+/// [`cut`], with the ExifTool program named (see [`save_with`]).
+pub fn cut_with(
+    program: &OsStr,
     catalog: &Catalog,
     ids: &[FileId],
     confirmed: bool,
@@ -242,7 +268,7 @@ pub fn cut(
         },
         opts,
         ctl,
-        || Ok(CutWorker::default()),
+        || Ok(CutWorker { exiftool: None, program: program.to_os_string() }),
         |worker: &mut CutWorker, i, bytes| {
             cut_original(jobs.get(i).context("an item outside the pass")?, &paths, bytes, worker, present)
         },
@@ -301,7 +327,11 @@ fn cut_original(
         return Ok(CutWritten::Skipped);
     }
     let cropped = crop::cut(bytes, s.format, s.width, s.height, s.cut)?;
-    let new = if cropped.metadata { cropped.bytes } else { with_tags(&path, &cropped.bytes, &mut worker.exiftool)? };
+    let new = if cropped.metadata {
+        cropped.bytes
+    } else {
+        with_tags(&path, &cropped.bytes, &mut worker.exiftool, &worker.program)?
+    };
     let mut native = NativePath::default();
     set_path(&mut native, paths.get(s.path));
     let temp = temp_beside(&path, ".cut.pg-write").context("a file without a name")?;
@@ -331,11 +361,11 @@ fn temp_beside(path: &Path, suffix: &str) -> Option<PathBuf> {
 /// `bytes` (the cut of `original`, which came out without its metadata) with the original's tags copied onto them by
 /// ExifTool. They are written to a temporary beside the original, tagged there, and read back; the temporary is removed
 /// on every path. Nothing of the original is written.
-fn with_tags(original: &Path, bytes: &[u8], exiftool: &mut Option<ExifTool>) -> Result<Vec<u8>> {
+fn with_tags(original: &Path, bytes: &[u8], exiftool: &mut Option<ExifTool>, program: &OsStr) -> Result<Vec<u8>> {
     let temp = tags_temp_beside(original).context("a file without a name")?;
     let guard = TempFile::new(&temp);
     std::fs::write(&temp, bytes).with_context(|| format!("writing {}", shown(&temp)))?;
-    ExifTool::running(exiftool, &pg_exiftool::program())?.copy_tags(original, &temp)?;
+    ExifTool::running(exiftool, program)?.copy_tags(original, &temp)?;
     let tagged = std::fs::read(&temp).with_context(|| format!("reading {}", shown(&temp)))?;
     drop(guard);
     Ok(tagged)
@@ -382,8 +412,8 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8]) -> Result<Written> {
 }
 
 /// Give the published copy at `out` the tags of `source` that the crop left out (ExifTool), and its modification time.
-fn tag_copy(exiftool: &mut Option<ExifTool>, source: &Path, out: &Path) -> Result<()> {
-    ExifTool::running(exiftool, &pg_exiftool::program())?.copy_tags(source, out)?;
+fn tag_copy(exiftool: &mut Option<ExifTool>, program: &OsStr, source: &Path, out: &Path) -> Result<()> {
+    ExifTool::running(exiftool, program)?.copy_tags(source, out)?;
     keep_time(source, out)
 }
 

@@ -14,7 +14,7 @@ use crate::dups;
 pub(crate) struct Cli {
     /// Folder holding catalog.sqlite and the thumbnail cache (default: the data folder's `catalog`, see `pg_library::layout`).
     // Named explicitly: the field is `catalog_dir_arg`, and the flag is `--catalog-dir` (README, the screenshot script).
-    #[arg(long = "catalog-dir", env = "PG_CATALOG_DIR")]
+    #[arg(long = "catalog-dir")]
     catalog_dir_arg: Option<PathBuf>,
     /// Make the catalog folder when it doesn't exist. The default folder (`catalog` under the data folder) is made without
     /// it; another folder that is missing is refused, since it is most likely a drive that isn't connected.
@@ -27,7 +27,7 @@ pub(crate) struct Cli {
 impl Cli {
     /// The data folders: the catalog folder the flag gives, else the environment's and the default (`pg_library::layout`).
     pub(crate) fn layout(&self) -> anyhow::Result<pg_library::layout::Layout> {
-        pg_library::layout::Layout::resolve(|name| std::env::var_os(name), self.catalog_dir_arg.clone())
+        pg_library::layout::Layout::resolve(pg_platform::env::process, self.catalog_dir_arg.clone())
             .map_err(anyhow::Error::msg)
     }
 }
@@ -194,7 +194,6 @@ fn thumb_height(text: &str) -> Result<ThumbHeight, String> {
 
 /// `--cap-gib`: a number of GiB above zero, as the thumbnail cache's cap.
 fn cap_gib(text: &str) -> Result<pg_thumbcache::Cap, String> {
-    let gib: f64 = text.trim().parse().map_err(|_| format!("{text} isn't a number of GiB"))?;
-    pg_thumbcache::Cap::from_gib(gib)
-        .ok_or_else(|| format!("{text} GiB isn't a size a cache can have (a number of GiB above zero)"))
+    pg_thumbcache::Cap::parse_gib(text)
+        .ok_or_else(|| format!("{text} isn't a number of GiB above zero, a size a cache can have"))
 }

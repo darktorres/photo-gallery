@@ -1,6 +1,6 @@
 //! A crop whose copy can't be given its tags (here ExifTool can't run) is a failure, and leaves no untagged copy at its
-//! output, nor a temporary beside it; a cut whose tags can't be copied leaves its original as it was. In its own test
-//! binary: it sets `PG_EXIFTOOL` for the whole process, which the other crop tests must not see.
+//! output, nor a temporary beside it; a cut whose tags can't be copied leaves its original as it was. The program that
+//! can't run is given to the crop (`save_with`, `cut_with`), so no test reads or sets the environment for it.
 
 use std::path::{Path, PathBuf};
 
@@ -49,10 +49,9 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     let id = state::file_id(&c, "d.tif").unwrap();
 
     // ExifTool can't run: the copy is published, then its tags can't be copied into it.
-    // SAFETY: this test binary runs no other test that reads PG_EXIFTOOL, so nothing reads it concurrently.
-    unsafe { std::env::set_var("PG_EXIFTOOL", dir.join("no-such-exiftool")) };
+    let missing = dir.join("no-such-exiftool");
     let out = dir.join("out");
-    let stats = pg_crop::save(&c, &[id], &out, &opts, &ctl).unwrap();
+    let stats = pg_crop::save_with(missing.as_os_str(), &c, &[id], &out, &opts, &ctl).unwrap();
     assert_eq!((stats.saved, stats.failed), (0, 1), "the copy's tags could not be written: a failure");
     let left = files_under(&out);
     assert!(left.is_empty(), "no untagged copy and no temporary is left: {left:?}");
@@ -79,9 +78,8 @@ fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
     let id = state::file_id(&c, "d.tif").unwrap();
     let before = std::fs::read(&path).unwrap();
 
-    // SAFETY: this test binary runs no other test that reads PG_EXIFTOOL, so nothing reads it concurrently.
-    unsafe { std::env::set_var("PG_EXIFTOOL", dir.join("no-such-exiftool")) };
-    let stats = pg_crop::cut(&c, &[id], true, &opts, &ctl, &|_| true).unwrap();
+    let missing = dir.join("no-such-exiftool");
+    let stats = pg_crop::cut_with(missing.as_os_str(), &c, &[id], true, &opts, &ctl, &|_| true).unwrap();
     assert_eq!((stats.saved, stats.failed), (0, 1), "the tags could not be copied: a failure ({:?})", stats.failures);
     assert_eq!(std::fs::read(&path).unwrap(), before, "the original is as it was");
     assert_eq!(files_under(&images), vec![path.clone()], "no temporary is left beside it");

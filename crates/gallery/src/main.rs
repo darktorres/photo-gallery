@@ -23,7 +23,7 @@ fn main() -> ExitCode {
     // error, `fatal`) write none. Backtraces are cut to 10 frames unless PG_DHAT_UNTRIMMED is set.
     #[cfg(feature = "dhat-heap")]
     let _profiler = {
-        let frames = std::env::var_os("PG_DHAT_UNTRIMMED").is_none().then_some(10);
+        let frames = pg_platform::env::read(pg_platform::env::Var::DhatUntrimmed).is_none().then_some(10);
         dhat::Profiler::builder().trim_backtraces(frames).build()
     };
     let args: Vec<OsString> = std::env::args_os().collect();

@@ -281,5 +281,82 @@ class StaticFfmpegLibraries(unittest.TestCase):
         self.assertEqual(self.quoted(video_list.group(1)), expected, "pg-video.patch the library loop")
 
 
+ENV_REGISTRY = REPO / "crates" / "platform" / "src" / "env.rs"
+ENV_EXAMPLE = REPO / ".env.example"
+ENV_SOURCES = {".rs", ".cpp", ".h", ".hpp"}
+PG_NAME = re.compile(r"\bPG_[A-Z][A-Z0-9_]*\b")
+REGISTERED_SPEC = re.compile(r'Spec \{\s*name: "(PG_[A-Z0-9_]+)",\s*kind: Kind::\w+,\s*reader: Reader::(\w+),')
+DOCUMENTED = re.compile(r"^#?\s*(PG_[A-Z][A-Z0-9_]*)=", re.MULTILINE)
+# The names the sources use that are not the app's variables, each with its reason. A name is registered in
+# crates/platform/src/env.rs (VARS), documented in .env.example, or one of these.
+TEST_INPUTS = [
+    (r"PG_HOLDER_\w+", "a child process's handshake keys (the catalog and dbfile holders)"),
+    (r"PG_THUMB_(HOLDER|CATALOG|READY|RELEASE)", "the thumbnail cache's child-process keys"),
+    (r"PG_PLATFORM_TESTING_CHILD_PREFIX|PG_PLATFORM_SPAWN_HELPER|PG_TESTING_HELD", "pg-platform's child-process keys"),
+    (r"PG_PROBE_\w+", "the examples' probe inputs, not the app's"),
+    (r"PG_JOIN_\w+", "the join test's dump inputs"),
+    (r"PG_LABEL", "a benchmark's output label"),
+    (r"PG_QML_RESOURCES", "the QML test harness's resource folder"),
+    (r"PG_TEST_CATALOG|PG_REHEARSAL_CATALOG|PG_JPEG_COMPARE_DIR", "the input a test or a rehearsal reads"),
+    (r"PG_FFMPEG", "a library test's FFmpeg program (the build's is PG_FFMPEG_BIN)"),
+]
+
+
+def env_sources():
+    """{name: [file, ...]} for every PG_* name in the sources under crates/."""
+    found = {}
+    for path in sorted((REPO / "crates").rglob("*")):
+        if path.suffix not in ENV_SOURCES or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for name in set(PG_NAME.findall(text)):
+            found.setdefault(name, []).append(path.relative_to(REPO).as_posix())
+    return found
+
+
+def function_body(text, header):
+    """The text of the function that starts with `header`, up to its closing brace at the start of a line."""
+    start = text.index(header)
+    end = text.index("\n}", start)
+    return text[start:end]
+
+
+class EnvironmentRegistry(unittest.TestCase):
+    def setUp(self):
+        self.registry = dict(REGISTERED_SPEC.findall(ENV_REGISTRY.read_text(encoding="utf-8")))
+        self.documented = set(DOCUMENTED.findall(ENV_EXAMPLE.read_text(encoding="utf-8")))
+
+    def test_the_registry_is_read_from_the_source(self):
+        self.assertIn("PG_HOME", self.registry)
+        self.assertIn("PG_FORCE_AV1", self.registry)
+
+    def test_every_name_the_sources_use_is_registered_documented_or_a_test_input(self):
+        unknown = {}
+        for name, files in env_sources().items():
+            if name in self.registry or name in self.documented:
+                continue
+            if any(re.fullmatch(pattern, name) for pattern, _ in TEST_INPUTS):
+                continue
+            unknown[name] = sorted(set(files))
+        self.assertEqual(unknown, {}, "add to VARS in crates/platform/src/env.rs, or to .env.example, or to TEST_INPUTS")
+
+    def test_every_variable_the_app_or_native_code_reads_is_documented(self):
+        missing = [name for name, reader in self.registry.items() if reader in ("App", "Native") and name not in self.documented]
+        self.assertEqual(missing, [], "document these in .env.example (a commented PG_NAME=value line with its meaning)")
+
+    def test_the_cpp_flag_spellings_are_the_rust_spellings(self):
+        rust = set(re.findall(r'"([^"]+)"', function_body(ENV_REGISTRY.read_text(encoding="utf-8"), "pub fn parse(")))
+        cpp = set(
+            re.findall(
+                r'u"([^"]+)"',
+                function_body(
+                    (REPO / "crates" / "desktop" / "cpp" / "gpu_device.cpp").read_text(encoding="utf-8"),
+                    "bool env_flag(",
+                ),
+            )
+        )
+        self.assertEqual(cpp, rust, "the C++ desktop reads its flags with the same spellings as pg_platform::env::parse")
+
+
 if __name__ == "__main__":
     unittest.main()

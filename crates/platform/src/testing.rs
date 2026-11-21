@@ -36,7 +36,7 @@ static HELD: Mutex<Vec<HeldLock>> = Mutex::new(Vec::new());
 /// The base folder for a test's files: `PG_TEST_DIR` when it is set, else the temp folder's `scratch` folder. The name
 /// is a plain folder name (`"scratch_platform"`): no test writes to a drive it was not told about.
 pub fn base(scratch: &str) -> PathBuf {
-    match std::env::var_os("PG_TEST_DIR") {
+    match crate::env::read(crate::env::Var::TestDir) {
         // `.env` writes paths with forward slashes, and the verbatim (`\\?\`) paths that pg-platform opens are not
         // normalized: a test's folders need the native separator, as the paths the app itself is given have.
         Some(dir) => native_separators(&dir),
@@ -74,7 +74,11 @@ pub fn odd_name(text: &str) -> std::ffi::OsString {
 /// test fails, so a missing tool can't pass silently.
 #[expect(clippy::print_stderr, reason = "a skipped test says so on stderr, where the test runner prints it")]
 pub fn missing_tool(tool: &str) {
-    assert!(crate::env::flag("PG_REQUIRE_TOOLS") != Some(true), "{tool} not found, and PG_REQUIRE_TOOLS is set");
+    let required = crate::env::flag(crate::env::Var::RequireTools);
+    if let crate::env::Parsed::Invalid(text) = &required {
+        eprintln!("PG_REQUIRE_TOOLS: {text} is not on or off, so the tests skip instead of failing");
+    }
+    assert!(required != crate::env::Parsed::On, "{tool} not found, and PG_REQUIRE_TOOLS is set");
     eprintln!("{tool} not found: skipped");
 }
 

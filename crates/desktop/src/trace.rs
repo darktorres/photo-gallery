@@ -23,13 +23,27 @@ impl qobject::Stages {
 /// to open, if it failed: the window has no stderr, so the caller logs it once the log exists.
 #[expect(clippy::print_stderr, reason = "PG_TRACE=1 asks for the timings on the console")]
 pub(crate) fn install() -> Option<String> {
-    if pg_platform::env::flag("PG_TRACE") == Some(true) {
-        pg_trace::set_sink(|stage, ms| eprintln!("stage {ms:>9.1} ms  {stage}"));
+    // A value that is neither on nor off turns the trace off, and is returned for the caller to log with the perf log's
+    // failure: the window has no stderr to say it on.
+    let mut problem = None;
+    match pg_platform::env::flag(pg_platform::env::Var::Trace) {
+        pg_platform::env::Parsed::On => {
+            pg_trace::set_sink(|stage, ms| eprintln!("stage {ms:>9.1} ms  {stage}"));
+        }
+        pg_platform::env::Parsed::Invalid(text) => {
+            problem = Some(format!("PG_TRACE: {text} is not on or off, so the stages are not traced"));
+        }
+        pg_platform::env::Parsed::Off | pg_platform::env::Parsed::Unset => {}
     }
     // The perf log, when `PG_PERF_LOG` names a file: the background job's rounds and their passes are appended to it as
     // they end (the app writes the file; `gallery perf` reads it). Its `-` is the command line's, not the app's.
-    let file = std::env::var_os("PG_PERF_LOG").filter(|v| !v.is_empty() && v.to_str() != Some("-"))?;
-    let meta = serde_json::json!({ "program": pg_perf::PROGRAM, "version": env!("CARGO_PKG_VERSION") });
-    let path = std::path::Path::new(&file);
-    pg_perf::open(path, meta).err().map(|e| format!("perf log: can't open {}: {e}; not recording", path.display()))
+    let perf =
+        pg_platform::env::read(pg_platform::env::Var::PerfLog).filter(|v| v.to_str() != Some("-")).and_then(|file| {
+            let meta = serde_json::json!({ "program": pg_perf::PROGRAM, "version": env!("CARGO_PKG_VERSION") });
+            let path = std::path::Path::new(&file);
+            pg_perf::open(path, meta)
+                .err()
+                .map(|e| format!("perf log: can't open {}: {e}; not recording", path.display()))
+        });
+    problem.or(perf)
 }

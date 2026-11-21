@@ -1439,7 +1439,7 @@ keep.ps1:10 defaults Rule to bounded and passes --rule and --margin explicitly a
 
 ### C-006 [medium] `PG_*` environment reads scattered; plan and ledger counts stale — CONFIRMED
 
-**Disposition: Deferred.** A single PG_* resolution module is not built (a cross-crate refactor, REFACTOR_LEDGER F-12).
+**Disposition: Fixed.** `pg_platform::env` is the one reader: `read`, `value`, `flag` and `process`, over the registry `VARS` (name, kind, reader, meaning). An empty value is unset for every variable. `Layout::resolve` reads its variables through the same readers, and the clap `env =` on `--catalog-dir` is gone, so it is read once. `PG_THUMB_CAP_GIB` and `--cap-gib` share `Cap::parse_gib`. The OneDrive and Dropbox roots use `dirs::user_folder` for `USERPROFILE`. ExifTool is resolved once per run into `pg_exiftool::Program` (the writer at start, the crop at each `save`/`cut`), so `save_with` and `cut_with` take the program and the crop tests need no environment. `boundaries.py` checks that production code reads no variable through `std::env`, and `test_ci_files.py` checks every `PG_*` name the sources use against `VARS`, `.env.example` or its test-input list. Exceptions, named in `ENV_READERS`: the build scripts and the one `set_var` for `QT_AUDIO_BACKEND`.
 
 `PG_*` environment reads are spread across layout.rs:30-31, exiftool lib.rs:31, desktop lib.rs:157, video build.rs:64 and more. `REFACTOR_LEDGER.md:52` records this as an open shortcut (F-12), so the scatter is known and not yet consolidated.
 
@@ -1457,7 +1457,7 @@ keep.ps1:10 defaults Rule to bounded and passes --rule and --margin explicitly a
 
 ### C-009 [medium] Boolean and flag env values parse differently — CONFIRMED
 
-**Disposition: Fixed in part.** pg_platform::env::flag reads the Rust side; gpu_device.cpp uses the same spellings. Unrecognised values read as unset; no warning is logged yet.
+**Disposition: Fixed.** `pg_platform::env::flag` reads every Rust flag with one spelling set (`parse`), and a value outside it is `Parsed::Invalid`, which the caller reports once: `PG_DEV` as a bad option (logged at start), `PG_TRACE` in the start's problem message, and `PG_REQUIRE_TOOLS` on stderr (the tests then skip). `PG_FORCE_AV1` and `PG_SHARED_DEVICE` are read by the C++ `env_flag`, which has the same set and is held to it by `test_ci_files.py`; it stays silent on a bad value, since the window has no log at that point (the parser is the C++'s own, as the plan decided).
 
 Flag variables parse differently: desktop trace.rs:25 accepts only the value 1 for `PG_TRACE`, `command_line.rs:329` accepts 1, 0, true and false for `PG_DEV`, `gpu_device.cpp:71` accepts only 0 for `PG_SHARED_DEVICE`, `gpu_device.cpp:43` reads `PG_FORCE_AV1` as an int, and exiftool lib.rs:295 treats `PG_REQUIRE_TOOLS` as on for any value.
 

@@ -23,9 +23,26 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a closing ExifTool gets to exit after `-stay_open False` before it is killed.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The ExifTool program: `PG_EXIFTOOL`, or `exiftool` on PATH. Read by the writes and the copies as they start it.
-pub fn program() -> OsString {
-    std::env::var_os("PG_EXIFTOOL").unwrap_or_else(|| "exiftool".into())
+/// The ExifTool program a run starts: `PG_EXIFTOOL`, or `exiftool` on PATH. A run reads the environment once, when it
+/// starts ([`Program::from_env`]), and the writer and the crop take the program they are given, so a test names its own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Program(OsString);
+
+impl Program {
+    /// The program the environment names, read now (see [`Program`]).
+    pub fn from_env() -> Program {
+        Program(pg_platform::env::read(pg_platform::env::Var::Exiftool).unwrap_or_else(|| "exiftool".into()))
+    }
+
+    /// The program at `path`.
+    pub fn new(path: impl Into<OsString>) -> Program {
+        Program(path.into())
+    }
+
+    /// The program, for [`ExifTool::start`] and [`ExifTool::running`].
+    pub fn as_os_str(&self) -> &OsStr {
+        &self.0
+    }
 }
 
 /// One ExifTool kept running (`-stay_open`), as starting it costs ~0.3 s per call.

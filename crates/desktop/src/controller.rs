@@ -58,13 +58,14 @@ impl Core {
         let options_refused = start_refused(&app::get().prefs().get(), &options, applied.as_ref());
         let start = start_state(&app::get().prefs().get(), &options, session, applied);
         let controller = Controller::new(start);
-        let recorder = std::env::var_os("PG_RECORD").and_then(|path| match std::fs::File::create(&path) {
-            Ok(file) => Some(file),
-            Err(e) => {
-                pg_log::warn("record", &format!("PG_RECORD {}: {e:#}", path.to_string_lossy()));
-                None
-            }
-        });
+        let recorder =
+            pg_platform::env::read(pg_platform::env::Var::Record).and_then(|path| match std::fs::File::create(&path) {
+                Ok(file) => Some(file),
+                Err(e) => {
+                    pg_log::warn("record", &format!("PG_RECORD {}: {e:#}", path.to_string_lossy()));
+                    None
+                }
+            });
         let mut core = Core { controller, counts: Counts::default(), recorder, options_refused };
         let init = replay::init(&core.controller);
         core.write(&init);

@@ -46,6 +46,12 @@ impl Cap {
         (1.0..MAX_CAP_BYTES).contains(&bytes).then(|| Cap(pg_model::num::f64_to_i64(bytes)))
     }
 
+    /// The cap a number of GiB written as text names: the `--cap-gib` flag and the `PG_THUMB_CAP_GIB` variable both read
+    /// it this way (see [`Cap::from_gib`]). Surrounding spaces are ignored.
+    pub fn parse_gib(text: &str) -> Option<Cap> {
+        text.trim().parse::<f64>().ok().and_then(Cap::from_gib)
+    }
+
     /// `bytes` as a cap; `None` unless it is above zero.
     pub const fn from_bytes(bytes: i64) -> Option<Cap> {
         if bytes > 0 { Some(Cap(bytes)) } else { None }
@@ -67,3 +73,19 @@ pub(crate) const TOUCH_FLUSH: Duration = Duration::from_secs(60);
 
 /// How often `open` checks the totals against the entries, which is a scan of them: at most once in this interval.
 pub(crate) const HEAL_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[cfg(test)]
+mod tests {
+    use super::Cap;
+
+    // The flag and the variable read a cap the same way: a positive number of GiB, spaces ignored, anything else is no
+    // cap (so the caller keeps the cache's own).
+    #[test]
+    fn a_cap_is_a_positive_number_of_gib_as_text() {
+        assert_eq!(Cap::parse_gib(" 2 "), Cap::from_gib(2.0));
+        assert_eq!(Cap::parse_gib("1.5"), Cap::from_gib(1.5));
+        for other in ["", "0", "-1", "x", "NaN", "1e300"] {
+            assert_eq!(Cap::parse_gib(other), None, "{other:?}");
+        }
+    }
+}

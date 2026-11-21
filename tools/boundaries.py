@@ -12,6 +12,11 @@
    `std::os::unix`, and no OS crate or module (`windows_sys`, `libloading::os`), in production code outside `pg-platform`,
    except the glue in `PLATFORM_GLUE`, which must name the platform's own signatures or types.
 
+5. Environment: production code reads no variable through `std::env` (`var`, `var_os`, `vars`, `set_var` and their
+   kin). A variable is read through pg-platform's `env` module (`read`, `value`, `flag`, `process`), which makes an
+   empty value unset everywhere and keeps the registry of `PG_*` names (`VARS`) true. The build scripts and the one
+   documented `set_var` are in `ENV_READERS`, with their reasons.
+
 Production code is a crate's `src/` and its build script, without `#[cfg(test)]` items (an inline module, or a
 `mod name;` whose file is then left out too). The test helpers are checked like the rest: pg-testkit's folders are pg-platform's
 code, so the rule has no exemption for a test crate.
@@ -38,6 +43,16 @@ REEXPORT_BOUNDARIES = {
 }
 # Production code outside pg-platform that may name a platform, with the reason (ground rule 6).
 PLATFORM_GLUE: dict[str, str] = {}
+
+ENV_READ = re.compile(r"\benv::(var|var_os|vars|vars_os|set_var|remove_var)\b")
+# The files that read the environment with `std::env` themselves, each with its reason (ground rule 5).
+ENV_READERS: dict[str, str] = {
+    "crates/platform/src/env.rs": "the process reader, `process`: the one place a variable is read",
+    "crates/desktop/src/lib.rs": "sets QT_AUDIO_BACKEND once, before any thread of the app starts",
+    "crates/desktop/build.rs": "a build script reads the variables of the build",
+    "crates/gallery/build.rs": "a build script reads the variables of the build",
+    "crates/video/build.rs": "a build script reads the variables of the build",
+}
 
 PLATFORM_WORD = re.compile(r"\b(windows|unix|target_os|target_family)\b")
 CFG = re.compile(r"\bcfg(?:_attr)?!?\s*\(")
@@ -241,6 +256,18 @@ def cfg_args(text, start):
     return text[start:]
 
 
+def check_env(files):
+    failures = []
+    for path, text in files.items():
+        key = rel(path)
+        if key in ENV_READERS:
+            continue
+        for m in ENV_READ.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            failures.append(f"{key}:{line}: std::env::{m.group(1)} (read it through pg_platform::env)")
+    return failures
+
+
 def check_platform(files):
     failures = []
     for path, text in files.items():
@@ -264,6 +291,7 @@ def main():
         ("dev edges acyclic", [f"cycle: {' -> '.join(c)}" for c in cycles(graph)]),
         ("re-exports", check_reexports(files)),
         ("platform code outside pg-platform", check_platform(files)),
+        ("environment reads through pg-platform", check_env(files)),
     ]
     failed = 0
     for title, failures in sections:

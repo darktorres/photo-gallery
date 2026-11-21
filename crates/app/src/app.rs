@@ -83,7 +83,7 @@ impl App {
             _ => failed(format!("{}: {e}", shown.display())),
         })?;
         // A caution, not a refusal: the catalog opens on a network drive or in a sync folder, but its files are at risk there.
-        if let Some(caution) = pg_platform::dir::folder_caution(shown, |name| std::env::var_os(name)) {
+        if let Some(caution) = pg_platform::dir::folder_caution(shown, pg_platform::env::process) {
             pg_log::warn("catalog", &caution_text(shown, caution));
         }
         // The catalog folder as SQLite opens it (an alias in the home for a folder it can't name).

@@ -109,7 +109,7 @@ fn command_name(command: &Command) -> &'static str {
 /// value is a file to append to, whose table is printed when the run ends. Unset (or a file that can't be opened, which
 /// is said), nothing is recorded. Returns the file, when there is one to summarize.
 fn open_perf_log(cli: &Cli) -> Option<std::path::PathBuf> {
-    let target = std::env::var_os("PG_PERF_LOG").filter(|v| !v.is_empty())?;
+    let target = pg_platform::env::read(pg_platform::env::Var::PerfLog)?;
     let meta = json!({
         "program": pg_perf::PROGRAM,
         "version": env!("CARGO_PKG_VERSION"),

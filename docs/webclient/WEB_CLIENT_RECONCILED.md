@@ -807,9 +807,6 @@ Desktop writes after the flip are sets and commands over loopback with the same 
 
 Quarantine is dropped (`WEB_CLIENT_TECH_DECISIONS.md:200`, recorded in this pass). The store, the quarantine tables and triggers (migration 11), the three-step executor, recovery, purge, the quarantine routes, the UI and the test plan that stood here are removed. A user delete goes to the Windows Recycle Bin.
 
-
-
-
 ### 3.12 Resolved conflicts (cluster 3)
 
 - Thumbnails: the image GET never queues; the miss returns the 1x1 placeholder; the want list queues (1.5). Writes' GET-side queue and ThumbHash placeholder are rejected.

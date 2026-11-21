@@ -229,7 +229,7 @@ The cited platform/src/lock.rs does not exist. The lock is in platform/src/testi
 
 ### DOC-036 [medium] video ffi doc says bindgen does not emit `AV_NOPTS_VALUE`; build allowlists it — PARTIAL
 
-**Disposition: Deferred.** Needs a bindgen run against the FFmpeg headers (no generated bindings in the tree).
+**Disposition: Fixed.** The bindgen output of this build (`target/debug/build/pg-video/*/out/ffmpeg.rs`, generated from the FFmpeg headers) has no `AV_NOPTS_VALUE`, so the `VARS` entry in `crates/video/build.rs` was dead and is removed. `ffi.rs` keeps the hand-written constant. `pg-video` checks green.
 
 ffi.rs:38 says bindgen does not emit `AV_NOPTS_VALUE`, and ffi.rs:39 defines it by hand. build.rs:38 still allowlists `AV_NOPTS_VALUE` in VARS. If bindgen cannot parse the macro, the allowlist entry is dead. No code conflict was shown, and the bindgen output was not generated here.
 
@@ -1074,6 +1074,7 @@ Several discards are documented best-effort (thumbcache lib.rs:189 says best-eff
 ### E-009 [medium] Fallbacks hide missing or dropped data — CONFIRMED
 
 **Disposition: No change.** Each cited fallback was decided on its own (TreeFull, unreadable versions, the EXIF default).
+
 - `TreeBuilder::add` (`model/src/tree.rs`): a folder past the `u32` offsets was left out with no word. It now returns `Err(TreeFull)`, and the catalog's tree read fails with it, which the desktop reports through its existing `TreeFailed` notice. The callers in tests unwrap it.
 - `ImageKey::parse` (`model/src/image.rs`): an unreadable version after `@` was dropped, so the key was served as the current file. It is now refused (`None`), as an unreadable file id already was; the URL parser turns that into a rejected request.
 - `Write::from_stored` (`model/src/write.rs`): `None` for an out-of-range value, which the schema's `CHECK` makes impossible. The one reader, `catalog/src/queue.rs`, already turns the `None` into an error, so it is not silent.
@@ -1088,7 +1089,7 @@ ledger.rs:199-201 says `retry_failures` does nothing for the import, and that th
 
 ### E-011 [medium] Missing-configuration messages worded differently across tools — CONFIRMED
 
-**Disposition: Fixed (Python tools).** `pgtools.not_set(name, how)` words the one message, "NAME is not set: <how>", and the Python tools that report `PG_HOME` or `QT_DIR` missing now call it (the builds, `check_qt`, `compare_shots`, `lint_qml`, `qmltest`, `profile`). Each keeps its specific hint. The PowerShell originals (`profile.ps1`, `qmltest.ps1`) keep their own wording until the originals are removed, under the rule in `tools/README.md`.
+**Disposition: Fixed (Python tools).** `pgtools.not_set(name, how)` words the one message, `NAME is not set: <how>`, and the Python tools that report `PG_HOME` or `QT_DIR` missing now call it (the builds, `check_qt`, `compare_shots`, `lint_qml`, `qmltest`, `profile`). Each keeps its specific hint. The PowerShell originals (`profile.ps1`, `qmltest.ps1`) keep their own wording until the originals are removed, under the rule in `tools/README.md`.
 
 The `PG_HOME` message is worded differently in `build_static_qt.py:69`, `build_jpeg_turbo.py:75` and `build_static_ffmpeg.py:92`. The `QT_DIR` message is worded differently in `compare_shots.py:666`, `check_qt.py:21`, `lint_qml.py:70`, profile.ps1:26, qmltest.ps1:20 and qmltest.py:41.
 
@@ -1322,7 +1323,7 @@ borders.rs:47 uses isn't in the catalog and state.rs:83 uses is not in the catal
 
 ### E-050 [low] Context strings vary in style and some are missing — CONFIRMED
 
-**Disposition: Fixed.** The read in `thumbs/src/placeholders.rs` that had no context now says "can't read <file>". The bare `decoding` and `encoding` contexts in `codec/src/encode.rs` say what failed ("can't decode the image", "can't encode the image"). The lane coordinator's context reads "can't start the lane coordinator", in the same form as the inbox's. `pipeline.rs`'s line is a comment, not a context, and is not changed.
+**Disposition: Fixed.** The read in `thumbs/src/placeholders.rs` that had no context now says "can't read `<file>`". The bare `decoding` and `encoding` contexts in `codec/src/encode.rs` say what failed ("can't decode the image", "can't encode the image"). The lane coordinator's context reads "can't start the lane coordinator", in the same form as the inbox's. `pipeline.rs`'s line is a comment, not a context, and is not changed.
 
 Context strings vary in style: pipeline.rs:339 is a comment, not a context. coordinator.rs:192 uses start the lane coordinator, borders cli uses reading X, encode.rs:88 uses bare decoding and encoding, and placeholders.rs:131 has no context on fs::read. Low severity.
 
@@ -1450,7 +1451,7 @@ keep.ps1:10 defaults Rule to bounded and passes --rule and --margin explicitly a
 
 ### C-008 [medium] Env var prefix convention not followed for repo-owned keys — CONFIRMED
 
-**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Repo-owned JPEG_* keys are renamed PG_JPEG_* with no fallback (nothing in the repo set the old names; the docs now name the new ones); the repo-owned QT_DIR, LLVM_DIR and CUDA_ARCH are renamed PG_QT_DIR, PG_LLVM_DIR and PG_CUDA_ARCH with no fallback. CUDA_PATH, LIBCLANG_PATH and FFMPEG_DIR are kept, because upstream crates and installers read them under those names (ffmpeg-sys-next, clang-sys, NVIDIA's installer).
+**Disposition: Fixed, by the default chosen in this pass (owner may revisit).** Repo-owned `JPEG_*` keys are renamed `PG_JPEG_*` with no fallback (nothing in the repo set the old names; the docs now name the new ones); the repo-owned QT_DIR, LLVM_DIR and CUDA_ARCH are renamed PG_QT_DIR, PG_LLVM_DIR and PG_CUDA_ARCH with no fallback. CUDA_PATH, LIBCLANG_PATH and FFMPEG_DIR are kept, because upstream crates and installers read them under those names (ffmpeg-sys-next, clang-sys, NVIDIA's installer).
 
 .env.example names `QT_DIR` (line 12), `LIBCLANG_PATH`, `FFMPEG_DIR`, `JPEG_EVAL` and `CUDA_PATH` without a prefix, while `PG_TEST_DIR` (line 38) and the `PG_` family are prefixed. tools/linux.py:344 and eval/jpeg-decoders/linux.py:42 add more unprefixed variables beside `PG_` ones.
 
@@ -2472,7 +2473,7 @@ The mask 0xFFFFFFFFFFFF is repeated as a literal in sql.rs:91 and at least seven
 
 ### PF-011 [medium] Temp-file suffix convention diverges — CONFIRMED
 
-**Disposition: No change.** The dot-name rule holds for temps beside photos; app data files use <file>.tmp.
+**Disposition: No change.** The dot-name rule holds for temps beside photos; app data files use `<file>.tmp`.
 
 Temp names differ: writeback file.rs:46 uses a leading dot and .pg-write; yandex save.rs:50-52 uses `.<name>.pg-save`; crop lib.rs:402 uses .pg-crop; app store.rs:118 uses `<name>.tmp`, not dot-prefixed; eval plant.py:38 uses .tmp. The model notice.rs:1397 test fixture uses .pg-tmp, which matches no real writer.
 
@@ -2808,7 +2809,7 @@ The static Qt build is wired through patch files that edit crate sources: tools/
 
 ### A-032 [low] Writeback holds a leaked static thumbnail cache — CONFIRMED
 
-**Disposition: Deferred.** Arc<ThumbCache> ownership is an owner decision and is not applied.
+**Disposition: Deferred.** `Arc<ThumbCache>` ownership is an owner decision and is not applied.
 
 writeback lib.rs:165-167 holds thumbs as a leaked static reference, and the test at :812 creates it with Box::leak. The production code and the test use the same pattern, so the leak is in the design and in the tests.
 
@@ -2892,7 +2893,7 @@ WheelListView.qml:1 and PanelKind.qml:1 have no pragma, Ratings.qml:2 and Theme.
 
 ### ML-012 [medium] `unreachable_pub` expect applied to every bridge module except two — CONFIRMED
 
-**Disposition: Fixed.** `crates/desktop/src/lib.rs` now puts the same `#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` ...")]` on `mod settings_bridge` and `mod trace_bridge`, the two bridges that lacked it. Both files have the same `#[cxx_qt::bridge] pub mod qobject` shape as the bridges that already carry the expect, so the expectation is met by the same items. The other bridge declarations were already consistent; the finding's list of exceptions is complete.
+**Disposition: Fixed.** `crates/desktop/src/lib.rs` now puts the same ``#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` ...")]`` on `mod settings_bridge` and `mod trace_bridge`, the two bridges that lacked it. Both files have the same `#[cxx_qt::bridge] pub mod qobject` shape as the bridges that already carry the expect, so the expectation is met by the same items. The other bridge declarations were already consistent; the finding's list of exceptions is complete.
 
 desktop lib.rs:76 puts the `unreachable_pub` expect on the screenshot bridge, and :81 and :86 on other bridges. `settings_bridge` (lib.rs:79) and `trace_bridge` (lib.rs:84) are bridge modules with no such expect. The two listed bridges are not the only exceptions, so the bridge list is incomplete in the same way.
 
@@ -4150,9 +4151,7 @@ maker.rs:20-22 documents the public statics DECODE, RESIZE, ENCODE and THUMBHASH
 
 ### AD-015 [low] Mode lists in the two decoder harness tools are documented differently — PARTIAL
 
-**Disposition: Deferred.** The claim text is missing from the audit; it must be restored from git history before the check.
-
-Both cites are missing at the paths given: the harness is at eval/jpeg-decoders/harness/harness.cpp, and the main.rs cite does not exist as written. The mode-list difference between the two tools cannot be checked from these cites.
+**Disposition: No change.** The claim text, restored from `e63aa037`, says both cites were missing and so the mode lists could not be compared. Both cites now resolve: the C++ harness is `eval/jpeg-decoders/harness/harness.cpp` (its modes are `list`, `time`, `repeat`, `throughput` and `dump`), and the Rust harness is `eval/jpeg-decoders/src/main.rs` (its modes are `time`, `compare` and `repeat`). The lists differ because the two are different tools, and each usage line names its own modes correctly.
 
 ### AD-016 [low] Script-header conventions: PowerShell help blocks and first-line verb form — CONFIRMED
 

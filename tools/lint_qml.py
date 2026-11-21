@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The QML's lint (`just lint-qml` on Linux and macOS), failing on any warning: qmllint's, and the QML compiler's. Every
+"""The QML's lint (`just lint-qml`, on every OS), failing on any warning: qmllint's, and the QML compiler's. Every
 binding and function must compile to C++ (qmlcachegen, at build time), none left to the interpreter. qmlcachegen falls
 back to bytecode quietly, and says why only with --verbose; qmllint's own compiler pass (--compiler) misses much of what
 it rejects, so qmlcachegen itself is run here as the build runs it. Run this after a build: it reads the types of the
@@ -24,20 +24,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pgtools import QT_DIR_HOW, load_env_file, not_set
+
 REPO = Path(__file__).resolve().parent.parent
 QML_SOURCES = REPO / "crates" / "desktop" / "qml"
 WARNING = re.compile(r"^(?:Warning|Error): (.+?):(\d+):(\d+): (.*)$")
-
-
-def load_env_file() -> None:
-    """Keys of the repo's .env that the environment does not set (the Justfile loads it for recipes; a direct run does here)."""
-    env_file = REPO / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        match = re.match(r"^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$", line)
-        if match and match.group(1) not in os.environ:
-            os.environ[match.group(1)] = match.group(2)
 
 
 def qt_tool(qt: Path, name: str) -> str:
@@ -52,7 +43,7 @@ def qt_tool(qt: Path, name: str) -> str:
 
 
 def newest_qmltypes() -> Path:
-    """The build script's output: build/pg-desktop-<hash>/ with stable cargo, build/pg-desktop/<hash>/ with the pinned nightly."""
+    """The build script's output: target/*/build/pg-desktop-<hash>/ with stable cargo, target/*/build/pg-desktop/<hash>/ with the pinned nightly."""
     patterns = [
         "target/*/build/pg-desktop-*/out/qt-build-utils/qml_modules/pg/gallery/plugin.qmltypes",
         "target/*/build/pg-desktop/*/out/qt-build-utils/qml_modules/pg/gallery/plugin.qmltypes",
@@ -67,7 +58,7 @@ def main() -> int:
     load_env_file()
     qt_dir = os.environ.get("QT_DIR")
     if not qt_dir:
-        sys.exit("QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env.")
+        not_set("QT_DIR", QT_DIR_HOW)
     qt = Path(qt_dir)
     qmllint = qt_tool(qt, "qmllint")
     qmlcachegen = qt_tool(qt, "qmlcachegen")

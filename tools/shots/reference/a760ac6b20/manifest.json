@@ -1,7 +1,9 @@
 {
   "commit": "a760ac6b20cff24e136f8c9c5b58f6447e0a88f2",
   "recorded": "2026-11-10",
-  "fixture": "558FDB5E93C978EF78688D77A08DC9AA77242325BF44569453AFF28C05C56278",
+  "fixtures": {
+    "default": "558FDB5E93C978EF78688D77A08DC9AA77242325BF44569453AFF28C05C56278"
+  },
   "qt": "C:\\Qt\\6.12.0\\msvc2022_64\\bin\\qmake.exe",
   "wait": 10.0,
   "scenarios": [

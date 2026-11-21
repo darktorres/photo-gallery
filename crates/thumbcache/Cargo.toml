@@ -1,6 +1,7 @@
 [package]
 name = "pg-thumbcache"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 publish.workspace = true
 
@@ -9,13 +10,16 @@ workspace = true
 
 # The thumbnail cache: one SQLite file of the grid's JPEG thumbnails, keyed by (file, height) and capped in bytes, with
 # its writer thread. The storage only: making a thumbnail is `pg-render`'s, and the pass that makes them is the
-# library's. It reads the catalog through the catalog's views alone (`thumb_sources`, `thumb_clock`, `thumb_folders`),
-# with no dependency on `pg-catalog`; the tests make catalogs with its fixture.
+# library's. It reads the catalog through its views (`thumb_sources`, `thumb_clock`), and in two places through the
+# catalog's tables directly: the `files` ids and volumes of the orphan sweep and the volume list, and the id high-water
+# mark (`sqlite_sequence`), which no view exposes. It has no dependency on `pg-catalog`; the tests make catalogs with
+# its fixture. A view for those two reads would need a catalog schema version change, so that is not made here.
 [dependencies]
 anyhow.workspace = true
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
+pg-query = { path = "../query" }
 pg-dbfile = { path = "../dbfile" }
 rusqlite.workspace = true
 

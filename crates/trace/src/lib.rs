@@ -9,9 +9,6 @@
 //! Otherwise a stage costs a call. The tree and the list are marked each time one is shown; the first of each is the
 //! start's. The library does not print: what a stage does is the app's.
 
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 use std::sync::OnceLock;
 
 /// What a stage does: given its name and the milliseconds since the process was created.

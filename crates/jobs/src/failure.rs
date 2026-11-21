@@ -5,6 +5,12 @@ use pg_model::notice::FileFailure;
 
 use crate::panics::Panicked;
 
+/// Whether a failure is an I/O error of the read itself, not a panic a job caught: the file is unreadable for now (a
+/// locked file, an offline drive), so the next pass tries it again and it is not recorded.
+pub fn is_io_read(e: &anyhow::Error) -> bool {
+    !crate::panics::is_panic(e) && e.downcast_ref::<std::io::Error>().is_some()
+}
+
 /// The failures a pass keeps for its stats. Past this many, only the count grows: a folder that fails on every file
 /// doesn't fill the stats.
 pub const FAILURES_KEPT: usize = 20;

@@ -95,7 +95,6 @@ mod words;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod words_bridge;
 mod worker;
-
 mod yandex;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod yandex_bridge;
@@ -121,7 +120,7 @@ pub fn run(args: &[OsString]) -> i32 {
     // The crate's and the QML module's C++ initializers. A static library keeps them only where they are called.
     cxx_qt::init_crate!(pg_desktop);
     cxx_qt::init_qml_module!("pg.gallery");
-    trace::install();
+    let perf_log_failure = trace::install();
     pg_trace::pg_stage_main();
     if let Err(e) = command_line::init(args) {
         fatal(&format!("{e:#}"));
@@ -145,9 +144,12 @@ pub fn run(args: &[OsString]) -> i32 {
     // The log is appended to, so each run's part of it starts with its session's record: the build and where the data is.
     pg_log::init(
         config.layout.log().to_path_buf(),
-        &format!("gallery {}, data folder {}", env!("CARGO_PKG_VERSION"), config.layout.home().display()),
+        &format!("{} {}, data folder {}", pg_perf::PROGRAM, env!("CARGO_PKG_VERSION"), config.layout.home().display()),
     );
     panic_log::install(config.layout.log().to_path_buf());
+    if let Some(failure) = perf_log_failure {
+        pg_log::warn("perf", &failure);
+    }
     // Each option or value the window can't use is logged; it is ignored (the start is the same without it).
     for bad in command_line::bad_options() {
         pg_log::warn("args", &bad.to_string());
@@ -174,7 +176,7 @@ pub fn run(args: &[OsString]) -> i32 {
     }
     // The writes the window makes off its thread (`worker`); without the thread they are made where they are asked for.
     if let Err(e) = worker::start() {
-        pg_log::warn("window", &format!("the window's writes stay on the Qt thread: {e}"));
+        pg_log::warn("window", &format!("the window's writes stay on the Qt thread: {e:#}"));
     }
     pg_trace::pg_stage_init_done();
 
@@ -270,6 +272,9 @@ fn catalog_refusal_message(e: &pg_app::Error) -> Option<pg_client::text::Message
             Message::CatalogDrift { path, found: found.to_string(), detail: why.clone() }
         }
         CatalogRefusal::PredatesKeyVersion => Message::CatalogPredatesKeyVersion { path },
+        CatalogRefusal::PathRules { detail, wanted } => {
+            Message::CatalogPathRules { path, detail: detail.clone(), wanted: wanted.to_string() }
+        }
         CatalogRefusal::InUse => Message::CatalogInUse { path },
         CatalogRefusal::PathTooLong => Message::CatalogPathTooLong { path },
         CatalogRefusal::ReadOnly => Message::CatalogReadOnly { path },

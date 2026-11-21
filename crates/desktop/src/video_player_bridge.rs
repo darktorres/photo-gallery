@@ -11,6 +11,10 @@ pub mod ffi {
         #[namespace = "pg"]
         type VideoPlayer;
         /// The source of `player` (a live `QMediaPlayer`, or null: the source keeps a weak reference to it).
+        ///
+        /// # Safety
+        ///
+        /// `player` is a live `QMediaPlayer` or null. The C++ side keeps only a weak reference to it.
         #[namespace = "pg"]
         unsafe fn new_video_player(player: *mut QMediaPlayer) -> UniquePtr<VideoPlayer>;
         /// Plays the file open at `handle` (`pg_platform::file::player_handle`: a `HANDLE` on Windows, a descriptor on

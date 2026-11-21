@@ -37,7 +37,7 @@ filter-range-seconds = { $from }–{ $to } s
 filter-borders = borders: { $values }
 filter-borders-marked = borders marked not a border
 filter-borders-not-marked = borders not marked
-filter-name = name has “{ $name }”
+filter-name = name has "{ $name }"
 
 # The grid cell's badge
 badge-video = ▶ { $time }
@@ -111,7 +111,7 @@ refused-reason = { $code ->
     [nfs] it is on an NFS mount
     [smb] it is on an SMB or CIFS share
     [fat] its file system is FAT, whose file numbers change when it is mounted again
-    [exfat] its file system is exFAT, whose file numbers change when it is mounted again
+    [ex-fat] its file system is exFAT, whose file numbers change when it is mounted again
     [pseudo] it is the kernel's { $file_system } file system, not a disk
     [unsupported-system] scanning is supported on Windows and Linux only
    *[other] it can't be scanned for its files' identities
@@ -160,11 +160,24 @@ yandex-saved-failed = Saved { $written }, { $failed } failed. First failure: { $
 yandex-download-failed = { $url } couldn't be downloaded: { $error }
 yandex-write-failed = { $url } couldn't be written to { $path }: { $error }
 # A search or a save stopped by a panic, which the app logged
-yandex-stopped = Stopped by an internal error; the details are in gallery.log.
+yandex-panicked = Ended by an internal error; the details are in { $log }.
+folder-list-changed = The folder list changed since it was shown: nothing was removed, and the list is read again. Try again.
 # Why a Yandex request failed (`pg_yandex::YandexError`; the captcha is `yandex-captcha`)
 yandex-http-status = Yandex answered HTTP { $status }
 yandex-transport = Yandex request failed: { $error }
-yandex-unexpected = unexpected Yandex response: { $detail }
+yandex-upload-not-json = Yandex's answer to the upload is not JSON
+yandex-upload-no-cbir-id = Yandex's answer to the upload has no image id
+yandex-upload-no-original = Yandex's answer to the upload has no original picture
+yandex-results-page-no-state = Yandex's results page has no search state
+yandex-results-state-not-json = Yandex's search state is not JSON
+yandex-similar-not-json = Yandex's similar-images answer is not JSON
+yandex-similar-no-results = Yandex's similar-images answer has no result list
+yandex-not-an-image = Yandex's result is not an image
+yandex-too-large = Yandex's picture is larger than the download limit
+yandex-no-result = Yandex's search has no such result
+yandex-no-search = There is no search to take a result from
+yandex-no-search-on-screen = Nothing is on screen to save
+yandex-not-called = The request was never made
 yandex-recorded = recorded Yandex session: { $error }
 yandex-undecodable = a result's file is not an image this app can decode: { $reason }
 
@@ -174,6 +187,7 @@ catalog-unopened = Can't open the catalog: { $error }
 catalog-newer-schema = The catalog at { $path } was made by a later build (its schema is version { $found }; this build's is { $current }){ $built_by }. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite).
 catalog-drift = The catalog at { $path } has a schema (version { $found }) that differs from this build's: { $detail }. A released catalog is not rebuilt: restore a backup by hand (rename it over catalog.sqlite).
 catalog-predates-key-version = The catalog at { $path } has a schema that differs from this build's, and it predates key_version. Restore a .pre-v*.bak or start fresh.
+catalog-path-rules = The catalog at { $path } was { $detail }, but this build uses the { $wanted } path rules. Open it on the platform that made it, or move it aside and scan again.
 catalog-in-use = Another program has the catalog at { $path } open, so it can't be changed until it is closed.
 catalog-folder-missing = The catalog folder { $path } was not found. Is its drive connected? Choose a folder that exists, or use the default.
 catalog-read-only =The catalog at { $path } needs a change, but it can't be written (it, or its folder, is read-only or permission is denied). Make it writable, or open a copy of it.
@@ -288,12 +302,14 @@ notice-folder-not-added-title = The folder couldn't be added
 notice-folder-not-added-body = { $error }
 notice-folder-not-removed-title = The folder couldn't be removed from the library
 notice-folder-not-removed-body = { $error }
-notice-folder-removal-unfinished-title = A change to a file in { $folder } was kept
+notice-folder-removal-unfinished-title = A change to a file in { $folder } is waiting to be written
 notice-folder-removal-unfinished-body = The file was deleted before its change was written, and its folder is being removed from the library. The new content is kept in { $temp }; the change is not written anywhere else.
 notice-rescan-failed-title = The library couldn't be scanned again
 notice-rescan-failed-body = { $error }
 notice-library-unavailable-title = The background work couldn't start
 notice-library-unavailable-body = Nothing is scanned, imported or written into the files: { $error }
+notice-changes-unseen-title = The window can't see the library's changes
+notice-changes-unseen-body = Changes made in the background won't show until the app is started again: { $error }
 notice-folders-unreadable-title = The library's folders couldn't be read
 notice-folders-unreadable-body = { $error }
 notice-picker-failed-title = The folder dialog failed

@@ -94,9 +94,9 @@ The round-2 value review recommends cutting both: they save under a second on NV
     sizes rewritten. Its own RIFF header reader.
   - BMP: a `min(size, 16 KiB)` prefix when the file starts with `BM` (checked inline: `pg-container` has no internal
     dependencies, `tools/crate-layers.txt:8`).
-  - Tests: fixtures in `pg_codec::fixtures` behind its `fixtures` feature (`deny.toml:56,62` allow `webp`/`image`
+  - Tests: fixtures in `pg_codec::fixtures` behind its `fixture` feature (`deny.toml:56,62` allow `webp`/`image`
     only there), including files written by the app's own WebP rewrite (`crates/edit/src/rewrite/webp.rs`);
-    analysis-equality tests in `pg-import` (new dev-dependencies: `pg-codec` with `fixtures`, `proptest`), comparing
+    analysis-equality tests in `pg-import` (new dev-dependencies: `pg-codec` with `fixture`, `proptest`), comparing
     error texts too; proptest case count pinned as `container/src/lib.rs:1295`.
 
 ## Applies to every change

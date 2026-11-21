@@ -3,14 +3,12 @@
 //! borders, or take review marks into the catalog, are the command line's (`pg_cli::borders`).
 
 use std::collections::BTreeSet;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use pg_analysis::analyze::{Analyzer, FileBorders};
 use pg_catalog::Catalog;
 use pg_catalog::ledger::Failure;
 use pg_jobs::control::Control;
-use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FilePass;
@@ -19,7 +17,7 @@ use pg_model::progress::Phase;
 #[cfg(feature = "fault")]
 pub mod fault;
 
-const BATCH: usize = 500;
+const BATCH: usize = pg_catalog::WRITE_BATCH;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
@@ -38,9 +36,7 @@ pub struct Stats {
 }
 
 /// Unix seconds now.
-fn unix_now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-}
+use pg_platform::clock::unix_now;
 
 /// Look for the borders that are due, committing in batches (stopping loses at most the batch). The files that don't
 /// decode, or that the detector panics on, are recorded in the catalog's failure ledger (`pg_catalog::ledger`); the
@@ -94,7 +90,7 @@ pub fn find_while(
                         // Couldn't be read (a locked file, an offline drive): nothing is stored, so the file stays due and
                         // the next pass tries it again. Storing "no borders" here would hide it until BORDERS_VERSION
                         // changed. A panic in the read is the detector's own (below).
-                        Err(e) if e.downcast_ref::<std::io::Error>().is_some() && !panics::is_panic(&e) => {
+                        Err(e) if pg_jobs::failure::is_io_read(&e) => {
                             done.failed += 1;
                             done.unreadable += 1;
                             continue;

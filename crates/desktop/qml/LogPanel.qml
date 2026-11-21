@@ -99,7 +99,7 @@ ModalOverlay {
             anchors.fill: parent
             spacing: 10
             Label {
-                text: words.text("ui-log-title")
+                text: words.text("ui-log")
                 font.bold: true
                 font.pixelSize: 16
             }
@@ -137,7 +137,7 @@ ModalOverlay {
                     readonly property bool chosen: row.seq === panel.selectedSeq
                     width: list.width
                     height: 22
-                    color: row.chosen ? "#2f5f93" : (row.index % 2 ? "#242424" : "transparent")
+                    color: row.chosen ? Theme.chosenRow : (row.index % 2 ? "#242424" : "transparent")
                     Accessible.role: Accessible.ListItem
                     Accessible.name: row.message
                     Accessible.selected: row.chosen
@@ -155,7 +155,7 @@ ModalOverlay {
                         Label {
                             text: row.level === 2 ? "E" : (row.level === 1 ? "W" : "I")
                             textFormat: Text.PlainText
-                            color: row.level === 2 ? "#e06060" : (row.level === 1 ? "#e0a050" : "#888888")
+                            color: row.level === 2 ? Theme.invalidText : (row.level === 1 ? Theme.statusWarning : "#888888")
                             font.bold: true
                         }
                         Label {

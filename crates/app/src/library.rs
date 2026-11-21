@@ -27,7 +27,6 @@ use pg_writeback::{WriteStatus, Writer};
 
 use crate::catalogs::Catalogs;
 use crate::error::{Error, Result, failed};
-use crate::inbox::Inbox;
 
 /// How long a stop waits for the job's file (or batch) in progress. A file that takes longer to read is left to end
 /// with the process, and its last changes are merged at the next open.
@@ -227,6 +226,7 @@ impl Library {
         self.runner.wake_removals();
     }
 
+    /// Pauses or resumes the background job (`Runner::set_paused`, the global pause).
     pub fn set_paused(&self, paused: bool) {
         self.runner.set_paused(paused);
     }
@@ -270,7 +270,7 @@ pub struct LibraryService {
     catalogs: Arc<Catalogs>,
     thumbs: &'static ThumbCache,
     /// Where the job's notices go.
-    inbox: Arc<Inbox>,
+    inbox: Arc<dyn NoticeSink>,
     /// The thumbnail height the grid asks for. Held from the start, so it may be set before the job starts.
     heights: HeightCell,
     /// Which background work is on (the borders, the duplicates), from the preferences. Held from the start, as the
@@ -285,7 +285,7 @@ impl LibraryService {
         catalog_path: PathBuf,
         catalogs: Arc<Catalogs>,
         thumbs: &'static ThumbCache,
-        inbox: Arc<Inbox>,
+        inbox: Arc<dyn NoticeSink>,
         features: Features,
     ) -> LibraryService {
         LibraryService {
@@ -418,7 +418,7 @@ impl LibraryService {
         let rules = pg_platform::native::PATH_RULES;
         let temps: Vec<RulePath> = discarded.temps.iter().filter_map(|bytes| rules.parse_bytes(bytes)).collect();
         for (temp, e) in pg_writeback::discard_temps(rules, &temps) {
-            pg_log::warn("removal", &format!("{}: the temp file wasn't deleted: {e}", rules.display(&temp)));
+            pg_log::warn("removal", &format!("{}: the temp file wasn't deleted: {e:#}", rules.display(&temp)));
         }
         self.thumbs.sweep_orphans(&self.catalog_path).map_err(failed)?;
         Ok(true)
@@ -483,10 +483,7 @@ mod tests {
     }
 
     fn library(name: &str) -> (Library, Arc<Recording>, PathBuf) {
-        let dir = pg_testkit::run_folder("scratch_app", name).unwrap();
-        let layout = pg_library::layout::Layout::in_home(&dir);
-        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
-        drop(pg_library::open_catalog(&layout).unwrap());
+        let (dir, layout) = crate::test_support::catalog_home(name);
         let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::disabled()));
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();

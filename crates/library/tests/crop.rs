@@ -84,11 +84,11 @@ fn place_in(out: &Path, root: &pg_model::rules::Path) -> PathBuf {
 #[test]
 fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The TIFF's metadata is copied with it.
-    if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
+    if pg_testkit::tool_missing("exiftool", "-ver") {
         pg_testkit::missing_tool("ExifTool");
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_rate", "crop", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "crop", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -206,7 +206,7 @@ fn library_with_borders(dir: &Path) -> (Catalog, Vec<(i64, String)>) {
 /// Whether ExifTool can't be run here. The cuts of the JPEG, the TIFF and the WebP copy their tags with it, so their tests
 /// are skipped without it, as the copies' test is.
 fn exiftool_missing() -> bool {
-    let missing = std::process::Command::new("exiftool").arg("-ver").output().is_err();
+    let missing = pg_testkit::tool_missing("exiftool", "-ver");
     if missing {
         pg_testkit::missing_tool("ExifTool");
     }
@@ -242,7 +242,7 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
     if exiftool_missing() {
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_rate", "cut", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "cut", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     tag(&dir.join("images").join("a.jpg"), "pg cut test");
     tag(&dir.join("images").join("d.tif"), "pg cut test");
@@ -315,7 +315,7 @@ fn a_stop_during_a_cut_records_every_original_it_rewrote() {
     if exiftool_missing() {
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_rate", "cut-stop", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "cut-stop", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     let (c, found) = library_with_borders(&dir);
     let ctl = Control::new();
@@ -363,7 +363,7 @@ fn a_file_removed_before_its_cut_is_not_written() {
     if exiftool_missing() {
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_rate", "cut_removed", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "cut-removed", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     let (c, found) = library_with_borders(&dir);
     let ctl = Control::new();
@@ -384,7 +384,7 @@ fn a_file_removed_before_its_cut_is_not_written() {
 /// Refused without the user's confirmation: nothing is written, and the catalog still has the borders to cut.
 #[test]
 fn an_unconfirmed_cut_writes_nothing() {
-    let dir = pg_testkit::run_folder_with("scratch_rate", "cut-unconfirmed", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "cut-unconfirmed", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     let (c, found) = library_with_borders(&dir);
     let ctl = Control::new();
@@ -411,7 +411,7 @@ fn a_tiff_is_cut_and_keeps_its_metadata() {
     if exiftool_missing() {
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_rate", "cut-tiff", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "cut-tiff", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     tag(Path::new(&files[3]), "pg tiff tag");
     let (c, found) = library_with_borders(&dir);
@@ -453,7 +453,7 @@ fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() {
     if exiftool_missing() {
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_rate", "cut-held", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "cut-held", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     let (c, found) = library_with_borders(&dir);
     let ctl = Control::new();

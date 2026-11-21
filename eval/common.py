@@ -11,6 +11,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import BinaryIO
 
+import numpy as np
 from PIL import Image, ImageOps
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -45,6 +46,14 @@ def pg_path(var: str | None, *parts: str) -> Path:
     raise SystemExit(f"{names} must be set (put PG_ROOT=<base folder> in {REPO_ROOT / '.env'}, or in the environment)")
 
 
+def exe_name(name: str) -> str:
+    """A program's file name on this OS: `name.exe` on Windows, `name` elsewhere."""
+    return name + (".exe" if os.name == "nt" else "")
+
+
+# A venv's interpreter, as (folder, file) under the venv: Scripts\python.exe on Windows, bin/python elsewhere.
+VENV_PYTHON = ("Scripts" if os.name == "nt" else "bin", exe_name("python"))
+
 DATA_ROOT = pg_path("PG_DATA_ROOT", "datasets", "pinterest")
 WORK_DIR = pg_path("PG_WORK_DIR", "eval")
 CACHE_DIR = pg_path("PG_CACHE_DIR", "cache")
@@ -54,6 +63,33 @@ os.environ.setdefault("HF_HOME", str(CACHE_DIR / "hf"))
 os.environ.setdefault("TORCH_HOME", str(CACHE_DIR / "torch"))
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+
+# The verifier's feature extraction resolution (long side); the DISK engine's largest input is the same size.
+WORK_SIDE = 1024
+# The library the projections are sized for: 70 million images.
+LIBRARY_SIZE = 70e6
+# The similarity of a row with nothing (itself, a padded slot): below every cosine (at least -1), so a top-k never picks it.
+NO_SIM = float("-inf")
+# The decode rule of the Rust import (crates/analysis/src/analyze.rs, DECODE_MIN_*): the long side at least 512 and the
+# short side at least 320, after orientation.
+ANALYSIS_DRAFT_SIDES = (512, 320)
+
+# The model the eval scripts use when none is named: the PyTorch SSCD baseline (models.py's SPECS).
+DEFAULT_MODEL = "sscd_fp16"
+
+
+def embedding_name(model: str, trim: bool = False, draft: bool = False) -> str:
+    """The stem of a model's embedding files (emb_<stem>.npy, ok_<stem>.npy): the model, then _trim when its borders were
+    cut first and _draft when its JPEGs were decoded at the import's draft scale. embed.py writes these names, and every
+    reader builds them here too."""
+    return model + ("_trim" if trim else "") + ("_draft" if draft else "")
+
+
+def analysis_denom(w: int, h: int) -> int:
+    """The DCT scale denominator (1, 2, 4 or 8) the analysis rule picks for a w x h JPEG: the smallest that keeps
+    ANALYSIS_DRAFT_SIDES."""
+    mw, mh = ANALYSIS_DRAFT_SIDES if w >= h else ANALYSIS_DRAFT_SIDES[::-1]
+    return next((d for d in (8, 4, 2) if -(-w // d) >= mw and -(-h // d) >= mh), 1)
 
 # Local, trusted files; some Pinterest originals are huge.
 Image.MAX_IMAGE_PIXELS = None
@@ -67,7 +103,7 @@ def load_rgb(
     draft=(w, h): let a JPEG decode at 1/2, 1/4 or 1/8 scale in the DCT (libjpeg-turbo) while staying at least
     w x h after orientation; other formats decode in full.
     draft_sides=(long, short): the same, keeping the long side >= long and the short side >= short; this is the
-    Rust import's decode rule (512, 320 in crates/core/src/analyze.rs)."""
+    Rust import's decode rule (ANALYSIS_DRAFT_SIDES, from crates/analysis/src/analyze.rs)."""
     with Image.open(path) as im:
         if draft_sides and im.format == "JPEG":
             long, short = draft_sides  # orientation doesn't change which side is the long one
@@ -89,6 +125,21 @@ def load_rgb(
 GROUPS_DIR = "dups2"
 # Images that duplicate tools flagged as duplicates, but which aren't.
 NEGATIVES_DIR = "similiar_but_not_dups"
+
+
+def vips_thumbnail(data: bytes, width: int, height: int) -> np.ndarray:
+    """`data` fitted to width x height by libvips, as the 3-band sRGB array the other decoders give (the bench's `vips`
+    pipeline: bench_decode.py and bench_thumbs.py both use this one)."""
+    import pyvips  # the bench's only user of it: imported where it is used
+
+    im = pyvips.Image.thumbnail_buffer(data, width, height=height, size="force")
+    if im.interpretation not in ("srgb", "rgb", "b-w") or im.bands not in (1, 3):
+        im = im.colourspace("srgb")
+    if im.hasalpha():
+        im = im.flatten(background=[255, 255, 255])
+    if im.bands == 1:
+        im = im.bandjoin([im, im])
+    return np.ndarray(buffer=im.write_to_memory(), dtype=np.uint8, shape=(im.height, im.width, 3))
 
 
 def image_list() -> list[str]:

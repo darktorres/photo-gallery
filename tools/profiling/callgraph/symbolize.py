@@ -48,16 +48,11 @@ SYMOPT_NO_PROMPTS = 0x80000
 
 
 def _load_dotenv() -> None:
-    """Load the repo's .env (KEY=VALUE lines, # comments); variables already set in the environment win."""
-    env_file = Path(__file__).resolve().parents[3] / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+    """Load the repo's .env, as the other tools do (`pgtools.load_env_file`: quotes stripped, variables already set win)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # tools/, for pgtools
+    from pgtools import load_env_file
+
+    load_env_file()
 
 
 _load_dotenv()
@@ -76,8 +71,10 @@ def debuggers_dir() -> Path:
 
 
 def llvm_dir() -> Path:
-    """LLVM_DIR, else %ProgramFiles%\\LLVM."""
-    return Path(os.environ.get("LLVM_DIR") or Path(os.environ["PROGRAMFILES"]) / "LLVM")
+    """LLVM_DIR, else %ProgramFiles%\\LLVM (pgtools.default_llvm_dir, the default build.py uses too)."""
+    from pgtools import default_llvm_dir  # tools/ is on the path: _load_dotenv put it there at import
+
+    return Path(os.environ["LLVM_DIR"]) if os.environ.get("LLVM_DIR") else default_llvm_dir()
 
 
 def symbol_cache() -> str:
@@ -153,6 +150,13 @@ class Symbols:
         self.loaded = {}  # (path, base) -> loaded: a DLL loaded again at another base is a new load
         self.names = {}
         self.lines = {}
+
+    def close(self):
+        """Ends dbghelp's use of the debugger folder, and puts the process's DLL search directory back to the default
+        (it was set process-wide, for symsrv.dll and the debugger's DLLs, when this object was made)."""
+        d = self.dbghelp
+        d.SymCleanup(self.handle)
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
 
     def add_image(self, low, high, path):
         if (low, high, path) in self.images:
@@ -347,15 +351,18 @@ def main():
     ap.add_argument("--cache", default=symbol_cache(), help="where the symbol server's PDBs are kept (PG_SYMBOL_CACHE)")
     args = ap.parse_args()
     symbols = Symbols(";".join([*args.path, f"srv*{args.cache}*{SERVER}"]))
-    demangler = Demangler()
-    if demangler.missing:
-        print(f"no {demangler.cxxfilt}: Rust names stay mangled")
-    for p in args.files:
-        r = symbolize(p, symbols, demangler)
-        if r is None:
-            print(f"{p}: skipped (not a raw callgraph.dll profile)")
-        else:
-            print(f"{p}: {r[0]} functions named, {r[1]} left by address, {r[2]} positions without a line")
+    try:
+        demangler = Demangler()
+        if demangler.missing:
+            print(f"no {demangler.cxxfilt}: Rust names stay mangled")
+        for p in args.files:
+            r = symbolize(p, symbols, demangler)
+            if r is None:
+                print(f"{p}: skipped (not a raw callgraph.dll profile)")
+            else:
+                print(f"{p}: {r[0]} functions named, {r[1]} left by address, {r[2]} positions without a line")
+    finally:
+        symbols.close()
 
 
 if __name__ == "__main__":

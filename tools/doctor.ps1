@@ -29,6 +29,16 @@ function Optional([bool]$ok, [string]$name, [string]$okDetail, [string]$fix) {
     }
 }
 
+# A pin from the Justfile's text, as tools/pgtools.py's just_value reads it: the hints name the pinned versions from here.
+function Get-JustValue([string]$name) {
+    $text = Get-Content -LiteralPath (Join-Path $repo 'Justfile') -Raw
+    $match = [regex]::Match($text, '(?m)^' + $name + '\s*:=\s*"([^"]*)"')
+    if (-not $match.Success) { throw "the Justfile does not assign $name" }
+    $match.Groups[1].Value
+}
+$qtVersion = Get-JustValue 'qt_version'
+$ffmpegPin = [regex]::Match((Get-JustValue 'ffmpeg_url'), 'ffmpeg-n(\d+\.\d+)').Groups[1].Value
+
 if (Test-Path -LiteralPath (Join-Path $repo '.env')) {
     Show 'ok' '.env' 'read by just'
 } else {
@@ -43,13 +53,13 @@ Require ($null -ne $cargo) 'cargo' $cargo.Source 'install Rust with rustup (http
 $qt = $env:QT_DIR
 $qmake = if ($qt) { Join-Path $qt 'bin/qmake.exe' } else { '' }
 Require ($qmake -and (Test-Path -LiteralPath $qmake -PathType Leaf)) 'Qt (QT_DIR)' $qt `
-    'set QT_DIR in .env to the Qt 6.12.0 msvc2022_64 kit (the folder with bin\qmake.exe), installed with the Qt Online Installer'
+    "set QT_DIR in .env to the Qt $qtVersion msvc2022_64 kit (the folder with bin/qmake), from the Qt Online Installer"
 
 # FFmpeg: the headers are what build.rs generates from, and the DLLs are what the app and the tests load.
 $ffmpeg = if ($env:FFMPEG_DIR) { $env:FFMPEG_DIR } else { Join-Path $repo '.deps/ffmpeg' }
 $ffmpegOk = (Test-Path -LiteralPath (Join-Path $ffmpeg 'include/libavcodec/avcodec.h') -PathType Leaf) -and
     (Test-Path -LiteralPath (Join-Path $ffmpeg 'bin') -PathType Container)
-Require $ffmpegOk 'FFmpeg' $ffmpeg 'run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg 9.0 shared build'
+Require $ffmpegOk 'FFmpeg' $ffmpeg ('run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg ' + $ffmpegPin + ' shared build')
 
 # libclang: bindgen (pg-video's build script) loads it. LIBCLANG_PATH names its folder; LLVM_DIR is the LLVM install.
 $clangDirs = @(

@@ -22,9 +22,10 @@ STEPS = [
     ["cargo", "clippy", "-p", "pg-gallery", "--features", "dhat-heap", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "clippy", "-p", "pg-model", "--features", "specta", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "check", "-p", "pg-model", "-p", "pg-client", "--locked", "--target", "wasm32-unknown-unknown"],
-    # The workspaces outside the root (fuzz and eval/jpeg-decoders have their own lockfiles): their lock must not be stale.
+    # The workspaces outside the root (fuzz and eval/*-decoders have their own lockfiles): their lock must not be stale.
     ["cargo", "metadata", "--locked", "--manifest-path", "fuzz/Cargo.toml", "--format-version", "1"],
     ["cargo", "metadata", "--locked", "--manifest-path", "eval/jpeg-decoders/Cargo.toml", "--format-version", "1"],
+    ["cargo", "metadata", "--locked", "--manifest-path", "eval/png-decoders/Cargo.toml", "--format-version", "1"],
     ["cargo", "doc", "--workspace", "--no-deps", "--document-private-items", "--locked", "--timings"],
     ["cargo", "machete", "crates"],
     ["ruff", "format", "--check", "."],

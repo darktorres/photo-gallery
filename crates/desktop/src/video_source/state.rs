@@ -7,7 +7,7 @@ use crate::video_player_bridge::ffi::VideoPlayer;
 /// The player's device.
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct VideoSourceRust {
     /// Null until `attach`.

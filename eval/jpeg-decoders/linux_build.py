@@ -15,9 +15,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import sources
 from linux import EVAL as E
 
 HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+sys.path.insert(0, str(REPO / "tools"))
+from build_jpeg_turbo import FORK_COMMIT, FORK_URL  # noqa: E402 (after the sys.path insert above): the app's libjpeg-turbo pin
+
 JOBS = str(os.cpu_count() or 1)
 ENV = {**os.environ, "CC": "clang", "CXX": "clang++"}
 
@@ -42,28 +47,8 @@ def ensure_ninja() -> None:
 
 
 def clone(name: str, url: str, commit: str, submodules: bool = False) -> None:
-    """Fetches `commit` of `url` into the sources folder, once. Applies the folder's patch (patches/<name>.patch) if it has
-    one."""
-    folder = E / "src" / name
-    if not folder.is_dir():
-        folder.mkdir(parents=True)
-        subprocess.run(["git", "init", "-q", str(folder)], check=True)
-        subprocess.run(["git", "-C", str(folder), "fetch", "-q", "--depth", "1", url, commit], check=True)
-        subprocess.run(["git", "-C", str(folder), "checkout", "-q", "FETCH_HEAD"], check=True)
-        if submodules:
-            subprocess.run(
-                ["git", "-C", str(folder), "submodule", "update", "-q", "--init", "--recursive", "--depth", "1"], check=True
-            )
-        patch = HERE / "patches" / f"{name}.patch"
-        if patch.is_file():
-            subprocess.run(["git", "-C", str(folder), "apply", str(patch)], check=True)
-    head = subprocess.run(
-        ["git", "-C", str(folder), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    date = subprocess.run(
-        ["git", "-C", str(folder), "log", "-1", "--format=%cs"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    print(f"{name:<14} {head} {date}")
+    """A source checkout under the sources folder (sources.clone, shared with win_build.py)."""
+    sources.clone(E / "src" / name, url, commit, submodules)
 
 
 def configure(name: str, source: Path, *args: str) -> None:
@@ -92,7 +77,7 @@ def install(source: Path, destination: Path) -> None:
 
 def build_turbo() -> None:
     """The app's libjpeg-turbo 3.1.0, in the turbojpeg-sys fork it pins: cjpeg, djpeg, jpegtran, tjbench, libturbojpeg.a."""
-    clone("rust-turbojpeg", "https://github.com/darktorres/rust-turbojpeg", "945d853b47a76f98fd97ac5ff43830997712caa2")
+    clone("rust-turbojpeg", FORK_URL, FORK_COMMIT)
     configure(
         "libjpeg-turbo",
         E / "src" / "rust-turbojpeg" / "turbojpeg-sys" / "libjpeg-turbo",
@@ -106,7 +91,7 @@ def build_turbo() -> None:
 
 def build_mozjpeg() -> None:
     """cjpeg with trellis quantization and the optimized scan scripts."""
-    clone("mozjpeg", "https://github.com/mozilla/mozjpeg", "08265790774cd0714832c9e675522acbe5581437")
+    clone("mozjpeg", *sources.PINS["mozjpeg"])
     configure("mozjpeg", E / "src" / "mozjpeg", "-DBUILD_SHARED_LIBS=OFF", "-DPNG_SUPPORTED=ON")  # master renamed ENABLE_SHARED
     build("mozjpeg", "cjpeg-static", "djpeg-static", "jpegtran-static")
     for tool in ["cjpeg", "djpeg", "jpegtran"]:
@@ -115,7 +100,7 @@ def build_mozjpeg() -> None:
 
 def build_jpegli() -> None:
     """google/jpegli: cjpegli, djpegli, ssimulacra2 (the encoder metric), libjpegli-static.a."""
-    clone("jpegli", "https://github.com/google/jpegli", "031a0077f5799a6041004267fc12b956c1f52a20", submodules=True)
+    clone("jpegli", *sources.PINS["jpegli"], submodules=True)
     configure("jpegli", E / "src" / "jpegli", "-DBUILD_TESTING=OFF", "-DJPEGLI_ENABLE_DEVTOOLS=ON")
     build("jpegli", "cjpegli", "djpegli", "ssimulacra2", "jpegli-static")
     for tool in ["cjpegli", "djpegli", "ssimulacra2"]:
@@ -126,7 +111,7 @@ def build_jpegli() -> None:
 
 
 def build_guetzli() -> None:
-    clone("guetzli", "https://github.com/google/guetzli", "214f2bb42abf5a577c079d00add5d6cc470620d3")
+    clone("guetzli", *sources.PINS["guetzli"])
     try:
         run_logged(
             ["make", "-C", str(E / "src" / "guetzli"), "-j", JOBS, "config=release", "guetzli"], E / "build" / "guetzli.build.log"
@@ -140,7 +125,7 @@ def build_guetzli() -> None:
 
 def build_wuffs() -> None:
     """The harness compiles Wuffs' single-file release itself; convert-to-nia is its command-line decoder."""
-    clone("wuffs", "https://github.com/google/wuffs", "d28ecd494491baa9b11d2557d10819111050fd24")
+    clone("wuffs", *sources.PINS["wuffs"])
     subprocess.run(
         [
             ENV["CC"],
@@ -155,7 +140,7 @@ def build_wuffs() -> None:
 
 def build_parajpeg() -> None:
     """The CPU backend (the CUDA build is win_build.py's): libparajpeg.a and pjdec."""
-    clone("parajpeg", "https://github.com/anniigr/parajpeg", "f45081d7f75fdab809e7170c15fd806f42deb375")
+    clone("parajpeg", *sources.PINS["parajpeg"])
     configure(
         "parajpeg",
         E / "src" / "parajpeg",

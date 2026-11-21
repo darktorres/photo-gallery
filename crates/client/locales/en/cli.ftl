@@ -1,12 +1,16 @@
 # The command line's own lines (pg-client::text::cli): each entry is one `cli::Line`, by its id; a test checks that the
 # two lists name the same entries. Its notices are worded by text.ftl's entries, as the window's are. Values are passed
 # as text; a line's indentation is the command line's, not part of its words.
+# Lines start in lowercase, as the command line's status lines do (the window's words start capitalised). The two that
+# begin with a comma are fragments, added after the line before them.
 
 # A pass's progress, on stderr: with no total (files counted as found), and with one
 cli-progress-count = { $pass }: { $done } files, { $rate } files/s, { $seconds } s
 cli-progress = { $pass }: { $done }/{ $total } ({ $percent }%), { $rate } files/s, { $mbps } MB/s, { $failed } failed, { $seconds } s elapsed, ETA { $eta } s
 # A line, with its technical account after it
 cli-with-detail = { $line } ({ $detail })
+# A build without the app window, started with no command: the one line it prints
+cli-no-window = gallery was built without its app window (the `desktop` feature): give it a command
 # A file a pass kept as failed: skipped by the scan, or failed by the thumbnails
 cli-skipped = skipped: { $path }: { $error }
 cli-failed = failed: { $path }: { $error }
@@ -23,8 +27,10 @@ cli-temp-not-deleted = { $root }: can't delete { $temp }: { $error }
 
 # gallery remove
 cli-removed = { $root }: removed from the library, { $deleted } files deleted from the catalog
-cli-removal-kept = { $root }: { $deferred } rows kept for an unfinished write. Start the app to finish them, or run remove with --discard-pending to give them up
+cli-removal-kept = { $root }: { $deferred } changes kept, waiting to be written. Start the app to finish them, or run remove with --discard-pending to give them up
 cli-not-in-library = { $root }: not in the library
+cli-scan-busy = a scan of { $root } is running ({ $holder })
+cli-scan-removed = { $root } was removed from the library while it was scanned
 
 # gallery import
 cli-marked-again = { $count } files to analyze again
@@ -58,7 +64,7 @@ cli-csv-missing = --csv: where the report goes
 # gallery status
 cli-status-home = data folder: { $folder }
 cli-status-library = library: { $folder }
-cli-status-removing = { $folder }: removal not finished, { $deferred } rows kept for an unfinished write
+cli-status-removing = { $folder }: removal not finished, { $deferred } changes kept, waiting to be written
 cli-status-files = { $files } files ({ $missing } missing), { $analyzed } analyzed, { $failed } failed, { $pending } pending, { $pairs } PDQ pairs
 cli-status-writes = { $queued } changes to write into files ({ $failing } failing)
 cli-status-cache = thumbnail cache: { $count } thumbnails, { $used } of { $cap } GB
@@ -67,8 +73,8 @@ cli-status-no-cache = thumbnail cache: none yet
 # gallery write
 cli-thumbnails-error = thumbnails: file { $file }: { $error }
 cli-write-done = written; { $left } left ({ $failing } failing), { $pending } files to re-import (turned), { $seconds } s
-cli-writer-stopped = the file writer stopped with { $left } changes still to write
-cli-writer-stopped-failing = the file writer stopped with { $left } changes still to write (the last failure: { $error })
+cli-writer-stopped = writing into the files has stopped with { $left } changes still to write
+cli-writer-stopped-failing = writing into the files has stopped with { $left } changes still to write (the last failure: { $error })
 
 # gallery dups: a tier of identical files or pixels, the PDQ pairs by distance, the groups, and a group's heading
 cli-dups-identical = tier { $tier ->
@@ -79,4 +85,4 @@ cli-dups-pdq = tier 1 PDQ pairs by distance:
 cli-dups-band = { $lo }–{ $hi }: { $pairs }
 cli-dups-groups = groups (tiers 0a + 0b + PDQ ≤ { $distance }): { $groups } groups, { $files } files, largest { $largest }
 cli-dups-group = { $count } files:
-cli-file-not-in-catalog = file { $id } is not in the catalog
+cli-file-not-in-catalog = file { $id } isn't in the catalog

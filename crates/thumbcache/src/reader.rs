@@ -121,14 +121,7 @@ fn checkpoint_since(tx: &Connection, height: i64, volumes: &[i64]) -> Result<Opt
 /// The catalog's volumes, by a loose index scan over `files`'s `(volume, file_ref)` index: a step per volume, not per
 /// file. A displaced row (no volume) is none.
 fn catalog_volumes(tx: &Connection) -> Result<Vec<i64>> {
-    let mut stmt = tx.prepare(
-        "WITH RECURSIVE v(volume) AS (
-             SELECT min(volume) FROM cat.files WHERE volume IS NOT NULL
-             UNION ALL
-             SELECT (SELECT min(volume) FROM cat.files WHERE volume > v.volume) FROM v WHERE v.volume IS NOT NULL
-         )
-         SELECT volume FROM v WHERE volume IS NOT NULL",
-    )?;
+    let mut stmt = tx.prepare(pg_query::volumes_sql!("cat.files"))?;
     Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
@@ -171,7 +164,7 @@ mod checkpoint_tests {
     #[test]
     fn the_pass_since_a_checkpoint_with_a_volume_filter_reads_the_change_index() {
         use pg_model::ids::FolderId;
-        let dir = pg_testkit::run_folder("scratch_thumbs", "checkpoint-plan").unwrap();
+        let dir = pg_testkit::run_folder("scratch_thumbcache", "checkpoint-plan").unwrap();
         let catalog = dir.join("catalog.sqlite");
         let versions = pg_catalog::Versions::current();
         let c = pg_catalog::Catalog::prepare(&catalog, versions, pg_model::rules::PathRules::Windows).unwrap();
@@ -249,11 +242,11 @@ mod orphan_tests {
     /// file that the catalog's own open (and a rename over it) then trips on.
     #[test]
     fn a_missing_catalog_is_an_error_and_no_file_is_made() {
-        let dir = run_folder("scratch_thumbs", "orphans-missing-catalog").unwrap();
+        let dir = run_folder("scratch_thumbcache", "orphans-missing-catalog").unwrap();
         let catalog = dir.join("catalog.sqlite");
         let cache = dir.join("thumbs.sqlite");
         assert!(orphans_in(&cache, &catalog).is_err());
         assert!(!catalog.exists(), "no catalog was made beside the cache");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

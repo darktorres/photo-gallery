@@ -1,7 +1,7 @@
 # JPEG decoder comparison
 
 `linux.py` runs the comparison on Linux, in the container (`just linux-eval eval/jpeg-decoders/linux.py STEP...`) or natively. Its `inputs` step reads one `<name>.jpg` per entry of `NAMES` from the
-directory in `JPEG_SRC_DIR`. `win_build.py` builds the decoders on Windows.
+directory in `JPEG_SRC_DIR` (the source photos, read-only). The benches read their working copies from `JPEG_INPUTS` (default `~/jpeg-inputs`), which the inputs step fills from `JPEG_SRC_DIR`. `win_build.py` builds the decoders on Windows.
 
 ## Third-party patches
 

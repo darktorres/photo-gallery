@@ -112,10 +112,13 @@ impl TreeBuilder {
     /// A folder (`folders.id`, its path) holding `count` present files. A drive root (no parts) is in no node: its
     /// files are counted in [`FolderTree::root_files`] (and so in [`FolderTree::total`]). Only a drive counts as an
     /// anchor: a UNC root or a Unix path's empty anchor is on none.
-    pub fn add(&mut self, id: i64, path: &Path, count: i64) {
+    ///
+    /// # Errors
+    /// [`TreeFull`] when the folder's path or key is past the `u32` offsets; the builder is not used after that.
+    pub fn add(&mut self, id: i64, path: &Path, count: i64) -> Result<(), TreeFull> {
         if path.parts.is_empty() {
             self.tree.root_files = self.tree.root_files.saturating_add(count);
-            return;
+            return Ok(());
         }
         let rules = self.tree.rules;
         let anchor = match (rules, path.anchor.as_bytes()) {
@@ -137,10 +140,13 @@ impl TreeBuilder {
         rules.push_parts(paths, &path.parts);
         let key_start = keys.len();
         rules.push_folder_key(keys, &path.parts);
-        // The strings are addressed by `u32` offsets: a folder past them is left out of the tree.
+        // The strings are addressed by `u32` offsets: past them, the folder cannot be in the tree, and that is an error.
         let range = |start: usize, end: usize| u32::try_from(start).ok().zip(u32::try_from(end).ok());
-        let (Some(path), Some(key)) = (range(path_start, paths.len()), range(key_start, keys.len())) else { return };
+        let (Some(path), Some(key)) = (range(path_start, paths.len()), range(key_start, keys.len())) else {
+            return Err(TreeFull);
+        };
         self.rows.push(TreeRow { id, count, anchor, path, key });
+        Ok(())
     }
 
     /// The tree: the rows sorted by key once, then the nodes made in that order with a stack of the open ones. A
@@ -177,7 +183,11 @@ impl TreeBuilder {
             // Close the nodes the row isn't under.
             let end = node_u32(tree.nodes.len());
             while let Some(&top) = open.last() {
-                let Some(node) = tree.nodes.get_mut(top) else { break };
+                let Some(node) = tree.nodes.get_mut(top) else {
+                    // The stack holds only the indices the builder made: a miss is a bug, which the tests stop on.
+                    debug_assert!(false, "the open stack names a node the builder did not make");
+                    break;
+                };
                 if row_key.starts_with(key((node.key_start, node.key_end))) {
                     break;
                 }
@@ -214,7 +224,11 @@ impl TreeBuilder {
                         tree.nodes.len() - 1
                     }
                 };
-                let Some(node) = tree.nodes.get_mut(n) else { continue };
+                let Some(node) = tree.nodes.get_mut(n) else {
+                    // The nodes are the indices the builder made, so a miss is a bug, which the tests stop on.
+                    debug_assert!(false, "a node index the builder did not make");
+                    continue;
+                };
                 node.total += row.count;
                 node.anchors |= row_bit(row);
                 // Spelled as the first folder that reached it (the old tree's order: by folder id).
@@ -308,18 +322,11 @@ impl FolderTree {
         })
     }
 
-    /// The anchors it is on, in text order: `D: E:`. Past 63 anchors a node shows every anchor of the shared bit 63.
-    /// Empty for a node past the tree's end.
-    pub fn anchors(&self, n: usize) -> String {
+    /// The anchors it is on, in text order (the names, for the front end to show). Past 63 anchors a node shows every
+    /// anchor of the shared bit 63. Empty for a node past the tree's end.
+    pub fn anchors(&self, n: usize) -> impl Iterator<Item = &Name> + '_ {
         let bits = self.nodes.get(n).map_or(0, |node| node.anchors);
-        let mut text = String::new();
-        for (_, name) in self.anchor_names.iter().enumerate().filter(|(rank, _)| bits & bit(*rank) != 0) {
-            if !text.is_empty() {
-                text.push(' ');
-            }
-            text.push_str(&name.display());
-        }
-        text
+        self.anchor_names.iter().enumerate().filter(move |(rank, _)| bits & bit(*rank) != 0).map(|(_, name)| name)
     }
 
     /// Whether it is on more than one anchor (a drive folder merged across drives).
@@ -352,6 +359,19 @@ impl FolderTree {
     }
 }
 
+/// A folder the tree cannot take: the offsets its strings are addressed by (`u32`) do not reach it. The catalog holds
+/// fewer folders than that in practice, so this is a limit to report, never a folder to drop without a word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TreeFull;
+
+impl std::fmt::Display for TreeFull {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the folder tree's strings are past the u32 offsets that address them")
+    }
+}
+
+impl std::error::Error for TreeFull {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,7 +384,7 @@ mod tests {
         let bytes: usize = rows.iter().map(|r| r.1.len()).sum();
         let mut builder = TreeBuilder::with_capacity(PathRules::Windows, rows.len(), bytes, 6);
         for (id, path, count) in rows {
-            builder.add(id, &PathRules::Windows.parse(path).unwrap(), count);
+            builder.add(id, &PathRules::Windows.parse(path).unwrap(), count).unwrap();
         }
         let tree = builder.build();
         assert_eq!(tree.len(), 3);
@@ -379,17 +399,18 @@ mod tests {
     fn a_folder_shows_each_anchor_it_is_on_in_text_order() {
         let mut builder = TreeBuilder::with_capacity(PathRules::Windows, 4, 0, 0);
         for (id, path) in [(1, r"E:\p"), (2, r"D:\p"), (3, r"F:\q"), (4, r"\\nas\share\p")] {
-            builder.add(id, &PathRules::Windows.parse(path).unwrap(), 1);
+            builder.add(id, &PathRules::Windows.parse(path).unwrap(), 1).unwrap();
         }
         let tree = builder.build();
         let node = |folder: &str| {
             (0..tree.len()).find(|&n| PathRules::Windows.display_merged(&tree.merged(n)) == folder).unwrap()
         };
-        assert_eq!(tree.anchors(node("p")), "D: E:");
+        let names = |n: usize| tree.anchors(n).map(|name| name.display().into_owned()).collect::<Vec<String>>();
+        assert_eq!(names(node("p")), ["D:", "E:"]);
         assert!(tree.multi_anchor(node("p")));
-        assert_eq!(tree.anchors(node("q")), "F:");
+        assert_eq!(names(node("q")), ["F:"]);
         assert!(!tree.multi_anchor(node("q")));
-        assert_eq!(tree.anchors(node(r"nas\share\p")), "");
+        assert!(names(node(r"nas\share\p")).is_empty());
         assert!(!tree.multi_anchor(node(r"nas\share\p")));
     }
 
@@ -398,8 +419,8 @@ mod tests {
     #[test]
     fn drive_root_files_alone_are_counted_but_make_no_node() {
         let mut builder = TreeBuilder::with_capacity(PathRules::Windows, 2, 0, 0);
-        builder.add(1, &PathRules::Windows.parse("D:").unwrap(), 3);
-        builder.add(2, &PathRules::Windows.parse(r"E:\").unwrap(), 2);
+        builder.add(1, &PathRules::Windows.parse("D:").unwrap(), 3).unwrap();
+        builder.add(2, &PathRules::Windows.parse(r"E:\").unwrap(), 2).unwrap();
         let tree = builder.build();
         assert!(tree.is_empty());
         assert_eq!(tree.root_files(), 5);
@@ -412,7 +433,7 @@ mod tests {
     fn drive_root_files_beside_folders_add_to_the_total_only() {
         let mut builder = TreeBuilder::with_capacity(PathRules::Windows, 4, 0, 0);
         for (id, path, count) in [(1, "D:", 3), (2, r"D:\p", 2), (3, r"E:\p\sub", 4), (4, "E:", 1)] {
-            builder.add(id, &PathRules::Windows.parse(path).unwrap(), count);
+            builder.add(id, &PathRules::Windows.parse(path).unwrap(), count).unwrap();
         }
         let tree = builder.build();
         assert_eq!(tree.len(), 2);
@@ -421,8 +442,8 @@ mod tests {
         let folders: i64 = tree.children(None).map(|n| tree.node(n).unwrap().total).sum();
         assert_eq!(folders, 6);
         let mut posix = TreeBuilder::with_capacity(PathRules::Posix, 2, 0, 0);
-        posix.add(1, &PathRules::Posix.parse("/").unwrap(), 2);
-        posix.add(2, &PathRules::Posix.parse("/home").unwrap(), 1);
+        posix.add(1, &PathRules::Posix.parse("/").unwrap(), 2).unwrap();
+        posix.add(2, &PathRules::Posix.parse("/home").unwrap(), 1).unwrap();
         let posix = posix.build();
         assert_eq!((posix.len(), posix.root_files(), posix.total()), (1, 2, 3));
     }
@@ -434,7 +455,7 @@ mod tests {
         let folder = Merged::from(vec![Name::from("Pics"), wide.clone()]);
         let mut builder = TreeBuilder::with_capacity(PathRules::Posix, 1, 0, 0);
         let path = Path { anchor: Name::from(""), parts: folder.parts().to_vec() };
-        builder.add(7, &path, 3);
+        builder.add(7, &path, 3).unwrap();
         let tree = builder.build();
         // Two nodes: `Pics` (depth 0) and `Pics\<wide>` (depth 1, the folder itself).
         assert_eq!(tree.len(), 2);

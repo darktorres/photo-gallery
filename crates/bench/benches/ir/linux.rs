@@ -56,7 +56,7 @@ fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analysis {
 #[library_benchmark]
 #[bench::h256(setup = for_thumb)]
 fn thumb_jpeg((bytes, mut maker): (Vec<u8>, Maker)) -> Vec<u8> {
-    black_box(or_stop(maker.make(black_box(&bytes), 256, Turns::NONE), "make"))
+    black_box(or_stop(maker.make(black_box(&bytes), pg_model::num::index(THUMB_HEIGHT), Turns::NONE), "make"))
 }
 
 /// The committed clip the video tests use: its poster frame is what the viewer shows of a video until it plays.

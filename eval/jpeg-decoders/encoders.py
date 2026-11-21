@@ -22,7 +22,6 @@ import os
 import statistics
 import subprocess
 import sys
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -31,6 +30,7 @@ import env
 
 from linux import ENCODES as W
 from linux import EVAL, INPUTS
+from timing import median_s, seconds_of
 
 BIN = EVAL / "bin"
 NAMES = [
@@ -124,8 +124,9 @@ def encode():
         name, ppm, enc, q, cmd = job
         out = W / "out" / f"{name}.{enc}.q{q}.jpg"
         if not out.exists():
-            run(expand(cmd, ppm, out.with_suffix(".tmp")))
-            out.with_suffix(".tmp").rename(out)
+            tmp = out.with_name(f"{out.name}.{uuid.uuid4().hex}.tmp")
+            run(expand(cmd, ppm, tmp))
+            tmp.rename(out)
         return out
 
     todo = sorted(jobs(), key=lambda j: j[2] == "guetzli", reverse=True)  # guetzli first: the longest
@@ -148,12 +149,8 @@ def speed():
                 continue
             out = W / "speed.jpg"
             reps = 1 if enc == "guetzli" else 3
-            ts = []
-            for _ in range(reps):
-                t = time.perf_counter()
-                run(expand(cmd(q), ppm, out))
-                ts.append(time.perf_counter() - t)
-            line.append(f"{statistics.median(ts) * 1e3 / mp:.1f}")
+            secs = median_s(reps, lambda: seconds_of(lambda: run(expand(cmd(q), ppm, out))))
+            line.append(f"{secs * 1e3 / mp:.1f}")
         rows.append(line)
         print(*line, sep="\t", flush=True)
     lines = ["\t".join(["image", *ENCODERS])] + ["\t".join(r) for r in rows]
@@ -234,5 +231,5 @@ def score():
 
 
 if __name__ == "__main__":
-    print(env.line(), file=sys.stderr)
+    print(env.line())
     {"prepare": prepare, "encode": encode, "speed": speed, "score": score}[sys.argv[1]]()

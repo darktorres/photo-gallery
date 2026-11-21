@@ -12,9 +12,6 @@
 //! - The outcomes the front ends word: a pass's progress (`progress`), why a folder is refused (`refusal`), the Yandex
 //!   search's and save's (`yandex`), and the notices (`notice`).
 
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 pub mod analysis;
 pub mod date;
 pub mod details;

@@ -66,7 +66,7 @@ pub(crate) fn post(run: impl FnOnce(Pin<&mut qobject::GalleryModel>) + Send + 's
         Some(thread) => {
             let _ = thread.queue(run);
         }
-        None => pg_log::error("gallery", "a command reached the grid model before it was made; it was not carried out"),
+        None => pg_log::warn("gallery", "a command reached the grid model before it was made; it wasn't carried out"),
     });
 }
 

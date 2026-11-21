@@ -14,6 +14,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -37,13 +38,13 @@ def sha256_of(path: Path) -> str:
 
 def download(url: str, target: Path) -> None:
     """Fetches `url` to `target`, through a `.partial` name so an interrupted download never looks finished."""
-    partial = target.with_name(target.name + ".partial")
+    partial = target.with_name(f"{target.name}.{uuid.uuid4().hex}.partial")
     print(f"Downloading {url}", flush=True)
     if not url.startswith("https://"):
         sys.exit(f"the FFmpeg archive's URL is not https: {url}")
     try:
         # An https URL, checked above: the pinned one, from the Justfile.
-        with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file:  # noqa: S310
+        with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file:  # noqa: S310 (an https URL, checked above)
             shutil.copyfileobj(response, file, CHUNK)
     except urllib.error.HTTPError as error:
         if error.code == 404:

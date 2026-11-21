@@ -8,7 +8,7 @@ same picture, and the same pin saved at different sizes. Non-destructive by desi
 
 - **Rust** for the core: scanning, the SQLite catalog, decoding and thumbnails, duplicate detection.
 - **Qt and QML** for the window, through cxx-qt (the Qt version is the Justfile's `qt_version`).
-- **Windows only** for now.
+- **Windows first.** The app is built and tested on Windows; CI also builds and tests the whole workspace on Linux (`just check-linux`, in the `pg-dev` container).
 
 The project page: <https://darktorres.github.io/photo-gallery/> (its source is `site/`).
 

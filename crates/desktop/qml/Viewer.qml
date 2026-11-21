@@ -1,4 +1,4 @@
-// Full-window viewer and triage (ImageRater's): fit to the window, up or down, with an antialiased
+// Full-window viewer and triage (a rating app's): fit to the window, up or down, with an antialiased
 // (Lanczos3) resample made in Rust; zoom from fit to 32× around the cursor (pinch, + −) and pan by dragging; the wheel
 // steps to the previous or next picture. Between
 // fit and 1:1 Rust renders the visible part with Lanczos as the view moves, and the last part shown stays until the
@@ -153,7 +153,7 @@ Rectangle {
 
     signal closed(int index)
 
-    color: "black"
+    color: Theme.viewerFill
     visible: index >= 0
     focus: visible
 
@@ -181,7 +181,7 @@ Rectangle {
         }
     }
 
-    // Rate, show the rating's symbol for a moment (the content, on `rated`), and move on (ImageRater's triage).
+    // Rate, show the rating's symbol for a moment (the content, on `rated`), and move on (a rating app's triage).
     function rate(r: int) {
         if (index < 0)
             return;
@@ -352,7 +352,7 @@ Rectangle {
                     id: wheelStep
                     property real notches: 0
                     onWheel: ev => {
-                        notches += ev.angleDelta.y / 120;
+                        notches += ev.angleDelta.y / Wheel.notch;
                         const n = Math.trunc(notches);
                         if (n !== 0) {
                             notches -= n;
@@ -492,7 +492,7 @@ Rectangle {
                     width: (viewportItem.zoomed ? viewportItem.dw : layers.fitImage.width) + 2
                     height: (viewportItem.zoomed ? viewportItem.dh : layers.fitImage.height) + 2
                     color: "transparent"
-                    border.color: "#ff00ff"
+                    border.color: Theme.borderFrame
                     border.width: 1
                 }
 

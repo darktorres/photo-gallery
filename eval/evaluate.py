@@ -14,7 +14,7 @@ import json
 import numpy as np
 import torch
 
-from common import WORK_DIR, ground_truth, image_list
+from common import NO_SIM, WORK_DIR, ground_truth, image_list
 
 TARGET_RECALLS = (0.80, 0.90, 0.95, 0.98)
 
@@ -28,7 +28,7 @@ def knn(emb: torch.Tensor, k: int, chunk: int = 2048) -> tuple[np.ndarray, np.nd
         q = emb[start : start + chunk]
         s = q @ emb.T
         rows = torch.arange(len(q), device=emb.device)
-        s[rows, rows + start] = -2.0
+        s[rows, rows + start] = NO_SIM
         values, indices = s.topk(k, dim=1)
         sims[start : start + len(q)] = values.float().cpu().numpy()
         idx[start : start + len(q)] = indices.cpu().numpy()
@@ -104,7 +104,7 @@ def main() -> None:
     # Each loose dups2 file's best match among the other loose files.
     loose = emb[torch.tensor(unpaired_pool, device="cuda")].float()
     loose_sims = loose @ loose.T
-    loose_sims.fill_diagonal_(-2.0)
+    loose_sims.fill_diagonal_(NO_SIM)
     best_sims, best_idx = (t.cpu().numpy() for t in loose_sims.max(dim=1))
 
     sims, idx = knn(emb, args.k)

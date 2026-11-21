@@ -229,7 +229,7 @@ static GpuResult gpu_encode(const std::vector<const Rgb*>& imgs, int quality, bo
         egpu_destroy(ctx);
         return r;
     }
-    if (!host.empty()) cudaMemcpy(d, host.data(), host.size(), cudaMemcpyHostToDevice);
+    if (!host.empty()) cuda_ok(cudaMemcpy(d, host.data(), host.size(), cudaMemcpyHostToDevice), "cudaMemcpy");
     r.rc = egpu_encode_batch(ctx, d, host.size(), desc.data(), n);
     if (r.rc != EGPU_OK) {
         r.err = egpu_last_error();
@@ -970,7 +970,23 @@ struct QualityRow {
     std::vector<double> psnr_g, psnr_t, ssim_g, ssim_t, ratio;
 };
 
+// Puts the PATH back as it was when the scope ends, so a DLL folder added for a test does not outlive it.
+struct PathRestore {
+    std::string saved;
+    bool had = false;
+    PathRestore() {
+        if (const char* p = std::getenv("PATH")) {
+            saved = p;
+            had = true;
+        }
+    }
+    ~PathRestore() { _putenv_s("PATH", had ? saved.c_str() : ""); }
+    PathRestore(const PathRestore&) = delete;
+    PathRestore& operator=(const PathRestore&) = delete;
+};
+
 static bool test6_quality() {
+    PathRestore restore_path;
     fs::create_directories(g_work_dir);
     if (g_use_ssim) {
         // ssimulacra2.exe loads jpegli_cms.dll from ..\lib relative to its tools folder.
@@ -1008,6 +1024,7 @@ static bool test6_quality() {
                 if (!decode_rgb(g.jpg[i].data(), g.jpg[i].size(), dg, wg) ||
                     !decode_rgb(tj.data(), tj.size(), dt, wt)) {
                     printf("decode failed for image %d\n", b0 + (int)i);
+                    ++failed_loads;  // a decode failure fails the test, as the other failures here do
                     continue;
                 }
                 QualityRow& row = rows[si];
@@ -1091,8 +1108,8 @@ static bool test7_throughput() {
             host.insert(host.end(), src[i].px.begin(), src[i].px.end());
         }
         uint8_t* d = nullptr;
-        cudaMalloc((void**)&d, host.size());
-        cudaMemcpy(d, host.data(), host.size(), cudaMemcpyHostToDevice);
+        cuda_ok(cudaMalloc((void**)&d, host.size()), "cudaMalloc");
+        cuda_ok(cudaMemcpy(d, host.data(), host.size(), cudaMemcpyHostToDevice), "cudaMemcpy");
 
         // Warm-up, then timed repetitions. Input stays on the device, as in the pipeline.
         for (int w = 0; w < 3; ++w) egpu_encode_batch(ctx, d, host.size(), desc.data(), (uint32_t)batch);
@@ -1132,13 +1149,32 @@ static bool test7_throughput() {
 // DCT methods (integer ISLOW, the default that turbo_encode uses; float; fast integer IFAST), and the GPU encoder.
 // Prints median PSNR against the source. Run it on request with --tests 8.
 
+// A CUDA call whose failure ends the run: the harness has no result to report without it.
+static void cuda_ok(cudaError_t e, const char* what) {
+    if (e != cudaSuccess) {
+        fprintf(stderr, "%s failed: %s\n", what, cudaGetErrorString(e));
+        exit(1);
+    }
+}
+
+// libjpeg's encode with the DCT method given. A libjpeg error gives an empty result, which the caller's score() skips as a
+// failed decode is skipped; the error manager longjmps as libjpeg_encode_rgb's does (libjpeg's default one exits).
 static std::vector<uint8_t> libjpeg_encode(const Rgb& im, int q, bool c420, J_DCT_METHOD dct) {
     jpeg_compress_struct c;
-    jpeg_error_mgr jerr;
-    c.err = jpeg_std_error(&jerr);
-    jpeg_create_compress(&c);
+    JerrMgr em;
+    em.warnings = 0;
+    c.err = jpeg_std_error(&em.pub);
+    em.pub.error_exit = jerr_exit;
+    em.pub.emit_message = jerr_emit;
+    em.pub.output_message = jerr_output;
     unsigned char* buf = nullptr;
     unsigned long sz = 0;
+    if (setjmp(em.jb)) {
+        jpeg_destroy_compress(&c);
+        free(buf);
+        return {};
+    }
+    jpeg_create_compress(&c);
     jpeg_mem_dest(&c, &buf, &sz);
     c.image_width = (JDIMENSION)im.w;
     c.image_height = (JDIMENSION)im.h;

@@ -13,7 +13,6 @@ PG_HOME's static folder (from the environment or .env): pass --work when PG_HOME
 """
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -23,25 +22,22 @@ import sys
 import time
 from pathlib import Path
 
-from pgtools import MSVC_TOOLSET, WINDOWS, import_msvc_environment, load_env_file
+from pgtools import (
+    DEFAULT_BUILD_TOOLS,
+    MSVC_TOOLSET,
+    WINDOWS,
+    checked,
+    import_msvc_environment,
+    load_env_file,
+    not_set,
+    sha256,
+)
 
 # ---- Pins. Change them here, and note the reason beside each one.
 # The libjpeg-turbo sources are inside the rust-turbojpeg fork at this commit (turbojpeg-sys/libjpeg-turbo), the same commit
 # the root Cargo.toml pins for turbojpeg-sys, so the app's and Qt's libjpeg come from one source.
 FORK_URL = "https://github.com/darktorres/rust-turbojpeg"
-FORK_COMMIT = "945d853b47a76f98fd97ac5ff43830997712caa2"
-DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
-
-
-def checked(what: str, command: list[str], log: Path | None = None, cwd: Path | None = None) -> None:
-    """Runs `command`, its output in `log` when given; a failure ends this program."""
-    if log is None:
-        result = subprocess.run(command, cwd=cwd, check=False)
-    else:
-        with log.open("w", encoding="utf-8") as file:
-            result = subprocess.run(command, cwd=cwd, stdout=file, stderr=subprocess.STDOUT, check=False)
-    if result.returncode != 0:
-        sys.exit(f"{what} failed (exit {result.returncode})")
+FORK_COMMIT = "28b8b86af795d5e6f1402c978e62facd61952da2"
 
 
 def fetch_pinned(src: Path, log: Path) -> None:
@@ -61,18 +57,10 @@ def fetch_pinned(src: Path, log: Path) -> None:
     sys.exit(f"git fetch failed after 3 attempts: see {log}")
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
-
-
 def default_work() -> Path:
     home = os.environ.get("PG_HOME")
     if not home:
-        sys.exit("PG_HOME is not set: pass --work, or set PG_HOME in .env to the data folder (static/ goes under it)")
+        not_set("PG_HOME", "pass --work, or set it in .env to the data folder (static/ goes under it)")
     return Path(home) / "static" / "jpeg-turbo"
 
 
@@ -140,7 +128,9 @@ def main() -> None:
         "fork_commit": FORK_COMMIT,
         "msvc_toolset": MSVC_TOOLSET,
         "configure": cmake_args[:-1],
-        "libraries": [{"path": str(library), "sha256": sha256(library)}],
+        "libraries": [
+            {"path": library.relative_to(prefix).as_posix(), "bytes": library.stat().st_size, "sha256": sha256(library)}
+        ],
     }
     (work / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"done: {work / 'manifest.json'}")

@@ -12,7 +12,7 @@ pub mod ffi {
         #[namespace = "pg"]
         type GpuDevice;
 
-        /// Make the device on the default adapter and look for the AV1 decoder on it (~0.3 s). Any thread.
+        /// Make the device on the default adapter and look for the AV1 decoder on it (~0.3 s wall-clock). Any thread.
         #[namespace = "pg"]
         fn make_gpu_device() -> UniquePtr<GpuDevice>;
 

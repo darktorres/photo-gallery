@@ -4,7 +4,7 @@
 //! without a new analysis, however it comes back.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::PoisonError;
 use std::time::Duration;
 
 use pg_catalog::Catalog;
@@ -15,14 +15,13 @@ use pg_jobs::pipeline::Options;
 use pg_model::turns::Turns;
 use pg_platform::priority::Priority;
 
-/// Held by each test: the fault is a trigger in a catalog, and the file ids of two catalogs are the same numbers.
-static ONE_PASS: Mutex<()> = Mutex::new(());
+use pg_testkit::ONE_PASS;
 
 /// A run folder with `images/a.png` and `images/b.png` (the same textured picture) and `images/c.png` (another one),
 /// scanned and imported into a catalog beside them: the catalog, the run's control, and the folder.
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn imported(prefix: &str) -> (Catalog, Control, PathBuf) {
-    let dir = pg_testkit::run_folder("scratch_pairs", prefix).unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     let byte = |v: u32| u8::try_from(v % 256).unwrap();

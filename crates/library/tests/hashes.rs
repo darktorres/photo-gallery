@@ -14,7 +14,7 @@ use pg_platform::priority::Priority;
 /// scanned into a catalog beside them, not imported: the catalog, the run's control, and the folder.
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn scanned(prefix: &str) -> (Catalog, Control, PathBuf) {
-    let dir = pg_testkit::run_folder("scratch_hashes", prefix).unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     let byte = |v: u32| u8::try_from(v % 256).unwrap();

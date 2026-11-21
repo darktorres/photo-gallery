@@ -1,8 +1,7 @@
 //! A JSON file the app keeps a value in: read once when it is opened, changed in memory, and written back atomically on
 //! each change. Used for the preferences; the path is given at construction and resolved by the owner, not again here.
 
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -18,6 +17,7 @@ pub struct Unreadable {
     pub kept: Result<PathBuf, String>,
 }
 
+/// The value a JSON file holds, with its path and the write order of its saves. See the module comment.
 pub struct JsonStore<T> {
     path: PathBuf,
     current: Mutex<Current<T>>,
@@ -116,10 +116,7 @@ fn quarantine(path: &Path, error: String) -> Unreadable {
 /// the new one, never half of either.
 fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let temp = beside(path, ".tmp");
-    let mut file = File::create(&temp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
+    pg_platform::file::write_synced(&temp, bytes)?;
     std::fs::rename(&temp, path)
 }
 
@@ -138,7 +135,7 @@ mod tests {
 
     /// A fresh folder for one test, a run folder of its own (`pg_testkit::run_folder`).
     fn scratch(test: &str) -> PathBuf {
-        pg_testkit::run_folder("scratch_store", &format!("pg-store-{test}")).unwrap()
+        pg_testkit::run_folder("scratch_app", &format!("store-{test}")).unwrap()
     }
 
     #[test]

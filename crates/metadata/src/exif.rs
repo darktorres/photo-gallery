@@ -7,7 +7,7 @@ use pg_model::orientation::Orientation;
 use crate::tiff::{EXIF_TAG_ORIENTATION, Tiff};
 
 /// An EXIF date, `YYYY:MM:DD HH:MM:SS` (anything after it ignored), as wall-clock seconds; `None` when blank,
-/// malformed or impossible. The format rules are kamadak-exif's (`DateTime::from_ascii`), which read them before.
+/// malformed or impossible. The format is the one kamadak-exif reads; this parser implements it directly.
 pub(crate) fn exif_date(data: &[u8]) -> Option<i64> {
     if data == b"    :  :     :  :  " || data == b"                   " || data.len() < 19 {
         return None;

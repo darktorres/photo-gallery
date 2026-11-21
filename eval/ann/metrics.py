@@ -5,7 +5,7 @@ pipeline would: each row keeps its K best candidates with similarity >= FLOOR, a
 over rows (unordered). Pairs:
 - required: in the exact rule's set, and beating that row's (K+1)th neighbour by TIE (a tie can't be required);
 - radius: every pair >= FLOOR (exact top lists, plus hubs' full radius lists).
-Pair kinds: planted (a copy and its own source), planted_other (any other pair with a copy), dups2 (two members of
+Pair kinds: planted (a copy and its own source), planted_other (any other pair with a copy), duplicate (two members of
 one labelled group), test (the rest). Bands are by the pair's exact cosine.
 """
 
@@ -18,7 +18,7 @@ from scipy.stats import beta
 from ann.data import EDITS, FLOOR, TIE, Base, K, pair_half, pair_keys
 
 BANDS = (0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01)
-KINDS = ("planted", "planted_other", "dups2", "test")
+KINDS = ("planted", "planted_other", "duplicate", "test")
 
 
 @dataclass
@@ -160,7 +160,7 @@ def score(t: Truth, ids: np.ndarray, sims: np.ndarray, kprime: int) -> dict:
     }
     # dups2 pairs: found by the method / by the exact rule.
     dk = t.dups2_keys
-    out["dups2"] = [float(np.isin(dk, rule).mean()), float(np.isin(dk, t.rule_keys).mean()), len(dk)]
+    out["duplicate"] = [float(np.isin(dk, rule).mean()), float(np.isin(dk, t.rule_keys).mean()), len(dk)]
     hits = (ids[:, :K, None] == t.top10[:, None, :]).any(2).sum(1)
     out["recall_at_10"] = float(hits.mean() / K)
     return out

@@ -34,10 +34,8 @@ pub(crate) fn count(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
 }
 
-/// An error's text as a notice holds it: its causes after it, on one line, capped.
-pub(crate) fn error_text(error: &anyhow::Error) -> String {
-    tidy(&format!("{error:#}"), ERROR_CAP)
-}
+/// An error's text as a notice holds it (`pg_model::notice::error_text`).
+pub(crate) use pg_model::notice::error_text;
 
 /// Originals were cut in place: their thumbnails are forgotten (they show the uncut pixels), and the import that follows
 /// analyzes them again. The app is told the files changed.

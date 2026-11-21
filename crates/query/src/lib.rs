@@ -96,6 +96,27 @@ fn media_sql(media: MediaType) -> &'static str {
     }
 }
 
+/// The catalog's volumes, by a loose index scan over a `files` table's `(volume, file_ref)` index: one step a volume (the
+/// `min` of the volumes above the last one found), not a read of every file. A displaced row (no volume) is none. `$files`
+/// is the table as the statement names it: `"files"` in the catalog, `"cat.files"` over an attached catalog.
+#[macro_export]
+macro_rules! volumes_sql {
+    ($files:literal) => {
+        concat!(
+            "WITH RECURSIVE v(volume) AS (
+                 SELECT min(volume) FROM ",
+            $files,
+            " WHERE volume IS NOT NULL
+                 UNION ALL
+                 SELECT (SELECT min(volume) FROM ",
+            $files,
+            " WHERE volume > v.volume) FROM v WHERE v.volume IS NOT NULL
+             )
+             SELECT volume FROM v WHERE volume IS NOT NULL"
+        )
+    };
+}
+
 /// The type of a row, for the counts (`browse::read::facets`): a `MediaType`'s key, from the stored kind.
 pub const MEDIA_CASE: &str = concat!(
     "CASE WHEN f.kind = '",
@@ -103,7 +124,8 @@ pub const MEDIA_CASE: &str = concat!(
     "' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END"
 );
 
-/// The condition of a shape's value.
+/// The condition of a shape's value. The `* 100` is a 1% margin, cross-multiplied so no division is needed; it is not a
+/// fixed-point scale. The sort keys below are the module's fixed-point scale: millionths (`1e6`).
 fn shape_sql(shape: Shape) -> &'static str {
     match shape {
         Shape::Landscape => "(a.width - a.height) * 100 > a.width",

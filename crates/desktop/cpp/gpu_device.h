@@ -23,7 +23,7 @@ struct GpuDevice {
     bool decodes_av1 = false;
 };
 
-// Make the device on the default adapter and look for the GPU's AV1 decoder on it. Any thread; it takes ~0.3 s.
+// Make the device on the default adapter and look for the GPU's AV1 decoder on it. Any thread; it takes ~0.3 s of wall-clock time.
 // Never null: a device that can't be made, or that Qt Quick can't use, leaves only the AV1 answer.
 std::unique_ptr<GpuDevice> make_gpu_device();
 

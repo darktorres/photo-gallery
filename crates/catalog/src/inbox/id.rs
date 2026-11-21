@@ -1,5 +1,4 @@
-//! What names an entry of the inbox. A leaf below `core`: `Catalog`'s methods take it, and the compiler graph puts an
-//! inherent method in its type's module, so a type they name has to be below `core` too.
+//! What names an entry of the inbox. A leaf below `core` (the rule is in the crate's docs).
 
 use pg_model::notice::LedgerKind;
 

@@ -147,7 +147,7 @@ impl Reader {
         {
             let mut slots = self.slots.lock().unwrap_or_else(PoisonError::into_inner);
             slots.stop = true;
-            self.cancel.store(true, Ordering::Relaxed);
+            self.cancel.store(true, Ordering::SeqCst);
         }
         self.wake.notify_one();
         if let Some(thread) = self.thread.lock().unwrap_or_else(PoisonError::into_inner).take() {
@@ -167,7 +167,7 @@ impl Reader {
                     let oldest = slots.jobs.iter().min_by_key(|(_, (place, _))| *place).map(|(key, _)| *key);
                     if let Some((key, (_, job))) = oldest.and_then(|key| slots.jobs.remove_entry(&key)) {
                         slots.running = Some(key);
-                        self.cancel.store(false, Ordering::Relaxed);
+                        self.cancel.store(false, Ordering::SeqCst);
                         break (key, job);
                     }
                     slots = self.wake.wait(slots).unwrap_or_else(PoisonError::into_inner);
@@ -240,7 +240,7 @@ impl Session {
         slots.next += 1;
         slots.jobs.insert(key, (place, job));
         if slots.running == Some(key) {
-            reader.cancel.store(true, Ordering::Relaxed);
+            reader.cancel.store(true, Ordering::SeqCst);
         }
         reader.wake.notify_one();
     }
@@ -386,9 +386,7 @@ mod tests {
 
     /// A catalog in a test folder holding files 1 and 2, both with a thumbnail failure, and the folder's path.
     fn catalog(name: &str) -> (PathBuf, PathBuf) {
-        let dir = pg_testkit::run_folder("scratch_app", name).unwrap();
-        let layout = pg_library::layout::Layout::in_home(&dir);
-        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
+        let (dir, layout) = crate::test_support::catalog_home(name);
         let c = pg_library::open_catalog(&layout).unwrap();
         let folder = dir.to_str().unwrap();
         fixture::state::add_scan(&c, 1, folder).unwrap();

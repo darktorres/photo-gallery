@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
-use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, Status};
+use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, YandexStatus};
 use pg_platform::names::{disk_path, rule_path_of, shown};
 use pg_platform::native::PATH_RULES;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
@@ -190,7 +190,7 @@ pub struct Poll {
     /// A search or a save is running.
     pub busy: bool,
     /// The status since the last poll, when it changed: data, which the front end words.
-    pub status: Option<Status>,
+    pub status: Option<YandexStatus>,
     /// The results that came in since the last poll, once.
     pub found: Option<Found>,
     /// The results whose files could not be fetched or decoded since the last poll, once: take them off the grid.
@@ -206,7 +206,7 @@ struct Shared {
     /// The photo searched for: the saved files are named after it.
     photo: PathBuf,
     /// The latest status, not yet read by `poll`.
-    status: Option<Status>,
+    status: Option<YandexStatus>,
     /// The results, not yet read by `poll`.
     found: Option<Found>,
     /// Set by [`Search::stop`]: nothing starts any more.
@@ -267,10 +267,10 @@ fn request(e: SourceError) -> SearchError {
 
 fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
     // A thread that panicked must not stop the next search, so a poisoned lock is still used.
-    shared.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    shared.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn set_status(shared: &Mutex<Shared>, changes: &Bus<()>, status: Status) {
+fn set_status(shared: &Mutex<Shared>, changes: &Bus<()>, status: YandexStatus) {
     lock(shared).status = Some(status);
     changes.publish(());
 }
@@ -284,11 +284,11 @@ fn find_similar<S: Source + ?Sized>(
     changes: &Bus<()>,
 ) -> Result<(Found, Option<SimilarNote>), SearchError> {
     let bytes = read_photo(photo)?;
-    set_status(shared, changes, Status::Working(Phase::Uploading));
+    set_status(shared, changes, YandexStatus::Working(Phase::Uploading));
     let upload = source.upload(&bytes).map_err(request)?;
-    set_status(shared, changes, Status::Working(Phase::OtherSizes));
+    set_status(shared, changes, YandexStatus::Working(Phase::OtherSizes));
     let other = source.other_sizes(&upload).map_err(request)?;
-    set_status(shared, changes, Status::Working(Phase::Similar));
+    set_status(shared, changes, YandexStatus::Working(Phase::Similar));
     let (similar, note) = match source.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
         Ok(list) => {
             let shown = list.items.len();
@@ -370,7 +370,7 @@ fn save_all(
 ) -> Saved {
     let mut saved = Saved { folder: shown(folder), written: 0, failed: 0, first_error: None };
     for (i, hit) in hits.iter().enumerate() {
-        set_status(shared, changes, Status::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
+        set_status(shared, changes, YandexStatus::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
         match save_one(images, hit, stem, folder) {
             Ok(()) => saved.written += 1,
             Err(failure) => {
@@ -390,7 +390,8 @@ impl Search {
 
     /// Runs `work` (a search or a save, which has set `busy`) on a thread of its own, named `name`. When the system
     /// refuses the thread, `busy` and the status are cleared again, the change is announced, and the error returned:
-    /// nothing ran, so the next search or save may start.
+    /// nothing ran, so the next search or save may start. Unlike the image fetchers (`yandex/images.rs`, which fall back to
+    /// fetching on demand), a search or a save has no fallback, so its failure is reported.
     fn spawn_worker(&self, name: &str, work: impl FnOnce() + Send + 'static) -> io::Result<bool> {
         let name = name.to_string();
         self.spawn_with(work, |work| thread::Builder::new().name(name).spawn(work).map(drop))
@@ -427,7 +428,7 @@ impl Search {
             }
             s.busy = true;
             s.photo = photo.clone();
-            s.status = Some(Status::Working(Phase::Starting));
+            s.status = Some(YandexStatus::Working(Phase::Starting));
         }
         self.changes.publish(());
         let shared = self.shared.clone();
@@ -459,10 +460,10 @@ impl Search {
                         fetching = Some((pictures, results));
                     }
                     s.found = Some(found);
-                    s.status = Some(Status::Searched(note));
+                    s.status = Some(YandexStatus::Searched(note));
                 }
-                Ok(Err(e)) => s.status = Some(Status::SearchFailed(e)),
-                Err(_) => s.status = Some(Status::Stopped),
+                Ok(Err(e)) => s.status = Some(YandexStatus::SearchFailed(e)),
+                Err(_) => s.status = Some(YandexStatus::Panicked),
             }
             // Same lock as the results, so `poll()` never sees the search end before its results.
             s.busy = false;
@@ -490,7 +491,9 @@ impl Search {
 
     /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
     pub fn image(&self, id: u64) -> Result<Arc<Fetched>, SourceError> {
-        self.pictures().ok_or(SourceError::Yandex(YandexError::Unexpected("no search")))?.get_known(id)
+        self.pictures()
+            .ok_or(SourceError::Yandex(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NoSearch)))?
+            .get_known(id)
     }
 
     /// No search or save starts from now on, and the fetchers take no more results. Waits up to `wait` for the running
@@ -540,7 +543,7 @@ impl Search {
                 return Ok(false);
             }
             s.busy = true;
-            s.status = Some(Status::Working(Phase::Saving { files: hits.len() }));
+            s.status = Some(YandexStatus::Working(Phase::Saving { files: hits.len() }));
             stem_of(&s.photo)
         };
         self.changes.publish(());
@@ -561,10 +564,14 @@ impl Search {
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
             let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match pictures {
                 Some(pictures) => save_all(&hits, &stem, &folder, &pictures, &shared, &changes),
-                None => save_refused(&hits, &folder, YandexError::Unexpected("no search on screen").into()),
+                None => save_refused(
+                    &hits,
+                    &folder,
+                    YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NoSearchOnScreen).into(),
+                ),
             })) {
-                Ok(saved) => Status::Saved(saved),
-                Err(_) => Status::Stopped,
+                Ok(saved) => YandexStatus::Saved(saved),
+                Err(_) => YandexStatus::Panicked,
             };
             let mut s = lock(&shared);
             s.status = Some(status);
@@ -585,7 +592,7 @@ mod tests {
         {
             let mut s = lock(&search.shared);
             s.busy = true;
-            s.status = Some(Status::Working(Phase::Starting));
+            s.status = Some(YandexStatus::Working(Phase::Starting));
         }
         let refused = search.spawn_with(|| {}, |_work| Err(io::Error::other("no threads left")));
         assert!(matches!(refused, Err(ref e) if e.to_string() == "no threads left"));
@@ -599,7 +606,8 @@ mod tests {
         let search = Search::default();
         assert!(search.stop(Duration::ZERO), "nothing ran");
         let check: Check = Arc::new(|_| Ok(Vec::new()));
-        let make: Factory = Arc::new(|| Err(YandexError::Unexpected("not called").into()));
+        let make: Factory =
+            Arc::new(|| Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NotCalled).into()));
         assert!(matches!(search.start(Path::new("photo.jpg"), make, check), Ok(false)));
         assert!(!lock(&search.shared).busy);
     }
@@ -670,6 +678,6 @@ mod tests {
     fn a_missing_photo_is_unreadable() {
         let folder = pg_testkit::run_folder("scratch_app", "yandex-missing").unwrap();
         assert!(matches!(read_photo(&folder.join("gone.jpg")), Err(SearchError::Unreadable(_))));
-        std::fs::remove_dir_all(&folder).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

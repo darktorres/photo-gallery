@@ -3,12 +3,24 @@
 //!
 //! The folders and their protocol are in pg-platform (`testing`): this crate re-exports them under the names the tests
 //! use, and adds the image fixtures.
+//!
+//! The image fixtures are the files this crate writes (`png_rgb`, `bmp_rgb`, `tiff_rgb`, `gif`, `apng`). `pg_codec::fixtures`
+//! keeps the codec's own helpers (orientation, lossy WebP, TIFF with a chosen byte order), which take the codec's types;
+//! a test takes its image from here unless it needs one of those. The video fixture is the clip the tests share
+//! (`VIDEO_SAMPLE`), kept in the video crate's tests folder and read here.
 
-use std::path::PathBuf;
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
 
-pub use pg_platform::testing::{held, missing_tool, odd_name, skip};
+pub use pg_platform::testing::{held, missing_tool, odd_name, skip, tool_missing};
+
+/// The sample clip (tools/make_test_video.py): 64x48, six frames, H.264. The video crate's and the library's tests read
+/// it from here.
+pub const VIDEO_SAMPLE: &[u8] = include_bytes!("../../video/tests/sample.mp4");
 
 /// A fresh folder for one test (or one part of a test) in a test binary's run: `prefix-<process id>-<n>` under the base
 /// (`PG_TEST_DIR`, else the temp folder's `scratch`). The run folders of `prefix` that no running process holds are
@@ -26,6 +38,66 @@ pub fn run_folder_with(scratch: &str, prefix: &str, dirs: &[&str]) -> Result<Pat
         std::fs::create_dir_all(&sub).with_context(|| format!("make the folder {}", sub.display()))?;
     }
     Ok(dir)
+}
+
+/// Held by each test that runs a detection or thumbnail pass: the pass's process-wide state (the detector's injected
+/// fault, file ids that repeat from one catalog to the next) is shared by every test of the binary, so those tests run
+/// one at a time. Each test binary has its own copy.
+pub static ONE_PASS: Mutex<()> = Mutex::new(());
+
+/// The interval a [`wait_until`] polls at.
+const POLL: Duration = Duration::from_millis(20);
+
+/// Polls `done` every 20 ms until it holds, for a step another thread or process makes. Once `within` has passed it
+/// panics with `what()` (made only then) and the bound. Every wait in the tests goes through here, so the bound is
+/// stated at each call and the interval is one.
+pub fn wait_until<W: Display>(within: Duration, what: impl Fn() -> W, mut done: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while !done() {
+        assert!(start.elapsed() < within, "waited {within:?} for {}", what());
+        std::thread::sleep(POLL);
+    }
+}
+
+/// [`wait_until`] for a file: until `path` exists.
+pub fn wait_for_path(path: &Path, within: Duration) {
+    wait_until(within, || format!("{} to appear", path.display()), || path.exists());
+}
+
+/// A deterministic generator for the tests' random cases (SplitMix64): one seed draws the same cases on every run.
+pub struct Rng(u64);
+
+impl Rng {
+    /// A generator from `seed`.
+    pub fn new(seed: u64) -> Rng {
+        Rng(seed)
+    }
+
+    /// The next 64 random bits.
+    pub fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// A number below `n` (a range of at least one).
+    pub fn below(&mut self, n: usize) -> usize {
+        usize::try_from(self.next_u64() % u64::try_from(n.max(1)).unwrap_or(1)).unwrap_or(0)
+    }
+}
+
+/// The interleaved RGB bytes of a `w` × `h` picture whose channels step across it, so a crop or a turn moves pixels that
+/// differ from each other.
+pub fn rgb_pattern(w: usize, h: usize) -> Vec<u8> {
+    (0..w * h)
+        .flat_map(|i| {
+            let (x, y) = (i % w, i / w);
+            // Each channel is below 256 by its construction (`w`, `h` and the modulus), so the fallback never applies.
+            [x * 255 / w, y * 255 / h, (x * 7 + y * 13) % 256].map(|v| u8::try_from(v).unwrap_or(u8::MAX))
+        })
+        .collect()
 }
 
 /// An animated GIF of `frames` 4 × 4 frames, the first red and each after it brighter. The red level steps by 60, so
@@ -104,9 +176,9 @@ mod tests {
 
     #[test]
     fn a_run_folder_is_fresh_and_each_call_has_its_own() {
-        let first = run_folder("pg-testkit-check", "fresh").unwrap();
+        let first = run_folder("scratch_testkit", "fresh").unwrap();
         std::fs::write(first.join("kept.txt"), b"x").unwrap();
-        let second = run_folder("pg-testkit-check", "fresh").unwrap();
+        let second = run_folder("scratch_testkit", "fresh").unwrap();
         assert_ne!(first, second);
         assert!(first.join("kept.txt").is_file(), "a call does not remove another call's folder");
         assert_eq!(std::fs::read_dir(&second).unwrap().count(), 0, "a new folder is empty");

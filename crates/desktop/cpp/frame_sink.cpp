@@ -7,7 +7,7 @@
 
 namespace pg {
 
-FrameSink::FrameSink(QPointer<QVideoSink> sink) : state_(std::make_shared<State>(State{std::move(sink)})) {}
+FrameSink::FrameSink(QPointer<QVideoSink> sink) : m_state(std::make_shared<State>(std::move(sink))) {}
 
 void FrameSink::present(std::uint32_t width, std::uint32_t height, rust::Slice<const std::uint8_t> rgba) const {
     const qsizetype line = qsizetype(width) * 4;
@@ -18,19 +18,19 @@ void FrameSink::present(std::uint32_t width, std::uint32_t height, rust::Slice<c
     // The sink and `open` are only touched on the application's (the sink's) thread.
     QMetaObject::invokeMethod(
         QCoreApplication::instance(),
-        [state = state_, frame] {
-            if (state->open && state->sink)
+        [state = m_state, frame] {
+            if (state->open.load() && state->sink)
                 state->sink->setVideoFrame(frame);
         },
         Qt::QueuedConnection);
 }
 
 void FrameSink::close() const {
-    state_->open = false;
+    m_state->open.store(false);
 }
 
 std::unique_ptr<FrameSink> SinkRef::frame_sink() const {
-    return std::make_unique<FrameSink>(sink_);
+    return std::make_unique<FrameSink>(m_sink);
 }
 
 std::unique_ptr<SinkRef> new_sink_ref(QVideoSink* sink) {

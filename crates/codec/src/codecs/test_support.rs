@@ -17,6 +17,11 @@ pub(super) fn flattened(img: DynamicImage) -> (usize, usize, Vec<u8>) {
     (w, h, px)
 }
 
+/// The RGB of the RGBA bytes `rgba`, each channel flattened onto white by its alpha (the rule `flattened` applies).
+pub(crate) fn flatten_rgba(rgba: &[u8]) -> Vec<u8> {
+    rgba.as_chunks::<4>().0.iter().flat_map(|p| [0, 1, 2].map(|c| over_white(p[c], p[3]))).collect()
+}
+
 /// `values`, each as its `N` bytes.
 pub(super) fn ne_bytes<const N: usize, T: Copy>(values: &[T], to: impl Fn(T) -> [u8; N]) -> Vec<u8> {
     values.iter().flat_map(|&v| to(v)).collect()

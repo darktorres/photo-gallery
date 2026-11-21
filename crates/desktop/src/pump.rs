@@ -12,8 +12,8 @@ use cxx_qt::{CxxQtThread, Threading};
 /// for them.
 #[derive(Default)]
 pub(crate) struct Pending<P> {
-    changes: P,
-    queued: bool,
+    pub(crate) changes: P,
+    pub(crate) queued: bool,
 }
 
 impl<P: Default> Pending<P> {
@@ -25,7 +25,7 @@ impl<P: Default> Pending<P> {
     }
 }
 
-fn lock<P>(shared: &Mutex<Pending<P>>) -> MutexGuard<'_, Pending<P>> {
+pub(crate) fn lock<P>(shared: &Mutex<Pending<P>>) -> MutexGuard<'_, Pending<P>> {
     // A panic on the other side leaves the changes as they were: the next run handles them.
     shared.lock().unwrap_or_else(PoisonError::into_inner)
 }

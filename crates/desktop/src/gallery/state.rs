@@ -20,7 +20,7 @@ pub(crate) type DetailsDelivery = Arc<dyn Fn(u64, FileId, Option<Details>) + Sen
 /// The model's properties, the list and the details read last.
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct GalleryRust {
     pub(crate) count: i32,
@@ -145,10 +145,10 @@ impl GalleryRust {
     fn read_details(&self, file: FileId) {
         let generation = self.details_generation;
         let Some(deliver) = self.details_delivery.clone() else {
-            pg_log::error("gallery", "a file's details were asked for before the grid model was made; not read");
+            pg_log::warn("gallery", "a file's details were asked for before the grid model was made; not read");
             return;
         };
-        crate::app::get().reading().session().details(file, move |read| {
+        crate::app::session().details(file, move |read| {
             // No details when the read fails (the notice says why) or the file is gone.
             let details = crate::app::observe(Op::RowRead, read, |err| Notice::RowReadFailed {
                 error: crate::app::error_text(&format!("{err:#}")),

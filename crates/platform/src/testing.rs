@@ -34,7 +34,7 @@ const OLD_OWNER: &str = ".owner";
 static HELD: Mutex<Vec<HeldLock>> = Mutex::new(Vec::new());
 
 /// The base folder for a test's files: `PG_TEST_DIR` when it is set, else the temp folder's `scratch` folder. The name
-/// is a plain folder name (`"scratch_rate"`): no test writes to a drive it was not told about.
+/// is a plain folder name (`"scratch_platform"`): no test writes to a drive it was not told about.
 pub fn base(scratch: &str) -> PathBuf {
     match std::env::var_os("PG_TEST_DIR") {
         // `.env` writes paths with forward slashes, and the verbatim (`\\?\`) paths that pg-platform opens are not
@@ -75,6 +75,13 @@ pub fn odd_name(text: &str) -> std::ffi::OsString {
 pub fn missing_tool(tool: &str) {
     assert!(std::env::var_os("PG_REQUIRE_TOOLS").is_none(), "{tool} not found, and PG_REQUIRE_TOOLS is set");
     eprintln!("{tool} not found: skipped");
+}
+
+/// Whether the external program `exe` is missing here: it does not start, or `version_arg` (its version flag, such as
+/// `-ver` or `-version`) does not exit with success. A test that needs the tool checks this first, and calls
+/// [`missing_tool`] when it returns true.
+pub fn tool_missing(exe: impl AsRef<OsStr>, version_arg: &str) -> bool {
+    !matches!(std::process::Command::new(exe).arg(version_arg).output(), Ok(out) if out.status.success())
 }
 
 /// A test that can't check what it is for in this environment (the reason says what) returns after this call: it

@@ -1,4 +1,4 @@
-//! The saved listing reads back as it was saved: for every folder, recursion, sort and query, what
+//! The saved listing reads back as it was saved: for the folders, recursions, sorts and queries that proptest draws, what
 //! `save_listing` writes, `listing` returns. The session is where the listing lives between starts.
 
 use pg_app::{App, Config};
@@ -22,7 +22,7 @@ fn folder() -> impl Strategy<Value = Merged> {
 /// A fresh folder for one case, so every case starts with no catalog: a run folder of its own.
 #[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
 fn fresh_dir() -> std::path::PathBuf {
-    pg_testkit::run_folder("scratch_listing", "case").unwrap()
+    pg_testkit::run_folder("scratch_app", "case").unwrap()
 }
 
 proptest! {

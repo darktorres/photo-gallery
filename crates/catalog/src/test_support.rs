@@ -27,6 +27,13 @@ pub(crate) fn p(rules: PathRules, text: &str) -> RulePath {
     rules.parse(&spelled(rules, text)).expect("a test path")
 }
 
+/// An in-memory catalog under `rules` with the library root `D:\r`: the start of the root and removal tests.
+pub(crate) fn rooted(rules: PathRules) -> Catalog {
+    let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+    assert!(c.add_root(&p(rules, r"D:\r")).unwrap());
+    c
+}
+
 /// A catalog with one file in it, under `rules`.
 pub(crate) fn one_file(rules: PathRules) -> (Catalog, i64) {
     one_file_at(rules, Path::new(":memory:"))

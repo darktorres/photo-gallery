@@ -10,7 +10,7 @@ use quick_xml::events::Event;
 use quick_xml::name::{Namespace, ResolveResult};
 use quick_xml::reader::ReaderBuffers;
 
-const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
+pub(crate) const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
 const NS_MICROSOFT_PHOTO: &str = "http://ns.microsoft.com/photo/1.0/";
 const NS_EXIF: &str = "http://ns.adobe.com/exif/1.0/";
 const NS_PHOTOSHOP: &str = "http://ns.adobe.com/photoshop/1.0/";
@@ -115,7 +115,7 @@ pub(crate) fn xmp_value(v: f64) -> Option<u8> {
     (0.0..=5.0).contains(&v).then(|| round_u8(v))
 }
 
-/// Windows' percentage scale (1, 25, 50, 75, 99), as ImageRater mapped it.
+/// Windows' percentage scale (1, 25, 50, 75, 99), as a rating app mapped it.
 pub(crate) fn percent(v: f64) -> u8 {
     match round_u8(v) {
         ..=0 => 0,

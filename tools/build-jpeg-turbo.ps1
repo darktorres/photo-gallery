@@ -20,7 +20,7 @@ $ErrorActionPreference = 'Stop'
 # The libjpeg-turbo sources are inside the rust-turbojpeg fork at this commit (turbojpeg-sys/libjpeg-turbo), the same
 # commit the root Cargo.toml pins for turbojpeg-sys, so the app's and Qt's libjpeg come from one source.
 $ForkUrl    = 'https://github.com/darktorres/rust-turbojpeg'
-$ForkCommit = '945d853b47a76f98fd97ac5ff43830997712caa2'
+$ForkCommit = '28b8b86af795d5e6f1402c978e62facd61952da2'
 $Toolset    = '14.44.35207'                                  # MSVC toolset (vcvars64 -vcvars_ver)
 
 # ---- Helpers ----------------------------------------------------------------------------------------------------
@@ -104,8 +104,8 @@ $manifest = [ordered]@{
     msvc_toolset = $Toolset
     configure    = $cmakeArgs[0..($cmakeArgs.Count - 2)]
     libraries    = @(
-        @{ path = "$Prefix\lib\turbojpeg-static.lib"; sha256 = (Get-FileHash "$Prefix\lib\turbojpeg-static.lib" -Algorithm SHA256).Hash },
-        @{ path = "$Prefix\lib\jpeg-static.lib"; sha256 = (Get-FileHash "$Prefix\lib\jpeg-static.lib" -Algorithm SHA256).Hash }
+        @{ path = 'lib/turbojpeg-static.lib'; bytes = (Get-Item "$Prefix\lib\turbojpeg-static.lib").Length; sha256 = (Get-FileHash "$Prefix\lib\turbojpeg-static.lib" -Algorithm SHA256).Hash },
+        @{ path = 'lib/jpeg-static.lib'; bytes = (Get-Item "$Prefix\lib\jpeg-static.lib").Length; sha256 = (Get-FileHash "$Prefix\lib\jpeg-static.lib" -Algorithm SHA256).Hash }
     )
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$Work\manifest.json"

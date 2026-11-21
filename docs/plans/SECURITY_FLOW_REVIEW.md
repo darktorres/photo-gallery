@@ -2976,8 +2976,8 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Consequence: The probe measures a stale snapshot that lacks the newest committed changes, so its row counts and timings do not match the live catalog. If the copy races a checkpoint, the copy can be torn and fail with a malformed-database error. The source is only read and never written, so no user data is damaged. The defect is a wrong probe result, with no effect on the app.
 - Suggested fix: Copy the -wal sidecar with the main file (or run wal\1checkpoint(TRUNCATE) through a separate connection to the source before copying, or use SQLite's backup API). Refuse or warn when the source has a non-empty -wal.
 - Locations:
-  - `crates/catalog/examples/pairs_load_probe.rs:84` std::fs::copy(source, &db).context("copy the catalog")?;
-  - `crates/catalog/examples/pairs_write_probe.rs:80` std::fs::copy(source, &db).context("copy the catalog")?;
+  - `crates/import/examples/pairs_load_probe.rs:84` std::fs::copy(source, &db).context("copy the catalog")?;
+  - `crates/import/examples/pairs_write_probe.rs:80` std::fs::copy(source, &db).context("copy the catalog")?;
   - `crates/catalog/src/core.rs:55` /// Merge the WAL into the file, then close the connection (on drop, too, without the merge). The last connection
 
 ### SEC-189 [low/data-integrity] Copy folder is removed only on the success path — CONFIRMED
@@ -2990,6 +2990,6 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Consequence: The full catalog copy stays in the scratch folder until the next run of the same probe. Its lock is released at process exit, so the next run's sweep removes it. The copy takes disk space, and the folder keeps a copy of a real catalog (with its paths) in the temp folder in the meantime. No original is lost.
 - Suggested fix: Remove the copy folder from a guard's Drop (or wrap the body in a closure and remove the folder on both outcomes) so that every exit path removes the copy.
 - Locations:
-  - `crates/catalog/examples/pairs_load_probe.rs:94` times.entry(variant).or\1default().push(timed(&catalog, &db, variant)?);
-  - `crates/catalog/examples/pairs_write_probe.rs:97` check(&conn, variant, &pictures)?;
-  - `crates/catalog/examples/pairs_load_probe.rs:108` std::fs::remove\1dir\1all(&dir)?;
+  - `crates/import/examples/pairs_load_probe.rs:94` times.entry(variant).or\1default().push(timed(&catalog, &db, variant)?);
+  - `crates/import/examples/pairs_write_probe.rs:97` check(&conn, variant, &pictures)?;
+  - `crates/import/examples/pairs_load_probe.rs:108` std::fs::remove\1dir\1all(&dir)?;

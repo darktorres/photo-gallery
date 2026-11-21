@@ -43,7 +43,7 @@ Rectangle {
     width: Math.min(parent.width - 40, 900)
     height: transportRow.implicitHeight + 8
     radius: 8
-    color: "#a0000000"
+    color: Theme.scrimBacking
 
     RowLayout {
         id: transportRow

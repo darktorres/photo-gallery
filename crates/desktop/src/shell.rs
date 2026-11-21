@@ -31,6 +31,8 @@ use pg_model::rules::Path as RulePath;
 use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
 use pg_model::view::SavedView;
 
+use crate::rows::qt_int;
+use crate::settings::save_prefs;
 use crate::{app, controller, deadline, folders, gallery, keymap, library, worker};
 
 impl Default for ShellRust {
@@ -48,9 +50,9 @@ impl Default for ShellRust {
             saved_views: view_names(),
             filters_open: panels.filters_open(),
             show_borders: panels.show_borders(),
-            row_height: px(size.row_height().get()),
-            min_row_height: px(RowHeight::MIN.get()),
-            max_row_height: px(RowHeight::MAX.get()),
+            row_height: qt_int(size.row_height().get()),
+            min_row_height: qt_int(RowHeight::MIN.get()),
+            max_row_height: qt_int(RowHeight::MAX.get()),
             dev_mode: panels.dev_mode(),
         }
     }
@@ -61,14 +63,9 @@ fn to_i32(index: usize) -> i32 {
     i32::try_from(index).unwrap_or(-1)
 }
 
-/// A pixel size as QML takes it. The sizes are at most 2048, so the conversion never saturates.
-fn px(value: u32) -> i32 {
-    i32::try_from(value).unwrap_or(i32::MAX)
-}
-
 /// A size value the window sent that is not a valid one: logged and dropped, never applied.
 fn refused(what: &str, value: f64) {
-    pg_log::warn("size", &format!("{what} {value} is not a valid value; ignored"));
+    pg_log::warn("size", &format!("{what} {value} isn't a valid value; ignored"));
 }
 
 /// The listing change a click on a tree row makes. Recursion is the listing's one toggle, so the first two rows set it:
@@ -100,15 +97,6 @@ fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
         Command::Size(size::Change::SaveRowHeight(row)) => save_prefs(prefs, |p| p.row_height = *row),
         _ => {}
     }
-}
-
-/// Changes the preferences: the change is in memory at once, and the file is written on the window's writes (`worker`),
-/// off the Qt thread.
-fn save_prefs(prefs: &pg_app::PrefStore, change: impl FnOnce(&mut pg_app::Prefs)) {
-    let save = prefs.change(change);
-    worker::run(move || {
-        let _ = save.write();
-    });
 }
 
 /// The outcome of the change `op` to the saved views: a failure is posted, and a success clears what its failure kept.
@@ -336,7 +324,7 @@ impl qobject::Shell {
         // The bridge's number becomes a file's id here, once: everything after it is typed.
         let file = FileId::new(pg_model::num::f64_to_i64(file_id));
         let shell = self.qt_thread();
-        app::get().reading().session().reveal_folder(file, move |folder| {
+        app::session().reveal_folder(file, move |folder| {
             // Fails only when the window is gone: nothing left to reveal in.
             let _ = shell.queue(move |shell| shell.revealed(file, folder));
         });
@@ -351,7 +339,7 @@ impl qobject::Shell {
                 self.later(|shell| shell.reveal_shown());
             }
             Ok(None) => app::post(Notice::FileNoLongerInLibrary),
-            Err(e) => pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e}")),
+            Err(e) => pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e:#}")),
         }
     }
 
@@ -559,7 +547,7 @@ impl qobject::Shell {
     fn size(mut self: Pin<&mut Self>, change: size::Change) {
         match change {
             size::Change::RowHeight(height) => {
-                self.as_mut().rust_mut().row_height = px(height.get());
+                self.as_mut().rust_mut().row_height = qt_int(height.get());
                 self.as_mut().row_height_changed();
             }
             size::Change::ThumbHeight(height) => {
@@ -738,8 +726,8 @@ mod tests {
     fn tree() -> Tree {
         let rules = PathRules::Windows;
         let mut builder = TreeBuilder::with_capacity(rules, 2, 0, 0);
-        builder.add(1, &rules.parse(r"D:\").unwrap(), 2);
-        builder.add(2, &rules.parse(r"D:\p").unwrap(), 3);
+        builder.add(1, &rules.parse(r"D:\").unwrap(), 2).unwrap();
+        builder.add(2, &rules.parse(r"D:\p").unwrap(), 3).unwrap();
         let mut tree = Tree::new(rules);
         tree.replace(builder.build());
         tree
@@ -781,7 +769,7 @@ mod tests {
 
         let rules = PathRules::Windows;
         let mut builder = TreeBuilder::with_capacity(rules, 1, 0, 0);
-        builder.add(2, &rules.parse(r"D:\p").unwrap(), 3);
+        builder.add(2, &rules.parse(r"D:\p").unwrap(), 3).unwrap();
         let mut without_roots = Tree::new(rules);
         without_roots.replace(builder.build());
         assert_eq!(folders::listing_kind_of(&without_roots, &all, false), folders::KIND_ALL);

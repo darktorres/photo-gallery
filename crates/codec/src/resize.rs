@@ -7,6 +7,7 @@ use fast_image_resize::images::{TypedImage, TypedImageRef};
 use fast_image_resize::pixels::U8x3;
 use fast_image_resize::{ResizeAlg, ResizeOptions};
 
+use crate::decode::to_pixels;
 use crate::kernel::mks2021;
 use crate::pixels::Rgb;
 
@@ -30,7 +31,7 @@ impl Resizer {
         if long <= side {
             return Ok(false);
         }
-        let scale = pg_model::num::count(side) / pg_model::num::count(long);
+        let scale = crate::decode::MinSize::fit_scale(side, side, img.width, img.height);
         let w = to_pixels((pg_model::num::count(img.width) * scale).round()).max(1);
         let h = to_pixels((pg_model::num::count(img.height) * scale).round()).max(1);
         self.resize(img, w, h, out)?;
@@ -119,11 +120,6 @@ impl Resizer {
 /// A side in pixels as `fast_image_resize` takes it.
 fn pixels_u32(side: usize) -> Result<u32> {
     u32::try_from(side).context("image side over u32")
-}
-
-/// `x` rounded toward zero, as a count of pixels.
-fn to_pixels(x: f64) -> usize {
-    pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
 #[cfg(test)]

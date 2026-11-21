@@ -23,6 +23,8 @@ impl qobject::Words {
         QString::from(&text::ui(&String::from(id), 0.0, "", ""))
     }
 
+    /// The entry `id` with its values: `count` is the number its plural selector reads (`$count ->`), and an entry with no
+    /// selector takes 0 there, since the count is then not read. `value` fills `$text`, `second` fills `$other`.
     pub(crate) fn phrase(&self, id: &QString, count: f64, value: &QString, second: &QString) -> QString {
         QString::from(&text::ui(&String::from(id), count, &String::from(value), &String::from(second)))
     }
@@ -63,6 +65,20 @@ mod tests {
             .filter(|line| !line.starts_with(' ') && !line.starts_with('#'))
             .filter_map(|line| line.split_once(" =").map(|(id, _)| id.to_string()))
             .collect()
+    }
+
+    /// The QML stub cannot read `text::RATING_SYMBOLS`, so its literal list is read here and must equal the Rust list:
+    /// a change to one without the other fails this test rather than drifting.
+    #[test]
+    fn the_stub_rating_symbols_are_the_rust_ones() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/qml/stubs/pg/gallery/Words.qml");
+        let source = fs::read_to_string(&path).expect("the Words stub");
+        let line = source
+            .lines()
+            .find(|line| line.contains("readonly property var symbols:"))
+            .expect("the stub's symbols list");
+        let stub: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
+        assert_eq!(stub, pg_client::text::RATING_SYMBOLS);
     }
 
     /// Every id the QML asks for is an entry of `ui.ftl`, and every entry is asked for by some QML. The key hint labels,

@@ -5,6 +5,12 @@
 /// The largest zoom: 32 device pixels per image pixel.
 pub const MAX_ZOOM: f64 = 32.0;
 
+/// How far a zoom may be from fitting the picture, relative to the fit zoom (`fitted`), as a fraction of it.
+const FIT_TOLERANCE: f64 = 0.0001;
+
+/// The zoom at which a picture is shown at its own size (1:1), short of rounding: `pixels()` takes it so.
+const ONE_TO_ONE: f64 = 0.9999;
+
 /// A part of the image, as fractions of it (x, y, w, h) and its size in device pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Region {
@@ -95,7 +101,7 @@ impl View {
 
     /// 1:1 and beyond, away from the fit: the original is shown, nearest neighbour.
     pub fn pixels(&self) -> bool {
-        self.zoomable() && self.zoom >= 0.9999 && !self.fitted
+        self.zoomable() && self.zoom >= ONE_TO_ONE && !self.fitted
     }
 
     /// The window in device pixels, rounded: the size the fitted image is rendered at.
@@ -160,7 +166,7 @@ impl View {
         let (u, v) = ((px - self.ox) / self.dw(), (py - self.oy) / self.dh());
         self.zoom = zoom;
         let fit = self.fit_zoom();
-        self.fitted = (zoom - fit).abs() <= fit * 0.0001;
+        self.fitted = (zoom - fit).abs() <= fit * FIT_TOLERANCE;
         self.ox = px - u * self.dw();
         self.oy = py - v * self.dh();
         self.clamp();
@@ -168,7 +174,7 @@ impl View {
 
     /// Show the image fitted, or at 1:1 in Real Size mode (when that differs from the fit).
     pub fn reset(&mut self, real_size: bool) {
-        self.fitted = !(real_size && self.zoomable() && (self.fit_zoom() - 1.0).abs() > 0.0001);
+        self.fitted = !(real_size && self.zoomable() && (self.fit_zoom() - 1.0).abs() > FIT_TOLERANCE);
         self.zoom = if self.fitted { self.fit_zoom() } else { 1.0 };
         self.ox = (self.width - self.dw()) / 2.0;
         self.oy = (self.height - self.dh()) / 2.0;

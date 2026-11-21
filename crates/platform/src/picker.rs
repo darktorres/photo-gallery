@@ -211,8 +211,9 @@ mod native {
             }
             // SAFETY: the owner is the window's handle, given to the dialog as the window system gave it.
             unsafe {
-                // The handle is an address the window system gave (the app's window's HWND), not a pointer of ours.
-                let owner = owner.map(|handle| HWND(std::ptr::with_exposed_provenance_mut::<c_void>(handle)));
+                // The handle is a number the window system gave (the app's window's HWND), not memory of ours: no
+                // provenance, as process.rs and file.rs rebuild their handles.
+                let owner = owner.map(|handle| HWND(std::ptr::without_provenance_mut::<c_void>(handle)));
                 // The dialog runs its own message loop here; the caller holds nothing of the app across it.
                 let shown = self.dialog.Show(owner);
                 eat_mouse_move();
@@ -345,8 +346,7 @@ mod tests {
     #[test]
     fn a_dotted_folder_starts_the_dialog_at_its_nearest_plain_ancestor() {
         use crate::native::verbatim;
-        let dir =
-            std::path::absolute(crate::testing::run_folder("scratch_picker", "pg-start-dotted").unwrap()).unwrap();
+        let dir = std::path::absolute(crate::testing::run_folder("scratch_platform", "start-dotted").unwrap()).unwrap();
         let (dotted, sibling) = (dir.join("a."), dir.join("a"));
         std::fs::create_dir_all(verbatim(&dotted.join("inner"))).unwrap();
         std::fs::create_dir_all(&sibling).unwrap();
@@ -368,7 +368,7 @@ mod start_tests {
     /// A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
     #[test]
     fn a_start_folder_is_given_in_its_real_form() {
-        let tree = crate::testing::run_folder("scratch_picker", "pg-start-real").unwrap();
+        let tree = crate::testing::run_folder("scratch_platform", "start-real").unwrap();
         std::fs::create_dir(tree.join("inner")).unwrap();
         let got = super::start_folder(Some(tree.join("inner").join("..")), |_| None).expect("the start folder");
         assert_eq!(got, std::fs::canonicalize(&tree).unwrap());

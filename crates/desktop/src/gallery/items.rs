@@ -36,13 +36,13 @@ impl qobject::GalleryModel {
         self.entry(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
     }
 
-    /// What names the item's image for the providers (`ImageKey`: `<file id>@<mtime>.<rotation>.<pending turns>`, see
-    /// `providers`): it changes whenever the image does, so no stale image is shown.
+    /// What names the item's image for the providers (`pg_model::image::ImageKey`, whose text layout is documented there):
+    /// it changes whenever the image does, so no stale image is shown.
     pub(super) fn image_key(&self, item: i32) -> QString {
         self.entry(item).map_or_else(QString::default, |e| {
             let key = ImageKey {
                 file: e.id,
-                version: Some(Version { mtime: e.mtime, rotation: e.rotation, turns: e.pending_turns }),
+                version: Some(Version { mtime: e.mtime, rotation: e.rotation, pending_turns: e.pending_turns }),
             };
             // Formatted on the stack: the id and mtime at most 20 bytes each, the rotation and the turns one digit each
             // (0–3), so 20 + 1 + 20 + 1 + 1 + 1 + 1 = 45 bytes.

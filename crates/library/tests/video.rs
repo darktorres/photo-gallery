@@ -35,7 +35,7 @@ fn ffmpeg() -> Option<PathBuf> {
         let pinned = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.deps/ffmpeg/bin/ffmpeg.exe");
         if pinned.is_file() { pinned } else { PathBuf::from("ffmpeg") }
     });
-    Command::new(&exe).arg("-version").output().ok().filter(|o| o.status.success()).map(|_| exe)
+    (!pg_testkit::tool_missing(&exe, "-version")).then_some(exe)
 }
 
 /// Runs ffmpeg with `args`: an error if it can't start or fails.
@@ -62,7 +62,7 @@ fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
             }
         }
     };
-    let dir = pg_testkit::run_folder("scratch_video", "video")?;
+    let dir = pg_testkit::run_folder("scratch_library", "video")?;
     for sub in ["media", "anim"] {
         let to = dir.join(sub);
         std::fs::create_dir_all(&to).with_context(|| format!("make the folder {}", to.display()))?;
@@ -77,7 +77,7 @@ fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
 
 /// Encodes the clips into a folder of their own, which no test writes to.
 fn encode_clips(exe: &Path) -> anyhow::Result<PathBuf> {
-    let dir = pg_testkit::run_folder("scratch_video", "video-clips")?;
+    let dir = pg_testkit::run_folder("scratch_library", "video-clips")?;
     let media = dir.join("media");
     std::fs::create_dir_all(&media).with_context(|| format!("make the media folder {}", media.display()))?;
     let out = |name: &str| media.join(name).to_string_lossy().into_owned();
@@ -189,7 +189,7 @@ fn videos() {
     assert_eq!((f.width, f.height), (160, 80));
     assert!(near(pixel(&f, 20, 40), RED), "{:?}", pixel(&f, 20, 40));
 
-    // Mirrored: blue on the left. A catalog turn comes after the mirror: red at the top.
+    // Mirrored: blue on the left. A catalog turn comes after the mirror: blue at the top, red at the bottom.
     let mirrored = media.join("mirrored.mp4");
     let p = probe(&mirrored).unwrap();
     assert_eq!((p.width, p.height, p.orientation.get()), (160, 80, 2));

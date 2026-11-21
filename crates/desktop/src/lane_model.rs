@@ -18,6 +18,7 @@ use crate::lane_model_bridge::qobject;
 use core::pin::Pin;
 use std::time::Duration;
 
+use crate::rows::qt_int;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::LaneLines;
@@ -222,21 +223,17 @@ fn load_fixture() -> Option<LaneLines> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) => {
-            pg_log::warn("lane model", &format!("the lane rows {} can't be read: {e}", path.display()));
+            pg_log::warn("lanes", &format!("the lane rows {} can't be read: {e:#}", path.display()));
             return Some(LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() });
         }
     };
     match parse_fixture(&text) {
         Ok(fixture) => Some(fixture),
         Err(e) => {
-            pg_log::warn("lane model", &format!("the lane rows {} don't parse: {e}", path.display()));
+            pg_log::warn("lanes", &format!("the lane rows {} don't parse: {e:#}", path.display()));
             Some(LaneLines { crop: Progress::idle(), crop_since_work: None, lanes: Vec::new() })
         }
     }
-}
-
-fn qt_int(n: usize) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
 }
 
 impl qobject::LaneModel {
@@ -314,7 +311,8 @@ impl qobject::LaneModel {
                 }
                 Op::Move { from, to } => {
                     // A row moves up only (`to < from`), which Qt always takes.
-                    let _ = self.as_mut().begin_move_rows(&root, qt_int(from), qt_int(from), &root, qt_int(to));
+                    let moved = self.as_mut().begin_move_rows(&root, qt_int(from), qt_int(from), &root, qt_int(to));
+                    debug_assert!(moved, "Qt takes a row that moves up");
                     list_diff::apply(&mut self.as_mut().rust_mut().rows, op, &new);
                     self.as_mut().end_move_rows();
                 }

@@ -10,7 +10,7 @@
 // encoded); Rust writes both, at the path the command line gave (src/screenshot.rs), so this file takes no path: a path
 // that isn't UTF-8 can't be a QString.
 
-#include "pg-desktop/cpp/screenshot.h"
+#include "screenshot.h"
 
 #include <atomic>
 #include <cstddef>
@@ -179,11 +179,12 @@ void save_screenshot_later(QQmlApplicationEngine& engine, int max_ms) {
         if (ready.isValid() && !ready.toBool()) {
             if (!timed_out)
                 return;
-            // Never ready: saved as it is. Nothing was timed since ready, nor were frames watched.
+            // Never ready: saved as it is, and the run fails as a timed-out run without a window does. Nothing was timed
+            // since ready, nor were frames watched.
             take(engine, poll, false,
                  QStringLiteral("timed out after %1 ms, the window not ready; %2")
                      .arg(state->total.elapsed()).arg(busy_of(window).text()));
-            QCoreApplication::quit();
+            QCoreApplication::exit(1);
             return;
         }
         if (!state->ready_seen) {

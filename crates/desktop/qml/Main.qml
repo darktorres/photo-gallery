@@ -28,7 +28,7 @@ ApplicationWindow {
         text: "#dddddd"
         button: "#2d2d2d"
         buttonText: "#dddddd"
-        highlight: "#2f5f93"
+        highlight: Theme.chosenRow
         highlightedText: "#ffffff"
         mid: "#3a3a3a"
         dark: "#111111"
@@ -197,7 +197,7 @@ ApplicationWindow {
 
     // Where the filter bar's "Save cropped copies" puts them: the folder is asked for, then they are made.
     function askSaveCrops() {
-        cropPicker.pick(1);
+        cropPicker.pick(PickerPurpose.SaveCrops);
     }
 
     // Where the filter bar's "Cut borders from originals" starts: the count is asked for, then the dialog confirms.
@@ -211,7 +211,7 @@ ApplicationWindow {
     CutBordersDialog {
         id: cutDialog
         onConfirmed: galleryModel.cutBordersConfirmed()
-        onClosed: grid.takeFocus()
+        onClosed: win.refocus()
         onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
     }
 
@@ -226,7 +226,7 @@ ApplicationWindow {
     RemoveFolderDialog {
         id: removeDialog
         onConfirmed: library.removeFolder(removeDialog.row)
-        onClosed: grid.takeFocus()
+        onClosed: win.refocus()
         onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
     }
 
@@ -240,7 +240,7 @@ ApplicationWindow {
     DiscardRemovalDialog {
         id: discardDialog
         onConfirmed: library.discardRemoval(discardDialog.folder)
-        onClosed: grid.takeFocus()
+        onClosed: win.refocus()
         onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
     }
 
@@ -708,7 +708,7 @@ ApplicationWindow {
                     }
                     onHidden: grid.takeFocus()
                     onVisibleChanged: win.modalShown(PanelKind.Library, visible)
-                    onAddRequested: addPicker.pick(0)
+                    onAddRequested: addPicker.pick(PickerPurpose.AddFolder)
                     onRemoveRequested: row => win.askRemoveFolder(row)
                     onDiscardRequested: folder => win.askDiscardRemoval(folder)
                     onRescanRequested: library.rescan()
@@ -815,7 +815,7 @@ ApplicationWindow {
                     sortName: topBar.sortText
                     caret: !testHooks.screenshot
                     onSaved: name => shell.saveView(name)
-                    onClosed: grid.takeFocus()
+                    onClosed: win.refocus()
                     onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
                 }
             }

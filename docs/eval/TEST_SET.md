@@ -24,7 +24,7 @@ a copy of the Pinterest folder, copied to `D:\PhotoGallery\datasets\pinterest`.
 
 ### Labels
 
-- `dups2/<NNN>/`: matched duplicate groups. After fixes: **678 groups, 1,363 files, 702 pairs**.
+- `dups2/<NNN>/`: matched duplicate groups. After fixes: **678 groups, 1,363 files, 702 pairs** (superseded by the 2026-10-29 entry below: 679 groups, 698 pairs).
 - `dups2/*` (loose): **4,574 files**, each with a duplicate among the other loose files, unsorted.
 - `similiar_but_not_dups/`: **370 files** that other tools wrongly flagged; ~68k non-duplicate pairs.
 

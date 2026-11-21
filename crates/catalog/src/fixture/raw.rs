@@ -1,8 +1,13 @@
 //! The raw state the catalog's own tests set up or check, by name. Test-only.
 //!
-//! The tests of the catalog never touch its connection: each statement they need is a function here, so the SQL is in
-//! one place and a test says what it sets up or checks. The layout tests (the rebuild and the migrations) are the
-//! exception: what they check is the file on disk, so they open it themselves with [`on_disk`].
+//! A test sets up or checks common state through the functions here, so each shared statement is in one place and the
+//! test says what it sets up or checks. Two kinds of test use the connection directly: a test whose subject is a
+//! statement (a writer, a query, a migration) runs it on the catalog's own connection, and the layout tests (the rebuild
+//! and the migrations) open the file on disk themselves with [`on_disk`], since what they check is the file.
+
+// Its helpers unwrap: a failed statement here is the test's failure. They are test code under `cfg(test)` (exempt by
+// clippy.toml), but other crates' tests build this module through the `fixture` feature, where the lint applies.
+#![cfg_attr(not(test), expect(clippy::unwrap_used, reason = "a fixture's statement that fails is the test's failure"))]
 
 use std::path::Path;
 

@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from pgtools import REPO, WINDOWS, load_env_file, run
+from pgtools import QT_DIR_HOW, REPO, WINDOWS, load_env_file, not_set, run
 
 QML = REPO / "crates" / "desktop" / "qml"
 STUBS = REPO / "crates" / "desktop" / "tests" / "qml" / "stubs" / "pg" / "gallery"
@@ -38,7 +38,7 @@ def qt_kit() -> Path:
     """The Qt kit: QT_DIR (its bin and lib folders), from the environment or .env. Exits when it is not one."""
     qt = os.environ.get("QT_DIR", "")
     if not qt:
-        sys.exit("QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env.")
+        not_set("QT_DIR", QT_DIR_HOW)
     qmake = Path(qt) / "bin" / ("qmake.exe" if WINDOWS else "qmake")
     if not qmake.is_file():
         sys.exit(f"QT_DIR ({qt}) has no bin/{qmake.name}: point it at the Qt kit folder.")

@@ -213,7 +213,7 @@ fn compare(decoders: &mut Decoders, files: &[(String, Vec<u8>)]) -> Result<()> {
                 }
             };
             if other != dims || out.len() != reference.len() {
-                print!("  {}: {}×{} {} ch", dec.name(), other.width, other.height, other.channels);
+                print!("  {}: {}x{} {} ch", dec.name(), other.width, other.height, other.channels);
             } else if out == reference {
                 print!("  {}: identical", dec.name());
             } else {

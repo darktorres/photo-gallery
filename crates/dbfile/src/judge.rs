@@ -174,12 +174,12 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_a_database_is_damaged() {
-        let dir = pg_testkit::run_folder("scratch_dbfile", "pg-dbfile-judge").unwrap();
+        let dir = pg_testkit::run_folder("scratch_dbfile", "dbfile-judge").unwrap();
         let path = dir.join("not-a-db.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
         let judged = judge(&path, |p| Connection::open(p), &EXPECTED, ID).unwrap();
         assert_eq!(judged, Found::Damaged(Damage::NotADatabase));
         assert_eq!(judge(&dir.join("absent.sqlite"), |p| Connection::open(p), &EXPECTED, ID).unwrap(), Found::New);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

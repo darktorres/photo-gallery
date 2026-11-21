@@ -165,7 +165,7 @@ Names used throughout (every section uses these spellings):
 - Cookies: `__Host-gallery_session` (the sign-in secret; Secure, HttpOnly, SameSite=Lax, Path=/, no Domain) and `gallery_device` (the device id, which grants nothing; Secure, HttpOnly, SameSite=Lax, Path=/api/auth/login). See 2.4.
 - Headers: `X-Pg-Client: browser|desktop|cli` on every POST, PUT, PATCH and DELETE; `X-Pg-Bundle` (browser) or `X-Pg-Build` (desktop, cli) on build-gated requests; `Authorization: Bearer` on loopback; `Origin`; `Sec-Fetch-Site`.
 - Routes: `/login` and `/api/auth/*` for sign-in; `/api/devices/*`; `/api/settings/*`; `/api/hello` and `/api/server/stop` (loopback only).
-- Files in catalog_dir: catalog.sqlite, server.lock, server.json, server.token. Files in home: server.db, gallery.json (rollback mirror), gallery.log, desktop.lock, home.lock (ASSEMBLER), tls/lan-ca.bundle, tls/root.cer.
+- Files in catalog_dir: catalog.sqlite, server.lock. Files in home: server.db, launch.json, gallery.json (rollback mirror), gallery.log, desktop.lock, home.lock (ASSEMBLER), tls/lan-ca.bundle, tls/root.cer.
 - Ids: 32 lowercase hex, 128 random bits, minted by the server: device id, request_id, plan, job, sid, epoch. listing_key is derived (section 4). catalog_id is meta.catalog_id.
 - Errors: body is `{error: <kebab-case code>}`.
 
@@ -305,7 +305,7 @@ Resolved in 1.2:
 - Frozen set (envelope 1; golden fixtures in pg-wire): the hello reply, the login reply, and the bodies of 401 not-authenticated, 403 origin-refused, 409 build-changed, 426 build-required and 429 rate-limited. version-mismatch is not frozen, because the build gate answers a stale page first.
 - Wire enums carry no serde `other` and no defaults on required fields; an unknown value is a decode error, which on a build-gated route is a stale signal.
 - Loopback hello: `GET /api/hello?nonce=<64 hex>`, no bearer. Returns `{envelope: 1, build_id, catalog_id, state, proof}`, where `proof` is the hex BLAKE3 keyed hash, keyed with H = BLAKE3(token), over the 32 nonce bytes. Only H is held in server memory.
-- Files: `server.token` (32 random bytes, hex; written at each start; owner-only DACL, not verified) and `server.json` (`{port, envelope, build_id, started_ms}`) in catalog_dir. The token is written first; both are removed at clean stop. Both are trusted only while server.lock is held.
+- Files: `launch.json` in home (B9 in WEB_CLIENT_TECH_DECISIONS.md), `{port, token, envelope, build_id, started_ms}`, with the token as 32 random bytes in hex, written at each start by temp-then-rename under an owner-only DACL (not verified). It is removed at clean stop and trusted only while server.lock is held.
 - Loopback request rules: Host must be `127.0.0.1` or `localhost` with the port; any Origin is refused; cookies are never read; no CORS. Every route except hello requires the Bearer token, compared in constant time. The token never appears in a query string or a cookie.
 
 ### 1.4 Error codes and headers
@@ -640,7 +640,7 @@ The remembered table in server.db (section 3.4) holds everything below; the mirr
 
 `gallery auth set-password` reads the password with echo off from a console only; it refuses otherwise and never reads argv or the environment. It enforces the 15-character minimum.
 
-1. If Lock::try_take(server.lock) finds a server running (exclusive), call loopback setup, change or reset with the token from server.token (one re-read of server.json on 401). If loopback is unreachable, refuse with a message.
+1. If Lock::try_take(server.lock) finds a server running (exclusive), call loopback setup, change or reset with the token from launch.json (one re-read of launch.json on 401). If loopback is unreachable, refuse with a message.
 2. Otherwise take server.lock shared and write in one BEGIN IMMEDIATE transaction under SQLite's own locks. No exclusive hold on server.db is taken.
 
 `gallery store move-aside` takes home.lock, then Live::exclusive on server.db, then move_aside (remove.rs:21). The CLI refuses the offline credential write under WSL against a Windows-mounted folder, because locks do not hold across operating systems (O6).
@@ -656,7 +656,7 @@ The remembered table in server.db (section 3.4) holds everything below; the mirr
 - Store location: home, not catalog_dir or auth.sqlite (2.1).
 - Lock: server.lock in catalog_dir, not Lock::take on the home folder (auth), `<home>`/server.lock (device), `<catalog>`.server.lock (ops), or a PID file. Non-waiting try (section 2.1).
 - Exclusive hold on server.db: only for replacement. The auth probe on auth.sqlite and the device design's probe are withdrawn.
-- Launch file: server.json and server.token in catalog_dir (section 1.3). Identity's launch.json in home is withdrawn; its proof is kept.
+- Launch file: launch.json in home (section 1.3; B9). Its proof is kept.
 - Desktop key: the random this_computer id. A fixed 'desktop' key and a token-derived key are rejected.
 - Cookies: section 2.4. Strict is rejected; Max-Age is the absolute lifetime (lan's idle-based Max-Age is rejected: the browser would hold a cookie the server has idled out).
 - Login reuses non-revoked devices; delete-and-recreate (auth) and creating a device before the password verifies (device) are rejected.
@@ -689,7 +689,7 @@ The remembered table in server.db (section 3.4) holds everything below; the mirr
 
 - C1: non-waiting Lock::try_take and Lock::try_take_shared on server.lock, beside Lock::take (lock.rs:12-13, 27-38, which waits about 5 s). The exclusive try at core.rs:92 moves into the change branch (core.rs:91-92), so a prepare that needs no change never takes the exclusive hold; the refusal at core.rs:93-95 stays. The server takes the prepare lock (catalog.sqlite.lock, lifecycle.rs:43-46) for its whole life through an internal prepare body. No schema change. A second in-process desktop is refused (O22).
 - C2: pg-web with routes for every inventory operation, run from tests; GET /api/status and GET /api/dups; the JsonStore durability fixes and the set_aside rename (store.rs:61).
-- C3: GET /api/hello; server.token and server.json; loopback order (1.2, 1.3); POST /api/server/stop; discovery and attach (3.2); the token DACL test (unverified).
+- C3: GET /api/hello; launch.json; loopback order (1.2, 1.3); POST /api/server/stop; discovery and attach (3.2); the token DACL test (unverified).
 - C4: the Loopback backend and the conformance suite run on both backends.
 - C5: the change pump moves behind the trait. Direct implements the vector from the in-process Change bus; Loopback reads POST /api/changes on a worker thread. The resume, gap resync and retention text is deleted.
 - C6: the remembered table in server.db; views, inbox and the thumbnail placeholder behind the trait; the gallery.json mirror written by the server. Direct still writes gallery.json. O29 is decided before this step.
@@ -704,8 +704,8 @@ Resolved: "phase" is used for cutover steps (C1 to C9) and quarantine build phas
 
 - server.lock: non-waiting, in catalog_dir. The server holds it exclusive for life. CLI writing commands hold it shared for their run; read commands that must run prepare do too; the pre-cutover desktop holds it shared for its life. desktop.lock (home) is exclusive for the pre-cutover desktop and refuses a second desktop process.
 - Catalog holds: prepare takes the exclusive Live probe only in the change branch. The server keeps the shared hold for life (core.rs:124-125, kept by app.rs:62). The residual old-build risk is O19.
-- Server start, in order: (1) try server.lock exclusive; if held, exit 75 (or 0 when a matching server answers hello). (2) Write server.holder (kind and pid) as an unlocked informational file. (3) Prepare under the prepare lock; refuse the rebuild-window state (catalog absent while catalog.sqlite.replaced exists, rebuild.rs:87-91). (4) Startup repair: delete scan leases (types.rs:89; roots.rs:221-223); leave writer temp files alone (they are the only whole copy of a write). (5) Import once if the marker is missing. (6) Write server.token, then server.json. (7) Bind loopback; the LAN listener only if the checklist passes (section 5.11). (8) Start the job, the writer and the inbox; after bind, the quarantine recovery job (3.11).
-- Desktop attach (from C3): (1) try server.lock. If free, no server runs: run the task (`schtasks /Run`, section 5.3) and wait for hello with a matching build. The desktop never spawns the server and never kills a process (the cluster-3 detached spawn is rejected: lan's kill-on-close analysis, process.rs:104-115, and the two-supervisor problem). (2) If held, read server.json and server.token, call GET /api/hello with a fresh nonce, verify the proof and envelope 1 and build_id, and only then send the bearer. A failed check means a squatter: the file is ignored and no bearer is sent. (3) On a build mismatch: once per desktop start, POST /api/server/stop with the bearer; wait for the lock within a bound; run the task. A second mismatch is an error state. (4) Held but no answer: show the connecting state naming the holder kind from server.holder, and retry within 5 s (P); never kill. A 401 later re-reads server.json once.
+- Server start, in order: (1) try server.lock exclusive; if held, exit 75 (or 0 when a matching server answers hello). (2) Write server.holder (kind and pid) as an unlocked informational file. (3) Prepare under the prepare lock; refuse the rebuild-window state (catalog absent while catalog.sqlite.replaced exists, rebuild.rs:87-91). (4) Startup repair: delete scan leases (types.rs:89; roots.rs:221-223); leave writer temp files alone (they are the only whole copy of a write). (5) Import once if the marker is missing. (6) Write launch.json (temp-then-rename). (7) Bind loopback; the LAN listener only if the checklist passes (section 5.11). (8) Start the job, the writer and the inbox; after bind, the quarantine recovery job (3.11).
+- Desktop attach (from C3): (1) try server.lock. If free, no server runs: run the task (`schtasks /Run`, section 5.3) and wait for hello with a matching build. The desktop never spawns the server and never kills a process (the cluster-3 detached spawn is rejected: lan's kill-on-close analysis, process.rs:104-115, and the two-supervisor problem). (2) If held, read launch.json, call GET /api/hello with a fresh nonce, verify the proof and envelope 1 and build_id, and only then send the bearer. A failed check means a squatter: the file is ignored and no bearer is sent. (3) On a build mismatch: once per desktop start, POST /api/server/stop with the bearer; wait for the lock within a bound; run the task. A second mismatch is an error state. (4) Held but no answer: show the connecting state naming the holder kind from server.holder, and retry within 5 s (P); never kill. A 401 later re-reads launch.json once.
 - Before C8 the desktop default remains Direct and holds server.lock shared; it does not start the server.
 - Exit codes: 0 (a matching server already holds the lock), 75 (the lock is held by a non-server writer or by a server with another build; the task retries), 1 (any other failure).
 
@@ -767,7 +767,7 @@ Resolved: the cutover's attached ledger in server.db and the quarantine request 
 
 ### 3.8 CLI
 
-- Writing commands (scan, import, remove, thumbs, borders, write, and the rest): try server.lock shared without waiting. On success, run the direct path for the whole command; nothing is refused. On failure a server holds the lock exclusively: read server.json and server.token, call hello, verify the proof, and call the server's API with the bearer. Report job progress; Ctrl-C posts POST /api/jobs/{job}/cancel. If hello does not answer within 5 s (P), fail with 'server is starting, retry'. The command never checks for a server and then writes; the lock chooses the path.
+- Writing commands (scan, import, remove, thumbs, borders, write, and the rest): try server.lock shared without waiting. On success, run the direct path for the whole command; nothing is refused. On failure a server holds the lock exclusively: read launch.json, call hello, verify the proof, and call the server's API with the bearer. Report job progress; Ctrl-C posts POST /api/jobs/{job}/cancel. If hello does not answer within 5 s (P), fail with 'server is starting, retry'. The command never checks for a server and then writes; the lock chooses the path.
 - Read commands use Catalog::open (cli lib.rs:136 today, moved below the mode check). They never prepare while a server runs. When the catalog needs a change and no server runs, they take server.lock shared and run prepare.
 - The CLI never stops a server.
 - A long CLI write holds the shared lock, so a server start during it exits 75 and the task retries; the desktop shows 'server not running' and retries. O21 decides whether the start waits instead.
@@ -1101,11 +1101,11 @@ Resolved in 4.12: 16384 px and the full-image route (transport) are rejected. Th
 
 ### 5.1 Placement
 
-- home (`<home>`): server.db; gallery.json (rollback mirror); gallery.log; desktop.lock; home.lock (section 2.1); tls/lan-ca.bundle (intermediate certificate and its DPAPI-protected key); tls/root.cer (public root).
-- catalog_dir (`<catalog_dir>`): catalog.sqlite; server.lock; server.json; server.token.
+- home (`<home>`): server.db; launch.json; gallery.json (rollback mirror); gallery.log; desktop.lock; home.lock (section 2.1); tls/lan-ca.bundle (intermediate certificate and its DPAPI-protected key); tls/root.cer (public root).
+- catalog_dir (`<catalog_dir>`): catalog.sqlite; server.lock.
 - The root private key: an owner-chosen file outside both folders. The server never keeps it at rest.
 - Nothing is configured by path except the certificate paths in server.db, which name the fixed files above.
-- Resolved: paths in gallery.json (auth) are rejected; configured paths (lan's first draft) are rejected for the fixed names; everything in catalog_dir (puts key material and credentials in backup scope) is rejected; everything in home (the lock would not guard the catalog folder) is rejected. The names server.sqlite, auth.sqlite, serve.json and launch.json are withdrawn.
+- Resolved: paths in gallery.json (auth) are rejected; configured paths (lan's first draft) are rejected for the fixed names; everything in catalog_dir (puts key material and credentials in backup scope) is rejected; everything in home (the lock would not guard the catalog folder) is rejected. The names server.sqlite, auth.sqlite and serve.json are withdrawn; launch.json in home is the one launch file (B9).
 
 ### 5.2 Server start (combined order)
 
@@ -1114,7 +1114,7 @@ Resolved in 4.12: 16384 px and the full-image route (transport) are rejected. Th
 3. Judge server.db (section 2.2).
 4. Remove a leftover `.building` (rebuild.rs:67-68) at every start.
 5. Catalog::prepare (section 3.2), with the exclusive hold only in the change branch (core.rs:91-92). The server keeps the catalog's shared hold for life (core.rs:124-125).
-6. Write server.token (owner-only DACL), then server.json (temp, FlushFileBuffers, rename).
+6. Write launch.json (owner-only DACL; temp, FlushFileBuffers, rename).
 7. Bind loopback and serve it.
 8. Start the LAN listener only if the checklist in 5.11 passes.
 
@@ -1130,7 +1130,7 @@ A failure at steps 1 to 7 ends the process. A LAN failure never stops loopback o
 
 ### 5.4 Stop, crash and logoff
 
-Stop is `POST /api/server/stop` with the bearer (build-exempt, loopback only). Order: stop accepting on both listeners; answer held polls with 'stopping'; close sessions; stop batch jobs at a file boundary; drain within bounds; write the mirror and the catalog session row; close the pool; drop the catalog keeper last; delete server.json and server.token; release server.lock last. Crash, logoff and shutdown are one case. No design depends on a graceful stop; a mutation is acknowledged only after its commit.
+Stop is `POST /api/server/stop` with the bearer (build-exempt, loopback only). Order: stop accepting on both listeners; answer held polls with 'stopping'; close sessions; stop batch jobs at a file boundary; drain within bounds; write the mirror and the catalog session row; close the pool; drop the catalog keeper last; delete launch.json; release server.lock last. Crash, logoff and shutdown are one case. No design depends on a graceful stop; a mutation is acknowledged only after its commit.
 
 ### 5.5 Pre-login surface and guards
 

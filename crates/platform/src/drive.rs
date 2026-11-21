@@ -39,7 +39,7 @@ impl Drives for SystemDrives {
 #[cfg(not(any(windows, target_os = "linux")))]
 impl Drives for SystemDrives {
     fn of(&self, _path: &Path) -> io::Result<Drive> {
-        Err(io::ErrorKind::Unsupported.into())
+        Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
     }
 }
 
@@ -484,7 +484,7 @@ mod linux {
         /// and a USB disk; then a solid disk `sdc` and a spinning disk `sdd`, and a device-mapper device `dm-1` over both.
         /// Its `dev/block` links point at each, as sysfs has them.
         fn sysfs() -> std::path::PathBuf {
-            let root = crate::testing::run_folder("scratch_drive", "pg-drive-sysfs").unwrap();
+            let root = crate::testing::run_folder("scratch_platform", "drive-sysfs").unwrap();
             let write = |rel: &str, text: &str| {
                 let path = root.join(rel);
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -626,7 +626,7 @@ mod linux {
 
         #[test]
         fn the_real_folder_is_on_a_disk_or_is_a_file_system_with_none() {
-            let dir = crate::testing::run_folder("scratch_drive", "pg-drive-of").unwrap();
+            let dir = crate::testing::run_folder("scratch_platform", "drive-of").unwrap();
             match SystemDrives.of(&dir) {
                 Ok(drive) => assert!(!drive.label.is_empty()),
                 Err(error) => assert_eq!(error.kind(), io::ErrorKind::Unsupported, "{error}"),
@@ -738,6 +738,7 @@ mod tests {
     #[test]
     fn the_bus_constants_are_windows_own() {
         use windows_sys::Win32::Storage::FileSystem as fs;
+        assert_eq!(wf::BUS_UNKNOWN, fs::BusTypeUnknown);
         assert_eq!(wf::BUS_USB, fs::BusTypeUsb);
         assert_eq!(wf::BUS_SATA, fs::BusTypeSata);
         assert_eq!(wf::BUS_VIRTUAL, fs::BusTypeVirtual);
@@ -750,7 +751,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_folder_on_this_machine_is_on_a_drive_that_can_be_named() {
-        let dir = crate::testing::run_folder("scratch_drive", "pg-drive-of").unwrap();
+        let dir = crate::testing::run_folder("scratch_platform", "drive-of").unwrap();
         let drive = SystemDrives.of(&dir).unwrap();
         assert!(!drive.label.is_empty());
         if let DriveKey::Disks(disks) = &drive.key {

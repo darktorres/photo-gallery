@@ -534,7 +534,7 @@ fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mu
             let bytes = bytes?;
             let temp = rules
                 .parse_bytes(&bytes)
-                .ok_or_else(|| crate::error::Error::Other(anyhow::anyhow!("a queued temp path that doesn't parse")))?;
+                .ok_or(crate::error::Error::Stored { what: "a queued temp path that doesn't parse" })?;
             temps.push(temp);
         }
     }

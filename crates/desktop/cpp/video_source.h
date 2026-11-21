@@ -1,4 +1,4 @@
-// A video's file as the player's device (src/video_player.rs): a QMediaPlayer plays a QFile over the file Rust opened
+// A video's file as the player's device (src/video_source.rs): a QMediaPlayer plays a QFile over the file Rust opened
 // by its exact path and handed over as a raw handle (a HANDLE on Windows, a descriptor on Unix). Qt never opens the
 // file by name: on Windows its file engine normalizes every name (GetFullPathNameW, the verbatim one too), which drops
 // a folder's trailing dot. Qt's FFmpeg backend reads the device itself.
@@ -34,9 +34,9 @@ private:
     // backend stops reading it first.
     void set_device(std::unique_ptr<QIODevice> device, rust::Str ext);
 
-    QPointer<QMediaPlayer> player_;
+    QPointer<QMediaPlayer> m_player;
     // The device the player plays, kept while it plays.
-    std::unique_ptr<QIODevice> device_;
+    std::unique_ptr<QIODevice> m_device;
 };
 
 std::unique_ptr<VideoPlayer> new_video_player(QMediaPlayer* player);

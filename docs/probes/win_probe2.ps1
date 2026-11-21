@@ -1,10 +1,11 @@
 param(
     # Default: the folder that holds the checkout, the user profile and System32.
-    [string[]]$ScanRoots = @([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\..')), $env:USERPROFILE, 'C:\Windows\System32'),
+    [string[]]$ScanRoots = @([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')), $env:USERPROFILE, 'C:\Windows\System32'),
     [int]$MaxEntries = 400000,
     # Default: the checkout's target folder through the local administrative share.
     [string]$UncFolder = ''
 )
+$ErrorActionPreference = 'Stop'
 
 Add-Type -TypeDefinition @"
 using System;
@@ -108,9 +109,8 @@ public static class PgProbe2 {
 }
 "@
 
-$ErrorActionPreference = 'Continue'
 if (-not $UncFolder) {
-    $t = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\target'))
+    $t = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\target'))
     $UncFolder = '\\localhost\' + $t.Substring(0, 1) + '$' + $t.Substring(2)
 }
 Write-Output '== A. UNC path (SMB admin share)'

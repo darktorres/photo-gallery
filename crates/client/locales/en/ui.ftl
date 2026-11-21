@@ -69,10 +69,10 @@ ui-remove-folder-question = Its images are deleted from the catalog, with their 
 ui-removal-heading = Being removed
 ui-removal-removing = removing
 ui-removal-kept = kept: a change is waiting to be written
-ui-removal-discard = Discard
-ui-removal-discard-title = Discard this removal?
-ui-removal-discard-question = The changes not yet written into its files are given up, and their temporary copies are deleted. The files they were being written into may be left partly written.
-ui-removal-discard-confirm = Discard changes
+ui-discard-removal = Discard
+ui-discard-removal-title = Discard this removal?
+ui-discard-removal-question = The changes not yet written into its files are given up, and their temporary copies are deleted. The files they were being written into may be left partly written.
+ui-discard-removal-confirm = Discard changes
 ui-no-folders-yet = No folders yet.
 ui-write-files = Write ratings and turns into the files too (where the format allows)
 ui-write-files-tooltip = Ratings are always kept in the catalog. With this on, they also go into the image files (XMP), so other programs see them; turns rotate the files losslessly.
@@ -88,7 +88,6 @@ ui-nothing-to-crop = No file in the list has borders to crop.
 ui-add-folder = Add folder…
 ui-rescan-all = Rescan all
 ui-close = Close
-# The log view (dev mode): its button in the status bar, its title, and what it shows with no record
 # The status bar's button that opens the inbox, with how many of its entries are unread (none: no count)
 ui-inbox = { $count ->
     [0] Inbox
@@ -106,15 +105,14 @@ ui-inbox-reveal = Reveal
 ui-inbox-more = The newest { $other } of { $text } files
 # The scans' ledger lists its folders: how many it holds ($text) and how many are listed ($other)
 ui-inbox-more-folders = { $other } of { $text } folders
-# A ledger's list while it is read, and when it couldn't be ($text: why)
-ui-inbox-loading = Loading…
+# A ledger's list when it couldn't be read ($text: why); while it is read, the shared ui-loading
 ui-inbox-unreadable = The list couldn't be read: { $text }
 # The status bar's link to the pass's failed files: its words are the pass line's (pass-failed); this names it
 ui-failed-link = Show the failed files
 # The pass's "N failed" when the inbox lists nothing of it yet (its failures aren't recorded yet): plain text, this its tooltip
 ui-failed-not-recorded = Not recorded in the inbox yet
+# The log view (dev mode): its button in the status bar, which is also its title, and what it shows with no record
 ui-log = Log
-ui-log-title = Log
 ui-log-empty = Nothing logged yet
 
 # The window and its dialogs
@@ -193,6 +191,7 @@ ui-folder-up = Up
 ui-choose = Choose
 ui-choose-here = Choose this folder
 ui-cancel = Cancel
+ui-save = Save
 ui-find-similar-yandex = Find similar on Yandex
 ui-save-picked = Save { $text } { $count ->
     [one] image…
@@ -227,7 +226,7 @@ ui-hint-mute = M mute
 ui-hint-up-4 = ↑ 4
 ui-hint-down-1 = ↓ 1
 ui-hint-turn-back = R ⟲
-ui-hint-turn-on = ⇧R ⟳
+ui-hint-turn-on = Shift+R ⟳
 ui-hint-wheel-zoom = wheel zoom
 ui-hint-one-to-one = double-click 1:1
 ui-hint-real-size = Z real size

@@ -56,8 +56,10 @@ mod tests {
             let error = format!("{:#}", gif::rewrite(&gif_file, op).unwrap_err());
             assert!(error.contains("too large"), "{error}");
         }
-        // The cap is the decoders' own.
-        assert_eq!(pg_codec::max_decode_bytes(), 512 << 20);
+        // The cap is the decoders' own: a size at it is kept, a byte over it is refused, whatever its value.
+        let cap = usize::try_from(pg_codec::max_decode_bytes()).unwrap();
+        assert_eq!(decoded_size("x", &[cap]).unwrap(), cap);
+        assert!(decoded_size("x", &[cap + 1]).is_err());
         assert!(decoded_size("x", &[usize::MAX, 2]).is_err());
         assert_eq!(decoded_size("x", &[3, 4, 2]).unwrap(), 24);
     }

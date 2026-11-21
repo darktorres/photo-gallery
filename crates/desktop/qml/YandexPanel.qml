@@ -182,7 +182,7 @@ Rectangle {
                     enabled: yandex.pickedCount > 0 && !yandex.busy
                     onClicked: {
                         // The picker opens in the folder saved into last, or the photo's.
-                        savePicker.pick(2);
+                        savePicker.pick(PickerPurpose.YandexSave);
                     }
                 }
                 Button {

@@ -8,14 +8,16 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from build_static_ffmpeg import MSYS_PACKAGES, WINDOWS_SDK
 from ci.eval_pins import PACKAGES, REQUIREMENTS, pin
 from ci.github_files import env_line, path_line, pin_values
 from install_exiftool import install
-from pgtools import MSVC_TOOLSET, REPO, just_value
+from pgtools import DEFAULT_BUILD_TOOLS, DEFAULT_MSYS, MSVC_TOOLSET, REPO, just_value
 
 WORKFLOW = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 PINNED = {
@@ -213,11 +215,44 @@ class WorkflowPins(unittest.TestCase):
                 self.assertLess(text.find("actions/setup-python"), pins, job)
 
 
+class ClippyFiles(unittest.TestCase):
+    def test_the_crates_repeat_the_root_test_allowances_and_bans(self):
+        # Clippy reads a crate's own clippy.toml instead of the root's, and has no include, so the model and client files
+        # repeat the root's settings that apply everywhere. This keeps the repeats in step with the root.
+        root = tomllib.loads((REPO / "clippy.toml").read_text(encoding="utf-8"))
+        root_types = {entry["path"] for entry in root["disallowed-types"]}
+        for crate in ("model", "client"):
+            with self.subTest(crate=crate):
+                own = tomllib.loads((REPO / "crates" / crate / "clippy.toml").read_text(encoding="utf-8"))
+                for key in (
+                    "allow-panic-in-tests",
+                    "allow-print-in-tests",
+                    "allow-unwrap-in-tests",
+                    "allow-expect-in-tests",
+                    "allow-indexing-slicing-in-tests",
+                ):
+                    self.assertEqual(own.get(key), root.get(key), key)
+                own_types = {entry["path"] for entry in own["disallowed-types"]}
+                self.assertLessEqual(root_types, own_types, "every root hash-collection ban is in the crate's list")
+                own_methods = {entry["path"] for entry in own["disallowed-methods"]}
+                self.assertIn("std::env::temp_dir", own_methods, "the root temp_dir ban is in the crate's list")
+
+
 class Consumers(unittest.TestCase):
     def test_the_powershell_copies_agree_on_the_msvc_toolset(self):
         for script in ("build-jpeg-turbo.ps1", "build-static-ffmpeg.ps1"):
             text = (REPO / "tools" / script).read_text(encoding="utf-8")
             self.assertIn(f"'{MSVC_TOOLSET}'", text, script)
+
+    def test_the_powershell_copies_agree_on_the_static_build_folders_and_pins(self):
+        ffmpeg = (REPO / "tools" / "build-static-ffmpeg.ps1").read_text(encoding="utf-8")
+        jpeg = (REPO / "tools" / "build-jpeg-turbo.ps1").read_text(encoding="utf-8")
+        for text in (ffmpeg, jpeg):
+            self.assertIn(f"'{DEFAULT_BUILD_TOOLS}'", text)
+        self.assertIn(f"'{DEFAULT_MSYS}'", ffmpeg)
+        self.assertIn(f"'{WINDOWS_SDK}'", ffmpeg)
+        for name, version in MSYS_PACKAGES.items():
+            self.assertIn(f"{name} = '{version}'", ffmpeg)
 
     def test_the_workflow_python_is_the_justfile_pin(self):
         # setup-python runs before the pins step, so the workflow holds the literal; this asserts it is the pinned one.

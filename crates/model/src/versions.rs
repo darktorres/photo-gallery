@@ -1,6 +1,6 @@
 //! The versions of every persisted artifact, in one place. Each is an `i64` named `<OWNER>_VERSION`, and the name is the
 //! upper-cased mark it drives in `meta` (`import_version` is `IMPORT_VERSION`, `thumb_output_version` is
-//! `THUMB_OUTPUT_VERSION`). The owning crate re-exports its constant under the same name with a pointer to this module:
+//! `THUMB_OUTPUT_VERSION`; `KEY_ALGO_VERSION` is the one exception: it drives the `key_version` mark, and its doc says why). The owning crate re-exports its constant under the same name with a pointer to this module:
 //! `pub const IMPORT_VERSION: i64 = pg_model::versions::IMPORT_VERSION;`.
 //!
 //! A bump is a change to what the artifact stores, or to what its stored values mean. Its rule is written beside each
@@ -17,7 +17,8 @@ pub const BORDERS_VERSION: i64 = 1;
 
 /// The version of the pairs the pairing pass makes (`pg_model::pdq::PAIRING_VERSION`): what matches within
 /// `MATCH_DISTANCE`, among the reliable hashes. A catalog at another owes every pair again. Its seed in the baseline is
-/// this value, checked by the catalog's schema test.
+/// this value. The seed is a literal in `baseline.sql` (SQL cannot name this constant), so the catalog's `schema.rs` asserts
+/// it at compile time and its schema test checks the stored seed.
 pub const PAIRING_VERSION: i64 = 1;
 
 /// The version of the thumbnails' pass state (`pg_render::THUMBS_VERSION`): the retry semantics of a thumbnail the pass
@@ -48,3 +49,8 @@ pub const THUMB_OUTPUT_VERSION: i64 = 1;
 /// when a key changes for the same name. The catalog's `key_version` mark is this with the toolchain's Unicode version,
 /// which the keys' case folding depends on: either changing recomputes the stored keys.
 pub const KEY_ALGO_VERSION: i64 = 1;
+
+/// The version of the preferences file's layout (`gallery.json`, `pg_app::prefs`). Each save stamps it; a file without the
+/// key reads as 0, the layout whose row height was a float. Version 1 stores the row height as a whole number of pixels.
+/// Bump it when a field changes meaning or its format. A new field needs no bump: a file without it reads the default.
+pub const PREFS_VERSION: i64 = 1;

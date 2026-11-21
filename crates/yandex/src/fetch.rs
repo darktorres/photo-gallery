@@ -41,7 +41,7 @@ impl Fetcher {
         }
         let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
         if !plausibly_image(content_type) {
-            return Err(YandexError::Unexpected("the result is not an image"));
+            return Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NotAnImage));
         }
         let mut bytes = Vec::new();
         resp.into_body()
@@ -50,7 +50,7 @@ impl Fetcher {
             .read_to_end(&mut bytes)
             .map_err(|e| YandexError::Transport(e.to_string()))?;
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_DOWNLOAD_BYTES {
-            return Err(YandexError::Unexpected("the image is larger than the download limit"));
+            return Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::TooLarge));
         }
         let format = Format::sniff(&bytes);
         Ok(Download { bytes, format })

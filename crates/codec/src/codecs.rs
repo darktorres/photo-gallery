@@ -21,7 +21,7 @@ mod jpeg;
 pub(crate) mod limits;
 mod png;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 pub(crate) mod tiff;
 mod webp;
 
@@ -464,7 +464,7 @@ mod tests {
         }
         // Every kind made it. What fails fails as it did: gray with alpha, which the tiff crate reads as two bands
         // (`Multiband`, a colour type `image` doesn't take), and planar CMYK.
-        assert_eq!(files.len(), 72);
+        assert_eq!(files.len(), 72, "the corpus is 72 files: a change to it changes what this test covers");
         let tiff = |kind: &str| [false, true].map(|planar| format!("tiff {kind} planar {planar}"));
         let mut expected = [tiff("1 8x2"), tiff("1 16x2")].concat();
         expected.extend(["tiff 5 8x4 planar true".to_string(), "tiff 5 16x4 planar true".to_string()]);

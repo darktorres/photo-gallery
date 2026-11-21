@@ -8,7 +8,7 @@ index 05d235a..49413c2 100644
 
 +    // The `pg_static_qt` cfg (set below for the static build) is declared for every build, so the shared build is
 +    // checked the same way.
-+    println!("cargo::rustc-check-cfg=cfg(pg_static_qt)");
++    println!("cargo:rustc-check-cfg=cfg(pg_static_qt)");
 +
      // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that: a fork with local changes, so qmlcachegen sees the module as Qt's CMake build lays it out
      let mut builder = CxxQtBuilder::new_qml_module(
@@ -46,7 +46,7 @@ index 05d235a..49413c2 100644
 +        std::env::var_os("PG_FFMPEG_STATIC")
 +            .ok_or("PG_QT_STATIC needs PG_FFMPEG_STATIC, the static FFmpeg's lib folder")?,
 +    );
-+    println!("cargo::rustc-cfg=pg_static_qt");
++    println!("cargo:rustc-cfg=pg_static_qt");
 +    for lib in STATIC_QT_LIBS {
 +        link_static(&qt.join(lib))?;
 +    }
@@ -54,7 +54,7 @@ index 05d235a..49413c2 100644
 +        link_static(&ffmpeg.join(format!("{lib}.lib")))?;
 +    }
 +    for lib in STATIC_QT_SYSTEM_LIBS {
-+        println!("cargo::rustc-link-lib={lib}");
++        println!("cargo:rustc-link-lib={lib}");
 +    }
 +    Ok(())
 +}
@@ -66,8 +66,8 @@ index 05d235a..49413c2 100644
 +        .file_stem()
 +        .and_then(|name| name.to_str())
 +        .ok_or_else(|| format!("{}: no library name", path.display()))?;
-+    println!("cargo::rustc-link-search=native={}", dir.display());
-+    println!("cargo::rustc-link-lib=static={name}");
++    println!("cargo:rustc-link-search=native={}", dir.display());
++    println!("cargo:rustc-link-lib=static={name}");
 +    Ok(())
 +}
 +

@@ -577,7 +577,7 @@ impl Inner {
             }
             Some(f) => f,
             None if job.kind() == WriteKind::Rating => return Ok(catalog.write_done(job, WriteEffect::Nothing)?),
-            None => bail!("{shown}: unknown format"),
+            None => bail!("{shown}: unknown image format"),
         };
         let temp_rule = temp_of(&path_rule, job.kind());
         let temp = disk_path(rules, &temp_rule);
@@ -803,7 +803,7 @@ mod tests {
             &dir.join("thumbs.sqlite"),
             "a catalog",
             pg_thumbcache::Cap::from_bytes(1 << 20),
-            1,
+            pg_model::versions::THUMBS_VERSION,
             events,
         )
         .unwrap();

@@ -71,7 +71,7 @@ mod tests {
 
     impl Scratch {
         fn new(tag: &str) -> Self {
-            Self(pg_testkit::run_folder("scratch_desktop", &format!("pg-screenshot-{tag}")).unwrap())
+            Self(pg_testkit::run_folder("scratch_desktop", &format!("screenshot-{tag}")).unwrap())
         }
     }
 

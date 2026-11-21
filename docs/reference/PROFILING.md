@@ -957,7 +957,7 @@ Kept (6 pairs against step 1's remainder, gated on time; cycles beside):
 
 #### The write (pairing plan, second round, step 7)
 
-**Where it went.** `crates/catalog/examples/pairs_write_probe.rs` replays the pass's write of all 187,804 pictures
+**Where it went.** `crates/import/examples/pairs_write_probe.rs` replays the pass's write of all 187,804 pictures
 and 5,277 pairs on a copy of the catalog: transactions of 2,000 owed pictures, the catalog's settings and the pass's
 16 MB cache, a fresh connection, every picture owed and no pair stored before each run. Each variant changes one part
 (medians of 6 runs, ms):
@@ -1031,7 +1031,7 @@ alone with cycles level, kept when run again): no workload's time or cycles chan
 
 #### The load (pairing plan, second round, step 8)
 
-**Where it went.** `crates/catalog/examples/pairs_load_probe.rs` times the load's parts on a copy of the catalog with
+**Where it went.** `crates/import/examples/pairs_load_probe.rs` times the load's parts on a copy of the catalog with
 every picture owed, each on a fresh read-only connection with the pass's 16 MB cache, as `Catalog::reader` opens it
 (the pages come from the OS's file cache, as after an import). Medians of 6 runs; the probe is one thread, so its
 cycles are the load's:

@@ -3,14 +3,11 @@
 //! the image decoders and encoders are linked (the bans in deny.toml). No file, catalog or metadata reads: the caller
 //! gives the bytes and the EXIF orientation.
 
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 pub mod animation;
 mod codecs;
 pub mod decode;
 pub mod encode;
-#[cfg(any(test, feature = "fixtures"))]
+#[cfg(any(test, feature = "fixture"))]
 pub mod fixtures;
 mod kernel;
 pub mod pixels;

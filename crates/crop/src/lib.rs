@@ -107,8 +107,8 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
         },
         opts,
         ctl,
-        || Ok(Vec::new()),
-        |temp, i, bytes| write_copy(jobs.get(i).context("an item outside the pass")?, &paths, bytes, temp),
+        || Ok(()),
+        |_, i, bytes| write_copy(jobs.get(i).context("an item outside the pass")?, &paths, bytes),
         |i, result, len| {
             let (Some(job), Some(job_done)) = (jobs.get(i), done.get_mut(i)) else {
                 bail!("an item outside the pass");
@@ -297,16 +297,14 @@ fn cut_original(
     }
     let s = &job.source;
     let path = disk_path_of(paths.get(s.path));
-    if pg_platform::file::stat(&path).with_context(|| format!("reading {}", shown(&path)))? != (s.size, s.mtime)
-        || usize::try_from(s.size).ok() != Some(bytes.len())
-    {
+    if !still_listed(&path, s, bytes.len())? {
         return Ok(CutWritten::Skipped);
     }
     let cropped = crop::cut(bytes, s.format, s.width, s.height, s.cut)?;
     let new = if cropped.metadata { cropped.bytes } else { with_tags(&path, &cropped.bytes, &mut worker.exiftool)? };
     let mut native = NativePath::default();
     set_path(&mut native, paths.get(s.path));
-    let temp = temp_beside(&path).context("a file without a name")?;
+    let temp = temp_beside(&path, ".cut.pg-write").context("a file without a name")?;
     match replace(&path, &native, &temp, &new, (s.size, s.mtime)) {
         Ok(after) => Ok(CutWritten::Saved { after }),
         // Nothing was copied into it: the original is as it was.
@@ -320,13 +318,13 @@ fn cut_original(
     }
 }
 
-/// The temp of a cut, beside `path`: the file's name with a dot in front and `.cut.pg-write` after it, as the queued
-/// writes' temps are named.
-fn temp_beside(path: &Path) -> Option<PathBuf> {
+/// A temporary beside `path`: the file's name with a dot in front and `suffix` after it, as the repository's temporaries
+/// are named (`.a.jpg.rating.pg-write`, `.a.jpg.pg-crop`). A cut's replacement is `.cut.pg-write`; a copy's is `.pg-crop`.
+fn temp_beside(path: &Path, suffix: &str) -> Option<PathBuf> {
     let name = path.file_name()?;
     let mut temp = OsString::from(".");
     temp.push(name);
-    temp.push(".cut.pg-write");
+    temp.push(suffix);
     Some(path.with_file_name(temp))
 }
 
@@ -356,18 +354,21 @@ fn tags_temp_beside(path: &Path) -> Option<PathBuf> {
     Some(path.with_file_name(name))
 }
 
-/// Write `job`'s copy of the file read as `bytes`, through `temp` (a worker's buffer for the temporary path's bytes).
-fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) -> Result<Written> {
+/// Write `job`'s copy of the file read as `bytes`, through a temporary beside its output.
+/// Whether the file at `path` is still the source the pass listed: its size and mtime are the listed ones, and the bytes
+/// read are that size. A file changed since it was listed is left as it is.
+fn still_listed(path: &Path, source: &CropSource, read_len: usize) -> Result<bool> {
+    let now = pg_platform::file::stat(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))?;
+    Ok(now == (source.size, source.mtime) && usize::try_from(source.size).ok() == Some(read_len))
+}
+
+fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8]) -> Result<Written> {
     let s = &job.source;
     let (source, out) = (paths.get(s.path), paths.get(job.out));
     // Each by its disk path, which reaches it exactly: a folder whose name ends in a dot or a space is the one read and
     // written, not a sibling without it.
     let (source_path, out_path) = (disk_path_of(source), disk_path_of(out));
-    if pg_platform::file::stat(&source_path)
-        .with_context(|| format!("reading {}", pg_platform::names::shown(&source_path)))?
-        != (s.size, s.mtime)
-        || usize::try_from(s.size).ok() != Some(bytes.len())
-    {
+    if !still_listed(&source_path, s, bytes.len())? {
         return Ok(Written::Skipped);
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
@@ -375,10 +376,7 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) ->
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", shown(dir)))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
-    temp.clear();
-    temp.extend_from_slice(out);
-    temp.extend_from_slice(b".pg-crop");
-    let temp_path: PathBuf = disk_path_of(temp);
+    let temp_path = temp_beside(&out_path, ".pg-crop").context("a file without a name")?;
     publish(&temp_path, &out_path, &cropped.bytes, &source_path)?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
@@ -392,7 +390,7 @@ fn tag_copy(exiftool: &mut Option<ExifTool>, source: &Path, out: &Path) -> Resul
 /// Write `bytes` to the temporary `temp`, give it `source`'s modification time, and rename it to `out`, so the copy
 /// at `out` is complete or not there. The temporary is removed on any failure from its first write on (a write that
 /// failed part way, a time not set, a rename refused): its guard is armed before the write and disarmed only once
-/// the rename is done. (Its name is fixed, `<out>.pg-crop`, so what a crash leaves is replaced by the next save.)
+/// the rename is done. (Its name is fixed, `.<out>.pg-crop`, so what a crash leaves is replaced by the next save.)
 fn publish(temp: &Path, out: &Path, bytes: &[u8], source: &Path) -> Result<()> {
     // Each is a disk path, reached exactly; the messages name them as the user does.
     let guard = TempFile::new(temp);
@@ -425,41 +423,41 @@ mod tests {
     /// Published: the copy is in place with the source's time, and no temporary is left.
     #[test]
     fn publish_renames_the_temp_into_place() {
-        let (dir, source) = folder("pg-crop-publish");
-        let (temp, out) = (dir.join("out.jpg.pg-crop"), dir.join("out.jpg"));
+        let (dir, source) = folder("crop-publish");
+        let (temp, out) = (dir.join(".out.jpg.pg-crop"), dir.join("out.jpg"));
         publish(&temp, &out, b"cropped", &source).unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), b"cropped");
         assert!(!temp.exists());
         let time = |p: &Path| std::fs::metadata(p).unwrap().modified().unwrap();
         assert_eq!(time(&out), time(&source));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A rename that fails (the copy's folder is gone) leaves no temporary, and no copy.
     #[test]
     fn a_failed_rename_leaves_no_temp() {
-        let (dir, source) = folder("pg-crop-rename");
-        let (temp, out) = (dir.join("out.jpg.pg-crop"), dir.join("gone").join("out.jpg"));
+        let (dir, source) = folder("crop-rename");
+        let (temp, out) = (dir.join(".out.jpg.pg-crop"), dir.join("gone").join("out.jpg"));
         assert!(publish(&temp, &out, b"cropped", &source).is_err());
         assert!(!temp.exists(), "the temporary is removed");
         assert!(!out.exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A failure after the write (the source's time can't be read: it is gone) leaves no temporary; nor does a
     /// write that fails.
     #[test]
     fn a_failed_write_or_time_leaves_no_temp() {
-        let (dir, source) = folder("pg-crop-write");
-        let (temp, out) = (dir.join("out.jpg.pg-crop"), dir.join("out.jpg"));
+        let (dir, source) = folder("crop-write");
+        let (temp, out) = (dir.join(".out.jpg.pg-crop"), dir.join("out.jpg"));
         assert!(publish(&temp, &out, b"cropped", &dir.join("missing.jpg")).is_err());
         assert!(!temp.exists(), "written, then removed");
         assert!(!out.exists());
         // The temporary's folder is missing: the write fails, and nothing is there.
-        let temp = dir.join("gone").join("out.jpg.pg-crop");
+        let temp = dir.join("gone").join(".out.jpg.pg-crop");
         assert!(publish(&temp, &out, b"cropped", &source).is_err());
         assert!(!temp.exists());
         assert!(!out.exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

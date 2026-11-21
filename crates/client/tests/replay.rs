@@ -42,7 +42,7 @@ fn a_changed_command_is_reported_at_its_record() -> Result<(), String> {
         commands.clear();
     }
     let error = replay(&records).expect_err("a changed command must not replay");
-    assert!(error.starts_with(&format!("record {}:", index)), "{error}");
+    assert!(error.starts_with(&format!("line {}:", index + 1)), "{error}");
     Ok(())
 }
 
@@ -57,6 +57,6 @@ fn a_recording_of_another_format_is_refused_by_its_version() {
     for format in [0, 2] {
         let line = format!(r#"{{"kind":"Init","format":{format},"listing":{{}},"row_height":220,"saved_row":220}}"#);
         let error = parse(&line).expect_err("a recording of another format must be refused");
-        assert_eq!(error, format!("recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
+        assert_eq!(error, format!("line 1: recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
     }
 }

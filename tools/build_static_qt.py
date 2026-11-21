@@ -14,7 +14,6 @@ prefix\\ (the install: the app's QT_DIR), logs\\ and manifest.json. Put it on a 
 
 import argparse
 import datetime
-import hashlib
 import json
 import os
 import re
@@ -26,7 +25,17 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from pgtools import MSVC_TOOLSET, WINDOWS, import_msvc_environment, load_env_file
+from pgtools import (
+    DEFAULT_BUILD_TOOLS,
+    DEFAULT_MSYS,
+    MSVC_TOOLSET,
+    WINDOWS,
+    checked,
+    import_msvc_environment,
+    load_env_file,
+    not_set,
+    sha256,
+)
 
 # ---- Pins. Change them here, and note the reason beside each one. --------------------------------------
 QT_VERSION = "6.12.0"
@@ -39,34 +48,13 @@ SOURCE_SHA256 = "A72E89C33726D742E67EDF494ABF7B625EAFFC756673221C9823322ECD1A32D
 SUBMODULES = ["qtbase", "qtshadertools", "qtdeclarative", "qtmultimedia", "qtimageformats", "qtsvg"]
 # Each of these folders must hold static plugin libraries after the install, or the app's plugin list cannot be linked.
 PLUGIN_FOLDERS = ["platforms", "imageformats", "multimedia", "tls", "iconengines"]
-DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
-DEFAULT_MSYS = Path(r"C:\tools\msys64")
 TOOLS = ["cmake", "ninja", "perl"]
-
-
-def checked(what: str, command: list[str], log: Path | None = None, cwd: Path | None = None) -> None:
-    """Runs `command`, its output in `log` when given; a failure ends this program."""
-    if log is None:
-        result = subprocess.run(command, cwd=cwd, check=False)
-    else:
-        with log.open("w", encoding="utf-8") as file:
-            result = subprocess.run(command, cwd=cwd, stdout=file, stderr=subprocess.STDOUT, check=False)
-    if result.returncode != 0:
-        sys.exit(f"{what} failed (exit {result.returncode})")
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
 
 
 def pg_home_folder(name: str) -> Path:
     home = os.environ.get("PG_HOME")
     if not home:
-        sys.exit("PG_HOME is not set: pass --work and the prefixes, or set PG_HOME in .env to the data folder")
+        not_set("PG_HOME", "pass --work and the prefixes, or set it in .env to the data folder")
     return Path(home) / "static" / name
 
 
@@ -223,7 +211,7 @@ def main() -> None:
         "configure_log": str(logs / "configure.log"),
         "install": install,
         "libraries": [
-            {"path": str(path.relative_to(prefix)), "bytes": path.stat().st_size, "sha256": sha256(path)} for path in libraries
+            {"path": path.relative_to(prefix).as_posix(), "bytes": path.stat().st_size, "sha256": sha256(path)} for path in libraries
         ],
     }
     (work / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

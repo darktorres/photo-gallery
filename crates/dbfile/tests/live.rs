@@ -10,16 +10,7 @@ use pg_dbfile::Live;
 
 /// A folder for one test: a run folder of its own.
 fn scratch(name: &str) -> std::io::Result<PathBuf> {
-    pg_testkit::run_folder("scratch_live", &format!("pg-live-{name}")).map_err(std::io::Error::other)
-}
-
-/// Waits until `path` exists, for at most `within`.
-fn wait_for(path: &Path, within: Duration) {
-    let start = Instant::now();
-    while !path.exists() {
-        assert!(start.elapsed() < within, "{} never appeared", path.display());
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    pg_testkit::run_folder("scratch_dbfile", &format!("live-{name}")).map_err(std::io::Error::other)
 }
 
 /// This test binary, run as a holder of the database `db`: it takes the hold `mode` names (`shared` or `exclusive`),
@@ -28,25 +19,25 @@ fn spawn_holder(db: &Path, mode: &str, ready: &Path, release: &Path) -> std::io:
     Command::new(std::env::current_exe()?)
         .args(["--exact", "holder"])
         .stdout(Stdio::null())
-        .env("PG_LIVE_DB", db)
-        .env("PG_LIVE_MODE", mode)
-        .env("PG_LIVE_READY", ready)
-        .env("PG_LIVE_RELEASE", release)
+        .env("PG_HOLDER_PATH", db)
+        .env("PG_HOLDER_MODE", mode)
+        .env("PG_HOLDER_READY", ready)
+        .env("PG_HOLDER_RELEASE", release)
         .spawn()
 }
 
-/// Run only by `spawn_holder`: without `PG_LIVE_DB` it does nothing.
+/// Run only by `spawn_holder`: without `PG_HOLDER_PATH` it does nothing.
 #[test]
 fn holder() {
-    let Some(db) = std::env::var_os("PG_LIVE_DB") else { return };
-    let hold = if std::env::var("PG_LIVE_MODE").unwrap() == "shared" {
+    let Some(db) = std::env::var_os("PG_HOLDER_PATH") else { return };
+    let hold = if std::env::var("PG_HOLDER_MODE").unwrap() == "shared" {
         Live::shared(Path::new(&db)).unwrap()
     } else {
         Live::exclusive(Path::new(&db)).unwrap()
     };
     let _hold = hold.expect("the holder gets its hold");
-    std::fs::write(std::env::var_os("PG_LIVE_READY").unwrap(), b"").unwrap();
-    wait_for(Path::new(&std::env::var_os("PG_LIVE_RELEASE").unwrap()), Duration::from_secs(60));
+    std::fs::write(std::env::var_os("PG_HOLDER_READY").unwrap(), b"").unwrap();
+    pg_testkit::wait_for_path(Path::new(&std::env::var_os("PG_HOLDER_RELEASE").unwrap()), Duration::from_secs(60));
 }
 
 /// A shared hold in another process keeps the exclusive hold out, and shares with other shared holds.
@@ -56,7 +47,7 @@ fn a_shared_hold_in_another_process_keeps_out_the_exclusive_one() {
     let db = dir.join("catalog.sqlite");
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut holder = spawn_holder(&db, "shared", &ready, &release).unwrap();
-    wait_for(&ready, Duration::from_secs(60));
+    pg_testkit::wait_for_path(&ready, Duration::from_secs(60));
 
     assert!(Live::exclusive(&db).unwrap().is_none(), "another process holds it shared");
     let mine = Live::shared(&db).unwrap();
@@ -75,7 +66,7 @@ fn a_shared_hold_waits_for_an_exclusive_one_in_another_process() {
     let db = dir.join("catalog.sqlite");
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut holder = spawn_holder(&db, "exclusive", &ready, &release).unwrap();
-    wait_for(&ready, Duration::from_secs(60));
+    pg_testkit::wait_for_path(&ready, Duration::from_secs(60));
 
     assert!(Live::exclusive(&db).unwrap().is_none(), "another process holds it exclusively");
     // The other process lets go a second after the wait starts.

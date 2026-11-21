@@ -116,7 +116,7 @@ libvips and jpeg-decoder do their work in threads gungraun doesn't count, so the
 instead (`linux.py marginal`: 3 decodes minus 1, halved, all threads). That method gives the same numbers as gungraun
 for libjpeg-turbo, to within 0.5 M.
 
-Wall times are medians on WSL (`wsl.sh`) unless a section says Windows.
+Wall times are medians on WSL (`wsl.sh`, since removed with WSL, `62b4540`) unless a section says Windows.
 
 ## Instructions per decode
 

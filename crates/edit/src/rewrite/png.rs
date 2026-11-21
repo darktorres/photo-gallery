@@ -49,7 +49,7 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
         idat.extend_from_slice(chunk_bytes(&encoded, &c)?);
     }
 
-    let mut out = bytes.get(..8).context("damaged PNG")?.to_vec();
+    let mut out = bytes.get(..8).context("the PNG is damaged")?.to_vec();
     let mut idat_written = false;
     for c in png_chunks(bytes) {
         let raw_chunk = chunk_bytes(bytes, &c)?;
@@ -58,7 +58,7 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
                 // Width and height (4 bytes each); bit depth, color type, compression and filter method, kept; the
                 // interlace method.
                 let (Some(kept), Some(extra)) = (c.data.get(8..12), c.data.get(13..)) else {
-                    bail!("damaged PNG header")
+                    bail!("the PNG header is damaged")
                 };
                 let mut ihdr = Vec::with_capacity(c.data.len());
                 ihdr.extend_from_slice(&nw.to_be_bytes());

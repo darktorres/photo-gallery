@@ -103,6 +103,26 @@ def callgrind_total(path: Path) -> int | None:
     return None
 
 
+def callgrind_instructions(
+    command: list[str], out: Path, *, cwd: Path = DST, env: dict[str, str] | None = None
+) -> int | None:
+    """The instructions `command` executes under valgrind's callgrind, its profile written to `out`; None when valgrind
+    fails. Every harness that counts instructions goes through here, so the flags and the total read are one."""
+    result = run(
+        ["valgrind", "--tool=callgrind", f"--callgrind-out-file={out}", *command],
+        cwd=cwd,
+        env=env,
+        check=False,
+        quiet=True,
+    )
+    return None if result.returncode != 0 else (callgrind_total(out) or 0)
+
+
+def marginal_millions(one: int, three: int) -> str:
+    """Millions of instructions per decode, all threads: the repeat-3 total minus the repeat-1 total, halved, to a decimal."""
+    return f"{(three - one) / 2e6:.1f}"
+
+
 def marginal(env: dict[str, str]) -> None:
     """Callgrind on `repeat 3` minus `repeat 1`, halved: one decode, every thread."""
     binary = DST / "target" / "release" / "jpeg-decoders"
@@ -110,24 +130,10 @@ def marginal(env: dict[str, str]) -> None:
 
     def ir(count: int, decoder: str, mode: str, file: Path) -> float | str:
         with tempfile.TemporaryDirectory() as folder:
-            out = Path(folder) / "cg"
-            result = run(
-                [
-                    "valgrind",
-                    "--tool=callgrind",
-                    f"--callgrind-out-file={out}",
-                    str(binary),
-                    "repeat",
-                    str(count),
-                    decoder,
-                    mode,
-                    str(file),
-                ],
-                check=False,
-                env=env,
-                quiet=True,
+            total = callgrind_instructions(
+                [str(binary), "repeat", str(count), decoder, mode, str(file)], Path(folder) / "cg", env=env
             )
-            return "ERR" if result.returncode != 0 else (callgrind_total(out) or 0)
+        return "ERR" if total is None else total
 
     print(f"M instructions per decode, all threads; columns: {' '.join(NAMES)}")
     for decoder in ["libjpeg-turbo", "libvips", "jpeg-decoder"]:

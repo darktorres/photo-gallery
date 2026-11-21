@@ -427,6 +427,10 @@ impl Grid {
             self.count_bordered(before, after);
         }
         turned.changed.sort_unstable();
+        // A changed entry is a change to what is listed: the revision counts it, so a read made before it is refused.
+        if !turned.changed.is_empty() {
+            self.revision += 1;
+        }
         Some(turned)
     }
 

@@ -21,7 +21,7 @@ confirm. `just qmltest` passed (100 tests) at `472eaf5`.
 |---|---:|---|
 | Behaviour | 0 | No open rows. N-47 is closed in this revision. |
 | Tests | 6 | N-12, N-13, N-18, N-21, N-24 and N-29. N-12 and N-29 wait on decisions. N-17 is closed. |
-| Waiting on a person | 12 | Decisions D1 to D8, expanded at the end. |
+| Waiting on a person | 12 | Decisions D1 to D12, expanded at the end. |
 | Pending | 3 | Performance and screenshot runs. N-43 has run; N-44 and N-45 have not. |
 | Not reviewed | 1 | N-46: two manual items need a person at the app (D12). |
 | Total | 22 | Open rows. Closed in this revision: N-17 and N-47. |

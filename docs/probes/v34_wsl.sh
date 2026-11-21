@@ -1,6 +1,7 @@
 #!/bin/bash
 # V3: which pair of paths is a guaranteed pair of distinct devices on any Linux?
 # V4: state of the drvfs mounts (for the within-boot renumbering trigger).
+set -u
 echo "== V3 devices"
 for p in / /proc /dev/shm /tmp /mnt/c /mnt/d; do
   printf '%-10s st_dev=%-6s fs=%s\n' "$p" "$(stat -c %d "$p" 2>/dev/null || echo missing)" "$(stat -f -c %T "$p" 2>/dev/null)"

@@ -58,7 +58,7 @@ def bound_text(low: float, high: float) -> str:
 def ir_total(path: Path) -> int:
     """The Ir total of one callgrind file: the `totals:` column for the `Ir` event."""
     events: list[str] = []
-    for line in path.read_text(errors="replace").splitlines():
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("events:"):
             events = line.split()[1:]
         elif line.startswith("totals:"):
@@ -99,14 +99,14 @@ def main() -> int:
         return 1
     if args.update:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
-        args.baseline.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n")
+        args.baseline.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"wrote {len(run)} bench(es) to {args.baseline}")
         return 0
     if not args.baseline.exists():
         print(f"no baseline at {args.baseline}: measure it and run with --update", file=sys.stderr)
         return 1
 
-    base = json.loads(args.baseline.read_text())
+    base = json.loads(args.baseline.read_text(encoding="utf-8"))
     failed = 0
     skipped = {name for name in set(base) | set(run) if any(name.startswith(p) for p in args.skip)}
     for name in sorted(skipped):

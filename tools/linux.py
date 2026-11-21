@@ -287,9 +287,16 @@ def head_run(tag, target, command, flags=(), extra_mounts=(), env=()):
     /head (what the tool benches or fuzzes), and PG_HEAD_SHA set to HEAD's short hash."""
     ensure_image(tag, target)
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True)
+    previous = os.environ.get("PG_HEAD_SHA")
     os.environ["PG_HEAD_SHA"] = sha.stdout.strip()
-    refresh_head()
-    return run(tag, command, [*mounts(), *extra_mounts], flags=flags, env=env)
+    try:
+        refresh_head()
+        return run(tag, command, [*mounts(), *extra_mounts], flags=flags, env=env)
+    finally:
+        if previous is None:
+            os.environ.pop("PG_HEAD_SHA", None)
+        else:
+            os.environ["PG_HEAD_SHA"] = previous
 
 
 # Gungraun runs valgrind under `setarch -R` (ASLR off, as the baseline was measured), which needs the personality
@@ -412,7 +419,7 @@ def ann_worker(job_file):
             folders[folder] = f"/ann/{len(folders)}"
             mounts_list += ["-v", f"{posix(folder)}:{folders[folder]}:ro"]
         container_job[key] = f"{folders[folder]}/{path.name}"
-    (out / "job.container.json").write_text(json.dumps(container_job), encoding="utf-8")
+    (out / "job.container.json").write_text(json.dumps(container_job, indent=2), encoding="utf-8")
     ensure_image(EVAL, "eval")
     command = ["/opt/eval/bin/python", "eval/ann/cpu_worker.py", "/ann/0/job.container.json"]
     sys.exit(run(EVAL, command, ["-v", f"{posix(REPO)}:/work:ro", *mounts_list], env=ANN_ENV))

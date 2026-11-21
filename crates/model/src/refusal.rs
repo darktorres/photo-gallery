@@ -76,7 +76,7 @@ impl RefusedReason {
             RefusedReason::Nfs => "nfs",
             RefusedReason::Smb => "smb",
             RefusedReason::Fat => "fat",
-            RefusedReason::ExFat => "exfat",
+            RefusedReason::ExFat => "ex-fat",
             RefusedReason::Pseudo { .. } => "pseudo",
             RefusedReason::UnsupportedSystem => "unsupported-system",
         }

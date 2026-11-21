@@ -295,7 +295,7 @@ mod tests {
         #[cfg(unix)]
         let name: Vec<crate::native::Unit> = vec![0x61, 0xFF];
         let os = crate::testing::odd_name("a");
-        let base = crate::testing::run_folder("scratch_names", "pg-normalize").unwrap();
+        let base = crate::testing::run_folder("scratch_platform", "normalize").unwrap();
         let folder = base.join(&os);
         std::fs::create_dir_all(&folder).unwrap();
         let path = normalize_path(&folder).unwrap();
@@ -304,7 +304,7 @@ mod tests {
         let gone = base.join("gone");
         let Err(NormalizeError::Unreadable { path, error }) = normalize_path(&gone) else { panic!("not unreadable") };
         assert_eq!((path, error.kind()), (gone, io::ErrorKind::NotFound));
-        std::fs::remove_dir_all(&base).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
     }
     #[test]
     fn a_name_with_a_surrogate_keeps_it_through_the_units() {
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     #[expect(clippy::disallowed_methods, reason = "the test checks the typed spelling against the catalog's, dotted")]
     fn a_stored_path_in_a_dotted_folder_is_reached_by_its_disk_path() {
-        let dir = std::path::absolute(crate::testing::run_folder("scratch_names", "disk-path").unwrap()).unwrap();
+        let dir = std::path::absolute(crate::testing::run_folder("scratch_platform", "disk-path").unwrap()).unwrap();
         let dotted = dir.join("Acme Inc.");
         std::fs::create_dir_all(verbatim(&dotted)).unwrap();
         std::fs::create_dir_all(dir.join("Acme Inc")).unwrap();
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(std::fs::read(disk_path_of(&stored)).unwrap(), b"dotted");
         let rule = rule_path_of(&dotted.join("a.jpg")).unwrap();
         assert_eq!(std::fs::read(disk_path(crate::native::PATH_RULES, &rule)).unwrap(), b"dotted");
-        std::fs::remove_dir_all(verbatim(&dir)).unwrap();
+        let _ = std::fs::remove_dir_all(verbatim(&dir));
     }
 
     #[test]
@@ -378,7 +378,7 @@ mod stored_case_tests {
     /// A fresh folder for one test: a run folder of its own under the test base.
     #[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
     fn fresh(test: &str) -> PathBuf {
-        crate::testing::run_folder("scratch_names", &format!("pg-stored-case-{test}")).unwrap()
+        crate::testing::run_folder("scratch_platform", &format!("stored-case-{test}")).unwrap()
     }
 
     #[test]
@@ -387,7 +387,7 @@ mod stored_case_tests {
         std::fs::create_dir_all(base.join("Photos")).unwrap();
         let real = real_path(&base.join("Photos")).unwrap();
         assert_eq!(real.file_name(), Some(std::ffi::OsStr::new("Photos")));
-        std::fs::remove_dir_all(&base).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -399,12 +399,12 @@ mod stored_case_tests {
         let _ = std::fs::create_dir(base.join("pics"));
         if std::fs::read_dir(&base).unwrap().count() != 2 {
             crate::testing::skip("this test folder's file system is case-insensitive: the two names are one folder");
-            std::fs::remove_dir_all(&base).unwrap();
+            let _ = std::fs::remove_dir_all(&base);
             return;
         }
         assert_eq!(real_path(&base.join("pics")).unwrap().file_name(), Some(std::ffi::OsStr::new("pics")));
         assert_eq!(real_path(&base.join("Pics")).unwrap().file_name(), Some(std::ffi::OsStr::new("Pics")));
-        std::fs::remove_dir_all(&base).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// A folder's entries for `pick_stored`: each name with its (device, inode), and a count of the identity lookups made.

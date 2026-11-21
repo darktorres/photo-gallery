@@ -141,7 +141,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 
 ## 4. Phases
 
-**Commit policy.** Phases 1-8 are one commit each, on the checked-out branch. After all of them, run a single `just build && just lint && just test` and fix forward. Intermediate commits do not compile. Forward dependencies are marked with `→`.
+**Commit policy.** Phases 1-8 are one commit each, on the checked-out branch, when a commit is asked for (the standing rule, `BACKGROUND_JOB_AUDIT_FIXES.md:25`: commit only when asked). After all of them, run a single `just build && just lint && just test` and fix forward. Intermediate commits do not compile. Forward dependencies are marked with `→`.
 
 **Oracles.** Every equivalence oracle is the old code or SQL kept under `cfg(test)` or the `fixture` feature.
 
@@ -164,7 +164,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - `vendor/README.md`
   - `docs/plans/DATABASE.md`
 - **Change:**
-  - `LIBSQLITE3_FLAGS = "SQLITE_TEMP_STORE=0 SQLITE_DEFAULT_MEMSTATUS=1"` (forced).
+  - `LIBSQLITE3_FLAGS = "SQLITE_TEMP_STORE=0 SQLITE_DEFAULT_MEMSTATUS=0"` (forced; the fork route's value, as `catalog/src/core.rs` asserts).
   - SETTINGS gains `temp_store=FILE` and `journal_size_limit=67108864`.
   - Every production ORDER BY is total.
 - **Tests:**

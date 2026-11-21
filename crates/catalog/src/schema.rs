@@ -112,6 +112,10 @@ pub(crate) const APPLICATION_ID: i64 = 0x5047_4354;
 /// (its id, the marks it was made with), so only the keys are compared.
 const SEEDS: &[(&str, &str)] = &[("meta", "key")];
 
+/// How long a statement waits for another connection's lock, in ms: the `busy_timeout` in [`SETTINGS`] (its literal, which
+/// SQL cannot take from here), and the same wait `core.rs` gives a read-only open. Change both together.
+pub(crate) const BUSY_TIMEOUT_MS: u64 = 5000;
+
 /// Every connection's settings. `busy_timeout`: a statement that finds the catalog locked by another connection (the
 /// background job's writer, a scan) waits up to this long for it, instead of failing at once with "database is locked".
 /// `cache_size` (8 MB) is the writers' and the thumbs' cache: the writes touch a batch's rows and their index pages, and
@@ -236,10 +240,10 @@ impl<'c> ForeignKeysOff<'c> {
 impl Drop for ForeignKeysOff<'_> {
     fn drop(&mut self) {
         if let Err(e) = self.conn.pragma_update(None, "legacy_alter_table", self.legacy_alter_table) {
-            pg_log::warn("catalog", &format!("putting back the connection's legacy_alter_table: {e}"));
+            pg_log::warn("catalog", &format!("putting back the connection's legacy_alter_table: {e:#}"));
         }
         if let Err(e) = self.conn.pragma_update(None, "foreign_keys", self.foreign_keys) {
-            pg_log::warn("catalog", &format!("putting back the connection's foreign_keys: {e}"));
+            pg_log::warn("catalog", &format!("putting back the connection's foreign_keys: {e:#}"));
         }
     }
 }
@@ -257,9 +261,7 @@ fn rebuilds_tables(set: &SchemaSet<'_>, version: i64) -> bool {
 fn require_foreign_keys_off(tx: &Transaction<'_>) -> Result<()> {
     let on: i64 = tx.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
     if on != 0 {
-        return Err(crate::error::Error::Other(anyhow!(
-            "foreign keys are on for a migration that drops tables: it is refused, and the catalog is unchanged"
-        )));
+        return Err(crate::error::Error::ForeignKeysOn);
     }
     Ok(())
 }
@@ -304,7 +306,7 @@ static CURRENT: Expected = Expected::new(current_layout, SEEDS);
 pub(crate) fn mismatch(conn: &Connection, want: &Schema) -> Result<Option<String>> {
     let found = match Schema::read(conn, SEEDS) {
         Ok(found) => found,
-        Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => return Ok(Some("not a database".to_string())),
+        Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => return Ok(Some("not a catalog".to_string())),
         Err(e) => return Err(e.into()),
     };
     if let Some(difference) = found.difference(want) {
@@ -362,7 +364,7 @@ mod tests {
     /// named by its base name). [`every_trigger_names_the_test_that_covers_it`] fails on a trigger this list does not
     /// name, and on a name the schema does not have.
     const TRIGGER_TESTS: &[(&str, &str)] = &[
-        ("files_changed", "core::pending_follows_what_the_analysis_was_made_from"),
+        ("files_pending_changed", "core::pending_follows_what_the_analysis_was_made_from"),
         ("files_source_changed", "writers::a_size_change_alone_moves_the_file_in_the_thumbnail_source"),
         ("analysis_changed", "core::pending_follows_what_the_analysis_was_made_from"),
         ("analysis_removed", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
@@ -383,8 +385,8 @@ mod tests {
         ("border_sides_stamp_delete", "writers::borders_stamp_the_file_as_changed_and_not_its_thumbnails"),
         ("notices_uid", "inbox::events_past_the_bound_go_oldest_first_and_never_the_one_just_posted"),
         ("file_failures_stamp", "ledger::a_ledger_is_one_entry_new_again_with_a_new_failure"),
-        ("files_failures_stale", "ledger::a_failure_is_one_row_for_the_file_as_it_failed"),
-        ("files_failures_hidden", "ledger::the_hidden_trigger_fires_only_when_pending_or_missing_changes"),
+        ("file_failures_stale", "ledger::a_failure_is_one_row_for_the_file_as_it_failed"),
+        ("file_failures_hidden", "ledger::the_hidden_trigger_fires_only_when_pending_or_missing_changes"),
         ("analysis_import", "ledger::a_failed_analysis_that_leaves_its_file_pending_is_hidden"),
         (
             "analysis_import_rewritten",
@@ -595,7 +597,7 @@ mod tests {
     /// A new catalog made by `prepare` is the baseline at version 1, with incremental auto-vacuum and no VACUUM owed.
     #[test]
     fn a_new_catalog_is_the_baseline_with_no_vacuum_owed() {
-        let dir = pg_testkit::run_folder("scratch_schema", "fresh-catalog").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "fresh-catalog").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = crate::Catalog::prepare(&path, crate::test_support::versions(), PathRules::Windows).unwrap();
         assert_eq!(version(&c.conn), BASELINE_VERSION);
@@ -604,14 +606,14 @@ mod tests {
         let owed: i64 = c.conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
         assert_eq!(owed, 0);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The application id is checked at every version, not only once the file has one: a file without this build's id is
     /// not its catalog, even at version 0.
     #[test]
     fn the_application_id_is_checked_at_version_zero_too() {
-        let dir = pg_testkit::run_folder("scratch_schema", "application-id-any-version").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "application-id-any-version").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = crate::Catalog::prepare(&path, crate::test_support::versions(), PathRules::Windows).unwrap();
         let want = current_expected().unwrap();
@@ -621,7 +623,7 @@ mod tests {
         c.conn.pragma_update(None, "user_version", 0).unwrap();
         assert!(mismatch(&c.conn, want).unwrap().is_some(), "the id is checked at version 0 too");
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A catalog whose file has no incremental auto-vacuum is owed a VACUUM (its pragma came too late to take effect, or

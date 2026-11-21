@@ -3,18 +3,16 @@
 //! so its values are the import's own. The pairs they owe are the pairing pass's (`pairs_owed`, set by
 //! `AnalysisWriter::store_hashes`).
 
-use std::io;
-
 use anyhow::{Context, Result};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, OwedHashes, WorkItem};
 use pg_jobs::control::Control;
-use pg_jobs::panics;
+use pg_jobs::failure::Cause;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::media::Kind;
 use pg_model::progress::Phase;
 
-const BATCH: usize = 500;
+const BATCH: usize = pg_catalog::WRITE_BATCH;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
@@ -111,13 +109,13 @@ fn flush(
                     done.stored += 1;
                 }
             }
-            Err(e) if e.downcast_ref::<io::Error>().is_some() && !panics::is_panic(&e) => {
+            Err(e) if pg_jobs::failure::is_io_read(&e) => {
                 done.failed += 1;
                 done.unreadable += 1;
             }
             Err(e) => {
                 done.failed += 1;
-                writer.store_failure(item, &format!("{e:#}"))?;
+                writer.store_failure(item, &Cause::of(&e).to_string())?;
             }
         }
     }

@@ -54,13 +54,13 @@ fn remove_temp(rules: PathRules, temp: &RulePath) -> std::io::Result<()> {
 }
 
 /// The temp file of a file for a kind of write: beside the original, so it is on the same drive, named by the
-/// original's name with a dot in front and the kind and `.pg-write` after it (`.a.jpg.rating.pg-write`; the scanner
+/// original's name with a dot in front and the kind's queue key and `.pg-write` after it (`.a.jpg.rating.pg-write`; the scanner
 /// ignores the extension). A rating and a turn of one file each have theirs, so neither job touches the other's. Its
 /// parts are the original's, but the last.
 pub fn temp_of(path: &RulePath, kind: WriteKind) -> RulePath {
     let suffix = match kind {
         WriteKind::Rating => ".rating.pg-write",
-        WriteKind::Turns => ".turns.pg-write",
+        WriteKind::Turns => ".rotation.pg-write",
     };
     let mut temp = path.clone();
     if let Some(name) = temp.parts.pop() {
@@ -103,6 +103,6 @@ mod tests {
         let rating = temp_of(&path, WriteKind::Rating);
         let turns = temp_of(&path, WriteKind::Turns);
         assert_eq!(PathRules::Windows.display(&rating), r"D:\p\.a.jpg.rating.pg-write");
-        assert_eq!(PathRules::Windows.display(&turns), r"D:\p\.a.jpg.turns.pg-write");
+        assert_eq!(PathRules::Windows.display(&turns), r"D:\p\.a.jpg.rotation.pg-write");
     }
 }

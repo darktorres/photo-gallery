@@ -31,11 +31,11 @@ pub fn path_of_units(units: &[u16]) -> PathBuf {
 /// refuses both with "invalid parameter"). `\\?\UNC\server\share` is `\\server\share`.
 #[cfg(windows)]
 pub fn shell_path(units: &[u16]) -> Vec<u16> {
-    const VERBATIM: [u16; 4] = [0x5C, 0x5C, 0x3F, 0x5C];
-    const UNC: [u16; 4] = [0x55, 0x4E, 0x43, 0x5C];
+    use crate::native::{UNC_AFTER, VERBATIM};
     let units: Vec<u16> = units.iter().map(|&u| if u == 0x2F { 0x5C } else { u }).collect();
-    let Some(rest) = units.strip_prefix(&VERBATIM) else { return units };
-    match rest.strip_prefix(&UNC) {
+    let Some(rest) = units.strip_prefix(VERBATIM) else { return units };
+    // `UNC_AFTER` starts at the `?` of the verbatim prefix, after the first two units, as `plain_in_place` reads it.
+    match units.get(2..).and_then(|after| after.strip_prefix(UNC_AFTER)) {
         Some(share) => [0x5C, 0x5C].into_iter().chain(share.iter().copied()).collect(),
         None => rest.to_vec(),
     }

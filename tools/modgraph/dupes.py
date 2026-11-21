@@ -1,7 +1,7 @@
 """Duplicate code: every function body (production and test) of >= N lines, and every window of W consecutive
 normalized code lines, hashed across all .rs files under crates/. Prints groups that occur in more than one place.
 
-A report for a review (`just modgraph-report`), not a gate: it matches by name, so it can both miss a use and invent one.
+A report for a review (`just modgraph-report`), not a gate (see `testcut.py`).
 """
 
 import hashlib
@@ -9,6 +9,8 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from testcut import production_part
 
 ROOT = Path(__file__).resolve().parents[2]
 W = int(sys.argv[1]) if len(sys.argv) > 1 else 6
@@ -22,8 +24,9 @@ def norm(line: str) -> str:
 TRIVIAL = re.compile(r"^[{}()\[\];,]*$|^(use |mod |#\[|pub mod |\}\)?;?$|Ok\(\(\)\)$)")
 windows = defaultdict(list)
 for path in sorted(ROOT.glob("crates/*/src/**/*.rs")) + sorted(ROOT.glob("crates/*/tests/**/*.rs")):
-    raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    test_start = next((i for i, l in enumerate(raw) if l.startswith("#[cfg(test)]")), len(raw))
+    text = path.read_text(encoding="utf-8", errors="replace")
+    raw = text.splitlines()
+    test_start = len(production_part(text).splitlines())  # the first line of the inline test module, 0-based
     code = [(i + 1, norm(l)) for i, l in enumerate(raw)]
     code = [(n, l) for n, l in code if l and not TRIVIAL.match(l)]
     rel = path.relative_to(ROOT).as_posix()

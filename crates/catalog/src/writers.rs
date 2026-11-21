@@ -2,7 +2,8 @@
 //! the passes' failure ledger. Each writer borrows the transaction it is made in, so it is dropped before that commits.
 //! The ledger's set-based writes are functions over a connection ([`record_failures_on`], [`clear_failures_on`]), which
 //! `Catalog::record_failures`/`clear_failures` run in a transaction of their own and the [`LedgerWriter`] in its
-//! caller's. Uses `types`, `ledger::failure` and `error`; its SQL macros are from `sql`.
+//! caller's. Uses `types`, `ledger::failure`, `error`, the lease (`HeldLease`, the scan's hold), `current` (whether a file
+//! is current) and `lifecycle` (the held extensions); its SQL macros are from `sql`.
 
 use anyhow::{Context, anyhow};
 use std::collections::BTreeMap;
@@ -342,79 +343,83 @@ pub(crate) fn touch_analysis(conn: &Connection, file: i64) -> rusqlite::Result<(
     Ok(())
 }
 
+/// The value of one `meta` key, bound as `?1`: the marks the writers compare with this build's versions.
+const META_VALUE: &str = "SELECT value FROM meta WHERE key = ?1";
+
 /// The import's writes: analyses, failures, and the file ratings they carry. The pairs are the pairing pass's
 /// ([`PairsWriter`]); an analysis that owes them has a `pairs_owed` row.
 pub struct AnalysisWriter<'tx> {
     /// The build's IMPORT_VERSION, which a stored failure is made against.
     import: i64,
-    current: Statement<'tx>,
+    current: CachedStatement<'tx>,
     /// The next change number, and the file a new analysis row touches (`touch_file`).
-    bump: Statement<'tx>,
-    touch: Statement<'tx>,
-    delete_pairs: Statement<'tx>,
-    analysis: Statement<'tx>,
-    failure: Statement<'tx>,
-    borders_due: Statement<'tx>,
-    delete_sides: Statement<'tx>,
-    owe_pairs: Statement<'tx>,
-    owe_hashes: Statement<'tx>,
-    set_image_hashes: Statement<'tx>,
-    set_video_hash: Statement<'tx>,
-    clear_owed_hashes: Statement<'tx>,
-    known_rating: Statement<'tx>,
-    queued_rating: Statement<'tx>,
-    set_rating: Statement<'tx>,
-    delete_rating: Statement<'tx>,
-    set_file_rating: Statement<'tx>,
-    delete_file_rating: Statement<'tx>,
-    delete_thumbs_failure: Statement<'tx>,
+    bump: CachedStatement<'tx>,
+    touch: CachedStatement<'tx>,
+    delete_pairs: CachedStatement<'tx>,
+    analysis: CachedStatement<'tx>,
+    failure: CachedStatement<'tx>,
+    borders_due: CachedStatement<'tx>,
+    delete_sides: CachedStatement<'tx>,
+    owe_pairs: CachedStatement<'tx>,
+    owe_hashes: CachedStatement<'tx>,
+    set_image_hashes: CachedStatement<'tx>,
+    set_video_hash: CachedStatement<'tx>,
+    clear_owed_hashes: CachedStatement<'tx>,
+    known_rating: CachedStatement<'tx>,
+    queued_rating: CachedStatement<'tx>,
+    set_rating: CachedStatement<'tx>,
+    delete_rating: CachedStatement<'tx>,
+    set_file_rating: CachedStatement<'tx>,
+    delete_file_rating: CachedStatement<'tx>,
+    delete_thumbs_failure: CachedStatement<'tx>,
 }
 
 impl<'tx> AnalysisWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction, import: i64) -> Result<AnalysisWriter<'tx>> {
         Ok(AnalysisWriter {
             import,
-            current: tx.prepare(crate::current::IS_CURRENT)?,
-            bump: tx.prepare(BUMP_SEQ)?,
-            touch: tx.prepare(TOUCH_FILE)?,
-            delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
-            analysis: tx.prepare(
+            current: tx.prepare_cached(crate::current::IS_CURRENT)?,
+            bump: tx.prepare_cached(BUMP_SEQ)?,
+            touch: tx.prepare_cached(TOUCH_FILE)?,
+            delete_pairs: tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
+            analysis: tx.prepare_cached(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     format, orientation, width, height, frames, taken, taken_utc, duration_ms, poster_ms, borders_due)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), NULL, ?7, ?8, ?9, ?10, ?11,
                          CASE WHEN ?13 THEN unixepoch(?12, 'unixepoch', 'localtime') ELSE ?12 END,
                          CASE WHEN ?13 THEN ?12 END, ?14, ?15, 0)",
             )?,
-            owe_pairs: tx.prepare("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
-            owe_hashes: tx.prepare("INSERT OR IGNORE INTO hashes_owed(file_id) VALUES (?1)")?,
-            set_image_hashes: tx.prepare(
+            owe_pairs: tx.prepare_cached("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
+            owe_hashes: tx.prepare_cached("INSERT OR IGNORE INTO hashes_owed(file_id) VALUES (?1)")?,
+            set_image_hashes: tx.prepare_cached(
                 "UPDATE analysis SET file_hash = ?2, pixel_hash = ?3, pdq_dihedral = ?4, pdq_quality = ?5
                  WHERE file_id = ?1",
             )?,
-            set_video_hash: tx.prepare("UPDATE analysis SET file_hash = ?2 WHERE file_id = ?1")?,
-            clear_owed_hashes: tx.prepare("DELETE FROM hashes_owed WHERE file_id = ?1")?,
-            failure: tx.prepare(
+            set_video_hash: tx.prepare_cached("UPDATE analysis SET file_hash = ?2 WHERE file_id = ?1")?,
+            clear_owed_hashes: tx.prepare_cached("DELETE FROM hashes_owed WHERE file_id = ?1")?,
+            failure: tx.prepare_cached(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     borders_due)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7, 0)",
             )?,
-            borders_due: tx.prepare(concat!(
+            borders_due: tx.prepare_cached(concat!(
                 "UPDATE analysis SET borders_due = coalesce(",
                 has_borders!(),
                 ", 0) WHERE file_id = ?1"
             ))?,
-            delete_sides: tx.prepare(DELETE_SIDES)?,
-            known_rating: tx.prepare("SELECT value FROM file_ratings WHERE file_id = ?1")?,
-            queued_rating: tx.prepare(concat!(
+            delete_sides: tx.prepare_cached(DELETE_SIDES)?,
+            known_rating: tx.prepare_cached("SELECT value FROM file_ratings WHERE file_id = ?1")?,
+            queued_rating: tx.prepare_cached(concat!(
                 "SELECT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND kind = '",
                 pg_model::write_rating!(),
                 "')"
             ))?,
-            set_rating: tx.prepare(SET_RATING)?,
-            delete_rating: tx.prepare(DELETE_RATING)?,
-            set_file_rating: tx.prepare(SET_FILE_RATING)?,
-            delete_file_rating: tx.prepare(DELETE_FILE_RATING)?,
-            delete_thumbs_failure: tx.prepare("DELETE FROM file_failures WHERE file_id = ?1 AND pass = 'thumbs'")?,
+            set_rating: tx.prepare_cached(SET_RATING)?,
+            delete_rating: tx.prepare_cached(DELETE_RATING)?,
+            set_file_rating: tx.prepare_cached(SET_FILE_RATING)?,
+            delete_file_rating: tx.prepare_cached(DELETE_FILE_RATING)?,
+            delete_thumbs_failure: tx
+                .prepare_cached("DELETE FROM file_failures WHERE file_id = ?1 AND pass = 'thumbs'")?,
         })
     }
 
@@ -681,12 +686,12 @@ const SET_PLACEHOLDER: &str = concat!(
 
 /// The Placeholders pass's writes, in one transaction of the caller's.
 pub struct PlaceholderWriter<'tx> {
-    set: Statement<'tx>,
+    set: CachedStatement<'tx>,
 }
 
 impl<'tx> PlaceholderWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction) -> Result<PlaceholderWriter<'tx>> {
-        Ok(PlaceholderWriter { set: tx.prepare(SET_PLACEHOLDER)? })
+        Ok(PlaceholderWriter { set: tx.prepare_cached(SET_PLACEHOLDER)? })
     }
 
     /// Store `hash` as the file's placeholder, made at `item`'s identity. Whether it was stored: not when the file has
@@ -706,26 +711,26 @@ impl<'tx> PlaceholderWriter<'tx> {
 
 /// The borders pass's writes.
 pub struct BordersWriter<'tx> {
-    current: Statement<'tx>,
-    cut: Statement<'tx>,
-    delete_sides: Statement<'tx>,
-    side: Statement<'tx>,
+    current: CachedStatement<'tx>,
+    cut: CachedStatement<'tx>,
+    delete_sides: CachedStatement<'tx>,
+    side: CachedStatement<'tx>,
     /// The catalog's `borders_version` mark, read at each store.
-    mark: Statement<'tx>,
+    mark: CachedStatement<'tx>,
 }
 
 impl<'tx> BordersWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
         Ok(BordersWriter {
-            mark: tx.prepare("SELECT value FROM meta WHERE key = 'borders_version'")?,
-            current: tx.prepare(crate::current::IS_CURRENT)?,
-            cut: tx.prepare(
+            mark: tx.prepare_cached(META_VALUE)?,
+            current: tx.prepare_cached(crate::current::IS_CURRENT)?,
+            cut: tx.prepare_cached(
                 "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0,
                     width = coalesce(?6, width), height = coalesce(?7, height)
                  WHERE file_id = ?1",
             )?,
-            delete_sides: tx.prepare(DELETE_SIDES)?,
-            side: tx.prepare(
+            delete_sides: tx.prepare_cached(DELETE_SIDES)?,
+            side: tx.prepare_cached(
                 "INSERT INTO border_sides(file_id, pass, edge, kind, class, depth, color, straight, dev, drift,
                     rejected)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -747,7 +752,7 @@ impl<'tx> BordersWriter<'tx> {
     ) -> Result<bool> {
         // A detection is this build's: it is stored only where the catalog's `borders_version` is this build's. Another
         // build's mark (a later build prepared the catalog meanwhile) refuses it: nothing is written, as with a stale row.
-        let mark: i64 = self.mark.query_row([], |r| r.get(0))?;
+        let mark: i64 = self.mark.query_row(["borders_version"], |r| r.get(0))?;
         if mark != pg_model::versions::BORDERS_VERSION {
             return Ok(false);
         }
@@ -819,7 +824,7 @@ pub(crate) fn pass_mark_is_ours(conn: &Connection, pass: FilePass) -> Result<boo
         FilePass::Borders => ("borders_version", pg_model::versions::BORDERS_VERSION),
         _ => return Ok(true),
     };
-    let stored: i64 = conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))?;
+    let stored: i64 = conn.query_row(META_VALUE, [key], |r| r.get(0))?;
     Ok(stored == ours)
 }
 
@@ -1855,18 +1860,7 @@ mod tests {
         the_hashes_stored_later_move_the_pairing_epoch_posix
     );
 
-    /// A small deterministic generator for the differential test (SplitMix64).
-    struct Mix(u64);
-
-    impl Mix {
-        fn below(&mut self, n: usize) -> usize {
-            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            let mut z = self.0;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-            usize::try_from((z ^ (z >> 31)) % u64::try_from(n.max(1)).unwrap()).unwrap()
-        }
-    }
+    use pg_testkit::Rng;
 
     /// `PairsWriter`'s writes before the set-based guard, as the oracle: each pair and each done one statement, guarded
     /// by the stored hashes of its analyses alone.
@@ -1950,7 +1944,7 @@ mod tests {
     /// quality alone, which no writer makes, is the one the oracle let through: the test above has it.)
     fn the_batch_writer_writes_what_the_row_by_row_guard_did(rules: PathRules) {
         for seed in 0..64 {
-            let mut mix = Mix(seed);
+            let mut mix = Rng::new(seed);
             let made = || {
                 let mut c = pictures(rules, 12);
                 // Half the pictures owe nothing (they are partners), and 13's analysis is below the quality and owed (a
@@ -2042,7 +2036,7 @@ mod tests {
             let path = dir.as_ref().map_or_else(|| std::path::PathBuf::from(":memory:"), |d| d.join("catalog.sqlite"));
             pairing_work_at(rules, &path);
             if let Some(dir) = dir {
-                std::fs::remove_dir_all(&dir).unwrap();
+                let _ = std::fs::remove_dir_all(&dir);
             }
         }
     }
@@ -2173,14 +2167,14 @@ mod tests {
             }
             drop(c);
         }
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A random catalog of [`the_load_reads_what_the_joined_statement_did`] at `path`, and the id of its analysis with no
     /// file.
     fn random_catalog(rules: PathRules, seed: u64, path: &std::path::Path) -> (Catalog, i64) {
         {
-            let mut mix = Mix(seed);
+            let mut mix = Rng::new(seed);
             let (mut c, first) = crate::test_support::one_file_at(rules, path);
             let mut ids = vec![first];
             let mut next = first;
@@ -2282,7 +2276,7 @@ mod tests {
 
     fn three_way_rating_sync(rules: PathRules) {
         let (mut c, id) = one_file(rules);
-        // First import of a file rated elsewhere (ImageRater, Explorer): adopted.
+        // First import of a file rated elsewhere (a rating app, Explorer): adopted.
         sync_file(&mut c, id, Rating::new(4));
         assert_eq!(raw::rating(&c, id), Some(4));
         // Rated in the app, not written back (or the format can't hold it): the file still says 4, as known, so

@@ -110,7 +110,7 @@ migration ships, these rows stay unversioned, and the pre-migration window is as
 - Stamp the columns the listing reads but the stamp triggers miss: `ratings.rating`, `file_writes.value`,
   `border_marks` presence, and `analysis.error`.
 
-**B15. Remembered saves.** Debounce 500 ms. Flush on `visibilitychange` to hidden with `keepalive`. This replaces O9
+**B15. Remembered saves.** Debounce 1,000 ms (the design's and the code's value; `deadlines.rs` asserts it). Flush on `visibilitychange` to hidden with `keepalive`. This replaces O9
 (timing) and reduces the loss in O10 to what a kill inside the debounce window can cost.
 
 **B17. Serving: hyper-util's auto builder behind a custom accept loop.** `axum::serve` can't set the HTTP/2 header-list

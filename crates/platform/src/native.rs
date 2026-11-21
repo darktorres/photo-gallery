@@ -13,7 +13,8 @@
 //! (`NativePath::set_plain`, the crate's own) as they always did.
 //!
 //! ExifTool reads and writes a verbatim path, through its stay-open argument file and its command line alike (checked
-//! with ExifTool 13.60, in a folder `Fotos ä.` beside `Fotos ä`). Two readers normalize every name they are given, the
+//! with ExifTool 13.60, the Windows install, in a folder `Fotos ä.` beside `Fotos ä`; the CI pin is 13.59, which this was
+//! not run on). Two readers normalize every name they are given, the
 //! verbatim one too: Qt's file engine (`GetFullPathNameW`, in `QFSFileEnginePrivate::longFileName`), so the video
 //! player is given the file open (`file::player_handle`); and the shell's parse, so a folder dialog starts at the
 //! nearest folder whose names survive it ([`check_folder_names`], `picker::start_folder`).
@@ -182,10 +183,10 @@ fn set_units(out: &mut Vec<Unit>, parts: &[&[Unit]], _verbatim: bool) {
 
 /// The units of the verbatim prefix, and of a device path (`\\.\`), which is left as it is.
 #[cfg(windows)]
-const VERBATIM: &[Unit] = &[0x5C, 0x5C, 0x3F, 0x5C]; // \\?\
+pub(crate) const VERBATIM: &[Unit] = &[0x5C, 0x5C, 0x3F, 0x5C]; // \\?\
 /// What the verbatim form of a share puts after its leading `\\`: `\\server` becomes `\\?\UNC\server`.
 #[cfg(windows)]
-const UNC_AFTER: &[Unit] = &[
+pub(crate) const UNC_AFTER: &[Unit] = &[
     0x3F, // ?
     0x5C, // \
     0x55, // U
@@ -371,7 +372,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_folder_with_a_trailing_dot_is_reached_verbatim() {
-        let dir = std::path::absolute(crate::testing::run_folder("scratch_native", "trailing-dot").unwrap()).unwrap();
+        let dir = std::path::absolute(crate::testing::run_folder("scratch_platform", "trailing-dot").unwrap()).unwrap();
         let dotted = dir.join("Acme Inc.");
         let sibling = dir.join("Acme Inc");
         std::fs::create_dir_all(verbatim(&dotted)).unwrap();
@@ -384,7 +385,7 @@ mod tests {
         set_os_str(&mut native, dotted.join("a.jpg").as_os_str());
         let file = crate::file::open_read(&native).unwrap();
         assert_eq!(std::io::read_to_string(file).unwrap(), "dotted");
-        std::fs::remove_dir_all(verbatim(&dir)).unwrap();
+        let _ = std::fs::remove_dir_all(verbatim(&dir));
     }
 
     #[test]

@@ -6,7 +6,7 @@ The few-owed path against the sorted path, by owed count: where the join's two p
 For each -Workers count and each -Owed count, on fresh copies of -Catalog with that many pictures owed (`set_owed.py`),
 runs `pairs_probe` with the few-owed path forced (`PG_PROBE_FEW` past any count) and with the sorted path forced
 (`PG_PROBE_FEW=0`), alternately, -Reps times each, and prints the median join (ms) and cycles (M) of each path. The
-background CPU load is printed with each line; a run is not left out for it.
+background CPU load is printed with each line; a run that started busy is left out of the medians.
 
 .EXAMPLE
 tools/profiling/pairing/few_sweep.ps1 -Catalog D:\scratch\pairing\catalog.sqlite -Workers 12 -Owed 1000,2000,4000
@@ -21,6 +21,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $setOwed = Join-Path $PSScriptRoot 'set_owed.py'
+. (Join-Path $PSScriptRoot 'cpu_load.ps1')
 New-Item -ItemType Directory $Work -Force | Out-Null
 $copy = Join-Path $Work 'catalog.sqlite'
 function Median([double[]] $v) {
@@ -47,7 +48,7 @@ foreach ($w in $Workers) {
                 $runs[$path] += , @($join, $cycles)
             }
         }
-        $cpu = (Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average
+        $cpu = Get-CpuLoad
         $f = $runs.few; $s = $runs.sorted
         '{0,2} workers {1,6} owed: few join {2,5} ms {3,6} M | sorted join {4,5} ms {5,6} M | cpu {6}%' -f $w, $n,
             (Median ($f | ForEach-Object { $_[0] })), (Median ($f | ForEach-Object { $_[1] })),

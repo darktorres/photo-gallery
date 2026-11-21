@@ -116,7 +116,7 @@ ModalOverlay {
                             color: "#999999"
                         }
                         Button {
-                            text: words.text("ui-removal-discard")
+                            text: words.text("ui-discard-removal")
                             flat: true
                             onClicked: panel.discardRequested(keptRow.modelData)
                         }

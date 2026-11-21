@@ -18,9 +18,8 @@ from pathlib import Path
 import env
 import numpy as np
 from reference_io import read_ppm
+from timing import BUDGET_S, MAX_BATCH_BYTES
 
-BUDGET_S = 2.0
-MAX_BATCH_BYTES = 2.0e9  # decoded RGB per batch: the 2060 has 6 GB, ~1.5 GB taken by the desktop
 CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
 
 
@@ -88,7 +87,7 @@ def main():
             print(f"{name:15} cannot be created: {e}")
     print(env.line())
     print(
-        f"nvImageCodec {nv.__version__}: median wall ms per image (pixels on the host), CPU ms per image, "
+        f"nvImageCodec {nv.__version__}: median wall ms/image (pixels on the host), CPU ms/image, "
         "output vs libjpeg-turbo (mean |diff| / max / PSNR)"
     )
     for f in args.files:
@@ -109,10 +108,10 @@ def main():
             quality = diff(out, ref)
             for b in [b for b in batches if b <= cap]:
                 if b == 1:
-                    fn = lambda dec=dec, data=data: dec.decode(data).cpu()  # noqa: E731
+                    fn = lambda dec=dec, data=data: dec.decode(data).cpu()  # noqa: E731 (a closure over this loop's decoder and data)
                 else:
                     batch = [data] * b
-                    fn = lambda dec=dec, batch=batch: [i.cpu() for i in dec.decode(batch)]  # noqa: E731
+                    fn = lambda dec=dec, batch=batch: [i.cpu() for i in dec.decode(batch)]  # noqa: E731 (a closure over this loop's decoder and batch)
                 try:
                     wall, cpu = timed(fn, b, args.secs)
                 except Exception as e:  # noqa: BLE001 (reported, and the run goes on)

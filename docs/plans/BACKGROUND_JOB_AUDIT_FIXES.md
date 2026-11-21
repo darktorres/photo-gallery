@@ -16,7 +16,7 @@ Not mine and to be left alone: modified `crates/catalog/src/writers.rs` and
 edit around them, never revert or commit them.
 
 User decisions: rescan on start (plus idle/slow rescan); use the recorded designs. **Decided by me, redirect if wrong:**
-migrations, not a BASELINE edit (the baseline is frozen, `schema.rs:28-31`; BM §1.3's "one BASELINE edit" predates that);
+a BASELINE edit, in place, since no release has been made (`schema.rs:28-31`: the baseline is edited in place before the first release and frozen after it; the BM §1.3 "one BASELINE edit" is that rule);
 `analysis` stays `INSERT OR REPLACE` for now (DO 3.5's upsert is unsafe against today's triggers; settle before DO
 Phase 4); repair re-pairs the whole library once after the upgrade (resumable, low priority); slow rescan default 6 h
 while idle (a parameter); round order unchanged (D17 vs DO 2.9 is DO Phase 2's); batch 100 files / 250 ms for import and
@@ -34,7 +34,7 @@ pg-dev container.
 - `content_gen` is also recorded in `docs/plans/NTFS_MFT_SCAN_PLAN.md:279-291,345`: that plan gets amended too.
 - Two recorded plans conflict on `INSERT OR REPLACE` vs upsert for `analysis` (BM 2.1/2.4 vs DO 3.5/4.4); BM Q3 already
   decides "the missing flag is ignored when pairs form" (D25 wording ambiguous).
-- Real guard tests for a migration: `carried_is_every_table_of_the_current_schema` (`schema.rs:804`),
+- Real guard tests for a migration: `carried_is_every_table_of_the_current_schema` (in `catalog/src/schema.rs`),
   `the_baseline_and_the_migration_make_the_current_schema` (`:956`),
   `every_older_version_reaches_the_current_one_on_both_paths` (`lifecycle.rs:1229`). SQL steps never reach rebuilt
   catalogs, so a data repair must be a Rust `convert` step (`convert.rs:1-12`).
@@ -48,7 +48,9 @@ pg-dev container.
   `f.content_gen`.
 - `work_leases(id INTEGER PRIMARY KEY, kind, target BLOB, owner, token INTEGER NOT NULL, beat INTEGER NOT NULL DEFAULT 0)`
   replacing `scan_leases`; named unique partial indexes `(target) WHERE kind='scan'` and `(kind) WHERE kind='pair'`
-  (nested-root overlap stays a Rust check); `meta.lease_next_id`.
+  (nested-root overlap stays a Rust check); `meta.lease_next_id`. These six columns are TO_10's. The full table in
+  `BOUNDED_MEMORY_PLAN.md` (Shared tables) has six more (`inputs, seq_lo, seq_hi, dead, progress, reserved`) and is not
+  in TO_10.
 - `root_removals(id, path, hidden, report, finished, cursor_path, cursor_id)` + unique index on `path WHERE finished IS NULL`
   (`key_lo/key_hi` come with the reader mask).
 - `meta.roots_gen` + triggers `AFTER INSERT/DELETE ON roots` (bumped by CLI, app and tests alike); `meta.dups_version`

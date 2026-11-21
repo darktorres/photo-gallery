@@ -17,7 +17,7 @@ foreach ($line in Get-Content (Join-Path $PSScriptRoot "..\.env") -ErrorAction S
 }
 # The Qt kit: QT_DIR (its bin and lib folders), from the environment or .env.
 $Qt = $env:QT_DIR
-if (-not $Qt) { throw "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in the repo's .env." }
+if (-not $Qt) { throw "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env" }
 if (-not (Test-Path (Join-Path $Qt "bin\qmake.exe"))) { throw "QT_DIR ($Qt) has no bin\qmake.exe: point it at the Qt kit folder." }
 $root = Split-Path $PSScriptRoot -Parent
 $staged = Join-Path $root "target\qmltest"
@@ -42,7 +42,10 @@ $env:QT_QPA_PLATFORM = "offscreen"
 # Offscreen draws text with FreeType, which reads the fonts from QT_QPA_FONTDIR or else from <Qt>/lib/fonts. Qt no longer
 # ships fonts, so that folder is missing and every text draw warns. The app sets the same folder (crates/desktop/cpp/
 # gui_app.cpp); this runner doesn't go through that code, so the script sets it.
-if (-not $env:QT_QPA_FONTDIR) { $env:QT_QPA_FONTDIR = Join-Path $env:WINDIR "Fonts" }
+if (-not $env:QT_QPA_FONTDIR) {
+    $windir = if ($env:WINDIR) { $env:WINDIR } else { 'C:\Windows' } # the same fallback as qmltest.py and gui_app.cpp
+    $env:QT_QPA_FONTDIR = Join-Path $windir 'Fonts'
+}
 
 # The host (CMake, the Qt kit's packages): built into target\qml_host, then run with qmltestrunner's arguments.
 $host_build = Join-Path $root "target\qml_host"

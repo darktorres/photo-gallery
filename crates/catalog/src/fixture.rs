@@ -1,5 +1,6 @@
 //! Test catalogs: files inserted as the scanner would, with their order keys. Behind the `fixture` feature (and in
-//! this crate's tests), so every crate that reads a catalog in its tests builds the same files.
+//! this crate's tests), so every crate that reads a catalog in its tests builds the same files. `raw` (the rows as the
+//! scanner writes them) is for this crate's own tests only.
 
 #[cfg(test)]
 pub(crate) mod raw;
@@ -13,11 +14,15 @@ use rusqlite::params;
 
 /// A file row; `folder` must exist in `folders`.
 pub struct File {
+    /// The file's id.
     pub id: FileId,
+    /// The folder it is in (a `folders` row).
     pub folder: FolderId,
     /// The name's exact bytes (a name with no UTF-8 form is one of these too).
     pub name: &'static [u8],
+    /// The file's kind, as the `files` row stores it.
     pub kind: &'static str,
+    /// The file's size in bytes.
     pub size: i64,
     pub mtime: i64,
     pub file_ref: i64,
@@ -126,7 +131,7 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
 }
 
 /// A file's size and mtime as a scan that found it changed records them: the state the thumbnail and failure keys name,
-/// so a file rewritten on disk is seen as changed only once this has run (the `files_changed` trigger fires as it would).
+/// so a file rewritten on disk is seen as changed only once this has run (the `files_pending_changed` trigger fires as it would).
 pub fn set_state(catalog: &Catalog, id: FileId, size: i64, mtime: i64) -> anyhow::Result<()> {
     catalog
         .conn

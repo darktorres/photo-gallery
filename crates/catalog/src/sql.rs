@@ -4,7 +4,7 @@
 
 /// Whether the `files` row being written needs its analysis (re)done: no analysis made from it as it is now (at
 /// `meta.import_version` or later, from the same size, mtime, catalog rotation and kind). A failure counts as made:
-/// `--retry` redoes those. Inside `UPDATE files … WHERE id = …`.
+/// `--retry-errors` redoes those. Inside `UPDATE files … WHERE id = …`.
 macro_rules! stale {
     () => {
         "NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
@@ -62,6 +62,24 @@ macro_rules! under_root {
     };
 }
 
+/// No thumbnail failure is recorded for the `files` alias `$file` at its current size, mtime and rotation: the Thumbs
+/// pass does not list such a file again until it changes or Retry clears its row. Inside a `WHERE`.
+macro_rules! thumbs_not_failed {
+    ($file:literal) => {
+        concat!(
+            "NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = ",
+            $file,
+            ".id AND x.pass = 'thumbs' AND x.size = ",
+            $file,
+            ".size AND x.mtime = ",
+            $file,
+            ".mtime AND x.rotation = ",
+            $file,
+            ".rotation)"
+        )
+    };
+}
+
 /// The data a row can hold that a pairing would lose: a rotation, a rating, the file's own rating,
 /// an analysis or a queued write. Inside a statement over `files`.
 macro_rules! has_children {
@@ -108,6 +126,14 @@ macro_rules! not_being_written {
     };
 }
 
+/// A file is present and not pending: the rule its owed work (pairs, hashes, placeholders) waits on. `$alias` is the
+/// file's table alias in the statement.
+macro_rules! present_ready {
+    ($alias:ident) => {
+        concat!(stringify!($alias), ".missing = 0 AND ", stringify!($alias), ".pending = 0")
+    };
+}
+
 /// The row of `files` that the walk has not seen: `files.id` is not in its set (`temp.scan_seen`). A correlated lookup of
 /// the set's key: a `NOT IN` over the set would be materialised again for each statement a batch runs.
 macro_rules! not_seen {
@@ -125,7 +151,7 @@ macro_rules! kept_events {
 }
 
 /// The ledger's rows the inbox shows: those of files that are present, and for the import also not pending
-/// (`file_failures.hidden`, kept by `files_failures_hidden`). Written out as the literal the partial index
+/// (`file_failures.hidden`, kept by `file_failures_hidden`). Written out as the literal the partial index
 /// `file_failures_live` is made with, since SQLite uses a partial index only when the query repeats its condition.
 macro_rules! live_failures {
     () => {

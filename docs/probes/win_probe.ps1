@@ -1,4 +1,4 @@
-param([string]$Dir = ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\target\pg-test\probe'))))
+param([string]$Dir = ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\target\pg-test\probe'))))
 
 Add-Type -TypeDefinition @"
 using System;

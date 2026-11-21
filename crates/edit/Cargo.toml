@@ -1,6 +1,7 @@
 [package]
 name = "pg-edit"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 publish.workspace = true
 
@@ -21,7 +22,9 @@ turbojpeg.workspace = true
 weezl.workspace = true
 
 [dev-dependencies]
-pg-codec = { path = "../codec", features = ["fixtures"] }
+# The codec's test helpers that take its types (`fixtures::tiff_rgb8`, `webp_lossy_rgb`, `orient`); the other images
+# come from pg-testkit.
+pg-codec = { path = "../codec", features = ["fixture"] }
 # The tests decode a file the way the viewer shows it (`pg_render::display`).
 pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }

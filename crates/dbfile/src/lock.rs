@@ -26,16 +26,23 @@ impl Lock {
     /// another still holds it after that.
     pub fn take(path: &Path) -> io::Result<Option<Lock>> {
         let file = OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, ".lock"))?;
-        for attempt in 0..LOCK_TRIES {
-            match file.try_lock() {
-                Ok(()) => return Ok(Some(Lock { _held: file })),
-                Err(TryLockError::Error(e)) => return Err(e),
-                Err(TryLockError::WouldBlock) if attempt + 1 < LOCK_TRIES => std::thread::sleep(LOCK_WAIT),
-                Err(TryLockError::WouldBlock) => {}
-            }
-        }
-        Ok(None)
+        Ok(lock_with_retries(&file, false)?.then_some(Lock { _held: file }))
     }
+}
+
+/// Takes the lock on `file` (shared, or exclusive), trying up to `LOCK_TRIES` times `LOCK_WAIT` apart. `false` when
+/// another holder still has it after that.
+fn lock_with_retries(file: &File, shared: bool) -> io::Result<bool> {
+    for attempt in 0..LOCK_TRIES {
+        let taken = if shared { file.try_lock_shared() } else { file.try_lock() };
+        match taken {
+            Ok(()) => return Ok(true),
+            Err(TryLockError::Error(e)) => return Err(e),
+            Err(TryLockError::WouldBlock) if attempt + 1 < LOCK_TRIES => std::thread::sleep(LOCK_WAIT),
+            Err(TryLockError::WouldBlock) => {}
+        }
+    }
+    Ok(false)
 }
 
 /// A hold on a database file that a process has open: `<database>.live`, which stays after the hold is released. A
@@ -54,15 +61,7 @@ impl Live {
     /// while an exclusive holder (a rebuild) lets go. `None` when one still holds the file after that.
     pub fn shared(path: &Path) -> io::Result<Option<Live>> {
         let file = open_live(path)?;
-        for attempt in 0..LOCK_TRIES {
-            match file.try_lock_shared() {
-                Ok(()) => return Ok(Some(Live { _held: file })),
-                Err(TryLockError::Error(e)) => return Err(e),
-                Err(TryLockError::WouldBlock) if attempt + 1 < LOCK_TRIES => std::thread::sleep(LOCK_WAIT),
-                Err(TryLockError::WouldBlock) => {}
-            }
-        }
-        Ok(None)
+        Ok(lock_with_retries(&file, true)?.then_some(Live { _held: file }))
     }
 
     /// The exclusive hold on the database at `path`, for a change to the file itself. It doesn't wait: `None` when any

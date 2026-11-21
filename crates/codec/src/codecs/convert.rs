@@ -171,11 +171,10 @@ pub(super) fn luma8([v]: [u8; 1]) -> u8 {
     clamp_u8(f32::from(v) * R)
 }
 
-/// [`luma8`] for 16-bit samples.
+/// [`luma8`] for 16-bit samples: the same integer rule as [`rgb16`], so a 16-bit channel rounds one way whatever its
+/// channel count.
 fn luma16(v: u16) -> u8 {
-    // 1 / u16::MAX, as a literal: `f32::from` is not `const`.
-    const R: f32 = 1.0 / 65535.0;
-    clamp_u8(f32::from(v) * R)
+    rgb16(v)
 }
 
 /// `clamp_from_f32` for `u8`: [`f32_to_u8`] saturates.

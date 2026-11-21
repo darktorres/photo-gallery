@@ -36,7 +36,7 @@ The decisions from the old file, each with its status.
 10. **Facades.** Partly built. A facade exists where it holds logic or owns an object QML calls by id. `ViewsMenu` is a separate file. The remaining facade work is in S-12 (step 12, open).
 11. **Localisation.** Built. Fluent (`fluent-bundle` 0.16, `unic-langid`), with `crates/client/locales/en/*.ftl` and the `Words` facade in QML. `en` is the only shipped locale; `--locale=pseudo` runs the pseudo-locale.
 12. **Crate splits.** Built (S-20). The pass crates are split out of `pg-library`. The ledger records one deviation in S-20.3.
-13. **Verification.** Built with gaps. `just lint` (includes the wasm32 check of `pg-model` and `pg-client`, `cargo deny`, machete, ruff, markdownlint, `lint-qml`), `just test`, `just qmltest`, `just shots`, `just perf`, `just fuzz-smoke`. CI is in place but red at `15ca4e1` (S-15).
+13. **Verification.** Built with gaps. `just lint` (includes the wasm32 check of `pg-model` and `pg-client`, machete, ruff, markdownlint, `lint-qml`; `just deny` runs `cargo deny`), `just test`, `just qmltest`, `just shots`, `just perf`, `just fuzz-smoke`. CI is in place but red at `15ca4e1` (S-15).
 
 ## 3. Deviations from the old plan
 

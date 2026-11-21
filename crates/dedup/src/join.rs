@@ -77,6 +77,22 @@ const LANES: usize = 8;
 /// The most head words: two chunks to a word, of the 15 other than the stage's own.
 const MAX_HEAD_WORDS: usize = 7;
 
+/// Calls the generic function `$f` at the head-word count `$w`: 1 to 6 words each have their own instance, and any other
+/// count uses `MAX_HEAD_WORDS`'s.
+macro_rules! by_head_words {
+    ($w:expr, $f:ident($($arg:expr),* $(,)?)) => {
+        match $w {
+            1 => $f::<1>($($arg),*),
+            2 => $f::<2>($($arg),*),
+            3 => $f::<3>($($arg),*),
+            4 => $f::<4>($($arg),*),
+            5 => $f::<5>($($arg),*),
+            6 => $f::<6>($($arg),*),
+            _ => $f::<MAX_HEAD_WORDS>($($arg),*),
+        }
+    };
+}
+
 /// What a full test of a candidate costs at the margin, in head words per lane: about 100 ns for a test whose two
 /// hashes miss the cache (the stored side is 32 bytes a picture's orientation, past L3), against 0.16 ns for one more
 /// head word per lane (24 ms a stage over its 150 M lanes). Measured on the i7-8700 at one to five words at every stage
@@ -285,9 +301,15 @@ fn chunk(words: &[u64; 4], c: usize) -> usize {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kernel {
     Scalar,
-    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(dead_code, reason = "only the x86_64 build selects this kernel at runtime")
+    )]
     Popcnt,
-    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(dead_code, reason = "only the x86_64 build selects this kernel at runtime")
+    )]
     Avx2,
 }
 
@@ -973,30 +995,14 @@ fn first_pass(
     c: usize,
     w: usize,
 ) {
-    match w {
-        1 => first_pass_width::<1>(block, read, entries, entry, c),
-        2 => first_pass_width::<2>(block, read, entries, entry, c),
-        3 => first_pass_width::<3>(block, read, entries, entry, c),
-        4 => first_pass_width::<4>(block, read, entries, entry, c),
-        5 => first_pass_width::<5>(block, read, entries, entry, c),
-        6 => first_pass_width::<6>(block, read, entries, entry, c),
-        _ => first_pass_width::<MAX_HEAD_WORDS>(block, read, entries, entry, c),
-    }
+    by_head_words!(w, first_pass_width(block, read, entries, entry, c))
 }
 
 /// The second pass into region `h`: the records of high byte `h` from each of the first pass's `blocks`, in block
 /// order (so the sort is stable), placed by the key's low byte, with heads of `w` words in `layout`. Every slot an
 /// entry needs is written, and the padding may hold anything, so the region's buffers need no clearing.
 fn second_pass(region: &mut Region, blocks: &[Block], h: usize, w: usize, layout: Layout) {
-    match w {
-        1 => second_pass_width::<1>(region, blocks, h, layout),
-        2 => second_pass_width::<2>(region, blocks, h, layout),
-        3 => second_pass_width::<3>(region, blocks, h, layout),
-        4 => second_pass_width::<4>(region, blocks, h, layout),
-        5 => second_pass_width::<5>(region, blocks, h, layout),
-        6 => second_pass_width::<6>(region, blocks, h, layout),
-        _ => second_pass_width::<MAX_HEAD_WORDS>(region, blocks, h, layout),
-    }
+    by_head_words!(w, second_pass_width(region, blocks, h, layout))
 }
 
 /// The head of a permuted hash at stage `c`, `W` words, from its 16 chunks ([`chunks`]): chunks `c + 1, c + 2, ...`
@@ -1419,6 +1425,8 @@ fn scan_scalar<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, ou
     );
 }
 
+/// # Safety
+/// The CPU supports POPCNT. `best_kernel` chooses this kernel only after detecting it.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "popcnt")]
 unsafe fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
@@ -1431,6 +1439,9 @@ unsafe fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usi
 /// ([`hits`]). A large bucket's words are loaded per eight entries of each stored entry's suffix, and its lanes past
 /// the bucket's end dropped on a hit; a small bucket's are loaded once, with its pictures, and the ordering rule and
 /// the bucket's end are a lane mask.
+///
+/// # Safety
+/// The CPU supports AVX2 and POPCNT. `best_kernel` chooses this kernel only after detecting both.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,popcnt")]
 unsafe fn scan_avx2<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
@@ -2029,15 +2040,7 @@ impl Schedule for FewSchedule {
 
 /// Dispatches one block to the kernel at the stage's head words.
 fn scan(kernel: Kernel, st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
-    match st.w {
-        1 => scan_width::<1>(kernel, st, buckets, out),
-        2 => scan_width::<2>(kernel, st, buckets, out),
-        3 => scan_width::<3>(kernel, st, buckets, out),
-        4 => scan_width::<4>(kernel, st, buckets, out),
-        5 => scan_width::<5>(kernel, st, buckets, out),
-        6 => scan_width::<6>(kernel, st, buckets, out),
-        _ => scan_width::<MAX_HEAD_WORDS>(kernel, st, buckets, out),
-    }
+    by_head_words!(st.w, scan_width(kernel, st, buckets, out))
 }
 
 /// Dispatches one block to the kernel at `W` head words.
@@ -2387,7 +2390,7 @@ mod tests {
                         let mut flips: Vec<(usize, usize)> = (0..c).flat_map(|e| [(e, 0), (e, 1)]).collect();
                         flips.extend(flip_at.map(|b| (c, b)));
                         // The rest of the radius, all in the head: its chunks after c first, then those that wrap.
-                        let mut rest = 31 - flips.len() + usize::from(over);
+                        let mut rest = pg_model::num::index(MATCH_DISTANCE) - flips.len() + usize::from(over);
                         let head: Vec<usize> = (1..=2 * w).map(|i| (c + i) % 16).collect();
                         for &e in head.iter().filter(|&&e| e > c).chain(head.iter().filter(|&&e| e < c)) {
                             let from = if e < c { 2 } else { 0 };
@@ -2404,7 +2407,7 @@ mod tests {
                         for (e, b) in flips {
                             y = flip(&y, place[e][b]);
                         }
-                        assert_eq!(x[0].distance(&y), 31 + u32::from(over));
+                        assert_eq!(x[0].distance(&y), MATCH_DISTANCE + u32::from(over));
                         lib.hashes.push(x);
                         lib.hashes.push([y, rng.hash(), rng.hash(), rng.hash()]);
                         lib.owed.extend([true, true]);
@@ -2661,7 +2664,8 @@ mod tests {
         let base = rng.four();
         // Only the first orientation is near: the others are unrelated, so no other combination is within the radius.
         let unrelated_rest = [rng.hash(), rng.hash(), rng.hash()];
-        for (flips, found) in [(31usize, true), (32, false)] {
+        let radius = pg_model::num::index(MATCH_DISTANCE);
+        for (flips, found) in [(radius, true), (radius + 1, false)] {
             let mut first = base[0];
             for k in 0..flips {
                 first = flip(&first, k * 7 + 1);
@@ -2910,7 +2914,7 @@ mod tests {
             lib.hashes.push(std::array::from_fn(|v| Hash(rec[9 + 32 * v..9 + 32 * v + 32].try_into().unwrap())));
         }
         let n = lib.hashes.len();
-        println!("pictures {n}, owed {}", lib.owed.iter().filter(|&&o| o).count());
+        eprintln!("pictures {n}, owed {}", lib.owed.iter().filter(|&&o| o).count());
         let threads: usize = std::env::var("PG_JOIN_THREADS")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -2918,11 +2922,11 @@ mod tests {
         for kernel in kernels() {
             let t = std::time::Instant::now();
             let pairs = run(kernel, &lib, 0..n, 1);
-            println!("{kernel:?} 1 thread: {:?}, {} pairs", t.elapsed(), pairs.len());
+            eprintln!("{kernel:?} 1 thread: {:?}, {} pairs", t.elapsed(), pairs.len());
         }
         let t = std::time::Instant::now();
         let pairs = run(best_kernel(), &lib, 0..n, threads);
-        println!("{:?} {threads} threads: {:?}, {} pairs", best_kernel(), t.elapsed(), pairs.len());
+        eprintln!("{:?} {threads} threads: {:?}, {} pairs", best_kernel(), t.elapsed(), pairs.len());
         let mut out = std::io::BufWriter::new(std::fs::File::create(std::env::var("PG_JOIN_OUT").unwrap()).unwrap());
         for p in &pairs {
             let (a, b) = (ids[index(p.a)], ids[index(p.b)]);

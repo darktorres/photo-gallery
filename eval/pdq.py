@@ -22,7 +22,7 @@ import numpy as np
 import pdqhash
 from PIL import Image
 
-from common import DATA_ROOT, WORK_DIR, image_list, load_rgb
+from common import ANALYSIS_DRAFT_SIDES, DATA_ROOT, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
 from linear_resize import FIT_SIDE, fit_within
 
@@ -43,7 +43,7 @@ def hash_file(rel: str) -> tuple[np.ndarray, int] | None:
     try:
         # The app's decode: a DCT-scaled decode keeping >= 512 px long and 320 short, as analyze.rs (DECODE_MIN_*).
         # Moves the hash by 0 bits at the median and at most 6 on a 60-image sample (scratchpad eval_pdq/smoke.py).
-        bits, quality = pdqhash.compute(prepare(load_rgb(DATA_ROOT / rel, draft_sides=(512, 320))))
+        bits, quality = pdqhash.compute(prepare(load_rgb(DATA_ROOT / rel, draft_sides=ANALYSIS_DRAFT_SIDES)))
         return bits, int(quality)
     except Exception:  # noqa: BLE001 (a file that will not hash is reported as None)
         return None

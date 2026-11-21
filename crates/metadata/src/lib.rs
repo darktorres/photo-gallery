@@ -8,8 +8,6 @@
 //!
 //! EXIF is read in place by a reader of its own: IFD0 and the Exif IFD, only the tags used here, every offset
 //! checked. A broken field elsewhere in the block (a thumbnail's IFD, GPS) doesn't lose the ones read.
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 mod container;
 mod exif;

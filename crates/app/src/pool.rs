@@ -4,12 +4,14 @@
 
 use std::sync::{Mutex, PoisonError};
 
+/// A pool of idle `T`s, at most `keep` of them kept between borrows. See the module comment.
 pub struct Pool<T> {
     idle: Mutex<Vec<T>>,
     keep: usize,
 }
 
 impl<T> Pool<T> {
+    /// An empty pool that keeps at most `keep` idle items.
     pub fn new(keep: usize) -> Pool<T> {
         Pool { idle: Mutex::new(Vec::new()), keep }
     }

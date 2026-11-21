@@ -134,7 +134,7 @@ impl Analysis {
 pub const PLACEHOLDER_VERSION: i64 = crate::versions::PLACEHOLDER_VERSION;
 
 /// The longest ThumbHash: 25 bytes with alpha, 24 opaque. It is the vendored encoder's `MAX_LEN` as a literal (the
-/// model has no dependencies); the `analyze` tests in pg-analysis check the two are equal.
+/// encoder is not a dependency of the model); the `analyze` tests in pg-analysis check the two are equal.
 pub const THUMBHASH_MAX: usize = 25;
 
 /// A ThumbHash (a placeholder's `hash`, `placeholders`), held inline: the grid's placeholder.

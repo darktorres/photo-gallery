@@ -25,8 +25,8 @@ struct Object {
     sql: String,
 }
 
-/// The first way two schemas differ. The kinds are SQLite's (`table`, `index`, `trigger`, `view`), and `rows` for a
-/// seeded table's keys.
+/// The first way two schemas differ. The kinds are SQLite's (`table`, `index`, `trigger`, `view`), `rows` for a
+/// seeded table's keys, and `header` for a header value (`application_id`) that differs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Difference {
     /// The expected schema has it and the file doesn't.
@@ -296,13 +296,13 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_a_database_is_an_error_to_read() {
-        let dir = pg_testkit::run_folder("scratch_dbfile", "pg-dbfile").unwrap();
+        let dir = pg_testkit::run_folder("scratch_dbfile", "dbfile").unwrap();
         let path = dir.join("not-a-db.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
         let conn = Connection::open(&path).unwrap();
         let err = Schema::read(&conn, &[]).unwrap_err();
         assert_eq!(err.sqlite_error_code(), Some(rusqlite::ErrorCode::NotADatabase));
         drop(conn);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

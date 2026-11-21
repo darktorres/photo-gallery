@@ -29,9 +29,9 @@ pub struct JpegEncoder {
 
 impl JpegEncoder {
     /// An encoder at `quality` (libjpeg-turbo's 1–100) with `chroma`.
-    pub fn new(quality: i32, chroma: Chroma) -> Result<JpegEncoder> {
+    pub fn new(quality: u8, chroma: Chroma) -> Result<JpegEncoder> {
         let mut compressor = Compressor::new()?;
-        compressor.set_quality(quality)?;
+        compressor.set_quality(i32::from(quality))?;
         compressor.set_subsamp(match chroma {
             Chroma::Half => Subsamp::Sub2x2,
             Chroma::Full => Subsamp::None,
@@ -85,32 +85,32 @@ pub fn cropped(bytes: &[u8], format: Format, x: u32, y: u32, w: u32, h: u32) -> 
     {
         return Ok(out);
     }
-    let img = image::load_from_memory_with_format(bytes, format).context("decoding")?;
+    let img = image::load_from_memory_with_format(bytes, format).context("can't decode the image")?;
     let mut out = Cursor::new(Vec::new());
-    img.crop_imm(x, y, w, h).write_to(&mut out, format).context("encoding")?;
+    img.crop_imm(x, y, w, h).write_to(&mut out, format).context("can't encode the image")?;
     Ok(out.into_inner())
 }
 
 /// The quality a cut lossy WebP is encoded at, on libwebp's 0–100 scale. libwebp keeps no quantization tables to read
 /// the source's quality from, so every cut lossy WebP is encoded at this one.
-pub const WEBP_LOSSY_QUALITY: f32 = 90.0;
+pub const WEBP_LOSSY_QUALITY: u8 = 90;
 
 /// `bytes` (a still lossy WebP, RGB or with alpha) decoded, cropped to `rect` (left, top, width, height, stored pixels)
 /// and encoded lossy again at `quality` (libwebp's 0–100), its alpha kept. The metadata is not carried over.
-pub fn webp_lossy_cropped(bytes: &[u8], rect: [u32; 4], quality: f32) -> Result<Vec<u8>> {
+pub fn webp_lossy_cropped(bytes: &[u8], rect: [u32; 4], quality: u8) -> Result<Vec<u8>> {
     let image = webp::Decoder::new(bytes).decode().context("decoding")?;
     let alpha = image.is_alpha();
     let pixels = rows(&image[..], image.width(), if alpha { 4 } else { 3 }, rect)?;
     let [_, _, w, h] = rect;
     let encoder = if alpha { webp::Encoder::from_rgba(&pixels, w, h) } else { webp::Encoder::from_rgb(&pixels, w, h) };
-    Ok(encoder.encode(quality).to_vec())
+    Ok(encoder.encode(f32::from(quality)).to_vec())
 }
 
 /// `bytes` (a still JPEG in YCbCr or grey) decoded, cropped to `rect` (left, top, width, height, stored pixels) and
 /// encoded again at `quality` (libjpeg-turbo's 1–100), with the chroma subsampling of the source. The crop is exact:
 /// it is on no block grid, as a DCT crop's is. The metadata is not carried over. A JPEG in another colour space (CMYK,
 /// YCCK, or RGB) is refused, since its re-encode would change its colours.
-pub fn jpeg_cropped(bytes: &[u8], rect: [u32; 4], quality: i32) -> Result<Vec<u8>> {
+pub fn jpeg_cropped(bytes: &[u8], rect: [u32; 4], quality: u8) -> Result<Vec<u8>> {
     let header = turbojpeg::read_header(bytes).context("decoding")?;
     ensure!(
         matches!(header.colorspace, Colorspace::YCbCr | Colorspace::Gray),
@@ -121,7 +121,7 @@ pub fn jpeg_cropped(bytes: &[u8], rect: [u32; 4], quality: i32) -> Result<Vec<u8
     let pixels = rows(&image.pixels, u32::try_from(image.width)?, 3, rect)?;
     let [_, _, w, h] = rect;
     let mut compressor = Compressor::new()?;
-    compressor.set_quality(quality)?;
+    compressor.set_quality(i32::from(quality))?;
     compressor.set_subsamp(header.subsamp)?;
     let w = num::index(w);
     let image = Image { pixels: &pixels[..], width: w, pitch: w * 3, height: num::index(h), format: PixelFormat::RGB };
@@ -294,9 +294,9 @@ where
     [C::Inner]: tiff::encoder::TiffValue,
 {
     if big {
-        tiff::encoder::TiffEncoder::new_big(out)?.write_image::<C>(w, h, data).context("encoding")?;
+        tiff::encoder::TiffEncoder::new_big(out)?.write_image::<C>(w, h, data).context("can't encode the image")?;
     } else {
-        tiff::encoder::TiffEncoder::new(out)?.write_image::<C>(w, h, data).context("encoding")?;
+        tiff::encoder::TiffEncoder::new(out)?.write_image::<C>(w, h, data).context("can't encode the image")?;
     }
     Ok(())
 }
@@ -311,10 +311,6 @@ mod tests {
     fn samples(bytes: &[u8]) -> (tiff::ColorType, (u32, u32), tiff::decoder::DecodingResult) {
         let mut d = tiff::decoder::Decoder::new(Cursor::new(bytes)).unwrap();
         (d.colortype().unwrap(), d.dimensions().unwrap(), d.read_image().unwrap())
-    }
-
-    fn is_big(bytes: &[u8]) -> bool {
-        matches!(bytes.get(..4), Some(b"II\x2B\0" | b"MM\0\x2B"))
     }
 
     /// A CMYK TIFF is cropped in its CMYK samples, at its depth and in its kind: no conversion to RGB, and a
@@ -339,7 +335,7 @@ mod tests {
             }
             let file = file.into_inner();
             let out = cropped(&file, Format::Tiff, rect[0], rect[1], rect[2], rect[3]).unwrap();
-            assert_eq!(is_big(&out), big);
+            assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
             assert_eq!((color, size), (tiff::ColorType::CMYK(8), (3, 2)));
             let tiff::decoder::DecodingResult::U8(got) = got else { panic!("8-bit samples") };
@@ -353,7 +349,7 @@ mod tests {
                 TiffEncoder::new(&mut file).unwrap().write_image::<CMYK16>(w, h, &cmyk16).unwrap();
             }
             let out = cropped(&file.into_inner(), Format::Tiff, rect[0], rect[1], rect[2], rect[3]).unwrap();
-            assert_eq!(is_big(&out), big);
+            assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
             assert_eq!((color, size), (tiff::ColorType::CMYK(16), (3, 2)));
             let tiff::decoder::DecodingResult::U16(got) = got else { panic!("16-bit samples") };
@@ -373,7 +369,7 @@ mod tests {
         for big in [false, true] {
             let file = crate::fixtures::tiff_rgb8(w, h, &rgb, big).unwrap();
             let out = cropped(&file, Format::Tiff, 1, 1, 4, 2).unwrap();
-            assert_eq!(is_big(&out), big);
+            assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
             assert_eq!((color, size), (tiff::ColorType::RGB(8), (4, 2)));
             let want: Vec<u8> = (1..3usize).flat_map(|y| rgb[(y * 6 + 1) * 3..(y * 6 + 5) * 3].to_vec()).collect();
@@ -450,7 +446,7 @@ mod tests {
                 TiffEncoder::new(&mut file).unwrap().write_image::<RGB16>(w, h, &rgb).unwrap();
             }
             let out = cropped(&file.into_inner(), Format::Tiff, 1, 1, 4, 2).unwrap();
-            assert_eq!(is_big(&out), big);
+            assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
             assert_eq!((color, size), (tiff::ColorType::RGB(16), (4, 2)));
             let tiff::decoder::DecodingResult::U16(got) = got else { panic!("16-bit samples") };

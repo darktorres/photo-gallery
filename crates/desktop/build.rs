@@ -62,9 +62,11 @@ fn main() -> Result<(), String> {
                 "qml/InboxPanel.qml",
                 "qml/LogPanel.qml",
                 "qml/PanelKind.qml",
+                "qml/PickerPurpose.qml",
             ])
             .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true))
-            .qml_file(QmlFile::from("qml/Theme.qml").singleton(true)),
+            .qml_file(QmlFile::from("qml/Theme.qml").singleton(true))
+            .qml_file(QmlFile::from("qml/Wheel.qml").singleton(true)),
     )
     // Before the files and resources below: the builder emits their path lines when they are added.
     // CI sets PG_DESKTOP_CONTENT_KEY to a hash of this crate, so the build reruns when the crate changes and not when a

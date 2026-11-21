@@ -295,10 +295,9 @@ int init_inflate(z_stream* s) { return no_checksum() ? inflateInit2(s, -15) : in
 // pieces, output into a 96 KiB window that is reused and discarded (zlib keeps its own history, so it needs no rolling).
 // False if the stream doesn't end or doesn't inflate to `raw` bytes.
 bool inflate_streamed(z_stream& s, const std::vector<uint8_t>& stream, std::vector<uint8_t>& window, size_t raw) {
-    const size_t kInChunk = 16 << 10;
     size_t at = 0;
     while (true) {
-        const size_t end = std::min(at + kInChunk, stream.size());
+        const size_t end = std::min(at + kStreamChunk, stream.size());
         s.next_in = const_cast<Bytef*>(stream.data() + at);
         s.avail_in = uInt(end - at);
         int rc = Z_OK;

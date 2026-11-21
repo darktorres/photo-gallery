@@ -1,12 +1,9 @@
 //! A file's containers, walked without allocating (the file's own metadata and its pixels' structure):
 //! JPEG marker segments (and whether the frame is progressive), the chunks of an extended XMP packet, PNG chunks,
-//! RIFF (WebP) chunks and GIF blocks. Each walk yields byte ranges of the file, so the metadata reader and the
+//! RIFF (WebP) chunks and GIF blocks. Each walk yields the file's structure as byte ranges (PNG chunks yield their chunk values), so the metadata reader and the
 //! lossless rewriter share one reading of each format's structure, and one rule for whether a file is animated
 //! ([`PngAnimation`], [`WebpAnimation`]), applied chunk by chunk as a walk goes. The writing half is here too: a PNG
 //! chunk and its CRC, a RIFF file and its VP8X canvas, GIF sub-blocks. Model-shaped: no decoding, no XMP parsing.
-
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
@@ -62,36 +59,49 @@ impl JpegSegments<'_> {
     }
 }
 
+/// What the marker after a 0xFF byte is, by its code: a fill byte, a standalone marker (restart, TEM), the end of the
+/// image, or a segment with its code and its length (the scan header is a segment, code 0xDA).
+enum Marker {
+    Fill,
+    Standalone,
+    End,
+    Segment { code: u8, len: usize },
+}
+
+fn marker_kind(code: u8, hi: u8, lo: u8) -> Marker {
+    match code {
+        0xFF => Marker::Fill,
+        0xD0..=0xD7 | 0x01 => Marker::Standalone,
+        0xD9 => Marker::End,
+        _ => Marker::Segment { code, len: usize::from(u16::from_be_bytes([hi, lo])) },
+    }
+}
+
 impl<'a> Iterator for JpegSegments<'a> {
     type Item = Segment<'a>;
 
     fn next(&mut self) -> Option<Segment<'a>> {
         let bytes = self.bytes;
-        while let Some([ff, marker, len_hi, len_lo]) = bytes_at::<4>(bytes, self.i) {
+        while let Some([ff, code, hi, lo]) = bytes_at::<4>(bytes, self.i) {
             if ff != 0xFF {
                 self.damaged = true;
                 return None;
             }
-            if marker == 0xFF {
-                self.i += 1; // fill byte
-                continue;
+            match marker_kind(code, hi, lo) {
+                Marker::Fill => self.i += 1,
+                Marker::Standalone => self.i += 2,
+                Marker::End | Marker::Segment { code: 0xDA, .. } => return None,
+                Marker::Segment { code, len } => {
+                    let (start, end) = (self.i + 4, self.i + 2 + len);
+                    // `None` when the length is under 2 (the range runs backwards) or runs past the file.
+                    let Some(data) = bytes.get(start..end) else {
+                        self.damaged = true;
+                        return None;
+                    };
+                    self.i = end;
+                    return Some(Segment { marker: code, start, data });
+                }
             }
-            if marker == 0xDA || marker == 0xD9 {
-                return None;
-            }
-            if (0xD0..=0xD7).contains(&marker) || marker == 0x01 {
-                self.i += 2;
-                continue;
-            }
-            let len = usize::from(u16::from_be_bytes([len_hi, len_lo]));
-            let (start, end) = (self.i + 4, self.i + 2 + len);
-            // `None` when the length is under 2 (the range runs backwards) or runs past the file.
-            let Some(data) = bytes.get(start..end) else {
-                self.damaged = true;
-                return None;
-            };
-            self.i = end;
-            return Some(Segment { marker, start, data });
         }
         self.damaged = true;
         None
@@ -136,35 +146,34 @@ pub fn jpeg_header_end(bytes: &[u8]) -> JpegHeader {
     let mut i = 2;
     let mut frame = false;
     loop {
-        let Some([ff, marker, hi, lo]) = bytes_at::<4>(bytes, i) else { return JpegHeader::Needs(i + 4) };
+        let Some([ff, code, hi, lo]) = bytes_at::<4>(bytes, i) else { return JpegHeader::Needs(i + 4) };
         if ff != 0xFF {
             return JpegHeader::Unread;
         }
-        match marker {
-            0xFF => {
-                i += 1; // fill byte
+        let (code, len) = match marker_kind(code, hi, lo) {
+            Marker::Fill => {
+                i += 1;
                 continue;
             }
-            0xD9 => return JpegHeader::Unread,
-            0xD0..=0xD7 | 0x01 => {
+            Marker::Standalone => {
                 i += 2;
                 continue;
             }
-            _ => {}
-        }
-        let len = usize::from(u16::from_be_bytes([hi, lo]));
+            Marker::End => return JpegHeader::Unread,
+            Marker::Segment { code, len } => (code, len),
+        };
         if len < 2 {
             return JpegHeader::Unread;
         }
         let end = i + 2 + len;
-        if marker == 0xDA {
+        if code == 0xDA {
             if !frame || len < 8 {
                 return JpegHeader::Unread;
             }
             return if end <= bytes.len() { JpegHeader::Ends(end) } else { JpegHeader::Needs(end) };
         }
         // A start-of-frame marker: C0..=CF, but not C4 (DHT), C8 (JPG) or CC (DAC).
-        frame |= matches!(marker, 0xC0..=0xCF) && !matches!(marker, 0xC4 | 0xC8 | 0xCC);
+        frame |= matches!(code, 0xC0..=0xCF) && !matches!(code, 0xC4 | 0xC8 | 0xCC);
         i = end;
     }
 }
@@ -206,7 +215,7 @@ pub struct ExtendedChunk {
     pub seq: usize,
 }
 
-/// An APP1 segment's data, if it is a chunk of an extended packet.
+/// Adds an APP1 segment's data to `chunks`, if it is a chunk of an extended packet.
 pub fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<ExtendedChunk>) {
     if let Some(rest) = data.strip_prefix(JPEG_XMP_EXTENSION)
         && let Some((guid, rest)) = rest.split_first_chunk::<32>()
@@ -1016,7 +1025,7 @@ mod tests {
 
     /// A PNG of these chunks after its signature, each with its CRC.
     fn png(chunks: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
-        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut out = PNG_SIGNATURE.to_vec();
         for (kind, data) in chunks {
             out.extend(png_chunk(kind, data).unwrap());
         }
@@ -1118,7 +1127,7 @@ mod tests {
 
     #[test]
     fn a_jpeg_header_that_does_not_end_in_a_scan_is_unread() {
-        assert_eq!(jpeg_header_end(b"\x89PNG\r\n\x1a\n"), JpegHeader::Unread);
+        assert_eq!(jpeg_header_end(&PNG_SIGNATURE), JpegHeader::Unread);
         // A marker byte that isn't 0xFF; a length under 2; the end marker before a scan.
         assert_eq!(jpeg_header_end(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 1, 2, 0x00, 0xDA, 0, 8]), JpegHeader::Unread);
         assert_eq!(jpeg_header_end(&[0xFF, 0xD8, 0xFF, 0xE1, 0, 1, 0, 0]), JpegHeader::Unread);
@@ -1291,20 +1300,20 @@ mod tests {
         assert_eq!(gather(&png_of(&[], &[10], &[(b"eXIf", big)])), None);
     }
 
-    proptest::proptest! {
-        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(200))]
+    use proptest::prelude::prop;
 
+    proptest::proptest! {
         // Whatever the layout, the gather is the whole file's bytes, or none (the file is then read whole); and a file
         // laid out as an encoder writes it is gathered.
         #[test]
         fn a_gather_is_the_whole_files_or_none(
-            before in proptest::collection::vec(0usize..40_000, 0..3),
+            before in prop::collection::vec(0usize..40_000, 0..3),
             first in 1usize..70_000,
             len in 1usize..70_000,
             count in 0usize..12,
-            ends in proptest::collection::vec(1usize..70_000, 0..3),
-            after in proptest::collection::vec(0usize..40_000, 0..3),
-            restart in proptest::option::of((1usize..70_000, 1usize..6)),
+            ends in prop::collection::vec(1usize..70_000, 0..3),
+            after in prop::collection::vec(0usize..40_000, 0..3),
+            restart in prop::option::of((1usize..70_000, 1usize..6)),
             trailer in 0usize..4,
         ) {
             let before: Vec<(&[u8; 4], usize)> = before.into_iter().map(|n| (b"tEXt", n)).collect();

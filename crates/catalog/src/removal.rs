@@ -21,7 +21,6 @@
 
 use std::rc::Rc;
 
-use anyhow::anyhow;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -71,8 +70,8 @@ pub struct Discarded {
 }
 
 /// `SELECT` of the files a batch deletes: those under the folders, without a recorded write.
-const PAGE: &str = "SELECT id FROM files WHERE folder_id IN rarray(?1) AND NOT EXISTS \
-                    (SELECT 1 FROM file_writes w WHERE w.file_id = files.id AND w.temp IS NOT NULL) LIMIT ";
+const PAGE: &str =
+    concat!("SELECT id FROM files WHERE folder_id IN rarray(?1) AND ", not_being_written!(files), " LIMIT ");
 
 /// The batch's files, deleted if they are still under the folders and still have no recorded write (a write recorded
 /// since the page was read keeps its file: its temp is the only copy of the edit).
@@ -90,7 +89,7 @@ impl Catalog {
         let stored: Option<Vec<u8>> =
             tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
         let Some(bytes) = stored else { return Ok(Begun::NotFound) };
-        let path = rules.parse_bytes(&bytes).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
+        let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a stored library path has a NUL" })?;
         if !rules.same(&path, expected) {
             return Ok(Begun::Changed);
         }
@@ -163,9 +162,7 @@ impl Catalog {
         let mut made = 0;
         for bytes in candidates {
             let Some(folder) = rules.parse_bytes(&bytes) else { continue };
-            let overlaps_root = roots
-                .iter()
-                .any(|r| rules.same(r, &folder) || rules.is_under(r, &folder) || rules.is_under(&folder, r));
+            let overlaps_root = roots.iter().any(|r| overlaps(rules, r, &folder));
             if overlaps_root || covering.iter().any(|m| rules.is_under(&folder, m)) {
                 continue;
             }
@@ -190,8 +187,7 @@ impl Catalog {
             .collect::<rusqlite::Result<_>>()?;
         let mut markers = Vec::with_capacity(rows.len());
         for (bytes, deferred) in rows {
-            let path =
-                rules.parse_bytes(&bytes).ok_or_else(|| Error::Other(anyhow!("a removal's folder has a NUL")))?;
+            let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a removal's folder has a NUL" })?;
             markers.push(Marker { path, deferred: usize::try_from(deferred).unwrap_or(0) });
         }
         Ok(markers)
@@ -225,7 +221,7 @@ impl Catalog {
             )
             .optional()?;
         let Some(folder) = folder else { return Ok(false) };
-        let folder = self.rules.parse_bytes(&folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+        let folder = self.rules.parse_bytes(&folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
         Ok(self.removal_markers()?.iter().any(|m| self.rules.is_under(&folder, &m.path)))
     }
 
@@ -240,10 +236,7 @@ impl Catalog {
             return Ok(None);
         }
         if overlapping_root(&tx, rules, path)?.is_some() {
-            return Err(Error::Other(anyhow!(
-                "{} is a library folder again: its removal is not discarded",
-                rules.display(path)
-            )));
+            return Err(Error::RootAgain { path: rules.display(path) });
         }
         let folders = folder_ids_under(&tx, rules, path)?;
         let temps: Vec<Vec<u8>> = {
@@ -346,15 +339,15 @@ fn drive_one(
     Ok(true)
 }
 
-/// The ids of the folders at `path` or below it, by the rules. Folders are matched by the rules, not by the bytes of
-/// `path`: under the Windows rules a folder spelled in another case is under the library folder all the same.
+/// The ids of the folders at `path` or below it: folders are matched by the rules, not by the bytes of `path`, so under
+/// the Windows rules a folder spelled in another case is under the library folder all the same.
 pub(crate) fn folder_ids_under(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare_cached("SELECT id, path FROM folders")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
     let mut ids = Vec::new();
     for row in rows {
         let (id, bytes) = row?;
-        let folder = rules.parse_bytes(&bytes).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+        let folder = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
         if rules.is_under(&folder, path) {
             ids.push(id);
         }
@@ -370,7 +363,7 @@ pub(crate) fn marker_paths(conn: &Connection, rules: PathRules) -> Result<Vec<Ru
         .collect::<rusqlite::Result<_>>()?;
     let mut paths = Vec::with_capacity(rows.len());
     for bytes in &rows {
-        paths.push(rules.parse_bytes(bytes).ok_or_else(|| Error::Other(anyhow!("a removal's folder has a NUL")))?);
+        paths.push(rules.parse_bytes(bytes).ok_or(Error::Stored { what: "a removal's folder has a NUL" })?);
     }
     Ok(paths)
 }
@@ -378,17 +371,17 @@ pub(crate) fn marker_paths(conn: &Connection, rules: PathRules) -> Result<Vec<Ru
 /// A removal not finished that overlaps `path` (equal, inside or containing), if there is one: a library folder can't be
 /// added there until the removal is finished (`Catalog::add_root`).
 pub(crate) fn overlapping_marker(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Option<RulePath>> {
-    Ok(marker_paths(conn, rules)?
-        .into_iter()
-        .find(|m| rules.same(m, path) || rules.is_under(m, path) || rules.is_under(path, m)))
+    Ok(marker_paths(conn, rules)?.into_iter().find(|m| overlaps(rules, m, path)))
+}
+
+/// Whether two paths overlap by the rules: the same folder, or one inside the other.
+fn overlaps(rules: PathRules, a: &RulePath, b: &RulePath) -> bool {
+    rules.same(a, b) || rules.is_under(a, b) || rules.is_under(b, a)
 }
 
 /// The library folder that overlaps `path` (equal, inside or containing), on `conn`.
 fn overlapping_root(conn: &Transaction<'_>, rules: PathRules, path: &RulePath) -> Result<Option<RulePath>> {
-    Ok(roots_on(conn, rules)?
-        .into_iter()
-        .map(|r| r.path)
-        .find(|r| rules.same(r, path) || rules.is_under(r, path) || rules.is_under(path, r)))
+    Ok(roots_on(conn, rules)?.into_iter().map(|r| r.path).find(|r| overlaps(rules, r, path)))
 }
 
 fn marker_present(conn: &Connection, bytes: &[u8]) -> Result<bool> {
@@ -403,7 +396,7 @@ fn release_leases(tx: &Transaction<'_>, rules: PathRules, path: &RulePath) -> Re
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     for (id, walked) in leases {
-        let walked = rules.parse_bytes(&walked).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
+        let walked = rules.parse_bytes(&walked).ok_or(Error::Stored { what: "a scan lease's folder has a NUL" })?;
         if rules.is_under(&walked, path) {
             tx.execute("DELETE FROM scan_leases WHERE id = ?1", [id])?;
         }
@@ -419,7 +412,7 @@ fn finish_folders(tx: &Transaction<'_>, rules: PathRules, path: &RulePath, folde
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     for (id, walked) in scans {
-        let walked = rules.parse_bytes(&walked).ok_or_else(|| anyhow!("a scan's folder has a NUL"))?;
+        let walked = rules.parse_bytes(&walked).ok_or(Error::Stored { what: "a scan's folder has a NUL" })?;
         if rules.is_under(&walked, path) {
             tx.execute("DELETE FROM scans WHERE id = ?1", [id])?;
         }
@@ -444,18 +437,16 @@ fn values(ids: &[i64]) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use pg_model::ids::FolderId;
 
     use super::*;
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, File};
-    use crate::test_support::{p, versions};
+    use crate::test_support::{p, rooted};
 
     fn library(rules: PathRules) -> Catalog {
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        assert!(c.add_root(&p(rules, r"D:\r")).unwrap());
+        let c = rooted(rules);
         crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\r")).unwrap();
         crate::fixture::state::add_folder(&c, 2, &spelled(rules, r"D:\r\sub")).unwrap();
         fixture::insert(

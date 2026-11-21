@@ -221,7 +221,7 @@ mod tests {
     fn tree() -> FolderTree {
         let mut b = TreeBuilder::with_capacity(PathRules::Windows, 5, 0, 0);
         for (id, path) in [(1, r"D:\a"), (2, r"D:\a\b"), (3, r"D:\a\b\c"), (4, r"D:\a\d"), (5, r"D:\e")] {
-            b.add(id, &PathRules::Windows.parse(path).unwrap(), 1);
+            b.add(id, &PathRules::Windows.parse(path).unwrap(), 1).unwrap();
         }
         b.build()
     }
@@ -243,10 +243,10 @@ mod tests {
     fn tree_with_roots(count: i64) -> FolderTree {
         let mut b = TreeBuilder::with_capacity(PathRules::Windows, 7, 0, 0);
         for (id, path) in [(1, r"D:\a"), (2, r"D:\a\b"), (3, r"D:\a\b\c"), (4, r"D:\a\d"), (5, r"D:\e")] {
-            b.add(id, &PathRules::Windows.parse(path).unwrap(), 1);
+            b.add(id, &PathRules::Windows.parse(path).unwrap(), 1).unwrap();
         }
-        b.add(6, &PathRules::Windows.parse(r"D:\").unwrap(), count);
-        b.add(7, &PathRules::Windows.parse(r"E:\").unwrap(), count);
+        b.add(6, &PathRules::Windows.parse(r"D:\").unwrap(), count).unwrap();
+        b.add(7, &PathRules::Windows.parse(r"E:\").unwrap(), count).unwrap();
         b.build()
     }
 
@@ -367,7 +367,7 @@ mod tests {
         let mut path = rules.parse(r"D:").unwrap();
         path.parts = vec![odd.clone()];
         let mut b = TreeBuilder::with_capacity(rules, 2, 0, 0);
-        b.add(1, &path, 1);
+        b.add(1, &path, 1).unwrap();
         let mut t = Tree::new(PathRules::Windows);
         t.replace(b.build());
         let Some(Visible::Folder(node)) = t.row(1) else { panic!("the folder's row") };

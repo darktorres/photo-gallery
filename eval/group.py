@@ -31,7 +31,7 @@ from itertools import combinations
 
 import numpy as np
 
-from common import WORK_DIR, ground_truth, image_list
+from common import DEFAULT_MODEL, WORK_DIR, ground_truth, image_list
 
 PDQ_MIN_QUALITY = 50  # Meta: hashes below this quality are unreliable (flat or tiny images)
 MIN_EVIDENCE = 0.05  # weight of a verifier decision right at the noise threshold
@@ -156,7 +156,7 @@ def score(groups: list[list[str]], files: list[str]) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="sscd_fp16")
+    parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--shortcut-pdq", type=int, default=SHORTCUT_PDQ, help="accept PDQ distance <= this (-1 = off)")
     parser.add_argument("--shortcut-sim", type=float, default=SHORTCUT_SIM, help="accept SSCD cosine >= this (> 1 = off)")
     parser.add_argument("--method", choices=("multicut", "components"), default="multicut")
@@ -211,7 +211,7 @@ def main() -> None:
         "score": s,
         "groups": [{"members": m, "edges": e} for m, e in zip(groups, inside, strict=True)],
     }
-    (WORK_DIR / f"groups_{args.model}.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
+    (WORK_DIR / f"groups_{args.model}.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -1,31 +1,31 @@
 {
   "comparison": "The notifications work's first milestone (storage, the writer and the scan) against the baseline recorded before it; inbox-refresh against its form recorded at that milestone. Used once: just perf --budgets (tools/perf_check.py, tools/perf-compare.py). Changes are fractions of the baseline's count. Restated where the original guess didn't fit the design, as measured.",
   "budgets": {
-    "scan-walk.again": {
+    "scan_walk.again": {
       "max": 0.10,
       "why": "batching and the scan lease"
     },
-    "scan-walk.first": {
+    "scan_walk.first": {
       "max": 0.20,
       "why": "the pairing reads the fresh rows once per tier, each batch in its own transaction, so a decision sees the rows as they are (one read of them all before); files_fresh is kept on every new row; the lease and the value guard"
     },
-    "import-flush": {
+    "import_flush": {
       "max": 0.30,
-      "why": "the import ledger's triggers: in the SQLite bundled (3.54), each firing costs a frame of 10-25k instructions even when its WHEN is false, and the import writes a row per statement; two fire per analysis (analysis_import, files_failures_hidden)"
+      "why": "the import ledger's triggers: in the SQLite bundled (3.54.1), each firing costs a frame of 10-25k instructions even when its WHEN is false, and the import writes a row per statement; two fire per analysis (analysis_import, file_failures_hidden)"
     },
-    "pending-import": {
+    "pending_import": {
       "max": 0.02,
       "why": "one probe; the larger schema's fixed cost around it (about 1,300 instructions)"
     },
-    "inbox-refresh.closed": {
+    "inbox_refresh.closed": {
       "max": -0.90,
       "why": "must fall by 90% or more: the ledger's cheap state on the partial index instead of the counts"
     },
-    "inbox-refresh.open": {
+    "inbox_refresh.open": {
       "max": -0.70,
       "why": "the counts read while the inbox is shown are linear in the live rows (a count is a scan of the partial index; the bench's ledgers are all new, so both the total and the new are full ranges): only the closed refresh is the cheap state"
     },
-    "pending-thumbs": {
+    "pending_thumbs": {
       "max": 0.18,
       "why": "the pass's ATTACH parses the catalog's schema, which versions 8 and 9 grew by their tables, indexes and triggers: a fixed cost per pass, not per file"
     }

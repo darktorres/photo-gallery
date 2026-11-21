@@ -64,8 +64,8 @@
 //! - The window's thumbnail reports (`thumb_failed`, `thumb_made`), the latest per file.
 //! - The flags: whether the inbox is viewed (the latest wins), a poke, the stop.
 //!
-//! Whether a clear has work is decided by SQL on the writer: `replace_notices` reads `notices(kind, root)` first and
-//! takes no write lock when nothing is stored.
+//! Whether a clear has work is decided by SQL on the writer: `clear_notices` (which is `replace_notices` with no notices)
+//! reads `notices(kind, root)` first and takes no write lock when nothing is stored.
 //!
 //! **Failures.** The writer's connection waits `BUSY_TIMEOUT` (100 ms, set by `Catalog::set_busy_timeout`; every other
 //! connection waits 5 s) for a lock another connection holds, so it checks its stop at least that often. A write that is
@@ -146,7 +146,7 @@ const BUSY_WARN: u32 = 50;
 
 /// What the inbox lists now: its entries, newest first, and how many are unread.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Listing {
+pub struct InboxListing {
     pub entries: Vec<Entry>,
     pub unread: u64,
 }
@@ -155,7 +155,7 @@ pub struct Listing {
 #[derive(Clone, Debug)]
 pub enum InboxEvent {
     /// The inbox changed: what it lists now.
-    Changed(Arc<Listing>),
+    Changed(Arc<InboxListing>),
     /// A notice to show now: a new entry, one posted again that says something new, or a transient notice.
     Toast(Notice),
 }
@@ -369,12 +369,14 @@ enum Keeping {
     Event,
 }
 
+/// The app's notice inbox: posted notices, their kept state and the listing the window shows. Its writer thread opens
+/// its own catalog connection (see `Inbox::start`).
 pub struct Inbox {
     shared: Arc<Shared>,
     events: Arc<Bus<InboxEvent>>,
     /// The subscription taken when the inbox started, for the first subscriber: the notices of the app's opening reach it.
     first: Mutex<Option<Subscription<InboxEvent>>>,
-    listing: Arc<Mutex<Arc<Listing>>>,
+    listing: Arc<Mutex<Arc<InboxListing>>>,
     /// When each kept notice was last logged, by its key; only the keys logged within [`LOG_AGAIN`] are kept.
     logged: Mutex<BTreeMap<String, Instant>>,
     /// The thumbnails' ledger may hold files: a thumbnail the window makes is sent to clear its file only then.
@@ -389,7 +391,7 @@ impl Inbox {
         let shared = Arc::new(Shared::default());
         let events: Arc<Bus<InboxEvent>> = Arc::new(Bus::new(256));
         let first = Mutex::new(Some(events.subscribe()));
-        let listing = Arc::new(Mutex::new(Arc::new(Listing::default())));
+        let listing = Arc::new(Mutex::new(Arc::new(InboxListing::default())));
         let thumb_failures = Arc::new(AtomicBool::new(true));
         let writer = Writer::new(shared.clone(), events.clone(), listing.clone(), thumb_failures.clone());
         let thread = std::thread::Builder::new()
@@ -443,7 +445,7 @@ impl Inbox {
             }
             Keeping::Event => {
                 if self.push(|w| w.event(notice, at)) == Some(1) {
-                    pg_log::warn("inbox", "the inbox's queue is full: notices are not kept");
+                    pg_log::warn("inbox", "the inbox couldn't keep notices: its queue is full");
                 }
             }
         }
@@ -481,7 +483,8 @@ impl Inbox {
         }
     }
 
-    /// "Mark all read": the entries displayed, `ids`, and never one the window wasn't given.
+    /// "Mark all read": marks `ids`, which the caller takes from the entries the window displays. Nothing here checks
+    /// them against the display.
     pub fn mark_all_read(&self, ids: Vec<EntryId>) {
         self.mark_read(ids);
     }
@@ -532,7 +535,7 @@ impl Inbox {
     }
 
     /// What the inbox lists now (empty until the writer has read it).
-    pub fn listing(&self) -> Arc<Listing> {
+    pub fn listing(&self) -> Arc<InboxListing> {
         self.listing.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
@@ -617,14 +620,24 @@ impl NoticeSink for Inbox {
     }
 }
 
+/// A notice's text in the log: its stored JSON form. The fallback (none, as the notice is plain data) is its Debug form
+/// with the error, so every log line of a notice has the same shape.
+pub(crate) fn log_line(notice: &Notice) -> String {
+    serde_json::to_string(notice).unwrap_or_else(|e| format!("{notice:?} ({e})"))
+}
+
 /// Log `notice` in its stored form, at its level.
 fn write_log(notice: &Notice) {
-    let text = serde_json::to_string(notice).unwrap_or_else(|e| format!("{notice:?} ({e})"));
+    log_notice(notice, &log_line(notice));
+}
+
+/// Log `text` about `notice`: under the notice's source, at the notice's level.
+fn log_notice(notice: &Notice, text: &str) {
     let target = notice.source().code();
     match notice.level() {
-        Level::Info => pg_log::info(target, &text),
-        Level::Warning => pg_log::warn(target, &text),
-        Level::Error => pg_log::error(target, &text),
+        Level::Info => pg_log::info(target, text),
+        Level::Warning => pg_log::warn(target, text),
+        Level::Error => pg_log::error(target, text),
     }
 }
 
@@ -710,7 +723,9 @@ impl Store for Catalog {
     }
 }
 
-/// One write of the writer's: an op, or a run of thumbnail reports of one kind written together.
+/// One write of the writer's: an op, or a run of thumbnail reports of one kind written together. The naming is by
+/// grain: the inbox's methods and `Thumb` name one report (`thumb_failed`, `Thumb::Made`); a `Step` and the store's
+/// methods name a run of them (`ThumbsFailed`, `thumbs_made`), since they take a batch.
 enum Step {
     Event { notice: Notice, at: i64 },
     State(StateOp),
@@ -800,7 +815,7 @@ struct Drained {
 struct Writer {
     shared: Arc<Shared>,
     events: Arc<Bus<InboxEvent>>,
-    listing: Arc<Mutex<Arc<Listing>>>,
+    listing: Arc<Mutex<Arc<InboxListing>>>,
     thumb_failures: Arc<AtomicBool>,
     /// What the last read found, by entry (`EntryId::entry`).
     seen: BTreeMap<EntryId, Mark>,
@@ -820,7 +835,7 @@ impl Writer {
     fn new(
         shared: Arc<Shared>,
         events: Arc<Bus<InboxEvent>>,
-        listing: Arc<Mutex<Arc<Listing>>>,
+        listing: Arc<Mutex<Arc<InboxListing>>>,
         thumb_failures: Arc<AtomicBool>,
     ) -> Writer {
         Writer {
@@ -1054,19 +1069,19 @@ impl Writer {
             Ok(any) => self.thumb_failures.store(any, Ordering::Relaxed),
             Err(e) => pg_log::warn("inbox", &format!("the thumbnails' ledger couldn't be read: {e:#}")),
         }
-        let listing = Arc::new(Listing { entries, unread });
+        let listing = Arc::new(InboxListing { entries, unread });
         *self.listing.lock().unwrap_or_else(PoisonError::into_inner) = listing.clone();
         if toast {
             for entry in listing.entries.iter().filter(|e| news.contains(&e.id.entry())) {
                 self.toasted.insert(entry.id.entry(), now);
                 // A ledger's entry is never posted: it is logged when it is news.
                 if let EntryId::Ledger { .. } = entry.id {
-                    let text = serde_json::to_string(&entry.notice).unwrap_or_else(|e| format!("{e}"));
+                    let text = log_line(&entry.notice);
                     let text = match entry.counts {
                         Some(counts) => format!("{text} ({} files)", counts.total),
                         None => text,
                     };
-                    pg_log::warn(entry.notice.source().code(), &text);
+                    log_notice(&entry.notice, &text);
                 }
                 self.events.publish(InboxEvent::Toast(entry.notice.clone()));
             }
@@ -1101,10 +1116,7 @@ mod tests {
 
     /// A prepared catalog in a test folder, and its path.
     fn catalog_in(name: &str) -> (PathBuf, PathBuf) {
-        let dir = pg_testkit::run_folder("scratch_app", name).unwrap();
-        let layout = pg_library::layout::Layout::in_home(&dir);
-        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
-        drop(pg_library::open_catalog(&layout).unwrap());
+        let (dir, layout) = crate::test_support::catalog_home(name);
         (layout.catalog_path(), dir)
     }
 
@@ -1118,7 +1130,7 @@ mod tests {
     }
 
     /// The next listing the inbox publishes, and the toasts before it.
-    fn next(sub: &Subscription<InboxEvent>) -> (Vec<Notice>, Arc<Listing>) {
+    fn next(sub: &Subscription<InboxEvent>) -> (Vec<Notice>, Arc<InboxListing>) {
         let mut toasts = Vec::new();
         loop {
             match sub.recv().expect("the inbox is open") {
@@ -1140,7 +1152,7 @@ mod tests {
         entry.counts.map(|c| c.total)
     }
 
-    fn notices(listing: &Listing) -> Vec<Notice> {
+    fn notices(listing: &InboxListing) -> Vec<Notice> {
         listing.entries.iter().map(|e| e.notice.clone()).collect()
     }
 
@@ -1161,7 +1173,7 @@ mod tests {
         let writer = Writer::new(
             Arc::new(Shared::default()),
             events,
-            Arc::new(Mutex::new(Arc::new(Listing::default()))),
+            Arc::new(Mutex::new(Arc::new(InboxListing::default()))),
             Arc::new(AtomicBool::new(true)),
         );
         (writer, sub)
@@ -1544,7 +1556,7 @@ mod tests {
         store.faults.lock().unwrap().push_back(Injected::Locked);
         writer.handle(&store, batch(vec![Op::Mutation(Mutation::Dismiss(vec![id]))]));
         assert_eq!(writer.lost, 0);
-        let published: Vec<Arc<Listing>> = sub
+        let published: Vec<Arc<InboxListing>> = sub
             .take()
             .items
             .into_iter()

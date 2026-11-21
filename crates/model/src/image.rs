@@ -13,8 +13,8 @@ pub struct Version {
     /// The file's modification time and the quarter turns it was stored with (the thumbnail cache's source).
     pub mtime: i64,
     pub rotation: Turns,
-    /// The quarter turns clockwise asked for and not yet written then.
-    pub turns: Turns,
+    /// The quarter turns clockwise asked for and not yet written then (`pending_turns`, as `FileState` and the grid name them).
+    pub pending_turns: Turns,
 }
 
 impl Version {
@@ -22,8 +22,8 @@ impl Version {
         let mut parts = text.split('.');
         let mtime = parts.next()?.parse().ok()?;
         let rotation = Turns::new(parts.next()?.parse::<u8>().ok()?);
-        let turns = Turns::new(parts.next()?.parse::<u8>().ok()?);
-        Some(Version { mtime, rotation, turns })
+        let pending_turns = Turns::new(parts.next()?.parse::<u8>().ok()?);
+        Some(Version { mtime, rotation, pending_turns })
     }
 }
 
@@ -35,10 +35,16 @@ pub struct ImageKey {
 }
 
 impl ImageKey {
-    /// The key `text` names, `None` when the file id doesn't read.
+    /// The key `text` names, `None` when the file id doesn't read or the version after `@` is not one. An unreadable
+    /// version is not the same as no version: it names a picture (a version) this key cannot show, so the key is refused
+    /// rather than served as the current file.
     pub fn parse(text: &str) -> Option<ImageKey> {
         let (file, version) = text.split_once('@').map_or((text, None), |(f, v)| (f, Some(v)));
-        Some(ImageKey { file: FileId::new(file.parse().ok()?), version: version.and_then(Version::parse) })
+        let version = match version {
+            Some(text) => Some(Version::parse(text)?),
+            None => None,
+        };
+        Some(ImageKey { file: FileId::new(file.parse().ok()?), version })
     }
 }
 
@@ -46,7 +52,7 @@ impl fmt::Display for ImageKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.file.get())?;
         match self.version {
-            Some(v) => write!(f, "@{}.{}.{}", v.mtime, v.rotation.get(), v.turns.get()),
+            Some(v) => write!(f, "@{}.{}.{}", v.mtime, v.rotation.get(), v.pending_turns.get()),
             None => Ok(()),
         }
     }

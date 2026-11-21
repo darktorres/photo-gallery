@@ -2,7 +2,7 @@
 //! codecs and the decoder can both use it.
 
 /// An upright RGB image.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Rgb {
     pub width: usize,
     pub height: usize,

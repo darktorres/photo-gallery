@@ -216,7 +216,7 @@ fn analyze_video(path: &Path, turns: Turns) -> Result<Analysis> {
 mod tests {
     use super::*;
 
-    /// A streamed file (a video) hashes as its loaded bytes do: one digest for both ways in.
+    // A streamed file (a video) hashes as its loaded bytes do: one digest for both ways in.
     #[test]
     fn a_streamed_file_hashes_as_its_bytes_do() {
         let dir = pg_testkit::run_folder("scratch_analysis", "analysis").unwrap();

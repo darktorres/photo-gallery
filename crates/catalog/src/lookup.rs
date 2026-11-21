@@ -175,7 +175,11 @@ impl Catalog {
                 let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
                 let format = r.get_ref(4)?.as_str()?;
                 let format = Format::from_name(format).ok_or_else(|| {
-                    rusqlite::Error::FromSqlConversionFailure(4, Type::Text, format!("unknown format {format}").into())
+                    rusqlite::Error::FromSqlConversionFailure(
+                        4,
+                        Type::Text,
+                        format!("unknown image format {format}").into(),
+                    )
                 })?;
                 let (folder, name) = (r.get_ref(0)?.as_blob()?, r.get_ref(1)?.as_blob()?);
                 let path = self.rules.sep_byte();

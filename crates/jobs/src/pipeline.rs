@@ -18,6 +18,8 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+// crossbeam-channel rather than std::sync::mpsc: the readers and workers share one receiver each (`raw_rx.clone()`), and
+// std's `Receiver` cannot be cloned. Every one-to-one handoff elsewhere in the workspace uses std::sync::mpsc.
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
 use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
@@ -47,15 +49,23 @@ pub struct Options {
 /// The budget per read in flight and per worker: a large camera JPEG (24 MP at high quality).
 const BUFFER_PER_SLOT: usize = 12 << 20;
 
+/// The reads in flight of a pipeline (`Options::new`), and the default the other pools are sized by.
+pub const READERS: usize = 8;
+
+/// The logical CPUs the pools are sized by: `available_parallelism`, or 4 where the platform cannot say.
+pub fn cpus() -> usize {
+    std::thread::available_parallelism().map_or(4, |n| n.get())
+}
+
 impl Options {
-    /// 8 reads in flight, a worker per logical CPU, and their [`Options::budget`].
+    /// [`READERS`] reads in flight, a worker per logical CPU, and their [`Options::budget`].
     pub fn new(priority: Priority) -> Options {
-        let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let cpus = cpus();
         Options {
-            readers: 8,
+            readers: READERS,
             workers: cpus,
-            slots: Options::slots(8, cpus),
-            buffer_bytes: Options::budget(8, cpus),
+            slots: Options::slots(READERS, cpus),
+            buffer_bytes: Options::budget(READERS, cpus),
             budget: None,
             priority,
         }
@@ -131,6 +141,7 @@ impl Clock {
     /// Adds the time since `since`.
     fn add(&self, since: Instant) {
         let nanos = u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        // Relaxed: a statistic for the timing report, which no other memory is ordered by.
         self.0.fetch_add(nanos, Ordering::Relaxed);
     }
 
@@ -220,7 +231,9 @@ where
     R: Send,
 {
     let next = AtomicUsize::new(0);
-    // The items the readers handed to the workers, to check that each came back with a result.
+    // The items the readers handed to the workers, to check that each came back with a result. The counters and the
+    // stop flag here are SeqCst: each is set by one thread and read by another (or after the scope joins), so the
+    // file uses one ordering for them; only the statistic (`Clock`) and the index claim are Relaxed.
     let sent = AtomicUsize::new(0);
     // The items a stopped pass dropped unrun: each was sent, and has no result.
     let dropped = AtomicUsize::new(0);
@@ -242,6 +255,8 @@ where
                 priority::set_current_thread(opts.priority);
                 let mut wide = NativePath::default();
                 while ctl.checkpoint_until(stop) {
+                    // Relaxed: the index only makes each item go to one reader; the item's data reaches the reader
+                    // through `items`, and the hand-off to the workers goes through the channel.
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { break };
                     let started = Instant::now();
@@ -974,7 +989,7 @@ mod tests {
     /// processed once, through slots and a channel far smaller than the pass.
     #[test]
     fn a_pass_reads_every_file_within_its_slots() {
-        let dir = pg_testkit::run_folder("scratch_rate", "pg-pipeline").unwrap();
+        let dir = pg_testkit::run_folder("scratch_jobs", "pipeline").unwrap();
         let paths: Vec<String> = (0..200)
             .map(|i| {
                 let path = dir.join(format!("{i}.bin"));
@@ -1014,7 +1029,7 @@ mod tests {
         )
         .unwrap();
         assert!(seen.iter().all(|&s| s));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Runs `f` on a thread of its own, and fails if it takes longer than a pass of a few files ever should: a
@@ -1029,7 +1044,7 @@ mod tests {
 
     /// `count` small files in a new folder, with their indices.
     fn numbered_files(name: &str, count: usize) -> (std::path::PathBuf, Vec<(usize, String)>) {
-        let dir = pg_testkit::run_folder("scratch_rate", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_jobs", name).unwrap();
         let items = (0..count)
             .map(|i| {
                 let path = dir.join(format!("{i}.bin"));
@@ -1042,7 +1057,7 @@ mod tests {
 
     /// Each item's result in a pass whose `read` or `process` panics on item 3, and how many times `init` ran.
     fn a_pass_panicking_on_item_3(in_read: bool) -> (Vec<Option<Result<usize, bool>>>, usize) {
-        let (dir, items) = numbered_files(if in_read { "pg-pipeline-read-panic" } else { "pg-pipeline-panic" }, 8);
+        let (dir, items) = numbered_files(if in_read { "pipeline-read-panic" } else { "pipeline-panic" }, 8);
         let opts = Options {
             readers: 2,
             workers: 2,
@@ -1077,7 +1092,7 @@ mod tests {
             },
         )
         .unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
         (results, inits.into_inner())
     }
 
@@ -1085,7 +1100,7 @@ mod tests {
     /// too, which lands after the quick items' (it sleeps first). Nothing that had not started runs.
     #[test]
     fn a_stop_sinks_the_items_in_flight_and_runs_no_more() {
-        let (dir, items) = numbered_files("pg-pipeline-stop", 40);
+        let (dir, items) = numbered_files("pipeline-stop", 40);
         let opts = Options {
             readers: 2,
             workers: 4,
@@ -1128,13 +1143,13 @@ mod tests {
         assert_eq!(sunk, ran, "every item that ran has its result sunk");
         assert!(sunk.contains(&5), "the item the stop was asked in has its result");
         assert!(ran.len() < items.len(), "the items not started were not run");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A sink that says stop ends the pass at once: it is not called again, and nothing is drained after it.
     #[test]
     fn a_sink_that_says_stop_is_not_called_again() {
-        let (dir, items) = numbered_files("pg-pipeline-sink-stop", 20);
+        let (dir, items) = numbered_files("pipeline-sink-stop", 20);
         let opts = Options {
             readers: 2,
             workers: 2,
@@ -1161,7 +1176,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(calls.into_inner(), 1);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1188,7 +1203,7 @@ mod tests {
     #[test]
     fn a_failed_init_fails_the_pass() {
         let outcome = within_timeout(|| {
-            let (dir, items) = numbered_files("pg-pipeline-init", 4);
+            let (dir, items) = numbered_files("pipeline-init", 4);
             let opts = Options {
                 readers: 2,
                 workers: 2,
@@ -1209,7 +1224,7 @@ mod tests {
                 |_, _, _| Ok(()),
                 |_, _, _| Ok(true),
             );
-            std::fs::remove_dir_all(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
             outcome.map_err(|e| format!("{e:#}"))
         });
         let error = outcome.unwrap_err();
@@ -1221,7 +1236,7 @@ mod tests {
     #[test]
     fn a_sink_error_while_paused_returns_without_a_resume() {
         let outcome = within_timeout(|| {
-            let (dir, items) = numbered_files("pg-pipeline-paused", 40);
+            let (dir, items) = numbered_files("pipeline-paused", 40);
             let opts = Options {
                 readers: 2,
                 workers: 1,
@@ -1248,7 +1263,7 @@ mod tests {
                     anyhow::bail!("the sink fails")
                 },
             );
-            std::fs::remove_dir_all(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
             (outcome.map_err(|e| e.to_string()), ctl.is_paused())
         });
         assert_eq!(outcome, (Err("the sink fails".to_string()), true));
@@ -1257,7 +1272,7 @@ mod tests {
     /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
     #[test]
     fn files_open_as_std_opens_them() {
-        let root = pg_testkit::run_folder("scratch_rate", "pg-open").unwrap();
+        let root = pg_testkit::run_folder("scratch_jobs", "open").unwrap();
         let mut dir = root.clone();
         while dir.as_os_str().len() < 300 {
             dir.push("a-folder-name-of-forty-characters-long--");
@@ -1276,13 +1291,13 @@ mod tests {
         let ours = pg_platform::file::open_read(&wide).unwrap_err();
         let std = File::open(dir.join("missing.jpg")).unwrap_err();
         assert_eq!((ours.kind(), ours.raw_os_error()), (std.kind(), std.raw_os_error()));
-        std::fs::remove_dir_all(&root).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
     }
     /// Four files of 5000, 6000, 7000 and 300 bytes, each read by [`Read::Gather`] with a hint of 1000: the length each
     /// gives `process`. The gather gives 10 bytes for the first, nothing for the second, and panics for the third; the
     /// fourth is no longer than the hint.
     fn a_gather_pass() -> Vec<usize> {
-        let dir = pg_testkit::run_folder("scratch_rate", "pipeline-gather").unwrap();
+        let dir = pg_testkit::run_folder("scratch_jobs", "pipeline-gather").unwrap();
         let items: Vec<(usize, String)> = [5000usize, 6000, 7000, 300]
             .into_iter()
             .enumerate()
@@ -1325,7 +1340,7 @@ mod tests {
             },
         )
         .unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
         lengths
     }
 

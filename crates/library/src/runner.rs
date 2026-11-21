@@ -27,6 +27,7 @@ use pg_thumbcache::ThumbCache;
 use crate::coordinator::Lanes;
 use crate::shared::{FeatureCell, Generation, HeightCell, LaneProgress, Shared};
 
+/// The background job the module comment describes. It holds the lanes, one per drive the library's folders are on.
 pub struct Runner {
     lanes: Arc<Lanes>,
 }
@@ -193,7 +194,6 @@ impl Runner {
 mod tests {
     use std::path::Path;
     use std::sync::atomic::AtomicU64;
-    use std::time::Instant;
 
     use pg_catalog::Catalog;
     use pg_jobs::pipeline::Options;
@@ -262,7 +262,7 @@ mod tests {
 
     /// [`library`], with square pictures of `side` pixels (the border detector looks at those of 64 or more).
     fn library_sized(prefix: &str, names: &[&str], side: u32) -> (PathBuf, PathBuf, RulePath) {
-        let dir = pg_testkit::run_folder_with("scratch_runner", prefix, &["images"]).unwrap();
+        let dir = pg_testkit::run_folder_with("scratch_library", prefix, &["images"]).unwrap();
         // A pattern, not a flat colour: a flat picture has too little PDQ quality to owe its pairs.
         let pixels: Vec<u8> =
             (0..side * side * 3).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap()).collect();
@@ -391,15 +391,6 @@ mod tests {
         pass.run(&mut Cx { inner, catalog: &mut catalog }).unwrap()
     }
 
-    /// Wait (30 s at most) until `done`.
-    fn wait_for(what: &str, done: impl Fn() -> bool) {
-        let began = Instant::now();
-        while !done() {
-            assert!(began.elapsed() < Duration::from_secs(30), "waited 30 s for {what}");
-            std::thread::sleep(Duration::from_millis(20));
-        }
-    }
-
     /// A file that can't be read (here, gone since the import) is said, not recorded in the ledger; once nothing is
     /// left to read, the next complete pass (its early return) clears what was said.
     #[test]
@@ -461,10 +452,18 @@ mod tests {
             sink.clone(),
         )
         .unwrap();
-        wait_for("the round's failure", || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })));
+        pg_testkit::wait_until(
+            Duration::from_secs(30),
+            || "the round's failure",
+            || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })),
+        );
         std::fs::rename(&aside, &catalog_path).unwrap();
         runner.wake();
-        wait_for("the failure cleared", || sink.calls().contains(&Call::Resolve(Trigger::Op(Op::Round))));
+        pg_testkit::wait_until(
+            Duration::from_secs(30),
+            || "the failure cleared",
+            || sink.calls().contains(&Call::Resolve(Trigger::Op(Op::Round))),
+        );
         assert!(runner.stop(Duration::from_secs(30)));
     }
 
@@ -588,7 +587,11 @@ mod tests {
         runner.cut_borders(vec![id], false);
         assert!(runner.lanes.cuts_queued() == 0, "an unconfirmed cut queues nothing");
         runner.cut_borders(vec![id], true);
-        wait_for("the cut's notice", || sink.posted().iter().any(|n| matches!(n, Notice::BordersCut { .. })));
+        pg_testkit::wait_until(
+            Duration::from_secs(30),
+            || "the cut's notice",
+            || sink.posted().iter().any(|n| matches!(n, Notice::BordersCut { .. })),
+        );
         let posted = sink.posted();
         let told = Notice::BordersCut { saved: 0, skipped: 1, unsupported: 0, failed: 0, failures: Vec::new() };
         assert!(posted.contains(&told), "{posted:?}");

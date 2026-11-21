@@ -1879,6 +1879,8 @@ dependencies = [
  "pg-model",
  "pg-perf",
  "pg-platform",
+ "pg-testkit",
+ "rusqlite",
 ]
 
 [[package]]
@@ -2048,6 +2050,7 @@ dependencies = [
  "pg-jobs-testkit",
  "pg-model",
  "pg-platform",
+ "pg-query",
  "pg-testkit",
  "rusqlite",
 ]

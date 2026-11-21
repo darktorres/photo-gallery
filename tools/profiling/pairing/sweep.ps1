@@ -26,7 +26,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $setOwed = Join-Path $PSScriptRoot 'set_owed.py'
-function Get-Load { (Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'").PercentProcessorTime }
+. (Join-Path $PSScriptRoot 'cpu_load.ps1')
 function Get-Median([double[]] $xs) {
     $s = $xs | Sort-Object
     if ($s.Count -eq 0) { return [double]::NaN }
@@ -48,8 +48,8 @@ foreach ($rep in 1..$Reps) {
         if ($Slice -gt 0) { $env:PG_PROBE_SLICE = "$Slice" } else { Remove-Item Env:PG_PROBE_SLICE -ErrorAction SilentlyContinue }
         if ($CacheKib -gt 0) { $env:PG_PROBE_CACHE_KIB = "$CacheKib" } else { Remove-Item Env:PG_PROBE_CACHE_KIB -ErrorAction SilentlyContinue }
         $env:PG_PROBE_WORKERS = "$w"
-        $load = Get-Load
-        $line = (& $Probe $Work 2>&1) -join ' '
+        $load = Get-CpuLoad
+        $line = (& $Probe $Work) -join ' '
         $run = [ordered]@{ rep = $rep; workers = $w; load = $load; busy = ($load -gt 30); line = $line }
         if ($line -match 'in ([0-9.]+) s') { $run.total = [double]$Matches[1] * 1000 }
         foreach ($m in [regex]::Matches($line, '(\w+) ([0-9.]+)(?= |$| ms)')) {
@@ -61,6 +61,7 @@ foreach ($rep in 1..$Reps) {
     }
 }
 if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
+Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_SLICE, Env:PG_PROBE_CACHE_KIB, Env:PG_PROBE_WORKERS -ErrorAction SilentlyContinue
 
 ''
 'medians (ms), runs that started busy left out:'

@@ -48,16 +48,13 @@ import imagecodecs
 import numpy as np
 from PIL import AvifImagePlugin, Image, ImageDraw
 
-from bench_decode import _vips
-from common import CACHE_DIR, DATA_ROOT, WORK_DIR, image_list, load_rgb, pg_path
+from common import CACHE_DIR, DATA_ROOT, LIBRARY_SIZE, WORK_DIR, exe_name, image_list, load_rgb, pg_path, vips_thumbnail
 
 TOOLS_DIR = pg_path("PG_TOOLS_DIR", "tools")
-EXE = ".exe" if os.name == "nt" else ""
-SSIMULACRA2 = TOOLS_DIR / "libjxl-0.11.1" / f"ssimulacra2{EXE}"
-CJPEGLI = TOOLS_DIR / "libjxl-0.11.1" / f"cjpegli{EXE}"
+SSIMULACRA2 = TOOLS_DIR / "libjxl-0.11.1" / exe_name("ssimulacra2")
+CJPEGLI = TOOLS_DIR / "libjxl-0.11.1" / exe_name("cjpegli")
 
 MAX_ASPECT = 3.0  # panoramas: width capped at this x the row height
-LIBRARY_SIZE = 70e6
 SCORE_TARGETS = (60, 70, 80, 85)
 RESIZE_METHODS = ("full_lanczos", "full_bilinear", "draft_lanczos", "draft2_lanczos", "draft4_lanczos", "vips")
 LANCZOS = Image.Resampling.LANCZOS
@@ -81,7 +78,7 @@ def oriented_size(data: bytes) -> tuple[int, int]:
 
 def resize(method: str, data: bytes, size: tuple[int, int]) -> np.ndarray:
     if method == "vips":
-        return _vips(data, *size)
+        return vips_thumbnail(data, *size)
     margin = {"draft_lanczos": 1, "draft2_lanczos": 2, "draft4_lanczos": 4}.get(method)
     draft = (margin * size[0], margin * size[1]) if margin else None
     im = load_rgb(io.BytesIO(data), draft=draft)
@@ -159,11 +156,20 @@ CODECS: dict[str, tuple[tuple[float, ...], Callable[[np.ndarray, float], bytes],
 # --- SSIMULACRA2 via libjxl's tool ---
 
 
+_RUN: Path | None = None  # this run's scratch folder: set by main() and by each pool worker's initializer
+
+
+def _start_run(run: Path) -> None:
+    global _RUN
+    _RUN = run
+
+
 @cache
 def _tmp() -> Path:
-    """This process's scratch folder (pool workers each get their own)."""
-    (CACHE_DIR / "tmp").mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="thumbs_", dir=CACHE_DIR / "tmp"))
+    """This process's scratch folder, inside the run's folder (pool workers each get their own)."""
+    if _RUN is None:
+        raise RuntimeError("the run's scratch folder is set by main()")
+    return Path(tempfile.mkdtemp(prefix="thumbs_", dir=_RUN))
 
 
 def ssimulacra2(reference: Path, a: np.ndarray) -> float:
@@ -340,9 +346,12 @@ def main() -> None:
     random.seed(0)
     files = random.sample(image_list(), args.images)
     start = time.perf_counter()
-    with Pool(args.workers) as pool:
+    (CACHE_DIR / "tmp").mkdir(parents=True, exist_ok=True)
+    run = Path(tempfile.mkdtemp(prefix="bench_thumbs_", dir=CACHE_DIR / "tmp"))
+    _start_run(run)
+    with Pool(args.workers, initializer=_start_run, initargs=(run,)) as pool:
         results = [r for r in pool.imap(quality, [(f, heights) for f in files], chunksize=2) if r]
-    print(f"quality pass: {len(results)}/{len(files)} images, {time.perf_counter() - start:.0f} s")
+    print(f"quality pass: {len(results)}/{len(files)} images, {time.perf_counter() - start:.0f} s", flush=True)
 
     report: dict = {"images": len(results), "heights": heights, "resize": {}, "encode": {}, "iso_quality": {}}
     for row in heights:
@@ -373,9 +382,8 @@ def main() -> None:
     report["timing_ms"] = timing(files[: args.timing], heights)
     if not args.no_sscd:
         report["sscd_cosine"] = sscd_reuse(files, heights)
-    (WORK_DIR / "bench_thumbs.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
-    for d in (CACHE_DIR / "tmp").glob("thumbs_*"):  # this process's and the workers'
-        shutil.rmtree(d, ignore_errors=True)
+    (WORK_DIR / "bench_thumbs.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    shutil.rmtree(run, ignore_errors=True)  # this run's folders only: this process's and the workers'
 
     t = report["timing_ms"]
     print("\n## Resize (SSIMULACRA2 vs float Lanczos3: mean / p10; ms)")

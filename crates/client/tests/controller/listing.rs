@@ -177,7 +177,7 @@ fn every_open_list_has_a_newer_generation() {
 #[test]
 fn a_reveal_waits_for_its_own_list() {
     let mut c = controller(start());
-    let older = generation_of(&c.update(0, Report::Reload)).unwrap();
+    let older = generation_of(&c.update(0, Report::Reload)).expect("a reload has a listing generation");
     let out = c.update(0, Report::Reveal { file: FileId::new(7), folder: folder("beta") });
     let own = generation_of(&out).unwrap();
     assert!(!shown(&mut c, older).contains(&Do::Reveal(FileId::new(7))), "the older list is not the reveal's");

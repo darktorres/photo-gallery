@@ -47,6 +47,6 @@ fn open_window(args: &[OsString]) -> ExitCode {
 #[cfg(not(feature = "desktop"))]
 fn open_window(_args: &[OsString]) -> ExitCode {
     pg_platform::console::attach_to_parent();
-    eprintln!("gallery was built without its app window (the `desktop` feature): give it a command");
+    eprintln!("{}", pg_cli::no_window_line());
     ExitCode::FAILURE
 }

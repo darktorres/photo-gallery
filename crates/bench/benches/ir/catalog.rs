@@ -25,9 +25,12 @@ use pg_scan::ScanStats;
 use pg_scan::synthetic::SyntheticTree;
 use pg_thumbcache::{self as thumbs, Pending};
 
+// Unset at build time, the data is `/bench/data` in the container, inside the bench volume (tools/linux.py mounts it at
+// `/bench`), where tools/profiling/bench.py puts it and sets PG_BENCH_DATA to it. It was `/root/pg-bench`, a path nothing
+// mounts.
 const DATA: &str = match option_env!("PG_BENCH_DATA") {
     Some(path) => path,
-    None => "/root/pg-bench",
+    None => "/bench/data",
 };
 // The layout: a catalog made on Windows by this build's CLI passes (scan, import, thumbs) from the synthetic library at
 // D:\PhotoGallery\synthetic\library. Its paths are Windows paths, as the folder literals below are. Its name carries the
@@ -41,7 +44,7 @@ const BENCH_LARGE_LAYOUT: &str = "v1-windows-rules-large";
 // The path rules the layout was made under (its meta.path_rules). Not pg_platform::native::PATH_RULES: the benches
 // run on Linux, where that is posix, and a catalog keeps the rules it was made with.
 const RULES: pg_model::rules::PathRules = pg_model::rules::PathRules::Windows;
-// The thumbnail height the cache was filled at.
+// The thumbnail height the cache was filled at, and the height the per-file thumbnail bench makes (linux.rs).
 const THUMB_HEIGHT: u32 = 256;
 
 fn run_dir() -> PathBuf {
@@ -68,17 +71,13 @@ fn copy_layout(layout: &str) -> PathBuf {
     run
 }
 
-fn versions() -> Versions {
-    Versions::current()
-}
-
 fn open_catalog() -> Catalog {
     open_layout(BENCH_LAYOUT)
 }
 
 fn open_layout(layout: &str) -> Catalog {
     let catalog =
-        or_stop(Catalog::prepare(&copy_layout(layout).join("catalog.sqlite"), versions(), RULES), "the catalog");
+        or_stop(Catalog::prepare(&copy_layout(layout).join("catalog.sqlite"), Versions::current(), RULES), "the catalog");
     // A catalog that doesn't match this build's schema is moved aside and an empty one made: the bench would measure
     // nothing. Regenerate the data instead.
     assert!(
@@ -171,7 +170,7 @@ fn pending_thumbs(run: PathBuf) -> Pending {
 // The files of one import batch (pg-import's 500), each made due again (`Catalog::mark_pending`, as `import --again`
 // does), and the analysis the batch stores for each: the sample's. On the large layout, so the import ledger's triggers
 // run over its 50,000 failures.
-const IMPORT_BATCH: usize = 500;
+const IMPORT_BATCH: usize = pg_catalog::WRITE_BATCH;
 
 fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analysis) {
     let catalog = open_layout(BENCH_LARGE_LAYOUT);
@@ -247,7 +246,7 @@ fn synthetic_tree(root: &RulePath) -> SyntheticTree {
 }
 
 fn for_scan_walk(again: bool) -> (Catalog, RulePath, SyntheticTree, Control) {
-    let mut catalog = or_stop(Catalog::prepare(Path::new(":memory:"), versions(), RULES), "a catalog in memory");
+    let mut catalog = or_stop(Catalog::prepare(Path::new(":memory:"), Versions::current(), RULES), "a catalog in memory");
     let root = scan_root();
     or_stop(catalog.add_root(&root), "the library folder");
     if again {
@@ -272,7 +271,7 @@ library_benchmark_group!(name = scan, benchmarks = [scan_walk]);
 // have no analysis, rating or write, so the deletes are the rows' own with their index work; the thumbnails are the
 // cache's, and are not measured. No bench data: it runs wherever the benches do.
 fn for_removal() -> (Catalog, RulePath) {
-    let mut catalog = or_stop(Catalog::prepare(Path::new(":memory:"), versions(), RULES), "a catalog in memory");
+    let mut catalog = or_stop(Catalog::prepare(Path::new(":memory:"), Versions::current(), RULES), "a catalog in memory");
     let root = scan_root();
     or_stop(catalog.add_root(&root), "the library folder");
     or_stop(pg_scan::scan_with(&mut catalog, &root, &Control::new(), &mut synthetic_tree(&root)), "the walk");

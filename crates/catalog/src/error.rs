@@ -13,14 +13,6 @@ pub enum Error {
     /// A value read from a row that its column can't hold (a `FromSqlError`).
     #[error(transparent)]
     Value(#[from] rusqlite::types::FromSqlError),
-    /// The catalog stores its paths under other rules than this build's: its names and paths don't read as this
-    /// build's. It is a valid catalog of another platform, so it is not moved aside: open it on the platform that made
-    /// it, or move it aside by hand and scan again.
-    #[error(
-        "catalog {path}: {detail}, this build uses the {wanted} path rules: open it on the platform that made it, or move \
-         it aside and scan again"
-    )]
-    PathRules { path: String, detail: String, wanted: &'static str },
     /// A walk of `root` was refused: a walk of a folder that overlaps it (one is inside the other) holds an unexpired
     /// lease (`Catalog::begin_scan`), `holder` says whose. Nothing was written. It can be tried again once that walk ends,
     /// or its lease expires (`SCAN_LEASE_SECS` without a heartbeat).
@@ -40,6 +32,40 @@ pub enum Error {
     /// added until the removal is finished (or discarded), since its files are still going.
     #[error("{path} is still being removed from the library: try again when it is gone")]
     RemovalPending { path: String },
+    /// A file the catalog holds no row for (`id`): nothing was done to it.
+    #[error("file {id} isn't in the catalog")]
+    NotInCatalog { id: i64 },
+    /// A file a write of the app is changing (its temp is being written): its cut is not recorded yet.
+    #[error("file {id} is being written: its cut is not recorded")]
+    BeingWritten { id: i64 },
+    /// A file whose recorded cut is another build's: the catalog's borders are kept by a build that differs from this one.
+    #[error("file {id}: its cut is not recorded, the catalog's borders are another build's")]
+    OtherBuildsBorders { id: i64 },
+    /// The catalog at `path` is held by another process or program, so `what` (preparing it, changing it) cannot go on.
+    #[error("catalog {path}: {what}")]
+    Held { path: String, what: &'static str },
+    /// The catalog at `path` is not this build's to change: `why` says how it differs.
+    #[error("catalog {path}: the catalog made is not this build's: {why}")]
+    NotThisBuild { path: String, why: String },
+    /// The catalog at `path` has schema version `found`, not this build's `current`.
+    #[error("catalog {path}: schema version {found}, not this build's {current}")]
+    SchemaVersion { path: String, found: i64, current: i64 },
+    /// A migration of the catalog at `path` needs `needed` MB free on its drive (a copy aside and the migration's log), and
+    /// `free` MB are.
+    #[error(
+        "catalog {path}: bringing it to this build's version needs {needed} MB free on its drive (a copy aside and the \
+         migration's log), and {free} MB are: free some space and start again"
+    )]
+    MigrationRoom { path: String, needed: u64, free: u64 },
+    /// A library folder whose removal was under way is a library folder again: the removal is not discarded.
+    #[error("{path} is a library folder again: its removal is not discarded")]
+    RootAgain { path: String },
+    /// A migration that drops tables is refused while foreign keys are on: it is refused, and the catalog is unchanged.
+    #[error("foreign keys are on for a migration that drops tables: it is refused, and the catalog is unchanged")]
+    ForeignKeysOn,
+    /// A stored value that does not read as this build's; `what` says which (a folder's path, a queued temp path).
+    #[error("{what}")]
+    Stored { what: &'static str },
     /// A catalog file that `prepare` refuses, and why (`reason`). Nothing was written to it. The front ends word it by
     /// `reason` (`Error::refusal`); this text is the CLI's.
     #[error("{}", .reason.message(.path))]
@@ -69,6 +95,10 @@ pub enum Refusal {
     /// The catalog needs a change, and it, or its folder, can't be written (read-only, or permission is denied). Nothing was
     /// changed.
     ReadOnly,
+    /// The catalog stores its paths under other rules than this build's: its names and paths don't read as this build's.
+    /// It is a valid catalog of another platform, so it is not moved aside. `detail` is how its rules differ (or that
+    /// they were not recorded), `wanted` names this build's rules.
+    PathRules { detail: String, wanted: &'static str },
 }
 
 impl Refusal {
@@ -105,6 +135,10 @@ impl Refusal {
                 "catalog {path}: the path is too long for the files the catalog keeps beside it (Windows' limit is 259 \
                  characters): use a shorter folder, such as one set by PG_HOME or --catalog-dir"
             ),
+            Refusal::PathRules { detail, wanted } => format!(
+                "catalog {path}: {detail}, this build uses the {wanted} path rules: open it on the platform that made it, or \
+                 move it aside and scan again"
+            ),
         }
     }
 }
@@ -137,11 +171,20 @@ impl Error {
             }),
             Error::Interrupted
             | Error::Value(_)
-            | Error::PathRules { .. }
             | Error::ScanBusy { .. }
             | Error::LeaseLost { .. }
             | Error::RootRemoved { .. }
             | Error::RemovalPending { .. }
+            | Error::NotInCatalog { .. }
+            | Error::BeingWritten { .. }
+            | Error::OtherBuildsBorders { .. }
+            | Error::Held { .. }
+            | Error::NotThisBuild { .. }
+            | Error::SchemaVersion { .. }
+            | Error::MigrationRoom { .. }
+            | Error::RootAgain { .. }
+            | Error::ForeignKeysOn
+            | Error::Stored { .. }
             | Error::Refused { .. }
             | Error::Io(_) => false,
         }

@@ -1,4 +1,4 @@
-// The saved views menu (ImageRater's bookmarks): the views by name, to apply one; the save of the current view; and
+// The saved views menu (a rating app's bookmarks): the views by name, to apply one; the save of the current view; and
 // the delete. It reports what the user asks for (signals); TopBar passes them on, and Main makes the calls.
 pragma ComponentBehavior: Bound
 

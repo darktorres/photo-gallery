@@ -83,18 +83,22 @@ pub mod qobject {
         #[cxx_name = "swapsAxes"]
         fn swaps_axes(self: &Viewport, turns: i32) -> bool;
 
+        /// The left edge of the region on screen, as a fraction of the image (see `regionSource`).
         #[qinvokable]
         #[cxx_name = "regionX"]
         fn region_x(self: &Viewport) -> f64;
 
+        /// The top edge of the region on screen, as a fraction of the image (see `regionSource`).
         #[qinvokable]
         #[cxx_name = "regionY"]
         fn region_y(self: &Viewport) -> f64;
 
+        /// The width of the region on screen, as a fraction of the image (see `regionSource`).
         #[qinvokable]
         #[cxx_name = "regionW"]
         fn region_w(self: &Viewport) -> f64;
 
+        /// The height of the region on screen, as a fraction of the image (see `regionSource`).
         #[qinvokable]
         #[cxx_name = "regionH"]
         fn region_h(self: &Viewport) -> f64;

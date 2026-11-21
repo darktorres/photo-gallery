@@ -52,7 +52,7 @@ pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Op
     let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + doe - 719_468;
-    Some(days * 86_400 + h * 3600 + mi * 60 + s)
+    Some(days * 86_400 + h * 3_600 + mi * 60 + s)
 }
 
 /// A calendar day, without a time zone: the days since 1970-01-01 (negative before it).

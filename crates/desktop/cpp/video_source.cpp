@@ -4,7 +4,7 @@
 #include <QtCore/QString>
 #include <QtCore/QUrl>
 
-#if defined(_WIN32)
+#ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -34,19 +34,19 @@ QUrl hint_url(rust::Str ext) {
 
 }  // namespace
 
-VideoPlayer::VideoPlayer(QMediaPlayer* player) : player_(player) {}
+VideoPlayer::VideoPlayer(QMediaPlayer* player) : m_player(player) {}
 
 VideoPlayer::~VideoPlayer() {
     // The player stops reading the device before the device is released (it is a member, released after this).
-    if (player_) {
-        player_->setSource(QUrl());
+    if (m_player) {
+        m_player->setSource(QUrl());
     }
 }
 
 void VideoPlayer::play_file(std::int64_t handle, rust::Str ext) {
     auto file = std::make_unique<QFile>();
     if (handle >= 0) {
-#if defined(_WIN32)
+#ifdef Q_OS_WIN
         // The C runtime's descriptor over the handle: the workspace links the runtime dynamically (no crt-static), so
         // Rust, this code and Qt share one table, and QFile reads the handle back from it (_get_osfhandle).
         const int fd = _open_osfhandle(static_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
@@ -59,7 +59,7 @@ void VideoPlayer::play_file(std::int64_t handle, rust::Str ext) {
 #endif
         if (fd >= 0 && !file->open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
             // Qt takes the descriptor only when it opens: a refused one is closed here, or it would stay open.
-#if defined(_WIN32)
+#ifdef Q_OS_WIN
             _close(fd);
 #else
             ::close(fd);
@@ -71,23 +71,23 @@ void VideoPlayer::play_file(std::int64_t handle, rust::Str ext) {
 
 void VideoPlayer::clear() {
     // Without a device there is no source to clear, and no source change to report.
-    if (!player_ || !device_) {
+    if (!m_player || !m_device) {
         return;
     }
     // Declared before the call, so it is released after the player has stopped reading it.
-    std::unique_ptr<QIODevice> old = std::move(device_);
-    player_->setSource(QUrl());
+    std::unique_ptr<QIODevice> old = std::move(m_device);
+    m_player->setSource(QUrl());
 }
 
 void VideoPlayer::set_device(std::unique_ptr<QIODevice> device, rust::Str ext) {
-    if (!player_) {
-        device_ = std::move(device);
+    if (!m_player) {
+        m_device = std::move(device);
         return;
     }
-    std::unique_ptr<QIODevice> old = std::move(device_);
+    std::unique_ptr<QIODevice> old = std::move(m_device);
     QIODevice* next = device.get();
-    device_ = std::move(device);
-    player_->setSourceDevice(next, hint_url(ext));
+    m_device = std::move(device);
+    m_player->setSourceDevice(next, hint_url(ext));
     // `old` is released here, after the player has replaced it.
 }
 

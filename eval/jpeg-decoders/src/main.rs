@@ -107,7 +107,7 @@ fn compare(decoders: &mut Decoders, files: &[(String, Vec<u8>)]) -> Result<()> {
                 let out = decoders.decode(dec, mode, bytes)?;
                 if (out.width, out.height) != (reference.width, reference.height) {
                     print!(
-                        "  {}: {}×{} vs {}×{}",
+                        "  {}: {}x{} vs {}x{}",
                         dec.name(),
                         out.width,
                         out.height,

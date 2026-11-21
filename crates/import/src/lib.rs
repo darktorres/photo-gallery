@@ -22,7 +22,7 @@ use pg_jobs::failure::Cause;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::progress::Phase;
 
-const BATCH: usize = 500;
+const BATCH: usize = pg_catalog::WRITE_BATCH;
 
 /// The admission a JPEG takes before it is read: its header's first block (`pg_container::jpeg_import_bytes` reads 16 KiB,
 /// then on to the header's end; the median header of a wallpaper set is under 1 KiB, the 99th percentile under 100). A
@@ -37,6 +37,7 @@ const PNG_HINT: usize = 64 << 10;
 /// is measured on larger files only.
 const PNG_GATHER_FROM: usize = 256 << 10;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ImportStats {
     /// The files the pass had to import.
     pub pending: usize,

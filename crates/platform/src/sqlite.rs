@@ -312,7 +312,7 @@ mod windows {
         /// A file made through the alias is in the folder; a second request reuses the same junction.
         #[test]
         fn a_folder_without_a_utf8_name_is_reached_through_an_alias() {
-            let dir = crate::testing::run_folder("scratch_sqlite", "alias").unwrap();
+            let dir = crate::testing::run_folder("scratch_platform", "alias").unwrap();
             let folder = odd_folder(&dir, b"cat\xED\xA0\x80");
             let root = dir.join("aliases");
             let link = alias_under(&root, &folder).unwrap();
@@ -320,13 +320,13 @@ mod windows {
             std::fs::write(link.join("made-through-it.txt"), b"x").unwrap();
             assert!(folder.join("made-through-it.txt").exists());
             assert_eq!(alias_under(&root, &folder).unwrap(), link, "the same junction is reused");
-            std::fs::remove_dir_all(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
         }
 
         /// A junction whose folder is gone is swept by the next alias made in its folder.
         #[test]
         fn a_stale_alias_is_swept() {
-            let dir = crate::testing::run_folder("scratch_sqlite", "stale").unwrap();
+            let dir = crate::testing::run_folder("scratch_platform", "stale").unwrap();
             let root = dir.join("aliases");
             let gone = odd_folder(&dir, b"gone\xED\xA0\x80");
             let stale = alias_under(&root, &gone).unwrap();
@@ -334,7 +334,7 @@ mod windows {
             let kept = odd_folder(&dir, b"kept\xED\xA0\x80");
             alias_under(&root, &kept).unwrap();
             assert!(stale.symlink_metadata().is_err(), "{} is still there", stale.display());
-            std::fs::remove_dir_all(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
         }
 
         /// The alias may point at a folder on another volume than the alias's own: the target is in the temp folder, and
@@ -343,14 +343,14 @@ mod windows {
         /// single-volume case.
         #[test]
         fn an_alias_can_point_at_a_folder_on_another_volume() {
-            let dir = crate::testing::run_folder("scratch_sqlite", "volume").unwrap();
-            let temp = crate::testing::run_folder_on_system_temp("pg-alias").unwrap();
+            let dir = crate::testing::run_folder("scratch_platform", "volume").unwrap();
+            let temp = crate::testing::run_folder_on_system_temp("alias").unwrap();
             let folder = odd_folder(&temp, b"pg-alias-\xED\xA0\x80");
             let link = alias_under(&dir.join("aliases"), &folder).unwrap();
             std::fs::write(link.join("across.txt"), b"x").unwrap();
             assert!(folder.join("across.txt").exists());
-            std::fs::remove_dir_all(&temp).unwrap();
-            std::fs::remove_dir_all(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(&temp);
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }

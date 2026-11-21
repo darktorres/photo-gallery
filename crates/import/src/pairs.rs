@@ -136,7 +136,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     let mut pass = pg_perf::span("pass.pairing");
     let tx_at = pg_catalog::tx_mark();
     let paused_before = ctl.paused_total();
-    let probe = pg_perf::span("pairs.probe");
+    let probe = pg_perf::span("pair.probe");
     let owed = catalog.has_owed_pairs()?;
     drop(probe);
     if !owed {
@@ -225,11 +225,11 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
         Ok(())
     })?;
     let t = &stats.timings;
-    pg_perf::record("pairs.load", t.load, &[]);
-    pg_perf::record("pairs.store", t.store, &[]);
-    pg_perf::record("pairs.join", t.join, &[]);
-    pg_perf::record("pairs.write", t.write, &[]);
-    pg_perf::record("pairs.commit", t.commit, &[]);
+    pg_perf::record("pair.load", t.load, &[]);
+    pg_perf::record("pair.store", t.store, &[]);
+    pg_perf::record("pair.join", t.join, &[]);
+    pg_perf::record("pair.write", t.write, &[]);
+    pg_perf::record("pair.commit", t.commit, &[]);
     pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
     pass.field("pairs", u64::try_from(stats.pairs).unwrap_or(u64::MAX));
     pass.paused(ctl.paused_total().saturating_sub(paused_before));

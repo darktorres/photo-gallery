@@ -19,12 +19,14 @@ Stages, each cached in CACHE_DIR/ann (results_*.jsonl lines are skipped when pre
 - report: tables (report.md, report.json).
 """
 
+import hashlib
 import json
 import subprocess
 import sys
 import tarfile
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -163,7 +165,9 @@ def run_config(base: Base, size: int | None, c: dict, pca_dim: int = 0, **job) -
         family = "faiss"
     else:
         family = fam
-    tag = f"{size_tag(size)}_{fam}_{abs(hash(json.dumps(cfg, sort_keys=True))) % 10**8}"
+    # A digest, not hash(): str hashes are salted per process, so the tag would change between runs.
+    digest = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode("utf-8")).hexdigest()
+    tag = f"{size_tag(size)}_{fam}_{int(digest, 16) % 10**8}"
     return methods.run_cpu(tag, bf, family, worker_cfg, c["params"], **job)
 
 
@@ -263,7 +267,7 @@ def stage_validate(base: Base) -> None:
         str(r["param"]["ef"]): round(float((r["ids"][:, 0] == gt1).mean()), 4) for r in runs
     }
     out["gate1_sift1m"] = gate1
-    print(json.dumps(gate1, indent=1), flush=True)
+    print(json.dumps(gate1, indent=2), flush=True)
 
     # Gate 2: the ceiling at 25k.
     size = VALIDATE
@@ -287,7 +291,7 @@ def stage_validate(base: Base) -> None:
         gate2[f"{c['family']} {json.dumps(c['config'])}"] = round(both, 5)
     out["gate2_ceiling_25k"] = gate2
     out["gate2_pass"] = all(v >= 0.999 for v in gate2.values())
-    print(json.dumps(gate2, indent=1), flush=True)
+    print(json.dumps(gate2, indent=2), flush=True)
 
     # Gate 3: exact vs float64.
     gt = exact.ground_truth(base, MAIN)
@@ -297,7 +301,7 @@ def stage_validate(base: Base) -> None:
     out["gate3_fp64"] = exact.check_fp64(xa, gt["sims"], gt["ids"], rows)
     out["gate3_pass"] = not out["gate3_fp64"]["mismatched_rows"]
     out["pass"] = bool(all(v for k, v in gate1.items() if k.endswith(" pass")) and out["gate2_pass"] and out["gate3_pass"])
-    (OUT / "validate.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
+    (OUT / "validate.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"validation {'PASSED' if out['pass'] else 'FAILED'}: {OUT / 'validate.json'}", flush=True)
 
 
@@ -309,8 +313,8 @@ def require_validation() -> None:
 
 def stage_charact(base: Base) -> None:
     out = charact.characterize(base, exact.ground_truth)
-    (OUT / "charact.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
-    print(json.dumps(out, indent=1), flush=True)
+    (OUT / "charact.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print(json.dumps(out, indent=2), flush=True)
 
 
 def stage_exact(base: Base) -> None:
@@ -322,7 +326,7 @@ def stage_exact(base: Base) -> None:
         )
     x = base.x[base.subset(MAIN)]
     rate = exact.fp16_rate(x)
-    (OUT / "exact_speed.json").write_text(json.dumps({"fp16_pairs_per_s": rate}), encoding="utf-8")
+    (OUT / "exact_speed.json").write_text(json.dumps({"fp16_pairs_per_s": rate}, indent=2), encoding="utf-8")
     print(f"exact fp16 join: {rate / 1e9:.1f} G pairs/s", flush=True)
 
 
@@ -494,8 +498,8 @@ def prepare_verify(base: Base) -> None:
         {"key": int(k), "sources": chosen[int(k)], "kind": metrics.KINDS[int(pk[i])], "sim": float(sims_ab[i])}
         for i, k in enumerate(keys)
     ]
-    (OUT / "verify_meta.json").write_text(json.dumps(meta), encoding="utf-8")
-    tmp = WORK_DIR / "pairs_knn.csv.tmp"
+    (OUT / "verify_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    tmp = WORK_DIR / f"pairs_knn.csv.{uuid.uuid4().hex}.tmp"
     with tmp.open("w", encoding="utf-8") as f:
         f.write("a,b,label\n")
         f.writelines(f"{ra},{rb},{lab}\n" for ra, rb, lab in zip(rows_a, rows_b, label, strict=True))

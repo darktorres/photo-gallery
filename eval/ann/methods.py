@@ -122,7 +122,7 @@ def run_cpu(tag: str, base_file: Path, family: str, config: dict, params: list[d
         "max_search_s": MAX_SEARCH_S,
         **{k: (str(v.resolve()) if isinstance(v, Path) else v) for k, v in job.items()},
     }
-    (work / "job.json").write_text(json.dumps(spec), encoding="utf-8")
+    (work / "job.json").write_text(json.dumps(spec, indent=2), encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, str(LAUNCHER), "ann-worker", str(work / "job.json")],
         capture_output=True,

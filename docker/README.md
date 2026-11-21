@@ -70,4 +70,4 @@ device, so masked paths under `/proc` are correct, not a failure.
 
 The container runs the Linux checks, benches, fuzzer and the eval's Linux parts. The Windows job (`just lint`, `just test`, the Qt desktop app,
 `just shots`) still runs on Windows. The container does not reproduce a Windows drive or a WSL drvfs mount; the one
-check that needs one (S-17.7's renumbering, the S-17.7 plan (removed 2026-11-14; last committed at 7086cc5)) is the exception that uses WSL, and only to run binaries.
+check that needs one (S-17.7's renumbering, the S-17.7 plan (removed 2026-11-14; last committed at 7086cc5)) needed WSL only to run binaries, and WSL is retired (`docs/reference/REFACTOR_DESIGN.md`), so no check needs it now.

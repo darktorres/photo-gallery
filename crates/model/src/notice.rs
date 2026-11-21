@@ -108,6 +108,27 @@ pub enum Level {
     Error,
 }
 
+impl Level {
+    /// The level's code, as the catalog stores it (`notices.level`, `baseline.sql`) and the panels colour it: 0 info,
+    /// 1 warning, 2 error.
+    pub fn code(self) -> i32 {
+        match self {
+            Level::Info => 0,
+            Level::Warning => 1,
+            Level::Error => 2,
+        }
+    }
+
+    /// The level with `code` ([`Level::code`]). Any other code is an error, so a damaged row shows as one.
+    pub fn from_code(code: i32) -> Level {
+        match code {
+            0 => Level::Info,
+            1 => Level::Warning,
+            _ => Level::Error,
+        }
+    }
+}
+
 /// Where a notice comes from: the inbox's category, worded as `source-<code>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -609,6 +630,11 @@ pub enum Notice {
     LibraryUnavailable {
         error: String,
     },
+    /// The window's thread for the library's changes couldn't start: the changes the background work makes won't show
+    /// until the app is started again.
+    ChangesUnseen {
+        error: String,
+    },
     /// The catalog's list of the library's folders couldn't be read.
     FoldersUnreadable {
         error: String,
@@ -983,6 +1009,7 @@ ids! {
     FolderRemovalUnfinished => "folder-removal-unfinished",
     RescanFailed => "rescan-failed",
     LibraryUnavailable => "library-unavailable",
+    ChangesUnseen => "changes-unseen",
     FoldersUnreadable => "folders-unreadable",
     PickerFailed => "picker-failed",
     ListingFailed => "listing-failed",
@@ -1011,6 +1038,12 @@ ids! {
 /// The most bytes of an error's text a notice keeps (its words add the rest).
 pub const ERROR_CAP: usize = 2048;
 
+/// An error's text as a notice keeps it: its causes after it (`{:#}`), on one line, capped at [`ERROR_CAP`]. Every notice
+/// that carries an error's text uses this, so the rule is one.
+pub fn error_text(error: &impl std::fmt::Display) -> String {
+    tidy(&format!("{error:#}"), ERROR_CAP)
+}
+
 /// The mark a cut text ends in.
 const ELLIPSIS: char = '…';
 
@@ -1037,7 +1070,10 @@ pub fn tidy(text: &str, cap: usize) -> String {
 }
 
 impl Notice {
-    /// How much it matters.
+    /// How much it matters, by one rule. Error: the change or action the user asked for did not take effect (it failed
+    /// as a whole, was lost, or was kept aside), or a read the window needs failed. Warning: part of a batch failed and
+    /// the rest went through, or the app goes on in a reduced way (no thumbnail cache, a thumbnail not kept, a list left
+    /// for the next pass). Info: nothing went wrong, but the user may want to know.
     pub fn level(&self) -> Level {
         match self {
             Notice::ScanNote { note, .. } => {
@@ -1059,6 +1095,7 @@ impl Notice {
             | Notice::FileNoLongerInLibrary
             | Notice::UpdateAvailable { .. } => Level::Info,
             Notice::CacheFull { .. }
+            | Notice::CacheDisabled { .. }
             | Notice::CatalogRebuilt { .. }
             | Notice::CatalogNotClosed { .. }
             | Notice::PrefsUnreadable { .. }
@@ -1067,10 +1104,6 @@ impl Notice {
             | Notice::CacheNotStored { .. }
             | Notice::CacheWalNotMerged { .. }
             | Notice::CacheStartedOver { .. }
-            | Notice::WriteDropped { .. }
-            | Notice::FolderRefused { .. }
-            | Notice::FoldersUnreadable { .. }
-            | Notice::PickerFailed { .. }
             | Notice::ThumbsFailed { .. }
             | Notice::BordersFailed { .. }
             | Notice::ImportFailed { .. }
@@ -1084,14 +1117,18 @@ impl Notice {
             | Notice::RoundPanicked { .. }
             | Notice::CropFailed { .. }
             | Notice::CutFailed { .. }
-            | Notice::CacheDisabled { .. }
             | Notice::WriteFailed { .. }
             | Notice::WriteStopped
+            | Notice::WriteDropped { .. }
             | Notice::FolderNotAdded { .. }
+            | Notice::FolderRefused { .. }
             | Notice::FolderNotRemoved { .. }
             | Notice::FolderRemovalUnfinished { .. }
+            | Notice::PickerFailed { .. }
+            | Notice::FoldersUnreadable { .. }
             | Notice::RescanFailed { .. }
             | Notice::LibraryUnavailable { .. }
+            | Notice::ChangesUnseen { .. }
             | Notice::ListingFailed { .. }
             | Notice::RowReadFailed { .. }
             | Notice::ReloadFailed { .. }
@@ -1111,7 +1148,8 @@ impl Notice {
             Notice::RoundFailed { .. }
             | Notice::RoundPanicked { .. }
             | Notice::RescanFailed { .. }
-            | Notice::LibraryUnavailable { .. } => Source::Library,
+            | Notice::LibraryUnavailable { .. }
+            | Notice::ChangesUnseen { .. } => Source::Library,
             Notice::CacheFull { .. } | Notice::ThumbsFailed { .. } => Source::Thumbs,
             Notice::Cropped { .. }
             | Notice::CropFailed { .. }
@@ -1216,6 +1254,7 @@ impl Notice {
             | Notice::FolderNotRemoved { .. }
             | Notice::RescanFailed { .. }
             | Notice::LibraryUnavailable { .. }
+            | Notice::ChangesUnseen { .. }
             | Notice::FoldersUnreadable { .. }
             | Notice::PickerFailed { .. }
             | Notice::NoticesLost { .. }
@@ -1315,6 +1354,7 @@ impl Notice {
             | Notice::FolderNotRemoved { .. }
             | Notice::RescanFailed { .. }
             | Notice::LibraryUnavailable { .. }
+            | Notice::ChangesUnseen { .. }
             | Notice::FoldersUnreadable { .. }
             | Notice::PickerFailed { .. }
             | Notice::ListingFailed { .. }
@@ -1395,7 +1435,7 @@ impl Notice {
                 error: error(),
                 panicked: false,
                 file: Some(r"D:\Photos\a.jpg".into()),
-                temp: Some(r"D:\Photos\a.jpg.pg-tmp".into()),
+                temp: Some(r"D:\Photos\a.jpg.rating.pg-write".into()),
             },
             Notice::WriteStopped,
             Notice::WriteDropped { write: WriteKind::Rating, count: 2 },
@@ -1442,6 +1482,7 @@ impl Notice {
                 folder: sample_path(&["Photos"]),
                 temp: sample_path(&["Photos", "a.jpg.pg-write"]),
             },
+            Notice::ChangesUnseen { error: error() },
         ]
     }
 }
@@ -1509,6 +1550,7 @@ mod tests {
             Notice::FolderNotRemoved { .. } => 23,
             Notice::RescanFailed { .. } => 24,
             Notice::LibraryUnavailable { .. } => 25,
+            Notice::ChangesUnseen { .. } => 50,
             Notice::FoldersUnreadable { .. } => 26,
             Notice::PickerFailed { .. } => 27,
             Notice::ListingFailed { .. } => 28,
@@ -1536,7 +1578,7 @@ mod tests {
         }
     }
 
-    const KINDS: usize = 50;
+    const KINDS: usize = 51;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {
@@ -1584,11 +1626,12 @@ mod tests {
     /// build writes it is printed, to compare (and, for a change that is meant, to replace the file with).
     #[test]
     fn every_kind_is_stored_as_its_golden_line() {
-        const GOLDEN: &str = include_str!("notice/golden.jsonl");
+        // Normalised as the resolver table's test normalises its file: CRLF checkouts compare as LF.
+        let golden_text = include_str!("notice/golden.jsonl").replace("\r\n", "\n");
         let written: Vec<Notice> =
             Notice::samples().into_iter().filter(|n| !matches!(n, Notice::Unknown { .. })).collect();
         let actual: Vec<String> = written.iter().map(|n| serde_json::to_string(n).unwrap()).collect();
-        let golden: Vec<&str> = GOLDEN.lines().filter(|l| !l.trim().is_empty()).collect();
+        let golden: Vec<&str> = golden_text.lines().filter(|l| !l.trim().is_empty()).collect();
         let mut differ = Vec::new();
         for (notice, text) in written.iter().zip(&actual) {
             let line = golden

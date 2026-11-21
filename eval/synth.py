@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from common import DATA_ROOT, WORK_DIR, image_list, load_rgb
+from common import DATA_ROOT, WORK_DIR, embedding_name, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
 from imgload import ImageDataset, TrimmedSource, embed
 from models import SPECS, build_transform, load_model
@@ -53,7 +53,7 @@ def main() -> None:
         "--trim", action="store_true", help="cut borders from originals and edited copies (needs embed.py --trim)"
     )
     args = parser.parse_args()
-    name = f"{args.model}_trim" if args.trim else args.model
+    name = embedding_name(args.model, args.trim)
 
     device = torch.device("cuda")
     files = image_list()

@@ -8,7 +8,7 @@ Files (built on first use, under CACHE_DIR):
   onnx/calib_<size>.npy                    the calibration batch: CALIB_IMAGES unlabeled images not in files.txt
   trt/sscd_<size>_<precision>_trt<N>.plan  TensorRT engines (batch 1..MAX_BATCH; N is the TensorRT major version)
   onnx/disk_<precision>.onnx, trt/disk_<precision>_trt<N>.plan   DISK's U-Net (one image, any size up to
-                                           DISK_MAX_SIDE, multiples of 16)
+                                           WORK_SIDE, multiples of 16)
 
 TensorRT 11 only builds strongly typed networks: the precision is the ONNX graph's own (fp16 weights and
 activations, or int8 Q/DQ), there is no fp16/int8 builder switch. ModelOpt pins older onnx / onnxruntime
@@ -30,12 +30,22 @@ import torch
 from torch import nn
 from torch.nn.utils.fusion import fuse_conv_bn_eval
 
-from common import CACHE_DIR, DATA_ROOT, GROUPS_DIR, IMAGE_EXTS, NEGATIVES_DIR, image_list, load_rgb, pg_path
+from common import (
+    CACHE_DIR,
+    DATA_ROOT,
+    GROUPS_DIR,
+    IMAGE_EXTS,
+    NEGATIVES_DIR,
+    VENV_PYTHON,
+    WORK_SIDE,
+    image_list,
+    load_rgb,
+    pg_path,
+)
 from models import SPECS, SSCD, build_transform
 
 ONNX_DIR = CACHE_DIR / "onnx"
 TRT_DIR = CACHE_DIR / "trt"
-VENV_PYTHON = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")  # a venv's interpreter, by OS
 QUANT_PYTHON = pg_path("PG_QUANT_PYTHON", "venv-quant", *VENV_PYTHON)
 TRT10_DIR = pg_path("PG_TRT10_DIR", "tools", "tensorrt-10.16.1.11-cu13")
 CALIB_IMAGES = 512
@@ -243,7 +253,6 @@ class TRTModule(TRTRunner):
 
 # --- DISK (the verifier's local features) ---
 
-DISK_MAX_SIDE = 1024  # verify.WORK_SIDE: the largest image the engine takes
 DISK_OPT = (1, 3, 1024, 688)  # a typical working image: portrait 2:3 at the long side
 
 
@@ -274,7 +283,7 @@ def disk_onnx_path(precision: str) -> Path:
 def disk_engine_path(precision: str) -> Path:
     path = TRT_DIR / f"disk_{precision}_trt{trt_major()}.plan"
     if not path.exists():
-        build_engine(disk_onnx_path(precision), path, ((1, 3, 16, 16), DISK_OPT, (1, 3, DISK_MAX_SIDE, DISK_MAX_SIDE)))
+        build_engine(disk_onnx_path(precision), path, ((1, 3, 16, 16), DISK_OPT, (1, 3, WORK_SIDE, WORK_SIDE)))
     return path
 
 
@@ -291,11 +300,13 @@ class DiskUnetTRT(TRTRunner):
 def _ort_session(path: Path, provider: str, precision: str, size: int):
     import onnxruntime as ort
 
+    previous_path = os.environ["PATH"]
     if provider == "trt":
-        os.environ["PATH"] = str(TRT10_DIR) + os.pathsep + os.environ["PATH"]
         cache = TRT_DIR / "ort"
         cache.mkdir(parents=True, exist_ok=True)
-        shape = lambda b: f"x:{b}x3x{size}x{size}"  # noqa: E731
+        # ONNX Runtime loads the TensorRT 10 DLLs from PATH when the session is created; PATH is put back after that.
+        os.environ["PATH"] = str(TRT10_DIR) + os.pathsep + previous_path
+        shape = lambda b: f"x:{b}x3x{size}x{size}"  # noqa: E731 (a one-expression helper for the shape string)
         options = {
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": str(cache),
@@ -312,8 +323,11 @@ def _ort_session(path: Path, provider: str, precision: str, size: int):
         providers = ["CUDAExecutionProvider"]
     so = ort.SessionOptions()
     so.log_severity_level = 3
-    session = ort.InferenceSession(str(path), so, providers=providers)
-    want = "TensorrtExecutionProvider" if provider == "trt" else "CUDAExecutionProvider"
+    try:
+        session = ort.InferenceSession(str(path), so, providers=providers)
+    finally:
+        os.environ["PATH"] = previous_path
+    want ="TensorrtExecutionProvider" if provider == "trt" else "CUDAExecutionProvider"
     if session.get_providers()[0] != want:
         raise RuntimeError(f"{want} unavailable: {session.get_providers()}")
     return session

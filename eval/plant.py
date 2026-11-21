@@ -15,6 +15,7 @@ are kept, so a rerun only makes the missing ones.
 import argparse
 import json
 import random
+import uuid
 from multiprocessing import Pool
 
 from common import DATA_ROOT, WORK_DIR, load_rgb, pg_path
@@ -35,7 +36,7 @@ def make_copy(job: tuple[str, int, str, int]) -> tuple[str, bool]:
     try:
         im = load_rgb(DATA_ROOT / TEST_DIR / source_path)
         out.parent.mkdir(parents=True, exist_ok=True)
-        tmp = out.with_suffix(".tmp")
+        tmp = out.with_name(f"{out.name}.{uuid.uuid4().hex}.tmp")
         if edit == "jpeg_q30":
             im.save(tmp, "JPEG", quality=30)
         else:
@@ -78,7 +79,7 @@ def main() -> None:
         files.append(rel)
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     (WORK_DIR / "files.txt").write_text("\n".join(files), encoding="utf-8")
-    (WORK_DIR / "planted.json").write_text(json.dumps(planted), encoding="utf-8")
+    (WORK_DIR / "planted.json").write_text(json.dumps(planted, indent=2), encoding="utf-8")
     print(f"{len(planted)} planted copies ({failed} sources failed to decode), {len(files)} rows in {WORK_DIR}")
 
 

@@ -88,7 +88,7 @@ def main() -> None:
         ms = statistics.median(samples)
 
         if out.shape != (ref_h, ref_w, ref_ch):
-            check = f"{out.shape[1]}×{out.shape[0]} {out.shape[2]} ch vs {ref_w}×{ref_h} {ref_ch} ch"
+            check = f"{out.shape[1]}x{out.shape[0]} {out.shape[2]} ch vs {ref_w}x{ref_h} {ref_ch} ch"
         else:
             got = out.reshape(-1)
             if np.array_equal(got, ref):

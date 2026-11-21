@@ -79,11 +79,6 @@ pub(super) fn row_change_roles(values: bool, height: bool) -> Vec<i32> {
     roles
 }
 
-/// A count or a row as Qt's int, saturating: a Qt model holds no more rows than an int counts.
-pub(super) fn qt_int(n: usize) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

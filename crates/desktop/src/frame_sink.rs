@@ -17,10 +17,10 @@ impl Frames {
     }
 }
 
-// SAFETY: `FrameSink::present` may be called from any thread (cpp/frame_sink.cpp); `close` is called on the GUI
-// thread, by `Player`'s drop.
+// SAFETY: `FrameSink::present` and `close` may be called from any thread: the sink's only shared state is an atomic
+// flag, and a frame runs on the sink's own thread (cpp/frame_sink.cpp).
 unsafe impl Send for Frames {}
-// SAFETY: as above; both methods take `&self` and touch the sink only on its own thread.
+// SAFETY: as above; both methods take `&self`, and the only state they share is that flag.
 unsafe impl Sync for Frames {}
 
 impl Sink for Frames {

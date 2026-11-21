@@ -8,28 +8,18 @@ Windows on the host (with QT_DIR and its bin folder on PATH), Linux in the pg-de
 Crates with no library target (pg-bench, pg-gallery) are not listed: the script takes only the library crates.
 """
 
-import json
 import subprocess
 import sys
 from pathlib import Path
 
+from compiler_graph import library_packages
+
 REPO = Path(__file__).resolve().parent.parent.parent
 
 
-def library_crates() -> list[str]:
-    """The workspace's packages that have a library target."""
-    metadata = subprocess.run(
-        ["cargo", "metadata", "--no-deps", "--format-version", "1"], cwd=REPO, capture_output=True, text=True, check=True
-    )
-    return [
-        package["name"]
-        for package in json.loads(metadata.stdout)["packages"]
-        if any(target["kind"] == ["lib"] for target in package["targets"])
-    ]
-
-
 def main() -> None:
-    for crate in library_crates():
+    failed = False
+    for crate, _ in library_packages():
         result = subprocess.run(
             ["cargo", "rustc", "-p", crate, "--lib", "--profile", "check", "--", "-W", "unreachable_pub"],
             cwd=REPO,
@@ -41,11 +31,13 @@ def main() -> None:
         count = sum("unreachable `pub`" in line for line in lines)
         errors = [i for i, line in enumerate(lines) if line.startswith("error")]
         print(f"{crate} unreachable_pub={count} errors={len(errors)}")
+        failed = failed or bool(errors)
         # The first three errors, each with the two lines after it.
         for i in errors[:3]:
             for line in lines[i : i + 3]:
                 print(f"    {line}")
-    sys.exit(0)
+    # A crate whose check errored (the lint could not run on it) fails the run; the counts of findings do not.
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":

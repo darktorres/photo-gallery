@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common import IMAGE_EXTS, WORK_DIR
+from common import IMAGE_EXTS, LIBRARY_SIZE, WORK_DIR
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel32.CreateFileW.restype = wintypes.HANDLE
@@ -239,7 +239,7 @@ def main() -> None:
     print("\n| order | files/s | MB/s | days for 70M files at this rate |")
     print("|---|---|---|---|")
     for r in rows:
-        print(f"| {r['order']} | {r['files_s']:.0f} | {r['mb_s']:.0f} | {70e6 / r['files_s'] / 86400:.1f} |")
+        print(f"| {r['order']} | {r['files_s']:.0f} | {r['mb_s']:.0f} | {LIBRARY_SIZE / r['files_s'] / 86400:.1f} |")
     if not args.dense:
         print(
             f"\nNote: each sample is 1 in {args.stride} files, so seeks are longer than in a full pass; compare "

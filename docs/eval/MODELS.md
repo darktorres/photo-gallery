@@ -19,7 +19,7 @@ Measured results for the models: their speed, their retrieval quality, and the a
 
 ### True negatives and new candidates (subset, 2026-10-29)
 
-`evaluate.py` now also counts **cross-group pairs** (915,279 pairs of images from two different
+`eval/evaluate.py` now also counts **cross-group pairs** (915,279 pairs of images from two different
 `dups2` groups, i.e. different pictures) above each threshold, the false-positive measure that
 replaces `similiar_but_not_dups` (mostly matches now, see VERIFIER.md, "Superseded the same day").
 

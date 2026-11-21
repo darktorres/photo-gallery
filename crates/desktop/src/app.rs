@@ -5,11 +5,10 @@
 //! The order of shutdown is in `lib.rs` (`run`): [`stop`] (the reader, the library), then the engine goes (the image
 //! providers), then [`shutdown`] (the thumbnail cache, the inbox, then the catalog connections, the keeper last).
 
-use std::fmt::Display;
 use std::sync::OnceLock;
 
 use pg_app::{App, Config};
-use pg_model::notice::{ERROR_CAP, Notice, Op, Trigger, tidy};
+use pg_model::notice::{Notice, Op, Trigger};
 
 static APP: OnceLock<App> = OnceLock::new();
 
@@ -40,10 +39,8 @@ pub(crate) fn observe<T, E>(op: Op, result: Result<T, E>, failure: impl FnOnce(&
     }
 }
 
-/// An error's text as a notice keeps it: its causes after it (`{:#}`), on one line, capped.
-pub(crate) fn error_text(error: &impl Display) -> String {
-    tidy(&format!("{error:#}"), ERROR_CAP)
-}
+/// An error's text as a notice keeps it (`pg_model::notice::error_text`).
+pub(crate) use pg_model::notice::error_text;
 
 /// The app. Only after [`open`].
 pub(crate) fn get() -> &'static App {
@@ -55,12 +52,17 @@ pub(crate) fn get() -> &'static App {
     app
 }
 
+/// The reader's session, which the window's catalog reads go through (`App::reading`, then `session`).
+pub(crate) fn session() -> pg_app::Session {
+    get().reading().session()
+}
+
 /// Stop the background work and say what it couldn't stop. Call after the event loop.
 pub(crate) fn stop() {
     if let Some(app) = APP.get()
         && let Err(e) = app.stop()
     {
-        pg_log::warn("app", &e.to_string());
+        pg_log::warn("app", &format!("{e:#}"));
     }
 }
 

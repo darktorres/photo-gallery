@@ -105,7 +105,8 @@ impl Images {
         for n in 0..count.min(FETCHERS) {
             let images = Arc::clone(self);
             lock(&self.table).fetchers += 1;
-            // A thread that can't start leaves its results queued: `get` fetches them.
+            // A fetcher is optional parallelism: a thread that can't start leaves its results queued, and `get` fetches
+            // them on demand. So the failure is not reported (unlike a search or a save, see `Search::spawn_worker`).
             if thread::Builder::new().name(format!("yandex image {n}")).spawn(move || images.fetch_queue()).is_err() {
                 lock(&self.table).fetchers -= 1;
             }
@@ -216,7 +217,7 @@ impl Images {
             .slots
             .get(&id)
             .map(|slot| slot.url.clone())
-            .ok_or(SourceError::Yandex(YandexError::Unexpected("no such result")))?;
+            .ok_or(SourceError::Yandex(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NoResult)))?;
         self.get(id, &url)
     }
 
@@ -321,7 +322,7 @@ mod tests {
     fn a_result_asked_for_before_it_is_queued_is_fetched_by_its_url() {
         let fetch = Arc::new(Counting { calls: AtomicUsize::new(0), fail: vec![] });
         let images = images(fetch.clone(), accept);
-        assert_eq!(images.get_known(9).unwrap_err().to_string(), "unexpected Yandex response: no such result");
+        assert_eq!(images.get_known(9).unwrap_err().to_string(), "unexpected Yandex response: NoResult");
         assert_eq!(images.get(9, "https://a.example/9.jpg").unwrap().file.bytes, b"picture");
         assert_eq!(images.get_known(9).unwrap().file.bytes, b"picture");
         assert_eq!(fetch.calls.load(Ordering::SeqCst), 1);

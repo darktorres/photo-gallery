@@ -27,10 +27,8 @@ const MARK_EVERY: Duration = Duration::from_millis(500);
 struct Running {
     progress: Progress,
     started: Instant,
-    /// The time the pass has spent paused, up to the latest resume.
-    paused_total: Duration,
-    /// When the current pause began, while paused.
-    paused_since: Option<Instant>,
+    /// The pauses of the phase: the time spent paused, and the pause in progress.
+    pauses: PauseClock,
     /// Files that finished while paused. They took no working time, so the rate leaves them out.
     drained: u64,
     /// (working time, count without the drained files), oldest first. The front one is where the window starts: the
@@ -45,8 +43,7 @@ impl Running {
         Running {
             progress,
             started,
-            paused_total: Duration::ZERO,
-            paused_since: None,
+            pauses: PauseClock::default(),
             drained: 0,
             marks: VecDeque::from([(Duration::ZERO, 0)]),
             ended: None,
@@ -74,27 +71,19 @@ impl Running {
 
     /// The time the phase has run at `now`, not counting its pauses.
     fn active(&self, now: Instant) -> Duration {
-        let paused = self.paused_since.map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
-        now.saturating_duration_since(self.started).saturating_sub(self.paused_total.saturating_add(paused))
+        now.saturating_duration_since(self.started).saturating_sub(self.pauses.total_at(now))
     }
 
-    /// Pauses or resumes the clock at `now`. A repeat changes nothing.
+    /// Pauses or resumes the phase's clock at `now`. A repeat changes nothing.
     fn set_paused(&mut self, paused: bool, now: Instant) {
-        match (paused, self.paused_since) {
-            (true, None) => self.paused_since = Some(now),
-            (false, Some(since)) => {
-                self.paused_total = self.paused_total.saturating_add(now.saturating_duration_since(since));
-                self.paused_since = None;
-            }
-            _ => {}
-        }
+        self.pauses.set(paused, now);
     }
 
     /// Applies a change of the progress at `now`. A file finished while paused is drained, not counted in the window.
     fn change(&mut self, now: Instant, change: impl FnOnce(&mut Progress)) {
         let before = self.progress.done;
         change(&mut self.progress);
-        if self.paused_since.is_some() {
+        if self.pauses.since.is_some() {
             self.drained += self.progress.done.saturating_sub(before);
         }
         self.mark(now);
@@ -199,6 +188,8 @@ impl Family {
     }
 }
 
+/// One lane's handle on its job (or the root's, for the job as a whole): its stop and pause, its progress and its
+/// events. The lanes of one job share a `Family`, which holds what they have in common.
 pub struct Control {
     lane: LaneId,
     family: Arc<Family>,
@@ -217,13 +208,18 @@ pub struct Control {
 }
 
 /// The time this lane has been paused: the pauses ended, and the pause in progress since when it began.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct PauseClock {
     total: Duration,
     since: Option<Instant>,
 }
 
 impl PauseClock {
+    /// The time paused up to `now`: the pauses ended, and the pause in progress.
+    fn total_at(&self, now: Instant) -> Duration {
+        self.total.saturating_add(self.since.map_or(Duration::ZERO, |since| now.saturating_duration_since(since)))
+    }
+
     /// Starts or ends a pause at `now`. A repeat changes nothing.
     fn set(&mut self, paused: bool, now: Instant) {
         match (paused, self.since) {
@@ -346,6 +342,7 @@ impl Control {
         self.wake_family();
     }
 
+    /// Clears the stop that [`Control::request_stop`] set: this lane's own, and on the root the family's too.
     pub fn clear_stop(&self) {
         let _own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
         self.stop.store(false, Ordering::SeqCst);

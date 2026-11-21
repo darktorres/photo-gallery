@@ -12,9 +12,25 @@ use pg_container::{
 };
 use pg_model::format::Format;
 
-use crate::xmp::{MetaScratch, Packet};
+use crate::xmp::{MetaScratch, NS_XMP, Packet};
 
-pub(crate) const JPEG_XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+/// The XMP namespace as the NUL-terminated bytes a JPEG's APP1 packet begins with: the one URI (`NS_XMP`), with its NUL.
+pub(crate) const JPEG_XMP: &[u8] = &nul_terminated::<{ NS_XMP.len() + 1 }>(NS_XMP);
+
+#[expect(
+    clippy::indexing_slicing,
+    reason = "a const fn cannot use iterators; both indexes are below the lengths the loop checks, and N is the text's length plus one"
+)]
+const fn nul_terminated<const N: usize>(text: &str) -> [u8; N] {
+    let text = text.as_bytes();
+    let mut out = [0u8; N];
+    let mut i = 0;
+    while i < text.len() {
+        out[i] = text[i];
+        i += 1;
+    }
+    out
+}
 
 /// Where a file's container keeps the metadata the import reads, found in one walk of it. Its XMP packets, main one
 /// first, are in [`MetaScratch::packets`]: in the file, but for a reassembled extended JPEG packet and a compressed

@@ -38,10 +38,13 @@ pub mod qobject {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
+        /// How many files the list holds: its row count.
         #[qproperty(i32, count, READ, WRITE, NOTIFY, FINAL)]
         /// How many of the listed files have borders found and not marked: what `saveCroppedCopies` crops. Read again
         /// with the revision (`bump_revision`).
         #[qproperty(i32, croppable, READ, WRITE, NOTIFY, FINAL)]
+        /// Counts the changes to the rows and their state (`bump_revision`): a reader holding an older value knows its
+        /// data is stale.
         #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
         /// A list asked for (`openList`) hasn't arrived yet; the one shown stays meanwhile.
         #[qproperty(bool, loading, READ, WRITE, NOTIFY, FINAL)]
@@ -61,21 +64,39 @@ pub mod qobject {
         /// What the viewer shows of its item (`viewing`): set by `refresh_viewed` whenever the item or what it shows
         /// changes, and bound to by the viewer, which asks for none of them one by one.
         #[qproperty(QString, viewed_key, cxx_name = "viewedKey", READ, WRITE, NOTIFY, FINAL)]
+        /// The keys of the items around the viewer's item, as `refresh_viewed` sets them.
         #[qproperty(QStringList, viewed_neighbour_keys, cxx_name = "viewedNeighbourKeys", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's quarter turns, as `refresh_viewed` sets them.
         #[qproperty(i32, viewed_turns, cxx_name = "viewedTurns", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's rating, as `refresh_viewed` sets it.
         #[qproperty(i32, viewed_rating, cxx_name = "viewedRating", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's full-size width in pixels.
         #[qproperty(i32, viewed_full_width, cxx_name = "viewedFullWidth", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's full-size height in pixels.
         #[qproperty(i32, viewed_full_height, cxx_name = "viewedFullHeight", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's media kind: an image, an animation or a video.
         #[qproperty(MediaKind, viewed_kind, cxx_name = "viewedKind", READ = read_viewed_kind, NOTIFY, FINAL)]
+        /// The quarter turns Qt's player adds to show the viewer's file upright: its catalog rotation and the turns not
+        /// yet written.
         #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's file id in the catalog.
         #[qproperty(i64, viewed_file_id, cxx_name = "viewedFileId", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's URL at full size.
         #[qproperty(QString, viewed_full_url, cxx_name = "viewedFullUrl", READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item's status-bar line.
         #[qproperty(QString, viewed_info, cxx_name = "viewedInfo", READ, WRITE, NOTIFY, FINAL)]
+        /// What is left of the viewer's item without its borders, as fractions of the image as shown.
         #[qproperty(QRectF, viewed_border_box, cxx_name = "viewedBorderBox", READ, WRITE, NOTIFY, FINAL)]
+        /// Where the border detector's first rejected candidate at the top would have cut, as a fraction of the image from
+        /// that edge; -1 for none.
         #[qproperty(f64, viewed_rejected_top, cxx_name = "viewedRejectedTop", READ, WRITE, NOTIFY, FINAL)]
+        /// As `viewedRejectedTop`, at the bottom edge.
         #[qproperty(f64, viewed_rejected_bottom, cxx_name = "viewedRejectedBottom", READ, WRITE, NOTIFY, FINAL)]
+        /// As `viewedRejectedTop`, at the left edge.
         #[qproperty(f64, viewed_rejected_left, cxx_name = "viewedRejectedLeft", READ, WRITE, NOTIFY, FINAL)]
+        /// As `viewedRejectedTop`, at the right edge.
         #[qproperty(f64, viewed_rejected_right, cxx_name = "viewedRejectedRight", READ, WRITE, NOTIFY, FINAL)]
+        /// Whether the viewer's item's borders are marked as not a border (the review).
         #[qproperty(bool, viewed_border_marked, cxx_name = "viewedBorderMarked", READ, WRITE, NOTIFY, FINAL)]
         type GalleryModel = super::GalleryRust;
     }
@@ -160,7 +181,7 @@ pub mod qobject {
         fn index_of(self: &GalleryModel, file_id: i64) -> i32;
 
         /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder the picker
-        /// chose for them (`FolderPicker`, purpose 1), in the background (the library's crop pass). Returns how many it
+        /// chose for them (`FolderPicker`, `PickerPurpose.SaveCrops`), in the background (the library's crop pass). Returns how many it
         /// asked for.
         #[qinvokable]
         #[cxx_name = "saveCroppedCopiesPicked"]

@@ -5,7 +5,7 @@ use cxx_qt_lib::{QString, QStringList};
 /// The properties the shell mirrors from the controller. Everything else is the controller's.
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct ShellRust {
     pub(crate) folder: QString,

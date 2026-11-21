@@ -1,4 +1,4 @@
-"""Make the app icon from mascot 03: the mascot centred on a square, written as a multi-size Windows icon.
+"""Makes the app icon from mascot 03: the mascot centred on a square, written as a multi-size Windows icon.
 
 Usage:
   python make_icon.py                    # writes crates/gallery/resources/app.ico and crates/desktop/resources/app-icon.png

@@ -985,6 +985,7 @@ extern "C" void egpu_destroy(EgpuContext* c) {
 
 extern "C" int egpu_encode_batch(EgpuContext* c, const uint8_t* d_rgb, uint64_t d_rgb_bytes,
                                  const EgpuImage* images, uint32_t count) {
+    set_error("ok");  // the last call's message is not this call's: a call that succeeds leaves "ok"
     if (!c) {
         set_error("egpu_encode_batch: null context");
         return EGPU_ERR_ARG;

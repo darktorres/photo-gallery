@@ -67,7 +67,7 @@ mod tests {
 
     /// A folder with an original in it (`original`), its (size, mtime), and the native path of the original.
     fn original(name: &str, content: &[u8]) -> (PathBuf, PathBuf, (i64, i64), NativePath) {
-        let dir = pg_testkit::run_folder("scratch_writeback_inplace", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_writeback", name).unwrap();
         let path = dir.join("a.bin");
         std::fs::write(&path, content).unwrap();
         let before = pg_platform::file::stat(&path).unwrap();
@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"cut");
         assert!(!temp.exists(), "the temp is removed once the copy is in");
         assert_eq!(after, pg_platform::file::stat(&path).unwrap());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// An original changed since it was read is not written; nor is it touched when the temp can't be written.
@@ -104,7 +104,7 @@ mod tests {
         let err = replace(&path, &native, &blocked, b"cut", before).unwrap_err();
         assert!(matches!(err, ReplaceError::Untouched(_)), "{err:?}");
         assert_eq!(std::fs::read(&path).unwrap(), b"original bytes");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// An original another program holds open with a share mode that denies writers is not opened for the copy: the
@@ -122,6 +122,6 @@ mod tests {
         assert!(!temp.exists(), "the temp is removed");
         drop(holder);
         assert_eq!(std::fs::read(&path).unwrap(), b"original bytes");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -71,8 +71,8 @@ impl Record {
 }
 
 /// The records of a log file's text, oldest first. A JSON line is a record; a plain line that starts with a date and a
-/// time is a record of an older build (info, its time as written); any other line continues the record before it (a
-/// plain panic's backtrace), or is a record of its own when it starts the text. A JSON line cut short (the app ended in
+/// time is a record of an older build (info, its time as written); any other line continues the record before it when that is a
+/// plain record (a plain panic's backtrace); after a JSON record, or at the start of the text, it is a record of its own. A JSON line cut short (the app ended in
 /// the middle of it) reads as a plain line.
 pub fn parse(text: &str) -> Vec<Record> {
     let mut records: Vec<Record> = Vec::new();

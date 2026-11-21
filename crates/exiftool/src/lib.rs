@@ -8,9 +8,6 @@
 //! such a name runs ExifTool once, with the names as its process arguments (exact on Unix; Windows can't hold such a
 //! name).
 
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -127,7 +124,7 @@ impl ExifTool {
     }
 
     /// Write `XMP:Rating` into a copy of `path` at `out`. When ExifTool won't update the file as it is (damaged
-    /// metadata), the metadata is rebuilt and the write retried once, as ImageRater did.
+    /// metadata), the metadata is rebuilt and the write retried once, as a rating app did.
     pub fn write_rating(&mut self, path: &Path, out: &Path, rating: u8) -> Result<()> {
         let tag = format!("-XMP:Rating={rating}");
         let (stdout, stderr) = self.exec(&[OsStr::new(&tag), OsStr::new("-o"), out.as_os_str(), path.as_os_str()])?;
@@ -291,11 +288,7 @@ mod tests {
         match ExifTool::start(program) {
             Ok(tool) => Some(tool),
             Err(_) => {
-                assert!(
-                    std::env::var_os("PG_REQUIRE_TOOLS").is_none(),
-                    "ExifTool not found, and PG_REQUIRE_TOOLS is set"
-                );
-                eprintln!("ExifTool not found: skipped");
+                pg_testkit::missing_tool("ExifTool");
                 None
             }
         }

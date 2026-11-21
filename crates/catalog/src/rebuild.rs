@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use pg_model::notice::Carried;
 use pg_model::rules::PathRules;
 use pg_platform::file::beside;
@@ -135,7 +135,7 @@ fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Op
 /// Delete the database at `path` with its sidecars (`pg_dbfile::remove_database`). Only ever called on a file this
 /// build made (a replacement left by an interrupted rebuild), never on the catalog itself.
 fn remove_database(path: &Path) -> Result<()> {
-    pg_dbfile::remove_database(path).map_err(|e| Error::Other(anyhow!("{e}")))
+    pg_dbfile::remove_database(path).map_err(Error::Io)
 }
 
 /// The tables a rebuild carries over from the old catalog, in the order their foreign keys need (a table comes after the
@@ -294,7 +294,7 @@ mod tests {
     /// auto-vacuum) is not carried over, since the new file was made with it.
     #[test]
     fn the_copy_keeps_the_new_files_vacuum_mark() {
-        let dir = run_folder("scratch_rebuild", "vacuum-mark").unwrap();
+        let dir = run_folder("scratch_catalog", "vacuum-mark").unwrap();
         let old_path = dir.join("old.sqlite");
         drop(made(&old_path, false));
         assert_eq!(vacuum_owed(&Connection::open(&old_path).unwrap()), 1, "the old file owes a vacuum");
@@ -304,14 +304,14 @@ mod tests {
         carry_rows(&mut new, &old_path, &SCHEMA, PATH_RULES).unwrap();
         assert_eq!(vacuum_owed(&new), 0, "the copy did not carry the old file's mark");
         drop(new);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A queued write the layout refuses (its value out of its kind's range: the CHECK) is an error that rolls the copy
     /// back, not a row dropped: the old file has such a row only because its constraints were off.
     #[test]
     fn a_queued_write_the_layout_refuses_is_an_error_not_a_dropped_row() {
-        let dir = run_folder("scratch_rebuild", "refused-write").unwrap();
+        let dir = run_folder("scratch_catalog", "refused-write").unwrap();
         let old_path = dir.join("old.sqlite");
         {
             let old = made(&old_path, true);
@@ -328,6 +328,6 @@ mod tests {
         let rows: i64 = new.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 0, "the copy is rolled back");
         drop(new);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

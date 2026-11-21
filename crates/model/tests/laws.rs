@@ -87,7 +87,7 @@ proptest! {
         rotation in turns(),
         pending in turns(),
     ) {
-        let version = versioned.then_some(Version { mtime, rotation, turns: pending });
+        let version = versioned.then_some(Version { mtime, rotation, pending_turns: pending });
         let key = ImageKey { file: FileId::new(file), version };
         prop_assert_eq!(ImageKey::parse(&key.to_string()), Some(key));
     }

@@ -35,6 +35,7 @@ use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions, key_version_text};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
 
+/// An open catalog: its connection, the path rules its paths are stored under, and the hold on the file while it is open.
 pub struct Catalog {
     pub(crate) conn: Connection,
     /// The path rules the catalog's paths are stored under (`meta.path_rules`, checked when it opens).
@@ -165,7 +166,7 @@ impl<'a> Prepare<'a> {
             check_rules(&conn, path, rules)?;
         }
         let why = match &action {
-            Action::MoveAsideThenCreate => Some("not a database".to_string()),
+            Action::MoveAsideThenCreate => Some("not a catalog".to_string()),
             Action::RebuildCarry { why } => Some(why.clone()),
             _ => None,
         };
@@ -218,10 +219,7 @@ impl<'a> Prepare<'a> {
             None => format!("catalog {}", path.display()),
         })?;
         if let Some(why) = mismatch(&conn, current_schema)? {
-            return Err(Error::Other(anyhow!(
-                "catalog {}: the catalog made is not this build's: {why}",
-                path.display()
-            )));
+            return Err(Error::NotThisBuild { path: path.display().to_string(), why });
         }
         check_rules(&conn, path, rules)?;
         // The keys follow this build's key algorithm and toolchain (a copy carried the old file's mark; a change of it
@@ -297,10 +295,7 @@ impl Catalog {
         let current = current_version()?;
         let version = pg_dbfile::user_version(&conn)?;
         if version != current {
-            return Err(Error::Other(anyhow!(
-                "catalog {}: schema version {version}, not this build's {current}",
-                path.display()
-            )));
+            return Err(Error::SchemaVersion { path: path.display().to_string(), found: version, current });
         }
         if let Some(why) = mismatch(&conn, current_expected()?)? {
             return Err(Error::Other(anyhow!("catalog {}: {why}: it changed after it was prepared", path.display())));
@@ -332,7 +327,7 @@ impl Catalog {
     /// statements of a read.
     pub fn cancel_when(&mut self, cancel: Arc<AtomicBool>) -> Result<()> {
         // Checked every 1000 virtual-machine steps: microseconds.
-        Ok(self.conn.progress_handler(1000, Some(move || cancel.load(Ordering::Relaxed)))?)
+        Ok(self.conn.progress_handler(1000, Some(move || cancel.load(Ordering::SeqCst)))?)
     }
 
     /// Give back this connection's page cache (the reader does it after each list it made).
@@ -404,7 +399,7 @@ const STATEMENT_CACHE: usize = 64;
 pub(crate) fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}"))?;
-    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.busy_timeout(Duration::from_millis(crate::schema::BUSY_TIMEOUT_MS))?;
     conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
     Ok(conn)
 }
@@ -689,10 +684,10 @@ mod tests {
         let run = || raw::slow_count(&c).map_err(Error::from);
         assert_eq!(run().unwrap(), 100_000);
         // Set between statements (SQLite's own interrupt would be lost there): every statement fails.
-        cancel.store(true, Ordering::Relaxed);
+        cancel.store(true, Ordering::SeqCst);
         assert!(matches!(run().unwrap_err(), Error::Interrupted));
         assert!(matches!(run().unwrap_err(), Error::Interrupted));
-        cancel.store(false, Ordering::Relaxed);
+        cancel.store(false, Ordering::SeqCst);
         assert_eq!(run().unwrap(), 100_000);
     }
 
@@ -882,7 +877,7 @@ mod tests {
         );
         drop(reader);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
 
         let memory = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let reader = memory.reader(1024).unwrap();

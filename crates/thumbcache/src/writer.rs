@@ -92,7 +92,7 @@ struct Closing<'a>(&'a Inbox);
 
 impl Drop for Closing<'_> {
     fn drop(&mut self) {
-        let mut queue = self.0.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut queue = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
         queue.open = false;
         queue.ops.clear();
     }

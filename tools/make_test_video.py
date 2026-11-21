@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument("out", type=Path)
     args = parser.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    ffmpeg = os.environ.get("FFMPEG", "ffmpeg")
+    ffmpeg = os.environ.get("PG_FFMPEG", "ffmpeg")
     subprocess.run(
         [
             ffmpeg,

@@ -14,9 +14,9 @@ pub enum YandexError {
     /// A connection, TLS or timeout failure.
     #[error("Yandex request failed: {0}")]
     Transport(String),
-    /// A response that did not have the data we read.
-    #[error("unexpected Yandex response: {0}")]
-    Unexpected(&'static str),
+    /// A response that did not have the data we read: which part was missing.
+    #[error("unexpected Yandex response: {0:?}")]
+    Unexpected(pg_model::yandex::UnexpectedReason),
 }
 
 impl From<YandexError> for pg_model::yandex::RequestError {
@@ -27,7 +27,7 @@ impl From<YandexError> for pg_model::yandex::RequestError {
             YandexError::Captcha => RequestError::Captcha,
             YandexError::Status(status) => RequestError::Status(status),
             YandexError::Transport(error) => RequestError::Transport(error),
-            YandexError::Unexpected(detail) => RequestError::Unexpected(detail.to_string()),
+            YandexError::Unexpected(reason) => RequestError::Unexpected(reason),
         }
     }
 }

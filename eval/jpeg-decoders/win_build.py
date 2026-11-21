@@ -20,25 +20,21 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(HERE))
 
-from win_env import Toolchain, setup  # noqa: E402
+from win_env import Toolchain, setup  # noqa: E402 (after the sys.path insert above)
 
-from build_jpeg_turbo import FORK_COMMIT, FORK_URL  # noqa: E402
-from pgtools import run  # noqa: E402
+import sources  # noqa: E402 (after the sys.path insert above)
+from build_jpeg_turbo import FORK_COMMIT, FORK_URL  # noqa: E402 (after the sys.path insert above)
+from pgtools import run  # noqa: E402 (after the sys.path insert above)
 
 ORDER = ["turbo", "jpeggpu", "gpujpeg", "parajpeg", "debesheedas", "harness"]
 
+# The build jobs of every cmake build, the same rule as linux_build.py's JOBS (one job per CPU). It was a fixed 4.
+JOBS = str(os.cpu_count() or 1)
+
 
 def clone(env: Toolchain, name: str, url: str, commit: str) -> None:
-    """A full clone with autocrlf off (LF line endings, as upstream), checked out at `commit`, then the local patch if there is
-    one. A folder already there is kept as it is."""
-    dest = env.jpeg_eval / "src" / name
-    if dest.exists():
-        return
-    run(["git", "-c", "core.autocrlf=false", "clone", "-q", url, str(dest)])
-    run(["git", "-C", str(dest), "-c", "core.autocrlf=false", "checkout", "-q", commit])
-    patch = HERE / "patches" / f"{name}.patch"
-    if patch.is_file():
-        run(["git", "-C", str(dest), "apply", str(patch)])
+    """A source checkout under the sources folder (sources.clone, shared with linux_build.py)."""
+    sources.clone(env.jpeg_eval / "src" / name, url, commit)
 
 
 def turbo(env: Toolchain) -> None:
@@ -56,12 +52,12 @@ def turbo(env: Toolchain) -> None:
         ],
         quiet=True,
     )  # fmt: skip
-    run(["cmake", "--build", str(build), "-j", "4"])
+    run(["cmake", "--build", str(build), "-j", JOBS])
     run(["cmake", "--install", str(build)], quiet=True)
 
 
 def jpeggpu(env: Toolchain) -> None:
-    clone(env, "jpeggpu", "https://github.com/nolmoonen/jpeggpu", "3ae7ac0dbc6e1b047abaa67badb6378baa7d39cb")
+    clone(env, "jpeggpu", *sources.PINS["jpeggpu"])
     src, build = env.jpeg_eval / "src" / "jpeggpu", env.jpeg_eval / "build" / "jpeggpu"
     run(
         [
@@ -72,11 +68,11 @@ def jpeggpu(env: Toolchain) -> None:
     )  # fmt: skip
     # The library alone, which the harness links: the project's test program does not build with this MSVC (it passes a
     # std::filesystem::path where a narrow string is wanted), and win-build.cmd let that failure through unchecked.
-    run(["cmake", "--build", str(build), "--target", "jpeggpu", "-j", "4"])
+    run(["cmake", "--build", str(build), "--target", "jpeggpu", "-j", JOBS])
 
 
 def gpujpeg(env: Toolchain) -> None:
-    clone(env, "GPUJPEG", "https://github.com/CESNET/GPUJPEG", "37ab4810657fafeedad8c7a3c4546ea4ef5eb363")
+    clone(env, "GPUJPEG", *sources.PINS["GPUJPEG"])
     src, build = env.jpeg_eval / "src" / "GPUJPEG", env.jpeg_eval / "build" / "GPUJPEG"
     run(
         [
@@ -87,13 +83,13 @@ def gpujpeg(env: Toolchain) -> None:
         ],
         quiet=True,
     )  # fmt: skip
-    run(["cmake", "--build", str(build), "-j", "4"])
+    run(["cmake", "--build", str(build), "-j", JOBS])
 
 
 def parajpeg(env: Toolchain) -> None:
     """clang-cl for its C++ (GCC/Clang attributes and builtins), nvcc on cl for the .cu; the CUDA build has the CPU backend
     too. __builtin_cpu_supports needs clang's builtins runtime, which lld-link doesn't add by itself."""
-    clone(env, "parajpeg", "https://github.com/anniigr/parajpeg", "f45081d7f75fdab809e7170c15fd806f42deb375")
+    clone(env, "parajpeg", *sources.PINS["parajpeg"])
     src, build = env.jpeg_eval / "src" / "parajpeg", env.jpeg_eval / "build" / "parajpeg-cuda"
     for version in sorted((env.llvm_dir / "lib" / "clang").glob("*")):
         if version.is_dir():
@@ -109,12 +105,12 @@ def parajpeg(env: Toolchain) -> None:
         quiet=True,
     )  # fmt: skip
     # The fuzz replay tool links the kernels' CPU emulator beside the kernels (duplicate symbols on Windows): skip it.
-    run(["cmake", "--build", str(build), "-j", "4", "--target", "parajpeg", "pjdec"])
+    run(["cmake", "--build", str(build), "-j", JOBS, "--target", "parajpeg", "pjdec"])
 
 
 def debesheedas(env: Toolchain) -> None:
     """debesheedas/GPU-JPEG-Decoder (a course project): its Makefile's one nvcc line, for this GPU's compute capability."""
-    clone(env, "GPU-JPEG-Decoder", "https://github.com/debesheedas/GPU-JPEG-Decoder", "61cfb3726691fe2436a84696d6a977d5bd8c6123")
+    clone(env, "GPU-JPEG-Decoder", *sources.PINS["GPU-JPEG-Decoder"])
     out = env.jpeg_eval / "build" / "debesheedas"
     out.mkdir(parents=True, exist_ok=True)
     run(
@@ -172,7 +168,7 @@ def harness(env: Toolchain) -> None:
     if result.returncode != 0:
         print(log.read_text(encoding="utf-8"))
         sys.exit(result.returncode)
-    run(["cmake", "--build", str(build / "harness"), "-j", "4"])
+    run(["cmake", "--build", str(build / "harness"), "-j", JOBS])
     # Next to its DLLs: GPUJPEG's (CUDA's nvJPEG and cudart come from the toolkit's bin on PATH).
     shutil.copy(build / "GPUJPEG" / "gpujpeg.dll", build / "harness")
 

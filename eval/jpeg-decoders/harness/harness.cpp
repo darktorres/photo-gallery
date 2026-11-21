@@ -251,7 +251,7 @@ int throughput_mode(std::vector<std::string> args) {
         stop = true;
         for (auto& t : th) t.join();
         double secs = now() - t0, cpu = cpu_seconds() - c0;
-        std::printf("%-34s %-16s workers %2d: %9.1f images/s  %8.3f ms/image  cpu %8.3f ms/image%s\n",
+        std::printf("%-34s %-16s workers %2d: %9.1f images/s  %8.3f ms/image  CPU %8.3f ms/image%s\n",
                     base(args[f]).c_str(), spec->name.c_str(), workers, double(done) / secs,
                     secs * 1e3 / double(done), cpu * 1e3 / double(done), failed ? "  (errors)" : "");
         std::fflush(stdout);

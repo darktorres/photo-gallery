@@ -74,7 +74,7 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
 type Imported = (PathBuf, Vec<(String, Format)>, PathBuf, Catalog);
 
 fn imported(prefix: &str) -> anyhow::Result<Imported> {
-    let dir = pg_testkit::run_folder("scratch_rate", prefix)?;
+    let dir = pg_testkit::run_folder("scratch_library", prefix)?;
     std::fs::create_dir_all(dir.join("images"))?;
     let files = make_files(&dir)?;
     let catalog_path = dir.join("catalog.sqlite");
@@ -106,15 +106,6 @@ fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(&'static ThumbCache, Quiet
     Ok((thumbs, quiet))
 }
 
-/// Waits until `done` holds, and fails with `what` after `secs` seconds.
-fn wait_until(secs: u64, what: impl Fn() -> String, mut done: impl FnMut() -> bool) {
-    let start = Instant::now();
-    while !done() {
-        assert!(start.elapsed() < Duration::from_secs(secs), "{}", what());
-        std::thread::sleep(Duration::from_millis(200));
-    }
-}
-
 /// The path a rule path names on disk.
 fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
     pg_platform::names::disk_path(c.rules(), path)
@@ -131,14 +122,23 @@ fn wait_for_queue(c: &Catalog) -> anyhow::Result<()> {
     }
 }
 
+/// Whether ExifTool is missing. A test that needs it returns when so: `missing_tool` says it was skipped, and fails the
+/// test under `PG_REQUIRE_TOOLS`, so a missing tool never passes silently in CI.
+fn exiftool_missing() -> bool {
+    let missing = pg_testkit::tool_missing("exiftool", "-ver");
+    if missing {
+        pg_testkit::missing_tool("ExifTool");
+    }
+    missing
+}
+
 #[test]
 fn ratings_and_turns_reach_the_files() {
-    if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
-        pg_testkit::missing_tool("ExifTool");
+    if exiftool_missing() {
         return;
     }
     // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
-    let dir = pg_testkit::run_folder_with("scratch_rate", "writeback", &["images"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "writeback", &["images"]).unwrap();
     let files = make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -270,11 +270,10 @@ fn ratings_and_turns_reach_the_files() {
 /// folder holds no other file. Needs ExifTool; skipped without it.
 #[test]
 fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
-    if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
-        pg_testkit::missing_tool("ExifTool");
+    if exiftool_missing() {
         return;
     }
-    let dir = pg_testkit::run_folder_with("scratch_writeback", "odd-names", &["images"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "odd-names", &["images"]).unwrap();
     let (jpeg_name, video_name): (&[u8], &[u8]) = if cfg!(windows) {
         (b"odd\xED\xA0\x80.jpg", b"clip\xED\xA0\x80.mp4")
     } else {
@@ -288,7 +287,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     // The clip from the video crate's tests: 64x48, six frames.
     std::fs::write(
         images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(video_name))),
-        include_bytes!("../../video/tests/sample.mp4"),
+        pg_testkit::VIDEO_SAMPLE,
     )
     .unwrap();
 
@@ -345,10 +344,10 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
         pg_render::display::decode(&mut Decoder::new().unwrap(), &turned, MinSize::Full, Turns::NONE).unwrap().image;
     assert_eq!((now.width, now.height), (48, 64), "the JPEG is turned in place");
     assert_eq!(Meta::read(&turned, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(4));
-    let clip = include_bytes!("../../video/tests/sample.mp4");
+    let clip = pg_testkit::VIDEO_SAMPLE;
     assert_eq!(
         std::fs::read(images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(video_name)))).unwrap(),
-        clip.as_slice()
+        clip
     );
 
     drop(writer);
@@ -384,7 +383,11 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     // The queue's row, and then the status, which the writer sets after it.
     let incomplete = || matches!(writer.status().error, Some(WriteError::CopyIncomplete { .. }));
-    wait_until(120, || format!("not at the cap at {} attempts", attempts()), || attempts() >= 5 && incomplete());
+    pg_testkit::wait_until(
+        Duration::from_secs(120),
+        || format!("not at the cap at {} attempts", attempts()),
+        || attempts() >= pg_catalog::queue::MAX_ATTEMPTS && incomplete(),
+    );
 
     // At the cap: the temp and its record are kept, and the file still reads as being written.
     let row = state::write_row(&c, id).unwrap();
@@ -401,16 +404,16 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     assert!(c.file_state(id).unwrap().unwrap().writing);
     // And it waits at the cap: no more tries until a change or a start.
     std::thread::sleep(Duration::from_secs(3));
-    assert_eq!(attempts(), 5);
+    assert_eq!(attempts(), pg_catalog::queue::MAX_ATTEMPTS);
 
     // The file is free, and the writer starts again: it tries the copy again, and finishes it.
     drop(held);
     drop(writer);
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
-    wait_until(
-        60,
-        || "the copy is still queued".into(),
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the copy is still queued",
         || state::writes_queued(&c, id).unwrap() == 0 && writer.status().error.is_none(),
     );
     assert!(!on_disk(&c, &temp).exists(), "the temp is still on disk");
@@ -429,8 +432,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
 /// ExifTool (skipped without it).
 #[test]
 fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
-    if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
-        pg_testkit::missing_tool("ExifTool");
+    if exiftool_missing() {
         return;
     }
     let (dir, files, catalog_path, c) = imported("later").unwrap();
@@ -481,10 +483,10 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = |kind: &str| state::write_row_of(&c, id, kind).unwrap().attempts;
-    wait_until(
-        120,
+    pg_testkit::wait_until(
+        Duration::from_secs(120),
         || format!("rating attempts {}, turn attempts {}", attempts("rating"), attempts("rotation")),
-        || attempts("rating") >= 5 && attempts("rotation") >= 1,
+        || attempts("rating") >= pg_catalog::queue::MAX_ATTEMPTS && attempts("rotation") >= 1,
     );
     assert_eq!(state::write_row_of(&c, id, "rating").unwrap().temp, Some(rating_temp.clone()));
     assert!(on_disk(&c, &rating_temp).exists(), "the rating's temp was deleted");
@@ -515,7 +517,7 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
-    wait_until(60, || format!("{} attempts", attempts()), || attempts() >= 1);
+    pg_testkit::wait_until(Duration::from_secs(60), || format!("{} attempts", attempts()), || attempts() >= 1);
     let row = state::write_row(&c, id).unwrap();
     assert_eq!(row.temp, None, "a temp was recorded though the copy never started");
     assert!(!on_disk(&c, &temp).exists(), "the temp is left on disk");
@@ -536,7 +538,7 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
 #[test]
 fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     use pg_platform::native::verbatim;
-    let dir = std::path::absolute(pg_testkit::run_folder("scratch_rate", "dotted").unwrap()).unwrap();
+    let dir = std::path::absolute(pg_testkit::run_folder("scratch_library", "dotted").unwrap()).unwrap();
     let (dotted, sibling) = (dir.join("images").join("Acme Inc."), dir.join("images").join("Acme Inc"));
     std::fs::create_dir_all(verbatim(&dotted)).unwrap();
     std::fs::create_dir_all(&sibling).unwrap();
@@ -601,7 +603,11 @@ fn a_file_saved_between_the_read_and_the_copy_is_read_again() {
         Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault, RecordingSink::new())
             .unwrap();
     writer.wake();
-    wait_until(60, || "the turn is still queued".into(), || state::writes_queued(&c, id).unwrap() == 0);
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the turn is still queued",
+        || state::writes_queued(&c, id).unwrap() == 0,
+    );
     let now = shown(&files[1].0).unwrap();
     assert_eq!((now.width, now.height), (16, 32), "the turn of the other program's save");
 
@@ -624,9 +630,9 @@ fn a_finishing_copy_whose_temp_is_gone_completes() {
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
-    wait_until(
-        60,
-        || "the copy is still queued".into(),
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the copy is still queued",
         || state::writes_queued(&c, id).unwrap() == 0 && writer.status().error.is_none(),
     );
     assert_eq!(writer.status().error, None);
@@ -662,7 +668,7 @@ fn a_read_only_original_is_counted_up_to_the_cap() {
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     let cap = pg_catalog::queue::MAX_ATTEMPTS;
-    wait_until(120, || format!("{} attempts", attempts()), || attempts() >= cap);
+    pg_testkit::wait_until(Duration::from_secs(120), || format!("{} attempts", attempts()), || attempts() >= cap);
     let row = state::write_row(&c, id).unwrap();
     assert!(row.error.is_some() && row.temp.is_none(), "{:?}", row.error);
     assert_eq!(c.left_to_write().unwrap(), 0, "nothing left to try");
@@ -676,10 +682,10 @@ fn a_read_only_original_is_counted_up_to_the_cap() {
 
 /// A rating queued for a file that can't hold one leaves the queue as done, with no error: a BMP (known from its
 /// analysis), and a `.jpg` that is no image the app reads (its analysis failed, and its bytes are no format). Before,
-/// the second failed every attempt with "unknown format", which the status kept showing.
+/// the second failed every attempt with "unknown image format", which the status kept showing.
 #[test]
 fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
-    let dir = pg_testkit::run_folder("scratch_rate", "cantholds").unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", "cantholds").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir).unwrap();
     let junk = dir.join("images").join("g.jpg");
@@ -707,7 +713,7 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let left = || state::writes_queued(&c, bmp).unwrap() + state::writes_queued(&c, jpg).unwrap();
-    wait_until(60, || format!("{} still queued", left()), || left() == 0);
+    pg_testkit::wait_until(Duration::from_secs(60), || format!("{} still queued", left()), || left() == 0);
     assert_eq!(writer.status().error, None);
     assert_eq!(std::fs::read(&junk).unwrap(), b"not an image at all");
     let bmp_bytes = std::fs::read(&files[5].0).unwrap();
@@ -746,8 +752,8 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
         let s = writer.status();
         s.dropped == 1 && s.error_file == Some(deleted)
     };
-    wait_until(
-        60,
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
         || format!("queued {}, deleted file's attempts {}", queued(), attempts()),
         || queued() == 0 && attempts() >= 2 && noted(),
     );
@@ -759,14 +765,14 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     // The deleted file is marked missing too: its write is dropped, and its failure is no longer shown.
     state::mark_missing(&c, deleted).unwrap();
     writer.wake();
-    wait_until(
-        60,
-        || "the deleted file's write is still queued".into(),
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the deleted file's write is still queued",
         || state::writes_queued(&c, deleted).unwrap() == 0 && writer.status().dropped == 2,
     );
     let status = writer.status();
     assert_eq!(status.dropped, 2);
-    assert_eq!((status.error, status.error_file), (None, None), "the failure of a dropped write is still shown");
+    assert_eq!((status.error, status.error_file), (None, None), "the failure of a dropped write is no longer shown");
 
     // The writer told it all: each drop (an event, its count with the drain's others), the deleted file's failure
     // once (the same failure again is not news), and its end once its write was dropped.
@@ -811,7 +817,11 @@ fn a_copy_that_may_have_started_is_kept_while_its_file_is_missing() {
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     // The status is set after the job's failure is recorded in the queue.
-    wait_until(60, || "the copy's failure is not shown".into(), || writer.status().error_file == Some(id));
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the copy's failure is not shown",
+        || writer.status().error_file == Some(id),
+    );
     assert_eq!(writer.status().dropped, 0, "kept, not dropped");
     assert_eq!(state::writes_queued(&c, id).unwrap(), 1, "the row is kept");
     assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()), "the temp's record is kept");
@@ -845,7 +855,11 @@ fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     // The queue's row, and then the status, which the writer sets after it.
     let incomplete = || matches!(writer.status().error, Some(WriteError::CopyIncomplete { .. }));
-    wait_until(120, || format!("not at the cap at {} attempts", attempts()), || attempts() >= 5 && incomplete());
+    pg_testkit::wait_until(
+        Duration::from_secs(120),
+        || format!("not at the cap at {} attempts", attempts()),
+        || attempts() >= pg_catalog::queue::MAX_ATTEMPTS && incomplete(),
+    );
 
     let row = state::write_row(&c, id).unwrap();
     assert_eq!(row.temp, Some(temp.clone()), "the temp's record is kept");
@@ -883,9 +897,9 @@ fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
             .unwrap();
     writer.wake();
     // The row is gone at the record, and the temp (made before it) goes right after: both are done when the temp is.
-    wait_until(
-        60,
-        || "the cancelled job's temp is still on disk".into(),
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the cancelled job's temp is still on disk",
         || state::writes_queued(&c, id).unwrap() == 0 && !on_disk(&c, &temp).exists(),
     );
     assert_eq!(std::fs::read(&files[1].0).unwrap(), before, "the original is as it was");
@@ -901,7 +915,7 @@ fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
 #[test]
 fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // Its own folder, as the other tests here: each run_folder call gets a folder of its own.
-    let dir = pg_testkit::run_folder("scratch_rate", "finish").unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", "finish").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
@@ -993,7 +1007,7 @@ fn rapid_turns_of_one_file_are_all_made_once() {
 #[test]
 fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     // Its own folder, as the other tests here: each run_folder call gets a folder of its own.
-    let dir = pg_testkit::run_folder("scratch_rate", "poisoned").unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", "poisoned").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
@@ -1061,7 +1075,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
 /// write` stops waiting for it.
 #[test]
 fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
-    let dir = pg_testkit::run_folder("scratch_rate", "drainpanic").unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", "drainpanic").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
@@ -1213,9 +1227,9 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
 
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
-    wait_until(
-        60,
-        || "the change is still queued".into(),
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the change is still queued",
         || state::writes_queued(&c, id).unwrap() == 0 && writer.status().error.is_none(),
     );
     assert!(!on_disk(&c, &temp).exists(), "the writer finished the copy and took its temp");
@@ -1245,9 +1259,9 @@ fn a_waiting_copy_does_not_hold_back_the_other_writes() {
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
-    wait_until(
-        60,
-        || "the other rating is still queued behind the waiting copy".into(),
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the other rating is still queued behind the waiting copy",
         || state::writes_queued(&c, a).unwrap() == 0,
     );
     assert_eq!(state::file_rating_of(&c, a).unwrap(), Some(4));

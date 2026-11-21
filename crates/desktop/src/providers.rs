@@ -1,5 +1,6 @@
-//! The QML image providers. A file is named by `<file id>@<mtime>.<rotation>.<turns>` (`GalleryModel::image_key`, parsed
-//! as `pg_model::image::ImageKey`): the version changes whenever the image does, so Qt's pixmap cache never serves a
+//! The QML image providers. A file is named by its `pg_model::image::ImageKey` text, which that type's `Display` writes and
+//! `parse` reads (the layout is documented there; `GalleryModel::image_key` builds it): the version changes whenever the
+//! image does, so Qt's pixmap cache never serves a
 //! stale one, and `turns` are the quarter turns the user asked for that aren't in the file yet: the image is served
 //! already turned by them, so every view shows a turn at once. Each image comes from one view of the file (`pg_app::App`'s
 //! image methods): a thumbnail the cache keeps for the file as the key names it, from the key alone; anything else from
@@ -96,7 +97,7 @@ pub(crate) fn kind_of(provider: Provider) -> ImageKind {
 /// A Yandex result's picture, by its id: the grid picture (the JPEG the search made of its file), or the file as its
 /// host gave it (the preview's). Each is fetched now when the search doesn't keep it yet.
 fn yandex_picture(id: u64, original: bool) -> anyhow::Result<Pixels> {
-    let picture = crate::app::get().yandex().image(id)?;
+    let picture = app::get().yandex().image(id)?;
     let bytes = if original { &picture.file.bytes } else { &picture.grid };
     let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
     Ok(Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image })

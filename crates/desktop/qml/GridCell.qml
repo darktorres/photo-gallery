@@ -101,7 +101,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: width / 2
-            color: "#e57373"
+            color: Theme.errorText
         }
         Rectangle {
             anchors.centerIn: parent
@@ -139,7 +139,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "transparent"
-        border.color: "#4aa3ff"
+        border.color: Theme.selectionOutline
         border.width: 3
         visible: cell.item === cell.current
     }
@@ -158,7 +158,7 @@ Item {
         leftPadding: 4
         rightPadding: 4
         background: Rectangle {
-            color: "#a0000000"
+            color: Theme.scrimBacking
             radius: 3
         }
     }
@@ -188,7 +188,7 @@ Item {
         leftPadding: 4
         rightPadding: 4
         background: Rectangle {
-            color: "#a0000000"
+            color: Theme.scrimBacking
             radius: 3
         }
     }

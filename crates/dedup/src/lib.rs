@@ -2,9 +2,6 @@
 //! catalog's pairing pass after the import), and the union-find that groups them (`UnionFind`). Over the model's hashes
 //! only: the catalog hands the hashes in and stores the pairs found.
 
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 pub mod join;
 pub mod union_find;
 

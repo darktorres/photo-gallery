@@ -57,8 +57,8 @@ pub mod qobject {
         #[cxx_name = "endResetModel"]
         fn end_reset_model(self: Pin<&mut FailedFiles>);
 
-        /// Show what a ledger lists (a `Notices` row's `pass`: 0 the thumbnails, 1 the borders, 2 the import, 3 the scans'
-        /// folders): asked for now, shown when its read is delivered (`loading` meanwhile); -1 shows none. Asked again
+        /// Show what a ledger lists (an index into `LedgerKind::ALL`, mapped by `ledgers::kind_of`: 0 the thumbnails, 1 the
+        /// borders, 2 the import, 3 the scans' folders): asked for now, shown when its read is delivered (`loading` meanwhile); -1 shows none. Asked again
         /// for the ledger shown, it is read again (its newest failure changed) and its rows stay until then.
         #[qinvokable]
         fn show(self: Pin<&mut FailedFiles>, pass: i32);

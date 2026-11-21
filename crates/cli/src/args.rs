@@ -35,7 +35,7 @@ impl Cli {
 #[derive(clap::Args)]
 pub(crate) struct PipelineArgs {
     /// Reads in flight (≥ 8 reaches the HDD's sequential speed).
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = pipeline::READERS)]
     readers: usize,
     /// Decode threads (default: all logical CPUs).
     #[arg(long)]
@@ -55,7 +55,7 @@ impl PipelineArgs {
         opts.readers = self.readers.max(1);
         opts.workers = self.workers.unwrap_or(opts.workers).max(1);
         let budget = pipeline::Options::budget(opts.readers, opts.workers);
-        opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1) << 20);
+        opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1).saturating_mul(1 << 20));
         opts.slots = self.slots.unwrap_or(pipeline::Options::slots(opts.readers, opts.workers)).max(1);
         opts
     }

@@ -42,7 +42,7 @@ def forked_crates(lock_path: Path) -> list[tuple[str, str, str]]:
 def newest_release(crate: str) -> str:
     """The newest stable version of the crate on crates.io."""
     request = urllib.request.Request(f"https://crates.io/api/v1/crates/{crate}", headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (crates.io over https only)
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (a fixed https URL: crates.io)
         return json.load(response)["crate"]["max_stable_version"]
 
 
@@ -67,7 +67,7 @@ def report(rows: list[dict[str, str]]) -> str:
         f"| {row['newest']} | {row['status']} |"
         for row in rows
     )
-    behind = [row for row in rows if row["status"] == "newer release"]
+    behind = [row for row in rows if row["status"] == "NEWER"]
     if behind:
         lines += [
             "",
@@ -96,11 +96,11 @@ def main() -> int:
             newest = newest_release(crate)
             row["newest"] = newest
             behind = version_key(newest) > version_key(locked)
-            row["status"] = "newer release" if behind else "current"
+            row["status"] = "NEWER" if behind else "current"
         except (OSError, KeyError, ValueError) as error:
             unreadable = True
             row["newest"] = "?"
-            row["status"] = f"could not read crates.io ({error})"
+            row["status"] = f"UNREADABLE ({error})"
         rows.append(row)
 
     text = report(rows)
@@ -110,7 +110,7 @@ def main() -> int:
 
     if unreadable:
         return 2
-    if any(row["status"] == "newer release" for row in rows):
+    if any(row["status"] == "NEWER" for row in rows):
         return 1
     return 0
 

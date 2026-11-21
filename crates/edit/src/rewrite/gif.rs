@@ -34,7 +34,7 @@ fn decode_indices(lzw: &[u8], min_code: u8, pixels: usize) -> Result<Vec<u8>> {
             weezl::LzwStatus::NoProgress => bail!("damaged GIF: its image data has no end code"),
         }
     }
-    ensure!(written == pixels, "GIF image data is short");
+    ensure!(written == pixels, "the image data is short");
     Ok(indices)
 }
 

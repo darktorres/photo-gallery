@@ -18,12 +18,12 @@ from pathlib import Path
 import env
 from nvidia import nvimgcodec as nv
 from reference_io import read_ppm
+from timing import BUDGET_S
 
 if not os.environ.get("PG_JPEG_ENC_DIR"):
     raise SystemExit("set PG_JPEG_ENC_DIR (.env) to encoders.py's work folder, the one the container mounts")
 W = Path(os.environ["PG_JPEG_ENC_DIR"])
 QUALITIES = [50, 60, 70, 75, 80, 85, 90, 95]
-BUDGET_S = 2.0
 
 
 def nv_params(q):

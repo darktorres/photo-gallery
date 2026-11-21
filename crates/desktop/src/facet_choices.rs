@@ -20,6 +20,7 @@ use pg_client::text;
 use pg_model::query::{ListFacet, Query};
 
 use crate::controller;
+use crate::rows::qt_int;
 
 const ROLE_KEY: i32 = 256;
 const ROLE_LABEL: i32 = 257;
@@ -28,7 +29,7 @@ const ROLE_CHOSEN: i32 = 259;
 
 /// Counts saturate: the properties are ints, as QML's are. (`Filters` shows its totals with the same function.)
 pub(crate) fn count(n: i64) -> i32 {
-    i32::try_from(n.max(0)).unwrap_or(i32::MAX)
+    qt_int(n.max(0))
 }
 
 /// The rows of `facet` for a query and counts.

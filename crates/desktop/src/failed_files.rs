@@ -18,6 +18,7 @@ use pg_app::{Failed, FailedItems};
 use pg_client::text;
 use pg_model::rules::Path as RulePath;
 
+use crate::rows::qt_int;
 use crate::{app, ledgers};
 use state::Shown;
 
@@ -51,11 +52,6 @@ fn rows_of(items: FailedItems) -> Vec<Shown> {
         FailedItems::Files(files) => files.into_iter().map(Shown::File).collect(),
         FailedItems::Folders(folders) => folders.into_iter().map(Shown::Folder).collect(),
     }
-}
-
-/// A count as QML takes it.
-fn qt_int(n: impl TryInto<i32>) -> i32 {
-    n.try_into().unwrap_or(i32::MAX)
 }
 
 thread_local! {
@@ -142,7 +138,7 @@ impl qobject::FailedFiles {
         self.as_mut().put_loading(true);
         let list = self.qt_thread();
         let seen_to = crate::notices::seen_at_open(kind);
-        app::get().reading().session().failed_files(kind, SHOWN, seen_to, move |read| {
+        app::session().failed_files(kind, SHOWN, seen_to, move |read| {
             // Fails only when the window is gone: nothing left to show it in.
             let _ = list.queue(move |list| list.delivered(asked, read));
         });
@@ -162,7 +158,7 @@ impl qobject::FailedFiles {
                 self.put(rows_of(items), counts.total);
             }
             Err(e) => {
-                pg_log::warn("inbox", &format!("the ledger's list couldn't be read: {e}"));
+                pg_log::warn("inbox", &format!("the ledger's list couldn't be read: {e:#}"));
                 // The error alone: InboxPanel words it (`ui-inbox-unreadable`).
                 self.put_error(QString::from(&app::error_text(&e)));
             }

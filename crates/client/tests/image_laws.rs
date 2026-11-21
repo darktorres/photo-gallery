@@ -29,7 +29,7 @@ proptest! {
         id in any::<u64>(),
         original in any::<bool>(),
     ) {
-        let version = versioned.then_some(Version { mtime, rotation, turns: pending });
+        let version = versioned.then_some(Version { mtime, rotation, pending_turns: pending });
         let key = ImageKey { file: FileId::new(file), version };
         let request = match kind {
             0 => ImageRequest::thumb(key, pg_model::size::ThumbHeight::new(height).expect("a height in the cache's range")),

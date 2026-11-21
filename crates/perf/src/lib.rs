@@ -14,8 +14,6 @@
 //!
 //! The library writes to no console: the echo is the command line's or the app's, through the sink it opens.
 
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::io;
@@ -29,6 +27,10 @@ use serde_json::{Map, Value, json};
 
 /// The most bytes of a perf file before it is rotated (its older files are kept beside it, as the app log's are).
 pub const FILE_CAP: u64 = 16 * 1024 * 1024;
+
+/// The `program` every perf log's meta names. The command line and the window are one executable, so both write this
+/// name (the CLI and the app's trace used to differ).
+pub const PROGRAM: &str = "gallery";
 
 /// Where the records go. A file, or an echo: each top-level span (one with no parent) is handed to the echo as its line.
 enum Sink {
@@ -452,11 +454,24 @@ pub fn capture<T>(f: impl FnOnce() -> T) -> (T, Vec<Value>) {
     lock(&CAPTURED).clear();
     let was_enabled = ENABLED.swap(true, Ordering::Relaxed);
     let was_here = CAPTURE_HERE.with(|here| here.replace(true));
+    let restore = RestoreCapture { was_enabled, was_here };
     let out = f();
-    CAPTURE_HERE.with(|here| here.set(was_here));
-    ENABLED.store(was_enabled, Ordering::Relaxed);
+    drop(restore);
     let records = std::mem::take(&mut *lock(&CAPTURED));
     (out, records)
+}
+
+/// The capture flags as they were before a capture, put back when it ends: by its return, or by a panic in its closure.
+struct RestoreCapture {
+    was_enabled: bool,
+    was_here: bool,
+}
+
+impl Drop for RestoreCapture {
+    fn drop(&mut self) {
+        CAPTURE_HERE.with(|here| here.set(self.was_here));
+        ENABLED.store(self.was_enabled, Ordering::Relaxed);
+    }
 }
 
 /// The table of a perf file: for each session in it, the steps by name (count, total and self time, their share of the

@@ -9,16 +9,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pgtools import WINDOWS, just_value, load_env_file
+from pgtools import QT_KIT, WINDOWS, just_value, load_env_file, not_set
 
 
 def main() -> None:
     load_env_file()
     wanted = just_value("qt_version")
     qt = os.environ.get("QT_DIR", "")
-    kit = "msvc2022_64" if WINDOWS else "gcc_64"
+    kit = QT_KIT
     if not qt:
-        sys.exit(f"QT_DIR is not set: put the Qt kit folder in .env (QT_DIR=<path>/{wanted}/{kit})")
+        not_set("QT_DIR", f"put the Qt kit folder in the environment or .env (QT_DIR=<path>/{wanted}/{kit})")
     qmake = Path(qt) / "bin" / ("qmake.exe" if WINDOWS else "qmake")
     if not qmake.is_file():
         sys.exit(f"no {qmake.name} in {qmake.parent}: QT_DIR must be the Qt {wanted} {kit} kit")

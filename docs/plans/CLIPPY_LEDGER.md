@@ -74,12 +74,13 @@ To be enabled in one change. Each lint has zero hits in the current tree, so the
 | `unused_macro_rules` | warn | 0 | none | not started |
 | `non_ascii_idents` | warn | 0 | none | not started |
 | clippy cargo group, except `multiple_crate_versions` (Phase 12) | warn | 0 | none | not started |
-| the 171 names below | warn | 0 | Add each name at `warn`; no code change expected | not started |
+| the 171 names below | deny | 0 | Add each name at `deny`; no code change expected | not started |
 
 These 171 lints are not in the default set, have zero hits in the current tree on Windows and WSL, and are not named
 elsewhere in this ledger. Enabling them is configuration only: each has zero sites, so the gate stays clean and the
-change adds no churn. Enable them at `warn` in `[workspace.lints.clippy]` in one change, then deny them once the
-gate has run clean.
+change adds no churn. Enable them at `deny` in `[workspace.lints.clippy]` in one change. A `warn` stage does not fit the
+gate: `just lint` runs clippy with `-D warnings` (see Current configuration), so a warn-level lint fails it. With zero
+hits, `deny` passes the gate directly.
 
 Before adding a name, check it against the toolchain's lint list (`cargo clippy -- -W help`). Some names in the
 list are deprecated or renamed, and enabling those does nothing, so they are left out until they are checked.
@@ -144,7 +145,8 @@ once the sites are fixed.
 
 ## Phase 7: unsafe code (decided)
 
-`unsafe_code` flags every `unsafe` block, function and impl. The workspace has 472 such sites. 446 are in `desktop`,
+`unsafe_code` flags every `unsafe` block, function and impl. The baseline run counted 472 lint hits (compiler diagnostics,
+not source lines; the grep counts are in `VALUE_PROVENANCE_IDEAS.md` and `NIGHTLY_AND_BUILD_FLAGS_PLAN.md`). 446 hits are in `desktop`,
 spread over 23 hand-written files (`gallery.rs` and `shell.rs` hold 170 between them), 20 are in `platform`, and the
 rest are in `gallery`, `trace` and `video`. The policy is recorded in the table below.
 

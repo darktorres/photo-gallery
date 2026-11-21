@@ -448,7 +448,7 @@ differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
   - There, the folded write (variant c) drops 12% in instructions and 51% on Windows (44.4 → 21.6 ms).
   - `1200,500` and `1200,1000` gave the same as `1200,200`.
 - **Decided (D2): every connection.**
-  - It costs 192 KB more per connection, small next to each catalog connection's 256 MB page cache (`schema.rs:479`).
+  - It costs 192 KB more per connection, small next to each catalog connection's 8 MB page cache (`schema.rs:114-117`).
   - It needs no `unsafe` call.
 
 ### Phase 2: design
@@ -799,7 +799,7 @@ lister**).
   as now: the seen identities, chain, mounts, skip rules, batches, lease and the seen set. Its results equal a
   single-threaded walk's.
 - **Worker connections.** Each worker has its own `Lister` and its own read-only connection with a small page cache.
-  `Catalog::open` would carry the 256 MB `cache_size` of `SETTINGS` on each.
+  `Catalog::open` would carry the 8 MB `cache_size` of `SETTINGS` on each.
   - **Not `Catalog::reader`** (`core.rs:214`), though it opens the same kind of connection. Its `Reader` borrows the
     `Catalog`, which the walk holds mutably for its batches, so it can't be on another thread. And for an in-memory
     catalog it reuses the catalog's own connection.
@@ -964,7 +964,7 @@ and takes the write lock only when there are rows to mark.
 - **10:** `Ext::of_name_bytes` compares an ASCII extension byte by byte, without decoding (`eq_ignore_ascii_case` against the
   lower-case lists).
 - **11:** a listed file's name moves into its batch entry (`ListedFile::name`); the walk owns the listing.
-- **13:** the walk's seen set is a `HashSet`; it is only queried for membership.
+- **13:** the walk's seen set is a `BTreeSet` (the clippy ban on std hash containers rules out `HashSet`); it is only queried for membership.
 
 **Not built, and why:**
 
@@ -1018,7 +1018,7 @@ From the report's item verdicts, with the reason:
 - **D2. Lookaside for every connection. Decided (2026-11-15)** (Phase 2).
 - **D3. The perf baseline. Superseded (2026-11-17).**
   - The user re-measured the baseline at `0d44547` (`f036825`), which contains Phase F. The scan gate is live (±1%,
-    `tools/perf-compare.py`).
+    `tools/perf_check.py`, which runs `tools/perf-compare.py` as the comparison).
   - Each phase now re-baselines its own scan entries in its commit, from its callgrind archive, as `f036825` did.
   - The decision as first written, kept for its reasons:
   - Phases 1 to 3 move `scan_walk.first` and `scan_walk.again` (`docs/perf/baseline.json`) far outside ±1%. Phase 4

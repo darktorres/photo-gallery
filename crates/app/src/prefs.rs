@@ -6,13 +6,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pg_jobs::NoticeSink;
 use pg_model::features::Features;
 use pg_model::ids::FileId;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::RowHeight;
+use pg_model::versions::PREFS_VERSION;
 use serde::{Deserialize, Serialize};
 
-use crate::inbox::Inbox;
 use crate::store::{JsonStore, Save};
 use pg_model::notice::{ERROR_CAP, Notice, Trigger, tidy};
 
@@ -21,12 +22,16 @@ use pg_model::notice::{ERROR_CAP, Notice, Trigger, tidy};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
+    /// The layout the file was written in (`PREFS_VERSION`). Every save stamps it; a file without the key reads as 0 (the
+    /// field-level default, not the struct's), so the layout it was written in stays known until it is saved again.
+    #[serde(default)]
+    pub version: i64,
     /// Write ratings and turns into the files too (on by default); off keeps them in the catalog only.
     pub write_back: bool,
     /// The folder Yandex results were last saved into; None before the first save.
     #[serde(with = "yandex_folder")]
     pub yandex_folder: Option<RulePath>,
-    /// The viewer opens images at 1:1 instead of fitted (ImageRater's Real Size), across images and runs.
+    /// The viewer opens images at 1:1 instead of fitted (a rating app's Real Size), across images and runs.
     pub real_size: bool,
     /// The grid and the viewer show what cropping the borders would cut (B).
     pub show_borders: bool,
@@ -119,6 +124,7 @@ mod last_file {
 impl Default for Prefs {
     fn default() -> Prefs {
         Prefs {
+            version: PREFS_VERSION,
             write_back: true,
             yandex_folder: None,
             real_size: false,
@@ -139,13 +145,13 @@ impl Default for Prefs {
 pub struct PrefStore {
     store: JsonStore<Prefs>,
     path: PathBuf,
-    inbox: Arc<Inbox>,
+    inbox: Arc<dyn NoticeSink>,
 }
 
 impl PrefStore {
     /// Read the preferences at `path`: the defaults where the file is missing or doesn't parse (a notice says why, and where
     /// the unreadable file was kept).
-    pub(crate) fn open(path: PathBuf, inbox: Arc<Inbox>) -> PrefStore {
+    pub(crate) fn open(path: PathBuf, inbox: Arc<dyn NoticeSink>) -> PrefStore {
         let (store, unreadable) = JsonStore::open(path.clone());
         if let Some(u) = unreadable {
             let (kept, keep_error) = match u.kept {
@@ -176,7 +182,11 @@ impl PrefStore {
     /// Change the preferences now, and return the save of the file: `PrefSave::write` writes it, on any thread, so the
     /// disk is not waited for where the change is made.
     pub fn change(&self, change: impl FnOnce(&mut Prefs)) -> PrefSave {
-        PrefSave { save: self.store.change(change), path: self.path.clone(), inbox: self.inbox.clone() }
+        let save = self.store.change(|prefs| {
+            change(prefs);
+            prefs.version = PREFS_VERSION;
+        });
+        PrefSave { save, path: self.path.clone(), inbox: self.inbox.clone() }
     }
 }
 
@@ -185,7 +195,7 @@ impl PrefStore {
 pub struct PrefSave {
     save: Save<Prefs>,
     path: PathBuf,
-    inbox: Arc<Inbox>,
+    inbox: Arc<dyn NoticeSink>,
 }
 
 impl PrefSave {
@@ -210,6 +220,7 @@ mod tests {
 
     /// The file's text, pinned: the field names, their order and the number formats are the format on disk.
     const GOLDEN: &str = r#"{
+  "version": 1,
   "write_back": true,
   "yandex_folder": "",
   "real_size": false,
@@ -234,6 +245,12 @@ mod tests {
     }
 
     #[test]
+    fn a_file_without_a_version_reads_as_version_zero() {
+        assert_eq!(serde_json::from_str::<Prefs>(r#"{"row_height": 333.5}"#).unwrap().version, 0);
+        assert_eq!(serde_json::from_str::<Prefs>(GOLDEN).unwrap().version, PREFS_VERSION);
+    }
+
+    #[test]
     fn a_float_row_height_from_an_old_file_reads_rounded_and_clamped() {
         let read =
             |px: &str| serde_json::from_str::<Prefs>(&format!(r#"{{"row_height": {px}}}"#)).unwrap().row_height.get();
@@ -254,7 +271,7 @@ mod tests {
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false,"thumb_cache":true}"#
+            r#"{"version":1,"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false,"thumb_cache":true}"#
         );
     }
 

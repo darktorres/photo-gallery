@@ -48,6 +48,14 @@ pub fn local_time() -> LocalTime {
     }
 }
 
+/// The Unix time in whole seconds, as the database and the notices store it (`i64`). A clock before the epoch reads as 0,
+/// and a time past `i64::MAX` seconds saturates; neither happens on a working clock.
+pub fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
+
 /// A calendar field as the Windows API holds it (`SYSTEMTIME`'s fields are `u16`). The fallback is for a year past 65535,
 /// which the clock can't reach in practice.
 #[cfg(not(windows))]

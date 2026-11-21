@@ -16,6 +16,7 @@ use crate::yandex_bridge::qobject;
 use std::path::Path;
 use std::pin::Pin;
 
+use crate::rows::qt_int;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::yandex::Hit;
@@ -24,7 +25,13 @@ use pg_client::layout;
 use pg_client::results::Results;
 use pg_client::text::{self, Message, render};
 use pg_model::ids::FileId;
-use pg_model::yandex::{Phase, Status};
+use pg_model::yandex::{Phase, YandexStatus};
+
+/// A status line's text. A panic's line names the log's file as it is on disk: the log is open before the window is made.
+fn status_text(status: &YandexStatus) -> String {
+    let log = pg_log::path().map(|p| p.display().to_string()).unwrap_or_default();
+    text::yandex_status(status, &log)
+}
 
 const ROLE_THUMB: i32 = 256;
 const ROLE_IMAGE_WIDTH: i32 = 257;
@@ -62,16 +69,6 @@ fn picture_url(id: u64) -> String {
 /// The URL of a result's file as its host gave it, for the preview at full size.
 fn original_url(id: u64) -> String {
     ImageRequest::Yandex { id, original: true }.url()
-}
-
-/// A count or a row as Qt's int, saturating: a Qt model holds no more rows than an int counts.
-fn qt_int(n: usize) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
-}
-
-/// A side in pixels as Qt's int, saturating.
-fn qt_side(n: u32) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
 }
 
 /// A result's aspect ratio, for its frame: its size as Yandex gives it, or square when it gives none.
@@ -174,7 +171,7 @@ impl qobject::YandexSearch {
         // Without its thread the panel isn't told the search's changes: the log says why, and the next search tries
         // again.
         if let Err(e) = pump {
-            pg_log::warn("yandex", &format!("the change pump didn't start: {e}"));
+            pg_log::warn("yandex", &format!("the change pump didn't start: {e:#}"));
             self.as_mut().rust_mut().pump = false;
         }
     }
@@ -345,8 +342,8 @@ impl qobject::YandexSearch {
                 };
                 (
                     QString::from(&original_url(hit.id)),
-                    qt_side(hit.width),
-                    qt_side(hit.height),
+                    qt_int(hit.width),
+                    qt_int(hit.height),
                     self.results.picks().is_picked(i),
                     QString::from(&around(i + len - 1)),
                     QString::from(&around(i + 1)),
@@ -373,7 +370,7 @@ impl qobject::YandexSearch {
             self.as_mut().drop_dead(&poll.dead);
         }
         if let Some(status) = poll.status {
-            self.as_mut().set_status(QString::from(&text::yandex_status(&status)));
+            self.as_mut().set_status(QString::from(&status_text(&status)));
         }
         self.set_busy(poll.busy);
     }
@@ -388,8 +385,8 @@ impl qobject::YandexSearch {
         let frame = self.frames.get(i).copied().unwrap_or_default();
         match role {
             ROLE_THUMB => QVariant::from(&QString::from(&picture_url(hit.id))),
-            ROLE_IMAGE_WIDTH => QVariant::from(&qt_side(hit.width)),
-            ROLE_IMAGE_HEIGHT => QVariant::from(&qt_side(hit.height)),
+            ROLE_IMAGE_WIDTH => QVariant::from(&qt_int(hit.width)),
+            ROLE_IMAGE_HEIGHT => QVariant::from(&qt_int(hit.height)),
             ROLE_PICKED => QVariant::from(&self.results.picks().is_picked(i)),
             ROLE_FRAME_X => QVariant::from(&frame.x),
             ROLE_FRAME_Y => QVariant::from(&frame.y),
@@ -465,13 +462,13 @@ impl qobject::YandexSearch {
             Err(e) => return self.not_started("save", &e),
         }
         self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from(&text::yandex_status(&Status::Working(Phase::Saving { files }))));
+        self.as_mut().set_status(QString::from(&status_text(&YandexStatus::Working(Phase::Saving { files }))));
     }
 
     /// A search or a save (`what`) whose thread the system refused: the log says why, and so does the status line.
     /// Nothing runs, so the panel isn't busy.
     fn not_started(mut self: Pin<&mut Self>, what: &str, e: &std::io::Error) {
-        pg_log::warn("yandex", &format!("the {what} didn't start: {e}"));
+        pg_log::warn("yandex", &format!("the {what} didn't start: {e:#}"));
         self.as_mut().set_busy(false);
         self.as_mut().set_status(QString::from(&render(&Message::YandexNotStarted { error: e.to_string() })));
     }

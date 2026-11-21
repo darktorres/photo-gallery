@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pgtools import QT_DIR_HOW, not_set
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -33,7 +35,7 @@ def main() -> int:
     # `just` loads .env into the environment (dotenv-load), so QT_DIR is set here.
     qt_dir = os.environ.get("QT_DIR")
     if not qt_dir:
-        sys.exit("QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env.")
+        not_set("QT_DIR", QT_DIR_HOW)
     files = tracked_qml()
     if not files:
         print("format_qml: no tracked QML files")

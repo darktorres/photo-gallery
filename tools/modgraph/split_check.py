@@ -22,6 +22,8 @@ import re
 import sys
 from pathlib import Path
 
+from testcut import production_part
+
 REPO = Path(__file__).resolve().parents[2]
 FREE = re.compile(
     r"^(?:pub(?:\([a-z]+\))? )?(?:const |static |unsafe |async )*(fn|struct|enum|const|static|type|trait)\s+([A-Za-z_]\w*)"
@@ -69,8 +71,8 @@ def parse(path):
     """
     text = (REPO / path).read_text(encoding="utf-8")
     lines = text.split("\n")
-    cut = re.search(r"^#\[cfg\(test\)\]", text, re.MULTILINE)
-    stop = text[: cut.start()].count("\n") if cut else len(lines)
+    prod = production_part(text)
+    stop = prod.count("\n") if len(prod) < len(text) else len(lines)
     starts = []  # (line, kind, name, impl_type)
     impl_type = None
     for i in range(stop):

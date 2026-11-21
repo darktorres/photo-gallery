@@ -69,7 +69,9 @@ pub const DISMISSED_FOR: i64 = 30 * 24 * 60 * 60;
 /// An entry as the inbox lists it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
+    /// The entry's id: a row's or a ledger's (see [`EntryId`]).
     pub id: EntryId,
+    /// What the entry says, as the notice this build makes of its kind.
     pub notice: Notice,
     /// A row's: how many times it was posted (a state's repeats, in `total`). A ledger's: read only while the inbox is
     /// viewed, `None` otherwise (nothing renders a count then).
@@ -77,6 +79,7 @@ pub struct Entry {
     /// When it was first posted, and last (Unix seconds).
     pub created: i64,
     pub updated: i64,
+    /// Whether the user has read it.
     pub read: bool,
     /// Why a stored row of a kind this build knows couldn't be read (it then reads as [`Notice::Unknown`]): a bad
     /// payload, which the inbox logs. `None` for a row read, and for a retired or unknown kind (expected).
@@ -89,10 +92,13 @@ pub struct Entry {
 /// count, or its revision in its id), or newly read; a ledger by the newest row in its id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mark {
+    /// The entry the mark is for.
     pub id: EntryId,
     /// A row's posts; 0 for a ledger, whose counts aren't read for its mark.
     pub count: u64,
+    /// The entry's level.
     pub level: Level,
+    /// Whether the entry was read when the mark was taken.
     pub read: bool,
 }
 
@@ -257,7 +263,7 @@ impl Catalog {
                 let mark = Mark {
                     id: EntryId::Row { id: r.get(0)?, uid: r.get(1)?, rev: r.get(2)? },
                     count: count(r.get(3)?),
-                    level: level_of(r.get(4)?),
+                    level: Level::from_code(r.get(4)?),
                     read: r.get(5)?,
                 };
                 Ok((mark, r.get::<_, i64>(6)?))
@@ -294,7 +300,8 @@ impl Catalog {
         Ok(changed)
     }
 
-    /// "Mark all read": the entries displayed, `ids` ([`Catalog::mark_read`]), and never one the window wasn't given.
+    /// "Mark all read": marks `ids` as [`Catalog::mark_read`] does. The caller passes the entries the window displays;
+    /// this does not check them against what was displayed (the catalog has no record of it).
     pub fn mark_all_read(&self, ids: &[EntryId], now: i64) -> Result<bool> {
         self.mark_read(ids, now)
     }
@@ -380,7 +387,7 @@ fn upsert(rules: PathRules, tx: &Connection, notice: &Notice, times: u64, now: i
         key,
         part,
         root,
-        level_code(notice.level()),
+        notice.level().code(),
         notice.source().code(),
         notice.code(),
         data,
@@ -421,22 +428,6 @@ fn decode(kind: &str, data: &str) -> Decoded {
     }
 }
 
-fn level_code(level: Level) -> i64 {
-    match level {
-        Level::Info => 0,
-        Level::Warning => 1,
-        Level::Error => 2,
-    }
-}
-
-fn level_of(code: i64) -> Level {
-    match code {
-        0 => Level::Info,
-        1 => Level::Warning,
-        _ => Level::Error,
-    }
-}
-
 /// A stored count (never negative).
 fn count(n: i64) -> u64 {
     u64::try_from(n).unwrap_or(0)
@@ -445,7 +436,7 @@ fn count(n: i64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browse::fixtures::under_both_rules;
+    use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::raw;
     use crate::ledger;
     use crate::test_support::{p, versions};
@@ -559,11 +550,16 @@ mod tests {
         a_dismissed_event_goes_and_a_dismissed_state_is_kept_posix
     );
 
+    under_both_rules!(
+        a_mark_of_an_older_row_leaves_the_later_rows_unread,
+        a_mark_of_an_older_row_leaves_the_later_rows_unread_windows,
+        a_mark_of_an_older_row_leaves_the_later_rows_unread_posix
+    );
+
     // A mark of one row (an older one, not the newest) reads that row alone: the rows posted before and after it keep
     // their state, so a later row is not read by an earlier one's mark.
-    #[test]
-    fn a_mark_of_an_older_row_leaves_the_later_rows_unread() {
-        let c = catalog(PathRules::Posix);
+    fn a_mark_of_an_older_row_leaves_the_later_rows_unread(rules: PathRules) {
+        let c = catalog(rules);
         c.post_notice(&event(1), 10).unwrap();
         c.post_notice(&event(2), 11).unwrap();
         c.post_notice(&event(3), 12).unwrap();
@@ -632,10 +628,15 @@ mod tests {
         a_folders_notices_go_with_the_folder_posix
     );
 
+    under_both_rules!(
+        a_row_this_build_cant_read_is_unknown,
+        a_row_this_build_cant_read_is_unknown_windows,
+        a_row_this_build_cant_read_is_unknown_posix
+    );
+
     // A row of a kind this build doesn't know (or retired) reads as Unknown, by its code; one this build wrote reads back.
-    #[test]
-    fn a_row_this_build_cant_read_is_unknown() {
-        let c = catalog(PathRules::Posix);
+    fn a_row_this_build_cant_read_is_unknown(rules: PathRules) {
+        let c = catalog(rules);
         c.conn
             .execute(
                 "INSERT INTO notices(level, source, kind, data, created, updated)
@@ -663,11 +664,17 @@ mod tests {
 
     // A pass's failures are one entry, among the rows by its time; it is marked and dismissed as listed, and its counts
     // are read only while the inbox is viewed.
-    #[test]
-    fn a_ledger_is_listed_among_the_rows() {
-        let c = catalog(PathRules::Posix);
-        crate::fixture::state::add_scan(&c, 1, "/p").unwrap();
-        crate::fixture::state::add_folder(&c, 1, "/p").unwrap();
+    under_both_rules!(
+        a_ledger_is_listed_among_the_rows,
+        a_ledger_is_listed_among_the_rows_windows,
+        a_ledger_is_listed_among_the_rows_posix
+    );
+
+    fn a_ledger_is_listed_among_the_rows(rules: PathRules) {
+        let c = catalog(rules);
+        let folder = spelled(rules, r"D:\p");
+        crate::fixture::state::add_scan(&c, 1, &folder).unwrap();
+        crate::fixture::state::add_folder(&c, 1, &folder).unwrap();
         let file = pg_model::ids::FileId::new(1);
         crate::fixture::insert(
             &c,
@@ -818,6 +825,6 @@ mod tests {
         let back = c.inbox_entries(10, false).unwrap();
         assert_eq!((back.len(), back[0].read), (1, false), "new data is listed again, unread");
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

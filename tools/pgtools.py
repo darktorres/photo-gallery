@@ -3,6 +3,7 @@ run reads it here), the lint tools at CI's pins (in `.venv` and `tools/lint`, el
 library only, the same on every OS.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 if sys.version_info < (3, 12):  # noqa: UP036 (the target is the floor; this guard is for an older Python)
     sys.exit(
@@ -23,6 +25,28 @@ _ENV_LINE = re.compile(r"^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$")
 # The MSVC toolset of the static builds (vcvars64 -vcvars_ver). The PowerShell copies keep their own; a tools test asserts
 # they agree.
 MSVC_TOOLSET = "14.44.35207"
+# The default Visual Studio Build Tools and MSYS2 folders of the static builds. The PowerShell copies keep their own; the
+# tools test asserts they agree.
+DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
+DEFAULT_MSYS = Path(r"C:\tools\msys64")
+
+
+# The profiling tools' defaults, shared by build.py, profile.py and symbolize.py. profile.ps1 keeps its own copy of the Pin
+# default (it cannot import this module). Each raises KeyError when its environment variable is unset: callers check first.
+def default_llvm_dir() -> Path:
+    """LLVM's default folder, %ProgramFiles%\\LLVM (the LLVM_DIR default)."""
+    return Path(os.environ["PROGRAMFILES"]) / "LLVM"
+
+
+def default_pin_root() -> Path:
+    """Intel SDE's Pin kit, %LOCALAPPDATA%\\Programs\\sde\\pinkit (the PIN_ROOT default; pin.exe is in it)."""
+    return Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit"
+
+
+# The Qt kit folder under a Qt version: the MSVC kit on Windows, GCC elsewhere (`QT_KIT` is this OS's).
+WINDOWS_QT_KIT = "msvc2022_64"
+LINUX_QT_KIT = "gcc_64"
+QT_KIT = WINDOWS_QT_KIT if WINDOWS else LINUX_QT_KIT
 
 
 def just_value(name: str) -> str:
@@ -64,6 +88,11 @@ def venv_exe(name: str) -> Path:
     """A program of the repository's `.venv` (its `Scripts` folder on Windows, `bin` elsewhere)."""
     folder = "Scripts" if WINDOWS else "bin"
     return REPO / ".venv" / folder / (name + ".exe" if WINDOWS else name)
+
+
+def default_python() -> str:
+    """The Python the Justfile's `py` uses when PG_PYTHON is not set: `python` on Windows, `python3` elsewhere."""
+    return "python" if WINDOWS else "python3"
 
 
 LINT_DIR = REPO / "tools" / "lint"
@@ -120,6 +149,37 @@ def import_msvc_environment(build_tools: Path, toolset: str | None = None) -> st
     if toolset and f"\\{toolset}\\" not in cl:
         sys.exit(f"cl.exe is not toolset {toolset}: {cl}")
     return cl
+
+
+def not_set(name: str, how: str) -> NoReturn:
+    """Ends the program: the environment variable `name` is not set. `how` says what to give it, and where (the environment
+    or the repository's `.env`). Every tool words this one message the same way."""
+    sys.exit(f"{name} is not set: {how}")
+
+
+# What QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives. The PowerShell scripts repeat them
+# (qmltest.ps1), since they cannot import this module.
+QT_DIR_HOW = "point it at the Qt kit folder (the one with bin and lib), in the environment or in .env"
+
+
+def checked(what: str, command: list[str], log: Path | None = None, cwd: Path | None = None) -> None:
+    """Runs `command`, its output in `log` when given; a failure ends this program."""
+    if log is None:
+        result = subprocess.run(command, cwd=cwd, check=False)
+    else:
+        with log.open("w", encoding="utf-8") as file:
+            result = subprocess.run(command, cwd=cwd, stdout=file, stderr=subprocess.STDOUT, check=False)
+    if result.returncode != 0:
+        sys.exit(f"{what} failed (exit {result.returncode})")
+
+
+def sha256(path: Path) -> str:
+    """The file's SHA-256 in upper case, as the pins and the manifests write it."""
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest().upper()
 
 
 def run(cmd: list[str], env: dict[str, str] | None = None, quiet: bool = False, cwd: Path = REPO) -> None:

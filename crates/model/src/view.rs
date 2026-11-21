@@ -12,7 +12,9 @@ use crate::rules::Merged;
 pub struct Listing {
     /// The folder, merged; empty for all folders.
     pub folder: Merged,
+    /// Whether the folder's subfolders are listed with it.
     pub recursive: bool,
+    /// The order the rows are listed in.
     pub sort: Sort,
     /// The filter bar's query (`Query` as JSON in the catalog; empty when none).
     pub query: Query,
@@ -25,7 +27,7 @@ impl Default for Listing {
     }
 }
 
-/// A saved view (ImageRater's bookmarks): a listing with a name.
+/// A saved view (a rating app's bookmarks): a listing with a name.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct SavedView {
     pub name: String,

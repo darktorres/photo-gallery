@@ -11,8 +11,8 @@ from, as the compiler resolves it: a private import is the module's own binding,
 is cxx-qt's: a bridge must name its backing struct as `super::T` (cxx-qt-gen, foreignmod.rs), so `x.rs` binds it with
 `use state::XRust;` and the bridge's `super::XRust` is an edge to `x::state`, not back to `x`.
 
-Test-only code is excluded: whole files named tests.rs (or under a tests/ folder), and inline `#[cfg(test)] mod`
-blocks, which are cut from the file before scanning.
+Test-only code is excluded: whole files named tests.rs (or under a tests/ folder), and everything from a file's first
+line-start `#[cfg(test)]` (the rule `testcut` states, shared with the other modgraph tools), which is cut before scanning.
 
 Usage: python tools/modgraph/module_graph.py [OUT_DIR]   (default: target/modgraph)
 Writes graph.json, summary.json, and one <crate>.dot per crate. Standard library only.
@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 from allowlist import check_all
+from testcut import production_part
 
 REPO = Path(__file__).resolve().parents[2]
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "target" / "modgraph"
@@ -59,9 +60,8 @@ def is_test_file(path):
 
 
 def production_text(text):
-    """Cut the text at an inline test module (by convention it comes last in the file)."""
-    m = re.search(r"#\[cfg\(test\)\]\s*mod\s+\w+\s*\{", text)
-    return text[: m.start()] if m else text
+    """The production code: cut at the test section, the first line-start `#[cfg(test)]` (see `testcut`)."""
+    return production_part(text)
 
 
 def inline_mods(text):
@@ -331,8 +331,8 @@ def main():
         }
         write_dot(crate, nodes, edges)
 
-    (OUT / "graph.json").write_text(json.dumps(graph, indent=1), encoding="utf-8")
-    (OUT / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
+    (OUT / "graph.json").write_text(json.dumps(graph, indent=2), encoding="utf-8")
+    (OUT / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     for crate, s in summary.items():
         print(f"{crate}: {s['modules']} modules, {s['edges']} edges, cycles={len(s['cycles'])}")

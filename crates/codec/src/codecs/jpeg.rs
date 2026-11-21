@@ -92,9 +92,10 @@ pub(super) fn decode(
 fn jpeg_error(err: zune_jpeg::errors::DecodeErrors) -> ImageError {
     use zune_jpeg::errors::DecodeErrors;
     match err {
-        DecodeErrors::Unsupported(desc) => ImageError::Unsupported(UnsupportedError::from_format_and_kind(
+        // zune-jpeg's reason has no `Display`, only `Debug`, and that form is not for a user: the text names the cause.
+        DecodeErrors::Unsupported(_) => ImageError::Unsupported(UnsupportedError::from_format_and_kind(
             ImageFormat::Jpeg.into(),
-            UnsupportedErrorKind::GenericFeature(format!("{desc:?}")),
+            UnsupportedErrorKind::GenericFeature("a JPEG coding this decoder does not read".to_string()),
         )),
         DecodeErrors::LargeDimensions(_) => ImageError::Limits(LimitError::from_kind(LimitErrorKind::DimensionError)),
         err => ImageError::Decoding(DecodingError::new(ImageFormat::Jpeg.into(), err)),

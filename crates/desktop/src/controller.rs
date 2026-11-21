@@ -46,7 +46,7 @@ impl Core {
                 None
             }
             Err(e) => {
-                pg_log::warn("start", &format!("--apply-view={name}: {e}; ignored"));
+                pg_log::warn("start", &format!("--apply-view={name}: {e:#}; ignored"));
                 None
             }
         });
@@ -61,7 +61,7 @@ impl Core {
         let recorder = std::env::var_os("PG_RECORD").and_then(|path| match std::fs::File::create(&path) {
             Ok(file) => Some(file),
             Err(e) => {
-                pg_log::warn("record", &format!("PG_RECORD {}: {e}", path.to_string_lossy()));
+                pg_log::warn("record", &format!("PG_RECORD {}: {e:#}", path.to_string_lossy()));
                 None
             }
         });
@@ -78,10 +78,10 @@ impl Core {
         match serde_json::to_string(record) {
             Ok(line) => {
                 if let Err(e) = writeln!(file, "{line}") {
-                    pg_log::warn("record", &format!("PG_RECORD: {e}"));
+                    pg_log::warn("record", &format!("PG_RECORD: {e:#}"));
                 }
             }
-            Err(e) => pg_log::warn("record", &format!("PG_RECORD: {e}")),
+            Err(e) => pg_log::warn("record", &format!("PG_RECORD: {e:#}")),
         }
     }
 }

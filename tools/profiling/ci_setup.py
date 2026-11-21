@@ -51,12 +51,15 @@ def install_rust() -> None:
         with urllib.request.urlopen("https://sh.rustup.rs", timeout=60) as response:
             installer = response.read()
         subprocess.run(["sh", "-s", "--", "-y", "--profile", "minimal"], input=installer, check=True)
-    # The minimal profile has neither component.
-    subprocess.run([str(rustup), "component", "add", "clippy", "rustfmt"], check=True)
+    # The minimal profile has neither component, and not the repo's channel. rust-toolchain.toml names the channel and its
+    # components; running cargo in the repo makes rustup install both, so the list lives in that file only.
+    subprocess.run([str(CARGO_BIN / "cargo"), "--version"], cwd=REPO, check=True)
 
 
 def report() -> None:
-    rustc = subprocess.run([str(CARGO_BIN / "rustc"), "--version"], capture_output=True, text=True, check=True)
+    rustc = subprocess.run(
+        [str(CARGO_BIN / "rustc"), "--version"], capture_output=True, text=True, check=True, cwd=REPO
+    )
     version = " ".join(rustc.stdout.split()[:2])
     modversion = subprocess.run(["pkg-config", "--modversion", "libavcodec"], capture_output=True, text=True, check=True)
     print(f"{version}, FFmpeg libavcodec {modversion.stdout.strip()}")

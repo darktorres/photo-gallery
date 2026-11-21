@@ -70,7 +70,10 @@ pub struct Rgb {
     pub pixels: Vec<u8>,
 }
 
-/// The scale denominator `pg-codec` picks (decode.rs): libjpeg-turbo rounds scaled sizes up.
+/// The scale denominator `pg-codec` picks (crates/codec/src/decode.rs), with the analyze minimum from
+/// crates/analysis/src/analyze.rs (DECODE_MIN_LONG / DECODE_MIN_SHORT). Keep `(512, 320)` here and
+/// `eval/common.py` (ANALYSIS_DRAFT_SIDES) in step with those. This crate is its own workspace and cannot depend on
+/// the app's crates, so the copy is deliberate. libjpeg-turbo rounds scaled sizes up.
 pub fn denom(mode: Mode, w: usize, h: usize) -> usize {
     match mode {
         Mode::Full => 1,
@@ -369,7 +372,7 @@ mod vips {
             }
             let pixels = std::slice::from_raw_parts(mem as *const u8, size).to_vec();
             g_free(mem);
-            ensure!(bands == 3 && size == iw * ih * 3, "libvips: {bands} bands, {size} bytes for {iw}×{ih}");
+            ensure!(bands == 3 && size == iw * ih * 3, "libvips: {bands} bands, {size} bytes for {iw}x{ih}");
             Ok(Rgb { width: iw, height: ih, pixels })
         }
     }

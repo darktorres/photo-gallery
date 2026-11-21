@@ -46,7 +46,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
-    let dir = pg_testkit::run_folder_with("scratch_rate", "crop_tags", &["images"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags", &["images"]).unwrap();
     // A TIFF: the copy has no metadata of its own, so the crop copies the tags with ExifTool.
     let mut bytes = Cursor::new(Vec::new());
     letterboxed().write_to(&mut bytes, image::ImageFormat::Tiff).unwrap();
@@ -77,7 +77,7 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
 /// temporary beside it, and the catalog still has its borders to cut.
 #[test]
 fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
-    let dir = pg_testkit::run_folder_with("scratch_rate", "crop_tags_cut", &["images"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags-cut", &["images"]).unwrap();
     let mut bytes = Cursor::new(Vec::new());
     letterboxed().write_to(&mut bytes, image::ImageFormat::Tiff).unwrap();
     let images = dir.join("images");

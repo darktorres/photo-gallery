@@ -14,7 +14,7 @@ import argparse
 import numpy as np
 import torch
 
-from common import DATA_ROOT, GROUPS_DIR, IMAGE_EXTS
+from common import DATA_ROOT, DEFAULT_MODEL, GROUPS_DIR, IMAGE_EXTS, NO_SIM
 from imgload import FileSource, ImageDataset, embed
 from models import SPECS, build_transform, load_model
 
@@ -40,7 +40,7 @@ def components(sims: np.ndarray, link: float) -> list[list[int]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="sscd_fp16", choices=sorted(SPECS))
+    parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(SPECS))
     parser.add_argument("--link", type=float, default=0.35)
     args = parser.parse_args()
 
@@ -71,7 +71,7 @@ def main() -> None:
         else:
             # Weakest similarity that still holds the group together (max spanning tree's min edge
             # is complex; the min over each member's best partner is a good-enough signal).
-            np.fill_diagonal(sims, -2.0)
+            np.fill_diagonal(sims, NO_SIM)
             weak.append((float(sims.max(1).min()), group))
 
     print(f"{len(folders)} group folders, {len(files)} files, linked at similarity >= {args.link}")

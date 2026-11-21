@@ -142,7 +142,7 @@ impl qobject::FolderModel {
                 ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),
                 ROLE_EXPANDED => QVariant::from(&tree.is_expanded(n)),
                 ROLE_TOTAL => QVariant::from(&node.total),
-                ROLE_DRIVES => QVariant::from(&QString::from(&folders.anchors(n))),
+                ROLE_DRIVES => QVariant::from(&QString::from(&pg_client::text::anchors(folders.anchors(n)))),
                 ROLE_MERGED => QVariant::from(&folders.multi_anchor(n)),
                 _ => QVariant::default(),
             }
@@ -177,7 +177,7 @@ impl qobject::FolderModel {
             this.generation
         };
         let model = self.qt_thread();
-        crate::app::get().reading().session().tree(move |tree| {
+        crate::app::session().tree(move |tree| {
             let tree = crate::app::observe(pg_model::notice::Op::Tree, tree, |e| {
                 pg_model::notice::Notice::TreeFailed { error: crate::app::error_text(&format!("{e:#}")) }
             })

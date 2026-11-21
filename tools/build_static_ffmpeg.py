@@ -14,7 +14,6 @@ The build needs MSVC and MSYS2 (for FFmpeg's configure and make), both on this m
 
 import argparse
 import datetime
-import hashlib
 import json
 import os
 import re
@@ -24,7 +23,17 @@ import sys
 import time
 from pathlib import Path
 
-from pgtools import MSVC_TOOLSET, WINDOWS, import_msvc_environment, load_env_file
+from pgtools import (
+    DEFAULT_BUILD_TOOLS,
+    DEFAULT_MSYS,
+    MSVC_TOOLSET,
+    WINDOWS,
+    checked,
+    import_msvc_environment,
+    load_env_file,
+    not_set,
+    sha256,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -36,8 +45,6 @@ WINDOWS_SDK = "10.0.26100.0"
 MSYS_PACKAGES = {"make": "4.4.1-3", "diffutils": "3.12-1"}  # installed if missing; a different version is recorded
 # The Windows libraries the static link needs. FFmpeg's .pc files don't list them (Libs.private is empty).
 SYSTEM_LIBS = ["user32.lib", "bcrypt.lib"]
-DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
-DEFAULT_MSYS = Path(r"C:\tools\msys64")
 
 # The configure line. --prefix is added below. Each flag is the pilot's.
 CONFIGURE_FLAGS = [
@@ -57,17 +64,6 @@ CONFIGURE_FLAGS = [
 SYSTEM_DLL = re.compile(r"^(api-ms-win-|KERNEL32|USER32|bcrypt|VCRUNTIME140|MSVCP140)", re.IGNORECASE)
 
 
-def checked(what: str, command: list[str], log: Path | None = None, cwd: Path | None = None) -> None:
-    """Runs `command`, its output in `log` when given; a failure ends this program."""
-    if log is None:
-        result = subprocess.run(command, cwd=cwd, check=False)
-    else:
-        with log.open("w", encoding="utf-8") as file:
-            result = subprocess.run(command, cwd=cwd, stdout=file, stderr=subprocess.STDOUT, check=False)
-    if result.returncode != 0:
-        sys.exit(f"{what} failed (exit {result.returncode})")
-
-
 def git(src: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", "-C", str(src), *args], capture_output=True, text=True, check=False)
 
@@ -78,18 +74,10 @@ def posix(path: Path) -> str:
     return "/" + full[0].lower() + full[2:].replace("\\", "/")
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
-
-
 def default_work() -> Path:
     home = os.environ.get("PG_HOME")
     if not home:
-        sys.exit("PG_HOME is not set: pass --work, or set PG_HOME in .env to the data folder (static/ goes under it)")
+        not_set("PG_HOME", "pass --work, or set it in .env to the data folder (static/ goes under it)")
     return Path(home) / "static" / "ffmpeg"
 
 
@@ -250,8 +238,8 @@ def main() -> None:
     crt = []
     for lib in libs:
         data = lib.read_bytes()
-        crt.append({"Name": lib.name, "MSVCRT": data.count(b"MSVCRT"), "LIBCMT": data.count(b"LIBCMT")})
-    if any(entry["LIBCMT"] > 0 for entry in crt):
+        crt.append({"name": lib.name, "msvcrt": data.count(b"MSVCRT"), "libcmt": data.count(b"LIBCMT")})
+    if any(entry["libcmt"] > 0 for entry in crt):
         sys.exit("a library references LIBCMT (static CRT): see the manifest")
 
     # 5. Link check: a program that calls into each library, linked with the system libraries, then run.
@@ -291,7 +279,9 @@ def main() -> None:
             "license": license_line.group(0) if license_line else "",
             "disabled_with_warning": disabled,
         },
-        "libraries": [{"name": lib.name, "bytes": lib.stat().st_size, "sha256": sha256(lib)} for lib in libs],
+        "libraries": [
+            {"path": lib.relative_to(prefix).as_posix(), "bytes": lib.stat().st_size, "sha256": sha256(lib)} for lib in libs
+        ],
         "crt": crt,
         "link_check": {"output": output, "dependents": dependents, "non_system": non_system},
     }

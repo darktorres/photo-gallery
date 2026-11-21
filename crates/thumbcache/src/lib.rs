@@ -24,8 +24,6 @@
 //! height reads only the files changed since. Evicting entries at a height forgets that, and so does a cache
 //! started over: the next pass looks at every file again. A cache belongs to one catalog (`meta.catalog_id`, the
 //! catalog's): opened for another one (rebuilt, so its file ids mean other files), it starts over.
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 mod config;
 mod maintenance;
@@ -51,7 +49,7 @@ use pg_model::path::WorkList;
 use pg_model::size::ThumbHeight;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
-use crate::config::TOUCH_AGE_S;
+use crate::config::TOUCH_AGE;
 use crate::maintenance::unix_now;
 use crate::reader::{READERS, with_reader};
 use crate::schema::{BUSY_TIMEOUT, Writing, hold_shared, open_writer};
@@ -126,16 +124,16 @@ impl ThumbCache {
     /// Turn the cache off (`true`) or back on (`false`), live. While suspended, reads find nothing and writes store
     /// nothing; see the type's documentation.
     pub fn set_suspended(&self, suspended: bool) {
-        self.suspended.store(suspended, Ordering::Release);
+        self.suspended.store(suspended, Ordering::SeqCst);
     }
 
     /// Whether the cache is turned off (see [`ThumbCache::set_suspended`]). Not whether it could be opened.
     pub fn suspended(&self) -> bool {
-        self.suspended.load(Ordering::Acquire)
+        self.suspended.load(Ordering::SeqCst)
     }
 
     fn send(&self, op: Op) -> Result<()> {
-        let store = self.store.as_ref().ok_or_else(|| anyhow!("no thumbnail cache"))?;
+        let store = self.store.as_ref().ok_or_else(|| anyhow!("thumbnail cache not open"))?;
         if !store.inbox.push(op) {
             bail!("thumbnail cache closed");
         }
@@ -185,7 +183,7 @@ impl ThumbCache {
         // The schema holds heights in 16..=2048 (a CHECK), so a stored one out of them is a corrupt cache, not a thumbnail.
         let h =
             ThumbHeight::new(h).ok_or_else(|| anyhow!("the cache holds a {h}-pixel thumbnail, outside its heights"))?;
-        if last_used < unix_now() - TOUCH_AGE_S {
+        if last_used < unix_now() - i64::try_from(TOUCH_AGE.as_secs()).unwrap_or(i64::MAX) {
             // Best-effort: a cache closing doesn't fail the read.
             let _ = self.send(Op::Touch(id));
         }
@@ -416,7 +414,7 @@ mod tests {
     use pg_testkit::run_folder;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
-    const SCRATCH: &str = "scratch_thumbs";
+    const SCRATCH: &str = "scratch_thumbcache";
 
     /// Closing the cache leaves no WAL or index file: the writer merges the WAL, and this thread's reader (opened by
     /// the read before) closes with it, so the last connection deletes the files. A reader left open keeps them.
@@ -802,7 +800,7 @@ mod tests {
         assert_eq!(pg_dbfile::application_id(&conn).unwrap(), APPLICATION_ID);
         assert_eq!(conn.query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
         drop(conn);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -818,7 +816,7 @@ mod tests {
         assert_eq!((reason, path), (StartOverReason::OtherBuild, cache_path(&dir)));
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 12345));
         drop(cache);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A file with this cache's tables but another application id is not ours to delete: it is refused, as it is.
@@ -830,7 +828,7 @@ mod tests {
         let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(pg_dbfile::application_id(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 9);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A database that is not a cache (tables of its own, no cache's application id) is refused and left as it was.
@@ -843,7 +841,7 @@ mod tests {
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), before);
         assert!(!bad_path(&dir).exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Where a damaged cache in `dir` is moved aside to.
@@ -874,11 +872,11 @@ mod tests {
         let (reason, why) = opens_over_damage(&dir, &[b'x'; 8192]);
         assert!(why.contains("not a database"), "{why}");
         assert_eq!(reason, StartOverReason::NotADatabase);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A cache of a few hundred entries, closed (its WAL merged), with the day's check of its totals due at the next
-    /// open: its bytes and page size.
+    /// A cache of 400 entries (twenty batches of twenty), closed (its WAL merged), with the day's check of its totals due
+    /// at the next open: its bytes and page size.
     fn closed_cache_due_a_check(dir: &Path) -> (Vec<u8>, usize) {
         let cache = open_quiet(dir, CATALOG_ID, None);
         for i in 0..20 {
@@ -904,7 +902,7 @@ mod tests {
         }
         std::fs::write(cache_path(&dir), &bytes).unwrap();
         opens_over_damage(&dir, &bytes);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A real cache cut to half its pages (a disk full, a copy cut short): moved aside and made anew.
@@ -915,7 +913,7 @@ mod tests {
         let cut = &bytes[..bytes.len() / page / 2 * page];
         std::fs::write(cache_path(&dir), cut).unwrap();
         opens_over_damage(&dir, cut);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Damage among the entries, past the pages the open reads, is found by the day's check of the totals
@@ -935,7 +933,7 @@ mod tests {
         let (reason, why) = opens_over_damage(&dir, &bytes);
         assert!(why.contains("damaged"), "{why}");
         assert_eq!(reason, StartOverReason::Damaged);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The same damage found on an open that passes a cap: the cap is written only after the day's check, so the
@@ -956,7 +954,7 @@ mod tests {
         assert_eq!(std::fs::read(bad_path(&dir)).unwrap(), bytes, "the old bytes are kept");
         assert_eq!(cache.cap().unwrap(), 12345);
         drop(cache);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A damaged cache that another program has open is not moved: the open fails, and the file stays as it was.
@@ -970,7 +968,7 @@ mod tests {
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), vec![b'x'; 8192]);
         assert!(!bad_path(&dir).exists());
         drop(held);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1004,13 +1002,8 @@ mod tests {
         let dir = run_folder(SCRATCH, "sequence").unwrap();
         let cache = open(&dir, 5_000);
         // A fixed pseudo-random walk over puts (new and replacing), on-demand puts, evictions and retags.
-        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
-        let mut next = |n: u64| {
-            x ^= x << 13;
-            x ^= x >> 7;
-            x ^= x << 17;
-            x % n
-        };
+        let mut rng = pg_testkit::Rng::new(0x9E37_79B9_7F4A_7C15);
+        let mut next = |n: u64| rng.next_u64() % n;
         for _ in 0..600 {
             let (file, height, size) = (
                 i64::try_from(next(60)).unwrap(),
@@ -1202,7 +1195,7 @@ mod tests {
         drop(open(&alias, 1 << 30));
         assert!(cache_path(&folder).exists(), "the cache file is in the folder");
         drop(open(&alias, 1 << 30));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1380,7 +1373,7 @@ mod tests {
         assert_eq!(reason, StartOverReason::OtherBuild);
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), default_cap_bytes(&dir)));
         drop(cache);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

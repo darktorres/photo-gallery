@@ -17,6 +17,8 @@ from pathlib import Path
 # The Justfile's pins for CI come from pgtools (the Justfile's text, before `just` is installed).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from pgtools import LINUX_QT_KIT, WINDOWS_QT_KIT  # noqa: E402 (tools/ is on the path above)
+
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -52,13 +54,13 @@ def pin_values() -> list[tuple[str, str]]:
 
     qt = just_value("qt_version")
     if sys.platform == "win32":
-        root, kit, arch = "C:\\", "msvc2022_64", "win64_msvc2022_64"
+        root, kit, arch = "C:\\", WINDOWS_QT_KIT, "win64_msvc2022_64"
         sep = "\\"
     else:
         temp = os.environ.get("RUNNER_TEMP")
         if not temp:
             sys.exit("RUNNER_TEMP is not set: the pins for Linux are written in a GitHub Actions step")
-        root, kit, arch = temp + "/", "gcc_64", "linux_gcc_64"
+        root, kit, arch = temp + "/", LINUX_QT_KIT, "linux_gcc_64"
         sep = "/"
     qt_dir = f"{root}Qt{sep}{qt}{sep}{kit}"
     values = [

@@ -3,13 +3,15 @@
 Collects `pg_x::a::b` paths and `use pg_x::{...}` trees in src/ before the first line-start #[cfg(test)], per file.
 Prints, per edge, the distinct names, how many files use it, and edges whose only uses are in test code.
 
-A report for a review (`just modgraph-report`), not a gate: it matches by name, so it can both miss a use and invent one.
+A report for a review (`just modgraph-report`), not a gate (see `testcut.py`).
 """
 
 import re
 import tomllib
 from collections import defaultdict
 from pathlib import Path
+
+from testcut import production_part
 
 ROOT = Path(__file__).resolve().parents[2]
 

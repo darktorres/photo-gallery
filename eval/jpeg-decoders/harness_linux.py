@@ -16,14 +16,17 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from linux import EVAL, NAMES, RESTART, callgrind_total, run
+from linux import EVAL, NAMES, RESTART, callgrind_instructions, marginal_millions, run
 
 HARNESS = EVAL / "bin" / "harness"
 ORIGINALS = [f"{name}.orig.jpg" for name in NAMES]
 RESTARTS = [f"{name}.rstrow.jpg" for name in NAMES]
 FILES = [*ORIGINALS, "pin-prog420-1mp.base.jpg", *RESTARTS]
-CPU_DECODERS = "turbo,turbo-yuv,parajpeg-t1,parajpeg-t6,parajpeg-t12,jpegli,wuffs"
-IR_DECODERS = ["turbo", "turbo-yuv", "parajpeg-t1", "parajpeg-t12", "jpegli", "wuffs"]
+# The decoders the harness runs, in order. The timing run takes them all; the instruction table leaves out parajpeg-t6, as
+# it always has.
+DECODERS = ["turbo", "turbo-yuv", "parajpeg-t1", "parajpeg-t6", "parajpeg-t12", "jpegli", "wuffs"]
+CPU_DECODERS = ",".join(DECODERS)
+IR_DECODERS = [d for d in DECODERS if d != "parajpeg-t6"]
 
 
 def ir_one(decoder: str, file: str) -> str:
@@ -31,26 +34,13 @@ def ir_one(decoder: str, file: str) -> str:
     totals = []
     with tempfile.TemporaryDirectory() as folder:
         for count in (1, 3):
-            out = Path(folder) / str(count)
-            result = run(
-                [
-                    "valgrind",
-                    "--tool=callgrind",
-                    f"--callgrind-out-file={out}",
-                    str(HARNESS),
-                    "repeat",
-                    str(count),
-                    decoder,
-                    file,
-                ],
-                cwd=RESTART,
-                check=False,
-                quiet=True,
+            total = callgrind_instructions(
+                [str(HARNESS), "repeat", str(count), decoder, file], Path(folder) / str(count), cwd=RESTART
             )
-            if result.returncode != 0:
+            if total is None:
                 return "ERR"
-            totals.append(callgrind_total(out) or 0)
-    return f"{(totals[1] - totals[0]) / 2e6:.1f}"
+            totals.append(total)
+    return marginal_millions(totals[0], totals[1])
 
 
 def instructions() -> None:

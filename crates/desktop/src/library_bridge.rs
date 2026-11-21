@@ -15,6 +15,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
+        /// The library's folders as paths, one row each; `load_roots` fills it, and the catalog ids run alongside.
         #[qproperty(QStringList, roots, READ, WRITE, NOTIFY, FINAL)]
         /// The folders whose removal is not finished and waits for an unfinished write (Discard gives it up).
         #[qproperty(QStringList, kept_removals, cxx_name = "keptRemovals", READ, WRITE, NOTIFY, FINAL)]

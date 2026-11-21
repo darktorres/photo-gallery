@@ -170,12 +170,12 @@ impl Lanes {
         let crop_ctl = root.lane();
         let removal_ctl = root.lane();
         // The lanes' CPU is shared: their workers take permits, so two drives' decoders share the cores.
-        let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let cpus = pg_jobs::pipeline::cpus();
         root.share_cpu(cpus);
         // The lanes together hold a quarter of the machine's memory for file buffers, each up to the measured knee.
         let cap = pg_platform::memory::physical_bytes()
             .map(|bytes| usize::try_from(bytes / MEMORY_SHARE).unwrap_or(usize::MAX));
-        let governor = Governor::new(Options::budget(8, cpus), cap);
+        let governor = Governor::new(Options::budget(pg_jobs::pipeline::READERS, cpus), cap);
         let lanes = Arc::new(Lanes {
             root,
             crop_ctl,
@@ -190,7 +190,7 @@ impl Lanes {
         });
         let weak = Arc::downgrade(&lanes);
         let coordinator = Service::start("lane coordinator", move |waker| coordinate(&weak, waker))
-            .context("start the lane coordinator")?;
+            .context("can't start the lane coordinator")?;
         let _ = lanes.coordinator.set(Arc::new(coordinator));
         let weak = Arc::downgrade(&lanes);
         let cropper = Service::start("crop job", move |waker| crop(&weak, waker)).context("start the crop job")?;
@@ -424,7 +424,9 @@ impl Lanes {
             let before = lane_names(&reg.lanes);
             let retiring = self.assign_lanes(&mut reg, &groups, &volumes)?;
             for lane in &reg.lanes {
-                lane.inner.set_label(drive_label(&lane.roots, &places));
+                lane.inner.set_label(crate::lanes::drive_label(&lane.roots, |root| {
+                    places.iter().find(|(path, _)| path == root).and_then(|(_, place)| place.clone())
+                }));
             }
             // A label that changed and a lane that retired change the rows without any progress event: tell the hook.
             // The hook only publishes on the bus, so it is safe under the registry lock.
@@ -483,11 +485,7 @@ impl Lanes {
         }
         let single = kept.len() == 1;
         for lane in &kept {
-            let set = if single {
-                VolumeSet::All
-            } else {
-                VolumeSet::Only(lane.roots.iter().filter_map(|root| volume_of(volumes, root)).collect())
-            };
+            let set = crate::lanes::lane_volumes(single, lane.roots.iter().filter_map(|root| volume_of(volumes, root)));
             if lane.inner.volume_set() != set {
                 lane.inner.ctl.request_stop();
                 lane.service.wake();
@@ -816,14 +814,16 @@ impl Lanes {
     fn run_removals(&self, conn: &mut Option<Catalog>, adopt: bool) -> std::result::Result<(), String> {
         let catalog = match conn.take() {
             Some(c) => c,
-            None => Catalog::open(&self.shared.catalog_path, PATH_RULES).map_err(|e| error_text(&e.into()))?,
+            None => {
+                Catalog::open(&self.shared.catalog_path, PATH_RULES).map_err(|e| error_text(&anyhow::Error::from(e)))?
+            }
         };
         let found = if adopt { catalog.adopt_hidden_folders().map(drop) } else { Ok(()) }
             .and_then(|()| catalog.removal_markers());
         let result = match found {
             Ok(markers) if markers.is_empty() => Ok(()),
             Ok(markers) => self.finish_removals(&catalog, &markers),
-            Err(e) => Err(error_text(&e.into())),
+            Err(e) => Err(error_text(&anyhow::Error::from(e))),
         };
         *conn = Some(catalog);
         result
@@ -852,19 +852,6 @@ impl Lanes {
 /// Each lane's number and label, the two things the rows show that no progress event carries.
 fn lane_names(lanes: &[Lane]) -> Vec<(usize, String)> {
     lanes.iter().map(|lane| (lane.inner.number, lane.inner.label())).collect()
-}
-
-/// The drive for people of a lane's roots: the drive of the first of them whose place is known (`E:`), empty when none is.
-fn drive_label(roots: &[RulePath], places: &[(RulePath, Option<Place>)]) -> String {
-    roots
-        .iter()
-        .find_map(|root| {
-            places.iter().find(|(path, _)| path == root).and_then(|(_, place)| match place {
-                Some(Place::Mounted { drive, .. }) => Some(drive.label.clone()),
-                _ => None,
-            })
-        })
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -55,8 +56,7 @@ def copy_bench_data() -> None:
     for layout in sorted(p for p in source.iterdir() if p.is_dir()):
         dest = DATA / layout.name
         if not dest.is_dir():
-            partial = DATA / (layout.name + ".partial")
-            shutil.rmtree(partial, ignore_errors=True)
+            partial = DATA / f"{layout.name}.{uuid.uuid4().hex}.partial"
             shutil.copytree(layout, partial)
             partial.rename(dest)
 
@@ -112,14 +112,18 @@ def main() -> None:
     listing = gungraun / "archive-list.txt"
     listing.write_text("\n".join(outputs) + "\n", encoding="utf-8")
     try:
-        subprocess.run(
+        packed = subprocess.run(
             ["tar", "--zstd", "-cf", str(archive), "-C", str(gungraun), "-T", str(listing)],
             env={**os.environ, "ZSTD_CLEVEL": "19"},
-            check=True,
+            check=False,
         )
     finally:
         listing.unlink(missing_ok=True)
-    count = subprocess.run(["tar", "--zstd", "-tf", str(archive)], capture_output=True, text=True, check=True)
+    if packed.returncode != 0:
+        sys.exit(f"bench.py: tar could not write {archive} (exit {packed.returncode})")
+    count = subprocess.run(["tar", "--zstd", "-tf", str(archive)], capture_output=True, text=True, check=False)
+    if count.returncode != 0:
+        sys.exit(f"bench.py: tar could not list {archive} (exit {count.returncode})")
     size = archive.stat().st_size / (1024 * 1024)
     print(f"profiles: {len(count.stdout.splitlines())} files in {archive.relative_to(REPO)} ({size:.1f} MiB)")
 

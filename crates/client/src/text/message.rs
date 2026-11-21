@@ -230,14 +230,27 @@ messages! {
     YandexDownloadFailed { url: String, error: String } => "yandex-download-failed",
     /// A downloaded result that couldn't be written to `path`, for `error`.
     YandexWriteFailed { url: String, path: String, error: String } => "yandex-write-failed",
-    /// A search or a save stopped by an internal error (a panic, whose details are in gallery.log).
-    YandexStopped => "yandex-stopped",
+    /// A search or a save stopped by an internal error (a panic), whose details are in `log`.
+    YandexPanicked { log: String } => "yandex-panicked",
+    FolderListChanged => "folder-list-changed",
     /// Yandex answered with an HTTP `status` other than success.
     YandexHttpStatus { status: String } => "yandex-http-status",
     /// A connection, TLS or timeout failure of a Yandex request.
     YandexTransport { error: String } => "yandex-transport",
     /// A Yandex answer without the data the app reads (`detail`: what was missing).
-    YandexUnexpected { detail: String } => "yandex-unexpected",
+    YandexUploadNotJson => "yandex-upload-not-json",
+    YandexUploadNoCbirId => "yandex-upload-no-cbir-id",
+    YandexUploadNoOriginal => "yandex-upload-no-original",
+    YandexResultsPageNoState => "yandex-results-page-no-state",
+    YandexResultsStateNotJson => "yandex-results-state-not-json",
+    YandexSimilarNotJson => "yandex-similar-not-json",
+    YandexSimilarNoResults => "yandex-similar-no-results",
+    YandexNotAnImage => "yandex-not-an-image",
+    YandexTooLarge => "yandex-too-large",
+    YandexNoResult => "yandex-no-result",
+    YandexNoSearch => "yandex-no-search",
+    YandexNoSearchOnScreen => "yandex-no-search-on-screen",
+    YandexNotCalled => "yandex-not-called",
     /// A recorded Yandex session (the screenshot fixture's) that can't answer, for `error`.
     YandexRecorded { error: String } => "yandex-recorded",
     /// A result's file that is not an image this app decodes, for `reason`.
@@ -252,6 +265,9 @@ messages! {
     CatalogDrift { path: String, found: String, detail: String } => "catalog-drift",
     /// A catalog without the `key_version` mark, whose schema differs from this build's, at `path`.
     CatalogPredatesKeyVersion { path: String } => "catalog-predates-key-version",
+    /// A catalog at `path` made under other path rules: `detail` says how (or that they were not recorded), `wanted` names
+    /// this build's rules.
+    CatalogPathRules { path: String, detail: String, wanted: String } => "catalog-path-rules",
     /// Another program has the catalog at `path` open, so it can't be changed.
     CatalogInUse { path: String } => "catalog-in-use",
     /// The catalog's path at `path` is too long for the files it keeps beside it (Windows' limit).

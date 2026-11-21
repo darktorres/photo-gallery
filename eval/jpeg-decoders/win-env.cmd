@@ -6,6 +6,8 @@ rem installer sets it, and a shell started before that install can get it from .
 rem Usage: call eval\jpeg-decoders\win-env.cmd, then cmake -G Ninja ...
 if exist "%~dp0..\..\.env" for /f "usebackq eol=# tokens=1,* delims==" %%a in ("%~dp0..\..\.env") do if not defined %%a set "%%a=%%b"
 
+rem The x86 program folder is always there on 64-bit Windows; the default is the one win_env.py uses.
+if not defined ProgramFiles(x86) set "ProgramFiles(x86)=C:\Program Files (x86)"
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
   echo win-env.cmd: vswhere.exe not found in the Visual Studio Installer folder 1>&2

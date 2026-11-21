@@ -1,5 +1,5 @@
 //! The app's one D3D11 device (cpp/gpu_device.cpp): Qt Quick renders with it, and Qt's player decodes on the GPU
-//! only if the GPU's decoder for AV1 is found on it. Making a device costs ~0.9 G instructions here, most of it the
+//! only if the GPU's decoder for AV1 is found on it. Making a device costs ~0.9 G instructions (callgrind) here, most of it the
 //! driver's loader; before, the decoder lookup and Qt Quick each made one (PROFILING "The start, to ready").
 //!
 //! **Rendering.** The window is declared `visible: false` and shown by [`ffi::show_windows`], which first hands Qt

@@ -20,8 +20,8 @@ How it works:
   templates under target/shots/sides/<side>/<template>. `default` is the library's; `broken` adds the committed files
   of tools/shots/broken (a JPEG the import fails), copied to the fixed target/shots/broken, as a second library folder,
   for the inbox scenarios. A comparison refuses a reference whose hash for a scenario's template (or for an input file
-  the scenario reads) differs from this tree's. A manifest recorded before the templates has one `fixture` hash,
-  the default template's, and is still compared.
+  the scenario reads) differs from this tree's. Every manifest keeps its hashes under `fixtures` (the references recorded
+  before the templates were rewritten to it, with their default template's hash under `default`).
 - Each run starts from a copy of its side's template catalog, fresh preferences, notes.txt and the input files (shot.log,
   lanes.txt), and
   the library as it was made: the turn and rating keys write into the original files, so restore_library puts them back
@@ -36,7 +36,7 @@ settle log is <png>.settle.txt, with what the check saw.
 
 The script re-runs itself under target/shots/venv (Pillow and numpy, from tools/shots/requirements.txt), so the global
 Python is not changed. The Python that makes the venv is --python, else PG_PYTHON from the environment (or .env), else
-python on PATH. The Qt kit is QT_DIR (from the environment or .env); the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
+python on Windows and python3 elsewhere (the Justfile's default). The Qt kit is QT_DIR (from the environment or .env); the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
 """
 
 import argparse
@@ -51,7 +51,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from pgtools import REPO, WINDOWS, load_env_file, run
+from pgtools import QT_DIR_HOW, REPO, WINDOWS, default_python, load_env_file, not_set, run
 
 HERE = Path(__file__).resolve().parent
 SHOTS = REPO / "target" / "shots"
@@ -264,17 +264,15 @@ def fixture_hashes() -> dict[str, str]:
     """The manifest's `fixtures`: each template's identity, and each input file's. The broken template is the default one with
     tools/shots/broken added, so its hash covers the default's and the broken files' bytes."""
     default = fixture_hash()
-    lines = [f"default {default}", *(f"{file.relative_to(BROKEN_SOURCE).as_posix()} {sha256(file)}" for file in broken_files())]
+    lines = [f"default {default}", *(f"{os.sep}{file.relative_to(BROKEN_SOURCE)} {sha256(file)}" for file in broken_files())]
     broken = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest().upper()
     inputs = {name: sha256(path) for name, path in INPUT_FILES.items()}
     return {DEFAULT: default, BROKEN_TEMPLATE: broken, **inputs}
 
 
 def manifest_fixtures(manifest: dict) -> dict[str, str]:
-    """A manifest's fixture hashes. One recorded before the templates has a single `fixture`: the default template's."""
-    if "fixtures" in manifest:
-        return dict(manifest["fixtures"])
-    return {DEFAULT: manifest["fixture"]}
+    """A manifest's fixture hashes, by template and input file (`fixtures`, as `fixture_hashes` writes them)."""
+    return dict(manifest["fixtures"])
 
 
 def fixture_step(*args: str) -> None:
@@ -653,7 +651,7 @@ def main() -> None:
     parser.add_argument("--wait", type=float, default=10.0, help="the most to wait for a settled window, in seconds")
     parser.add_argument("--only", default="", help="comma-separated scenario names to run")
     parser.add_argument("--expect", default="", help="comma-separated scenarios declared to differ: reported, not failures")
-    parser.add_argument("--python", default="", help="the Python that makes the venv (default PG_PYTHON, else python)")
+    parser.add_argument("--python", default="", help="the venv's Python (default PG_PYTHON, else python3, python on Windows)")
     args = parser.parse_args()
     if args.record and args.self:
         sys.exit("--record and --self do not go together")
@@ -663,7 +661,7 @@ def main() -> None:
     load_env_file()
     qt = os.environ.get("QT_DIR")
     if not qt:
-        sys.exit("QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env.")
+        not_set("QT_DIR", QT_DIR_HOW)
     qmake = Path(qt) / "bin" / ("qmake.exe" if WINDOWS else "qmake")
     if not qmake.is_file():
         sys.exit(f"QT_DIR ({qt}) has no bin/qmake: point it at the Qt kit folder.")
@@ -672,7 +670,7 @@ def main() -> None:
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
     if os.environ.get("PG_SHOTS_CHILD") != "1":
-        bootstrap(args.python or os.environ.get("PG_PYTHON") or "python")  # exits: the rest runs under the venv's Python
+        bootstrap(args.python or os.environ.get("PG_PYTHON") or default_python())  # exits: the rest runs under the venv's Python
 
     scenarios, pseudo = scenarios_matching([name for name in args.only.split(",") if name])
     expect = [name for name in args.expect.split(",") if name]

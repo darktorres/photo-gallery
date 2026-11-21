@@ -3,7 +3,9 @@
 Run with the eval venv (torch with CUDA): python eval/jpeg-decoders/nvjpeg.py [--interpolate] [--batches 1,64] FILE...
 
 torchvision's decode_jpeg has no backend option and decodes Huffman on the CPU, so this calls the nvJPEG DLL that
-ships with torchvision directly (ctypes; declarations from nvjpeg.h 13.2). Device memory and streams come from torch.
+ships with torchvision directly (ctypes; declarations from nvjpeg.h 13.2). That DLL is torchvision's, not the
+nvidia-nvjpeg wheel that requirements.txt pins (13.3.2.43, for the nvImageCodec venv), so the two versions can differ.
+Device memory and streams come from torch.
 
 - batched API (nvjpegDecodeBatched): GPU_HYBRID only decodes Huffman on the GPU for batches over 50 baseline
   interleaved JPEGs, so batches 1 to 128 (capped by the decoded size) show the switch.
@@ -22,18 +24,18 @@ import argparse
 import ctypes as C
 import io
 import os
-import statistics
-import time
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # eval/: common's analysis rule
 import env
 import numpy as np
 import torch
 import torchvision
+from common import analysis_denom
+from timing import MAX_BATCH_BYTES, timed
 from PIL import Image
 
-BUDGET_S = 1.5
-MAX_BATCH_BYTES = 2.0e9  # decoded RGB per batch; the 2060 has 6 GB, ~1.5 GB in use by the desktop, plus nvJPEG's
 BATCHES = (1, 8, 32, 64, 128)
 HYBRID, GPU_HYBRID = 1, 2  # nvjpegBackend_t
 BACKENDS = {"HYBRID (CPU Huffman)": HYBRID, "GPU_HYBRID (GPU Huffman)": GPU_HYBRID}
@@ -93,6 +95,9 @@ def blocking_sync():
 
     CUDA's default (cudaDeviceScheduleAuto) busy-waits in cudaStreamSynchronize, which would bill the whole GPU
     decode as CPU time. Must run before the CUDA context exists (torch creates it lazily).
+
+    The runtime API's call for the flag. gpu.py and nvimgcodec_bench.py make the driver API's call
+    (cuDevicePrimaryCtxSetFlags) instead, because their venv has no torch and so no cudart DLL; both set the same flag.
     """
     cudart = C.CDLL(str(Path(torch.__file__).parent / "lib" / "cudart64_13.dll"))
     ok(cudart.cudaSetDeviceFlags(0x04), "cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync)")
@@ -200,24 +205,6 @@ class Decoupled:
         NV.nvjpegDestroy(self.handle)
 
 
-def denom(w, h):
-    """pg-analysis's choice for analyze: the smallest 1/8, 1/4, 1/2 keeping long ≥ 512 and short ≥ 320."""
-    mw, mh = (512, 320) if w >= h else (320, 512)
-    return next((d for d in (8, 4, 2) if -(-w // d) >= mw and -(-h // d) >= mh), 1)
-
-
-def timed(fn, per_call=1):
-    """Median seconds per item, and process CPU seconds per item, over at least BUDGET_S of calls."""
-    for _ in range(3):
-        fn()
-    walls, cpu0, start, n = [], time.process_time(), time.perf_counter(), 0
-    while len(walls) < 5 or time.perf_counter() - start < BUDGET_S:
-        t = time.perf_counter()
-        fn()
-        walls.append((time.perf_counter() - t) / per_call)
-        n += per_call
-    return statistics.median(walls), (time.process_time() - cpu0) / n
-
 
 def pillow(data, d=1):
     im = Image.open(io.BytesIO(data))
@@ -243,7 +230,7 @@ def report(label, dec, batch, host):
 
     for mode, fn in (("on GPU", on_gpu), ("to host", to_host)):
         wall, cpu = timed(fn, batch)
-        print(f"  {label:<40} {mode:<8} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {1 / wall:6.0f} img/s")
+        print(f"  {label:<40} {mode:<8} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {1 / wall:6.0f} images/s")
 
 
 def diff(a, b):
@@ -273,16 +260,16 @@ def main():
         data = Path(path).read_bytes()
         im = pillow(data)
         w, h = im.size
-        d = denom(w, h)
+        d = analysis_denom(w, h)
         ref = np.asarray(im.convert("RGB"))
-        print(f"\n{Path(path).stem}: {w}×{h} ({w * h / 1e6:.1f} MP), {len(data) / 1e3:.0f} KB")
+        print(f"\n{Path(path).stem}: {w}x{h} ({w * h / 1e6:.1f} MP), {len(data) / 1e3:.0f} KB")
         sw, sh = pillow(data, d).size
         for label, fn in (
             ("Pillow full", lambda data=data: pillow(data)),
-            (f"Pillow 1/{d} ({sw}×{sh})", lambda data=data, d=d: pillow(data, d)),
+            (f"Pillow 1/{d} ({sw}x{sh})", lambda data=data, d=d: pillow(data, d)),
         ):
             wall, cpu = timed(fn)
-            print(f"  {label:<49} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {1 / wall:6.0f} img/s")
+            print(f"  {label:<49} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {1 / wall:6.0f} images/s")
 
         outputs = {}
         for name, backend in BACKENDS.items():

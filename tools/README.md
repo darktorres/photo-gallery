@@ -5,6 +5,10 @@ Linux unless its row says Windows only. The Justfile calls most of them through 
 `python` on Windows and `python3` elsewhere); `just --list` names the recipes. Run a script with `--help` to see its
 arguments, where it has any.
 
+Exit codes, as the profiling tools use them (`docs/plans/DECODE_ONCE_PLAN.md` section 6 gives the plan's reasons): 0 ok;
+1 failed (a measured or compared result is bad); 2 usage or a missing argument; 3 an input is unreadable or has the wrong
+shape. The other tools end with `sys.exit(message)`, which exits 1.
+
 | Script | What it does | OS | How it runs |
 |---|---|---|---|
 | `pgtools.py` | The helpers the other tools share: the repository's folder, the `.env` loader, a command runner, the MSVC environment | both | imported |
@@ -54,7 +58,7 @@ tests (`just test-eval`).
 ## Folders and files
 
 - `static-ffmpeg/static-check.c`: the link check that `build_static_ffmpeg.py` compiles against the static libraries.
-- `static-qt/*.patch`: the local patches to Qt's sources (the app build and pg-video), as the static Qt build applies them.
+- `static-qt/*.patch`: the static build's edits to the crate sources (`app-build.patch` to `crates/desktop`, `pg-video.patch` to `crates/video`; the diffs name those paths), not to Qt's sources. `build_static_qt.py` has no patch step, so apply them from the repo root with `git apply` before it runs.
 - `lint/`: the lint tools at their pins: `requirements.txt` (ruff, with hashes) and `package.json` with its lockfile
   (markdownlint-cli). `just lint-tools-setup` installs from them.
 - `shots/`: the screenshot fixture and its reference recordings (`reference/<sha10>/`), and the inputs kept outside

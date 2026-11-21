@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 # V1: a symlink root that points at an SMB admin share. Which check of decision 6 refuses it?
-$testRoot = if ($env:PG_TEST_DIR) { $env:PG_TEST_DIR } else { Join-Path $PSScriptRoot '..\..\..\target\pg-test' }
+$testRoot = if ($env:PG_TEST_DIR) { $env:PG_TEST_DIR } else { Join-Path $PSScriptRoot '..\..\target\pg-test' }
 $testRoot = [IO.Path]::GetFullPath($testRoot)
 $link = Join-Path $testRoot 'v1-link'
 # The same folder through the local administrative share (\\localhost\<drive>$\...).

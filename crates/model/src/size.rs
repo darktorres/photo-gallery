@@ -66,7 +66,7 @@ pub struct ThumbHeight(u32);
 
 impl ThumbHeight {
     /// The thumbnail height of a fresh window's row: the default row height (220) at scale 1.
-    pub const DEFAULT: ThumbHeight = ThumbHeight(220);
+    pub const DEFAULT: ThumbHeight = ThumbHeight(RowHeight::DEFAULT.0);
 
     /// The thumbnail height `px`, or `None` if it is outside [`THUMB_HEIGHT`].
     pub fn new(px: u32) -> Option<ThumbHeight> {

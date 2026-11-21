@@ -89,16 +89,6 @@ mod tests {
     use pg_codec::fixtures::orient;
     use pg_container::{GifBlock, gif_blocks};
 
-    /// A test image with distinct, smoothly varying pixels (so a wrong turn can't match by chance).
-    fn pattern(w: usize, h: usize) -> Vec<u8> {
-        (0..w * h)
-            .flat_map(|i| {
-                let (x, y) = (i % w, i / w);
-                [x * 255 / w, y * 255 / h, (x * 7 + y * 13) % 256].map(|v| u8::try_from(v).unwrap())
-            })
-            .collect()
-    }
-
     /// Expected: the original as shown, turned clockwise `turns` times.
     fn expect_turned(original: &[u8], turns: Turns) -> (usize, usize, Vec<u8>) {
         let (w, h, pixels) = shown(original);
@@ -172,7 +162,7 @@ mod tests {
     fn png_all_layouts_exact() {
         let (w, h) = (13, 7);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let rgb = pattern(w, h);
+        let rgb = pg_testkit::rgb_pattern(w, h);
         for (color, depth, data) in [
             (png::ColorType::Rgb, png::BitDepth::Eight, rgb.clone()),
             (png::ColorType::Rgb, png::BitDepth::Sixteen, rgb.iter().flat_map(|&v| [v, v ^ 0x5A]).collect()),
@@ -203,7 +193,7 @@ mod tests {
     #[test]
     fn a_still_gif_with_nothing_on_its_screen_is_catalogued() {
         let (w, h) = (4, 3);
-        let rgb = pattern(w, h);
+        let rgb = pg_testkit::rgb_pattern(w, h);
         let mut file = pg_testkit::gif_rgb(4, 3, &rgb).unwrap();
         // The frame's left edge moved past the 4-pixel screen.
         let d = gif_blocks(&file)
@@ -222,7 +212,7 @@ mod tests {
     fn bmp_gif_webp_exact() {
         let (w, h) = (11, 6);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let rgb = pattern(w, h);
+        let rgb = pg_testkit::rgb_pattern(w, h);
         // No EXIF in these formats: no starting orientation but 1.
         for file in [pg_testkit::bmp_rgb(sw, sh, &rgb).unwrap(), pg_testkit::gif_rgb(sw, sh, &rgb).unwrap()] {
             let format = Format::sniff(&file).unwrap();
@@ -248,7 +238,7 @@ mod tests {
             let mut c = turbojpeg::Compressor::new().unwrap();
             c.set_quality(95).unwrap();
             c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
-            let pixels = pattern(w, h);
+            let pixels = pg_testkit::rgb_pattern(w, h);
             c.compress_to_vec(turbojpeg::Image {
                 pixels: &pixels[..],
                 width: w,
@@ -298,7 +288,7 @@ mod tests {
         c.set_quality(95).unwrap();
         c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
         let (w, h) = (64, 32);
-        let pixels = pattern(w, h);
+        let pixels = pg_testkit::rgb_pattern(w, h);
         let plain = c
             .compress_to_vec(turbojpeg::Image {
                 pixels: &pixels[..],

@@ -1,5 +1,5 @@
 //! The thumbnail makers: each one a decoder with its buffers. The image work borrows one, and an idle one is kept for the next
-//! borrower, up to a few.
+//! borrower, up to `KEEP_MAKERS` of them.
 
 use pg_render::maker::Maker;
 

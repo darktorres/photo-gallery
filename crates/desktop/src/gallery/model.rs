@@ -17,9 +17,10 @@ use super::qobject;
 use super::roles::{
     ROLE_ASPECTS, ROLE_BADGES, ROLE_BORDERS_MARKED, ROLE_CONTENT_HEIGHT, ROLE_CONTENT_WIDTH, ROLE_CONTENT_X,
     ROLE_CONTENT_Y, ROLE_COUNT, ROLE_FIRST, ROLE_HEIGHT, ROLE_IDS, ROLE_IMAGE_ASPECTS, ROLE_NAMES, ROLE_RATINGS,
-    ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS, qt_int, row_change_roles,
+    ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS, row_change_roles,
 };
 use super::state::fresh_entry;
+use crate::rows::qt_int;
 
 impl qobject::GalleryModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
@@ -97,7 +98,7 @@ impl qobject::GalleryModel {
         let pg_model::view::Listing { folder, recursive, sort, query } = listing;
         let model = self.qt_thread();
         let shown = pg_platform::native::PATH_RULES.display_merged(&folder);
-        crate::app::get().reading().session().grid(folder, recursive, query, sort, move |entries| {
+        crate::app::session().grid(folder, recursive, query, sort, move |entries| {
             let entries = crate::app::observe(pg_model::notice::Op::Listing, entries, |e| {
                 pg_model::notice::Notice::ListingFailed { error: crate::app::error_text(&format!("{shown}: {e:#}")) }
             })

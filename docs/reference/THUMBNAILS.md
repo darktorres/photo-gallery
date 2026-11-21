@@ -20,7 +20,7 @@ full decode, 384 px; zone plate = worst-case aliasing test):
 | DCT-scaled decode keeping ≥ 1× + Lanczos3 | 87.5 / 75.5 | 7.7 | 36.7 |
 | Full decode + antialiased bilinear | 86.0 / 82.3 | 13.0 | 43.9 |
 
-- **Lanczos3 from at least 4× the target is the thumbnail path**: the full-decode quality, and on large
+- **Magic Kernel Sharp 2021 is the thumbnail resampler** (the one resize every pipeline uses, `codec/src/resize.rs`): the full-decode quality, and on large
   originals (camera photos) still the 1/2–1/4 DCT-scaled decode. On this sample (median 800×1200)
   there is little to scale, hence the same time. libvips (= 2× margin) is softer on some images
   (p10 at 256 px: 87.7 vs 96.5).

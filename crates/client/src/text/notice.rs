@@ -83,6 +83,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         | Notice::FolderNotRemoved { error }
         | Notice::RescanFailed { error }
         | Notice::LibraryUnavailable { error }
+        | Notice::ChangesUnseen { error }
         | Notice::FoldersUnreadable { error }
         | Notice::PickerFailed { error }
         | Notice::ListingFailed { error }

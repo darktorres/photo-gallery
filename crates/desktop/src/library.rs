@@ -169,7 +169,9 @@ impl qobject::Library {
             |library, pending| library.on_pass(&pending),
         );
         if let Err(e) = pump {
-            pg_log::warn("library", &format!("the change pump didn't start: {e}"));
+            pg_log::warn("library", &format!("the change pump didn't start: {e:#}"));
+            // The window would show nothing of the background's changes: the inbox says so, not only the log.
+            app::post(Notice::ChangesUnseen { error: app::error_text(&e) });
         }
         // The state as it is now, for what was announced before the pump.
         self.as_mut().refresh_progress();
@@ -279,7 +281,7 @@ impl qobject::Library {
             // The list changed since it was shown: nothing was removed, and the list is read again.
             Ok(Begun::Changed | Begun::NotFound) => {
                 self.as_mut().load_roots();
-                app::post(Notice::FolderNotRemoved { error: "the folder list changed: try again".to_string() });
+                app::post(Notice::FolderNotRemoved { error: text::render(&Message::FolderListChanged) });
             }
             Err(e) => app::post(Notice::FolderNotRemoved { error: app::error_text(&e) }),
         }

@@ -8,12 +8,13 @@ optional part only says so. Exit status 1 when a required part is missing.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from pgtools import REPO, WINDOWS, just_value, load_env_file
+from pgtools import QT_KIT, REPO, WINDOWS, just_value, load_env_file
 
 # The FFmpeg libraries pg-video uses, as pkg-config names them (crates/video/build.rs).
 FFMPEG_LIBS = ["libavcodec", "libavformat", "libavutil", "libswscale", "libswresample"]
@@ -43,7 +44,15 @@ class Doctor:
 
 def qt_kit() -> str:
     """The Qt kit this OS builds against: msvc2022_64 on Windows, gcc_64 elsewhere."""
-    return "msvc2022_64" if WINDOWS else "gcc_64"
+    return QT_KIT
+
+
+def ffmpeg_pin() -> str:
+    """The FFmpeg release the Justfile pins, as major.minor: `ffmpeg_url` names it (ffmpeg-n9.0.2-39-g...)."""
+    match = re.search(r"ffmpeg-n(\d+\.\d+)", just_value("ffmpeg_url"))
+    if not match:
+        sys.exit("the Justfile's ffmpeg_url does not name an FFmpeg release")
+    return match.group(1)
 
 
 def ffmpeg_prefix() -> Path | None:
@@ -118,7 +127,10 @@ def main() -> None:
     prefix = ffmpeg_prefix()
     where = str(prefix) if prefix is not None else "pkg-config (the FFmpeg development packages)"
     if WINDOWS:
-        fix = "run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg 9.0 shared build"
+        fix = (
+            "run `just setup` to fetch the pinned build, or set FFMPEG_DIR in .env to an FFmpeg "
+            f"{ffmpeg_pin()} shared build"
+        )
     else:
         fix = "install the FFmpeg development packages (docker/apt-packages.txt), or set FFMPEG_DIR in .env"
     doctor.require(ffmpeg_ok(prefix), "FFmpeg", where, fix)

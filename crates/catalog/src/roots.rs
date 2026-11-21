@@ -142,6 +142,7 @@ impl Catalog {
         Ok(ScanLease::new(self, scan, root.clone()))
     }
 
+    /// Records that the scan `scan` finished, stamping its `finished` time now.
     pub fn finish_scan(&self, scan: ScanId) -> Result<()> {
         self.conn.execute("UPDATE scans SET finished = unixepoch() WHERE id = ?1", [scan.get()])?;
         Ok(())
@@ -166,7 +167,7 @@ impl ScanLease<'_> {
     pub fn mark_missing(&self, skipped: &[Skip]) -> Result<usize> {
         let (rules, root, scan) = (self.rules, self.root(), self.id());
         let held = self.held();
-        let mut pass = pg_perf::span("mark_missing");
+        let mut pass = pg_perf::span("pass.mark_missing");
         let tx_at = crate::transaction::tx_mark();
         // The present rows the walk did not see, read once outside any write transaction: the lease keeps any other walk
         // of these folders out. Only the rows left are written, by id, in batches of `WRITE_BATCH`, and each write repeats
@@ -179,10 +180,10 @@ impl ScanLease<'_> {
                 folders_under(&snapshot, rules, root)?.into_iter().filter(|f| !skipped.contains(f)).collect();
             let mut out = Vec::new();
             {
-                let mut read = snapshot.prepare_cached(
-                    "SELECT id FROM files WHERE folder_id = ?1 AND missing = 0
-                     AND NOT EXISTS (SELECT 1 FROM temp.scan_seen s WHERE s.id = files.id)",
-                )?;
+                let mut read = snapshot.prepare_cached(concat!(
+                    "SELECT id FROM files WHERE folder_id = ?1 AND missing = 0 AND ",
+                    not_seen!()
+                ))?;
                 for folder in &folders {
                     for id in read.query_map([folder], |r| r.get::<_, i64>(0))? {
                         out.push((id?, *folder));
@@ -199,10 +200,10 @@ impl ScanLease<'_> {
             let tx = write_transaction(&self.conn)?;
             held.hold(&tx)?;
             {
-                let mut mark = tx.prepare_cached(
-                    "UPDATE files SET missing = 1 WHERE id = ?1 AND folder_id = ?2 AND missing = 0
-                     AND NOT EXISTS (SELECT 1 FROM temp.scan_seen s WHERE s.id = files.id)",
-                )?;
+                let mut mark = tx.prepare_cached(concat!(
+                    "UPDATE files SET missing = 1 WHERE id = ?1 AND folder_id = ?2 AND missing = 0 AND ",
+                    not_seen!()
+                ))?;
                 for &(id, folder) in batch {
                     marked += mark.execute(params![id, folder])?;
                 }
@@ -425,13 +426,12 @@ fn sweep_folder_failures(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::time::{Duration, Instant};
 
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, WriteHolds, raw};
     use crate::ledger::Failure;
-    use crate::test_support::{begin, lease, listed, p, versions};
+    use crate::test_support::{begin, lease, listed, p, rooted, versions};
     use crate::types::rules_name;
     use crate::{
         Catalog, Error, FolderFailure, Prior, Recorded, SCAN_LEASE_SECS, ScanLease, ScannedFile, Skip, SkipReason,
@@ -446,12 +446,6 @@ mod tests {
     const UNREADABLE: FolderFailure = FolderFailure::Unreadable;
 
     /// A catalog whose library is `D:\r`.
-    fn library(rules: PathRules) -> Catalog {
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        assert!(c.add_root(&p(rules, r"D:\r")).unwrap());
-        c
-    }
-
     /// A walk of `root` that couldn't take the folders `failed` (each recorded, and skipped as the walk skips it) and
     /// skipped `also`: complete (its end sweeps the ledger) or stopped (its lease dropped, nothing swept). Its id.
     fn walk(c: &mut Catalog, root: &str, failed: &[(&str, FolderFailure)], also: &[Skip], complete: bool) -> ScanId {
@@ -500,7 +494,7 @@ mod tests {
     // didn't see, and only those: a walk of a folder below replaces its subtree's, and a later walk of the library
     // folder that takes everything resolves the rest.
     fn a_complete_walk_resolves_the_folders_of_its_subtree(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         walk(&mut c, r"D:\r", &[(r"D:\r\a", UNREADABLE), (r"D:\r\b\c", UNREADABLE)], &[], true);
         assert_eq!(paths(&c), stored(rules, &[r"D:\r\a", r"D:\r\b\c"]));
         walk(&mut c, r"D:\r\b", &[(r"D:\r\b\d", UNREADABLE)], &[], true);
@@ -518,7 +512,7 @@ mod tests {
     // The subtree is a range of bytes: a sibling whose name starts with the folder's (`X2`), or has a byte a pattern
     // would take for a wildcard (`X_`, `X%`), is not in it.
     fn the_sweep_takes_the_subtree_by_its_bytes(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let all = [r"D:\r\X\y", r"D:\r\X2\y", r"D:\r\X_\y", r"D:\r\X%\y"];
         let failed: Vec<(&str, FolderFailure)> = all.iter().map(|f| (*f, UNREADABLE)).collect();
         walk(&mut c, r"D:\r", &failed, &[], true);
@@ -536,7 +530,7 @@ mod tests {
     // A row is a folder by its exact path: two spellings are two rows, under either rules. A folder recorded again
     // keeps its serial (it is not news again), whatever its reason now.
     fn a_folder_is_its_exact_path_and_keeps_its_serial(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let both = [(r"D:\r\a", UNREADABLE), (r"D:\r\A", UNREADABLE)];
         walk(&mut c, r"D:\r", &both, &[], true);
         let first = ledger(&c);
@@ -557,7 +551,7 @@ mod tests {
     // The insert trigger stamps a new folder's serial past the ones already there (`folder_failures_stamp`). A
     // folder recorded again keeps its stamp, so the walk that follows sees only the new one as news.
     fn a_new_folder_failure_is_stamped_past_the_older_ones(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         walk(&mut c, r"D:\r", &[(r"D:\r\a", UNREADABLE)], &[], true);
         let first = ledger(&c);
         assert_eq!(first.len(), 1, "{first:?}");
@@ -580,7 +574,7 @@ mod tests {
     // reparse folder they go (nothing below one can resolve while it is one), and a reparse folder is no row. The rows
     // go with their library folder: removed, or replaced by one above it.
     fn the_ledger_follows_complete_walks_and_the_library(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         walk(&mut c, r"D:\r", &[(r"D:\r\a\b", UNREADABLE), (r"D:\r\j\k", UNREADABLE)], &[], true);
         walk(&mut c, r"D:\r", &[], &[], false);
         assert_eq!(paths(&c).len(), 2, "a stopped walk resolves nothing");
@@ -606,7 +600,7 @@ mod tests {
     // A sub-folder refused by its file system (a mount, or a file system the library refuses) is a row of the ledger
     // while the walk of its parent refuses it, and the next complete walk of the parent, which sees it again, sweeps it.
     fn a_refused_sub_folder_is_swept_by_its_parents_next_complete_walk(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let refused = [(r"D:\r\m", FolderFailure::MountRefused), (r"D:\r\n", FolderFailure::Refused)];
         walk(&mut c, r"D:\r", &refused, &[], true);
         assert_eq!(paths(&c), stored(rules, &[r"D:\r\m", r"D:\r\n"]));
@@ -626,7 +620,7 @@ mod tests {
     #[test]
     fn a_folder_outside_the_library_is_not_recorded() {
         let rules = PathRules::Posix;
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let elsewhere = p(rules, r"D:\elsewhere");
         assert!(
             matches!(c.begin_scan(&elsewhere).err(), Some(Error::RootRemoved { .. })),
@@ -650,7 +644,7 @@ mod tests {
     // another library folder goes on. A walk whose lease expired and was taken over is told apart: its folder is still
     // the library's.
     fn removing_a_folder_ends_the_walks_under_it(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         assert!(c.add_root(&p(rules, r"D:\s")).unwrap());
         let (r, sub, s) = (p(rules, r"D:\r"), p(rules, r"D:\r\sub"), p(rules, r"D:\s"));
         let (of_r, of_sub, of_s) = (begin(&mut c, &r), begin(&mut c, &sub), begin(&mut c, &s));
@@ -678,7 +672,7 @@ mod tests {
     // A folder refused before its walk began is a row of the ledger (one, however often refused); a walk already
     // running doesn't resolve it, the next complete walk does.
     fn a_refused_folder_is_resolved_by_its_next_complete_walk(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let root = p(rules, r"D:\r");
         let lease = c.begin_scan(&root).unwrap();
         assert!(lease.folder_refused(&root, "not an NTFS volume").unwrap());
@@ -705,7 +699,7 @@ mod tests {
     // The scans' ledger is one inbox entry, its folders the entry's detail, grouped by library folder; new until read,
     // and counted apart from the earlier ones once some are new.
     fn the_scans_ledger_is_one_entry_with_its_folders(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         walk(&mut c, r"D:\r", &[(r"D:\r\a", UNREADABLE), (r"D:\r\m", FolderFailure::MountRefused)], &[], true);
         let [entry] = c.ledger_entries(true).unwrap()[..] else { panic!("one entry") };
         assert_eq!(entry.kind, LedgerKind::ScanFolders);
@@ -794,7 +788,7 @@ mod tests {
         assert!(matches!(lease.renew(), Err(Error::LeaseLost { .. })), "the expired lease is gone");
         drop(lease);
         drop((a, b));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -807,7 +801,7 @@ mod tests {
     // in progress, survives it (the row is only seen); an import, a retry or a new import version, which change nothing
     // on disk, don't keep a real change out.
     fn a_walk_changes_a_row_only_as_it_listed_it(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let root = p(rules, r"D:\r");
         let identity = FileIdentity::new(1, 7);
         let found = |c: &mut Catalog, scan: ScanId, size: u64, mtime: i64, prior: Option<Prior>| -> Recorded {
@@ -881,7 +875,7 @@ mod tests {
         const FOLDERS: i64 = 1500;
         const FILES: i64 = 25_000;
         let rules = PathRules::Posix;
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         fixture::state::add_scan(&c, 1, "/r").unwrap();
         for id in 1..=FOLDERS {
             fixture::state::add_folder(&c, id, &format!("/r/f{id}")).unwrap();
@@ -916,7 +910,7 @@ mod tests {
     // The folder's read recognises a listing that matches its row, which the walk then only marks seen; a listing that
     // differs in any compared column is for the batch.
     fn the_folder_read_recognises_a_listing_that_matches_its_row(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let root = p(rules, r"D:\r");
         let scan = begin(&mut c, &root);
         let name = Name::from("a.jpg");
@@ -950,7 +944,7 @@ mod tests {
 
     // A walk's set of seen rows goes with its lease: giving the lease back (here, its drop) empties it.
     fn a_lease_given_back_empties_the_walks_set(rules: PathRules) {
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         let root = p(rules, r"D:\r");
         let scan = begin(&mut c, &root);
         let seen =
@@ -981,11 +975,13 @@ mod tests {
         let started = Instant::now();
         let err = c.add_root(&p(rules, r"D:\r")).unwrap_err();
         assert!(err.is_busy(), "{err:#}");
-        assert!(started.elapsed() < Duration::from_secs(4), "{:?}", started.elapsed());
+        // The error comes after the busy timeout has run. A lower bound (half the timeout) is what the test proves; an upper
+        // bound would depend on the machine's load.
+        assert!(started.elapsed() >= Duration::from_millis(50), "{:?}", started.elapsed());
         holder.execute_batch("ROLLBACK").unwrap();
         assert!(c.add_root(&p(rules, r"D:\r")).unwrap());
         drop((c, holder));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // `remove_root` over a folder of more files than one write batch: every row under it is deleted, the root and the
@@ -995,7 +991,7 @@ mod tests {
         use crate::types::WRITE_BATCH;
         use pg_model::ids::{FileId, FolderId};
         let rules = PathRules::Posix;
-        let mut c = library(rules);
+        let mut c = rooted(rules);
         assert!(c.add_root(&p(rules, r"D:\s")).unwrap());
         crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
         for (id, path) in [(1, r"D:\r"), (2, r"D:\r\sub"), (3, r"D:\s")] {

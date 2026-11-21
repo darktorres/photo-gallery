@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use pg_catalog::ledger::Failure as LedgerFailure;
@@ -28,7 +28,8 @@ use pg_model::size::ThumbHeight;
 pub mod fault;
 pub mod placeholders;
 
-const BATCH: usize = 200;
+/// The files one batch of a pass takes: the thumbnail pass's and the placeholder pass's (`placeholders`).
+pub(crate) const BATCH: usize = 200;
 
 /// The failures found are written to the ledger at least this often, so the inbox follows a long pass.
 const LEDGER_EVERY: Duration = Duration::from_secs(2);
@@ -113,14 +114,15 @@ impl Failed {
             Some(MakeError::Unreadable(_)) => Failed::Unreadable,
             Some(MakeError::Undecodable(_)) => Failed::Undecodable,
             // The pipeline's read of the file.
-            None if e.downcast_ref::<std::io::Error>().is_some() => Failed::Unreadable,
+            None if pg_jobs::failure::is_io_read(e) => Failed::Unreadable,
             None => Failed::Other,
         }
     }
 
-    /// Whether the ledger records it, and with which retry: `Some(true)` tried again by the next pass, `Some(false)`
-    /// only once the file changes (or the user retries it); `None` not recorded (tried again, and no failure of the
-    /// file's).
+    /// Whether the ledger records it, and with which retry: `Some(false)` is recorded and tried again only once the file
+    /// changes (or the user retries it), which is every recorded failure today. `Some(true)` (the ledger's retry flag,
+    /// tried again by the next pass) is not produced by any failure yet. `None` is not recorded (tried again, and no
+    /// failure of the file's).
     fn recorded(&self) -> Option<bool> {
         match self {
             Failed::Panicked | Failed::Undecodable => Some(false),
@@ -130,9 +132,7 @@ impl Failed {
 }
 
 /// Unix seconds now.
-pub(crate) fn unix_now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-}
+pub(crate) use pg_platform::clock::unix_now;
 
 /// `seq` folded into the smallest change number of the files to try again.
 fn fold(first_failed: &mut Option<i64>, seq: i64) {
@@ -214,7 +214,7 @@ pub fn run_while(
     // The maker's steps the workers run for this pass: process-wide tallies, so the pass attaches what they grew by.
     let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::ENCODE];
     let step_marks = steps.map(|step| step.mark());
-    let pending = pg_perf::span("thumbs.pending");
+    let pending = pg_perf::span("pending.thumbs");
     let Pending { work, snapshot } = match volumes {
         pg_catalog::VolumeSet::All => cache.pending(catalog_path, thumb)?,
         pg_catalog::VolumeSet::Only(volumes) => cache.pending_on(catalog_path, thumb, volumes)?,
@@ -444,8 +444,7 @@ mod tests {
     /// The file whose thumbnail asks its pass to stop (before it is made, so the pass is stopped with that file's result
     /// in hand).
     static STOP_ON: Mutex<Option<(FileId, Arc<Control>)>> = Mutex::new(None);
-    /// Held by each test that runs the pass: the fault is the process's, and file ids repeat from catalog to catalog.
-    static ONE_PASS: Mutex<()> = Mutex::new(());
+    use pg_testkit::ONE_PASS;
 
     /// Asks the pass to stop when `id` is the file asked for, and panics when it is the file that panics.
     pub(super) fn fault(id: FileId) {
@@ -464,13 +463,7 @@ mod tests {
     #[test]
     fn a_file_whose_thumbnail_panics_is_not_listed_again() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-        let dir = pg_testkit::run_folder_with("scratch_rate", "thumbs-panic", &["images"]).unwrap();
-        for name in ["a.png", "b.png"] {
-            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
-        }
-        let catalog_path = dir.join("catalog.sqlite");
-        let mut c =
-            Catalog::prepare(&catalog_path, pg_catalog::Versions::current(), pg_platform::native::PATH_RULES).unwrap();
+        let (dir, catalog_path, mut c) = pictures("thumbs-panic", &["a.png", "b.png"]);
         let ctl = Control::new();
         // The ledger's changes the pass announces (`Control::ledger_changed`).
         let announced = Arc::new(AtomicUsize::new(0));
@@ -483,7 +476,7 @@ mod tests {
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
-        *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(state::file_id(&c, "a.png").unwrap());
         let before = announced.load(Ordering::SeqCst);
 
         let (events, _quiet) = Quiet::bus();
@@ -509,7 +502,7 @@ mod tests {
         assert_eq!((second.needed, second.made, second.failed), (0, 0, 0), "the file that panicked is listed again");
         assert_eq!(second.ledger, LedgerOutcome::Untouched, "an empty pass touches no ledger");
         // The user's Retry, the fault gone: the file is made, and leaves the ledger.
-        *PANIC_ON.lock().unwrap() = None;
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = None;
         c.retry_failures(FilePass::Thumbs).unwrap();
         let third = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
         assert_eq!((third.needed, third.made, third.failed), (1, 1, 0));
@@ -523,15 +516,23 @@ mod tests {
     /// cache's events.
     type Imported = (std::path::PathBuf, std::path::PathBuf, Catalog, ThumbCache, Quiet<pg_thumbcache::Event>);
 
-    /// A library folder in a run folder with `names` (small PNGs), scanned and imported, and a cache of `cap` bytes for
-    /// its catalog.
-    fn imported(prefix: &str, names: &[&str], cap: i64) -> Imported {
-        let dir = pg_testkit::run_folder_with("scratch_rate", prefix, &["images"]).unwrap();
+    /// A run folder of its own whose `images` folder holds `names` as small PNGs, and the catalog prepared beside them:
+    /// the folder, the catalog's path, and the catalog.
+    fn pictures(prefix: &str, names: &[&str]) -> (std::path::PathBuf, std::path::PathBuf, Catalog) {
+        let dir = pg_testkit::run_folder_with("scratch_thumbs", prefix, &["images"]).unwrap();
         for name in names {
             std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         }
         let catalog_path = dir.join("catalog.sqlite");
-        let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        let c =
+            Catalog::prepare(&catalog_path, pg_catalog::Versions::current(), pg_platform::native::PATH_RULES).unwrap();
+        (dir, catalog_path, c)
+    }
+
+    /// A library folder in a run folder with `names` (small PNGs), scanned and imported, and a cache of `cap` bytes for
+    /// its catalog.
+    fn imported(prefix: &str, names: &[&str], cap: i64) -> Imported {
+        let (dir, catalog_path, mut c) = pictures(prefix, names);
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         c.add_root(&root).unwrap();
@@ -583,7 +584,7 @@ mod tests {
     fn a_ledger_that_cant_be_written_fails_the_ledger_and_not_the_pass() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
         let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-ledger-fails", &["a.png", "b.png"], 1 << 30);
-        *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(state::file_id(&c, "a.png").unwrap());
         let opts = Options::new(Priority::Normal);
         let failing = pg_catalog::fixture::LedgerWritesFail::start();
         let first = run(&cache, &catalog_path, h(64), &opts, &Control::new()).unwrap();
@@ -593,7 +594,7 @@ mod tests {
         assert!(c.failed_files(FilePass::Thumbs, 10).unwrap().is_empty(), "nothing was recorded");
         // Its change number held the checkpoint back: the next pass lists it again, and records it.
         let second = run(&cache, &catalog_path, h(64), &opts, &Control::new()).unwrap();
-        *PANIC_ON.lock().unwrap() = None;
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = None;
         assert_eq!((second.needed, second.failed, second.ledger), (1, 1, LedgerOutcome::Written));
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
     }
@@ -603,9 +604,9 @@ mod tests {
     fn the_ledger_is_written_when_the_cache_fills() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
         let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-ledger-full", &["a.png", "b.png"], 1);
-        *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(state::file_id(&c, "a.png").unwrap());
         let first = run(&cache, &catalog_path, h(64), &Options::new(Priority::Normal), &Control::new()).unwrap();
-        *PANIC_ON.lock().unwrap() = None;
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = None;
         assert!(first.cache_full && !first.complete);
         assert_eq!(first.ledger, LedgerOutcome::Written);
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
@@ -618,12 +619,12 @@ mod tests {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
         let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-ledger-stop", &["a.png", "b.png"], 1 << 30);
         let a = state::file_id(&c, "a.png").unwrap();
-        *PANIC_ON.lock().unwrap() = Some(a);
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(a);
         let ctl = Arc::new(Control::new());
-        *STOP_ON.lock().unwrap() = Some((a, ctl.clone()));
+        *STOP_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some((a, ctl.clone()));
         let first = run(&cache, &catalog_path, h(64), &Options::new(Priority::Normal), &ctl).unwrap();
-        *PANIC_ON.lock().unwrap() = None;
-        *STOP_ON.lock().unwrap() = None;
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        *STOP_ON.lock().unwrap_or_else(PoisonError::into_inner) = None;
         assert_eq!(first.failed, 1, "the file that panicked was reached before the stop");
         assert_eq!(first.ledger, LedgerOutcome::Written);
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure recorded") };
@@ -639,7 +640,7 @@ mod tests {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
         let (dir, catalog_path, c, cache, _quiet) = imported("thumbs-pass-error", &["a.png", "b.png"], 1 << 30);
         let a = state::file_id(&c, "a.png").unwrap();
-        *PANIC_ON.lock().unwrap() = Some(a);
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(a);
         // The cache's data table refuses every thumbnail: the store's error comes back to the pass.
         fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
         let opts = Options::new(Priority::Normal);
@@ -655,7 +656,7 @@ mod tests {
         // The next pass, with the cache working: the refused file is made, the one that panicked is not listed (its row
         // holds it), and the ledger still holds it once.
         let second = run(&cache, &catalog_path, h(64), &opts, &Control::new()).unwrap();
-        *PANIC_ON.lock().unwrap() = None;
+        *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = None;
         assert_eq!((second.needed, second.made, second.failed, second.complete), (1, 1, 0, true));
         assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
     }
@@ -698,13 +699,8 @@ mod tests {
     #[test]
     fn a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-        let dir = pg_testkit::run_folder_with("scratch_rate", "thumbs-ledger", &["images"]).unwrap();
+        let (dir, catalog_path, mut c) = pictures("thumbs-ledger", &["a.png", "b.png", "c.png"]);
         let images = dir.join("images");
-        for name in ["a.png", "b.png", "c.png"] {
-            std::fs::write(images.join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
-        }
-        let catalog_path = dir.join("catalog.sqlite");
-        let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&images).unwrap();
         c.add_root(&root).unwrap();
@@ -755,13 +751,8 @@ mod tests {
     #[test]
     fn placeholders_follow_the_thumbnails_and_an_undecodable_file_owes_none() {
         let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-        let dir = pg_testkit::run_folder_with("scratch_rate", "thumbs-placeholders", &["images"]).unwrap();
+        let (dir, catalog_path, mut c) = pictures("thumbs-placeholders", &["a.png", "b.png"]);
         let images = dir.join("images");
-        for name in ["a.png", "b.png"] {
-            std::fs::write(images.join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
-        }
-        let catalog_path = dir.join("catalog.sqlite");
-        let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
         let root = pg_platform::names::normalize_path(&images).unwrap();
         c.add_root(&root).unwrap();
@@ -797,9 +788,5 @@ mod tests {
         assert_eq!(c.owed_placeholders().unwrap(), 0);
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
         assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "b.png").unwrap(), false));
-    }
-
-    fn versions() -> pg_catalog::Versions {
-        pg_catalog::Versions::current()
     }
 }

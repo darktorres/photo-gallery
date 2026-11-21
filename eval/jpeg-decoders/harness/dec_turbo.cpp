@@ -12,6 +12,7 @@ struct Turbo : Decoder {
     explicit Turbo(bool planar) : planar(planar) {}
     ~Turbo() override { tj3Destroy(h); }
     std::string decode(const std::vector<uint8_t>& jpeg, Image& out) override {
+        if (!h) return "tj3Init failed";
         if (tj3DecompressHeader(h, jpeg.data(), jpeg.size()) != 0) return tj3GetErrorStr(h);
         int w = tj3Get(h, TJPARAM_JPEGWIDTH), ht = tj3Get(h, TJPARAM_JPEGHEIGHT);
         int ss = tj3Get(h, TJPARAM_SUBSAMP);

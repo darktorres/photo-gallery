@@ -43,6 +43,7 @@
 //! counter of its own; the grid carries it (through `GalleryModel::open_listing` and `Grid::arrive`, never through QML),
 //! and `Shell::list_shown` reports the generation shown. A reveal is consumed only by its own listing's `ListShown`, and
 //! navigating away drops it.
+//!
 //! ## Where the window tells
 //!
 //! Every report of the window, and what it is: the notice it posts (the inbox logs it, its target the notice's source),
@@ -69,8 +70,9 @@
 //! | `picker.rs` `report_unlisted` | `picker`, warning | The app's folder dialog couldn't list a folder | `PickerFailed` |
 //! | `library.rs` `load_roots` | `library`, warning | The library's folders couldn't be read | `FoldersUnreadable` |
 //! | `library.rs` `start` | `library`, error | The background work didn't start | `LibraryUnavailable` |
+//! | `library.rs` the change pump's start | `library`, error | The window can't see the library's changes | `ChangesUnseen` |
 //! | `library.rs` `start` | `library`, warning | The change pump didn't start | log |
-//! | `providers.rs` (4) | `providers`, warning | An image request failed, or wasn't one | log (a thumbnail that doesn't decode is also recorded in the ledger, by `pg_app::Images`) |
+//! | `providers.rs` (3) | `providers`, warning | An image request failed, or wasn't one | log (a thumbnail that doesn't decode is also recorded in the ledger, by `pg_app::Images`) |
 //! | `animation.rs` `restart` | `animation`, warning | An animation couldn't be read | log |
 //! | `video_source.rs` `play`, `video_player.rs` `play_path` | `video`, warning | A video couldn't be opened | log |
 //! | `yandex.rs` (3) | `yandex`, warning | A search's file, the pump, a thread | log (the panel says it) |
@@ -82,18 +84,21 @@
 pub(crate) mod state;
 
 use crate::notices_bridge::qobject;
+use crate::rows::qt_int;
 
 use core::pin::Pin;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
+
+use crate::pump::{Pending, lock};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::reexport::{InboxEntry, InboxEntryId};
-use pg_app::{FailedItems, InboxEvent, Listing};
-use pg_client::text::{self, Message, render};
-use pg_model::notice::{Action, LedgerKind, Level, Notice};
+use pg_app::{FailedItems, InboxEvent, InboxListing};
+use pg_client::text::{self, Message};
+use pg_model::notice::{Action, LedgerKind, Notice};
 use pg_model::rules::PathRules;
 
 use crate::app;
@@ -187,7 +192,7 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
             for file in files {
                 words.push('\n');
                 let path = rules.display(&file.path);
-                words.push_str(&render(&Message::FailedFileLine { path, error: file.error.clone() }));
+                words.push_str(&text::render(&Message::FailedFileLine { path, error: file.error.clone() }));
             }
         }
         Some(FailedItems::Folders(folders)) => {
@@ -197,12 +202,12 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
                     root = Some(folder.root);
                     words.push('\n');
                     let root = rules.display(&folder.root_path);
-                    words.push_str(&render(&Message::FailedFolderGroup { root }));
+                    words.push_str(&text::render(&Message::FailedFolderGroup { root }));
                 }
                 words.push_str("\n  ");
-                words.push_str(&render(&Message::FailedFolderLine {
+                words.push_str(&text::render(&Message::FailedFolderLine {
                     path: rules.display(&folder.path),
-                    why: render(&Message::FailedFolderReason { reason: folder.failure.code().to_string() }),
+                    why: text::render(&Message::FailedFolderReason { reason: folder.failure.code().to_string() }),
                     error: folder.error.clone(),
                 }));
             }
@@ -211,30 +216,11 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
     words
 }
 
-/// What the inbox published that the Qt thread hasn't shown, and whether a pass is queued for it.
+/// What the inbox published that the Qt thread hasn't shown (gathered into `pump::Pending`).
 #[derive(Default)]
-struct Pending {
-    listing: Option<Arc<Listing>>,
+struct InboxChanges {
+    listing: Option<Arc<InboxListing>>,
     toasts: Vec<Notice>,
-    queued: bool,
-}
-
-fn lock(pending: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
-    pending.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// The `level` role and `toastLevel`: 0 info, 1 warning, 2 error.
-fn level_code(level: Level) -> i32 {
-    match level {
-        Level::Info => 0,
-        Level::Warning => 1,
-        Level::Error => 2,
-    }
-}
-
-/// A count as QML takes it.
-fn qt_int(n: impl TryInto<i32>) -> i32 {
-    n.try_into().unwrap_or(i32::MAX)
 }
 
 impl qobject::Notices {
@@ -246,13 +232,15 @@ impl qobject::Notices {
         let notice = &entry.notice;
         match role {
             ROLE_TITLE => {
-                QVariant::from(&QString::from(&render(&Message::NoticeTitle { notice: notice.clone(), rules })))
+                QVariant::from(&QString::from(&text::render(&Message::NoticeTitle { notice: notice.clone(), rules })))
             }
             ROLE_BODY => {
-                QVariant::from(&QString::from(&render(&Message::NoticeBody { notice: notice.clone(), rules })))
+                QVariant::from(&QString::from(&text::render(&Message::NoticeBody { notice: notice.clone(), rules })))
             }
-            ROLE_SOURCE => QVariant::from(&QString::from(&render(&Message::SourceLabel { source: notice.source() }))),
-            ROLE_LEVEL => QVariant::from(&level_code(notice.level())),
+            ROLE_SOURCE => {
+                QVariant::from(&QString::from(&text::render(&Message::SourceLabel { source: notice.source() })))
+            }
+            ROLE_LEVEL => QVariant::from(&notice.level().code()),
             // Unix seconds, as a number QML makes a `Date` of.
             ROLE_UPDATED => QVariant::from(&pg_model::num::signed(entry.updated)),
             // How many times a kept notice was posted, how many files a ledger holds; -1 when not counted (a ledger's
@@ -270,7 +258,7 @@ impl qobject::Notices {
                     // Nothing says none: a ledger entry with no failure since its dismissal has no line.
                     (InboxEntryId::Ledger { .. }, Some(counts)) if counts.since_dismissed > 0 => {
                         let count = usize::try_from(counts.since_dismissed).unwrap_or(usize::MAX);
-                        render(&Message::LedgerSinceDismissed { count })
+                        text::render(&Message::LedgerSinceDismissed { count })
                     }
                     _ => String::new(),
                 };
@@ -321,14 +309,14 @@ impl qobject::Notices {
         let events = inbox.subscribe();
         self.as_mut().show(&inbox.listing());
         let thread = self.qt_thread();
-        let pending: Arc<Mutex<Pending>> = Arc::default();
+        let pending: Arc<Mutex<Pending<InboxChanges>>> = Arc::default();
         let follower = std::thread::Builder::new().name("inbox view".into()).spawn(move || {
             while let Some(event) = events.recv() {
                 let queue = {
                     let mut pending = lock(&pending);
                     match event {
-                        InboxEvent::Changed(listing) => pending.listing = Some(listing),
-                        InboxEvent::Toast(notice) => pending.toasts.push(notice),
+                        InboxEvent::Changed(listing) => pending.changes.listing = Some(listing),
+                        InboxEvent::Toast(notice) => pending.changes.toasts.push(notice),
                     }
                     !std::mem::replace(&mut pending.queued, true)
                 };
@@ -342,30 +330,30 @@ impl qobject::Notices {
             }
         });
         if let Err(e) = follower {
-            pg_log::warn("inbox", &format!("the inbox view's follower didn't start: {e}"));
+            pg_log::warn("inbox", &format!("the inbox view's follower didn't start: {e:#}"));
         }
     }
 
     /// One pass on the Qt thread: the latest listing, and the newest toast.
-    fn on_pass(mut self: Pin<&mut Self>, pending: Arc<Mutex<Pending>>) {
+    fn on_pass(mut self: Pin<&mut Self>, pending: Arc<Mutex<Pending<InboxChanges>>>) {
         let (listing, toasts) = {
             let mut pending = lock(&pending);
             pending.queued = false;
-            (pending.listing.take(), std::mem::take(&mut pending.toasts))
+            (pending.changes.listing.take(), std::mem::take(&mut pending.changes.toasts))
         };
         if let Some(listing) = listing {
             self.as_mut().show(&listing);
         }
         if let Some(notice) = toasts.last() {
             let words =
-                render(&Message::NoticeTitle { notice: notice.clone(), rules: pg_platform::native::PATH_RULES });
-            self.as_mut().set_toast_shown(QString::from(&words), level_code(notice.level()));
+                text::render(&Message::NoticeTitle { notice: notice.clone(), rules: pg_platform::native::PATH_RULES });
+            self.as_mut().set_toast_shown(QString::from(&words), notice.level().code());
         }
     }
 
     /// Show `listing`: the changes from the rows shown (`list_diff`), then each row whose entry changed in place (a new
     /// revision, its counts, read) told so. Shown while the panel is open in an active window, what is new is read.
-    fn show(mut self: Pin<&mut Self>, listing: &Listing) {
+    fn show(mut self: Pin<&mut Self>, listing: &InboxListing) {
         let old: Vec<InboxEntryId> = self.rows.iter().map(|e| e.id.entry()).collect();
         let new: Vec<InboxEntryId> = listing.entries.iter().map(|e| e.id.entry()).collect();
         let root = QModelIndex::default();
@@ -383,7 +371,8 @@ impl qobject::Notices {
                 }
                 Op::Move { from, to } => {
                     // A row moves up only (`to < from`), which Qt always takes.
-                    let _ = self.as_mut().begin_move_rows(&root, qt_int(from), qt_int(from), &root, qt_int(to));
+                    let moved = self.as_mut().begin_move_rows(&root, qt_int(from), qt_int(from), &root, qt_int(to));
+                    debug_assert!(moved, "Qt takes a row that moves up");
                     list_diff::apply(&mut self.as_mut().rust_mut().rows, op, &listing.entries);
                     self.as_mut().end_move_rows();
                 }
@@ -507,11 +496,11 @@ impl qobject::Notices {
             return;
         };
         let notices = self.qt_thread();
-        app::get().reading().session().copy_details(kind, COPIED_FILES, seen_at_open(kind), move |read| {
+        app::session().copy_details(kind, COPIED_FILES, seen_at_open(kind), move |read| {
             let items = match read {
                 Ok(failed) => Some(failed.items),
                 Err(e) => {
-                    pg_log::warn("inbox", &format!("the failed files to copy couldn't be read: {e}"));
+                    pg_log::warn("inbox", &format!("the failed files to copy couldn't be read: {e:#}"));
                     None
                 }
             };
@@ -645,7 +634,8 @@ mod tests {
         let words = copy_words(&notice, rules, Some(&FailedItems::Files(vec![file])));
         let mut lines = words.lines();
         assert_eq!(lines.next(), Some(text::notice_line(&notice, rules).as_str()));
-        assert_eq!(lines.next(), Some(r"D:\p\a.jpg: not a JPEG"));
+        let shown = format!("{}: not a JPEG", rules.display(&p(r"D:\p\a.jpg")));
+        assert_eq!(lines.next(), Some(shown.as_str()));
         assert_eq!(lines.next(), None);
 
         let folder = |root: i64, root_path: &str, path: &str| FailedFolder {

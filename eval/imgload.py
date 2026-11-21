@@ -13,7 +13,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
-from common import load_rgb
+from common import exe_name, load_rgb
 from models import ModelSpec, run
 
 
@@ -42,8 +42,7 @@ class FileSource:
 
 
 # The gallery's border detector (crates/analysis/src/borders.rs), run on piped pixels by `gallery borders --stdin`.
-GALLERY_EXE = "gallery.exe" if os.name == "nt" else "gallery"
-GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / GALLERY_EXE))
+GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / exe_name("gallery")))
 
 
 class _Detector:

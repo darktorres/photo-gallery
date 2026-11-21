@@ -55,6 +55,13 @@ Pane {
     readonly property int facetBorders: 3
     readonly property int facetRatings: 4
     readonly property int facetExts: 5
+    // The bounded fields, by index: the order of pg_client::input::Field::ALL (pinned by its test). Each Bound names one
+    // of these; a list facet's index above is a different namespace, so these are not facet indices.
+    readonly property int fieldSize: 0
+    readonly property int fieldMegapixels: 1
+    readonly property int fieldDuration: 2
+    readonly property int fieldTaken: 3
+    readonly property int fieldModified: 4
     // The duplicates and review boxes, in their order (Filters.duplicatesIndex, borderMarkedIndex).
     readonly property list<string> duplicateChoices: [words.text("ui-any"), words.text("ui-has-duplicates"), words.text("ui-no-duplicates")]
     readonly property list<string> reviewChoices: [words.text("ui-any"), words.text("ui-not-marked"), words.text("ui-marked-not-a-border")]
@@ -245,33 +252,33 @@ Pane {
                         text: words.text("ui-size-mb")
                     }
                     Bound {
-                        facet: 0
+                        facet: bar.fieldSize
                         end: 0
                     }
                     Bound {
-                        facet: 0
+                        facet: bar.fieldSize
                         end: 1
                     }
                     Caption {
                         text: words.text("ui-megapixels")
                     }
                     Bound {
-                        facet: 1
+                        facet: bar.fieldMegapixels
                         end: 0
                     }
                     Bound {
-                        facet: 1
+                        facet: bar.fieldMegapixels
                         end: 1
                     }
                     Caption {
                         text: words.text("ui-duration-s")
                     }
                     Bound {
-                        facet: 2
+                        facet: bar.fieldDuration
                         end: 0
                     }
                     Bound {
-                        facet: 2
+                        facet: bar.fieldDuration
                         end: 1
                     }
                 }
@@ -282,12 +289,12 @@ Pane {
                         text: words.text("ui-taken")
                     }
                     Bound {
-                        facet: 3
+                        facet: bar.fieldTaken
                         end: 0
                         isDate: true
                     }
                     Bound {
-                        facet: 3
+                        facet: bar.fieldTaken
                         end: 1
                         isDate: true
                     }
@@ -295,12 +302,12 @@ Pane {
                         text: words.text("ui-modified")
                     }
                     Bound {
-                        facet: 4
+                        facet: bar.fieldModified
                         end: 0
                         isDate: true
                     }
                     Bound {
-                        facet: 4
+                        facet: bar.fieldModified
                         end: 1
                         isDate: true
                     }

@@ -17,12 +17,15 @@ use pg_model::orientation::Orientation;
 
 use crate::display::{self, DECODE_MARGIN, Shown};
 
-// The steps a worker's picture takes, each a tally of its thread time, over every worker (process-wide: a pass that runs
-// them attaches the tallies it caused to its span). The decode is a thumbnail's and a placeholder's alike; the resize and
-// the encode are a thumbnail's, the resize and the hash a placeholder's.
+/// The steps a worker's picture takes, each a tally of its thread time, over every worker (process-wide: a pass that runs
+/// them attaches the tallies it caused to its span). The decode is a thumbnail's and a placeholder's alike; the resize and
+/// the encode are a thumbnail's, the resize and the hash a placeholder's.
 pub static DECODE: pg_perf::Tally = pg_perf::Tally::new("render.decode");
+/// The resize step's tally (see [`DECODE`]).
 pub static RESIZE: pg_perf::Tally = pg_perf::Tally::new("render.resize");
+/// The encode step's tally (see [`DECODE`]).
 pub static ENCODE: pg_perf::Tally = pg_perf::Tally::new("render.encode");
+/// The ThumbHash step's tally (see [`DECODE`]).
 pub static THUMBHASH: pg_perf::Tally = pg_perf::Tally::new("render.thumbhash");
 
 /// The image a placeholder is encoded from is fitted into this many px on its long side (the encoder's blur is at its
@@ -34,7 +37,7 @@ pub const PLACEHOLDER_DECODE_SIDE: usize = 200;
 
 /// libjpeg-turbo q85, 4:2:0 (SSIMULACRA2 ~82). The cache format is still open:
 /// JPEG is the fastest to make on demand (~1 ms) and to show (~0.6 ms).
-const JPEG_QUALITY: i32 = 85;
+const JPEG_QUALITY: u8 = 85;
 /// What a worker keeps of each buffer: a thumbnail decode is DCT-scaled to 4× its height, so this holds a 2048 px
 /// high one of a 3:2 photo. A larger image (a PNG, decoded at full size) frees its buffers once it is done.
 pub const KEEP_BYTES: usize = 3072 * 2048 * 3;
@@ -386,7 +389,7 @@ mod tests {
         assert!(mean(&p1).abs_diff(mean(&p2)) < 4, "{} and {}", mean(&p1), mean(&p2));
     }
 
-    const SCRATCH: &str = "scratch_maker";
+    const SCRATCH: &str = "scratch_render";
 
     /// Files read into the maker make the thumbnails and decodes their bytes make, file after file (larger, smaller,
     /// missing, not an image), and a missing file fails as `std::fs::read` does.
@@ -421,7 +424,7 @@ mod tests {
             let err = maker.read_file(&missing).unwrap_err();
             assert_eq!(err.to_string(), std::fs::read(&missing).unwrap_err().to_string());
         }
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// What a failure is decides whether it is tried again: a video whose file can't be opened is unreadable (an offline
@@ -442,6 +445,6 @@ mod tests {
         let cut = whole.get(..sof + 6).unwrap();
         assert!(matches!(maker.make(cut, 64, Turns::NONE), Err(MakeError::Undecodable(_))));
         assert!(matches!(maker.make(b"not an image", 64, Turns::NONE), Err(MakeError::Undecodable(_))));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

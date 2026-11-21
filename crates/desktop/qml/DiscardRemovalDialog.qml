@@ -29,7 +29,7 @@ Dialog {
     property alias cancelButton: cancelBtn
     property alias discardButton: discardBtn
 
-    title: words.text("ui-removal-discard-title")
+    title: words.text("ui-discard-removal-title")
     modal: true
     width: 420
     // Qt gives the focus to the first enabled button when the dialog shows; Cancel takes it once the dialog is open.
@@ -56,7 +56,7 @@ Dialog {
             width: parent.width
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
-            text: words.text("ui-removal-discard-question")
+            text: words.text("ui-discard-removal-question")
         }
     }
 
@@ -68,7 +68,7 @@ Dialog {
         }
         Button {
             id: discardBtn
-            text: words.text("ui-removal-discard-confirm")
+            text: words.text("ui-discard-removal-confirm")
             DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
         }
     }

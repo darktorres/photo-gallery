@@ -37,11 +37,11 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
   | Buffers | MB/s |
   |---|---|
   | no pool (HEAD 2e1b6ca: a channel of 32 files, a `Vec` per file) | 255 |
-  | 64 MB | 221 |
-  | 128 MB | 250 |
-  | 240 MB (12 MiB × (8 + 12), the default) | 268 (HEAD in the same rounds: 270) |
-  | 256 MB | 268 |
-  | 512 MB | 266 |
+  | 64 MiB | 221 |
+  | 128 MiB | 250 |
+  | 240 MiB (12 MiB × (8 + 12), the default) | 268 (HEAD in the same rounds: 270) |
+  | 256 MiB | 268 |
+  | 512 MiB | 266 |
 
   - The disk, not the CPU, sets the pace: ~40 files/s. Below a file per slot, readers wait for workers to
     hand buffers back.
@@ -51,8 +51,8 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     different blocks of the folder, more than the budgets differ.
   - **Again with the pool that replaces a too-small idle buffer** (145ec5b; the runs above were of a pool that
     only reused a buffer already large enough, and otherwise made a new one while the budget had room), at
-    1d3685b, the same files and method, 2026-11-02. Medians: no pool (2e1b6ca) 278 MB/s, 64 MB 222,
-    128 MB 267, 240 MB 277, 256 MB 278, 512 MB 277. The knee is where it was, so the default stays at 240 MB. The same
+    1d3685b, the same files and method, 2026-11-02. Medians: no pool (2e1b6ca) 278 MB/s, 64 MiB 222,
+    128 MiB 267, 240 MiB 277, 256 MiB 278, 512 MiB 277. The knee is where it was, so the default stays at 240 MiB. The same
     build without a pool read 278 MB/s here and 255 MB/s in the first session, so only rounds of one session
     compare.
   - That pool still made a buffer for nearly every file: only bytes bound the files in flight, so readers read
@@ -61,15 +61,15 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     many buffers, reused and grown in place, and the readers' channel has that many places), 2026-11-02. The
     first 400 of the same files (2.6 GB), the same method, three rounds of slots × budget, medians in MB/s:
 
-    | Slots \ budget | 128 MB | 240 MB | 512 MB |
+    | Slots \ budget | 128 MiB | 240 MiB | 512 MiB |
     |---|---:|---:|---:|
     | 20 (readers + workers) | 249 | 271 | 272 |
     | 32 (readers + 2 × workers, the default) | 261 | 273 | 273 |
     | 56 (readers + 4 × workers) | 265 | 274 | 273 |
     | no bound by count | 261 | 273 | 273 |
 
-    The runs of a configuration were within 0.4 s of each other (9.6–10.1 s, but for 20 at 128 MB). The bound by
-    count costs nothing from 32 slots on, and 240 MB is still the knee, so both defaults are those. A first try
+    The runs of a configuration were within 0.4 s of each other (9.6–10.1 s, but for 20 at 128 MiB). The bound by
+    count costs nothing from 32 slots on, and 240 MiB is still the knee, so both defaults are those. A first try
     on the 1,000 files was dropped: its third round ran 30% slower in every configuration, from some other load
     on the machine.
 - **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and the scanner's `CreateFileW` is
@@ -80,7 +80,7 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
 - **Folders ending in a dot or a space.** A plain path drops the dot or space from a folder's name on Windows, so
   `D:\a.\x.jpg` opens `D:\a\x.jpg`; the verbatim form keeps it. Every stored path reaches the disk verbatim
   (`pg_platform::names::disk_path`). Probed (2026-11-10, Windows 10, folders `a.` and `a` side by side):
-  - ExifTool 13.60 takes the verbatim form, through the stay-open argument file and from the command line, with a
+  - ExifTool 13.60 (the Windows install; the CI pin is 13.59, not re-probed) takes the verbatim form, through the stay-open argument file and from the command line, with a
     non-ASCII name too: `-Rating=5` on `\\?\…\a.\x.jpg` wrote `a.\x.jpg`, and on the plain path it wrote `a\x.jpg`.
     The write-back and the crop give it the verbatim path. (An earlier note here said ExifTool did not read `\\?\`:
     wrong for 13.60.)

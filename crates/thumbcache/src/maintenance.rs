@@ -1,8 +1,6 @@
 //! The cache file's upkeep, below the schema and the writer: the check of the totals against the entries (`heal`,
 //! and `heal_if_due` once a day at open), giving free pages back (`shrink`), and the Unix clock they use.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use anyhow::Result;
 use rusqlite::{Connection, TransactionBehavior, params};
 
@@ -29,9 +27,7 @@ pub struct Drift {
     pub actual: (i64, i64),
 }
 
-pub(crate) fn unix_now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-}
+pub(crate) use pg_platform::clock::unix_now;
 
 /// `heal`, unless it was done within `HEAL_INTERVAL` (`meta.healed`, the Unix second it last was): the open's check.
 pub(crate) fn heal_if_due(conn: &mut Connection) -> Result<Option<Drift>> {

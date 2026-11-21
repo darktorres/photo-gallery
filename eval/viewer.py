@@ -18,6 +18,7 @@ import mimetypes
 import re
 import socket
 import threading
+import uuid
 import webbrowser
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -216,8 +217,8 @@ def set_marks(run: str, items: list) -> dict:
                 marks.pop(pair_key(a, b), None)
             else:
                 marks[pair_key(a, b)] = mark
-        tmp = target.with_suffix(".tmp")
-        tmp.write_text(json.dumps(marks, indent=1, ensure_ascii=False), encoding="utf-8")
+        tmp = target.with_name(f"{target.name}.{uuid.uuid4().hex}.tmp")
+        tmp.write_text(json.dumps(marks, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(target)
     return {"changed": len(items), "marked": len(marks)}
 
@@ -242,7 +243,7 @@ def thumbnail(path: Path, size: int) -> bytes:
     im.save(buf, "JPEG", quality=85)
     data = buf.getvalue()
     cached.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cached.with_name(f"{key}.{threading.get_ident()}.tmp")
+    tmp = cached.with_name(f"{cached.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_bytes(data)
     tmp.replace(cached)
     return data

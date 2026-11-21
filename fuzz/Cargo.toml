@@ -71,8 +71,10 @@ test = false
 doc = false
 bench = false
 
-# The workspace's vendored crates (the root Cargo.toml's [patch.crates-io] is the full list). Without
-# these, this crate's graph would take the upstream quick-xml, which pg-metadata does not compile against.
+# The workspace's vendored crates: the root Cargo.toml's [patch.crates-io] minus the four its graph never reaches
+# (cxx-qt-build and qt-build-utils, which are Qt's, and rusqlite and thumbhash, which the catalog uses). Keep the rest
+# in step with the root. Without these, this crate's graph would take the upstream quick-xml, which pg-metadata does not
+# compile against. parajpeg is a git dependency of pg-codec, not a patch, so it is not listed here.
 [patch.crates-io]
 fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", rev = "0ea7089165e3c991693f45bcddbf82bbcf9c4e7b" }
 fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }

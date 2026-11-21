@@ -47,7 +47,7 @@ doctor:
 
 # Build the app: `release` (default) or `debug` (reads the QML from crates/desktop/qml and reloads it on change).
 build profile="release": _qt
-    cargo build {{ if profile == "release" { "--release" } else { "" } }}
+    cargo build --locked {{ if profile == "release" { "--release" } else { "" } }}
 
 # Build, then put the Qt DLLs and QML modules next to gallery.exe (needed once per profile, and after Qt updates).
 # qoffscreen is included on purpose: the test hooks run the window offscreen (QT_QPA_PLATFORM=offscreen), and windeployqt
@@ -60,14 +60,14 @@ deploy profile="release" pdb="": (build profile)
 
 # Run the release build: the app, or a command (`just run scan D:\Photos`, `just run status`).
 run *args: _qt
-    cargo run --release -- {{ args }}
+    cargo run --locked --release -- {{ args }}
 
 # Run the debug build, whose window reloads when a QML file changes.
 dev *args: _qt
-    cargo run -- {{ args }}
+    cargo run --locked -- {{ args }}
 
 # The unit and integration tests. Qt's bin is on PATH (above): pg-desktop's tests link Qt and need its DLLs. FFmpeg isn't
-# on PATH: pg-video loads its DLLs by full path (crates/video/src/ffi.rs), so no PATH order decides which copy runs.
+# on PATH: pg-video loads its DLLs by full path (crates/video/src/ffi/load.rs), so no PATH order decides which copy runs.
 test *args: _qt
     cargo test --workspace --locked --timings {{ args }}
 
@@ -140,9 +140,9 @@ deny: _lint-tools
 
 # The module-cycle check: the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the
-# cxx-qt bridge modules the compiler does not. cargo-modules is a tool, not a dependency: its version is pinned here and
-# in CI's install steps (.github/workflows/ci.yml; bump both; the container reads it from here). A missing or different
-# one is installed at the pin. A cycle group that is not on the allowlist (tools/modgraph-allow.txt) fails the check, and
+# cxx-qt bridge modules the compiler does not. cargo-modules is a tool, not a dependency: its version is pinned here, and
+# CI reads it from here too (tools/ci/github_files.py, TAIKI_TOOLS), as the container does (tools/linux.py build args), so
+# a bump is this one line. A missing or different one is installed at the pin. A cycle group that is not on the allowlist (tools/modgraph-allow.txt) fails the check, and
 # the allowlist is empty: any module cycle fails. CI runs it on both targets.
 cargo_modules_version := "0.28.0"
 

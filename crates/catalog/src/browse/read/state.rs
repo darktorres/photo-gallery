@@ -30,7 +30,7 @@ fn file_state_at(r: &rusqlite::Row, first: usize) -> rusqlite::Result<FileState>
     Ok(FileState {
         mtime: r.get(first)?,
         rotation: Turns::new(r.get(first + 1)?),
-        turns: Turns::new(r.get(first + 2)?),
+        pending_turns: Turns::new(r.get(first + 2)?),
         writing: r.get(first + 3)?,
         size: r.get(first + 4)?,
     })
@@ -93,7 +93,7 @@ impl Catalog {
                     ValueRef::Null => None,
                     v => ThumbHash::new(v.as_blob()?),
                 };
-                Ok(Placeholder { hash, turns: Turns::new(kept).plus(file_state_at(r, 2)?.turns) })
+                Ok(Placeholder { hash, turns: Turns::new(kept).plus(file_state_at(r, 2)?.pending_turns) })
             })
             .optional()?)
     }

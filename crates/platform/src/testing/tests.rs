@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 
-const SCRATCH: &str = "scratch_platform_testing";
+const SCRATCH: &str = "scratch_platform";
 
 /// The environment variable that tells the child process of the cross-process test which prefix to claim under.
 const CHILD_PREFIX: &str = "PG_PLATFORM_TESTING_CHILD_PREFIX";

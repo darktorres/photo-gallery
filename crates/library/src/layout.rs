@@ -208,7 +208,7 @@ mod tests {
 
         other.ensure_catalog_dir(true).unwrap();
         assert!(other.catalog_dir().is_dir(), "with create, it is made");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The alias is a Windows mechanism (`pg_platform::sqlite::openable_folder`): on Unix SQLite takes the folder's bytes as
@@ -216,7 +216,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home() {
-        let home = pg_testkit::run_folder("scratch_aliases", "pg-layout").unwrap();
+        let home = pg_testkit::run_folder("scratch_library", "layout").unwrap();
         // "cat" with an unpaired surrogate.
         let odd = pg_testkit::odd_name("cat");
         let layout =
@@ -228,6 +228,6 @@ mod tests {
         let catalog = crate::open_catalog(&sqlite).unwrap();
         drop(catalog);
         assert!(layout.catalog_path().exists(), "the catalog is in its own folder, through the alias");
-        std::fs::remove_dir_all(&home).unwrap();
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

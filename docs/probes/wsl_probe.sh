@@ -7,7 +7,7 @@ set -u
 echo "== 1. Filesystems and devices"
 echo "home fs: $(stat -f -c %T "$HOME")"
 echo "home st_dev: $(stat -c %d "$HOME")"
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DRV="${PG_PROBE_DIR:-$ROOT/target/pg-test}/probe-wsl"
 mkdir -p "$DRV"
 rm -f "$DRV"/* 2>/dev/null

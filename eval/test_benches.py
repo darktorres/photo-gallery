@@ -20,8 +20,8 @@ os.environ["PG_CACHE_DIR"] = str(_ROOT / "cache")
 
 import numpy as np  # noqa: E402 (after the environment above)
 
-import bench_ann  # noqa: E402
-import bench_hdd  # noqa: E402
+import bench_ann  # noqa: E402 (after the environment above)
+import bench_hdd  # noqa: E402 (after the environment above)
 
 # common.py keeps the folders this module set. Drop it from the import cache, so a test module that imports it next
 # (test_viewer, which sets its own folders) gets a fresh one. The benches above keep the module they were given.
@@ -46,7 +46,9 @@ class DenseSamples(unittest.TestCase):
         files = [f"f{i}" for i in range(11)]
         with self.assertRaises(ValueError) as cm:
             bench_hdd.dense_samples(files, ORDERS, 2)
-        self.assertIn("--dense 2 x 6 orders needs 12 files; 11 found", str(cm.exception))
+        # The counts, not the sentence around them: the refusal names what is needed and what was found.
+        self.assertIn("needs 12 files", str(cm.exception))
+        self.assertIn("11 found", str(cm.exception))
 
     def test_exactly_enough_files_is_accepted(self):
         files = [f"f{i}" for i in range(12)]

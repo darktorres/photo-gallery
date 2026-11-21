@@ -13,7 +13,7 @@ pub(super) struct Row {
 #[derive(Default)]
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct FacetChoicesRust {
     /// The facet: the list's index in `pg_client::facets::ALL`; 0 (the default) is Types.

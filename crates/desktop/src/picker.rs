@@ -89,7 +89,7 @@ impl qobject::FolderPicker {
                     let call = pg_platform::picker::failed_call(&e).unwrap_or("the dialog");
                     pg_log::warn(
                         "picker",
-                        &format!("{purpose:?}: {call}: {e} (start folder {start:?}, owner window {owner:?})"),
+                        &format!("{purpose:?}: {call}: {e:#} (start folder {start:?}, owner window {owner:?})"),
                     );
                     crate::app::post(Notice::PickerFailed { error: crate::app::error_text(&e) });
                     let message = QString::from(&text::render(&Message::FolderDialogFailed { error: e.to_string() }));

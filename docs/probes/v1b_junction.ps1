@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 # V1 (no elevation): a junction on D: whose target is a folder on C:. Shows what the path-based checks report
 # for a reparse root whose real volume differs from the path's volume. Junction removal deletes the link only.
-$testRoot = if ($env:PG_TEST_DIR) { $env:PG_TEST_DIR } else { Join-Path $PSScriptRoot '..\..\..\target\pg-test' }
+$testRoot = if ($env:PG_TEST_DIR) { $env:PG_TEST_DIR } else { Join-Path $PSScriptRoot '..\..\target\pg-test' }
 $testRoot = [IO.Path]::GetFullPath($testRoot)
 $link = Join-Path $testRoot 'v1-junction'
 $target = $env:USERPROFILE

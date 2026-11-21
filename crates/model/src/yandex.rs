@@ -11,12 +11,43 @@ pub enum RequestError {
     Status(u16),
     /// A connection, TLS or timeout failure: the transport's text.
     Transport(String),
-    /// An answer without the data the app reads: what was missing.
-    Unexpected(String),
+    /// An answer without the data the app reads: which part was missing (the front ends word each one).
+    Unexpected(UnexpectedReason),
     /// A recorded session that can't answer: why.
     Recorded(String),
     /// A result's file that is not an image this app decodes: what failed.
     Undecodable(String),
+}
+
+/// What an answer from Yandex lacked, or what the app's own state lacked, as a typed reason: the front ends word each one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnexpectedReason {
+    /// The upload's answer is not JSON.
+    UploadNotJson,
+    /// The upload's answer has no `cbir_id`.
+    UploadNoCbirId,
+    /// The upload's answer has no URL for the original picture.
+    UploadNoOriginal,
+    /// The results page has no search state in it.
+    ResultsPageNoState,
+    /// The search state is not JSON.
+    ResultsStateNotJson,
+    /// The similar-images answer is not JSON.
+    SimilarNotJson,
+    /// The similar-images answer has no result list.
+    SimilarNoResults,
+    /// The result's file is not an image.
+    NotAnImage,
+    /// The picture is larger than the download limit.
+    TooLarge,
+    /// The search has no result of that id.
+    NoResult,
+    /// There is no search to take a result from.
+    NoSearch,
+    /// Nothing is on screen to save.
+    NoSearchOnScreen,
+    /// The request was never made (the app's stand-in before a search).
+    NotCalled,
 }
 
 /// Where a search or a save is, while it runs.
@@ -66,7 +97,8 @@ pub enum SaveFailure {
     Client(RequestError),
     /// A file could not be downloaded.
     Download { url: String, error: RequestError },
-    /// A downloaded file could not be written to `path` (as the user sees it): the error's text.
+    /// A downloaded file could not be written to `path` (as the user sees it). `error` is the error's text, not the error:
+    /// an `io::Error` is neither `Clone` nor `Eq`, and this type derives both.
     Write { url: String, path: String, error: String },
 }
 
@@ -82,7 +114,7 @@ pub struct Saved {
 
 /// A step's outcome, as the front end reads it on each poll.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Status {
+pub enum YandexStatus {
     /// A step in progress.
     Working(Phase),
     /// The search ended. The note is there when the similar images stopped early or failed.
@@ -91,6 +123,6 @@ pub enum Status {
     SearchFailed(SearchError),
     /// The save ended.
     Saved(Saved),
-    /// The search or the save stopped at an internal error (the panic is in the log).
-    Stopped,
+    /// The search or the save ended in a panic (the panic is in the log). Not a stop the user asked for.
+    Panicked,
 }

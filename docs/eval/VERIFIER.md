@@ -8,7 +8,7 @@ The verifier fix (PIL LANCZOS resampling, and the blur scaled by `ref_scale` / `
 and new figures from the same work dir: the pre-fix tree is 22ae0ff (`262004b^`), the post-fix tree is HEAD. The runs
 are in `D:\PhotoGallery\eval\archive-prefix-22ae0ff\` and `archive-postfix-262004b-HEAD\`. The pre-fix labeled run
 reproduces the recorded labeled baseline exactly. Sets: labeled (1043 pairs); cross-groups (4637 pairs, floor 0.3);
-k-NN (8450 pairs on a 9,307-image subset, built by selecting rows of the full-set embeddings by path).
+k-NN (8,344 pairs on a 9,307-image subset, built by selecting rows of the full-set embeddings by path).
 
 | Set | Pre-fix | Post-fix |
 |---|---|---|
@@ -19,7 +19,7 @@ k-NN (8450 pairs on a 9,307-image subset, built by selecting rows of the full-se
 The criterion window (duplicate p99 to cross-group p1) is [0.0171, 0.0858] before the fix and [0.0171, 0.0852] after.
 The fix barely moves it.
 
-Sweep of `--max-noise` on the post-fix data (`verify.py --rescore`, all three sets):
+Sweep of `--max-noise` on the post-fix data (`eval/verify.py --rescore`, all three sets):
 
 | max-noise | duplicates unrelated (of 698) | cross matched (of 4637) | k-NN cross matched (of 207) | labeled similar match / unrelated | k-NN unlabeled match / unrelated |
 |---|---|---|---|---|---|

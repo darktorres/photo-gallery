@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
-from common import DATA_ROOT, WORK_DIR, image_list, load_rgb
+from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
 from verify import (
     ROTATIONS,
@@ -37,7 +37,7 @@ from verify import (
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="sscd_fp16", help="only selects the sample (its ok_<model>.npy mask)")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="only selects the sample (its ok_<model>.npy mask)")
     parser.add_argument("--count", type=int, default=300)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--edits", nargs="+", choices=list(TRANSFORMS), help="only these edits (default: all)")
@@ -65,6 +65,8 @@ def main() -> None:
     def done(row: dict, out: dict, diag) -> None:
         nonlocal verified
         row.update(out)
+        # Every synthetic pair is a planted match: an error decision is not the expected one, so it is not correct (as
+        # verify.py scores a labelled pair).
         row["correct"] = row["decision"] == "match"
         if diag is not None:
             cv2.imwrite(str(diag_dir / f"{row['id']}.jpg"), diag, [cv2.IMWRITE_JPEG_QUALITY, 85])

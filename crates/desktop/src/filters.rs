@@ -159,7 +159,7 @@ impl qobject::Filters {
         let listing = controller::listing();
         let filters = self.qt_thread();
         let shown = pg_platform::native::PATH_RULES.display_merged(&listing.folder);
-        crate::app::get().reading().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
+        crate::app::session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
             let facets = crate::app::observe(pg_model::notice::Op::Facets, facets, |e| {
                 pg_model::notice::Notice::FacetsFailed { error: crate::app::error_text(&format!("{shown}: {e:#}")) }
             })

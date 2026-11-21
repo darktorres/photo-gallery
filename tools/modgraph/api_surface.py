@@ -5,7 +5,7 @@ For each item: production uses in the dependent crates' src/ (other crates), use
 that can name the defining crate (it, or a crate depending on it). Output: JSON plus a text table of the items no
 other crate's production code names.
 
-A report for a review (`just modgraph-report`), not a gate: it matches by name, so it can both miss a use and invent one.
+A report for a review (`just modgraph-report`), not a gate (see `testcut.py`).
 """
 
 import json
@@ -13,6 +13,9 @@ import re
 import subprocess
 import tomllib
 from pathlib import Path
+
+from compiler_graph import library_packages
+from testcut import production_part
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "target" / "modgraph" / "api.json"
@@ -44,18 +47,12 @@ def strip_comments(text: str) -> str:
 
 
 def prod_text(path: Path) -> str:
-    text = path.read_text(encoding="utf-8", errors="replace")
-    # Production code: up to the first line-start #[cfg(test)].
-    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.MULTILINE)
-    if m:
-        text = text[: m.start()]
-    return strip_comments(text)
+    return strip_comments(production_part(path.read_text(encoding="utf-8", errors="replace")))
 
 
 def test_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
-    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.MULTILINE)
-    return strip_comments(text[m.start() :]) if m else ""
+    return strip_comments(text[len(production_part(text)) :])
 
 
 texts = {}
@@ -74,9 +71,10 @@ for name, c in crates.items():
 users = {n: [m for m, c in crates.items() if n in c["deps"]] for n in crates}
 dev_users = {n: [m for m, c in crates.items() if n in c["dev"]] for n in crates}
 
+lib_names = {name for name, _ in library_packages()}
 result = {}
 for name, c in crates.items():
-    if not (c["dir"] / "src" / "lib.rs").exists():
+    if name not in lib_names:
         continue
     proc = subprocess.run(
         ["cargo", "modules", "structure", "-p", name, "--lib"],
@@ -115,7 +113,7 @@ for name, c in crates.items():
         it.update(prod_users=prod_users, test_users=test_users, own_prod_refs=own_prod)
     result[name] = items
 
-OUT.write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
+OUT.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
 total = sum(len([i for i in v if i["kind"] != "mod"]) for v in result.values())
 print(f"{total} public items in {len(result)} crates")
 for name, items in result.items():

@@ -11,7 +11,7 @@
 //! `state`.
 //!
 //! A file's row describes the file as it failed: a change to the file (its size, time or turn) removes the thumbnails'
-//! and the borders' rows (`files_failures_stale`), and so does a pass that makes the file's result after all
+//! and the borders' rows (`file_failures_stale`), and so does a pass that makes the file's result after all
 //! ([`Catalog::clear_failures`]); a file gone missing keeps them, hidden (`hidden`), so they come back with their serials.
 //! A failure that holds writes nothing when it is recorded again ([`Catalog::record_failures`]): it keeps its serial, so
 //! it is not news again.
@@ -25,7 +25,7 @@
 //! - **Thumbnails and borders** write their own rows. A failure is recorded only while the catalog has the file as the pass
 //!   read it. Recorded again unchanged, nothing is written and the serial stays: a file that fails at every pass is not news
 //!   each time. A new error updates the row and keeps the serial. A file whose mtime, size or rotation changes leaves these
-//!   ledgers (`files_failures_stale`), as does a file made since (the pass's flush, a thumbnail the window made on demand)
+//!   ledgers (`file_failures_stale`), as does a file made since (the pass's flush, a thumbnail the window made on demand)
 //!   and a replaced file (`pair.rs`). A deleted file's rows go with it.
 //! - **The import's rows mirror its failed analyses**, kept by triggers on `analysis` (`analysis_import`,
 //!   `analysis_import_rewritten`, `analysis_import_removed`), with the state of the bytes the analysis read.
@@ -34,10 +34,10 @@
 //!   the row and its serial; a changed file that fails again is a new row with a new serial (a dismissed entry comes back);
 //!   a fixed file's row goes, and so does a deleted analysis's. An in-place update of the analysis by a write-back (the
 //!   app rewrote the file: `file_rewritten`, `analysis_turned_back`) copies the new state into the row and keeps the
-//!   serial. `files_failures_stale` doesn't touch the import's rows, and a Retry or a rotation that bumps `files.seq`
+//!   serial. `file_failures_stale` doesn't touch the import's rows, and a Retry or a rotation that bumps `files.seq`
 //!   doesn't either, so a thumbnail Retry never re-badges the import.
 //! - **Missing is hidden, not removed.** A file gone missing keeps its rows of every pass, and the import's rows are also
-//!   hidden while the file is pending (`hidden`, kept by `files_failures_hidden`, which fires only when `pending` or
+//!   hidden while the file is pending (`hidden`, kept by `file_failures_hidden`, which fires only when `pending` or
 //!   `missing` changes). They come back with their old serials, so an offline blip or a folder removed and added again is
 //!   not news. The inbox reads the rest through the partial index `file_failures_live(pass, serial) WHERE hidden = 0`, and
 //!   every read repeats that literal condition (`live_failures!()`), since SQLite uses a partial index only then. The inbox
@@ -81,7 +81,7 @@
 //! could make a file that failed work. The catalog keeps the version it last ran under (`meta.thumbs_version`): a new one
 //! relists the thumbnails that won't be tried again (`retry = 0`) and empties the thumbnails' ledger. The cache keeps its
 //! own mark, and a new one makes every height forget how far it was checked, so the next pass looks at every file once. A
-//! new `BORDERS_VERSION` empties the borders' ledger, as the pass redoes them all.
+//! new **`BORDERS_VERSION`** (`pg_analysis::borders`, its owner) empties the borders' ledger, as the pass redoes them all.
 //!
 //! **Retry** (the thumbnails' entry) is `Catalog::retry_failures`: the rows go, and the files are listed again by the next
 //! pass, which the job is woken for. The import's rows mirror its analyses and are never deleted by a Retry; its failures
@@ -102,6 +102,19 @@ use crate::error::Result;
 use crate::transaction::write_transaction;
 use crate::types::FolderFailure;
 use crate::writers::{clear_failures_on, failures_held, record_failures_on};
+
+/// A retry of the failed files of one pass, in the transaction `tx`: the pass's next run lists them again (`seq` moves
+/// on, `list` makes the listing), and their rows go, so what still fails is recorded anew.
+pub(crate) fn relist_failures(
+    tx: &rusqlite::Transaction<'_>,
+    pass_code: &str,
+    list: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<usize>,
+) -> Result<()> {
+    tx.execute_batch(next_seq!())?;
+    list(tx)?;
+    tx.execute("DELETE FROM file_failures WHERE pass = ?1", [pass_code])?;
+    Ok(())
+}
 
 pub(crate) mod failure;
 mod state;
@@ -140,9 +153,11 @@ impl Summary {
 /// A failed file, as the inbox's expanded entry lists it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FailedFile {
+    /// The failed file's id.
     pub file_id: FileId,
     /// The file's path, exact.
     pub path: RulePath,
+    /// The error the pass recorded for the file.
     pub error: String,
     /// The pass tries it again by itself; else not until it changes, or the user retries it (the import's: by
     /// `gallery import --retry`).
@@ -205,9 +220,7 @@ impl Catalog {
             return Ok(());
         }
         let tx = write_transaction(&self.conn)?;
-        tx.execute_batch(next_seq!())?;
-        tx.execute(failures_relisted!(""), [pass.code()])?;
-        tx.execute("DELETE FROM file_failures WHERE pass = ?1", [pass.code()])?;
+        relist_failures(&tx, pass.code(), |tx| Ok(tx.execute(failures_relisted!(""), [pass.code()])?))?;
         tx.commit()?;
         Ok(())
     }
@@ -267,7 +280,7 @@ impl Catalog {
         let rules = self.rules();
         let mut out = Vec::with_capacity(rows.len());
         for (id, folder, name, error, retry, first_seen, new) in rows {
-            let mut path = rules.parse_bytes(&folder).ok_or_else(|| anyhow!("a failed file's folder holds a NUL"))?;
+            let mut path = rules.parse_bytes(&folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
             path.parts.push(pg_model::name::Name::from_raw(&name));
             out.push(FailedFile { file_id: FileId::new(id), path, error, retry, first_seen, new });
         }
@@ -299,7 +312,7 @@ impl Catalog {
             .collect::<rusqlite::Result<_>>()?;
         let rules = self.rules();
         let parse = |bytes: &[u8]| -> Result<RulePath> {
-            Ok(rules.parse_bytes(bytes).ok_or_else(|| anyhow!("a failed folder's path holds a NUL"))?)
+            Ok(rules.parse_bytes(bytes).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?)
         };
         let mut out = Vec::with_capacity(rows.len());
         for (root, root_path, path, reason, error, first_seen, new) in rows {
@@ -486,7 +499,7 @@ fn count(n: i64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browse::fixtures::under_both_rules;
+    use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, File, raw};
     use crate::queue;
     use crate::test_support::versions;
@@ -500,9 +513,9 @@ mod tests {
     /// A catalog at `path` with files 1 to `n` (size 10, mtime 100) in one folder, none analyzed.
     fn catalog_at(path: &std::path::Path, rules: PathRules, n: i64) -> Catalog {
         let c = Catalog::prepare(path, versions(), rules).unwrap();
-        let folder = if rules == PathRules::Windows { r"D:\p" } else { "/p" };
-        fixture::state::add_scan(&c, 1, folder).unwrap();
-        fixture::state::add_folder(&c, 1, folder).unwrap();
+        let folder = spelled(rules, r"D:\p");
+        fixture::state::add_scan(&c, 1, &folder).unwrap();
+        fixture::state::add_folder(&c, 1, &folder).unwrap();
         let files: Vec<File> =
             (1..=n).map(|i| File::new(FileId::new(i), FolderId::new(1), format!("{i}.jpg").leak(), 10, 100)).collect();
         fixture::insert(&c, &files).unwrap();
@@ -606,7 +619,7 @@ mod tests {
         assert!(c.record_failures(FilePass::Import, &[failure(1, "x")], 50).is_err());
         assert!(c.clear_failures(FilePass::Import, &[FileId::new(1)]).is_ok(), "nothing held: no write to refuse");
         drop((c, other));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // A pass's ledger is one entry: unread until read up to its newest failure, gone once dismissed, and back, unread,
@@ -737,7 +750,7 @@ mod tests {
     }
 
     // A new IMPORT_VERSION makes the analyses it doesn't cover stale: every file they are of becomes pending, and its
-    // import row is hidden with it (`set_import_version`'s recompute, through `files_failures_hidden`). A file with no
+    // import row is hidden with it (`set_import_version`'s recompute, through `file_failures_hidden`). A file with no
     // row has none to hide.
     #[test]
     fn a_new_import_version_hides_the_import_rows_of_the_files_it_makes_pending() {
@@ -795,7 +808,7 @@ mod tests {
         assert_eq!(serials(&c, "import"), seen, "a retry of the same bytes is the same failure");
     }
 
-    // `files_failures_hidden` fires only when `pending` or `missing` changes (its WHEN): an update that changes neither
+    // `file_failures_hidden` fires only when `pending` or `missing` changes (its WHEN): an update that changes neither
     // leaves the row's `hidden` alone, and a change to either sets it from the file as it is now.
     #[test]
     fn the_hidden_trigger_fires_only_when_pending_or_missing_changes() {
@@ -816,7 +829,7 @@ mod tests {
         assert_eq!(hidden(&c), 1, "missing: hidden");
     }
 
-    // A new IMPORT_VERSION fires `files_failures_hidden` only where a file's pending changes: a row whose file was already
+    // A new IMPORT_VERSION fires `file_failures_hidden` only where a file's pending changes: a row whose file was already
     // pending keeps its `hidden`, here set to a value the trigger would not write.
     #[test]
     fn set_import_version_fires_the_hidden_trigger_only_where_pending_changes() {

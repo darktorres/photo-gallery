@@ -2,8 +2,8 @@
 //! temporary so that a failure leaves no partial file at the name.
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{File, OpenOptions};
-use std::io::{self, ErrorKind, Write};
+use std::fs::OpenOptions;
+use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use pg_platform::file::TempFile;
@@ -75,10 +75,7 @@ fn write_new_with(
 ) -> Result<PathBuf, (PathBuf, io::Error)> {
     let temp = TempFile::new(&temp_path(folder, stem, ext));
     let at_temp = |error: io::Error| (temp.path().to_path_buf(), error);
-    let mut file = File::create(temp.path()).map_err(at_temp)?;
-    file.write_all(bytes).map_err(at_temp)?;
-    file.sync_all().map_err(at_temp)?;
-    drop(file);
+    pg_platform::file::write_synced(temp.path(), bytes).map_err(at_temp)?;
     let path = claim(folder, stem, ext).map_err(|error| (folder.join(numbered(stem, ext, 1)), error))?;
     let placeholder = TempFile::new(&path);
     rename(temp.path(), &path).map_err(|error| (path.clone(), error))?;
@@ -112,7 +109,7 @@ mod tests {
         assert_eq!(path, folder.join("IMG_1234 (yandex 1920x1080).jpg"));
         assert_eq!(std::fs::read(&path).unwrap(), b"first");
         assert_eq!(names_in(&folder), [OsString::from("IMG_1234 (yandex 1920x1080).jpg")], "no temporary is left");
-        std::fs::remove_dir_all(&folder).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]
@@ -125,7 +122,7 @@ mod tests {
         assert_eq!(std::fs::read(&first).unwrap(), b"first", "the first is not written over");
         assert_eq!(std::fs::read(&second).unwrap(), b"second");
         assert_eq!(names_in(&folder).len(), 2, "no temporary is left");
-        std::fs::remove_dir_all(&folder).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]
@@ -139,7 +136,7 @@ mod tests {
         assert_eq!(at, temp, "the error names where it failed");
         assert!(!folder.join("IMG_1234 (yandex 1920x1080).jpg").exists(), "no partial or empty file at the name");
         assert_eq!(names_in(&folder), [temp.file_name().unwrap().to_os_string()], "only the folder put there");
-        std::fs::remove_dir_all(&folder).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]
@@ -152,7 +149,7 @@ mod tests {
         assert_eq!(at, folder.join("IMG_1234 (yandex 1920x1080).jpg"), "the error names the claimed name");
         assert_eq!(error.to_string(), "rename refused");
         assert!(names_in(&folder).is_empty(), "neither the claim nor the temporary is left");
-        std::fs::remove_dir_all(&folder).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

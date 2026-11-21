@@ -177,7 +177,7 @@ wuffs_zlib__decoder g_inflate_kept;       // the decoder kept across calls when 
 }  // namespace
 
 bool wuffs_inflate_stream(const std::vector<uint8_t>& stream, std::vector<uint8_t>& window, size_t raw, bool fresh) {
-    const size_t kInChunk = 16 << 10, kHistory = 32 << 10, kMinRoom = 16 << 10;
+    const size_t kHistory = 32 << 10, kMinRoom = 16 << 10;
     std::unique_ptr<wuffs_zlib__decoder> own;
     wuffs_zlib__decoder* dec = &g_inflate_kept;
     if (fresh) {
@@ -193,7 +193,7 @@ bool wuffs_inflate_stream(const std::vector<uint8_t>& stream, std::vector<uint8_
 
     size_t at = 0, pos = 0, total = 0;
     while (true) {
-        const size_t end = std::min(at + kInChunk, stream.size());
+        const size_t end = std::min(at + kStreamChunk, stream.size());
         wuffs_base__io_buffer src{};
         src.data = wuffs_base__make_slice_u8(const_cast<uint8_t*>(stream.data()) + at, end - at);
         src.meta.wi = end - at;

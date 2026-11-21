@@ -10,7 +10,7 @@ use crate::frame_sink_bridge::ffi::SinkRef;
 /// The file played, its sink, and the player playing it into the sink.
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct AnimationPlayerRust {
     pub(crate) file_id: i64,

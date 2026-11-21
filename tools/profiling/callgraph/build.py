@@ -18,7 +18,7 @@ from pathlib import Path
 # pgtools is in tools/, two folders up: Python puts only this script's own folder on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pgtools import REPO, WINDOWS, load_env_file
+from pgtools import REPO, WINDOWS, default_llvm_dir, default_pin_root, load_env_file
 
 
 def newest(pattern: Path) -> Path:
@@ -63,17 +63,13 @@ def main() -> None:
     if not WINDOWS:
         sys.exit("build.py: Windows only (Intel Pin and clang-cl)")
     load_env_file()
-    llvm_dir = os.environ.get("LLVM_DIR") or (
-        str(Path(os.environ["PROGRAMFILES"]) / "LLVM") if os.environ.get("PROGRAMFILES") else ""
-    )
-    if not llvm_dir:
+    if os.environ.get("LLVM_DIR"):
+        llvm = Path(os.environ["LLVM_DIR"])
+    elif os.environ.get("PROGRAMFILES"):
+        llvm = default_llvm_dir()
+    else:
         sys.exit("build.py: LLVM_DIR is unset and ProgramFiles is unavailable: set LLVM_DIR")
-    llvm = Path(llvm_dir)
-    pin = (
-        Path(os.environ["PIN_ROOT"])
-        if os.environ.get("PIN_ROOT")
-        else Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit"
-    )
+    pin = Path(os.environ["PIN_ROOT"]) if os.environ.get("PIN_ROOT") else default_pin_root()
     here = Path(__file__).resolve().parent
     out = REPO / "target" / "pin"
     out.mkdir(parents=True, exist_ok=True)

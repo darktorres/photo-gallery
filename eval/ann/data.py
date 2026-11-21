@@ -10,10 +10,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from common import CACHE_DIR, WORK_DIR, ground_truth, image_list
+from common import CACHE_DIR, WORK_DIR, embedding_name, ground_truth, image_list
 from edits import TRANSFORMS
 
-MODEL = "sscd_trt_fp16_trim_draft"
+MODEL = embedding_name("sscd_trt_fp16", trim=True, draft=True)
 TEST_PREFIX = "pinterest/"
 OUT = CACHE_DIR / "ann"
 FLOOR, K = 0.4, 10  # the k-NN candidate rule (verify.py --pairs knn)

@@ -1,10 +1,10 @@
 //! The file writes queue (`file_writes`): what the user changed that the files themselves should carry, and what
 //! the writer does with it. A rating or a turn is queued here in the same transaction that changes the catalog
-//! (the producers: `set_rating`, `queue_rotation`). The writer takes the oldest settled job with `next_ready`, records
-//! the temp file it made with `record_temp` once the original is open for the copy (a recorded temp means the copy
-//! into the original may have started), and ends the job with `done` (with what the write changed in the catalog, a
-//! `WriteEffect`), `failed`, or `drop_gone`. A recorded temp is never discarded: a copy that keeps failing stays
-//! recorded, and `retry_copies` lets each start of the writer try it again. Each call is one transaction or one
+//! (the producers: `set_rating`, `queue_rotation`). The writer takes the oldest settled job with `next_write`, records
+//! the temp file it made with `record_write_temp` once the original is open for the copy (a recorded temp means the copy
+//! into the original may have started), and ends the job with `write_done` (with what the write changed in the catalog, a
+//! `WriteEffect`), `write_failed`, or `drop_gone_write`. A recorded temp is never discarded: a copy that keeps failing
+//! stays recorded, and `retry_write_copies` lets each start of the writer try it again. Each call is one transaction or one
 //! statement, so no reader sees a write both done and still queued.
 
 use std::rc::Rc;
@@ -398,13 +398,18 @@ fn add_catalog_rotation(tx: &Transaction, file_id: FileId, turns: Turns) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browse::fixtures::library;
+    use crate::browse::fixtures::{library, under_both_rules};
     use crate::fixture::raw;
     use pg_model::rules::PathRules;
 
-    #[test]
-    fn ratings_and_turns_queue_for_the_file() {
-        let c = library(PathRules::Windows);
+    under_both_rules!(
+        ratings_and_turns_queue_for_the_file,
+        ratings_and_turns_queue_for_the_file_windows,
+        ratings_and_turns_queue_for_the_file_posix
+    );
+
+    fn ratings_and_turns_queue_for_the_file(rules: PathRules) {
+        let c = library(rules);
         c.set_rating(FileId::new(2), Rating::new(3), true).unwrap();
         assert_eq!(raw::queued(&c, 2, "rating"), Some(3));
         // Back to what the file holds (nothing): nothing to write.
@@ -559,7 +564,7 @@ mod tests {
         // Three turns recorded in a temp; then one more turn (a full circle in all), and a failed copy.
         c.queue_rotation(FileId::new(1), Turns::new(3)).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
-        let temp = PathRules::Windows.parse(r"D:\p\.b.jpg.turns.pg-write").unwrap();
+        let temp = PathRules::Windows.parse(r"D:\p\.b.jpg.rotation.pg-write").unwrap();
         let three = Write::Turns(Turns::new(3));
         c.record_write_temp(&job, &temp, three).unwrap();
         c.queue_rotation(FileId::new(1), Turns::new(1)).unwrap();

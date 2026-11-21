@@ -5,7 +5,7 @@
 //! can't be written stores neither.
 
 use std::path::Path;
-use std::sync::{Mutex, PoisonError};
+use std::sync::PoisonError;
 
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -14,15 +14,13 @@ use pg_jobs::pipeline::Options;
 use pg_model::notice::FilePass;
 use pg_testkit::held::{Access, hold};
 
-/// Held by each test that runs the pass: the detector's fault is the process's, and file ids repeat from catalog to
-/// catalog.
-static ONE_PASS: Mutex<()> = Mutex::new(());
+use pg_testkit::ONE_PASS;
 
 /// A run folder with `images/a.png` (96x80, a gradient), scanned and imported into a catalog beside it: the image's path,
 /// its bytes, and the catalog.
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn imported(prefix: &str) -> (std::path::PathBuf, Vec<u8>, Catalog) {
-    let dir = pg_testkit::run_folder("scratch_borders", prefix).unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     let byte = |v: u32| u8::try_from(v % 256).unwrap();
@@ -60,7 +58,7 @@ fn damage(a: &Path, len: usize) {
 #[test]
 fn an_unreadable_file_stays_due_for_the_next_pass() {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-    let dir = pg_testkit::run_folder("scratch_borders", "borders").unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", "borders").unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     // A channel wraps past 255.
@@ -87,7 +85,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
         return;
     };
     let stats = pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
-    // Both looked at; the unreadable one stored nothing, and is no failure of the file's.
+    // Both looked at; the unreadable one stored nothing and is counted in `failed`, but records no failure of the file's.
     assert_eq!((stats.files, stats.failed, stats.unreadable, stats.stored), (2, 1, 1, 1));
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 1, "an unreadable file must stay due");
@@ -108,7 +106,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
 #[test]
 fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-    let dir = pg_testkit::run_folder("scratch_borders", "borders-ledger").unwrap();
+    let dir = pg_testkit::run_folder("scratch_library", "borders-ledger").unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     let byte = |v: u32| u8::try_from(v % 256).unwrap();

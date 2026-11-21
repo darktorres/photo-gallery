@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn a_recorded_search_keeps_what_came_before_a_captcha() {
-        let dir = pg_testkit::run_folder("scratch_yandex", "pg-yandex-replay").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "yandex-replay").unwrap();
         write_session(&dir);
         let photo = dir.join("IMG_1234.jpg");
         // A JPEG's start, so the photo sniffs as a still; the recording answers, so the bytes are never decoded.
@@ -194,12 +194,12 @@ mod tests {
         let written = std::fs::read(folder.join("IMG_1234 (yandex similar 1).png")).unwrap();
         assert_eq!(written, b"\x89PNG\r\n\x1a\nresult one");
 
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_replay_without_its_files_says_so_and_sends_nothing() {
-        let dir = pg_testkit::run_folder("scratch_yandex", "pg-yandex-replay-missing").unwrap();
+        let dir = pg_testkit::run_folder("scratch_app", "yandex-replay-missing").unwrap();
         let why = Recording::read(&dir).err().unwrap();
         assert!(why.contains("upload.json"), "{why}");
         // The search reports the reason as its request failure; no client is made.

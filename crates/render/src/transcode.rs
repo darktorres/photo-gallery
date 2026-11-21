@@ -11,7 +11,7 @@ use pg_model::turns::Turns;
 use crate::display;
 
 /// libjpeg-turbo q95 without chroma subsampling (4:4:4): a copy for a search, kept close to the photo, not a thumbnail.
-const QUALITY: i32 = 95;
+const QUALITY: u8 = 95;
 
 /// `bytes` (a file in any format the codec decodes) as a JPEG of the same size, upright. Fails when the file can't be
 /// decoded or libjpeg-turbo refuses the pixels.

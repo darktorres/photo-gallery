@@ -1,6 +1,7 @@
 [package]
 name = "pg-import"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 publish.workspace = true
 
@@ -18,3 +19,8 @@ pg-model = { path = "../model" }
 pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true
+
+# The pairing probes (`examples/pairs_*_probe.rs`) read and write the catalog's pairing tables directly.
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }
+rusqlite.workspace = true

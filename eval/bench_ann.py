@@ -21,12 +21,12 @@ import time
 
 import numpy as np
 
-from common import CACHE_DIR, WORK_DIR, ground_truth, image_list
+from ann.data import FLOOR, K
+from common import CACHE_DIR, LIBRARY_SIZE, NO_SIM, WORK_DIR, ground_truth, image_list
 
 DIM = 512
 OUT = CACHE_DIR / "ann"
 THREADS = os.cpu_count() or 8
-FLOOR, K = 0.4, 10
 CHUNK = 262_144
 
 
@@ -96,7 +96,7 @@ def stage_gen(n: int, nq: int, p: dict) -> None:
         "real_dup_cos_pcts": np.percentile(dup_cos, [5, 25, 50, 75, 95]).round(3).tolist(),
         "real_dups": len(dup_cos),
     }
-    p["meta.json"].write_text(json.dumps(meta), encoding="utf-8")
+    p["meta.json"].write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(
         f"gen: {n:,} vectors in {meta['gen_s']:.0f} s; real duplicate cosines p5/25/50/75/95 "
         f"{meta['real_dup_cos_pcts']} ({len(dup_cos)} pairs)",
@@ -167,7 +167,7 @@ def stage_exact(p: dict) -> dict:
     base = np.load(p["base.f16"], mmap_mode="r")
     q = torch.from_numpy(np.load(p["queries.npy"])).cuda().float()
     n = len(base)
-    best_s = torch.full((len(q), K), -2.0, device="cuda")
+    best_s = torch.full((len(q), K), NO_SIM, device="cuda")
     best_i = torch.zeros((len(q), K), dtype=torch.long, device="cuda")
     t = time.perf_counter()
     for s in range(0, n, CHUNK):
@@ -183,7 +183,7 @@ def stage_exact(p: dict) -> dict:
     rate = all_pairs_rate()
     print(
         f"exact: {len(q):,} queries x {n:,} in {wall:.0f} s (fp32); fp16 GEMM + top-{K}: {rate / 1e9:.1f} G pairs/s, "
-        f"70M all-pairs ≈ {70e6**2 / rate / 3600:.0f} GPU hours",
+        f"70M all-pairs ≈ {LIBRARY_SIZE**2 / rate / 3600:.0f} GPU hours",
         flush=True,
     )
     ids, sims = best_i.cpu().numpy(), best_s.cpu().numpy()
@@ -191,20 +191,22 @@ def stage_exact(p: dict) -> dict:
     return {"ids": ids, "sims": sims, "rate": rate}
 
 
-BANDS = ((0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.8), (0.8, 1.0))
+# [lo, hi) cosine bands. The top is 1.01, not 1.0, so a cosine of exactly 1.0 (identical vectors) falls in the top band,
+# as ann/metrics.py's BANDS (edges ending at 1.01) puts it; the labels still print 1.0.
+BANDS = ((0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.8), (0.8, 1.01))
 
 
 def partner_cos(p: dict) -> np.ndarray:
     return np.array(json.loads(p["meta.json"].read_text(encoding="utf-8"))["partner_cos"])
 
 
-def score(found: np.ndarray, exact: dict, partners: np.ndarray, cos: np.ndarray) -> dict:
+def score_search(found: np.ndarray, exact: dict, partners: np.ndarray, cos: np.ndarray) -> dict:
     """recall@10 vs exact search, and the share of planted partners in the top 10 by cosine band (≥ FLOOR overall)."""
     ex = exact["ids"]
     recall = np.mean([len(set(found[i]) & set(ex[i])) / K for i in range(len(ex))])
     hit = np.array([partners[i] in set(found[i]) for i in range(len(ex))])
     bands = {f"{a:.1f}-{b:.1f}": float(hit[(cos >= a) & (cos < b)].mean()) for a, b in BANDS}
-    return {"recall10": float(recall), "partners_found": float(hit[cos >= FLOOR].mean()), "bands": bands}
+    return {"recall_at_10": float(recall), "partners_found": float(hit[cos >= FLOOR].mean()), "bands": bands}
 
 
 def stage_usearch(p: dict, exact: dict, dtype: str) -> list[dict]:
@@ -232,7 +234,7 @@ def stage_usearch(p: dict, exact: dict, dtype: str) -> list[dict]:
         t = time.perf_counter()
         m = index.search(q, K, threads=THREADS)
         qs = time.perf_counter() - t
-        sc = score(np.asarray(m.keys), exact, partners, cos)
+        sc = score_search(np.asarray(m.keys), exact, partners, cos)
         rows.append(
             {
                 "index": f"usearch HNSW {dtype}",
@@ -245,7 +247,7 @@ def stage_usearch(p: dict, exact: dict, dtype: str) -> list[dict]:
             }
         )
         print(
-            f"  ef {ef:>3}: recall@10 {sc['recall10']:.4f}, partners ≥ {FLOOR} {sc['partners_found']:.4f} "
+            f"  ef {ef:>3}: recall@10 {sc['recall_at_10']:.4f}, partners ≥ {FLOOR} {sc['partners_found']:.4f} "
             f"{sc['bands']}, {len(q) / qs:,.0f} q/s",
             flush=True,
         )
@@ -305,7 +307,7 @@ def stage_faiss(p: dict, exact: dict) -> list[dict]:
                 if k > K:
                     ids = rerank(base, q, ids)
                 qs = time.perf_counter() - t
-                sc = score(ids[:, :K], exact, partners, cos)
+                sc = score_search(ids[:, :K], exact, partners, cos)
                 rows.append(
                     {
                         "index": f"faiss {name}{suffix}",
@@ -318,7 +320,7 @@ def stage_faiss(p: dict, exact: dict) -> list[dict]:
                     }
                 )
                 print(
-                    f"  nprobe {nprobe:>3}{suffix}: recall@10 {sc['recall10']:.4f}, partners "
+                    f"  nprobe {nprobe:>3}{suffix}: recall@10 {sc['recall_at_10']:.4f}, partners"
                     f"≥ {FLOOR} {sc['partners_found']:.4f} {sc['bands']}, {len(q) / qs:,.0f} q/s",
                     flush=True,
                 )
@@ -346,8 +348,8 @@ def main() -> None:
     if {"exact", "usearch", "faiss"} & set(args.stages):
         exact = stage_exact(p)
         partners = np.load(p["partners.npy"])
-        sc = score(exact["ids"], exact, partners, partner_cos(p))
-        results["exact"] = {"pairs_per_s": exact["rate"], "hours_70m_all_pairs": 70e6**2 / exact["rate"] / 3600, **sc}
+        sc = score_search(exact["ids"], exact, partners, partner_cos(p))
+        results["exact"] = {"pairs_per_s": exact["rate"], "hours_70m_all_pairs": LIBRARY_SIZE**2 / exact["rate"] / 3600, **sc}
         print(f"exact: partners ≥ {FLOOR} in the top {K}: {sc['partners_found']:.4f} {sc['bands']}", flush=True)
         if "usearch" in args.stages:
             for dt in args.usearch_dtype:
@@ -355,7 +357,7 @@ def main() -> None:
         if "faiss" in args.stages:
             rows += stage_faiss(p, exact)
     results["rows"] = rows
-    results_path.write_text(json.dumps(results, indent=1), encoding="utf-8")
+    results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"wrote {results_path}")
 
 

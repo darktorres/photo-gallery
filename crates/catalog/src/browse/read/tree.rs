@@ -33,7 +33,7 @@ impl Catalog {
             if let Some(stored) = r.get::<_, Option<Vec<u8>>>(1)? {
                 let path =
                     rules.parse_bytes(&stored).ok_or_else(|| anyhow::anyhow!("a stored folder path has a NUL"))?;
-                builder.add(r.get(0)?, &path, r.get(2)?);
+                builder.add(r.get(0)?, &path, r.get(2)?).map_err(|e| crate::Error::Other(e.into()))?;
             }
         }
         Ok(builder.build())

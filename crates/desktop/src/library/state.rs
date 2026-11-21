@@ -7,7 +7,7 @@ use pg_model::rules::Path as RulePath;
 #[derive(Default)]
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct LibraryRust {
     pub(crate) roots: QStringList,

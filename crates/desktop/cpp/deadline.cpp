@@ -2,7 +2,7 @@
 // one QTimer, so a later or an earlier deadline replaces the pending one, and a timeout that arrives after a re-arm is harmless:
 // the controller fires only the deadlines that are due.
 
-#include "pg-desktop/cpp/deadline.h"
+#include "deadline.h"
 
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QMetaObject>

@@ -1,6 +1,6 @@
 """Second-stage verifier prototype: align two images, undo global edits, look at what is left.
 
-Usage: python verify.py [--pairs labeled|cross_groups|knn] [--model sscd_fp16] [--floor 0.4] [--k 10] [--limit N]
+Usage: python verify.py [--pairs labeled|cross_groups|knn|listed] [--list NAME] [--model sscd_fp16] [--floor 0.4] [--k 10] [--limit N]
 
 Pair sets (only pairs whose embedding similarity from emb_<model>.npy clears --floor, i.e. the
 pairs a k-NN candidate stage would actually hand to this verifier; labeled duplicates always):
@@ -70,14 +70,13 @@ import numpy as np
 import torch
 from PIL import Image
 
-from common import DATA_ROOT, WORK_DIR, ground_truth, image_list, load_rgb
+from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, WORK_SIDE, ground_truth, image_list, load_rgb
 from group import SHORTCUT_PDQ, SHORTCUT_SIM, pdq_distances, shortcut
 
 # isort: split
 import kornia as K  # after common: weights download under CACHE_DIR
 import kornia.feature as KF
 
-WORK_SIDE = 1024  # feature extraction resolution (long side); larger images are downscaled
 MIN_WORK_SIDE = 512  # ... smaller ones upscaled to this (25%-downscaled copies: 0/40 aligned as is, 40/40 at 512)
 # Don't try the mirrored image if the as-is alignment has this many inliers (45% of k-NN pairs), unless the
 # pair then doesn't match: a mirrored symmetric picture can align as is with ~300 inliers (2026-10-29).
@@ -186,7 +185,7 @@ class Features:
         (ka, da, *frames_a), (kb, db, *frames_b) = fa, fb
         if len(ka) < 8 or len(kb) < 8:
             return np.zeros((0, 2), np.float32), np.zeros((0, 2), np.float32)
-        ones = lambda k: torch.ones(1, len(k), 1, 1, device=DEVICE)  # noqa: E731
+        ones = lambda k: torch.ones(1, len(k), 1, 1, device=DEVICE)  # noqa: E731 (a one-expression helper for the ones tensor)
         lafs_a = frames_a[0] if frames_a else KF.laf_from_center_scale_ori(ka[None], ones(ka))
         lafs_b = frames_b[0] if frames_b else KF.laf_from_center_scale_ori(kb[None], ones(kb))
         _, idx = self.matcher(da, db, lafs_a, lafs_b, hw1=hw_a, hw2=hw_b)
@@ -675,7 +674,9 @@ def params_from(args: argparse.Namespace) -> Params:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pairs", choices=tuple(PAIR_SETS), default="labeled")
-    parser.add_argument("--model", default="sscd_fp16", help="embedding used for similarities and candidate selection")
+    parser.add_argument(
+        "--model", default=DEFAULT_MODEL, help="embedding used for similarities and candidate selection"
+    )
     parser.add_argument("--floor", type=float, default=0.4, help="min similarity for an unlabeled or negative pair to be checked")
     parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
     parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")
@@ -783,6 +784,8 @@ def main() -> None:
         row.update(out)
         if diag is not None:
             cv2.imwrite(str(diag_dir / f"{row['id']}.jpg"), diag, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        # Only the labelled pairs have an expected decision. An error decision is never the expected one, so it is not
+        # correct (verify_synth.py scores its planted matches the same way).
         if row["label"] in EXPECTED:
             row["correct"] = row["decision"] == EXPECTED[row["label"]]
         results[row["id"]] = row

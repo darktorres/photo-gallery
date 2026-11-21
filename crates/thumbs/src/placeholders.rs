@@ -7,25 +7,20 @@
 //! The pass is the Hashes pass's shape (`pg_import::hashes`): batches, one transaction per batch, the stop asked after each.
 //! It runs with or without the cache, and whatever the grid's height is: it does not depend on the grid.
 
-use std::io;
-
 use anyhow::{Context, Result};
 use pg_catalog::ledger::Failure as LedgerFailure;
 use pg_catalog::{Catalog, PlaceholderWork, WorkItem};
 use pg_jobs::control::Control;
-use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::analysis::ThumbHash;
 use pg_model::media::Kind;
 use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
-use pg_render::maker::{MakeError, Maker};
+use pg_render::maker::Maker;
 use pg_thumbcache::{Source, ThumbCache};
 
-use crate::unix_now;
-
-const BATCH: usize = 200;
+use crate::{BATCH, Failed, unix_now};
 
 /// The height of the cached thumbnail a placeholder is read from when there is one: the nearest the cache has to it
 /// (`ThumbCache::get_nearest_into`), and it is used only if it is at least [`CACHED_MIN_SIDE`] high.
@@ -128,7 +123,7 @@ pub fn run_while(
             let read;
             let whole = if bytes.is_empty() {
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                read = std::fs::read(&disk)?;
+                read = std::fs::read(&disk).with_context(|| format!("can't read {}", disk.display()))?;
                 read.as_slice()
             } else {
                 bytes
@@ -162,20 +157,13 @@ fn cached(cache: &ThumbCache, item: &WorkItem, jpeg: &mut Vec<u8>) -> Result<boo
 /// Whether a failure is the file's read that failed (an offline drive, a file in use): tried again by the next pass, and
 /// not recorded.
 fn is_unreadable(e: &anyhow::Error) -> bool {
-    if panics::is_panic(e) {
-        return false;
-    }
-    match e.downcast_ref::<MakeError>() {
-        Some(MakeError::Unreadable(_)) => true,
-        Some(MakeError::Undecodable(_)) => false,
-        None => e.downcast_ref::<io::Error>().is_some(),
-    }
+    matches!(Failed::of(e), Failed::Unreadable)
 }
 
 /// Whether a failure is recorded in the Thumbs ledger: a file that doesn't decode, or panicked. Neither is tried again
 /// until it changes or the user retries it (`retry = false`), as the Thumbs pass records them.
 fn is_recorded(e: &anyhow::Error) -> bool {
-    panics::is_panic(e) || matches!(e.downcast_ref::<MakeError>(), Some(MakeError::Undecodable(_)))
+    matches!(Failed::of(e), Failed::Panicked | Failed::Undecodable)
 }
 
 /// Stores a batch: the placeholders made, and the failures recorded in the Thumbs ledger, in one transaction. A file that
@@ -214,7 +202,7 @@ fn flush(
                         mtime: item.mtime,
                         size: item.size,
                         rotation: item.rotation,
-                        error: format!("{e:#}"),
+                        error: pg_jobs::failure::Cause::of(&e).to_string(),
                         retry: false,
                     });
                 }

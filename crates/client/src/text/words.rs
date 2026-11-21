@@ -35,12 +35,21 @@ fn english() -> FluentBundle<FluentResource> {
     // Fluent wraps each placeable in invisible isolation marks for right-to-left text; the screen wants the plain text.
     bundle.set_use_isolating(false);
     // NUMBER() and DATETIME(), for an entry that formats its number (a range's ends are passed as numbers).
-    let _ = bundle.add_builtins();
+    let builtins = bundle.add_builtins();
+    debug_assert!(builtins.is_ok(), "the Fluent built-ins didn't add: {builtins:?}");
     for source in [ENGLISH, ENGLISH_UI, ENGLISH_CLI] {
-        let resource = FluentResource::try_new(source.to_string()).unwrap_or_else(|(resource, _)| resource);
-        // The English entries name no id twice (the tests check it); were one named twice, its first entry is kept
-        // and the rest of the file is added all the same.
-        let _ = bundle.add_resource(resource);
+        // The English resources are compiled in, so a syntax error or a repeated id is a bug in them: debug builds and the
+        // tests stop on it. A release build keeps what parsed (the parser's partial resource), and the first of a repeated
+        // id, so the rest of the file still shows.
+        let resource = match FluentResource::try_new(source.to_string()) {
+            Ok(resource) => resource,
+            Err((resource, errors)) => {
+                debug_assert!(false, "an English resource has a syntax error: {errors:?}");
+                resource
+            }
+        };
+        let added = bundle.add_resource(resource);
+        debug_assert!(added.is_ok(), "an English resource names an id twice: {added:?}");
     }
     bundle
 }

@@ -7,12 +7,13 @@ use crate::types::{OtherSize, Similar, SimilarItem, SimilarPage, Upload, YandexE
 
 /// The ids in an upload's answer (JSON), which the result requests need.
 pub fn parse_upload(body: &str) -> Result<Upload, YandexError> {
-    let v: Value = serde_json::from_str(body).map_err(|_| YandexError::Unexpected("upload is not JSON"))?;
-    let cbir_id = v.get("cbir_id").and_then(Value::as_str).ok_or(YandexError::Unexpected("upload has no cbir_id"))?;
+    use pg_model::yandex::UnexpectedReason as Reason;
+    let v: Value = serde_json::from_str(body).map_err(|_| YandexError::Unexpected(Reason::UploadNotJson))?;
+    let cbir_id = v.get("cbir_id").and_then(Value::as_str).ok_or(YandexError::Unexpected(Reason::UploadNoCbirId))?;
     let orig_url = v
         .pointer("/sizes/orig/path")
         .and_then(Value::as_str)
-        .ok_or(YandexError::Unexpected("upload has no original URL"))?;
+        .ok_or(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::UploadNoOriginal))?;
     Ok(Upload { cbir_id: cbir_id.to_string(), orig_url: orig_url.to_string() })
 }
 
@@ -105,9 +106,10 @@ fn decode_entity(name: &str) -> Option<char> {
 
 /// Every group in `cbirOtherSizes`, largest first. Items without a readable size or URL are skipped.
 pub fn parse_other_sizes(html: &str) -> Result<Vec<OtherSize>, YandexError> {
-    let raw = extract_data_state(html).ok_or(YandexError::Unexpected("results page has no ImagesApp state"))?;
+    let raw = extract_data_state(html)
+        .ok_or(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::ResultsPageNoState))?;
     let state: Value = serde_json::from_str(&decode_entities(raw))
-        .map_err(|_| YandexError::Unexpected("results state is not JSON"))?;
+        .map_err(|_| YandexError::Unexpected(pg_model::yandex::UnexpectedReason::ResultsStateNotJson))?;
     let Some(groups) = state.pointer("/initialState/cbirOtherSizes/items").and_then(Value::as_object) else {
         return Ok(Vec::new());
     };
@@ -135,10 +137,11 @@ fn parse_size(text: &str) -> Option<(u32, u32)> {
 
 /// One page of the similar endpoint. Errors with `Unexpected` when the JSON has no result list.
 pub fn parse_similar_page(body: &str) -> Result<SimilarPage, YandexError> {
-    let v: Value = serde_json::from_str(body).map_err(|_| YandexError::Unexpected("similar page is not JSON"))?;
+    let v: Value = serde_json::from_str(body)
+        .map_err(|_| YandexError::Unexpected(pg_model::yandex::UnexpectedReason::SimilarNotJson))?;
     let serp = v
         .pointer("/blocks/1/params/adapterData/serpList")
-        .ok_or(YandexError::Unexpected("similar page has no result list"))?;
+        .ok_or(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::SimilarNoResults))?;
     let mut items: Vec<SimilarItem> = serp
         .pointer("/items/entities")
         .and_then(Value::as_object)

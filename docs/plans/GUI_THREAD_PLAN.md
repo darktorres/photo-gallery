@@ -235,7 +235,7 @@ itself.
 the hand-off is scoped, like `std::thread::scope`. The flushes borrow pass-local state today
 (`crates/import/src/lib.rs:50-89`, `crates/borders/src/lib.rs:60-117`, `crates/catalog/src/pair.rs:96-229`), and the
 alternative is to restructure every flush to own its data. The lifetimes of the closure and of the stop are erased in
-one documented `unsafe` block in `pg-catalog`. `write` requires `F: Send` and `R: Send`. That alone does not keep the
+one documented `unsafe` block that this plan would add to `pg-catalog` (no `unsafe` exists in that crate today). `write` requires `F: Send` and `R: Send`. That alone does not keep the
 caller's read connection out: the connection is `Send`, and the passes hold it as `&mut Catalog` today
 (`import/src/lib.rs:32`, `borders/src/lib.rs:50`, `scan/src/lib.rs:379`). So the passes hold their read connection as
 `&Catalog`. A shared reference to it is not `Send`, because the connection is not `Sync`, and a closure that captured it
@@ -1716,7 +1716,7 @@ are today's busy timeout, kept, not chosen.
   - `busy_handler` and `wal_hook` take closures at the locked revision (`src/busy.rs:55-57`,
     `src/hooks/mod.rs:389-391`), `total_changes()` is exposed (`src/lib.rs:1064`), and the busy handler is invoked for
     `BEGIN IMMEDIATE`.
-  - `unsafe` is allowed in the workspace (`undocumented_unsafe_blocks = "warn"`, `Cargo.toml:65`), and `pg-catalog`
+  - `unsafe` is allowed in the workspace (`undocumented_unsafe_blocks = "warn"` in `[workspace.lints.clippy]`), and `pg-catalog`
     holds no mutex a panic could poison.
   - No lock-order cycle among the write-back's slot, the job's queue and busy mutexes and the inbox's locks.
   - The inbox's `idle()` and `listing()` take different mutexes, and the inbox thread holds neither across SQL.

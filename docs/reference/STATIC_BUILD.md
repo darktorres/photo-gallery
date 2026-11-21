@@ -226,7 +226,7 @@ with these environment variables:
 
 Problems the pilot found by running the binary offscreen, in the order they were hit, with the fixes in the patch:
 
-- **Link arguments do not propagate.** `cargo::rustc-link-arg` from `pg-desktop`'s build script does not reach the binary.
+- **Link arguments do not propagate.** `cargo:rustc-link-arg` from `pg-desktop`'s build script does not reach the binary.
   The static libraries go out as `rustc-link-search` and `rustc-link-lib=static=<name>`.
 - **Plugin symbol names.** Each plugin exports `qt_static_plugin_<name>`. The name drops the `Plugin` suffix for the TLS
   backends (`QSchannelBackend`). `dumpbin /symbols` on each plugin library lists the names.

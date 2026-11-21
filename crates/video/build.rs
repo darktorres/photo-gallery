@@ -108,8 +108,8 @@ fn headers(windows: bool) -> Result<Headers, String> {
     let include = prefix.join("include");
     if !include.join("libavcodec").join("avcodec.h").is_file() {
         return Err(format!(
-            "no FFmpeg headers in {}: run `just setup` to fetch the pinned build (Windows), or set FFMPEG_DIR in .env to an \
-             FFmpeg 9.0 shared build",
+            "no FFmpeg headers in {}: run `just setup` to fetch the pinned build (Windows), or set FFMPEG_DIR in .env to a \
+             shared build of the release the Justfile's ffmpeg_url pins",
             prefix.display()
         ));
     }

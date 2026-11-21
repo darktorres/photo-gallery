@@ -1,10 +1,8 @@
 //! A file's border sides as detection found them (`border_sides`), and the user's mark that they are not a border
-//! (`set_border_mark`, the review). Methods of `Catalog`; the details read the sides in their snapshot
-//! (`border_sides_on`).
+//! (`set_border_mark`, the review). Methods of `Catalog`. The sides are read by the read side's `border_sides_on`
+//! (`browse::read`), which the details read in their snapshot.
 
-use anyhow::anyhow;
-use rusqlite::types::Type;
-use rusqlite::{Connection, params};
+use rusqlite::params;
 
 use pg_model::detection::{self, Detection};
 use pg_model::ids::FileId;
@@ -43,8 +41,7 @@ impl Catalog {
         tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
         // The file as it is now, which the detection is stored for, and the stored size its analysis has (a detection of
         // none has no cut, whatever that size is).
-        let item = work_item(&tx, file_id)?
-            .ok_or_else(|| Error::Other(anyhow!("file {} isn't in the catalog", file_id.get())))?;
+        let item = work_item(&tx, file_id)?.ok_or(Error::NotInCatalog { id: file_id.get() })?;
         let (width, height): (u32, u32) =
             tx.query_row("SELECT width, height FROM analysis WHERE file_id = ?1", [file_id.get()], |r| {
                 Ok((r.get(0)?, r.get(1)?))
@@ -52,13 +49,10 @@ impl Catalog {
         // The store is refused for a file with a write of the app's in progress: the cut is then not recorded, and
         // the import sees the file changed.
         if !query_current(&mut tx.prepare(IS_CURRENT)?, file_id, &item.listed())? {
-            return Err(Error::Other(anyhow!("file {} is being written: its cut is not recorded", file_id.get())));
+            return Err(Error::BeingWritten { id: file_id.get() });
         }
         if !BordersWriter::new(&tx)?.store_borders(&item, None, Some(&Detection::none(width, height)))? {
-            return Err(Error::Other(anyhow!(
-                "file {}: its cut is not recorded, the catalog's borders are another build's",
-                file_id.get()
-            )));
+            return Err(Error::OtherBuildsBorders { id: file_id.get() });
         }
         tx.commit()?;
         Ok(())
@@ -67,7 +61,7 @@ impl Catalog {
     /// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
     /// than detection finds (`detection::MAX_SIDES`) can only be in a damaged catalog: an error.
     pub fn border_sides(&self, file_id: FileId) -> Result<detection::Sides> {
-        border_sides_on(&self.conn, file_id)
+        crate::browse::read::border_sides_on(&self.conn, file_id)
     }
 
     /// Mark a file's borders as not a border, or take the mark back (the review).
@@ -81,37 +75,4 @@ impl Catalog {
         }
         Ok(())
     }
-}
-
-/// [`Catalog::border_sides`] on `conn`, which may be a snapshot's transaction.
-pub(crate) fn border_sides_on(conn: &Connection, file_id: FileId) -> Result<detection::Sides> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
-         ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",
-    )?;
-    let mut rows = stmt.query([file_id.get()])?;
-    let mut sides = detection::Sides::new();
-    while let Some(r) = rows.next()? {
-        let unknown = |i: usize, v: &str| rusqlite::Error::InvalidColumnType(i, v.to_string(), Type::Text);
-        let (edge, kind) = (r.get_ref(1)?.as_str()?, r.get_ref(2)?.as_str()?);
-        let color: Option<i64> = r.get(4)?;
-        let side = detection::Side {
-            pass: r.get(0)?,
-            edge: detection::Edge::from_key(edge).ok_or_else(|| unknown(1, edge))?,
-            kind: detection::Kind::from_key(kind).ok_or_else(|| unknown(2, kind))?,
-            depth: r.get(3)?,
-            color: color.map(detection::Side::unpacked_color),
-            straight: r.get(5)?,
-            dev: r.get(6)?,
-            drift: r.get(7)?,
-            rejected: match r.get_ref(8)?.as_str_or_null()? {
-                Some(k) => Some(detection::Reason::from_key(k).ok_or_else(|| unknown(8, k))?),
-                None => None,
-            },
-        };
-        sides.try_push(side).map_err(|_| {
-            anyhow::anyhow!("file {}: more than {} border sides kept", file_id.get(), detection::MAX_SIDES)
-        })?;
-    }
-    Ok(sides)
 }

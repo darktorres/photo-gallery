@@ -3,6 +3,8 @@
 // time is what CPU code after the decode would see. Input and device buffers are kept between calls (grow-only).
 #include "decoder.h"
 
+#include <cstdio>
+
 #ifdef HAVE_CUDA
 #include <cuda_runtime.h>
 
@@ -46,7 +48,11 @@ struct DevBuf {
 
 }  // namespace
 
-void gpu_init() { cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync); }
+void gpu_init() {
+    // Without the flag the GPU decoders still run, only with a spinning wait: a warning, not a failure.
+    if (cudaError_t e = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync); e != cudaSuccess)
+        fprintf(stderr, "cudaSetDeviceFlags failed: %s\n", cudaGetErrorString(e));
+}
 
 // ---- jpeggpu: planes on the GPU (no upsampling, no colour conversion), copied back as planes ----
 #ifdef HAVE_JPEGGPU
@@ -65,7 +71,7 @@ struct JpegGpu : Decoder {
     bool to_rgb;  // true: the colour stage (colour.cu) runs on the planes, and RGB goes to the host
     explicit JpegGpu(bool rgb_out = false) : to_rgb(rgb_out) {
         if (jpeggpu_decoder_startup(&d) != JPEGGPU_SUCCESS) init = "jpeggpu_decoder_startup failed";
-        cudaStreamCreate(&s);
+        if (cudaStreamCreate(&s) != cudaSuccess && init.empty()) init = "cudaStreamCreate failed";
     }
     // Upsampling and colour conversion on the device, then the RGB copy to pinned host memory.
     std::string rgb_out(const jpeggpu_img_info& info, const jpeggpu_img& img, Image& out) {
@@ -198,7 +204,7 @@ struct NvBase : Decoder {
     NvBase() {
         if (nvjpegCreateEx(NVJPEG_BACKEND_DEFAULT, nullptr, nullptr, kFlags, &h) != NVJPEG_STATUS_SUCCESS)
             init = "nvjpegCreateEx failed";
-        cudaStreamCreate(&s);
+        if (cudaStreamCreate(&s) != cudaSuccess && init.empty()) init = "cudaStreamCreate failed";
     }
     ~NvBase() override {
         cudaStreamDestroy(s);

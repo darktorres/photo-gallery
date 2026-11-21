@@ -35,3 +35,25 @@ pub(crate) fn disarm(owner: *mut QObject) {
     // SAFETY: as for `arm`.
     unsafe { ffi::deadline_disarm(owner) }
 }
+
+#[cfg(test)]
+mod tests {
+    /// The C++ side reaches the shell by name: cpp/deadline.cpp invokes `timeout`, and cpp/screenshot.cpp reads the window's
+    /// `shellCore` and `ready` and invokes `pending`. Each name is checked against its Rust or QML definition here, so a
+    /// rename on either side fails the tests rather than failing silently at run time.
+    #[test]
+    fn the_names_the_cpp_side_reaches_by_string_exist() {
+        let deadline = include_str!("../cpp/deadline.cpp");
+        let screenshot = include_str!("../cpp/screenshot.cpp");
+        let shell_bridge = include_str!("shell_bridge.rs");
+        let main = include_str!("../qml/Main.qml");
+        assert!(deadline.contains("\"timeout\""));
+        assert!(shell_bridge.contains("fn timeout(self: Pin<&mut Shell>);"));
+        assert!(screenshot.contains("\"pending\""));
+        assert!(shell_bridge.contains("fn pending(self: &Shell) -> bool;"));
+        assert!(screenshot.contains("\"shellCore\""));
+        assert!(main.contains("readonly property var shellCore: shell"));
+        assert!(screenshot.contains("\"ready\""));
+        assert!(main.contains("property bool ready: false"));
+    }
+}

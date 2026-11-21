@@ -1,7 +1,5 @@
 //! The front end's logic: what the desktop and the web client both need, with no Qt and no platform calls.
 
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 pub mod controller;
 pub mod facets;
 pub mod features;

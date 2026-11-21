@@ -1,4 +1,4 @@
-// Rating bar: ImageRater's symbols, the current rating ringed; clicking one rates and moves on. It also holds the
+// Rating bar: a rating app's symbols, the current rating ringed; clicking one rates and moves on. It also holds the
 // find-similar button, the border mark (N) and the turns (R, Shift+R). It asks for each change through a signal; the
 // Viewer does it.
 pragma ComponentBehavior: Bound
@@ -30,7 +30,7 @@ Rectangle {
     width: barRow.implicitWidth + 16
     height: barRow.implicitHeight + 8
     radius: height / 2
-    color: "#a0000000"
+    color: Theme.scrimBacking
 
     RowLayout {
         id: barRow

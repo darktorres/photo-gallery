@@ -27,6 +27,7 @@ use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
+use pg_testkit::Rng;
 use rusqlite::params_from_iter;
 
 /// A folder given as its Windows path text, merged: the spelling the Windows-only tests use.
@@ -111,16 +112,19 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rule
     let state = || c.file_state(FileId::new(1)).unwrap().unwrap();
     let turns = || c.placeholder(FileId::new(1)).unwrap().unwrap().turns;
     let size = raw::file_size(&c, FileId::new(1));
-    assert_eq!(state(), FileState { mtime: 3, size, rotation: Turns::new(0), turns: Turns::new(0), writing: false });
+    assert_eq!(
+        state(),
+        FileState { mtime: 3, size, rotation: Turns::new(0), pending_turns: Turns::new(0), writing: false }
+    );
     assert_eq!(c.file_source(FileId::new(1)).unwrap().unwrap().state, state());
     assert_eq!((turns(), c.placeholder(FileId::new(1)).unwrap().unwrap().hash), (Turns::NONE, ThumbHash::new(&[1])));
     // A turn asked for, not yet written.
     c.queue_rotation(FileId::new(1), Turns::new(3)).unwrap();
-    assert_eq!((state().turns, turns()), (Turns::new(3), Turns::new(3)));
+    assert_eq!((state().pending_turns, turns()), (Turns::new(3), Turns::new(3)));
     // One kept in the catalog since the analysis, and one more asked for.
     raw::set_rotation(&c, FileId::new(1), Turns::new(1));
     c.queue_rotation(FileId::new(1), Turns::new(2)).unwrap();
-    assert_eq!((state().rotation, state().turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
+    assert_eq!((state().rotation, state().pending_turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
     let job = queue::Job {
@@ -310,7 +314,7 @@ fn flat(tree: &FolderTree) -> Vec<Flat> {
     (0..tree.len())
         .filter_map(|n| {
             let node = tree.node(n)?;
-            let drives = tree.anchors(n).split(' ').filter(|d| !d.is_empty()).map(String::from).collect();
+            let drives = tree.anchors(n).map(|name| name.display().into_owned()).collect();
             let children = tree.children(Some(n)).count();
             let path = tree.rules().display_merged(&tree.merged(n));
             let name = tree.name(n).display().into_owned();
@@ -324,7 +328,7 @@ fn flat(tree: &FolderTree) -> Vec<Flat> {
 fn check_tree(rules: PathRules, rows: &[(i64, String, i64)]) {
     let mut builder = TreeBuilder::with_capacity(rules, rows.len(), 0, 0);
     for (id, path, count) in rows {
-        builder.add(*id, &rules.parse(path).unwrap(), *count);
+        builder.add(*id, &rules.parse(path).unwrap(), *count).unwrap();
     }
     let tree = builder.build();
     if rules == PathRules::Windows {
@@ -353,7 +357,7 @@ fn check_tree(rules: PathRules, rows: &[(i64, String, i64)]) {
             assert_eq!(tree.find(&upper, &mut key), Some(n), "{merged:?}");
         }
         assert_eq!(tree.key(n), rules.merged_key(&merged));
-        assert_eq!(tree.multi_anchor(n), tree.anchors(n).contains(' '));
+        assert_eq!(tree.multi_anchor(n), tree.anchors(n).count() > 1);
         if let Some(p) = tree.parent(n) {
             assert!(p < n && n < tree.subtree_end(p) && tree.children(Some(p)).any(|c| c == n));
         }
@@ -375,16 +379,16 @@ fn the_tree_is_built_as_before() {
             .map(|(i, p)| (i64::try_from(i).unwrap() + 1, p.to_string(), i64::try_from(i).unwrap() + 1))
             .collect::<Vec<_>>(),
     );
-    let mut rng = Rng(0x5851_F42D_4C95_7F2D);
+    let mut rng = Rng::new(0x5851_F42D_4C95_7F2D);
     for _ in 0..30 {
         // Distinct paths and ids, as `folders` has them.
         let (mut paths, mut ids) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
         let mut rows: Vec<(i64, String, i64)> = Vec::new();
-        for _ in 0..rng.next() % 200 {
+        for _ in 0..rng.next_u64() % 200 {
             let (path, id, count) = (
                 random_file(&mut rng).0,
-                i64::try_from(rng.next() % 1000).unwrap(),
-                1 + i64::try_from(rng.next() % 5).unwrap(),
+                i64::try_from(rng.next_u64() % 1000).unwrap(),
+                1 + i64::try_from(rng.next_u64() % 5).unwrap(),
             );
             if paths.insert(path.clone()) && ids.insert(id) {
                 rows.push((id, path, count));
@@ -448,32 +452,17 @@ fn lower(part: &Name) -> Vec<u8> {
     out
 }
 
-/// A small xorshift: the same cases on every run, without a dependency.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    fn pick<'a>(&mut self, from: &[&'a str]) -> &'a str {
-        from[usize::try_from(self.next() % u64::try_from(from.len()).unwrap()).unwrap()]
-    }
-}
-
 /// Paths and names made of the pieces where lowercasing and byte order are tricky.
 fn random_file(rng: &mut Rng) -> (String, String) {
     const PIECES: &[&str] = &[
         "a", "A", "b", "B", "z", "ä", "Ä", "ß", "İ", "i", "\u{212A}", "k", "K", "Σ", "σ", "ς", "e\u{301}", "é", "-",
         ".", " ", "1", "10", "\u{1}", "\u{2}", "\u{3}", "ΑΣ", "ας", "日本", "😀",
     ];
-    let part = |rng: &mut Rng| -> String { (0..1 + rng.next() % 3).map(|_| rng.pick(PIECES)).collect() };
-    let drive = rng.pick(&["D:", "E:", "d:", r"\\srv\share"]);
+    let part =
+        |rng: &mut Rng| -> String { (0..1 + rng.next_u64() % 3).map(|_| PIECES[rng.below(PIECES.len())]).collect() };
+    let drive = ["D:", "E:", "d:", r"\\srv\share"][rng.below(4)];
     let mut folder = drive.to_string();
-    for _ in 0..rng.next() % 4 {
+    for _ in 0..rng.next_u64() % 4 {
         folder.push('\\');
         folder.push_str(&part(rng));
     }
@@ -483,7 +472,7 @@ fn random_file(rng: &mut Rng) -> (String, String) {
 // Windows-only: the order keys fold case per character and leave the drives out, and the cases named are Windows'.
 #[test]
 fn order_keys_sort_as_before() {
-    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut rng = Rng::new(0x9E37_79B9_7F4A_7C15);
     let files: Vec<(String, String)> = (0..400).map(|_| random_file(&mut rng)).collect();
     for a in &files {
         for b in &files {
@@ -532,7 +521,7 @@ fn folder_keys_are_made_per_character() {
         r"\\nas\Photos\2024",
         "",
     ];
-    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    let mut rng = Rng::new(0x2545_F491_4F6C_DD1D);
     let random = (0..400).map(|_| random_file(&mut rng).0);
     for text in merged.into_iter().map(String::from).chain(random) {
         let parts = folder(&text).parts().to_vec();

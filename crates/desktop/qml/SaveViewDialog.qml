@@ -35,7 +35,16 @@ Dialog {
     anchors.centerIn: parent
     title: words.text("ui-save-view-title")
     modal: true
-    standardButtons: Dialog.Save | Dialog.Cancel
+    footer: DialogButtonBox {
+        Button {
+            text: words.text("ui-save")
+            DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+        }
+        Button {
+            text: words.text("ui-cancel")
+            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+        }
+    }
     onRequestsChanged: dialog.open()
     onAboutToShow: {
         viewName.text = "";

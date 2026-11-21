@@ -17,16 +17,20 @@ use pg_thumbcache::Effect;
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
 /// cache that holds the bus is dropped: joining it then means the last one is out. A cache that is leaked (`gallery
 /// write`, for the writer's `'static` borrow) never drops, so its thread runs until the process ends and is not joined.
+#[expect(clippy::expect_used, reason = "a command line that cannot start a thread cannot print its progress")]
 pub(crate) fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, JoinHandle<()>) {
     let bus = Arc::new(Bus::new(64));
     let events = bus.subscribe();
-    let printer = std::thread::spawn(move || {
-        while let Some(event) = events.recv() {
-            if let Some(text) = thumb_event_text(&event) {
-                eprintln!("{text}");
+    let printer = std::thread::Builder::new()
+        .name("thumbnail printer".into())
+        .spawn(move || {
+            while let Some(event) = events.recv() {
+                if let Some(text) = thumb_event_text(&event) {
+                    eprintln!("{text}");
+                }
             }
-        }
-    });
+        })
+        .expect("a thread can be started");
     (bus, printer)
 }
 
@@ -72,20 +76,32 @@ pub(crate) fn changed_while_read(n: usize) -> String {
 
 /// Runs `f` with a control whose progress is printed on stderr while it runs: a line every few seconds for each
 /// phase, and the phase's last line when it ends. The printer is joined before this returns.
+#[expect(clippy::expect_used, reason = "a command line that cannot start a thread cannot print its progress")]
 pub(crate) fn with_progress<T>(f: impl FnOnce(&Control) -> T) -> T {
     let ctl = Control::new();
     let events = ctl.subscribe();
-    let printer = std::thread::spawn(move || {
-        while let Some(event) = events.recv() {
-            match event {
-                Event::Progress(p) | Event::Finished(p) => eprintln!("{}", progress_line(&p)),
+    let printer = std::thread::Builder::new()
+        .name("progress printer".into())
+        .spawn(move || {
+            while let Some(event) = events.recv() {
+                match event {
+                    Event::Progress(p) | Event::Finished(p) => eprintln!("{}", progress_line(&p)),
+                }
             }
-        }
-    });
+        })
+        .expect("a thread can be started");
     let out = f(&ctl);
     drop(ctl);
-    let _ = printer.join();
+    join_printer(printer);
     out
+}
+
+/// Joins a printer thread once its events are gone. A printer that panicked is a bug, so its panic is raised again here
+/// rather than dropped with the join's error.
+pub(crate) fn join_printer(printer: JoinHandle<()>) {
+    if let Err(panic) = printer.join() {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 /// The command line's progress line for a phase.

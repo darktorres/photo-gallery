@@ -19,6 +19,7 @@ use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
 use crate::rewrite::{self, op::Op};
 use pg_model::{format::Format, num};
 
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Cropped {
     pub bytes: Vec<u8>,
     /// What was cut from the left, top, right and bottom (stored pixels): the cut asked for, but for JPEG's left
@@ -78,7 +79,7 @@ pub fn cut(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4])
         Format::Jpeg => {
             let quality = pg_codec::encode::jpeg_quality(bytes)
                 .context("the JPEG has no luminance table to read its quality from")?;
-            let bytes = pg_codec::encode::jpeg_cropped(bytes, rect, i32::from(quality))?;
+            let bytes = pg_codec::encode::jpeg_cropped(bytes, rect, quality)?;
             Ok(Cropped { bytes, cut, metadata: false })
         }
         Format::Webp if webp_kind(bytes) == WebpKind::Lossy => {
@@ -99,15 +100,6 @@ fn reencoded(bytes: &[u8], format: Format, x: u32, y: u32, w: u32, h: u32, cut: 
 mod tests {
     use super::*;
     use crate::testing::stored;
-
-    fn pattern(w: usize, h: usize) -> Vec<u8> {
-        (0..w * h)
-            .flat_map(|i| {
-                let (x, y) = (i % w, i / w);
-                [x * 255 / w, y * 255 / h, (x * 7 + y * 13) % 256].map(|v| u8::try_from(v).unwrap())
-            })
-            .collect()
-    }
 
     /// Photo-like content: blocks of hashed colours with fine noise (as the library's cut tests have). A lossy encode
     /// has detail to lose in it; a smooth gradient is one a lossless encode keeps smaller.
@@ -138,7 +130,7 @@ mod tests {
     fn lossless_formats_crop_exactly_and_keep_their_chunks() {
         let (w, h) = (37, 23);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let rgb = pattern(w, h);
+        let rgb = pg_testkit::rgb_pattern(w, h);
         let cut = [3, 5, 7, 2];
         let mut files = vec![
             pg_testkit::png_rgb(sw, sh, &rgb).unwrap(),
@@ -171,7 +163,7 @@ mod tests {
     fn gif_crops_the_frame_and_the_screen() {
         let (w, h) = (19, 11);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let file = pg_testkit::gif_rgb(sw, sh, &pattern(w, h)).unwrap();
+        let file = pg_testkit::gif_rgb(sw, sh, &pg_testkit::rgb_pattern(w, h)).unwrap();
         let (_, _, before) = stored(&file);
         let cut = [2, 1, 4, 3];
         let out = crop(&file, Format::Gif, sw, sh, cut).unwrap();
@@ -184,7 +176,7 @@ mod tests {
     fn jpeg_crops_losslessly_on_the_mcu_grid() {
         let (w, h) = (100, 70);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let pixels = pattern(w, h);
+        let pixels = pg_testkit::rgb_pattern(w, h);
         let mut c = turbojpeg::Compressor::new().unwrap();
         c.set_quality(95).unwrap();
         c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
@@ -288,7 +280,7 @@ mod tests {
     fn the_other_formats_cut_as_the_copies_do() {
         let (w, h) = (37, 23);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let rgb = pattern(w, h);
+        let rgb = pg_testkit::rgb_pattern(w, h);
         let borders = [3, 5, 7, 2];
         let mut webp = Vec::new();
         image_webp::WebPEncoder::new(&mut webp).encode(&rgb, sw, sh, image_webp::ColorType::Rgb8).unwrap();

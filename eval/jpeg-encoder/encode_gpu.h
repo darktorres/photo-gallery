@@ -37,7 +37,7 @@ typedef struct EgpuOptions {
     int quality;            /* 1..100; out-of-range values are clamped */
     int chroma_420;         /* nonzero: 4:2:0 (16x16 MCU); zero: 4:4:4 (8x8 MCU) */
     int device;             /* CUDA device ordinal */
-    uint64_t pixel_budget;  /* max pixels encoded per internal sub-batch; 0 = 64 Mpx */
+    uint64_t pixel_budget;  /* max pixels encoded per internal sub-batch; 0 = 64 Mi pixels (2^26 = 67,108,864) */
     int keep_coefficients;  /* nonzero: keep quantized coefficients for egpu_coefficients() */
 } EgpuOptions;
 

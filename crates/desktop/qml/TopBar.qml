@@ -108,7 +108,7 @@ ToolBar {
             ToolTip.text: bar.descending ? words.text("ui-sort-descending") : words.text("ui-sort-ascending")
             Layout.preferredWidth: 32
         }
-        // Saved views (ImageRater's bookmarks): a folder with its subfolders, filters and sort, by name.
+        // Saved views (a rating app's bookmarks): a folder with its subfolders, filters and sort, by name.
         ViewsMenu {
             id: viewsMenu
             savedViews: bar.savedViews

@@ -163,7 +163,7 @@ def main() -> None:
         previous = top
     result["peak_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
     result["base_bytes"] = int(x.nbytes)
-    (out / "result.json").write_text(json.dumps(result))
+    (out / "result.json").write_text(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

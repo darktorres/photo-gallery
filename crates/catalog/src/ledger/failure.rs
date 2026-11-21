@@ -1,6 +1,5 @@
-//! A file a pass couldn't make its result of, and how its error is kept. A leaf below `core` and the writers:
-//! `Catalog`'s methods and the `LedgerWriter` take it, and the compiler graph puts an inherent method in its type's
-//! module, so a type they name has to be below `core` too.
+//! A file a pass couldn't make its result of, and how its error is kept. A leaf below `core` and the writers (the rule is
+//! in the crate's docs).
 
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;

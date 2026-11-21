@@ -11,6 +11,11 @@ pub(crate) fn to_row(row: Option<usize>) -> i32 {
     row.map_or(-1, |row| i32::try_from(row).unwrap_or(i32::MAX))
 }
 
+/// A count, a row or a side in pixels as Qt's int, saturating: a Qt model holds no more rows than an int counts.
+pub(crate) fn qt_int(n: impl TryInto<i32>) -> i32 {
+    n.try_into().unwrap_or(i32::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

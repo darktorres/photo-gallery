@@ -11,7 +11,7 @@ Item 2's pixmap cache (step 5) and its instrumentation (step 0) were not built. 
 **This file now holds item 5 only.**
 
 Verification of items 1-4: `cargo test` passes for the affected crates, `cargo clippy -D warnings` is clean, and
-`just qmltest` passes (108 of 108). `just lint` passes apart from `cargo deny`'s advisory check, which needs the network.
+`just qmltest` passes (108 of 108). `just lint` passes; `just deny`'s advisory check, which needs the network, was not run.
 
 ## Context
 

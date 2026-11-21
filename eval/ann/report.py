@@ -56,7 +56,7 @@ def true_duplicate_recall(base: Base) -> dict:
         decision = {int(r["id"]): r["decision"] for r in csv.DictReader(f)}
     sub = base.subset(MAIN)
     t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))
-    band_of = lambda s: int(np.digitize(s, metrics.BANDS) - 1)  # noqa: E731
+    band_of = lambda s: int(np.digitize(s, metrics.BANDS) - 1)  # noqa: E731 (a one-expression helper for the band)
 
     # Match rate per stratum among the exact candidates' sample.
     strata: dict[tuple, list[int]] = {}
@@ -156,10 +156,10 @@ def write(base: Base) -> None:
         md += ["| Edit | exact rule | " + " | ".join(best) + " |", "|---|---|" + "---|" * len(best)]
         for edit, (_, ceiling) in any_ln["planted"].items():
             md.append(f"| {edit} | {ceiling:.3f} | " + " | ".join(f"{b['planted'][edit][0]:.3f}" for b in best.values()) + " |")
-        md += ["", "| dups2 pairs | exact rule | " + " | ".join(best) + " |", "|---|---|" + "---|" * len(best)]
+        md += ["", "| duplicate pairs | exact rule | " + " | ".join(best) + " |", "|---|---|" + "---|" * len(best)]
         md.append(
-            f"| {any_ln['dups2'][2]} | {any_ln['dups2'][1]:.4f} | "
-            + " | ".join(f"{b['dups2'][0]:.4f}" for b in best.values())
+            f"| {any_ln['duplicate'][2]} | {any_ln['duplicate'][1]:.4f} | "
+            + " | ".join(f"{b['duplicate'][0]:.4f}" for b in best.values())
             + " |"
         )
 
@@ -170,10 +170,10 @@ def write(base: Base) -> None:
         "## True-duplicate recall (verifier on samples; each family's cheapest 0.999 setting)",
         "",
         "```json",
-        json.dumps(tdr, indent=1),
+        json.dumps(tdr, indent=2),
         "```",
         "",
     ]
     (OUT / "report.md").write_text("\n".join(md), encoding="utf-8")
-    (OUT / "report.json").write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    (OUT / "report.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print("\n".join(md))

@@ -158,28 +158,24 @@ mod tests {
         }
     }
 
-    fn wait_for(f: impl Fn() -> bool) {
-        let until = Instant::now() + Duration::from_secs(10);
-        while !f() {
-            assert!(Instant::now() < until, "the player showed nothing in 10 s");
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-
     #[test]
     fn loops_the_frames_and_closes_the_sink_once_dropped() {
-        let dir = pg_testkit::run_folder("scratch_render", "pg-player").unwrap();
+        let dir = pg_testkit::run_folder("scratch_render", "player").unwrap();
         let file = dir.join("loop.gif");
         std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
 
         let sink = Arc::new(Record::default());
         let player = Player::start(file.clone(), sink.clone(), false);
         // Three frames a pass, so seeing four shows the loop started again.
-        wait_for(|| sink.presented.lock().unwrap().len() > 3);
+        pg_testkit::wait_until(
+            Duration::from_secs(10),
+            || "the player to show its frames",
+            || sink.presented.lock().unwrap().len() > 3,
+        );
         assert!(sink.presented.lock().unwrap().iter().all(|&size| size == (4, 4)));
         drop(player);
         assert!(*sink.closed.lock().unwrap());
-        std::fs::remove_dir_all(&dir).ok();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -212,15 +208,19 @@ mod tests {
             use std::os::unix::ffi::OsStringExt;
             OsString::from_vec(b"x\xFF.gif".to_vec())
         };
-        let dir = pg_testkit::run_folder("scratch_render", "pg-player-odd").unwrap();
+        let dir = pg_testkit::run_folder("scratch_render", "player-odd").unwrap();
         let file = dir.join(name);
         std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
 
         let sink = Arc::new(Record::default());
         let player = Player::start(file.clone(), sink.clone(), false);
-        wait_for(|| !sink.presented.lock().unwrap().is_empty());
+        pg_testkit::wait_until(
+            Duration::from_secs(10),
+            || "the player to show its frames",
+            || !sink.presented.lock().unwrap().is_empty(),
+        );
         assert!(sink.presented.lock().unwrap().iter().all(|&size| size == (4, 4)));
         drop(player);
-        std::fs::remove_dir_all(&dir).ok();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -157,7 +157,7 @@ impl RootFacts for SystemFacts {
     type Handle = ();
 
     fn volume_root(&self, _path: &[Unit]) -> io::Result<Vec<Unit>> {
-        Err(io::ErrorKind::Unsupported.into())
+        Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
     }
 
     fn drive_type(&self, _volume_root: &[Unit]) -> DriveType {
@@ -165,19 +165,19 @@ impl RootFacts for SystemFacts {
     }
 
     fn open(&self, _path: &[Unit]) -> io::Result<()> {
-        Err(io::ErrorKind::Unsupported.into())
+        Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
     }
 
     fn is_reparse_point(&self, _handle: &()) -> io::Result<bool> {
-        Err(io::ErrorKind::Unsupported.into())
+        Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
     }
 
     fn final_path(&self, _handle: &()) -> io::Result<Vec<Unit>> {
-        Err(io::ErrorKind::Unsupported.into())
+        Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
     }
 
     fn file_system(&self, _handle: &()) -> io::Result<String> {
-        Err(io::ErrorKind::Unsupported.into())
+        Err(io::Error::new(io::ErrorKind::Unsupported, "not supported on this platform"))
     }
 }
 
@@ -201,10 +201,8 @@ impl RootFacts for SystemFacts {
 
     fn drive_type(&self, volume_root: &[Unit]) -> DriveType {
         use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
-        // `GetDriveTypeW`'s values (WinBase.h; windows-sys has them behind a feature this crate doesn't take).
-        const DRIVE_REMOVABLE: u32 = 2;
-        const DRIVE_FIXED: u32 = 3;
-        const DRIVE_REMOTE: u32 = 4;
+        // `GetDriveTypeW`'s values, from windows-sys (its `Win32_System_WindowsProgramming` feature, which the workspace takes).
+        use windows_sys::Win32::System::WindowsProgramming::{DRIVE_FIXED, DRIVE_REMOTE, DRIVE_REMOVABLE};
         let mut wide = NativePath::default();
         wide.set_plain(&[volume_root]);
         // SAFETY: `wide` is NUL-terminated and outlives the call.
@@ -801,7 +799,7 @@ mod folders_tests {
 
     #[test]
     fn the_folders_listed_are_the_folders_by_their_exact_names() {
-        let tree = crate::testing::run_folder("scratch_dir", "pg-folders-listing").unwrap();
+        let tree = crate::testing::run_folder("scratch_platform", "folders-listing").unwrap();
         let odd = tree.join(crate::testing::odd_name("odd"));
         std::fs::create_dir(&odd).unwrap();
         std::fs::create_dir(tree.join("Beta")).unwrap();

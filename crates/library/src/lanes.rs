@@ -2,8 +2,10 @@
 //! the lanes run at once, one per physical drive, so folders on two drives make progress together, and folders on one
 //! drive go one after the other, since two readers on one spindle fight over its head.
 //!
-//! This module decides the grouping, from each root's drive (`pg_platform::drive`). It is pure, so it is tested without
-//! a disk: the job asks the drives, then groups them here.
+//! This module decides the grouping, from each root's drive (`pg_platform::drive`). The grouping itself (`plan`, `assign`,
+//! `place_on_volume`) is pure, so it is tested without a disk. The probes that ask the disks are `probe_place` (the
+//! root's volume through `pg_scan::root_volume`, its drive through a `Drives`) and `groups`, which uses the system's
+//! drives; they run on the calling thread, and then their answers are grouped here.
 
 use std::collections::BTreeMap;
 
@@ -81,29 +83,38 @@ pub fn groups(rules: PathRules, roots: &[RulePath], serial: bool) -> Vec<Group> 
         .map(|members| {
             let place_of =
                 |root: &RulePath| probes.iter().find(|(path, _)| path == root).and_then(|(_, place)| place.clone());
-            let label = members
-                .first()
-                .and_then(|root| match place_of(root) {
-                    Some(Place::Mounted { drive, .. }) => Some(drive.label),
+            let label = drive_label(&members, place_of);
+            let volumes = lane_volumes(
+                single,
+                members.iter().filter_map(|root| match place_of(root) {
+                    Some(Place::Mounted { volume, .. }) => Some(volume),
                     _ => None,
-                })
-                .unwrap_or_default();
-            let volumes = if single {
-                pg_catalog::VolumeSet::All
-            } else {
-                pg_catalog::VolumeSet::Only(
-                    members
-                        .iter()
-                        .filter_map(|root| match place_of(root) {
-                            Some(Place::Mounted { volume, .. }) => Some(volume),
-                            _ => None,
-                        })
-                        .collect(),
-                )
-            };
+                }),
+            );
             Group { roots: members, volumes, label }
         })
         .collect()
+}
+
+/// The volume set of a lane: every volume when it is the only lane, else the volumes its roots are on. The one rule the
+/// planner and the coordinator both apply.
+pub(crate) fn lane_volumes(single: bool, volumes: impl Iterator<Item = i64>) -> pg_catalog::VolumeSet {
+    if single { pg_catalog::VolumeSet::All } else { pg_catalog::VolumeSet::Only(volumes.collect()) }
+}
+
+/// The drive for people of a lane's roots: the drive of the first of them whose place is known (`E:`), empty when none
+/// is. The one rule the planner and the coordinator both apply.
+pub(crate) fn drive_label<'a>(
+    roots: impl IntoIterator<Item = &'a RulePath>,
+    place_of: impl Fn(&RulePath) -> Option<Place>,
+) -> String {
+    roots
+        .into_iter()
+        .find_map(|root| match place_of(root) {
+            Some(Place::Mounted { drive, .. }) => Some(drive.label),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 /// The lanes a command runs over a catalog: [`groups`] of its roots, or, when it has no roots, one lane over every volume
@@ -126,7 +137,7 @@ pub fn run_each<T: Send>(
     ctl: &pg_jobs::control::Control,
     pass: impl Fn(&mut Catalog, &Group, &pg_jobs::control::Control) -> anyhow::Result<T> + Sync,
 ) -> anyhow::Result<Vec<T>> {
-    ctl.share_cpu(std::thread::available_parallelism().map_or(4, |n| n.get()));
+    ctl.share_cpu(pg_jobs::pipeline::cpus());
     let lanes: Vec<(&Group, std::sync::Arc<pg_jobs::control::Control>)> =
         groups.iter().map(|group| (group, ctl.lane())).collect();
     std::thread::scope(|scope| {
@@ -142,7 +153,13 @@ pub fn run_each<T: Send>(
             .collect();
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap_or_else(|_| Err(anyhow::anyhow!("a lane panicked"))))
+            .map(|handle| {
+                // The panic's own message, as a `Panicked` (`pg_jobs::panics::is_panic` recognises it).
+                handle.join().unwrap_or_else(|payload| {
+                    let message = pg_jobs::panics::message(&*payload).to_string();
+                    Err(anyhow::Error::new(pg_jobs::panics::Panicked(message)))
+                })
+            })
             .collect()
     })
 }

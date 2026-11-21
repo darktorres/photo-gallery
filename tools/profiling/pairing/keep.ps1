@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+Paired runs of two pairs_probe builds for the keep rule (keep.py judges them).
+
+.DESCRIPTION
+The header comment below the param block gives the pairing, the gate and the measures.
+#>
 param(
     [Parameter(Mandatory)] [string] $A,
     [Parameter(Mandatory)] [string] $B,
@@ -32,14 +39,11 @@ param(
 # sorted path as N decides), slices4-w12 (all owed in four slices of 50,000, so writes overlap joins).
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $here 'cpu_load.ps1')
 $base = Join-Path ([IO.Path]::GetTempPath()) 'pg_keep'
 if (Test-Path $base) { Remove-Item -LiteralPath $base -Recurse -Force }
 New-Item -ItemType Directory $base | Out-Null
-$drop = "import sqlite3, sys`nc = sqlite3.connect(sys.argv[1])`nc.execute('PRAGMA foreign_keys = ON')`n" +
-    "c.execute('DELETE FROM pdq_pairs WHERE a IN (SELECT file_id FROM pairs_owed) OR b IN (SELECT file_id FROM pairs_owed)')`n" +
-    "c.commit()"
-$dropPy = Join-Path $base 'drop.py'
-Set-Content -LiteralPath $dropPy -Value $drop
+$dropPy = Join-Path $here 'drop_owed_pairs.py'
 $catalogs = @{ A = $Catalog; B = if ($CatalogB) { $CatalogB } else { $Catalog } }
 # One template catalog per build and owed count, made once.
 $templates = @{}
@@ -94,7 +98,7 @@ for ($p = 0; $p -lt $Pairs; $p++) {
                 $env:PG_PROBE_WORKERS = $threads
                 $extra = if ($build -eq 'A') { $EnvA } else { $EnvB }
                 foreach ($e in $extra.Keys) { Set-Item "Env:$e" $extra[$e] }
-                $cpu = (Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average
+                $cpu = Get-CpuLoad
                 $exe = if ($build -eq 'A') { $A } else { $B }
                 $line = (& $exe $run) -join ' '
                 foreach ($e in $extra.Keys) { Remove-Item "Env:$e" -ErrorAction SilentlyContinue }

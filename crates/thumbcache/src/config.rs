@@ -5,20 +5,11 @@
 use std::path::Path;
 use std::time::Duration;
 
-/// The cache's layout version (`PRAGMA user_version`). Before the first release, layout changes edit `SCHEMA` in place
-/// and it stays 1. A cache of another version, or whose schema differs from this build's, is started over
-/// ([`StartOverReason::OtherBuild`](pg_model::notice::StartOverReason::OtherBuild)), never migrated: it holds derived data only. A
-/// macro, so `SCHEMA` sets it as a constant.
-macro_rules! cache_version {
-    () => {
-        1
-    };
-}
-pub(crate) use cache_version;
-
+/// The cache's layout version (`PRAGMA user_version`), from the registry; `make_layout` sets it when it makes a file. Before
+/// the first release, layout changes edit `SCHEMA` in place and the version stays put. A cache of another version, or whose
+/// schema differs from this build's, is started over
+/// ([`StartOverReason::OtherBuild`](pg_model::notice::StartOverReason::OtherBuild)), never migrated: it holds derived data only.
 pub const CACHE_VERSION: i64 = pg_model::versions::CACHE_VERSION;
-// The macro is the literal `SCHEMA` sets in SQL; it must be the registry's version.
-const _: () = assert!(cache_version!() == CACHE_VERSION);
 
 /// The largest cap a new cache gets when none is set (`ThumbCache::open`), and the cap where the volume's size can't be
 /// read.
@@ -64,7 +55,7 @@ impl Cap {
 
 /// A hit not touched for this long is touched again: least recently used to the hour, which is what eviction
 /// needs, without a write for every thumbnail shown.
-pub(crate) const TOUCH_AGE_S: i64 = 3600;
+pub(crate) const TOUCH_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// Touches are written together, at the latest this long after the first one waiting (or after the last failed
 /// try).

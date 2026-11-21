@@ -406,7 +406,7 @@ and the code.
      - **The fix:** `copy_tables` lets a `Rust` step declare the tables it converts from an old shape. For those
        tables, the step does the copy itself, from `carried`, instead of the plain copy. A column default would hide the
        very mistake item 10 wants caught, so defaults are not the fix.
-   - **`CARRIED` gains `links` and `volumes`.** `carried_is_every_table_of_the_current_schema` (`schema.rs:906`)
+   - **`CARRIED` gains `links` and `volumes`.** `carried_is_every_table_of_the_current_schema` (in `catalog/src/schema.rs`)
      enforces it.
    - **The every-version test carries rows.** `every_older_version_reaches_the_current_one_on_both_paths`
      (`lifecycle.rs:1422`) rebuilds empty catalogs, so it can't catch a failed copy. It gets at least one row in each
@@ -789,7 +789,7 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
    - records from a builder with fixups, plus real records captured by a capture step in this step, from C: and E: (the
      prototype's records are not kept in the repo);
    - a mutation test: errors, never panics or hangs (the cycle rule is in step 4);
-   - the `mft` crate as an oracle on a captured `$MFT`, as a dev-dependency. `just lint` runs `cargo deny` (licenses, duplicates;
+   - the `mft` crate as an oracle on a captured `$MFT`, as a dev-dependency. `just deny` runs `cargo deny` (licenses, duplicates;
      "a new license is a decision", `deny.toml`) and `cargo machete`. Whatever it pulls in must pass them, or the oracle is
      replaced by records cross-checked with `GetFileInformationByHandle`.
 

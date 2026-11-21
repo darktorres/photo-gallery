@@ -2,6 +2,7 @@
 // layout (the png fork's EXPAND output: palette and tRNS to RGB(A), gray below 8 bits to 8, 16-bit kept as big-endian
 // samples, packed row by row, no padding), one thread, full size, into an output buffer it keeps across decodes.
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -9,6 +10,10 @@
 #include <vector>
 
 #include "png_info.h"
+
+// The input piece a streaming reader feeds an inflater: the Rust reader's (fdeflate's) 16 KiB, so the C inflaters see the
+// same pieces (dec_wuffs.cpp and harness.cpp's inflate_streamed).
+inline constexpr size_t kStreamChunk = 16 << 10;
 
 // Unsupported: the library cannot give the app's layout for this file, so its output is not compared. Failed: an error.
 enum class Status { Ok, Unsupported, Failed };

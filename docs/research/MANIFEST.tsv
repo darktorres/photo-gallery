@@ -6,7 +6,7 @@ no	status_or_source	bytes	sha256	file	url
 05	raw file (.ipynb) via raw.githubusercontent.com HTTP 200	7053143	41d1815eff3594bb5d7e3df52b31cce75955a95a2a448cf0494d1daf1e4b3c9a	05_raw.githubusercontent.com_changsin_ClassifyImages_main_notebooks_dedupe_images.ipynb	https://github.com/changsin/ClassifyImages/blob/main/notebooks/dedupe_images.ipynb
 06	curl HTTP 200	199631	72a30b497a61a0b68bc211074ee511a70f451fec534ca516956182dbced4b5f6	06_github.com_fpingham_dataset-cleaner.html	https://github.com/fpingham/dataset-cleaner
 07	curl HTTP 200	232945	63ae804ad2f1a1ed247f0bca0b16b96e494675ba24e4673d865a25015045d0d1	07_github.com_mendesk_image-ndd-lsh.html	https://github.com/mendesk/image-ndd-lsh
-08	curl HTTP 200	9841	9c3478291f6718acbf71977cf98a89307edd1b89ccdf792cab16a3532b4c396e	08_vitali-fedulov.github.io_similar.pictures_research.html.html	https://vitali-fedulov.github.io/similar.pictures/research.html
+08	curl HTTP 200	9841	9c3478291f6718acbf71977cf98a89307edd1b89ccdf792cab16a3532b4c396e	08_vitali-fedulov.github.io_similar.pictures_research.html	https://vitali-fedulov.github.io/similar.pictures/research.html
 09	curl HTTP 200	144285	82596c53703f42b6b7ad655b4339d4380c815eb3085c7e5e48d68c89226ead62	09_towardsdatascience.com_a-guide-to-building-an-image-duplicate-finder-system-4a46021410f1.html	https://towardsdatascience.com/a-guide-to-building-an-image-duplicate-finder-system-4a46021410f1
 10	curl HTTP 200	148988	6a4b986e69c55930409c2c304cb9fd3c7f1865bd92622a4337ddf0127cfefff5	10_web.archive.org_web_20220303003104_https_towardsdatascience.com_how-to-build-an-image-dupl.html	https://web.archive.org/web/20220303003104/https://towardsdatascience.com/how-to-build-an-image-duplicate-finder-f8714ddca9d2
 11	curl HTTP 200	184542	971c249a129ff459b738473f0a4963ddb6c24f71ce31b7143010c660fe76ad78	11_medium.com_scrapehero_exploring-image-similarity-approaches-in-python-b8ca0a3ed5a3.html	https://medium.com/scrapehero/exploring-image-similarity-approaches-in-python-b8ca0a3ed5a3
@@ -34,7 +34,7 @@ no	status_or_source	bytes	sha256	file	url
 33	curl HTTP 200	271065	385376fb976853cbedfef77e15f0ee29b127cee36a6b7fcf9731292523351474	33_github.com_google-research_google-research_tree_master_scann.html	https://github.com/google-research/google-research/tree/master/scann
 34	curl HTTP 200	372344	9bd72ff6229be8b2b8c8de32a13c7f770ad18d5c5c633bed1483aeee299f51b0	34_github.com_erikbern_ann-benchmarks.html	https://github.com/erikbern/ann-benchmarks
 35	curl HTTP 200	266709	9227f3d99d0028476dc574b4851d87e5cb257a33b0b573dbb38a64dcf64f050c	35_github.com_harsha-simhadri_big-ann-benchmarks.html	https://github.com/harsha-simhadri/big-ann-benchmarks
-36	curl HTTP 200	28944	5d49f94b1729c3de865b74f1c491db84d7236f00f461af53b7332b64bc9e16a0	36_big-ann-benchmarks.com_neurips23.html.html	https://big-ann-benchmarks.com/neurips23.html
+36	curl HTTP 200	28944	5d49f94b1729c3de865b74f1c491db84d7236f00f461af53b7332b64bc9e16a0	36_big-ann-benchmarks.com_neurips23.html	https://big-ann-benchmarks.com/neurips23.html
 37	curl HTTP 200	550692	f0152e11fbe70973fbe1081b6db4f7d538cf01ae3e10569544e4e935aed9260e	37_github.com_milvus-io_milvus.html	https://github.com/milvus-io/milvus
 38	curl HTTP 200	218940	dadffb59c48e92ebc5e879ad66459701cc6ef3b62a94e225566153790c3accef	38_rom1504.medium.com_semantic-search-at-billions-scale-95f21695689a.html	https://rom1504.medium.com/semantic-search-at-billions-scale-95f21695689a
 39	curl HTTP 200	247454	04dda62c7a568923527ecc37a19196490bd921a0fa8ea18e80c4bb257dc2a37c	39_supabase.com_docs_guides_database_extensions_pgvector.html	https://supabase.com/docs/guides/database/extensions/pgvector
@@ -42,11 +42,11 @@ no	status_or_source	bytes	sha256	file	url
 41	curl HTTP 200	383117	61f5b118375edd79338a3e939a2290bac8f8dc8d4790f74ea71bfa1c6e0d2217	41_github.com_libvips_libvips.html	https://github.com/libvips/libvips
 42	curl HTTP 200	304146	3e96b28eaac6fa827bb7d4c9915bef060bc7de0095ffc5e255862f8bc987e71e	42_github.com_avaneev_avir.html	https://github.com/avaneev/avir
 43	curl HTTP 200	202328	5d23522c7880d077783b6e4093d9df4fbb243ab92d1aa8ab656168912d8c5d60	43_github.com_NVIDIA_CUDALibrarySamples_tree_master_nvJPEG.html	https://github.com/NVIDIA/CUDALibrarySamples/tree/master/nvJPEG
-44	curl HTTP 200	62257	48bbbe0a1eee36f2233cd55a2ebf0fe47f0694e1cb0e5e6056ff18be92eee377	44_artoriuz.github.io_blog_imagemagick_resampling.html.html	https://artoriuz.github.io/blog/imagemagick_resampling.html
-45	curl HTTP 200	31516	ad7a95231bfbdd6c976616ffdf4c811a778a94b90c63f7af077d1e228f4b8ce2	45_artoriuz.github.io_blog_mpv_upscaling.html.html	https://artoriuz.github.io/blog/mpv_upscaling.html
+44	curl HTTP 200	62257	48bbbe0a1eee36f2233cd55a2ebf0fe47f0694e1cb0e5e6056ff18be92eee377	44_artoriuz.github.io_blog_imagemagick_resampling.html	https://artoriuz.github.io/blog/imagemagick_resampling.html
+45	curl HTTP 200	31516	ad7a95231bfbdd6c976616ffdf4c811a778a94b90c63f7af077d1e228f4b8ce2	45_artoriuz.github.io_blog_mpv_upscaling.html	https://artoriuz.github.io/blog/mpv_upscaling.html
 46	curl HTTP 200	203359	a6c787c76d80d085a7bfeeb4bed7a8a5569367ed78e4fcef3acf293812d9f766	46_uploadcare.com_blog_fighting-jpeg-color-banding.html	https://uploadcare.com/blog/fighting-jpeg-color-banding/
 47	browser (Playwright)	131999	caa8623e366c6a7473348a9c5bc4c95113a9ef56c079172fff8d71f7f6263065	47_web.archive.org_web_20221118084637_https_zuru.tech_blog_the-dangers-behind-image-resizing.html	https://web.archive.org/web/20221118084637/https://zuru.tech/blog/the-dangers-behind-image-resizing
-48	browser (Playwright)	123610	b415c141377ce8f8024581d4e4e4da9cb6392bf0380d80559a816af856834db2	48_www.ericbrasseur.org_gamma.html.html	https://www.ericbrasseur.org/gamma.html
+48	browser (Playwright)	123610	b415c141377ce8f8024581d4e4e4da9cb6392bf0380d80559a816af856834db2	48_www.ericbrasseur.org_gamma.html	https://www.ericbrasseur.org/gamma.html
 49	curl HTTP 200	5599	b557dafc48dd40f0f46e960acaa2a7ab95ae2638afcff5d5c30a2d99a5f19de9	49_blurha.sh.html	https://blurha.sh/
 50	curl HTTP 200	457095	83e5158a07749fbb4fb3672954c5a69252a00104d95bb8d55142117ade2a7062	50_github.com_skyllc-ai_UltraFastFileSearch.html	https://github.com/skyllc-ai/UltraFastFileSearch
 51	curl HTTP 200	51487	0cd1317d68b63d752e47eb9da9445539e2c3f21571eaa638928ea5b71eb9c7d3	51_www.voidtools.com_support_everything_sdk.html	https://www.voidtools.com/support/everything/sdk/

@@ -40,7 +40,8 @@ use pg_writeback::Writer;
 
 use args::{Cli, Command, PipelineArgs};
 use report::{
-    Kept, PrintingSink, changed_while_read, print_failures, report_pass, report_rebuilt, thumb_events, with_progress,
+    Kept, PrintingSink, changed_while_read, join_printer, print_failures, report_pass, report_rebuilt, thumb_events,
+    with_progress,
 };
 
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
@@ -52,6 +53,11 @@ pub fn wants_cli(args: &[OsString]) -> bool {
             matches!(a, "help" | "--help" | "-h" | "--version" | "-V") || <Command as Subcommand>::has_subcommand(a)
         })
     })
+}
+
+/// The line a build without the app window prints when it is started with no command (the words are `cli.ftl`'s).
+pub fn no_window_line() -> String {
+    line(&Line::NoWindow)
 }
 
 /// Run a command. `args` includes the program name.
@@ -105,7 +111,7 @@ fn command_name(command: &Command) -> &'static str {
 fn open_perf_log(cli: &Cli) -> Option<std::path::PathBuf> {
     let target = std::env::var_os("PG_PERF_LOG").filter(|v| !v.is_empty())?;
     let meta = json!({
-        "program": "gallery",
+        "program": pg_perf::PROGRAM,
         "version": env!("CARGO_PKG_VERSION"),
         "command": command_name(&cli.command),
         "cores": std::thread::available_parallelism().map_or(0, std::num::NonZero::get),
@@ -301,7 +307,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                         let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                         let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
                         drop(cache);
-                        let _ = printer.join();
+                        join_printer(printer);
                         driven
                     };
                     match pg_library::folders::add_folder_finishing(&catalog, &root, &mut finish) {
@@ -368,10 +374,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     }
                     // Another process walks a folder that overlaps this one: said, and the command fails (`--wait`
                     // waits for it instead).
-                    Err(busy @ pg_scan::ScanError::Busy { .. }) => bail!("{busy}"),
+                    Err(pg_scan::ScanError::Busy { root, holder }) => bail!(line(&Line::ScanBusy { root, holder })),
                     // Another process removed the folder from the library meanwhile (`gallery remove`, or the app):
                     // said, and the command fails, as the scan asked for didn't happen.
-                    Err(removed @ pg_scan::ScanError::Removed { .. }) => bail!("{removed}"),
+                    Err(pg_scan::ScanError::Removed { root }) => bail!(line(&Line::ScanRemoved { root })),
                     Err(pg_scan::ScanError::Failed(e)) => return Err(e),
                 };
                 let mut report = scan_report(&root, &s, rules, start.elapsed().as_secs_f64()).into_iter();
@@ -388,7 +394,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                         say(&Line::ThumbNotForgotten { root: name.clone(), error: format!("{e:#}") });
                     }
                     drop(cache);
-                    let _ = printer.join();
+                    join_printer(printer);
                 }
                 for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
                     say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() });
@@ -418,7 +424,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
             let swept = cache.sweep_orphans(&catalog_path);
             drop(cache);
-            let _ = printer.join();
+            join_printer(printer);
             swept?;
             say(&Line::Removed { root: name, deleted: discarded.rows.to_string() });
         }
@@ -445,7 +451,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                     let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
                     drop(cache);
-                    let _ = printer.join();
+                    join_printer(printer);
                     let driven = driven?;
                     say(&Line::Removed { root: name.clone(), deleted: driven.files.to_string() });
                     if driven.deferred > 0 {
@@ -539,7 +545,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 });
             }
             drop(cache);
-            let _ = printer.join();
+            join_printer(printer);
         }
         Command::Borders { import_review, pipeline, .. } => {
             if let Some(review) = import_review {
@@ -975,7 +981,7 @@ mod tests {
         assert!(!dir.join("elsewhere").exists(), "nothing is made without --create");
         run(words(&["--create"])).unwrap();
         assert!(archive.is_dir(), "with --create it is made");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -991,7 +997,7 @@ mod tests {
         use pg_catalog::fixture::state;
         use pg_writeback::fault::Fault;
 
-        let dir = pg_testkit::run_folder_with("scratch_rate", "cli-write", &["images"]).unwrap();
+        let dir = pg_testkit::run_folder_with("scratch_cli", "cli-write", &["images"]).unwrap();
         std::fs::write(dir.join("images").join("a.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
         let catalog_path = dir.join("catalog.sqlite");
         let mut catalog =
@@ -1028,7 +1034,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(60))
             .expect("gallery write kept waiting for a writer that ended");
         let error = waited.unwrap_err();
-        assert!(error.contains("the file writer stopped with 1 changes still to write"), "{error}");
+        assert!(error.contains("writing into the files has stopped with 1 changes still to write"), "{error}");
         quiet.check();
     }
 }

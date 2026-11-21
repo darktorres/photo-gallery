@@ -22,13 +22,13 @@ From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse/`, `crate
 
 - **About 79 GB at 70M, at today's ratio.** The live catalog (`D:\PhotoGallery\catalog\catalog.sqlite`, checked
   2026-11-13) is 261 MB for 230,812 files, ~1,130 B per file (2026-11-01: 154 MB for 189,518 files, ~810 B), about three
-  times PLAN §6's 20–30 GB. The largest items are `analysis.pdq_dihedral` (256 B per analysed file: the eight dihedral
-  PDQ hashes, PLAN §5) and `order_key` (121 B on average), stored in `files` and again in `files_order`: ~240 B per file,
-  ~17 GB at 70M.
+  times PLAN §6's 20–30 GB. The largest items are `analysis.pdq_dihedral` (128 B per analysed file: four 32-byte dihedral
+  PDQ hashes, `pdq.rs:118`) and `order_key` (117 B on average, `CATALOG_SIZE_PLAN.md`), stored in `files` and again in `files_order`: ~234 B per file,
+  ~16 GB at 70M.
 - **SQL built at run time:** `crates/query/src/lib.rs` (670 lines) compiles the conditions and sort keys, which
   `crates/catalog/src/browse/read/` runs: facet counts, folder counts, name order, joins of `files` and `analysis`. The
   grid has no paging yet (§3).
-- **Row triggers and a view:** `files_changed`, `analysis_*` keep `pending`, `seq` and the totals (a new row's columns are the writer's: `files_added` went in migration 16);
+- **Row triggers and a view:** `files_pending_changed`, `analysis_*` keep `pending`, `seq` and the totals (a new row's columns are the writer's: `files_added` went in migration 16);
   `present_pdq_pairs` is a view. Partial indexes. `auto_vacuum = INCREMENTAL` in the catalog (schema 19: a removal's pages go
   back to the disk) and in the thumbnail cache. The ids of `files`, `folders` and `roots` are `AUTOINCREMENT`, never reused:
   the thumbnail cache finds a removed file's entries by id, and that relies on it (schema 19).
@@ -98,7 +98,7 @@ random-key inserts, which is the one place the catalog could gain (BLAKE3 hashes
 
 | Engine | Insert | Size | Lookup by key | GROUP BY | Page of 200 by key | Point UPDATE |
 |---|---|---|---|---|---|---|
-| SQLite 3.49 (Python's build; the app ships 3.54.0) | 48–55k rows/s | 276 MiB | 11 µs | 610–860 ms | 0.15 ms | 76–101 µs |
+| SQLite 3.49 (Python's build; the app ships 3.54.1) | 48–55k rows/s | 276 MiB | 11 µs | 610–860 ms | 0.15 ms | 76–101 µs |
 | DuckDB 2.0 | 74k rows/s | 391 MiB | 1.3 ms | 4 ms | 16 ms | 5.4 ms |
 | Stoolap 0.4.2 | 48k rows/s | 178 MiB | 14 ms | 42 ms | 592 ms | 32 µs |
 | Turso 0.8.3 (CLI, same SQL as SQLite) | 14k vs SQLite's 29k rows/s | | 20k lookups: 473 vs 216 ms | 242 vs 189 ms | | |

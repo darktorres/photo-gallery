@@ -103,7 +103,7 @@ mod tests {
     /// A fresh catalog is made at the baseline, with nothing to migrate: the only phase reported is the check.
     #[test]
     fn a_fresh_catalog_reports_only_the_check() {
-        let dir = pg_testkit::run_folder("scratch_progress", "fresh").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "fresh").unwrap();
         let recorder = Recorder(Mutex::new(Vec::new()));
         let catalog =
             Catalog::preparing(&dir.join("catalog.sqlite"), versions(), PATH_RULES).progress(&recorder).run().unwrap();
@@ -114,7 +114,7 @@ mod tests {
     /// A migration reports the copy aside of the catalog it migrates, then each of its steps in order.
     #[test]
     fn a_migration_reports_its_backup_and_each_step() {
-        let dir = pg_testkit::run_folder("scratch_progress", "migrate").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "migrate").unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), PATH_RULES).unwrap());
         let recorder = Recorder(Mutex::new(Vec::new()));
@@ -134,7 +134,7 @@ mod tests {
     /// A migration is refused before anything is copied when its volume has no room: the catalog is left as it was.
     #[test]
     fn a_migration_is_refused_before_the_copy_when_the_volume_has_no_room() {
-        let dir = pg_testkit::run_folder("scratch_progress", "room").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "room").unwrap();
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), PATH_RULES).unwrap());
         let no_room = |_: &Path| Some(0_u64);

@@ -14,7 +14,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from linux import CLONE, INPUTS, NAMES, callgrind_total
+from linux import CLONE, INPUTS, NAMES, callgrind_instructions, marginal_millions
 from linux import RESTART as OUT  # the variants, kept for GPU tests
 
 BIN = CLONE / "eval" / "jpeg-decoders" / "target" / "release" / "jpeg-decoders"  # linux.py builds it
@@ -46,27 +46,13 @@ def instructions(mode: str, file: Path) -> str:
     totals = []
     with tempfile.TemporaryDirectory() as folder:
         for count in (1, 3):
-            out = Path(folder) / f"{count}.out"
-            result = subprocess.run(
-                [
-                    "valgrind",
-                    "--tool=callgrind",
-                    f"--callgrind-out-file={out}",
-                    str(BIN),
-                    "repeat",
-                    str(count),
-                    "libjpeg-turbo",
-                    mode,
-                    str(file),
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
+            total = callgrind_instructions(
+                [str(BIN), "repeat", str(count), "libjpeg-turbo", mode, str(file)], Path(folder) / f"{count}.out"
             )
-            if result.returncode != 0:
+            if total is None:
                 return "ERR"
-            totals.append(callgrind_total(out) or 0)
-    return f"{(totals[1] - totals[0]) / 2e6:.1f}"
+            totals.append(total)
+    return marginal_millions(totals[0], totals[1])
 
 
 def wall(mode: str, file: Path, count: int) -> str:

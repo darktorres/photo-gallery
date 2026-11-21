@@ -27,7 +27,7 @@ proptest! {
         let rules = PathRules::Windows;
         let mut builder = TreeBuilder::with_capacity(rules, paths.len(), paths.iter().map(String::len).sum(), 12);
         for (i, path) in paths.iter().enumerate() {
-            builder.add(i64::try_from(i).unwrap() + 1, &rules.parse(path).unwrap(), 1);
+            builder.add(i64::try_from(i).unwrap() + 1, &rules.parse(path).unwrap(), 1).unwrap();
         }
         let mut tree = Tree::new(rules);
         tree.replace(builder.build());
@@ -53,10 +53,10 @@ proptest! {
         let rules = PathRules::Windows;
         let mut builder = TreeBuilder::with_capacity(rules, paths.len() + 1, paths.iter().map(String::len).sum(), 12);
         for (i, path) in paths.iter().enumerate() {
-            builder.add(i64::try_from(i).unwrap() + 1, &rules.parse(path).unwrap(), 1);
+            builder.add(i64::try_from(i).unwrap() + 1, &rules.parse(path).unwrap(), 1).unwrap();
         }
         if roots > 0 {
-            builder.add(0, &rules.parse("D:").unwrap(), roots);
+            builder.add(0, &rules.parse("D:").unwrap(), roots).unwrap();
         }
         let mut tree = Tree::new(rules);
         tree.replace(builder.build());

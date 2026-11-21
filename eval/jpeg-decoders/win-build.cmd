@@ -28,20 +28,20 @@ exit /b 0
 :turbo
 rem The app's vendored libjpeg-turbo 3.1.0, static with SIMD: the reference and CPU baseline
 cmake -G Ninja -S "%REPO%\vendor\turbojpeg-sys\libjpeg-turbo" -B "%JPEG_EVAL%\build\libjpeg-turbo" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=ON "-DCMAKE_INSTALL_PREFIX=%JPEG_EVAL%\deps\libjpeg-turbo" >nul || exit /b 1
-cmake --build "%JPEG_EVAL%\build\libjpeg-turbo" -j 4 || exit /b 1
+cmake --build "%JPEG_EVAL%\build\libjpeg-turbo" -j %NUMBER_OF_PROCESSORS% || exit /b 1
 cmake --install "%JPEG_EVAL%\build\libjpeg-turbo" >nul
 exit /b
 
 :jpeggpu
 call :clone jpeggpu https://github.com/nolmoonen/jpeggpu 3ae7ac0dbc6e1b047abaa67badb6378baa7d39cb || exit /b 1
 cmake -G Ninja -S "%JPEG_EVAL%\src\jpeggpu" -B "%JPEG_EVAL%\build\jpeggpu" -DCMAKE_BUILD_TYPE=Release %CUDA_MSVC_FLAGS% "-DCMAKE_CXX_FLAGS=/Zc:preprocessor /EHsc" >nul || exit /b 1
-cmake --build "%JPEG_EVAL%\build\jpeggpu" -j 4
+cmake --build "%JPEG_EVAL%\build\jpeggpu" -j %NUMBER_OF_PROCESSORS%
 exit /b
 
 :gpujpeg
 call :clone GPUJPEG https://github.com/CESNET/GPUJPEG 37ab4810657fafeedad8c7a3c4546ea4ef5eb363 || exit /b 1
 cmake -G Ninja -S "%JPEG_EVAL%\src\GPUJPEG" -B "%JPEG_EVAL%\build\GPUJPEG" -DCMAKE_BUILD_TYPE=Release %CUDA_MSVC_FLAGS% -DBUILD_SHARED_LIBS=ON -DCMAKE_DISABLE_FIND_PACKAGE_OpenGL=ON -DCMAKE_DISABLE_FIND_PACKAGE_GLEW=ON -DCMAKE_DISABLE_FIND_PACKAGE_GLUT=ON -DCMAKE_DISABLE_FIND_PACKAGE_GLFW=ON "-DCMAKE_C_FLAGS=/Zc:preprocessor" "-DCMAKE_CXX_FLAGS=/Zc:preprocessor /EHsc" >nul || exit /b 1
-cmake --build "%JPEG_EVAL%\build\GPUJPEG" -j 4
+cmake --build "%JPEG_EVAL%\build\GPUJPEG" -j %NUMBER_OF_PROCESSORS%
 exit /b
 
 :parajpeg
@@ -51,7 +51,7 @@ call :clone parajpeg https://github.com/anniigr/parajpeg f45081d7f75fdab809e7170
 for /d %%v in ("%LLVM_DIR%\lib\clang\*") do set "LIB=%%v\lib\windows;%LIB%"
 cmake -G Ninja -S "%JPEG_EVAL%\src\parajpeg" -B "%JPEG_EVAL%\build\parajpeg-cuda" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_COMPILER=%CLANG_CL%" "-DCMAKE_CXX_COMPILER=%CLANG_CL%" "-DCMAKE_CXX_FLAGS=/EHsc -O2" -DCMAKE_EXE_LINKER_FLAGS=clang_rt.builtins-x86_64.lib -DPARAJPEG_WITH_CUDA=ON -DCMAKE_CUDA_HOST_COMPILER=cl -DCMAKE_CUDA_FLAGS=-Xcompiler=/Zc:preprocessor -DPARAJPEG_BUILD_TESTS=OFF -DPARAJPEG_BUILD_BENCH=OFF -DPARAJPEG_BUILD_TOOLS=ON >nul || exit /b 1
 rem the fuzz replay tool links the kernels' CPU emulator beside the kernels (duplicate symbols on Windows): skip it
-cmake --build "%JPEG_EVAL%\build\parajpeg-cuda" -j 4 --target parajpeg pjdec
+cmake --build "%JPEG_EVAL%\build\parajpeg-cuda" -j %NUMBER_OF_PROCESSORS% --target parajpeg pjdec
 exit /b
 
 :debesheedas
@@ -68,7 +68,7 @@ exit /b %RC%
 set "S=%JPEG_EVAL%\src"
 set "B=%JPEG_EVAL%\build"
 cmake -G Ninja -S "%HERE%harness" -B "%B%\harness" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=cl -DWITH_CUDA=ON "-DTURBO_INCLUDE=%JPEG_EVAL%\deps\libjpeg-turbo\include" "-DTURBO_LIB=%JPEG_EVAL%\deps\libjpeg-turbo\lib\turbojpeg-static.lib" "-DPARAJPEG_SRC=%S%\parajpeg" "-DPARAJPEG_LIB=%B%\parajpeg-cuda\parajpeg.lib" "-DJPEGGPU_SRC=%S%\jpeggpu" "-DJPEGGPU_BUILD=%B%\jpeggpu" "-DGPUJPEG_SRC=%S%\GPUJPEG" "-DGPUJPEG_BUILD=%B%\GPUJPEG" >"%B%\harness.configure.log" 2>&1 || (type "%B%\harness.configure.log" & exit /b 1)
-cmake --build "%B%\harness" -j 4 || exit /b 1
+cmake --build "%B%\harness" -j %NUMBER_OF_PROCESSORS% || exit /b 1
 rem next to its DLLs: GPUJPEG's, and CUDA's (nvJPEG, cudart) from the toolkit
 copy /y "%B%\GPUJPEG\gpujpeg.dll" "%B%\harness\" >nul
 exit /b

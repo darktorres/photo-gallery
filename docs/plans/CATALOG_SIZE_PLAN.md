@@ -63,7 +63,7 @@ The key exists only in the index; the table keeps the name once.
   merges drives), with each part mapped through the rules' name key instead of lowercase. Otherwise `ς`/`σ` would be one
   name on NTFS (both upcase to `Σ`) and two folders. The keys stay stored byte keys (334 rows), so `prefix_upper_bound`
   subtree ranges work unchanged.
-- **Version stamp:** `meta.name_key_version` (the table's hash, plus a key-format number). On open, when it differs from
+- **Version stamp:** `meta.key_version` (the table's hash, plus a key-format number; the code's mark name). On open, when it differs from
   this build's, rewrite `mfolders.key` from `folders.path` and `REINDEX files_mn`, before any other use
   (`lifecycle::set_pairing_version` is the pattern). SQLite treats an index built under a different function or collation as
   corrupt (ICU README, section 3.3).
@@ -180,7 +180,7 @@ DROP INDEX files_changed;
   tier 2 today; add one).
 - **`files_changed`** (D2): change the "edited-index" case in `lifecycle.rs:873` to another index; fix
   `crates/catalog/examples/stmt_journal_probe.rs:54-61` (it also names dropped `last_scan`, `files_fresh`) and
-  `crates/catalog/examples/pairs_load_probe.rs:51-52` (`INDEXED BY files_present`, `files_to_import`); update the
+  `crates/import/examples/pairs_load_probe.rs:51-52` (`INDEXED BY files_present`, `files_to_import`); update the
   `fixture.rs:129` comment and the `test_support.rs:171` helper. The trigger `files_changed` and `TRIGGER_TESTS`
   (`schema.rs:1141`) are unaffected.
 
@@ -243,7 +243,7 @@ CREATE INDEX files_seq ON files(seq);                               -- files_to_
   `order_key`/`folders.key` exist only in the old one. So `files`, `folders` and `analysis` must not be copied generically when
   the old shape differs: add a "converted tables" notion to `copy_tables` (or have the `Rust` step read them from `carried.*`
   via `Source::Carried`, which exists for this), build `mfolders` first, and add `"mfolders"`, `"volumes"`, `"exts"` to
-  `CARRIED` (`rebuild.rs:138-161`; `carried_is_every_table_of_the_current_schema`, `schema.rs:1118`). `table_columns`
+  `CARRIED` (`rebuild.rs:138-161`; `carried_is_every_table_of_the_current_schema`, in `catalog/src/schema.rs`). `table_columns`
   (`convert.rs:44`) reads `pragma_table_info`; an expression index adds no column to it.
 - **Writers and copies:** `writers.rs:146,149-152,166,176,206-221,246-248` (`folder()` insert-or-get `mfolders` in the same
   transaction; positional `get_ref(8)` in `known`), `types.rs:326-378` (`FolderRows::unchanged`: compare the key and `mid`; public
@@ -304,12 +304,12 @@ phase, then compile once. Never migrate the live catalog: use a copy.
    order by exact bytes; Windows: `file_by_path` case-insensitive.
 3. The `#[ignore]` rehearsal (`crates/catalog/tests/rehearsal.rs:54-80`) on a copy of the real catalog: `integrity_check`,
    `foreign_key_check`, counts, exact sequences, the new order against the old (listing only the G4 differences), SQL order equal
-   to the Rust sort for all names, `REINDEX` firing when the stored `name_key_version` differs, and a connection without the
+   to the Rust sort for all names, `REINDEX` firing when the stored `key_version` differs, and a connection without the
    function able to read and refused writes.
 4. Re-run `dbstat` (sqlite3 is installed via winget) on the migrated copy; expected about 200 MiB after the `VACUUM`.
 5. `EXPLAIN QUERY PLAN` of every changed statement on the migrated copy; timings: full ordered read about 0.07-0.15 s,
    100,000 pinned name lookups about 0.1 s (measured on the replica), tree counts about 0.05 s.
-6. Benchmarks: bump `LAYOUT = "v10-windows-rules"` (`crates/bench/benches/ir/catalog.rs:43`), delete the stale `.pre-v20.bak` in
+6. Benchmarks: bump the bench's `BENCH_LAYOUT` (`crates/bench/benches/ir/catalog.rs:36`, `"v1-windows-rules"` today; the layout's bump is its one constant), delete the stale `.pre-v20.bak` in
    the bench `run/` dir, regenerate with `tools/profiling/bench_data.py`; compare `scan_walk` and the grid read with the current
    build; add a tier-2 pairing benchmark and a first-scan benchmark that exercises the name lookup (700k lookups).
 7. Linux pass in the `pg-dev` container (Posix rules): reference keys, case-variant names, multi-volume pairing, the embedded
@@ -354,7 +354,7 @@ deterministic and perfectly consistent, and a changed one corrupts the index unt
 expridx). NTFS compares through the volume's `$UpCase` (a per-UTF-16-unit uppercase table, 128 KB), and a directory can be
 case-sensitive (Windows 10 build 17107+); ext4 casefold is Unicode 12.1 NFD per directory; APFS is case-insensitive by default
 and case-sensitive as an option. Rust `char::to_lowercase` is the unconditional full mapping (`İ` -> `i` + U+0307) and
-`char::UNICODE_VERSION` reports the toolchain's Unicode version. The bundled SQLite is 3.54.1 (the fork's `libsqlite3-sys` 0.39.1;
+`char::UNICODE_VERSION` reports the toolchain's Unicode version. The bundled SQLite is 3.54.1 (the fork's `libsqlite3-sys` 0.40.0;
 `REINDEX EXPRESSIONS` is in the amalgamation).
 
 **Validated against the code:** 118 unique `file:line` citations of the earlier plan, all correct or off by a line or two

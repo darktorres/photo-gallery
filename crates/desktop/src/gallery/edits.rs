@@ -13,7 +13,7 @@ use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
 use super::qobject;
-use super::roles::qt_int;
+use crate::rows::qt_int;
 use crate::worker;
 
 impl qobject::GalleryModel {
@@ -67,7 +67,7 @@ impl qobject::GalleryModel {
     /// is put in by `turned_read`.
     fn request_turned(&self) {
         let Some((ids, revision)) = self.grid.turned_request() else { return };
-        crate::app::get().reading().session().entries(ids, move |read| {
+        crate::app::session().entries(ids, move |read| {
             let Some(fresh) = crate::app::observe(Op::Reload, read, |e| Notice::ReloadFailed {
                 error: crate::app::error_text(&format!("{e:#}")),
             }) else {

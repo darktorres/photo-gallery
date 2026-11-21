@@ -90,6 +90,7 @@ impl Tally {
         let mut state = self.state();
         match failure {
             Some(error) => {
+                let error = tidy(&error, ERROR_CAP);
                 self.notices.post(Notice::RoundFailed { error: error.clone() });
                 state.rounds.insert(lane, error);
             }

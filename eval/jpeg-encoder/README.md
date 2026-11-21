@@ -14,7 +14,7 @@ implemented.
   quantized coefficients.
 - `encode_gpu.cu`: CUDA implementation.
 - `test_encoder.cpp`: test driver (tests 1 to 7, and the diagnostic test 8 described below).
-- `build.ps1`: native build script (nvcc 13.4, MSVC cl host compiler, sm_75).
+- `build.ps1`: native build script (nvcc 13.4, MSVC cl host compiler, the GPU's compute capability from `CUDA_ARCH` or nvidia-smi, or `-Arch`).
 - `build/`: build output (`test_encoder.exe`, and the generated `build_test_encoder.cmd`).
 
 ## Build
@@ -26,7 +26,7 @@ From a PowerShell prompt in this directory:
 The script checks that every required file exists, then runs `vcvars64.bat` and `nvcc` in one cmd
 session (`/Zc:preprocessor` is required by CCCL under MSVC). Defaults, each overridable by parameter:
 
-- CUDA 13.4 at `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4`, `-arch=sm_75`, `-O2`, no fast-math.
+- CUDA 13.4 at `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4`, `-arch=sm_75` on the RTX 2060 measured below (the arch follows the GPU, see `build.ps1`), `-O2`, no fast-math.
 - MSVC from `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build`.
 - libjpeg-turbo 3.1.0 headers from `D:\PhotoGallery\tools\jpeg-eval\src\jpegli\third_party\libjpeg-turbo`,
   with `jconfig.h` and the static libraries `jpeg-static.lib` and `turbojpeg-static.lib` from
@@ -107,7 +107,7 @@ The GPU matches libjpeg's float DCT to two decimals at both settings, and the in
 they come from different APIs, and I have not compared their bytes.
 
 **Test 7, throughput: measured (no pass criterion).** 4:2:0, q75, device-resident input, median of 20
-repetitions after warm-up, default 64 Mpx pixel budget:
+repetitions after warm-up, default 64 Mi pixel budget (2^26 pixels):
 
 | Batch | Median time per batch | Images per second | Stage means (colour / dct / sizes / scan / pack / pad / stuff / copy, ms) |
 |---|---|---|---|

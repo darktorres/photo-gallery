@@ -18,7 +18,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "tools"))
 
-from pgtools import import_msvc_environment, load_env_file, run  # noqa: E402
+from pgtools import import_msvc_environment, load_env_file, run  # noqa: E402 (after the sys.path insert above)
 
 # The pins: each commit is what its tag (or Wuffs' snapshot) resolved to when the build was made.
 ZLIB = ("https://github.com/madler/zlib", "99623ef7097352da7993ba614161fd6a311e046e")  # v1.4
@@ -27,6 +27,9 @@ LIBSPNG = ("https://github.com/randy408/libspng", "fb768002d4288590083a476af628e
 WUFFS = ("https://github.com/google/wuffs", "d28ecd494491baa9b11d2557d10819111050fd24")  # d28ecd4, 2026-10-31
 
 ORDER = ["zlib", "libpng", "libspng", "wuffs", "harness"]
+
+# The build jobs of every cmake build: one per CPU, the rule of eval/jpeg-decoders (linux_build.py, win_build.py). It was 4.
+JOBS = str(os.cpu_count() or 1)
 
 # zlib's CMake names its static library libz plus a suffix ("s" with MSVC), so it installs as libzs.lib.
 ZLIB_STATIC_LIB = "libzs.lib"
@@ -158,7 +161,7 @@ def harness(root: Path) -> None:
         ],
         quiet=True,
     )  # fmt: skip
-    run(["cmake", "--build", str(build / "harness"), "-j", "4"])
+    run(["cmake", "--build", str(build / "harness"), "-j", JOBS])
 
 
 STEPS = {"zlib": zlib, "libpng": libpng, "libspng": libspng, "wuffs": wuffs, "harness": harness}

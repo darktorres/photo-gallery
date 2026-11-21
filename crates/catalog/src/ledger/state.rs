@@ -1,6 +1,5 @@
 //! What the inbox reads of a ledger: its acknowledgement, its cheap state, its counts and the folders of the scans'
-//! ledger. A leaf below `core`: `Catalog`'s methods take and return these, and the compiler graph puts an inherent
-//! method in its type's module, so a type they name has to be below `core` too. Uses only `types`.
+//! ledger. A leaf below `core` (the rule is in the crate's docs). Uses only `types`.
 
 use pg_model::ids::RootId;
 use pg_model::rules::Path as RulePath;

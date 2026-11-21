@@ -4,8 +4,8 @@
 //! the keeper is the one that must close last. The front end holds one `App` for the process; nothing here is a `static`.
 //!
 //! The services are reached through the accessors: [`App::inbox`], [`App::catalogs`], [`App::prefs`], [`App::images`],
-//! [`App::reading`], [`App::views`], [`App::edit`], [`App::library`] and [`App::yandex`]. Each service holds `Arc` handles to the services
-//! below it, never to the `App`.
+//! [`App::reading`], [`App::views`], [`App::edit`], [`App::thumbs`], [`App::library`] and [`App::yandex`]. Each service
+//! holds `Arc` handles to the services below it, never to the `App`.
 //!
 //! The library prints nothing (its crates deny printing); what happens that the user should hear about is a
 //! [`pg_model::notice::Notice`] posted to the inbox, which the front end words and shows.
@@ -209,7 +209,7 @@ impl App {
         if let Some(e) = self.catalogs.close() {
             // The inbox has closed: the log is all that hears it.
             let notice = Notice::CatalogNotClosed { error: tidy(&format!("{e:#}"), ERROR_CAP) };
-            pg_log::warn("catalog", &serde_json::to_string(&notice).unwrap_or_else(|_| format!("{e:#}")));
+            pg_log::warn("catalog", &crate::inbox::log_line(&notice));
         }
     }
 }
@@ -235,7 +235,7 @@ fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox
                     Some(Effect::Post(notice)) => {
                         // The notice's words are the user's; its technical account is the log's.
                         if let Notice::CacheStartedOver { detail, .. } = &notice {
-                            pg_log::warn("thumbnails", detail);
+                            pg_log::warn("thumbs", detail);
                         }
                         inbox.post(notice);
                     }

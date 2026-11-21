@@ -16,7 +16,13 @@ use crate::worker;
 /// writes (`worker`). A save that fails is a note on the app's bus (the window prints it), and the change holds in
 /// memory until the app closes.
 fn change_prefs(change: impl FnOnce(&mut pg_app::Prefs)) {
-    let save = app::get().prefs().change(change);
+    save_prefs(app::get().prefs(), change);
+}
+
+/// Changes the preferences: the change is in memory at once, and the file is written on the window's writes (`worker`),
+/// off the Qt thread. A failed write is posted as a notice by `PrefSave::write`, so the result needs no handling here.
+pub(crate) fn save_prefs(prefs: &pg_app::PrefStore, change: impl FnOnce(&mut pg_app::Prefs)) {
+    let save = prefs.change(change);
     worker::run(move || {
         let _ = save.write();
     });

@@ -4,7 +4,8 @@ encoders on the local GPU, torch fp16 vs TensorRT fp16, and how faithful TensorR
 Usage: python bench_semantic.py [--models clip_b32 siglip2_b16 ...] [--batch 64] [--iters 30] [--images 128]
 
 Per model: image-encoder parameters, GPU-only throughput (synthetic batch) under torch fp16 autocast and as a
-TensorRT 11 fp16 engine (accel.build_engine; ONNX exported from the fp16 encoder), and the cosine between the
+TensorRT fp16 engine (accel.build_engine; ONNX exported from the fp16 encoder, its plan named with the installed
+TensorRT's major version, accel.trt_major()), and the cosine between the
 TensorRT and torch fp32 embeddings of --images real images (open_clip's own preprocessing). Quality is the
 published zero-shot ImageNet-1k top-1, as there are no keyword labels here: it ranks models, not this
 library. Weights download to the cache dir (the SO400M model is ~4.5 GB). Writes WORK_DIR/bench_semantic.json.
@@ -19,7 +20,7 @@ import numpy as np
 import torch
 
 import accel
-from common import CACHE_DIR, DATA_ROOT, WORK_DIR, image_list, load_rgb
+from common import CACHE_DIR, DATA_ROOT, LIBRARY_SIZE, WORK_DIR, image_list, load_rgb
 
 # name: (open_clip architecture, pretrained tag, published zero-shot ImageNet-1k top-1 %, source of that number)
 CANDIDATES = {
@@ -134,7 +135,7 @@ def main() -> None:
             "img_s": {k: round(v) for k, v in rates.items()},
             "cos_vs_fp32": {k: {"min": float(c.min()), "p1": float(np.percentile(c, 1))} for k, c in cosine.items()},
         }
-        out_path.write_text(json.dumps(report, indent=1), encoding="utf-8")
+        out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"{name}: {report[name]}", flush=True)
         del visual, trt_model, x, synthetic
         torch.cuda.empty_cache()
@@ -149,7 +150,7 @@ def main() -> None:
         trt_rate = r["img_s"]["trt_fp16"]
         print(
             f"| {name} | {r['size']} px | {r['params_m']:.0f} | {r['imagenet_zero_shot']:.1f}% "
-            f"| {r['img_s']['torch_fp16']:,} | {trt_rate:,} | {70e6 / trt_rate / 3600:.0f} "
+            f"| {r['img_s']['torch_fp16']:,} | {trt_rate:,} | {LIBRARY_SIZE / trt_rate / 3600:.0f} "
             f"| {r['cos_vs_fp32']['trt_fp16']['min']:.4f} |"
         )
 

@@ -1,5 +1,6 @@
 //! A star rating: what the file itself says (`file_ratings`, 0 to 5 stars), and the rating the user gave (`ratings`,
-//! 1 to 5). An unrated file has no rating at all, so it is `Option<Rating>`.
+//! 1 to 5 stars; a user's 0 stars clears the row, so it is no rating). An unrated file has no rating at all, so it is
+//! `Option<Rating>`.
 
 /// Stars, 0 to 5. Serialized as its number of stars; a number past 5 doesn't read.
 #[cfg_attr(feature = "specta", derive(specta::Type), specta(type = u8))]

@@ -219,7 +219,7 @@ fn main() -> Result<()> {
 }
 
 fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> {
-    std::mem::drop(Catalog::prepare(path, versions(), PATH_RULES)?);
+    std::mem::drop(Catalog::prepare(path, Versions::current(), PATH_RULES)?);
     let conn = Connection::open(path)?;
     if let Some((size, count)) = variant.lookaside {
         // SAFETY: the handle is this open connection's, used on this thread and not closed here; nothing has been
@@ -258,10 +258,6 @@ fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> 
         variant.about
     )?;
     Ok(())
-}
-
-fn versions() -> Versions {
-    Versions::current()
 }
 
 fn remove(conn: &Connection, removed: Removed) -> Result<()> {

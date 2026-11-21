@@ -231,7 +231,7 @@ mod prepare_tests {
             .unwrap();
         drop(Catalog::prepare(&path, versions(), PathRules::Windows).unwrap());
         assert_eq!(meta(&path, "written_by"), "an-older-build");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A schema after this build's is refused by the build that made it, named, and nothing in the file is changed.
@@ -252,7 +252,7 @@ mod prepare_tests {
         assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), later);
         drop(conn);
         assert_eq!(meta(&path, "written_by"), "a-later-build");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A catalog that needs a change and is read-only is refused by name, and the file is left as it was.
@@ -280,7 +280,7 @@ mod prepare_tests {
         )]
         permissions.set_readonly(false);
         std::fs::set_permissions(&path, permissions).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A path too long for the files made beside it is refused by name before anything is made: no lock file, no folder.
@@ -295,6 +295,6 @@ mod prepare_tests {
         assert_eq!(reason, &Refusal::PathTooLong);
         assert_eq!(refused_path, path.display().to_string());
         assert!(!folder.exists(), "nothing is made under a path too long for its files");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

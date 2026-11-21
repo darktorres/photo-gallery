@@ -8,7 +8,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use pg_dbfile::{Damage, Expected, Schema};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-use crate::config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, cache_version, default_cap_bytes};
+use crate::config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
 use crate::maintenance::{Drift, heal_if_due};
 use pg_model::notice::StartOverReason;
 
@@ -16,8 +16,7 @@ use pg_model::notice::StartOverReason;
 const AUTO_VACUUM_INCREMENTAL: i64 = 2;
 
 /// A new cache file's tables, at [`CACHE_VERSION`].
-const SCHEMA: &str = concat!(
-    "
+const SCHEMA: &str = "
 CREATE TABLE entries(
     id        INTEGER PRIMARY KEY,
     file_id   INTEGER NOT NULL,  -- catalog files.id
@@ -26,7 +25,7 @@ CREATE TABLE entries(
     rotation  INTEGER NOT NULL,
     format    TEXT NOT NULL,
     bytes     INTEGER NOT NULL,
-    last_used INTEGER NOT NULL,  -- Unix seconds, to the hour (TOUCH_AGE_S)
+    last_used INTEGER NOT NULL,  -- Unix seconds, to the hour (TOUCH_AGE)
     UNIQUE(file_id, height));
 -- Eviction reads only this index.
 CREATE INDEX entries_lru ON entries(last_used, height, bytes);
@@ -69,10 +68,7 @@ CREATE TRIGGER entries_removed AFTER DELETE ON entries BEGIN
 END;
 CREATE TRIGGER entries_resized AFTER UPDATE OF bytes ON entries BEGIN
     UPDATE totals SET bytes = bytes - old.bytes + new.bytes;
-END; PRAGMA user_version = ",
-    cache_version!(),
-    ";"
-);
+END;";
 
 /// The `application_id` header field of a cache file (`PGTC`), set when the file is made: with [`SEEDS`] and the schema,
 /// what tells a cache from another SQLite file.
@@ -153,6 +149,7 @@ fn expected() -> Result<&'static Schema> {
 /// catalog's id. Creating a file and making the expected schema both do this, so they can't disagree.
 fn make_layout(conn: &Connection, catalog_id: &str, cap_bytes: i64) -> rusqlite::Result<()> {
     conn.execute_batch(SCHEMA)?;
+    conn.pragma_update(None, "user_version", CACHE_VERSION)?;
     conn.pragma_update(None, "application_id", APPLICATION_ID)?;
     conn.execute("INSERT INTO limits VALUES (1, ?1)", [cap_bytes])?;
     conn.execute("INSERT INTO meta VALUES ('catalog_id', ?1)", [catalog_id])?;
@@ -297,7 +294,9 @@ pub(crate) fn open_writer(
             writing.started_over = Some((Why { reason: why.reason, detail }, kept));
             Ok(writing)
         }
-        Attempt::Damaged(again) => bail!("{}: {}, even when made anew", path.display(), again.detail),
+        Attempt::Damaged(again) => {
+            bail!("{}: {}, even when made anew, so the cache can't be opened", path.display(), again.detail)
+        }
     }
 }
 

@@ -9,7 +9,7 @@ square, EXIF orientation applied):
   vips       libvips thumbnail: shrink-on-load in the decoder + Lanczos3 reduce
   nvjpeg     batched GPU decode (torchvision.io.decode_jpeg on CUDA) + antialiased GPU resize
 
-Reports img/s in one process and across --processes processes (CPU pipelines; nvJPEG runs batched
+Reports images/s in one process and across --processes processes (CPU pipelines; nvJPEG runs batched
 in one process), and how far each pipeline moves the SSCD fp16 embedding away from the reference
 (cosine). Files are read once before timing, so this measures decode, not disk. Run it on an idle
 machine: other jobs skew the timings.
@@ -25,7 +25,7 @@ from multiprocessing import Pool
 import numpy as np
 from PIL import Image, ImageOps
 
-from common import DATA_ROOT, WORK_DIR, image_list
+from common import DATA_ROOT, WORK_DIR, image_list, vips_thumbnail
 
 SIDE = 320
 CPU_PIPELINES = ("pil_full", "pil_draft", "vips")
@@ -39,25 +39,11 @@ def _pil(data: bytes, draft: bool) -> np.ndarray:
         return np.asarray(im.resize((SIDE, SIDE), Image.Resampling.BILINEAR))
 
 
-def _vips(data: bytes, width: int = SIDE, height: int = SIDE) -> np.ndarray:
-    import pyvips
-
-    im = pyvips.Image.thumbnail_buffer(data, width, height=height, size="force")
-    if im.interpretation not in ("srgb", "rgb", "b-w") or im.bands not in (1, 3):
-        im = im.colourspace("srgb")
-    if im.hasalpha():
-        im = im.flatten(background=[255, 255, 255])
-    if im.bands == 1:
-        im = im.bandjoin([im, im])
-    return np.ndarray(buffer=im.write_to_memory(), dtype=np.uint8, shape=(im.height, im.width, 3))
-
-
-def decode(job: tuple[str, str]) -> np.ndarray | None:
-    pipeline, rel = job
-    data = (DATA_ROOT / rel).read_bytes()
+def decode(job: tuple[str, bytes]) -> np.ndarray | None:
+    pipeline, data = job
     try:
         if pipeline == "vips":
-            return _vips(data)
+            return vips_thumbnail(data, SIDE, SIDE)
         return _pil(data, draft=pipeline == "pil_draft")
     except Exception:  # noqa: BLE001 (a decoder failing on one file is a result, not a crash)
         return None
@@ -79,20 +65,19 @@ def orient(t, orientation: int):
     return torch.rot90(t, k=rotations.get(orientation, 0), dims=[1, 2])
 
 
-def nvjpeg_run(files: list[str], batch: int) -> tuple[list, float, int]:
-    """Batched GPU decode. Returns (HWC uint8 arrays or None, seconds, CPU fallbacks)."""
+def nvjpeg_run(blobs: list[bytes], batch: int) -> tuple[list, float, int]:
+    """Batched GPU decode of the bytes (read before timing). Returns (HWC uint8 arrays or None, seconds, CPU fallbacks)."""
     import torch
     import torch.nn.functional as F
     from torchvision.io import ImageReadMode, decode_jpeg
 
-    out: list = [None] * len(files)
+    out: list = [None] * len(blobs)
     fallbacks = 0
     torch.cuda.synchronize()
     start = time.perf_counter()
-    for s in range(0, len(files), batch):
-        chunk = files[s : s + batch]
-        blobs = [(DATA_ROOT / rel).read_bytes() for rel in chunk]
-        tensors = [torch.frombuffer(bytearray(b), dtype=torch.uint8) for b in blobs]
+    for s in range(0, len(blobs), batch):
+        chunk = blobs[s : s + batch]
+        tensors = [torch.frombuffer(bytearray(b), dtype=torch.uint8) for b in chunk]
         try:
             decoded = decode_jpeg(tensors, mode=ImageReadMode.RGB, device="cuda")
         except RuntimeError:  # one unsupported file fails the batch: decode one by one
@@ -102,7 +87,7 @@ def nvjpeg_run(files: list[str], batch: int) -> tuple[list, float, int]:
                     decoded.append(decode_jpeg(t, mode=ImageReadMode.RGB, device="cuda"))
                 except RuntimeError:
                     decoded.append(None)
-        for k, (img, data) in enumerate(zip(decoded, blobs, strict=True)):
+        for k, (img, data) in enumerate(zip(decoded, chunk, strict=True)):
             if img is None:  # CMYK and other formats nvJPEG rejects: CPU path
                 fallbacks += 1
                 out[s + k] = _pil(data, draft=False)
@@ -148,9 +133,11 @@ def main() -> None:
 
     jpegs = [f for f in image_list() if f.lower().endswith((".jpg", ".jpeg"))]
     files = sorted(random.Random(args.seed).sample(jpegs, args.count))
+    blobs: dict[str, bytes] = {}
     sizes = []
-    for rel in files:  # warm the OS file cache and record sizes
+    for rel in files:  # read every file once, before any timing: the timed loops decode these bytes
         data = (DATA_ROOT / rel).read_bytes()
+        blobs[rel] = data
         with Image.open(io.BytesIO(data)) as im:
             sizes.append((len(data), im.width * im.height))
     mb = np.array([s[0] for s in sizes]) / 1e6
@@ -163,7 +150,7 @@ def main() -> None:
     outputs: dict[str, list] = {}
     rows = []
     for name in CPU_PIPELINES:
-        jobs = [(name, rel) for rel in files]
+        jobs = [(name, blobs[rel]) for rel in files]
         start = time.perf_counter()
         outputs[name] = [decode(j) for j in jobs]
         single = len(files) / (time.perf_counter() - start)
@@ -180,10 +167,10 @@ def main() -> None:
                 "failed": sum(o is None for o in outputs[name]),
             }
         )
-        print(f"  {name}: {single:.0f} img/s (1 process), {multi:.0f} img/s ({args.processes} processes)", flush=True)
+        print(f"  {name}: {single:.0f} images/s (1 process), {multi:.0f} images/s ({args.processes} processes)", flush=True)
 
-    nvjpeg_run(files[: args.batch * 2], args.batch)  # CUDA init + warm-up outside the timing
-    outputs["nvjpeg"], seconds, fallbacks = nvjpeg_run(files, args.batch)
+    nvjpeg_run([blobs[rel] for rel in files[: args.batch * 2]], args.batch)  # CUDA init + warm-up outside the timing
+    outputs["nvjpeg"], seconds, fallbacks = nvjpeg_run([blobs[rel] for rel in files], args.batch)
     rows.append(
         {
             "pipeline": "nvjpeg",

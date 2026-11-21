@@ -1,4 +1,4 @@
-// One D3D11 device for the app. Making one costs ~0.9 G instructions on this machine, most of it NVIDIA's loader
+// One D3D11 device for the app. Making one costs ~0.9 G instructions (callgrind, a different measure from the 0.3 s wall clock) on this machine, most of it NVIDIA's loader
 // scanning its DLL (PROFILING "The start, to ready"), and both the AV1 lookup and Qt Quick's renderer need one.
 //
 // The device is made the way Qt Quick makes its own (qrhid3d11.cpp, QRhiD3D11::create): the first adapter of a

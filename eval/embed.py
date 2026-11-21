@@ -12,12 +12,9 @@ import time
 import numpy as np
 import torch
 
-from common import DATA_ROOT, WORK_DIR, image_list
+from common import ANALYSIS_DRAFT_SIDES, DATA_ROOT, WORK_DIR, embedding_name, image_list
 from imgload import FileSource, ImageDataset, TrimmedSource, embed, first_failures
 from models import SPECS, build_transform, load_model
-
-# The Rust import's decode rule (crates/core/src/analyze.rs): long side >= 512, short side >= 320.
-DRAFT_SIDES = (512, 320)
 
 
 def main() -> None:
@@ -34,9 +31,9 @@ def main() -> None:
     spec = SPECS[args.model]
     model = load_model(spec, device)
 
-    source = FileSource(DATA_ROOT, files, draft_sides=DRAFT_SIDES if args.draft else None)
+    source = FileSource(DATA_ROOT, files, draft_sides=ANALYSIS_DRAFT_SIDES if args.draft else None)
     dataset = ImageDataset(TrimmedSource(source) if args.trim else source, build_transform(spec), spec.size)
-    name = args.model + ("_trim" if args.trim else "") + ("_draft" if args.draft else "")
+    name = embedding_name(args.model, args.trim, args.draft)
     start = time.perf_counter()
     emb, ok = embed(model, spec, dataset, args.batch, args.workers, device, args.model)
     elapsed = time.perf_counter() - start

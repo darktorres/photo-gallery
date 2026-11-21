@@ -14,7 +14,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools"))
 
-from pgtools import import_msvc_environment, load_env_file  # noqa: E402
+from pgtools import import_msvc_environment, load_env_file  # noqa: E402 (after the sys.path insert above)
 
 
 @dataclass(frozen=True)

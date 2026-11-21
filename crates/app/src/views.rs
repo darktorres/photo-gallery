@@ -1,5 +1,5 @@
 //! Where the grid looks and in what order: the session's listing (the folder shown, with or without its subfolders, the
-//! sort, and the filter bar's query), and the saved views (ImageRater's bookmarks). The listing is remembered for the
+//! sort, and the filter bar's query), and the saved views (a rating app's bookmarks). The listing is remembered for the
 //! next start; a view is a listing with a name.
 
 use std::sync::Arc;

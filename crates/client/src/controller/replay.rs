@@ -49,12 +49,17 @@ pub fn parse(text: &str) -> Result<Vec<Record>, String> {
                 ));
             };
             if format != REPLAY_FORMAT_VERSION {
-                return Err(format!("recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
+                return Err(format_refused(n + 1, format));
             }
         }
         records.push(serde_json::from_str(line).map_err(|e| format!("line {}: {e}", n + 1))?);
     }
     Ok(records)
+}
+
+/// The refusal of a recording made by another format, at `line` (the line of its Init).
+fn format_refused(line: usize, format: impl std::fmt::Display) -> String {
+    format!("line {line}: recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}")
 }
 
 /// Replay a recording: the number of events checked, or the first record whose commands differ from the recorded ones.
@@ -66,16 +71,17 @@ pub fn replay(records: &[Record]) -> Result<usize, String> {
         return Err("a recording starts with its Init record".to_string());
     };
     if *format != REPLAY_FORMAT_VERSION {
-        return Err(format!("recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
+        return Err(format_refused(1, format));
     }
     let mut controller = Controller::new(start.clone());
     for (n, record) in rest.iter().enumerate() {
+        // `rest` starts at the second record, which is the second line of the recording: its line is `n + 2`.
         let Record::Update { now_ms, event, commands } = record else {
-            return Err(format!("record {}: a second Init", n + 1));
+            return Err(format!("line {}: a second Init", n + 2));
         };
         let got = controller.update(*now_ms, event.clone());
         if &got != commands {
-            return Err(format!("record {}: the commands {got:?}, recorded {commands:?}", n + 1));
+            return Err(format!("line {}: the commands {got:?}, recorded {commands:?}", n + 2));
         }
     }
     Ok(rest.len())

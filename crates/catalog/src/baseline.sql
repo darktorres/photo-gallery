@@ -27,7 +27,7 @@ CREATE TABLE analysis(
     width       INTEGER,           -- upright, full size
     height      INTEGER,
     pdq_quality INTEGER,
-    pdq_dihedral BLOB,             -- tier 1: the 8 orientations' hashes, 32 bytes each (the first is pdq's), for pairs
+    pdq_dihedral BLOB,             -- tier 1: the 4 orientations' hashes, 32 bytes each (128 bytes per row; the first is pdq's), for pairs
     frames      INTEGER,           -- frames in the file: > 1 is an animated image (or a video)
     -- When it was taken, as wall-clock time (no time zone) in Unix seconds: the frame every date filter and sort
     -- compares in. A camera's own clock is taken as it is; a UTC instant (a video's creation time) is converted to
@@ -120,7 +120,7 @@ CREATE TABLE notices(
 CREATE TABLE file_failures(
     id         INTEGER PRIMARY KEY,
     file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-    pass       TEXT NOT NULL,      -- FilePass::code: 'thumbs' | 'borders'
+    pass       TEXT NOT NULL,      -- FilePass::code: 'thumbs' | 'borders' | 'import'
     mtime      INTEGER NOT NULL,   -- the file as it failed
     size       INTEGER NOT NULL,
     rotation   INTEGER NOT NULL,
@@ -421,7 +421,7 @@ BEGIN
     UPDATE files SET changed = (SELECT value FROM meta WHERE key = 'seq') WHERE id = new.file_id;
 END;
 
-CREATE TRIGGER files_changed AFTER UPDATE OF size, mtime, rotation, kind ON files
+CREATE TRIGGER files_pending_changed AFTER UPDATE OF size, mtime, rotation, kind ON files
 WHEN old.size IS NOT new.size OR old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation
     OR old.kind IS NOT new.kind
 BEGIN
@@ -430,14 +430,14 @@ BEGIN
         AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind) WHERE id = new.id;
 END;
 
-CREATE TRIGGER files_failures_hidden AFTER UPDATE OF pending, missing ON files
+CREATE TRIGGER file_failures_hidden AFTER UPDATE OF pending, missing ON files
 WHEN old.pending IS NOT new.pending OR old.missing IS NOT new.missing
 BEGIN
     UPDATE file_failures SET hidden = (new.missing OR (pass = 'import' AND new.pending))
     WHERE file_id = new.id AND hidden IS NOT (new.missing OR (pass = 'import' AND new.pending));
 END;
 
-CREATE TRIGGER files_failures_stale AFTER UPDATE OF mtime, size, rotation ON files
+CREATE TRIGGER file_failures_stale AFTER UPDATE OF mtime, size, rotation ON files
 WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation
 BEGIN
     DELETE FROM file_failures WHERE file_id = new.id AND pass <> 'import';

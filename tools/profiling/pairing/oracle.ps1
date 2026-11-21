@@ -35,14 +35,6 @@ want = [w for w in open(sys.argv[2], encoding="utf-8").read().split("\n") if w]
 owed = c.execute("SELECT count(*) FROM pairs_owed").fetchone()[0]
 print(f"pairs {len(got)} oracle {len(want)} identical {got == want} still owed {owed}")
 '@
-$drop = @'
-import sqlite3, sys
-c = sqlite3.connect(sys.argv[1])
-c.execute("PRAGMA foreign_keys = ON")
-n = c.execute("DELETE FROM pdq_pairs WHERE a IN (SELECT file_id FROM pairs_owed) OR b IN (SELECT file_id FROM pairs_owed)").rowcount
-c.commit()
-print(f"deleted {n} pairs of the owed pictures")
-'@
 $cases = @(
     @{ name = 'all owed, one slice'; owed = 'all'; slice = 0; workers = 12 },
     @{ name = 'all owed, slices of 50000 (write overlap)'; owed = 'all'; slice = 50000; workers = 12 },
@@ -57,9 +49,8 @@ foreach ($case in $cases) {
     if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
     New-Item -ItemType Directory $Work | Out-Null
     $checkPy = Join-Path $Work 'check.py'
-    $dropPy = Join-Path $Work 'drop.py'
+    $dropPy = Join-Path $PSScriptRoot 'drop_owed_pairs.py'
     Set-Content -LiteralPath $checkPy -Value $check
-    Set-Content -LiteralPath $dropPy -Value $drop
     $db = Join-Path $Work 'catalog.sqlite'
     Copy-Item -LiteralPath $Catalog $db
     Remove-Item Env:PG_PROBE_KEEP_OWED -ErrorAction SilentlyContinue

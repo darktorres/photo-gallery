@@ -1,6 +1,6 @@
 """Exact k-NN self-join on the GPU: the ground truth, and the exact method's own timing.
 
-The ground truth is fp32 (no fp16 rounding at this size), self excluded by id. Each row keeps its TOP most similar
+The ground truth is the fp16 join with fp32 accumulation (`topk(..., fp16=True)`, as `run.py`'s exact family uses), checked against float64 by `validate`; plain `topk` is fp32. Self is excluded by id. Each row keeps its TOP most similar
 rows; a row whose TOP-th neighbour is still >= FLOOR (a hub) also gets every neighbour >= FLOOR (radius).
 """
 
@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from ann.data import FLOOR, OUT, Base, size_tag
+from common import NO_SIM
 
 TOP = 64
 BLOCK = 1024  # query rows per GEMM: a (BLOCK x n) fp32 block is ~0.8 GB at 206k rows
@@ -29,7 +30,7 @@ def topk(x: np.ndarray, k: int, fp16: bool = False) -> tuple[np.ndarray, np.ndar
     for s in range(0, n, BLOCK):
         block = xt[s : s + BLOCK] @ xt.T
         r = torch.arange(len(block), device="cuda")
-        block[r, r + s] = -float("inf")
+        block[r, r + s] = NO_SIM
         v, i = block.float().topk(k, dim=1)
         sims[s : s + BLOCK], ids[s : s + BLOCK] = v, i.int()
     torch.cuda.synchronize()
@@ -43,7 +44,7 @@ def radius(x: np.ndarray, rows: np.ndarray, floor: float) -> list[tuple[np.ndarr
     out = []
     for r in rows:
         s = xt @ xt[int(r)]
-        s[int(r)] = -float("inf")
+        s[int(r)] = NO_SIM
         i = torch.nonzero(s >= floor).flatten()
         o = torch.argsort(s[i], descending=True)
         out.append((i[o].int().cpu().numpy(), s[i[o]].cpu().numpy()))
@@ -56,7 +57,7 @@ def check_fp64(x: np.ndarray, sims: np.ndarray, ids: np.ndarray, rows: np.ndarra
     bad = []
     for r in rows:
         s = xd @ xd[r]
-        s[r] = -np.inf
+        s[r] = NO_SIM
         ref = np.argsort(-s, kind="stable")[: ids.shape[1]]
         if set(ref) != set(ids[r]):
             kth = s[ref[-1]]

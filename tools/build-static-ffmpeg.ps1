@@ -175,9 +175,9 @@ $libs = Get-ChildItem "$Prefix\lib\*.lib" | Sort-Object Name
 $crt = foreach ($lib in $libs) {
     $bytes = [IO.File]::ReadAllBytes($lib.FullName)
     $text = [Text.Encoding]::ASCII.GetString($bytes)
-    [pscustomobject]@{ Name = $lib.Name; MSVCRT = ([regex]::Matches($text, 'MSVCRT')).Count; LIBCMT = ([regex]::Matches($text, 'LIBCMT')).Count }
+    [pscustomobject]@{ name = $lib.Name; msvcrt = ([regex]::Matches($text, 'MSVCRT')).Count; libcmt = ([regex]::Matches($text, 'LIBCMT')).Count }
 }
-if (@($crt | Where-Object LIBCMT -gt 0).Count -gt 0) { throw 'a library references LIBCMT (static CRT): see the manifest' }
+if (@($crt | Where-Object libcmt -gt 0).Count -gt 0) { throw 'a library references LIBCMT (static CRT): see the manifest' }
 
 # 5. Link check: a program that calls into each library, linked with the system libraries, then run.
 Copy-Item (Join-Path $PSScriptRoot 'static-ffmpeg\static-check.c') "$Work\test\static-check.c" -Force
@@ -207,7 +207,7 @@ $manifest = [ordered]@{
     }
     configure       = [ordered]@{ license = $license; disabled_with_warning = $disabled }
     libraries       = @($libs | ForEach-Object {
-        [ordered]@{ name = $_.Name; bytes = $_.Length; sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash }
+        [ordered]@{ path = "lib/$($_.Name)"; bytes = $_.Length; sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash }
     })
     crt             = $crt
     link_check      = [ordered]@{ output = @($output); dependents = $dependents; non_system = $nonSystem }

@@ -256,7 +256,7 @@ impl Decoder {
 }
 
 /// `x` rounded toward zero, as a count of pixels.
-fn to_pixels(x: f64) -> usize {
+pub(crate) fn to_pixels(x: f64) -> usize {
     pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
@@ -501,15 +501,7 @@ mod tests {
                 &mut Vec::new(),
             )
             .unwrap();
-        let want: Vec<u8> = rgba
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .flat_map(|p| {
-                let a = u32::from(p[3]);
-                [0, 1, 2].map(|c| u8::try_from((u32::from(p[c]) * a + 255 * (255 - a) + 127) / 255).unwrap())
-            })
-            .collect();
+        let want = crate::codecs::test_support::flatten_rgba(&rgba);
         assert_eq!((decoded.width, decoded.height), (w, h));
         assert_eq!(decoded.pixels, want);
     }

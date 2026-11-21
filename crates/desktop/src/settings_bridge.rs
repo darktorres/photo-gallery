@@ -10,7 +10,7 @@ pub mod qobject {
         #[qml_element]
         /// Write ratings and turns into the files too (on by default); off keeps them in the catalog only.
         #[qproperty(bool, write_back, cxx_name = "writeBack", READ = read_write_back, WRITE = set_write_back_saved, NOTIFY, FINAL)]
-        /// The viewer opens images at 1:1 instead of fitted (ImageRater's Real Size), across images and runs.
+        /// The viewer opens images at 1:1 instead of fitted (a rating app's Real Size), across images and runs.
         #[qproperty(bool, real_size, cxx_name = "realSize", READ = read_real_size, WRITE = set_real_size_saved, NOTIFY, FINAL)]
         /// Detect the borders of the files, in the background (on by default). Off: the borders pass waits.
         #[qproperty(bool, detect_borders, cxx_name = "detectBorders", READ = read_detect_borders, WRITE = set_detect_borders_saved, NOTIFY, FINAL)]

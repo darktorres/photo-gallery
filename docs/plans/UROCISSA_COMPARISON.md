@@ -117,7 +117,7 @@ against a clone at `102025d` on the same day. Where a claim was wrong, the text 
   (`crates/analysis/src/analyze.rs:30-32`, scaling in `crates/codec/src/decode.rs`). Urocissa decodes at full
   resolution.
 - **Near-duplicate detection.** We run PDQ with 16-chunk multi-index lookup at radius ≤ 31
-  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/eval/VERIFIER.md`. Urocissa
+  (`crates/dedup/src/pdq_index.rs`, since removed: the all-pairs join is `crates/dedup/src/join.rs`), with labelled recall measured in `docs/eval/VERIFIER.md`. Urocissa
   does exact hashing only. Its perceptual hash is computed but not used.
 - **Layout runs in Rust.** Our justified rows are computed in `crates/client/src/layout.rs`.
   Urocissa runs Knuth–Plass in a web worker (`gallery-frontend/src/worker/toDataWorker.ts:324`) and updates
@@ -171,7 +171,7 @@ Both still need a measurement or an instrumented count that this repo does not c
 - **How slow is facet computation at 2M rows?** Not measured. The 0.6–0.9 s in `docs/plans/DATABASE.md:45`
   and `:192` comes from a standalone SQLite 3.49 test on a generic table with random keys. It does not run
   `facets()` (`crates/catalog/src/browse/read/facets.rs:39`), which has the file joins, one `CASE` per facet
-  and the scope filter; the app ships SQLite 3.54. A real figure needs `facets()` on a catalog of at least
+  and the scope filter; the app ships SQLite 3.54.1. A real figure needs `facets()` on a catalog of at least
   2M files. The largest layout in the repo is 200,000 files (`tools/profiling/bench_data.py -large`), so a
   larger catalog has to be generated first.
 

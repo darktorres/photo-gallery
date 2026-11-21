@@ -16,15 +16,25 @@ use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, PairingWork, PlaceholderWork, VolumeSet, WorkItem, folder_path, pairing_marks};
 use pg_model::analysis::PLACEHOLDER_VERSION;
 
-/// `Catalog::volumes`' query: a loose index scan over `files`'s `(volume, file_ref)` index, one step a volume (the
-/// `min` of the volumes above the last one found), not a read of every file. A displaced row (no volume) is none. The
-/// thumbnail cache's `catalog_volumes` is the same statement over the attached catalog.
-const VOLUMES: &str = "WITH RECURSIVE v(volume) AS (
-         SELECT min(volume) FROM files WHERE volume IS NOT NULL
-         UNION ALL
-         SELECT (SELECT min(volume) FROM files WHERE volume > v.volume) FROM v WHERE v.volume IS NOT NULL
-     )
-     SELECT volume FROM v WHERE volume IS NOT NULL";
+/// `Catalog::volumes`' query (`pg_query::volumes_sql!`): the thumbnail cache runs the same statement over the attached
+/// catalog.
+const VOLUMES: &str = pg_query::volumes_sql!("files");
+
+/// The statement `pending_borders` runs: the due analyses of the set (`from`, from `borders_from`) that the Thumbs pass has
+/// not failed, in volume then record order.
+fn borders_statement(from: &str) -> String {
+    format!(
+        concat!(
+            "SELECT {} {} AND f.missing = 0 AND f.pending = 0
+               AND ",
+            thumbs_not_failed!("f"),
+            "
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+        ),
+        work_columns!(),
+        from,
+    )
+}
 
 impl Catalog {
     /// The volumes the files `ids` are on, as the catalog stores them (the ids that are not in the catalog are none). A job
@@ -136,14 +146,18 @@ pub(crate) fn work_list_mapped<T>(
 /// whose analysis is good and whose placeholder is not at their identity and the current version (`?1`). A file the app
 /// is writing is left out until the write is done, and a file the Thumbs pass failed at its identity is left out until
 /// it changes or Retry clears its row.
-const OWED_PLACEHOLDERS: &str = "FROM files f
+const OWED_PLACEHOLDERS: &str = concat!(
+    "FROM files f
      JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
      LEFT JOIN placeholders p ON p.file_id = f.id AND p.size = f.size AND p.mtime = f.mtime
          AND p.rotation = f.rotation AND p.version = ?1
-     WHERE f.missing = 0 AND f.pending = 0 AND p.file_id IS NULL
+     WHERE ",
+    present_ready!(f),
+    " AND p.file_id IS NULL
        AND NOT EXISTS (SELECT 1 FROM file_writes w WHERE w.file_id = f.id AND w.temp IS NOT NULL)
-       AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
-           AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)";
+       AND ",
+    thumbs_not_failed!("f")
+);
 
 /// The item of file `id` as the work lists have it (`work_columns!`), or `None` when it isn't in the catalog.
 pub(crate) fn work_item(conn: &Connection, id: FileId) -> Result<Option<WorkItem>> {
@@ -423,7 +437,7 @@ impl Reader<'_> {
 
 /// The owed pictures the pairing pass can make: those of present, non-pending files (`PairingWork::owed`). A missing
 /// or pending one stays owed, and the first pass after its file is back makes its pairs.
-const OWED: &str = "FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND f.missing = 0 AND f.pending = 0";
+const OWED: &str = concat!("FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND ", present_ready!(f));
 
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
@@ -458,13 +472,7 @@ impl Catalog {
         let from = borders_from(volumes);
         // An upper bound: the due analyses of the set.
         let bound: usize = tx.query_row(&format!("SELECT count(*) {from}"), [], |r| r.get(0))?;
-        let mut stmt = tx.prepare(&format!(
-            "SELECT {} {from} AND f.missing = 0 AND f.pending = 0
-               AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
-                   AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)
-             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
-            work_columns!(),
-        ))?;
+        let mut stmt = tx.prepare(&borders_statement(&from))?;
         let list = work_list(&tx, &mut stmt, bound)?;
         drop(stmt);
         tx.commit()?;
@@ -523,8 +531,10 @@ impl Catalog {
     /// of what duplicates detection, while it was off, left for the Hashes pass.
     pub fn owed_hashes(&self) -> Result<usize> {
         Ok(self.conn.query_row(
-            "SELECT count(*) FROM hashes_owed h CROSS JOIN files f
-             WHERE f.id = h.file_id AND f.missing = 0 AND f.pending = 0",
+            concat!(
+                "SELECT count(*) FROM hashes_owed h CROSS JOIN files f WHERE f.id = h.file_id AND ",
+                present_ready!(f)
+            ),
             [],
             |r| r.get(0),
         )?)
@@ -562,8 +572,11 @@ impl Catalog {
     /// list waits while one does (`NOT_DUPLICATES`).
     pub fn has_owed_hashes(&self) -> Result<bool> {
         Ok(self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM hashes_owed h JOIN files ff ON ff.id = h.file_id
-             WHERE ff.missing = 0 AND ff.pending = 0)",
+            concat!(
+                "SELECT EXISTS(SELECT 1 FROM hashes_owed h JOIN files ff ON ff.id = h.file_id WHERE ",
+                present_ready!(ff),
+                ")"
+            ),
             [],
             |r| r.get(0),
         )?)
@@ -647,18 +660,6 @@ mod tests {
         ]
     }
 
-    /// The statement `pending_borders` runs for `volumes`, as it is written there (its FROM clause is `borders_from`).
-    fn borders_statement(volumes: &VolumeSet) -> String {
-        format!(
-            "SELECT {} {} AND f.missing = 0 AND f.pending = 0
-               AND NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
-                   AND x.size = f.size AND x.mtime = f.mtime AND x.rotation = f.rotation)
-             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
-            work_columns!(),
-            borders_from(volumes),
-        )
-    }
-
     /// The statement `pending_hashes` runs for `volumes`, as it is written there (its FROM clause is `hashes_from`).
     fn hashes_statement(volumes: &VolumeSet) -> String {
         format!(
@@ -698,7 +699,7 @@ mod tests {
     fn a_volume_filtered_borders_or_hashes_list_drives_from_the_files() {
         let c = three_volumes();
         let set = VolumeSet::Only(vec![3]);
-        for (label, sql) in [("borders", borders_statement(&set)), ("hashes", hashes_statement(&set))] {
+        for (label, sql) in [("borders", borders_statement(&borders_from(&set))), ("hashes", hashes_statement(&set))] {
             let plan = raw::query_plan(&c, &sql, []);
             assert!(plan.contains("SEARCH f USING INDEX sqlite_autoindex_files_1 (volume=?)"), "{label}: {plan}");
             assert!(!plan.contains("SCAN a") && !plan.contains("SCAN h"), "{label}: {plan}");

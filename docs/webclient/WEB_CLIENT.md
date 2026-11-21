@@ -209,7 +209,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 
 - **What a snapshot is:** when a listing opens, the server runs the query and sort once, and keeps the resulting ordered list
   of item IDs under a listing ID and a generation. It stays fixed until the client closes it, it expires, or the client reopens
-  it. The server holds about 56 bytes per entry in memory (`crates/model/src/grid.rs:41`), so roughly 56 MB per million
+  it. The server holds about 56 bytes per entry in memory (`crates/model/src/grid.rs:41`; this figure is superseded by `WEB_CLIENT_RECONCILED.md`), so roughly 56 MB per million
   items. The client gets the aspect-ratio block once, then fetches item records by range as the grid asks for them.
 - A snapshot freezes membership and order when it opens. Attribute changes update items in place.
 - The server publishes the fields each listing's query and sort read. A change to one of those fields is
@@ -217,7 +217,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   and anchors the scroll to it. If the selected item no longer matches, the selection moves to the next item in the new
   order, or the previous one if there is none.
 - *Proposed:* a snapshot is released after its client disconnects, after a grace period long enough for a sleeping phone
-  (the length is open). A 10-minute idle backstop applies, and each client may hold at most four snapshots. Every number is
+  (the length is open). A 10-minute idle backstop applies, and each client may hold at most four snapshots (superseded: `WEB_CLIENT_RECONCILED.md` voids this cap). Every number is
   unmeasured. The cap needs a client key, which depends on device identity.
 - *Decided, version 1 membership changes:* scan-missing files, library folder removal, and rating-driven sort. The desktop
   edits a rating in place today, so for the web client it is a membership rule, not a new behaviour. Scan-driven changes
@@ -269,7 +269,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - The loopback listener binds `127.0.0.1` only. Requests carry a per-start token from a user-only file, so other local
   processes can't use it.
 - The LAN listener is off by default. Once it is on: TLS with a certificate that matches the address the phone uses (the
-  private CA certificate with the LAN name and the IP, already configured; the phone trust test is the gate), login before
+  private CA certificate with the LAN name and the IP, to be configured (the repo has no certificate code yet); the phone trust test is the gate), login before
   any request other than login, the `Origin` check on the WebSocket, and a logged-in credential on every mutation. The
   enforcement is in the transport, not in the client.
 - *Proposed safeguards:* a connection cap, a pre-auth idle timeout, and rate limits on the login request. No values are set.
@@ -390,7 +390,7 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
 - `POST /api/listings`: a `Query` and `Sort`. Freezes the result under an id and returns the count.
 - `GET /api/listings/{id}/ratios`: the aspect ratios as one binary column, 2 to 4 bytes each.
 - `GET /api/listings/{id}/items?from=&to=`: the rest of each item as columnar JSON, gzip-compressed.
-- `GET /api/thumbs/{file_id}@{mtime}.{rotation}/{height}`: cache only, `Cache-Control: public, max-age=31536000,
+- `GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation}/{height}`: cache only, `Cache-Control: public, max-age=31536000,
   immutable`. A missing height gets the nearest one (`ThumbCache::get_nearest`).
 - `GET /api/files/{id}/view?w=&h=`: a fitted image, or the original bytes with `Range` for video.
 - `POST /api/login`: login, which sets the httpOnly cookie.
@@ -452,7 +452,7 @@ only what the tests read. A full `pg.gallery` for the browser has to implement a
   cross-origin isolated page. Qt's own WASM test server sends the isolation headers, with the comment "required for
   WebAssembly threads" (`qtbase/util/wasm/qtwasmserver/qtwasmserver.py:67-68, 213`). Isolation needs a secure context.
   Over plain `http://<LAN-IP>` only the single-threaded kit would run, and it has no Multimedia (`wasm_singlethread` has
-  no `Qt6Multimedia` CMake config). *Configured:* HTTPS with a private CA whose certificate has the LAN name and the IP address, installed on the phone. That makes
+  no `Qt6Multimedia` CMake config). *Planned:* HTTPS with a private CA whose certificate has the LAN name and the IP address, installed on the phone. That makes
   the page a secure context, so the multithreaded kit can run. The WebSocket must be `wss://`, since a non-local `ws://` from an HTTPS
   page is rejected (`qwebsocket_wasm_p.cpp`, about 148–172). Phone trust is untested.
 - **Video.** Qt Multimedia on WASM plays through an HTML5 `<video>` element that it creates on the page
@@ -561,7 +561,7 @@ did not settle.
 | P4 Snapshot lifetime | Proposed (L–M) | Released after disconnect, with a grace period; 10-minute idle backstop; cap of four per client. | The grace length for a sleeping phone; the client key; every number is unmeasured. |
 | P5 Desktop cutover | Proposed (M) | In-process timings, then server and conformance suite, benchmark, cutover. The in-process server beside the desktop is rejected. | Whether writes move in the same step as reads (otherwise two writers). |
 | P6 Video element removal | Open | Never change or clear the source while the player is Preparing or Prepared. The pause-first fix is rejected: pause is ignored in Preparing. | Video is work in progress. The candidate fix is unverified (test E1c). The served-URL source. If the fix fails, a Qt fork or a browser-native element. |
-| P7 HTTPS trust | Decided (certificate); gate open | Private CA certificate with the LAN name and the IP, configured; `wss://` only. | Phone trust (Chrome on Android); `crossOriginIsolated` with a bypassed certificate; Emscripten version match (the spike used 5.0.5). |
+| P7 HTTPS trust | Decided (certificate); gate open | Private CA certificate with the LAN name and the IP, to be configured; `wss://` only. | Phone trust (Chrome on Android); `crossOriginIsolated` with a bypassed certificate; Emscripten version match (the spike used 5.0.5). |
 | P8 Control and data split | Proposed (M) | Member table and grep test first; the seam at the protocol boundary; a poisoned-stub run before any bridge is rewritten. | Per-member labels are provisional. The desktop controller reads app state at start (`crates/desktop/src/controller.rs:39, 51, 55`). The table misses three `video_source` members and one `failed_files` member. |
 | P9 Layout threading | Decided: Web Worker | Layout runs in a worker. | Measure to set the budget. |
 | P10 Thumbnail transport | Proposed (M) | The async server, which gives HTTP/2 natively. | The TLS library (see Server); whether the WebSocket batch is still needed on the LAN; time-to-fill on a phone, measured. |

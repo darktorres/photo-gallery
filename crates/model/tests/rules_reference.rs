@@ -127,7 +127,7 @@ fn a_folder_key_differs_only_by_a_final_sigma() -> Fallible<()> {
         }
     }
     // The count is for the ledger: each changed key is a folder whose old lower-casing made a Σ final (ς).
-    println!("folder keys changed by the per-character lower case: {}", changed.len());
+    eprintln!("folder keys changed by the per-character lower case: {}", changed.len());
     Ok(())
 }
 

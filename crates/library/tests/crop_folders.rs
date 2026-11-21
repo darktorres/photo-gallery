@@ -85,7 +85,7 @@ fn folder_name(path: &Path) -> String {
 /// left as they were. Nothing else is left behind.
 #[test]
 fn a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder() -> Result<()> {
-    let dir = std::path::absolute(pg_testkit::run_folder("scratch_crop", "folders-source")?)?;
+    let dir = std::path::absolute(pg_testkit::run_folder("scratch_library", "folders-source")?)?;
     let (c, dotted, sibling) = library(&dir)?;
     let (dotted_original, sibling_original) = (
         std::fs::read(verbatim(&dir.join("images").join("Acme Inc.").join("a.jpg")))?,
@@ -114,7 +114,7 @@ fn a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder() -> Result<(
 /// A copy into a folder whose name ends in a dot is written into that folder, and no folder without the dot is made.
 #[test]
 fn a_copy_into_a_folder_ending_in_a_dot_is_written_there() -> Result<()> {
-    let dir = std::path::absolute(pg_testkit::run_folder("scratch_crop", "folders-copy")?)?;
+    let dir = std::path::absolute(pg_testkit::run_folder("scratch_library", "folders-copy")?)?;
     let (c, _dotted, sibling) = library(&dir)?;
     let original = std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?;
     let out = dir.join("Out.");

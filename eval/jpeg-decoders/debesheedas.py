@@ -9,7 +9,6 @@ DIR holds `harness dump turbo FILE DIR/NAME.ppm` for each FILE (NAME = FILE's st
 
 import argparse
 import shutil
-import statistics
 import subprocess
 import tempfile
 import time
@@ -19,6 +18,7 @@ import env
 import numpy as np
 from PIL import Image
 from reference_io import read_ppm
+from timing import median_s
 
 
 def tiny_jpeg(path):  # a 16x16 4:4:4 baseline JPEG, for the fixed cost
@@ -49,12 +49,12 @@ def main():
         outdir = work / "testing" / "cuda_decoder_output_arrays"
         outdir.mkdir(parents=True)
         tiny = tiny_jpeg(work / "tiny.jpg")
-        base = statistics.median(run(exe, tiny, work) for _ in range(3))
+        base = median_s(3, lambda: run(exe, tiny, work))
         print(f"fixed cost (16x16 image): {base * 1e3:.0f} ms")
         for f in files:
             ref = read_ppm(ref_dir / (f.stem + ".ppm"))
             try:
-                wall = statistics.median(run(exe, f, work) for _ in range(3))
+                wall = median_s(3, lambda: run(exe, f, work))
             except subprocess.CalledProcessError as e:
                 print(f"{f.name:34} error: exit {e.returncode}")
                 continue

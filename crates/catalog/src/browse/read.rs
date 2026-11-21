@@ -3,6 +3,7 @@
 //! here writes; the saved views and the session are `browse::views`'.
 
 mod details;
+pub(crate) use details::border_sides_on;
 pub mod facets;
 pub(crate) mod grid;
 mod scope;

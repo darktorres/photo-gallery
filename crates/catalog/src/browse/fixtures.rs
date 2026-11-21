@@ -53,7 +53,7 @@ pub(crate) fn library(rules: PathRules) -> crate::core::Catalog {
     crate::fixture::state::add_scan(&c, 1, &spelled(rules, "D:")).unwrap();
     crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\p")).unwrap();
     if rules == PathRules::Windows {
-        crate::fixture::state::add_folder(&c, 2, r"E:\p").unwrap();
+        crate::fixture::state::add_folder(&c, 2, &spelled(rules, r"E:\p")).unwrap();
     }
     crate::fixture::state::add_folder(&c, 3, &spelled(rules, r"D:\p\sub")).unwrap();
     for (id, folder, name, size, mtime, format, rating) in [

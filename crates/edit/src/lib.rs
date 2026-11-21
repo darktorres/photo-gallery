@@ -3,9 +3,6 @@
 //! where its format has no lossless way (a crop of TIFF or BMP, through `pg_codec::encode`), and then the metadata is
 //! not carried over.
 
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 pub mod crop;
 mod rewrite;
 pub mod rotate;

@@ -24,7 +24,7 @@ from pathlib import Path
 # pgtools is in tools/, two folders up: Python puts only this script's own folder on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pgtools import REPO, WINDOWS, load_env_file
+from pgtools import REPO, WINDOWS, default_pin_root, load_env_file, not_set
 
 HERE = Path(__file__).resolve().parent
 
@@ -44,15 +44,8 @@ def main() -> None:
     load_env_file()
     qt = args.qt or os.environ.get("QT_DIR", "")
     if not qt:
-        sys.exit(
-            "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env "
-            "(or pass --qt)."
-        )
-    pin = (
-        Path(os.environ["PIN_EXE"])
-        if os.environ.get("PIN_EXE")
-        else (Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit" / "pin.exe")
-    )
+        not_set("QT_DIR", "point it at the Qt kit folder (the one with bin and lib), in the environment or in .env (or pass --qt)")
+    pin = Path(os.environ["PIN_EXE"]) if os.environ.get("PIN_EXE") else default_pin_root() / "pin.exe"
     tool = REPO / "target" / "pin" / "callgraph.dll"
     if not tool.is_file():
         sys.exit(f"no {tool}: run tools/profiling/callgraph/build.py first")

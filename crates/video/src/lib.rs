@@ -3,8 +3,6 @@
 //!
 //! "Upright" is as players show it: the stream's display matrix (a phone's rotation tag) applied, then the
 //! catalog rotation. Near-duplicate detection doesn't cover videos yet: no pixel hash or PDQ.
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 mod ffi;
 mod unopened;
@@ -357,11 +355,11 @@ mod tests {
     }
 
     /// The sample clip (tools/make_test_video.py): 64x48, six frames, H.264.
-    const SAMPLE: &[u8] = include_bytes!("../tests/sample.mp4");
+    const SAMPLE: &[u8] = pg_testkit::VIDEO_SAMPLE;
 
     /// A fresh folder for one test: a run folder of its own.
     fn scratch_dir(test: &str) -> PathBuf {
-        pg_testkit::run_folder("scratch_video", &format!("pg-video-{test}")).unwrap()
+        pg_testkit::run_folder("scratch_video", &format!("video-{test}")).unwrap()
     }
 
     /// The sample under `name`, a name the system holds exactly (on Windows a lone surrogate, on Unix a raw byte: FFmpeg

@@ -20,7 +20,7 @@ pub mod ffi {
         /// Any thread: queues the frame for the sink's thread.
         #[namespace = "pg"]
         fn present(self: &FrameSink, width: u32, height: u32, rgba: &[u8]);
-        /// The sink's thread: frames still queued are dropped.
+        /// Any thread: frames still queued are dropped when they come up.
         #[namespace = "pg"]
         fn close(self: &FrameSink);
     }

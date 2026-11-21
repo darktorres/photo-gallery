@@ -135,18 +135,19 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 
 1. **Symbols, not line numbers.** Name the function or type when you write about code; line numbers drift.
 2. **Re-exports.** A `pub use` at an old path stays only where the item is part of the crate's documented public API, or a documented layer boundary (`pg_app::reexport`, which the desktop uses because it does not depend on `catalog`, `library`, `jobs`, `thumbcache`, `yandex` or `codec`). Every other transitional re-export is removed in the same change as its callers.
-3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would be a cycle or need private access. Today: `pg-codec` `fixtures`, `pg-catalog` `fixture`, `pg-writeback` `fault`. Everything else (for example `Quiet` in `pg-jobs`) goes in a dev-only crate.
+3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would be a cycle or need private access. Today: `pg-codec` `fixture`, `pg-catalog` `fixture`, `pg-writeback` `fault`. Everything else (for example `Quiet` in `pg-jobs`) goes in a dev-only crate.
 4. **Large files.** Split when a file holds more than one layer of a dependency graph, not by line count.
 5. **Layer claims are by reading or by script, and neither is proof.** The committed split check is `tools/modgraph/split_check.py`, with its skip set in its docstring. The check that counts is the compiler: the `modgraph` run (`just modgraph`).
 6. **Platform rule.** No `cfg(windows)`, `cfg(unix)` or `std::os::{windows,unix}` in production code outside `pg-platform`, except cxx-qt and FFI glue that must declare per-platform signatures. Each such exception is stated where it is declared.
 7. **Ordering.** A split is done in one sitting on the current HEAD, its measurement re-run first, and committed before anyone else's change to that file lands. The gate runs on a clean tree. No branches.
+8. **Invariants.** A condition the code relies on is guarded in one of three forms, and only these: an `assert!` with a message that names the invariant (in production too, when a wrong value would corrupt data); `unreachable!` in a match arm the types leave impossible, with the reason in its message; and `expect` only under `#[expect(clippy::expect_used, reason = "…")]` on the function. A bare `assert!` or `expect` with no message or reason is not used.
 
 ### Gates
 
 - **Linux:** `docker run --rm --security-opt systempaths=unconfined -v "D:/GitHub/photo-gallery:/work" -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/root/.cargo/registry pg-dev`. It runs `docker/check.py` in CI's order. It covers every crate except the desktop app.
 - **Windows:** `just lint` and `just test`. The desktop app builds only here, with `just build`.
 - **Desktop moves:** also `just shots`. A pure move must show no pixel change against `tools/shots/reference`.
-- **Cargo doc:** `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (`.github/workflows/ci.yml`). Run it on each change that moves or re-exports items.
+- **Cargo doc:** `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (`tools/lint.py`, which `just lint` runs). Run it on each change that moves or re-exports items.
 - **Perf:** `just perf` runs callgrind in `pg-dev` and gates against `docs/perf/baseline.json`.
 - **Module cycles** (`just modgraph`, the CI step): 115 to 149 seconds on the successful runs of 2026-11-10 and 2026-11-12, on both targets, with `rust-cache` warm.
 
@@ -256,7 +257,7 @@ just deploy  # release build, then the Qt DLLs and QML modules next to gallery.e
 just build   # rebuild
 just run     # the app; `just run status`, `just run scan <folder>`… for the command line
 just test    # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
-just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint, then the QML's (just lint-qml)
+just lint    # rustfmt, clippy, cargo-machete, ruff, markdownlint, then the QML's (just lint-qml); cargo-deny is `just deny`
 ```
 
 `just deploy debug`, then `just dev`, give the debug build (it links the release Qt too). It reads the QML from
@@ -265,7 +266,7 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 `QT_FORCE_STDERR_LOGGING=1` is set.
 
 `just lint` also checks that `pg-model` and `pg-client` build for WebAssembly (`wasm32-unknown-unknown`) and that the
-rustdoc has no warnings. `just check-linux` runs the Linux job's checks, clippy included, in the container (the Linux-only code). `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
+rustdoc has no warnings. `just check-linux` runs the Linux job's checks, clippy included, in the container (the Linux-only code). `just lint` needs `cargo binstall cargo-machete` once, and `just deny` needs `cargo binstall cargo-deny` once. `cargo deny check` covers advisories, licenses
 (the allowed list is in `deny.toml`), duplicate versions, and each dependency staying in its crates (Qt in `pg-desktop` alone, the image codecs in
 `pg-codec`, SQLite in `pg-catalog`, `pg-query`, `pg-dbfile` and `pg-thumbcache`);
 `cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or
@@ -407,7 +408,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 
 ## The app
 
-ImageRater's triage, without Everything: open "Unrated", largest first, rate each picture and move on.
+a rating app's triage, without Everything: open "Unrated", largest first, rate each picture and move on.
 
 The window comes up before anything is read from the catalog: the folder tree, the grid's files and the filter
 counts are read by a thread of their own (`crates/app/src/reader.rs`), oldest request first, each kind keeping only its newest
@@ -422,7 +423,7 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
 - **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file type, file size, date
   modified, date taken, date created, rating, megapixels, width, height, aspect ratio, duration, frames, border depth)
   and its direction (↑ / ↓). **Views ▾** saves the current folder,
-  subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
+  subfolders, filters and sort under a name (a rating app's bookmarks), and opens or deletes saved ones.
 - **Filter bar** (`FilterBar.qml`, `crates/query/src/lib.rs`): type (image, animated, video), extension, rating (unrated,
   1–5), shape (landscape, portrait, square), file size, megapixels, duration, date taken, date modified,
   duplicates (has / has none, from tiers 0a, 0b and tier-1 pairs within PDQ 22; "has none" is listed only once no
@@ -487,7 +488,7 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
   ExifTool could write XMP into an MP4 or MOV, but it rewrites the whole file, gigabytes for a video. Writes
   are queued in the catalog (`file_writes`), so they survive quitting, wait for offline drives, and retry; the
   bottom bar shows what is pending or failing. A file is rewritten in place, keeping its NTFS identity, and a
-  rating write doesn't make it look changed to the import. Ratings already in files (ImageRater, Explorer,
+  rating write doesn't make it look changed to the import. Ratings already in files (a rating app, Explorer,
   Lightroom: `xmp:Rating`, `MicrosoftPhoto:Rating`, EXIF Rating/RatingPercent) are read at import; a rating
   changed in a file by another program since we last saw it wins over the catalog's.
 - **Turns** are lossless and real wherever possible, so every program shows them: JPEG pixels are turned with

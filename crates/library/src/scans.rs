@@ -16,7 +16,7 @@ pub fn forget_replaced(thumbs: &ThumbCache, ids: &[FileId]) -> Vec<(FileId, anyh
 /// The notices a scan's result carries, split by what each describes ([`ScanNote::lifecycle`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScanNotices {
-    /// The conditions of the library folder (hard links, reparse points, ambiguous rows…): kept under `(root, code)`,
+    /// The conditions of the library folder (hard links, reparse points, ambiguous rows…): kept under one key per library root (`Key::all(scan-note, root)`),
     /// and replaced only by a complete walk of the whole library folder, which is what holds for it.
     pub conditions: Vec<Notice>,
     /// What this walk did (rows replaced, rows bound again): posted by the walk that did it, whatever folder it walked.

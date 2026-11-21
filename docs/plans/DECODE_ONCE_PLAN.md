@@ -407,11 +407,13 @@ INSERT INTO meta (key, value) VALUES ('dups_version', 1);
 -- The io read attempts of a file in a pass (5.6). Cleared by the trigger when the file changes, and by the
 -- pass whenever it stores a result for the file, or writes the terminal failure at the third attempt.
 CREATE TABLE io_attempts(
-    file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-    pass     TEXT NOT NULL,
-    attempts INTEGER NOT NULL,
+    file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    pass        TEXT    NOT NULL,
+    attempts    INTEGER NOT NULL,
+    next_try_at INTEGER NOT NULL DEFAULT 0,  -- as IMPORT_FAILURES_PLAN 5.4 E: the worklists skip rows with next_try_at > unixepoch()
     PRIMARY KEY(file_id, pass)
 );
+CREATE INDEX io_attempts_due ON io_attempts(pass, next_try_at);
 CREATE TRIGGER io_attempts_stale AFTER UPDATE OF mtime, size, rotation, missing ON files
 WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation
     OR old.missing IS NOT new.missing
@@ -523,12 +525,12 @@ It returns `Ok(rows == 1)`. `owed` is `true` when duplicate detection is off.
 - **With duplicate detection off, nothing pairs.** Import does not build a Pairer and does not load `pdq_hashes()`. The Dups pass does not pair. The hashes are still computed (3.1), and the rows stay `'due'` (the pairs are owed).
 - Import builds its Pairer per import call (`import/src/lib.rs:41-42`, local to `import()`), as today, when detection is on. The Dups pass builds one per Dups pass run, when detection is on.
 - `Pairer::reserve` is sized from the due count (`items.len() * 8`, `pairer.rs:35-37`).
-- Memory: 8 PDQ orientations of 32 bytes per file, about 256 MB at a million files. That is recorded in the bounded-memory plan's terms, not solved here.
+- Memory: 4 PDQ orientations of 32 bytes per file (128 bytes, `pdq.rs` `BLOB_BYTES`), about 128 MB at a million files. That is recorded in the bounded-memory plan's terms, not solved here.
 
 ### 3.7 The Dups pass and the decode budget
 
 - **Location: a module of `pg-import`**, `crates/import/src/duplicates.rs`, exposed as `pg_import::duplicates`. The Dups pass shares the import's analyzer, pipeline, sink and budget, and `pg-import` already has every edge it needs (`analysis`, `catalog`, `dedup`, `jobs`, `model`, `platform`). So no new crate, no new layer line and no manifest change. The name `pg-duplicates` is dropped.
-- **Names.** The pass is `Dups` (`Phase::Dups` in `model/src/progress.rs`; the words `pass-dups` in `text.ftl`, read through `pg_client::text::pass_name`; `Message::PassDups` in `client/src/text/message.rs`). Its ledger code is `FilePass::Duplicates` (`model/src/notice.rs:281-288`). `file_failures.pass` has no `CHECK` (`schema.rs:114` is only a comment, and it is stale: it lists 'thumbs' and 'borders' alone), so the duplicates pass needs only its Rust code. The old migration's comment is left as it is.
+- **Names.** The pass is `Duplicates` in code, as IMPORT_FAILURES_PLAN.md (D-C) decides: `Phase::Duplicates` in `model/src/progress.rs`, the words `pass-duplicates` in `text.ftl`, read through `pg_client::text::pass_name`, and `Message::PassDuplicates` in `client/src/text/message.rs`. Its ledger code is `FilePass::Duplicates` (`model/src/notice.rs:281-288`). The prose "Dups pass" elsewhere in this plan means this pass. `file_failures.pass` has no `CHECK` (`schema.rs:114` is only a comment, and it is stale: it lists 'thumbs' and 'borders' alone), so the duplicates pass needs only its Rust code. The old migration's comment is left as it is.
 - **Round order:** `Crops, Scans, Import, Thumbs, Borders, Dups`. Dups runs last and is reached on every round, because Thumbs no longer stops a round (2.9). Priority `BelowNormal` (5.10). Superseded 2026-11-16 (commit aeb7d2c): the order is `Crops, Cuts, Scans, Import, Thumbs, Hashes, Pairing, Borders`; Hashes and Pairing are skipped while duplicates detection is off, and Borders while border detection is off.
 
 **Worklists** (`crates/catalog/src/work.rs`, beside `pending_borders`, `:84-99`). Both are over `analysis a JOIN files f` with `a.dups_state = 'due' AND f.missing = 0 AND f.pending = 0`, in the order of the other passes (`ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF`):
@@ -712,7 +714,7 @@ INSERT INTO meta (key, value) VALUES
 ```
 
 - The two meta keys are added to the expected schema through the migration: `SEEDS` (`schema.rs:373`) compares the keys that `expected()` produces by running the migrations (`schema.rs:439-449`), so no `SEEDS` edit is needed.
-- `files_log` is a catalog table, so `carried_is_every_table_of_the_current_schema` (`schema.rs:803-820`) requires it in `CARRIED` or `TRANSIENT` (`rebuild.rs:134, :158`), and in only one. It goes in `TRANSIENT`: a rebuild sets `log_horizon` to the current change number, so no carried log row could ever be read (4.5). (Rebuilds keep file ids, `rebuild.rs:160-161`, so renumbering is not the reason.)
+- `files_log` is a catalog table, so `carried_is_every_table_of_the_current_schema` (in `catalog/src/schema.rs`) requires it in `CARRIED` or `TRANSIENT` (`rebuild.rs:134, :158`), and in only one. It goes in `TRANSIENT`: a rebuild sets `log_horizon` to the current change number, so no carried log row could ever be read (4.5). (Rebuilds keep file ids, `rebuild.rs:160-161`, so renumbering is not the reason.)
 - The `analysis_rewritten` trigger's WHEN compares 27 columns on every analysis UPDATE. Its cost is measured in Phase 6.
 
 ### 4.4 Duplicate-status triggers
@@ -1120,7 +1122,7 @@ Import is already BelowNormal, and Scans is Normal. Moving Scans is not part of 
 
 ### 5.11 The CLI and the import options
 
-`gallery import` takes `--no-borders` and `--no-duplicates` (they set the features, 2.1 and 3.9) and `--thumbs-height N` (it sets the grid height for the ingest thumbnails and turns that stage on; without it the thumbnail stage is off, since the cache has no height). `gallery borders` and `gallery thumbs` stay explicit commands and ignore the toggles (`cli/src/args.rs:86, :102`).
+`gallery import` takes `--no-borders` and `--no-dups` (they set the features, 2.1 and 3.9; `--no-dups` is shipped as `no_dups`, `cli/src/args.rs:107`, so the sketch below does not add it again) and `--thumbs-height N` (it sets the grid height for the ingest thumbnails and turns that stage on; without it the thumbnail stage is off, since the cache has no height). `gallery borders` and `gallery thumbs` stay explicit commands and ignore the toggles (`cli/src/args.rs:86, :102`).
 
 `Command::Import` (`cli/src/args.rs:74-84`) gains three fields after `again`. Clap derives the long names from the field names:
 
@@ -1130,14 +1132,14 @@ Import is already BelowNormal, and Scans is Normal. Moving Scans is not part of 
 no_borders: bool,
 /// Find no duplicates (the Duplicates toggle off): no hash pairing and no PDQ pairs.
 #[arg(long)]
-no_duplicates: bool,
+no_dups: bool,
 /// Make the thumbnails at this grid height in the same decode (the cache's heights, 16 to 2048). Without it no
 /// thumbnail is made and the thumbnail stage is skipped, since the cache has no height.
 #[arg(long, value_name = "PX", value_parser = thumb_height)]
 thumbs_height: Option<ThumbHeight>,
 ```
 
-The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, duplicates: !no_duplicates, thumbnails: thumbs_height.is_some() };` and the options carry the height: `ImportOptions { features, thumb_height: thumbs_height, .. }`. `Features` stays bool-only (2.1), and the height is a separate value of the import options. The import takes `import(catalog, &opts, retry_errors, ctl)`, with the features and the height inside the options. `ThumbHeight` is already imported (`args.rs:7`).
+The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, duplicates: !no_dups, thumbnails: thumbs_height.is_some() };` and the options carry the height: `ImportOptions { features, thumb_height: thumbs_height, .. }`. `Features` stays bool-only (2.1), and the height is a separate value of the import options. The import takes `import(catalog, &opts, retry_errors, ctl)`, with the features and the height inside the options. `ThumbHeight` is already imported (`args.rs:7`).
 
 - The doc comment of `fn thumb_height` (`args.rs:137`, its body at `:138-141`) names `--cap-gb`; that text belongs to `fn cap_gb` (`:143-146`). It is fixed in the same commit.
 - The `import` crate's `Cargo.toml` comment (`crates/import/Cargo.toml:10`, "not on the thumbnails or the writes") is updated. The crate gains `pg-render`, `pg-thumbcache` and `pg-trace`, which are on earlier lines of `crate-layers.txt` (5.13), so the edges are allowed.
@@ -1295,5 +1297,5 @@ Each migration's test compares `expected()` with a fresh schema (`schema.rs:851-
 - `ui.ftl` (Phase 2): `ui-borders-disabled`, `ui-thumbnails-disabled`, `ui-nothing-to-crop`, `ui-no-border-here`, `ui-borders-not-checked`, `ui-start-option-disabled`, `ui-feature-borders`, `ui-feature-thumbnails`, `ui-detect-borders-count`, `ui-pregenerate-thumbnails`.
 - `ui.ftl` (Phase 3): `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplicates`, `ui-detect-duplicates-count`, `ui-detect-duplicates`.
 - `text.ftl` (Phase 3): `pass-dups`.
-- `cli.ftl` (Phase 5): the `--no-borders`, `--no-duplicates` and `--thumbs-height` help lines.
+- `cli.ftl` (Phase 5): the `--no-borders`, `--no-dups` and `--thumbs-height` help lines.
 - No `Notice` variant is added. `CacheFull` and `CacheNotStored` exist (5.8).

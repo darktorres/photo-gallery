@@ -8,7 +8,7 @@ use pg_client::results::Results;
 #[derive(Default)]
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct YandexSearchRust {
     pub(crate) busy: bool,
@@ -36,6 +36,6 @@ pub struct YandexSearchRust {
     pub(super) pump: bool,
     /// The other sizes, then the similar images, as the latest search found them, and their picks.
     pub(super) results: Results<Hit>,
-    /// Each result's frame in the panel's layout (`relayout`), by its index in `hits`.
+    /// Each result's frame in the panel's layout (`relayout`), by its index in `results`.
     pub(super) frames: Vec<Frame>,
 }

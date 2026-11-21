@@ -1,5 +1,4 @@
-//! What a scan of a root saw, for its pairing. A leaf below `core`: `Catalog`'s methods take it, and the compiler graph
-//! puts an inherent method in its type's module, so a type they name has to be below `core` too.
+//! What a scan of a root saw, for its pairing. A leaf below `core` (the rule is in the crate's docs).
 
 use crate::types::Skip;
 

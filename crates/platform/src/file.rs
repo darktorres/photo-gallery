@@ -4,6 +4,14 @@ use std::fs::{File, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// Writes `bytes` to a new file at `path` and flushes them to disk: the step that both an atomic replace and a claimed
+/// save start with (each names its temporary its own way).
+pub fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut file = File::create(path)?;
+    std::io::Write::write_all(&mut file, bytes)?;
+    file.sync_all()
+}
+
 use crate::native::NativePath;
 
 /// Open the file at `path` for reading, with every sharing mode and no flags: the call std makes, without std's
@@ -287,7 +295,7 @@ mod tests {
     /// A rename onto an existing name is refused and moves nothing; onto a free one it moves the file.
     #[test]
     fn a_rename_never_replaces() {
-        let dir = crate::testing::run_folder("scratch_rename", "pg-no-replace").unwrap();
+        let dir = crate::testing::run_folder("scratch_platform", "no-replace").unwrap();
         let (from, taken, free) = (dir.join("a"), dir.join("b"), dir.join("c"));
         std::fs::write(&from, b"a").unwrap();
         std::fs::write(&taken, b"b").unwrap();
@@ -303,7 +311,7 @@ mod tests {
     /// Each file kept aside takes the next free name, so an earlier one kept is never overwritten.
     #[test]
     fn a_file_kept_aside_takes_the_next_free_name() {
-        let dir = crate::testing::run_folder("scratch_keep_aside", "pg-keep-aside").unwrap();
+        let dir = crate::testing::run_folder("scratch_platform", "keep-aside").unwrap();
         let path = dir.join("gallery.json");
         for (n, want) in [(1, "gallery.json.bad"), (2, "gallery.json.bad.1"), (3, "gallery.json.bad.2")] {
             std::fs::write(&path, format!("{n}")).unwrap();
@@ -320,7 +328,7 @@ mod tests {
     fn the_player_handle_is_the_file_in_a_dotted_folder() {
         use std::os::windows::io::FromRawHandle;
         let dir =
-            std::path::absolute(crate::testing::run_folder("scratch_player", "pg-player-handle").unwrap()).unwrap();
+            std::path::absolute(crate::testing::run_folder("scratch_platform", "player-handle").unwrap()).unwrap();
         let (dotted, sibling) = (dir.join("a."), dir.join("a"));
         std::fs::create_dir_all(crate::native::verbatim(&dotted)).unwrap();
         std::fs::create_dir_all(&sibling).unwrap();
@@ -337,7 +345,7 @@ mod tests {
     /// is refused until the handle closes. Its size is read from the handle.
     #[test]
     fn a_copy_open_writes_in_place_and_denies_other_writers() {
-        let dir = crate::testing::run_folder("scratch_rate", "pg-open-copy").unwrap();
+        let dir = crate::testing::run_folder("scratch_platform", "open-copy").unwrap();
         let path = dir.join("a.bin");
         std::fs::write(&path, b"before").unwrap();
         let mut native = NativePath::default();
@@ -356,13 +364,13 @@ mod tests {
         // A missing file is the open's error, as std's.
         crate::native::set_os_str(&mut native, dir.join("missing.bin").as_os_str());
         assert_eq!(open_for_copy(&native).unwrap_err().kind(), io::ErrorKind::NotFound);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A temporary is removed when its guard drops, unless it was persisted; one never made is no error.
     #[test]
     fn a_temp_file_is_removed_unless_persisted() {
-        let dir = crate::testing::run_folder("scratch_rate", "pg-temp-file").unwrap();
+        let dir = crate::testing::run_folder("scratch_platform", "temp-file").unwrap();
         let path = dir.join("a.tmp");
         {
             let guard = TempFile::new(&path);
@@ -374,6 +382,6 @@ mod tests {
         guard.persist();
         assert_eq!(std::fs::read(&path).unwrap(), b"whole", "persisted: kept");
         drop(TempFile::new(&dir.join("never-made.tmp")));
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

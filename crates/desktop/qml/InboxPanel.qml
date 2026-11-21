@@ -290,7 +290,7 @@ ModalOverlay {
                         tell()
                     width: list.width
                     height: list.rowHeight
-                    color: row.chosen ? "#2f5f93" : (row.index % 2 ? "#242424" : "transparent")
+                    color: row.chosen ? Theme.chosenRow : (row.index % 2 ? "#242424" : "transparent")
                     Accessible.role: Accessible.ListItem
                     Accessible.name: row.title
                     Accessible.description: row.source
@@ -304,7 +304,7 @@ ModalOverlay {
                             Layout.preferredWidth: 8
                             Layout.preferredHeight: 8
                             radius: 4
-                            color: row.level === 2 ? "#e06060" : (row.level === 1 ? "#e0a050" : "#6a9fd8")
+                            color: row.level === 2 ? Theme.invalidText : (row.level === 1 ? Theme.statusWarning : "#6a9fd8")
                         }
                         Label {
                             text: row.title
@@ -318,7 +318,7 @@ ModalOverlay {
                             visible: row.sinceDismissed.length > 0
                             text: row.sinceDismissed
                             textFormat: Text.PlainText
-                            color: "#e0a050"
+                            color: Theme.statusWarning
                         }
                         // Not counted (-1: a ledger's counts while the inbox isn't viewed) shows nothing.
                         Label {
@@ -385,7 +385,7 @@ ModalOverlay {
                 Label {
                     objectName: "inboxLoading"
                     visible: panel.failedLoading
-                    text: words.text("ui-inbox-loading")
+                    text: words.text("ui-loading")
                     textFormat: Text.PlainText
                     color: "#888888"
                 }
@@ -394,7 +394,7 @@ ModalOverlay {
                     visible: panel.failedError.length > 0
                     text: words.phrase("ui-inbox-unreadable", 0, panel.failedError, "")
                     textFormat: Text.PlainText
-                    color: "#e06060"
+                    color: Theme.invalidText
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
@@ -470,7 +470,7 @@ ModalOverlay {
                 Label {
                     visible: panel.failedTotal > files.count && !panel.failedLoading
                     // The scans' folders (pass 3), or a pass's files.
-                    text: panel.selectedPass === 3 ? words.phrase("ui-inbox-more-folders", panel.failedTotal, "" + panel.failedTotal, "" + files.count) : words.phrase("ui-inbox-more", panel.failedTotal, "" + panel.failedTotal, "" + files.count)
+                    text: panel.selectedPass === 3 ? words.phrase("ui-inbox-more-folders", 0, "" + panel.failedTotal, "" + files.count) : words.phrase("ui-inbox-more", 0, "" + panel.failedTotal, "" + files.count)
                     textFormat: Text.PlainText
                     color: "#888888"
                 }

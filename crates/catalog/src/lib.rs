@@ -7,14 +7,18 @@
 //!
 //! The thumbnails' work is tracked the same way: whatever a thumbnail depends on changing gives the file the next
 //! number of a change sequence (`files.seq`, from `meta.seq`), so the thumbnail pass looks only at files changed
-//! since it last looked (`thumbs::pending_in`).
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+//! since it last looked (`pg_thumbcache::pending_in`).
+//!
+//! A module the docs call a leaf (below `core`) is one whose types `Catalog`'s methods take or return. The compiler
+//! graph puts an inherent method in its type's module, so a type named in those signatures has to sit below `core` too.
 
 // The SQL macros are declared first: `macro_rules!` is textually scoped, so every module declared after
 // this one can use them.
 #[macro_use]
 mod sql;
+
+/// The rows a catalog write batch holds in the import and borders passes (one transaction per batch).
+pub const WRITE_BATCH: usize = 500;
 
 pub mod browse;
 pub mod dups;

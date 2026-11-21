@@ -135,6 +135,7 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
         if stored != Stored::Same {
             return Err(ImageError::Unsupported(UnsupportedError::from_format_and_kind(
                 ImageFormat::Tiff.into(),
+                // The spelling is `image`'s own, which the decode tests compare against.
                 UnsupportedErrorKind::GenericFeature("Planar TIFF with CMYK color type is not supported".to_string()),
             )));
         }
@@ -143,7 +144,7 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
         if raw.len().checked_div(plane_stride).unwrap_or(0) < usize::from(color.channel_count()) {
             return Err(ImageError::Decoding(DecodingError::new(
                 ImageFormat::Tiff.into(),
-                "Not enough planes read from TIFF image".to_string(),
+                "not enough planes read from the TIFF image".to_string(),
             )));
         }
         convert(raw, color, Some(plane_stride), pixels, out)?;

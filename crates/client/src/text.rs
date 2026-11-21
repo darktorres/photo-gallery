@@ -15,16 +15,23 @@ mod words;
 
 use pg_model::detection::Class;
 use pg_model::media::MediaType;
+use pg_model::name::Name;
 use pg_model::notice::Notice;
 use pg_model::progress::{Phase, Progress};
 use pg_model::query::{BorderFacet, Choice, DateRange, ListFacet, Query, Range, RatingFilter, Shape, Status};
 use pg_model::rules::PathRules;
-use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status as YandexStatus};
+use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, YandexStatus};
 
 use crate::input::day_text;
 use crate::keys::Hint;
 pub use message::{Message, refused_reason, render};
 pub use words::{set_pseudo, ui};
+
+/// The drive anchors a folder is on, joined for its tree row: `D: E:`. The model gives the names; the space between them
+/// is the front end's to write.
+pub fn anchors<'a>(names: impl IntoIterator<Item = &'a Name>) -> String {
+    names.into_iter().map(|name| name.display()).collect::<Vec<_>>().join(" ")
+}
 
 /// The rating symbols, by rating (0 unrated, 5 best).
 pub const RATING_SYMBOLS: [&str; 6] = ["☆", "❌", "❔", "🔨", "✔️", "⭐"];
@@ -358,7 +365,21 @@ pub fn yandex_request(e: &RequestError) -> String {
         RequestError::Captcha => render(&Message::YandexCaptcha),
         RequestError::Status(status) => render(&Message::YandexHttpStatus { status: status.to_string() }),
         RequestError::Transport(error) => render(&Message::YandexTransport { error: error.clone() }),
-        RequestError::Unexpected(detail) => render(&Message::YandexUnexpected { detail: detail.clone() }),
+        RequestError::Unexpected(reason) => render(&match reason {
+            pg_model::yandex::UnexpectedReason::UploadNotJson => Message::YandexUploadNotJson,
+            pg_model::yandex::UnexpectedReason::UploadNoCbirId => Message::YandexUploadNoCbirId,
+            pg_model::yandex::UnexpectedReason::UploadNoOriginal => Message::YandexUploadNoOriginal,
+            pg_model::yandex::UnexpectedReason::ResultsPageNoState => Message::YandexResultsPageNoState,
+            pg_model::yandex::UnexpectedReason::ResultsStateNotJson => Message::YandexResultsStateNotJson,
+            pg_model::yandex::UnexpectedReason::SimilarNotJson => Message::YandexSimilarNotJson,
+            pg_model::yandex::UnexpectedReason::SimilarNoResults => Message::YandexSimilarNoResults,
+            pg_model::yandex::UnexpectedReason::NotAnImage => Message::YandexNotAnImage,
+            pg_model::yandex::UnexpectedReason::TooLarge => Message::YandexTooLarge,
+            pg_model::yandex::UnexpectedReason::NoResult => Message::YandexNoResult,
+            pg_model::yandex::UnexpectedReason::NoSearch => Message::YandexNoSearch,
+            pg_model::yandex::UnexpectedReason::NoSearchOnScreen => Message::YandexNoSearchOnScreen,
+            pg_model::yandex::UnexpectedReason::NotCalled => Message::YandexNotCalled,
+        }),
         RequestError::Recorded(error) => render(&Message::YandexRecorded { error: error.clone() }),
         RequestError::Undecodable(reason) => render(&Message::YandexUndecodable { reason: reason.clone() }),
     }
@@ -409,7 +430,7 @@ fn yandex_failure(failure: &SaveFailure) -> String {
 }
 
 /// A Yandex search's or save's outcome, as the panel's status line shows it: empty for a search that ended with no note.
-pub fn yandex_status(status: &YandexStatus) -> String {
+pub fn yandex_status(status: &YandexStatus, log: &str) -> String {
     match status {
         YandexStatus::Working(phase) => yandex_phase(*phase),
         YandexStatus::Searched(note) => note.as_ref().map_or_else(String::new, yandex_similar_note),
@@ -417,8 +438,8 @@ pub fn yandex_status(status: &YandexStatus) -> String {
         YandexStatus::Saved(Saved { folder, written, failed, first_error }) => {
             yandex_saved(*written, folder, *failed, first_error.as_ref().map(yandex_failure).as_deref())
         }
-        // The panic that stopped it is in gallery.log (a thread the system refused is `YandexNotStarted`'s line).
-        YandexStatus::Stopped => render(&Message::YandexStopped),
+        // The panic that ended it is in the log (a thread the system refused is `YandexNotStarted`'s line).
+        YandexStatus::Panicked => render(&Message::YandexPanicked { log: log.to_string() }),
     }
 }
 
@@ -688,7 +709,7 @@ mod tests {
             first_error: Some(SaveFailure::Download { url: "u".into(), error: RequestError::Captcha }),
         };
         assert_eq!(
-            yandex_status(&YandexStatus::Saved(failed)),
+            yandex_status(&YandexStatus::Saved(failed), ""),
             yandex_saved(
                 2,
                 "D:/out",
@@ -696,7 +717,7 @@ mod tests {
                 Some(&yandex_failure(&SaveFailure::Download { url: "u".into(), error: RequestError::Captcha }))
             )
         );
-        assert_eq!(yandex_status(&YandexStatus::Searched(None)), "", "a search with no note shows nothing");
+        assert_eq!(yandex_status(&YandexStatus::Searched(None), ""), "", "a search with no note shows nothing");
         assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
         assert_eq!(yandex_saved(3, "D:/out", 0, None), "Saved 3 files to D:/out");
         assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");
@@ -708,12 +729,15 @@ mod tests {
             error: "disk full".into(),
         };
         assert_eq!(yandex_failure(&write), "https://a/b.jpg couldn't be written to D:/out/b.jpg: disk full");
-        assert_eq!(render(&Message::YandexStopped), "Stopped by an internal error; the details are in gallery.log.");
+        assert_eq!(
+            render(&Message::YandexPanicked { log: r"C:\gallery.log".into() }),
+            "Ended by an internal error; the details are in C:\\gallery.log."
+        );
         assert_eq!(yandex_request(&RequestError::Status(503)), "Yandex answered HTTP 503");
         assert_eq!(yandex_request(&RequestError::Transport("timed out".into())), "Yandex request failed: timed out");
         assert_eq!(
-            yandex_request(&RequestError::Unexpected("no cbir_id".into())),
-            "unexpected Yandex response: no cbir_id"
+            yandex_request(&RequestError::Unexpected(pg_model::yandex::UnexpectedReason::UploadNoCbirId)),
+            "Yandex's answer to the upload has no image id"
         );
         assert_eq!(
             yandex_request(&RequestError::Recorded("no such step".into())),
@@ -753,6 +777,14 @@ mod tests {
         assert_eq!(
             render(&Message::CatalogPredatesKeyVersion { path: "D:/c".into() }),
             "The catalog at D:/c has a schema that differs from this build's, and it predates key_version. Restore a .pre-v*.bak or start fresh."
+        );
+        assert_eq!(
+            render(&Message::CatalogPathRules {
+                path: "D:/c".into(),
+                detail: "made with the windows path rules".into(),
+                wanted: "posix".into(),
+            }),
+            "The catalog at D:/c was made with the windows path rules, but this build uses the posix path rules. Open it on the platform that made it, or move it aside and scan again."
         );
         assert_eq!(
             render(&Message::CatalogNewerSchema {
@@ -824,12 +856,12 @@ mod tests {
         let still = Shown { has_borders: false, still: true, video: false };
         assert_eq!(
             hint(&keys::viewer_hint(Media::Still, still)),
-            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1 · Z real size · L loupe · \
+            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · Shift+R ⟳ · wheel zoom · double-click 1:1 · Z real size · L loupe · \
              B borders · H hide · Esc close"
         );
         assert_eq!(
             hint(&keys::viewer_hint(Media::Video, still)),
-            "← → step · K play/pause · M mute · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
+            "← → step · K play/pause · M mute · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · Shift+R ⟳ · H hide · Esc close"
         );
     }
 

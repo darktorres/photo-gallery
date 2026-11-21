@@ -13,7 +13,7 @@ pub(crate) enum Shown {
 #[derive(Default)]
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct FailedFilesRust {
     pub(crate) total: i32,

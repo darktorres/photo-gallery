@@ -1,5 +1,6 @@
-// The rating symbols (ImageRater's), used by the grid badges, the viewer's rating bar and its popup, and the filter.
+// The rating symbols (a rating app's), used by the grid badges, the viewer's rating bar and its popup, and the filter.
 pragma Singleton
+pragma ComponentBehavior: Bound
 import QtQml
 import QtQuick
 import pg.gallery

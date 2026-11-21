@@ -36,11 +36,12 @@ pub(crate) mod state;
 use crate::log_model_bridge::qobject;
 
 use core::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
+
+use crate::pump::{Pending, lock};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_model::notice::Level;
 
 const ROLE_TIME: i32 = 256;
 const ROLE_LEVEL: i32 = 257;
@@ -48,26 +49,6 @@ const ROLE_TARGET: i32 = 258;
 const ROLE_MESSAGE: i32 = 259;
 const ROLE_DETAIL: i32 = 260;
 const ROLE_SEQ: i32 = 261;
-
-/// The records logged that the Qt thread hasn't shown, and whether a pass is queued for them.
-#[derive(Default)]
-struct Pending {
-    records: Vec<pg_log::Record>,
-    queued: bool,
-}
-
-fn lock(pending: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
-    pending.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// The `level` role: 0 info, 1 warning, 2 error (LogPanel.qml colours them).
-fn level_code(level: Level) -> i32 {
-    match level {
-        Level::Info => 0,
-        Level::Warning => 1,
-        Level::Error => 2,
-    }
-}
 
 impl qobject::LogModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
@@ -79,7 +60,7 @@ impl qobject::LogModel {
         };
         match role {
             ROLE_TIME => QVariant::from(&QString::from(&record.local)),
-            ROLE_LEVEL => QVariant::from(&level_code(record.level)),
+            ROLE_LEVEL => QVariant::from(&record.level.code()),
             ROLE_TARGET => QVariant::from(&QString::from(&record.target)),
             ROLE_MESSAGE => QVariant::from(&QString::from(&record.message)),
             ROLE_DETAIL => QVariant::from(&QString::from(record.detail.as_deref().unwrap_or_default())),
@@ -121,7 +102,7 @@ impl qobject::LogModel {
                 let _ = thread.queue(move |model| model.show_all(records));
             });
             if let Err(e) = reader {
-                pg_log::warn("log", &format!("the log view's reader didn't start: {e}"));
+                pg_log::warn("log", &format!("the log view's reader didn't start: {e:#}"));
             }
             return;
         }
@@ -138,11 +119,11 @@ impl qobject::LogModel {
             if thread.queue(move |model| model.show_all(all)).is_err() {
                 return;
             }
-            let pending: Arc<Mutex<Pending>> = Arc::default();
+            let pending: Arc<Mutex<Pending<Vec<pg_log::Record>>>> = Arc::default();
             while let Ok(record) = feed.new.recv() {
                 let queue = {
                     let mut pending = lock(&pending);
-                    pending.records.push(record);
+                    pending.changes.push(record);
                     !std::mem::replace(&mut pending.queued, true)
                 };
                 if queue {
@@ -154,7 +135,7 @@ impl qobject::LogModel {
             }
         });
         if let Err(e) = reader {
-            pg_log::warn("log", &format!("the log view's reader didn't start: {e}"));
+            pg_log::warn("log", &format!("the log view's reader didn't start: {e:#}"));
         }
     }
 
@@ -167,11 +148,11 @@ impl qobject::LogModel {
     }
 
     /// The records logged since the last pass, added at the end; the oldest rows go past the cap.
-    fn append(mut self: Pin<&mut Self>, pending: Arc<Mutex<Pending>>) {
+    fn append(mut self: Pin<&mut Self>, pending: Arc<Mutex<Pending<Vec<pg_log::Record>>>>) {
         let records = {
             let mut pending = lock(&pending);
             pending.queued = false;
-            std::mem::take(&mut pending.records)
+            std::mem::take(&mut pending.changes)
         };
         if records.is_empty() {
             return;
@@ -197,12 +178,12 @@ impl qobject::LogModel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use pg_model::notice::Level;
 
     #[test]
     fn each_level_has_the_code_the_panel_colours() {
-        assert_eq!(level_code(Level::Info), 0);
-        assert_eq!(level_code(Level::Warning), 1);
-        assert_eq!(level_code(Level::Error), 2);
+        assert_eq!(Level::Info.code(), 0);
+        assert_eq!(Level::Warning.code(), 1);
+        assert_eq!(Level::Error.code(), 2);
     }
 }

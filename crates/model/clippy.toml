@@ -1,5 +1,6 @@
-# clippy reads this file instead of the root clippy.toml, so the root's settings that apply to every crate are repeated
-# here: the hash-collection bans and allow-panic-in-tests and allow-print-in-tests. Keep them in step with the root file.
+# clippy reads this file instead of the root clippy.toml (it has no include), so the root's settings that apply to every
+# crate are repeated here: the test allowances and the hash-collection bans. tools/test_ci_files.py keeps the repeats in
+# step with the root file.
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true

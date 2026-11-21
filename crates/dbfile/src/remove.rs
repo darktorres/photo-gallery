@@ -60,7 +60,7 @@ mod tests {
     /// The main file and its sidecars move together to the first free name, and nothing already there is overwritten.
     #[test]
     fn moving_aside_takes_the_sidecars_and_never_overwrites() {
-        let dir = pg_testkit::run_folder("scratch_dbfile", "pg-dbfile-aside").unwrap();
+        let dir = pg_testkit::run_folder("scratch_dbfile", "dbfile-aside").unwrap();
         let path = dir.join("db.sqlite");
         std::fs::write(&path, b"first").unwrap();
         std::fs::write(dir.join("db.sqlite-wal"), b"first wal").unwrap();
@@ -72,18 +72,18 @@ mod tests {
         assert_eq!(std::fs::read(dir.join("db.sqlite.bad.1-wal")).unwrap(), b"first wal");
         assert_eq!(std::fs::read(dir.join("db.sqlite.bad-shm")).unwrap(), b"in the way");
         assert!(!path.exists() && !dir.join("db.sqlite-wal").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn removing_takes_the_sidecars_and_a_missing_part_is_no_error() {
-        let dir = pg_testkit::run_folder("scratch_dbfile", "pg-dbfile-remove").unwrap();
+        let dir = pg_testkit::run_folder("scratch_dbfile", "dbfile-remove").unwrap();
         let path = dir.join("db.sqlite");
         std::fs::write(&path, b"main").unwrap();
         std::fs::write(dir.join("db.sqlite-wal"), b"wal").unwrap();
         remove_database(&path).unwrap();
         assert!(!path.exists() && !dir.join("db.sqlite-wal").exists());
         remove_database(&path).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

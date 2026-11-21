@@ -166,22 +166,18 @@ pub mod qobject {
 
         /// Whether a pause is still running (the screenshot waits for none).
         #[qinvokable]
-        #[cxx_name = "pending"]
         fn pending(self: &Shell) -> bool;
 
         /// Shutdown: the pending saves run now (the session and the row height are kept).
         #[qinvokable]
-        #[cxx_name = "flush"]
         fn flush(self: Pin<&mut Shell>);
 
         /// A rating, asked for on an item (the viewer's keys and buttons).
         #[qinvokable]
-        #[cxx_name = "rate"]
         fn rate(self: Pin<&mut Shell>, item: i32, rating: i32);
 
         /// A quarter turn of an item (the viewer's keys and buttons): 1 clockwise, -1 counterclockwise.
         #[qinvokable]
-        #[cxx_name = "turn"]
         fn turn(self: Pin<&mut Shell>, item: i32, turns: i32);
 
         /// Toggle an item's border mark (the test hooks and the grid's key).

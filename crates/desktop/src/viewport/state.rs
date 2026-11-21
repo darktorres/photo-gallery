@@ -5,7 +5,7 @@ use pg_client::viewport::View;
 /// The view, and the values of its properties (kept in step by `sync`, so the bindings update).
 #[expect(
     unreachable_pub,
-    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct ViewportRust {
     pub(super) view: View,

@@ -63,7 +63,7 @@ enum Found {
     Made(Vec<u8>),
     /// The original can't be read (offline), or doesn't decode. The height of the best smaller thumbnail the cache keeps
     /// of the file as it is, if it was read into the caller's buffer.
-    Offline(Error, Option<ThumbHeight>),
+    Unavailable(Error, Option<ThumbHeight>),
 }
 
 /// A thumbnail, as [`Images::thumbnail`] finds it.
@@ -157,7 +157,7 @@ impl Images {
                 });
             }
         }
-        Found::Offline(error, kept)
+        Found::Unavailable(error, kept)
     }
 
     /// The error a thumbnail of the file as `src` has is, if it failed to decode lately as it is now.
@@ -210,7 +210,7 @@ impl Images {
         let mut smaller = None;
         if let Some(n) = named {
             match self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)? {
-                Some(h) if h >= height => return Ok(kept(n.turns, h)),
+                Some(h) if h >= height => return Ok(kept(n.pending_turns, h)),
                 Some(h) => smaller = Some(h),
                 None => {}
             }
@@ -234,7 +234,7 @@ impl Images {
             };
             // A file that failed to decode as it is now fails the same way: it is not decoded again.
             if let Some(text) = self.recent_failure(file_id, src) {
-                return Ok(Found::Offline(Error::Undecodable(text), kept_smaller));
+                return Ok(Found::Unavailable(Error::Undecodable(text), kept_smaller));
             }
             // The file's disk path, which std and FFmpeg reach exactly.
             let path = path_of(&src.path);
@@ -253,21 +253,21 @@ impl Images {
             };
             Ok(match made {
                 Ok(made) => Found::Made(made),
-                Err(MakeError::Unreadable(e)) => Found::Offline(original(e), kept_smaller),
+                Err(MakeError::Unreadable(e)) => Found::Unavailable(original(e), kept_smaller),
                 Err(e @ MakeError::Undecodable(_)) => self.undecodable(file_id, src, e, kept_smaller),
             })
         })?;
-        let turns = src.state.turns;
+        let turns = src.state.pending_turns;
         match found {
             Found::Kept(h) => Ok(kept(turns, h)),
-            Found::Offline(_, Some(h)) => Ok(kept(turns, h)),
+            Found::Unavailable(_, Some(h)) => Ok(kept(turns, h)),
             Found::Made(made) => {
                 // A file whose thumbnail failed (in a pass, or here) and is made now leaves the ledger.
                 self.inbox.thumb_made(file_id);
                 let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
                 Ok(Thumbnail { turns, made: Some((made, Keep { file_id, height, source })), kept_at: None })
             }
-            Found::Offline(e, None) => {
+            Found::Unavailable(e, None) => {
                 let Some(n) = named else { return Err(e) };
                 let at = match smaller {
                     Some(h) => Some(h),
@@ -275,7 +275,7 @@ impl Images {
                     None => self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)?,
                 };
                 match at {
-                    Some(h) => Ok(kept(n.turns, h)),
+                    Some(h) => Ok(kept(n.pending_turns, h)),
                     None => Err(e),
                 }
             }
@@ -335,7 +335,7 @@ impl Images {
     /// viewer's neighbours are preloaded as fits, so keeping those would push out the decode the image on screen zooms in
     /// on.
     fn decode(&self, file_id: FileId, src: &FileSource, view: View) -> Result<(Arc<Shown>, Option<Decoded>)> {
-        let rotation = src.state.rotation.plus(src.state.turns);
+        let rotation = src.state.rotation.plus(src.state.pending_turns);
         {
             let last = self.last_decodes.lock().unwrap_or_else(PoisonError::into_inner);
             if let Some(d) = last.iter().find(|d| {

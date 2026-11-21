@@ -4,6 +4,12 @@ members = ["crates/*"]
 
 [workspace.package]
 edition = "2024"
+# The oldest toolchain the code needs: let-chains are stable from 1.88 on edition 2024, and `File::try_lock` and
+# `try_lock_shared` (the `.live` holds, `pg-dbfile`) are stable from 1.89. Each member inherits it with
+# `rust-version.workspace = true`. Verify the number with `cargo msrv verify` when the toolchain changes.
+# The SQLite floor is 3.38: `unixepoch()` (the catalog's and thumbcache's timestamps) is 3.38, and `UPDATE ... RETURNING`
+# (3.35) is in use too. The bundled SQLite (rusqlite's) meets it; only a system SQLite would need checking against it.
+rust-version = "1.89"
 version = "0.1.0-dev"
 publish = false
 
@@ -14,7 +20,7 @@ bindgen = { version = "0.73", default-features = false, features = ["runtime"] }
 blake3 = "1"
 clap = { version = "4", features = ["derive", "env"] }
 crc32fast = "1"
-crossbeam-channel = "0.5"
+crossbeam-channel = "0.5" # the jobs pipeline's multi-consumer queues only; std::sync::mpsc everywhere else
 cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-build = "0.10"

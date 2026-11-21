@@ -9,6 +9,7 @@
 //
 // The handler is part of the view, not a component put in one, so it reaches the view by its id: the QML compiler
 // compiles that to C++, where it can't for a Flickable found at run time (its members aren't final).
+pragma ComponentBehavior: Bound
 import QtQuick
 
 ListView {
@@ -46,7 +47,7 @@ ListView {
             list.wheelScrolled();
             return;
         }
-        scroller.destination = clampContentY(scroller.destination - angleY / 120 * Application.styleHints.wheelScrollLines * wheelLineHeight);
+        scroller.destination = clampContentY(scroller.destination - angleY / Wheel.notch * Application.styleHints.wheelScrollLines * wheelLineHeight);
         if (!frames.running) {
             scroller.written = contentY;
             frames.start();

@@ -3,7 +3,7 @@
 # The sample folder must be on a Windows drive (drvfs): by default target/pg-test/probe-wsl2 in the checkout this
 # script belongs to, so run it from a checkout under /mnt/<drive>. PG_PROBE_DIR overrides the parent folder.
 set -u
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DRV="${PG_PROBE_DIR:-$ROOT/target/pg-test}/probe-wsl2"
 mkdir -p "$DRV"
 echo "drvfs fs: $(stat -f -c %T "$DRV")"

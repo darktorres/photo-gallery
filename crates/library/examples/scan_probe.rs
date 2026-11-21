@@ -22,7 +22,7 @@ use pg_platform::native::PATH_RULES;
 fn main() -> Result<()> {
     let folder = PathBuf::from(std::env::args_os().nth(1).context("usage: scan_probe <library folder>")?);
     let again = std::env::var_os("PG_PROBE_AGAIN").is_some();
-    let dir = pg_testkit::run_folder("scratch_scan_probe", "scan-probe")?;
+    let dir = pg_testkit::run_folder("scratch_library", "scan-probe")?;
     run(&folder, &dir.join("catalog.sqlite"), again)
 }
 

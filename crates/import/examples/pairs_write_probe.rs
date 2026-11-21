@@ -29,14 +29,14 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
+use pg_import::pairs::{CACHE_KIB, WRITE};
 use rusqlite::types::Value;
 use rusqlite::{Connection, params};
 
-/// The catalog's connection settings (`schema::SETTINGS`), with the pass's cache (`pg_import::pairs::CACHE_KIB`).
+/// The catalog's connection settings: a copy of `schema::SETTINGS`, which is crate-private, without its cache. The
+/// pass's cache (`CACHE_KIB`, from `pg_import::pairs`) is set in `open`, after these.
 const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
-     PRAGMA cache_size = -16384; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
-/// The owed pictures per write transaction (`pg_import::pairs::WRITE`).
-const WRITE: usize = 2_000;
+     PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
 /// `PairsWriter`'s statements.
 const PAIR: &str = "INSERT INTO pdq_pairs(a, b, distance)
      SELECT ?1, ?2, ?3
@@ -100,7 +100,7 @@ fn main() -> Result<()> {
         }
     }
     let mut out = std::io::stdout().lock();
-    writeln!(out, "variant: statements, commits, total (median of {runs} runs, ms); WAL after (MB)")?;
+    writeln!(out, "variant: statements, commits, total (ms), WAL after (MiB); median of {runs} runs")?;
     for variant in &variants {
         let Some(t) = times.get(variant) else { continue };
         let ms = |f: &dyn Fn(&(Duration, Duration, u64)) -> f64| median(t.iter().map(f).collect());
@@ -124,6 +124,7 @@ fn wal_of(db: &Path) -> PathBuf {
 fn open(db: &Path) -> Result<Connection> {
     let conn = Connection::open(db)?;
     conn.execute_batch(SETTINGS)?;
+    conn.pragma_update(None, "cache_size", -i64::from(CACHE_KIB))?;
     rusqlite::vtab::array::load_module(&conn)?;
     Ok(conn)
 }
@@ -149,8 +150,8 @@ fn show_plans(conn: &Connection) -> Result<()> {
     for sql in [SET_READ, SET_DELETE] {
         let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))?;
         let plan: Vec<String> = stmt.query_map([&ids], |r| r.get::<_, String>(3))?.collect::<rusqlite::Result<_>>()?;
-        let verb = sql.split_whitespace().next().unwrap_or("");
-        writeln!(std::io::stdout(), "plan of {verb}: {}", plan.join("; "))?;
+        let head: String = sql.split_whitespace().take(4).collect::<Vec<_>>().join(" ");
+        writeln!(std::io::stdout(), "plan of {head}: {}", plan.join("; "))?;
     }
     Ok(())
 }

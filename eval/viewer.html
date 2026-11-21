@@ -162,7 +162,8 @@ const PAGE = 60;
 const state = { runs: [], run: null, tab: "summary", model: null, rows: [], view: [], shown: 0, marks: {}, open: -1,
   side: 0, swapSide: null };
 // Same key as viewer.py's pair_key: marks are per unordered pair of images, across sets and reruns.
-const pairKey = (r) => [r.path_a, r.path_b].sort().join("|");
+const keyOf = (a, b) => [a, b].sort().join("|");
+const pairKey = (r) => keyOf(r.path_a, r.path_b);
 const markOf = (r) => state.marks[pairKey(r)] ?? null;
 // The verifier's decision in mark terms ("match" = same picture, incl. edits).
 const decisionMark = (r) => ({ match: "same", unrelated: "different" })[r.decision] ?? null;
@@ -604,7 +605,6 @@ const gstate = { data: null, view: [], shown: 0, open: -1, member: 0, prev: null
 // Sets: as many as the group has images. Named A, B, C... (then 27, 28...), colored by the golden angle.
 const setName = (k) => (k < 26 ? String.fromCharCode(65 + k) : String(k + 1));
 const setStyle = (k) => `--set: hsl(${(200 + k * 137.5) % 360} 75% 65%)`;
-const keyOf = (a, b) => [a, b].sort().join("|");
 
 async function renderGroups() {
   if (!state.model) { $("content").replaceChildren(el("p", { class: "empty" }, "No groups in this run: run group.py.")); return; }

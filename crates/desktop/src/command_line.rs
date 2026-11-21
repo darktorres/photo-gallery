@@ -230,10 +230,10 @@ fn read_of(args: &[OsString], dev_env: Option<&OsStr>) -> Read {
     }
     let start = StartOptions {
         query: typed(&parsed, "query", &mut bad, |t| {
-            pg_app::views::query_from_json(t).map_err(|e| format!("does not read as a query: {e}"))
+            pg_app::views::query_from_json(t).map_err(|e| format!("is not a query: {e}"))
         }),
         sort: typed(&parsed, "sort", &mut bad, |t| {
-            pg_app::views::sort_from_json(t).map_err(|e| format!("does not read as a sort: {e}"))
+            pg_app::views::sort_from_json(t).map_err(|e| format!("is not a sort: {e}"))
         }),
         apply_view: text_of(&parsed, "apply-view", &mut bad).map(str::to_owned),
         size: typed(&parsed, "size", &mut bad, |t| {
@@ -243,7 +243,7 @@ fn read_of(args: &[OsString], dev_env: Option<&OsStr>) -> Read {
         show_borders: typed(&parsed, "borders", &mut bad, flag),
         dev_mode: typed(&parsed, "dev", &mut bad, flag).or_else(|| env_flag(dev_env, &mut bad)),
     };
-    let hooks = Hooks {
+    let mut hooks = Hooks {
         select: typed(&parsed, "select", &mut bad, index),
         view: typed(&parsed, "view", &mut bad, index),
         zoom: typed(&parsed, "zoom", &mut bad, |t| number(t).and_then(positive)),
@@ -260,10 +260,7 @@ fn read_of(args: &[OsString], dev_env: Option<&OsStr>) -> Read {
         .is_some(),
         library: typed(&parsed, "library", &mut bad, flag).unwrap_or(false),
         save_view: typed(&parsed, "save-view", &mut bad, flag).unwrap_or(false),
-        yandex_preview: typed(&parsed, "yandex-preview", &mut bad, index).filter(|_| {
-            // Only a search's result can be shown at full size: without --find-similar, the option says nothing.
-            has_option(&parsed, "find-similar")
-        }),
+        yandex_preview: typed(&parsed, "yandex-preview", &mut bad, index),
         log: typed(&parsed, "log", &mut bad, flag).unwrap_or(false),
         inbox: typed(&parsed, "inbox", &mut bad, flag).unwrap_or(false),
         inbox_expand: text_of(&parsed, "inbox-expand", &mut bad).map(str::to_owned),
@@ -275,8 +272,10 @@ fn read_of(args: &[OsString], dev_env: Option<&OsStr>) -> Read {
         .is_some(),
         wait: typed(&parsed, "wait", &mut bad, |t| number(t).and_then(positive)).unwrap_or(10.0),
     };
+    // Only a search's result can be shown at full size: without --find-similar, the option is named bad and dropped.
     if has_option(&parsed, "yandex-preview") && !has_option(&parsed, "find-similar") {
         bad.push(BadOption::new("--yandex-preview", "needs --find-similar; ignored"));
+        hooks.yandex_preview = None;
     }
     Read { start, hooks, bad }
 }

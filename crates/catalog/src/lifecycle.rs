@@ -1,17 +1,18 @@
 //! The catalog file's locks and open holds, the path rules it was made under, and the version marks that
-//! `Catalog::prepare` checks and sets. The rebuild is `rebuild`'s, the work lists `work`'s. Uses `types` and `error`; its
-//! SQL macros are from `sql`.
+//! `Catalog::prepare` checks and sets. The rebuild is `rebuild`'s, the work lists `work`'s. Uses `types`, `error`,
+//! `progress` (the free space check), `transaction` and `ledger` (the failures' relisting); its SQL macros are from `sql`.
 
 use std::path::Path;
 
-use anyhow::{Context, anyhow};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
+use anyhow::Context;
+use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use pg_model::media::Ext;
 use pg_model::rules::PathRules;
 
 use crate::error::{Error, Result};
 use crate::progress::FreeSpace;
+use crate::transaction::write_transaction;
 use crate::types::{TAKEN_ZONE_QUERY, key_version_text, rules_name};
 use pg_model::name::Name;
 use std::collections::BTreeMap;
@@ -35,7 +36,10 @@ pub(crate) fn rules_mismatch(conn: &Connection, rules: PathRules) -> rusqlite::R
 pub(crate) fn check_rules(conn: &Connection, path: &Path, rules: PathRules) -> Result<()> {
     match rules_mismatch(conn, rules)? {
         None => Ok(()),
-        Some(detail) => Err(Error::PathRules { path: path.display().to_string(), detail, wanted: rules_name(rules) }),
+        Some(detail) => Err(Error::Refused {
+            path: path.display().to_string(),
+            reason: Box::new(crate::error::Refusal::PathRules { detail, wanted: rules_name(rules) }),
+        }),
     }
 }
 
@@ -45,7 +49,7 @@ pub(crate) fn check_rules(conn: &Connection, path: &Path, rules: PathRules) -> R
 pub(crate) fn take_lock(path: &Path) -> Result<pg_dbfile::Lock> {
     match pg_dbfile::Lock::take(path) {
         Ok(Some(lock)) => Ok(lock),
-        Ok(None) => Err(Error::Other(anyhow!("catalog {}: another process is preparing it", path.display()))),
+        Ok(None) => Err(Error::Held { path: path.display().to_string(), what: "another process is preparing it" }),
         // The lock file is made beside the catalog, so a folder that can't be written refuses it by name.
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(refuse_read_only(path)),
         Err(e) => Err(anyhow::Error::new(e).context(format!("catalog {}: its lock file", path.display())).into()),
@@ -74,7 +78,7 @@ pub(crate) fn in_use(path: &Path) -> Error {
 pub(crate) fn take_shared(path: &Path) -> Result<pg_dbfile::Live> {
     pg_dbfile::Live::shared(path)
         .with_context(|| format!("catalog {}: its open marker", path.display()))?
-        .ok_or_else(|| Error::Other(anyhow!("catalog {}: another program is changing it", path.display())))
+        .ok_or_else(|| Error::Held { path: path.display().to_string(), what: "another program is changing it" })
 }
 
 /// Which way an integer mark moved, against the catalog's own (3.4): `Raised` when the catalog's mark is older than this
@@ -117,7 +121,7 @@ fn set_mark_i64(
     if first == MarkChange::Same {
         return Ok(first);
     }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    let tx = write_transaction(conn)?;
     let change = direction(stored(&tx)?, current);
     if change != MarkChange::Same {
         tx.execute(
@@ -175,7 +179,7 @@ where
     if stored(conn)?.as_ref() == Some(current) {
         return Ok(());
     }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    let tx = write_transaction(conn)?;
     if stored(&tx)?.as_ref() != Some(current) {
         tx.execute(
             "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -276,14 +280,15 @@ pub(crate) fn ensure_room_to_migrate(path: &Path, free_space: Option<&FreeSpace<
         return Ok(());
     }
     let mb = |bytes: u64| bytes.div_ceil(1_000_000);
-    Err(Error::Other(anyhow!(
-        "catalog {}: bringing it to this build's version needs {} MB free on its drive (a copy aside and the \
-         migration's log), and {} MB are: free some space and start again",
-        path.display(),
-        mb(len.saturating_mul(MIGRATION_ROOM)),
-        mb(free.unwrap_or(0))
-    )))
+    Err(Error::MigrationRoom {
+        path: path.display().to_string(),
+        needed: mb(len.saturating_mul(MIGRATION_ROOM)),
+        free: mb(free.unwrap_or(0)),
+    })
 }
+
+/// What the warnings of a `VACUUM` that didn't run say about its retry.
+const RETRY_AT_START: &str = "it is tried again at the next start";
 
 /// The `VACUUM` a migration left owed (`meta.vacuum_owed`, schema version 13's), after its commit: the WAL is merged
 /// first, the file is rewritten without the dropped columns' pages, and the WAL is merged again, then the mark is
@@ -303,11 +308,8 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
         let (len, free) = size_and_free(path);
         if !has_room(len, free, VACUUM_ROOM) {
             pg_log::warn(
-                "migration",
-                &format!(
-                    "catalog {}: no room to compact it after its migration; it is tried again at the next start",
-                    path.display()
-                ),
+                "catalog",
+                &format!("catalog {}: no room to compact it after its migration; {RETRY_AT_START}", path.display()),
             );
             return Ok(());
         }
@@ -323,10 +325,8 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
         Err(e) => {
             let name = path.map_or_else(|| ":memory:".to_string(), |p| p.display().to_string());
             pg_log::warn(
-                "migration",
-                &format!(
-                    "catalog {name}: compacting it after its migration failed ({e}); it is tried again at the next start"
-                ),
+                "catalog",
+                &format!("catalog {name}: compacting it after its migration failed ({e:#}); {RETRY_AT_START}"),
             );
             Ok(())
         }
@@ -406,9 +406,9 @@ pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<usize> {
 /// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], one [`set_mark`].
 pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<MarkChange> {
     set_mark_i64(conn, "thumbs_version", current, |tx, _| {
-        tx.execute_batch(next_seq!())?;
-        tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?;
-        tx.execute("DELETE FROM file_failures WHERE pass = 'thumbs'", [])?;
+        crate::ledger::relist_failures(tx, "thumbs", |tx| {
+            Ok(tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?)
+        })?;
         Ok(())
     })
 }
@@ -471,7 +471,7 @@ mod key_version_tests {
 
     /// A catalog at `name` with one folder and two files, and the keys they were stored with.
     fn catalog_with_files(name: &str) -> (std::path::PathBuf, Vec<Vec<u8>>) {
-        let dir = pg_testkit::run_folder("scratch_key_version", name).unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", name).unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
         state::add_scan(&c, 1, "D:\\p").unwrap();
@@ -493,7 +493,7 @@ mod key_version_tests {
     #[test]
     fn a_lowered_import_mark_is_set_back() {
         use pg_model::versions::IMPORT_VERSION;
-        let dir = pg_testkit::run_folder("scratch_key_version", "lowered-import").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "lowered-import").unwrap();
         let path = dir.join("catalog.sqlite");
         let newer = crate::Versions { import: IMPORT_VERSION + 1, ..versions() };
         drop(Catalog::prepare(&path, newer, PATH_RULES).unwrap());
@@ -557,7 +557,7 @@ mod key_version_tests {
     #[test]
     fn a_large_catalog_has_its_stale_keys_recomputed() {
         const FILES: i64 = 200_000;
-        let dir = pg_testkit::run_folder("scratch_key_version", "large").unwrap();
+        let dir = pg_testkit::run_folder("scratch_catalog", "large").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
         state::add_scan(&c, 1, "D:\\p").unwrap();
@@ -624,7 +624,7 @@ mod tests {
     use crate::work::pending_import_sql;
     use pg_model::notice::Carried;
 
-    use crate::{Catalog, Error, Result, ScannedFile};
+    use crate::{Catalog, Result, ScannedFile};
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::Taken;
     use pg_model::ids::{FileId, FileIdentity, FolderId};
@@ -677,7 +677,7 @@ mod tests {
         let wal = std::fs::metadata(dir.join("catalog.sqlite-wal")).map(|m| m.len()).unwrap_or(0);
         assert_eq!(wal, 0, "the WAL `pairs_again` wrote is still in the -wal file");
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // The layout tests below read the file on disk through their own connection (`raw::on_disk`): what they check
@@ -765,7 +765,7 @@ mod tests {
         drop(moved);
         drop(disk);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A catalog that differs from this build's schema only by an index it shouldn't have is rebuilt with its rows: the
@@ -808,7 +808,7 @@ mod tests {
         assert_eq!(c.roots().unwrap().len(), 1);
         drop(disk);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -821,7 +821,7 @@ mod tests {
     // by its exact bytes.
     #[cfg(unix)]
     #[test]
-    fn a_catalog_in_a_folder_with_a_name_that_is_not_utf8_keeps_its_rows() {
+    fn a_catalog_in_a_folder_with_a_name_that_is_not_utf8_keeps_its_rows_on_unix() {
         use std::os::unix::ffi::OsStringExt;
         let base = run_folder(SCRATCH, "odd-folder-name").unwrap();
         let dir = base.join(std::ffi::OsString::from_vec(b"odd-\xFF".to_vec()));
@@ -847,7 +847,7 @@ mod tests {
     /// carry attaches the old file by name), through the alias its caller opens it by (`pg_platform::sqlite::openable_folder`).
     #[cfg(windows)]
     #[test]
-    fn a_catalog_in_a_folder_without_a_utf8_name_is_opened_and_carried_through_an_alias() {
+    fn a_catalog_in_a_folder_without_a_utf8_name_is_opened_and_carried_through_an_alias_on_windows() {
         let dir = run_folder(SCRATCH, "odd-folder").unwrap();
         let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cat\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
@@ -877,7 +877,7 @@ mod tests {
         assert!(c.rebuilt().is_some(), "moved aside, and its rows carried");
         drop(c);
         assert!(folder.join("catalog.sqlite").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Rows stored under other rules are not carried into a catalog of these: their paths don't read as its own.
@@ -895,7 +895,7 @@ mod tests {
         assert_eq!(r.carried, Carried::Nothing { reason: "made with the windows path rules".to_string() });
         assert!(c.roots().unwrap().is_empty());
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside(rules: PathRules) {
@@ -940,7 +940,7 @@ mod tests {
         assert!(dir.join("catalog.sqlite.replaced").exists());
         drop(disk);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -979,7 +979,7 @@ mod tests {
         drop(Catalog::prepare(&path, versions(), rules).unwrap());
         assert!(dir.join("catalog.sqlite.replaced.1").exists());
         assert!(dir.join("catalog.sqlite.replaced").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1009,7 +1009,7 @@ mod tests {
         drop(moved);
         // The new catalog records its rules, so it opens again.
         drop(Catalog::prepare(&path, versions(), rules).unwrap());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1036,9 +1036,10 @@ mod tests {
         drop(Catalog::prepare(&path, versions(), PathRules::Windows).unwrap());
         // Another build's rules: its paths would read as other paths. The catalog is valid, so it is refused, not moved.
         let e = Catalog::open(&path, PathRules::Posix).err().expect("refused");
-        assert!(matches!(e, Error::PathRules { .. }), "{e:?}");
+        assert!(matches!(e.refusal(), Some((_, crate::error::Refusal::PathRules { .. }))), "{e:?}");
         assert!(e.to_string().contains("on the platform that made it"), "{e}");
-        assert!(matches!(Catalog::prepare(&path, versions(), PathRules::Posix), Err(Error::PathRules { .. })));
+        let again = Catalog::prepare(&path, versions(), PathRules::Posix).err().expect("refused");
+        assert!(matches!(again.refusal(), Some((_, crate::error::Refusal::PathRules { .. }))), "{again:?}");
         assert!(!dir.join("catalog.sqlite.replaced").exists());
         // Its rules row gone is not this build's schema: it is moved aside, and the new catalog is made.
         raw::on_disk(&path).execute("DELETE FROM meta WHERE key = 'path_rules'", []).unwrap();
@@ -1046,7 +1047,7 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         assert!(c.rebuilt().is_some());
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1101,7 +1102,7 @@ mod tests {
         assert!(again.rebuilt().is_none());
         drop(again);
         assert!(!dir.join("catalog.sqlite.replaced").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1125,7 +1126,7 @@ mod tests {
             assert!(why.contains(named), "{name}: {why}");
             assert!(is_current(&raw::on_disk(&path)).unwrap());
             drop(c);
-            std::fs::remove_dir_all(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
@@ -1149,7 +1150,7 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(c.rebuilt().is_none(), "a comment moved the catalog aside");
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1205,7 +1206,7 @@ mod tests {
         assert_eq!(counts.total, 1);
         assert!(counts.exts.iter().all(|(ext, _)| ext != "xyz"), "{:?}", counts.exts);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1273,7 +1274,7 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(present(&c, "a.jpg"), "this build's set: not looked for");
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1296,7 +1297,7 @@ mod tests {
         assert_eq!(kept.query_row("SELECT x FROM notes", [], |r| r.get::<_, i64>(0)).unwrap(), 5);
         drop(kept);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1310,10 +1311,10 @@ mod tests {
         let path = dir.join("catalog.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
-        assert_eq!(rebuilt_why(&c).as_deref(), Some("not a database"));
+        assert_eq!(rebuilt_why(&c).as_deref(), Some("not a catalog"));
         assert_eq!(std::fs::read(dir.join("catalog.sqlite.replaced")).unwrap(), vec![b'x'; 8192]);
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1330,7 +1331,7 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert_eq!(rebuilt_why(&c).as_deref(), Some("application id 7, not a catalog's"));
         drop(c);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1346,7 +1347,7 @@ mod tests {
         raw::on_disk(&path).execute_batch("CREATE TABLE extra(x INTEGER);").unwrap();
         let e = Catalog::open(&path, rules).err().expect("refused");
         assert!(e.to_string().contains("extra"), "{e}");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1367,7 +1368,7 @@ mod tests {
             .collect();
         let moved: Vec<bool> = threads.into_iter().map(|t| t.join().unwrap().unwrap()).collect();
         assert_eq!(moved.iter().filter(|m| **m).count(), 1, "{moved:?}");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     under_both_rules!(
@@ -1388,6 +1389,10 @@ mod tests {
         a_memory_catalog_takes_no_lock_file_posix
     );
 
+    /// A fingerprint in the real format (`TAKEN_ZONE_QUERY`: four offsets in seconds) that no zone has: every offset is past
+    /// the widest real one, 14 hours (50400 s).
+    const NO_ZONE: &str = "-99999,-99999,-99999,-99999";
+
     fn a_changed_zone_computes_utc_taken_times_again_from_their_instants(rules: PathRules) {
         let (mut c, _) = one_file(rules);
         let item = next_work(&c);
@@ -1397,7 +1402,7 @@ mod tests {
         // A `taken` left from another zone, and a fingerprint no zone has (a UTC system's own is "0,0,0,0", so a
         // numeric stand-in could match it and hide the change): the next prepare recomputes it.
         c.conn.execute("UPDATE analysis SET taken = 0 WHERE file_id = 1", []).unwrap();
-        c.conn.execute("UPDATE meta SET value = 'another-zone' WHERE key = 'taken_zone'", []).unwrap();
+        c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [NO_ZONE]).unwrap();
         set_taken_zone(&c.conn).unwrap();
         assert_eq!(taken_columns(&c), (Some(local_of(&c, instant)), Some(instant)));
         let current: String = c.conn.query_row(TAKEN_ZONE_QUERY, [], |r| r.get(0)).unwrap();
@@ -1417,7 +1422,7 @@ mod tests {
         let (mut c, _) = one_file(rules);
         let item = next_work(&c);
         store_taken(&mut c, &item, Some(Taken::Wall(1_700_000_000)));
-        c.conn.execute("UPDATE meta SET value = 'another-zone' WHERE key = 'taken_zone'", []).unwrap();
+        c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [NO_ZONE]).unwrap();
         set_taken_zone(&c.conn).unwrap();
         assert_eq!(taken_columns(&c), (Some(1_700_000_000), None));
     }
@@ -1503,6 +1508,6 @@ mod tests {
         let owed: i64 = other.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
         assert_eq!(owed, 0, "done once nothing holds the file");
         drop(other);
-        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

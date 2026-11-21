@@ -31,11 +31,10 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
+use pg_import::pairs::CACHE_KIB;
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, OpenFlags};
 
-/// The pass's cache (`pg_import::pairs::CACHE_KIB`), in KiB.
-const CACHE_KIB: i64 = 16 * 1024;
 /// The load's one statement before the pairing plan's second round, step 8 (`work.rs` at `459c8e0`): each analysis
 /// joined to its file and its owed row.
 const PAIRING_WORK: &str =
@@ -96,7 +95,7 @@ fn main() -> Result<()> {
     }
     drop(catalog);
     let mut out = std::io::stdout().lock();
-    writeln!(out, "variant: wall (ms), cycles (M), median of {runs} runs; rows")?;
+    writeln!(out, "variant: wall (ms), cycles (M), rows; median of {runs} runs")?;
     for variant in &variants {
         let Some(t) = times.get(variant) else { continue };
         let wall = median(t.iter().map(|x| x.0.as_secs_f64() * 1e3).collect());
@@ -110,10 +109,10 @@ fn main() -> Result<()> {
 }
 
 /// A read-only connection with a cache of `kib` KiB, as `Catalog::reader` opens one.
-fn open(db: &Path, kib: i64) -> Result<Connection> {
+fn open(db: &Path, kib: u32) -> Result<Connection> {
     let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
     conn.busy_timeout(Duration::from_secs(5))?;
-    conn.pragma_update(None, "cache_size", -kib)?;
+    conn.pragma_update(None, "cache_size", -i64::from(kib))?;
     Ok(conn)
 }
 
@@ -147,7 +146,7 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
     let start = Instant::now();
     let rows = match variant {
         "today" => {
-            let work = catalog.reader(u32::try_from(CACHE_KIB)?)?.pairing_work()?;
+            let work = catalog.reader(CACHE_KIB)?.pairing_work()?;
             work.ids.len() + work.legacy
         }
         "split" => {
@@ -156,7 +155,7 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
                 .and_then(|w| w.parse().ok())
                 .or_else(|| std::thread::available_parallelism().ok().map(std::num::NonZero::get))
                 .unwrap_or(1);
-            let work = catalog.reader(u32::try_from(CACHE_KIB)?)?.pairing_work_split(threads, &|| {})?;
+            let work = catalog.reader(CACHE_KIB)?.pairing_work_split(threads, &|| {})?;
             work.ids.len() + work.legacy
         }
         "open" => {

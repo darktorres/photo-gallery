@@ -1,6 +1,6 @@
 //! Test fixtures for the crates that test their files: a TIFF the tiff crate's encoder writes (BigTIFF, which `image`
 //! doesn't write), and an image turned by an EXIF orientation, which the edit's and the library's tests compare against.
-//! Built with the `fixtures` feature, which the crates' dev-dependencies enable.
+//! Built with the `fixture` feature, which the crates' dev-dependencies enable.
 
 use pg_model::orientation::Orientation;
 

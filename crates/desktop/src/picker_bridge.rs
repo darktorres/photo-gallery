@@ -48,7 +48,7 @@ pub mod qobject {
         #[qinvokable]
         fn pick(self: Pin<&mut FolderPicker>, purpose: i32);
 
-        /// The folder from the command line for `purpose` (`--add-folder=…` for 0, `--save-crops=…` for 1), chosen as the
+        /// The folder from the command line for `purpose` (`--add-folder=…` for `AddFolder`, `--save-crops=…` for `SaveCrops`), chosen as the
         /// dialog would choose it (`done`), with no dialog.
         #[qinvokable]
         #[cxx_name = "chooseCommandLine"]

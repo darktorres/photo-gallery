@@ -267,8 +267,8 @@ fn open_folder<L: Listing>(lister: &mut L, rules: PathRules, path: &RulePath) ->
     lister.open(&units_of(&rules.join(path)))
 }
 
-/// What a scan of a root did. The counts are for the report; `replaced_ids` and `temps` are for the caller to act on
-/// after the scan's commit (the thumbnails and the temp files of the replaced files).
+/// What a scan of a root did. The counts are for the report; `pairing`'s replaced rows and dropped temp files are for the
+/// caller to act on after the scan's commit (the thumbnails and the temp files of the replaced files).
 #[derive(Debug, Default)]
 pub struct ScanStats {
     pub folders: u64,
@@ -1344,7 +1344,6 @@ mod tests {
 
     /// Folders by their units, as the walk opens them: each one's path under the fake root, and its entries. A clone lists
     /// the same tree, with the same hooks: a worker's lister is one.
-    /// A fake tree: each folder by its units, its path under the fake root, and its entries.
     type Tree = Vec<(Vec<Unit>, String, Vec<FakeEntry>)>;
 
     #[derive(Clone)]
@@ -1487,10 +1486,6 @@ mod tests {
         }
     }
 
-    fn versions() -> pg_catalog::Versions {
-        pg_catalog::Versions::current()
-    }
-
     /// One scan of the fake tree into a catalog, under the catalog's rules.
     fn scan_fake<S: AsRef<str>>(catalog: &mut Catalog, tree: &[(S, Vec<FakeEntry>)], root_volume: u64) -> ScanStats {
         let rules = catalog.rules();
@@ -1501,7 +1496,8 @@ mod tests {
     }
 
     fn catalog() -> Catalog {
-        Catalog::prepare(Path::new(":memory:"), versions(), pg_platform::native::PATH_RULES).unwrap()
+        Catalog::prepare(Path::new(":memory:"), pg_catalog::Versions::current(), pg_platform::native::PATH_RULES)
+            .unwrap()
     }
 
     #[test]
@@ -1607,7 +1603,7 @@ mod tests {
     fn scanned_folders_list_their_files_in_the_grid(rules: PathRules) {
         use pg_model::query::{Query, Sort};
 
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), pg_catalog::Versions::current(), rules).unwrap();
         let tree = [
             ("", vec![folder("ΑΣ", 20), folder("ΟΔΥΣΣΕΥΣ", 21)]),
             ("ΑΣ", vec![file("a.jpg", 1, 1)]),
@@ -1738,7 +1734,7 @@ mod tests {
     fn on_disk(prefix: &str) -> std::path::PathBuf {
         let dir = pg_testkit::run_folder("scratch_scan", prefix).unwrap();
         let path = dir.join("catalog.sqlite");
-        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        let c = Catalog::prepare(&path, pg_catalog::Versions::current(), pg_platform::native::PATH_RULES).unwrap();
         assert!(c.add_root(&fake_root()).unwrap());
         path
     }
@@ -2002,7 +1998,10 @@ mod tests {
         let hook_path = path.clone();
         let mut lister = FakeListing::new(1, &tree).on_listing("sub", move || {
             // One newer than this build's: the import's version is bumped while the walk lists.
-            let bumped = pg_catalog::Versions { import: pg_model::versions::IMPORT_VERSION + 1, ..versions() };
+            let bumped = pg_catalog::Versions {
+                import: pg_model::versions::IMPORT_VERSION + 1,
+                ..pg_catalog::Versions::current()
+            };
             drop(Catalog::prepare(&hook_path, bumped, pg_platform::native::PATH_RULES).unwrap());
         });
         let stats = walk(&mut c, &fake_root(), &Control::new(), &mut lister).unwrap();
@@ -2126,8 +2125,6 @@ mod tests {
         assert_eq!((status.files, status.missing), (1, 0), "the row moved to b; no second row");
     }
 
-    /// Every write transaction of a walk of 200 000 files, the pairing and the missing marks included, holds the write
-    /// lock for at most this long (wall clock, in a debug build, whose SQLite is optimized: `profile.dev.package."*"`).
     /// A listing that outlasts the lease keeps it: each record renews it once `renew_every` has passed. A minute passes
     /// before the folder's first record; when its listing is done the lease is fresh, so another walk of the root is
     /// refused rather than let in on the old lease.
@@ -2173,6 +2170,8 @@ mod tests {
     /// pause inside a hold (seconds, or for ever) fails the test, and a slow machine doesn't.
     const HOLD_BOUND: Duration = Duration::from_secs(3);
 
+    /// Every write transaction of a walk of 200 000 files, the pairing and the missing marks included, holds the write
+    /// lock for at most this long (wall clock, in a debug build, whose SQLite is optimized: `profile.dev.package."*"`).
     #[test]
     fn no_write_transaction_of_a_200_000_file_walk_holds_the_lock_long() {
         let mut c = catalog();

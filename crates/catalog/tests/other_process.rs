@@ -9,19 +9,6 @@ use std::time::{Duration, Instant};
 use pg_catalog::{Catalog, Versions};
 use rusqlite::Connection;
 
-fn versions() -> Versions {
-    Versions::current()
-}
-
-/// Waits until `path` exists, for at most `within`.
-fn wait_for(path: &Path, within: Duration) {
-    let start = Instant::now();
-    while !path.exists() {
-        assert!(start.elapsed() < within, "{} never appeared", path.display());
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
 /// This test binary, run as a holder of the catalog at `path`: `open` holds it by opening the catalog, `exclusive` as a
 /// rebuild does, `post` opens it and posts [`posted`] to its inbox. It makes `ready` once it has, and keeps the hold
 /// until `release` exists.
@@ -29,19 +16,19 @@ fn spawn_holder(path: &Path, mode: &str, ready: &Path, release: &Path) -> std::i
     Command::new(std::env::current_exe()?)
         .args(["--exact", "holder"])
         .stdout(Stdio::null())
-        .env("PG_CATALOG_HOLDER", path)
-        .env("PG_CATALOG_MODE", mode)
-        .env("PG_CATALOG_READY", ready)
-        .env("PG_CATALOG_RELEASE", release)
+        .env("PG_HOLDER_PATH", path)
+        .env("PG_HOLDER_MODE", mode)
+        .env("PG_HOLDER_READY", ready)
+        .env("PG_HOLDER_RELEASE", release)
         .spawn()
 }
 
-/// Run only by `spawn_holder`: without `PG_CATALOG_HOLDER` it does nothing.
+/// Run only by `spawn_holder`: without `PG_HOLDER_PATH` it does nothing.
 #[test]
 fn holder() {
-    let Some(path) = std::env::var_os("PG_CATALOG_HOLDER") else { return };
+    let Some(path) = std::env::var_os("PG_HOLDER_PATH") else { return };
     let path = Path::new(&path);
-    let mode = std::env::var("PG_CATALOG_MODE").unwrap();
+    let mode = std::env::var("PG_HOLDER_MODE").unwrap();
     let _hold: Box<dyn std::any::Any> = if mode == "exclusive" {
         Box::new(pg_dbfile::Live::exclusive(path).unwrap().expect("the holder gets the rebuild's hold"))
     } else {
@@ -51,18 +38,18 @@ fn holder() {
         }
         Box::new(c)
     };
-    std::fs::write(std::env::var_os("PG_CATALOG_READY").unwrap(), b"").unwrap();
-    wait_for(Path::new(&std::env::var_os("PG_CATALOG_RELEASE").unwrap()), Duration::from_secs(60));
+    std::fs::write(std::env::var_os("PG_HOLDER_READY").unwrap(), b"").unwrap();
+    pg_testkit::wait_for_path(Path::new(&std::env::var_os("PG_HOLDER_RELEASE").unwrap()), Duration::from_secs(60));
 }
 
 #[test]
 fn a_catalog_open_in_another_process_is_not_rebuilt() {
     let dir: PathBuf = pg_testkit::run_folder("scratch_catalog", "other-process").unwrap();
     let path = dir.join("catalog.sqlite");
-    drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
+    drop(Catalog::prepare(&path, Versions::current(), pg_platform::native::PATH_RULES).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut other = spawn_holder(&path, "open", &ready, &release).unwrap();
-    wait_for(&ready, Duration::from_secs(60));
+    pg_testkit::wait_for_path(&ready, Duration::from_secs(60));
 
     // Opened beside the other process: both hold it shared.
     drop(Catalog::open(&path, pg_platform::native::PATH_RULES).unwrap());
@@ -72,13 +59,13 @@ fn a_catalog_open_in_another_process_is_not_rebuilt() {
     let edited = Connection::open(&path).unwrap();
     edited.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
     drop(edited);
-    let err = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).err().expect("refused");
+    let err = Catalog::prepare(&path, Versions::current(), pg_platform::native::PATH_RULES).err().expect("refused");
     assert!(format!("{err:#}").contains("has it open"), "{err:#}");
     assert!(!dir.join("catalog.sqlite.replaced").exists(), "nothing was moved aside");
 
     std::fs::write(&release, b"").unwrap();
     assert!(other.wait().unwrap().success(), "the holder ends");
-    let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+    let c = Catalog::prepare(&path, Versions::current(), pg_platform::native::PATH_RULES).unwrap();
     assert!(c.rebuilt().is_some(), "rebuilt once nothing else has it open");
 }
 
@@ -93,19 +80,19 @@ fn posted() -> pg_model::notice::Notice {
 fn a_notice_another_process_posts_is_seen() {
     let dir: PathBuf = pg_testkit::run_folder("scratch_catalog", "other-process-post").unwrap();
     let path = dir.join("catalog.sqlite");
-    let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+    let c = Catalog::prepare(&path, Versions::current(), pg_platform::native::PATH_RULES).unwrap();
     let before = c.data_version().unwrap();
     assert!(c.inbox_entries(10, false).unwrap().is_empty());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut other = spawn_holder(&path, "post", &ready, &release).unwrap();
-    wait_for(&ready, Duration::from_secs(60));
+    pg_testkit::wait_for_path(&ready, Duration::from_secs(60));
     assert_ne!(c.data_version().unwrap(), before, "another connection's commit moves it");
     let entries = c.inbox_entries(10, false).unwrap();
     assert_eq!(entries.iter().map(|e| e.notice.clone()).collect::<Vec<_>>(), [posted()]);
     std::fs::write(&release, b"").unwrap();
     assert!(other.wait().unwrap().success(), "the holder ends");
     drop(c);
-    std::fs::remove_dir_all(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// An open waits for a rebuild another process is making (it holds the catalog exclusively), and gets the catalog once
@@ -114,10 +101,10 @@ fn a_notice_another_process_posts_is_seen() {
 fn open_waits_for_a_rebuild_in_another_process() {
     let dir: PathBuf = pg_testkit::run_folder("scratch_catalog", "open-waits").unwrap();
     let path = dir.join("catalog.sqlite");
-    drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
+    drop(Catalog::prepare(&path, Versions::current(), pg_platform::native::PATH_RULES).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut rebuild = spawn_holder(&path, "exclusive", &ready, &release).unwrap();
-    wait_for(&ready, Duration::from_secs(60));
+    pg_testkit::wait_for_path(&ready, Duration::from_secs(60));
 
     // The other process lets go a second after the open starts.
     let releaser = std::thread::spawn({

@@ -44,7 +44,7 @@ foreach ($rep in 1..$Reps) {
             try {
                 $p.Refresh()
                 $ws = [Math]::Max($ws, $p.PeakWorkingSet64)
-                $commit = [Math]::Max($commit, $p.PeakPagedMemorySize64)
+                $commit = [Math]::Max($commit, $p.PrivateMemorySize64)
             } catch { }
             Start-Sleep -Milliseconds 15
         }
@@ -54,3 +54,4 @@ foreach ($rep in 1..$Reps) {
     }
 }
 if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
+Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_SLICE, Env:PG_PROBE_CACHE_KIB, Env:PG_PROBE_WORKERS -ErrorAction SilentlyContinue

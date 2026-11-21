@@ -26,8 +26,8 @@
 //   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
 //                       library job or write pending, no frame for a while), and quit; --wait=<s> is the most to wait
 //                       for that, 10 by default (src/screenshot.rs)
-// The options are read here. What they do to the window is signalled to Main, which makes the calls on the viewer and
-// the Rust objects. --query, --sort, --apply-view, --size, --filters, --borders and --dev shape the start in Rust
+// The options are read in Rust (`command_line.rs`), and given to this component as typed properties (see below). What
+// they do to the window is signalled to Main, which makes the calls on the viewer and the Rust objects. --query, --sort, --apply-view, --size, --filters, --borders and --dev shape the start in Rust
 // (controller.rs); the others act once the first list is shown (run, from startHooks()).
 pragma ComponentBehavior: Bound
 

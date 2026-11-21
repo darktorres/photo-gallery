@@ -215,12 +215,13 @@ mod tests {
             ("StepForward", Panel::Step { forward: true }),
             ("Pick", Panel::Pick),
         ];
-        for source in [include_str!("../qml/YandexPanel.qml"), include_str!("../qml/YandexPreview.qml")] {
-            let names = qml_enum(source, "PanelAction");
-            assert_eq!(names, expected.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>());
-            for (name, action) in expected {
-                assert_eq!(names[usize::try_from(panel_code(action)).unwrap()], name);
-            }
+        // YandexPanel.qml declares the enum; YandexPreview.qml uses it as `YandexPanel.PanelAction`.
+        let source = include_str!("../qml/YandexPanel.qml");
+        assert!(include_str!("../qml/YandexPreview.qml").contains("YandexPanel.PanelAction"));
+        let names = qml_enum(source, "PanelAction");
+        assert_eq!(names, expected.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>());
+        for (name, action) in expected {
+            assert_eq!(names[usize::try_from(panel_code(action)).unwrap()], name);
         }
     }
 

@@ -118,7 +118,8 @@ def main() -> None:
     def moved(blob: bytes) -> bytes:
         return bytes(x ^ y for x, y in zip(blob, current, strict=True))
 
-    dst.create_function("moved", 1, moved, deterministic=True)
+    # Not deterministic: its mask (`current`) changes between the copies, so the same blob gives different results.
+    dst.create_function("moved", 1, moved, deterministic=False)
     added = 0
     copy = 0
     dst.execute("BEGIN")

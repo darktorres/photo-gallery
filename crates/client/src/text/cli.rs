@@ -90,6 +90,15 @@ pub enum Line {
     NotInLibrary {
         root: String,
     },
+    /// A walk of `root` is refused: another walk of an overlapping folder is running (`holder` says whose).
+    ScanBusy {
+        root: String,
+        holder: String,
+    },
+    /// The library folder `root` was removed while its walk ran.
+    ScanRemoved {
+        root: String,
+    },
     MarkedAgain {
         count: String,
     },
@@ -268,6 +277,7 @@ pub enum Line {
     FileNotInCatalog {
         id: String,
     },
+    NoWindow,
 }
 
 impl Line {
@@ -288,6 +298,8 @@ impl Line {
             Line::Removed { .. } => "cli-removed",
             Line::RemovalKept { .. } => "cli-removal-kept",
             Line::NotInLibrary { .. } => "cli-not-in-library",
+            Line::ScanBusy { .. } => "cli-scan-busy",
+            Line::ScanRemoved { .. } => "cli-scan-removed",
             Line::MarkedAgain { .. } => "cli-marked-again",
             Line::ImportPending { .. } => "cli-import-pending",
             Line::ImportDone { .. } => "cli-import-done",
@@ -326,6 +338,7 @@ impl Line {
             Line::DupsGroups { .. } => "cli-dups-groups",
             Line::DupsGroup { .. } => "cli-dups-group",
             Line::FileNotInCatalog { .. } => "cli-file-not-in-catalog",
+            Line::NoWindow => "cli-no-window",
         }
     }
 
@@ -368,6 +381,8 @@ impl Line {
             Line::Removed { root, deleted } => vec![("root", root), ("deleted", deleted)],
             Line::RemovalKept { root, deferred } => vec![("root", root), ("deferred", deferred)],
             Line::NotInLibrary { root } => vec![("root", root)],
+            Line::ScanBusy { root, holder } => vec![("root", root), ("holder", holder)],
+            Line::ScanRemoved { root } => vec![("root", root)],
             Line::ImportPending { pending } => vec![("pending", pending)],
             Line::ImportDone { files, failed, changed, seconds } => {
                 vec![("files", files), ("failed", failed), ("changed", changed), ("seconds", seconds)]
@@ -456,7 +471,7 @@ impl Line {
                 vec![("distance", distance), ("groups", groups), ("files", files), ("largest", largest)]
             }
             Line::FileNotInCatalog { id } => vec![("id", id)],
-            Line::CacheFull | Line::CsvMissing | Line::StatusNoCache | Line::DupsPdq => Vec::new(),
+            Line::CacheFull | Line::CsvMissing | Line::StatusNoCache | Line::DupsPdq | Line::NoWindow => Vec::new(),
         }
     }
 
@@ -497,6 +512,8 @@ impl Line {
             Line::Removed { root: s(), deleted: s() },
             Line::RemovalKept { root: s(), deferred: s() },
             Line::NotInLibrary { root: s() },
+            Line::ScanBusy { root: s(), holder: s() },
+            Line::ScanRemoved { root: s() },
             Line::MarkedAgain { count: s() },
             Line::ImportPending { pending: s() },
             Line::ImportDone { files: s(), failed: s(), changed: s(), seconds: s() },
@@ -562,6 +579,7 @@ impl Line {
             Line::DupsGroups { distance: s(), groups: s(), files: s(), largest: s() },
             Line::DupsGroup { count: s() },
             Line::FileNotInCatalog { id: s() },
+            Line::NoWindow,
         ]
     }
 }
@@ -631,5 +649,7 @@ mod tests {
         );
         let tier = Line::DupsIdentical { tier: Tier::Pixels, groups: "2".into(), files: "5".into() };
         assert_eq!(line(&tier), "tier 0b identical pixels: 2 groups, 5 files");
+        let tier = Line::DupsIdentical { tier: Tier::File, groups: "3".into(), files: "7".into() };
+        assert_eq!(line(&tier), "tier 0a identical files: 3 groups, 7 files");
     }
 }

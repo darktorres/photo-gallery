@@ -30,7 +30,7 @@ So rustc checks the wrapper's seal. It does not check that every path to a sink 
 
 ### 2. Lints that enforce the boundary
 
-The repo already denies `as_conversions`, `cast_possible_truncation`, `cast_sign_loss` and `cast_possible_wrap` (`Cargo.toml`, lines 86 to 94). All 11 production `as` casts sit in `crates/model/src/num.rs`, each under `#[expect]`, so no silent `as` cast sits between the layers.
+The repo already denies `as_conversions`, `cast_possible_truncation`, `cast_sign_loss` and `cast_possible_wrap` (`Cargo.toml`, in `[workspace.lints.clippy]`). All 11 production `as` casts sit in `crates/model/src/num.rs`, each under `#[expect]`, so no silent `as` cast sits between the layers.
 
 `clippy.toml` already uses `disallowed-types` (for `HashMap`) and `disallowed-methods` (for `temp_dir`). The same mechanism can ban the wrapper's escape hatch. The probe checked that clippy flags the `into_inner` escape in three forms: a method call, a UFCS path call, and passing it as a fn value. Two limits:
 
@@ -49,7 +49,7 @@ Negative tests belong with the wrapper too. A `compile_fail` doctest for each fo
 
 ## Limits of all of these
 
-- `unsafe` code and FFI are not seen. About 245 lines across its crates open an `unsafe` block, function, impl or extern, including the cxx-qt bridge. `crates/metadata` has none.
+- `unsafe` code and FFI are not seen. A grep of the current tree finds 274 source lines under `crates/` that contain `unsafe` (lines, not the 472 lint hits in `CLIPPY_LEDGER.md`); they open an `unsafe` block, function, impl or extern, including the cxx-qt bridge. `crates/metadata` has none.
 - QML is untyped JavaScript. A value's journey stops at the Rust receiver.
 - A `serde` impl can build a domain type straight from input. That is safe only when the impl goes through the validator. `Rating` does (`#[serde(try_from = "u8")]`).
 - A derived `Serialize` on the wrapper would be a leak route. Not probed here; keep it off the wrapper.

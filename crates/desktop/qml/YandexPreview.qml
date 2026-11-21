@@ -16,14 +16,6 @@ Rectangle {
         id: words
     }
 
-    // The panel's actions, as the codes keymap.panelAction returns (the Rust side lists them in the same order).
-    enum PanelAction {
-        Close,
-        StepBack,
-        StepForward,
-        Pick
-    }
-
     // The result shown (its index in the search), -1 when none.
     property int item: -1
     property bool actual: false
@@ -67,7 +59,7 @@ Rectangle {
     // The whole notches a wheel movement of `angleY` makes, with the rest kept for the next movement. Up is negative
     // (the previous result), as in the viewer.
     function notchesFor(angleY: real): int {
-        preview.wheelNotches += angleY / 120;
+        preview.wheelNotches += angleY / Wheel.notch;
         const n = Math.trunc(preview.wheelNotches);
         preview.wheelNotches -= n;
         return n;
@@ -106,16 +98,16 @@ Rectangle {
         if (action < 0)
             return;
         switch (action) {
-        case YandexPreview.PanelAction.Close:
+        case YandexPanel.PanelAction.Close:
             preview.close();
             break;
-        case YandexPreview.PanelAction.StepBack:
+        case YandexPanel.PanelAction.StepBack:
             preview.step(-1);
             break;
-        case YandexPreview.PanelAction.StepForward:
+        case YandexPanel.PanelAction.StepForward:
             preview.step(1);
             break;
-        case YandexPreview.PanelAction.Pick:
+        case YandexPanel.PanelAction.Pick:
             preview.pickRequested(preview.item);
             break;
         }

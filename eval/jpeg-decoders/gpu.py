@@ -13,11 +13,10 @@ Run with the eval venv (torch with CUDA): python eval/jpeg-decoders/gpu.py FILE.
 import ctypes
 import io
 import os
-import statistics
 import sys
-import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # eval/: common's analysis rule
 os.environ["VIPS_CONCURRENCY"] = "1"  # before pyvips loads libvips
 
 import env
@@ -27,8 +26,10 @@ import torch
 from PIL import Image
 from torchvision.io import ImageReadMode, decode_jpeg
 
+from common import analysis_denom
+from timing import timed
+
 pyvips.cache_set_max(0)  # otherwise decoding the same buffer again is a cache hit
-BUDGET_S = 1.5
 MAX_BATCH_BYTES = 2.5e9  # decoded RGB per batch; the 2060 has 6 GB, ~1.4 GB in use by the desktop
 CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
 
@@ -43,24 +44,6 @@ def blocking_sync() -> None:
     if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
         raise RuntimeError(f"cuDevicePrimaryCtxSetFlags returned {rc} (the context is already active?)")
 
-
-def denom(w, h):
-    """pg-analysis's choice for analyze: the smallest 1/8, 1/4, 1/2 keeping long ≥ 512 and short ≥ 320."""
-    mw, mh = (512, 320) if w >= h else (320, 512)
-    return next((d for d in (8, 4, 2) if -(-w // d) >= mw and -(-h // d) >= mh), 1)
-
-
-def timed(fn, per_call=1):
-    """Median seconds per item, and process CPU seconds per item, over at least BUDGET_S of calls."""
-    for _ in range(3):
-        fn()
-    walls, cpu0, start, n = [], time.process_time(), time.perf_counter(), 0
-    while len(walls) < 5 or time.perf_counter() - start < BUDGET_S:
-        t = time.perf_counter()
-        fn()
-        walls.append((time.perf_counter() - t) / per_call)
-        n += per_call
-    return statistics.median(walls), (time.process_time() - cpu0) / n
 
 
 def pillow(data, d=1):
@@ -92,7 +75,7 @@ def main():
         name = Path(path).stem
         im = pillow(data)
         w, h = im.size
-        d = denom(w, h)
+        d = analysis_denom(w, h)
         ref = np.asarray(im.convert("RGB"), dtype=np.int16)
         cpu_tensor = torch.frombuffer(bytearray(data), dtype=torch.uint8)
 
@@ -103,7 +86,7 @@ def main():
         mse = float((diff.astype(np.float64) ** 2).mean())
         psnr = float("inf") if mse == 0 else 10 * np.log10(255**2 / mse)
 
-        print(f"\n{name}: {w}×{h} ({w * h / 1e6:.1f} MP), {len(data) / 1e3:.0f} KB")
+        print(f"\n{name}: {w}x{h} ({w * h / 1e6:.1f} MP), {len(data) / 1e3:.0f} KB")
         print(f"  nvJPEG vs Pillow: mean {diff.mean():.3f}, max {diff.max()}, {psnr:.1f} dB")
         for label, fn in [
             ("Pillow full", lambda data=data: pillow(data)),
@@ -130,7 +113,7 @@ def main():
 
             for label, fn in (("on GPU", on_gpu), ("to host", to_host)):
                 wall, cpu = timed(fn, batch)
-                rate = f"{1 / wall:7.0f} img/s"
+                rate = f"{1 / wall:7.0f} images/s"
                 print(f"  nvJPEG batch {batch:>2} {label:<8} {wall * 1e3:8.2f} ms/image   CPU {cpu * 1e3:7.2f} ms/image   {rate}")
             torch.cuda.empty_cache()
 

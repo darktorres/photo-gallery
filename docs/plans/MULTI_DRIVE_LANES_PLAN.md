@@ -11,14 +11,14 @@
 > | 1 Drives | `pg_platform::drive` (Windows extents, bus, seek penalty; Linux sysfs; union-find; `Opaque` for disks whose backing can't be seen; `Unknown` for buses that lie about seek penalty), and `pg_platform::memory` (physical RAM). | Linux nested mounts (a root holding another device). `Options::for_drive` and listing workers by `Kind`: no measured values yet, so no table. |
 > | 2 Catalog | `VolumeSet`, volume-filtered work lists (`CROSS JOIN` join order; `+f.volume` for the checkpoint), the thumbs checkpoint per `(height, volume)`, busy retry at `BEGIN IMMEDIATE`, `remove_root` in batches, `Catalog::volumes()` (a loose index scan, not a range scan). | None. |
 > | 3 Jobs | Lane child controls (own stop, pause and progress; shared global pause; tagged events; a per-lane pause that `Runner::set_lane_paused` sets and reads), `CpuGate` (wired by `Lanes::start`), `Budget` and `Governor` (each lane's budget split under the cap, rebalanced when a lane retires), and the pool reads its budget live. | Per-lane page-cache sizes: the connections keep their sizes. `Options::for_drive` and listing workers by kind: no measured values yet (R1). |
-> | 4 Library | `lanes::plan` (fail closed, unplugged roots get no lane, opaque drives share one), the coordinator (deadline probes, routing, retirement, crop parking, turned files routed to the lanes of their volumes through `Writer::take_turned`), per-lane stops, `LaneProgress` with drive labels, the serial escape hatch (`Features::serial_drives`, a pref), notices that name the drive (`UnreadableFiles.drives`), `tests/lanes.rs` (8 tests). | The pairing cooldown (its length is a measurement, R1). Linux nested mounts (Phase 1). The lane tests the tree lacks (L1, L2, L4, L6): see the ledger. |
+> | 4 Library | `lanes::plan` (fail closed, unplugged roots get no lane, opaque drives share one), the coordinator (deadline probes, routing, retirement, crop parking, turned files routed to the lanes of their volumes through `Writer::take_turned`), per-lane stops, `LaneProgress` with drive labels, the serial escape hatch (`Features::serial_drives`, a pref), notices that name the drive (`UnreadableFiles.drives`), `tests/lanes.rs` (9 tests). | The pairing cooldown (its length is a measurement, R1). Linux nested mounts (Phase 1). The lane tests the tree lacks (L1, L2, L4, L6): see the ledger. |
 > | 5 CLI | `gallery` scan, import and thumbs run one lane per drive through `pg_library::lanes` (`command_groups`, `run_each`), each on its own connection and child control; `--serial` for one lane; C1 compares `--serial` with the lanes over two roots. | `report.rs` per-lane tagged progress: a lane's lines follow a heading with its drive's label. |
 > | 6 Front ends | Per-lane rows with their own bar and pause in `StatusBar.qml`, over a `LaneModel`; every working or paused lane has a row, and the shared bar is gone. `LaneProgress` serves; there is no separate `LaneInfo`. | Screenshots of the stacked rows (`just shots`, the `lanes` scenario). |
 > | 7 Docs | This file, `docs/reference/IO.md` (spike results), `docs/reference/STORAGE.md` (the drive kinds as the job detects them), `crates/README.md` (the lanes), and the scan plan's Phase 4 note on the device query. | `docs/plans/PLAN.md` "1 reader per HDD" still holds (one lane per spindle), so it is unchanged. |
 >
 > Verified: `cargo check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and the tests of
 > pg-model, pg-client, pg-jobs, pg-platform, pg-library (incl. `tests/lanes.rs`), pg-catalog, pg-thumbcache, pg-app and
-> pg-cli. Not run: `just check-linux` (the sysfs path), `just perf` (the callgrind gate), `just qmltest`, and a real two-drive run.
+> pg-cli. Not run at this status: `just check-linux` (the sysfs path), `just perf` (the callgrind gate), `just qmltest`, and a real two-drive run. The verification ledger below records the later `just check-linux` and `just qmltest` runs.
 
 ## Context
 
@@ -397,7 +397,7 @@ its check passes, then `done` with the commit that closed it. Phase numbers refe
 | T5 | 2 | `remove_root` in batches keeps its guarantees (lease deleted first; the walk ends as `Removed`) | done (uncommitted; `roots.rs`, pass). Doc mismatch in `remove_root` (its doc names one transaction for the marks; the code batches them) is not fixed |
 | T6 | 2 | `volumes()` must not be a full range scan; an id above `i64::MAX` is refused | done (uncommitted; the id refusal is the existing `a_volume_set_takes_only_ids_a_catalog_can_store`) |
 
-### Lane tests the plan asked for and the tree lacks (`tests/lanes.rs`: 7 written, of 12)
+### Lane tests the plan asked for and the tree lacks (`tests/lanes.rs`: 9 written, of 12)
 
 | ID | Plan item | Status |
 |---|---|---|

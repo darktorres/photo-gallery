@@ -1,6 +1,7 @@
 [package]
 name = "pg-cli"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 publish.workspace = true
 
@@ -8,22 +9,22 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-pg-library = { path = "../library" }
+pg-analysis = { path = "../analysis" }
 pg-borders = { path = "../borders" }
+pg-catalog = { path = "../catalog" }
+pg-client = { path = "../client" }
+pg-codec = { path = "../codec" }
 pg-dedup = { path = "../dedup" }
 pg-import = { path = "../import" }
-pg-scan = { path = "../scan" }
-pg-thumbs = { path = "../thumbs" }
-pg-writeback = { path = "../writeback" }
-pg-catalog = { path = "../catalog" }
-pg-thumbcache = { path = "../thumbcache" }
+pg-jobs = { path = "../jobs" }
+pg-library = { path = "../library" }
 pg-model = { path = "../model" }
 pg-perf = { path = "../perf" }
-pg-client = { path = "../client" }
-pg-analysis = { path = "../analysis" }
-pg-codec = { path = "../codec" }
-pg-jobs = { path = "../jobs" }
 pg-platform = { path = "../platform" }
+pg-scan = { path = "../scan" }
+pg-thumbcache = { path = "../thumbcache" }
+pg-thumbs = { path = "../thumbs" }
+pg-writeback = { path = "../writeback" }
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true

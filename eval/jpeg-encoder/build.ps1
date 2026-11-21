@@ -1,4 +1,4 @@
-# build.ps1 - builds build\test_encoder.exe natively: nvcc (CUDA 13.4, sm_75) with the MSVC host compiler.
+# build.ps1 - builds build\test_encoder.exe natively: nvcc (CUDA 13.4, for this GPU's compute capability) with the MSVC host compiler.
 # Run from any PowerShell:  powershell -ExecutionPolicy Bypass -File build.ps1
 # Paths below are defaults for this machine; each can be overridden with a parameter.
 
@@ -8,11 +8,23 @@ param(
     [string]$VsInstallerDir = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer',
     [string]$JpegSrc   = 'D:\PhotoGallery\tools\jpeg-eval\src\jpegli\third_party\libjpeg-turbo',
     [string]$JpegBuild = 'D:\PhotoGallery\tools\jpeg-eval\build\libjpeg-turbo',
-    [string]$Arch      = 'sm_75'
+    [string]$Arch
 )
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Unless -Arch is given, the compute capability comes as win_env.py and win-env.cmd take it: CUDA_ARCH (7.5 is 75), else the
+# first GPU's from nvidia-smi.
+if (-not $Arch) {
+    $cap = $env:CUDA_ARCH
+    if (-not $cap) {
+        try { $cap = (& nvidia-smi --query-gpu=compute_cap --format=csv,noheader | Select-Object -First 1) } catch { $cap = '' }
+    }
+    $cap = ("$cap").Trim() -replace '\.', ''
+    if (-not $cap) { throw 'no compute capability: set CUDA_ARCH (7.5 is 75) or pass -Arch sm_NN' }
+    $Arch = "sm_$cap"
+}
 
 $vcvars   = Join-Path $VcvarsDir 'vcvars64.bat'
 $nvcc     = Join-Path $CudaRoot 'bin\nvcc.exe'

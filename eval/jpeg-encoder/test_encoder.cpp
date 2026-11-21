@@ -51,6 +51,9 @@ static std::string g_ssim_exe = default_ssim_exe();
 static bool g_use_ssim = true;
 static int g_failures = 0;
 
+// Defined below with the other CUDA helpers; declared here because the first uses come before it.
+static void cuda_ok(cudaError_t e, const char* what);
+
 static void report(const char* name, bool pass, const std::string& detail) {
     printf("[%s] %s\n       %s\n", pass ? "PASS" : "FAIL", name, detail.c_str());
     fflush(stdout);

@@ -13,11 +13,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from build_static_ffmpeg import MSYS_PACKAGES, WINDOWS_SDK
 from ci.eval_pins import PACKAGES, REQUIREMENTS, pin
 from ci.github_files import env_line, path_line, pin_values
 from install_exiftool import install
-from pgtools import DEFAULT_BUILD_TOOLS, DEFAULT_MSYS, MSVC_TOOLSET, REPO, just_value
+from pgtools import REPO, just_value
 
 WORKFLOW = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 PINNED = {
@@ -239,21 +238,6 @@ class ClippyFiles(unittest.TestCase):
 
 
 class Consumers(unittest.TestCase):
-    def test_the_powershell_copies_agree_on_the_msvc_toolset(self):
-        for script in ("build-jpeg-turbo.ps1", "build-static-ffmpeg.ps1"):
-            text = (REPO / "tools" / script).read_text(encoding="utf-8")
-            self.assertIn(f"'{MSVC_TOOLSET}'", text, script)
-
-    def test_the_powershell_copies_agree_on_the_static_build_folders_and_pins(self):
-        ffmpeg = (REPO / "tools" / "build-static-ffmpeg.ps1").read_text(encoding="utf-8")
-        jpeg = (REPO / "tools" / "build-jpeg-turbo.ps1").read_text(encoding="utf-8")
-        for text in (ffmpeg, jpeg):
-            self.assertIn(f"'{DEFAULT_BUILD_TOOLS}'", text)
-        self.assertIn(f"'{DEFAULT_MSYS}'", ffmpeg)
-        self.assertIn(f"'{WINDOWS_SDK}'", ffmpeg)
-        for name, version in MSYS_PACKAGES.items():
-            self.assertIn(f"{name} = '{version}'", ffmpeg)
-
     def test_the_workflow_python_is_the_justfile_pin(self):
         # setup-python runs before the pins step, so the workflow holds the literal; this asserts it is the pinned one.
         self.assertIn(f'python-version: "{just_value("python_version")}"', WORKFLOW)

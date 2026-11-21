@@ -21,7 +21,7 @@ if ((-not $JpegSrc -or -not $JpegBuild) -and -not $env:PG_HOME) {
 if (-not $JpegSrc) { $JpegSrc = Join-Path $env:PG_HOME 'tools\jpeg-eval\src\jpegli\third_party\libjpeg-turbo' }
 if (-not $JpegBuild) { $JpegBuild = Join-Path $env:PG_HOME 'tools\jpeg-eval\build\libjpeg-turbo' }
 
-# Unless -Arch is given, the compute capability comes as win_env.py and win-env.cmd take it: PG_CUDA_ARCH (7.5 is 75), else the
+# Unless -Arch is given, the compute capability comes as win_env.py takes it: PG_CUDA_ARCH (7.5 is 75), else the
 # first GPU's from nvidia-smi.
 if (-not $Arch) {
     $cap = $env:PG_CUDA_ARCH

@@ -26,7 +26,7 @@ void use_windows_fonts_for_offscreen() {
         return;
     QString windir = qEnvironmentVariable("WINDIR");
     if (windir.isEmpty())
-        windir = QStringLiteral("C:/Windows"); // the same fallback as tools/qmltest.py and qmltest.ps1
+        windir = QStringLiteral("C:/Windows"); // the same fallback as tools/qmltest.py
     qputenv("QT_QPA_FONTDIR", (windir + "/Fonts").toLocal8Bit());
 #endif
 }

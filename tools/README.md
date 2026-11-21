@@ -72,11 +72,13 @@ tests (`just test-eval`).
   (`boundaries.py`).
 - `profiling/`, `modgraph/`: as in the table.
 
-## PowerShell originals, kept until a Windows run confirms their Python ports
+## PowerShell originals
 
-These are not run by anything now. Each is removed once its replacement has run on Windows (the plan's rule):
-`doctor.ps1` (`doctor.py`), `qmltest.ps1` (`qmltest.py`),
-`compare-shots.ps1` (`compare_shots.py`), `build-jpeg-turbo.ps1` (`build_jpeg_turbo.py`),
-`build-static-ffmpeg.ps1` (`build_static_ffmpeg.py`), and `profiling/callgraph/profile.ps1` (`profile.py`).
-`eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`,
-`win_env.py`) are the same kind of original.
+Removed, each after its Python port ran on Windows: `doctor.ps1` (`doctor.py`), `qmltest.ps1` (`qmltest.py`),
+`build-jpeg-turbo.ps1` (`build_jpeg_turbo.py`), `build-static-ffmpeg.ps1` (`build_static_ffmpeg.py`), and
+`eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`, `win_env.py`). `compare-shots.ps1` was removed
+already: it had gone before this work, and `compare_shots.py` replaced it.
+
+Kept: `profiling/callgraph/profile.ps1`. Its Python port, `profile.py`, needs `callgraph/build.py`, which cannot run the
+Pin 4.3 kit's wrappers (`pinrt/bin/pin-clang-cl++` and `pin-ld` are extensionless shell scripts, and build.py finds only
+`.exe`, `.cmd` and `.bat`). Until that is fixed, the script stays.

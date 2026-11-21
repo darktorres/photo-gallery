@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The source checkouts of the JPEG decoder comparison, for linux_build.py and win_build.py: each is fetched once at its
-pinned commit, with the folder's patch (patches/<folder name>.patch) applied. win-build.cmd keeps its own copy until it is
-removed (tools/README.md).
+pinned commit, with the folder's patch (patches/<folder name>.patch) applied. The batch build it once shared pins with,
+win-build.cmd, is removed (tools/README.md).
 """
 
 import subprocess
@@ -10,8 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 # The pinned checkouts of linux_build.py and win_build.py, by folder name: (url, commit). Each pin is written here once.
-# The rust-turbojpeg fork is the exception: its pin is tools/build_jpeg_turbo.py's FORK_URL and FORK_COMMIT. win-build.cmd
-# keeps its own copies until it is removed.
+# The rust-turbojpeg fork is the exception: its pin is tools/build_jpeg_turbo.py's FORK_URL and FORK_COMMIT.
 PINS = {
     "mozjpeg": ("https://github.com/mozilla/mozjpeg", "08265790774cd0714832c9e675522acbe5581437"),
     "jpegli": ("https://github.com/google/jpegli", "031a0077f5799a6041004267fc12b956c1f52a20"),

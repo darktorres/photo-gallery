@@ -157,8 +157,8 @@ def not_set(name: str, how: str) -> NoReturn:
     sys.exit(f"pgtools: {name} is not set: {how}")
 
 
-# What PG_QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives. The PowerShell scripts repeat them
-# (qmltest.ps1), since they cannot import this module.
+# What PG_QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives. The PowerShell script that is
+# kept (profile.ps1) repeats them, since it cannot import this module.
 QT_DIR_HOW = "point it at the Qt kit folder (the one with bin and lib), in the environment or in .env"
 
 

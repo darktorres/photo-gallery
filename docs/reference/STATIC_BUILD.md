@@ -299,9 +299,8 @@ Each of these was hit while building, and the recipes now handle it.
    and an image opens with no JPEG error.
 2. **The Qt recipe's build, install and install checks are not run.** See the Qt section. The first run of them will show
    whether the plugin-folder and qmake checks match the pilot's install.
-3. **The PowerShell originals** (`tools/build-static-ffmpeg.ps1`, `tools/build-jpeg-turbo.ps1`) are still in `tools/`.
-   `tools/README.md` keeps them until a Windows run confirms the Python ports. Both ports have now run on 2026-11-13, so
-   the originals can go once that is agreed.
+3. **The PowerShell originals** (`tools/build-static-ffmpeg.ps1`, `tools/build-jpeg-turbo.ps1`) were removed in the
+   consistency program's Phase 0, once the Python ports had run on Windows (`tools/README.md`).
 4. **Codec lists are unverified.** The demuxer, decoder and parser lists are the pilot's guess. Check them against what
    pg-video needs.
 5. **Not checked:** the `networkinformation` plugin (`qnetworklistmanager`) is in the app but not in the link check's

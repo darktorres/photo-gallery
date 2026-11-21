@@ -43,6 +43,8 @@ Two thresholds serve two purposes. `MATCH_DISTANCE` is 31 (model pdq.rs:11), use
 
 ### DOC-005 [high] `take_shared` doc says it waits; body returns an error — PARTIAL
 
+**Disposition: Fixed.** `lifecycle.rs` doc now says the wait is bounded and then fails.
+
 lifecycle.rs:65 says `take_shared` waits for a change in progress. `pg_dbfile` lock.rs:55-61 does retry `LOCK_TRIES` times with a sleep, then returns None, which lifecycle.rs:69 maps to an error. The wait is bounded and then fails, so the doc is loose rather than wrong.
 
 ### DOC-006 [high] Undecodable files: ledger says no retry, failure.rs says retry — REFUTED
@@ -59,9 +61,13 @@ makers.rs:1-2 says an idle maker is kept up to a few, but `KEEP_MAKERS` is 8 (ma
 
 ### DOC-009 [high] Perf callgrind doc Ir counts disagree with docs/perf/baseline.json for the same bench keys — PARTIAL
 
+**Disposition: No change.** The callgrind note names commit 1bb0390, when it had 11 benches; `baseline.json` is from a later commit.
+
 The callgrind md numbers differ from baseline.json (facets.all 93,262,634 vs 47,331,512). The md is from commit 1bb0390 and baseline.json was re-measured later (layout v7, per `REFACTOR_LEDGER`). Different commits are not a contradiction, but the md title still says 11 benches for a 23-entry file.
 
 ### DOC-010 [high] `NOTIFICATIONS_DESIGN` gives two retention rules for dismissed events — PARTIAL
+
+**Disposition: Fixed.** The retention line now says "dismissed states" and notes that dismissed events are deleted at once.
 
 `NOTIFICATIONS_DESIGN.md:16` overrides the 30-day rule: dismissed events are deleted, and the purge applies to dismissed states only. Line 261 says dismissed purged after 30 days in the retention bullet without saying states, so it reads as covering events too. Wording problem, not a code conflict.
 
@@ -82,6 +88,8 @@ queue.rs module doc names `next_ready`, `record_temp`, done, failed, `drop_gone`
 `MULTI_DRIVE_LANES_PLAN.md:21` says just check-linux and just qmltest were not run. The same plan's ledger at :427 records check-linux passing and :429 records qmltest 108 passed.
 
 ### DOC-015 [high] `DECODE_ONCE_PLAN` body contradicts its own superseded notes — PARTIAL
+
+**Disposition: No change.** The plan marks superseded text under a marker, so the body is history by its own convention.
 
 `DECODE_ONCE_PLAN.md:44` and :953 are dated superseded notes above bodies that still describe the old design (thumbnails in Features, DCT scaling). The plan keeps superseded text under a marker, so the body is history. Not checked line by line, so partial.
 
@@ -115,6 +123,8 @@ baseline.sql:123 lists pass codes thumbs and borders only. The triggers at :359 
 
 ### DOC-023 [medium] Facet ordering documented differently in catalog and client, and not pinned by the tests it cites — PARTIAL
 
+**Disposition: Fixed.** `browse/read/facets.rs` doc gives types in `MediaType` order; the client tests already pin the order.
+
 catalog facets.rs:26 says types are most-files-first, but facets.rs:97 sorts types by MediaType order. Exts are sorted by count (:99). The client tests/facets.rs:19-20 does enumerate ALL and compare it with `from_index`, so the order is pinned; the not-pinned claim is wrong.
 
 ### DOC-024 [medium] Test doc comments claim more than the assertions check — CONFIRMED
@@ -126,6 +136,8 @@ library/tests/video.rs:192 says red at the top after a catalog turn, but the ass
 thumbs/src/lib.rs:121-123 says Some(true) means tried again by the next pass. recorded() at :124-129 returns only Some(false) (Panicked, Undecodable) or None (Unreadable, Other). The Some(true) case is documented and never produced.
 
 ### DOC-026 [medium] Docs disagree on which formats lose metadata and which are re-encoded on crop — PARTIAL
+
+**Disposition: No change.** `encode::cropped` sends other TIFFs through `image`, as `crop.rs` says; there is no contradiction.
 
 Metadata claims agree across edit/lib.rs:2-4, crop lib.rs:117 and edit crop.rs:9-11, and reencoded sets metadata false (crop.rs:95-98). crop.rs:9-11 says other TIFFs go through image, but crop.rs:66 routes every Tiff to reencoded. Whether encode::cropped sends other TIFFs to image was not read. The cited crop lib.rs:139 is unrelated to metadata.
 
@@ -151,6 +163,8 @@ hashes.rs:93 says failures are stored as the import stores them. hashes.rs:121 s
 
 ### DOC-032 [medium] Orientation and resize docs state contracts the code does not enforce — PARTIAL
 
+**Disposition: No change.** `fast_image_resize`'s `CropBox::crop` rejects out-of-bounds regions, so the doc is accurate.
+
 resize.rs:13-15 says `resize_region` fails when the region is outside the image. `resize_region` (:79-91) clamps the region with max(1.0) and does no bounds check, and run (:98-108) checks only the pixel buffer. Whether `fast_image_resize` rejects an out-of-bounds crop was not confirmed (registry search timed out). The orientation.rs:1 claim is accurate, since both read and write use the same private `exif_block`.
 
 ### DOC-033 [medium] Grid rating and model rating docs disagree with the file and catalog — REFUTED
@@ -159,13 +173,19 @@ grid.rs:30 gives the user's rating: None when unrated, with no catalog row. rati
 
 ### DOC-034 [medium] Model notice doc says library paths are RulePaths; the field is a String — PARTIAL
 
+**Disposition: Fixed.** `notice.rs` module doc names `FileFailure.path` as the one library path that is a `String`.
+
 notice.rs:9 says library paths are RulePaths, exact. FileFailure.path is a String, and its doc at notice.rs:303 says its path as the user sees it, so the String is deliberate display text. The module doc does not mention that exception.
 
 ### DOC-035 [medium] Lock doc says the name is removed on drop; Unix HeldLock has no Drop — PARTIAL
 
+**Disposition: Fixed.** The `platform/src/testing/lock.rs` doc says only `HeldLock::delete` removes the name; dropping leaves it.
+
 The cited platform/src/lock.rs does not exist. The lock is in platform/src/testing/lock.rs. Its doc at :25-26 says a lock from `create_for_delete` or `take_for_delete` removes its name when it goes, linking HeldLock::delete. No Drop impl exists in that file, so when it goes is loose wording; delete is the only removal.
 
 ### DOC-036 [medium] video ffi doc says bindgen does not emit `AV_NOPTS_VALUE`; build allowlists it — PARTIAL
+
+**Disposition: Not verified.** Needs a bindgen run against the FFmpeg headers; no generated bindings exist in `target/`.
 
 ffi.rs:38 says bindgen does not emit `AV_NOPTS_VALUE`, and ffi.rs:39 defines it by hand. build.rs:38 still allowlists `AV_NOPTS_VALUE` in VARS. If bindgen cannot parse the macro, the allowlist entry is dead. No code conflict was shown, and the bindgen output was not generated here.
 
@@ -178,6 +198,8 @@ Creation cost appears as ~0.3 s in `gpu_device.h:26` and `gpu_device_bridge.rs:1
 pipeline.rs:46-48 sets `BUFFER_PER_SLOT` to 12 MiB, and budget() is (readers + workers) x 12 MiB. With 8 readers and 12 workers that is 240 MiB, which the doc gives as 240 MB (only the MB/MiB label differs). control.rs:22-23 gives about 60 marks; the test at :702 marks once a second, so 32 marks is consistent with that sampling.
 
 ### DOC-039 [medium] Removed or renamed items referenced in plan documents — PARTIAL
+
+**Disposition: No change.** The references are historical notes in dated plans.
 
 `BACKGROUND_JOB_AUDIT_FIXES.md:248` says NOTIFICATIONS.md is removed, which the doc itself states. Cited line numbers in the migration plans are stale (schema.rs:804, :956, lifecycle.rs:1229 not all checked). The removed-file references are historical notes.
 
@@ -202,6 +224,8 @@ schema.rs:114-117 sets PRAGMA `cache_size` = -8192 (8 MB) in SETTINGS, as `OPEN_
 `NOTIFICATIONS_PLAN.md:10` says D1 to D12 are unanswered, and :24 says waiting on a person covers D1 to D8. `NOTIFICATIONS_DESIGN.md:13` says the cache has seven events, and :230 says five. thumbcache types.rs Event has at least seven variants (lines 68-85), so :13 is right and :230 is stale.
 
 ### DOC-045 [medium] `NOTIFICATIONS_DESIGN` contradicts the code and itself on derivation and schema — PARTIAL
+
+**Disposition: Fixed.** The `strum` claim is marked as overridden by the `ids!` decision, and the `TO_3` draft is marked as superseded.
 
 `NOTIFICATIONS_DESIGN.md:241` says code() comes from strum::IntoStaticStr. :94 overrides that to the ids! table, and notice.rs has no IntoStaticStr, so the code follows :94. The `TO_3` SQL at :251 (scope TEXT, AFTER DELETE trigger) is stale, but :29 overrides it, and `folder_failures.root` has ON DELETE CASCADE (baseline.sql:164).
 
@@ -235,6 +259,8 @@ docs/perf/baseline.json has 23 entries, all pg-bench keys. `REFACTOR_LEDGER.md:1
 
 ### DOC-053 [medium] Reference docs disagree on JPEG encoder and thumbnail numbers — PARTIAL
 
+**Disposition: Fixed.** `JPEG_ENCODERS.md` says ImageReduce's encode is libvips' `jpegsave`; whether that build uses mozjpeg is not recorded.
+
 `JPEG_ENCODERS.md:13-14` says ImageReduce runs mozjpeg in `JCP_FASTEST` mode. :111-112 says its encode is libvips 8.18.7 jpegsave. libvips jpegsave can use mozjpeg when built with it, and the doc does not say which. The naming conflict is real, but not proven as an error.
 
 ### DOC-054 [medium] Reference index and cross-references are incomplete or point at the wrong file — CONFIRMED
@@ -251,9 +277,13 @@ crates/core does not exist. The analyze decode rule is in crates/analysis/src/an
 
 ### DOC-057 [medium] PNG decoder README gives a timing budget and dump file names the code does not use — PARTIAL
 
+**Disposition: No change.** The README's dump names match the app's dump; the 5 s budget is advice that overrides the 1 s default.
+
 The PNG README:67 advises at least 5 s for inflate-stream numbers. The harness defaults (harness.cpp:90, main.rs:80) are 1.0 s, which the advice overrides with --secs. That is advice versus default, not a contradiction. README:60 names DIR/NAME.raw for the app's dump, which matches main.rs:120, but the C harness writes `NAME.<decoder>.raw` (harness.cpp:482).
 
 ### DOC-058 [medium] JPEG decoder harness docs contradict harness code on output layout, warm-up and command — PARTIAL
+
+**Disposition: Fixed.** The `dec_wuffs.cpp` comment says 4-byte RGBX pixels (`RGBA_NONPREMUL`, no alpha used).
 
 `dec_wuffs.cpp:1` says decodes to RGBA, but it sets Image::RGBX (:45) and names the format `RGBA_NONPREMUL` (:21). The layout is a 4-byte pixel with no real alpha, so the word is loose. harness.cpp:14-15 documents the GPU warm-up of 5 (:147, :233), so the Rust-versus-C difference is stated. The restart.py cite is about the Rust binary, as its docstring says.
 
@@ -283,13 +313,19 @@ grid.rs:138-139 says revision counts list shown and item edited. `refresh_turned
 
 ### DOC-065 [medium] Temporary file naming described differently in the app and the code — PARTIAL
 
+**Disposition: No change.** Two writers use two conventions; this is not a doc contradiction.
+
 save.rs:47-48 says repository temporaries are dot-names (.pg-write, .pg-crop), which matches the queue temps (queue.rs:562 .b.jpg.turns.pg-write). store.rs:115 writes `<name>.tmp`, a different writer that does not claim dot-names. Two conventions across different writers, not a doc contradiction.
 
 ### DOC-066 [medium] Versions doc names the per-crate constants and `pg_library::versions` instead of `pg_model::versions` — PARTIAL
 
+**Disposition: No change.** Naming the owning crates' re-exports is acceptable.
+
 types.rs:277 names `analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION` and `pg_render::THUMBS_VERSION`. Those are the owning crates' re-exports (render lib.rs:14). The code imports from `pg_model::versions` (types.rs:291), as the registry doc at versions.rs:1-4 prescribes. Naming the re-export is acceptable.
 
 ### DOC-067 [medium] Version comment names IMPORT as 1 literally in fixture doc — PARTIAL
+
+**Disposition: Fixed.** `fixture/raw.rs` doc names `IMPORT_VERSION` instead of the literal 1.
 
 fixture/raw.rs:180 says rows are at import version 1. versions.rs:13 has `IMPORT_VERSION` = 1 today, and raw.rs binds the constant (:229). The doc is right now but written as a literal that will go stale on a bump.
 
@@ -298,6 +334,8 @@ fixture/raw.rs:180 says rows are at import version 1. versions.rs:13 has `IMPORT
 scans.rs:19 says conditions are kept under (root, code). passes.rs:108 replaces them all under one Key::all(scan-note, root), so there is no per-code key. scan/lib.rs:270 names `replaced_ids` and temps as fields, and neither exists in that file.
 
 ### DOC-069 [low] Writeback test comment says PNG while the test queues a JPEG — PARTIAL
+
+**Disposition: Fixed.** The test comment says the poisoned JPEG is queued beside the PNG.
 
 writeback.rs:1013 says a PNG is rewritten without ExifTool. The test that follows queues the healthy b.png and the poisoned a.jpg (:1014). The comment describes one file and omits the JPEG. Incomplete, not wrong.
 
@@ -311,9 +349,13 @@ crates/README.md:240 cites crates/video/src/ffi/load.rs, which exists and is whe
 
 ### DOC-072 [low] Measured timings in doc comments that the code or benches do not reproduce — PARTIAL
 
+**Disposition: Not verified.** These are recorded measurements and cannot be reproduced in this checkout.
+
 The timing claims (modgraph 115 to 149 s, the HDD order speedup, the cold-read figures, the 0.8 s pairs pass) are measurements recorded in comments. They cannot be reproduced from the repo here, so they are unverified, not contradicted.
 
 ### DOC-073 [low] Crop, edit and cut docs use inconsistent function and crate paths — PARTIAL
+
+**Disposition: No change.** `pg_edit::crop::cut` exists (`crop.rs:75`), and the `encode.rs` cites are correct.
 
 encode.rs:1-3 names `pg_edit::crop::cut`. The crop module exists in crates/edit, but the cut function was not confirmed in that file. `WEBP_LOSSY_QUALITY` = 90 (encode.rs:96) matches its doc. The path claim is only partly checked.
 
@@ -327,6 +369,8 @@ eval/verify.py:3 gives the usage as labeled, `cross_groups` or knn. `PAIR_SETS` 
 
 ### DOC-076 [low] Eval JPEG encoder and decoder comments name the wrong counts, stages and venvs — PARTIAL
 
+**Disposition: Fixed.** `eval/jpeg-encoder/README.md` names the diagnostic test 8 alongside tests 1 to 7.
+
 README:16 says `test_encoder.cpp` has tests 1 to 7, and README:97 documents test 8 as a diagnostic outside pass or fail, so the two are consistent. The `encode_gpu.cu` header list was read only through stage 6. enum Stage (:543) has `ST_COPY`, and the header's full list was not confirmed.
 
 ### DOC-077 [low] Tools doc comments name the wrong OS scope, paths or Docker wording — CONFIRMED
@@ -334,6 +378,8 @@ README:16 says `test_encoder.cpp` has tests 1 to 7, and README:97 documents test
 `lint_qml.py:2` says just lint-qml on Linux and macOS, while :14 says every OS. :55 says the output is `build/pg-desktop-<hash>/`, but :57 globs `target/*/build`. `fuzz_smoke.py:3` says the fuzzed tree is a git archive of HEAD, but linux.py:187 uses git clone. `few_sweep.ps1:9` says busy runs are not left out, while sweep.ps1:8-9 and :66 leave them out.
 
 ### DOC-078 [low] Site and tools docs point at files that are missing or mislabelled — PARTIAL
+
+**Disposition: Fixed.** The `site/index.html` hero icon attributes are 160, matching the CSS.
 
 The hero-icon width is set to 160px in style.css:73, which overrides the 256 attributes in index.html:20, so the rendered size is the CSS. The screenshot comment (index.html:35) is commented out on purpose. pages.yml:39-41 does copy the icon and mascots, as index.html:3 says. The `tools/test_ci_files.py` docstring was not checked.
 
@@ -346,6 +392,8 @@ notices.rs:73 gives the providers.rs row as (4), but providers.rs has three `pg_
 ui.ftl:91-92: the log view comment is followed by the inbox comment, with no log entry under it. YandexPreview.qml:26-28: the results comment sits above the dpr property. Main.qml:203 says the cut dialog reports as SaveViewDialog, which is correct. `MAX_ZOOM` = 32 is in client viewport.rs:6, so the zoom comment is right. Gallery and `RATING_SYMBOLS` references resolve. The state.rs query-versus-media MediaType claim was not confirmed.
 
 ### DOC-081 [low] Client text and controller doc comments with stale details — PARTIAL
+
+**Disposition: No change.** The cited `deadlines.rs` exists, and the other instances were not contradicted.
 
 controller/size.rs:1 says pause is timed by deadlines.rs, which exists in crates/client/src/controller, so the file is in the repo. The other instances (tests facets, start.rs:2 on the session's last file) were not contradicted. Some were not read in full.
 
@@ -375,25 +423,37 @@ versions.rs:1-3 says each name is the upper-cased mark. `KEY_ALGO_VERSION` (:47-
 
 ### DOC-088 [low] Plan D9 and phase cross-references in code docs point at plans that do not give those numbers — PARTIAL
 
+**Disposition: Fixed.** The "plan D9" cites are removed; no plan in the tree numbers the cache rule D9.
+
 versions.rs:32 and :44 cite plan D9 for the cache and thumbnail rules. thumbcache schema.rs:113 cites plan D9 and notes no plan file is in the shard. Whether D9 is numbered that way in the plans was not checked.
 
 ### DOC-089 [low] Notices reference and catalog docs describe index names and fields that do not match — PARTIAL
+
+**Disposition: Fixed.** The `lookup.rs` doc says SQLite picks an index where one covers a query, with no claim about specific indexes.
 
 lookup.rs:195 names `files_present`, `files_to_import` and `analysis_failed`. Those indexes exist in baseline.sql (:215, :247, :253). Whether status() reads `files_present` was not confirmed. The `kept_events` value (1000) and the rebuild.rs module-doc list were not fully checked.
 
 ### DOC-090 [low] Runner, coordinator and lane docs name probes and tools that do not match code — PARTIAL
 
+**Disposition: No change.** `Runner::cut_borders` exists (`runner.rs:112`).
+
 inner.rs:39 cites `lane::BUSY_RETRY`, which lane.rs:26 defines, so that cite is right. coordinator.rs:107-108 says cuts are queued once confirmed via `Runner::cut_borders`; `cut_borders` was not found in library/src beyond that doc. The other lane and events cites were not fully checked.
 
 ### DOC-091 [low] Stub and test docs claim parity with Rust that is not tested in the cited place — PARTIAL
+
+**Disposition: No change.** The parity tests exist (`client/src/text/cli.rs:584` and `text/message.rs:307`).
 
 The locale files (cli.ftl:1, text.ftl:1, ui.ftl:3) say a test checks that the ids match the Rust lists. Client src references the ftl files, but the named parity tests were not located in full. Unverified as stated.
 
 ### DOC-092 [low] Callgrind and perf narrative numbers in reference docs disagree with each other — PARTIAL
 
+**Disposition: No change.** The three counts come from different snapshots, and the docs label them.
+
 PROFILING.md:320 says 189,518 files (2026-10-31 snapshot), :507 says 189,520 (the pairing data), `REFACTOR_MEASUREMENTS.md:120` says 189,519. The dates differ, so the library may have changed between runs. They are not proven to describe the same folder on the same day.
 
 ### DOC-093 [low] Search and crop limits in the desktop app do not match documented bounds — PARTIAL
+
+**Disposition: No change.** `R` and `Shift+R` turn images (`client/src/keys.rs:115, 132`), so the claim holds.
 
 shell/state.rs:19 says the row bounds are `pg_model::size::ROW_HEIGHT`, which matches RowHeight::MIN and MAX built from it (size.rs:10-23), as recorded for A-027. The rotate.rs:1 claim that R and Shift+R turn images was not found in keymap.rs, so that instance is unverified.
 
@@ -449,6 +509,8 @@ The verbatim prefix is stripped or defined in four places: platform names.rs:127
 
 ### D-013 [medium] CreateFileW sharing modes differ across opens — PARTIAL
 
+**Disposition: No change.** Each open's sharing mode is a deliberate per-open choice.
+
 The CreateFileW sharing combinations differ: file.rs:37 uses READ|WRITE|DELETE, dir.rs:366 the same, drive.rs:293 READ|WRITE, and file.rs:89 READ alone. Each open has its own purpose, and no shared constant exists, but whether these are duplicates or deliberate per-open choices was not settled from the lines read.
 
 ### D-014 [medium] XMP namespace URI written twice — CONFIRMED
@@ -464,6 +526,8 @@ The BigTIFF header rule (43, offset size 8, zero) is in model format.rs:53 `is_b
 container lib.rs:70 JpegSegments::next and lib.rs:138 `jpeg_header_end` both skip fill bytes and reject bad segment lengths with the same logic in two loops.
 
 ### D-017 [medium] YYYY-MM-DD parsed in three places — PARTIAL
+
+**Disposition: Fixed.** `Day::parse` delegates to `parse_iso_date` after its shape check. The EXIF date is a different format.
 
 model date.rs:9 `parse_iso_date` and date.rs:64 Day::parse both parse YYYY-MM-DD with range checks in the same file, which is a real duplication. metadata exif.rs:11 `exif_date` parses the colon format YYYY:MM:DD, a different format, so it is not a third copy of the same parse.
 
@@ -517,6 +581,8 @@ writeback.rs:387 uses attempts() `>=` 5 and :404 asserts attempts() == 5, while 
 
 ### D-030 [medium] Facet kinds enumerated in four client places — PARTIAL
 
+**Disposition: No change.** Matching one enum in several functions is normal Rust.
+
 input.rs:19 choice, input.rs:31 `key_of`, facets.rs:43 choices and text.rs:84 `choice_label` each match on the facet or choice enum to produce a different result (a value, a key, a list, a label). Matching one enum in four functions is normal Rust; the enum itself is not duplicated. The count of six kinds was not checked.
 
 ### D-031 [medium] Tier names mapped in Rust and Fluent — CONFIRMED
@@ -533,9 +599,13 @@ FilterBar.qml:48 declares facetTypes: 0 and the bar passes it on as a plain inte
 
 ### D-034 [medium] Lock order named two ways in web client docs — PARTIAL
 
+**Disposition: Fixed.** `WEB_CLIENT_RECONCILED` names the fence mutex as the registry lock.
+
 RECONCILED.md:582 gives the lock order as fence mutex, then device gates, then write transaction. DESIGN.md:369 says the registry lock serialises additions against the fence. The two may be the same lock under two names, or two locks; the text does not settle which, so the naming drift is real but its meaning is unclear.
 
 ### D-035 [medium] Sort ordering in two places in `DECODE_ONCE` plan — PARTIAL
+
+**Disposition: No change.** The plan restates one rule; the second ordering is planning text, not a conflict.
 
 `DECODE_ONCE_PLAN.md:873` says `compare_placed` is 'the existing `compare_keys` logic', so the plan treats the two as one rule, and :875 states the tie rule once. The `grid_sql` ORDER BY is a second written ordering in the plan, which is a planning-stage restatement and not an inconsistency by itself.
 
@@ -577,6 +647,8 @@ The wuffs streaming chunk constant 16 `<<` 10 is written at `eval/png-decoders/h
 
 ### D-045 [medium] Viewer pair kinds listed twice — PARTIAL
 
+**Disposition: No change.** `VERIFY_TABS` is a subset of `TABS`, not a copy.
+
 `VERIFY_TABS` in viewer.html:160 is a subset of TABS (:148) naming three tabs (verify, `verify_cross`, `verify_knn`), not a copy of the same list. `PAIR_FILES` in viewer.py:34 keys the pair kinds, and TABS in viewer.html names tabs. Whether these overlap beyond the verify tabs was not checked.
 
 ### D-046 [medium] DCT draft size and denominator rule in four places — CONFIRMED
@@ -596,6 +668,8 @@ doctor.ps1:55 and doctor.py:67 both implement the libclang search and the checks
 build.py:62 main compiles and links callgraph.dll, and build.sh (stale, DOC-059) repeats the same flag lists beside it. The two builds are kept side by side.
 
 ### D-050 [medium] LLVM default path computed three times — PARTIAL
+
+**Disposition: Decided and applied.** `build.sh` was deleted and `profile.ps1` and `tools/README.md` point at `build.py`. This also settles D-049, TL-008 and DOC-059.
 
 The LLVM default is computed in build.py:66-68 and build.sh:22-24. The cgtab.py:78 cite is an unrelated callgrind line, not an LLVM default, so only two copies are real.
 
@@ -661,6 +735,8 @@ Pending is declared three times: `log_model.rs:53`, notices.rs:215 and pump.rs:1
 
 ### D-066 [low] Client text and test helper duplication — PARTIAL
 
+**Disposition: No change.** The cited helpers are not duplicates.
+
 tree.rs:197 `visible_count` repeats the `visible_in` walk, and notice.rs:22 isolated is a bidi wrapper. The controller panels.rs:139 `set_viewer` is one setter, not four visible here. image.rs:109 `view_path` prints the region grammar that `view_of` parses back, which is a round-trip, not a duplicate. replay.rs does not exist and words.rs:97 `ui_entries` was not compared to `entries_of`.
 
 ### D-067 [low] Codec and container test helpers repeated — CONFIRMED
@@ -680,6 +756,8 @@ dbfile lock.rs:29 (Lock::take) and lock.rs:57 (Live::shared) each run the same `
 model/clippy.toml:3-5 repeats allow-panic-in-tests, allow-print-in-tests and allow-unwrap-in-tests, which root clippy.toml:2-6 sets. The model file's own comment says to keep them in step with the root.
 
 ### D-071 [low] Docs restate the same measurements — PARTIAL
+
+**Disposition: No change.** Most cited items are pointers to other docs, not restatements.
 
 PROFILING.md:494 'Moved to `JPEG_DECODERS.md'` is a pointer, not a restatement. STORAGE.md:95 points to PROFILING.md and `START_PROFILE.md:5` gives its own stage list. The restatement claims were only partly checked, so most of the finding is pointers.
 
@@ -739,6 +817,8 @@ Invariant guards vary: seam.rs:11 has an assert with a message, pdq.rs:57 has an
 
 ### E-008 [medium] Silent discards of errors in production paths — PARTIAL
 
+**Disposition: No change.** The discards are documented best-effort (`thumbcache/src/lib.rs:189`, `writer.rs:398`).
+
 Several discards are documented best-effort (thumbcache lib.rs:189 says best-effort; writer.rs:398 says failures stay queued), so they are a choice, not an oversight. The crop.rs:150 cite shows Ok(stats), not the `remove_file` the finding names, so that instance is wrong. The discards are inconsistent in their handling, but not all are bugs.
 
 ### E-009 [medium] Fallbacks hide missing or dropped data — CONFIRMED
@@ -754,6 +834,8 @@ ledger.rs:199-201 says `retry_failures` does nothing for the import, and that th
 The `PG_HOME` message is worded differently in `build_static_qt.py:69`, `build_jpeg_turbo.py:75` and `build_static_ffmpeg.py:92`. The `QT_DIR` message is worded differently in `compare_shots.py:666`, `check_qt.py:21`, `lint_qml.py:70`, profile.ps1:26, qmltest.ps1:20 and qmltest.py:41.
 
 ### E-012 [medium] Same error text duplicated across Python and PowerShell ports — PARTIAL
+
+**Disposition: No change.** `setup-ffmpeg.ps1` is not at HEAD, and the cited lines do not show the duplication.
 
 setup-ffmpeg.ps1 at HEAD has the throws at :45 (SHA mismatch) and :58 (top folders), so the PowerShell side is real. The Python cites (`setup_ffmpeg.py:89` and :62) are blank or argparse lines and do not show the identical wording, so the duplication is not shown by these cites. The file is deleted in the working tree.
 
@@ -807,6 +889,8 @@ rebuild.rs:138 turns a `pg_dbfile` error into Error::Other of its display text, 
 
 ### E-025 [medium] Invariant text and error shape for the codec memory limit kind — PARTIAL
 
+**Disposition: Decided and applied.** A malformed TIFF sample type is now a decode error (`tiff.rs`). Real budget limits are unchanged.
+
 tiff.rs:102 returns LimitsExceeded for a missing sample type, and png.rs:111 maps the png decoder's LimitsExceeded to InsufficientMemory, which is the kind the finding says should be used for a real memory limit. gif.rs:58 uses InsufficientMemory for a `checked_mul` overflow, which is arguably the right kind for an overflow. Whether each mapping is right needs a per-case decision; the finding's single 'wrong kind' claim is not shown.
 
 ### E-026 [medium] Debug text reaches users in codec and decoder messages — CONFIRMED
@@ -818,6 +902,8 @@ jpeg.rs:97 puts the zune-jpeg Debug form of the error into a GenericFeature mess
 Paths in error text come from three helpers: crop/lib.rs uses shown(), dbfile/remove.rs:35 uses Path::display(), and removal.rs:243 uses rules.display(). scan/lib.rs:375 uses catalog.rules().display(). The mix is real; low severity.
 
 ### E-028 [medium] Turns bound in `from_stored` duplicates the modulo rule — PARTIAL
+
+**Disposition: No change.** The literal is a range check, not the modulo rule. Rejecting damaged stored values is by design.
 
 write.rs:98 bounds stored turns with a literal small `<=` 3, and returns None above it. turns.rs:14 reduces modulo 4. These are different rules: `from_stored` rejects a damaged stored value, while Turns::new wraps a computed one. The literal duplicates the range but does not duplicate the modulo rule.
 
@@ -863,9 +949,13 @@ Tests fix the two messages: tests replay.rs:55 expects a line 1 prefix on the mi
 
 ### E-039 [medium] Fatal startup path writes the log and error box, not stderr — PARTIAL
 
+**Disposition: No change.** The fatal path is documented design (`desktop/src/lib.rs:244-246`).
+
 The fatal path is deliberate: the doc comment at desktop lib.rs:244-246 says a GUI program has nowhere to print, so it logs and shows a box, and it says the record is lost if the log has no file yet. The catalog-open call at lib.rs:169 follows that design. The gap is the in-memory record loss before the log opens, which the doc already states.
 
 ### E-040 [medium] Downcast to io::Error misses the Unopened wrapper — PARTIAL
+
+**Disposition: No change.** The historical plan records its own correction.
 
 `BACKGROUND_JOB_AUDIT_FIXES.md:178` says the Unreadable downcast is verified, and :186 amends DO 5.6 to stop using `downcast_ref` of io::Error because it misses Unopened. The plan records its own correction, so the inconsistency is in a historical plan that the same document fixes.
 
@@ -883,9 +973,13 @@ Conversion idioms differ within one area: library.rs:399 uses `map_err(pg_catalo
 
 ### E-044 [low] Source-level invariant and fallback behaviour in the platform layer — PARTIAL
 
+**Disposition: Fixed.** `drive.rs` names `ERROR_NOT_READY` (21) instead of a bare literal.
+
 picker.rs:141 holds the `ERROR_CANCELLED` constant, and drive.rs:56 uses the literal 21 for the unplugged code. drive.rs:251 defines `ERROR_MORE_DATA` locally as 234. The finding's crates/platform/src/lock.rs:50 does not exist; the lock test helper is at platform/src/testing/lock.rs. Half the cites are right, and the local-constant issue is real.
 
 ### E-045 [low] Planned error names in docs/plans still use pre-rename names — PARTIAL
+
+**Disposition: No change.** The planned renames are pending, as the plan says.
 
 `BACKGROUND_JOB_AUDIT_FIXES.md:80-84` plans renames: Error::ScanBusy to LeaseBusy and fence to LeaseLost. Code still has ScanBusy (catalog error.rs:28) and LeaseLost (error.rs:33), so the plan's names are pre-rename, which is expected until the work lands. The cli cite at lib.rs:168 does not show ScanBusy, so that instance is wrong.
 
@@ -927,6 +1021,8 @@ NUL-in-path messages differ: ledger.rs:269 is a failed file's folder holds a NUL
 
 ### E-055 [low] Saturating conversions clamp overflow silently — PARTIAL
 
+**Disposition: No change.** The saturation is deliberate and commented where it matters.
+
 perf/lib.rs:277 saturates a duration to u64::MAX on purpose, and platform clock.rs:51 documents its u16 fallback for a year past 65535. tiff.rs:96 saturates an entry count to usize::MAX. The saturation is deliberate and commented in the clock case, so only the undocumented ones are a problem.
 
 ### E-056 [low] Build script failure style varies — CONFIRMED
@@ -943,6 +1039,8 @@ NormalizeError in names.rs:148-150 has a hand-written Display, as native.rs and 
 
 ### E-059 [low] Turns and count decode limits differ from the documented range — PARTIAL
 
+**Disposition: No change.** The limits apply to different things (files and pictures), so the ranges agree.
+
 `union_find.rs:88` says a catalog holds fewer than 2^32 files, and join.rs:70 gives `MAX_PICTURES` as u32::MAX `>>` 4, which is 2^28 pictures. These are different limits on different things (files and pictures), so the documented ranges agree once the units are separated. The finding does not show a conflict.
 
 ### E-060 [low] Notice text overwrite on same-bytes refailure — CONFIRMED
@@ -950,6 +1048,8 @@ NormalizeError in names.rs:148-150 has a hand-written Display, as native.rs and 
 `NOTIFICATIONS_PLAN.md:61-65` records the design's undeclared deviations as open rows: N-35 `dismiss_all` deletes events, N-37 the dismissed-entry test moved, N-38 the cascades, N-39 the seven cache events against the designed five. The plan tracks them, so the deviations are known; the same-bytes refailure overwrite is still open per the finding.
 
 ### E-061 [low] Unplugged error classifier is duplicated by the import plan — PARTIAL
+
+**Disposition: No change.** The removal is planned by `IMPORT_FAILURES_PLAN.md`, not an unnoticed second table.
 
 `IMPORT_FAILURES_PLAN.md:208-212` says there is no existing OS-error classifier to reuse, notes the private `unplugged_code` table in drive.rs:54-68, and says the new table absorbs it. The duplication is planned for removal, not an unnoticed second table. drive.rs:56 is the literal 21, which the plan describes.
 
@@ -981,6 +1081,8 @@ pgtools.py:55 strips the quotes from a .env value, as just does. `lint_qml.py:40
 
 ### C-005 [high] Pairing gate defaults differ between PowerShell and Python drivers — PARTIAL
 
+**Disposition: No change.** `keep.py`'s header states the gate (`--part time --rule bounded --margin 0.10`), and `keep.ps1` always passes its values.
+
 keep.ps1:10 defaults Rule to bounded and passes --rule and --margin explicitly at :129-130 (margin 0.10 unless the rule is margin). keep.py:105 and :107 default to margin 0.01 and rule margin. The defaults differ, but the PowerShell driver always passes its values, so the difference only shows in a direct Python run. The user's pairing memory records the bounded 0.10 rule as the gated one.
 
 ### C-006 [medium] `PG_*` environment reads scattered; plan and ledger counts stale — CONFIRMED
@@ -1009,6 +1111,8 @@ The JPEG input folder has two variables: benches/ir.rs:12 reads `JPEG_INPUTS` (d
 
 ### C-012 [medium] Eval data-root variable named inconsistently — PARTIAL
 
+**Disposition: No change.** `PG_DATA_ROOT` and `PG_ROOT` have different roles.
+
 `PG_DATA_ROOT` is the dataset folder in common.py:48 and viewer.py:5. `PG_ROOT` is the base folder that the other default paths hang from (common.py `pg_path`). Both exist with different roles. The TIER2 plan line 17 cite does not name `PG_ROOT` as the data root, so that instance is wrong. The use of both is real but not one mistake.
 
 ### C-013 [medium] 5-second SQLite busy timeout written as literals in several places — CONFIRMED
@@ -1017,6 +1121,8 @@ The 5-second busy timeout is written as a literal in several places: catalog sch
 
 ### C-014 [medium] `cache_size` sign and unit convention inconsistent — PARTIAL
 
+**Disposition: No change.** The sign and unit convention is the same everywhere; only the types differ.
+
 SQLite's `cache_size` takes a negative value for KiB, so the sign convention is the same everywhere. `READER_CACHE_KIB` (roots.rs:336) is a positive u32 and `PREPARE_CACHE_KIB` (types.rs:133) a positive i64, both negated at the pragma, and SETTINGS and schema.rs:430 use negative literals. The types and literals differ, but the units agree. The reader.rs:59 cite is a doc comment, not a `cache_size` value.
 
 ### C-015 [medium] `auto_vacuum` INCREMENTAL mode as bare literal 2 — CONFIRMED
@@ -1024,6 +1130,8 @@ SQLite's `cache_size` takes a negative value for KiB, so the sign convention is 
 The `auto_vacuum` INCREMENTAL mode is the bare literal 2 in schema.rs:178, removal.rs:269 and the test at schema.rs:598. There is no named constant for it, so the magic number is repeated three times.
 
 ### C-016 [medium] Preference defaults and names disagree between code, docs and plans — PARTIAL
+
+**Disposition: Fixed.** `LANGUAGES.md` says Prefs has eleven fields, matching the struct.
 
 prefs.rs:122 sets `write_back` to true and `real_size` to false, and the settings bridge documents `detect_borders` as on by default. `DECODE_ONCE_PLAN.md:103` names the field `pregenerate_thumbnails` where the code has `thumb_cache`, which is a stale plan name. LANGUAGES.md:79 says the prefs hold seven fields, and that count was not checked against the struct here.
 
@@ -1037,6 +1145,8 @@ The FFmpeg default prefix differs: doctor.py:55 uses .deps/ffmpeg only on Window
 
 ### C-019 [medium] Two clippy.toml files that must be kept in step — PARTIAL
 
+**Disposition: No change.** The file names the repetition itself, and the two files agree.
+
 model/clippy.toml:1-3 repeats the root's hash-collection bans and `allow-*-in-tests` settings, and asks to keep them in step by hand. `CLIPPY_LEDGER.md:15` says clippy.toml bans HashMap for the whole workspace, which is true only through the root file. The repetition is a maintenance risk the file itself names; the two files agree today.
 
 ### C-020 [medium] Fixture module gating disagrees with its doc — CONFIRMED
@@ -1044,6 +1154,8 @@ model/clippy.toml:1-3 repeats the root's hash-collection bans and `allow-*-in-te
 fixture.rs:1 says the fixtures are behind the fixture feature, but fixture.rs:4 gates raw with cfg(test) while the pub mod state is not gated. browse.rs:8 gates its fixtures with cfg(test) only. The gating does not match the module doc.
 
 ### C-021 [medium] Ctrl modifier gating differs between grid and viewer zoom — PARTIAL
+
+**Disposition: No change.** The gating differs by action, by design.
 
 keys.rs:105-106 uses Ctrl for the grid's Plus and Minus (row resize), keys.rs:134-135 uses plain keys for viewer zoom, and keys.rs:117 gives B no modifier check. The actions differ, so the gating differs by design; the finding does not show a shortcut that is wrong.
 
@@ -1053,13 +1165,19 @@ The web client's numeric limits disagree. DESIGN.md:1297 allows 4 held polls per
 
 ### C-023 [medium] Stop-wait timings differ across app and library — PARTIAL
 
+**Disposition: No change.** Each wait is for its own purpose, so the values are not meant to match.
+
 The stop waits are per purpose: yandex.rs:102 `STOP_WAIT` 2 s, library.rs:34 `JOB_STOP_WAIT` 5 s, inbox.rs:142 `SHUTDOWN_DRAIN` 5 s, and coordinator.rs:47 `RETIRE_WAIT` 10 s. Their names describe different waits, so the values are not meant to match. The naming is mixed, and the values are not a conflict.
 
 ### C-024 [low] Batch and bench variable names overlap — PARTIAL
 
+**Disposition: No change.** The variables are read at build time or at run time, respectively.
+
 `PG_BENCH_DATA` and `PG_BENCH_JPEG` are read at build time (catalog.rs:28 and linux.rs:23), `PG_BENCH_DATA_SOURCE` is a runtime .env key (docker README:52), and `PG_FFMPEG_BIN` is baked in at build time (load.rs:171). The overlap the finding names is real, but these are build-time versus run-time reads of different variables, not a single conflict.
 
 ### C-025 [low] Yandex fixture flag missing from test hooks list — PARTIAL
+
+**Disposition: No change.** The flag is documented at `crates/README.md:111`.
 
 crates/README.md:111 says Config::yandex is set by a recorded session that --yandex-fixture names. The hook list at README.md:509 is the screenshot hook list and does not include the flag. The flag is documented at :111, so the omission is from a separate list, not a missing doc.
 
@@ -1101,9 +1219,13 @@ qmltest.py:98 falls back to C:/Windows for WINDIR, qmltest.ps1:45 has no fallbac
 
 ### C-035 [low] PowerShell error preference differs between tools — PARTIAL
 
+**Disposition: No change.** The two scripts have different jobs, so the setting differs by design.
+
 doctor.ps1:7 sets ErrorActionPreference to Continue because it reports and keeps going, and profile.ps1:19 sets Stop because a failed profile run should end. The two scripts have different jobs, so the difference is by design.
 
 ### C-036 [low] Same-named constants defined in two crates — PARTIAL
+
+**Disposition: No change.** The values agree.
 
 `LEDGER_EVERY` is 2 s in thumbs lib.rs:34, and the catalog ledger doc at ledger.rs:52 says 2 s too. The values agree, so the finding's conflict is not there. The inbox.rs:35 doc cites `pg_app::inbox::LISTED`, which the cite does not show, so that part is unchecked.
 
@@ -1117,6 +1239,8 @@ writeback.rs:387 waits for attempts of at least 5, a literal. writeback.rs:664 u
 
 ### C-039 [low] Retry and wait intervals repeat the 50 ms literal — PARTIAL
 
+**Disposition: No change.** Each constant is for its own wait, so they need not change together.
+
 The 50 ms value appears as `RETRY_EVERY` (transaction.rs:40), `RETRY_PAUSE` (inbox.rs:139) and a literal at library inner.rs:128. The pipeline.rs:644 cite is missing. Each constant is for its own wait, so the repetition is not one value that must change together.
 
 ### C-040 [low] Time constants use mixed types — CONFIRMED
@@ -1129,9 +1253,13 @@ The CLI repeats pipeline defaults as literals: args.rs:34 has `default_value_t` 
 
 ### C-042 [low] Similar-pages count differs between crawler and app — PARTIAL
 
+**Disposition: No change.** The doc names both figures and says which one was measured.
+
 `REVERSE_SEARCH.md:72` says the crawler script sets 20 pages, while the measured runs used 5, and the app's `DEFAULT_MAX_SIMILAR_PAGES` is 5 (yandex client.rs:25). The doc names both figures and says which one was measured, so the difference is recorded, not hidden.
 
 ### C-043 [low] Planned gallery.json keys do not match the flat preferences schema — PARTIAL
+
+**Disposition: No change.** The nested keys are proposals in a plan, not the shipped file.
 
 `BOUNDED_MEMORY_PLAN.md:1537` and :1889 plan nested gallery.json keys (`grid.range_indexes`, `journal.trust_detachable`), and LANGUAGES.md:79 says the prefs schema is flat. The nested keys are proposals for a schema that does not exist yet, so the mismatch is with a plan, not with the shipped file.
 
@@ -1140,6 +1268,8 @@ The CLI repeats pipeline defaults as literals: args.rs:34 has `default_value_t` 
 eval/viewer.html:8 says Dark theme always, and color-scheme dark at :10 is the intent of that file. site/style.css is the published site and has its own light tokens. Two pages with two themes is deliberate.
 
 ### C-045 [low] Data folder names differ by platform — PARTIAL
+
+**Disposition: No change.** Each platform follows its own convention, as intended.
 
 dirs.rs:32 uses PhotoGallery under LOCALAPPDATA on Windows, and dirs.rs:37 uses photo-gallery under `XDG_DATA_HOME` or HOME on Linux. Each follows its platform's convention, which is intended; the names differ by platform, as in N-033.
 
@@ -1162,6 +1292,8 @@ cli lib.rs:237-238 gigabytes() divides by 1e9 (decimal) for cache totals, while 
 IO.md:42 labels 240 MB as 12 MiB x (8+12). 12 MiB x 20 = 240 MiB, so the unit is wrong, and IO.md:55 and :64 repeat 240 MB. `CATALOG_SIZE_PLAN.md:1` title uses decimal MB (519 MB) while its body uses MiB.
 
 ### U-003 [medium] Comments state units or contracts the code does not follow — PARTIAL
+
+**Disposition: Fixed.** The `check_len` doc says longer buffers are tolerated, the `date.rs` doc notes the leap second, the join doc separates pictures from query entries, and the gif limit is attributed to `image`.
 
 Mixed result across the instances. REFUTED: reader.rs:37 `GRID_CACHE_KIB` = `256*1024` KiB matches its KiB doc, and the 120 MB at :186-189 is a measurement, not the constant's unit. REFUTED: `shell_bridge.rs:182` (1 clockwise, -1 counterclockwise) matches controller.rs:388. CONFIRMED: convert.rs:146-150 says decoders give exactly the expected size and anything else is a bug, but `check_len` (:149-150) accepts len `>=` expected. CONFIRMED: date.rs:33 says impossible times give None, but :44 accepts seconds 0..=60 with no note on leap seconds. CONFIRMED: join.rs:309 documents `FEW_BASE` + `FEW_PER_THREAD` × T as `few_entries_on`, but :338 multiplies by `QUERY_ORIENTATIONS`. PARTIAL: gif.rs:21 cites gif's 50 MB limit, which belongs to the image crate, and codec/src/limits.rs does not exist. `NOTIFICATIONS_DESIGN.md:228` says paths are String, and :240 gives folder as `Vec<u8>`, which is a field-level exception the doc does not mark. verify.py:199 does not exist. Viewport swapsAxes range (0-3) not checked against playerTurns.
 
@@ -1311,6 +1443,8 @@ encode.rs:32 JpegEncoder::new takes quality as i32 on libjpeg-turbo's 1-100 scal
 
 ### U-040 [low] Tree anchor bits saturate at 63 and alias — PARTIAL
 
+**Disposition: No change.** The limit is documented in the code.
+
 The aliasing is real: tree.rs:69-70 bit(rank) saturates at 63, so anchors 64 and later share bit 63. But the doc at :67-68 states it and gives the reason (no machine has that many drive letters), so it is a documented limit, not a contract violation.
 
 ### U-041 [low] Fixed-point scales in SQL sort and filter keys — CONFIRMED
@@ -1349,6 +1483,8 @@ The code's flag is --retry-errors (cli args.rs:90-92), and `IMPORT_FAILURES_PLAN
 
 ### N-005 [medium] Crate and package names are written three ways across code and docs — PARTIAL
 
+**Disposition: No change.** Hyphens in package names and underscores in imports is the Rust convention.
+
 crates/dedup/Cargo.toml names the package pg-dedup, so dups.rs:2 is right to write the hyphenated package name. The hyphen and underscore split is the Rust convention: package names are hyphenated and imports underscored. The real mixing is in tools/crate-layers.txt:32 (jobs-testkit against bare names). The finding's manifest instances (pg-cli, pg-log, pg-metadata, pg-model, pg-edit) are consistent.
 
 ### N-006 [medium] Notice name for a refused folder differs between the error map and the test — REFUTED
@@ -1365,6 +1501,8 @@ Two types named Listing are in the pg-app crate: inbox.rs:149 (the inbox's listi
 
 ### N-009 [medium] Scratch folder base names are reused across unrelated tests — PARTIAL
 
+**Disposition: No change.** Scratch names are labels; `run_folder` gives each call its own folder.
+
 testkit's `run_folder(scratch`, prefix) makes distinct folders per call, and platform/src/testing/tests.rs:286 tests that calls made together are distinct. Reusing a scratch base is therefore a grouping label, not a collision. The real inconsistency is that `scratch_rate` is shared by unrelated tests (crop, `crop_tags`, `crop_roots`, writeback) while `scratch_crop` and `scratch_cli` are used elsewhere.
 
 ### N-010 [medium] Stored turns count is called rotation in some places and turns in others — CONFIRMED
@@ -1376,6 +1514,8 @@ FileState.rotation (model state.rs:16) is the stored turns, and FileState.turns 
 Prefixes are mixed in baseline.sql: the table is `file_failures` (:120), the index `file_failures_live` (:233), the triggers `files_failures_stale` and `files_failures_hidden` (:433, :440), and `file_failures_stamp` (schema.rs:380). The triggers `files_changed` (:424) and the index `files_changed` (:241) share one name.
 
 ### N-012 [medium] Thumbs output version key and constant are named three ways — PARTIAL
+
+**Disposition: No change.** The three names are for three different values.
 
 The three names are for different things, which the finding overstates. meta '`thumbs_version'` (baseline.sql:463) is the thumbnailer's version, and `THUMBS_VERSION` is its constant (`pg_render`). '`thumb_output_version'` (thumbcache schema.rs:156) is the cache's output format, and `THUMB_OUTPUT_VERSION` is its constant. writer.rs:393 is a comment, not a key, so that instance is wrong. The similar names for different values are a real hazard.
 
@@ -1409,6 +1549,8 @@ C++ members use a trailing underscore (`frame_sink.cpp:10` `state_`, `video_sour
 
 ### N-020 [medium] Bench folder root literals differ between bench cases — PARTIAL
 
+**Disposition: No change.** These are separate fixtures; the difference is style only.
+
 catalog.rs:121 and :241 use different literal roots: `r'PhotoGallery\synthetic\library'` for the list bench and `r'D:\bench\library'` for the scan bench. These are separate fixtures and may be meant to differ. The duplicated literal is a style issue, not a clear error.
 
 ### N-021 [medium] Environment variable prefixes are mixed across tools and build scripts — CONFIRMED
@@ -1421,9 +1563,13 @@ The notice fixtures use a.jpg.pg-tmp (golden.jsonl:18 and notice.rs:1397). The c
 
 ### N-023 [medium] Notification design doc names differ from the code — PARTIAL
 
+**Disposition: No change.** The design doc declares each override it makes.
+
 `NOTIFICATIONS_DESIGN.md` is a design doc that records its own overrides: each 'Cache events (overrides ...)', 'Keeper close (overrides ...)' and 'Dev mode (overrides ...)' bullet says which earlier name it replaces, and the overridden names are called out. The differences the finding lists are therefore declared, not accidental. The doc has no stale claims left unmarked at the instances checked.
 
 ### N-024 [medium] Eval folder and label names for similar-but-not-duplicate pairs disagree — PARTIAL
+
+**Disposition: No change.** The folder name on disk is consistent; the labels differ only cosmetically.
 
 The same set is named differently by tool: eval/viewer.html:152 says Hardest negatives, verify.py:100 uses `similar_folder`, evaluate.py:130 uses `hard_negative_pairs_flagged`, and evaluate.py:209 uses similar-folder pairs flagged. The folder on disk is `similiar_but_not_dups` everywhere (common.py:91, `TEST_SET.md:29`), so that spelling is consistent, though misspelled.
 
@@ -1437,9 +1583,13 @@ The same set is named differently by tool: eval/viewer.html:152 says Hardest neg
 
 ### N-027 [medium] Module file name does not match its main type — PARTIAL
 
+**Disposition: Fixed.** `OPEN_ITEMS.md` names `Lanes::request_crop` at `coordinator.rs:307`. The module name is defensible.
+
 No type Coordinator exists in the library crate. The main type in coordinator.rs:130 is Lanes, and coordinator.rs:731 has a fn coordinate. `OPEN_ITEMS.md:157` cites `Coordinator::request_crop`, which does not exist, so that doc is stale. lanes.rs:65 has pub struct Group, which is a separate concept in a separate file. The file name itself is defensible.
 
 ### N-028 [low] Action and event names differ across the client controller layers — PARTIAL
+
+**Disposition: No change.** The repeated name reflects layering, not a clash.
 
 ListShown appears in three enums (controller.rs:83, input.rs:17, start.rs:286), which are in different layers and carry the same event name for the same fact. Event::FilesChanged mapping to Command::RefreshTurned (controller.rs:327) and Event::Reload mapping to `open_list` (controller.rs:326) are real naming gaps. The repeated ListShown is layering, not a clash.
 
@@ -1453,13 +1603,19 @@ Accessors for stored codes differ: detection.rs and media.rs Kind use key() and 
 
 ### N-031 [low] Decision, finding and item identifiers are numbered inconsistently in the plans — PARTIAL
 
+**Disposition: No change.** Each plan numbers its own decisions.
+
 Each plan numbers its own decisions, so Q3 (`BACKGROUND_JOB_AUDIT_FIXES`) and Q-S1 (`BOUNDED_MEMORY`) differ by plan and are not wrong. D1 and D2 do appear in both `CATALOG_SIZE_PLAN` and `BOUNDED_MEMORY_PLAN` with different meanings, which is real. `REFACTOR_LEDGER's` skipped F-56 and F-57 are a gap, and REVIEW.md:19 says IDs are never reused, so the gap is consistent.
 
 ### N-032 [low] Decoder and feature names differ in small ways across the crates — PARTIAL
 
+**Disposition: No change.** This is style variance, not a difference in meaning.
+
 Naming here is style variance, not meaning drift: container `png_chunks`, `png_` and `jpeg_` prefixes against unprefixed riff and find, and codecs.rs:43 writing ::png::Scratch with a leading :: while the webp type has none. The features (pg-codec fixtures, pg-catalog fixture) are documented in crates/README.md:138 as a deliberate test-support rule.
 
 ### N-033 [low] Product and data-folder spellings differ across docs and code — PARTIAL
+
+**Disposition: No change.** `LANGUAGES.md:85` documents the spellings.
 
 The product is named four ways in LANGUAGES.md:85 (Photo Gallery, gallery, pg-gallery, PhotoGallery), and the spelling of the UI title is documented there. layout.rs:151 and :154 assert different default folders per platform (PhotoGallery on Windows, photo-gallery under .local/share on Linux), which follows platform convention and is intended. eval/viewer.html:6 is a separate tool titled NDD Bake-off.
 
@@ -1468,6 +1624,8 @@ The product is named four ways in LANGUAGES.md:85 (Photo Gallery, gallery, pg-ga
 Inbox operations are named singular at the app layer and plural at the store layer: `thumb_failed` and `thumb_made` (inbox.rs:509), `thumbs_failed` and `thumbs_made` on Store (inbox.rs:641), and ThumbsFailed and ThumbsMade on Step (inbox.rs:718). Thumb::Failed and Thumb::Made (inbox.rs:214) add a third form.
 
 ### N-035 [low] Phase and pass labels in code comments are stale project labels — PARTIAL
+
+**Disposition: Fixed.** The stale `Phase 4` and `N-13` labels are removed from `core.rs`, `schema.rs` and `roots.rs`.
 
 Comments cite project labels a reader can't resolve: roots.rs:557 'N-13', schema.rs:85 'Phase 4', schema.rs:624 'N-13'. The finding's work.rs:909 'Phase 3' cite is past EOF (the file has 761 lines), so that instance can't be checked. The labels are project tracking names, stale for code readers, though not wrong.
 
@@ -1488,6 +1646,8 @@ Dialog titles are ui-removal-discard-title (DiscardRemovalDialog.qml:32), ui-rem
 cli.ftl ids all begin cli-; text.ftl ids have no file prefix (text.ftl:1 is the header). Hint ids use digit suffixes, as in keys.rs:273 ui-hint-up-4 and :274 ui-hint-down-1. The mix is real but is documented per file.
 
 ### N-040 [low] Constants and helper names differ in small ways across tools and crates — PARTIAL
+
+**Disposition: No change.** The differences are across languages and tools, not one codebase.
 
 sort.rs:7 uses KEYS where facets, panels, keys and input use ALL, a real split. The others are cross-language or unrelated: Get-Median (sweep.ps1:30) against Median (`few_sweep.ps1`), `sha256_of` (`setup_ffmpeg.py`) against Get-Sha256 (PowerShell), and `FILE_FLAG` constants in `png_read_bench.rs` against bare literals in `jpeg_read_bench.rs`. Those are different languages or tools, so they are not a codebase inconsistency.
 
@@ -1575,6 +1735,8 @@ prefs.rs:19-20 says missing fields take defaults and unknown fields are ignored 
 
 ### V-021 [medium] `THUMBS_VERSION` is wired into the thumb cache at five call sites — PARTIAL
 
+**Disposition: No change.** The production call site is correct, and the test call sites are intentional.
+
 Production site lib.rs:39 (`open_thumbs`) and test call runner.rs:370 are correct. The cited src paths are wrong: library/src/video.rs and writeback.rs do not exist, and library/src/lanes.rs:73 has no `THUMBS_VERSION`. The matching calls are in library/tests/lanes.rs:73, tests/video.rs:241 and tests/writeback.rs:103, so the line numbers hold but the directory is wrong. The duplication is real.
 
 ### V-022 [low] Catalog lowers newer marks while refusing newer schemas — CONFIRMED
@@ -1619,6 +1781,8 @@ nvjpeg.py:6 says declarations come from nvjpeg.h 13.2. requirements.txt:8 pins n
 
 ### V-032 [low] Library Cargo.toml calls versions a module — PARTIAL
 
+**Disposition: Fixed.** The `library/Cargo.toml` comment separates modules from functions.
+
 library/Cargo.toml:11 lists versions among items, and the comment mixes module names (runner, folders, scans) with functions (`open_catalog`, `open_thumbs`, versions). lib.rs:44 has pub fn versions(), so it is a fn. The manifest never calls it a module; the finding's reading is an inference. The line is stale only in that ambiguity.
 
 ### V-033 [low] Version owner named inconsistently in docs — CONFIRMED
@@ -1639,13 +1803,19 @@ config.rs:12-16 macro `cache_version!(`) yields the literal 1 (:14). :19 `CACHE_
 
 ### V-037 [low] ExifTool version given as an example and a probe version in code — PARTIAL
 
+**Disposition: No change.** There is no conflicting pin, and the probe note is dated.
+
 `install_exiftool.py:8` uses --version 13.59, which matches the Justfile pin (`exiftool_version` 13.59.0, `exiftool_source_version` 13.59). The 13.50 probe at exiftool/src/lib.rs:187 is a dated test note, not a conflicting pin. So the 'inconsistent' example does not hold; the probe note is only a historical reference.
 
 ### V-038 [low] Gate baseline commit named two ways — PARTIAL
 
+**Disposition: No change.** Both references are accurate for their dates.
+
 PROFILING.md:401-402 says the baseline was last re-measured at e7576f0. `REFACTOR_MEASUREMENTS.md:82` says HEAD's counts are baseline.json at a22fbad, in a dated 2026-11-04 section. Both are accurate for their dates, so they are not contradictory. The doc does not say which is current.
 
 ### V-039 [low] Argon2 implementation named differently between design and measurement — PARTIAL
+
+**Disposition: Fixed.** `WEB_CLIENT_DESIGN.md` points to the argon2-cffi measurement in `WEB_CLIENT_TECH_DECISIONS.md`.
 
 `WEB_CLIENT_DESIGN.md:174` proposes the argon2 Rust crate 0.5.3 with m=65536, t=3. `TECH_DECISIONS.md:16` states the measurement used argon2-cffi 25.1.0 (Python). The library difference is stated in `TECH_DECISIONS`, so 'undocumented' overstates it; only the design has no pointer to the measurement's library.
 
@@ -1660,6 +1830,8 @@ baseline.sql:30 says 8 orientations of 32 bytes (256). pdq.rs:8 ORIENTATIONS = 4
 refusal.rs:8 serde uses `rename_all` kebab-case, so ExFat serialises as ex-fat, while refusal.rs:79 code() returns exfat. Both are strings for the same variant; the serde one is the persisted tag.
 
 ### PF-003 [high] Unrated stored two ways and ratings CHECK forbids the file-side form — PARTIAL
+
+**Disposition: No change.** `writers.rs:541` documents that a user's 0 stars clears the row. `file_ratings` allows 0 by design.
 
 Unrated is stored two ways: the ratings table (baseline.sql:81) has CHECK BETWEEN 1 AND 5, so the user side deletes the row for 0 stars (writers.rs:545-546), while `file_ratings` (baseline.sql:85-88) allows 0..5 and takes Some(value) unchanged. The title's claim that the ratings CHECK forbids the file-side form is muddled: the CHECK on ratings applies to the user side. The writers.rs:380 and :383 cites are the pair-delete and analysis insert, not ratings writes.
 
@@ -1689,6 +1861,8 @@ Level mapping Info=0, Warning=1, Error=2 is written three times: inbox.rs:424 `l
 
 ### PF-010 [medium] Hard-coded SQL literals where shared constants or macros exist — PARTIAL
 
+**Disposition: Fixed.** `AUTO_VACUUM_INCREMENTAL` is a named constant in catalog and thumbcache. The `0xFFFFFFFFFFFF` mask literal is unchanged; it is documented as deliberate.
+
 The mask 0xFFFFFFFFFFFF is repeated as a literal in sql.rs:91 and at least seven places in work.rs (57, 64, 465, 483, 505, 656, 665), with no named constant, so the repetition is real. The premise that a shared constant exists is wrong for this literal. `live_failures!` (sql.rs:130) is already a macro and its literal is documented as deliberate, because the partial index needs the literal condition. The thumbcache `auto_vacuum` literal 2 (schema.rs:229) has no named constant, a real case.
 
 ### PF-011 [medium] Temp-file suffix convention diverges — CONFIRMED
@@ -1697,9 +1871,13 @@ Temp names differ: writeback file.rs:46 uses a leading dot and .pg-write; yandex
 
 ### PF-012 [medium] Version meta key names differ for the same thumbnail version — PARTIAL
 
+**Disposition: No change.** The keys are in different databases and name different constants.
+
 `thumb_output_version` is written to thumbcache meta (thumbcache schema.rs:156), and `thumbs_version` is the catalog meta mark (core.rs:225, fixture/raw.rs:270). They are different databases and different constants (`THUMB_OUTPUT_VERSION` and `THUMBS_VERSION`). The writer.rs:393 cite is a comment about eviction and does not name a key. The cited key names are not the same value under two names.
 
 ### PF-013 [medium] Missing value encoded as -1 in some places and null or NULL in others — PARTIAL
+
+**Disposition: No change.** The persisted sentinels are documented in `prefs`; the others are in-memory UI values.
 
 Persisted -1 is the prefs `last_file` sentinel (prefs.rs:104, 'a negative number reads as none') and the eval ids .npy (`cpu_worker.py:54`). Most other -1 cites (LaneRow.qml:17, VideoLog.qml:9) are in-memory UI sentinels that are never written. SQL uses NULL for unknown created (baseline.sql:208). The persisted mix is real but narrower than the finding says.
 
@@ -1721,6 +1899,8 @@ Viewport.qml:32 does not exist. A search for a fit/ image URL form in the QML an
 
 ### PF-018 [medium] README data folder list omits thumbs.sqlite — PARTIAL
 
+**Disposition: Fixed.** `crates/README.md` names `thumbs.sqlite`.
+
 crates/README.md:288-290 lists the catalog folder as holding catalog.sqlite and the thumbnail cache, without the file name. The same README names thumbs.sqlite at line 71 and at 360. layout.rs:75 puts thumbs.sqlite in `catalog_dir`. The data-folder list omits the file name, but does name the cache, so this is a wording gap, not a missing file.
 
 ### PF-019 [medium] `io_attempts` columns and triggers differ between two plan docs — CONFIRMED
@@ -1740,6 +1920,8 @@ The docs agree with the built catalog. baseline.sql:204 and :208 declare roots, 
 The names are one scheme across code and docs. rebuild.rs:26 uses .building, rebuild.rs:31 uses .pre-v{version}.bak, and rebuild.rs:44 uses .partial beside the backup. The moved-aside names (.replaced, .bad, numbered .1) come from one function, dbfile remove.rs:14. inbox.rs:44 and rehearsal.rs:79 describe the same names. The cited lifecycle.rs:752 is a test that uses the same scheme.
 
 ### PF-023 [medium] Analysis row version uses `IMPORT_VERSION` — PARTIAL
+
+**Disposition: No change.** Using `IMPORT_VERSION` for the analysis is by design (`versions.rs:10`).
 
 The analysis version is `IMPORT_VERSION` by design: versions.rs:10 says the analysis pipeline's version is `pg_analysis::analyze::IMPORT_VERSION`, so an analysis made at another version is redone. The value is documented. Naming it `IMPORT_VERSION` is confusing, but the code and the doc agree, so this is a naming issue, not a stored-value defect.
 
@@ -1761,13 +1943,19 @@ pairs.rs:136 opens the span pass.pairing, while control.rs:248 maps Phase::Pairi
 
 ### PF-028 [low] Tombstone retention and listing key proposals conflict with decided docs — PARTIAL
 
+**Disposition: No change.** Both documents treat retention as undecided.
+
 `INCREMENTAL_SYNC.md:60` proposes replacing 90-day retention and marks it Recommended, not accepted. `TECH_DECISIONS.md:207` keeps 90 days and marks it as a proposal. Both documents treat retention as undecided, so they do not contradict each other on the decision. The conflict with the bounded-memory plan's Phase 2 freeze is noted in `INCREMENTAL_SYNC.md:58` and is real, but it is one open item, not a split decision.
 
 ### PF-029 [low] Historical thumbs-v3 cache name in profiling notes — PARTIAL
 
+**Disposition: No change.** The note is dated history, not a live name.
+
 `START_PROFILE.md:219` is a historical note that the first run of a new build made the empty thumbs-v3.sqlite. That is a dated record, not a live name. The PROFILING.md:170 cite does not exist: grep for thumbs-v3 in docs finds it only in this audit. PROFILING.md:171 names thumbs.sqlite, which is the current name.
 
 ### PF-030 [low] Catalog `application_id` checked only when `user_version` is positive — PARTIAL
+
+**Disposition: Decided and applied.** The catalog checks `application_id` once a file has objects or a version, at any version. A new file has neither. Regression test: `the_application_id_is_checked_at_version_zero_too`.
 
 schema.rs:310 checks `application_id` only when `user_version` is above 0. judge.rs:131 treats id 0 as not foreign and any other differing id as foreign. The two rules differ for id 0 and for version 0. Neither doc states which is intended, so this is a real divergence whose intent is unrecorded.
 
@@ -1785,6 +1973,8 @@ viewer.html:165 defines pairKey as sort-and-join with |, and viewer.html:607 def
 
 ### PF-034 [low] Analysis row column lists disagree with the plan — PARTIAL
 
+**Disposition: No change.** The planned upsert is not built yet.
+
 writers.rs:382-383 INSERT OR REPLACE names 18 columns, and no `dups_state` appears in the catalog source. `DECODE_ONCE_PLAN.md:475` describes a 29-column upsert with `dups_state`, which is a planned change. The plan is not built, so the drift is expected unless the plan says it is done. The 27-column `analysis_rewritten` trigger (plan :716) is also a planned statement that was not checked in code.
 
 ### PF-035 [low] Research manifest has double .html extensions — CONFIRMED
@@ -1792,6 +1982,8 @@ writers.rs:382-383 INSERT OR REPLACE names 18 columns, and no `dups_state` appea
 docs/research/MANIFEST.tsv has five rows ending .html.html (grep count 5), matching the rows 08, 36, 44, 45 and 48.
 
 ### PF-036 [low] Inbox key separator differs between the catalog and QML fixture — PARTIAL
+
+**Disposition: No change.** The catalog key and the desktop key are different identities.
 
 The catalog's `key_text` (inbox.rs:394-396, used at :366) joins with U+001F. The desktop InboxEntryId key is row:{id}:{uid} and ledger:{code} (notices.rs:156-163), a different identity used for selection. The QML fixture (`tst_inbox_panel.qml:109`, row:2:2) follows the desktop key, not the catalog one. The cited fixture therefore agrees with the desktop side. Whether the catalog key and the desktop key should match was not settled, so the finding names the wrong pair.
 
@@ -1802,6 +1994,8 @@ The catalog's `key_text` (inbox.rs:394-396, used at :366) joins with U+001F. The
 thumbcache reader.rs reads the catalog's tables directly through ATTACH: `cat.sqlite_sequence` at :33 and cat.files in `catalog_volumes` at :121-123. The crate's own comment (Cargo.toml:11-13) says it reads through the views alone. The pg-catalog entry at Cargo.toml:24 is the dev dependency for the tests, which the comment also says.
 
 ### A-002 [high] `REFACTOR_DESIGN` states a wrong desktop dependency set and a non-existent query path — PARTIAL
+
+**Disposition: Fixed.** `REFACTOR_DESIGN` says the desktop has eight pg crates at runtime (it includes `pg-perf`).
 
 `REFACTOR_DESIGN.md:11` says the desktop depends on seven pg crates at runtime. desktop Cargo.toml:20-22 lists eight, including pg-perf, so the count is wrong. `REFACTOR_DESIGN.md:46` says `pg_catalog::query` does not exist and that `from_json` and `to_json` are in pg-query. pg-query has both (lib.rs:319 and :325), so that line is correct, and the finding misreads it.
 
@@ -1827,6 +2021,8 @@ Desktop imports app items from two paths: notices.rs:93 and `failed_files/state.
 
 ### A-008 [medium] Module docs name crates outside their dependency set — PARTIAL
 
+**Disposition: No change.** The references are prose, not imports.
+
 client image.rs:51, render transcode.rs:1-2, thumbs placeholders.rs:7 and log file.rs:9 name crates outside their dependency set. These are prose references, not imports, so no build depends on them. They only become broken links if written as intra-doc links, and the cites show plain prose. The finding is about wording, not dependency.
 
 ### A-009 [medium] Test fixtures come from four different places — CONFIRMED
@@ -1834,6 +2030,8 @@ client image.rs:51, render transcode.rs:1-2, thumbs placeholders.rs:7 and log fi
 Test fixtures come from four places: pg-testkit (edit Cargo.toml:10-11 says so), `pg_codec::fixtures` (edit crop.rs:156 and rotate.rs:89), and a file from another crate, `include_bytes` of ../../video/tests/sample.mp4 (library tests writeback.rs:291). `REFACTOR_LEDGER.md:63` (F-18) says the image dev-dependency should move to pg-testkit.
 
 ### A-010 [medium] Platform path rules reached directly instead of injected or wrapped — PARTIAL
+
+**Disposition: No change.** The desktop uses native rules by design (`catalogs.rs:17-21`).
 
 Direct uses of `PATH_RULES` are real: schema.rs:269 and :291 pass it into `bring_to`, which takes rules as a parameter (:146-148), and desktop folders.rs:49, `failed_files.rs:76` and gallery model.rs:99 use it directly. The desktop uses the native rules by design, as catalogs.rs:17-21 documents, so only the places that skip the wrapper are open.
 
@@ -1851,6 +2049,8 @@ lanes.rs:5-6 says the module is pure and tested without a disk. groups at :74-76
 
 ### A-014 [medium] Platform rule enforced through different mechanisms per crate — PARTIAL
 
+**Disposition: No change.** The real gap is an unadopted process ban, listed in `CLIPPY_LEDGER.md`.
+
 The platform rule uses different mechanisms by design: boundaries.py checks the platform words with an empty `PLATFORM_GLUE` (boundaries.py:40), and clippy `disallowed_types` is the mechanism for process spawning. `CLIPPY_LEDGER.md:299` lists the process ban as warn with adoption still to do. The mechanisms are not one rule in one place, but each rule has a check; the gap is the unadopted ban, not a conflict.
 
 ### A-015 [medium] Dependency and library-crate counting differs between module-graph tools — CONFIRMED
@@ -1867,9 +2067,13 @@ GlobalShortcuts.qml:4 and Main.qml say what a shortcut does is the controller's,
 
 ### A-018 [medium] Version registry location differs from the planned location — PARTIAL
 
+**Disposition: No change.** The registry location matches the code; the planned location was not verified.
+
 `tools/test_versions.py:14` scans crates/model/src/versions.rs as the registry, and versions.rs:1-3 is the registry (commit 991f5119 made the hand-written versions its). The test and the file agree. The finding cites a planned location that the instances do not show, so the mismatch is with the plan, which is not verified here.
 
 ### A-019 [medium] Catalog-free command path and catalog folder creation in the CLI — PARTIAL
+
+**Disposition: No change.** The split is intended and documented in the function's doc comment.
 
 cli lib.rs:130-139 runs borders of piped pixels or of outside files without a catalog and creates the catalog folder for every other command. The split is intended and documented in the function's own doc comment, so the two paths differ on purpose.
 
@@ -1879,9 +2083,13 @@ Python tooling uses different import conventions: flat imports (eval/accel.py:33
 
 ### A-021 [low] Historical layering claims in plan docs without status markers — PARTIAL
 
+**Disposition: No change.** The plan states the change as a plan item, which serves as its status.
+
 `BACKGROUND_JOB_AUDIT_FIXES.md:176` says the analysis to platform layer is to be added to crate-layers.txt, and crate-layers.txt:31 still lacks platform for analysis, so the plan is not executed. The finding wants status markers on the plan's layering claims. The plan does state its change as a plan item, which is the status marker the finding asks for.
 
 ### A-022 [low] Plan layer maps predate the current crate-layer file — PARTIAL
+
+**Disposition: Fixed.** The stale `DECODE_ONCE_PLAN` layer map is marked stale; `tools/crate-layers.txt` is the current map.
 
 `DECODE_ONCE_PLAN.md:1176` gives an import map of analysis catalog dedup jobs model platform render thumbcache trace. crate-layers.txt:40 gives analysis catalog container dedup jobs model perf platform, so the plan's map is stale. `GUI_THREAD_PLAN.md:111` (catalog may depend on dbfile, log, model, platform, query) matches crate-layers.txt:25, and `MULTI_DRIVE_LANES_PLAN.md:53` (jobs not on catalog or scan) matches crate-layers.txt:28. Only one of the four plan maps is stale.
 
@@ -1911,6 +2119,8 @@ The same leaf-below-core rationale is repeated across the catalog's module heade
 
 ### A-029 [low] Catalog comments tie to other crates' internals and phase numbers — PARTIAL
 
+**Disposition: Fixed.** The stale "Phase 4" label in `core.rs` is removed. The other two cited probe files do not exist.
+
 The two probe cites (`stmt_journal_probe.rs:9` and `pairs_write_probe.rs:11`) do not exist at those paths, so those instances cannot be checked. core.rs:109 says Test-only until the crash tests (Phase 4), a stale phase label that a reader cannot resolve. The finding has one real instance and two unchecked ones.
 
 ### A-030 [low] Pairing tooling couples to the v13 queue table — CONFIRMED
@@ -1927,6 +2137,8 @@ writeback lib.rs:165-167 holds thumbs as a leaked static reference, and the test
 
 ### A-033 [low] Desktop and app module boundary details — PARTIAL
 
+**Disposition: No change.** The finding does not show that any boundary is wrong.
+
 keymap.rs:68 imports a cxx-generated MediaKind from `gallery_bridge` in a non-bridge module, and `yandex_bridge.rs:1-2` says the allow is on this module and lib.rs. The shell state.rs:9 carries its own expect. These are small module boundary differences, and the finding does not show that any is wrong.
 
 ### A-034 [low] CLI manifest dependency order — CONFIRMED
@@ -1937,6 +2149,8 @@ cli Cargo.toml:11-13 lists pg-library before pg-borders and pg-dedup, so the six
 
 ### ML-001 [high] Client clippy.toml drops the `temp_dir` ban that root and model carry — PARTIAL
 
+**Disposition: Fixed.** The client and model `clippy.toml` now ban `std::env::temp_dir`, as the root does. Neither crate calls it. The model file did not carry the ban before, so the finding's premise was partly wrong.
+
 The root clippy.toml:25 bans `std::env::temp_dir`, and crates/client/clippy.toml has no `temp_dir` entry, so the client's gap is real. crates/model/clippy.toml does not ban `temp_dir` either (it bans `read_to_string`, write and `read_dir` at :20-23), so the finding's claim that model carries it is false. The cite clippy.toml:21 is a comment line; the ban is at :25.
 
 ### ML-002 [high] Three clippy.toml files repeat root settings by hand — CONFIRMED
@@ -1944,6 +2158,8 @@ The root clippy.toml:25 bans `std::env::temp_dir`, and crates/client/clippy.toml
 The root clippy.toml:2-4 sets the `allow-*-in-tests` keys, and crates/model/clippy.toml:3-5 and crates/client/clippy.toml:3-5 repeat them by hand. The model file's own comment at :1-2 says to keep them in step with the root file, so the duplication is acknowledged and manual.
 
 ### ML-003 [high] Workspace lint comment says warn while clippy lints are deny — PARTIAL
+
+**Disposition: Fixed.** The `Cargo.toml` comment scopes "warn" to the rust lints; the clippy group is deny where it says so.
 
 The comment at Cargo.toml:60 says the lints are kept at warn so work in progress builds, and it sits above the [workspace.lints.rust] table, which is the rust lint group. The clippy group at :71-98 is deny, under its own comment at :79-80. The comment is accurate for the table it sits on and does not cover the clippy group, so the conflict is in reading, not in the lint levels.
 
@@ -1993,6 +2209,8 @@ accel.py:131 and run.py:343 use a parenthesised reason after noqa, `nvimgcodec_b
 
 ### ML-015 [medium] Boundary bans described as enforced by deny.toml are not all present — PARTIAL
 
+**Disposition: Fixed.** The codec `Cargo.toml` comment now says `deny.toml` names the crates allowed to depend on the image decoders.
+
 `REFACTOR_LEDGER.md:61` (F-16) records the planned windows-sys and cxx bans as missing, and that is an open item, not a claim that deny enforces them. codec Cargo.toml:10 says image decoders are linked here and nowhere else (deny.toml), but deny.toml:56 lets image be wrapped by pg-library, pg-testkit and pdqhash as well as pg-codec. The codec comment overstates the ban.
 
 ### ML-016 [medium] Ruff repo-wide errors outside the lint scope — REFUTED
@@ -2005,13 +2223,19 @@ Cargo.toml:69 is `undocumented_unsafe_blocks`; `GUI_THREAD_PLAN.md:1719` cites l
 
 ### ML-018 [low] WTFPL allowance in deny.toml matches no crate — PARTIAL
 
+**Disposition: Not verified.** `cargo deny` cannot fetch crates offline here, so the WTFPL entry is unchecked.
+
 deny.toml:34 allows WTFPL. Whether any crate uses it needs cargo-deny to run, and I did not run it, so the claim that the entry matches no crate is unverified. LANGUAGES.md:426 is a phase table row, not a cite of this entry, so it does not show the entry is unused.
 
 ### ML-019 [low] quick-xml entries left in manifests after the planned removal — PARTIAL
 
+**Disposition: No change.** The removal is planned and has no date, so the entries are expected for now.
+
 `EXIFTOOL_PORT_PLAN.md:378-380` plans the removal of legacy and quick-xml, including fuzz/Cargo.toml:82, deny.toml:53 and :84, and the lock lines. The entries are still present, which is expected while the removal is a plan, not done. The finding treats the planned removal as overdue, but the plan does not set a date.
 
 ### ML-020 [low] Windows feature additions planned but not in the workspace list — PARTIAL
+
+**Disposition: No change.** The additions are planned, so the gap is between a plan and the manifest.
 
 LANGUAGES.md:51, `EXIFTOOL_PORT_DESIGN.md:471` and `MULTI_DRIVE_LANES_PLAN.md:135` name Win32 features (Globalization, `System_Time`, `System_Ioctl`) that are not in Cargo.toml:49-54. These are planned additions, so the gap is between a plan and the manifest, not a bug.
 
@@ -2028,6 +2252,8 @@ tools/static-qt/pg-video.patch:11 uses cargo:rerun-if-env-changed with one colon
 `video_source.cpp:7` and its other branches use the compiler macro `_WIN32`, while `gpu_device.cpp:22` and its other branches use Qt's `Q_OS_WIN`. The same platform test is written two ways across the desktop C++ files.
 
 ### ML-024 [low] Shebang lines present on some Python tools and absent on others — PARTIAL
+
+**Disposition: No change.** Cosmetic; left as is.
 
 The shebang mix is real: tools/profiling/bench.py has a shebang line, `bench_data.py` has none, and cgtab.py and `ci_setup.py` have one. Two of the cited files do not exist at the cited paths (`tools/profiling/grow_catalog.py`, keep.py and medians.py are missing; keep.py is at tools/profiling/pairing/keep.py).
 
@@ -2057,9 +2283,13 @@ desktop lib.rs:95-101 lists mod declarations that are not in order: worker sits 
 
 ### ML-031 [low] Feature combinations missing from the clippy gate — PARTIAL
 
+**Disposition: Decided and applied.** `lint.py` gains clippy steps for `dhat-heap` (pg-gallery) and `specta` (pg-model). A new guard, `tools/check_feature_coverage.py`, fails `just lint` when a feature has no lint step, dependency, or allowed reason.
+
 dhat-heap is a feature of crates/gallery (Cargo.toml:28-29), off by default, so the clippy gate with default features does not compile it. The specta dependency is at the root (Cargo.toml:42), and whether a model feature gates it was not checked here.
 
 ### ML-032 [low] Crates listed under both dependencies and dev-dependencies in library — PARTIAL
+
+**Disposition: No change.** It is a Cargo pattern for enabling a feature in tests.
 
 library Cargo.toml lists pg-catalog and pg-writeback, and pg-borders, under both dependencies and dev-dependencies (with fixture and fault features). Cargo allows this, and the dev-dependency entry is how a test enables a feature. The duplication is a Cargo pattern, not an error.
 
@@ -2078,6 +2308,8 @@ library Cargo.toml lists pg-catalog and pg-writeback, and pg-borders, under both
 `NIGHTLY_AND_BUILD_FLAGS_PLAN.md:232` and LANGUAGES.md:129 both say just lint runs cargo deny. tools/lint.py has no deny step (a grep for deny finds nothing), and the Justfile deny recipe is outside lint. The docs state a step that does not run.
 
 ### TL-003 [high] WSL and container policy stated inconsistently across docs — PARTIAL
+
+**Disposition: Fixed.** `PLAN.md` says Linux runs in the `pg-dev`, `pg-tools` and `pg-eval` containers.
 
 PLAN.md:19 says WSL is not used and Linux runs in pg-dev. IO.md:91 describes an ExifTool probe run in WSL and `TIER2_ANN_BAKEOFF_PLAN.md:102` says CPU indexes ran in WSL until 2026-11-11 and then moved, so both are dated history. The current policy is consistent. The TIER2 doc names pg-eval where PLAN names pg-dev, which is a real naming difference but both are containers, not WSL.
 
@@ -2131,13 +2363,19 @@ sweep.ps1:52 merges stderr with `2>&1`. `few_sweep.ps1:44` and oracle.ps1:74 tak
 
 ### TL-016 [medium] Probe binaries disagree on scratch cleanup and duplicate scheduling — PARTIAL
 
+**Disposition: No change.** The rotation claim was not located, and the probes are examples.
+
 Scratch cleanup differs: `pairs_load_probe.rs:108` and `pairs_write_probe.rs:114` call `remove_dir_all`, while `stmt_journal_probe.rs:206` creates its `run_folder` and never removes it. The cites are at crates/catalog/examples/, not src/, which is the real location. The rotation claim ((k + run) % len at :90 and :86) was not located by a search for % len, so it is unverified.
 
 ### TL-017 [medium] Screenshot comparison exists as both a PowerShell and a Python tool — PARTIAL
 
+**Disposition: Fixed.** `BOUNDED_MEMORY_PLAN.md` names `tools/compare_shots.py`; there is no PowerShell version.
+
 The premise that a PowerShell tool exists beside the Python one is false: tools/compare-shots.ps1 does not exist, only `tools/compare_shots.py` does. `BOUNDED_MEMORY_PLAN.md:1567` still names the .ps1, so the stale reference is the real defect. The 25-scenario claim at `compare_shots.py:104-129` was not confirmed (:104 is a blank line in the view).
 
 ### TL-018 [medium] Eval scripts parse command lines in three styles — PARTIAL
+
+**Disposition: No change.** The third style was not established, and the styles differ by script.
 
 Two styles are seen: encoders.py:238 dispatches on sys.argv[1] through a dict, and eval/ann/run.py:524-525 reads stage names from sys.argv. linux.py does not use argparse (no match), so the cited comparison does not hold for linux.py. Some eval scripts use argparse; the claimed third style was not established.
 
@@ -2167,6 +2405,8 @@ cli lib.rs:745-746 asserts wants(...) is true for the CLI's own subcommands and 
 
 ### TL-025 [low] CI leaves a debug variable and sets a tool-missing flag — PARTIAL
 
+**Disposition: Decided and applied.** The temporary `CARGO_LOG` line is removed from `ci.yml`. `PG_REQUIRE_TOOLS` is intended and stays.
+
 ci.yml:59-60 sets `CARGO_LOG` with the comment 'Diagnostic (temporary)', so the debug variable is left in CI with a temporary label. `PG_REQUIRE_TOOLS` at ci.yml:51 is an intended setting (its comment says so), not a leftover.
 
 ### TL-026 [low] Tool-availability probes differ across library tests — CONFIRMED
@@ -2190,6 +2430,8 @@ deadline.cpp:5 and screenshot.cpp:13 include "`pg-desktop/cpp/<name>.h"`. `frame
 `CATALOG_SIZE_PLAN.md:312` says bump LAYOUT = "v10-windows-rules" at catalog.rs:43. The bench code has `BENCH_LAYOUT` = "v1-windows-rules" at catalog.rs:36. The constant name, the line and the version all differ from the plan's instruction, so the plan is stale.
 
 ### TL-031 [low] Version lint script referenced from the versions registry — PARTIAL
+
+**Disposition: No change.** `test_versions.py` does enforce that each owner reads its constants.
 
 `tools/test_versions.py` exists and does the regex scan of `*VERSION` constants described in its docstring (lines 1-4 and 16-17). The versions.rs:7 claim that it fails on a constant no owner reads was not confirmed in the parts read, so only the outside-module check is verified.
 
@@ -2229,6 +2471,8 @@ ci.yml:56 windows-2025 and :224 ubuntu-26.04 (the finding's :223 is the job name
 
 ### P-009 [medium] gungraun-runner installed without --locked while other cargo installs use it — PARTIAL
 
+**Disposition: No change.** The omission is deliberate and commented in the Dockerfile.
+
 Dockerfile:115 gungraun-runner has no --locked. Dockerfile:113-114 gives the reason in a comment: the published lock pins yoke-derive 0.8.3, which was yanked. :116 and :87-90 use --locked. The omission is deliberate and commented, so inconsistent describes a documented exception.
 
 ### P-010 [medium] Rust components and the installer are declared in both `ci_setup.py` and rust-toolchain.toml — CONFIRMED
@@ -2261,13 +2505,19 @@ build-jpeg-turbo.ps1:24 and build-static-ffmpeg.ps1:24 hard-code Toolset 14.44.3
 
 ### P-017 [low] Measurement records cite GPU and image library versions that differ from the current pins — PARTIAL
 
+**Disposition: No change.** The docs state measurement versions by design.
+
 Accurate for nvImageCodec (`JPEG_ENCODERS.md:53` measured 0.9.0.20; pin 0.10.0.9), nvJPEG (`JPEG_DECODERS.md:492` measured 13.2; requirements.txt:8 pins 13.3.2.43) and Pillow 12.2.0 (`PNG_DECODERS.md:47`). Not accurate for Pillow 13 (`JPEG_DECODERS.md:51`), which matches requirements.txt:11 pillow 13.0.0, or for libvips (no pin exists). The docs state measurement versions by design.
 
 ### P-018 [low] FFmpeg and mpv versions in docs disagree with the shipped FFmpeg 9.0.2 — PARTIAL
 
+**Disposition: No change.** No mpv version is pinned, and the docs label their own FFmpeg builds.
+
 mpv 0.41 does not appear in `VIDEO_PLAYER.md` (the doc says 0.42.0 at :261 and :289). FFmpeg: PROFILING.md:126 labels its Linux build as FFmpeg 8 (Ubuntu) and says the Windows app ships avcodec-63, so that is a stated separate build. `JPEG_DECODERS.md:54` names FFmpeg 8 mjpeg in a decoder table without a build label. No mpv version is pinned anywhere.
 
 ### P-019 [low] Eval torch CUDA tag in MODELS.md is stale against requirements — PARTIAL
+
+**Disposition: No change.** Only the dated measurement uses the older tag; the rest matches the pin.
 
 requirements.txt:65 pins torch 2.15.0+cu134. `TEST_SET.md:13` says CUDA 13.4 (matches). MODELS.md:190 says cu132 then cu134, which measures the same. MODELS.md:152 says cu132 for the driver-621.01 measurement, a dated record. Only the dated measurement uses cu132; the rest agrees with the pin.
 
@@ -2280,6 +2530,8 @@ requirements.txt:60-62 pins TensorRT 11.4.0.106. accel.py:40 defaults `TRT10_DIR
 Justfile:142 says bump cargo-modules in ci.yml and the container reads it from here. `tools/ci/github_files.py:81` maps cargo-modules to `cargo_modules_version` and reads it from the Justfile through `just_value`. So CI no longer needs a separate bump, and the bump-both instruction is stale. The cite Justfile:140 is a comment line; :143 is the 0.28.0 pin.
 
 ### P-022 [low] Two Windows binding crates in one platform crate, and a stale windows-sys line reference in a plan — PARTIAL
+
+**Disposition: No change.** Both binding crates are real; the plan cite is wrong.
 
 Both binding crates are in platform: picker.rs:129 uses the windows crate, dir.rs:122 and drive.rs:240 use `windows_sys`. That part holds. `DECODE_ONCE_PLAN.md:299` does not mention windows-sys at all, so the plan-reference instance is wrong. Cargo.toml:54 windows-sys 0.61 is at line 54, as the finding says.
 
@@ -2305,13 +2557,19 @@ yandex/src/http.rs:11-14 sets Chrome/108.0.0.0 and says it is the same User-Agen
 
 ### P-028 [low] Qt 6.12 cited as a version in code comments, not only READMEs — PARTIAL
 
+**Disposition: No change.** Two of the three cited instances name the version; the third is a Qt source file name.
+
 Qt 6.12 is named in platform/audio.rs:1 and desktop/qml/GridCell.qml:77 as the finding says. `gpu_device.cpp:4` cites Qt's source file qrhid3d11.cpp, not a Qt version. Two of the three instances match the claim.
 
 ### P-029 [low] Key version tied to toolchain Unicode version — PARTIAL
 
+**Disposition: No change.** The dependency is already documented in the function's doc comment (`types.rs:268-270`).
+
 types.rs:272 combines `KEY_ALGO_VERSION` with `char::UNICODE_VERSION`, as stated. The toolchain dependency is already documented in the function's doc comment at types.rs:268-270 (recomputed on another toolchain). The key-version doc the finding asks for does not exist as a separate doc.
 
 ### P-030 [low] SHA-256 comparison uses two different case conventions — PARTIAL
+
+**Disposition: No change.** `setup-ffmpeg.ps1` is not at HEAD, and the Python side compares case-insensitively.
 
 tools/setup-ffmpeg.ps1 is deleted in the working tree (uncommitted) and present at HEAD. The Python side also compares case-insensitively: `setup_ffmpeg.py:96` lowercases the pin and :109 compares `sha256_of(zip`). The cited line 82 is `top_folder`, not the SHA comparison. Both sides are case-insensitive, so the two-conventions claim describes style, not behaviour.
 
@@ -2343,6 +2601,8 @@ notice.rs:1049 gives Cropped and BordersCut Warning when failed `>` 0 and Info o
 
 ### UI-007 [medium] Status word for Failed differs between filter chip and status — PARTIAL
 
+**Disposition: Not verified.** The filter chip's label was not located. The status word matches its test.
+
 The test at text.rs:821-825 expects the Failed status to read 'Unreadable', which matches text.ftl:14 (status-failed = Unreadable). The filter chip's label was not located, so whether the chip and the status word actually differ is unverified.
 
 ### UI-008 [medium] Dialog buttons come from two label sources — CONFIRMED
@@ -2358,6 +2618,8 @@ The count argument to words.phrase is passed as a fixed 0 (YandexPreview.qml:129
 ui.ftl:135 writes Shift+R, :218 writes R / Shift+R, :230 writes ⇧R, and text.rs:790-799 asserts the hint strings in both forms. Key notation differs across the hint lines.
 
 ### UI-011 [medium] Client-facing English Display text bypasses the catalogue — PARTIAL
+
+**Disposition: Decided and applied.** The desktop's `cause_text` wraps a raw error in the catalogued `failure-detail` message ("Error: …"). The raw text itself stays English, since it comes from the system or library.
 
 The English Display impls exist: names.rs:153 NormalizeError, scan lib.rs:344 ScanError::Removed, catalog error.rs:37 RootRemoved, library folders.rs:17 AddError::Refused, and writeback lib.rs:98 WriteError, which its doc says the app words through `pg_client::text`. The CLI maps NormalizeError itself (cli lib.rs:149-151). Whether the English Display text reaches a GUI user was not confirmed, so the finding is only partly shown.
 
@@ -2383,6 +2645,8 @@ dbfile judge.rs:49 says 'it is not a database', dbfile remove.rs:35 says 'can't 
 
 ### UI-017 [low] Product name spelled as a Rust literal and in Fluent — PARTIAL
 
+**Disposition: Fixed.** The error box title comes from the `ui-app-name` entry.
+
 The em-dash claim is refuted: ui.ftl:122 and LANGUAGES.md:85 both use 'Photo Gallery — {text}' with an em dash, so no hyphen is in use. The real defect stands: alert.rs:6 passes the literal 'Photo Gallery' to the error box instead of going through a catalogue key (ui-app-name at ui.ftl:121 exists), and text.ftl:172 holds the crash box text.
 
 ### UI-018 [low] Window and dialog strings use different scripts and separators — CONFIRMED
@@ -2403,9 +2667,13 @@ Both failed-file link keys read 'Show the failed files': ui.ftl:103 (ui-inbox-sh
 
 ### UI-022 [low] Historical plan docs name keys and facts the code no longer uses — PARTIAL
 
+**Disposition: No change.** The historical plans are dated records.
+
 'round-failed' is still a live key in the catalog doc (ledger.rs:58) and RoundFailed is still a Notice in the client (text/notice.rs:74), so one cited key is still in use. The 'scan-failed' key and the RoundPanicked-as-State claim were not checked, so the historical-drift claim is only partly shown.
 
 ### UI-023 [low] Sentence-final periods differ between messages and labels — PARTIAL
+
+**Disposition: No change.** Labels and sentences are different kinds of string.
 
 yandex-nothing-picked (text.ftl:137) and yandex-no-folder (:138) end with a period, and ui.ftl labels (:8 onward) do not. Labels and sentences are different kinds of string, so a missing period on labels is expected. Whether messages are consistent with each other was not checked across the file.
 
@@ -2461,6 +2729,8 @@ The inbox logs under a literal target inbox (inbox.rs:446, and at 553, 844, 851,
 
 ### LG-006 [medium] CLI summary written to stderr in one mode and stdout in another — PARTIAL
 
+**Disposition: No change.** The split keeps stdout clean when stdout carries the data.
+
 In --stdin mode the borders command writes its data to stdout (lib.rs:715) and so writes its summary to stderr (lib.rs:716), which keeps stdout clean for the data. The CSV mode prints its summary to stdout because there is no data stream. The two modes differ for a reason, so the mismatch is a choice, not a fault.
 
 ### LG-007 [medium] Environment version line on stderr in one eval script, stdout in others — CONFIRMED
@@ -2505,6 +2775,8 @@ exiftool/lib.rs:298 prints ExifTool not found: skipped. platform testing.rs:77 p
 
 ### LG-017 [low] Print lint allows a stderr line that uses Debug level names — PARTIAL
 
+**Disposition: No change.** The Debug form in the human line is deliberate; the stored JSON form is lowercase.
+
 plain() (log record.rs:59) uses the Debug form of the level for the human stderr line, so the line reads Warning. The doc at log lib.rs:18 describes the JSON level field as lowercase info, warning or error, and that is the stored form. The human line is a different output, so the Debug form there is not a contradiction. The finding's point is that the two forms differ, which is true but deliberate.
 
 ### LG-018 [low] Identical warning text repeated in two places — CONFIRMED
@@ -2525,6 +2797,8 @@ Catalog lifecycle warnings use the target catalog at lifecycle.rs:198, and the m
 
 ### LG-022 [low] Same user-visible message written in PowerShell and Python twins — PARTIAL
 
+**Disposition: No change.** `setup-ffmpeg.ps1` is not at HEAD, so the twin message cannot be shown.
+
 tools/setup-ffmpeg.ps1:22 is missing from the working tree (deleted, present at HEAD), so that cite can't be checked here. The python cite at `setup_ffmpeg.py:75` is a docstring and does not print the sentence. The twin-message claim is not shown by these cites.
 
 ### LG-023 [low] Tool status words use different vocabularies — CONFIRMED
@@ -2532,6 +2806,8 @@ tools/setup-ffmpeg.ps1:22 is missing from the working tree (deleted, present at 
 doctor.ps1:17 uses ok and MISSING, perf-compare.py:113 uses SKIPPED, NO-BENCH, MISSING, OVER and UNDER in uppercase, and fork-updates.py:99 uses lowercase newer release and current. The status words for a check's result use three vocabularies.
 
 ### LG-024 [low] Command echo present in some Python tools but not the shell build — PARTIAL
+
+**Disposition: No change.** The Python echo pattern is real; the shell build it compares with no longer exists.
 
 docker/check.py:27 and pgtools.py:128 echo each command with a + prefix. build.sh does not exist in the repository (no such file in tools), so the shell-build comparison in the finding cannot be checked. The Python echo pattern is real.
 
@@ -2548,6 +2824,8 @@ Progress cadence differs: verify.py:791 prints every 100 pairs, `verify_synth.py
 Test diagnostics use eprintln in browse tests.rs:415 and codec decode.rs:471, and println in join.rs:2912, `rules_reference.rs:126` and rehearsal.rs:102. Low severity.
 
 ### LG-028 [low] Superseded `PG_METRICS` body left in `DECODE_ONCE_PLAN` — PARTIAL
+
+**Disposition: No change.** The superseded note is marked, so the staleness is visible.
 
 `DECODE_ONCE_PLAN.md:1227` carries a superseded note that says `PG_PERF_LOG` replaces `PG_METRICS` and that nothing was built under the old name. The body below the note still describes it, which is how superseded design text usually stays in a plan. The note is there, so the staleness is marked, not hidden.
 
@@ -2574,6 +2852,8 @@ The scratch root names do not follow one pattern. `scratch_store`, `scratch_list
 Timing asserts with fixed windows exist: roots.rs:984 asserts under 4 s, transaction.rs:219 under 1 s, inbox.rs:1690 sleeps 1 s to hold a lock, writeback.rs:403 sleeps a fixed 3 s. `MULTI_DRIVE_LANES_PLAN.md:455` records a 3 s deadline test that failed once in a parallel run.
 
 ### T-005 [medium] Known flaky tests recorded in plans but left unfixed — PARTIAL
+
+**Disposition: Not verified.** The flaky-test rate was not reproduced here, so whether the test is still flaky is unknown.
 
 `IMPORT_FAILURES_PLAN.md:185` records a flaky test that fails 2 of 5 alone. The test still exists under its name at thumbs/src/lib.rs:699, not at the cited :687 (which is a different test). The 2-of-5 rate was not reproduced here, so whether it is still flaky is unknown.
 
@@ -2667,15 +2947,21 @@ Hand-rolled generators: browse/read/tests.rs:452 defines struct Rng with xorshif
 
 ### T-028 [low] Known-gap statements in plans about test coverage — PARTIAL
 
+**Disposition: Fixed.** `LANGUAGES.md` and `NIGHTLY_AND_BUILD_FLAGS_PLAN.md` say `cargo deny` is its own recipe, not part of `just lint`.
+
 The plan's coverage gaps are real: LANGUAGES.md:130 says the pseudo scenarios run but are not compared, and `REFACTOR_LEDGER.md:90` (F-34) says only doctest = false is set. But LANGUAGES.md:129 lists cargo deny in just lint, which lint.py does not run (see DOC-001). eval/jpeg-decoders/linux.py:176-177 runs only clippy and fmt, as stated. Mixed: most gaps are accurate, one is stale.
 
 ### T-029 [low] Ignored test reason and invocation name different crates — PARTIAL
+
+**Disposition: No change.** The wording is loose, not wrong.
 
 `compares_real_jpegs` is in crates/codec/src/decode.rs:438, and its invocation (cargo test -p pg-codec) is correct. `JPEG_DECODERS.md:226` calls it the app's ignored test. The app is the whole product, so the wording is loose rather than wrong.
 
 ## concurrency-unsafe
 
 ### CU-001 [medium] Lease heartbeat cadence: plan says 5 s thread, code renews every 20 s in write transactions — PARTIAL
+
+**Disposition: Fixed.** `BACKGROUND_JOB_AUDIT_FIXES.md` notes the heartbeat thread is not built. The code renews the lease every 20 s.
 
 `BACKGROUND_JOB_AUDIT_FIXES.md:82` describes a heartbeat thread that beats every 5 s. scan lib.rs:205 has `RENEW_EVERY` = 20 s, scan lib.rs:45 renews with each batch and every 20 s, and catalog lease.rs:21 writes the heartbeat as the first statement of each write transaction. The code documents a different mechanism. Whether the plan is the decided design or a proposal was not settled, so the plan is stale against the code.
 
@@ -2688,6 +2974,8 @@ app reader.rs:150, :170 and :243 store the cancel flag with Relaxed. catalog cor
 lifecycle.rs:112 and :168 open a transaction with `Transaction::new_unchecked(conn`, Immediate), which skips `write_transaction`. `write_transaction` (transaction.rs:87-97) retries on DatabaseBusy, so these two writes have no busy retry.
 
 ### CU-004 [medium] Pre-check outside the write lock, then write in a second transaction — PARTIAL
+
+**Disposition: Fixed.** The `clear_failures` doc says a failure recorded between the check and the transaction is newer than these results, so it stays.
 
 The read-then-write pattern is real: inbox.rs:142 checks before `write_transaction` at :145, ledger.rs:189 checks before the write at :192, and pair.rs:393 probes outside the transaction. lifecycle.rs:108 reads outside, but :169 checks again inside the transaction, so that one is safe. inbox.rs and ledger.rs were not confirmed to re-check inside.
 
@@ -2811,9 +3099,13 @@ Public functions beside documented ones are undocumented in many files: `set_pau
 
 ### AD-007 [medium] Doc comments attached to the wrong item or duplicated — PARTIAL
 
+**Disposition: Fixed.** The duplicate paragraphs are removed from the `crop.rs` module doc and the writeback test doc.
+
 `library_bridge.rs:19` is directly above `kept_removals` (line 20), and its text (waits for an unfinished write) reads as that property, so the attachment is right and roots at line 18 has no doc. The claim that each doc is shifted one property off would need the property at line 22 to confirm, and that line was not read. The writeback test docs at :71-73 and the crop.rs:68-70 doc are real duplications of the same paragraph, which is the stronger part of the finding.
 
 ### AD-008 [medium] Python docstring and argparse description conventions diverge — PARTIAL
+
+**Disposition: No change.** The three conventions are real, but most cited paths do not match.
 
 `install_exiftool.py:46` takes the first paragraph of the docstring, `make_test_video.py:18` takes line 1 of the docstring split by lines, and cgtab.py:325 uses the whole docstring with a raw formatter. The three conventions are real. Most of the other cites (`bench_data`, perf-compare, `make_bench_jpeg`, `setup_ffmpeg`, `synthetic_library`) are at paths that do not match the cite, so they are not checkable as written.
 
@@ -2822,6 +3114,8 @@ Public functions beside documented ones are undocumented in many files: `set_pau
 Fields are undocumented beside documented ones: catalog fixture.rs:15 (File), inbox.rs:72-73 (Entry), inbox.rs:92-96 (Mark), ledger.rs:143 (FailedFile), model details.rs:13 (Details.size), model view.rs:15-16 (Listing), and the others listed. The gap is common across the model and catalog.
 
 ### AD-010 [low] Doc comments on public items name private machinery or other-crate variants — PARTIAL
+
+**Disposition: Fixed.** The pub doc in `dedup/src/join.rs` no longer names the private `run_team`.
 
 join.rs:516 mentions `run_team`, which the doc says is private; that is an internal name in a public doc. app error.rs:25-26 names client message variants, which the app is allowed to name because it depends on the client's text layer. Only the join doc is an internal-name leak, and the finding's second instance is an intended cross-layer reference.
 
@@ -2843,6 +3137,8 @@ maker.rs:20-22 documents the public statics DECODE, RESIZE, ENCODE and THUMBHASH
 
 ### AD-015 [low] Mode lists in the two decoder harness tools are documented differently — PARTIAL
 
+**Disposition: Not verified.** The harness paths the audit cites do not exist, so the check cannot be made.
+
 Both cites are missing at the paths given: the harness is at eval/jpeg-decoders/harness/harness.cpp, and the main.rs cite does not exist as written. The mode-list difference between the two tools cannot be checked from these cites.
 
 ### AD-016 [low] Script-header conventions: PowerShell help blocks and first-line verb form — CONFIRMED
@@ -2863,65 +3159,6 @@ TestHooks.qml:29 says The options are read here, while the comment at :64 says t
 
 ### AD-020 [low] Plan docs cite API shapes that differ from the code — PARTIAL
 
+**Disposition: No change.** The plans mark their own API shapes as not verified.
+
 The plans already mark their own API shapes as not verified against current code: `CATALOG_SIZE_PLAN.md:225`, `DECODE_ONCE_PLAN.md:380` and `BOUNDED_MEMORY_PLAN.md:121` each carry a not verified marker in the finding text. The divergence is expected for a plan, and the plans say so. The finding is accurate about the gap but not about a hidden error.
-
-## Disposition of the 149 PARTIAL findings
-
-Each PARTIAL was checked against the code and docs it cites. Result: 39 fixed, 6 need a decision, 6 could not be verified here, and 98 were checked with no change (by design, historical or dated, or the cited claim does not hold on reading).
-
-Verification: the edited crates pass `cargo check --all-targets` (pg-model, pg-platform, pg-codec, pg-dedup, pg-edit, pg-thumbcache, pg-catalog, pg-client, pg-library). pg-desktop was not built (it needs the Qt build). `tools/test_versions.py` and `tools/test_ci_files.py` pass.
-
-### Fixed (39)
-
-- **Docs and comments:** DOC-005, DOC-010, DOC-023, DOC-034, DOC-035, DOC-045, DOC-053, DOC-058, DOC-067, DOC-069, DOC-076, DOC-078, DOC-088, DOC-089. Each doc or comment now matches the code.
-- **Duplication:** D-017 (`Day::parse` delegates to `parse_iso_date`); D-034 (the "fence mutex" is the registry lock, now named as such in WEB_CLIENT_RECONCILED).
-- **Errors:** E-044 (`drive.rs` names `ERROR_NOT_READY`).
-- **Config:** C-016 (Prefs has eleven fields, per LANGUAGES).
-- **Units:** U-003 (`check_len` doc, leap-second doc, join pictures vs query entries, gif limit attribution).
-- **Naming:** N-027 (OPEN_ITEMS names `Lanes::request_crop`); N-035 (stale phase labels removed).
-- **Versions:** V-032 (library `Cargo.toml` comment); V-039 (Argon2 measurement pointer).
-- **Persisted formats:** PF-010 (`AUTO_VACUUM_INCREMENTAL` in catalog and thumbcache; the `0xFFFFFFFFFFFF` mask literal is unchanged); PF-018 (README names `thumbs.sqlite`).
-- **Architecture:** A-002 (desktop has eight pg crates at runtime); A-022 (stale DECODE_ONCE layer map marked); A-029 (Phase 4 label).
-- **Manifests and lints:** ML-001 (`temp_dir` ban added to client and model `clippy.toml`; neither crate calls it); ML-003 (Cargo comment scopes "warn" to the rust lints); ML-015 (codec `Cargo.toml` comment).
-- **Tooling:** TL-003 (PLAN lists the three Linux containers); TL-017 (BOUNDED_MEMORY names `compare_shots.py`).
-- **UI text:** UI-017 (error box title from the `ui-app-name` entry).
-- **Tests:** T-028 (LANGUAGES and NIGHTLY: `cargo deny` is its own recipe, `just deny`).
-- **Concurrency:** CU-001 (BACKGROUND_JOB_AUDIT_FIXES notes the heartbeat thread is not built); CU-004 (`clear_failures` doc: a failure recorded between the check and the transaction is newer and stays).
-- **API docs:** AD-007 (duplicate paragraphs in crop and writeback tests); AD-010 (private `run_team` removed from a pub doc).
-
-### Decided and applied (6)
-
-The six open decisions were resolved and applied:
-
-- **D-050:** `build.sh` deleted; `profile.ps1` and `tools/README.md` point at `build.py`. This also settles D-049, TL-008 and DOC-059.
-- **E-025:** a malformed TIFF sample type is now a decode error (`tiff.rs`); real budget limits are unchanged.
-- **PF-030:** the catalog checks `application_id` once a file has objects or a version, at any version. A new file has neither. Regression test: `the_application_id_is_checked_at_version_zero_too`.
-- **ML-031:** `lint.py` gains a `dhat-heap` clippy step and a `specta` one. A new guard, `tools/check_feature_coverage.py`, fails `just lint` when a feature has no lint step, a dependency that turns it on, or an allowed reason.
-- **TL-025:** the temporary `CARGO_LOG` is removed from `ci.yml`.
-- **UI-011:** `cause_text` wraps a raw error in the catalogue's `failure-detail` message.
-
-The original questions follow, for reference.
-
-### Needs a decision (6, original list)
-
-- **D-050:** `tools/profiling/callgraph/build.sh` still sits beside `build.py`, which says it replaced it. Deleting it also settles D-049, TL-008 and DOC-059. Not deleted here.
-- **E-025:** codec kind mapping (png `LimitsExceeded` to `InsufficientMemory`). Needs a per-case call.
-- **PF-030:** catalog `application_id` is checked only when `user_version > 0` (`schema.rs:310`), while `judge.rs:131` treats id 0 differently. The intent is not recorded.
-- **ML-031:** the `dhat-heap` feature is not in the clippy gate. Adding it changes the gate.
-- **TL-025:** `CARGO_LOG` marked "Diagnostic (temporary)" in `ci.yml:59-60`. Removing it is a CI decision.
-- **UI-011:** whether English `Display` text reaches a GUI user was not confirmed.
-
-### Could not verify here (6)
-
-- **DOC-036:** needs a bindgen run against the FFmpeg headers; no generated bindings exist in `target/`.
-- **DOC-072:** measured timings in comments; not reproducible in this checkout.
-- **ML-018:** `cargo deny` cannot fetch crates offline; the WTFPL entry is unchecked.
-- **UI-007:** the filter chip's label was not located.
-- **T-005:** the flaky-test rate was not reproduced.
-- **AD-015:** the harness paths the audit cites do not exist.
-
-### Checked, no change (98)
-
-- **Accurate on reading, cite wrong, or claim does not hold:** DOC-026, DOC-032, DOC-057, DOC-073, DOC-081, DOC-090, DOC-091, DOC-093, D-066, E-008, E-012, E-028, E-039, C-005, C-025, PF-003, P-030, LG-022, LG-024, TL-031, P-022, P-028, T-029, AD-008.
-- **By design or documented choice:** C-012, C-014, C-019, C-021, C-023, C-024, C-035, C-036, C-039, C-042, C-045, D-013, D-030, D-045, E-055, E-059, U-040, N-005, N-009, N-012, N-020, N-023, N-024, N-028, N-031, N-032, N-033, N-040, A-008, A-010, A-014, A-019, A-033, V-021, PF-012, PF-013, PF-023, PF-036, ML-024, ML-032, TL-016, TL-018, LG-006, LG-017, UI-023, DOC-065, DOC-066.
-- **Historical plan, dated snapshot, or planned work:** DOC-009, DOC-015, DOC-039, DOC-092, D-035, D-071, E-040, E-045, E-061, A-018, A-021, C-043, ML-019, ML-020, PF-028, PF-029, PF-034, V-037, V-038, P-009, P-017, P-018, P-019, P-029, UI-022, LG-028, AD-020.

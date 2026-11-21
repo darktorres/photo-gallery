@@ -4,7 +4,7 @@ Status as of 2026-11-21, against the commit that holds this file (`261ea501` and
 `docs/plans/CONSISTENCY_PROGRAM_PLAN.md`. This file is scratch state: delete it when the program ends.
 
 Phase 0 is finished. Its last item, `profile.ps1`, is removed: `profile.py` runs now that `callgraph/build.py` runs the Pin kit's wrappers.
-Phase 1 is done in the working tree, uncommitted (no commit was asked for). Its gates ran once at the end of the phase, and they are green (the last row of the table).
+Phase 1 is committed as `e2c3b4a5`. Phase 2 is done in the working tree, uncommitted (no commit was asked for); its gates ran once at the end of the phase and are green (the last row of the table).
 
 | Step | Commit or state | Gate result |
 |---|---|---|
@@ -31,8 +31,10 @@ Phase 1 is done in the working tree, uncommitted (no commit was asked for). Its 
 | GPU track: E-002 (`colour_check`) | `colour_check.exe` ran on two 4:4:4 inputs: 0 mismatched channels | Fixed in part: 4:2:0 and 4:2:2 are from 2026-11-14, not re-run |
 | GPU track: U-030 (PNG allocation counts) | the C harness builds with `alloc_count.cpp` | Fixed in part: the comparison is not run |
 | GPU track: E-017, P-004, V-030 | not run: E-017 needs a GPU run of nvimgcodec_bench; P-004 needs the win_build chain and a pin change (its URL changes with the SHA); V-030 needs both nvJPEG toolkits | Deferred, with the reasons in the audit |
-| Phase 1: PF-026 (`WriteKind::Turns` to `Rotation`, `write_turns!` to `write_rotation!`; stored key unchanged) | uncommitted | green (see the gates row below) |
-| Phase 1: N-030 (`key`/`from_key` for stored spellings; `Resolver::token`), N-016 (two test names), N-034 (grain rule, No change), N-010 (`rotation` fields to `turns`) | uncommitted; naming rule in `crates/README.md` | green (see the gates row below) |
-| Phase 1: T-018 (`pg_render` aliases removed; `pg_model::versions::` everywhere) and T-027 (generators to `pg_testkit::Rng`) | uncommitted | green (see the gates row below) |
-| Phase 1: N-017 (QML `*Asked` to `*Requested`) | uncommitted | green: `just build debug`, `just qmltest` (143 passed) |
-| Phase 1 gates, run once at the end of the phase | uncommitted | `just check` green, no warnings; `just lint` green (rustfmt fixes in `queue.rs`, `runner.rs`, `lanes.rs`; a doc link in `refusal.rs`); `just test` 1452 Rust tests passed; `just test-tools` 93 passed, 3 skipped |
+| Phase 1: PF-026 (`WriteKind::Turns` to `Rotation`, `write_turns!` to `write_rotation!`; stored key unchanged) | `e2c3b4a5` | green (see the gates row below) |
+| Phase 1: N-030 (`key`/`from_key` for stored spellings; `Resolver::token`), N-016 (two test names), N-034 (grain rule, No change), N-010 (`rotation` fields to `turns`) | `e2c3b4a5`; naming rule in `crates/README.md` | green (see the gates row below) |
+| Phase 1: T-018 (`pg_render` aliases removed; `pg_model::versions::` everywhere) and T-027 (generators to `pg_testkit::Rng`) | `e2c3b4a5` | green (see the gates row below) |
+| Phase 1: N-017 (QML `*Asked` to `*Requested`) | `e2c3b4a5` | green: `just build debug`, `just qmltest` (143 passed) |
+| Phase 1 gates, run once at the end of the phase | `e2c3b4a5` | `just check` green, no warnings; `just lint` green (rustfmt fixes in `queue.rs`, `runner.rs`, `lanes.rs`; a doc link in `refusal.rs`); `just test` 1452 Rust tests passed; `just test-tools` 93 passed, 3 skipped |
+| Phase 2: U-004 (client turns end to end) | uncommitted | `Turns` carries `Event::Turn`/`Command::Turn`; the QML's signed count is converted once in `Shell::turn`; `Turns` serde reads a signed count and writes a bare number |
+| Phase 2 gates, run once at the end of the phase | uncommitted | `just check` green; `just lint` green; `just build debug` and `just qmltest` (143 passed); `just test` 1455 Rust tests passed (3 new: the serde test in `model`, and two controller law tests); `just test-tools` 93 passed, 3 skipped |

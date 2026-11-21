@@ -29,6 +29,7 @@ use pg_model::notice::{Notice, Op, ViewOp};
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
+use pg_model::turns::Turns;
 use pg_model::view::SavedView;
 
 use crate::rows::{file_id_of, qt_int};
@@ -248,9 +249,11 @@ impl qobject::Shell {
         }
     }
 
+    /// `turns` is the QML's signed count (1 clockwise, -1 counterclockwise): it is converted here, once, so the
+    /// controller and the gallery carry [`Turns`].
     pub(crate) fn turn(self: Pin<&mut Self>, item: i32, turns: i32) {
         if let Ok(item) = usize::try_from(item) {
-            self.dispatch(Event::Turn { item, turns });
+            self.dispatch(Event::Turn { item, turns: Turns::of(i64::from(turns)) });
         }
     }
 

@@ -17,12 +17,11 @@ use crate::rows::qt_int;
 use crate::worker;
 
 impl qobject::GalleryModel {
-    /// Turn a file by quarter turns (1 = clockwise, -1 = counterclockwise), losslessly, in the background: the
+    /// Turn a file by quarter turns clockwise (three is counterclockwise), losslessly, in the background: the
     /// controller's `Turn` command. The turn is queued for the file on the writes' thread, and the item shows it once
     /// it is queued (`turn_queued`).
-    pub(crate) fn rotate(self: Pin<&mut Self>, item: i32, turns: i32) {
+    pub(crate) fn rotate(self: Pin<&mut Self>, item: i32, turns: Turns) {
         let Some(id) = self.file_at(item) else { return };
-        let turns = Turns::of(i64::from(turns));
         if turns == Turns::NONE {
             return;
         }

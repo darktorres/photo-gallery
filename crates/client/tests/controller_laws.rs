@@ -16,6 +16,7 @@ use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
 use pg_model::rules::Merged;
 use pg_model::size::{Factor, RowHeight, Scale};
+use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
 use proptest::prelude::*;
 
@@ -61,6 +62,31 @@ fn item_key() -> impl Strategy<Value = GridKey> {
         Just(GridKey::MarkBorder),
         Just(GridKey::Open),
     ]
+}
+
+/// A turn of an item by the signed count the desktop sends (1 clockwise, -1 anticlockwise, and any other count the bridge
+/// can carry): the event holds the quarter turns that count is.
+fn turn_event() -> impl Strategy<Value = Event> {
+    (0usize..100, -8i64..=8).prop_map(|(item, count)| Event::Turn { item, turns: Turns::of(count) })
+}
+
+proptest! {
+    /// A turn survives its recording, unchanged.
+    #[test]
+    fn turn_events_round_trip_through_json(event in turn_event()) {
+        let text = serde_json::to_string(&event).expect("an event serialises");
+        let back: Event = serde_json::from_str(&text).expect("an event deserialises");
+        prop_assert_eq!(back, event);
+    }
+
+    /// A recording that holds a signed count (a counterclockwise turn is -1) reads back as the same quarter turns the
+    /// controller computes, so an older recording still replays.
+    #[test]
+    fn a_recorded_signed_turn_reads_as_its_quarter_turns(count in -8i64..=8) {
+        let recorded = serde_json::json!({ "Turn": { "item": 1, "turns": count } });
+        let event: Event = serde_json::from_value(recorded).expect("a recorded signed turn reads");
+        prop_assert_eq!(event, Event::Turn { item: 1, turns: Turns::of(count) });
+    }
 }
 
 proptest! {

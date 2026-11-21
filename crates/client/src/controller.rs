@@ -9,6 +9,7 @@ use pg_model::ids::FileId;
 use pg_model::rating::Rating;
 use pg_model::rules::Merged;
 use pg_model::size::{GridWidth, RowHeight};
+use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
 
@@ -112,7 +113,8 @@ pub enum Event {
     },
     Turn {
         item: usize,
-        turns: i32,
+        /// Quarter turns clockwise (a counterclockwise turn is three).
+        turns: Turns,
     },
     ToggleBorderMark(usize),
     /// An item's border mark is set (the viewer's own state, as the window reports it).
@@ -160,7 +162,7 @@ pub enum Command {
     /// Set the rating of an item (model).
     Rate { item: usize, rating: Rating },
     /// Turn an item by quarter turns (model).
-    Turn { item: usize, turns: i32 },
+    Turn { item: usize, turns: Turns },
     /// Toggle an item's border mark (model).
     ToggleBorderMark(usize),
     /// Set an item's border mark (model).
@@ -385,7 +387,7 @@ impl Controller {
                 match grid {
                     // The key map rates 0 to 5 only.
                     GridKey::Rate(stars) => Command::Rate { item, rating: Rating::new(stars)? },
-                    GridKey::Turn { forward } => Command::Turn { item, turns: if forward { 1 } else { -1 } },
+                    GridKey::Turn { forward } => Command::Turn { item, turns: Turns::of(if forward { 1 } else { -1 }) },
                     _ => Command::ToggleBorderMark(item),
                 }
             }

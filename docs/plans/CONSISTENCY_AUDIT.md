@@ -1703,7 +1703,7 @@ Mixed result across the instances. REFUTED: reader.rs:37 `GRID_CACHE_KIB` = `256
 
 ### U-004 [medium] Quarter-turn rotation typed as u8, i64, i32 or Turns, with literal modulus 4 — CONFIRMED
 
-**Disposition: Fixed in part.** Turns is the type in fixture, queue, lookup and browse state; the client controller still carries integers.
+**Disposition: Fixed.** The client carries `Turns` end to end. `Event::Turn` and `Command::Turn` hold `Turns`; the signed count from the QML is converted once, in `Shell::turn`, and `GalleryModel::rotate` takes `Turns`. `Turns` serialises as its number of turns and reads a signed count (`-1` is three), so a recording of the old form replays (`a_recorded_signed_turn_reads_as_its_quarter_turns`). The QML still sends `int`.
 
 `file_rotation` returns u8 (fixture/state.rs:88), `analysis_rotation` returns i64 (:189), `set_analysis_rotation` takes u8, lookup.rs:45 compares via i64::from, model image.rs:24 parses u8, Turns::new takes u8 and reduces mod 4 (turns.rs:13-14), queue.rs:113-114 and browse state.rs:85 repeat % 4 inline, and client controller.rs:113 carries i32 turns.
 

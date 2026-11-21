@@ -3,7 +3,7 @@
 Status as of 2026-11-21, against the commit that holds this file (`261ea501` and the commits after it). The plan is
 `docs/plans/CONSISTENCY_PROGRAM_PLAN.md`. This file is scratch state: delete it when the program ends.
 
-Phase 0 is finished. Its one open item is `profile.ps1`, which stays because `profile.py` cannot run here (see below).
+Phase 0 is finished. Its last item, `profile.ps1`, is removed: `profile.py` runs now that `callgraph/build.py` runs the Pin kit's wrappers.
 Phase 1 has not started.
 
 | Step | Commit or state | Gate result |
@@ -24,7 +24,7 @@ Phase 1 has not started.
 | DOC-036 (`AV_NOPTS_VALUE`) | audit disposition rewritten: Fixed; dead allowlist entry removed from `crates/video/build.rs` | `pg-video` checks green; the generated bindings contain no `AV_NOPTS_VALUE` |
 | PF-024 (static manifests) | the static builds are not in use: `D:/PhotoGallery/static` was deleted (4.3 GB) on the owner's instruction, manifests included | closed as not verifiable here; the finding stays Deferred |
 | Retained originals: `doctor.ps1`, `qmltest.ps1`, `build-jpeg-turbo.ps1`, `build-static-ffmpeg.ps1`, `win-build.cmd`, `win-env.cmd` | removed; `test_ci_files.py` `Consumers` drops the two PowerShell-agreement tests and their now-unused imports; the stale references in `tools/README.md`, `pgtools.py`, `sources.py`, `gui_app.cpp`, `STATIC_BUILD.md` and `build.ps1` are reworded; the dispositions of D-036, D-047/048, D-053..057, E-011, E-014, C-001, C-017, TL-012, P-011, P-014 are rewritten | `just lint` and `just test-tools` green |
-| `profile.ps1` (TL-008, UI-014, C-001) | kept: `profile.py` needs `callgraph/build.py`, which fails on the Pin 4.3 kit's extensionless wrappers (`pinrt/bin/pin-clang-cl++`, `pin-ld`); build.py looks only for `.exe`, `.cmd` and `.bat` | open: fix build.py's wrapper lookup, then run profile.py and delete the script |
+| `profile.ps1` (TL-008, UI-014, C-001, E-011) | `callgraph/build.py` now runs the Pin 4.3 kit's extensionless wrappers under the MSYS2 bash of `DEFAULT_MSYS`; `profile.py` ran against the debug app with a scratch catalog (exit 0, 208 s); the script is removed | TL-008, UI-014, C-001, E-011 dispositions rewritten to Fixed |
 | GPU track: packages and binaries (PNG C harness, `colour_check.exe`, `test_encoder.exe`, decoder harness, nvimgcodec venv at `tools/jpeg-eval/venv`) | done; `venv-nv10` removed | encoder fix committed as `ea0db5ae`; the venv imports nvimgcodec 0.10.0 |
 | GPU track: U-029 (`encode_gpu.cu`) | the k_dct block-count cast is checked in `encode_chunk` (refused over 0xFFFFFFFF); `test_encoder.exe` builds | Fixed in part; the encoder test run is not done |
 | GPU track: E-063 (macro format) | `dec_gpu.cpp`'s CU() now writes `<expr> failed: <error>`, as encode_gpu.cu does; the decoder harness and the encoder build compile | Fixed in part: the Python harnesses still differ |

@@ -1089,7 +1089,7 @@ ledger.rs:199-201 says `retry_failures` does nothing for the import, and that th
 
 ### E-011 [medium] Missing-configuration messages worded differently across tools — CONFIRMED
 
-**Disposition: Fixed (Python tools).** `pgtools.not_set(name, how)` words the one message, `NAME is not set: <how>`, and the Python tools that report `PG_HOME` or `QT_DIR` missing now call it (the builds, `check_qt`, `compare_shots`, `lint_qml`, `qmltest`, `profile`). Each keeps its specific hint. `qmltest.ps1` is removed. `profile.ps1` keeps its own wording until `profile.py` can run (`tools/README.md`).
+**Disposition: Fixed (Python tools).** `pgtools.not_set(name, how)` words the one message, `NAME is not set: <how>`, and the Python tools that report `PG_HOME` or `QT_DIR` missing now call it (the builds, `check_qt`, `compare_shots`, `lint_qml`, `qmltest`, `profile`). Each keeps its specific hint. `qmltest.ps1` and `profile.ps1` are removed.
 
 The `PG_HOME` message is worded differently in `build_static_qt.py:69`, `build_jpeg_turbo.py:75` and `build_static_ffmpeg.py:92`. The `QT_DIR` message is worded differently in `compare_shots.py:666`, `check_qt.py:21`, `lint_qml.py:70`, profile.ps1:26, qmltest.ps1:20 and qmltest.py:41.
 
@@ -1409,7 +1409,7 @@ CUDA error text differs across harnesses: gpu.py:42 and `nvimgcodec_bench.py:44`
 
 ### C-001 [high] dotenv quote handling differs between tools — CONFIRMED
 
-**Disposition: Fixed in part.** `lint_qml.py` and `symbolize.py` now call `pgtools.load_env_file`, which strips quotes and honours `PG_CONTAINER`, as `profile.py` and the build tools already do. The PowerShell original `profile.ps1` keeps its own loader until `profile.py` can run (`tools/README.md`).
+**Disposition: Fixed.** `lint_qml.py` and `symbolize.py` now call `pgtools.load_env_file`, which strips quotes and honours `PG_CONTAINER`, as `profile.py` and the build tools already do. The PowerShell original `profile.ps1` is removed.
 
 pgtools.py:55 strips the quotes from a .env value, as just does. `lint_qml.py:40` keeps the raw quoted value, symbolize.py:60 keeps the raw value with setdefault, and profile.ps1:22 keeps the raw value. A value written in quotes reads differently in these tools.
 
@@ -3065,7 +3065,7 @@ eval/jpeg-decoders/Cargo.toml:9 declares its own [workspace]. lint.py:22-24 runs
 
 ### TL-008 [medium] Callgraph pin build and profile logic duplicated between Python and shell/PowerShell — CONFIRMED
 
-**Disposition: Deferred.** profile.py needs callgraph/build.py, which cannot run the Pin 4.3 kit's extensionless wrappers (`tools/README.md`); profile.ps1 stays until it can.
+**Disposition: Fixed.** callgraph/build.py now runs the Pin 4.3 kit's extensionless wrappers under the MSYS2 bash of `DEFAULT_MSYS`; `profile.py` ran against the debug app with a scratch catalog on 2026-11-21 (exit 0), and `profile.ps1` is removed.
 
 The MSVC compile and link flags are written out in build.py (:86 onwards) and again in build.sh (:42-54), and build.sh is the file build.py says was replaced (DOC-059). The knob list (-o, -stop, -start) is built separately in profile.py:61 and profile.ps1:32. Duplicated in Python, shell and PowerShell.
 
@@ -3459,7 +3459,7 @@ The same refusal advice is worded three ways: lifecycle.rs:27 'made with the {na
 
 ### UI-014 [medium] Doubled and mismatched strings in doctor and qmltest scripts — CONFIRMED
 
-**Disposition: Fixed in part.** check_qt.py and profile.py use QT_DIR_HOW; the profile.ps1 original is unchanged.
+**Disposition: Fixed.** check_qt.py and profile.py use QT_DIR_HOW; the profile.ps1 original is removed.
 
 doctor.py:174 and :177 print the same strings as doctor.ps1:88 and :92. The `QT_DIR` not-set message is written in qmltest.ps1:20, qmltest.py:41 and `lint_qml.py:70`, with the same wording in each.
 

@@ -340,8 +340,16 @@ fn drive_one(
 }
 
 /// The ids of the folders at `path` or below it: folders are matched by the rules, not by the bytes of `path`, so under
-/// the Windows rules a folder spelled in another case is under the library folder all the same.
+/// the Windows rules a folder spelled in another case is under the library folder all the same. The range of their
+/// `path_key`s, which is the scan below (`folder_ids_under_by_scan`) over every folder.
 pub(crate) fn folder_ids_under(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Vec<i64>> {
+    crate::types::folders_under(conn, rules, path)
+}
+
+/// [`folder_ids_under`] by a scan of every folder with `is_under`: the definition the range query must equal, kept for
+/// the test that checks it.
+#[cfg(test)]
+pub(crate) fn folder_ids_under_by_scan(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare_cached("SELECT id, path FROM folders")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
     let mut ids = Vec::new();
@@ -788,5 +796,29 @@ mod tests {
         a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved,
         a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved_windows,
         a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved_posix
+    );
+
+    /// The folders under a path are the range over their `path_key`s, and that is the scan with `is_under` over every
+    /// folder: folders in mixed case, one the prefix of another, a name that extends another's, and a Unicode case pair.
+    fn the_folders_under_a_path_are_the_same_by_the_range_and_by_the_scan(rules: PathRules) {
+        let c = rooted(rules);
+        let folders = [r"D:\r", r"D:\R\Sub", r"D:\r\sub\deep", r"D:\rr", r"D:\r-x", r"D:\ρ\X", r"D:\Ρ\x\y"];
+        for (i, text) in folders.iter().enumerate() {
+            crate::fixture::state::add_folder(&c, i64::try_from(i).unwrap() + 1, &spelled(rules, text)).unwrap();
+        }
+        for text in [r"D:\r", r"D:\R", r"D:\r\sub", r"D:\ρ", r"D:\rr", r"D:\r-", r"D:\Ρ\x", r"D:\"] {
+            let root = p(rules, text);
+            let mut by_range = folder_ids_under(&c.conn, rules, &root).unwrap();
+            let mut by_scan = folder_ids_under_by_scan(&c.conn, rules, &root).unwrap();
+            by_range.sort_unstable();
+            by_scan.sort_unstable();
+            assert_eq!(by_range, by_scan, "under {text}");
+        }
+    }
+
+    under_both_rules!(
+        the_folders_under_a_path_are_the_same_by_the_range_and_by_the_scan,
+        the_folders_under_a_path_are_the_same_by_the_range_and_by_the_scan_windows,
+        the_folders_under_a_path_are_the_same_by_the_range_and_by_the_scan_posix
     );
 }

@@ -195,6 +195,9 @@ impl<'a> Prepare<'a> {
         }
         let mut rebuilt = None;
         if let Some(why) = why {
+            // The replacement is written beside the catalog before the old file is moved aside: a volume without the room
+            // for it is refused first, so the catalog is left as it is.
+            ensure_room_to_migrate(path, free_space)?;
             rebuilt = Some(rebuild(conn, path, set, rules, why, version.is_some())?);
             conn = Connection::open(db_file(path)?)
                 .with_context(|| format!("catalog {}: reopening it after its rebuild", path.display()))?;

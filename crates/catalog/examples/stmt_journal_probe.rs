@@ -42,9 +42,9 @@ const KNOWN: &str = "SELECT id, folder_id, name, ext, kind, size, mtime, missing
      WHERE volume = ?1 AND file_ref = ?2";
 /// The rest of `ScanWriter`'s statements, prepared and held through the batch as the writer holds them.
 const HELD: [&str; 7] = [
-    "SELECT id FROM folders WHERE path = ?1",
-    "INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id",
-    "SELECT EXISTS(SELECT 1 FROM folders WHERE id = ?4 AND (path = ?1 OR (path >= ?2 AND path < ?3)))",
+    "SELECT id FROM folders WHERE path_key = ?1",
+    "INSERT INTO folders(path, path_key, match_key) VALUES (?1, ?2, ?3) RETURNING id",
+    "SELECT EXISTS(SELECT 1 FROM folders WHERE id = ?4 AND path_key >= ?1 AND (?2 IS NULL OR path_key < ?2))",
     "UPDATE files SET last_scan = ?3 WHERE volume = ?1 AND file_ref = ?2",
     "UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL",
     "UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1",
@@ -332,8 +332,8 @@ fn setup(conn: &Connection, files: &[File]) -> Result<Ctx> {
     for f in 1..=FOLDERS {
         let folder = PATH_RULES.parse(&format!("{ROOT}/folder-{f:02}")).context("the folder path")?;
         folder_ids.push(conn.query_row(
-            "INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id",
-            params![PATH_RULES.join(&folder), PATH_RULES.folder_key(&folder.parts)],
+            "INSERT INTO folders(path, path_key, match_key) VALUES (?1, ?2, ?3) RETURNING id",
+            params![PATH_RULES.join(&folder), PATH_RULES.path_key(&folder), PATH_RULES.folder_key(&folder.parts)],
             |r| r.get(0),
         )?);
     }

@@ -53,12 +53,12 @@ macro_rules! has_borders {
     };
 }
 
-/// Folders equal to the root (?1) or below it: the paths from ?2 (the root and a separator) up to ?3 (the root and the
-/// separator's successor, so nothing sorts past the subtree). The bounds are made by
-/// `under_params`.
+/// Folders equal to the root or below it: the keys from ?1 (the root's `path_key`) up to ?2 (the least key above its
+/// subtree, or NULL when there is none: the POSIX root's subtree is every folder). The bounds are made by
+/// `under_params`, and a folder's key is a prefix of its subfolders' keys, so the range is the subtree exactly.
 macro_rules! under_root {
     () => {
-        "SELECT id FROM folders WHERE path = ?1 OR (path >= ?2 AND path < ?3)"
+        "SELECT id FROM folders WHERE path_key >= ?1 AND (?2 IS NULL OR path_key < ?2)"
     };
 }
 

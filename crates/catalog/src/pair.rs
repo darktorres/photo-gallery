@@ -36,7 +36,7 @@ use crate::core::ScanLease;
 use crate::error::Result;
 use crate::lease::HeldLease;
 use crate::transaction::write_transaction;
-use crate::types::{WRITE_BATCH, skipped_folders, under_params};
+use crate::types::{Subtree, WRITE_BATCH, skipped_folders, under_params};
 
 mod coverage;
 pub use coverage::Coverage;
@@ -161,11 +161,11 @@ impl ScanLease<'_> {
                 }
                 let Some(seen) = seen.as_mut() else { return Ok(()) };
                 let mut moved = tx.prepare_cached(concat!(
-                    "SELECT id, volume, folder_id FROM files WHERE volume IS NOT NULL AND volume <> ?4 AND file_ref = ?5
-                     AND size = ?6 AND mtime = ?7 AND ext = ?8 AND (created IS NULL OR ?9 IS NULL OR created = ?9)
+                    "SELECT id, volume, folder_id FROM files WHERE volume IS NOT NULL AND volume <> ?3 AND file_ref = ?4
+                     AND size = ?5 AND mtime = ?6 AND ext = ?7 AND (created IS NULL OR ?8 IS NULL OR created = ?8)
                      AND ",
                     not_seen!(),
-                    " AND id <> ?10 AND folder_id IN (",
+                    " AND id <> ?9 AND folder_id IN (",
                     under_root!(),
                     ") ORDER BY id"
                 ))?;
@@ -177,9 +177,8 @@ impl ScanLease<'_> {
                     let candidates: Vec<(i64, i64, i64)> = moved
                         .query_map(
                             params![
-                                under[0],
-                                under[1],
-                                under[2],
+                                under.key,
+                                under.upper,
                                 f.volume,
                                 f.file_ref,
                                 f.size,
@@ -321,7 +320,7 @@ impl ScanLease<'_> {
                 ") AND ",
                 has_children!()
             ),
-            params![under[0], under[1], under[2]],
+            params![under.key, under.upper],
             |r| r.get::<_, u64>(0),
         )?;
         drop(close);
@@ -382,7 +381,7 @@ impl Steps {
 fn in_batches(
     conn: &Connection,
     held: HeldLease<'_>,
-    under: &[Vec<u8>; 3],
+    under: &Subtree,
     skipped: &BTreeSet<i64>,
     steps: &Steps,
     mut tier: impl FnMut(&Transaction<'_>, &[Fresh]) -> Result<()>,
@@ -438,21 +437,21 @@ fn seen_volumes(tx: &Transaction) -> Result<std::collections::BTreeSet<i64>> {
 /// `CROSS JOIN` keeps the set as the outer loop. With a plain `JOIN` the planner drove the query from the folder's
 /// files and sorted every match for each batch: the cost grew with the square of the library (12.9 s for 85,071 rows
 /// in 172 batches, against 0.27 s with the set outside).
-fn fresh_rows(conn: &Connection, under: &[Vec<u8>; 3], after: i64, limit: usize) -> Result<Vec<Fresh>> {
+fn fresh_rows(conn: &Connection, under: &Subtree, after: i64, limit: usize) -> Result<Vec<Fresh>> {
     let mut stmt = conn.prepare_cached(concat!(
         "SELECT files.id, files.volume, files.file_ref, files.created, files.folder_id, files.name, files.ext,
                 files.kind, files.size, files.mtime, files.order_key
          FROM temp.scan_seen s CROSS JOIN files ON files.id = s.id
-         WHERE s.unpaired = 1 AND files.unpaired = 1 AND files.volume IS NOT NULL AND s.id > ?4
+         WHERE s.unpaired = 1 AND files.unpaired = 1 AND files.volume IS NOT NULL AND s.id > ?3
            AND files.folder_id IN (",
         under_root!(),
         ") AND NOT ",
         has_children!(),
-        " ORDER BY s.id LIMIT ?5"
+        " ORDER BY s.id LIMIT ?4"
     ))?;
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let rows = stmt
-        .query_map(params![under[0], under[1], under[2], after, limit], |r| {
+        .query_map(params![under.key, under.upper, after, limit], |r| {
             Ok(Fresh {
                 id: r.get(0)?,
                 volume: r.get(1)?,

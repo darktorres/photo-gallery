@@ -64,33 +64,25 @@ pub struct PlaceholderWork {
     pub poster_ms: i64,
 }
 
-/// The parameters of `under_root!` for `root` under `rules`: the root's bytes, and the bounds of its subtree. A
-/// drive's root already ends with a separator, so its subtree starts there.
-pub(crate) fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> [Vec<u8>; 3] {
-    let sep = rules.sep_byte();
-    let bytes = rules.join(root);
-    let (lo, hi) = match bytes.split_last() {
-        Some((&last, init)) if last == sep => {
-            let mut hi = init.to_vec();
-            hi.push(sep + 1);
-            (bytes.clone(), hi)
-        }
-        _ => {
-            let mut lo = bytes.clone();
-            lo.push(sep);
-            let mut hi = bytes.clone();
-            hi.push(sep + 1);
-            (lo, hi)
-        }
-    };
-    [bytes, lo, hi]
+/// The subtree of a folder, bound to `under_root!` as `?1` (the folder's own key) and `?2` (the least key above its
+/// subtree, `None` when every key is in it: the POSIX root). See [`PathRules::subtree`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Subtree {
+    pub(crate) key: Vec<u8>,
+    pub(crate) upper: Option<Vec<u8>>,
+}
+
+/// The subtree of `root` under `rules`: the bounds `under_root!` takes for it.
+pub(crate) fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> Subtree {
+    let (key, upper) = rules.subtree(root);
+    Subtree { key, upper }
 }
 
 /// The ids of the folders at `path` or below it (`under_root!`), on `conn` (a transaction's too).
 pub(crate) fn folders_under(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare_cached(under_root!())?;
-    let [p1, p2, p3] = under_params(rules, path);
-    Ok(stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    let under = under_params(rules, path);
+    Ok(stmt.query_map(params![under.key, under.upper], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
 /// The folders a scan did not list: each folder of `skipped` (whatever the reason: one it couldn't read, a mount it
@@ -187,12 +179,14 @@ impl FolderFailure {
 
 /// The folder ledger's write (`ScanWriter::folder_failed`, `Catalog::folder_refused`): `?1` the covering library
 /// folder's id, `?2` its stored path (checked with the id, so a removed folder writes nothing and a reused id never
-/// binds a row to the wrong folder), `?3` the folder's stored path, `?4` the reason, `?5` the error, `?6` the walk. A
-/// folder already recorded keeps its serial and its first sighting.
-pub(crate) const FOLDER_FAILED: &str = "INSERT INTO folder_failures(root, path, reason, error, walk, first_seen)
-     SELECT ?1, ?3, ?4, ?5, ?6, unixepoch() WHERE EXISTS (SELECT 1 FROM roots WHERE id = ?1 AND path = ?2)
-     ON CONFLICT(path) DO UPDATE SET root = excluded.root, reason = excluded.reason, error = excluded.error,
-         walk = excluded.walk";
+/// binds a row to the wrong folder), `?3` the folder's stored path, `?4` its `path_key` (the row's identity: one row per
+/// folder, whatever the spelling), `?5` the reason, `?6` the error, `?7` the walk. A folder already recorded keeps its
+/// serial and its first sighting.
+pub(crate) const FOLDER_FAILED: &str =
+    "INSERT INTO folder_failures(root, path, path_key, reason, error, walk, first_seen)
+     SELECT ?1, ?3, ?4, ?5, ?6, ?7, unixepoch() WHERE EXISTS (SELECT 1 FROM roots WHERE id = ?1 AND path = ?2)
+     ON CONFLICT(path_key) DO UPDATE SET root = excluded.root, path = excluded.path, reason = excluded.reason,
+         error = excluded.error, walk = excluded.walk";
 
 /// A library folder: the user added it, and a rescan walks it again.
 #[derive(Clone, Debug, PartialEq, Eq)]

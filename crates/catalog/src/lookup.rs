@@ -126,7 +126,7 @@ impl Catalog {
         // drive, and a name equal by key, which is case-insensitive where the rules are (SQLite's lower() is ASCII).
         let mut stmt = self.conn.prepare_cached(
             "SELECT f.id, f.name, fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id
-             WHERE fo.key = ?1 AND f.missing = 0",
+             WHERE fo.match_key = ?1 AND f.missing = 0",
         )?;
         let rows =
             stmt.query_map([key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, Vec<u8>>(2)?)))?;
@@ -150,8 +150,9 @@ impl Catalog {
             under_root!(),
             ")"
         ))?;
-        let [p1, p2, p3] = under_params(self.rules, folder);
-        let ids: Vec<i64> = stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        let under = under_params(self.rules, folder);
+        let ids: Vec<i64> =
+            stmt.query_map(params![under.key, under.upper], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
         Ok(ids.into_iter().map(FileId::new).collect())
     }
 

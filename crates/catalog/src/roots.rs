@@ -4,8 +4,8 @@
 //!
 //! ### The folder ledger
 //!
-//! The folders a walk couldn't read are the `folder_failures` table: one row per folder, by its exact path (`UNIQUE(path)`,
-//! as `folders.path`), tied to the library folder that holds it (a foreign key: removing the library folder, or `add_root`
+//! The folders a walk couldn't read are the `folder_failures` table: one row per folder, by its path key (`UNIQUE(path_key)`,
+//! as `folders.path_key`, so a folder's spelling in another case is the same row), tied to the library folder that holds it (a foreign key: removing the library folder, or `add_root`
 //! replacing the folders inside a new one, removes its rows), with the reason (`unreadable`, `mount-refused`, `refused`),
 //! the error, the `scans` row of the walk that last saw it (`walk`), a serial and when it was first seen. It is the inbox's
 //! `scan-folders-failed` entry, acknowledged as `scan-folders` in `ledger_ack` with the same rules; its detail lists the
@@ -46,8 +46,8 @@ use crate::ledger::failure::tidy;
 use crate::removal::{Begun, overlapping_marker};
 use crate::transaction::write_transaction;
 use crate::types::{
-    FOLDER_FAILED, FolderFailure, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, WRITE_BATCH,
-    covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, under_params,
+    FOLDER_FAILED, FolderFailure, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, Subtree,
+    WRITE_BATCH, covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, under_params,
 };
 
 impl Catalog {
@@ -243,6 +243,7 @@ impl Catalog {
                 root.id.get(),
                 self.rules.join(&root.path),
                 self.rules.join(path),
+                self.rules.path_key(path),
                 FolderFailure::Refused.key(),
                 tidy(error),
                 walk
@@ -310,9 +311,9 @@ pub(crate) fn folder_rows_on(conn: &Connection, rules: PathRules, folder: &RuleP
         let rows = snapshot
             .prepare_cached(
                 "SELECT volume, file_ref, id, unpaired, missing, name, ext, kind, size, mtime, order_key, created
-                 FROM files WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
+                 FROM files WHERE folder_id = (SELECT id FROM folders WHERE path_key = ?1) AND volume IS NOT NULL",
             )?
-            .query_map([rules.join(folder)], |r| {
+            .query_map([rules.path_key(folder)], |r| {
                 let row = FolderRow {
                     id: r.get(2)?,
                     unpaired: r.get::<_, i64>(3)? != 0,
@@ -402,22 +403,23 @@ fn sweep_folder_failures(
     scan: ScanId,
     skipped: &[Skip],
 ) -> Result<()> {
-    let [p1, p2, p3] = under_params(rules, root);
+    let under = under_params(rules, root);
     let rows: Vec<(i64, Vec<u8>)> = conn
         .prepare_cached(
-            "SELECT id, path FROM folder_failures WHERE (path = ?1 OR (path >= ?2 AND path < ?3)) AND walk < ?4",
+            "SELECT id, path_key FROM folder_failures WHERE path_key >= ?1 AND (?2 IS NULL OR path_key < ?2) AND walk < ?3",
         )?
-        .query_map(params![p1, p2, p3, scan.get()], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map(params![under.key, under.upper, scan.get()], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
-    // The subtrees the walk never looked into: a row strictly below one of them is not known to be resolved.
-    let unseen: Vec<[Vec<u8>; 3]> = skipped
+    // The subtrees the walk never looked into: a row strictly below one of them is not known to be resolved. A row's
+    // own folder is in its subtree, so the row's key equal to a subtree's key is the subtree's own row.
+    let unseen: Vec<Subtree> = skipped
         .iter()
         .filter(|s| matches!(s.reason, SkipReason::Unreadable | SkipReason::RefusedMount))
         .map(|s| under_params(rules, &s.path))
         .collect();
     let mut delete = conn.prepare_cached("DELETE FROM folder_failures WHERE id = ?1")?;
-    for (id, path) in rows {
-        let below_unseen = unseen.iter().any(|[at, lo, hi]| path != *at && path >= *lo && path < *hi);
+    for (id, key) in rows {
+        let below_unseen = unseen.iter().any(|s| key > s.key && s.upper.as_ref().is_none_or(|u| key < *u));
         if !below_unseen {
             delete.execute([id])?;
         }
@@ -528,25 +530,35 @@ mod tests {
         the_sweep_takes_the_subtree_by_its_bytes_posix
     );
 
-    // A row is a folder by its exact path: two spellings are two rows, under either rules. A folder recorded again
-    // keeps its serial (it is not news again), whatever its reason now.
-    fn a_folder_is_its_exact_path_and_keeps_its_serial(rules: PathRules) {
+    // A row is a folder by its path key: one row per folder, so two spellings of one folder are one row under the Windows
+    // rules (which fold case), and two rows under the POSIX rules (whose names are case-sensitive). The row keeps the
+    // spelling the walk last saw. A folder recorded again keeps its serial (it is not news again), whatever its reason now.
+    fn a_folder_is_one_row_by_its_path_key_and_keeps_its_serial(rules: PathRules) {
         let mut c = rooted(rules);
         let both = [(r"D:\r\a", UNREADABLE), (r"D:\r\A", UNREADABLE)];
         walk(&mut c, r"D:\r", &both, &[], true);
         let first = ledger(&c);
-        assert_eq!(first.len(), 2, "{first:?}");
+        let rows = match rules {
+            PathRules::Windows => 1,
+            PathRules::Posix => 2,
+        };
+        assert_eq!(first.len(), rows, "{first:?}");
         walk(&mut c, r"D:\r", &both, &[], true);
         assert_eq!(ledger(&c), first, "the same rows, the same serials");
         walk(&mut c, r"D:\r", &[(r"D:\r\a", FolderFailure::MountRefused)], &[], true);
-        let lower = first.iter().find(|row| row.0 == spelled(rules, r"D:\r\a")).unwrap();
-        assert_eq!(ledger(&c), [(lower.0.clone(), "mount-refused".to_string(), lower.2)]);
+        // The row the last walk saw under this spelling: under Windows the one row (spelled `A` by the walk before).
+        let seen = match rules {
+            PathRules::Windows => r"D:\r\A",
+            PathRules::Posix => r"D:\r\a",
+        };
+        let kept = first.iter().find(|row| row.0 == spelled(rules, seen)).unwrap();
+        assert_eq!(ledger(&c), [(spelled(rules, r"D:\r\a"), "mount-refused".to_string(), kept.2)]);
     }
 
     under_both_rules!(
-        a_folder_is_its_exact_path_and_keeps_its_serial,
-        a_folder_is_its_exact_path_and_keeps_its_serial_windows,
-        a_folder_is_its_exact_path_and_keeps_its_serial_posix
+        a_folder_is_one_row_by_its_path_key_and_keeps_its_serial,
+        a_folder_is_one_row_by_its_path_key_and_keeps_its_serial_windows,
+        a_folder_is_one_row_by_its_path_key_and_keeps_its_serial_posix
     );
 
     // The insert trigger stamps a new folder's serial past the ones already there (`folder_failures_stamp`). A

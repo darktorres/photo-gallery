@@ -19,8 +19,11 @@ pub fn add_scan(c: &Catalog, id: i64, root: &str) -> Result<()> {
 
 /// A folder row (see [`add_scan`]).
 pub fn add_folder(c: &Catalog, id: i64, path: &str) -> Result<()> {
-    let (bytes, key) = super::folder_row(c, path)?;
-    c.conn.execute("INSERT INTO folders(id, path, key) VALUES (?1, ?2, ?3)", params![id, bytes, key])?;
+    let (bytes, path_key, key) = super::folder_row(c, path)?;
+    c.conn.execute(
+        "INSERT INTO folders(id, path, path_key, match_key) VALUES (?1, ?2, ?3, ?4)",
+        params![id, bytes, path_key, key],
+    )?;
     Ok(())
 }
 

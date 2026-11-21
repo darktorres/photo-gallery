@@ -204,6 +204,10 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
     for table in CARRIED {
         let new_columns = table_columns(&tx, "main", table)?;
         let old_columns = table_columns(&tx, "carried", table)?;
+        if matches!(*table, "folders" | "folder_failures") && !old_columns.is_empty() {
+            copy_folder_rows(&tx, table, &old_columns)?;
+            continue;
+        }
         let common: Vec<&str> =
             new_columns.iter().map(String::as_str).filter(|c| old_columns.iter().any(|o| o.as_str() == *c)).collect();
         if common.is_empty() {
@@ -212,11 +216,12 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
         let columns = common.join(", ");
         if *table == "meta" {
             // The file's own `path_rules` is this build's, and its `vacuum_owed` is the one this file's creation set: the
-            // copy's value for it is not the old file's.
+            // copy's value for it is not the old file's. Its `key_version` is not the old file's either: the keys are made
+            // below, by this build's algorithm, and the mark is set for them.
             tx.execute(
                 &format!(
                     "INSERT OR REPLACE INTO main.meta ({columns}) SELECT {columns} FROM carried.meta \
-                     WHERE key IN (SELECT key FROM main.meta) AND key NOT IN ('path_rules', 'vacuum_owed')"
+                     WHERE key IN (SELECT key FROM main.meta) AND key NOT IN ('path_rules', 'vacuum_owed', 'key_version')"
                 ),
                 [],
             )?;
@@ -226,6 +231,9 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
             tx.execute(&format!("INSERT INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"), [])?;
         }
     }
+    // The folders' and the files' keys are made by this build's algorithm from the paths, merging the folders the rules
+    // make one (the placeholders [`copy_folder_rows`] gave them are replaced here).
+    crate::lifecycle::recompute_keys(&tx, rules)?;
     // The migrations' conversions, in order, before the triggers are back (they would fire on the converted rows).
     for step in set.migrations.iter().flat_map(|migration| migration.steps.iter()) {
         if let Step::Rust(convert) = *step {
@@ -237,6 +245,35 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
         tx.execute_batch(sql)?;
     }
     tx.commit()?;
+    Ok(())
+}
+
+/// The folder tables are copied with their ids kept (the files and the ledger point at them), each row's path as bytes (the
+/// old layout stored it as text), and its keys as placeholders: a `path_key` unique to the row (its id's digits), and the
+/// old `key` as the `match_key` where the old file had one. The keys are made from the paths, and the folders the new
+/// rules make one are merged, by [`crate::lifecycle::recompute_keys`], which the copy runs next.
+fn copy_folder_rows(tx: &rusqlite::Transaction<'_>, table: &str, old: &[String]) -> Result<()> {
+    let new = table_columns(tx, "main", table)?;
+    let mut columns: Vec<String> = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+    for column in &new {
+        if column == "path_key" || column == "match_key" || !old.iter().any(|o| o == column) {
+            continue;
+        }
+        columns.push(column.clone());
+        values.push(if column == "path" { "CAST(path AS BLOB)".to_string() } else { column.clone() });
+    }
+    // The id's decimal digits: unique to the row, and never a key a folder gets (a key ends in a terminator byte).
+    columns.push("path_key".to_string());
+    values.push("CAST(id AS BLOB)".to_string());
+    if new.iter().any(|c| c == "match_key") {
+        columns.push("match_key".to_string());
+        values.push(if old.iter().any(|o| o == "key") { "CAST(key AS BLOB)".to_string() } else { "x''".to_string() });
+    }
+    tx.execute(
+        &format!("INSERT INTO main.{table} ({}) SELECT {} FROM carried.{table}", columns.join(", "), values.join(", ")),
+        [],
+    )?;
     Ok(())
 }
 
@@ -324,6 +361,47 @@ mod tests {
         assert!(error.contains("CHECK"), "{error}");
         let rows: i64 = new.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 0, "the copy is rolled back");
+        drop(new);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The old layout keyed a folder by its exact path, so one folder spelled in two cases was two rows. Carried, the two
+    /// are one folder: the lower id is kept, both folders' files are that folder's, and its key is the rules' key for
+    /// its path. (Windows: the rules fold case.)
+    #[cfg(windows)]
+    #[test]
+    fn folders_spelled_in_two_cases_carry_over_as_one_folder() {
+        let dir = run_folder("scratch_catalog", "carry-cases").unwrap();
+        let old_path = dir.join("old.sqlite");
+        {
+            let old = Connection::open(&old_path).unwrap();
+            old.execute_batch(
+                "CREATE TABLE folders(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, key BLOB NOT NULL);
+                 CREATE TABLE files(id INTEGER PRIMARY KEY, volume INTEGER, file_ref INTEGER, folder_id INTEGER NOT NULL,
+                     name BLOB NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL,
+                     mtime INTEGER NOT NULL, order_key BLOB NOT NULL);
+                 INSERT INTO folders VALUES (1, 'D:\\p', x'00'), (2, 'd:\\P', x'00');
+                 INSERT INTO files VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61'),
+                     (2, 1, 2, 2, x'62', 'jpg', 'image', 1, 1, x'62');",
+            )
+            .unwrap();
+        }
+        let new_path = dir.join("new.sqlite");
+        let mut new = made(&new_path, true);
+        carry_rows(&mut new, &old_path, &SCHEMA, PATH_RULES).unwrap();
+        let folders: Vec<(i64, String)> = {
+            let mut stmt = new.prepare("SELECT id, CAST(path AS TEXT) FROM folders ORDER BY id").unwrap();
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect()
+        };
+        assert_eq!(folders, [(1, "D:\\p".to_string())], "one folder, the lower id kept");
+        let files: Vec<(i64, i64)> = {
+            let mut stmt = new.prepare("SELECT id, folder_id FROM files ORDER BY id").unwrap();
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect()
+        };
+        assert_eq!(files, [(1, 1), (2, 1)], "both files are the folder's");
+        let key: Vec<u8> = new.query_row("SELECT path_key FROM folders WHERE id = 1", [], |r| r.get(0)).unwrap();
+        let folder = PATH_RULES.parse(r"D:\p").unwrap();
+        assert_eq!(key, PATH_RULES.path_key(&folder));
         drop(new);
         let _ = std::fs::remove_dir_all(&dir);
     }

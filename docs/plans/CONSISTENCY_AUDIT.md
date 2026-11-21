@@ -569,7 +569,7 @@ shell/state.rs:19 says the row bounds are `pg_model::size::ROW_HEIGHT`, which ma
 
 ### D-001 [high] Folder subtree membership computed two ways — CONFIRMED
 
-**Disposition: Deferred.** Rules-based matching is kept (its test pins the Windows meaning); the two selections still differ. Unifying needs a folded key column, not done.
+**Disposition: Fixed.** One folder is one row: `folders.path_key` (the spelling under the path rules, case-folded on Windows, with a terminator per part) is UNIQUE, and `folders.match_key` (the drive-free key the files' order keys follow) is kept beside it. A subtree is the range `path_key >= K AND (upper is NULL OR path_key < upper)`, which `removal::folder_ids_under` uses and which a test holds equal to the scan with `is_under`, over mixed-case and prefix-related folders on both rule sets. `folder_failures` is one row per `path_key` too. A carried catalog (the old layout, which keyed a folder by its exact path) merges the spellings the new key makes one, keeping the lowest id and re-pointing their files (`lifecycle::recompute_keys`, `rebuild::copy_folder_rows`). Not unified, by the decision: a re-lettered drive or a verbatim volume spelling (a different anchor), and NTFS's case table where it differs from Rust's (D-078).
 
 removal.rs:351 `folder_ids_under` filters every folder in Rust with `rules.is_under` (rules-aware, so case-insensitive under Windows rules). types.rs:90 `folders_under` selects by byte range through `under_root!`. Two selections of the same subtree with different matching rules.
 
@@ -1020,6 +1020,10 @@ The Qt kit names `msvc2022_64` and `gcc_64` are in `tools/check_qt.py:19` and `t
 **Disposition: No change.** drop_owed_pairs.py is shared; the medians are different statistics by design.
 
 The owed-pair delete SQL is written in keep.ps1:38-40 and oracle.ps1:42, with the same DELETE FROM `pdq_pairs` WHERE a IN `pairs_owed` statement. The median is computed in `few_sweep.ps1:26` and keep.py:172 in different ways.
+
+### D-078 [low] The folder key folds case with Rust's lower case, not NTFS's own table — CONFIRMED
+
+`PathRules::path_key` and `folder_key` fold each character of a Windows name with Rust's per-character lower case. NTFS folds with its own upper-case table (`$UpCase`), which differs from Rust's on some letters: `σ` and `ς` are one letter to Rust's lower case but two to the table's, `ſ` and `İ` fold differently, and the Kelvin sign folds to `k`. So one folder can be two keys here (a spelling NTFS treats as the same), or two folders can be one to NTFS and stay two rows. The residual cases are pinned in `crates/model/src/rules.rs` (`the_windows_fold_keeps_the_residual_cases_as_rust_folds_them`), so a change of the fold shows. Disposition: Deferred. A fix reads NTFS's table from the volume or ships a fixed copy, and that is a decision about the catalog's keys (a `KEY_ALGO_VERSION` bump), not a code tidy-up.
 
 ## errors
 

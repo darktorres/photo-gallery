@@ -162,7 +162,8 @@ CREATE TABLE "file_writes"(
 CREATE TABLE folder_failures(
     id         INTEGER PRIMARY KEY,
     root       INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
-    path       BLOB NOT NULL UNIQUE,   -- exact bytes, as folders.path
+    path       BLOB NOT NULL,          -- exact bytes, as folders.path
+    path_key   BLOB NOT NULL UNIQUE,   -- the folder's folders.path_key: one row per folder
     reason     TEXT NOT NULL,          -- 'unreadable' | 'mount-refused' | 'refused'
     error      TEXT NOT NULL,
     walk       INTEGER NOT NULL,       -- the scans row of the walk that last saw it
@@ -203,7 +204,10 @@ CREATE TABLE root_removals(
 
 CREATE TABLE "roots"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL UNIQUE, added INTEGER NOT NULL);
 
-CREATE TABLE "folders"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL UNIQUE, key BLOB NOT NULL);
+-- One row per folder, found by path_key: the spelling under the path rules (case-folded on Windows, so one folder is one
+-- row whatever its case). path is the spelling last seen, for display. match_key is the drive-free key the files'
+-- order keys are made from. See pg_model::rules::PathRules::path_key.
+CREATE TABLE "folders"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL, path_key BLOB NOT NULL UNIQUE, match_key BLOB NOT NULL);
 
 CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER, file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL REFERENCES folders(id), name BLOB NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, order_key BLOB NOT NULL, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref));
 
@@ -236,7 +240,7 @@ CREATE INDEX folder_failures_serial ON folder_failures(serial);
 
 CREATE INDEX folder_failures_root ON folder_failures(root);
 
-CREATE INDEX folders_key ON folders(key);
+CREATE INDEX folders_match_key ON folders(match_key);
 
 CREATE INDEX files_changed ON files(changed);
 

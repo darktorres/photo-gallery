@@ -276,6 +276,49 @@ impl PathRules {
         (lo, hi)
     }
 
+    /// The key that finds a folder by its spelling under these rules, unique to that spelling: the anchor (a Windows
+    /// drive or UNC root, per-character lower case, then 0x00; a POSIX path has none), then each part, then its
+    /// terminator 0x01. Each byte of an anchor or a part is escaped as `push_escaped` does, so the terminators stay
+    /// unambiguous. A Windows part is compared lower-cased, a POSIX part exactly, as [`PathRules::is_under`] compares
+    /// them. A folder's key is a prefix of its subfolders' keys, so the subtree of a folder is the range
+    /// [`PathRules::subtree`] gives.
+    ///
+    /// Worked examples: `C:\Photos\Raw` is `c:` 0x00 `photos` 0x01 `raw` 0x01, and `/photos/raw` is `photos` 0x01
+    /// `raw` 0x01 (the POSIX root is the empty key).
+    ///
+    /// Not folded, so one folder can still be two keys: the drive letter (a re-lettered drive is another anchor, as
+    /// [`PathRules::parse`] keeps it), a verbatim volume spelling (`\\?\Volume{...}`), NTFS's own case table where it
+    /// differs from Rust's per-character lower case (`σ`/`ς`, `ſ`, `İ`, the Kelvin sign: see the test that pins them),
+    /// trailing dots and spaces, 8.3 short names, and junctions.
+    pub fn path_key(self, path: &Path) -> Vec<u8> {
+        let mut key = Vec::new();
+        match self {
+            PathRules::Windows => {
+                let mut anchor = Vec::with_capacity(path.anchor.as_bytes().len());
+                path.anchor.push_lower(&mut anchor);
+                push_escaped(&mut key, &anchor);
+                key.push(0x00);
+                self.push_folder_key(&mut key, &path.parts);
+            }
+            PathRules::Posix => {
+                for part in &path.parts {
+                    push_escaped(&mut key, part.as_bytes());
+                    key.push(0x01);
+                }
+            }
+        }
+        key
+    }
+
+    /// The range of the keys in the subtree of `path`, as `(key, upper)`: a key is in the subtree (the folder itself and
+    /// every folder below it) exactly when it is at least `key` and below `upper`. `upper` is `None` when no key lies
+    /// above the subtree, which is the POSIX root's (its key is empty, and every key is in its subtree).
+    pub fn subtree(self, path: &Path) -> (Vec<u8>, Option<Vec<u8>>) {
+        let key = self.path_key(path);
+        let upper = prefix_upper_bound(&key);
+        (key, upper)
+    }
+
     /// Whether `path` is `root` or inside it. The anchors must agree (case-insensitively on Windows), then the
     /// parts must start with the root's parts (compared by the same case rule as the keys).
     pub fn is_under(self, path: &Path, root: &Path) -> bool {
@@ -558,5 +601,95 @@ mod byte_tests {
     fn a_posix_path_keeps_raw_bytes() {
         let path = PathRules::Posix.parse_bytes(b"/home/\xFF/x").unwrap();
         assert_eq!(PathRules::Posix.join(&path), b"/home/\xFF/x");
+    }
+
+    fn key_of(rules: PathRules, text: &str) -> Vec<u8> {
+        rules.path_key(&rules.parse(text).unwrap())
+    }
+
+    // The worked examples of `path_key`: a Windows folder is its drive, then its lower-cased parts; a POSIX folder is its
+    // exact parts, and the root is the empty key.
+    #[test]
+    fn a_folder_key_is_its_anchor_then_its_parts() {
+        assert_eq!(key_of(PathRules::Windows, r"C:\Photos\Raw"), b"c:\x00photos\x01raw\x01");
+        assert_eq!(key_of(PathRules::Posix, "/photos/raw"), b"photos\x01raw\x01");
+        assert_eq!(key_of(PathRules::Posix, "/"), b"");
+        assert_eq!(key_of(PathRules::Windows, r"D:\"), b"d:\x00");
+    }
+
+    // The spelling is the key: a Windows folder in another case is the same key, a POSIX one is not.
+    #[test]
+    fn the_same_folder_in_another_case_has_the_same_windows_key_and_a_posix_one_has_not() {
+        assert_eq!(key_of(PathRules::Windows, r"D:\Photos"), key_of(PathRules::Windows, r"d:\PHOTOS"));
+        assert_ne!(key_of(PathRules::Posix, "/Photos"), key_of(PathRules::Posix, "/photos"));
+    }
+
+    // The residual cases of the Windows fold, pinned: the key folds each character as Rust lower-cases it, which is not
+    // NTFS's own case table on these, so they stay apart here (the gap is in the audit).
+    #[test]
+    fn the_windows_fold_keeps_the_residual_cases_as_rust_folds_them() {
+        let key = |text: &str| key_of(PathRules::Windows, &format!(r"D:\{text}"));
+        // Rust's lower case keeps these apart, where NTFS's table may not.
+        for (a, b) in [("σ", "ς"), ("ſ", "s"), ("İ", "i")] {
+            assert_ne!(key(a), key(b), "{a} and {b}");
+        }
+        // Rust's lower case joins these, as it does every upper case with its lower case.
+        for (a, b) in [("Σ", "σ"), ("\u{212A}", "k")] {
+            assert_eq!(key(a), key(b), "{a} and {b}");
+        }
+    }
+
+    // A part's terminator is not a byte of a name: a folder named `b` followed by a byte 0x01 is not under `b`, though
+    // its key begins with `b`'s.
+    #[test]
+    fn a_folder_is_not_a_prefix_of_a_sibling_whose_name_extends_it() {
+        let (key, upper) = PathRules::Posix.subtree(&PathRules::Posix.parse("/a/b").unwrap());
+        let sibling = Path { anchor: Name::from(""), parts: vec![Name::from("a"), Name::from_raw(b"b\x01c")] };
+        let child = PathRules::Posix.path_key(&sibling);
+        assert!(
+            !(child >= key && child < upper.unwrap()),
+            "a folder named `b` with a terminator byte is not under `b`"
+        );
+    }
+
+    // A relative path whose one part is `c:x` has no drive: its key is not in the subtree of the drive `C:`.
+    #[test]
+    fn a_relative_part_named_like_a_drive_is_not_in_the_drive() {
+        let relative = Path { anchor: Name::from(""), parts: vec![Name::from("c:x")] };
+        let (key, upper) = PathRules::Windows.subtree(&PathRules::Windows.parse(r"C:\").unwrap());
+        let relative_key = PathRules::Windows.path_key(&relative);
+        assert!(!(relative_key >= key && relative_key < upper.unwrap()), "{relative_key:?}");
+    }
+
+    // The range of a subtree holds exactly the folders the oracle `is_under` names, over spellings that vary in case,
+    // separators and prefixes, for both rule sets.
+    #[test]
+    fn a_subtree_range_holds_exactly_the_folders_under_its_root() {
+        let windows = [
+            r"C:\",
+            r"C:\a",
+            r"C:\A\b",
+            r"C:\a\b",
+            r"C:\ab",
+            r"C:\a.b",
+            r"C:\a\b\c",
+            r"C:\a\b\c\d",
+            r"C:\b",
+            r"D:\a",
+            r"C:\a\b\",
+            r"C:\a\b\c\",
+        ];
+        let posix = ["/", "/a", "/a/b", "/a/bc", "/a/b/c", "/a\u{1}b", "/A/B", "/a/b\u{1}c", "/a/b\u{2}"];
+        for (rules, texts) in [(PathRules::Windows, windows.as_slice()), (PathRules::Posix, posix.as_slice())] {
+            let paths: Vec<Path> = texts.iter().filter_map(|t| rules.parse(t)).collect();
+            for root in &paths {
+                let (key, upper) = rules.subtree(root);
+                for path in &paths {
+                    let k = rules.path_key(path);
+                    let inside = k >= key && upper.as_ref().is_none_or(|u| k < *u);
+                    assert_eq!(inside, rules.is_under(path, root), "{rules:?}: {path:?} under {root:?}");
+                }
+            }
+        }
     }
 }

@@ -524,7 +524,7 @@ mod tests {
         bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
-             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO folders(id, path, path_key, match_key) VALUES (1, x'01', x'01', x'01');
              INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
                  VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61'), (2, 1, 2, 1, x'62', 'jpg', 'image', 1, 1, x'62');",
         )
@@ -553,9 +553,9 @@ mod tests {
         let root: i64 = conn.query_row("SELECT max(id) FROM roots", [], |r| r.get(0)).unwrap();
         assert_eq!(root, 3, "root 2 is not reissued");
 
-        conn.execute("INSERT INTO folders(path, key) VALUES (x'02', x'02')", []).unwrap();
+        conn.execute("INSERT INTO folders(path, path_key, match_key) VALUES (x'02', x'02', x'02')", []).unwrap();
         conn.execute("DELETE FROM folders WHERE id = 2", []).unwrap();
-        conn.execute("INSERT INTO folders(path, key) VALUES (x'03', x'03')", []).unwrap();
+        conn.execute("INSERT INTO folders(path, path_key, match_key) VALUES (x'03', x'03', x'03')", []).unwrap();
         let folder: i64 = conn.query_row("SELECT max(id) FROM folders", [], |r| r.get(0)).unwrap();
         assert_eq!(folder, 3, "folder 2 is not reissued");
     }
@@ -755,7 +755,7 @@ mod tests {
         bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
-             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO folders(id, path, path_key, match_key) VALUES (1, x'01', x'01', x'01');
              INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
                  VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61');",
         )

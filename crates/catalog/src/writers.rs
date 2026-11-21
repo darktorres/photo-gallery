@@ -26,7 +26,7 @@ use crate::ledger::failure::{Failure, tidy};
 use crate::types::PairingWork;
 use crate::types::{
     DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, FolderFailure, Hit, Recorded,
-    SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, covering_root, under_params,
+    SET_FILE_RATING, SET_RATING, ScannedFile, Subtree, WorkItem, covering_root, under_params,
 };
 
 // The passes' writes: one writer per transaction. The statements are cached on the connection (`prepare_cached`; the
@@ -94,13 +94,15 @@ fn change_number(bump: &mut Statement<'_>, change: &mut Option<i64>) -> Result<i
 pub struct ScanWriter<'tx> {
     scan: i64,
     rules: PathRules,
-    /// The scanned root's subtree (`under_params`): a row's folder is in it when it is `?1` or between `?2` and `?3`.
-    under: [Vec<u8>; 3],
+    /// The scanned root's subtree (`under_params`): a row's folder is in it when its `path_key` is in the range.
+    under: Subtree,
     /// The library folder that holds the walked one (its id and its stored path), resolved once when the writer is
     /// made; `None` when no library folder holds it (the folder ledger then records nothing).
     covering: Option<(i64, Vec<u8>)>,
     folder_id: CachedStatement<'tx>,
     new_folder: CachedStatement<'tx>,
+    /// A folder found again under another spelling: its stored `path` follows the scan's (the key is the same).
+    respell: CachedStatement<'tx>,
     known: CachedStatement<'tx>,
     identity_row: CachedStatement<'tx>,
     /// Marks a row seen by this walk (`temp.scan_seen`), with whether it is unpaired.
@@ -116,7 +118,7 @@ pub struct ScanWriter<'tx> {
     bump: CachedStatement<'tx>,
     change: Option<i64>,
     folder_failed: CachedStatement<'tx>,
-    /// The id of each folder this writer has resolved, by its stored path: a folder's files are written after its
+    /// The id of each folder this writer has resolved, by its `path_key`: a folder's files are written after its
     /// lookup once, not once per file (`folder`).
     folder_ids: BTreeMap<Vec<u8>, i64>,
     /// The order key of the file being recorded.
@@ -143,12 +145,14 @@ impl<'tx> ScanWriter<'tx> {
             rules,
             under: under_params(rules, root),
             covering,
-            folder_id: tx.prepare_cached("SELECT id FROM folders WHERE path = ?1")?,
-            new_folder: tx.prepare_cached("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
-            // The row of the identity, and whether its folder is under the root (`?3`..`?5`: `under_params`).
+            folder_id: tx.prepare_cached("SELECT id, path FROM folders WHERE path_key = ?1")?,
+            new_folder: tx
+                .prepare_cached("INSERT INTO folders(path, path_key, match_key) VALUES (?1, ?2, ?3) RETURNING id")?,
+            respell: tx.prepare_cached("UPDATE folders SET path = ?2 WHERE id = ?1")?,
+            // The row of the identity, and whether its folder is under the root (`?3`, `?4`: `under_params`).
             known: tx.prepare_cached(
                 "SELECT f.id, f.folder_id, f.name, f.ext, f.kind, f.size, f.mtime, f.missing, f.order_key, f.created,
-                    f.unpaired, (d.path = ?3 OR (d.path >= ?4 AND d.path < ?5))
+                    f.unpaired, (d.path_key >= ?3 AND (?4 IS NULL OR d.path_key < ?4))
                  FROM files f JOIN folders d ON d.id = f.folder_id
                  WHERE f.volume = ?1 AND f.file_ref = ?2",
             )?,
@@ -196,6 +200,7 @@ impl<'tx> ScanWriter<'tx> {
             root,
             root_bytes,
             self.rules.join(path),
+            self.rules.path_key(path),
             failure.key(),
             tidy(error),
             self.scan
@@ -204,17 +209,30 @@ impl<'tx> ScanWriter<'tx> {
     }
 
     /// The folder's row, made if it's new.
+    ///
+    /// The folder is found by its `path_key` (one row per folder, whatever its case under the Windows rules). A folder
+    /// found under another spelling keeps its row and takes the spelling the scan has now; a new one is made.
     pub fn folder(&mut self, path: &RulePath) -> Result<Folder> {
         let key = self.rules.folder_key(&path.parts);
-        let bytes = self.rules.join(path);
-        let id = match self.folder_ids.get(&bytes) {
+        let path_key = self.rules.path_key(path);
+        let id = match self.folder_ids.get(&path_key) {
             Some(id) => *id,
             None => {
-                let id: i64 = match self.folder_id.query_row([&bytes], |r| r.get(0)).optional()? {
-                    Some(id) => id,
-                    None => self.new_folder.query_row(params![bytes, key], |r| r.get(0))?,
+                let bytes = self.rules.join(path);
+                let id: i64 = match self
+                    .folder_id
+                    .query_row([&path_key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
+                    .optional()?
+                {
+                    Some((id, stored)) => {
+                        if stored != bytes {
+                            self.respell.execute(params![id, bytes])?;
+                        }
+                        id
+                    }
+                    None => self.new_folder.query_row(params![bytes, path_key, key], |r| r.get(0))?,
                 };
-                self.folder_ids.insert(bytes, id);
+                self.folder_ids.insert(path_key, id);
                 id
             }
         };
@@ -249,7 +267,7 @@ impl<'tx> ScanWriter<'tx> {
         let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
         let (ext, kind, size) = (f.ext.key(), f.ext.kind().key(), f.size);
         let hit = known
-            .query_row(params![volume, file_ref, under[0], under[1], under[2]], |r| {
+            .query_row(params![volume, file_ref, under.key, under.upper], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
                     && r.get_ref(2)?.as_blob()? == f.name.as_bytes()
                     && r.get_ref(3)?.as_str()? == ext

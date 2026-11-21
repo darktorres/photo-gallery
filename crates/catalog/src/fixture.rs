@@ -84,9 +84,9 @@ impl Drop for WriteHolds {
 }
 
 /// A folder's stored bytes and key, from its path text (as the tests write it) under the catalog's rules.
-pub(crate) fn folder_row(c: &Catalog, path: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+pub(crate) fn folder_row(c: &Catalog, path: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let path = c.rules().parse(path).ok_or_else(|| anyhow!("{path:?} is not a test folder path"))?;
-    Ok((c.rules().join(&path), c.rules().folder_key(&path.parts)))
+    Ok((c.rules().join(&path), c.rules().path_key(&path), c.rules().folder_key(&path.parts)))
 }
 
 /// Insert the files (scan 1 must exist).

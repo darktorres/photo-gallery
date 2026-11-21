@@ -31,8 +31,8 @@ DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\B
 DEFAULT_MSYS = Path(r"C:\tools\msys64")
 
 
-# The profiling tools' defaults, shared by build.py, profile.py and symbolize.py. profile.ps1 keeps its own copy of the Pin
-# default (it cannot import this module). Each raises KeyError when its environment variable is unset: callers check first.
+# The profiling tools' defaults, shared by build.py, profile.py and symbolize.py. Each raises KeyError when its environment
+# variable is unset: callers check first.
 def default_llvm_dir() -> Path:
     """LLVM's default folder, %ProgramFiles%\\LLVM (the PG_LLVM_DIR default)."""
     return Path(os.environ["PROGRAMFILES"]) / "LLVM"
@@ -157,8 +157,7 @@ def not_set(name: str, how: str) -> NoReturn:
     sys.exit(f"pgtools: {name} is not set: {how}")
 
 
-# What PG_QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives. The PowerShell script that is
-# kept (profile.ps1) repeats them, since it cannot import this module.
+# What PG_QT_DIR is set to, for `not_set`: the words every tool that needs the Qt kit gives.
 QT_DIR_HOW = "point it at the Qt kit folder (the one with bin and lib), in the environment or in .env"
 
 

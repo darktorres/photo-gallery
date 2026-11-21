@@ -18,7 +18,7 @@ from pathlib import Path
 # pgtools is in tools/, two folders up: Python puts only this script's own folder on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pgtools import REPO, WINDOWS, default_llvm_dir, default_pin_root, load_env_file
+from pgtools import DEFAULT_MSYS, REPO, WINDOWS, default_llvm_dir, default_pin_root, load_env_file
 
 
 def newest(pattern: Path) -> Path:
@@ -51,12 +51,19 @@ def windows_kit_root() -> Path:
     sys.exit(f"build.py: no Windows SDK libraries under KitsRoot10 ({', '.join(map(str, roots)) or 'not in the registry'})")
 
 
-def tool(path: Path) -> str:
-    """The program at `path`, with the extension Windows uses for it (.exe, .cmd, .bat); exits when it is not there."""
+def tool(path: Path) -> list[str]:
+    """The command that runs the program at `path`. A Windows program (.exe, .cmd, .bat) runs as it is. The Pin 4.3 kit's
+    wrappers (pinrt/bin/pin-clang-cl++, pin-ld) have no extension: they are shell scripts written for MSYS2's bash (they
+    test uname for MINGW or MSYS), so they run under the MSYS2 bash of DEFAULT_MSYS. Exits when the program is not there."""
     found = shutil.which(str(path))
-    if found is None:
-        sys.exit(f"build.py: {path} is not there: check the Pin kit (PIN_ROOT) and LLVM (PG_LLVM_DIR)")
-    return found
+    if found is not None:
+        return [found]
+    if path.is_file():
+        bash = DEFAULT_MSYS / "usr" / "bin" / "bash.exe"
+        if not bash.is_file():
+            sys.exit(f"build.py: {path} is a shell script, and its bash is not there: {bash} (MSYS2, see the pins)")
+        return [str(bash), str(path)]
+    sys.exit(f"build.py: {path} is not there: check the Pin kit (PIN_ROOT) and LLVM (PG_LLVM_DIR)")
 
 
 def main() -> None:
@@ -80,7 +87,7 @@ def main() -> None:
     env = {**os.environ, "PATH": f"{llvm / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}", "INCLUDE": str(clang_inc)}
 
     compile_command = [
-        tool(pin / "intel64" / "pinrt" / "bin" / "pin-clang-cl++"),
+        *tool(pin / "intel64" / "pinrt" / "bin" / "pin-clang-cl++"),
         "-c",
         str(here / "callgraph.cpp"),
         f"-Fo{out / 'callgraph.obj'}",
@@ -109,7 +116,7 @@ def main() -> None:
         str(clang_inc),
     ]
     link_command = [
-        tool(pin / "intel64" / "pinrt" / "bin" / "pin-ld"),
+        *tool(pin / "intel64" / "pinrt" / "bin" / "pin-ld"),
         "-dll",
         "-c++",
         "//EXPORT:main",

@@ -79,6 +79,6 @@ Removed, each after its Python port ran on Windows: `doctor.ps1` (`doctor.py`), 
 `eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`, `win_env.py`). `compare-shots.ps1` was removed
 already: it had gone before this work, and `compare_shots.py` replaced it.
 
-Kept: `profiling/callgraph/profile.ps1`. Its Python port, `profile.py`, needs `callgraph/build.py`, which cannot run the
-Pin 4.3 kit's wrappers (`pinrt/bin/pin-clang-cl++` and `pin-ld` are extensionless shell scripts, and build.py finds only
-`.exe`, `.cmd` and `.bat`). Until that is fixed, the script stays.
+Also removed: `profiling/callgraph/profile.ps1`, after `profile.py` ran against the debug app with a scratch catalog on
+2026-11-21 (exit 0). `callgraph/build.py` runs the Pin 4.3 kit's extensionless wrappers (`pinrt/bin/pin-clang-cl++` and
+`pin-ld`, which are MSYS2 bash scripts) under the MSYS2 bash of `DEFAULT_MSYS`.

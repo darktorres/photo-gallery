@@ -12,6 +12,9 @@ use crate::config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, cache_version, default
 use crate::maintenance::{Drift, heal_if_due};
 use pg_model::notice::StartOverReason;
 
+/// `PRAGMA auto_vacuum`'s value for incremental vacuum (0 none, 1 full, 2 incremental).
+const AUTO_VACUUM_INCREMENTAL: i64 = 2;
+
 /// A new cache file's tables, at [`CACHE_VERSION`].
 const SCHEMA: &str = concat!(
     "
@@ -110,7 +113,7 @@ enum Found {
     /// A database that is not a thumbnail cache: refused, and left as it is.
     Foreign { why: String },
     /// A cache a later build made (a later layout, or later thumbnail pixels): refused, and left as it is, as a foreign
-    /// file is. This build's own cache is not changed by it (plan D9).
+    /// file is. This build's own cache is not changed by it.
     Newer { why: String },
 }
 
@@ -226,7 +229,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
         other_build(difference.to_string())
     } else if id != APPLICATION_ID {
         other_build(format!("application id {id}, not a cache's"))
-    } else if auto_vacuum != 2 {
+    } else if auto_vacuum != AUTO_VACUUM_INCREMENTAL {
         other_build("auto_vacuum is not incremental, so its free pages can't be given back".to_string())
     } else if output != Some(pg_model::versions::THUMB_OUTPUT_VERSION) {
         // A missing or earlier output version starts over: the pixels were made by another build.

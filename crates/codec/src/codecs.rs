@@ -384,8 +384,8 @@ mod tests {
         out
     }
 
-    /// The one difference skipping a GIF's metadata makes: XMP over gif's 50 MB memory limit fails `image`'s decode,
-    /// and this one decodes the pixels as `image` decodes the same file without it.
+    /// The one difference skipping a GIF's metadata makes: XMP over the 50 MB limit of `image`'s gif decoder fails
+    /// `image`'s decode, and this one decodes the pixels as `image` decodes the same file without it.
     #[test]
     fn gif_metadata_over_the_memory_limit_is_skipped() {
         let mut gif = Vec::new();

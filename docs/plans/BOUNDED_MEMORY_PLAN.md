@@ -1564,7 +1564,7 @@ The journal only says where to look. Listings are the truth, and results replay 
   - `testkit/src/{alloc.rs, ntfs.rs}`
   - `scan/tests/{usn_oracle, usn_faults, usn_vhd}.rs`
   - `desktop/tests/qt_edge_lint.rs`
-  - `tools/compare-shots.ps1`
+  - `tools/compare_shots.py`
   - `tools/shots/asserts/*.json`
   - `docs/perf/sql-plans.toml`
   - `Justfile` (`usn-vhd`)

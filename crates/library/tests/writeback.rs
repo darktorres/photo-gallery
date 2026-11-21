@@ -69,7 +69,7 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
 }
 
 /// A library of [`make_files`] in a folder of its own (`prefix`; each run_folder call gets a folder of its own, and these
-/// tests run beside each other), scanned and imported: the folder, the files, the catalog's path and the catalog.
+/// tests run beside each other), scanned and imported (the type below says what it holds).
 /// The folder, the files written into it (name and format), the catalog's path and the catalog.
 type Imported = (PathBuf, Vec<(String, Format)>, PathBuf, Catalog);
 
@@ -1010,7 +1010,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
         &ctl,
     )
     .unwrap();
-    // Turns: a PNG's is rewritten without ExifTool.
+    // Turns: a PNG's is rewritten without ExifTool; the poisoned JPEG is queued beside it.
     let (poisoned, healthy) = (state::file_id(&c, "a.jpg").unwrap(), state::file_id(&c, "b.png").unwrap());
     for id in [poisoned, healthy] {
         c.queue_rotation(id, Turns::new(1)).unwrap();

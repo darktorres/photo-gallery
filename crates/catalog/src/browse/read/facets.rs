@@ -23,8 +23,8 @@ pub struct Facets {
     pub total: i64,
     /// Those the query passes.
     pub matching: i64,
-    /// Per type and per extension (most files first): how many files choosing it would show, given the other
-    /// facets.
+    /// Per type (in `MediaType` order) and per extension (most files first): how many files choosing it would show,
+    /// given the other facets.
     pub types: Vec<(MediaType, i64)>,
     pub exts: Vec<(String, i64)>,
     /// Per border value (`BorderFacet::iter()`'s order), the same way.

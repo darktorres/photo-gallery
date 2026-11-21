@@ -30,7 +30,8 @@ pub fn parse_iso_date(s: &str) -> Option<i64> {
 }
 
 /// Seconds since 1970-01-01 00:00 of a calendar date and time (proleptic Gregorian, no time zone); `None` for an
-/// impossible one (EXIF's blank `0000:00:00 00:00:00` included).
+/// impossible one (EXIF's blank `0000:00:00 00:00:00` included). A second of 60 is accepted and counts as the start of
+/// the next minute: there is no leap-second table.
 pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Option<i64> {
     let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
     let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -68,9 +69,8 @@ impl Day {
         if !shaped || !b.iter().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()) {
             return None;
         }
-        let num = |r: std::ops::Range<usize>| t.get(r)?.parse::<i64>().ok();
-        let (y, m, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
-        wall_clock_seconds(y, m, d, 0, 0, 0).map(|s| Day(s.div_euclid(86_400)))
+        // The shape above fixes the text to `YYYY-MM-DD`, which `parse_iso_date` reads as a date alone.
+        parse_iso_date(t).map(|s| Day(s.div_euclid(86_400)))
     }
 
     /// Midnight at the start of the day, in Unix seconds of the wall clock.

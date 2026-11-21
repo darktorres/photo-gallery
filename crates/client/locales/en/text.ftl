@@ -118,6 +118,8 @@ refused-reason = { $code ->
 }
 # A file a job panicked on (caught: the job went on with the next file), as a crop's or a write's failure
 file-panicked = internal error on this file: { $message }
+# The error a job reported on a file, in the system's or the library's words, as the detail under the failure.
+failure-detail = Error: { $error }
 
 # The Yandex panel
 yandex-captcha = Yandex asked for a captcha, which the app can't answer. Try again later.

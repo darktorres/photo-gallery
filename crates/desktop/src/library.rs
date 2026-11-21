@@ -65,7 +65,7 @@ impl Changes {
 /// Why a job failed on a file: the error's text, or the words for a panic the job caught on it.
 fn cause_text(cause: &Cause) -> String {
     match cause {
-        Cause::Error(error) => error.clone(),
+        Cause::Error(error) => text::render(&Message::FailureDetail { error: error.clone() }),
         Cause::Panicked(message) => text::render(&Message::FilePanicked { message: message.clone() }),
     }
 }

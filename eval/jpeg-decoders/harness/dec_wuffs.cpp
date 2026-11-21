@@ -1,4 +1,4 @@
-// Wuffs (github.com/google/wuffs) through wuffs_aux::DecodeImage, to RGBA: its AVX2 YCbCr path writes 4-byte pixels
+// Wuffs (github.com/google/wuffs) through wuffs_aux::DecodeImage, to 4-byte RGBX pixels (wuffs' RGBA_NONPREMUL layout, no alpha used): its AVX2 YCbCr path writes 4-byte pixels
 // (3-byte formats take the generic per-pixel path). Pixel and work buffers are reused across decodes, as the other
 // decoders reuse theirs.
 #include "decoder.h"

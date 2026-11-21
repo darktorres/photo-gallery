@@ -185,6 +185,8 @@ messages! {
     /// system's name or the system's error where the reason has one.
     RefusedReason { code: String, file_system: String, error: String } => "refused-reason",
     FilePanicked { message: String } => "file-panicked",
+    /// The error a job reported on a file, in the system's or the library's own words, as the detail under the failure.
+    FailureDetail { error: String } => "failure-detail",
     YandexCaptcha => "yandex-captcha",
     YandexNotStill => "yandex-not-still",
     YandexUploading => "yandex-uploading",

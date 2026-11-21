@@ -177,7 +177,7 @@ pub(crate) fn add_pdq_pair(c: &Catalog, a: i64, b: i64, distance: i64) {
     c.conn.execute("INSERT INTO pdq_pairs(a, b, distance) VALUES (?1, ?2, ?3)", params![a, b, distance]).unwrap();
 }
 
-/// An analysis row as a test sets it up: the columns the browse tests read, at import version 1.
+/// An analysis row as a test sets it up: the columns the browse tests read, at the import version (`pg_model::versions::IMPORT_VERSION`).
 pub(crate) struct AnalysisRow {
     pub file: i64,
     pub size: i64,

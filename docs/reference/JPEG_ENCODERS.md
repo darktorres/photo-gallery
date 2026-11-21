@@ -10,8 +10,9 @@ encoder comparison (jpegli −9% bytes, AVIF −38%) is in THUMBNAILS.md "Thumbn
 - **jpegli saves the most:** on the camera files it needs 0.69–0.89× the bytes of ImageReduce's encode for the same
   SSIMULACRA2 score, and 0.75–0.93× as baseline, which keeps the cheap decode. mozjpeg's trellis quantization comes
   next: 0.77–0.97×, or 0.78–1.02× as baseline.
-- **ImageReduce doesn't use mozjpeg's gains today.** It runs mozjpeg in `JCP_FASTEST` mode (Annex K tables, no
-  trellis), so its output is libjpeg-turbo's: the `turbo` row here.
+- **ImageReduce doesn't use mozjpeg's gains today.** Its encode is libvips' `jpegsave` (see its switch section below),
+  which writes the Annex K tables at Q75 with no trellis, so its output is libjpeg-turbo's: the `turbo` row here. The
+  doc does not record whether that libvips build uses mozjpeg.
 - **Re-encoding with the tables a file was made with is nearly lossless,** and every other encoder loses against
   it on those files. Some Pinterest files show this in both directions (see "Inputs"). ImageReduce's inputs are
   mostly already-compressed web images, so a switch has to be judged on them, not only on camera originals.

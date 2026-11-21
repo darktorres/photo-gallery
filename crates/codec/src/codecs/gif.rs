@@ -18,8 +18,8 @@ pub(super) fn decode(scratch: &mut gif::Scratch, raw: &mut Vec<u8>, bytes: &[u8]
     options.set_color_output(gif::ColorOutput::RGBA);
     // The XMP and ICC extensions are skipped, where `image`'s decoder collects them for its metadata getters,
     // which a decode doesn't call: the metadata reader finds the XMP itself, and colours aren't managed. That
-    // changes no pixel and no error, except for a file whose XMP or ICC alone is over gif's 50 MB memory limit,
-    // which `image` fails and this decodes.
+    // changes no pixel and no error, except for a file whose XMP or ICC alone is over the 50 MB limit that the `image`
+    // crate's gif decoder puts on metadata, which `image` fails and this decodes.
     options.skip_metadata(true);
     let mut reader = match options.read_info_with(Cursor::new(bytes), std::mem::take(scratch)) {
         Ok(reader) => reader,

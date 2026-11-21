@@ -8,7 +8,7 @@ These facts were checked against the tree at HEAD `898b709` on 2026-11-12. They 
 
 - **Crates.** `members = ["crates/*"]` (`Cargo.toml:3`) gives 34 crates. The ledger's S-13.1 row says 24, so it is stale.
 - **LTO.** No release LTO is configured. The only explicit `lto = false` is in `[profile.dhat]` (`Cargo.toml:116`), the heap profiler's build.
-- **Desktop dependencies.** `crates/desktop/Cargo.toml` depends on seven pg crates at runtime: client, log, model, platform, trace, app, render. It also has `pg-testkit` as a dev-dependency. That is eight in all, not eleven. The ledger's S-13.1 claim that the desktop depends only on Qt and `pg-app` is false.
+- **Desktop dependencies.** `crates/desktop/Cargo.toml` depends on eight pg crates at runtime: client, log, model, perf, platform, trace, app, render. It also has `pg-testkit` as a dev-dependency. That is nine in all, not eleven. The ledger's S-13.1 claim that the desktop depends only on Qt and `pg-app` is false.
 - **Desktop tests.** The desktop sets `doctest = false` only, with no `test = false`. Its tests run in `just test` (`Justfile`).
 - **QML.** `crates/desktop/qml/Main.qml` is 758 lines. It holds no `Timer` and no controller policy. The policy is in Rust: `pg_client::controller` has `deadlines`, `input`, `listing`, `panels`, `replay`, `size` and `start` (`crates/client/src/controller/`). `Shell` is `crates/desktop/src/shell.rs`, a QObject created by id in `Main.qml`.
 - **The bridge.** Filter and facet queries are not JSON across the bridge. The bridge uses typed invokables (`Shell::save_view(name)`, `apply_view(name) -> bool`, `delete_view`). JSON is parsed only from the command line, in Rust.

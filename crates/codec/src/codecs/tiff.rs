@@ -99,7 +99,13 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
         Some(_) => 8,
         // Sample formats and depths that `check_sample_format` and the colour types of `decoded_color` let through
         // all have a sample type.
-        None => return Err(tiff_error(tiff::TiffError::LimitsExceeded)),
+        // Not a memory limit: the file's samples are malformed for its colour type.
+        None => {
+            return Err(ImageError::Decoding(DecodingError::new(
+                ImageFormat::Tiff.into(),
+                "the samples have no sample type",
+            )));
+        }
     };
     let plane_stride = layout.plane_stride.map_or(0, |n| n.get());
     let extent =

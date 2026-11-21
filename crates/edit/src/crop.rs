@@ -11,9 +11,7 @@
 //!   BigTIFF; `pg_codec::encode::cropped`). Not kept for other TIFFs, which go through `image`: they come out
 //!   classic, 1-bit grey becomes 8-bit, and palette and YCbCr TIFFs are refused.
 //!
-//! [`cut`] is the cut of an original (`pg_crop::cut`), which must be exact on every format: a JPEG is re-encoded exactly
-//! at the quality its tables say, and a lossy WebP stays lossy. Those two come out without their metadata, which the
-//! caller copies over. Every other format is cut as [`crop`] cuts it.
+//! [`cut`] is the cut of an original (`pg_crop::cut`), exact on every format: its docs say how each re-encode is made.
 
 use anyhow::{Context, Result, bail, ensure};
 

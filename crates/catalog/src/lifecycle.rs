@@ -69,7 +69,8 @@ pub(crate) fn in_use(path: &Path) -> Error {
     Error::Refused { path: path.display().to_string(), reason: Box::new(crate::error::Refusal::InUse) }
 }
 
-/// The shared hold a catalog keeps while it is open (`pg_dbfile::Live`). It waits for a change in progress to finish.
+/// The shared hold a catalog keeps while it is open (`pg_dbfile::Live`). It waits a bounded time for a change in progress
+/// to finish, and fails if that change does not finish in time.
 pub(crate) fn take_shared(path: &Path) -> Result<pg_dbfile::Live> {
     pg_dbfile::Live::shared(path)
         .with_context(|| format!("catalog {}: its open marker", path.display()))?
@@ -1078,7 +1079,7 @@ mod tests {
 
     /// Whether the catalog at `conn` is this build's schema at its version: the check [`Catalog::prepare`] makes.
     fn is_current(conn: &Connection) -> Result<bool> {
-        Ok(mismatch(conn, current_version()?, current_expected()?)?.is_none())
+        Ok(mismatch(conn, current_expected()?)?.is_none())
     }
 
     /// Why the preparation moved the old catalog aside (`None` when it kept it).

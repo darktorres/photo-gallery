@@ -7,9 +7,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The job that runs the passes in order (`runner`), how a catalog folder is opened (`open_catalog`, `open_thumbs`,
-# `versions`, which names the renderer's `THUMBS_VERSION`), and what both front ends do around the passes (`folders`,
-# `scans`). The passes are their own crates (`pg-scan`, `pg-import`, `pg-thumbs`, `pg-borders`, `pg-crop`,
+# The job that runs the passes in order (the module `runner`), how a catalog folder is opened (the functions
+# `open_catalog`, `open_thumbs` and `versions`, which names the renderer's `THUMBS_VERSION`), and what both front ends
+# do around the passes (the modules `folders` and `scans`). The passes are their own crates (`pg-scan`, `pg-import`, `pg-thumbs`, `pg-borders`, `pg-crop`,
 # `pg-writeback`), which callers name directly: this crate re-exports none of them. The runner runs them all, so it
 # depends on all of them. The integration tests of `pg-borders` and `pg-crop` are here, because they prepare a catalog
 # with `versions`; they and the other tests dev-depend on the codecs they check against.

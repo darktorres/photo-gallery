@@ -79,7 +79,7 @@ tests; tests that scan without `add_root` get one (`library/tests/borders.rs:36`
 2. **Leases (BM D16)**: helper in `pg_catalog`: `claim`, `fence(tx)` (`UPDATE … SET beat=beat+1 WHERE id=? AND token=?`
    must hit exactly one row, else `Error::LeaseLost`), `release`, adoption. Staleness is a **counter** unchanged for the
    adopter's own monotonic 60 s (remembered in a field on `Catalog`), not `unixepoch()`; `SCAN_LEASE_SECS` stays as that
-   window. A heartbeat **thread** with its own plain connection beats every 5 s (covers FFmpeg stalls, pauses, 500-video
+   window. A heartbeat **thread** with its own plain connection beats every 5 s (not built: the code renews the lease every 20 s, `crates/scan/src/lib.rs:205`, and writes its heartbeat in each write transaction, `crates/catalog/src/lease.rs:21`) (covers FFmpeg stalls, pauses, 500-video
    batches without touching `pipeline::run`; `:memory:` renews from the owner). BUSY on renew = retry, not `Lost`.
    `Error::ScanBusy` → `LeaseBusy{kind,target,holder}`; `ScanError::Lost` (+ the exhaustive match at `cli/lib.rs:168-183`);
    `scan/lib.rs:600-601` `ensure!` becomes typed `Lost`.

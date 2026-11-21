@@ -285,8 +285,8 @@ viewer gets the shown item's values as properties. Text and numbers come typed f
 The data folder (its home) is `PG_HOME` when set. Otherwise it is the parent of the catalog folder, when one is given:
 `PG_CATALOG_DIR` (which `.env` sets for `just run` and `just dev` on Windows) or `--catalog-dir` on the command line.
 Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows, and `$XDG_DATA_HOME/photo-gallery`
-(`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and the
-thumbnail cache), `gallery.json`, `gallery.log` and, on Windows, `sqlite-aliases` (where a folder whose name SQLite
+(`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and
+`thumbs.sqlite` (the thumbnail cache), `gallery.json`, `gallery.log` and, on Windows, `sqlite-aliases` (where a folder whose name SQLite
 can't open is reached by an alias): nothing of the app's is written outside it. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
 is the session's, with the build and the data folder (the log's format is in `crates/log/src/lib.rs`), and
 `gallery status` prints the data folder. The app's preferences (write-back, Real Size, borders, row height, the last

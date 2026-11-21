@@ -1172,6 +1172,8 @@ The benches go in `pg-bench`, which runs only through `cargo bench -p pg-bench -
 
 **Crate layers.** `pg-bench` gains `pg-import` as a dependency (`crates/bench/Cargo.toml`, `[dependencies]`, after `pg-codec`). A dependency must point to an earlier line of `tools/crate-layers.txt` (`boundaries.py:106-108`), so `bench` moves below `import`, and the lines change in the same commit (5.13 below):
 
+Stale: `tools/crate-layers.txt` is the current map (its `import` line adds `container` and `perf`).
+
 ```text
 import: analysis catalog dedup jobs model platform render thumbcache trace
 bench: analysis catalog codec import jobs model render scan thumbcache

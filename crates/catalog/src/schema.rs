@@ -24,6 +24,9 @@ use crate::error::Result;
 use crate::progress::{NO_PROGRESS, Phase, Progress};
 use crate::transaction::write_transaction;
 
+/// `PRAGMA auto_vacuum`'s value for incremental vacuum (0 none, 1 full, 2 incremental).
+pub(crate) const AUTO_VACUUM_INCREMENTAL: i64 = 2;
+
 /// One step of a migration: SQL that changes the layout, or a conversion of rows (`Source`: the old shape it reads from),
 /// which is idempotent. `PathRules`: the rules the catalog's paths are stored under.
 #[derive(Clone, Copy)]
@@ -82,7 +85,7 @@ pub(crate) const SCHEMA: SchemaSet<'static> = SchemaSet { baseline: BASELINE, mi
 pub(crate) const MIGRATIONS: &[Migration] = &[];
 
 /// What a caller watches while a catalog is brought to a version: the progress its steps are reported to. The fault
-/// points come through this same parameter (Phase 4), so the signature of [`bring_to`] changes once.
+/// points come through this same parameter, so the signature of [`bring_to`] changes once.
 pub(crate) struct Hooks<'a> {
     pub(crate) progress: &'a dyn Progress,
 }
@@ -175,7 +178,7 @@ pub(crate) fn bring_to(
             // A file made without incremental auto-vacuum is compacted by a VACUUM that the next start runs (`vacuum_owed`):
             // its creator sets the pragma before the schema, and SQLite ignores it once a page exists.
             let mode: i64 = tx.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
-            if mode != 2 {
+            if mode != AUTO_VACUUM_INCREMENTAL {
                 tx.execute("UPDATE meta SET value = 1 WHERE key = 'vacuum_owed'", [])?;
             }
         } else {
@@ -297,8 +300,8 @@ static CURRENT: Expected = Expected::new(current_layout, SEEDS);
 
 /// Why the file at `conn` is not this build's catalog at `version`, given `want` (its [`expected_for`] schema): `None` when
 /// it is. It reads only. A file that is not a database is not a catalog, and neither is one whose `application_id` is
-/// another's.
-pub(crate) fn mismatch(conn: &Connection, version: i64, want: &Schema) -> Result<Option<String>> {
+/// another's, once it has objects or a version (a new file has neither, and no id yet).
+pub(crate) fn mismatch(conn: &Connection, want: &Schema) -> Result<Option<String>> {
     let found = match Schema::read(conn, SEEDS) {
         Ok(found) => found,
         Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => return Ok(Some("not a database".to_string())),
@@ -307,7 +310,9 @@ pub(crate) fn mismatch(conn: &Connection, version: i64, want: &Schema) -> Result
     if let Some(difference) = found.difference(want) {
         return Ok(Some(difference.to_string()));
     }
-    if version > 0 {
+    // The id is set with the version, in the transaction that creates the catalog. So a file with objects, or with a
+    // version, but without the id was not made here. A file with neither is new, and has no id yet.
+    if !found.is_empty() || pg_dbfile::user_version(conn)? > 0 {
         let id = pg_dbfile::application_id(conn)?;
         if id != APPLICATION_ID {
             return Ok(Some(format!("application id {id}, not a catalog's")));
@@ -595,9 +600,26 @@ mod tests {
         let c = crate::Catalog::prepare(&path, crate::test_support::versions(), PathRules::Windows).unwrap();
         assert_eq!(version(&c.conn), BASELINE_VERSION);
         let mode: i64 = c.conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0)).unwrap();
-        assert_eq!(mode, 2, "incremental");
+        assert_eq!(mode, AUTO_VACUUM_INCREMENTAL, "incremental");
         let owed: i64 = c.conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
         assert_eq!(owed, 0);
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The application id is checked at every version, not only once the file has one: a file without this build's id is
+    /// not its catalog, even at version 0.
+    #[test]
+    fn the_application_id_is_checked_at_version_zero_too() {
+        let dir = pg_testkit::run_folder("scratch_schema", "application-id-any-version").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = crate::Catalog::prepare(&path, crate::test_support::versions(), PathRules::Windows).unwrap();
+        let want = current_expected().unwrap();
+        assert_eq!(mismatch(&c.conn, want).unwrap(), None);
+        c.conn.pragma_update(None, "application_id", 42).unwrap();
+        assert!(mismatch(&c.conn, want).unwrap().is_some());
+        c.conn.pragma_update(None, "user_version", 0).unwrap();
+        assert!(mismatch(&c.conn, want).unwrap().is_some(), "the id is checked at version 0 too");
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -621,7 +643,7 @@ mod tests {
     }
 
     /// The stamps of a rating, a border mark and a queued write are triggers of their own on delete and on update as
-    /// well as on insert: taking each back (or changing it again) names its file, as the insert did (N-13).
+    /// well as on insert: taking each back (or changing it again) names its file, as the insert did.
     #[test]
     fn each_stamp_trigger_names_its_file_on_delete_and_update() {
         let c = library(PathRules::Windows);

@@ -229,7 +229,7 @@ Notable closures (full lists in the appendix):
 - New: bench inputs in `crates/bench/benches/ir/linux.rs`. `fuzz/` exists as a top-level crate with seven targets, so no
   per-crate `fuzz/` directories are needed.
 - Reused as is: `tools/profiling/bench.py`, `tools/linux.py`, `tools/profiling/cgtab.py`, `tools/profiling/bench_data.py`,
-  `crates/bench/benches/ir.rs`, and the `justfile` recipes. `just lint` runs fmt, clippy with `-D warnings`, `cargo deny`,
+  `crates/bench/benches/ir.rs`, and the `justfile` recipes. `just lint` runs fmt and clippy with `-D warnings` (`cargo deny` is its own recipe, which CI runs),
   `cargo machete`, ruff and markdownlint.
 
 ## Verification

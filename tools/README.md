@@ -74,5 +74,5 @@ These are not run by anything now. Each is removed once its replacement has run 
 `doctor.ps1` (`doctor.py`), `qmltest.ps1` (`qmltest.py`),
 `compare-shots.ps1` (`compare_shots.py`), `build-jpeg-turbo.ps1` (`build_jpeg_turbo.py`),
 `build-static-ffmpeg.ps1` (`build_static_ffmpeg.py`), `profiling/callgraph/profile.ps1` (`profile.py`), and
-`profiling/callgraph/build.sh` (`build.py`). `eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`,
+`profiling/callgraph/build.py`. `eval/jpeg-decoders/win-build.cmd` and `win-env.cmd` (`win_build.py`,
 `win_env.py`) are the same kind of original.

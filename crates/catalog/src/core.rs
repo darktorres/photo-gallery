@@ -107,7 +107,7 @@ impl<'a> Prepare<'a> {
         self
     }
 
-    /// Brings the catalog to `set`, rather than the build's own schema. Test-only until the crash tests (Phase 4) need it
+    /// Brings the catalog to `set`, rather than the build's own schema. Test-only until the crash tests need it
     /// from outside the crate, which is when `SchemaSet` becomes public behind the `fixture` feature.
     #[cfg(test)]
     pub(crate) fn schemas(mut self, set: &'a SchemaSet<'a>) -> Self {
@@ -144,8 +144,8 @@ impl<'a> Prepare<'a> {
         let drift = match version {
             None => None,
             Some(found) if found > current => None,
-            Some(found) if found == current => mismatch(&conn, found, current_schema)?,
-            Some(found) => mismatch(&conn, found, &expected_for(set, found)?)?,
+            Some(found) if found == current => mismatch(&conn, current_schema)?,
+            Some(found) => mismatch(&conn, &expected_for(set, found)?)?,
         };
         // The lock order of a change: the exclusive hold first, kept through the change. Without it a change is refused
         // before anything is moved; a catalog that needs no change is held shared, below, as any open catalog is.
@@ -217,7 +217,7 @@ impl<'a> Prepare<'a> {
             ),
             None => format!("catalog {}", path.display()),
         })?;
-        if let Some(why) = mismatch(&conn, current, current_schema)? {
+        if let Some(why) = mismatch(&conn, current_schema)? {
             return Err(Error::Other(anyhow!(
                 "catalog {}: the catalog made is not this build's: {why}",
                 path.display()
@@ -302,7 +302,7 @@ impl Catalog {
                 path.display()
             )));
         }
-        if let Some(why) = mismatch(&conn, version, current_expected()?)? {
+        if let Some(why) = mismatch(&conn, current_expected()?)? {
             return Err(Error::Other(anyhow!("catalog {}: {why}: it changed after it was prepared", path.display())));
         }
         check_rules(&conn, path, rules)?;

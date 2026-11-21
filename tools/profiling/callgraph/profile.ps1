@@ -1,5 +1,5 @@
 # Instruction profile of the gallery, callgrind's format, one file per thread: runs target/release/gallery.exe
-# under Pin with callgraph.dll (build.sh) until a startup stage (crates/trace/src/lib.rs), then names the functions
+# under Pin with callgraph.dll (build.py) until a startup stage (crates/trace/src/lib.rs), then names the functions
 # Pin could only name by address (symbolize.py). Read the result with tools/profiling/cgtab.py or KCachegrind.
 #
 #   profile.ps1 -Out $PG_ROOT\profiles\ready [-Stop pg_stage_ready] [-Start STAGE] [-- gallery arguments]
@@ -26,7 +26,7 @@ if (-not $Qt) { $Qt = $env:QT_DIR }
 if (-not $Qt) { throw "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in the repo's .env (or pass -Qt)." }
 $pin = if ($env:PIN_EXE) { $env:PIN_EXE } else { "$env:LOCALAPPDATA\Programs\sde\pinkit\pin.exe" }
 $tool = "$PSScriptRoot\..\..\..\target\pin\callgraph.dll"
-if (-not (Test-Path $tool)) { throw "no ${tool}: run tools/profiling/callgraph/build.sh first" }
+if (-not (Test-Path $tool)) { throw "no ${tool}: run tools/profiling/callgraph/build.py first" }
 New-Item -ItemType Directory -Force (Split-Path $Out) | Out-Null
 
 $knobs = @('-o', $Out)

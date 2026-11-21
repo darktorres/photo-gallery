@@ -2864,3 +2864,64 @@ TestHooks.qml:29 says The options are read here, while the comment at :64 says t
 ### AD-020 [low] Plan docs cite API shapes that differ from the code — PARTIAL
 
 The plans already mark their own API shapes as not verified against current code: `CATALOG_SIZE_PLAN.md:225`, `DECODE_ONCE_PLAN.md:380` and `BOUNDED_MEMORY_PLAN.md:121` each carry a not verified marker in the finding text. The divergence is expected for a plan, and the plans say so. The finding is accurate about the gap but not about a hidden error.
+
+## Disposition of the 149 PARTIAL findings
+
+Each PARTIAL was checked against the code and docs it cites. Result: 39 fixed, 6 need a decision, 6 could not be verified here, and 98 were checked with no change (by design, historical or dated, or the cited claim does not hold on reading).
+
+Verification: the edited crates pass `cargo check --all-targets` (pg-model, pg-platform, pg-codec, pg-dedup, pg-edit, pg-thumbcache, pg-catalog, pg-client, pg-library). pg-desktop was not built (it needs the Qt build). `tools/test_versions.py` and `tools/test_ci_files.py` pass.
+
+### Fixed (39)
+
+- **Docs and comments:** DOC-005, DOC-010, DOC-023, DOC-034, DOC-035, DOC-045, DOC-053, DOC-058, DOC-067, DOC-069, DOC-076, DOC-078, DOC-088, DOC-089. Each doc or comment now matches the code.
+- **Duplication:** D-017 (`Day::parse` delegates to `parse_iso_date`); D-034 (the "fence mutex" is the registry lock, now named as such in WEB_CLIENT_RECONCILED).
+- **Errors:** E-044 (`drive.rs` names `ERROR_NOT_READY`).
+- **Config:** C-016 (Prefs has eleven fields, per LANGUAGES).
+- **Units:** U-003 (`check_len` doc, leap-second doc, join pictures vs query entries, gif limit attribution).
+- **Naming:** N-027 (OPEN_ITEMS names `Lanes::request_crop`); N-035 (stale phase labels removed).
+- **Versions:** V-032 (library `Cargo.toml` comment); V-039 (Argon2 measurement pointer).
+- **Persisted formats:** PF-010 (`AUTO_VACUUM_INCREMENTAL` in catalog and thumbcache; the `0xFFFFFFFFFFFF` mask literal is unchanged); PF-018 (README names `thumbs.sqlite`).
+- **Architecture:** A-002 (desktop has eight pg crates at runtime); A-022 (stale DECODE_ONCE layer map marked); A-029 (Phase 4 label).
+- **Manifests and lints:** ML-001 (`temp_dir` ban added to client and model `clippy.toml`; neither crate calls it); ML-003 (Cargo comment scopes "warn" to the rust lints); ML-015 (codec `Cargo.toml` comment).
+- **Tooling:** TL-003 (PLAN lists the three Linux containers); TL-017 (BOUNDED_MEMORY names `compare_shots.py`).
+- **UI text:** UI-017 (error box title from the `ui-app-name` entry).
+- **Tests:** T-028 (LANGUAGES and NIGHTLY: `cargo deny` is its own recipe, `just deny`).
+- **Concurrency:** CU-001 (BACKGROUND_JOB_AUDIT_FIXES notes the heartbeat thread is not built); CU-004 (`clear_failures` doc: a failure recorded between the check and the transaction is newer and stays).
+- **API docs:** AD-007 (duplicate paragraphs in crop and writeback tests); AD-010 (private `run_team` removed from a pub doc).
+
+### Decided and applied (6)
+
+The six open decisions were resolved and applied:
+
+- **D-050:** `build.sh` deleted; `profile.ps1` and `tools/README.md` point at `build.py`. This also settles D-049, TL-008 and DOC-059.
+- **E-025:** a malformed TIFF sample type is now a decode error (`tiff.rs`); real budget limits are unchanged.
+- **PF-030:** the catalog checks `application_id` once a file has objects or a version, at any version. A new file has neither. Regression test: `the_application_id_is_checked_at_version_zero_too`.
+- **ML-031:** `lint.py` gains a `dhat-heap` clippy step and a `specta` one. A new guard, `tools/check_feature_coverage.py`, fails `just lint` when a feature has no lint step, a dependency that turns it on, or an allowed reason.
+- **TL-025:** the temporary `CARGO_LOG` is removed from `ci.yml`.
+- **UI-011:** `cause_text` wraps a raw error in the catalogue's `failure-detail` message.
+
+The original questions follow, for reference.
+
+### Needs a decision (6, original list)
+
+- **D-050:** `tools/profiling/callgraph/build.sh` still sits beside `build.py`, which says it replaced it. Deleting it also settles D-049, TL-008 and DOC-059. Not deleted here.
+- **E-025:** codec kind mapping (png `LimitsExceeded` to `InsufficientMemory`). Needs a per-case call.
+- **PF-030:** catalog `application_id` is checked only when `user_version > 0` (`schema.rs:310`), while `judge.rs:131` treats id 0 differently. The intent is not recorded.
+- **ML-031:** the `dhat-heap` feature is not in the clippy gate. Adding it changes the gate.
+- **TL-025:** `CARGO_LOG` marked "Diagnostic (temporary)" in `ci.yml:59-60`. Removing it is a CI decision.
+- **UI-011:** whether English `Display` text reaches a GUI user was not confirmed.
+
+### Could not verify here (6)
+
+- **DOC-036:** needs a bindgen run against the FFmpeg headers; no generated bindings exist in `target/`.
+- **DOC-072:** measured timings in comments; not reproducible in this checkout.
+- **ML-018:** `cargo deny` cannot fetch crates offline; the WTFPL entry is unchecked.
+- **UI-007:** the filter chip's label was not located.
+- **T-005:** the flaky-test rate was not reproduced.
+- **AD-015:** the harness paths the audit cites do not exist.
+
+### Checked, no change (98)
+
+- **Accurate on reading, cite wrong, or claim does not hold:** DOC-026, DOC-032, DOC-057, DOC-073, DOC-081, DOC-090, DOC-091, DOC-093, D-066, E-008, E-012, E-028, E-039, C-005, C-025, PF-003, P-030, LG-022, LG-024, TL-031, P-022, P-028, T-029, AD-008.
+- **By design or documented choice:** C-012, C-014, C-019, C-021, C-023, C-024, C-035, C-036, C-039, C-042, C-045, D-013, D-030, D-045, E-055, E-059, U-040, N-005, N-009, N-012, N-020, N-023, N-024, N-028, N-031, N-032, N-033, N-040, A-008, A-010, A-014, A-019, A-033, V-021, PF-012, PF-013, PF-023, PF-036, ML-024, ML-032, TL-016, TL-018, LG-006, LG-017, UI-023, DOC-065, DOC-066.
+- **Historical plan, dated snapshot, or planned work:** DOC-009, DOC-015, DOC-039, DOC-092, D-035, D-071, E-040, E-045, E-061, A-018, A-021, C-043, ML-019, ML-020, PF-028, PF-029, PF-034, V-037, V-038, P-009, P-017, P-018, P-019, P-029, UI-022, LG-028, AD-020.

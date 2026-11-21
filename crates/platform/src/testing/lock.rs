@@ -22,8 +22,8 @@ pub(super) fn next_number() -> u64 {
     CLAIMS.fetch_add(1, Ordering::Relaxed)
 }
 
-/// A lock on a file. It is held until it drops, and a lock from [`create_for_delete`] or [`take_for_delete`] removes its
-/// name when it goes ([`HeldLock::delete`]).
+/// A lock on a file. It is held until it drops. A lock from [`create_for_delete`] or [`take_for_delete`] removes its name
+/// only through [`HeldLock::delete`]; dropping it leaves the name in place.
 #[cfg(unix)]
 #[derive(Debug)]
 pub(crate) struct HeldLock {

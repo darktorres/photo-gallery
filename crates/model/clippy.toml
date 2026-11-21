@@ -21,4 +21,5 @@ disallowed-methods = [
     { path = "std::fs::read_to_string", reason = "no files in the shared model" },
     { path = "std::fs::write", reason = "no files in the shared model" },
     { path = "std::fs::read_dir", reason = "no files in the shared model" },
+    { path = "std::env::temp_dir", reason = "test scratch goes through pg_testkit::run_folder, which owns its folders" },
 ]

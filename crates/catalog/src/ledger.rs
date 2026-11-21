@@ -184,7 +184,8 @@ impl Catalog {
 
     /// The results of `files` were made by `pass` (the thumbnails' or the borders'): their failures are gone. Nothing is
     /// written when the ledger holds none of them (it is looked at first, so a clear of what isn't there doesn't take
-    /// the write lock). Whether a row went.
+    /// the write lock). A failure recorded between that check and the transaction is newer than these results, so it
+    /// stays. Whether a row went.
     pub fn clear_failures(&self, pass: FilePass, files: &[FileId]) -> Result<bool> {
         if !failures_held(&self.conn, pass, files)? {
             return Ok(false);

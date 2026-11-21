@@ -15,7 +15,7 @@ paper name are from that paper. Measured figures are as recorded when measured; 
 - A desktop photo gallery for a library of **~70M images**, with near-duplicate detection aimed at **Pinterest
   saves: many crops and edits of the same picture**, plus the same pin saved at different sizes.
 - **Rust** for everything that runs at scale. **Windows only** for now (decided 2026-10-28). CUDA, nvJPEG, PyTorch,
-  TensorRT and ONNX Runtime all work there. Linux runs only in the `pg-dev` container (`tools/linux.py`), for the CI
+  TensorRT and ONNX Runtime all work there. Linux runs only in the `pg-dev`, `pg-tools` and `pg-eval` containers (`tools/linux.py`, `docker/README.md`), for the CI
   checks, the callgrind benches, the fuzzer and the eval's Linux parts. WSL is not used.
 - **Quality over speed** (user decision, 2026-10-28): days or weeks of processing are acceptable. Heavier models
   (SSCD-large, fp32), exact rather than approximate k-NN (docs/plans/TIER2_ANN_BAKEOFF_PLAN.md: ~5.5 days of GEMM for 70M), multiple

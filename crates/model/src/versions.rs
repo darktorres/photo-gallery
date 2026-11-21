@@ -29,7 +29,7 @@ pub const THUMBS_VERSION: i64 = 1;
 pub const PLACEHOLDER_VERSION: i64 = 1;
 
 /// The version of the thumbnail cache's layout (`pg_thumbcache::CACHE_VERSION`). A cache at another starts over; a newer
-/// one is left alone (plan D9).
+/// one is left alone.
 pub const CACHE_VERSION: i64 = 1;
 
 /// The version of the replay format (`pg_client::controller::replay::REPLAY_FORMAT_VERSION`): a dev recording's format.
@@ -41,7 +41,7 @@ pub const CATALOG_SCHEMA_VERSION: i64 = 1;
 
 /// The version of the thumbnail pixels this build makes (`pg_render::THUMB_OUTPUT_VERSION`): the resize, the JPEG and
 /// WebP settings, the chroma. A cache whose `meta.thumb_output_version` is another starts over; a newer one is left
-/// alone (plan D9). Bump it when a thumbnail's bytes change for the same source.
+/// alone. Bump it when a thumbnail's bytes change for the same source.
 pub const THUMB_OUTPUT_VERSION: i64 = 1;
 
 /// The version of the key algorithm (`pg_model::name`'s folder and order keys: `folders.key`, `files.order_key`). Bump it

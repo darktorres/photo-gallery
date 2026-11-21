@@ -18,6 +18,9 @@ from pgtools import lint_tool, load_env_file, run
 STEPS = [
     ["cargo", "fmt", "--all", "--check"],
     ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--timings", "--", "-D", "warnings"],
+    # The features the workspace step does not turn on (tools/check_feature_coverage.py checks that every feature has one).
+    ["cargo", "clippy", "-p", "pg-gallery", "--features", "dhat-heap", "--all-targets", "--locked", "--", "-D", "warnings"],
+    ["cargo", "clippy", "-p", "pg-model", "--features", "specta", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "check", "-p", "pg-model", "-p", "pg-client", "--locked", "--target", "wasm32-unknown-unknown"],
     # The workspaces outside the root (fuzz and eval/jpeg-decoders have their own lockfiles): their lock must not be stale.
     ["cargo", "metadata", "--locked", "--manifest-path", "fuzz/Cargo.toml", "--format-version", "1"],
@@ -53,6 +56,8 @@ def main() -> None:
     # The crate boundaries (tools/boundaries.py): the crate layers, acyclic dev edges, re-exports, and the platform rule
     # (the OS calls and branches are in pg-platform).
     run([sys.executable, str(Path(__file__).resolve().parent / "boundaries.py")])
+    # Every feature of the workspace is compiled by a step above, by a dependency, or named as allowed (check_feature_coverage.py).
+    run([sys.executable, str(Path(__file__).resolve().parent / "check_feature_coverage.py")])
     # The FFmpeg pin: a month-end build BtbN has not dropped, at the commit the static build uses (tools/check_ffmpeg_pin.py).
     run([sys.executable, str(Path(__file__).resolve().parent / "check_ffmpeg_pin.py")])
     print("lint: every step passed")

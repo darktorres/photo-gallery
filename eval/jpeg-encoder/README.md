@@ -13,7 +13,7 @@ implemented.
   batch from a device RGB buffer and a descriptor array, read back outputs, timings, and (debug)
   quantized coefficients.
 - `encode_gpu.cu`: CUDA implementation.
-- `test_encoder.cpp`: test driver (tests 1 to 7).
+- `test_encoder.cpp`: test driver (tests 1 to 7, and the diagnostic test 8 described below).
 - `build.ps1`: native build script (nvcc 13.4, MSVC cl host compiler, sm_75).
 - `build/`: build output (`test_encoder.exe`, and the generated `build_test_encoder.cmd`).
 

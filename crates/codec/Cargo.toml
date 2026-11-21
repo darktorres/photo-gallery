@@ -7,7 +7,8 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The pixels in and out: the image decoders and encoders are linked here and nowhere else (deny.toml). No file or
+# The pixels in and out: the image decoders and encoders are linked here, and deny.toml names the other crates allowed
+# to depend on them (`image`, `turbojpeg` and `png` are listed with their wrappers there). No file or
 # catalog access; the caller gives the bytes.
 [dependencies]
 pg-model = { path = "../model" }

@@ -554,7 +554,7 @@ mod tests {
         a_folder_is_its_exact_path_and_keeps_its_serial_posix
     );
 
-    // The insert trigger stamps a new folder's serial past the ones already there (N-13, `folder_failures_stamp`). A
+    // The insert trigger stamps a new folder's serial past the ones already there (`folder_failures_stamp`). A
     // folder recorded again keeps its stamp, so the walk that follows sees only the new one as news.
     fn a_new_folder_failure_is_stamped_past_the_older_ones(rules: PathRules) {
         let mut c = library(rules);

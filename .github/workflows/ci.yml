@@ -55,9 +55,6 @@ jobs:
     name: Windows (app, Qt)
     runs-on: windows-2025
     timeout-minutes: 90
-    env:
-      # Diagnostic (temporary): why cargo rebuilds each unit. Each rebuilt unit logs "dirty:" with its reason.
-      CARGO_LOG: cargo::compiler::fingerprint=info
     # The steps run under bash (Git for Windows), so a failed command fails its step; the diagnostics below say pwsh.
     defaults:
       run:

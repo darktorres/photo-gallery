@@ -6,7 +6,8 @@
 //! Each kind is one variant: its code (permanent, the stored tag and the words' ids), its level, its source (the inbox's
 //! category), its lifecycle (how the inbox keeps it) and its actions. A new kind is one variant here, its words, and the
 //! call that posts it (the checklist is in the module docs below). Paths of the library are [`RulePath`]s, exact; files
-//! of the app's own (the preferences, a kept catalog) are the text the system gave.
+//! of the app's own (the preferences, a kept catalog) are the text the system gave. A [`FileFailure`]'s path is the text
+//! the user sees, a `String`: the one library path that is not a `RulePath`.
 //!
 //! Serialised internally tagged by `kind`, kebab-case. A field added later is `#[serde(default)]`, so an older row still
 //! reads. A row of a kind this build doesn't know is [`Notice::Unknown`], which the decoder in `pg-app` makes; it is never

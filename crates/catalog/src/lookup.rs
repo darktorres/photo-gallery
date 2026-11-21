@@ -192,7 +192,8 @@ impl Catalog {
             .optional()?)
     }
 
-    /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
+    /// The counts, each a query over the catalog's tables. SQLite picks an index where one covers a query (the indexes
+    /// are in `baseline.sql`).
     pub fn status(&self) -> Result<Status> {
         // One read snapshot: the counts agree with each other while a scan writes.
         let snapshot = self.conn.unchecked_transaction()?;

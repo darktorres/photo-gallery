@@ -579,7 +579,7 @@ Elevation (`POST /api/auth/elevate {password}`, verified through the queue and l
 
 ### 2.9 Fence, drain and commit (revoke, change, reset, sign-out-everywhere)
 
-Lock order: the fence mutex (taken briefly and never held while waiting), then the per-device write gates (async read-write locks, in device-id order), then the write transaction. A mutation holds its device gate shared across its check and commit, and reads the deny set while holding it.
+Lock order: the registry lock (the fence's mutex; taken briefly and never held while waiting), then the per-device write gates (async read-write locks, in device-id order), then the write transaction. A mutation holds its device gate shared across its check and commit, and reads the deny set while holding it.
 
 1. Fence: insert the device id into the deny set (revoke), or set signins_fenced (change, reset, sign-out-everywhere). Release the mutex.
 2. Drain: take the affected browser device gates exclusively, in device-id order.

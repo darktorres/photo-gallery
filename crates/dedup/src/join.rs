@@ -306,7 +306,8 @@ pub(crate) fn best_kernel() -> Kernel {
 }
 
 /// The most owed pictures of a slice the few-owed path takes by default, on a join of `T` threads: `FEW_BASE +
-/// FEW_PER_THREAD * T` ([`Tuning::few_entries_on`]); a larger slice takes the sorted path. Both are the least-squares
+/// FEW_PER_THREAD * T` owed pictures ([`Tuning::few_entries_on`] returns that times `QUERY_ORIENTATIONS`, in query
+/// entries); a larger slice takes the sorted path. Both are the least-squares
 /// line through the two paths' measured crossovers on 1, 2, 4, 6, 8 and 12 threads (253, 309, 357, 415, 585 and 652
 /// owed pictures; docs/reference/PROFILING.md, "The settings again"). The few-owed path's work spreads over every
 /// thread; the sorted path's floor, sorting the stored side, gains little past the physical cores, so the crossover
@@ -516,7 +517,7 @@ impl<'a> Joiner<'a> {
     /// The pairs in which the query side is one of `queries` (a range of indices; the owed ones in it query).
     ///
     /// On a team of `threads` threads (at least one), which do all of the join's work but finding the slice's owed
-    /// pictures (`run_team`). `start` runs once in each thread before it works (the caller sets its priority there).
+    /// pictures. `start` runs once in each thread before it works (the caller sets its priority there).
     /// `control` is asked before each task, returns false to stop, and may block (a pause). `abort` is called when a
     /// thread panics, after the team is told to stop: it should wake a `control` that is blocked, and make it return
     /// false. `None` when `control` stopped the join: nothing is returned then. Not inlined, so a profiler can toggle on

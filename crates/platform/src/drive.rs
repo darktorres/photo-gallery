@@ -53,7 +53,8 @@ pub fn unplugged(error: &std::io::Error) -> bool {
 /// The OS error codes that say a drive is not there: Windows' `ERROR_NOT_READY`, and on Linux `ENODEV` and `ENXIO`.
 #[cfg(windows)]
 fn unplugged_code(code: Option<i32>) -> bool {
-    code == Some(21)
+    const ERROR_NOT_READY: i32 = 21;
+    code == Some(ERROR_NOT_READY)
 }
 
 #[cfg(target_os = "linux")]

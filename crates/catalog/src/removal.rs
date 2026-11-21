@@ -266,7 +266,7 @@ impl Catalog {
     /// holds off falls back to a passive one.
     pub fn shrink(&self) -> Result<()> {
         let mode: i64 = self.conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
-        if mode != 2 {
+        if mode != crate::schema::AUTO_VACUUM_INCREMENTAL {
             return Ok(());
         }
         let mut free: i64 = self.conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;

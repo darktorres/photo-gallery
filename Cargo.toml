@@ -57,7 +57,8 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zune-core = { version = "0.5", default-features = false }
 zune-jpeg = "0.5"
 
-# Each crate opts in with `[lints] workspace = true`. Kept at "warn" so work in progress builds; `cargo clippy
+# Each crate opts in with `[lints] workspace = true`. The rust lints below are kept at "warn" so work in progress builds
+# (the clippy group further down is "deny" where it says so); `cargo clippy
 # --workspace --all-targets -- -D warnings` (just lint) holds the tree to them.
 [workspace.lints.rust]
 # A `pub` item is one another crate can name; one only this crate uses is `pub(crate)` or narrower, so the public

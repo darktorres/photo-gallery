@@ -17,6 +17,10 @@ set windows-shell := ["cmd.exe", "/d", "/c"]
 ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
 ffmpeg_sha256 := "1d9823c35c7a7e2f54d1438cf61030d6efabe3278de01c191309d1e828bb74df"
 
+# rustup's installer for x86_64 Linux, from static.rust-lang.org, checked against this SHA-256 (the published .sha256 of the
+# same file) before it runs. The container (docker/Dockerfile) and CI's setup (tools/profiling/ci_setup.py) both use it.
+rustup_init_sha256 := "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55"
+
 # The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
 py := env('PG_PYTHON', if os() == "windows" { "python" } else { "python3" })
 

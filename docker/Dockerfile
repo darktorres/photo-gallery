@@ -78,7 +78,14 @@ COPY rust-toolchain.toml /opt/pg/rust-toolchain.toml
 
 USER pg
 
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
+# rustup's installer, checked against the pin in the Justfile (rustup_init_sha256) before it runs.
+ARG RUSTUP_INIT_URL=https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+ARG RUSTUP_INIT_SHA256=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+RUN curl -sSf -o /tmp/rustup-init "${RUSTUP_INIT_URL}" \
+ && echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum -c - \
+ && chmod +x /tmp/rustup-init \
+ && /tmp/rustup-init -y --profile minimal \
+ && rm /tmp/rustup-init \
  && . "$HOME/.cargo/env" \
  && cd /opt/pg && rustup show
 

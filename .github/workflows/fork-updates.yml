@@ -23,7 +23,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: Upstream releases for the forks
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Compare each fork's locked version with its crate's newest release
         id: check

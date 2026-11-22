@@ -865,7 +865,7 @@ The LLVM default is computed in build.py:66-68 and build.sh:22-24. The cgtab.py:
 
 ### D-051 [medium] Newest-version selection in three tools — CONFIRMED
 
-**Disposition: Deferred.** The three "newest" rules differ on purpose; the shared version_key move to pgtools is not done.
+**Disposition: No change.** `tools/fork-updates.py:49` `version_key` compares version strings (`0.41.1`); `tools/profiling/callgraph/build.py:24` `newest` compares the digits of a folder path. They compare different things, so a shared helper would not change `build.py`. The `build.sh` `sort -V` picks a clang folder and differs again. The finding's claim that `fork-updates.py:49` does not exist is stale: the function is there.
 
 build.py:24 newest() sorts version digits in order, and build.sh:31 uses sort -V to pick the newest clang include folder. The fork-updates.py:49 cite does not exist.
 
@@ -933,7 +933,7 @@ Theme.qml holds the tokens panelScrim #b0000000 (:9), captionBacking #b3000000 (
 
 ### D-063 [low] Desktop QML structural duplication — CONFIRMED
 
-**Disposition: No change.** PanelAction is shared; the wheel accumulators and the preloads call different things.
+**Disposition: Fixed.** The two inline wheel accumulators (`Viewer.qml` and `YandexPreview.qml`) are one `WheelStepper.qml` component with a `stepsFor()` function and `reset()`, covered by `tst_wheelstepper.qml`. Both callers keep their behaviour: a notch is one step, up is the previous item. The preload is not merged (no `NeighbourPreload`): the plan records that the two would share only about two declarations.
 
 enum PanelAction { Close, StepBack, StepForward, Pick } is declared at YandexPanel.qml:90 and identically at YandexPreview.qml:20. The wheel accumulator is at Viewer.qml:302 and YandexPreview.qml:59, and the neighbour preload is at Viewer.qml:396 and YandexPreview.qml:220.
 
@@ -1313,7 +1313,7 @@ Edit crate messages vary: raster.rs:19 says is too large to decode, webp.rs:53 s
 
 ### E-048 [low] Spelling, case and symbol drift in user-facing messages — CONFIRMED
 
-**Disposition: Fixed in part.** The planar TIFF message keeps image's spelling ("color") because the decode test compares against image; other codec messages use "colour".
+**Disposition: Fixed.** The planar TIFF message keeps `image`'s spelling ("color"), with a comment in `codec/src/codecs/tiff.rs` saying why the decode test compares against it. The "Not enough planes" wording the finding cites no longer exists. The `×` in the codec's fixture error is developer-facing text, not UI copy, so it stays.
 
 tiff.rs:132 uses color while jpeg.rs:36 and :66 use colour. tiff.rs:140 capitalises Not enough planes. crop.rs:102 and the size text use x and the multiplication sign inconsistently: fixtures.rs:20 and crop.rs:36 use the multiplication sign.
 
@@ -1687,7 +1687,7 @@ dirs.rs:32 uses PhotoGallery under LOCALAPPDATA on Windows, and dirs.rs:37 uses 
 
 ### U-001 [medium] Decimal and binary MB/GB labels mixed in code and tools — CONFIRMED
 
-**Disposition: Fixed in part.** Byte counts and budgets are binary (cli --cap-gib, thumbcache Cap::from_gib, cli GiB labels); query MB labels and the Cap::from_gb docs elsewhere are not all done.
+**Disposition: Fixed.** Byte counts and budgets are binary (cli `--cap-gib`, thumbcache `Cap::from_gib`, cli GiB labels). The size filter's `MB` constant in `query/src/lib.rs` now says it is binary (2^20 bytes), as Explorer counts file sizes. No `Cap::from_gb` docs remain. The decimal rates and totals the finding cites (`lifecycle.rs`, `report.rs`) are decimal on purpose and stay as they are.
 
 cli lib.rs:237-238 gigabytes() divides by 1e9 (decimal) for cache totals, while the cli test at lib.rs:986 builds `Cap::from_bytes(1` `<<` 30) (binary GiB). The cite at lib.rs:960 is a different test. lifecycle.rs:268 MB is decimal, query lib.rs:88 MB is binary, report.rs:111 mbps is decimal, rehearsal.rs:46 is MiB, eval/ann/report.py:44 gb is `2**30`. `dhat_top.py` is at tools/profiling/pairing/, not tools/profiling/.
 
@@ -1889,7 +1889,7 @@ viewport.rs:163 uses a relative tolerance fit × 0.0001, viewport.rs:171 uses th
 
 ### U-035 [low] Instruction and cycle counts shown in millions and as raw values — CONFIRMED
 
-**Disposition: Fixed in part.** medians.py uses one formatter with an M label; pairs_probe.rs prints its raw values as before.
+**Disposition: Fixed.** The two probes (`library/examples/pairs_probe.rs` and `import/examples/pairs_load_probe.rs`) format cycles through one helper, `pg_model::num::millions`, which prints whole millions with an `M` label, the form `medians.py` uses. The raw values are no longer printed in those probes.
 
 callgrind/1bb039084.md:19 shows Ir as 93.26 M and 23.3 K per file, while docs/perf/baseline.json stores raw integers. `pairs_probe.rs:77-78` divides cycles by `1_000_000` and prints them as M, while medians.py:27 prints whole M cycles and keep.py reports percent to two decimals.
 
@@ -2171,7 +2171,7 @@ Dialog titles are ui-removal-discard-title (DiscardRemovalDialog.qml:32), ui-rem
 
 ### N-039 [low] Fluent id prefixes and digit suffixes are not uniform — CONFIRMED
 
-**Disposition: No change.** The decision is not to rename the Fluent ids; the per-file convention still needs a header comment.
+**Disposition: Fixed.** Every `text.ftl` id now starts with `msg-`, like the `ui-` and `cli-` ids of their files. The messages! table, the source labels and the notice title and body ids name them, and `words.rs` asserts the prefix. `Hint::Up4` and `Hint::Down1` are `UpFour` and `DownOne`, with ids `ui-hint-up-four` and `ui-hint-down-one`. Stored notice codes are unchanged.
 
 cli.ftl ids all begin cli-; text.ftl ids have no file prefix (text.ftl:1 is the header). Hint ids use digit suffixes, as in keys.rs:273 ui-hint-up-4 and :274 ui-hint-down-1. The mix is real but is documented per file.
 
@@ -2759,7 +2759,7 @@ Python tooling uses different import conventions: flat imports (eval/accel.py:33
 
 ### A-023 [low] Eval scripts import private helpers and tool internals from other scripts — CONFIRMED
 
-**Disposition: Fixed in part.** verify_types.py holds the shared types; Features and PairRunner remain in verify.py because they need torch and kornia.
+**Disposition: Fixed.** The torch-free helpers the tools share (`Params`, the feature constants, `work_image`, `Prefetcher`, the argument helpers, `write_outputs`) live in `eval/verify_common.py`, and `verify_synth.py` imports them from there. `tools/test_ci_files.py` (`VerifyCommonIsTorchFree`) checks that `verify_common.py`, `verify_types.py` and `common.py` import neither torch nor kornia. `Features` and `PairRunner` stay in `verify.py`, since they need torch and kornia.
 
 `bench_thumbs.py:51` imports the private `_vips` from `bench_decode`, and `verify_synth.py:23` imports ROTATIONS, Checkpoint and PairRunner from verify. Scripts reach into another script's internals.
 
@@ -2787,7 +2787,7 @@ The doc at shell/state.rs:19 names `pg_model::size::ROW_HEIGHT`. size.rs:10 defi
 
 ### A-028 [low] Leaf-below-core rationale repeated and reverse edges exist — CONFIRMED
 
-**Disposition: Deferred.** Whether core reaches roots needs a cargo-modules graph; the remaining leaf headers need pointers.
+**Disposition: Moot.** The catalog core does not reach `roots`: `core.rs` imports no item from `roots`, and `roots` (which holds `impl Catalog` blocks) imports the leaf modules, which is allowed because `roots` is not core. The leaf headers already point to the crate's docs for the rule (`A leaf below core (the rule is in the crate's docs)`), so the repeated rationale is a pointer, not a copy of the rule.
 
 The same leaf-below-core rationale is repeated across the catalog's module headers (dups/identity.rs:1, inbox/id.rs:1, and in failure.rs, ledger state.rs, listing.rs, coverage.rs, lease.rs). roots.rs:44 imports ledger::failure and removal, which shows reverse edges from the module that the core reaches.
 
@@ -2923,13 +2923,13 @@ The `TIER2_ANN_BAKEOFF_PLAN.md:117` note recorded 9 ruff errors and one format d
 
 ### ML-017 [low] Plan docs cite stale Cargo.toml and deny.toml line numbers — CONFIRMED
 
-**Disposition: Fixed in part.** The live cites are replaced; six remain in dated review text.
+**Disposition: Fixed.** The six cites the finding lists are gone from the dated review text: `GUI_THREAD_PLAN.md`, `VALUE_PROVENANCE_IDEAS.md` and `NIGHTLY_AND_BUILD_FLAGS_PLAN.md` now name the lints and files without line numbers that have moved. A grep of `docs/plans` for `Cargo.toml:` and `deny.toml:` cites in those three files finds none.
 
 Cargo.toml:69 is `undocumented_unsafe_blocks`; `GUI_THREAD_PLAN.md:1719` cites line 65, which is a different lint. `VALUE_PROVENANCE_IDEAS.md:33` cites the cast lints at 86-94, and they are at 88-98. `NIGHTLY_AND_BUILD_FLAGS_PLAN.md:192` and :143 cite lines that moved. The stale line citations are real.
 
 ### ML-018 [low] WTFPL allowance in deny.toml matches no crate — PARTIAL
 
-**Disposition: Fixed in part.** WTFPL is removed from deny.toml; cargo deny check licenses still needs to run (network).
+**Disposition: Fixed.** WTFPL is removed from deny.toml, and `just deny` now runs to the end: advisories, bans, licences and sources all pass. The run found one real advisory, a stack overflow in `url` 2.5.8 (through `ureq` in `pg-yandex`); `cargo update -p url` moves it to 2.5.9 in `Cargo.lock`. The fuzz and eval lockfiles do not pin `url`.
 
 deny.toml:34 allows WTFPL. Whether any crate uses it needs cargo-deny to run, and I did not run it, so the claim that the entry matches no crate is unverified. LANGUAGES.md:426 is a phase table row, not a cite of this entry, so it does not show the entry is unused.
 
@@ -3061,7 +3061,7 @@ pages.yml:30 uses runs-on: ubuntu-latest, while ci.yml:224 pins ubuntu-26.04. Th
 
 ### TL-007 [medium] eval/jpeg-decoders is a separate workspace that no CI step builds — CONFIRMED
 
-**Disposition: Deferred.** A CI job must build eval/jpeg-decoders with the eval packages installed.
+**Disposition: Fixed.** The Linux CI job runs `cargo check --manifest-path eval/jpeg-decoders/Cargo.toml --locked` after its tests (`.github/workflows/ci.yml`). The check builds locally with `FFMPEG_DIR` set; in CI the FFmpeg development packages the job installs are what `ffmpeg-sys-next` finds. Not yet run in CI: the first CI run will show it.
 
 eval/jpeg-decoders/Cargo.toml:9 declares its own [workspace]. lint.py:22-24 runs cargo metadata on that manifest, but no CI or Justfile step builds the crate, which matches `REVIEW_LEDGER.md:89`.
 
@@ -3257,7 +3257,7 @@ Dockerfile:115 gungraun-runner has no --locked. Dockerfile:113-114 gives the rea
 
 ### P-010 [medium] Rust components and the installer are declared in both `ci_setup.py` and rust-toolchain.toml — CONFIRMED
 
-**Disposition: Deferred.** The rustup-init SHA-256 pin needs network access; the Dockerfile copy is included.
+**Disposition: Fixed.** rustup-init is pinned by SHA-256 in the Justfile (`rustup_init_sha256`, checked against the published `.sha256` of the same file). `docker/Dockerfile` downloads it to `/tmp`, verifies it with `sha256sum -c`, and runs it; it no longer pipes `sh.rustup.rs` into a shell. `tools/profiling/ci_setup.py` does the same check before it runs the installer. `tools/test_ci_files.py` asserts the Dockerfile's `RUSTUP_INIT_SHA256` equals the Justfile pin.
 
 The file is `tools/profiling/ci_setup.py`, not `tools/ci_setup.py`. Line 51 fetches `https://sh.rustup.rs` with urllib and pipes it to sh with no checksum. Line 55 runs rustup component add clippy rustfmt on the default toolchain. rust-toolchain.toml:4-5 pins nightly-2026-11-06 with clippy and rustfmt components.
 
@@ -3333,7 +3333,7 @@ Both binding crates are in platform: picker.rs:129 uses the windows crate, dir.r
 
 ### P-023 [low] GitHub Action pin comments use different version granularity — CONFIRMED
 
-**Disposition: Deferred.** The release behind each SHA needs a GitHub lookup.
+**Disposition: Fixed.** Each action's SHA resolves to a release tag on GitHub (checked with `gh api` against the repository's tags), so the comments name the exact release: `Swatinem/rust-cache` v2.9.3, `actions/cache` v6.1.0, `actions/checkout` v7.0.1, `actions/upload-artifact` v7.0.2, `jurplel/install-qt-action` v4.5.0 (in `ci.yml`, `fork-updates.yml` and `pages.yml`). The other pins already named their exact release.
 
 ci.yml:66 comment # v7, :70 # v7.1.0, :82 # v2; pages.yml:43 # v6.0.0 and :48 # v5.0.1. The comment granularity varies as stated.
 
@@ -3755,7 +3755,7 @@ Timing asserts with fixed windows exist: roots.rs:984 asserts under 4 s, transac
 
 ### T-005 [medium] Known flaky tests recorded in plans but left unfixed — PARTIAL
 
-**Disposition: Fixed in part.** The cites are corrected; reproducing the flaky run needs a Windows run.
+**Disposition: Fixed.** The cites are corrected, and the two named tests were run 20 times each on Windows (`a_file_that_doesnt_decode_is_recorded_and_one_unread_is_not` in `pg-thumbs`, `a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found` in `pg-library`): 40 of 40 passed. A third test, the 200,000-file transaction timing test, is load-sensitive and was not in this check.
 
 `IMPORT_FAILURES_PLAN.md:185` records a flaky test that fails 2 of 5 alone. The test still exists under its name at thumbs/src/lib.rs:699, not at the cited :687 (which is a different test). The 2-of-5 rate was not reproduced here, so whether it is still flaky is unknown.
 
@@ -4041,7 +4041,7 @@ Atomic-write temp names differ: eval encoders.py:127-128 uses a fixed .tmp suffi
 
 ### CU-024 [low] Download integrity checked in one tool and not in another — CONFIRMED
 
-**Disposition: Deferred.** The rustup-init SHA-256 pin needs network access.
+**Disposition: Fixed.** The rustup-init download is verified against its pinned SHA-256 in both places that fetch it: the container (`docker/Dockerfile`) and CI's setup (`tools/profiling/ci_setup.py`). See P-010.
 
 The `tools/ci_setup.py` cite is at `tools/profiling/ci_setup.py`. There it fetches `https://sh.rustup.rs` with urlopen (:51) and runs it with no checksum. `setup_ffmpeg.py` verifies a SHA-256 before it installs the archive. The cite at `setup_ffmpeg.py:80` is `top_folder`, but the check exists in that file.
 
@@ -4073,7 +4073,7 @@ The cited file is at `tools/profiling/pairing/grow_catalog.py`. moved() at :121 
 
 ### AD-002 [medium] Analyze scale rule (512x320 minimum) held in Rust and Python — CONFIRMED
 
-**Disposition: Deferred.** The equality test between the Rust copy and eval/common.py is not added.
+**Disposition: Fixed.** The decoder's copy of the analyze minimum is two named constants (`ANALYZE_MIN_LONG`, `ANALYZE_MIN_SHORT`) in `eval/jpeg-decoders/src/lib.rs`. `tools/test_ci_files.py` (`AnalysisScaleRule`) reads them with `crates/analysis/src/analyze.rs` (`DECODE_MIN_LONG`, `DECODE_MIN_SHORT`) and `eval/common.py` (`ANALYSIS_DRAFT_SIDES`) and asserts they agree. The `nvjpeg.py` restatement the finding cites does not exist: that file only refers to the denominator `analyze` uses.
 
 The analyze scale rule is held in two places: jpeg-decoders src/lib.rs:54 documents it and :78 codes it as (512, 320) or (320, 512). nvjpeg.py:204-206 restates the same rule and cites pg-analysis. A change to one needs a change to the other.
 

@@ -29,6 +29,7 @@ PINNED = {
     "exiftool_version": just_value("exiftool_version"),
     "exiftool_source_sha256": just_value("exiftool_source_sha256"),
     "ffmpeg_sha256": just_value("ffmpeg_sha256"),
+    "rustup_init_sha256": just_value("rustup_init_sha256"),
 }
 
 
@@ -126,6 +127,13 @@ class Pins(unittest.TestCase):
         # The FFmpeg cache's key is this value (ci.yml), so a new pin is a new cache.
         self.assertRegex(PINNED["ffmpeg_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(dict(pin_values())["FFMPEG_SHA256"], PINNED["ffmpeg_sha256"])
+
+    def test_the_container_checks_rustup_init_against_the_justfile_pin(self):
+        # The container's rustup step verifies the installer with the same SHA-256 the Justfile pins (and ci_setup.py reads).
+        self.assertRegex(PINNED["rustup_init_sha256"], r"^[0-9a-f]{64}$")
+        dockerfile = (REPO / "docker" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn(f"RUSTUP_INIT_SHA256={PINNED['rustup_init_sha256']}", dockerfile)
+        self.assertIn("sha256sum -c", dockerfile)
 
     def test_the_linux_kit_is_under_the_runner_temp_folder(self):
         qt = PINNED["qt_version"]

@@ -60,7 +60,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The pinned Python comes first: the pins step and `just setup` and the other recipes run its scripts (the screenshot
       # fixture's venv is built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.12.10).
@@ -101,7 +101,7 @@ jobs:
           tool: ${{ env.TAIKI_TOOLS }}
 
       - name: "Qt ${{ env.QT_VERSION }} (at PG_QT_DIR)"
-        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
         with:
           version: ${{ env.QT_VERSION }}
           # aqtinstall's latest release, 3.3.0, cannot install Qt 6.11 or later on Windows x64: Qt split that repository
@@ -118,7 +118,7 @@ jobs:
         run: python tools/ci/github_files.py env PG_DESKTOP_CONTENT_KEY "${{ hashFiles('crates/desktop/**') }}"
 
       - name: FFmpeg archive and build (cached; keyed on the pin's SHA-256, which the pins step exports)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # The extracted build too: pg-video's build script reruns when its include folder is newer than its last run, and
           # an extraction on every run made it newer every time. A restore keeps the files' times.
@@ -137,7 +137,7 @@ jobs:
       - name: ExifTool (the metadata tests)
         run: choco install exiftool --version=${{ env.EXIFTOOL_VERSION }} -y --no-progress
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         id: cache
         with:
           # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
@@ -217,7 +217,7 @@ jobs:
 
       - name: Screenshot report
         if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots
           path: |
@@ -229,7 +229,7 @@ jobs:
       # so this comes last. cargo writes each run to its own cargo-timing-<time>.html.
       - name: Cargo timings report (diagnostic)
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cargo-timings
           path: target/cargo-timings/
@@ -247,7 +247,7 @@ jobs:
       # replays its warning. Setting the flag here changes every unit's fingerprint, so the next run rebuilds once.
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The Justfile's pins, for every later step (see the Windows job). The runner's python3 runs it.
       - name: Pins (the Justfile's versions, into the environment)
@@ -288,7 +288,7 @@ jobs:
 
       # The kit's QMAKE (cxx-qt) and LD_LIBRARY_PATH (the test binaries) are written by the pins step, with PG_QT_DIR.
       - name: Qt (linux, under QT_INSTALL_ROOT, as the Windows job's kit)
-        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
         with:
           version: ${{ env.QT_VERSION }}
           # The same aqtinstall commit as the Windows job (see there for why).
@@ -299,7 +299,7 @@ jobs:
           modules: qtmultimedia
           cache: true
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
           # is what the next run needs (the default saves nothing from a failed job).
@@ -336,6 +336,11 @@ jobs:
         # --no-fail-fast: a red run names every failing test, not the first test binary's (cargo stops at that one otherwise).
         run: just test --no-fail-fast
 
+      # The eval decoders are a separate workspace (eval/jpeg-decoders, its own Cargo.lock): no step above builds it. Its
+      # FFmpeg comes from the development packages installed above (pkg-config finds them).
+      - name: Eval decoders (their own workspace)
+        run: cargo check --manifest-path eval/jpeg-decoders/Cargo.toml --locked
+
       # A crash in the QML tests (a SIGSEGV in Qt Multimedia, seen on this job) leaves a core file: the kernel writes it
       # to this folder, set here because this runner's default hands cores to systemd-coredump. The failure steps below
       # read it with gdb and upload it. Nothing runs under gdb on a pass, and the core costs nothing unless there is one.
@@ -363,7 +368,7 @@ jobs:
 
       - name: Upload the QML core, on a QML failure only
         if: failure() && steps.qml.outcome == 'failure'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qml-core-linux
           path: ${{ runner.temp }}/core.qml_host.*.gz

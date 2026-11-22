@@ -4,15 +4,19 @@ container installs too), mold, the Rust components. FFmpeg's headers come from i
 finds. Idempotent.
 """
 
+import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CARGO_BIN = Path.home() / ".cargo" / "bin"
+RUSTUP_INIT_URL = "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init"
 
 
 def apt(*arguments: str) -> list[str]:
@@ -47,10 +51,21 @@ def install_rust() -> None:
     print("== rustup", flush=True)
     rustup = CARGO_BIN / "rustup"
     if not rustup.is_file():
-        # The installer is run by `sh` from its own text (fetched here), with the same arguments as the usual one-liner.
-        with urllib.request.urlopen("https://sh.rustup.rs", timeout=60) as response:
+        # rustup-init is fetched from the release host and checked against the pin in the Justfile before it runs.
+        text = (REPO / "Justfile").read_text(encoding="utf-8")
+        pin = re.search(r'^rustup_init_sha256 := "([0-9a-f]{64})"', text, re.MULTILINE)
+        if pin is None:
+            sys.exit("ci_setup.py: the Justfile has no rustup_init_sha256 pin")
+        with urllib.request.urlopen(RUSTUP_INIT_URL, timeout=120) as response:
             installer = response.read()
-        subprocess.run(["sh", "-s", "--", "-y", "--profile", "minimal"], input=installer, check=True)
+        digest = hashlib.sha256(installer).hexdigest()
+        if digest != pin.group(1):
+            sys.exit(f"ci_setup.py: rustup-init is {digest}, not the pinned {pin.group(1)}; not run")
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "rustup-init"
+            path.write_bytes(installer)
+            path.chmod(0o755)
+            subprocess.run([str(path), "-y", "--profile", "minimal"], check=True)
     # The minimal profile has neither component, and not the repo's channel. rust-toolchain.toml names the channel and its
     # components; running cargo in the repo makes rustup install both, so the list lives in that file only.
     subprocess.run([str(CARGO_BIN / "cargo"), "--version"], cwd=REPO, check=True)

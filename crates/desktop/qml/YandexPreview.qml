@@ -59,11 +59,11 @@ Rectangle {
         preview.closed();
     }
 
+    // The previous (-1) or next (1) result: the search wraps round its results, and says which one is shown now.
+    signal stepRequested(int by)
     function step(by: int) {
-        if (preview.total > 0) {
-            preview.item = ((preview.item + by) % preview.total + preview.total) % preview.total;
-            preview.actual = false;
-        }
+        preview.stepRequested(by);
+        preview.actual = false;
     }
 
     // 1:1 opens on the image's middle; fitted, the content is the view, scrolled to its start. Done once the

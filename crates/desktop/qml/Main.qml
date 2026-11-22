@@ -116,9 +116,27 @@ ApplicationWindow {
         }
         onRelayoutDue: win.relayout()
         onSelectRequested: i => win.scrollTo(i)
+        // A test hook the window performs (the shell ran the rest, in order: TestHooks.perform).
+        onTestStep: (kind, index, value, text) => testHooks.perform(kind, index, value, text)
+        // The library was scanned: the tree is read again, then the open folder's files (Shell.reloadAll).
+        onFoldersReloadRequested: folderModel.reload()
+        // The controller asked for a similar-search panel: it is made (its loader) and the panel searches.
+        onSimilarRequested: fileId => {
+            yandexLoader.active = true;
+            win.similarSearchRequested(fileId);
+        }
+        onSimilarCommandLineRequested: {
+            yandexLoader.active = true;
+            win.similarCommandLineRequested();
+        }
         onViewerRequested: i => viewerItem.show(i)
         onPanelOpenRequested: kind => win.openPanel(kind)
         onPanelCloseRequested: kind => win.closePanel(kind)
+        // A listing that shows a reveal or the failed files takes the viewer away (the controller's CloseViewer).
+        onViewerCloseRequested: {
+            if (viewerItem.visible)
+                viewerItem.close();
+        }
         // A Reveal's folder is read and listed (Shell.reveal, Shell.revealFolder).
         onRevealShown: win.showAsked()
     }
@@ -134,31 +152,42 @@ ApplicationWindow {
     }
     Library {
         id: library
-        onScanned: win.reloadAll()
-        onImported: win.refreshGrid()
+        onScanned: shell.reloadAll()
+        onImported: shell.reloadList()
         // The job's progress was read again: the status bar's rows follow it (LaneModel).
         onProgressed: laneRows.refresh()
         // Turned files changed in place: no renumbering, so the viewer can stay open (the controller reads them again).
         onFilesChanged: shell.filesChanged()
     }
-    // The tree has been shown once: from then on a new tree (a scan) leaves its folders as the user left them.
-    property bool treeShown: false
+    // Where the view and the tree go is the model's choice; these only scroll them to it (GalleryModel.placeRequested,
+    // FolderModel.treePlaced).
+    Connections {
+        target: galleryModel
+        function onPlaceRequested(item: int, contain: bool) {
+            if (item >= 0)
+                grid.positionAt(galleryModel.rowOf(item), contain ? ListView.Contain : ListView.Beginning);
+            else
+                grid.positionAtBeginning();
+        }
+    }
+    Connections {
+        target: folderModel
+        function onTreePlaced(row: int, reveal: bool) {
+            tree.currentIndex = row;
+            if (reveal)
+                tree.positionViewAtIndex(row, ListView.Contain);
+        }
+    }
 
     // The pauses (the thumbnails, the saved selection, the layout, the list after a query) are the controller's
     // (Shell.currentChanged, gridResized, queryEdited); their commands come back as Shell's signals above.
     onCurrentChanged: shell.currentChanged(current)
     onClosing: shell.flush()
 
-    // The counts next to the filter choices, and "N of M". Not needed (and not computed) while nothing filters
-    // and the bar is closed.
-    function updateFacets() {
-        if (filtersOpen || filterBar.active > 0)
-            filterBar.countFacets();
-    }
-
     // The filters changed: the list is shown after a short pause (Shell.queryEdited; the controller's pause opens the list), so typing a number
-    // doesn't re-list at every key.
-    onFiltersOpenChanged: updateFacets()
+    // doesn't re-list at every key. The counts next to the filter choices are the filter bar's model's to keep: it counts
+    // them while the bar is open or a filter is set.
+    onFiltersOpenChanged: filterBar.setBarOpen(filtersOpen)
 
     // The folder pickers: the system's dialog where it is used, else the app's own (FolderPickerDialog). Each picker is
     // told when its folder is chosen (`done`), and then its action takes the folder.
@@ -177,7 +206,7 @@ ApplicationWindow {
         onChooseRow: row => addPicker.choose(row)
         onChooseHere: addPicker.chooseHere()
         onCancelled: addPicker.cancel()
-        onVisibleChanged: win.modalShown(PanelKind.FolderPicker, visible)
+        onVisibleChanged: shell.setPanelShown(PanelKind.FolderPicker, visible)
     }
     FolderPicker {
         id: cropPicker
@@ -194,7 +223,7 @@ ApplicationWindow {
         onChooseRow: row => cropPicker.choose(row)
         onChooseHere: cropPicker.chooseHere()
         onCancelled: cropPicker.cancel()
-        onVisibleChanged: win.modalShown(PanelKind.FolderPicker, visible)
+        onVisibleChanged: shell.setPanelShown(PanelKind.FolderPicker, visible)
     }
 
     // Where the filter bar's "Save cropped copies" puts them: the folder is asked for, then they are made.
@@ -214,14 +243,14 @@ ApplicationWindow {
         id: cutDialog
         onConfirmed: galleryModel.cutBordersConfirmed()
         onClosed: win.refocus()
-        onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+        onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
 
     // Where the library panel's Remove starts: the folder is named, then the dialog confirms. The folder leaves the library
     // for good (its images and their ratings), so nothing is removed before the user's confirmation.
     function askRemoveFolder(row: int) {
         removeDialog.row = row;
-        removeDialog.folder = library.roots[row] ?? "";
+        removeDialog.folder = library.folderAt(row);
         removeDialog.open();
     }
 
@@ -229,7 +258,7 @@ ApplicationWindow {
         id: removeDialog
         onConfirmed: library.removeFolder(removeDialog.row)
         onClosed: win.refocus()
-        onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+        onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
 
     // Where the library panel's Discard starts: the removal is named, then the dialog confirms. Its changes are given up
@@ -243,19 +272,20 @@ ApplicationWindow {
         id: discardDialog
         onConfirmed: library.discardRemoval(discardDialog.folder)
         onClosed: win.refocus()
-        onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+        onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
 
+    // The item to keep in view is the model's choice (the current item, else the top of the view, read before the change).
     function relayout() {
-        const anchor = current >= 0 ? current : grid.topItem();
+        const top = grid.topItem();
         grid.settling = true;
-        galleryModel.relayout(grid.gridWidth, rowHeight, gap);
+        const anchor = galleryModel.relayout(grid.gridWidth, rowHeight, gap, top);
         if (loadPending) {
             gridLoaded(loadedIndex);
             return;
         }
         if (anchor >= 0)
-            grid.positionAt(galleryModel.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning);
+            galleryModel.placeList(anchor);
         grid.settling = false;
     }
 
@@ -271,12 +301,8 @@ ApplicationWindow {
         }
         loadPending = false;
         shell.listShown(galleryModel.count);
-        if (current >= 0)
-            grid.positionAt(galleryModel.rowOf(current), ListView.Contain);
-        else if (index >= 0)
-            grid.positionAt(galleryModel.rowOf(index), ListView.Beginning);
-        else
-            grid.positionAtBeginning();
+        // Where the view goes is the model's (placeRequested).
+        galleryModel.placeList(index);
         grid.settling = false;
         shell.listPositioned();
     }
@@ -287,51 +313,21 @@ ApplicationWindow {
     // The folder model works out the listed folder's row (-1: under a folder the user collapsed, or not in the tree).
     // The shell keeps the folder as the tree spells it and tells the controller whether the folder is known.
     function treeLoaded() {
-        // The view is placed once, on the first tree; the model opens the folders above the listed one then (treeLoaded).
-        const first = !treeShown;
-        treeShown = true;
-        const row = folderModel.treeLoaded();
-        if (row >= 0) {
-            tree.currentIndex = row;
-            if (first)
-                tree.positionViewAtIndex(row, ListView.Contain);
-        } else {
-            tree.currentIndex = currentRowOf(row);
-        }
+        // The model places the tree (treePlaced), then the shell hears whether the listed folder is known.
+        folderModel.treeLoaded();
         shell.treeLoaded(folderModel.listedKnown());
-    }
-
-    // The tree's current row for the listed folder, given its row (`revealListing`): the row when it has one; else -1
-    // under a folder the user collapsed, and the first row when the tree doesn't have the folder at all.
-    function currentRowOf(row: int): int {
-        if (row >= 0)
-            return row;
-        return folderModel.listedKnown() ? -1 : 0;
     }
 
     // The subfolders were switched: for the empty folder that moves the listing between "All" (with them) and "Drive
     // roots" (without), so the tree's current row follows the listing (currentRowOf).
     function followListedRow() {
-        tree.currentIndex = currentRowOf(folderModel.revealListing(false));
-    }
-
-    // The folder tree changed (a scan): read it again, and the open folder's files.
-    function reloadAll() {
-        folderModel.reload();
-        refreshGrid();
-    }
-
-    // Re-read the open folder (new files, new sizes), keeping the selection or the top of the view in place. While
-    // the viewer is open the new list waits for it to close (it could take away the pictures being rated, out of
-    // "Unrated", and the viewer's place with them).
-    function refreshGrid() {
-        shell.reloadList();
+        tree.currentIndex = folderModel.currentRowOf(folderModel.revealListing(false));
     }
 
     // The list the controller asked for is loading (the shell announces it: listingChanged). The facets and the sort box
     // follow it; the session is saved by the controller.
     function showListing() {
-        updateFacets();
+        filterBar.countIfNeeded();
         topBar.sortIndex = shell.sortIndex();
     }
 
@@ -350,22 +346,12 @@ ApplicationWindow {
 
     // The inbox asked for a list of its own (a failed file's folder, the failed imports), which the shell has announced:
     // the inbox and the viewer close, the filter bar shows the query, the tree the folder.
+    // The listing that shows a reveal or the failed files: the inbox and the viewer are closed by the controller
+    // (ClosePanel, CloseViewer); here the filters, the tree and the focus follow the listing.
     function showAsked() {
-        inboxOpen = false;
-        if (viewerItem.visible)
-            viewerItem.close();
         filterBar.reloadQuery();
-        const row = folderModel.revealListing(true);
-        tree.currentIndex = Math.max(row, 0);
-        if (row >= 0)
-            tree.positionViewAtIndex(row, ListView.Contain);
+        folderModel.revealTree();
         grid.takeFocus();
-    }
-
-    // An inbox entry's Reveal: the file in its folder, selected once shown; a file the library no longer has toasts. The
-    // folder is read off the window's thread: the window follows when it is listed (Shell.revealShown).
-    function revealFile(fileId: real) {
-        shell.reveal(fileId);
     }
 
     // Show item i in the grid: its row, brought into view. The selection is the model's (the shell sets it).
@@ -375,13 +361,6 @@ ApplicationWindow {
             grid.positionAt(row, ListView.Contain);
     }
 
-    // A selection the window makes itself (the test hooks, the viewer's close): set it, then show it.
-    function select(i: int) {
-        if (i < 0 || i >= galleryModel.count)
-            return;
-        current = i;
-        scrollTo(i);
-    }
 
     // To the panel made when first needed (Yandex's Loader, below): what it is asked to do comes as a signal once it
     // is made (a Loader not loading asynchronously makes its item at once).
@@ -389,16 +368,6 @@ ApplicationWindow {
     // The command line's `--find-similar`: the photo is the path it names, not a catalog file.
     signal similarCommandLineRequested
 
-    // The viewer's "find similar": search Yandex for the photo's file (by its id).
-    function findSimilar(fileId: real) {
-        yandexLoader.active = true;
-        similarSearchRequested(fileId);
-    }
-
-    function findSimilarFromCommandLine() {
-        yandexLoader.active = true;
-        similarCommandLineRequested();
-    }
 
     // The save-view dialog (saveViewLoader) opens each time this rises: made at the first ask, then kept.
     property int saveViewRequests: 0
@@ -436,6 +405,13 @@ ApplicationWindow {
         id: inboxModel
         Component.onCompleted: start()
     }
+    // A ledger's entry is open: its failed files are to be read (-1: none), once per entry and newest failure (Notices).
+    Connections {
+        target: inboxModel
+        function onFilesRequested(pass: int) {
+            failedFilesModel.show(pass);
+        }
+    }
     // The failed files of the inbox's ledger entry shown.
     FailedFiles {
         id: failedFilesModel
@@ -446,14 +422,6 @@ ApplicationWindow {
         if (active)
             inboxModel.poke();
         inboxModel.setViewing(inboxOpen, active);
-    }
-
-    // A modal panel opened or closed: the shell mirrors which are open, for the shortcuts' rule.
-    function modalShown(kind: int, shown: bool) {
-        if (shown)
-            shell.panelOpened(kind);
-        else
-            shell.panelClosed(kind);
     }
 
     // A shortcut asked for a panel (Shell.panelOpenRequested, panelCloseRequested).
@@ -483,12 +451,11 @@ ApplicationWindow {
     // The status bar's selection: the item's info and rating, or the key hints with none selected.
     readonly property string selectionInfo: win.current >= 0 ? galleryModel.selectionInfo : keymap.gridHint()
 
-    // The test hooks (command-line options): their values are read in TestHooks, and what they do is run here.
+    // The test hooks (command-line options): the shell runs them in order (Shell.runTestHooks), and hands the window
+    // each one it performs (Shell.testStep, TestHooks.perform).
     TestHooks {
         id: testHooks
         viewer: viewerItem
-        onGridKeyRequested: key => shell.keyPressed(key, 0)
-        onSelectRequested: i => win.select(i)
         onBorderMarkToggled: i => shell.toggleBorderMark(i)
         // The user's B, as the test hook asks for it: the toggle, so the controller saves it as the user's key does.
         onBordersRequested: if (!win.showBorders)
@@ -498,7 +465,6 @@ ApplicationWindow {
             win.libraryOpen = true;
         }
         onSaveViewDialogRequested: win.askSaveView()
-        onSimilarRequested: win.findSimilarFromCommandLine()
         onAddFolderRequested: addPicker.chooseCommandLine(0)
         onSaveCropsRequested: cropPicker.chooseCommandLine(1)
         onViewerShowRequested: index => viewerItem.show(index)
@@ -559,7 +525,7 @@ ApplicationWindow {
                 win.libraryOpen = true;
             }
             onSizeChosen: h => shell.sizeChosen(h)
-            onViewsMenuOpenChanged: win.modalShown(PanelKind.ViewsMenu, viewsMenuOpen)
+            onViewsMenuOpenChanged: shell.setPanelShown(PanelKind.ViewsMenu, viewsMenuOpen)
         }
 
         StatusBar {
@@ -674,7 +640,7 @@ ApplicationWindow {
                 if (!visible)
                     grid.takeFocus();
             }
-            onRated: (i, r) => shell.rate(i, r)
+            onRated: (i, r) => shell.rateInViewer(i, r)
             onTurned: (i, d) => shell.turn(i, d)
             onBordersToggled: {
                 if (win.bordersOn)
@@ -691,8 +657,8 @@ ApplicationWindow {
             // The file the viewer is on is the one a session remembers (the shell reads it, `gallery::shown_file`).
             onIndexChanged: if (index >= 0)
                 shell.currentChanged(index)
-            onFindSimilar: fileId => win.findSimilar(fileId)
-            onClosed: i => win.select(i)
+            onFindSimilar: fileId => shell.findSimilar(fileId)
+            onClosed: i => shell.select(i)
         }
 
         // The library folders, over a dimmed window (an item in the page, like the viewer, so window grabs include it).
@@ -717,7 +683,7 @@ ApplicationWindow {
                         win.libraryOpen = false;
                     }
                     onHidden: grid.takeFocus()
-                    onVisibleChanged: win.modalShown(PanelKind.Library, visible)
+                    onVisibleChanged: shell.setPanelShown(PanelKind.Library, visible)
                     onAddRequested: addPicker.pick(PickerPurpose.AddFolder)
                     onRemoveRequested: row => win.askRemoveFolder(row)
                     onDiscardRequested: folder => win.askDiscardRemoval(folder)
@@ -794,8 +760,8 @@ ApplicationWindow {
                     // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer
                     // is gone.
                     onClosed: win.refocus()
-                    onVisibleChanged: win.modalShown(PanelKind.Yandex, visible)
-                    onPreviewOpenChanged: win.modalShown(PanelKind.YandexPreview, previewOpen)
+                    onVisibleChanged: shell.setPanelShown(PanelKind.Yandex, visible)
+                    onPreviewOpenChanged: shell.setPanelShown(PanelKind.YandexPreview, previewOpen)
                     Connections {
                         target: win
                         function onSimilarSearchRequested(fileId: real) {
@@ -826,7 +792,7 @@ ApplicationWindow {
                     caret: !testHooks.screenshot
                     onSaved: name => shell.saveView(name)
                     onClosed: win.refocus()
-                    onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+                    onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
                 }
             }
         }
@@ -840,9 +806,14 @@ ApplicationWindow {
                 LogPanel {
                     open: win.logOpen
                     records: logModel
+                    selected: logModel.selectedRow
+                    selectedSeq: logModel.selectedSeq
+                    selectedText: logModel.selectedText
+                    onSelectRequested: row => logModel.select(row)
+                    onUnselectRequested: logModel.unselect()
                     onDismissed: win.logOpen = false
                     onHidden: win.refocus()
-                    onVisibleChanged: win.modalShown(PanelKind.Log, visible)
+                    onVisibleChanged: shell.setPanelShown(PanelKind.Log, visible)
                 }
             }
         }
@@ -856,6 +827,14 @@ ApplicationWindow {
                 InboxPanel {
                     open: win.inboxOpen
                     notices: inboxModel
+                    selected: inboxModel.selectedRow
+                    selectedKey: inboxModel.selectedKey
+                    selectedText: inboxModel.selectedText
+                    selectedPass: inboxModel.selectedPass
+                    selectedSerial: inboxModel.selectedSerial
+                    selectedCanRetry: inboxModel.selectedCanRetry
+                    selectedCanShowFiles: inboxModel.selectedCanShowFiles
+                    detailsOpen: inboxModel.detailsOpen
                     failedFiles: failedFilesModel
                     failedTotal: failedFilesModel.total
                     failedLoading: failedFilesModel.loading
@@ -865,8 +844,15 @@ ApplicationWindow {
                     onCopyRequested: row => inboxModel.copy(row)
                     onDismissRequested: row => inboxModel.dismiss(row)
                     onRetryRequested: row => inboxModel.retry(row)
-                    onFilesRequested: pass => failedFilesModel.show(pass)
-                    onRevealRequested: fileId => win.revealFile(fileId)
+                    onSelectRequested: row => inboxModel.select(row)
+                    onUnselectRequested: inboxModel.unselect()
+                    onDetailsOpenRequested: open => inboxModel.setDetailsOpen(open)
+                    onDismissSelectedRequested: inboxModel.dismissSelected()
+                    onRetrySelectedRequested: inboxModel.retrySelected()
+                    // An inbox entry's Reveal: the file in its folder, selected once shown; a file the library no longer
+                    // has toasts. The folder is read off the window's thread: the window follows when it is listed
+                    // (Shell.revealShown).
+                    onRevealRequested: fileId => shell.reveal(fileId)
                     onFolderRevealRequested: row => shell.revealFolder(row)
                     onShowFilesRequested: {
                         shell.showFailedImports();
@@ -875,7 +861,7 @@ ApplicationWindow {
                     onClearRequested: inboxModel.dismissAll()
                     onDismissed: win.inboxOpen = false
                     onHidden: win.refocus()
-                    onVisibleChanged: win.modalShown(PanelKind.Inbox, visible)
+                    onVisibleChanged: shell.setPanelShown(PanelKind.Inbox, visible)
                 }
             }
         }
@@ -905,8 +891,8 @@ ApplicationWindow {
     // first reads, which it would compete with for the disk).
     function startHooks() {
         stages.ready();
-        testHooks.run();
+        shell.runTestHooks();
         library.start();
-        testHooks.runAfterLibraryStart();
+        shell.runLibraryHooks();
     }
 }

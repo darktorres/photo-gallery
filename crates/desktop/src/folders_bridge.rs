@@ -88,11 +88,23 @@ pub mod qobject {
         #[qinvokable]
         fn toggle(self: Pin<&mut FolderModel>, row: i32);
 
-        /// The tree arrived (`loaded`): the row of the listed folder. The first arrival opens the folders above it (the
-        /// start's reveal).
+        /// The tree arrived (`loaded`): the folders above the listed one open on the first arrival (the start's reveal), and
+        /// the tree is placed (`treePlaced`).
         #[qinvokable]
         #[cxx_name = "treeLoaded"]
-        fn tree_loaded(self: Pin<&mut FolderModel>) -> i32;
+        fn tree_loaded(self: Pin<&mut FolderModel>);
+
+        /// The tree is placed on its current row (-1: none), and scrolled to it only when `reveal` (the first arrival, with
+        /// the listed folder in the tree).
+        #[qsignal]
+        #[cxx_name = "treePlaced"]
+        fn tree_placed(self: Pin<&mut FolderModel>, row: i32, reveal: bool);
+
+        /// The listed folder is shown in the tree after a Reveal: its folders above it open, and the tree is placed on it
+        /// (`treePlaced`).
+        #[qinvokable]
+        #[cxx_name = "revealTree"]
+        fn reveal_tree(self: Pin<&mut FolderModel>);
 
         /// The row of the listed folder once the tree is in: `first` opens the folders above it (the start's reveal).
         /// The row, or -1 for none: a folder under one the user collapsed, or one the tree doesn't have (`listedKnown`
@@ -105,5 +117,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "listedKnown"]
         fn listed_known(self: &FolderModel) -> bool;
+
+        /// The tree's current row for the listed folder, given its `revealListing` row (-1 under a collapsed folder, and
+        /// the first row when the tree doesn't have the folder).
+        #[qinvokable]
+        #[cxx_name = "currentRowOf"]
+        fn current_row_of(self: &FolderModel, row: i32) -> i32;
     }
 }

@@ -288,6 +288,7 @@ Rectangle {
         imageUrl: yandex.previewUrl
         prevUrl: yandex.previewPrevUrl
         nextUrl: yandex.previewNextUrl
+        onStepRequested: by => yandex.stepPreview(by)
         sizeText: yandex.previewWidth > 0 ? yandex.previewWidth + "×" + yandex.previewHeight : ""
         picked: yandex.previewPicked
         onPickRequested: chosen => yandex.togglePick(chosen)

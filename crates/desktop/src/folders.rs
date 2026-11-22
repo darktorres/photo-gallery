@@ -219,10 +219,23 @@ impl qobject::FolderModel {
         self.data_changed(&index, &index);
     }
 
-    pub(crate) fn tree_loaded(mut self: Pin<&mut Self>) -> i32 {
+    /// The tree arrived: the folders above the listed one are opened on the first arrival, and the tree is placed on the
+    /// listed folder (`treePlaced`). The tree is scrolled to it on the first arrival only: after a scan it is left as the
+    /// user left it.
+    pub(crate) fn tree_loaded(mut self: Pin<&mut Self>) {
         let first = !self.shown;
         self.as_mut().rust_mut().shown = true;
-        self.reveal_listing(first)
+        let row = self.as_mut().reveal_listing(first);
+        let current = self.current_row_of(row);
+        let reveal = first && row >= 0;
+        self.as_mut().tree_placed(current, reveal);
+    }
+
+    /// The listed folder is shown in the tree after a Reveal (or the failed files' folder): its folders above it open, and
+    /// the tree is placed on it and scrolled to it. Where the listed folder isn't in the tree, the top row is current.
+    pub(crate) fn reveal_tree(mut self: Pin<&mut Self>) {
+        let row = self.as_mut().reveal_listing(true);
+        self.as_mut().tree_placed(row.max(0), row >= 0);
     }
 
     pub(crate) fn reveal_listing(mut self: Pin<&mut Self>, first: bool) -> i32 {
@@ -250,5 +263,17 @@ impl qobject::FolderModel {
     pub(crate) fn listed_known(&self) -> bool {
         let folder = controller::listing().folder;
         with(|tree| tree.find(&folder)).is_some()
+    }
+
+    /// The tree's current row for the listed folder, given its `revealListing` row: that row when it has one; else -1
+    /// under a folder the user collapsed, and the first row when the tree doesn't have the folder at all.
+    pub(crate) fn current_row_of(&self, row: i32) -> i32 {
+        if row >= 0 {
+            row
+        } else if self.listed_known() {
+            -1
+        } else {
+            0
+        }
     }
 }

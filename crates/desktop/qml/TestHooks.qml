@@ -26,9 +26,10 @@
 //   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
 //                       library job or write pending, no frame for a while), and quit; --wait=<s> is the most to wait
 //                       for that, 10 by default (src/screenshot.rs)
-// The options are read in Rust (`command_line.rs`), and given to this component as typed properties (see below). What
-// they do to the window is signalled to Main, which makes the calls on the viewer and the Rust objects. --query, --sort, --apply-view, --size, --filters, --borders and --dev shape the start in Rust
-// (controller.rs); the others act once the first list is shown (run, from startHooks()).
+// The options are read in Rust, and so are the hooks they ask for and the order they run in (`test_hooks.rs`): the shell
+// runs the selection, the grid's keys and the similar search itself, and hands each of the rest to `perform`, with the
+// kind that `Kind` names. --query, --sort, --apply-view, --size, --filters, --borders and --dev shape the start in Rust
+// (controller.rs); the others run once the first list is shown (Shell.runTestHooks), or once the library has started.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -38,14 +39,36 @@ Item {
     id: hooks
     // The viewer, which the viewer hooks drive.
     required property Viewer viewer
+
+    // What a hook asks the window to do, in the order of the Rust `Kind` enum (test_hooks.rs), which is the same.
+    enum Kind {
+        ViewerShow,
+        ViewerLoupe,
+        Borders,
+        BorderMark,
+        ViewerZen,
+        ViewerPlay,
+        ZoomIn,
+        ZoomOne,
+        ZoomTo,
+        Turn,
+        Rate,
+        ViewsMenu,
+        LibraryPanel,
+        SaveView,
+        LogPanel,
+        InboxExpand,
+        InboxPanel,
+        AddFolder,
+        SaveCrops
+    }
+
     // Done on the window by Main.
-    signal selectRequested(int index)
     signal borderMarkToggled(int index)
     signal bordersRequested
     signal viewsMenuRequested
     signal libraryPanelRequested
     signal saveViewDialogRequested
-    signal similarRequested
     signal addFolderRequested
     signal saveCropsRequested
     signal logPanelRequested
@@ -58,22 +81,12 @@ Item {
     signal viewerSetZoomRequested(real zoom, real px, real py)
     signal viewerTurnRequested(int turns)
     signal viewerRateRequested(int rating)
-    // A key pressed on the grid, as the keyboard sends it (Shell.keyPressed).
-    signal gridKeyRequested(int key)
 
-    // The test hooks, read by Rust (command_line.rs) and given to this component as typed properties of CommandLine:
-    // a "not given" value is -1 for an index or a mascot, empty for a text, false for a flag, and a zoom has its own flag
-    // (zoomGiven).
+    // The options the window still reads itself, as typed properties of CommandLine (command_line.rs): a "not given" value
+    // is -1 for an index or a mascot.
     CommandLine {
         id: commandLine
     }
-
-    // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
-    readonly property list<string> viewerKeys: commandLine.viewerKeys
-    // The grid's keys (--grid-keys): L, R, U, D are left, right, up, down.
-    readonly property list<string> gridKeys: commandLine.gridKeys
-    // The rating keys (--viewer-keys): "r3" rates 3.
-    readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
     // The mascot the window shows from the start (--mascot): -1 when not given, which is a random one.
     readonly property int mascot: commandLine.mascot
@@ -82,71 +95,68 @@ Item {
     // The result the Yandex panel shows at full size (-1: none). It counts only with --find-similar, which makes the panel.
     readonly property int yandexPreview: commandLine.yandexPreview
 
-    // The hooks that run once the first list is shown (Main's startHooks(), before the library job starts).
-    function run() {
-        if (commandLine.select >= 0)
-            selectRequested(commandLine.select);
-        for (let k = 0; k < gridKeys.length; k++) {
-            const c = gridKeys[k];
-            if (c === "L")
-                gridKeyRequested(Qt.Key_Left);
-            else if (c === "R")
-                gridKeyRequested(Qt.Key_Right);
-            else if (c === "U")
-                gridKeyRequested(Qt.Key_Up);
-            else if (c === "D")
-                gridKeyRequested(Qt.Key_Down);
-        }
-        if (commandLine.view >= 0) {
-            viewerShowRequested(commandLine.view);
-            for (let k = 0; k < viewerKeys.length; k++) {
-                const c = viewerKeys[k];
-                if (c === "L")
-                    viewer.loupe = true;
-                else if (c === "B")
-                    bordersRequested();
-                else if (c === "N")
-                    borderMarkToggled(viewer.index);
-                else if (c === "H")
-                    viewer.zen = true;
-                else if (c === "K")
-                    viewerPlayRequested();
-                else if (c === "+")
-                    viewerSetZoomRequested(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2);
-                else if (c === "1")
-                    viewerSetZoomRequested(1, viewer.width / 2, viewer.height / 2);
-                else if (c === "<")
-                    viewerTurnRequested(-1);
-                else if (c === ">")
-                    viewerTurnRequested(1);
-                else if (ratingKeys.indexOf(c) >= 0)
-                    viewerRateRequested(ratingKeys.indexOf(c));
-            }
-            if (commandLine.zoomGiven)
-                viewerSetZoomRequested(commandLine.zoom, viewer.width / 2, viewer.height / 2);
-        }
-        if (commandLine.menuViews)
+    // Performs one hook the shell hands over (`testStep`): its kind (`Kind`), and the index, value or text it takes.
+    // The viewer's own state is set here, and its calls go to the viewer through Main.
+    function perform(kind: int, index: int, value: real, text: string) {
+        switch (kind) {
+        case TestHooks.Kind.ViewerShow:
+            viewerShowRequested(index);
+            break;
+        case TestHooks.Kind.ViewerLoupe:
+            viewer.loupe = true;
+            break;
+        case TestHooks.Kind.Borders:
+            bordersRequested();
+            break;
+        case TestHooks.Kind.BorderMark:
+            // -1 is the viewer's own picture.
+            borderMarkToggled(index < 0 ? viewer.index : index);
+            break;
+        case TestHooks.Kind.ViewerZen:
+            viewer.zen = true;
+            break;
+        case TestHooks.Kind.ViewerPlay:
+            viewerPlayRequested();
+            break;
+        case TestHooks.Kind.ZoomIn:
+            viewerSetZoomRequested(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2);
+            break;
+        case TestHooks.Kind.ZoomOne:
+            viewerSetZoomRequested(1, viewer.width / 2, viewer.height / 2);
+            break;
+        case TestHooks.Kind.ZoomTo:
+            viewerSetZoomRequested(value, viewer.width / 2, viewer.height / 2);
+            break;
+        case TestHooks.Kind.Turn:
+            viewerTurnRequested(index);
+            break;
+        case TestHooks.Kind.Rate:
+            viewerRateRequested(index);
+            break;
+        case TestHooks.Kind.ViewsMenu:
             viewsMenuRequested();
-        if (commandLine.library)
+            break;
+        case TestHooks.Kind.LibraryPanel:
             libraryPanelRequested();
-        if (commandLine.saveView)
+            break;
+        case TestHooks.Kind.SaveView:
             saveViewDialogRequested();
-        if (commandLine.findSimilar)
-            similarRequested();
-        if (commandLine.log)
+            break;
+        case TestHooks.Kind.LogPanel:
             logPanelRequested();
-        // Before the inbox opens, so it opens at the entry.
-        if (commandLine.inboxExpand !== "")
-            inboxExpandRequested(commandLine.inboxExpand);
-        if (commandLine.inbox)
+            break;
+        case TestHooks.Kind.InboxExpand:
+            inboxExpandRequested(text);
+            break;
+        case TestHooks.Kind.InboxPanel:
             inboxPanelRequested();
-    }
-
-    // The hooks that run after the library job has started (Main's startHooks()).
-    function runAfterLibraryStart() {
-        if (commandLine.addFolder)
+            break;
+        case TestHooks.Kind.AddFolder:
             addFolderRequested();
-        if (commandLine.saveCrops)
+            break;
+        case TestHooks.Kind.SaveCrops:
             saveCropsRequested();
+            break;
+        }
     }
 }

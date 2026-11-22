@@ -265,6 +265,14 @@ impl qobject::Library {
         }
     }
 
+    /// The folder at `row` of `roots`, as the list shows it (`""` for none): the removal's dialog names it.
+    pub(crate) fn folder_at(&self, row: i32) -> QString {
+        usize::try_from(row)
+            .ok()
+            .and_then(|index| self.root_paths.get(index))
+            .map_or_else(|| QString::from(""), |path| QString::from(&pg_platform::native::PATH_RULES.display(path)))
+    }
+
     pub(crate) fn remove_folder(mut self: Pin<&mut Self>, row: i32) {
         let Some(index) = usize::try_from(row).ok() else { return };
         let (Some(id), Some(path)) =

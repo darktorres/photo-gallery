@@ -79,31 +79,32 @@ TestCase {
 
     function test_stepping_moves_within_the_list() {
         const v = viewer(1, 3);
-        v.step(1);
+        v.stepRequested(1);
         compare(movedSpy.count, 1);
         compare(movedSpy.signalArguments[0][0], 2);
-        v.step(-1);
+        v.stepRequested(-1);
         compare(movedSpy.count, 2);
         compare(movedSpy.signalArguments[1][0], 0);
     }
 
     function test_stepping_stops_at_the_ends() {
         const first = viewer(0, 3);
-        first.step(-1);
+        first.stepRequested(-1);
         compare(movedSpy.count, 0);
         const last = viewer(2, 3);
-        last.step(1);
+        last.stepRequested(1);
         compare(movedSpy.count, 0);
     }
 
-    function test_a_rating_is_signalled_and_moves_on() {
+    // Moving on to the next picture after a rating is the controller's (`Event::RateInViewer`, a Rust test); the viewer
+    // only signals the rating.
+    function test_a_rating_is_signalled() {
         const v = viewer(0, 3);
         v.rate(4);
         compare(ratedSpy.count, 1);
         compare(ratedSpy.signalArguments[0][0], 0);
         compare(ratedSpy.signalArguments[0][1], 4);
-        compare(movedSpy.count, 1);
-        compare(movedSpy.signalArguments[0][0], 1);
+        compare(movedSpy.count, 0);
     }
 
     function test_turning_asks_the_window_for_the_quarter_turns() {

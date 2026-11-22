@@ -144,7 +144,10 @@ impl qobject::LogModel {
         self.as_mut().rust_mut().reset(records);
         self.as_mut().end_reset_model();
         self.as_mut().rust_mut().ready = true;
-        self.ready_changed();
+        self.as_mut().ready_changed();
+        // The numbers start again, so the selection of the view before means nothing: it is cleared.
+        self.as_mut().rust_mut().selected = None;
+        self.as_mut().refresh_selection();
     }
 
     /// The records logged since the last pass, added at the end; the oldest rows go past the cap.
@@ -173,6 +176,50 @@ impl qobject::LogModel {
             self.as_mut().rust_mut().drop_oldest(extra);
             self.as_mut().end_remove_rows();
         }
+        self.as_mut().refresh_selection();
+    }
+
+    /// Select the row at `row` (none for a row past the list). The panel shows its message, with its detail below.
+    pub(crate) fn select(mut self: Pin<&mut Self>, row: i32) {
+        let selected = usize::try_from(row).ok().filter(|&at| at < self.rows.len()).map(|at| self.seq_of(at));
+        self.as_mut().rust_mut().selected = selected;
+        self.as_mut().refresh_selection();
+    }
+
+    /// Clear the selection.
+    pub(crate) fn unselect(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().selected = None;
+        self.as_mut().refresh_selection();
+    }
+
+    /// The selection as the panel reads it. It is held by number, so it follows its row as the oldest rows go; it is
+    /// cleared when its row is gone.
+    fn refresh_selection(mut self: Pin<&mut Self>) {
+        let at = self
+            .selected
+            .and_then(|seq| seq.checked_sub(self.first))
+            .and_then(|at| usize::try_from(at).ok())
+            .filter(|&at| at < self.rows.len());
+        if at.is_none() && self.selected.is_some() {
+            self.as_mut().rust_mut().selected = None;
+        }
+        let (row, seq, text) = match at.and_then(|at| self.rows.get(at).map(|record| (at, record))) {
+            Some((at, record)) => {
+                let text = match record.detail.as_deref().filter(|detail| !detail.is_empty()) {
+                    Some(detail) => format!("{}\n\n{detail}", record.message),
+                    None => record.message.clone(),
+                };
+                let seq = self.selected.map_or(-1.0, pg_model::num::size);
+                (i32::try_from(at).unwrap_or(-1), seq, QString::from(&text))
+            }
+            None => (-1, -1.0, QString::default()),
+        };
+        self.as_mut().rust_mut().selected_row = row;
+        self.as_mut().selected_row_changed();
+        self.as_mut().rust_mut().selected_seq = seq;
+        self.as_mut().selected_seq_changed();
+        self.as_mut().rust_mut().selected_text = text;
+        self.as_mut().selected_text_changed();
     }
 }
 

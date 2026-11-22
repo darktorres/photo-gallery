@@ -167,9 +167,20 @@ pub mod qobject {
         #[inherit]
         fn index(self: &GalleryModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
-        /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
+        /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size). Returns the item
+        /// to keep in view: the current item, else `topItem` (the view's top item, read before the change), or -1.
         #[qinvokable]
-        fn relayout(self: Pin<&mut GalleryModel>, width: f64, row_height: f64, spacing: f64);
+        fn relayout(self: Pin<&mut GalleryModel>, width: f64, row_height: f64, spacing: f64, top_item: i32) -> i32;
+
+        /// The list is shown: where the view goes (`placeRequested`), given the item the list was anchored to (-1: none).
+        #[qinvokable]
+        #[cxx_name = "placeList"]
+        fn place_list(self: Pin<&mut GalleryModel>, anchor: i32);
+
+        /// The view goes to `item` (-1: the top of the list): contained in the view when `contain`, else at its top.
+        #[qsignal]
+        #[cxx_name = "placeRequested"]
+        fn place_requested(self: Pin<&mut GalleryModel>, item: i32, contain: bool);
 
         #[qinvokable]
         #[cxx_name = "fileId"]

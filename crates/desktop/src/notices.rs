@@ -391,8 +391,9 @@ impl qobject::Notices {
         self.as_mut().set_passes_shown(passes);
         keep_seen(&self.rows, !self.viewing);
         if self.marking {
-            self.mark_shown_read();
+            self.as_mut().mark_shown_read();
         }
+        self.as_mut().refresh_selection();
     }
 
     /// The row at `at` changed in place: every role is read again.
@@ -470,6 +471,7 @@ impl qobject::Notices {
         }
         let passes = passes_of(&self.rows);
         self.as_mut().set_passes_shown(passes);
+        self.as_mut().refresh_selection();
         app::get().inbox().dismiss(entry.id);
     }
 
@@ -482,7 +484,115 @@ impl qobject::Notices {
         self.as_mut().end_reset_model();
         self.as_mut().set_unread_count(unread);
         self.as_mut().set_passes_shown(0);
+        self.as_mut().refresh_selection();
         app::get().inbox().dismiss_all(ids);
+    }
+
+    /// Select the entry at `row` (none for a row past the list). Its details are what the panel shows.
+    pub(crate) fn select(mut self: Pin<&mut Self>, row: i32) {
+        let key = usize::try_from(row)
+            .ok()
+            .and_then(|at| self.rows.get(at))
+            .map_or_else(QString::default, |entry| QString::from(&key_of(entry.id)));
+        self.as_mut().rust_mut().selected_key = key;
+        self.as_mut().selected_key_changed();
+        self.as_mut().refresh_selection();
+    }
+
+    /// Clear the selection, and close its details.
+    pub(crate) fn unselect(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().selected_key = QString::default();
+        self.as_mut().rust_mut().details_open = false;
+        self.as_mut().selected_key_changed();
+        self.as_mut().details_open_changed();
+        self.as_mut().refresh_selection();
+    }
+
+    /// Open or close the selected entry's details.
+    pub(crate) fn set_details_open(mut self: Pin<&mut Self>, open: bool) {
+        if self.details_open != open {
+            self.as_mut().rust_mut().details_open = open;
+            self.as_mut().details_open_changed();
+            self.as_mut().refresh_selection();
+        }
+    }
+
+    /// Dismiss the selected entry, which clears the selection.
+    pub(crate) fn dismiss_selected(mut self: Pin<&mut Self>) {
+        let row = self.selected_row;
+        if row < 0 {
+            return;
+        }
+        self.as_mut().unselect();
+        self.as_mut().dismiss(row);
+    }
+
+    /// Try the selected entry's failed files again, when it can be retried.
+    pub(crate) fn retry_selected(&self) {
+        if self.selected_row >= 0 && self.selected_can_retry {
+            self.retry(self.selected_row);
+        }
+    }
+
+    /// The selection as the panel reads it. It is held by key, so it follows its entry as the rows move, and it is
+    /// dropped, with its details, when the entry is gone. Then the failed files of a ledger are asked for, while its
+    /// details are open, once per entry and newest failure.
+    fn refresh_selection(mut self: Pin<&mut Self>) {
+        let key = self.selected_key.to_string();
+        let row = if key.is_empty() { None } else { self.rows.iter().position(|e| key_of(e.id) == key) };
+        if row.is_none() && !key.is_empty() {
+            self.as_mut().rust_mut().selected_key = QString::default();
+            self.as_mut().rust_mut().details_open = false;
+            self.as_mut().selected_key_changed();
+            self.as_mut().details_open_changed();
+        }
+        let shown = match row.and_then(|at| self.rows.get(at).map(|entry| (at, entry))) {
+            Some((at, entry)) => {
+                let rules = pg_platform::native::PATH_RULES;
+                let notice = &entry.notice;
+                let serial = match entry.id {
+                    InboxEntryId::Ledger { seen, .. } => pg_model::num::signed(seen),
+                    InboxEntryId::Row { .. } => 0.0,
+                };
+                (
+                    qt_int(at),
+                    QString::from(&text::render(&Message::NoticeBody { notice: notice.clone(), rules })),
+                    kind_code(ledger_kind(entry.id)),
+                    serial,
+                    notice.actions().contains(&Action::Retry),
+                    notice.actions().contains(&Action::ShowFailedFiles),
+                )
+            }
+            None => (-1, QString::default(), -1, 0.0, false, false),
+        };
+        let (row_index, text, pass, serial, retry, files) = shown;
+        self.as_mut().rust_mut().selected_row = row_index;
+        self.as_mut().selected_row_changed();
+        self.as_mut().rust_mut().selected_text = text;
+        self.as_mut().selected_text_changed();
+        self.as_mut().rust_mut().selected_pass = pass;
+        self.as_mut().selected_pass_changed();
+        self.as_mut().rust_mut().selected_serial = serial;
+        self.as_mut().selected_serial_changed();
+        self.as_mut().rust_mut().selected_can_retry = retry;
+        self.as_mut().selected_can_retry_changed();
+        self.as_mut().rust_mut().selected_can_show_files = files;
+        self.as_mut().selected_can_show_files_changed();
+        self.as_mut().maybe_request_files();
+    }
+
+    /// The failed files of the selected ledger are to be listed while its details are open: once per entry and newest
+    /// failure (`filesRequested`), so the list is read again only when what it is of changes.
+    fn maybe_request_files(mut self: Pin<&mut Self>) {
+        let pass = if self.details_open && self.selected_row >= 0 { self.selected_pass } else { -1 };
+        let key = if pass >= 0 { self.selected_key.to_string() } else { String::new() };
+        let serial = self.selected_serial;
+        let (requested_key, requested_serial) = self.requested.clone();
+        if key == requested_key.to_string() && (key.is_empty() || serial == requested_serial) {
+            return;
+        }
+        self.as_mut().rust_mut().requested = (QString::from(&key), serial);
+        self.as_mut().files_requested(pass);
     }
 
     /// Put the entry at `row` on the clipboard: at once for a kept notice; for a ledger, once its files (or folders) are

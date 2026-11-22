@@ -17,7 +17,6 @@ use std::fmt;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use cxx_qt_lib::{QString, QStringList};
 use pg_model::query::{Query, Sort};
 use pg_model::size::RowHeight;
 use pg_platform::env::Parsed;
@@ -442,30 +441,10 @@ fn index_for_qml(index: Option<usize>, none: i32) -> i32 {
     index.map_or(none, |i| i32::try_from(i).unwrap_or(i32::MAX))
 }
 
-/// The `CommandLine` object's typed properties, read by TestHooks.qml. Where QML has no type for "not given", the
-/// property says so: `-1` for an index or a mascot, empty for a text, and a separate flag (`zoomGiven`) for a zoom,
-/// whose number is then meaningless.
+/// The `CommandLine` object's typed properties that TestHooks.qml and the window still read: the mascot, the screenshot
+/// and the Yandex preview. The other hooks are run in Rust (`test_hooks`). Where QML has no type for "not given", the
+/// property says so: `-1` for an index or a mascot.
 impl qobject::CommandLine {
-    /// The item to select: `-1` when none.
-    pub(crate) fn read_select(&self) -> i32 {
-        index_for_qml(hooks().select, -1)
-    }
-
-    /// The item to open in the viewer: `-1` when none.
-    pub(crate) fn read_view(&self) -> i32 {
-        index_for_qml(hooks().view, -1)
-    }
-
-    /// Whether a zoom was given (`--zoom`); `read_zoom` is 0 and means nothing when it was not.
-    pub(crate) fn read_zoom_given(&self) -> bool {
-        hooks().zoom.is_some()
-    }
-
-    /// The viewer's zoom, given by `--zoom` (positive; see `read_zoom_given`).
-    pub(crate) fn read_zoom(&self) -> f64 {
-        hooks().zoom.unwrap_or(0.0)
-    }
-
     /// The mascot to show: `-1` for a random one.
     pub(crate) fn read_mascot(&self) -> i32 {
         hooks().mascot.map_or(-1, |m| i32::try_from(m).unwrap_or(-1))
@@ -476,57 +455,9 @@ impl qobject::CommandLine {
         index_for_qml(hooks().yandex_preview, -1)
     }
 
-    /// The ledger whose inbox entry to open: empty when none.
-    pub(crate) fn read_inbox_expand(&self) -> QString {
-        QString::from(hooks().inbox_expand.as_deref().unwrap_or_default())
-    }
-
-    pub(crate) fn read_viewer_keys(&self) -> QStringList {
-        hooks().viewer_keys.iter().map(QString::from).collect()
-    }
-
-    pub(crate) fn read_grid_keys(&self) -> QStringList {
-        hooks().grid_keys.iter().map(QString::from).collect()
-    }
-
-    pub(crate) fn read_menu_views(&self) -> bool {
-        hooks().menu_views
-    }
-
-    pub(crate) fn read_library(&self) -> bool {
-        hooks().library
-    }
-
-    pub(crate) fn read_save_view(&self) -> bool {
-        hooks().save_view
-    }
-
-    pub(crate) fn read_log(&self) -> bool {
-        hooks().log
-    }
-
-    pub(crate) fn read_inbox(&self) -> bool {
-        hooks().inbox
-    }
-
-    /// Whether `--find-similar` is given (the search runs and its panel shows).
-    pub(crate) fn read_find_similar(&self) -> bool {
-        path("find-similar").is_some()
-    }
-
     /// Whether `--screenshot` is given (the window is being photographed).
     pub(crate) fn read_screenshot(&self) -> bool {
         path("screenshot").is_some()
-    }
-
-    /// Whether `--add-folder` is given (the folder picker opens with the library job).
-    pub(crate) fn read_add_folder(&self) -> bool {
-        path("add-folder").is_some()
-    }
-
-    /// Whether `--save-crops` is given (the save picker opens with the library job).
-    pub(crate) fn read_save_crops(&self) -> bool {
-        path("save-crops").is_some()
     }
 }
 

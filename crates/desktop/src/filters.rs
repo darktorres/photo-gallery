@@ -40,6 +40,7 @@ impl Default for FiltersRust {
             description: QString::from(&text::describe(&q)),
             facets: Facets::default(),
             generation: 0,
+            bar_open: false,
         }
     }
 }
@@ -149,6 +150,24 @@ impl qobject::Filters {
         self.as_mut().sync();
         self.as_mut().loaded();
         self.edited();
+    }
+
+    /// The filter bar opened or closed (the window reports it). Opening it counts the choices.
+    pub(crate) fn set_bar_open(mut self: Pin<&mut Self>, open: bool) {
+        if self.bar_open != open {
+            self.as_mut().rust_mut().bar_open = open;
+            if open {
+                self.count_facets();
+            }
+        }
+    }
+
+    /// The counts are asked for while the bar is open or a filter is set; otherwise they are not computed, since nothing
+    /// shows them.
+    pub(crate) fn count_if_needed(self: Pin<&mut Self>) {
+        if self.bar_open || self.active > 0 {
+            self.count_facets();
+        }
     }
 
     pub(crate) fn count_facets(mut self: Pin<&mut Self>) {

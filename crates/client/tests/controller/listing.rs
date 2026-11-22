@@ -133,7 +133,17 @@ fn a_reveal_lists_the_files_folder_and_selects_it_once_shown() {
     let mut c = controller(start());
     let out = c.update(0, Report::Reveal { file: FileId::new(7), folder: folder("beta") });
     let Some(generation) = generation_of(&out) else { panic!("{out:?}") };
-    assert!(matches!(&out[..], [Do::OpenList { keep: false, .. }, Do::SaveSession(_)]), "{out:?}");
+    assert!(
+        matches!(
+            &out[..],
+            [
+                Do::OpenList { keep: false, .. },
+                Do::SaveSession(_),
+                Do::ClosePanel(pg_client::controller::panels::PanelKind::Inbox),
+            ]
+        ),
+        "{out:?}"
+    );
     assert_eq!(c.listing().folder, folder("beta"));
     assert!(shown(&mut c, generation).contains(&Do::Reveal(FileId::new(7))));
     assert!(!shown(&mut c, generation).contains(&Do::Reveal(FileId::new(7))), "once");

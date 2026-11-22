@@ -1,8 +1,8 @@
 //! The state of the `LogModel` QObject: the bridge's backing struct (the records shown).
 
+use cxx_qt_lib::QString;
 use std::collections::VecDeque;
 
-#[derive(Default)]
 #[expect(
     unreachable_pub,
     reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
@@ -16,6 +16,29 @@ pub struct LogRust {
     pub(super) first: u64,
     /// `start` ran: the feed is followed.
     pub(super) started: bool,
+    /// The selected row's number (`seq`), `None` when no row is selected. The selection follows its number as the rows
+    /// before it are trimmed, and is cleared when the view is read again.
+    pub(super) selected: Option<u64>,
+    /// The selection as the panel reads it: its row (-1 for none), its number (-1 for none), and its text (the message,
+    /// with the detail below it when there is one).
+    pub(crate) selected_row: i32,
+    pub(crate) selected_seq: f64,
+    pub(crate) selected_text: QString,
+}
+
+impl Default for LogRust {
+    fn default() -> Self {
+        Self {
+            ready: false,
+            rows: VecDeque::new(),
+            first: 0,
+            started: false,
+            selected: None,
+            selected_row: -1,
+            selected_seq: -1.0,
+            selected_text: QString::default(),
+        }
+    }
 }
 
 impl LogRust {

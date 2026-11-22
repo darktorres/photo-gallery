@@ -18,4 +18,6 @@ pub struct FiltersRust {
     pub(super) facets: Facets,
     /// The latest counts asked for; older ones arriving are dropped.
     pub(super) generation: u64,
+    /// The filter bar is open (the window reports it): the counts are kept while it is.
+    pub(crate) bar_open: bool,
 }

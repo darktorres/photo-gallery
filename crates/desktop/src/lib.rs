@@ -15,7 +15,6 @@ mod app_icon;
 mod clipboard;
 mod command_line;
 #[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod command_line_bridge;
 mod controller;
 mod deadline;
@@ -104,6 +103,7 @@ mod shell;
 #[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod shell_bridge;
+mod test_hooks;
 mod trace;
 #[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 mod trace_bridge;

@@ -29,84 +29,45 @@ ModalOverlay {
     required property int failedTotal
     required property bool failedLoading
     required property string failedError
-    // The selected row (-1: none), and what it says: its key, its details, and for a ledger its pass (-1: not one), its
-    // newest failure and what it offers.
-    property int selected: -1
-    property string selectedKey: ""
-    property string selectedText: ""
-    property int selectedPass: -1
-    property real selectedSerial: 0
-    property bool selectedCanRetry: false
-    property bool selectedCanShowFiles: false
-    // The selected row's details are open.
-    property bool detailsOpen: false
+    // The selection is the notice model's, and the window gives the panel what it shows: the selected row, its key, its
+    // text, its pass, its newest failure, what it offers, and whether its details are open. The panel asks for each change
+    // (the signals below): the model holds the selection, so it follows its entry as the entries move.
+    required property int selected
+    required property string selectedKey
+    required property string selectedText
+    required property int selectedPass
+    required property real selectedSerial
+    required property bool selectedCanRetry
+    required property bool selectedCanShowFiles
+    required property bool detailsOpen
     // The row to open when the panel opens, or when it appears (the status bar's "N failed": Main finds the pass's
     // ledger; -1: none).
     property int expandRow: -1
-    // The ledger's list last asked for (`filesRequested`): its entry's key ("" for none) and its newest failure then.
-    property string requestedKey: ""
-    property real requestedSerial: -1
 
     // The entry at `row` is to be copied, dismissed or retried; every entry shown is to be dismissed.
     signal copyRequested(int row)
     signal dismissRequested(int row)
     signal retryRequested(int row)
     signal clearRequested
-    // A ledger's entry is open: its list is to be read (-1: none). Asked again when its newest failure moves.
-    signal filesRequested(int pass)
     // A failed file is to be shown in its folder; a failed folder's parent (its row of the list); the import's failed
     // files are to be listed in the grid.
     signal revealRequested(real fileId)
     signal folderRevealRequested(int row)
     signal showFilesRequested
+    // The selection and the details are the notices' (Main's Notices), so the panel asks the window for each change.
+    signal selectRequested(int row)
+    signal unselectRequested
+    signal detailsOpenRequested(bool open)
+    signal dismissSelectedRequested
+    signal retrySelectedRequested
 
-    // The selected row says what it is (when it becomes the selected one, and when its entry changes in place).
-    function show(key: string, body: string, pass: int, serial: real, canRetry: bool, canShowFiles: bool) {
-        selectedKey = key;
-        selectedText = body;
-        selectedPass = pass;
-        selectedSerial = serial;
-        selectedCanRetry = canRetry;
-        selectedCanShowFiles = canShowFiles;
-        requestFiles();
-    }
-
-    // The open ledger's list, asked for once per entry and newest failure; none while no ledger's details are open.
-    function requestFiles() {
-        const pass = detailsOpen && selected >= 0 ? selectedPass : -1;
-        const key = pass >= 0 ? selectedKey : "";
-        if (key === requestedKey && (key === "" || selectedSerial === requestedSerial))
-            return;
-        requestedKey = key;
-        requestedSerial = selectedSerial;
-        filesRequested(pass);
-    }
-    onDetailsOpenChanged: requestFiles()
-
-    function unselect() {
-        selected = -1;
-        detailsOpen = false;
-        selectedKey = "";
-        selectedText = "";
-        selectedPass = -1;
-        selectedCanRetry = false;
-        selectedCanShowFiles = false;
-        requestFiles();
-    }
-
-    // The row just selected is to tell what it is (its delegate answers; one made later tells on its own).
-    signal rowSelected(int row)
-
-    // Select `row`.
+    // Select `row` (none for a row past the list). The notice model holds the selection, and its details.
     function select(row: int) {
-        selected = row;
-        selectedKey = "";
-        rowSelected(row);
+        panel.selectRequested(row);
     }
 
-    // Select `row` and bring it into view (a row past the list selects the nearest). The selected row's delegate tells
-    // the panel its details, so the delegate must exist when the selection is made: forceLayout applies the model's
-    // changes and creates it now (a view that has not polished yet made it later, and a key in between saw no details).
+    // Select `row` and bring it into view (a row past the list selects the nearest). forceLayout applies the model's
+    // changes and creates the row's delegate now, so the row is there to be selected.
     function moveTo(row: int) {
         if (list.count === 0)
             return;
@@ -116,17 +77,16 @@ ModalOverlay {
         select(at);
     }
 
+    // The window acts on the selected entry: nothing is asked for with no selection, and a retry only for an entry that
+    // offers one (the button shows for the same case).
     function dismissSelected() {
-        if (selected < 0)
-            return;
-        const row = selected;
-        unselect();
-        dismissRequested(row);
+        if (panel.selected >= 0)
+            panel.dismissSelectedRequested();
     }
 
     function retrySelected() {
-        if (selected >= 0 && selectedCanRetry)
-            retryRequested(selected);
+        if (panel.selected >= 0 && panel.selectedCanRetry)
+            panel.retrySelectedRequested();
     }
 
     // The entry to expand was opened: once per opening of the panel and per appearance of the entry, so its row moving
@@ -140,48 +100,12 @@ ModalOverlay {
         if (expanded || expandRow >= list.count)
             return;
         moveTo(expandRow);
-        detailsOpen = true;
+        panel.detailsOpenRequested(true);
         expanded = true;
     }
     onOpenChanged: expand()
     onExpandRowChanged: expand()
     Component.onCompleted: expand()
-
-    // The rows move under the selection, which follows its entry's row as they do. Not the view's current row: a ListView
-    // applies the model's changes at its next polish (and hears of them after these handlers), its current row and its
-    // delegates' rows stale until then, so a key or a click in between would act on another entry. The selected row
-    // dismissed lets the selection go; a reset (Clear all) takes every row.
-    Connections {
-        target: panel.notices
-        function onRowsInserted(parent: var, first: int, last: int) {
-            if (panel.selected >= first)
-                panel.selected += last - first + 1;
-        }
-        function onRowsRemoved(parent: var, first: int, last: int) {
-            if (panel.selected < 0)
-                return;
-            if (panel.selected > last)
-                panel.selected -= last - first + 1;
-            else if (panel.selected >= first)
-                panel.unselect();
-        }
-        // Rows `start` to `end` go before row `row` (counted before the move).
-        function onRowsMoved(parent: var, start: int, end: int, destination: var, row: int) {
-            const at = panel.selected;
-            const n = end - start + 1;
-            if (at < 0)
-                return;
-            if (at >= start && at <= end)
-                panel.selected = (row > end ? row - n : row) + at - start;
-            else if (row > end && at > end && at < row)
-                panel.selected = at - n;
-            else if (row < start && at >= row && at < start)
-                panel.selected = at + n;
-        }
-        function onModelReset() {
-            panel.unselect();
-        }
-    }
 
     Pane {
         anchors.centerIn: parent
@@ -235,7 +159,7 @@ ModalOverlay {
                     else if (event.key === Qt.Key_PageDown)
                         panel.moveTo(Math.max(at, 0) + page);
                     else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)
-                        panel.detailsOpen = at >= 0 && !panel.detailsOpen;
+                        panel.detailsOpenRequested(at >= 0 && !panel.detailsOpen);
                     else if (event.key === Qt.Key_Delete)
                         panel.dismissSelected();
                     else if (event.key === Qt.Key_C && ctrl) {
@@ -265,29 +189,6 @@ ModalOverlay {
                     required property real serial
                     // The selected entry's row: by its key, which a stale row number can't confuse.
                     readonly property bool chosen: panel.selectedKey.length > 0 && row.key === panel.selectedKey
-                    function tell() {
-                        panel.show(row.key, row.body, row.pass, row.serial, row.canRetry, row.canShowFiles);
-                    }
-                    // The row just selected, whose key isn't known yet: it tells it.
-                    function wanted(): bool {
-                        return panel.selectedKey.length === 0 && row.index === panel.selected;
-                    }
-                    Connections {
-                        target: panel
-                        function onRowSelected(at: int) {
-                            if (at === row.index)
-                                row.tell();
-                        }
-                    }
-                    // The entry changed in place (a new revision, its counts, a newer failure): its details follow.
-                    onBodyChanged: if (chosen)
-                        tell()
-                    onSerialChanged: if (chosen)
-                        tell()
-                    onCanRetryChanged: if (chosen)
-                        tell()
-                    Component.onCompleted: if (chosen || wanted())
-                        tell()
                     width: list.width
                     height: list.rowHeight
                     color: row.chosen ? Theme.chosenRow : (row.index % 2 ? "#242424" : "transparent")
@@ -344,7 +245,7 @@ ModalOverlay {
                         onTapped: {
                             list.forceActiveFocus();
                             panel.select(row.index);
-                            panel.detailsOpen = true;
+                            panel.detailsOpenRequested(true);
                         }
                     }
                 }
@@ -508,7 +409,7 @@ ModalOverlay {
                     text: words.text("ui-inbox-clear")
                     enabled: list.count > 0
                     onClicked: {
-                        panel.unselect();
+                        panel.unselectRequested();
                         panel.clearRequested();
                     }
                 }

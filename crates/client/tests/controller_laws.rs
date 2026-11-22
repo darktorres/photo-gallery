@@ -320,3 +320,46 @@ fn a_pending_query_and_session_save_make_one_save_at_the_close() {
     assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
     assert!(c.next_deadline().is_none(), "nothing is left waiting");
 }
+
+/// A rating made in the viewer rates the picture and shows the next one: the controller's step, not the viewer's.
+#[test]
+fn a_rating_in_the_viewer_rates_and_then_shows_the_next_picture() {
+    let mut c = started(listing(""));
+    let rating = pg_model::rating::Rating::new(4).expect("four stars is a rating");
+    let out = c.update(1, Event::RateInViewer { item: 2, rating });
+    assert_eq!(out.first(), Some(&Command::Rate { item: 2, rating }), "{out:?}");
+    assert!(out.contains(&Command::ShowViewer(3)), "{out:?}");
+}
+
+/// The last picture stays where it is: a rating there rates it and shows nothing else.
+#[test]
+fn a_rating_of_the_last_picture_in_the_viewer_shows_no_other() {
+    let mut c = started(listing(""));
+    let rating = pg_model::rating::Rating::new(5).expect("five stars is a rating");
+    let out = c.update(1, Event::RateInViewer { item: 9, rating });
+    assert!(out.contains(&Command::Rate { item: 9, rating }), "{out:?}");
+    assert!(!out.iter().any(|c| matches!(c, Command::ShowViewer(_))), "{out:?}");
+}
+
+/// The window's selection and its similar-search requests are commands the controller hands on, unchanged.
+#[test]
+fn selection_and_similar_search_are_handed_on_to_the_window() {
+    let mut c = started(listing(""));
+    assert!(c.update(1, Event::Select(4)).contains(&Command::Select(4)));
+    let file = FileId::new(7);
+    assert!(c.update(2, Event::FindSimilar(file)).contains(&Command::FindSimilar(file)));
+    assert!(c.update(3, Event::FindSimilarCommandLine).contains(&Command::FindSimilarCommandLine));
+}
+
+/// A listing that shows the failed files takes the inbox away, and the viewer only when it is open.
+#[test]
+fn a_listing_of_failures_closes_the_inbox_and_an_open_viewer_only() {
+    use pg_client::controller::panels::{Event as PanelEvent, PanelKind};
+    let mut c = started(listing(""));
+    let closed = c.update(1, Event::Listing(listing_event::Event::FailedImports));
+    assert!(closed.contains(&Command::ClosePanel(PanelKind::Inbox)), "{closed:?}");
+    assert!(!closed.contains(&Command::CloseViewer), "{closed:?}");
+    c.update(2, Event::Panel(PanelEvent::SetViewerOpen(true)));
+    let with_viewer = c.update(3, Event::Listing(listing_event::Event::FailedImports));
+    assert!(with_viewer.contains(&Command::CloseViewer), "{with_viewer:?}");
+}

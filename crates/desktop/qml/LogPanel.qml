@@ -22,10 +22,11 @@ ModalOverlay {
     }
     // The records (Main's LogModel).
     required property var records
-    // The row clicked: its message and detail are shown below the list (-1: none), and its number (`seq`).
-    property int selected: -1
-    property real selectedSeq: -1
-    property string selectedText: ""
+    // The row clicked: the log model holds the selection (by its number), and the window gives the panel what it shows:
+    // its row (-1: none), its number, and its message and detail, shown below the list.
+    required property int selected
+    required property real selectedSeq
+    required property string selectedText
     // The view stays at the newest record as records come.
     property bool following: true
 
@@ -53,36 +54,16 @@ ModalOverlay {
         onTriggered: panel.keyMoved()
     }
 
-    function select(row: int, seq: real, text: string) {
-        selected = row;
-        selectedSeq = seq;
-        selectedText = text;
+    // Select the record at `row`, or none: the log model keeps the selection as the rows move, so the window makes the call.
+    signal selectRequested(int row)
+    signal unselectRequested
+
+    function select(row: int) {
+        panel.selectRequested(row);
     }
 
     function unselect() {
-        selected = -1;
-        selectedSeq = -1;
-        selectedText = "";
-    }
-
-    // The rows move under the selection: records appended after it, the oldest trimmed before it (or with it).
-    Connections {
-        target: panel.records
-        function onRowsInserted(parent: var, first: int, last: int) {
-            if (panel.selected >= first)
-                panel.selected += last - first + 1;
-        }
-        function onRowsRemoved(parent: var, first: int, last: int) {
-            if (panel.selected < 0)
-                return;
-            if (panel.selected > last)
-                panel.selected -= last - first + 1;
-            else if (panel.selected >= first)
-                panel.unselect();
-        }
-        function onModelReset() {
-            panel.unselect();
-        }
+        panel.unselectRequested();
     }
 
     Pane {
@@ -173,7 +154,7 @@ ModalOverlay {
                         }
                     }
                     TapHandler {
-                        onTapped: panel.select(row.index, row.seq, row.detail.length > 0 ? row.message + "\n\n" + row.detail : row.message)
+                        onTapped: panel.select(row.index)
                     }
                 }
                 Label {

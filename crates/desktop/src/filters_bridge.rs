@@ -104,5 +104,15 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "countFacets"]
         fn count_facets(self: Pin<&mut Filters>);
+
+        /// The filter bar opened or closed. Opening it counts the choices.
+        #[qinvokable]
+        #[cxx_name = "setBarOpen"]
+        fn set_bar_open(self: Pin<&mut Filters>, open: bool);
+
+        /// Count the choices when they are shown: the bar is open or a filter is set.
+        #[qinvokable]
+        #[cxx_name = "countIfNeeded"]
+        fn count_if_needed(self: Pin<&mut Filters>);
     }
 }

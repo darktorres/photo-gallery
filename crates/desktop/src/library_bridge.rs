@@ -62,6 +62,11 @@ pub mod qobject {
         #[cxx_name = "removeFolder"]
         fn remove_folder(self: Pin<&mut Library>, row: i32);
 
+        /// The folder at `row` of `roots`, as the list shows it (`""` for none): the removal's dialog names it.
+        #[qinvokable]
+        #[cxx_name = "folderAt"]
+        fn folder_at(self: &Library, row: i32) -> QString;
+
         /// Give up the removal of the folder `folder` (as `keptRemovals` lists it) that waits for unfinished writes: the
         /// changes are dropped.
         #[qinvokable]

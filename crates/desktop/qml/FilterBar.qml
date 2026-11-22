@@ -38,9 +38,13 @@ Pane {
     // The user asking to cut the borders off the listed originals (the window asks first: CutBordersDialog).
     signal cutBordersRequested
 
-    // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
-    function countFacets() {
-        filters.countFacets();
+    // The bar opened or closed (the window reports it). The model counts the choices while the bar is open.
+    function setBarOpen(open: bool) {
+        filters.setBarOpen(open);
+    }
+    // The choices are shown again (the listing changed): the model counts them when they are needed.
+    function countIfNeeded() {
+        filters.countIfNeeded();
     }
     // The listing's query changed outside the bar (a saved view was applied): the fields show it again.
     function reloadQuery() {

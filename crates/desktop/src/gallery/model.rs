@@ -163,13 +163,24 @@ impl qobject::GalleryModel {
         self.loaded(crate::rows::to_row(selection.anchor));
     }
 
-    pub(crate) fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
+    /// Where the view goes once a list is shown (`placeRequested`): the current item, which is contained in the view; else
+    /// `anchor`, the item the list was given, at the view's top; else -1, the top of the list.
+    pub(crate) fn place_list(self: Pin<&mut Self>, anchor: i32) {
+        let (item, contain) = if self.current >= 0 { (self.current, true) } else { (anchor, false) };
+        self.place_requested(item, contain);
+    }
+
+    /// Lays the list out at `width`, and returns the item to keep in view across it: the current item, else `top_item`
+    /// (the one at the top of the view, read before the change), or -1 for none.
+    pub(crate) fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64, top_item: i32) -> i32 {
+        let anchor = if self.current >= 0 { self.current } else { top_item };
         let plan = {
             let mut this = self.as_mut().rust_mut();
             this.grid.set_size(width, row_height, spacing);
             this.grid.plan(Changed::Nothing)
         };
         self.show(plan);
+        anchor
     }
 
     /// Puts a laid-out list in (`Grid::plan`). A reset, an insert or a remove is made around the change of the rows,

@@ -1,9 +1,10 @@
 // The inbox (InboxPanel.qml): the list has the keys when it opens, and they drive it (Up, Down, Home, End, Page Up and
 // Page Down move; Enter and Space open and close the details; Delete dismisses; Ctrl+C copies; R retries); a row's click
-// shows its details; Copy, Dismiss and Clear all ask for their row (the panel's signals); a ledger's row lists its files
-// with Reveal (loading until they are read), and offers Retry; the selection and the open details stay with their row
-// when a notice comes in above it; a ledger's entry to expand opens when the panel opens and when it appears later;
-// Tab wraps within the panel; Escape and Close dismiss it. Run by `just qmltest`.
+// shows its details; Copy, Dismiss and Clear ask the window (the panel's signals); a ledger's row offers Retry and its
+// files with Reveal (loading until they are read); a ledger's entry to expand opens when the panel opens and when it
+// appears later; Tab wraps within the panel; Escape and Close dismiss it. The window owns the selection (the notice
+// model, src/notices.rs): the panel is given what it shows, and a test plays the window through answer(). Run by
+// `just qmltest`.
 import QtQuick
 import QtTest
 import pg.gallery
@@ -86,9 +87,25 @@ TestCase {
         }
     }
 
+    // The window's answer to the panel's selection requests: the notice model holds the selection, and says what it
+    // shows (its row, its entry's key, text, pass, serial and what it offers). Here the entries stand in for it.
+    function answer(p, row) {
+        const e = row >= 0 && row < entries.count ? entries.get(row) : null;
+        p.selected = e ? row : -1;
+        p.selectedKey = e ? e.key : "";
+        p.selectedText = e ? e.body : "";
+        p.selectedPass = e ? e.pass : -1;
+        p.selectedSerial = e ? e.serial : 0;
+        p.selectedCanRetry = e ? e.canRetry : false;
+        p.selectedCanShowFiles = e ? e.canShowFiles : false;
+        if (!e)
+            p.detailsOpen = false;
+    }
+
     Component {
         id: panelC
         InboxPanel {
+            id: inbox
             width: tc.width
             height: tc.height
             open: true
@@ -97,6 +114,17 @@ TestCase {
             failedTotal: 2
             failedLoading: false
             failedError: ""
+            selected: -1
+            selectedKey: ""
+            selectedText: ""
+            selectedPass: -1
+            selectedSerial: 0
+            selectedCanRetry: false
+            selectedCanShowFiles: false
+            detailsOpen: false
+            onSelectRequested: row => tc.answer(inbox, row)
+            onUnselectRequested: tc.answer(inbox, -1)
+            onDetailsOpenRequested: open => inbox.detailsOpen = open
         }
     }
 
@@ -109,36 +137,44 @@ TestCase {
         signalName: "copyRequested"
     }
     SignalSpy {
-        id: dismissSpy
-        signalName: "dismissRequested"
+        id: dismissSelectedSpy
+        signalName: "dismissSelectedRequested"
     }
     SignalSpy {
         id: clearSpy
         signalName: "clearRequested"
     }
     SignalSpy {
-        id: retrySpy
-        signalName: "retryRequested"
+        id: retrySelectedSpy
+        signalName: "retrySelectedRequested"
     }
     SignalSpy {
         id: revealSpy
         signalName: "revealRequested"
     }
     SignalSpy {
-        id: filesSpy
-        signalName: "filesRequested"
+        id: selectSpy
+        signalName: "selectRequested"
+    }
+    SignalSpy {
+        id: detailsSpy
+        signalName: "detailsOpenRequested"
     }
 
     function panel() {
         fill();
         const p = createTemporaryObject(panelC, tc);
         verify(p !== null);
-        for (const spy of [dismissedSpy, copySpy, dismissSpy, clearSpy, retrySpy, revealSpy, filesSpy]) {
+        for (const spy of [dismissedSpy, copySpy, dismissSelectedSpy, clearSpy, retrySelectedSpy, revealSpy, selectSpy, detailsSpy])
             spy.target = p;
+        for (const spy of [dismissedSpy, copySpy, dismissSelectedSpy, clearSpy, retrySelectedSpy, revealSpy, selectSpy, detailsSpy])
             spy.clear();
-        }
         tryVerify(() => findChild(p, "inboxList").activeFocus);
         return p;
+    }
+
+    function lastSelected() {
+        return selectSpy.signalArguments[selectSpy.count - 1][0];
     }
 
     function test_the_list_has_the_keys_when_it_opens() {
@@ -172,23 +208,24 @@ TestCase {
         verify(list.activeFocus);
     }
 
-    function test_a_click_shows_the_details_and_dismiss_asks_the_model() {
+    // A click asks the window for the row and for its details; the window's answer shows them.
+    function test_a_click_asks_for_the_row_and_shows_its_details() {
         const p = panel();
         const list = findChild(p, "inboxList");
         tryVerify(() => list.itemAtIndex(1) !== null);
         mouseClick(list.itemAtIndex(1));
+        compare(lastSelected(), 1);
+        compare(detailsSpy.signalArguments[detailsSpy.count - 1][0], true);
         compare(p.selected, 1);
         verify(p.detailsOpen);
-        tryCompare(p, "selectedKey", "row:2:2");
-        tryCompare(p, "selectedText", "2 saved in <b>D:/out</b>");
+        compare(p.selectedKey, "row:2:2");
+        compare(p.selectedText, "2 saved in <b>D:/out</b>");
         verify(findChild(p, "inboxDetails").visible);
         mouseClick(findChild(p, "inboxCopy"));
         compare(copySpy.count, 1);
         compare(copySpy.signalArguments[0][0], 1);
         mouseClick(findChild(p, "inboxDismiss"));
-        compare(dismissSpy.count, 1);
-        compare(dismissSpy.signalArguments[0][0], 1);
-        compare(p.selected, -1);
+        compare(dismissSelectedSpy.count, 1);
         mouseClick(findChild(p, "inboxClear"));
         compare(clearSpy.count, 1);
     }
@@ -198,7 +235,7 @@ TestCase {
         const p = panel();
         keyClick(Qt.Key_Down);
         compare(p.selected, 0);
-        tryCompare(p, "selectedKey", "row:1:1");
+        compare(p.selectedKey, "row:1:1");
         keyClick(Qt.Key_Down);
         keyClick(Qt.Key_Down);
         keyClick(Qt.Key_Down);
@@ -226,31 +263,28 @@ TestCase {
     function test_the_keys_dismiss_copy_and_retry() {
         const p = panel();
         keyClick(Qt.Key_R);
-        compare(retrySpy.count, 0, "nothing selected: nothing to retry");
+        compare(retrySelectedSpy.count, 0, "nothing selected: nothing to retry");
         keyClick(Qt.Key_End);
         keyClick(Qt.Key_C, Qt.ControlModifier);
         compare(copySpy.count, 1);
         compare(copySpy.signalArguments[0][0], 2);
         keyClick(Qt.Key_R);
-        compare(retrySpy.count, 1);
-        compare(retrySpy.signalArguments[0][0], 2);
+        compare(retrySelectedSpy.count, 1);
         keyClick(Qt.Key_Home);
         keyClick(Qt.Key_R);
-        compare(retrySpy.count, 1, "a row that can't be retried");
+        compare(retrySelectedSpy.count, 1, "a row that can't be retried");
         keyClick(Qt.Key_Delete);
-        compare(dismissSpy.count, 1);
-        compare(dismissSpy.signalArguments[0][0], 0);
+        compare(dismissSelectedSpy.count, 1);
     }
 
+    // A ledger's row offers Retry, and its files with Reveal; the files' list is asked for by the window, not here.
     function test_a_ledger_lists_its_files_with_reveal_and_offers_retry() {
         const p = panel();
         const list = findChild(p, "inboxList");
         tryVerify(() => list.itemAtIndex(2) !== null);
         verify(!findChild(p, "inboxRetry").visible);
         mouseClick(list.itemAtIndex(2));
-        tryCompare(p, "selectedPass", 0);
-        compare(filesSpy.count, 1);
-        compare(filesSpy.signalArguments[0][0], 0);
+        compare(p.selectedPass, 0);
         verify(findChild(p, "inboxLedger").visible);
         verify(findChild(p, "inboxRetry").visible);
         verify(!findChild(p, "inboxShowFiles").visible);
@@ -261,19 +295,7 @@ TestCase {
         compare(revealSpy.count, 1);
         compare(revealSpy.signalArguments[0][0], 7);
         mouseClick(findChild(p, "inboxRetry"));
-        compare(retrySpy.count, 1);
-        compare(retrySpy.signalArguments[0][0], 2);
-        // The entry stays (the next listing says what still fails), and its list is not asked for again until its
-        // newest failure moves.
-        compare(p.selected, 2);
-        compare(filesSpy.count, 1);
-        entries.setProperty(2, "serial", 41);
-        compare(filesSpy.count, 2, "a newer failure: the list is read again");
-        compare(filesSpy.signalArguments[1][0], 0);
-        // Closing the details lets the list go (the keys are the list's again: the click gave them to the button).
-        list.forceActiveFocus();
-        keyClick(Qt.Key_Space);
-        compare(filesSpy.signalArguments[filesSpy.count - 1][0], -1);
+        compare(retrySelectedSpy.count, 1);
     }
 
     // "Loading" shows until the ledger's list is delivered, and an error when its read fails.
@@ -293,39 +315,6 @@ TestCase {
         compare(error.text, "ui-inbox-unreadable:database is locked");
     }
 
-    // A notice that comes in above the selected row keeps the selection on its entry, with its details open.
-    function test_the_selection_stays_with_its_entry_across_an_update() {
-        const p = panel();
-        const list = findChild(p, "inboxList");
-        tryVerify(() => list.itemAtIndex(1) !== null);
-        mouseClick(list.itemAtIndex(1));
-        tryCompare(p, "selectedKey", "row:2:2");
-        entries.insert(0, {
-            title: "New",
-            body: "new",
-            source: "App",
-            level: 0,
-            updated: 1762790500,
-            count: 1,
-            read: false,
-            pass: -1,
-            canRetry: false,
-            canShowFiles: false,
-            key: "row:3:3",
-            sinceDismissed: "",
-            serial: 0
-        });
-        compare(p.selected, 2);
-        tryCompare(p, "selectedKey", "row:2:2");
-        verify(p.detailsOpen);
-        tryCompare(p, "selectedText", "2 saved in <b>D:/out</b>");
-        // A row moved above it keeps it too, and its entry changed in place shows the change.
-        entries.move(3, 0, 1);
-        tryCompare(p, "selectedKey", "row:2:2");
-        entries.setProperty(p.selected, "body", "3 saved");
-        tryCompare(p, "selectedText", "3 saved");
-    }
-
     function test_an_expanded_row_is_shown_when_it_opens() {
         const p = panel();
         p.expandRow = 2;
@@ -333,37 +322,6 @@ TestCase {
         verify(p.detailsOpen);
         // The row tells its pass once its delegate is made.
         tryCompare(p, "selectedPass", 0);
-    }
-
-    // Once opened, the entry's row moving (a notice coming in above it) doesn't take the selection back to it.
-    function test_an_expanded_row_that_moves_leaves_the_selection_alone() {
-        const p = panel();
-        p.expandRow = 2;
-        compare(p.selected, 2);
-        keyClick(Qt.Key_Home);
-        tryCompare(p, "selectedKey", "row:1:1");
-        entries.insert(0, {
-            title: "New",
-            body: "new",
-            source: "App",
-            level: 0,
-            updated: 1762790500,
-            count: 1,
-            read: false,
-            pass: -1,
-            canRetry: false,
-            canShowFiles: false,
-            key: "row:3:3",
-            sinceDismissed: "",
-            serial: 0
-        });
-        p.expandRow = 3;
-        compare(p.selected, 1);
-        tryCompare(p, "selectedKey", "row:1:1");
-        // The entry gone and back: it opens again.
-        p.expandRow = -1;
-        p.expandRow = 3;
-        compare(p.selected, 3);
     }
 
     // The entry to expand is not listed yet: nothing opens; when it appears (Main finds its row then), it opens.
@@ -390,6 +348,5 @@ TestCase {
         compare(p.selected, 3);
         tryCompare(p, "selectedPass", 2);
         verify(findChild(p, "inboxShowFiles").visible);
-        compare(filesSpy.signalArguments[filesSpy.count - 1][0], 2);
     }
 }

@@ -13,6 +13,8 @@ pub mod qobject {
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
         include!("cxx-qt-lib/qmodelindex.h");
         type QModelIndex = cxx_qt_lib::QModelIndex;
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qvariant.h");
         type QVariant = cxx_qt_lib::QVariant;
     }
@@ -23,6 +25,13 @@ pub mod qobject {
         #[qml_element]
         /// The records have been read (the files' and this run's): the view shows them from then on.
         #[qproperty(bool, ready, READ, NOTIFY, FINAL)]
+        /// The selected row in the view (-1: none). The selection is held here, by the row's number, so it follows its
+        /// record as the oldest rows go; the panel reads what it shows from these properties.
+        #[qproperty(i32, selected_row, cxx_name = "selectedRow", READ, NOTIFY, FINAL)]
+        /// The selected row's number (its `seq` role), -1 when none is selected.
+        #[qproperty(f64, selected_seq, cxx_name = "selectedSeq", READ, NOTIFY, FINAL)]
+        /// The selected record's text: its message, with its detail below it.
+        #[qproperty(QString, selected_text, cxx_name = "selectedText", READ, NOTIFY, FINAL)]
         type LogModel = super::LogRust;
     }
 
@@ -71,5 +80,13 @@ pub mod qobject {
         /// later calls do nothing.
         #[qinvokable]
         fn start(self: Pin<&mut LogModel>);
+
+        /// Select the row at `row` (-1 or a row past the list: none).
+        #[qinvokable]
+        fn select(self: Pin<&mut LogModel>, row: i32);
+
+        /// Clear the selection.
+        #[qinvokable]
+        fn unselect(self: Pin<&mut LogModel>);
     }
 }

@@ -154,6 +154,11 @@ pub mod qobject {
         #[cxx_name = "panelClosed"]
         fn panel_closed(self: Pin<&mut Shell>, kind: i32);
 
+        /// A modal panel was shown (`shown`) or hidden (a `PanelKind.Kind` code): the window reports each one.
+        #[qinvokable]
+        #[cxx_name = "setPanelShown"]
+        fn set_panel_shown(self: Pin<&mut Shell>, kind: i32, shown: bool);
+
         /// Open this modal panel (a `PanelKind.Kind` code): a shortcut asked for it.
         #[qsignal]
         #[cxx_name = "panelOpenRequested"]
@@ -163,6 +168,11 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "panelCloseRequested"]
         fn panel_close_requested(self: Pin<&mut Shell>, kind: i32);
+
+        /// Close the viewer (a listing that shows a reveal or the failed files takes it away).
+        #[qsignal]
+        #[cxx_name = "viewerCloseRequested"]
+        fn viewer_close_requested(self: Pin<&mut Shell>);
 
         /// Whether a pause is still running (the screenshot waits for none).
         #[qinvokable]
@@ -190,6 +200,51 @@ pub mod qobject {
         #[cxx_name = "setBorderMark"]
         fn set_border_mark(self: Pin<&mut Shell>, item: i32, marked: bool);
 
+        /// Select the item at `index`: the window's test hooks, and the viewer closing on an item.
+        #[qinvokable]
+        fn select(self: Pin<&mut Shell>, index: i32);
+
+        /// The test hooks that come once the first list is shown (`--select`, `--view`, the panels...): the shell runs
+        /// its own, and the window performs the others as `testStep`.
+        #[qinvokable]
+        #[cxx_name = "runTestHooks"]
+        fn run_test_hooks(self: Pin<&mut Shell>);
+
+        /// The test hooks that wait for the library job (`--add-folder`, `--save-crops`), run after it has started.
+        #[qinvokable]
+        #[cxx_name = "runLibraryHooks"]
+        fn run_library_hooks(self: Pin<&mut Shell>);
+
+        /// A test hook the window performs: its kind (TestHooks.Kind), its index, value and text.
+        #[qsignal]
+        #[cxx_name = "testStep"]
+        fn test_step(self: Pin<&mut Shell>, kind: i32, index: i32, value: f64, text: QString);
+
+        /// A rating made in the viewer: the item is rated and the viewer moves on to the next picture.
+        #[qinvokable]
+        #[cxx_name = "rateInViewer"]
+        fn rate_in_viewer(self: Pin<&mut Shell>, item: i32, rating: i32);
+
+        /// The viewer's "find similar" on the catalog file `file_id`: the window opens its panel and searches (`similarRequested`).
+        #[qinvokable]
+        #[cxx_name = "findSimilar"]
+        fn find_similar(self: Pin<&mut Shell>, file_id: f64);
+
+        /// The command line's `--find-similar`: the window opens its panel and searches (`similarCommandLineRequested`).
+        #[qinvokable]
+        #[cxx_name = "findSimilarFromCommandLine"]
+        fn find_similar_from_command_line(self: Pin<&mut Shell>);
+
+        /// A file's similar-search panel is to open on it (the controller asked).
+        #[qsignal]
+        #[cxx_name = "similarRequested"]
+        fn similar_requested(self: Pin<&mut Shell>, file_id: f64);
+
+        /// The command line's photo is to be searched.
+        #[qsignal]
+        #[cxx_name = "similarCommandLineRequested"]
+        fn similar_command_line_requested(self: Pin<&mut Shell>);
+
         /// Files were turned in place on disk: their rows are read again (nothing is renumbered).
         #[qinvokable]
         #[cxx_name = "filesChanged"]
@@ -199,6 +254,16 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "reloadList"]
         fn reload_list(self: Pin<&mut Shell>);
+
+        /// The library was scanned: the folder tree and the open folder's files are read again, in that order.
+        #[qinvokable]
+        #[cxx_name = "reloadAll"]
+        fn reload_all(self: Pin<&mut Shell>);
+
+        /// The folder tree is to be read again: the window's folder model reloads (before the list does).
+        #[qsignal]
+        #[cxx_name = "foldersReloadRequested"]
+        fn folders_reload_requested(self: Pin<&mut Shell>);
 
         /// Scroll this item into view: it is the selection already (the model set it).
         #[qsignal]

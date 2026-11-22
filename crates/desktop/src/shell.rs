@@ -32,8 +32,10 @@ use pg_model::size::{Factor, GridWidth, RowHeight, Scale};
 use pg_model::turns::Turns;
 use pg_model::view::SavedView;
 
+use crate::command_line::{hooks, path};
 use crate::rows::{file_id_of, qt_int};
 use crate::settings::save_prefs;
+use crate::test_hooks::{self, Hook};
 use crate::{app, controller, deadline, folders, gallery, keymap, library, worker};
 
 impl Default for ShellRust {
@@ -230,6 +232,16 @@ impl qobject::Shell {
         }
     }
 
+    /// A modal panel opened or closed (the window reports each one): the shell mirrors which are open, for the shortcuts'
+    /// rule.
+    pub(crate) fn set_panel_shown(mut self: Pin<&mut Self>, kind: i32, shown: bool) {
+        if shown {
+            self.as_mut().panel_opened(kind);
+        } else {
+            self.as_mut().panel_closed(kind);
+        }
+    }
+
     /// Whether the window has work still to show: the core's pauses, the inbox's writes (its marks and the listing
     /// after them), and the expanded ledger's list being read.
     pub(crate) fn pending(&self) -> bool {
@@ -263,6 +275,64 @@ impl qobject::Shell {
         }
     }
 
+    /// A rating made in the viewer: the item is rated, and the viewer moves on to the next picture.
+    pub(crate) fn rate_in_viewer(self: Pin<&mut Self>, item: i32, rating: i32) {
+        let rating = u8::try_from(rating).ok().and_then(Rating::new);
+        if let (Some(item), Some(rating)) = (crate::rows::row_of(item), rating) {
+            self.dispatch(Event::RateInViewer { item, rating });
+        }
+    }
+
+    /// Select the item at `index` (the window's test hooks, and the viewer closing on an item).
+    pub(crate) fn select(self: Pin<&mut Self>, index: i32) {
+        if let Ok(item) = usize::try_from(index) {
+            self.dispatch(Event::Select(item));
+        }
+    }
+
+    /// The viewer's "find similar": the catalog file's id, from the bridge's number.
+    pub(crate) fn find_similar(self: Pin<&mut Self>, file_id: f64) {
+        if let Some(file) = file_id_of(file_id) {
+            self.dispatch(Event::FindSimilar(file));
+        }
+    }
+
+    /// The command line's `--find-similar`.
+    pub(crate) fn find_similar_from_command_line(self: Pin<&mut Self>) {
+        self.dispatch(Event::FindSimilarCommandLine);
+    }
+
+    /// The test hooks that come once the first list is shown, in order (`test_hooks`).
+    pub(crate) fn run_test_hooks(mut self: Pin<&mut Self>) {
+        let steps = test_hooks::before_list(hooks(), path("find-similar").is_some());
+        for step in steps {
+            self.as_mut().run_test_hook(step);
+        }
+    }
+
+    /// The test hooks that wait for the library job, run once it has started (`test_hooks`).
+    pub(crate) fn run_library_hooks(mut self: Pin<&mut Self>) {
+        let steps = test_hooks::after_library_start(path("add-folder").is_some(), path("save-crops").is_some());
+        for step in steps {
+            self.as_mut().run_test_hook(step);
+        }
+    }
+
+    /// One hook: the shell's own (the selection, the grid's keys, the similar search) run here; the window performs the
+    /// rest, as `testStep` (TestHooks.qml).
+    fn run_test_hook(mut self: Pin<&mut Self>, step: Hook) {
+        match step {
+            Hook::Select(item) => self.as_mut().select(item),
+            Hook::GridKey(key) => {
+                self.as_mut().key_pressed(key, 0);
+            }
+            Hook::FindSimilar => self.as_mut().find_similar_from_command_line(),
+            Hook::Window { kind, index, value, text } => {
+                self.as_mut().test_step(kind.code(), index, value, QString::from(text.as_str()));
+            }
+        }
+    }
+
     pub(crate) fn set_border_mark(self: Pin<&mut Self>, item: i32, marked: bool) {
         if let Ok(item) = usize::try_from(item) {
             self.dispatch(Event::SetBorderMark { item, marked });
@@ -275,6 +345,13 @@ impl qobject::Shell {
 
     pub(crate) fn reload_list(self: Pin<&mut Self>) {
         self.dispatch(Event::Reload);
+    }
+
+    /// The library was scanned: the folder tree is read again first (`foldersReloadRequested`), then the open folder's
+    /// files. The order is the window's, as it was.
+    pub(crate) fn reload_all(mut self: Pin<&mut Self>) {
+        self.as_mut().folders_reload_requested();
+        self.reload_list();
     }
 
     /// The timer fired (the invokable above, queued from `deadline.cpp`): the pauses that are due run.
@@ -430,6 +507,14 @@ impl qobject::Shell {
                 });
                 self.as_mut().later(move |shell| shell.select_requested(item));
             }
+            // The window opens its similar-search panel on the file, and the search starts there.
+            Command::FindSimilar(file) => {
+                let file_id = pg_model::num::signed(file.get());
+                self.as_mut().later(move |shell| shell.similar_requested(file_id));
+            }
+            Command::FindSimilarCommandLine => {
+                self.as_mut().later(|shell| shell.similar_command_line_requested());
+            }
             // The file a reveal asked for, in the list just shown: selected and shown, or gone since.
             Command::Reveal(file) => {
                 let shell = self.qt_thread();
@@ -520,6 +605,7 @@ impl qobject::Shell {
                 let kind = keymap::panel_kind_code(kind);
                 self.as_mut().later(move |shell| shell.panel_close_requested(kind));
             }
+            Command::CloseViewer => self.as_mut().later(|shell| shell.viewer_close_requested()),
             // Saved by `prefs_effect`, above.
             Command::SaveDevMode(_) | Command::SaveShowBorders(_) => {}
             Command::Size(change) => self.as_mut().size(change),

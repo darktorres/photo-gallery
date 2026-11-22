@@ -169,10 +169,6 @@ Rectangle {
         moved(-1);
     }
 
-    function step(d: int) {
-        stepRequested(d);
-    }
-
     // The item the step lands on (`n`): the viewer moves there, unless the step stays on the item it is on.
     function stepTo(n: int) {
         if (n !== index) {
@@ -181,12 +177,12 @@ Rectangle {
         }
     }
 
-    // Rate, show the rating's symbol for a moment (the content, on `rated`), and move on (a rating app's triage).
+    // Rate the picture (the window's rating moves on to the next picture: the controller's). The rating's symbol shows
+    // for a moment on `rated`.
     function rate(r: int) {
         if (index < 0)
             return;
         rated(index, r);
-        step(1);
     }
 
     function turn(d: int) {
@@ -292,10 +288,10 @@ Rectangle {
             close();
             break;
         case Viewer.ViewerAction.StepBack:
-            step(-1);
+            stepRequested(-1);
             break;
         case Viewer.ViewerAction.StepForward:
-            step(1);
+            stepRequested(1);
             break;
         case Viewer.ViewerAction.Rate:
             rate(arg);
@@ -349,7 +345,7 @@ Rectangle {
                 // The wheel steps through the pictures: a notch is one step, up for the previous.
                 WheelStepper {
                     id: wheelStep
-                    onStepped: steps => viewer.step(steps)
+                    onStepped: steps => viewer.stepRequested(steps)
                 }
                 PinchHandler {
                     id: pinch
@@ -386,7 +382,7 @@ Rectangle {
                             return;
                         const t = activeTranslation;
                         if (Math.abs(t.x) > Math.abs(t.y) && Math.abs(t.x) > 60)
-                            viewer.step(t.x < 0 ? 1 : -1);
+                            viewer.stepRequested(t.x < 0 ? 1 : -1);
                         else if (Math.abs(t.y) > 60)
                             viewer.rate(t.y < 0 ? 4 : 1);
                     }

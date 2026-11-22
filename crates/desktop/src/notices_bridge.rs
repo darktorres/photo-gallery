@@ -35,6 +35,23 @@ pub mod qobject {
         #[qproperty(QString, toast, READ, NOTIFY, FINAL)]
         /// The toast's level: 0 info (it goes by itself), 1 warning, 2 error (they stay until dismissed or replaced).
         #[qproperty(i32, toast_level, cxx_name = "toastLevel", READ, NOTIFY, FINAL)]
+        /// The selected entry's row in the list (-1: none). The selection is held here, by the entry's key, so it follows
+        /// its entry as the rows move; the panel reads what it shows from these properties.
+        #[qproperty(i32, selected_row, cxx_name = "selectedRow", READ, NOTIFY, FINAL)]
+        /// The selected entry's key (its `key` role), empty when none is selected.
+        #[qproperty(QString, selected_key, cxx_name = "selectedKey", READ, NOTIFY, FINAL)]
+        /// The selected entry's body (its details), empty when none is selected.
+        #[qproperty(QString, selected_text, cxx_name = "selectedText", READ, NOTIFY, FINAL)]
+        /// The selected entry's pass (a ledger's; -1 for a kept notice).
+        #[qproperty(i32, selected_pass, cxx_name = "selectedPass", READ, NOTIFY, FINAL)]
+        /// The selected ledger's newest failure as listed (0 for a kept notice).
+        #[qproperty(f64, selected_serial, cxx_name = "selectedSerial", READ, NOTIFY, FINAL)]
+        /// The selected entry can be retried.
+        #[qproperty(bool, selected_can_retry, cxx_name = "selectedCanRetry", READ, NOTIFY, FINAL)]
+        /// The selected entry's failed files can be listed.
+        #[qproperty(bool, selected_can_show_files, cxx_name = "selectedCanShowFiles", READ, NOTIFY, FINAL)]
+        /// The selected entry's details are open.
+        #[qproperty(bool, details_open, cxx_name = "detailsOpen", READ, NOTIFY, FINAL)]
         type Notices = super::NoticesRust;
     }
 
@@ -153,5 +170,33 @@ pub mod qobject {
         /// Try the failed files of the entry at `row` again (a ledger's entry whose `canRetry`).
         #[qinvokable]
         fn retry(self: &Notices, row: i32);
+
+        /// Select the entry at `row` (-1 or a row past the list: none). Its details are what the panel shows.
+        #[qinvokable]
+        fn select(self: Pin<&mut Notices>, row: i32);
+
+        /// Clear the selection, and close its details.
+        #[qinvokable]
+        fn unselect(self: Pin<&mut Notices>);
+
+        /// Open or close the selected entry's details.
+        #[qinvokable]
+        #[cxx_name = "setDetailsOpen"]
+        fn set_details_open(self: Pin<&mut Notices>, open: bool);
+
+        /// Dismiss the selected entry (and clear the selection).
+        #[qinvokable]
+        #[cxx_name = "dismissSelected"]
+        fn dismiss_selected(self: Pin<&mut Notices>);
+
+        /// Try the selected entry's failed files again, when it can be retried.
+        #[qinvokable]
+        #[cxx_name = "retrySelected"]
+        fn retry_selected(self: &Notices);
+
+        /// The failed files of a ledger are to be listed: `pass` (the ledger's), asked once per entry and newest failure.
+        #[qsignal]
+        #[cxx_name = "filesRequested"]
+        fn files_requested(self: Pin<&mut Notices>, pass: i32);
     }
 }

@@ -64,6 +64,11 @@ pub mod qobject {
     unsafe extern "RustQt" {
         fn set_preview_item(self: Pin<&mut YandexSearch>, value: i32);
 
+        /// The preview's previous (-1) or next (1) result, wrapping round the results.
+        #[qinvokable]
+        #[cxx_name = "stepPreview"]
+        fn step_preview(self: Pin<&mut YandexSearch>, by: i32);
+
         fn set_layout_width(self: Pin<&mut YandexSearch>, value: f64);
 
         fn set_gap(self: Pin<&mut YandexSearch>, value: f64);

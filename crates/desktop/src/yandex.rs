@@ -316,6 +316,15 @@ impl qobject::YandexSearch {
         self.refresh_preview();
     }
 
+    /// The previous (`by` -1) or next (`by` 1) result of the preview, wrapping round the results.
+    pub(crate) fn step_preview(self: Pin<&mut Self>, by: i32) {
+        let total = self.other_count + self.similar_count;
+        if total > 0 {
+            let next = (self.preview_item + by).rem_euclid(total);
+            self.set_preview_item(next);
+        }
+    }
+
     pub(crate) fn set_preview_item(mut self: Pin<&mut Self>, value: i32) {
         if self.preview_item == value {
             return;

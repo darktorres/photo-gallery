@@ -99,6 +99,12 @@ pub enum Event {
     ListPositioned,
     /// The selection (the current item) changed, or none is selected now.
     CurrentChanged(Option<usize>),
+    /// The window selects an item (a test hook, or the viewer closing on it).
+    Select(usize),
+    /// Search for similar pictures of a catalog file (the viewer's button).
+    FindSimilar(FileId),
+    /// Search for similar pictures of the command line's photo (`--find-similar`).
+    FindSimilarCommandLine,
     /// A grid key, already decided by the key map against the current item.
     Key(GridKey),
     /// The grid's width changed, in pixels. `None` when the list has no width yet (the shell's width of zero or less).
@@ -119,6 +125,13 @@ pub enum Event {
         /// The item rated.
         item: usize,
         /// Zero stars takes the rating away.
+        rating: Rating,
+    },
+    /// A rating made in the viewer: the item is rated, and the viewer moves on to the next one.
+    RateInViewer {
+        /// The item rated.
+        item: usize,
+        /// The rating set.
         rating: Rating,
     },
     /// A quarter turn of an item, asked for by the user.
@@ -229,8 +242,11 @@ pub enum Command {
     Panel(panels::Change),
     /// Open this modal panel (a global shortcut).
     OpenPanel(PanelKind),
-    /// Close this modal panel (a global shortcut).
+    /// Close this modal panel (a global shortcut, or a listing that shows a reveal).
     ClosePanel(PanelKind),
+    /// Close the viewer: a listing that shows a reveal or the failed files takes it away, as the window's picture of the
+    /// list is the grid's.
+    CloseViewer,
     /// Remember dev mode for the next start: the user turned it on or off (a start's `--dev=1` is not saved).
     SaveDevMode(bool),
     /// Remember the borders for the next start: the user toggled them (a start's `--borders` is not saved).
@@ -240,6 +256,10 @@ pub enum Command {
     /// Select the file `file` in the list just shown, the one a reveal asked for (the model knows its item), or say it is
     /// no longer in the library.
     Reveal(FileId),
+    /// The window searches for similar pictures of a catalog file (the window opens its panel).
+    FindSimilar(FileId),
+    /// The window searches for the command line's photo.
+    FindSimilarCommandLine,
 }
 
 /// The one controller: every sub-machine, and the pauses.
@@ -356,8 +376,24 @@ impl Controller {
             Event::Panel(event) => self.panel(event),
             Event::Global(global) => self.global(global),
             Event::Size(event) => self.size(now_ms, event),
-            Event::Listing(event) => self.listing_event(event),
+            Event::Listing(event) => {
+                let shows_failures = matches!(event, listing::Event::FailedImports);
+                let out = self.listing_event(event);
+                if shows_failures { self.closed_for_listing(out) } else { out }
+            }
+            Event::Select(item) => vec![Command::Select(item)],
+            Event::FindSimilar(file) => vec![Command::FindSimilar(file)],
+            Event::FindSimilarCommandLine => vec![Command::FindSimilarCommandLine],
             Event::Rate { item, rating } => vec![Command::Rate { item, rating }],
+            // A rating in the viewer moves on to the next picture, as a rating app's triage does; at the end it stays.
+            Event::RateInViewer { item, rating } => {
+                let next = self.viewer_step(item, 1);
+                let mut out = vec![Command::Rate { item, rating }];
+                if next != item {
+                    out.push(Command::ShowViewer(next));
+                }
+                out
+            }
             Event::Turn { item, turns } => vec![Command::Turn { item, turns }],
             Event::ToggleBorderMark(item) => vec![Command::ToggleBorderMark(item)],
             Event::SetBorderMark { item, marked } => vec![Command::SetBorderMark { item, marked }],
@@ -372,7 +408,7 @@ impl Controller {
                     Command::OpenList { generation, .. } => Some((file, *generation)),
                     _ => None,
                 });
-                out
+                self.closed_for_listing(out)
             }
             Event::Reload => vec![self.open_list(true)],
             Event::FilesChanged => vec![Command::RefreshTurned],
@@ -529,6 +565,16 @@ impl Controller {
     /// The relayout at `row_height`, once the grid has a width (none before the list is laid out).
     fn relayout(&self, row_height: RowHeight) -> Option<Command> {
         Some(Command::Relayout { width: self.grid_width?, row_height })
+    }
+
+    /// A listing that shows a reveal or the failed files takes the inbox away, and the viewer when it is open: the window
+    /// closes them, after the list's own commands.
+    fn closed_for_listing(&self, mut out: Vec<Command>) -> Vec<Command> {
+        out.push(Command::ClosePanel(PanelKind::Inbox));
+        if self.panels.viewer_open() {
+            out.push(Command::CloseViewer);
+        }
+        out
     }
 
     /// A listing change: applied, then the listing's commands. A query typed is applied at once and shown after its

@@ -4,7 +4,6 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::anyhow;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
 use pg_model::turns::Turns;
@@ -299,7 +298,7 @@ fn scan_part(conn: &Connection, identity: &IdSet, lo: i64, hi: i64, out: &mut im
             continue;
         };
         let hashes = pg_model::pdq::from_blob(blob)
-            .ok_or_else(|| Error::Other(anyhow!("file {raw} has malformed stored hashes")))?;
+            .ok_or_else(|| Error::Invalid(format!("file {raw} has malformed stored hashes")))?;
         out.put(raw, hashes, r.get(2)?);
     }
     Ok(legacy)

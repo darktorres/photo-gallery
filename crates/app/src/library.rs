@@ -397,8 +397,9 @@ impl LibraryService {
                 }
                 None => {
                     self.catalogs.with_catalog(|c| {
-                        pg_library::removals::finish(c, &self.thumbs, &self.catalog_path, &mut |_| true)
-                            .map_err(pg_catalog::Error::Other)
+                        pg_library::removals::finish(c, &self.thumbs, &self.catalog_path, &mut |_| true).map_err(|e| {
+                            pg_catalog::Error::Step { what: pg_model::error::chain(&e), source: Box::new(e) }
+                        })
                     })?;
                 }
             }

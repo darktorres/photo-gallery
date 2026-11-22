@@ -5,7 +5,6 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
 use pg_model::notice::Carried;
 use pg_model::rules::PathRules;
 use pg_platform::file::beside;
@@ -39,7 +38,7 @@ pub(crate) fn back_up(conn: &Connection, path: &Path, version: i64) -> Result<()
     let partial = beside(&backup, ".partial");
     std::fs::copy(db_file(path)?, &partial)
         .and_then(|_| std::fs::rename(&partial, &backup))
-        .with_context(|| format!("copying the catalog to {} before it is migrated", backup.display()))?;
+        .map_err(|e| Error::step(format!("copying the catalog to {} before it is migrated", backup.display()), e))?;
     Ok(())
 }
 
@@ -76,7 +75,7 @@ pub(crate) fn rebuild(
                 // The copy is one transaction, so an error leaves no rows; the replacement is made again without them.
                 remove_database(&replacement)?;
                 make_replacement(&replacement, set, rules, None)?;
-                Carried::Nothing { reason: format!("{e:#}") }
+                Carried::Nothing { reason: pg_model::error::chain(&e) }
             }
         },
         Err(reason) => {
@@ -87,16 +86,19 @@ pub(crate) fn rebuild(
     // To `catalog.sqlite.replaced`, then `.replaced.1`, and so on: kept whole, with its sidecars, for the user to
     // remove.
     let kept = pg_dbfile::move_aside(path, ".replaced")
-        .with_context(|| format!("catalog {}: moving it aside ({why})", path.display()))?;
-    std::fs::rename(&replacement, path).with_context(|| {
-        format!("catalog {}: its new file {} can't take the name", path.display(), replacement.display())
+        .map_err(|e| Error::step(format!("catalog {}: moving it aside ({why})", path.display()), e))?;
+    std::fs::rename(&replacement, path).map_err(|e| {
+        Error::step(
+            format!("catalog {}: its new file {} can't take the name", path.display(), replacement.display()),
+            e,
+        )
     })?;
     Ok(Rebuilt { kept, why, carried })
 }
 
 /// The file SQLite opens for the catalog at `path`: the path itself, which the caller gave in a folder SQLite can open
 /// (`pg_platform::sqlite::openable_folder`).
-pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
+pub(crate) fn db_file(path: &Path) -> Result<PathBuf> {
     Ok(path.to_path_buf())
 }
 
@@ -105,14 +107,15 @@ pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
 /// changes in the main file.
 fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Option<&Path>) -> Result<(u64, u64)> {
     let mut conn = Connection::open(db_file(path)?)
-        .with_context(|| format!("catalog {}: making its replacement", path.display()))?;
+        .map_err(|e| Error::step(format!("catalog {}: making its replacement", path.display()), e))?;
     // An empty file takes incremental auto-vacuum at once; a catalog made here is then compacted in place, never as a whole.
     conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
     conn.execute_batch(SETTINGS)?;
     // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
     conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
-    bring_to(&conn, set, rules, version_in(set)?, &Hooks::none())
-        .with_context(|| format!("catalog {}: bringing its replacement to this build's schema", path.display()))?;
+    bring_to(&conn, set, rules, version_in(set)?, &Hooks::none()).map_err(|e| {
+        Error::step(format!("catalog {}: bringing its replacement to this build's schema", path.display()), e)
+    })?;
     let counts = match from {
         Some(old) => {
             carry_rows(&mut conn, old, set, rules)?;
@@ -184,9 +187,9 @@ pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, set: &SchemaSet<'_>, rules: PathRules) -> Result<()> {
     // The old file's name as SQLite takes it, bound as a BLOB: its bytes on Unix, and on Windows the UTF-8 of the alias
     // for a folder with no UTF-8 name (`pg_platform::sqlite`).
-    let bound =
-        pg_platform::sqlite::attach_bytes(old).with_context(|| format!("{}: the old catalog", old.display()))?;
-    conn.execute("ATTACH DATABASE ?1 AS carried", [bound]).context("attaching the old catalog")?;
+    let bound = pg_platform::sqlite::attach_bytes(old)
+        .map_err(|e| Error::step(format!("{}: the old catalog", old.display()), e))?;
+    conn.execute("ATTACH DATABASE ?1 AS carried", [bound]).map_err(|e| Error::step("attaching the old catalog", e))?;
     let copied = copy_tables(conn, set, rules);
     conn.execute_batch("DETACH DATABASE carried")?;
     copied

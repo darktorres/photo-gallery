@@ -116,7 +116,7 @@ use pg_jobs::events::{Bus, Subscription};
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice, Trigger};
 
-use crate::error::{Result, failed};
+use crate::error::{Error, Result};
 
 /// How many Events wait for the writer before one is counted as lost (a catalog locked for long by another process).
 pub(crate) const EVENTS: usize = 1024;
@@ -397,7 +397,7 @@ impl Inbox {
         let thread = std::thread::Builder::new()
             .name("inbox".into())
             .spawn(move || writer.run(&catalog_path))
-            .map_err(|e| failed(format!("can't start the inbox: {e}")))?;
+            .map_err(|e| Error::Failed(format!("can't start the inbox: {e}")))?;
         Ok(Arc::new(Inbox {
             shared,
             events,
@@ -1223,7 +1223,7 @@ mod tests {
         fn write<T>(&self, f: impl FnOnce(&Catalog) -> pg_catalog::Result<T>) -> pg_catalog::Result<T> {
             self.writes.fetch_add(1, Ordering::Relaxed);
             match self.faults.lock().unwrap().pop_front() {
-                Some(fault) => Err(pg_catalog::Error::Other(anyhow::Error::new(fault))),
+                Some(fault) => Err(pg_catalog::Error::Step { what: fault.to_string(), source: Box::new(fault) }),
                 None => f(&self.catalog),
             }
         }
@@ -1273,7 +1273,7 @@ mod tests {
             self.catalog.prune_inbox(now)
         }
         fn is_busy(&self, e: &pg_catalog::Error) -> bool {
-            matches!(e, pg_catalog::Error::Other(a) if a.downcast_ref::<Injected>() == Some(&Injected::Busy))
+            matches!(e, pg_catalog::Error::Step { source, .. } if source.downcast_ref::<Injected>() == Some(&Injected::Busy))
                 || e.is_busy()
         }
     }

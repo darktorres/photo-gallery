@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::anyhow;
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize};
@@ -30,15 +29,18 @@ use pg_thumbcache::ThumbCache;
 use pg_writeback::fault::Fault;
 use pg_writeback::{WriteError, Writer};
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// A `w` × `h` test picture, encoded as `encoding`: its channels step across it, so a crop or a turn moves pixels that
 /// differ from each other.
-fn pattern(w: u32, h: u32, encoding: Encoding) -> anyhow::Result<Vec<u8>> {
+fn pattern(w: u32, h: u32, encoding: Encoding) -> Result<Vec<u8>> {
     let rgb = pg_testkit::rgb_pattern(usize::try_from(w)?, usize::try_from(h)?);
-    pg_testkit::encode(w, h, &rgb, encoding)
+    pg_testkit::encode(w, h, &rgb, encoding).map_err(Into::into)
 }
 
 /// One file per format, sized so the JPEG transform is perfect (multiples of 16).
-fn make_files(dir: &Path) -> anyhow::Result<Vec<(String, Format)>> {
+fn make_files(dir: &Path) -> Result<Vec<(String, Format)>> {
     let mut out = Vec::new();
     for (name, encoding) in [
         ("a.jpg", Encoding::Jpeg),
@@ -51,17 +53,17 @@ fn make_files(dir: &Path) -> anyhow::Result<Vec<(String, Format)>> {
         let bytes = pattern(64, 48, encoding)?;
         let path = dir.join("images").join(name);
         std::fs::write(&path, &bytes)?;
-        let sniffed = Format::sniff(&bytes).ok_or_else(|| anyhow!("{name}: not a format the codec knows"))?;
+        let sniffed = Format::sniff(&bytes).ok_or_else(|| format!("{name}: not a format the codec knows"))?;
         out.push((path.to_string_lossy().into_owned(), sniffed));
     }
     Ok(out)
 }
 
-fn shown(path: &str) -> anyhow::Result<Rgb> {
+fn shown(path: &str) -> Result<Rgb> {
     Ok(pg_render::display::decode(&mut Decoder::new()?, &std::fs::read(path)?, MinSize::Full, Turns::NONE)?.image)
 }
 
-fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
+fn ids(c: &Catalog) -> Result<Vec<(i64, String)>> {
     Ok(state::present_files(c)?.into_iter().map(|(id, name)| (id.get(), name)).collect())
 }
 
@@ -70,7 +72,7 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
 /// The folder, the files written into it (name and format), the catalog's path and the catalog.
 type Imported = (PathBuf, Vec<(String, Format)>, PathBuf, Catalog);
 
-fn imported(prefix: &str) -> anyhow::Result<Imported> {
+fn imported(prefix: &str) -> Result<Imported> {
     let dir = pg_testkit::run_folder("scratch_library", prefix)?;
     std::fs::create_dir_all(dir.join("images"))?;
     let files = make_files(&dir)?;
@@ -92,7 +94,7 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
 
 /// The thumbnail cache a writer retags, shared with the writer as the app shares its own, and the check that it reported
 /// nothing.
-fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(Arc<ThumbCache>, Quiet<pg_thumbcache::Event>)> {
+fn thumbs(dir: &Path, c: &Catalog) -> Result<(Arc<ThumbCache>, Quiet<pg_thumbcache::Event>)> {
     let (events, quiet) = Quiet::bus();
     let thumbs = Arc::new(ThumbCache::open(
         &dir.join("thumbs.sqlite"),
@@ -109,7 +111,7 @@ fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
     pg_platform::names::disk_path(c.rules(), path)
 }
 
-fn wait_for_queue(c: &Catalog) -> anyhow::Result<()> {
+fn wait_for_queue(c: &Catalog) -> Result<()> {
     let start = Instant::now();
     loop {
         if state::writes_still_tried(c)? == 0 {

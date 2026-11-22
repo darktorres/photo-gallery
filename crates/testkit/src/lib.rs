@@ -10,13 +10,56 @@
 //! (`VIDEO_SAMPLE`), kept in the video crate's tests folder and read here.
 
 use std::fmt::Display;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, anyhow};
-
 pub use pg_platform::testing::{held, missing_tool, odd_name, skip, tool_missing};
+
+/// What a test helper couldn't make: the step that failed, and its cause (the encoder's or the file system's).
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// A run folder of the test binary (see [`run_folder`]).
+    #[error("make the run folder {prefix} in {scratch}")]
+    RunFolder {
+        prefix: String,
+        scratch: String,
+        #[source]
+        source: io::Error,
+    },
+    /// A folder a test asked for under its run folder (see [`run_folder_with`]).
+    #[error("make the folder {}", path.display())]
+    Folder {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    /// More frames than the GIF's colours hold (see [`gif`]).
+    #[error("frame {frame} of {frames}: a test GIF has at most 5 frames")]
+    GifFrame { frame: usize, frames: usize },
+    /// Pixels that aren't the `w` × `h` picture asked for (`channels` a pixel's: RGB or RGBA).
+    #[error("{len} bytes are not {w} × {h} {channels} pixels")]
+    Pixels { len: usize, w: u32, h: u32, channels: &'static str },
+    /// An encoder's step that failed, named by the step.
+    #[error("{step}")]
+    Encode {
+        step: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+}
+
+/// The result of a test helper.
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Wraps an encoder's error as the step that failed.
+fn encode_failed<E>(step: impl Into<String>, source: E) -> Error
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    Error::Encode { step: step.into(), source: Box::new(source) }
+}
 
 /// The sample clip (tools/make_test_video.py): 64x48, six frames, H.264. The video crate's and the library's tests read
 /// it from here.
@@ -26,8 +69,11 @@ pub const VIDEO_SAMPLE: &[u8] = include_bytes!("../../video/tests/sample.mp4");
 /// (`PG_TEST_DIR`, else the temp folder's `scratch`). The run folders of `prefix` that no running process holds are
 /// removed first, and the folder is owned by its lock from the moment it has a name (see `pg_platform::testing`).
 pub fn run_folder(scratch: &str, prefix: &str) -> Result<PathBuf> {
-    pg_platform::testing::run_folder(scratch, prefix)
-        .with_context(|| format!("make the run folder {prefix} in {scratch}"))
+    pg_platform::testing::run_folder(scratch, prefix).map_err(|source| Error::RunFolder {
+        prefix: prefix.to_string(),
+        scratch: scratch.to_string(),
+        source,
+    })
 }
 
 /// [`run_folder`], with the folders `dirs` (paths relative to it, made as needed) made in it.
@@ -35,7 +81,7 @@ pub fn run_folder_with(scratch: &str, prefix: &str, dirs: &[&str]) -> Result<Pat
     let dir = run_folder(scratch, prefix)?;
     for sub in dirs {
         let sub = dir.join(sub);
-        std::fs::create_dir_all(&sub).with_context(|| format!("make the folder {}", sub.display()))?;
+        std::fs::create_dir_all(&sub).map_err(|source| Error::Folder { path: sub.clone(), source })?;
     }
     Ok(dir)
 }
@@ -85,12 +131,10 @@ pub fn gif(frames: usize) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut enc = image::codecs::gif::GifEncoder::new(&mut out);
     for i in 0..frames {
-        let red = i
-            .checked_mul(60)
-            .and_then(|level| u8::try_from(level).ok())
-            .ok_or_else(|| anyhow!("frame {i} of {frames}: a test GIF has at most 5 frames"))?;
+        let red =
+            i.checked_mul(60).and_then(|level| u8::try_from(level).ok()).ok_or(Error::GifFrame { frame: i, frames })?;
         let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([red, 0, 0, 255]));
-        enc.encode_frame(image::Frame::new(img)).with_context(|| format!("encode GIF frame {i}"))?;
+        enc.encode_frame(image::Frame::new(img)).map_err(|e| encode_failed(format!("encode GIF frame {i}"), e))?;
     }
     drop(enc);
     Ok(out)
@@ -98,10 +142,14 @@ pub fn gif(frames: usize) -> Result<Vec<u8>> {
 
 /// `rgba` (`w` × `h` pixels, four bytes each) as a PNG, with its transparency.
 pub fn png_rgba(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>> {
-    let img = image::RgbaImage::from_raw(w, h, rgba.to_vec())
-        .ok_or_else(|| anyhow!("{} bytes are not {w} × {h} RGBA pixels", rgba.len()))?;
+    let img = image::RgbaImage::from_raw(w, h, rgba.to_vec()).ok_or(Error::Pixels {
+        len: rgba.len(),
+        w,
+        h,
+        channels: "RGBA",
+    })?;
     let mut file = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut file, image::ImageFormat::Png).context("encode the PNG")?;
+    img.write_to(&mut file, image::ImageFormat::Png).map_err(|e| encode_failed("encode the PNG", e))?;
     Ok(file.into_inner())
 }
 
@@ -126,10 +174,10 @@ pub fn tiff_rgb(w: u32, h: u32, rgb: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn still(w: u32, h: u32, rgb: &[u8], format: image::ImageFormat) -> Result<Vec<u8>> {
-    let img = image::RgbImage::from_raw(w, h, rgb.to_vec())
-        .ok_or_else(|| anyhow!("{} bytes are not {w} × {h} RGB pixels", rgb.len()))?;
+    let img =
+        image::RgbImage::from_raw(w, h, rgb.to_vec()).ok_or(Error::Pixels { len: rgb.len(), w, h, channels: "RGB" })?;
     let mut file = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut file, format).with_context(|| format!("encode the {format:?}"))?;
+    img.write_to(&mut file, format).map_err(|e| encode_failed(format!("encode the {format:?}"), e))?;
     Ok(file.into_inner())
 }
 
@@ -205,13 +253,13 @@ pub fn apng(frames: u32) -> Result<Vec<u8>> {
     let mut enc = png::Encoder::new(&mut out, 2, 2);
     enc.set_color(png::ColorType::Rgb);
     if frames > 1 {
-        enc.set_animated(frames, 0).context("make the PNG animated")?;
+        enc.set_animated(frames, 0).map_err(|e| encode_failed("make the PNG animated", e))?;
     }
-    let mut w = enc.write_header().context("write the PNG header")?;
+    let mut w = enc.write_header().map_err(|e| encode_failed("write the PNG header", e))?;
     for _ in 0..frames {
-        w.write_image_data(&[7; 12]).context("write a PNG frame")?;
+        w.write_image_data(&[7; 12]).map_err(|e| encode_failed("write a PNG frame", e))?;
     }
-    w.finish().context("finish the PNG")?;
+    w.finish().map_err(|e| encode_failed("finish the PNG", e))?;
     Ok(out)
 }
 

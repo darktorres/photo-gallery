@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 
-use anyhow::Result;
+use crate::error::Result;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
 use pg_model::size::ThumbHeight;
@@ -24,7 +24,10 @@ pub(crate) fn orphans_in(cache: &Path, catalog: &Path) -> Result<Vec<FileId>> {
     // ATTACH makes an empty file at a path with none, so a missing catalog is an error here, not a new catalog beside
     // the cache (the sweep's caller logs it).
     if !catalog.exists() {
-        anyhow::bail!("catalog {}: not there, so its orphans are not looked for", catalog.display());
+        return Err(crate::error::Error::invalid(format!(
+            "catalog {}: not there, so its orphans are not looked for",
+            catalog.display()
+        )));
     }
     let conn = Connection::open(cache)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;

@@ -1,8 +1,7 @@
 //! The error of a video file that couldn't be opened (a leaf: `ffi` returns it, the crate's callers look for it).
 
 /// The video's file couldn't be opened, or its size read: an I/O failure (an offline drive, a file in use, a file gone),
-/// not a video that doesn't decode. A frame's or a probe's error is this one, under the context of the open, when that
-/// is why it failed (`anyhow::Error::downcast`).
+/// not a video that doesn't decode. It is the source of [`crate::error::Error::Open`], which names the file.
 #[derive(Debug)]
 pub struct Unopened(pub std::io::Error);
 

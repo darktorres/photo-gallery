@@ -11,8 +11,19 @@ use pg_analysis::analyze::Analyzer;
 use pg_model::analysis::{Analysis, Media};
 use pg_model::turns::Turns;
 
+/// The probe's result: any error, its words kept as text (a probe has no caller that matches on its errors).
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+macro_rules! ensure {
+    ($cond:expr, $($arg:tt)*) => {
+        if !($cond) {
+            return Err(format!($($arg)*).into());
+        }
+    };
+}
+
 /// The facts an analysis stores, as text (an analysis has no `Debug`): what the catalog would keep of it, or the error.
-fn facts(result: &anyhow::Result<Analysis>) -> String {
+fn facts(result: &pg_analysis::Result<Analysis>) -> String {
     match result {
         Err(e) => format!("error: {e:#}"),
         Ok(a) => {
@@ -34,7 +45,7 @@ fn has_extension(path: &Path, exts: &[&str]) -> bool {
 
 const JPEG: &[&str] = &["jpg", "jpeg", "jfif"];
 
-fn collect(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+fn collect(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
         if path.is_dir() {
@@ -46,8 +57,8 @@ fn collect(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>) -> anyhow::Result<
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
-    let root = std::env::args().nth(1).ok_or_else(|| anyhow::anyhow!("the folder to check"))?;
+fn main() -> Result<()> {
+    let root = std::env::args().nth(1).ok_or("the folder to check")?;
     let every: usize = std::env::args().nth(2).and_then(|n| n.parse().ok()).unwrap_or(1).max(1);
     let exts: Vec<&str> = match std::env::args().nth(3).as_deref() {
         Some("jpeg") => JPEG.to_vec(),
@@ -92,6 +103,6 @@ fn main() -> anyhow::Result<()> {
         files.len(),
         started.elapsed().as_secs_f64()
     );
-    anyhow::ensure!(mismatched == 0, "{mismatched} files differ between the whole file and the gathered bytes");
+    ensure!(mismatched == 0, "{mismatched} files differ between the whole file and the gathered bytes");
     Ok(())
 }

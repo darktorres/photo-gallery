@@ -306,7 +306,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 for root in roots {
                     // A removal over this folder (begun, or kept for an unfinished write) is finished first: an add over it
                     // is refused until then. Its thumbnails are opened only for that finish.
-                    let mut finish = || -> Result<pg_catalog::Driven> {
+                    let mut finish = || -> pg_library::Result<pg_catalog::Driven> {
                         let (events, printer) = thumb_events();
                         let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                         let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
@@ -342,7 +342,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                             say_finished(&finished);
                             return Err(pg_catalog::Error::RemovalPending { path: finished.folder }.into());
                         }
-                        Err(AddFinishError::Finish(e)) => return Err(e),
+                        Err(AddFinishError::Finish(e)) => return Err(e.into()),
                     }
                 }
                 added
@@ -356,7 +356,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             if !unplaced.is_empty() {
                 groups.push(Group { roots: unplaced, volumes: VolumeSet::All, label: String::new() });
             }
-            let walked = run_each(&catalog_path, &groups, ctl, |catalog, group, lane| {
+            let walked = run_each(&catalog_path, &groups, ctl, |catalog, group, lane| -> pg_library::Result<_> {
                 Ok(group
                     .roots
                     .iter()
@@ -385,7 +385,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     // Another process removed the folder from the library meanwhile (`gallery remove`, or the app):
                     // said, and the command fails, as the scan asked for didn't happen.
                     Err(pg_scan::ScanError::Removed { root }) => bail!(line(&Line::ScanRemoved { root })),
-                    Err(pg_scan::ScanError::Failed(e)) => return Err(e),
+                    Err(pg_scan::ScanError::Failed(e)) => return Err(e.into()),
                 };
                 let mut report = scan_report(&root, &s, rules, start.elapsed().as_secs_f64()).into_iter();
                 if let Some(summary) = report.next() {
@@ -514,13 +514,18 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, cap, events)?;
             // One lane per drive: each makes its volumes' thumbnails and placeholders, all into the one cache.
             let groups = lanes::command_groups(&catalog, serial)?;
-            let runs = run_each(&catalog_path, &groups, ctl, |catalog, group, lane| {
-                let s = pg_thumbs::run_while(&cache, &catalog_path, height, &opts, &group.volumes, &|| true, lane)?;
-                // The placeholders the thumbnails left owing: after them, as the app's rounds run them.
-                let placed =
-                    pg_thumbs::placeholders::run_while(catalog, &cache, &opts, &group.volumes, &|| true, lane)?;
-                Ok((s, placed))
-            })?;
+            let runs = run_each(
+                &catalog_path,
+                &groups,
+                ctl,
+                |catalog, group, lane| -> std::result::Result<_, pg_thumbs::Error> {
+                    let s = pg_thumbs::run_while(&cache, &catalog_path, height, &opts, &group.volumes, &|| true, lane)?;
+                    // The placeholders the thumbnails left owing: after them, as the app's rounds run them.
+                    let placed =
+                        pg_thumbs::placeholders::run_while(catalog, &cache, &opts, &group.volumes, &|| true, lane)?;
+                    Ok((s, placed))
+                },
+            )?;
             cache.flush();
             for (group, (s, placed)) in groups.iter().zip(&runs) {
                 lane_heading(group, groups.len());

@@ -33,7 +33,6 @@
 //! (`duplicates`, `reparse`, `ambiguous`, `unpaired`, `volume-id`) are states keyed `(root, code)` and replaced only by a
 //! root walk; what one walk did (`replaced`, `rebound`) is an event of that walk, with its count.
 
-use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use pg_model::ids::{FileIdentity, RootId, ScanId};
@@ -126,7 +125,7 @@ impl Catalog {
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
         for (other, holder) in held {
-            let other = rules.parse_bytes(&other).ok_or_else(|| anyhow!("a scan lease's folder has a NUL"))?;
+            let other = rules.parse_bytes(&other).ok_or(Error::Stored { what: "a scan lease's folder has a NUL" })?;
             if rules.is_under(root, &other) || rules.is_under(&other, root) {
                 return Err(Error::ScanBusy { root: other, holder });
             }

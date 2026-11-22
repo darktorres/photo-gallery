@@ -14,7 +14,7 @@ workspace = true
 # `thumb_file_ids`, `thumb_volumes`, `thumb_failures`, defined in the catalog's `baseline.sql`): it never names a catalog
 # table. It has no dependency on `pg-catalog`; the tests make catalogs with its fixture.
 [dependencies]
-anyhow.workspace = true
+thiserror.workspace = true
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }

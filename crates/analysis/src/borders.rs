@@ -24,7 +24,7 @@ mod side;
 mod stats;
 mod view;
 
-use anyhow::{Context, Result};
+use crate::{Result, side};
 use pg_codec::pixels::Rgb;
 use pg_model::detection::{Detection, Edge, MAX_SIDES, Reason, Side, Sides};
 
@@ -141,9 +141,9 @@ fn detect_with(d: &mut Detector, img: &Rgb, p: &Params) -> Result<Detection> {
 /// The [`Detection`] of an image `w` × `h` with the content box `content` (inside the image); an error for a side
 /// over `u32::MAX`.
 fn detection(w: usize, h: usize, content: [usize; 4], sides: Sides) -> Result<Detection> {
-    let width = u32::try_from(w).context("image width over u32")?;
-    let height = u32::try_from(h).context("image height over u32")?;
-    let [l, t, r, b] = content.map(u32::try_from);
+    let width = side(w, "image width over u32")?;
+    let height = side(h, "image height over u32")?;
+    let [l, t, r, b] = content.map(|c| side(c, "the content box over u32"));
     Ok(Detection { width, height, content: [l?, t?, r?, b?], sides })
 }
 

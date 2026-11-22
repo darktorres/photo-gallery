@@ -26,11 +26,14 @@
 //! catalog's): opened for another one (rebuilt, so its file ids mean other files), it starts over.
 
 mod config;
+mod error;
 mod maintenance;
 mod reader;
 mod schema;
 mod types;
 mod writer;
+
+pub use error::{Error, Result};
 
 pub use config::{CACHE_VERSION, Cap, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
 pub use maintenance::Drift;
@@ -41,7 +44,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
-use anyhow::{Context, Result, anyhow, bail};
 use pg_jobs::events::Bus;
 use pg_jobs::service::Service;
 use pg_model::ids::FileId;
@@ -108,7 +110,7 @@ impl ThumbCache {
         let inbox = Arc::new(Inbox::new());
         let body = inbox.clone();
         let writer = Service::start("thumbnail cache", move |waker| write_loop(conn, &body, &events, waker))
-            .context("start the thumbnail cache writer")?;
+            .map_err(|e| Error::step("start the thumbnail cache writer", e))?;
         Ok(ThumbCache {
             store: Some(Store { path: path.to_path_buf(), readers: ReaderPool::new(path), inbox, writer, _live: live }),
             suspended: AtomicBool::new(false),
@@ -133,9 +135,9 @@ impl ThumbCache {
     }
 
     fn send(&self, op: Op) -> Result<()> {
-        let store = self.store.as_ref().ok_or_else(|| anyhow!("thumbnail cache not open"))?;
+        let store = self.store.as_ref().ok_or_else(|| Error::invalid("thumbnail cache not open"))?;
         if !store.inbox.push(op) {
-            bail!("thumbnail cache closed");
+            return Err(Error::invalid("thumbnail cache closed"));
         }
         store.writer.wake();
         Ok(())
@@ -145,7 +147,7 @@ impl ThumbCache {
     fn call<T>(&self, op: impl FnOnce(mpsc::Sender<T>) -> Op) -> Result<T> {
         let (reply, answer) = mpsc::channel();
         self.send(op(reply))?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))
+        answer.recv().map_err(|_| Error::invalid("thumbnail cache writer stopped"))
     }
 
     /// The cached thumbnail closest to `height` that was made from the file as it is now (`source`): the smallest
@@ -181,8 +183,8 @@ impl ThumbCache {
         })?;
         let Some((id, h, last_used)) = found else { return Ok(None) };
         // The schema holds heights in 16..=2048 (a CHECK), so a stored one out of them is a corrupt cache, not a thumbnail.
-        let h =
-            ThumbHeight::new(h).ok_or_else(|| anyhow!("the cache holds a {h}-pixel thumbnail, outside its heights"))?;
+        let h = ThumbHeight::new(h)
+            .ok_or_else(|| Error::invalid(format!("the cache holds a {h}-pixel thumbnail, outside its heights")))?;
         if last_used < unix_now() - i64::try_from(TOUCH_AGE.as_secs()).unwrap_or(i64::MAX) {
             // Best-effort: a cache closing doesn't fail the read.
             let _ = self.send(Op::Touch(id));

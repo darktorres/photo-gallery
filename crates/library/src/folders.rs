@@ -57,9 +57,9 @@ pub struct Added {
 #[derive(Debug)]
 pub enum AddFinishError {
     /// The add itself failed, as [`add_folder`] says.
-    Add { error: AddError, finished: Option<Finished> },
+    Add { error: AddError, finished: Option<Box<Finished>> },
     /// The finish failed.
-    Finish(anyhow::Error),
+    Finish(crate::Error),
     /// The removal is still pending after its finish: files are kept for an unfinished write. Nothing was added.
     StillPending(Finished),
 }
@@ -70,7 +70,7 @@ pub enum AddFinishError {
 pub fn add_folder_finishing(
     catalog: &Catalog,
     path: &Path,
-    finish: &mut dyn FnMut() -> anyhow::Result<Driven>,
+    finish: &mut dyn FnMut() -> crate::Result<Driven>,
 ) -> Result<Added, AddFinishError> {
     let folder = match add_folder(catalog, path) {
         Ok((root, new)) => return Ok(Added { root, new, finished: None }),
@@ -82,6 +82,6 @@ pub fn add_folder_finishing(
     match add_folder(catalog, path) {
         Ok((root, new)) => Ok(Added { root, new, finished: Some(finished) }),
         Err(AddError::Catalog(pg_catalog::Error::RemovalPending { .. })) => Err(AddFinishError::StillPending(finished)),
-        Err(error) => Err(AddFinishError::Add { error, finished: Some(finished) }),
+        Err(error) => Err(AddFinishError::Add { error, finished: Some(Box::new(finished)) }),
     }
 }

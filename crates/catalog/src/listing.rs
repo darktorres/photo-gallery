@@ -41,8 +41,8 @@ fn json_column<T, E>(
 
 /// A listing's column values, `folder` (stored under `rules`), `recursive`, `query` and `sort`, in that order.
 pub(crate) fn listing_values(rules: PathRules, listing: &Listing) -> Result<(Vec<u8>, bool, String, String)> {
-    let query = to_json(&listing.query).map_err(|e| Error::Other(e.into()))?;
-    let sort = to_json(&listing.sort).map_err(|e| Error::Other(e.into()))?;
+    let query = to_json(&listing.query).map_err(Error::bare)?;
+    let sort = to_json(&listing.sort).map_err(Error::bare)?;
     Ok((rules.join_merged(&listing.folder), listing.recursive, query, sort))
 }
 

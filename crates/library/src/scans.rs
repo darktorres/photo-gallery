@@ -9,7 +9,7 @@ use pg_thumbcache::ThumbCache;
 
 /// Forget the thumbnails of the files a scan's pairing replaced (`ScanStats::replaced_ids`), after the
 /// scan's commit. The ones that couldn't be, with why.
-pub fn forget_replaced(thumbs: &ThumbCache, ids: &[FileId]) -> Vec<(FileId, anyhow::Error)> {
+pub fn forget_replaced(thumbs: &ThumbCache, ids: &[FileId]) -> Vec<(FileId, pg_thumbcache::Error)> {
     ids.iter().filter_map(|&id| thumbs.forget(id).err().map(|e| (id, e))).collect()
 }
 

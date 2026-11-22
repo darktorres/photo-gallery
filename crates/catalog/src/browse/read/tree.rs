@@ -2,7 +2,7 @@
 //! built by its `TreeBuilder` from the folders' rows).
 
 use crate::core::Catalog;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use pg_model::tree::{FolderTree, TreeBuilder};
 
 /// The present files of each folder, counted from the `files_present` index alone (no sort, no table), and each
@@ -32,8 +32,8 @@ impl Catalog {
         while let Some(r) = rows.next()? {
             if let Some(stored) = r.get::<_, Option<Vec<u8>>>(1)? {
                 let path =
-                    rules.parse_bytes(&stored).ok_or_else(|| anyhow::anyhow!("a stored folder path has a NUL"))?;
-                builder.add(r.get(0)?, &path, r.get(2)?).map_err(|e| crate::Error::Other(e.into()))?;
+                    rules.parse_bytes(&stored).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
+                builder.add(r.get(0)?, &path, r.get(2)?).map_err(Error::bare)?;
             }
         }
         Ok(builder.build())

@@ -915,9 +915,11 @@ mod tests {
     #[test]
     fn a_pass_that_fails_or_panics_still_ends_its_phase() {
         let ctl = Control::new();
-        let pass = |fail: bool| -> anyhow::Result<()> {
+        let pass = |fail: bool| -> Result<(), &'static str> {
             let _phase = ctl.begin(Phase::Borders, 3);
-            anyhow::ensure!(!fail, "the pass failed");
+            if fail {
+                return Err("the pass failed");
+            }
             Ok(())
         };
         assert!(pass(true).is_err());

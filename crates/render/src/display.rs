@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use pg_codec::decode::{Decoded, Decoder, Info, MinSize, transform};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
@@ -35,9 +35,9 @@ pub fn decode_into(
     image: &mut Rgb,
     spare: &mut Vec<u8>,
 ) -> Result<Info> {
-    let format = Format::sniff(bytes).context("unknown image format")?;
+    let format = Format::sniff(bytes).ok_or(Error::Invalid("unknown image format"))?;
     let exif = pg_metadata::orientation(bytes, format);
-    decoder.decode_into(bytes, format, exif, min, turns, image, spare)
+    decoder.decode_into(bytes, format, exif, min, turns, image, spare).map_err(Error::Codec)
 }
 
 /// [`decode_into`] as the file stores it: the pixels into `image`, not yet turned. The caller scales them before it turns
@@ -49,9 +49,9 @@ pub fn decode_stored_into(
     turns: Turns,
     image: &mut Rgb,
 ) -> Result<Info> {
-    let format = Format::sniff(bytes).context("unknown image format")?;
+    let format = Format::sniff(bytes).ok_or(Error::Invalid("unknown image format"))?;
     let exif = pg_metadata::orientation(bytes, format);
-    decoder.decode_stored_into(bytes, format, exif, min, turns, image)
+    decoder.decode_stored_into(bytes, format, exif, min, turns, image).map_err(Error::Codec)
 }
 
 /// [`decode_into`] into new buffers: a one-off decode.
@@ -145,7 +145,7 @@ pub fn poster(path: &Path, at_ms: i64, turns: Turns) -> Result<Shown> {
 
 /// The ThumbHash placeholder `hash` as a tiny image, turned by `turns`.
 pub fn placeholder(hash: &[u8], turns: Turns) -> Result<Rgba> {
-    let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash).ok().context("bad thumbhash")?;
+    let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash).ok().ok_or(Error::Invalid("bad thumbhash"))?;
     let (rgba, w, h) = transform(&rgba, w, h, 4, Orientation::UPRIGHT.compose(turns));
     Ok(Rgba::premultiply(w, h, rgba))
 }

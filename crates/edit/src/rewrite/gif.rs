@@ -1,6 +1,6 @@
 //! A still GIF: its one image decoded from LZW, turned or cropped, and encoded again, its other blocks kept.
 
-use anyhow::{Context, Result, bail, ensure};
+use crate::{Error, Result};
 use pg_container::{GifBlock, GifImage, gif_blocks, gif_header_len, gif_sub_block_data, gif_sub_blocks};
 
 use super::op::Op;
@@ -28,31 +28,23 @@ fn decode_indices(lzw: &[u8], min_code: u8, pixels: usize) -> Result<Vec<u8>> {
         if filling {
             written += step.consumed_out;
         }
-        match step.status.context("damaged GIF")? {
+        match step.status.map_err(|e| Error::step("damaged GIF", e))? {
             weezl::LzwStatus::Done => break,
             weezl::LzwStatus::Ok => {}
-            weezl::LzwStatus::NoProgress => bail!("damaged GIF: its image data has no end code"),
+            weezl::LzwStatus::NoProgress => {
+                return Err(Error::invalid("damaged GIF: its image data has no end code"));
+            }
         }
     }
-    ensure!(written == pixels, "the image data is short");
+    if written != pixels {
+        return Err(Error::invalid("the image data is short"));
+    }
     Ok(indices)
 }
 
-/// A still GIF whose image has no part left on the screen after the turn or crop (no pixels, or wholly off the
-/// screen): there is nothing to rewrite. `rotate` takes it as the catalog's, as it does an animation; `crop` reports
-/// it.
-#[derive(Debug)]
-pub(crate) struct NothingLeft;
-
-impl std::fmt::Display for NothingLeft {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("nothing of the GIF's image is left")
-    }
-}
-
-impl std::error::Error for NothingLeft {}
-
-/// A still GIF; `None` for an animation (more than one image). A still image with nothing left ([`NothingLeft`]).
+/// A still GIF; `None` for an animation (more than one image). A still image with nothing left (no pixels, or wholly
+/// off the screen after the turn or crop) is [`Error::NothingLeft`]: `rotate` takes it as the catalog's, as it does an
+/// animation; `crop` reports it.
 pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
     let mut blocks = gif_blocks(bytes);
     let (mut images, mut image) = (0, None);
@@ -63,16 +55,17 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
         }
     }
     if !blocks.complete() {
-        bail!("damaged GIF");
+        return Err(Error::invalid("damaged GIF"));
     }
     let (1, Some((range, descriptor))) = (images, image) else { return Ok(None) };
-    let header = gif_header_len(bytes).context("damaged GIF")?;
+    let damaged = || Error::invalid("damaged GIF");
+    let header = gif_header_len(bytes).ok_or_else(damaged)?;
     let u16_at = |i: usize| {
         bytes
             .get(i..)
             .and_then(<[u8]>::first_chunk::<2>)
             .map(|&b| usize::from(u16::from_le_bytes(b)))
-            .context("damaged GIF")
+            .ok_or_else(damaged)
     };
     let (sw, sh) = (u16_at(6)?, u16_at(8)?);
     // The logical screen, as the app's decoder reserves it (RGBA): a GIF it can't show isn't rewritten.
@@ -83,10 +76,12 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
     let code_at = d + descriptor.code_at();
     // The sizes the app's GIF decoder takes (the `gif` crate refuses others): a GIF the viewer can't show isn't
     // rewritten, and weezl's coders, which panic for a size above 12, are never given one.
-    ensure!((1..=11).contains(&min_code), "damaged GIF: an LZW minimum code size of {min_code}");
+    if !(1..=11).contains(&min_code) {
+        return Err(Error::invalid(format!("damaged GIF: an LZW minimum code size of {min_code}")));
+    }
 
     // The LZW stream, from its sub-blocks.
-    let (lzw, _) = gif_sub_block_data(bytes, code_at + 1).context("damaged GIF")?;
+    let (lzw, _) = gif_sub_block_data(bytes, code_at + 1).ok_or_else(damaged)?;
     let mut indices = decode_indices(&lzw, min_code, decoded_size("the GIF's image", &[w, h])?)?;
     // (An image no pixel wide has no rows to reorder.)
     if descriptor.interlaced() && w > 0 {
@@ -97,27 +92,28 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
         indices = rows.into_iter().flat_map(|(_, row)| row).copied().collect();
     }
     // The frame's place on the logical screen changes with it.
-    let ((nleft, ntop), kept, (nsw, nsh)) = op.frame([left, top, w, h], sw, sh).ok_or(NothingLeft)?;
+    let ((nleft, ntop), kept, (nsw, nsh)) = op.frame([left, top, w, h], sw, sh).ok_or(Error::NothingLeft)?;
     let (kept_pixels, kw, kh) = Op::Crop(kept).apply(&indices, w, h, 1)?;
     let (pixels, nw, nh) = match op {
         Op::Orient(_) => op.apply(&kept_pixels, kw, kh, 1)?,
         Op::Crop(_) => (kept_pixels, kw, kh),
     };
-    let data = weezl::encode::Encoder::new(weezl::BitOrder::Lsb, min_code).encode(&pixels)?;
+    let data = weezl::encode::Encoder::new(weezl::BitOrder::Lsb, min_code).encode(&pixels).map_err(Error::bare)?;
 
-    let mut out = bytes.get(..header).context("damaged GIF")?.to_vec();
-    let screen = out.first_chunk_mut::<10>().context("damaged GIF")?;
-    screen[6..8].copy_from_slice(&u16::try_from(nsw)?.to_le_bytes());
-    screen[8..10].copy_from_slice(&u16::try_from(nsh)?.to_le_bytes());
-    out.extend_from_slice(bytes.get(header..d).context("damaged GIF")?);
+    let mut out = bytes.get(..header).ok_or_else(damaged)?.to_vec();
+    let screen = out.first_chunk_mut::<10>().ok_or_else(damaged)?;
+    screen[6..8].copy_from_slice(&u16::try_from(nsw).map_err(Error::bare)?.to_le_bytes());
+    screen[8..10].copy_from_slice(&u16::try_from(nsh).map_err(Error::bare)?.to_le_bytes());
+    out.extend_from_slice(bytes.get(header..d).ok_or_else(damaged)?);
     out.push(0x2C);
     for v in [nleft, ntop, nw, nh] {
-        out.extend_from_slice(&u16::try_from(v)?.to_le_bytes());
+        out.extend_from_slice(&u16::try_from(v).map_err(Error::bare)?.to_le_bytes());
     }
     out.push(packed & !0x40); // written non-interlaced
-    out.extend_from_slice(bytes.get(d + 10..code_at + 1).context("damaged GIF")?); // local color table, LZW code size
+    // local color table, LZW code size
+    out.extend_from_slice(bytes.get(d + 10..code_at + 1).ok_or_else(damaged)?);
     out.extend(gif_sub_blocks(&data));
-    out.extend_from_slice(bytes.get(range.end..).context("damaged GIF")?);
+    out.extend_from_slice(bytes.get(range.end..).ok_or_else(damaged)?);
     Ok(Some(out))
 }
 
@@ -216,6 +212,6 @@ mod tests {
         // A frame wholly past the screen: nothing to turn, a `NothingLeft` error (not a wrapped placement).
         let (d, _) = descriptor(&file);
         file[d + 1..d + 3].copy_from_slice(&10u16.to_le_bytes());
-        assert!(rewrite(&file, six).unwrap_err().is::<NothingLeft>());
+        assert!(matches!(rewrite(&file, six), Err(Error::NothingLeft)));
     }
 }

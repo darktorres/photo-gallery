@@ -5,7 +5,6 @@
 //! caller's. Uses `types`, `ledger::failure`, `error`, the lease (`HeldLease`, the scan's hold), `current` (whether a file
 //! is current) and `lifecycle` (the held extensions); its SQL macros are from `sql`.
 
-use anyhow::anyhow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -851,7 +850,7 @@ pub(crate) fn pass_mark_is_ours(conn: &Connection, pass: FilePass) -> Result<boo
 fn written_by_its_pass(pass: FilePass) -> Result<()> {
     match pass {
         FilePass::Thumbs | FilePass::Borders => Ok(()),
-        FilePass::Import => Err(Error::Other(anyhow!("the import's failures are kept by its analyses, not written"))),
+        FilePass::Import => Err(Error::Invalid("the import's failures are kept by its analyses, not written".into())),
     }
 }
 
@@ -863,7 +862,7 @@ pub(crate) static LEDGER_FAULT: std::sync::atomic::AtomicBool = std::sync::atomi
 #[cfg(any(test, feature = "fixture"))]
 fn injected_ledger_fault() -> Result<()> {
     if LEDGER_FAULT.load(std::sync::atomic::Ordering::SeqCst) {
-        return Err(Error::Other(anyhow!("the test fixture fails the ledger's writes")));
+        return Err(Error::Invalid("the test fixture fails the ledger's writes".into()));
     }
     Ok(())
 }
@@ -890,7 +889,7 @@ pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[
             serde_json::json!([f.file_id.get(), f.mtime, f.size, f.turns.get(), tidy(&f.error), i64::from(f.retry)])
         })
         .collect();
-    let rows = serde_json::to_string(&rows).map_err(anyhow::Error::from)?;
+    let rows = serde_json::to_string(&rows).map_err(Error::bare)?;
     let changed = conn
         .prepare_cached(
             "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)
@@ -932,7 +931,7 @@ pub(crate) fn failures_held(conn: &Connection, pass: FilePass, files: &[FileId])
 
 /// The ids of `files`, as the JSON array the ledger's statements read with `json_each`.
 fn file_ids_json(files: &[FileId]) -> Result<String> {
-    Ok(serde_json::to_string(&files.iter().map(|f| f.get()).collect::<Vec<_>>()).map_err(anyhow::Error::from)?)
+    serde_json::to_string(&files.iter().map(|f| f.get()).collect::<Vec<_>>()).map_err(Error::bare)
 }
 
 #[cfg(test)]

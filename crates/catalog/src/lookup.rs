@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use anyhow::anyhow;
 use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params};
 
@@ -19,7 +18,7 @@ use pg_model::turns::Turns;
 
 use crate::core::Catalog;
 use crate::current::{CURRENT_BATCH, CURRENT_ROWS, IS_CURRENT, query_current};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::types::{CatalogCounts, CropSource, Listed, WriteTarget, under_params};
 
 impl Catalog {
@@ -100,7 +99,8 @@ impl Catalog {
 
     /// A file's path from its folder's stored bytes and its name's: the folder, the separator, the name.
     pub(crate) fn file_path_of(&self, folder: &[u8], name: &[u8]) -> Result<RulePath> {
-        let mut parts = self.rules.parse_bytes(folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+        let mut parts =
+            self.rules.parse_bytes(folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
         parts.parts.push(Name::from_raw(name));
         Ok(parts)
     }

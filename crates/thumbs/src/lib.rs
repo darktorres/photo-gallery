@@ -8,15 +8,13 @@ use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
 use pg_catalog::ledger::Failure as LedgerFailure;
 use pg_catalog::{Catalog, Listed};
 use pg_render::maker::{MakeError, Maker};
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
 use pg_jobs::control::Control;
-use pg_jobs::failure::{file_failure, keep_file_failure, stored_path};
-use pg_jobs::panics;
+use pg_jobs::failure::{Class, Failed as JobFailed, file_failure, keep_file_failure, stored_path};
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FileFailure;
@@ -27,6 +25,55 @@ use pg_model::size::ThumbHeight;
 #[cfg(any(test, feature = "fault"))]
 pub mod fault;
 pub mod placeholders;
+
+/// What a thumbnail or placeholder pass couldn't do: the catalog or the cache failed, a file couldn't be read (its
+/// read's error), a thumbnail couldn't be made (`render`), or the pass's own list didn't hold the item asked for.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The catalog failed (see `pg_catalog::Error`).
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The thumbnail cache failed (see `pg_thumbcache::Error`).
+    #[error(transparent)]
+    Cache(#[from] pg_thumbcache::Error),
+    /// The maker couldn't make a picture of a file (see `pg_render::MakeError`).
+    #[error(transparent)]
+    Make(#[from] MakeError),
+    /// The maker couldn't be started (see `pg_render::Error`).
+    #[error(transparent)]
+    Render(#[from] pg_render::Error),
+    /// A file couldn't be read: its words, and the I/O error under them.
+    #[error("{what}")]
+    Read {
+        what: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The pass's pipeline failed (see `pg_jobs::failure::Failed`).
+    #[error(transparent)]
+    Pass(#[from] JobFailed),
+    /// An item the pass's list doesn't hold.
+    #[error("{0}")]
+    Invalid(&'static str),
+}
+
+/// The result of a thumbnail or placeholder pass.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for JobFailed {
+    /// A file whose picture can't be read is retried by the next pass; one that doesn't decode (or the maker panicked on)
+    /// is recorded (`Class::Data`, and the panic's own class from the pipeline). Anything else is an ordinary failure.
+    fn from(error: Error) -> JobFailed {
+        match error {
+            Error::Pass(failed) => failed,
+            Error::Make(MakeError::Unreadable(_)) | Error::Read { .. } => JobFailed::new(Class::Read, error),
+            Error::Make(MakeError::Undecodable(_)) => JobFailed::new(Class::Data, error),
+            Error::Catalog(_) | Error::Cache(_) | Error::Render(_) | Error::Invalid(_) => {
+                JobFailed::new(Class::Other, error)
+            }
+        }
+    }
+}
 
 /// The files one batch of a pass takes: the thumbnail pass's and the placeholder pass's (`placeholders`).
 pub(crate) const BATCH: usize = 200;
@@ -81,9 +128,9 @@ impl LedgerOutcome {
     }
 
     /// A write or a clear failed with `error`: the first failure is kept.
-    fn failed(&mut self, error: &anyhow::Error) {
+    fn failed(&mut self, error: &(dyn std::error::Error + 'static)) {
         if !matches!(self, LedgerOutcome::Failed(_)) {
-            *self = LedgerOutcome::Failed(format!("{error:#}"));
+            *self = LedgerOutcome::Failed(pg_model::error::chain(error));
         }
     }
 }
@@ -106,16 +153,12 @@ enum Failed {
 impl Failed {
     /// By the error's type, never its text or its root cause: a truncated file's decode error has an I/O error at its
     /// root, and is no read failure.
-    fn of(e: &anyhow::Error) -> Failed {
-        if panics::is_panic(e) {
-            return Failed::Panicked;
-        }
-        match e.downcast_ref::<MakeError>() {
-            // A decode's failure is the file's, even with an I/O error under it (a truncated file), so it is checked
-            // before the read's.
-            Some(MakeError::Undecodable(_)) => Failed::Undecodable,
-            _ if pg_jobs::failure::is_io_read(e) => Failed::Unreadable,
-            _ => Failed::Other,
+    fn of(e: &JobFailed) -> Failed {
+        match e.class() {
+            Class::Panic => Failed::Panicked,
+            Class::Data => Failed::Undecodable,
+            Class::Read => Failed::Unreadable,
+            Class::Other => Failed::Other,
         }
     }
 
@@ -166,7 +209,7 @@ impl Unwritten {
                 for (_, seq) in &self.failures {
                     fold(first_failed, *seq);
                 }
-                ledger.failed(&e.into());
+                ledger.failed(&e);
             }
         }
         self.failures.clear();
@@ -240,7 +283,7 @@ pub fn run_while(
         cache.shrink()?;
         return Ok(stats);
     }
-    stats.cache_bytes = u64::try_from(cache.totals()?.0)?;
+    stats.cache_bytes = u64::try_from(cache.totals()?.0).map_err(|_| Error::Invalid("the cache's size is negative"))?;
     // To check each file against before its thumbnail is kept, and for the failure ledger.
     let setup = pg_perf::span("thumbs.setup");
     let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
@@ -267,7 +310,8 @@ pub fn run_while(
 
     // A batch of results, written by the writer's thread: the thumbnails made from the file as listed are kept, the
     // failures recorded; false once the cache is full.
-    let flush = |writing: &mut Writing, batch: &mut Vec<(usize, Result<Vec<u8>>)>| -> Result<bool> {
+    type Made = std::result::Result<Vec<u8>, JobFailed>;
+    let flush = |writing: &mut Writing, batch: &mut Vec<(usize, Made)>| -> Result<bool> {
         let Writing { catalog, thumbs, unwritten, first_failed, tried, stats } = writing;
         let rules = catalog.rules();
         // The made thumbnails' files are checked together, in one read per few hundred (`Catalog::currents`), in the
@@ -285,7 +329,7 @@ pub fn run_while(
         let mut current = catalog.currents(&checks)?.into_iter();
         for (i, result) in batch.drain(..) {
             *tried += 1;
-            let item = items.get(i).context("a thumbnail result for no work item")?;
+            let item = items.get(i).ok_or(Error::Invalid("a thumbnail result for no work item"))?;
             match result {
                 // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
                 // decides), nor being rewritten by the app (`Catalog::is_current`). Otherwise tried again by the next
@@ -346,7 +390,7 @@ pub fn run_while(
                             ctl.ledger_changed();
                         }
                     }
-                    Err(e) => stats.ledger.failed(&e.into()),
+                    Err(e) => stats.ledger.failed(&e),
                 }
             }
         } else if cache.suspended() {
@@ -371,9 +415,9 @@ pub fn run_while(
         },
         opts,
         ctl,
-        Maker::new,
+        || Maker::new().map_err(Error::Render),
         |maker, i, bytes| {
-            let item = items.get(i).context("a thumbnail to make for no work item")?;
+            let item = items.get(i).ok_or(Error::Invalid("a thumbnail to make for no work item"))?;
             #[cfg(test)]
             tests::fault(item.id);
             let mut out = spare.lock().unwrap_or_else(PoisonError::into_inner).pop().unwrap_or_default();
@@ -393,14 +437,14 @@ pub fn run_while(
                 Ok(()) => Ok(out),
                 Err(e) => {
                     spare.lock().unwrap_or_else(PoisonError::into_inner).push(out);
-                    Err(e.into())
+                    Err(Error::Make(e))
                 }
             }
         },
         // The failures go to the ledger at least every `LEDGER_EVERY`, so the inbox follows a long pass.
         Batch { size: BATCH, every: Some(LEDGER_EVERY) },
         writing,
-        flush,
+        |writing, batch| flush(writing, batch).map_err(JobFailed::from),
     );
     let Writing { catalog, mut unwritten, mut first_failed, tried, mut stats, .. } = writing;
     // The failures are written whatever ended the pass (an error, a stop, the cache full), before its checkpoint.
@@ -664,23 +708,27 @@ mod tests {
 
     // A failure's kind, by its error's type, never its text: what the ledger records, and with which retry.
     #[test]
-    fn a_failure_is_classified_by_its_type() {
+    fn a_failure_is_classified_by_its_class() {
         use std::io::{Error as IoError, ErrorKind};
 
-        let eof = || anyhow::Error::from(IoError::new(ErrorKind::UnexpectedEof, "cut short"));
-        // A truncated file: an I/O error at its root, under the decoder's context, is no read failure.
-        let truncated =
-            anyhow::Error::from(MakeError::Undecodable(eof().context("decoding the JPEG"))).context("a.jpg");
-        assert_eq!((Failed::of(&truncated), Failed::of(&truncated).recorded()), (Failed::Undecodable, Some(false)));
-        let unreadable =
-            anyhow::Error::from(MakeError::Unreadable(ReadFailed::from(IoError::new(ErrorKind::NotFound, "gone"))));
+        // A picture that doesn't decode is the file's: recorded, and not tried again until it changes.
+        let undecodable =
+            JobFailed::from(Error::Make(MakeError::Undecodable(pg_render::Error::Invalid("decoding the JPEG"))));
+        assert_eq!((Failed::of(&undecodable), Failed::of(&undecodable).recorded()), (Failed::Undecodable, Some(false)));
+        let unreadable = JobFailed::from(Error::Make(MakeError::Unreadable(ReadFailed::from(IoError::new(
+            ErrorKind::NotFound,
+            "gone",
+        )))));
         assert_eq!((Failed::of(&unreadable), Failed::of(&unreadable).recorded()), (Failed::Unreadable, None));
-        let panicked = anyhow::Error::new(panics::Panicked("boom".into()));
+        let panicked = JobFailed::panic("boom".into());
         assert_eq!((Failed::of(&panicked), Failed::of(&panicked).recorded()), (Failed::Panicked, Some(false)));
         // The pipeline's read of the file, before any decoder.
-        let read = eof().context("reading a.jpg");
+        let read = JobFailed::from(Error::Read {
+            what: "reading a.jpg".into(),
+            source: IoError::new(ErrorKind::UnexpectedEof, "cut short"),
+        });
         assert_eq!((Failed::of(&read), Failed::of(&read).recorded()), (Failed::Unreadable, None));
-        let other = anyhow::anyhow!("something else");
+        let other = JobFailed::other("something else".into());
         assert_eq!((Failed::of(&other), Failed::of(&other).recorded()), (Failed::Other, None));
     }
 
@@ -689,9 +737,9 @@ mod tests {
         let mut outcome = LedgerOutcome::Untouched;
         outcome.written();
         assert_eq!(outcome, LedgerOutcome::Written);
-        outcome.failed(&anyhow::anyhow!("busy"));
+        outcome.failed(&std::io::Error::other("busy"));
         outcome.written();
-        outcome.failed(&anyhow::anyhow!("later"));
+        outcome.failed(&std::io::Error::other("later"));
         assert_eq!(outcome, LedgerOutcome::Failed("busy".into()));
     }
 

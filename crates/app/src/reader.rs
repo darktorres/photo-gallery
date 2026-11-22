@@ -32,7 +32,7 @@ use pg_model::rules::{Merged, Path as RulePath};
 use pg_model::tree::FolderTree;
 
 use crate::catalogs::Catalogs;
-use crate::error::{Error, ReadError, Result, failed};
+use crate::error::{Error, ReadError, Result};
 
 /// The page cache of the reader's connection, in KiB: its reads touch most of the catalog, so it is the one connection
 /// with a large cache. The writers' and the thumbs' connections keep the catalog's small one (`Catalog::open`).
@@ -137,7 +137,7 @@ impl Reader {
         let thread = std::thread::Builder::new()
             .name("catalog reader".into())
             .spawn(move || worker.run())
-            .map_err(|e| failed(format!("can't start the catalog reader: {e}")))?;
+            .map_err(|e| Error::Failed(format!("can't start the catalog reader: {e}")))?;
         *reader.thread.lock().unwrap_or_else(PoisonError::into_inner) = Some(thread);
         Ok(reader)
     }

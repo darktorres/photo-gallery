@@ -3,11 +3,11 @@
 //! so its values are the import's own. The pairs they owe are the pairing pass's (`pairs_owed`, set by
 //! `AnalysisWriter::store_hashes`).
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, OwedHashes, WorkItem};
 use pg_jobs::control::Control;
-use pg_jobs::failure::Cause;
+use pg_jobs::failure::Failed;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::media::Kind;
 use pg_model::progress::Phase;
@@ -64,20 +64,22 @@ pub fn hash(
         },
         opts,
         ctl,
-        Analyzer::new,
+        || Analyzer::new().map_err(Error::Analysis),
         |analyzer, i, bytes| {
-            let item = items.get(i).context("no file to hash at this index")?;
+            let item = items.get(i).ok_or(Error::Invalid("no file to hash at this index"))?;
             if item.kind == Kind::Video {
                 // The hash opens the file by its disk path, as the import does.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                analyzer.video_file_hash(&disk).map(OwedHashes::Video)
+                analyzer.video_file_hash(&disk).map(OwedHashes::Video).map_err(Error::Analysis)
             } else {
-                analyzer.hash_image(bytes, item.turns).map_err(pg_jobs::failure::undecoded).map(OwedHashes::Image)
+                analyzer.hash_image(bytes, item.turns).map(OwedHashes::Image).map_err(Error::Analysis)
             }
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
-        |(catalog, stats), batch| flush(catalog, batch, items, stats, ctl).map(|()| still_wanted()),
+        |(catalog, stats), batch| {
+            flush(catalog, batch, items, stats, ctl).map(|()| still_wanted()).map_err(Failed::from)
+        },
     );
     result?;
     let (_, mut stats) = state;
@@ -92,7 +94,7 @@ pub fn hash(
 /// read stays owed; one that changed since it was listed is left as it is (the writer's guard).
 fn flush(
     catalog: &mut Catalog,
-    batch: &mut Vec<(usize, Result<OwedHashes>)>,
+    batch: &mut Vec<(usize, std::result::Result<OwedHashes, Failed>)>,
     items: &[WorkItem],
     stats: &mut Stats,
     ctl: &Control,
@@ -102,20 +104,20 @@ fn flush(
     let mut done = *stats;
     for (i, result) in batch.drain(..) {
         done.files += 1;
-        let item = items.get(i).context("a hash result for no file")?;
+        let item = items.get(i).ok_or(Error::Invalid("a hash result for no file"))?;
         match result {
             Ok(hashes) => {
                 if writer.store_hashes(item, &hashes)? {
                     done.stored += 1;
                 }
             }
-            Err(e) if pg_jobs::failure::is_io_read(&e) => {
+            Err(e) if e.is_read() => {
                 done.failed += 1;
                 done.unreadable += 1;
             }
             Err(e) => {
                 done.failed += 1;
-                writer.store_failure(item, &Cause::of(&e).to_string())?;
+                writer.store_failure(item, e.text())?;
             }
         }
     }

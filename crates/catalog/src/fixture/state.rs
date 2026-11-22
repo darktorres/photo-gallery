@@ -4,8 +4,8 @@
 //! fails with it.
 
 use crate::core::Catalog;
+use crate::error::{Error, Result};
 use crate::queue::MAX_ATTEMPTS;
-use anyhow::Result;
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;
 use rusqlite::{OptionalExtension, params};
@@ -84,7 +84,7 @@ pub fn file_id(c: &Catalog, name: &str) -> Result<FileId> {
 /// name, as the catalog's rules display it).
 pub fn file_and_path(c: &Catalog, name: &str) -> Result<(FileId, pg_model::rules::Path)> {
     let id: i64 = c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0))?;
-    let path = c.file_path(FileId::new(id))?.ok_or_else(|| anyhow::anyhow!("file {id} isn't in the catalog"))?;
+    let path = c.file_path(FileId::new(id))?.ok_or(Error::NotInCatalog { id })?;
     Ok((FileId::new(id), path))
 }
 
@@ -269,7 +269,7 @@ pub fn write_row(c: &Catalog, id: FileId) -> Result<WriteRow> {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })?;
     let temp = temp
-        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or_else(|| anyhow::anyhow!("a temp path that doesn't parse")))
+        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or(Error::Invalid("a temp path that doesn't parse".into())))
         .transpose()?;
     Ok(WriteRow { attempts, temp, error })
 }
@@ -283,7 +283,7 @@ pub fn write_row_of(c: &Catalog, id: FileId, kind: &str) -> Result<WriteRow> {
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
     let temp = temp
-        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or_else(|| anyhow::anyhow!("a temp path that doesn't parse")))
+        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or(Error::Invalid("a temp path that doesn't parse".into())))
         .transpose()?;
     Ok(WriteRow { attempts, temp, error })
 }

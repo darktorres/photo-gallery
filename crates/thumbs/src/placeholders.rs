@@ -7,10 +7,11 @@
 //! The pass is the Hashes pass's shape (`pg_import::hashes`): batches, one transaction per batch, the stop asked after each.
 //! It runs with or without the cache, and whatever the grid's height is: it does not depend on the grid.
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use pg_catalog::ledger::Failure as LedgerFailure;
 use pg_catalog::{Catalog, PlaceholderWork, WorkItem};
 use pg_jobs::control::Control;
+use pg_jobs::failure::Failed as JobFailed;
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::analysis::ThumbHash;
 use pg_model::media::Kind;
@@ -105,9 +106,9 @@ pub fn run_while(
         },
         opts,
         ctl,
-        || Ok(Worker { maker: Maker::new()?, jpeg: Vec::new() }),
-        |worker, i, bytes| {
-            let pw = items.get(i).context("a placeholder to make for no file")?;
+        || -> Result<Worker> { Ok(Worker { maker: Maker::new()?, jpeg: Vec::new() }) },
+        |worker, i, bytes| -> Result<(ThumbHash, bool)> {
+            let pw = items.get(i).ok_or(Error::Invalid("a placeholder to make for no file"))?;
             let item = &pw.item;
             if item.kind == Kind::Video {
                 // FFmpeg opens the file by its disk path, as the import does.
@@ -123,7 +124,8 @@ pub fn run_while(
             let read;
             let whole = if bytes.is_empty() {
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                read = std::fs::read(&disk).with_context(|| format!("can't read {}", disk.display()))?;
+                read = std::fs::read(&disk)
+                    .map_err(|source| Error::Read { what: format!("can't read {}", disk.display()), source })?;
                 read.as_slice()
             } else {
                 bytes
@@ -132,7 +134,9 @@ pub fn run_while(
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
-        |(catalog, stats), batch| flush(catalog, batch, items, stats, ctl).map(|()| still_wanted()),
+        |(catalog, stats), batch| {
+            flush(catalog, batch, items, stats, ctl).map(|()| still_wanted()).map_err(JobFailed::from)
+        },
     );
     result?;
     let (_, mut stats) = state;
@@ -156,21 +160,25 @@ fn cached(cache: &ThumbCache, item: &WorkItem, jpeg: &mut Vec<u8>) -> Result<boo
 
 /// Whether a failure is the file's read that failed (an offline drive, a file in use): tried again by the next pass, and
 /// not recorded.
-fn is_unreadable(e: &anyhow::Error) -> bool {
+fn is_unreadable(e: &JobFailed) -> bool {
     matches!(Failed::of(e), Failed::Unreadable)
 }
 
 /// Whether a failure is recorded in the Thumbs ledger: a file that doesn't decode, or panicked. Neither is tried again
 /// until it changes or the user retries it (`retry = false`), as the Thumbs pass records them.
-fn is_recorded(e: &anyhow::Error) -> bool {
+fn is_recorded(e: &JobFailed) -> bool {
     matches!(Failed::of(e), Failed::Panicked | Failed::Undecodable)
 }
+
+/// One file of a batch: its index in the pass's list, and what making its placeholder came to (the placeholder, and
+/// whether it was stored new).
+type Made = (usize, std::result::Result<(ThumbHash, bool), JobFailed>);
 
 /// Stores a batch: the placeholders made, and the failures recorded in the Thumbs ledger, in one transaction. A file that
 /// changed since it was listed, or is being written, is left as it is (`PlaceholderWriter::store`).
 fn flush(
     catalog: &mut Catalog,
-    batch: &mut Vec<(usize, Result<(ThumbHash, bool)>)>,
+    batch: &mut Vec<Made>,
     items: &[PlaceholderWork],
     stats: &mut PlaceholderStats,
     ctl: &Control,
@@ -181,7 +189,7 @@ fn flush(
     let mut failures = Vec::new();
     for (i, result) in batch.drain(..) {
         done.files += 1;
-        let pw = items.get(i).context("a placeholder result for no file")?;
+        let pw = items.get(i).ok_or(Error::Invalid("a placeholder result for no file"))?;
         let item = &pw.item;
         match result {
             Ok((hash, from_cache)) => {
@@ -202,7 +210,7 @@ fn flush(
                         mtime: item.mtime,
                         size: item.size,
                         turns: item.turns,
-                        error: pg_jobs::failure::Cause::of(&e).to_string(),
+                        error: e.text().to_string(),
                         retry: false,
                     });
                 }

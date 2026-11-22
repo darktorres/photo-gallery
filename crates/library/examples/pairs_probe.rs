@@ -22,7 +22,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+/// The probe's result: any error of the crates it uses.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 use pg_catalog::Catalog;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
@@ -35,7 +36,7 @@ fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
 }
 
 fn main() -> Result<()> {
-    let folder = PathBuf::from(std::env::args().nth(1).context("usage: pairs_probe <folder with catalog.sqlite>")?);
+    let folder = PathBuf::from(std::env::args().nth(1).ok_or("usage: pairs_probe <folder with catalog.sqlite>")?);
     let workers = env("PG_PROBE_WORKERS").unwrap_or(1);
     let keep = std::env::var_os("PG_PROBE_KEEP_OWED").is_some();
     let mut settings = pg_import::pairs::Settings::default();
@@ -48,9 +49,8 @@ fn main() -> Result<()> {
     settings.guard = std::env::var_os("PG_PROBE_GUARD").is_some();
     // Each stage's head words, as 16 comma-separated counts.
     if let Ok(list) = std::env::var("PG_PROBE_WIDTHS") {
-        let widths: Vec<usize> = list.split(',').map(|w| w.trim().parse()).collect::<Result<_, _>>()?;
-        let widths: [usize; 16] =
-            widths.try_into().map_err(|w: Vec<usize>| anyhow::anyhow!("16 widths, not {}", w.len()))?;
+        let widths: Vec<usize> = list.split(',').map(|w| w.trim().parse()).collect::<std::result::Result<_, _>>()?;
+        let widths: [usize; 16] = widths.try_into().map_err(|w: Vec<usize>| format!("16 widths, not {}", w.len()))?;
         settings.join.widths = Some(widths);
     }
     let path = folder.join("catalog.sqlite");

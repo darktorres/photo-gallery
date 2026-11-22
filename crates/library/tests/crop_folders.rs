@@ -5,13 +5,15 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::ids::FileId;
 use pg_platform::native::verbatim;
+
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// A letterboxed picture; `seed` changes its content, so that two files' bytes differ.
 fn jpeg(seed: u32) -> Result<Vec<u8>> {
@@ -23,7 +25,7 @@ fn jpeg(seed: u32) -> Result<Vec<u8>> {
             })
         })
         .collect();
-    pg_testkit::encode(320, 240, &rgb, pg_testkit::Encoding::Jpeg)
+    pg_testkit::encode(320, 240, &rgb, pg_testkit::Encoding::Jpeg).map_err(Into::into)
 }
 
 /// Every file under `dir`, recursively.
@@ -59,10 +61,12 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl)?;
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
     let files = state::present_files(&c)?;
-    anyhow::ensure!(files.len() == 2, "two files were expected: {files:?}");
+    if files.len() != 2 {
+        return Err(format!("two files were expected: {files:?}").into());
+    }
     let (mut dotted_id, mut sibling_id) = (None, None);
     for (id, _) in &files {
-        let path = c.file_path(*id)?.context("a file without a path")?;
+        let path = c.file_path(*id)?.ok_or("a file without a path")?;
         let in_dotted = path.parts.iter().rev().nth(1).is_some_and(|folder| folder.display().ends_with('.'));
         if in_dotted {
             dotted_id = Some(*id);
@@ -70,7 +74,7 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
             sibling_id = Some(*id);
         }
     }
-    Ok((c, dotted_id.context("the file in the dotted folder")?, sibling_id.context("the sibling's file")?))
+    Ok((c, dotted_id.ok_or("the file in the dotted folder")?, sibling_id.ok_or("the sibling's file")?))
 }
 
 /// The name of the folder `path` is in.
@@ -101,7 +105,7 @@ fn a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder() -> Result<(
     folders.sort();
     assert_eq!(folders, ["Acme Inc", "Acme Inc."], "each copy in its own folder: {copies:?}");
     // Each copy is of its own source: the two sources' pixels differ, so their copies do.
-    let [first, second] = copies.as_slice() else { anyhow::bail!("two copies: {copies:?}") };
+    let [first, second] = copies.as_slice() else { return Err(format!("two copies: {copies:?}").into()) };
     assert_ne!(std::fs::read(first)?, std::fs::read(second)?, "{copies:?}");
     drop(c);
     let _ = std::fs::remove_dir_all(verbatim(&dir));

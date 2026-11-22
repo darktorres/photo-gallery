@@ -5,20 +5,22 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use crate::error::{Error, Result};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::write::WriteKind;
 
 /// The size and mtime of the file at `path` (its disk path), with the file named in the error.
 pub(crate) fn stat(path: &Path) -> Result<(u64, i64)> {
-    pg_platform::file::stat(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))
+    pg_platform::file::stat(path).map_err(|e| Error::io(format!("reading {}", pg_platform::names::shown(path)), e))
 }
 
 /// The original, opened for the copy (`now`, its size and mtime), is as it was when it was read (`before`): another
 /// program's save in between fails the attempt, which counts, and the next one reads the file again.
 pub(crate) fn unchanged(shown: &str, before: (u64, i64), now: (u64, i64)) -> Result<()> {
     if before != now {
-        bail!("{shown} changed while its change was being prepared: it is read again at the next try");
+        return Err(Error::invalid(format!(
+            "{shown} changed while its change was being prepared: it is read again at the next try"
+        )));
     }
     Ok(())
 }
@@ -77,9 +79,10 @@ pub(crate) fn sync(path: &Path) -> std::io::Result<()> {
 /// Write `data` into the original, open for the copy, in place (same file, same NTFS identity), and flush it. The
 /// handle is closed on return, before anything stats the file.
 pub(crate) fn write_into(mut file: File, data: &[u8]) -> Result<()> {
-    file.write_all(data)?;
-    file.set_len(u64::try_from(data.len())?)?;
-    file.sync_all()?;
+    file.write_all(data).map_err(|e| Error::io("writing the copy", e))?;
+    let len = u64::try_from(data.len()).map_err(|_| Error::invalid("the copy is too large for a file"))?;
+    file.set_len(len).map_err(|e| Error::io("sizing the copy", e))?;
+    file.sync_all().map_err(|e| Error::io("flushing the copy", e))?;
     Ok(())
 }
 

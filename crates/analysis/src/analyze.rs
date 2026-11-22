@@ -2,7 +2,7 @@
 //! decoding. The pixel work (the duplicate hashes, the thumbnails, the placeholders, the borders) is a pass of its own
 //! after the import.
 
-use anyhow::{Context, Result};
+use crate::{Error, Result, side};
 use pg_model::turns::Turns;
 use std::fs::File;
 use std::io;
@@ -95,11 +95,11 @@ impl Analyzer {
 
     /// The file hash (tier 0a) of a video, streamed from `path`, for the Hashes pass.
     pub fn video_file_hash(&self, path: &Path) -> Result<FileHash> {
-        file_hash_of(path).with_context(|| format!("reading {}", path.display()))
+        file_hash_of(path).map_err(|source| Error::Read { path: path.to_path_buf(), source })
     }
 
     fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
-        let format = Format::sniff(bytes).context("unknown image format")?;
+        let format = Format::sniff(bytes).ok_or(Error::Invalid("unknown image format"))?;
         let meta = Meta::read(bytes, format, &mut self.meta);
         let dims = self.decoder.dimensions(bytes, format, meta.orientation, turns)?;
         Ok(Analysis {
@@ -115,7 +115,7 @@ impl Analyzer {
 
     /// Decodes an image for its duplicate hashes, at the hashing decode's size.
     fn hash_decoded(&mut self, bytes: &[u8], turns: Turns) -> Result<ImageHashes> {
-        let format = Format::sniff(bytes).context("unknown image format")?;
+        let format = Format::sniff(bytes).ok_or(Error::Invalid("unknown image format"))?;
         let meta = Meta::read(bytes, format, &mut self.meta);
         let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
         let (image, spare) = (&mut self.image, &mut self.spare);
@@ -132,7 +132,7 @@ impl Analyzer {
     }
 
     fn find_borders(&mut self, bytes: &[u8], turns: Turns) -> Result<FileBorders> {
-        let format = Format::sniff(bytes).context("unknown image format")?;
+        let format = Format::sniff(bytes).ok_or(Error::Invalid("unknown image format"))?;
         let meta = Meta::read(bytes, format, &mut self.meta);
         let info =
             self.decoder.decode_stored_into(bytes, format, meta.orientation, MinSize::Full, turns, &mut self.image)?;
@@ -189,8 +189,8 @@ fn image_hashes(
 /// tier 1 finds those at PDQ distance 0. An error for a side over `u32::MAX`, which the hash takes as 4 bytes.
 pub fn pixel_hash(img: &Rgb) -> Result<[u8; 16]> {
     let mut h = xxhash_rust::xxh3::Xxh3::new();
-    h.update(&u32::try_from(img.width).context("image width over u32")?.to_le_bytes());
-    h.update(&u32::try_from(img.height).context("image height over u32")?.to_le_bytes());
+    h.update(&side(img.width, "image width over u32")?.to_le_bytes());
+    h.update(&side(img.height, "image height over u32")?.to_le_bytes());
     h.update(&img.pixels);
     Ok(h.digest128().to_le_bytes())
 }

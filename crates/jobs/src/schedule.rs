@@ -2,7 +2,7 @@
 //! next round finds it (the passes take their work from the job's queue as they go), so the round itself keeps
 //! nothing.
 
-use anyhow::Result;
+use crate::failure::Failed;
 
 /// How a pass ended.
 #[derive(Debug, PartialEq, Eq)]
@@ -15,12 +15,12 @@ pub enum Step {
 
 /// One pass of a job, over the job's context `C`.
 pub trait Pass<C> {
-    fn run(&mut self, cx: &mut C) -> Result<Step>;
+    fn run(&mut self, cx: &mut C) -> Result<Step, Failed>;
 }
 
 /// Run the passes in the given order. A pass that is preempted ends the round at once, and so does a stop requested
 /// while a pass ran (`stopped`), so the passes after it don't start.
-pub fn round<C>(passes: &mut [&mut dyn Pass<C>], cx: &mut C, stopped: impl Fn(&C) -> bool) -> Result<Step> {
+pub fn round<C>(passes: &mut [&mut dyn Pass<C>], cx: &mut C, stopped: impl Fn(&C) -> bool) -> Result<Step, Failed> {
     for pass in passes.iter_mut() {
         if pass.run(cx)? == Step::Preempted || stopped(cx) {
             return Ok(Step::Preempted);
@@ -31,15 +31,13 @@ pub fn round<C>(passes: &mut [&mut dyn Pass<C>], cx: &mut C, stopped: impl Fn(&C
 
 #[cfg(test)]
 mod tests {
-    use anyhow::bail;
-
     use super::*;
 
     /// Records its name in the context, and answers with the step it is given.
     struct Named(&'static str, Step);
 
     impl Pass<Vec<&'static str>> for Named {
-        fn run(&mut self, cx: &mut Vec<&'static str>) -> Result<Step> {
+        fn run(&mut self, cx: &mut Vec<&'static str>) -> Result<Step, Failed> {
             cx.push(self.0);
             Ok(match self.1 {
                 Step::Done => Step::Done,
@@ -51,8 +49,8 @@ mod tests {
     struct Fails;
 
     impl Pass<Vec<&'static str>> for Fails {
-        fn run(&mut self, _: &mut Vec<&'static str>) -> Result<Step> {
-            bail!("no")
+        fn run(&mut self, _: &mut Vec<&'static str>) -> Result<Step, Failed> {
+            Err(Failed::other("no".to_string()))
         }
     }
 

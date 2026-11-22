@@ -9,7 +9,6 @@ use pg_model::ids::FileId;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail, ensure};
 use pg_catalog::{Catalog, CropSource};
 use pg_edit::crop::{self, crop};
 use pg_model::path::{PathArena, PathRef};
@@ -17,7 +16,7 @@ use pg_model::rules::Path as RulePath;
 
 use pg_exiftool::{ExifTool, Program};
 use pg_jobs::control::Control;
-use pg_jobs::failure::{FAILURES_KEPT, file_failure, stored_path};
+use pg_jobs::failure::{Class, FAILURES_KEPT, Failed, file_failure, stored_path};
 use pg_jobs::pipeline::{self, Options, Read};
 use pg_model::notice::FileFailure;
 use pg_model::progress::Phase;
@@ -26,6 +25,55 @@ use pg_platform::names::disk_path_of;
 use pg_platform::names::{set_path, shown};
 use pg_platform::native::NativePath;
 use pg_writeback::{ReplaceError, replace};
+
+/// What a crop couldn't do: a step of the crop that failed (`Io`), a value it can't use (`Invalid`), the catalog, the
+/// edit, ExifTool or the write-back, or the pass's own pipeline failure (`Pass`).
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The catalog failed (see `pg_catalog::Error`).
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The edit couldn't cut the file (see `pg_edit::Error`).
+    #[error("{0}")]
+    Edit(#[from] pg_edit::Error),
+    /// ExifTool failed (see `pg_exiftool::Error`).
+    #[error("{0}")]
+    Exiftool(#[from] pg_exiftool::Error),
+    /// The write-back failed (see `pg_writeback::Error`).
+    #[error("{0}")]
+    Writeback(#[from] pg_writeback::Error),
+    /// A file-system step failed: its words, and the I/O error under them.
+    #[error("{what}")]
+    Io {
+        what: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A file or a value the pass can't use, with the words that say why.
+    #[error("{0}")]
+    Invalid(String),
+    /// The pass's pipeline failed (see `pg_jobs::failure::Failed`).
+    #[error(transparent)]
+    Pass(#[from] Failed),
+}
+
+/// The crop's result.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for Failed {
+    /// A file that couldn't be cropped is an ordinary failure, stored as a failed file of the pass.
+    fn from(error: Error) -> Failed {
+        match error {
+            Error::Pass(failed) => failed,
+            other => Failed::new(Class::Other, other),
+        }
+    }
+}
+
+/// A step of the crop that failed on `source`, with the words of the step.
+fn io(what: impl Into<String>, source: std::io::Error) -> Error {
+    Error::Io { what: what.into(), source }
+}
 
 pub struct Stats {
     pub saved: usize,
@@ -67,7 +115,8 @@ pub fn save_with(
     // The folder is chosen by the user. It is taken as the disk spells it, not as text: a lossy text form would write
     // the copies into a different folder from the one named.
     // The copies' folder may not exist yet: its real part is resolved, and the rest is taken as typed (names::real_path_lenient).
-    let folder = pg_platform::names::real_path_lenient(folder).context("the folder for the copies isn't a path")?;
+    let folder = pg_platform::names::real_path_lenient(folder)
+        .map_err(|e| Error::Invalid(format!("the folder for the copies isn't a path: {e}")))?;
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
     let mut stats = Stats { saved: 0, skipped: 0, failed: 0, failures: Vec::new(), remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
@@ -77,7 +126,9 @@ pub fn save_with(
             stats.skipped += 1;
             continue;
         };
-        let path = rules.parse_bytes(paths.get(source.path)).context("a stored path doesn't parse")?;
+        let path = rules
+            .parse_bytes(paths.get(source.path))
+            .ok_or_else(|| Error::Invalid("a stored path doesn't parse".into()))?;
         // The deepest library folder holding it (library folders don't nest; a removed one can be inside another).
         let Some(root) = roots.iter().filter(|r| rules.is_under(&path, r)).max_by_key(|r| r.parts.len()) else {
             stats.skipped += 1;
@@ -90,15 +141,18 @@ pub fn save_with(
             parts: folder.parts.iter().cloned().chain(root.drive_letter()).chain(root.parts.iter().cloned()).collect(),
         };
         if let Some(r) = roots.iter().find(|r| rules.is_under(&tree, r) || rules.is_under(r, &tree)) {
-            bail!(
+            return Err(Error::Invalid(format!(
                 "The copies of {} would go into {}, in the library folder {}: choose a folder outside it",
                 rules.display(root),
                 rules.display(&tree),
                 rules.display(r)
-            );
+            )));
         }
         let mut parts = tree.parts.clone();
-        let inside = path.parts.get(root.parts.len()..).context("a file isn't inside its library folder")?;
+        let inside = path
+            .parts
+            .get(root.parts.len()..)
+            .ok_or_else(|| Error::Invalid("a file isn't inside its library folder".into()))?;
         parts.extend(inside.iter().cloned());
         let out = rules.join(&RulePath { anchor: tree.anchor.clone(), parts });
         let out = paths.push(&out);
@@ -120,15 +174,18 @@ pub fn save_with(
         },
         opts,
         ctl,
-        || Ok(()),
-        |_, i, bytes| write_copy(jobs.get(i).context("an item outside the pass")?, &paths, bytes),
+        || Ok::<(), Error>(()),
+        |_, i, bytes| {
+            let job = jobs.get(i).ok_or_else(|| Error::Invalid("an item outside the pass".into()))?;
+            write_copy(job, &paths, bytes)
+        },
         |i, result, len| {
             let (Some(job), Some(job_done)) = (jobs.get(i), done.get_mut(i)) else {
-                bail!("an item outside the pass");
+                return Err(Failed::from(Error::Invalid("an item outside the pass".into())));
             };
             *job_done = true;
             // TIFF and compressed BMP come out without their metadata.
-            let result = result.and_then(|written| match written {
+            let result = result.map_err(Error::Pass).and_then(|written| match written {
                 Written::Skipped => Ok(false),
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
@@ -151,7 +208,8 @@ pub fn save_with(
                 Err(e) => {
                     stats.failed += 1;
                     if stats.failures.len() < FAILURES_KEPT {
-                        stats.failures.push(file_failure(stored_path(rules, paths.get(job.source.path)), &e));
+                        let failed = Failed::from(e);
+                        stats.failures.push(file_failure(stored_path(rules, paths.get(job.source.path)), &failed));
                     }
                 }
             }
@@ -242,7 +300,9 @@ pub fn cut_with(
 ) -> Result<CutStats> {
     // The pass's span in the perf log: its phase is its child, and the phase records what it did.
     let _pass = pg_perf::span("pass.cut");
-    ensure!(confirmed, "the originals are changed only once the user has confirmed it");
+    if !confirmed {
+        return Err(Error::Invalid("the originals are changed only once the user has confirmed it".into()));
+    }
     let rules = catalog.rules();
     let mut stats = CutStats::default();
     let mut jobs = Vec::with_capacity(ids.len());
@@ -268,22 +328,26 @@ pub fn cut_with(
         },
         opts,
         ctl,
-        || Ok(CutWorker { exiftool: None, program: program.to_os_string() }),
+        || Ok::<CutWorker, Error>(CutWorker { exiftool: None, program: program.to_os_string() }),
         |worker: &mut CutWorker, i, bytes| {
-            cut_original(jobs.get(i).context("an item outside the pass")?, &paths, bytes, worker, present)
+            let job = jobs.get(i).ok_or_else(|| Error::Invalid("an item outside the pass".into()))?;
+            cut_original(job, &paths, bytes, worker, present)
         },
         |i, result, len| {
             let (Some(job), Some(job_done)) = (jobs.get(i), done.get_mut(i)) else {
-                bail!("an item outside the pass");
+                return Err(Failed::from(Error::Invalid("an item outside the pass".into())));
             };
             *job_done = true;
-            let result = result.and_then(|written| match written {
+            let result = result.map_err(Error::Pass).and_then(|written| match written {
                 CutWritten::Saved { after } => {
                     // The original is cut whatever the catalog says after this, so its thumbnails are forgotten either way.
                     stats.cut.push(job.id);
-                    catalog
-                        .borders_cut(job.id, after)
-                        .context("the borders are cut, but the catalog wasn't updated")?;
+                    catalog.borders_cut(job.id, after).map_err(|e| {
+                        Error::Invalid(format!(
+                            "the borders are cut, but the catalog wasn't updated: {}",
+                            pg_model::error::chain(&e)
+                        ))
+                    })?;
                     Ok(CutWritten::Saved { after })
                 }
                 other => Ok(other),
@@ -295,7 +359,8 @@ pub fn cut_with(
                 Err(e) => {
                     stats.failed += 1;
                     if stats.failures.len() < FAILURES_KEPT {
-                        stats.failures.push(file_failure(stored_path(rules, paths.get(job.source.path)), &e));
+                        let failed = Failed::from(e);
+                        stats.failures.push(file_failure(stored_path(rules, paths.get(job.source.path)), &failed));
                     }
                 }
             }
@@ -334,17 +399,18 @@ fn cut_original(
     };
     let mut native = NativePath::default();
     set_path(&mut native, paths.get(s.path));
-    let temp = temp_beside(&path, ".cut.pg-write").context("a file without a name")?;
+    let temp = temp_beside(&path, ".cut.pg-write").ok_or_else(|| Error::Invalid("a file without a name".into()))?;
     match replace(&path, &native, &temp, &new, (s.size, s.mtime)) {
         Ok(after) => Ok(CutWritten::Saved { after }),
         // Nothing was copied into it: the original is as it was.
-        Err(ReplaceError::Untouched(e)) => Err(e),
+        Err(ReplaceError::Untouched(e)) => Err(Error::Writeback(e)),
         // Part-written: the whole new content is in the temp, which the message names.
-        Err(ReplaceError::Incomplete { temp, error }) => bail!(
-            "{} may be incomplete: copying its cut into it failed ({error:#}); the whole new content is in {}",
+        Err(ReplaceError::Incomplete { temp, error }) => Err(Error::Invalid(format!(
+            "{} may be incomplete: copying its cut into it failed ({}); the whole new content is in {}",
             shown(&path),
+            pg_model::error::chain(&error),
             shown(&temp)
-        ),
+        ))),
     }
 }
 
@@ -362,11 +428,11 @@ fn temp_beside(path: &Path, suffix: &str) -> Option<PathBuf> {
 /// ExifTool. They are written to a temporary beside the original, tagged there, and read back; the temporary is removed
 /// on every path. Nothing of the original is written.
 fn with_tags(original: &Path, bytes: &[u8], exiftool: &mut Option<ExifTool>, program: &OsStr) -> Result<Vec<u8>> {
-    let temp = tags_temp_beside(original).context("a file without a name")?;
+    let temp = tags_temp_beside(original).ok_or_else(|| Error::Invalid("a file without a name".into()))?;
     let guard = TempFile::new(&temp);
-    std::fs::write(&temp, bytes).with_context(|| format!("writing {}", shown(&temp)))?;
+    std::fs::write(&temp, bytes).map_err(|e| io(format!("writing {}", shown(&temp)), e))?;
     ExifTool::running(exiftool, program)?.copy_tags(original, &temp)?;
-    let tagged = std::fs::read(&temp).with_context(|| format!("reading {}", shown(&temp)))?;
+    let tagged = std::fs::read(&temp).map_err(|e| io(format!("reading {}", shown(&temp)), e))?;
     drop(guard);
     Ok(tagged)
 }
@@ -388,7 +454,8 @@ fn tags_temp_beside(path: &Path) -> Option<PathBuf> {
 /// Whether the file at `path` is still the source the pass listed: its size and mtime are the listed ones, and the bytes
 /// read are that size. A file changed since it was listed is left as it is.
 fn still_listed(path: &Path, source: &CropSource, read_len: usize) -> Result<bool> {
-    let now = pg_platform::file::stat(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))?;
+    let now =
+        pg_platform::file::stat(path).map_err(|e| io(format!("reading {}", pg_platform::names::shown(path)), e))?;
     Ok(now == (source.size, source.mtime) && usize::try_from(source.size).ok() == Some(read_len))
 }
 
@@ -403,10 +470,10 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8]) -> Result<Written> {
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
     if let Some(dir) = out_path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", shown(dir)))?;
+        std::fs::create_dir_all(dir).map_err(|e| io(format!("creating {}", shown(dir)), e))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
-    let temp_path = temp_beside(&out_path, ".pg-crop").context("a file without a name")?;
+    let temp_path = temp_beside(&out_path, ".pg-crop").ok_or_else(|| Error::Invalid("a file without a name".into()))?;
     publish(&temp_path, &out_path, &cropped.bytes, &source_path)?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
@@ -424,17 +491,23 @@ fn tag_copy(exiftool: &mut Option<ExifTool>, program: &OsStr, source: &Path, out
 fn publish(temp: &Path, out: &Path, bytes: &[u8], source: &Path) -> Result<()> {
     // Each is a disk path, reached exactly; the messages name them as the user does.
     let guard = TempFile::new(temp);
-    std::fs::write(temp, bytes).with_context(|| format!("writing {}", shown(out)))?;
+    std::fs::write(temp, bytes).map_err(|e| io(format!("writing {}", shown(out)), e))?;
     keep_time(source, temp)?;
-    std::fs::rename(temp, out).with_context(|| format!("writing {}", shown(out)))?;
+    std::fs::rename(temp, out).map_err(|e| io(format!("writing {}", shown(out)), e))?;
     guard.persist();
     Ok(())
 }
 
 /// Give the copy at `copy` the original's modification time (both disk paths).
 fn keep_time(original: &Path, copy: &Path) -> Result<()> {
-    let modified = std::fs::metadata(original)?.modified()?;
-    std::fs::File::options().write(true).open(copy)?.set_modified(modified)?;
+    let modified = std::fs::metadata(original)
+        .and_then(|meta| meta.modified())
+        .map_err(|e| io(format!("reading {}", shown(original)), e))?;
+    std::fs::File::options()
+        .write(true)
+        .open(copy)
+        .and_then(|file| file.set_modified(modified))
+        .map_err(|e| io(format!("writing {}", shown(copy)), e))?;
     Ok(())
 }
 

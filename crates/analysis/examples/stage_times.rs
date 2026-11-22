@@ -2,7 +2,6 @@
 
 #![expect(clippy::print_stdout, reason = "an example prints its timings")]
 
-use anyhow::Context as _;
 use pg_model::turns::Turns;
 use std::time::{Duration, Instant};
 
@@ -14,10 +13,10 @@ use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let n: usize = args.get(2).map_or(Ok(300), |s| s.parse())?;
-    let mut files: Vec<_> = std::fs::read_dir(args.get(1).context("usage: stage_times <folder> [n]")?)?
+    let mut files: Vec<_> = std::fs::read_dir(args.get(1).ok_or("usage: stage_times <folder> [n]")?)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.is_file())
@@ -37,7 +36,7 @@ fn main() -> anyhow::Result<()> {
         let s = Instant::now();
         let _ = pg_model::analysis::FileHash::of(b);
         t[0] += s.elapsed();
-        let format = Format::sniff(b).context("a file is not an image")?;
+        let format = Format::sniff(b).ok_or("a file is not an image")?;
         let s = Instant::now();
         let meta = Meta::read(b, format, &mut meta_scratch);
         t[1] += s.elapsed();

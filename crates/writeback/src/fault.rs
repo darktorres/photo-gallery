@@ -65,7 +65,7 @@ pub(crate) fn before_record(
     fired: &AtomicBool,
     job: &pg_catalog::queue::Job,
     catalog_path: &Path,
-) -> anyhow::Result<()> {
+) -> crate::error::Result<()> {
     if let Some(Fault::ForgetBeforeRecord(forgotten)) = fault
         && forgotten == job.file_id
         && !fired.swap(true, Ordering::SeqCst)

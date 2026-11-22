@@ -244,12 +244,11 @@ impl Images {
                 // A video: its poster frame.
                 self.makers.with_maker(|m| {
                     let height = pg_model::num::index(height.get());
-                    Ok(m.load_frame(&path, at, current.turns, height).and_then(|()| m.encode_frame(height)))
+                    m.load_frame(&path, at, current.turns, height).and_then(|()| m.encode_frame(height))
                 })?
             } else {
                 // Read and made on one maker: its buffer holds this file's bytes until the thumbnail is made.
-                self.makers
-                    .with_maker(|m| Ok(m.make_of_file(&path, pg_model::num::index(height.get()), current.turns)))?
+                self.makers.with_maker(|m| m.make_of_file(&path, pg_model::num::index(height.get()), current.turns))?
             };
             Ok(match made {
                 Ok(made) => Found::Made(made),
@@ -295,7 +294,9 @@ impl Images {
 
     /// A thumbnail (a JPEG) turned by `turns` quarter turns clockwise, for a turn not yet written into the file.
     pub fn turn_jpeg(&self, jpeg: &[u8], turns: Turns) -> Result<Rgba> {
-        self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.rgba(View::Full, m.resizer()))
+        self.makers
+            .with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.rgba(View::Full, m.resizer()))?
+            .map_err(failed)
     }
 
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now. A file with none yet (the
@@ -326,7 +327,7 @@ impl Images {
             last.truncate(DECODES_KEPT);
         }
         // The decode stays shared (`last_decodes`); what is shown is made from it, on a worker's resizer.
-        self.makers.with_maker(|m| img.rgba(view, m.resizer()))
+        self.makers.with_maker(|m| img.rgba(view, m.resizer()))?.map_err(failed)
     }
 
     /// Decode what `view` needs (`display::min_size`), turned as the catalog says, reusing a decode of the file in that
@@ -356,8 +357,7 @@ impl Images {
             // made here: `with_maker` would make any error its closure returns an `Error::Failed`. A maker that can't
             // be made is still that.
             let path = path_of(&src.path);
-            let decoded =
-                self.makers.with_maker(|m| Ok(m.decode_of_file(&path, view, rotation).map_err(made_error)))??;
+            let decoded = self.makers.with_maker(|m| m.decode_of_file(&path, view, rotation).map_err(made_error))??;
             Arc::new(decoded)
         };
         let whole = matches!(view, View::Full | View::Region(..));

@@ -12,7 +12,6 @@ workspace = true
 # decode a view asks for, the fit, a video's poster, the ThumbHash placeholder). The codec decodes and encodes and the
 # metadata reads the orientation; this crate passes it between them.
 [dependencies]
-anyhow.workspace = true
 pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }

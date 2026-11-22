@@ -13,14 +13,15 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+/// The probe's result: any error of the crates it uses.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 use pg_catalog::Catalog;
 use pg_jobs::control::Control;
 use pg_library::folders::add_folder;
 use pg_platform::native::PATH_RULES;
 
 fn main() -> Result<()> {
-    let folder = PathBuf::from(std::env::args_os().nth(1).context("usage: scan_probe <library folder>")?);
+    let folder = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: scan_probe <library folder>")?);
     let again = std::env::var_os("PG_PROBE_AGAIN").is_some();
     let dir = pg_testkit::run_folder("scratch_library", "scan-probe")?;
     run(&folder, &dir.join("catalog.sqlite"), again)
@@ -37,9 +38,11 @@ fn run(folder: &Path, catalog_path: &Path, again: bool) -> Result<()> {
         if let Some(command) = std::env::var_os("PG_PROBE_BETWEEN") {
             let command = command.to_string_lossy().into_owned();
             let mut parts = command.split_whitespace();
-            let program = parts.next().context("PG_PROBE_BETWEEN is empty")?;
+            let program = parts.next().ok_or("PG_PROBE_BETWEEN is empty")?;
             let status = std::process::Command::new(program).args(parts).status()?;
-            anyhow::ensure!(status.success(), "PG_PROBE_BETWEEN failed: {status}");
+            if !status.success() {
+                return Err(format!("PG_PROBE_BETWEEN failed: {status}").into());
+            }
         }
     }
     let start = Instant::now();

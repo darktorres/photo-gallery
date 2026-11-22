@@ -11,18 +11,52 @@
 pub mod hashes;
 pub mod pairs;
 
-use anyhow::{Context, Result};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, WorkItem};
 use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
 
 use pg_jobs::control::Control;
-use pg_jobs::failure::Cause;
+use pg_jobs::failure::{Class, Failed};
 use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::progress::Phase;
 
 const BATCH: usize = pg_catalog::WRITE_BATCH;
+
+/// What the import couldn't do: the analysis of a file failed, the catalog failed, the pipeline failed, or the pass's own
+/// list didn't hold the item it was asked for.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The analysis of a file failed (see `pg_analysis::Error`): the file doesn't decode, or no analysis takes it.
+    #[error(transparent)]
+    Analysis(#[from] pg_analysis::Error),
+    /// The catalog failed (see `pg_catalog::Error`).
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The pass's pipeline failed (see `pg_jobs::failure::Failed`).
+    #[error(transparent)]
+    Pass(#[from] Failed),
+    /// The duplicate join was given more pictures than it takes (see `pg_dedup::TooManyPictures`).
+    #[error(transparent)]
+    Dedup(#[from] pg_dedup::join::TooManyPictures),
+    /// An item the pass's list doesn't hold.
+    #[error("{0}")]
+    Invalid(&'static str),
+}
+
+/// The result of an import pass.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for Failed {
+    /// A file whose analysis refuses it is a data failure, stored as failed; anything else of the pass is ordinary.
+    fn from(error: Error) -> Failed {
+        match error {
+            Error::Pass(failed) => failed,
+            Error::Analysis(_) => Failed::new(Class::Data, error),
+            Error::Catalog(_) | Error::Dedup(_) | Error::Invalid(_) => Failed::new(Class::Other, error),
+        }
+    }
+}
 
 /// The admission a JPEG takes before it is read: its header's first block (`pg_container::jpeg_import_bytes` reads 16 KiB,
 /// then on to the header's end; the median header of a wallpaper set is under 1 KiB, the 99th percentile under 100). A
@@ -113,21 +147,23 @@ pub fn import_while(
         },
         opts,
         ctl,
-        Analyzer::new,
+        || Analyzer::new().map_err(Error::Analysis),
         |analyzer, i, bytes| {
-            let item = items.get(i).context("no file to import at this index")?;
+            let item = items.get(i).ok_or(Error::Invalid("no file to import at this index"))?;
             if item.kind == Kind::Video {
                 // FFmpeg opens the file by its disk path: the plain one would lose a trailing dot or space in a folder's
                 // name, and open a sibling's file.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                analyzer.video(&disk, item.turns)
+                analyzer.video(&disk, item.turns).map_err(Error::Analysis)
             } else {
-                analyzer.analyze(bytes, item.turns)
+                analyzer.analyze(bytes, item.turns).map_err(Error::Analysis)
             }
         },
         Batch { size: BATCH, every: None },
         (catalog, Counts::default()),
-        |(catalog, counts), batch| store(catalog, counts, items, batch, ctl).map(|()| still_wanted()),
+        |(catalog, counts), batch| {
+            store(catalog, counts, items, batch, ctl).map(|()| still_wanted()).map_err(Failed::from)
+        },
     );
     result?;
     let (_, counts) = state;
@@ -160,7 +196,7 @@ fn store(
     catalog: &mut Catalog,
     counts: &mut Counts,
     items: &[WorkItem],
-    batch: &mut Vec<(usize, Result<Analysis>)>,
+    batch: &mut Vec<(usize, std::result::Result<Analysis, Failed>)>,
     ctl: &Control,
 ) -> Result<()> {
     let mut store = STORE.timer();
@@ -168,7 +204,7 @@ fn store(
     let tx = catalog.tx()?;
     let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
     for (i, result) in batch.drain(..) {
-        let item = items.get(i).context("an import result for no file")?;
+        let item = items.get(i).ok_or(Error::Invalid("an import result for no file"))?;
         match result {
             Ok(a) => {
                 if !writer.store_analysis(item, &a)? {
@@ -177,7 +213,7 @@ fn store(
                 }
             }
             Err(e) => {
-                if !writer.store_failure(item, &Cause::of(&e).to_string())? {
+                if !writer.store_failure(item, e.text())? {
                     counts.changed += 1;
                     continue;
                 }

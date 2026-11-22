@@ -4,11 +4,11 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail};
 use pg_dbfile::{Damage, Expected, Schema};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use crate::config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
+use crate::error::{Error, Result};
 use crate::maintenance::{Drift, heal_if_due};
 use pg_model::notice::StartOverReason;
 
@@ -128,8 +128,8 @@ fn damage(e: &rusqlite::Error) -> Option<Why> {
 }
 
 /// [`damage`] for the first SQLite error in `e`'s chain.
-fn damage_in(e: &anyhow::Error) -> Option<Why> {
-    Damage::in_chain(e.as_ref()).map(why_damaged)
+fn damage_in(e: &Error) -> Option<Why> {
+    Damage::in_chain(e).map(why_damaged)
 }
 
 /// The cache's layout as the expectation makes it: the catalog's id is not part of the schema (only the keys of its
@@ -281,8 +281,8 @@ pub(crate) fn open_writer(
     thumbs_version: i64,
 ) -> Result<Writing> {
     let _lock = pg_dbfile::Lock::take(path)
-        .with_context(|| format!("{}: its lock file", path.display()))?
-        .ok_or_else(|| anyhow!("{}: another process is changing it", path.display()))?;
+        .map_err(|e| Error::step(format!("{}: its lock file", path.display()), e))?
+        .ok_or_else(|| Error::invalid(format!("{}: another process is changing it", path.display())))?;
     let why = match open_once(path, catalog_id, cap_bytes, thumbs_version)? {
         Attempt::Opened(writing) => return Ok(writing),
         Attempt::Damaged(why) => why,
@@ -294,9 +294,11 @@ pub(crate) fn open_writer(
             writing.started_over = Some((Why { reason: why.reason, detail }, kept));
             Ok(writing)
         }
-        Attempt::Damaged(again) => {
-            bail!("{}: {}, even when made anew, so the cache can't be opened", path.display(), again.detail)
-        }
+        Attempt::Damaged(again) => Err(Error::invalid(format!(
+            "{}: {}, even when made anew, so the cache can't be opened",
+            path.display(),
+            again.detail
+        ))),
     }
 }
 
@@ -309,20 +311,27 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_versi
         Found::New => (false, None, None),
         Found::Stale { why, cap } => (false, Some(why), cap),
         Found::Damaged { why } => return Ok(Attempt::Damaged(why)),
-        Found::Foreign { why } => bail!("{}: {why}, so it is left alone", path.display()),
-        Found::Newer { why } => bail!("{}: {why}, made by a later build, so it is left alone", path.display()),
+        Found::Foreign { why } => {
+            return Err(Error::invalid(format!("{}: {why}, so it is left alone", path.display())));
+        }
+        Found::Newer { why } => {
+            return Err(Error::invalid(format!(
+                "{}: {why}, made by a later build, so it is left alone",
+                path.display()
+            )));
+        }
     };
     // Taken before anything is removed, and kept until the new file is made: the exclusive hold says nothing else has
     // the file open. Without it, the file is not touched.
     let exclusive = if why.is_some() {
         let held = pg_dbfile::Live::exclusive(path)
-            .with_context(|| format!("{}: its open marker", path.display()))?
+            .map_err(|e| Error::step(format!("{}: its open marker", path.display()), e))?
             .ok_or_else(|| {
-                anyhow!(
+                Error::invalid(format!(
                     "{}: made for another catalog or layout, and can't be started over while another program has it \
                      open",
                     path.display()
-                )
+                ))
             })?;
         Some(held)
     } else {
@@ -331,11 +340,11 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_versi
     if why.is_some() {
         // With its sidecars, the sidecars first: a `-wal` left beside a new file would be replayed into it.
         pg_dbfile::remove_database(path).map_err(|e| {
-            anyhow!(
+            Error::invalid(format!(
                 "{}: made for another catalog or layout, and can't be started over while another program has it open: \
                  {e}",
                 path.display()
-            )
+            ))
         })?;
     }
     let (conn, drift) = match ready(path, catalog_id, cap_bytes.or(cap), thumbs_version, !usable) {
@@ -362,7 +371,7 @@ fn ready(
 ) -> Result<(Connection, Option<Drift>)> {
     let mut conn = open_file(path, catalog_id, cap_bytes)?;
     if made && !matches!(judge(path, catalog_id)?, Found::Usable) {
-        bail!("{}: not usable even when made anew", path.display());
+        return Err(Error::invalid(format!("{}: not usable even when made anew", path.display())));
     }
     let drift = heal_if_due(&mut conn)?;
     // After the day's check, not in `open_file`: a write before it would commit to a damaged file, which would then be
@@ -401,18 +410,23 @@ fn set_thumbs_version(conn: &mut Connection, current: i64) -> Result<()> {
 /// Move the damaged cache at `path` aside, with its sidecars, to `<name>.bad` (or `.bad.1`, and so on): its new path.
 /// Only with the exclusive hold, so no other program or connection has it open; refused otherwise, with nothing moved.
 fn move_damaged(path: &Path, why: &str) -> Result<PathBuf> {
-    let _exclusive =
-        pg_dbfile::Live::exclusive(path).with_context(|| format!("{}: its open marker", path.display()))?.ok_or_else(
-            || anyhow!("{}: {why}, and can't be moved aside while another program has it open", path.display()),
-        )?;
-    pg_dbfile::move_aside(path, ".bad").with_context(|| format!("{}: {why}, and can't be moved aside", path.display()))
+    let _exclusive = pg_dbfile::Live::exclusive(path)
+        .map_err(|e| Error::step(format!("{}: its open marker", path.display()), e))?
+        .ok_or_else(|| {
+            Error::invalid(format!(
+                "{}: {why}, and can't be moved aside while another program has it open",
+                path.display()
+            ))
+        })?;
+    pg_dbfile::move_aside(path, ".bad")
+        .map_err(|e| Error::step(format!("{}: {why}, and can't be moved aside", path.display()), e))
 }
 
 /// The shared hold a cache keeps while it is open (`pg_dbfile::Live`): it waits for a start over in progress to finish.
 pub(crate) fn hold_shared(path: &Path) -> Result<pg_dbfile::Live> {
     pg_dbfile::Live::shared(path)
-        .with_context(|| format!("{}: its open marker", path.display()))?
-        .ok_or_else(|| anyhow!("{}: another process is starting it over", path.display()))
+        .map_err(|e| Error::step(format!("{}: its open marker", path.display()), e))?
+        .ok_or_else(|| Error::invalid(format!("{}: another process is starting it over", path.display())))
 }
 
 /// A connection to the cache file, made with its layout if it is new (for catalog `catalog_id`), and the cap set if one

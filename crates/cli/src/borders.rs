@@ -13,6 +13,7 @@ use pg_analysis::borders::{self as detector, Detector};
 use pg_catalog::Catalog;
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
+use pg_jobs::failure::Failed;
 use pg_jobs::pipeline::{self, Options, Read};
 use pg_model::detection::{self, Reason, Side};
 use pg_model::media::{Ext, Kind};
@@ -84,12 +85,15 @@ pub(crate) fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Contro
         },
         opts,
         ctl,
-        Analyzer::new,
-        |analyzer, _, bytes| analyzer.borders(bytes, Turns::NONE),
+        || Analyzer::new().map_err(|e| Failed::other(pg_model::error::chain(&e))),
+        |analyzer, _, bytes| {
+            analyzer.borders(bytes, Turns::NONE).map_err(|e| Failed::other(pg_model::error::chain(&e)))
+        },
         |i, result, len| {
             ctl.add(len, result.is_err());
             // The report is text: a file's name with no UTF-8 form shows with U+FFFD in its row.
-            let path = field(&files.get(i).context("the pipeline gave a file past the list")?.to_string_lossy());
+            let name = files.get(i).ok_or_else(|| Failed::other("the pipeline gave a file past the list".into()))?;
+            let path = field(&name.to_string_lossy());
             let row = match result {
                 Err(e) => {
                     stats.errors += 1;

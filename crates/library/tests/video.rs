@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, PoisonError};
 
-use anyhow::{Context, anyhow};
 use pg_analysis::analyze;
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -38,10 +37,15 @@ fn ffmpeg() -> Option<PathBuf> {
     (!pg_testkit::tool_missing(&exe, "-version")).then_some(exe)
 }
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// Runs ffmpeg with `args`: an error if it can't start or fails.
-fn run(exe: &Path, args: &[&str]) -> anyhow::Result<()> {
+fn run(exe: &Path, args: &[&str]) -> Result<()> {
     let out = Command::new(exe).args(["-hide_banner", "-loglevel", "error", "-y"]).args(args).output()?;
-    anyhow::ensure!(out.status.success(), "ffmpeg {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    if !out.status.success() {
+        return Err(format!("ffmpeg {args:?}: {}", String::from_utf8_lossy(&out.stderr)).into());
+    }
     Ok(())
 }
 
@@ -50,7 +54,7 @@ static ENCODED: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// A fresh folder for one test, with copies of the clips (`media` and `anim`): the test writes its catalog and caches
 /// into its own folder, so the folder of the clips itself is never written by a test.
-fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
+fn clips(exe: &Path) -> Result<PathBuf> {
     let source = {
         let mut encoded = ENCODED.lock().unwrap_or_else(PoisonError::into_inner);
         match encoded.as_ref() {
@@ -65,21 +69,21 @@ fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
     let dir = pg_testkit::run_folder("scratch_library", "video")?;
     for sub in ["media", "anim"] {
         let to = dir.join(sub);
-        std::fs::create_dir_all(&to).with_context(|| format!("make the folder {}", to.display()))?;
+        std::fs::create_dir_all(&to).map_err(|e| format!("make the folder {}: {e}", to.display()))?;
         for entry in std::fs::read_dir(source.join(sub))? {
             let entry = entry?;
             std::fs::copy(entry.path(), to.join(entry.file_name()))
-                .with_context(|| format!("copy the clip {}", entry.path().display()))?;
+                .map_err(|e| format!("copy the clip {}: {e}", entry.path().display()))?;
         }
     }
     Ok(dir)
 }
 
 /// Encodes the clips into a folder of their own, which no test writes to.
-fn encode_clips(exe: &Path) -> anyhow::Result<PathBuf> {
+fn encode_clips(exe: &Path) -> Result<PathBuf> {
     let dir = pg_testkit::run_folder("scratch_library", "video-clips")?;
     let media = dir.join("media");
-    std::fs::create_dir_all(&media).with_context(|| format!("make the media folder {}", media.display()))?;
+    std::fs::create_dir_all(&media).map_err(|e| format!("make the media folder {}: {e}", media.display()))?;
     let out = |name: &str| media.join(name).to_string_lossy().into_owned();
     let encode = |name: &str, codec: &[&str]| {
         let mut args = vec!["-f", "lavfi", "-i", SCENE];
@@ -98,7 +102,7 @@ fn encode_clips(exe: &Path) -> anyhow::Result<PathBuf> {
     run(exe, &["-display_hflip", "-i", &out("h264.mp4"), "-c", "copy", &out("mirrored.mp4")])?;
     // Animations: 0.8 to 1.2 s (red and blue, then green), outside the media folder.
     let anim = dir.join("anim");
-    std::fs::create_dir_all(&anim).with_context(|| format!("make the animation folder {}", anim.display()))?;
+    std::fs::create_dir_all(&anim).map_err(|e| format!("make the animation folder {}: {e}", anim.display()))?;
     for (name, codec) in [
         ("anim.webp", &["-c:v", "libwebp_anim", "-lossless", "1", "-loop", "0"][..]),
         ("anim.gif", &["-f", "gif"]),
@@ -114,12 +118,12 @@ fn encode_clips(exe: &Path) -> anyhow::Result<PathBuf> {
 }
 
 /// The pixel at (`x`, `y`): an error outside the frame.
-fn pixel_at(img: &Rgb, x: usize, y: usize) -> anyhow::Result<[u8; 3]> {
+fn pixel_at(img: &Rgb, x: usize, y: usize) -> Result<[u8; 3]> {
     let index = if x < img.width { y.checked_mul(img.width).and_then(|row| row.checked_add(x)) } else { None };
     index
         .and_then(|i| img.pixels.as_chunks::<3>().0.get(i))
         .copied()
-        .ok_or_else(|| anyhow!("({x}, {y}) is outside the {} × {} frame", img.width, img.height))
+        .ok_or_else(|| format!("({x}, {y}) is outside the {} × {} frame", img.width, img.height).into())
 }
 
 fn near(p: [u8; 3], want: [u8; 3]) -> bool {
@@ -146,7 +150,7 @@ fn each_pass_gives_the_frames_whole_with_their_delays() {
         let bytes: std::sync::Arc<[u8]> = std::fs::read(dir.join("anim").join(name)).unwrap().into();
         for _ in 0..2 {
             let frames: Vec<animation::Frame> =
-                animation::frames(bytes.clone()).unwrap().collect::<anyhow::Result<_>>().unwrap();
+                animation::frames(bytes.clone()).unwrap().collect::<std::result::Result<_, _>>().unwrap();
             assert!(frames.len() >= 2, "{name}: {} frames", frames.len());
             assert_eq!(frames.iter().map(|f| f.delay_ms).sum::<u32>(), 400, "{name}");
             assert!(frames.iter().all(|f| (f.width, f.height) == (160, 80)), "{name}");

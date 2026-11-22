@@ -19,8 +19,9 @@ impl Makers {
         Makers { pool: Pool::new(KEEP_MAKERS) }
     }
 
-    /// Run `f` with a thumbnail maker (and its decoder): an idle one, or a new one.
-    pub(crate) fn with_maker<R>(&self, f: impl FnOnce(&mut Maker) -> anyhow::Result<R>) -> Result<R> {
-        self.pool.with(|| Maker::new().map_err(failed), |m| f(m).map_err(failed))
+    /// Run `f` with a thumbnail maker (and its decoder): an idle one, or a new one. What `f` returns is its own: an error
+    /// of the work is the caller's to say, and only a maker that can't be made is an error here.
+    pub(crate) fn with_maker<R>(&self, f: impl FnOnce(&mut Maker) -> R) -> Result<R> {
+        self.pool.with(|| Maker::new().map_err(failed), |m| Ok(f(m)))
     }
 }

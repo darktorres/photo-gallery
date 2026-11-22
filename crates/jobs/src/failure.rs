@@ -1,25 +1,129 @@
 //! The failures a pass reports: a file or folder it couldn't process, and why (`pg_model::notice::FileFailure`, the one
 //! shape of a failed file). A pass keeps the first few for its stats and counts the rest.
+//!
+//! A job's failure is a [`Failed`]: its [`Class`] (what the pass does about it) and its text, with its source kept so the
+//! chain can be walked. A library turns its own error into a `Failed` where it crosses into a pass, and that is the one
+//! place its class is decided.
+
+use std::error::Error;
 
 use pg_model::name::Name;
 use pg_model::notice::FileFailure;
 use pg_model::rules::{Path, PathRules};
 use pg_platform::file::ReadFailed;
 
-use crate::panics::Panicked;
-
-/// Whether a failure is an I/O error of the read itself, not a panic a job caught: the file is unreadable for now (a
-/// locked file, an offline drive), so the next pass tries it again and it is not recorded. Any cause in the error's
-/// chain may say so: a [`ReadFailed`], or an I/O error under it.
-pub fn is_io_read(e: &anyhow::Error) -> bool {
-    !crate::panics::is_panic(e) && e.chain().any(|cause| cause.is::<ReadFailed>() || cause.is::<std::io::Error>())
+/// What a failure is, for what a pass does about it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Class {
+    /// A panic a job caught on the file: a bug, which would come back at every pass, so it is recorded (its file
+    /// is tried again once the file changes, or the user asks).
+    Panic,
+    /// The file couldn't be read this time (a locked file, an offline drive, a file gone): the next pass tries it again,
+    /// and nothing is recorded.
+    Read,
+    /// The bytes were read and don't decode: the file's fault, recorded, and tried again once the file changes.
+    Data,
+    /// Anything else: tried again by the next pass, and nothing is recorded.
+    Other,
 }
 
-/// A failure to decode bytes that were already read, as its text alone: a decode's I/O error under it (a truncated
-/// file's cut short) is the data's, not the read's, so [`is_io_read`] must not see it. A read's own failure keeps its
-/// chain.
-pub fn undecoded(e: anyhow::Error) -> anyhow::Error {
-    anyhow::anyhow!("{e:#}")
+/// A job's failure on one item, or a pass's own: its class, its text (the error's chain, as [`pg_model::error::chain`]
+/// writes it), and its source, which [`Error::source`] returns.
+#[derive(Debug)]
+pub struct Failed {
+    class: Class,
+    text: String,
+    source: Option<Box<dyn Error + Send + Sync + 'static>>,
+}
+
+/// A panic that a job caught (`panics::guard`): the message it carried. Its text is that message alone; the words that say
+/// it was a panic are the app's (`pg_client::text`), which tells it apart from other errors by its type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Panicked(pub String);
+
+impl std::fmt::Display for Panicked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Panicked {}
+
+impl Failed {
+    /// A failure of `class` on `error`: its text is `error`'s chain, and `error` is its source.
+    pub fn new<E>(class: Class, error: E) -> Failed
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        Failed { class, text: pg_model::error::chain(&error), source: Some(Box::new(error)) }
+    }
+
+    /// A panic a job caught, with its message: the text, and a [`Panicked`] source.
+    pub fn panic(message: String) -> Failed {
+        Failed { class: Class::Panic, text: message.clone(), source: Some(Box::new(Panicked(message))) }
+    }
+
+    /// The failure's class.
+    pub fn class(&self) -> Class {
+        self.class
+    }
+
+    /// The failure's text: the error's chain, or a caught panic's message.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Whether a job caught a panic here.
+    pub fn is_panic(&self) -> bool {
+        self.class == Class::Panic
+    }
+
+    /// Whether the read of the file failed (the class [`Class::Read`]).
+    pub fn is_read(&self) -> bool {
+        self.class == Class::Read
+    }
+
+    /// The same failure with `what` before its text (`what: text`), its class and its source kept.
+    pub fn context(self, what: &str) -> Failed {
+        Failed { class: self.class, text: format!("{what}: {}", self.text), source: self.source }
+    }
+
+    /// A pass's own failure, with no cause under it: the class [`Class::Other`], and `text` as both its text and its
+    /// source's.
+    pub fn other(text: String) -> Failed {
+        Failed::new(Class::Other, Note(text))
+    }
+}
+
+/// A failure's text, as an error of its own (the source of [`Failed::other`]).
+#[derive(Debug)]
+struct Note(String);
+
+impl std::fmt::Display for Note {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Error for Note {}
+
+impl std::fmt::Display for Failed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+impl Error for Failed {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.source.as_deref().map(|source| -> &(dyn Error + 'static) { source })
+    }
+}
+
+/// An I/O error is a failed read: a file that could not be read or gone, with the read's context in the text.
+impl From<std::io::Error> for Failed {
+    fn from(error: std::io::Error) -> Failed {
+        Failed::new(Class::Read, ReadFailed::from(error))
+    }
 }
 
 /// The failures a pass keeps for its stats. Past this many, only the count grows: a folder that fails on every file
@@ -40,9 +144,9 @@ pub fn keep_failure(kept: &mut Vec<FileFailure>, path: Path, error: impl std::fm
     }
 }
 
-/// The failure of the file at `path` on `error`: a caught panic's message, or the error's text.
-pub fn file_failure(path: Path, error: &anyhow::Error) -> FileFailure {
-    let (error, panicked) = match Cause::of(error) {
+/// The failure of the file at `path` on `failed`: a caught panic's message, or the error's text.
+pub fn file_failure(path: Path, failed: &Failed) -> FileFailure {
+    let (error, panicked) = match Cause::of(failed) {
         Cause::Error(text) => (text, false),
         Cause::Panicked(message) => (message, true),
     };
@@ -60,18 +164,19 @@ pub fn stored_path(rules: PathRules, bytes: &[u8]) -> Path {
 /// ([`crate::panics::guard`]). The job holds no words; the app says which it was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cause {
-    /// The error's text, its causes after it (`{:#}`).
+    /// The error's text, its causes after it.
     Error(String),
     /// The message of the panic.
     Panicked(String),
 }
 
 impl Cause {
-    /// The cause of `error`: a panic if it is (or was caused by) one, else its text.
-    pub fn of(error: &anyhow::Error) -> Cause {
-        match error.downcast_ref::<Panicked>() {
-            Some(Panicked(message)) => Cause::Panicked(message.clone()),
-            None => Cause::Error(format!("{error:#}")),
+    /// The cause of `failed`: a panic if it is one, else its text.
+    pub fn of(failed: &Failed) -> Cause {
+        if failed.is_panic() {
+            Cause::Panicked(failed.text().to_string())
+        } else {
+            Cause::Error(failed.text().to_string())
         }
     }
 }
@@ -82,5 +187,36 @@ impl std::fmt::Display for Cause {
         match self {
             Cause::Error(text) | Cause::Panicked(text) => f.write_str(text),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_io_error_is_a_read_and_keeps_its_text_and_source() {
+        let failed = Failed::from(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"));
+        assert_eq!(failed.class(), Class::Read);
+        assert!(failed.is_read());
+        assert!(failed.source().is_some());
+        assert!(failed.text().contains("gone"), "{}", failed.text());
+    }
+
+    #[test]
+    fn a_panic_is_its_message_and_its_class() {
+        let failed = Failed::panic("the file fails".into());
+        assert_eq!((failed.class(), failed.text()), (Class::Panic, "the file fails"));
+        assert!(failed.is_panic());
+        assert_eq!(Cause::of(&failed), Cause::Panicked("the file fails".into()));
+        let source = failed.source().expect("a panic's source");
+        assert_eq!(source.to_string(), "the file fails");
+    }
+
+    #[test]
+    fn a_failure_of_any_class_is_said_by_its_text() {
+        let failed = Failed::new(Class::Data, ReadFailed::from(std::io::Error::other("cut short")));
+        assert_eq!(Cause::of(&failed), Cause::Error(failed.text().to_string()));
+        assert_eq!(failed.class(), Class::Data);
     }
 }

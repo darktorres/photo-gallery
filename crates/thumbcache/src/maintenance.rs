@@ -1,7 +1,7 @@
 //! The cache file's upkeep, below the schema and the writer: the check of the totals against the entries (`heal`,
 //! and `heal_if_due` once a day at open), giving free pages back (`shrink`), and the Unix clock they use.
 
-use anyhow::Result;
+use crate::error::Result;
 use rusqlite::{Connection, TransactionBehavior, params};
 
 use crate::config::HEAL_INTERVAL;

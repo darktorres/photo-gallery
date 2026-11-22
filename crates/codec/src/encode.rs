@@ -3,7 +3,7 @@
 //! format ([`cropped`]). The cut of an original (`pg_edit::crop::cut`) re-encodes a JPEG exactly, at the quality its
 //! tables say ([`jpeg_cropped`], [`jpeg_quality`]), and a lossy WebP lossy again ([`webp_lossy_cropped`]).
 
-use anyhow::{Context, Result, bail, ensure};
+use crate::error::{Error, Result};
 use image::ImageFormat;
 use pg_model::{format::Format, num};
 use std::io::Cursor;
@@ -30,12 +30,14 @@ pub struct JpegEncoder {
 impl JpegEncoder {
     /// An encoder at `quality` (libjpeg-turbo's 1–100) with `chroma`.
     pub fn new(quality: u8, chroma: Chroma) -> Result<JpegEncoder> {
-        let mut compressor = Compressor::new()?;
-        compressor.set_quality(i32::from(quality))?;
-        compressor.set_subsamp(match chroma {
-            Chroma::Half => Subsamp::Sub2x2,
-            Chroma::Full => Subsamp::None,
-        })?;
+        let mut compressor = Compressor::new().map_err(Error::encoder)?;
+        compressor.set_quality(i32::from(quality)).map_err(Error::encoder)?;
+        compressor
+            .set_subsamp(match chroma {
+                Chroma::Half => Subsamp::Sub2x2,
+                Chroma::Full => Subsamp::None,
+            })
+            .map_err(Error::encoder)?;
         Ok(JpegEncoder { compressor, buf: Vec::new() })
     }
 
@@ -43,16 +45,19 @@ impl JpegEncoder {
     /// keeps its capacity for the next image ([`JpegEncoder::trim`]).
     pub fn encode_into(&mut self, img: &Rgb, out: &mut Vec<u8>) -> Result<()> {
         // Every byte libjpeg-turbo returns is written by it: a grown buffer only zeroes what it grew by.
-        self.buf.resize(self.compressor.buf_len(img.width, img.height)?, 0);
-        let n = self.compressor.compress_to_slice(image_of(img)?, &mut self.buf)?;
+        let len = self.compressor.buf_len(img.width, img.height).map_err(Error::encoder)?;
+        self.buf.resize(len, 0);
+        let n = self.compressor.compress_to_slice(image_of(img)?, &mut self.buf).map_err(Error::encoder)?;
         out.clear();
-        out.extend_from_slice(self.buf.get(..n).context("libjpeg-turbo gave a size past its buffer")?);
+        out.extend_from_slice(
+            self.buf.get(..n).ok_or_else(|| Error::invalid("libjpeg-turbo gave a size past its buffer"))?,
+        );
         Ok(())
     }
 
     /// `img` as a JPEG, once: a buffer of its own, nothing kept.
     pub fn encode(&mut self, img: &Rgb) -> Result<Vec<u8>> {
-        Ok(self.compressor.compress_to_vec(image_of(img)?)?)
+        self.compressor.compress_to_vec(image_of(img)?).map_err(Error::encoder)
     }
 
     /// Free the output buffer when one large image grew it over `bytes` ([`release_over`]).
@@ -63,7 +68,7 @@ impl JpegEncoder {
 
 /// `img` as libjpeg-turbo takes it: packed RGB rows.
 fn image_of(img: &Rgb) -> Result<Image<&[u8]>> {
-    let pitch = img.width.checked_mul(3).context("the image's row is longer than memory")?;
+    let pitch = img.width.checked_mul(3).ok_or_else(|| Error::invalid("the image's row is longer than memory"))?;
     Ok(Image { pixels: img.pixels.as_slice(), width: img.width, pitch, height: img.height, format: PixelFormat::RGB })
 }
 
@@ -78,16 +83,17 @@ pub fn cropped(bytes: &[u8], format: Format, x: u32, y: u32, w: u32, h: u32) -> 
     let format = match format {
         Format::Bmp => ImageFormat::Bmp,
         Format::Tiff => ImageFormat::Tiff,
-        other => bail!("{other:?} isn't re-encoded: its crop is lossless"),
+        other => return Err(Error::invalid(format!("{other:?} isn't re-encoded: its crop is lossless"))),
     };
     if format == ImageFormat::Tiff
         && let Some(out) = tiff_samples_cropped(bytes, [x, y, w, h])?
     {
         return Ok(out);
     }
-    let img = image::load_from_memory_with_format(bytes, format).context("can't decode the image")?;
+    let img =
+        image::load_from_memory_with_format(bytes, format).map_err(|e| Error::decode("can't decode the image", e))?;
     let mut out = Cursor::new(Vec::new());
-    img.crop_imm(x, y, w, h).write_to(&mut out, format).context("can't encode the image")?;
+    img.crop_imm(x, y, w, h).write_to(&mut out, format).map_err(|e| Error::encode("can't encode the image", e))?;
     Ok(out.into_inner())
 }
 
@@ -98,7 +104,7 @@ pub const WEBP_LOSSY_QUALITY: u8 = 90;
 /// `bytes` (a still lossy WebP, RGB or with alpha) decoded, cropped to `rect` (left, top, width, height, stored pixels)
 /// and encoded lossy again at `quality` (libwebp's 0–100), its alpha kept. The metadata is not carried over.
 pub fn webp_lossy_cropped(bytes: &[u8], rect: [u32; 4], quality: u8) -> Result<Vec<u8>> {
-    let image = webp::Decoder::new(bytes).decode().context("decoding")?;
+    let image = webp::Decoder::new(bytes).decode().ok_or_else(|| Error::invalid("decoding"))?;
     let alpha = image.is_alpha();
     let pixels = rows(&image[..], image.width(), if alpha { 4 } else { 3 }, rect)?;
     let [_, _, w, h] = rect;
@@ -111,21 +117,22 @@ pub fn webp_lossy_cropped(bytes: &[u8], rect: [u32; 4], quality: u8) -> Result<V
 /// it is on no block grid, as a DCT crop's is. The metadata is not carried over. A JPEG in another colour space (CMYK,
 /// YCCK, or RGB) is refused, since its re-encode would change its colours.
 pub fn jpeg_cropped(bytes: &[u8], rect: [u32; 4], quality: u8) -> Result<Vec<u8>> {
-    let header = turbojpeg::read_header(bytes).context("decoding")?;
-    ensure!(
-        matches!(header.colorspace, Colorspace::YCbCr | Colorspace::Gray),
-        "a JPEG in {:?} colour isn't cut: re-encoding it would change its colours",
-        header.colorspace
-    );
-    let image = turbojpeg::decompress(bytes, PixelFormat::RGB).context("decoding")?;
-    let pixels = rows(&image.pixels, u32::try_from(image.width)?, 3, rect)?;
+    let header = turbojpeg::read_header(bytes).map_err(|e| Error::decode("decoding", e))?;
+    if !matches!(header.colorspace, Colorspace::YCbCr | Colorspace::Gray) {
+        return Err(Error::invalid(format!(
+            "a JPEG in {:?} colour isn't cut: re-encoding it would change its colours",
+            header.colorspace
+        )));
+    }
+    let image = turbojpeg::decompress(bytes, PixelFormat::RGB).map_err(|e| Error::decode("decoding", e))?;
+    let pixels = rows(&image.pixels, u32::try_from(image.width).map_err(Error::decoder)?, 3, rect)?;
     let [_, _, w, h] = rect;
-    let mut compressor = Compressor::new()?;
-    compressor.set_quality(i32::from(quality))?;
-    compressor.set_subsamp(header.subsamp)?;
+    let mut compressor = Compressor::new().map_err(Error::encoder)?;
+    compressor.set_quality(i32::from(quality)).map_err(Error::encoder)?;
+    compressor.set_subsamp(header.subsamp).map_err(Error::encoder)?;
     let w = num::index(w);
     let image = Image { pixels: &pixels[..], width: w, pitch: w * 3, height: num::index(h), format: PixelFormat::RGB };
-    Ok(compressor.compress_to_vec(image)?)
+    compressor.compress_to_vec(image).map_err(Error::encoder)
 }
 
 /// The luminance quantization table of the IJG standard (ITU-T T.81, Annex K, Table K.1), in natural (row-major) order.
@@ -230,26 +237,28 @@ fn tiff_samples_cropped(bytes: &[u8], rect: [u32; 4]) -> Result<Option<Vec<u8>>>
     use tiff::decoder::{Decoder, DecodingResult};
     use tiff::encoder::colortype::{CMYK8, CMYK16, RGB8, RGB16};
 
-    let mut decoder = Decoder::new(Cursor::new(bytes)).context("decoding")?;
-    let color = decoder.colortype().context("decoding")?;
+    let decoding = |e: tiff::TiffError| Error::decode("decoding", e);
+    let mut decoder = Decoder::new(Cursor::new(bytes)).map_err(decoding)?;
+    let color = decoder.colortype().map_err(decoding)?;
     let channels = match color {
         Tiff::CMYK(8 | 16) => 4,
         Tiff::RGB(8 | 16) => 3,
         _ => return Ok(None),
     };
-    let layout = decoder.image_buffer_layout().context("decoding")?;
+    let layout = decoder.image_buffer_layout().map_err(decoding)?;
     if layout.planes != 1 || !matches!(layout.sample_format, tiff::tags::SampleFormat::Uint) {
         return Ok(None);
     }
-    let (width, height) = decoder.dimensions().context("decoding")?;
+    let (width, height) = decoder.dimensions().map_err(decoding)?;
     // The same limits as a decode of this file (`codecs::tiff_limits`): the decoded image reserved from the cap, and
     // the decoder's buffers from the rest.
-    let (image, stored) = decoded_color(color).context("decoding")?;
-    let mut decoder = decoder.with_limits(tiff_limits(image, stored, width, height).context("decoding")?);
+    let image_decoding = |e: image::ImageError| Error::decode("decoding", e);
+    let (image, stored) = decoded_color(color).map_err(image_decoding)?;
+    let mut decoder = decoder.with_limits(tiff_limits(image, stored, width, height).map_err(image_decoding)?);
     let big = pg_model::format::is_bigtiff(bytes);
     let [_, _, w, h] = rect;
     let mut out = Cursor::new(Vec::new());
-    match (color, decoder.read_image().context("decoding")?) {
+    match (color, decoder.read_image().map_err(decoding)?) {
         (Tiff::CMYK(8), DecodingResult::U8(s)) => {
             write::<CMYK8>(&mut out, big, w, h, &rows(&s, width, channels, rect)?)?;
         }
@@ -276,9 +285,11 @@ fn rows<T: Copy>(samples: &[T], width: u32, channels: usize, [x, y, w, h]: [u32;
     let mut out = Vec::with_capacity(w * h);
     // (`max`: an image no pixel wide has no rows.)
     for row in samples.chunks_exact(stride.max(1)).skip(y).take(h) {
-        out.extend_from_slice(row.get(x..x + w).context("the crop is outside the image")?);
+        out.extend_from_slice(row.get(x..x + w).ok_or_else(|| Error::invalid("the crop is outside the image"))?);
     }
-    ensure!(out.len() == w * h, "the crop is outside the image");
+    if out.len() != w * h {
+        return Err(Error::invalid("the crop is outside the image"));
+    }
     Ok(out)
 }
 
@@ -294,9 +305,11 @@ where
     [C::Inner]: tiff::encoder::TiffValue,
 {
     if big {
-        tiff::encoder::TiffEncoder::new_big(out)?.write_image::<C>(w, h, data).context("can't encode the image")?;
+        let mut encoder = tiff::encoder::TiffEncoder::new_big(out).map_err(Error::encoder)?;
+        encoder.write_image::<C>(w, h, data).map_err(|e| Error::encode("can't encode the image", e))?;
     } else {
-        tiff::encoder::TiffEncoder::new(out)?.write_image::<C>(w, h, data).context("can't encode the image")?;
+        let mut encoder = tiff::encoder::TiffEncoder::new(out).map_err(Error::encoder)?;
+        encoder.write_image::<C>(w, h, data).map_err(|e| Error::encode("can't encode the image", e))?;
     }
     Ok(())
 }

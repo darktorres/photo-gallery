@@ -53,7 +53,7 @@ use pg_model::rules::PathRules;
 
 use crate::convert::progress_count;
 use crate::core::Catalog;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::ledger::{Counts, dismiss_ledger_on, ledger_entries_on, mark_ledger_read_on};
 use crate::transaction::write_transaction;
 use crate::types::covering_root;
@@ -375,7 +375,7 @@ fn upsert(rules: PathRules, tx: &Connection, notice: &Notice, times: u64, now: i
     };
     let part = state.and_then(|k| k.part).map(part_text);
     let key = state.map(|k| key_text(k.code, root, part.as_deref()));
-    let data = serde_json::to_string(notice).map_err(anyhow::Error::from)?;
+    let data = serde_json::to_string(notice).map_err(Error::bare)?;
     let times = if key.is_some() { i64::try_from(times).unwrap_or(i64::MAX) } else { 1 };
     // A repeat keeps the row's latest text (`data`), but it is news, and counts again, only when the stored bytes differ: a
     // same-bytes refailure keeps its count, its revision and its read or dismissed marks. In the SET clause the column

@@ -15,9 +15,12 @@ pub fn orient(img: Rgb, orientation: Orientation) -> Rgb {
 
 /// A lossy WebP of `w` × `h` RGB pixels at `quality` (libwebp's 0–100), as the cut's re-encode writes one. Fails for
 /// `pixels` that don't hold `w × h` RGB pixels.
-pub fn webp_lossy_rgb(w: u32, h: u32, pixels: &[u8], quality: f32) -> anyhow::Result<Vec<u8>> {
-    let expected = usize::try_from(w)? * usize::try_from(h)? * 3;
-    anyhow::ensure!(pixels.len() == expected, "{} bytes for a {w}×{h} RGB image", pixels.len());
+pub fn webp_lossy_rgb(w: u32, h: u32, pixels: &[u8], quality: f32) -> crate::error::Result<Vec<u8>> {
+    let side = |n: u32| usize::try_from(n).map_err(|_| crate::error::Error::invalid("image side over usize"));
+    let expected = side(w)? * side(h)? * 3;
+    if pixels.len() != expected {
+        return Err(crate::error::Error::invalid(format!("{} bytes for a {w}×{h} RGB image", pixels.len())));
+    }
     Ok(webp::Encoder::from_rgb(pixels, w, h).encode(quality).to_vec())
 }
 

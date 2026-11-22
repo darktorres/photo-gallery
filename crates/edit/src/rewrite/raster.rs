@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use anyhow::{Context, Result, bail, ensure};
+use crate::{Error, Result};
 
 use super::buffers::reserved;
 use super::op::Op;
@@ -16,7 +16,7 @@ pub(super) fn decoded_size(what: &str, factors: &[usize]) -> Result<usize> {
     let len = factors.iter().try_fold(1usize, |n, &f| n.checked_mul(f));
     match len {
         Some(len) if u64::try_from(len).is_ok_and(|len| len <= pg_codec::max_decode_bytes()) => Ok(len),
-        _ => bail!("{what} is too large to decode"),
+        _ => Err(Error::invalid(format!("{what} is too large to decode"))),
     }
 }
 
@@ -30,14 +30,16 @@ pub(super) fn zeroed(len: usize) -> Result<Vec<u8>> {
 /// Rows of `bits`-per-pixel samples (MSB first, as PNG and BMP pack them) to one byte per pixel.
 pub(super) fn unpack(rows: &[u8], stride: usize, w: usize, h: usize, bits: usize) -> Result<Vec<u8>> {
     let per_byte = 8 / bits;
-    let mask = u8::try_from((1u16 << bits) - 1)?;
+    let mask = u8::try_from((1u16 << bits) - 1).map_err(Error::bare)?;
     let mut out = reserved(w * h)?;
     // (`max`: only a raster no pixel wide has a zero stride, and it reads nothing.)
     for row in rows.chunks(stride.max(1)).take(h) {
         let values = row.iter().flat_map(|&byte| (1..=per_byte).map(move |i| (byte >> (8 - bits * i)) & mask));
         out.extend(values.take(w));
     }
-    ensure!(out.len() == w * h, "the image data is short");
+    if out.len() != w * h {
+        return Err(Error::invalid("the image data is short"));
+    }
     Ok(out)
 }
 
@@ -78,16 +80,19 @@ pub(super) fn apply_rows(
     // The pixels packed, one row after the other: the rows themselves when they have no padding (a copy is made only
     // when they do).
     let packed: Cow<'_, [u8]> = if stride == row_len {
-        Cow::Borrowed(rows.get(..w * h * unit).context("the image data is short")?)
+        Cow::Borrowed(rows.get(..w * h * unit).ok_or_else(|| Error::invalid("the image data is short"))?)
     } else {
         // (`max`: only a raster no pixel wide has a zero stride, and it reads nothing.)
         let mut packed = reserved(w * h * unit)?;
         for row in rows.chunks(stride.max(1)).take(h) {
-            packed.extend_from_slice(row.get(..row_len).context("the image data is short")?);
+            let kept = row.get(..row_len).ok_or_else(|| Error::invalid("the image data is short"))?;
+            packed.extend_from_slice(kept);
         }
         Cow::Owned(packed)
     };
-    ensure!(packed.len() == w * h * unit, "the image data is short");
+    if packed.len() != w * h * unit {
+        return Err(Error::invalid("the image data is short"));
+    }
     let (pixels, nw, nh) = op.apply(&packed, w, h, unit)?;
     let s = new_stride(nw);
     // The result's rows are unpadded: it is the result as it is.
@@ -96,7 +101,8 @@ pub(super) fn apply_rows(
     }
     let mut out = zeroed(s * nh)?;
     for (line, row) in out.chunks_mut(s.max(1)).zip(pixels.chunks_exact((nw * unit).max(1))) {
-        line.get_mut(..row.len()).context("a row wider than its stride")?.copy_from_slice(row);
+        let dst = line.get_mut(..row.len()).ok_or_else(|| Error::invalid("a row wider than its stride"))?;
+        dst.copy_from_slice(row);
     }
     Ok((out, nw, nh))
 }

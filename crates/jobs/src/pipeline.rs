@@ -17,7 +17,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
 // crossbeam-channel rather than std::sync::mpsc: the readers and workers share one receiver each (`raw_rx.clone()`), and
 // std's `Receiver` cannot be cloned. Every one-to-one handoff elsewhere in the workspace uses std::sync::mpsc.
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
@@ -26,8 +25,9 @@ use pg_platform::priority::{self, Priority};
 use serde_json::json;
 
 use crate::control::Control;
+use crate::failure::{Class, Failed};
 use crate::governor::Budget;
-use crate::panics::{self, Panicked};
+use crate::panics;
 
 pub struct Options {
     pub readers: usize,
@@ -107,8 +107,8 @@ pub enum Read {
 /// What a worker sends back: an item's result with the bytes it counts as read, or the error of a setup that failed
 /// (or panicked), after which the worker stops.
 enum Outcome<R> {
-    Done { index: usize, result: Result<R>, read: usize },
-    SetupFailed(anyhow::Error),
+    Done { index: usize, result: Result<R, Failed>, read: usize },
+    SetupFailed(Failed),
 }
 
 /// Where a pass's threads spend their time: nanoseconds per stage, summed over the threads of the stage.
@@ -190,21 +190,24 @@ impl Timing {
 /// `read(item, wide)` says how the item is read ([`Read`]); for a file, it writes the path into `wide`, the reader's
 /// buffer, reused from file to file, so no path is made per file.
 ///
-/// A panic in `read` or `process` is that item's error ([`panics::Panicked`], through [`panics::guard`]), and the
-/// pass goes on: a worker whose `process` panicked makes its state again with `init`. A panic in `init`, or an error
-/// from it, fails the pass, as does a pass that ends with items sent to the workers and no result for them.
-pub fn run<T, S, R>(
+/// A panic in `read` or `process` is that item's failure ([`Class::Panic`], through [`panics::guard`]), and the pass goes
+/// on: a worker whose `process` panicked makes its state again with `init`. A panic in `init`, or an error from it,
+/// fails the pass, as does a pass that ends with items sent to the workers and no result for them. An error of `init`,
+/// `process` or `sink` converts into a [`Failed`] where it is returned.
+pub fn run<T, S, R, I, P>(
     items: &[T],
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
     opts: &Options,
     ctl: &Control,
-    init: impl Fn() -> Result<S> + Sync,
-    process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
-    sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
-) -> Result<()>
+    init: impl Fn() -> Result<S, I> + Sync,
+    process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
+    sink: impl FnMut(usize, Result<R, Failed>, usize) -> Result<bool, Failed>,
+) -> Result<(), Failed>
 where
     T: Sync,
     R: Send,
+    I: Into<Failed>,
+    P: Into<Failed>,
 {
     let timing = Timing::default();
     let started = Instant::now();
@@ -216,19 +219,21 @@ where
 
 /// [`run`], keeping each stage's time in `timing`.
 #[expect(clippy::too_many_arguments, reason = "run's parts, and the timing its stages keep")]
-fn run_timed<T, S, R>(
+fn run_timed<T, S, R, I, P>(
     items: &[T],
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
     opts: &Options,
     ctl: &Control,
-    init: impl Fn() -> Result<S> + Sync,
-    process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
-    mut sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
+    init: impl Fn() -> Result<S, I> + Sync,
+    process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
+    mut sink: impl FnMut(usize, Result<R, Failed>, usize) -> Result<bool, Failed>,
     timing: &Timing,
-) -> Result<()>
+) -> Result<(), Failed>
 where
     T: Sync,
     R: Send,
+    I: Into<Failed>,
+    P: Into<Failed>,
 {
     let next = AtomicUsize::new(0);
     // The items the readers handed to the workers, to check that each came back with a result. The counters and the
@@ -241,7 +246,7 @@ where
     let budget = opts.budget.clone().unwrap_or_else(|| Arc::new(Budget::new(opts.buffer_bytes)));
     let pool = Pool::with_budget(budget, opts.slots);
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
-    let (raw_tx, raw_rx) = bounded::<(usize, std::io::Result<Lease>, usize)>(pool.slots);
+    let (raw_tx, raw_rx) = bounded::<(usize, Result<Lease, Failed>, usize)>(pool.slots);
     let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers * 4);
 
     std::thread::scope(|s| {
@@ -262,11 +267,11 @@ where
                     let started = Instant::now();
                     let (bytes, streamed) = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
                         Ok(Read::File) => match read_whole(pool, i, &wide) {
-                            Some(bytes) => (bytes, 0),
+                            Some(bytes) => (bytes.map_err(read_error), 0),
                             None => break, // stopped
                         },
                         Ok(Read::Gather { hint, gather }) => match read_gather(pool, i, &wide, hint, gather) {
-                            Some(bytes) => (bytes, 0),
+                            Some(bytes) => (bytes.map_err(read_error), 0),
                             None => break, // stopped
                         },
                         Ok(Read::Streamed { bytes }) => {
@@ -278,7 +283,7 @@ where
                             // for it forever; the path it left half-written is not used again.
                             pool.pass(i);
                             wide = NativePath::default();
-                            (Err(std::io::Error::other(Panicked(panics::message(&*payload).to_string()))), 0)
+                            (Err(Failed::panic(panics::message(&*payload).to_string())), 0)
                         }
                     };
                     timing.read.add(started);
@@ -329,10 +334,10 @@ where
                             // The buffer goes back to the pool before the result is sent.
                             drop(lease);
                             // A panic may have left the state half-changed: it is made again.
-                            let rebuild = out.as_ref().is_err_and(panics::is_panic);
+                            let rebuild = out.as_ref().is_err_and(|failed| failed.is_panic());
                             (out, len, rebuild)
                         }
-                        Err(e) => (Err(read_error(e)), 0, false),
+                        Err(e) => (Err(e), 0, false),
                     };
                     let handing = Instant::now();
                     if res_tx.send(Outcome::Done { index: i, result: out, read: len }).is_err() {
@@ -382,10 +387,10 @@ where
         let sent = sent.load(Ordering::SeqCst);
         let dropped = dropped.load(Ordering::SeqCst);
         if received + dropped < sent {
-            anyhow::bail!(
+            return Err(Failed::other(format!(
                 "the workers ended with {} of the {sent} items read and no result for them",
                 sent - received - dropped
-            );
+            )));
         }
         Ok(())
     })
@@ -417,27 +422,29 @@ pub struct Batch {
     clippy::too_many_arguments,
     reason = "the pass's parts: its items, how each is read, the options, the control, the worker's state, the batches, the writer's state and its flush"
 )]
-pub fn batched<T, S, R, W>(
+pub fn batched<T, S, R, W, I, P>(
     items: &[T],
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
     opts: &Options,
     ctl: &Control,
-    init: impl Fn() -> Result<S> + Sync,
-    process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
+    init: impl Fn() -> Result<S, I> + Sync,
+    process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
     batch: Batch,
     writer: W,
-    flush: impl FnMut(&mut W, &mut Vec<(usize, Result<R>)>) -> Result<bool> + Send,
-) -> (W, Result<()>)
+    flush: impl FnMut(&mut W, &mut Vec<(usize, Result<R, Failed>)>) -> Result<bool, Failed> + Send,
+) -> (W, Result<(), Failed>)
 where
     T: Sync,
     R: Send,
     W: Send,
+    I: Into<Failed>,
+    P: Into<Failed>,
 {
     let size = batch.size.max(1);
     // A rendezvous: the sink hands a batch over only to a writer that is waiting for one. The vectors the writer is done
     // with come back on the other channel, to be kept again.
-    let (to_writer, from_sink) = bounded::<Vec<(usize, Result<R>)>>(0);
-    let (recycled_tx, recycled_rx) = unbounded::<Vec<(usize, Result<R>)>>();
+    let (to_writer, from_sink) = bounded::<Vec<(usize, Result<R, Failed>)>>(0);
+    let (recycled_tx, recycled_rx) = unbounded::<Vec<(usize, Result<R, Failed>)>>();
     // Set when the writer failed or stopped: the pass ends, and nothing more is handed over.
     let failed = AtomicBool::new(false);
     let failed = &failed;
@@ -450,7 +457,7 @@ where
         let writing = s.spawn(move || {
             let mut writer = writer;
             let mut flush = flush;
-            let mut outcome: Result<()> = Ok(());
+            let mut outcome: Result<(), Failed> = Ok(());
             let mut stopped = false;
             loop {
                 let waiting = Instant::now();
@@ -478,7 +485,7 @@ where
             (writer, outcome)
         });
 
-        let mut kept: Vec<(usize, Result<R>)> = Vec::with_capacity(size);
+        let mut kept: Vec<(usize, Result<R, Failed>)> = Vec::with_capacity(size);
         let mut since = Instant::now();
         let ran = run_timed(
             items,
@@ -487,7 +494,7 @@ where
             ctl,
             init,
             process,
-            |i, result, len| {
+            |i, result, len| -> Result<bool, Failed> {
                 ctl.add(len, result.is_err());
                 kept.push((i, result));
                 if failed.load(Ordering::SeqCst) {
@@ -518,7 +525,7 @@ where
         let result = match (ran, outcome) {
             (Ok(()), Ok(())) => Ok(()),
             (Ok(()), Err(e)) | (Err(e), Ok(())) => Err(e),
-            (Err(e), Err(w)) => Err(e.context(format!("and the writer ended with: {w:#}"))),
+            (Err(e), Err(w)) => Err(e.context(&format!("and the writer ended with: {w}"))),
         };
         (writer, result)
     });
@@ -530,9 +537,9 @@ where
 /// batch the writer is not waiting for is kept, to grow, unless `wait` (then the sink waits for the writer). Whether the
 /// writer is still there to take it.
 fn hand_over<R>(
-    to_writer: &Sender<Vec<(usize, Result<R>)>>,
-    recycled: &Receiver<Vec<(usize, Result<R>)>>,
-    kept: &mut Vec<(usize, Result<R>)>,
+    to_writer: &Sender<Vec<(usize, Result<R, Failed>)>>,
+    recycled: &Receiver<Vec<(usize, Result<R, Failed>)>>,
+    kept: &mut Vec<(usize, Result<R, Failed>)>,
     size: usize,
     wait: bool,
 ) -> bool {
@@ -571,11 +578,24 @@ fn hand_over<R>(
     }
 }
 
-/// The error of an item that couldn't be read. A panic in `read` comes as an I/O error holding it, and stays a panic.
-fn read_error(e: std::io::Error) -> anyhow::Error {
-    match e.get_ref().and_then(|inner| inner.downcast_ref::<Panicked>()) {
-        Some(panicked) => anyhow::Error::new(panicked.clone()),
-        None => anyhow::Error::new(e).context("read"),
+/// The error of an item that couldn't be read: a [`Class::Read`] whose text is `read`, then the I/O error.
+fn read_error(e: std::io::Error) -> Failed {
+    Failed::new(Class::Read, ReadFailure(e))
+}
+
+/// A failed read of an item, as the error of its failure: its text is `read`, and the I/O error is its source.
+#[derive(Debug)]
+struct ReadFailure(std::io::Error);
+
+impl std::fmt::Display for ReadFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("read")
+    }
+}
+
+impl std::error::Error for ReadFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
     }
 }
 
@@ -1016,12 +1036,12 @@ mod tests {
             },
             &opts,
             &Control::new(),
-            || Ok(()),
+            || Ok::<(), Failed>(()),
             |_, i, bytes| {
                 std::thread::sleep(std::time::Duration::from_micros(200));
                 assert_eq!(bytes.len(), 100 + i * 7);
                 assert!(bytes.iter().all(|&b| usize::from(b) == i));
-                Ok(())
+                Ok::<(), Failed>(())
             },
             |i, out, _| {
                 out.unwrap();
@@ -1081,15 +1101,15 @@ mod tests {
             &Control::new(),
             || {
                 inits.fetch_add(1, Ordering::SeqCst);
-                Ok(())
+                Ok::<(), Failed>(())
             },
             |_, i, bytes| {
                 assert!(in_read || i != 3, "item 3 can't be processed");
-                Ok(bytes.len())
+                Ok::<usize, Failed>(bytes.len())
             },
             |i, out, _| {
                 // `Err(true)`: the item's error is a panic.
-                results[i] = Some(out.map_err(|e| panics::is_panic(&e)));
+                results[i] = Some(out.map_err(|e| e.is_panic()));
                 Ok(true)
             },
         )
@@ -1122,14 +1142,14 @@ mod tests {
             },
             &opts,
             &ctl,
-            || Ok(()),
+            || Ok::<(), Failed>(()),
             |_, i, _| {
                 ran.lock().unwrap().push(i);
                 if i == 5 {
                     ctl.request_stop();
                     std::thread::sleep(std::time::Duration::from_millis(150));
                 }
-                Ok(i)
+                Ok::<usize, Failed>(i)
             },
             |i, out, _| {
                 out.unwrap();
@@ -1169,8 +1189,8 @@ mod tests {
             },
             &opts,
             &Control::new(),
-            || Ok(()),
-            |_, i, _| Ok(i),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i),
             |_, _, _| {
                 calls.fetch_add(1, Ordering::SeqCst);
                 Ok(false)
@@ -1222,8 +1242,8 @@ mod tests {
                 },
                 &opts,
                 &Control::new(),
-                || -> Result<()> { panic!("no state") },
-                |_, _, _| Ok(()),
+                || -> Result<(), Failed> { panic!("no state") },
+                |_, _, _| Ok::<(), Failed>(()),
                 |_, _, _| Ok(true),
             );
             let _ = std::fs::remove_dir_all(&dir);
@@ -1256,13 +1276,13 @@ mod tests {
                 },
                 &opts,
                 &ctl,
-                || Ok(()),
-                |_, _, _| Ok(()),
+                || Ok::<(), Failed>(()),
+                |_, _, _| Ok::<(), Failed>(()),
                 |_, _, _| {
                     ctl.set_paused(true);
                     // Time for both readers to come back to their checkpoint and wait there.
                     std::thread::sleep(std::time::Duration::from_millis(100));
-                    anyhow::bail!("the sink fails")
+                    Err(Failed::other("the sink fails".to_string()))
                 },
             );
             let _ = std::fs::remove_dir_all(&dir);
@@ -1334,8 +1354,8 @@ mod tests {
             },
             &opts,
             &Control::new(),
-            || Ok(()),
-            |_, _, bytes| Ok(bytes.len()),
+            || Ok::<(), Failed>(()),
+            |_, _, bytes| Ok::<usize, Failed>(bytes.len()),
             |i, out, _| {
                 lengths[i] = out.unwrap();
                 Ok(true)
@@ -1470,7 +1490,6 @@ mod tests {
 
 #[cfg(test)]
 mod batched_tests {
-    use anyhow::anyhow;
     use pg_platform::priority::Priority;
 
     use super::*;
@@ -1495,8 +1514,8 @@ mod batched_tests {
             no_file,
             &options(),
             &ctl,
-            || Ok(()),
-            |_, i, _| Ok(i * 2),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i * 2),
             Batch { size: 100, every: None },
             Vec::new(),
             |written: &mut Vec<usize>, batch| {
@@ -1521,15 +1540,15 @@ mod batched_tests {
             no_file,
             &options(),
             &ctl,
-            || Ok(()),
-            |_, i, _| Ok(i),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
             (),
             |_, batch| {
                 let started = Instant::now();
                 while ctl.snapshot().done < 150 {
                     if started.elapsed() > Duration::from_secs(20) {
-                        return Err(anyhow!("the count stopped behind a write"));
+                        return Err(Failed::other("the count stopped behind a write".to_string()));
                     }
                     std::thread::sleep(Duration::from_millis(1));
                 }
@@ -1552,8 +1571,8 @@ mod batched_tests {
             no_file,
             &options(),
             &ctl,
-            || Ok(()),
-            |_, i, _| Ok(i),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
             (),
             |_, batch| {
@@ -1576,13 +1595,13 @@ mod batched_tests {
             no_file,
             &options(),
             &ctl,
-            || Ok(()),
-            |_, i, _| Ok(i),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
             Vec::new(),
             |written: &mut Vec<usize>, batch| {
                 if written.len() >= 100 {
-                    return Err(anyhow!("disk full"));
+                    return Err(Failed::other("disk full".to_string()));
                 }
                 written.extend(batch.drain(..).map(|(i, _)| i));
                 Ok(true)
@@ -1602,8 +1621,8 @@ mod batched_tests {
             no_file,
             &options(),
             &ctl,
-            || Ok(()),
-            |_, i, _| Ok(i),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
             (),
             |_, batch| {
@@ -1612,7 +1631,7 @@ mod batched_tests {
             },
         );
         let error = result.unwrap_err();
-        assert!(panics::is_panic(&error), "{error:#}");
+        assert!(error.is_panic(), "{error}");
     }
 
     // A batch is never held longer than twice the batch size, however slow the writes are.
@@ -1625,8 +1644,8 @@ mod batched_tests {
             no_file,
             &options(),
             &ctl,
-            || Ok(()),
-            |_, i, _| Ok(i),
+            || Ok::<(), Failed>(()),
+            |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 50, every: None },
             0usize,
             |largest: &mut usize, batch| {

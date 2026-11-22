@@ -14,7 +14,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use crate::Result;
 use pg_catalog::{Catalog, PairingWork, PairsBatch};
 use pg_dedup::join::{JoinTimes, Joined, Joiner, Pair, Tuning};
 use pg_jobs::control::Control;

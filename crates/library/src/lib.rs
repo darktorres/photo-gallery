@@ -21,6 +21,51 @@ pub mod scans;
 pub mod shared;
 mod tally;
 
+/// What the library couldn't do: a catalog or thumbnail-cache failure, the failure of a pass or of a lane (a lane that
+/// panicked is a failure of class `Panic`), or a step of the library that failed, with the words of the step.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The catalog failed (see `pg_catalog::Error`).
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The thumbnail cache failed (see `pg_thumbcache::Error`).
+    #[error(transparent)]
+    Cache(#[from] pg_thumbcache::Error),
+    /// The crop failed (see `pg_crop::Error`).
+    #[error(transparent)]
+    Crop(#[from] pg_crop::Error),
+    /// A pass of a round failed, or a lane panicked (see `pg_jobs::failure::Failed`).
+    #[error(transparent)]
+    Pass(#[from] pg_jobs::failure::Failed),
+    /// A step of the library failed: its words, and the error under them.
+    #[error("{what}")]
+    Step {
+        what: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+}
+
+/// The library's result.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    /// A step of the library that failed on `source`, with the words of the step.
+    pub(crate) fn step(what: impl Into<String>, source: impl std::error::Error + Send + Sync + 'static) -> Error {
+        Error::Step { what: what.into(), source: Box::new(source) }
+    }
+}
+
+impl From<Error> for pg_jobs::failure::Failed {
+    /// A failure of a pass: a pass's own failure keeps its class, anything else is an ordinary one.
+    fn from(error: Error) -> pg_jobs::failure::Failed {
+        match error {
+            Error::Pass(failed) => failed,
+            other => pg_jobs::failure::Failed::new(pg_jobs::failure::Class::Other, other),
+        }
+    }
+}
+
 /// The catalog of `layout` (one as SQLite opens it, `Layout::for_sqlite`), prepared for this build (`Catalog::prepare`
 /// with [`versions`], under the native rules). A catalog this build can't use is moved aside and rebuilt;
 /// [`pg_catalog::Catalog::rebuilt`] says so.
@@ -35,8 +80,9 @@ pub fn open_thumbs(
     catalog_id: &str,
     cap: Option<pg_thumbcache::Cap>,
     events: std::sync::Arc<pg_jobs::events::Bus<pg_thumbcache::Event>>,
-) -> anyhow::Result<pg_thumbcache::ThumbCache> {
+) -> Result<pg_thumbcache::ThumbCache> {
     pg_thumbcache::ThumbCache::open(&layout.thumbs_path(), catalog_id, cap, pg_model::versions::THUMBS_VERSION, events)
+        .map_err(Error::from)
 }
 
 /// The versions of the analyses this build makes, for `Catalog::prepare`: the library passes them when it prepares a

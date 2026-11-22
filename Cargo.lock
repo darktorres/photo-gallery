@@ -1618,13 +1618,13 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "pg-analysis"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pdqhash",
  "pg-codec",
  "pg-metadata",
  "pg-model",
  "pg-testkit",
  "pg-video",
+ "thiserror 2.0.21",
  "xxhash-rust",
 ]
 
@@ -1632,7 +1632,6 @@ dependencies = [
 name = "pg-app"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-catalog",
  "pg-codec",
  "pg-jobs",
@@ -1675,20 +1674,19 @@ dependencies = [
 name = "pg-borders"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-catalog",
  "pg-jobs",
  "pg-model",
  "pg-perf",
  "pg-platform",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "pg-catalog"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-dbfile",
  "pg-log",
@@ -1748,7 +1746,6 @@ dependencies = [
 name = "pg-codec"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "fast_image_resize",
  "gif 0.14.2",
  "image 0.25.10",
@@ -1759,6 +1756,7 @@ dependencies = [
  "pg-model",
  "pg-testkit",
  "png 0.18.1",
+ "thiserror 2.0.21",
  "tiff 0.11.3",
  "turbojpeg",
  "webp",
@@ -1779,7 +1777,6 @@ dependencies = [
 name = "pg-crop"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-catalog",
  "pg-edit",
  "pg-exiftool",
@@ -1789,6 +1786,7 @@ dependencies = [
  "pg-platform",
  "pg-testkit",
  "pg-writeback",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1833,7 +1831,6 @@ dependencies = [
 name = "pg-edit"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "image-webp",
  "pg-codec",
  "pg-container",
@@ -1842,6 +1839,7 @@ dependencies = [
  "pg-render",
  "pg-testkit",
  "png 0.18.1",
+ "thiserror 2.0.21",
  "turbojpeg",
  "weezl 0.2.1",
 ]
@@ -1850,11 +1848,11 @@ dependencies = [
 name = "pg-exiftool"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-metadata",
  "pg-model",
  "pg-platform",
  "pg-testkit",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1873,7 +1871,6 @@ dependencies = [
 name = "pg-import"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-catalog",
  "pg-container",
@@ -1884,13 +1881,13 @@ dependencies = [
  "pg-platform",
  "pg-testkit",
  "rusqlite",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "pg-jobs"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "crossbeam-channel",
  "pg-model",
  "pg-perf",
@@ -1911,7 +1908,6 @@ dependencies = [
 name = "pg-library"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-borders",
  "pg-catalog",
@@ -2006,7 +2002,6 @@ dependencies = [
 name = "pg-render"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-codec",
  "pg-metadata",
@@ -2023,24 +2018,24 @@ dependencies = [
 name = "pg-scan"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-catalog",
  "pg-jobs",
  "pg-model",
  "pg-perf",
  "pg-platform",
  "pg-testkit",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "pg-testkit"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "image 0.25.10",
  "pg-platform",
  "pg-testrng",
  "png 0.18.1",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2051,7 +2046,6 @@ version = "0.1.0-dev"
 name = "pg-thumbcache"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-catalog",
  "pg-dbfile",
@@ -2062,13 +2056,13 @@ dependencies = [
  "pg-query",
  "pg-testkit",
  "rusqlite",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "pg-thumbs"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-analysis",
  "pg-catalog",
  "pg-import",
@@ -2082,6 +2076,7 @@ dependencies = [
  "pg-testkit",
  "pg-thumbcache",
  "rusqlite",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2095,20 +2090,19 @@ dependencies = [
 name = "pg-video"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "bindgen",
  "libloading 0.9.1",
  "pg-codec",
  "pg-model",
  "pg-platform",
  "pg-testkit",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "pg-writeback"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "pg-catalog",
  "pg-edit",
  "pg-exiftool",
@@ -2119,6 +2113,7 @@ dependencies = [
  "pg-platform",
  "pg-testkit",
  "pg-thumbcache",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

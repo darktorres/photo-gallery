@@ -7,6 +7,7 @@ pub mod animation;
 mod codecs;
 pub mod decode;
 pub mod encode;
+mod error;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixtures;
 mod kernel;
@@ -14,3 +15,5 @@ pub mod pixels;
 pub mod resize;
 
 pub use codecs::limits::max_decode_bytes;
+
+pub use error::{Error, Result, Source};

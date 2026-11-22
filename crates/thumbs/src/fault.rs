@@ -4,11 +4,9 @@
 
 use std::path::Path;
 
-use anyhow::Result;
-
 /// From now on, every thumbnail the cache in `cache_file` is asked to keep is refused. The trigger is in that file
 /// alone, so a test that asks for it touches no other cache.
-pub fn refuse_stores(cache_file: &Path) -> Result<()> {
+pub fn refuse_stores(cache_file: &Path) -> rusqlite::Result<()> {
     rusqlite::Connection::open(cache_file)?.execute_batch(
         "CREATE TRIGGER refuse_data BEFORE INSERT ON data
          BEGIN SELECT RAISE(ABORT, 'the cache refuses the thumbnail'); END;",
@@ -17,7 +15,7 @@ pub fn refuse_stores(cache_file: &Path) -> Result<()> {
 }
 
 /// Undoes [`refuse_stores`] on `cache_file`.
-pub fn allow_stores(cache_file: &Path) -> Result<()> {
+pub fn allow_stores(cache_file: &Path) -> rusqlite::Result<()> {
     rusqlite::Connection::open(cache_file)?.execute_batch("DROP TRIGGER refuse_data")?;
     Ok(())
 }

@@ -90,7 +90,6 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use pg_model::ids::{FileId, RootId};
@@ -98,7 +97,7 @@ use pg_model::notice::{FilePass, LedgerCounts, LedgerKind, Notice};
 use pg_model::rules::Path as RulePath;
 
 use crate::core::Catalog;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
 use crate::types::FolderFailure;
 use crate::writers::{clear_failures_on, failures_held, record_failures_on};
@@ -268,7 +267,8 @@ impl Catalog {
         let rules = self.rules();
         let mut out = Vec::with_capacity(rows.len());
         for (id, folder, name, error, retry, first_seen, new) in rows {
-            let mut path = rules.parse_bytes(&folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+            let mut path =
+                rules.parse_bytes(&folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
             path.parts.push(pg_model::name::Name::from_raw(&name));
             out.push(FailedFile { file_id: FileId::new(id), path, error, retry, first_seen, new });
         }
@@ -300,12 +300,12 @@ impl Catalog {
             .collect::<rusqlite::Result<_>>()?;
         let rules = self.rules();
         let parse = |bytes: &[u8]| -> Result<RulePath> {
-            Ok(rules.parse_bytes(bytes).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?)
+            rules.parse_bytes(bytes).ok_or(Error::Stored { what: "a stored folder path has a NUL" })
         };
         let mut out = Vec::with_capacity(rows.len());
         for (root, root_path, path, reason, error, first_seen, new) in rows {
-            let failure =
-                FolderFailure::from_key(&reason).ok_or_else(|| anyhow!("a failed folder's reason {reason:?}"))?;
+            let failure = FolderFailure::from_key(&reason)
+                .ok_or_else(|| Error::Invalid(format!("a failed folder's reason {reason:?}")))?;
             out.push(FailedFolder {
                 root: RootId::new(root),
                 root_path: parse(&root_path)?,

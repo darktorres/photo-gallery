@@ -7,8 +7,6 @@ use pg_model::image::View;
 use pg_model::turns::Turns;
 use std::path::Path;
 
-use anyhow::Result;
-
 use pg_codec::decode::{Decoder, MinSize, transform_into};
 use pg_codec::encode::{Chroma, JpegEncoder};
 use pg_codec::pixels::{Rgb, release_over};
@@ -53,15 +51,15 @@ pub enum MakeError {
     /// The file was read and doesn't decode (damaged, truncated, a format the decoder can't take), or the encoder failed:
     /// it fails again until the file changes, or the decoder does ([`pg_model::versions::THUMBS_VERSION`]).
     #[error(transparent)]
-    Undecodable(anyhow::Error),
+    Undecodable(crate::Error),
 }
 
 impl MakeError {
-    /// A video's frame error: [`MakeError::Unreadable`] when its file couldn't be opened ([`pg_video::Unopened`]).
-    fn of_video(e: anyhow::Error) -> MakeError {
-        match e.downcast::<pg_video::Unopened>() {
-            Ok(unopened) => MakeError::Unreadable(ReadFailed::from(unopened.0)),
-            Err(e) => MakeError::Undecodable(e),
+    /// A video's frame error: [`MakeError::Unreadable`] when its file couldn't be opened ([`pg_video::Error::Open`]).
+    fn of_video(e: pg_video::Error) -> MakeError {
+        match e {
+            pg_video::Error::Open { source, .. } => MakeError::Unreadable(ReadFailed::from(source.0)),
+            other => MakeError::Undecodable(other.into()),
         }
     }
 }
@@ -87,7 +85,7 @@ pub struct Maker {
 pub const VIEWER_THREADS: usize = 6;
 
 impl Maker {
-    pub fn new() -> Result<Maker> {
+    pub fn new() -> crate::Result<Maker> {
         Ok(Maker {
             decoder: Decoder::with_full_threads(VIEWER_THREADS)?,
             resizer: Resizer::new(),
@@ -172,7 +170,7 @@ impl Maker {
         result.map_err(MakeError::Undecodable)
     }
 
-    fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
+    fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> crate::Result<()> {
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
         // The decode is left as stored: the thumbnail's scale comes before its turn, so the turn touches the thumbnail
         // and not the decoded image, which is several times its size.
@@ -219,7 +217,7 @@ impl Maker {
 
     /// The ThumbHash of the decoded image (`self.image`), fitted to [`THUMBHASH_SIDE`] through `small`. The encoder reads
     /// the RGB as it is: the hash of the same pixels as opaque RGBA.
-    fn thumbhash_of_image(&mut self) -> Result<ThumbHash> {
+    fn thumbhash_of_image(&mut self) -> crate::Result<ThumbHash> {
         let img = {
             let _resize = RESIZE.timer();
             if self.resizer.fit_within(&self.image, THUMBHASH_SIDE, &mut self.small)? {
@@ -265,14 +263,14 @@ impl Maker {
     }
 
     /// The thumbnail of `image`: scaled to `height`, then encoded into `out`.
-    fn encode_image(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
+    fn encode_image(&mut self, height: usize, out: &mut Vec<u8>) -> crate::Result<()> {
         self.encode_turned(Orientation::UPRIGHT, height, out)
     }
 
     /// The thumbnail of the decoded image (`self.image`, as stored) shown turned by `orientation`: scaled to `height`
     /// px high once turned, then turned, then encoded into `out`. The scale comes first, on the stored pixels, so the
     /// turn moves the thumbnail's pixels and not the decode's.
-    fn encode_turned(&mut self, orientation: Orientation, height: usize, out: &mut Vec<u8>) -> Result<()> {
+    fn encode_turned(&mut self, orientation: Orientation, height: usize, out: &mut Vec<u8>) -> crate::Result<()> {
         let scaled = {
             let _resize = RESIZE.timer();
             if orientation.swaps_axes() {
@@ -288,7 +286,7 @@ impl Maker {
             std::mem::swap(&mut img.pixels, &mut self.spare);
         }
         let _encode = ENCODE.timer();
-        self.encoder.encode_into(img, out)
+        self.encoder.encode_into(img, out).map_err(crate::Error::Codec)
     }
 
     /// Free what one oversize image grew (see [`KEEP_BYTES`]).

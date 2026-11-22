@@ -5,7 +5,7 @@ use std::ffi::{CString, c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use anyhow::Result;
+use crate::error::Error;
 use libloading::Library;
 
 use super::generated::*;
@@ -78,8 +78,8 @@ type SeekCallback = unsafe extern "C" fn(*mut c_void, i64, c_int) -> i64;
 static API: OnceLock<Result<Api, String>> = OnceLock::new();
 
 /// FFmpeg, loaded on first use. Its error says what is missing, and where it was looked for.
-pub(crate) fn api() -> Result<&'static Api> {
-    API.get_or_init(load).as_ref().map_err(|e| anyhow::anyhow!("{e}"))
+pub(crate) fn api() -> crate::error::Result<&'static Api> {
+    API.get_or_init(load).as_ref().map_err(|e| Error::Library(e.clone()))
 }
 
 /// The library names and major versions (from the headers), and the folders the Windows DLLs are looked for in: the

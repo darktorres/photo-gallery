@@ -21,12 +21,15 @@ use pg_model::query::{Query, Sort};
 use pg_model::turns::Turns;
 use pg_testkit::Encoding;
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 const W: u32 = 320;
 const H: u32 = 240;
 /// The letterbox: black bars this deep at the top and bottom.
 const BAR: u32 = 40;
 
-fn make_files(dir: &Path) -> anyhow::Result<Vec<String>> {
+fn make_files(dir: &Path) -> Result<Vec<String>> {
     // Photo-like content between two black bars, as the detector's own tests have it.
     let img = pg_testkit::letterboxed_rgb(W, H, BAR);
     let mut out = Vec::new();
@@ -45,7 +48,7 @@ fn make_files(dir: &Path) -> anyhow::Result<Vec<String>> {
     Ok(out)
 }
 
-fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
+fn ids(c: &Catalog) -> Result<Vec<(i64, String)>> {
     Ok(state::present_files(c)?.into_iter().map(|(id, name)| (id.get(), name)).collect())
 }
 

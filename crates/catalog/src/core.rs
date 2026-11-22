@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::Context;
 use rusqlite::{Connection, OpenFlags};
 
 use pg_dbfile::Schema;
@@ -132,8 +131,8 @@ impl<'a> Prepare<'a> {
         }
         let _lock = if memory { None } else { Some(take_lock(path)?) };
         let current = version_in(set)?;
-        let mut conn =
-            Connection::open(db_file(path)?).with_context(|| format!("catalog {}: opening it", path.display()))?;
+        let mut conn = Connection::open(db_file(path)?)
+            .map_err(|e| Error::step(format!("catalog {}: opening it", path.display()), e))?;
         let version = version_of(&conn)?;
         // The build's current schema is built once per process; a custom one, and an earlier version, are built here.
         let custom;
@@ -200,7 +199,7 @@ impl<'a> Prepare<'a> {
             ensure_room_to_migrate(path, free_space)?;
             rebuilt = Some(rebuild(conn, path, set, rules, why, version.is_some())?);
             conn = Connection::open(db_file(path)?)
-                .with_context(|| format!("catalog {}: reopening it after its rebuild", path.display()))?;
+                .map_err(|e| Error::step(format!("catalog {}: reopening it after its rebuild", path.display()), e))?;
         }
         // An empty file takes incremental auto-vacuum before its first table (where it is a page-1 change, at once).
         if version == Some(0) && rebuilt.is_none() {
@@ -225,13 +224,16 @@ impl<'a> Prepare<'a> {
             pg_log::info("catalog", &upgrade_notice(found, current, &backup_path(path, found)));
             upgraded_from = Some(found);
         }
-        bring_to(&conn, set, rules, current, &Hooks::reporting(progress)).with_context(|| match upgraded_from {
-            Some(found) => format!(
-                "catalog {}: the upgrade from version {found} failed; the catalog as it was is kept at {}",
-                path.display(),
-                backup_path(path, found).display()
-            ),
-            None => format!("catalog {}: bringing it to this build's schema", path.display()),
+        bring_to(&conn, set, rules, current, &Hooks::reporting(progress)).map_err(|e| {
+            let what = match upgraded_from {
+                Some(found) => format!(
+                    "catalog {}: the upgrade from version {found} failed; the catalog as it was is kept at {}",
+                    path.display(),
+                    backup_path(path, found).display()
+                ),
+                None => format!("catalog {}: bringing it to this build's schema", path.display()),
+            };
+            Error::step(what, e)
         })?;
         if let Some(why) = mismatch(&conn, current_schema)? {
             return Err(refused(path, &conn, Refusal::Drift { found: current, why: why.to_string() }));
@@ -239,23 +241,26 @@ impl<'a> Prepare<'a> {
         check_rules(&conn, path, rules)?;
         // The keys follow this build's key algorithm and toolchain (a copy carried the old file's mark; a change of it
         // recomputes them, under the exclusive hold taken above).
-        set_key_version(&conn, rules).with_context(|| format!("catalog {}: its key version", path.display()))?;
+        set_key_version(&conn, rules)
+            .map_err(|e| Error::step(format!("catalog {}: its key version", path.display()), e))?;
         // The one-time compaction (incremental auto-vacuum's conversion) only under the exclusive hold: it writes the whole
         // file, and a start that holds it shared must not make every other process wait for it.
         vacuum_if_owed(&conn, (!memory).then_some(path), exclusive.is_some() || memory)?;
-        mark_unheld_missing(&conn).with_context(|| format!("catalog {}: its missing files", path.display()))?;
+        mark_unheld_missing(&conn)
+            .map_err(|e| Error::step(format!("catalog {}: its missing files", path.display()), e))?;
         // The marks are this build's or older (a later build's were refused above, before anything was written).
         let context = || format!("catalog {}: its version marks", path.display());
-        set_import_version(&conn, versions.import).with_context(context)?;
-        set_borders_version(&conn, versions.borders).with_context(context)?;
-        set_pairing_version(&conn, versions.pairing).with_context(context)?;
+        set_import_version(&conn, versions.import).map_err(|e| Error::step(context(), e))?;
+        set_borders_version(&conn, versions.borders).map_err(|e| Error::step(context(), e))?;
+        set_pairing_version(&conn, versions.pairing).map_err(|e| Error::step(context(), e))?;
         set_thumbs_version(&conn, versions.thumbs, crate::ledger::failure::relist_thumbs_panics)
-            .with_context(context)?;
-        set_taken_zone(&conn).with_context(|| format!("catalog {}: its taken zone", path.display()))?;
+            .map_err(|e| Error::step(context(), e))?;
+        set_taken_zone(&conn).map_err(|e| Error::step(format!("catalog {}: its taken zone", path.display()), e))?;
         // The build that last changed the catalog is named by it, so a later refusal can say which build to open it with.
         if changes {
-            conn.execute("UPDATE meta SET value = ?1 WHERE key = 'written_by'", [env!("CARGO_PKG_VERSION")])
-                .with_context(|| format!("catalog {}: recording the build that changed it", path.display()))?;
+            conn.execute("UPDATE meta SET value = ?1 WHERE key = 'written_by'", [env!("CARGO_PKG_VERSION")]).map_err(
+                |e| Error::step(format!("catalog {}: recording the build that changed it", path.display()), e),
+            )?;
         }
         conn.execute_batch(SETTINGS)?;
         conn.release_memory()?;
@@ -295,7 +300,7 @@ impl Catalog {
         let live = if path == Path::new(":memory:") || !path.exists() { None } else { Some(take_shared(path)?) };
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(db_file(path)?, flags)
-            .with_context(|| format!("catalog {}: opening it", path.display()))?;
+            .map_err(|e| Error::step(format!("catalog {}: opening it", path.display()), e))?;
         conn.execute_batch(SETTINGS)?;
         let current = current_version()?;
         let version = pg_dbfile::user_version(&conn)?;
@@ -407,7 +412,8 @@ const STATEMENT_CACHE: usize = 64;
 /// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s.
 pub(crate) fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let conn = Connection::open_with_flags(file, flags).with_context(|| format!("catalog {file}: opening it"))?;
+    let conn =
+        Connection::open_with_flags(file, flags).map_err(|e| Error::step(format!("catalog {file}: opening it"), e))?;
     conn.busy_timeout(Duration::from_millis(crate::schema::BUSY_TIMEOUT_MS))?;
     conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
     Ok(conn)

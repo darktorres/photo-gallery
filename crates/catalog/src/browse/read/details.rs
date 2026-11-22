@@ -1,7 +1,7 @@
 //! What the viewer's details panel and the border overlay show of one file.
 
 use crate::core::Catalog;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::types::bad_value;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension};
@@ -82,7 +82,7 @@ pub(crate) fn border_sides_on(conn: &Connection, file_id: FileId) -> Result<dete
             },
         };
         sides.try_push(side).map_err(|_| {
-            anyhow::anyhow!("file {}: more than {} border sides kept", file_id.get(), detection::MAX_SIDES)
+            Error::Invalid(format!("file {}: more than {} border sides kept", file_id.get(), detection::MAX_SIDES))
         })?;
     }
     Ok(sides)

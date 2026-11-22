@@ -15,7 +15,6 @@ workspace = true
 fixture = []
 
 [dependencies]
-anyhow.workspace = true
 thiserror.workspace = true
 pg-dbfile = { path = "../dbfile" }
 pg-log = { path = "../log" }

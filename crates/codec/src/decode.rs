@@ -7,7 +7,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
+use pg_model::error::chain;
 use pg_model::turns::Turns;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
@@ -103,7 +104,11 @@ impl Decoder {
     /// are libjpeg-turbo's, so the choice changes no hash; a JPEG parajpeg doesn't decode goes to libjpeg-turbo.
     /// Smaller decodes (the thumbnails') stay on libjpeg-turbo's one thread, which is what the batch work wants.
     pub fn with_full_threads(threads: usize) -> Result<Decoder> {
-        Ok(Decoder { jpeg: Decompressor::new()?, full_threads: threads, codecs: Codecs::default() })
+        Ok(Decoder {
+            jpeg: Decompressor::new().map_err(Error::decoder)?,
+            full_threads: threads,
+            codecs: Codecs::default(),
+        })
     }
 
     /// Free what one oversize file grew: buffers over `bytes` (see [`crate::pixels::release_over`]).
@@ -160,14 +165,16 @@ impl Decoder {
                     JPEG_FALLBACKS.fetch_add(1, Ordering::Relaxed);
                 }
                 if let Err(e) = self.codecs.decode(bytes, format, out) {
-                    let e = anyhow::Error::from(e);
                     return Err(match refused {
-                        Some(turbo) => e.context(format!("libjpeg-turbo refused it first: {turbo:#}")),
-                        None => e,
+                        Some(turbo) => Error::decode(
+                            format!("libjpeg-turbo refused it first: {}", chain(&turbo)),
+                            Box::<dyn std::error::Error + Send + Sync>::from(e),
+                        ),
+                        None => Error::decoder(e),
                     });
                 }
-                let width = u32::try_from(out.width).context("image width over u32")?;
-                (1, (width, u32::try_from(out.height).context("image height over u32")?))
+                let width = u32::try_from(out.width).map_err(|e| Error::decode("image width over u32", e))?;
+                (1, (width, u32::try_from(out.height).map_err(|e| Error::decode("image height over u32", e))?))
             }
         };
         Ok(Info { format, orientation, full_width, full_height, scale_denom })
@@ -181,12 +188,12 @@ impl Decoder {
         let (width, height) = match format {
             Format::Jpeg => match self.jpeg.read_header(bytes) {
                 Ok(header) => (
-                    u32::try_from(header.width).context("JPEG width over u32")?,
-                    u32::try_from(header.height).context("JPEG height over u32")?,
+                    u32::try_from(header.width).map_err(|e| Error::decode("JPEG width over u32", e))?,
+                    u32::try_from(header.height).map_err(|e| Error::decode("JPEG height over u32", e))?,
                 ),
-                Err(_) => self.codecs.dimensions(bytes, format)?,
+                Err(_) => self.codecs.dimensions(bytes, format).map_err(Error::decoder)?,
             },
-            _ => self.codecs.dimensions(bytes, format)?,
+            _ => self.codecs.dimensions(bytes, format).map_err(Error::decoder)?,
         };
         let info = Info { format, orientation, full_width: width, full_height: height, scale_denom: 1 }.upright();
         Ok(Dims { width: info.full_width, height: info.full_height, orientation })
@@ -212,7 +219,7 @@ impl Decoder {
                 return Ok((1, (header.width, header.height)));
             }
         }
-        let header = self.jpeg.read_header(bytes)?;
+        let header = self.jpeg.read_header(bytes).map_err(Error::decoder)?;
         let (w, h) = (header.width, header.height);
         // The decode happens before rotation, so an upright minimum turns with the image.
         let (min_w, min_h) = match min {
@@ -232,26 +239,28 @@ impl Decoder {
         };
         // libjpeg-turbo rounds scaled sizes up.
         let denom = [8, 4, 2].into_iter().find(|&d| w.div_ceil(d) >= min_w && h.div_ceil(d) >= min_h).unwrap_or(1);
-        self.jpeg.set_scaling_factor(ScalingFactor::new(1, denom))?;
+        self.jpeg.set_scaling_factor(ScalingFactor::new(1, denom)).map_err(Error::decoder)?;
         let scaled = header.scaled(self.jpeg.scaling_factor());
         // Every byte is written by the decode: a grown buffer only zeroes what it grew by.
         out.pixels.resize(scaled.width * scaled.height * 3, 0);
         (out.width, out.height) = (scaled.width, scaled.height);
-        self.jpeg.decompress(
-            bytes,
-            Image {
-                pixels: out.pixels.as_mut_slice(),
-                width: scaled.width,
-                pitch: scaled.width * 3,
-                height: scaled.height,
-                format: PixelFormat::RGB,
-            },
-        )?;
+        self.jpeg
+            .decompress(
+                bytes,
+                Image {
+                    pixels: out.pixels.as_mut_slice(),
+                    width: scaled.width,
+                    pitch: scaled.width * 3,
+                    height: scaled.height,
+                    format: PixelFormat::RGB,
+                },
+            )
+            .map_err(Error::decoder)?;
         let full = (
-            u32::try_from(header.width).context("JPEG width over u32")?,
-            u32::try_from(header.height).context("JPEG height over u32")?,
+            u32::try_from(header.width).map_err(|e| Error::decode("JPEG width over u32", e))?,
+            u32::try_from(header.height).map_err(|e| Error::decode("JPEG height over u32", e))?,
         );
-        Ok((u8::try_from(denom).context("scale denominator over u8")?, full))
+        Ok((u8::try_from(denom).map_err(|e| Error::decode("scale denominator over u8", e))?, full))
     }
 }
 

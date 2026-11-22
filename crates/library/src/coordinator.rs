@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use pg_catalog::{Catalog, VolumeSet};
 use pg_jobs::control::{Control, Hold};
 use pg_jobs::events::Change;
@@ -189,14 +189,15 @@ impl Lanes {
         });
         let weak = Arc::downgrade(&lanes);
         let coordinator = Service::start("lane coordinator", move |waker| coordinate(&weak, waker))
-            .context("can't start the lane coordinator")?;
+            .map_err(|e| Error::step("can't start the lane coordinator", e))?;
         let _ = lanes.coordinator.set(Arc::new(coordinator));
         let weak = Arc::downgrade(&lanes);
-        let cropper = Service::start("crop job", move |waker| crop(&weak, waker)).context("start the crop job")?;
+        let cropper = Service::start("crop job", move |waker| crop(&weak, waker))
+            .map_err(|e| Error::step("start the crop job", e))?;
         let _ = lanes.cropper.set(Arc::new(cropper));
         let weak = Arc::downgrade(&lanes);
-        let removals =
-            Service::start("removal job", move |waker| remove(&weak, waker)).context("start the removal job")?;
+        let removals = Service::start("removal job", move |waker| remove(&weak, waker))
+            .map_err(|e| Error::step("start the removal job", e))?;
         let _ = lanes.removals.set(Arc::new(removals));
         Ok(lanes)
     }
@@ -557,8 +558,8 @@ impl Lanes {
         reg.next_number += 1;
         let inner = Arc::new(Inner::new(self.shared.clone(), number, self.root.lane(), self.governor.lane()));
         let job = inner.clone();
-        let service =
-            Service::start("background job", move |waker| job.run(waker)).context("start a background job lane")?;
+        let service = Service::start("background job", move |waker| job.run(waker))
+            .map_err(|e| Error::step("start a background job lane", e))?;
         Ok(Lane { inner, service: Arc::new(service), roots: Vec::new() })
     }
 
@@ -643,10 +644,10 @@ impl Lanes {
             // is not written to.
             Job::Cut(ids) => match Catalog::open(&self.shared.catalog_path, PATH_RULES)
                 .map(Mutex::new)
-                .map_err(anyhow::Error::from)
+                .map_err(Error::from)
                 .and_then(|checker| {
                     let present = |id: FileId| checker.lock().is_ok_and(|c| c.is_present(id).unwrap_or(false));
-                    pg_crop::cut(&catalog, &ids, true, &opts, &self.crop_ctl, &present)
+                    pg_crop::cut(&catalog, &ids, true, &opts, &self.crop_ctl, &present).map_err(Error::from)
                 }) {
                 Ok(s) => {
                     // The cut's files are forgotten and analyzed again, whether or not the cut is done.
@@ -813,16 +814,15 @@ impl Lanes {
     fn run_removals(&self, conn: &mut Option<Catalog>, adopt: bool) -> std::result::Result<(), String> {
         let catalog = match conn.take() {
             Some(c) => c,
-            None => {
-                Catalog::open(&self.shared.catalog_path, PATH_RULES).map_err(|e| error_text(&anyhow::Error::from(e)))?
-            }
+            None => Catalog::open(&self.shared.catalog_path, PATH_RULES)
+                .map_err(|e| error_text(&pg_model::error::chain(&e)))?,
         };
         let found = if adopt { catalog.adopt_hidden_folders().map(drop) } else { Ok(()) }
             .and_then(|()| catalog.removal_markers());
         let result = match found {
             Ok(markers) if markers.is_empty() => Ok(()),
             Ok(markers) => self.finish_removals(&catalog, &markers),
-            Err(e) => Err(error_text(&anyhow::Error::from(e))),
+            Err(e) => Err(error_text(&pg_model::error::chain(&e))),
         };
         *conn = Some(catalog);
         result

@@ -4,7 +4,7 @@
 use std::cmp::Ordering;
 
 use crate::core::Catalog;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params_from_iter};
 
@@ -113,7 +113,7 @@ impl Catalog {
     /// in no particular order (each entry names its file).
     pub fn grid_entries(&self, file_ids: &[FileId]) -> Result<Vec<Entry>> {
         let ids: Vec<i64> = file_ids.iter().map(|id| id.get()).collect();
-        let json = serde_json::to_string(&ids).map_err(anyhow::Error::from)?;
+        let json = serde_json::to_string(&ids).map_err(Error::bare)?;
         let conn = &self.conn;
         let mut stmt = conn.prepare_cached(concat!(
             "SELECT ",

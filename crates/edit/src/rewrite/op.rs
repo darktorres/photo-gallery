@@ -1,6 +1,6 @@
 //! What a rewrite does to the stored pixels: a turn under an EXIF orientation, or a crop.
 
-use anyhow::{Context, Result, ensure};
+use crate::{Error, Result};
 
 use pg_codec::decode::transform;
 use pg_model::orientation::Orientation;
@@ -40,9 +40,12 @@ impl Op {
                 let mut out = reserved(cw * ch * unit)?;
                 // (`max`: a raster no pixel wide has no rows.)
                 for row in pixels.chunks_exact((w * unit).max(1)).skip(y).take(ch) {
-                    out.extend_from_slice(row.get(x * unit..(x + cw) * unit).context("the crop is outside the image")?);
+                    let kept = row.get(x * unit..(x + cw) * unit);
+                    out.extend_from_slice(kept.ok_or_else(|| Error::invalid("the crop is outside the image"))?);
                 }
-                ensure!(out.len() == cw * ch * unit, "the crop is outside the image");
+                if out.len() != cw * ch * unit {
+                    return Err(Error::invalid("the crop is outside the image"));
+                }
                 Ok((out, cw, ch))
             }
         }

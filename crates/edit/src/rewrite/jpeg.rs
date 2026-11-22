@@ -1,26 +1,13 @@
 //! JPEG, turned or cropped in the DCT domain.
 
-use anyhow::Result;
+use crate::{Error, Result};
 use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
 use super::op::Op;
 
-/// A JPEG transform that can't be done perfectly, so the file is left as it is and the orientation tag carries the
-/// turn (`rotate`). Every other error is a failure.
-#[derive(Debug)]
-pub(crate) struct Imperfect(pub(crate) String);
-
-impl std::fmt::Display for Imperfect {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "not a perfect transform: {}", self.0)
-    }
-}
-
-impl std::error::Error for Imperfect {}
-
 /// In the DCT domain (libjpeg-turbo's lossless transform), every marker copied. Turns are perfect transforms only:
-/// one that would have to drop or smear partial edge blocks is [`Imperfect`]. A crop's left and top must be on the
-/// MCU grid ([`mcu`]).
+/// one that would have to drop or smear partial edge blocks is [`Error::Imperfect`], which `rotate` takes as "tag it".
+/// A crop's left and top must be on the MCU grid ([`mcu`]).
 pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     let mut t = Transform::default();
     match op {
@@ -43,21 +30,21 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     // transform can't reuse the original ones).
     // A JPEG whose structure is damaged before its scan is refused: the transform would re-encode what is left.
     let Some(progressive) = pg_container::jpeg_is_progressive(bytes) else {
-        return Err(Imperfect("the JPEG's structure is damaged before its scan".into()).into());
+        return Err(Error::Imperfect("the JPEG's structure is damaged before its scan".into()));
     };
     t.progressive = progressive;
     t.optimize = !progressive;
     let perfect = t.perfect;
-    match Transformer::new()?.transform_to_vec(&t, bytes) {
+    match Transformer::new().map_err(Error::bare)?.transform_to_vec(&t, bytes) {
         Ok(out) => Ok(out),
         // A perfect transform fails when it would have to cut through a block: that is imperfect, not a failure.
-        Err(e) if perfect => Err(Imperfect(e.to_string()).into()),
-        Err(e) => Err(e.into()),
+        Err(e) if perfect => Err(Error::Imperfect(e.to_string())),
+        Err(e) => Err(Error::bare(e)),
     }
 }
 
 /// The JPEG's minimum coded unit, width and height: the grid a lossless crop starts on.
 pub(crate) fn mcu(bytes: &[u8]) -> Result<(usize, usize)> {
-    let header = turbojpeg::read_header(bytes)?;
+    let header = turbojpeg::read_header(bytes).map_err(Error::bare)?;
     Ok((header.subsamp.mcu_width(), header.subsamp.mcu_height()))
 }

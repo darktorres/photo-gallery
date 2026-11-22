@@ -63,7 +63,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail, ensure};
 use pg_catalog::pair::{Coverage, Pairing};
 use pg_catalog::{
     Catalog, FolderFailure, FolderRowReader, FolderRows, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason,
@@ -307,6 +306,47 @@ pub struct RefusedMount {
     pub reason: RefusedReason,
 }
 
+/// What a scan's own steps couldn't do: the catalog failed (`Catalog`, with the words of the step it was on, when a step
+/// added some), a walk's state didn't hold what the walk needed (`Invalid`), or a file couldn't be read (`Io`).
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The catalog failed (its own error, `pg_catalog::Error`).
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The walk's state didn't hold what the walk needed (a folder neither listed nor being listed, a catalog that gave
+    /// another number of rows than the files it was asked about).
+    #[error("{0}")]
+    Invalid(String),
+    /// A step of the scan that failed, with the words of the step and the error under them.
+    #[error("{what}")]
+    Step {
+        what: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+    /// A file or a folder the scan read couldn't be read (the file system's error).
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+/// The scan's internal result: its errors are [`Error`]; the public [`ScanError`] wraps them.
+pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl Error {
+    /// The step `what` failed on `source` (a catalog step's error, or a file system's).
+    fn step<E>(what: impl Into<String>, source: E) -> Error
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Error::Step { what: what.into(), source: Box::new(source) }
+    }
+
+    /// The walk's state held something the walk did not expect, as `message`.
+    fn invalid(message: impl Into<String>) -> Error {
+        Error::Invalid(message.into())
+    }
+}
+
 /// Why a scan didn't run, or didn't finish: the folder is refused (before any walk; the refusal is in the folder
 /// ledger), a walk of an overlapping folder holds its lease (nothing was written: try again once it ends), the folder
 /// was removed from the library while it was walked (nothing more was written: there is nothing to try again), or the
@@ -326,12 +366,18 @@ pub enum ScanError {
     Removed {
         root: String,
     },
-    Failed(anyhow::Error),
+    Failed(Error),
 }
 
-impl From<anyhow::Error> for ScanError {
-    fn from(e: anyhow::Error) -> ScanError {
+impl From<Error> for ScanError {
+    fn from(e: Error) -> ScanError {
         ScanError::Failed(e)
+    }
+}
+
+impl From<pg_catalog::Error> for ScanError {
+    fn from(e: pg_catalog::Error) -> ScanError {
+        ScanError::Failed(Error::Catalog(e))
     }
 }
 
@@ -374,7 +420,7 @@ pub fn scan(catalog: &mut Catalog, root: &RulePath, ctl: &Control) -> Result<Sca
     if let Err(reason) = check_folder(catalog.rules(), root) {
         let recorded = catalog
             .folder_refused(root, &reason.to_string())
-            .with_context(|| format!("recording that {} is refused", catalog.rules().display(root)))?;
+            .map_err(|e| Error::step(format!("recording that {} is refused", catalog.rules().display(root)), e))?;
         if recorded {
             ctl.ledger_changed();
         }
@@ -462,7 +508,7 @@ enum Outcome {
     /// The folder can't be opened or listed: it is unreadable, and the walk records it.
     Unreadable(io::Error),
     /// The catalog couldn't be read for the folder: the walk fails.
-    Failed(anyhow::Error),
+    Failed(Error),
     /// The listing panicked: the walk raises the panic again, with its payload.
     Panicked(Box<dyn std::any::Any + Send>),
 }
@@ -641,7 +687,7 @@ fn take(
             return Ok(Taken::Inline);
         }
         let Some(progress) = st.taken.get(key).map(|p| p.load(Ordering::Relaxed)) else {
-            bail!("a folder the walk needs was neither listed nor being listed");
+            return Err(Error::invalid("a folder the walk needs was neither listed nor being listed"));
         };
         if ctl.stop_requested() {
             return Ok(Taken::Stopped);
@@ -695,7 +741,7 @@ fn unit<L: Listing>(
     rules: PathRules,
     job: &Job,
     dir: Option<L::Dir>,
-    rows: &dyn Fn(&RulePath) -> anyhow::Result<FolderRows>,
+    rows: &dyn Fn(&RulePath) -> Result<FolderRows>,
     beat: &mut dyn FnMut(),
 ) -> Outcome {
     let dir = match dir {
@@ -748,7 +794,7 @@ fn list_here<L: Listing>(
                 }
             }
         };
-        let rows = |folder: &RulePath| -> anyhow::Result<FolderRows> {
+        let rows = |folder: &RulePath| -> Result<FolderRows> {
             let _step = FOLDER_ROWS.timer();
             Ok(lease.folder_rows(folder)?)
         };
@@ -771,7 +817,7 @@ fn worker<L: Listing>(lister: &mut L, pool: &Pool, ctl: &Control, file: &str, ru
     };
     while let Some((job, progress)) = pool.claim(ctl) {
         let key = job.key.clone();
-        let rows = |folder: &RulePath| reader.folder_rows(folder).map_err(anyhow::Error::from);
+        let rows = |folder: &RulePath| reader.folder_rows(folder).map_err(Error::from);
         let mut beat = || {
             progress.fetch_add(1, Ordering::Relaxed);
         };
@@ -834,9 +880,11 @@ fn walk_paced<L: Listing>(
     let tx_at = pg_catalog::tx_mark();
     let setup = pg_perf::span("scan.setup");
     let rules = catalog.rules();
-    let root_dir = open_folder(lister, rules, root).with_context(|| format!("can't open {}", rules.display(root)))?;
+    let root_dir =
+        open_folder(lister, rules, root).map_err(|e| Error::step(format!("can't open {}", rules.display(root)), e))?;
     let root_device = lister.device(&root_dir);
-    let root_volume = lister.volume(&root_dir).with_context(|| format!("the volume of {}", rules.display(root)))?;
+    let root_volume =
+        lister.volume(&root_dir).map_err(|e| Error::step(format!("the volume of {}", rules.display(root)), e))?;
     let mut lease = catalog.begin_scan(root).map_err(|e| match e {
         pg_catalog::Error::ScanBusy { root, holder } => ScanError::Busy { root, holder },
         e => ScanError::Failed(e.into()),
@@ -882,11 +930,20 @@ static RENEW: pg_perf::Tally = pg_perf::Tally::new("scan.renew");
 
 /// The folder whose removal from the library ended the walk with `e` (`pg_catalog::Error::RootRemoved`, anywhere in its
 /// chain), if that is what ended it.
-fn removed(e: &anyhow::Error) -> Option<String> {
-    e.chain().find_map(|cause| match cause.downcast_ref::<pg_catalog::Error>() {
-        Some(pg_catalog::Error::RootRemoved { root }) => Some(pg_platform::native::PATH_RULES.display(root)),
-        _ => None,
-    })
+fn removed(e: &Error) -> Option<String> {
+    // The catalog's error is wrapped transparently, so its source chain starts below it: it is matched here, and the
+    // causes under the others are walked.
+    if let Error::Catalog(pg_catalog::Error::RootRemoved { root }) = e {
+        return Some(pg_platform::native::PATH_RULES.display(root));
+    }
+    let mut cause = std::error::Error::source(e);
+    while let Some(next) = cause {
+        if let Some(pg_catalog::Error::RootRemoved { root }) = next.downcast_ref::<pg_catalog::Error>() {
+            return Some(pg_platform::native::PATH_RULES.display(root));
+        }
+        cause = next.source();
+    }
+    None
 }
 
 /// The walk of `root` under its lease. Folders are consumed in walk order, depth first, as a single thread lists them.
@@ -1121,12 +1178,13 @@ fn walk_leased<L: Listing>(
                     prior.items(u64::try_from(identities.len()).unwrap_or(u64::MAX));
                     lease.prior_states(&rows, &identities)?
                 };
-                ensure!(
-                    priors.len() == changed.len(),
-                    "the catalog gave {} rows for {} files",
-                    priors.len(),
-                    changed.len()
-                );
+                if priors.len() != changed.len() {
+                    return Err(Error::invalid(format!(
+                        "the catalog gave {} rows for {} files",
+                        priors.len(),
+                        changed.len()
+                    )));
+                }
                 for (file, prior) in changed.iter_mut().zip(priors) {
                     file.prior = prior;
                 }

@@ -359,7 +359,6 @@ dependencies = [
 name = "pg-codec"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "fast_image_resize",
  "gif",
  "image",
@@ -367,6 +366,7 @@ dependencies = [
  "parajpeg",
  "pg-model",
  "png",
+ "thiserror 2.0.21",
  "tiff",
  "turbojpeg",
  "webp",
@@ -385,13 +385,13 @@ dependencies = [
 name = "pg-edit"
 version = "0.1.0-dev"
 dependencies = [
- "anyhow",
  "image-webp",
  "pg-codec",
  "pg-container",
  "pg-metadata",
  "pg-model",
  "png",
+ "thiserror 2.0.21",
  "turbojpeg",
  "weezl 0.2.1",
 ]

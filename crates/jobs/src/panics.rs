@@ -2,11 +2,13 @@
 //! on a GUI program: the process's panic hook asks [`caught`] before it shows one.
 //!
 //! [`catch`] is for a whole unit of work (a round, a read the UI asked for); [`guard`] is for one file of a pass, whose
-//! panic becomes that file's error ([`Panicked`]) and the pass goes on with the next one.
+//! panic becomes that file's error ([`Panicked`](crate::failure::Panicked)) and the pass goes on with the next one.
 
 use std::any::Any;
 use std::cell::Cell;
 use std::panic::UnwindSafe;
+
+use crate::failure::Failed;
 
 thread_local! {
     /// Set while [`catch`] runs its closure on this thread.
@@ -40,44 +42,30 @@ pub fn message(payload: &(dyn Any + Send)) -> &str {
     }
 }
 
-/// A panic that [`guard`] caught: the message it carried. Its text is that message alone; the words that say it was a
-/// panic are the app's (`pg_client::text`), which tells it apart from other errors by its type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Panicked(pub String);
-
-impl std::fmt::Display for Panicked {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for Panicked {}
-
 /// Runs `f` on one item of work, a panic in it caught (through [`catch`], so the panic hook only logs it) and returned
-/// as a [`Panicked`] error.
-pub fn guard<T>(f: impl FnOnce() -> anyhow::Result<T> + UnwindSafe) -> anyhow::Result<T> {
+/// as a [`Failed`] of class [`crate::failure::Class::Panic`]. An error of `f` becomes a `Failed` through its `From`.
+pub fn guard<T, E>(f: impl FnOnce() -> Result<T, E> + UnwindSafe) -> Result<T, Failed>
+where
+    E: Into<Failed>,
+{
     match catch(f) {
-        Ok(result) => result,
-        Err(payload) => Err(anyhow::Error::new(Panicked(message(&*payload).to_string()))),
+        Ok(result) => result.map_err(Into::into),
+        Err(payload) => Err(Failed::panic(message(&*payload).to_string())),
     }
-}
-
-/// Whether `error` is (or was caused by) a panic that [`guard`] caught.
-pub fn is_panic(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<Panicked>().is_some()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::failure::Class;
 
     #[test]
     fn a_guarded_panic_is_its_message_and_leaves_the_outer_catch_in_place() {
         let outer = catch(|| {
-            let inner = guard(|| -> anyhow::Result<()> { panic!("the file fails") });
-            let error = inner.unwrap_err();
-            assert!(is_panic(&error));
-            assert_eq!(error.to_string(), "the file fails");
+            let inner = guard(|| -> Result<(), Failed> { panic!("the file fails") });
+            let failed = inner.unwrap_err();
+            assert_eq!(failed.class(), Class::Panic);
+            assert_eq!(failed.text(), "the file fails");
             // Still inside the outer catch: a panic now is caught too.
             caught()
         });
@@ -86,9 +74,20 @@ mod tests {
     }
 
     #[test]
-    fn a_guarded_error_is_not_a_panic() {
-        let error = guard(|| -> anyhow::Result<()> { anyhow::bail!("no") }).unwrap_err();
-        assert!(!is_panic(&error));
-        assert_eq!(guard(|| Ok(3)).unwrap(), 3);
+    fn a_guarded_error_keeps_its_class() {
+        let failed = guard(|| -> Result<(), Failed> { Err(Failed::new(Class::Data, ReadTest)) }).unwrap_err();
+        assert_eq!((failed.class(), failed.is_panic()), (Class::Data, false));
+        assert_eq!(guard(|| Ok::<u8, Failed>(3)).unwrap(), 3);
     }
+
+    #[derive(Debug)]
+    struct ReadTest;
+
+    impl std::fmt::Display for ReadTest {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("no")
+        }
+    }
+
+    impl std::error::Error for ReadTest {}
 }

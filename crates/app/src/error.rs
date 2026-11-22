@@ -1,7 +1,5 @@
 //! The app's errors. A caller that branches gets a variant; the rest carry the text of what failed, causes included
-//! (the image, file and cache layers report anyhow errors, whose text is taken here as it is).
-
-use std::fmt::Display;
+//! (the image, file and cache layers report their own typed errors, whose text is taken here with its causes).
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -69,21 +67,21 @@ impl From<ReadError> for Error {
     }
 }
 
-/// The error of a lower layer, as its text (`{:#}`: the causes included).
-pub(crate) fn failed(e: impl Display) -> Error {
-    Error::Failed(format!("{e:#}"))
+/// The error of a lower layer, as its text (`pg_model::error::chain`: the causes included).
+pub(crate) fn failed(e: impl std::error::Error + 'static) -> Error {
+    Error::Failed(pg_model::error::chain(&e))
 }
 
-/// The original can't be read (offline, gone): [`Error::Original`], with the lower layer's text (`{:#}`: the causes
-/// included). Its `Display` adds "original unavailable: ", so the text given here doesn't say it.
-pub(crate) fn original(e: impl Display) -> Error {
-    Error::Original(format!("{e:#}"))
+/// The original can't be read (offline, gone): [`Error::Original`], with the lower layer's text (the causes included).
+/// Its `Display` adds "original unavailable: ", so the text given here doesn't say it.
+pub(crate) fn original(e: impl std::error::Error + 'static) -> Error {
+    Error::Original(pg_model::error::chain(&e))
 }
 
 /// What a maker's failure is for the app: the original unavailable when it couldn't be read, else it doesn't decode.
 pub(crate) fn made_error(e: pg_render::maker::MakeError) -> Error {
     match e {
         pg_render::maker::MakeError::Unreadable(e) => original(e),
-        pg_render::maker::MakeError::Undecodable(e) => Error::Undecodable(format!("{e:#}")),
+        pg_render::maker::MakeError::Undecodable(e) => Error::Undecodable(pg_model::error::chain(&e)),
     }
 }

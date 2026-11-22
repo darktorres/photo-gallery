@@ -4,7 +4,6 @@
 
 use std::path::Path;
 
-use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use pg_model::media::Ext;
@@ -52,7 +51,7 @@ pub(crate) fn take_lock(path: &Path) -> Result<pg_dbfile::Lock> {
         Ok(None) => Err(Error::Held { path: path.display().to_string(), what: "another process is preparing it" }),
         // The lock file is made beside the catalog, so a folder that can't be written refuses it by name.
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(refuse_read_only(path)),
-        Err(e) => Err(anyhow::Error::new(e).context(format!("catalog {}: its lock file", path.display())).into()),
+        Err(e) => Err(Error::step(format!("catalog {}: its lock file", path.display()), e)),
     }
 }
 
@@ -65,7 +64,7 @@ pub(crate) fn refuse_read_only(path: &Path) -> Error {
 /// The exclusive hold on the catalog file (`pg_dbfile::Live`), when no other process or connection holds it. It doesn't
 /// wait: `None` is the answer when one does.
 pub(crate) fn try_exclusive(path: &Path) -> Result<Option<pg_dbfile::Live>> {
-    Ok(pg_dbfile::Live::exclusive(path).with_context(|| format!("catalog {}: its open marker", path.display()))?)
+    pg_dbfile::Live::exclusive(path).map_err(|e| Error::step(format!("catalog {}: its open marker", path.display()), e))
 }
 
 /// The refusal of a change to a catalog that another program or connection has open. Nothing has been moved.
@@ -77,7 +76,7 @@ pub(crate) fn in_use(path: &Path) -> Error {
 /// to finish, and fails if that change does not finish in time.
 pub(crate) fn take_shared(path: &Path) -> Result<pg_dbfile::Live> {
     pg_dbfile::Live::shared(path)
-        .with_context(|| format!("catalog {}: its open marker", path.display()))?
+        .map_err(|e| Error::step(format!("catalog {}: its open marker", path.display()), e))?
         .ok_or_else(|| Error::Held { path: path.display().to_string(), what: "another program is changing it" })
 }
 

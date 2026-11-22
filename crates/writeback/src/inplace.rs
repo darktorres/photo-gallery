@@ -11,7 +11,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
 use pg_platform::native::NativePath;
 
 use crate::file::{stat, sync, unchanged, write_into};
@@ -20,9 +20,9 @@ use crate::file::{stat, sync, unchanged, write_into};
 #[derive(Debug)]
 pub enum ReplaceError {
     /// Before the copy into the original started: the original is as it was, and the temp is gone.
-    Untouched(anyhow::Error),
+    Untouched(Error),
     /// The copy may have started: the original may be part-written. `temp` holds the whole new content, and is kept.
-    Incomplete { temp: PathBuf, error: anyhow::Error },
+    Incomplete { temp: PathBuf, error: Error },
 }
 
 /// Replace the original at `path` (its disk path) with `bytes`, made from the original as it was when its (size, mtime)
@@ -42,7 +42,7 @@ pub fn replace(
             return Err(ReplaceError::Untouched(e));
         }
     };
-    let incomplete = |error: anyhow::Error| ReplaceError::Incomplete { temp: temp.to_path_buf(), error };
+    let incomplete = |error: Error| ReplaceError::Incomplete { temp: temp.to_path_buf(), error };
     write_into(file, bytes).map_err(incomplete)?;
     let after = stat(path).map_err(incomplete)?;
     let _ = std::fs::remove_file(temp);
@@ -54,10 +54,13 @@ pub fn replace(
 fn prepare(path: &Path, native: &NativePath, temp: &Path, bytes: &[u8], before: (u64, i64)) -> Result<File> {
     let shown = pg_platform::names::shown(path);
     unchanged(&shown, before, stat(path)?)?;
-    std::fs::write(temp, bytes).with_context(|| format!("writing {}", pg_platform::names::shown(temp)))?;
-    sync(temp).with_context(|| format!("writing {}", pg_platform::names::shown(temp)))?;
-    let file = pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
-    unchanged(&shown, before, pg_platform::file::stat_of(&file)?)?;
+    let shown_temp = pg_platform::names::shown(temp);
+    std::fs::write(temp, bytes).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
+    sync(temp).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
+    let file =
+        pg_platform::file::open_for_copy(native).map_err(|e| Error::io(format!("opening {shown} for writing"), e))?;
+    let now = pg_platform::file::stat_of(&file).map_err(|e| Error::io(format!("reading {shown}"), e))?;
+    unchanged(&shown, before, now)?;
     Ok(file)
 }
 

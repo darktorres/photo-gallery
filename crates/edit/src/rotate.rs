@@ -15,7 +15,7 @@
 //! orientation and the new turn together, then resets the tag to 1, so the result shows the same in programs that
 //! ignore the tag.
 
-use anyhow::{Result, ensure};
+use crate::{Error, Result};
 use pg_model::turns::Turns;
 
 use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
@@ -46,18 +46,19 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
         // picture a second time.
         let out = pg_metadata::patch_orientation(&out, format, Orientation::UPRIGHT).unwrap_or(out);
         let left = pg_metadata::orientation(&out, format);
-        ensure!(
-            left == Orientation::UPRIGHT,
-            "the turned pixels would show turned again: the orientation tag still reads {}",
-            left.get()
-        );
+        if left != Orientation::UPRIGHT {
+            return Err(Error::invalid(format!(
+                "the turned pixels would show turned again: the orientation tag still reads {}",
+                left.get()
+            )));
+        }
         Ok(Outcome::Rewritten(out))
     };
     Ok(match format {
         Format::Jpeg => match rewrite::jpeg::rewrite(bytes, Op::Orient(total)) {
             Ok(out) => rewritten(out)?,
             // Not a perfect transform at this size, or a damaged file: the tag carries the turn.
-            Err(e) if e.is::<rewrite::jpeg::Imperfect>() => tag(),
+            Err(Error::Imperfect(_)) => tag(),
             Err(e) => return Err(e),
         },
         Format::Png if png_animated(bytes) => tag(),
@@ -70,7 +71,7 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
             Ok(Some(out)) => Outcome::Rewritten(out),
             Ok(None) => Outcome::Catalog,
             // A still GIF with nothing on its screen: no pixels to turn, and no tag a GIF can carry.
-            Err(e) if e.is::<rewrite::gif::NothingLeft>() => Outcome::Catalog,
+            Err(Error::NothingLeft) => Outcome::Catalog,
             Err(e) => return Err(e),
         },
         Format::Bmp => match rewrite::bmp::rewrite(bytes, Op::Orient(total))? {
@@ -273,11 +274,10 @@ mod tests {
         assert!(
             matches!(rotate(&good[..scan], Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(o) if o.get() == 6)
         );
-        assert!(
-            rewrite::jpeg::rewrite(&good[..scan], Op::Orient(Orientation::new(6).unwrap()))
-                .unwrap_err()
-                .is::<rewrite::jpeg::Imperfect>()
-        );
+        assert!(matches!(
+            rewrite::jpeg::rewrite(&good[..scan], Op::Orient(Orientation::new(6).unwrap())),
+            Err(Error::Imperfect(_))
+        ));
     }
 
     // A JPEG whose EXIF orientation 6 is a BYTE, a LONG, or a LONG array stored out of its entry turns once: the

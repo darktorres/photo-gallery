@@ -22,7 +22,6 @@ pg-query = { path = "../query" }
 pg-render = { path = "../render" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-yandex = { path = "../yandex" }
-anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

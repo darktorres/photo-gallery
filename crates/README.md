@@ -157,6 +157,7 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 - **`pg-model` stays one crate.** Its modules are consumed by one to fifteen crates each; its fan-in is expected.
 - **`cargo-modules` is a tool, not a dependency.** It is pinned in `docker/Dockerfile` and the Justfile (`cargo_modules_version`, which `just modgraph` checks and installs at the pin). The Linux graph runs in `pg-dev`; the Windows graph runs on the host through `just modgraph`.
 - **The command line does not depend on `pg-app`.** It opens catalogs and thumbnail caches through `pg-library`'s shared open functions (`open_catalog`, `open_thumbs`).
+- **Errors are typed.** A library crate returns its own `thiserror` enum. `anyhow` belongs to `pg-cli`, `pg-desktop` and `pg-gallery` only: `tools/anyhow-allow.txt` lists the library crates still on it (the file is empty), and `AnyhowAllowlist` in `tools/test_ci_files.py` fails when another crate depends on it. A crate's main error is named `Error`; a second enum in the same crate takes a `<What>Error` name (`ReadError`, `MakeError`). A pipeline's failure converts into `pg_jobs::failure::Failed` once, at the crate's boundary, and keeps its class.
 
 ### Naming
 

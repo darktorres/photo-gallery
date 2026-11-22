@@ -15,7 +15,47 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+/// What ExifTool couldn't do. A start, a pipe or a thread that the OS refused keeps the OS's error as its source, so a
+/// caller can tell an offline drive or a file in use from a command ExifTool refused (the writer does).
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The program couldn't be started (it is missing, or not an executable), with what it is for.
+    #[error("starting {program} ({what})")]
+    Start {
+        program: String,
+        what: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A pipe of the running ExifTool failed (the process has exited, or its pipes broke): the OS's error.
+    #[error("{what}")]
+    Pipe {
+        what: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A thread that reads ExifTool's output couldn't be started.
+    #[error("starting a thread to read ExifTool's output")]
+    Thread(#[source] std::io::Error),
+    /// ExifTool answered with a failure, or didn't answer (its timeout, or its exit): the message says what.
+    #[error("{0}")]
+    Failed(String),
+}
+
+/// The result of an ExifTool call.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    /// A pipe's failure, named by its own text.
+    fn pipe(source: std::io::Error) -> Error {
+        Error::Pipe { what: source.to_string(), source }
+    }
+
+    /// A failure ExifTool reported, as `message`.
+    fn failed(message: impl Into<String>) -> Error {
+        Error::Failed(message.into())
+    }
+}
 
 /// How long one command may take, from its first byte to its last marker. A command past it fails, and its process is
 /// killed: the next command starts a new one.
@@ -75,8 +115,10 @@ impl ExifTool {
         let mut cmd = Command::new(program);
         cmd.args(["-stay_open", "True", "-@", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         pg_platform::process::hide_console_window(&mut cmd);
-        let mut child = pg_platform::process::spawn_background(cmd).with_context(|| {
-            format!("starting {} (ExifTool, needed to write ratings into files)", program.to_string_lossy())
+        let mut child = pg_platform::process::spawn_background(cmd).map_err(|source| Error::Start {
+            program: program.to_string_lossy().into_owned(),
+            what: "ExifTool, needed to write ratings into files",
+            source,
         })?;
         match ExifTool::pipes(&mut child) {
             Ok((stdin, stdout, stderr)) => {
@@ -94,9 +136,11 @@ impl ExifTool {
 
     /// A started ExifTool's stdin, and its stdout and stderr each read by a thread of its own (`pump`).
     fn pipes(child: &mut Child) -> Result<(ChildStdin, Receiver<String>, Receiver<String>)> {
-        let stdin = child.stdin.take().context("ExifTool started without its stdin pipe")?;
-        let stdout = pump(child.stdout.take().context("ExifTool started without its stdout pipe")?)?;
-        let stderr = pump(child.stderr.take().context("ExifTool started without its stderr pipe")?)?;
+        let stdin = child.stdin.take().ok_or_else(|| Error::failed("ExifTool started without its stdin pipe"))?;
+        let stdout =
+            pump(child.stdout.take().ok_or_else(|| Error::failed("ExifTool started without its stdout pipe"))?)?;
+        let stderr =
+            pump(child.stderr.take().ok_or_else(|| Error::failed("ExifTool started without its stderr pipe"))?)?;
         Ok((stdin, stdout, stderr))
     }
 
@@ -124,8 +168,8 @@ impl ExifTool {
             input.push(b'\n');
         }
         input.extend_from_slice(format!("-echo4\n{{done{n}}}\n-execute{n}\n").as_bytes());
-        self.stdin.write_all(&input)?;
-        self.stdin.flush()?;
+        self.stdin.write_all(&input).map_err(Error::pipe)?;
+        self.stdin.flush().map_err(Error::pipe)?;
         let stdout = read_until(&self.stdout, &format!("{{ready{n}}}"), deadline)?;
         let stderr = read_until(&self.stderr, &format!("{{done{n}}}"), deadline)?;
         Ok((stdout, stderr))
@@ -164,7 +208,12 @@ impl ExifTool {
         if created(&stdout2) {
             return Ok(());
         }
-        bail!("ExifTool couldn't write the rating into {}: {} {}", path.display(), stderr.trim(), stderr2.trim())
+        Err(Error::failed(format!(
+            "ExifTool couldn't write the rating into {}: {} {}",
+            path.display(),
+            stderr.trim(),
+            stderr2.trim()
+        )))
     }
 
     /// Copy every tag `from` holds that `to` can carry (EXIF, XMP, IPTC, ICC profile) into `to`, in place.
@@ -181,7 +230,7 @@ impl ExifTool {
         if stdout.contains("1 image files updated") || stdout.contains("1 image files unchanged") {
             return Ok(());
         }
-        bail!("ExifTool couldn't copy the metadata of {}: {}", from.display(), stderr.trim())
+        Err(Error::failed(format!("ExifTool couldn't copy the metadata of {}: {}", from.display(), stderr.trim())))
     }
 
     /// Write an EXIF orientation into a copy of `path` at `out` (adding EXIF if the file has none).
@@ -192,7 +241,7 @@ impl ExifTool {
         if created(&stdout) {
             return Ok(());
         }
-        bail!("ExifTool couldn't set the orientation of {}: {}", path.display(), stderr.trim())
+        Err(Error::failed(format!("ExifTool couldn't set the orientation of {}: {}", path.display(), stderr.trim())))
     }
 }
 
@@ -215,7 +264,11 @@ fn oneshot(program: &OsStr, args: &[&OsStr]) -> Result<(String, String)> {
     let mut cmd = Command::new(program);
     cmd.args(["-charset", "filename=utf8"]).args(args).stdin(Stdio::null());
     pg_platform::process::hide_console_window(&mut cmd);
-    let out = cmd.output().with_context(|| format!("starting {} (ExifTool)", program.to_string_lossy()))?;
+    let out = cmd.output().map_err(|source| Error::Start {
+        program: program.to_string_lossy().into_owned(),
+        what: "ExifTool",
+        source,
+    })?;
     Ok((String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned()))
 }
 
@@ -247,7 +300,7 @@ fn pump(pipe: impl Read + Send + 'static) -> Result<Receiver<String>> {
                 }
             }
         })
-        .context("starting a thread to read ExifTool's output")?;
+        .map_err(Error::Thread)?;
     Ok(rx)
 }
 
@@ -260,9 +313,9 @@ fn read_until(lines: &Receiver<String>, marker: &str, deadline: Instant) -> Resu
         let line = match lines.recv_timeout(wait) {
             Ok(line) => line,
             Err(RecvTimeoutError::Timeout) => {
-                bail!("ExifTool didn't answer within {}s", COMMAND_TIMEOUT.as_secs())
+                return Err(Error::failed(format!("ExifTool didn't answer within {}s", COMMAND_TIMEOUT.as_secs())));
             }
-            Err(RecvTimeoutError::Disconnected) => bail!("ExifTool exited"),
+            Err(RecvTimeoutError::Disconnected) => return Err(Error::failed("ExifTool exited")),
         };
         if line.trim_end() == marker {
             return Ok(out);

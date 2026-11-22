@@ -21,7 +21,7 @@ pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
 pg-render = { path = "../render" }
 pg-thumbcache = { path = "../thumbcache" }
-anyhow.workspace = true
+thiserror.workspace = true
 # The fault module's trigger on the cache's file (`fault`, and the tests).
 rusqlite.workspace = true
 

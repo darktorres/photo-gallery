@@ -2,8 +2,7 @@
 //! (`pg_app::yandex`). The pixels come from [`display::decode`], the one place that reads the EXIF orientation, so the
 //! JPEG shows the photo upright, as the viewer does.
 
-use anyhow::Result;
-
+use crate::{Error, Result};
 use pg_codec::decode::{Decoder, MinSize};
 use pg_codec::encode::{Chroma, JpegEncoder};
 use pg_model::turns::Turns;
@@ -18,7 +17,7 @@ const QUALITY: u8 = 95;
 pub fn to_jpeg(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut decoder = Decoder::new()?;
     let decoded = display::decode(&mut decoder, bytes, MinSize::Full, Turns::NONE)?;
-    JpegEncoder::new(QUALITY, Chroma::Full)?.encode(&decoded.image)
+    JpegEncoder::new(QUALITY, Chroma::Full)?.encode(&decoded.image).map_err(Error::Codec)
 }
 
 #[cfg(test)]

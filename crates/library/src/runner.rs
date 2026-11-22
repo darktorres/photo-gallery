@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use anyhow::Result;
+use crate::Result;
 use pg_jobs::NoticeSink;
 use pg_jobs::control::Control;
 use pg_jobs::events::{Bus, Change};

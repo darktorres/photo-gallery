@@ -1,0 +1,4 @@
+# The crates allowed to depend on anyhow, one per line: the library crates that still use it. Each crate's migration removes
+# its line in the same commit point, so the file ends empty (Phase 7 of the consistency program). cli, desktop and gallery
+# keep anyhow for good (the binaries' errors) and are not listed. test_ci_files.py's AnyhowAllowlist checks both ways: a
+# crate that depends on anyhow must be listed here or be one of those three, and a listed crate must still depend on it.

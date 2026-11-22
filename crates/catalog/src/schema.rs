@@ -14,13 +14,12 @@
 //! old shape by the columns it has and is idempotent. The rebuild's copy runs every Rust step of every migration on the
 //! copied rows (`crate::rebuild::carry_rows`).
 
-use anyhow::{Context, anyhow};
 use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, Transaction};
 
 use crate::convert::Source;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::progress::{NO_PROGRESS, Phase, Progress};
 use crate::transaction::write_transaction;
 
@@ -130,7 +129,7 @@ pub(crate) fn current_version() -> Result<i64> {
 
 /// The version the schema `set` brings a catalog to: the baseline, then each of its migrations.
 pub(crate) fn version_in(set: &SchemaSet<'_>) -> Result<i64> {
-    let migrations = i64::try_from(set.migrations.len()).context("too many migrations")?;
+    let migrations = i64::try_from(set.migrations.len()).map_err(|e| Error::step("too many migrations", e))?;
     Ok(BASELINE_VERSION + migrations)
 }
 
@@ -173,7 +172,7 @@ pub(crate) fn bring_to(
             continue;
         }
         if version == 0 {
-            tx.execute_batch(set.baseline).context("creating the catalog")?;
+            tx.execute_batch(set.baseline).map_err(|e| Error::step("creating the catalog", e))?;
             tx.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [crate::types::rules_name(rules)])?;
             // The keys this build makes are the ones the mark names (the baseline holds no keys, so none is stored yet).
             tx.execute("INSERT INTO meta(key, value) VALUES ('key_version', ?1)", [crate::types::key_version_text()])?;
@@ -186,12 +185,13 @@ pub(crate) fn bring_to(
                 tx.execute("UPDATE meta SET value = 1 WHERE key = 'vacuum_owed'", [])?;
             }
         } else {
-            let index = usize::try_from(version - BASELINE_VERSION)
-                .with_context(|| format!("schema version {version}, older than the baseline {BASELINE_VERSION}"))?;
+            let index = usize::try_from(version - BASELINE_VERSION).map_err(|e| {
+                Error::step(format!("schema version {version}, older than the baseline {BASELINE_VERSION}"), e)
+            })?;
             let migration = set
                 .migrations
                 .get(index)
-                .ok_or_else(|| anyhow!("schema version {version}: no migration takes it on"))?;
+                .ok_or_else(|| Error::Invalid(format!("schema version {version}: no migration takes it on")))?;
             if migration.rebuilds_tables {
                 require_foreign_keys_off(&tx)?;
             }
@@ -204,8 +204,8 @@ pub(crate) fn bring_to(
                     steps: migration.steps.len(),
                 });
                 match *step {
-                    Step::Sql(sql) => tx.execute_batch(sql).with_context(context)?,
-                    Step::Rust(convert) => convert(&tx, Source::Main, rules).with_context(context)?,
+                    Step::Sql(sql) => tx.execute_batch(sql).map_err(|e| Error::step(context(), e))?,
+                    Step::Rust(convert) => convert(&tx, Source::Main, rules).map_err(|e| Error::step(context(), e))?,
                 }
             }
             tx.pragma_update(None, "user_version", version + 1)?;

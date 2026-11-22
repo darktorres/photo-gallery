@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use crate::error::{Error, Result};
 use pg_jobs::events::Bus;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
@@ -180,10 +180,8 @@ impl Touches {
         if self.ids.is_empty() {
             return Ok(());
         }
-        let written = conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(anyhow::Error::from)
-            .and_then(|tx| {
+        let written =
+            conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(Error::from).and_then(|tx| {
                 self.write(&tx)?;
                 Ok(tx.commit()?)
             });
@@ -229,7 +227,7 @@ impl Failing {
     }
 
     /// An on-demand thumbnail couldn't be stored.
-    fn not_stored(&mut self, error: &anyhow::Error, events: &Bus<Event>) {
+    fn not_stored(&mut self, error: &Error, events: &Bus<Event>) {
         self.store = true;
         events.publish(Event::NotStored { error: format!("{error:#}") });
     }
@@ -292,14 +290,14 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
                     params![file_id.get(), old_mtime, new_mtime],
                 )
                 .map(drop)
-                .map_err(anyhow::Error::from);
+                .map_err(Error::from);
             let _ = reply.send(done);
         }
         Op::Forget { file_id, reply } => {
             let done = conn
                 .execute("DELETE FROM entries WHERE file_id = ?1", params![file_id.get()])
                 .map(drop)
-                .map_err(anyhow::Error::from);
+                .map_err(Error::from);
             let _ = reply.send(done);
         }
         Op::ForgetMany { file_ids, reply } => {
@@ -319,7 +317,7 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Fai
                     conn.execute(CHECKPOINT, params![snapshot.height.get(), volume, through, snapshot.evictions])
                         .map(drop)
                 })
-                .map_err(anyhow::Error::from);
+                .map_err(Error::from);
             let _ = reply.send(done);
         }
         Op::Shrink(reply) => {
@@ -529,9 +527,9 @@ mod tests {
         let events = Bus::new(8);
         let sub = events.subscribe();
         let mut failing = Failing::default();
-        failing.touches(Err(anyhow::anyhow!("busy")), &events);
+        failing.touches(Err(Error::invalid("busy")), &events);
         failing.touches(Ok(()), &events);
-        failing.not_stored(&anyhow::anyhow!("disk full"), &events);
+        failing.not_stored(&Error::invalid("disk full"), &events);
         failing.stored(&events);
         assert_eq!(
             sub.take().items,

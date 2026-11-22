@@ -13,13 +13,13 @@ workspace = true
 # catalog access; the caller gives the bytes.
 [dependencies]
 pg-model = { path = "../model" }
-anyhow.workspace = true
 fast_image_resize.workspace = true
 gif.workspace = true
 image.workspace = true
 image-webp.workspace = true
 parajpeg.workspace = true
 png.workspace = true
+thiserror.workspace = true
 tiff.workspace = true
 turbojpeg.workspace = true
 webp.workspace = true

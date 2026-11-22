@@ -15,7 +15,7 @@ pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-video = { path = "../video" }
-anyhow.workspace = true
+thiserror.workspace = true
 xxhash-rust.workspace = true
 
 [dev-dependencies]

@@ -33,7 +33,8 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::ptr;
 
-use anyhow::{Result, bail};
+use crate::error::{Error, Result};
+use crate::unopened::Unopened;
 
 /// `AV_NOPTS_VALUE`: no timestamp. The headers define it as a macro, which bindgen doesn't emit.
 pub(crate) const NOPTS_VALUE: i64 = i64::MIN;
@@ -92,15 +93,16 @@ impl Input {
     /// Windows would change (a trailing dot or space) reaches the file it names and not a sibling's.
     pub(crate) fn open(path: &Path) -> Result<Self> {
         let api = api()?;
-        let file = std::fs::File::open(path).map_err(crate::unopened::Unopened)?;
-        let len = file.metadata().map_err(crate::unopened::Unopened)?.len();
+        let open = |source: std::io::Error| Error::Open { path: path.to_path_buf(), source: Unopened(source) };
+        let file = std::fs::File::open(path).map_err(open)?;
+        let len = file.metadata().map_err(open)?.len();
         let source = Box::into_raw(Box::new(Source { file, len }));
         // SAFETY: `av_malloc` gives a buffer of `IO_BUFFER` bytes; the I/O context takes it over (see `free_io`).
         let buffer = unsafe { (api.av_malloc)(IO_BUFFER) }.cast::<u8>();
         if buffer.is_null() {
             // SAFETY: `source` came from `Box::into_raw` above, and nothing else holds it.
             unsafe { drop(Box::from_raw(source)) };
-            bail!("out of memory");
+            return Err(Error::ffmpeg("out of memory"));
         }
         let size = c_int::try_from(IO_BUFFER).unwrap_or(c_int::MAX);
         // SAFETY: `buffer` is `size` bytes; `source` is the opaque pointer the callbacks read, alive while the context is
@@ -114,13 +116,13 @@ impl Input {
                 (api.av_free)(buffer.cast());
                 drop(Box::from_raw(source));
             }
-            bail!("out of memory");
+            return Err(Error::ffmpeg("out of memory"));
         }
         // SAFETY: a new format context, not yet opened.
         let ctx = unsafe { (api.avformat_alloc_context)() };
         if ctx.is_null() {
             free_io(api, io, source);
-            bail!("out of memory");
+            return Err(Error::ffmpeg("out of memory"));
         }
         // SAFETY: `ctx` is the context made above, not opened yet; its I/O is `io`, and the custom-I/O flag keeps
         // FFmpeg from closing it.
@@ -135,13 +137,13 @@ impl Input {
         let ret = unsafe { (api.avformat_open_input)(&mut ptr, name.as_ptr(), ptr::null(), ptr::null_mut()) };
         if ret < 0 {
             free_io(api, io, source);
-            bail!("{}", error_text(ret));
+            return Err(Error::ffmpeg(error_text(ret)));
         }
         let input = Self { ptr, io, source, api };
         // SAFETY: `input.ptr` is the open context; its drop closes it.
         let ret = unsafe { (api.avformat_find_stream_info)(input.ptr, ptr::null_mut()) };
         if ret < 0 {
-            bail!("{}", error_text(ret));
+            return Err(Error::ffmpeg(error_text(ret)));
         }
         Ok(input)
     }
@@ -233,7 +235,7 @@ impl Stream<'_> {
     pub(crate) fn frames(&self) -> Result<u32> {
         // SAFETY: as above.
         let frames = unsafe { (*self.ptr).nb_frames }.max(0);
-        u32::try_from(frames).map_err(|_| anyhow::anyhow!("a stream of {frames} frames"))
+        u32::try_from(frames).map_err(|_| Error::stream(format!("a stream of {frames} frames")))
     }
 
     pub(crate) fn avg_frame_rate(&self) -> AVRational {
@@ -310,7 +312,7 @@ impl Packet {
         // SAFETY: av_packet_alloc takes no arguments and returns a new packet or null.
         let ptr = unsafe { (api.av_packet_alloc)() };
         if ptr.is_null() {
-            bail!("av_packet_alloc failed");
+            return Err(Error::ffmpeg("av_packet_alloc failed"));
         }
         Ok(Self { ptr, api })
     }
@@ -348,18 +350,18 @@ impl Decoder {
         // SAFETY: `params` is the stream's, and the codec id is a value FFmpeg returns for its decoders.
         let codec = unsafe { (api.avcodec_find_decoder)((*params).codec_id) };
         if codec.is_null() {
-            bail!("no decoder for {}", codec_name(stream.codec_id()));
+            return Err(Error::stream(format!("no decoder for {}", codec_name(stream.codec_id()))));
         }
         // SAFETY: `codec` is FFmpeg's, and the new context is freed by Decoder's drop, from here on.
         let ptr = unsafe { (api.avcodec_alloc_context3)(codec) };
         if ptr.is_null() {
-            bail!("avcodec_alloc_context3 failed");
+            return Err(Error::ffmpeg("avcodec_alloc_context3 failed"));
         }
         let decoder = Self { ptr, api };
         // SAFETY: `decoder.ptr` and `codec` are valid, and `params` is the stream's, open while `stream` is.
         let ret = unsafe { (api.avcodec_parameters_to_context)(decoder.ptr, params) };
         if ret < 0 {
-            bail!("{}", error_text(ret));
+            return Err(Error::ffmpeg(error_text(ret)));
         }
         // SAFETY: `decoder.ptr` is the context made above and not yet opened, so its thread count can be set. 0 lets
         // FFmpeg pick the threads (frame and slice threading): a seek decodes forward from its keyframe, a GOP's worth
@@ -368,7 +370,7 @@ impl Decoder {
         // SAFETY: as above; no options.
         let ret = unsafe { (api.avcodec_open2)(decoder.ptr, codec, ptr::null_mut()) };
         if ret < 0 {
-            bail!("{}", error_text(ret));
+            return Err(Error::ffmpeg(error_text(ret)));
         }
         Ok(decoder)
     }
@@ -411,7 +413,7 @@ impl Frame {
         // SAFETY: av_frame_alloc takes no arguments and returns a new frame or null.
         let ptr = unsafe { (api.av_frame_alloc)() };
         if ptr.is_null() {
-            bail!("av_frame_alloc failed");
+            return Err(Error::ffmpeg("av_frame_alloc failed"));
         }
         Ok(Self { ptr, api })
     }
@@ -419,7 +421,8 @@ impl Frame {
     /// A video frame of `format` and size `w` × `h`, with its buffers allocated.
     pub(crate) fn video(format: AVPixelFormat, w: u32, h: u32) -> Result<Self> {
         let frame = Self::new()?;
-        let (cw, ch) = (i32::try_from(w)?, i32::try_from(h)?);
+        let to_c = |n: u32| i32::try_from(n).map_err(|e| Error::ffmpeg(e.to_string()));
+        let (cw, ch) = (to_c(w)?, to_c(h)?);
         // SAFETY: `frame.ptr` is a live frame; the buffers are allocated for its format and size.
         unsafe {
             (*frame.ptr).format = format;
@@ -427,7 +430,7 @@ impl Frame {
             (*frame.ptr).height = ch;
             let ret = (frame.api.av_frame_get_buffer)(frame.ptr, 0);
             if ret < 0 {
-                bail!("allocating the frame: {}", error_text(ret));
+                return Err(Error::ffmpeg(format!("allocating the frame: {}", error_text(ret))));
             }
         }
         Ok(frame)
@@ -517,7 +520,7 @@ impl Scaler {
         // SAFETY: sws_alloc_context takes no arguments and returns a new context or null.
         let ptr = unsafe { (api.sws_alloc_context)() };
         if ptr.is_null() {
-            bail!("sws_alloc_context failed");
+            return Err(Error::ffmpeg("sws_alloc_context failed"));
         }
         Ok(Self { ptr, api })
     }

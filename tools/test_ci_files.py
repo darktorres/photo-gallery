@@ -358,5 +358,53 @@ class EnvironmentRegistry(unittest.TestCase):
         self.assertEqual(cpp, rust, "the C++ desktop reads its flags with the same spellings as pg_platform::env::parse")
 
 
+# The binaries keep anyhow for good: their errors are reported, not matched. Every library crate is listed in
+# anyhow-allow.txt until its migration removes it (Phase 7).
+ANYHOW_PERMANENT = {"cli", "desktop", "gallery"}
+ANYHOW_ALLOW = REPO / "tools" / "anyhow-allow.txt"
+
+
+def depends_on_anyhow(manifest):
+    """Whether the crate's manifest names anyhow in any dependency table: normal, dev, build, or a target-specific one."""
+    tables = [manifest, *manifest.get("target", {}).values()]
+    kinds = ("dependencies", "dev-dependencies", "build-dependencies")
+    return any("anyhow" in table.get(kind, {}) for table in tables for kind in kinds)
+
+
+class AnyhowAllowlist(unittest.TestCase):
+    def crates_depending(self):
+        found = set()
+        for manifest_path in sorted((REPO / "crates").glob("*/Cargo.toml")):
+            manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+            if depends_on_anyhow(manifest):
+                found.add(manifest_path.parent.name)
+        return found
+
+    def listed(self):
+        lines = ANYHOW_ALLOW.read_text(encoding="utf-8").splitlines()
+        return {line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")}
+
+    def test_every_crate_that_uses_anyhow_is_listed_or_permanent(self):
+        unlisted = self.crates_depending() - self.listed() - ANYHOW_PERMANENT
+        self.assertEqual(
+            unlisted, set(), "these crates depend on anyhow: move them to typed errors, or list them in anyhow-allow.txt"
+        )
+
+    def test_every_listed_crate_still_depends_on_anyhow(self):
+        stale = self.listed() - self.crates_depending()
+        self.assertEqual(stale, set(), "remove these from anyhow-allow.txt: they no longer depend on anyhow")
+
+    def test_the_permanent_crates_are_crates(self):
+        present = {path.parent.name for path in (REPO / "crates").glob("*/Cargo.toml")}
+        self.assertLessEqual(ANYHOW_PERMANENT, present)
+
+    def test_a_manifest_check_sees_each_table_kind(self):
+        self.assertTrue(depends_on_anyhow({"dependencies": {"anyhow": {"workspace": True}}}))
+        self.assertTrue(depends_on_anyhow({"dev-dependencies": {"anyhow": {"workspace": True}}}))
+        self.assertTrue(depends_on_anyhow({"build-dependencies": {"anyhow": "1"}}))
+        self.assertTrue(depends_on_anyhow({"target": {"cfg(unix)": {"dependencies": {"anyhow": "1"}}}}))
+        self.assertFalse(depends_on_anyhow({"dependencies": {"thiserror": "2"}}))
+
+
 if __name__ == "__main__":
     unittest.main()

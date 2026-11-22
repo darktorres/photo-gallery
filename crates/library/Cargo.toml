@@ -29,7 +29,6 @@ pg-scan = { path = "../scan" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-thumbs = { path = "../thumbs" }
 pg-writeback = { path = "../writeback" }
-anyhow.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -5,7 +5,7 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use crate::error::{Error, Result};
 use image::AnimationDecoder;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
@@ -30,13 +30,15 @@ pub fn frames(bytes: Arc<[u8]>) -> Result<impl Iterator<Item = Result<Frame>>> {
     let format = Format::sniff(&bytes);
     let cursor = Cursor::new(bytes);
     let frames = match format {
-        Some(Format::Gif) => GifDecoder::new(cursor)?.into_frames(),
-        Some(Format::Png) => PngDecoder::new(cursor)?.apng()?.into_frames(),
-        Some(Format::Webp) => WebPDecoder::new(cursor)?.into_frames(),
-        _ => bail!("not a GIF, PNG or WebP file"),
+        Some(Format::Gif) => GifDecoder::new(cursor).map_err(Error::decoder)?.into_frames(),
+        Some(Format::Png) => {
+            PngDecoder::new(cursor).map_err(Error::decoder)?.apng().map_err(Error::decoder)?.into_frames()
+        }
+        Some(Format::Webp) => WebPDecoder::new(cursor).map_err(Error::decoder)?.into_frames(),
+        _ => return Err(Error::invalid("not a GIF, PNG or WebP file")),
     };
-    Ok(frames.map(|frame| {
-        let frame = frame?;
+    Ok(frames.map(|frame| -> Result<Frame> {
+        let frame = frame.map_err(Error::decoder)?;
         let (numer, denom) = frame.delay().numer_denom_ms();
         let delay_ms = numer / denom.max(1);
         let rgba = frame.into_buffer();

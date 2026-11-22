@@ -25,7 +25,7 @@ pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-thumbcache = { path = "../thumbcache" }
-anyhow.workspace = true
+thiserror.workspace = true
 
 # The notice sink that keeps what it is told (`RecordingSink`), and a run folder for the cache the writer's state holds.
 [dev-dependencies]

@@ -28,10 +28,43 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail, ensure};
 use pg_import::pairs::{CACHE_KIB, WRITE};
 use rusqlite::types::Value;
 use rusqlite::{Connection, params};
+
+/// The probe's result: any error, its words kept as text (a probe has no caller that matches on its errors).
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The words of a failure: `words: error` for a failed call, the words alone for a missing value.
+trait Context<T> {
+    fn context(self, words: &str) -> Result<T>;
+}
+
+impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
+    fn context(self, words: &str) -> Result<T> {
+        self.map_err(|e| format!("{words}: {e}").into())
+    }
+}
+
+impl<T> Context<T> for Option<T> {
+    fn context(self, words: &str) -> Result<T> {
+        self.ok_or_else(|| words.into())
+    }
+}
+
+macro_rules! bail {
+    ($($arg:tt)*) => {
+        return Err(format!($($arg)*).into())
+    };
+}
+
+macro_rules! ensure {
+    ($cond:expr, $($arg:tt)*) => {
+        if !($cond) {
+            bail!($($arg)*);
+        }
+    };
+}
 
 /// The catalog's connection settings: a copy of `schema::SETTINGS`, which is crate-private, without its cache. The
 /// pass's cache (`CACHE_KIB`, from `pg_import::pairs`) is set in `open`, after these.
@@ -170,7 +203,7 @@ fn load(conn: &Connection, pairs: &str) -> Result<Vec<Picture>> {
         .collect::<rusqlite::Result<_>>()?;
     let index = |pictures: &[Picture], id: i64| pictures.binary_search_by_key(&id, |p| p.id).ok();
     for line in std::fs::read_to_string(pairs)?.lines().filter(|l| !l.is_empty()) {
-        let parts: Vec<i64> = line.split_whitespace().map(str::parse).collect::<Result<_, _>>()?;
+        let parts: Vec<i64> = line.split_whitespace().map(str::parse).collect::<std::result::Result<_, _>>()?;
         let &[a, b, distance] = parts.as_slice() else { bail!("a pair line that is not `a b distance`: {line}") };
         let (Some(ia), Some(ib)) = (index(&pictures, a), index(&pictures, b)) else { bail!("a pair of no picture") };
         pictures.get_mut(ib).context("b")?.owns.push((ia, distance));

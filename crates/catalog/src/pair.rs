@@ -33,7 +33,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::core::ScanLease;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::lease::HeldLease;
 use crate::transaction::write_transaction;
 use crate::types::{Subtree, WRITE_BATCH, skipped_folders, under_params};
@@ -268,7 +268,7 @@ impl ScanLease<'_> {
                         }
                     }
                 }
-                let json = serde_json::to_string(&to_clear).map_err(anyhow::Error::from)?;
+                let json = serde_json::to_string(&to_clear).map_err(Error::bare)?;
                 // An ambiguous row is counted as it is cleared (while it is still unpaired): the rows this returns.
                 let clear = steps_r.clear.timer();
                 let cleared: Vec<i64> = tx

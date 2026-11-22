@@ -3,7 +3,7 @@
 //! overlapping folder (`Catalog::begin_scan`); [`Error::RootRemoved`] and [`Error::LeaseLost`], a walk whose lease is
 //! gone (its folder removed from the library, or the lease expired); and [`Error::is_busy`], the catalog locked by
 //! another connection past the busy timeout. Every other failure is one of the sources the catalog reads or writes
-//! through (SQLite, a stored value, a file), or [`Error::Other`]: an `anyhow` error that carries its context.
+//! through (SQLite, a stored value, a file), or a [`Error::Step`]: the step that failed, with the error under it.
 
 use pg_model::rules::Path as RulePath;
 
@@ -73,9 +73,26 @@ pub enum Error {
     Refused { path: String, reason: Box<Refusal> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    /// A SQLite call or statement that failed (not an interrupt, which is [`Error::Interrupted`]). Its SQLite error is the
+    /// source, so [`Error::is_busy`] can find the busy code under any step.
+    #[error("{0}")]
+    Sqlite(#[source] rusqlite::Error),
+    /// A step of a larger one (opening, migrating, copying a file, a row's write) that failed: its words, and the error
+    /// under them.
+    #[error("{what}")]
+    Step {
+        what: String,
+        #[source]
+        source: Source,
+    },
+    /// A value the catalog can't use, with the words that say which (a stored path that can't be read, a failed folder's
+    /// reason that isn't one of this build's).
+    #[error("{0}")]
+    Invalid(String),
 }
+
+/// The error under a [`Error::Step`]: any error of the catalog's dependencies, boxed.
+pub(crate) type Source = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// Why `prepare` refuses a catalog file. Typed, so a front end words it itself (`Error::refusal`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,45 +184,49 @@ impl Refusal {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl From<rusqlite::Error> for Error {
-    /// SQLite's interrupt is [`Error::Interrupted`]; any other statement error is kept with its context.
+    /// SQLite's interrupt is [`Error::Interrupted`]; any other statement error is [`Error::Sqlite`].
     fn from(e: rusqlite::Error) -> Error {
         if e.sqlite_error_code() == Some(rusqlite::ErrorCode::OperationInterrupted) {
             Error::Interrupted
         } else {
-            Error::Other(e.into())
+            Error::Sqlite(e)
         }
     }
 }
 
 impl Error {
+    /// The step `what` failed on `source`: an [`Error::Step`] (an interrupt under it stays the interrupt).
+    pub(crate) fn step<E>(what: impl Into<String>, source: E) -> Error
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Error::Step { what: what.into(), source: Box::new(source) }
+    }
+
+    /// An error of a dependency with no step of its own (an encoder's, a serializer's): the text is the error's, as it was
+    /// before the step names were typed.
+    pub(crate) fn bare<E>(source: E) -> Error
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let what = source.to_string();
+        Error::Step { what, source: Box::new(source) }
+    }
+
     /// Whether this is SQLite's `SQLITE_BUSY` (another connection holds the lock, past this one's busy timeout),
-    /// anywhere in its chain: a statement error is kept inside [`Error::Other`], under whatever context was added. It
-    /// is worth trying again on the same connection. `SQLITE_LOCKED` (a conflict inside this connection) is not busy:
-    /// trying it again can loop.
+    /// anywhere in its chain: a statement error is kept under whatever steps were added. It is worth trying again on
+    /// the same connection. `SQLITE_LOCKED` (a conflict inside this connection) is not busy: trying it again can loop.
     pub fn is_busy(&self) -> bool {
-        match self {
-            Error::Other(e) => e.chain().any(|cause| {
-                cause.downcast_ref::<rusqlite::Error>().and_then(rusqlite::Error::sqlite_error_code)
-                    == Some(rusqlite::ErrorCode::DatabaseBusy)
-                    || cause.downcast_ref::<Error>().is_some_and(Error::is_busy)
-            }),
-            Error::Interrupted
-            | Error::Value(_)
-            | Error::ScanBusy { .. }
-            | Error::LeaseLost { .. }
-            | Error::RootRemoved { .. }
-            | Error::RemovalPending { .. }
-            | Error::NotInCatalog { .. }
-            | Error::BeingWritten { .. }
-            | Error::OtherBuildsBorders { .. }
-            | Error::Held { .. }
-            | Error::MigrationRoom { .. }
-            | Error::RootAgain { .. }
-            | Error::ForeignKeysOn
-            | Error::Stored { .. }
-            | Error::Refused { .. }
-            | Error::Io(_) => false,
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(self);
+        while let Some(error) = cause {
+            if error.downcast_ref::<rusqlite::Error>().and_then(rusqlite::Error::sqlite_error_code)
+                == Some(rusqlite::ErrorCode::DatabaseBusy)
+            {
+                return true;
+            }
+            cause = error.source();
         }
+        false
     }
 
     /// The catalog file's path and why `prepare` refused it, when this is a refusal.
@@ -220,7 +241,6 @@ impl Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Context;
 
     #[test]
     fn busy_is_found_under_any_context_and_locked_is_not_busy() {
@@ -229,13 +249,9 @@ mod tests {
         };
         let busy: Error = failure(rusqlite::ErrorCode::DatabaseBusy).into();
         assert!(busy.is_busy());
-        let wrapped = Error::Other(
-            Err::<(), _>(Error::from(failure(rusqlite::ErrorCode::DatabaseBusy)))
-                .context("posting")
-                .context("the inbox")
-                .unwrap_err(),
-        );
-        assert!(wrapped.is_busy(), "{wrapped:#}");
+        let wrapped =
+            Error::step("the inbox", Error::step("posting", Error::from(failure(rusqlite::ErrorCode::DatabaseBusy))));
+        assert!(wrapped.is_busy(), "{wrapped}");
         assert!(!Error::from(failure(rusqlite::ErrorCode::DatabaseLocked)).is_busy());
         assert!(!Error::Interrupted.is_busy());
     }

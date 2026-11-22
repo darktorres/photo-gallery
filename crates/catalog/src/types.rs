@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use anyhow::anyhow;
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};
 
@@ -19,7 +18,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
 
 use crate::convert::identity_to_sql;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// The volumes a work list covers: every one, or some of them, as the catalog stores them (`files.volume`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,7 +102,7 @@ pub(crate) fn roots_on(conn: &Connection, rules: PathRules) -> Result<Vec<Root>>
     let mut roots = Vec::new();
     for row in rows {
         let (id, bytes) = row?;
-        let path = rules.parse_bytes(&bytes).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
+        let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a stored library path has a NUL" })?;
         roots.push(Root { id: RootId::new(id), path });
     }
     Ok(roots)

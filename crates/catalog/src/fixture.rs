@@ -7,7 +7,7 @@ pub(crate) mod raw;
 pub mod state;
 
 use crate::core::Catalog;
-use anyhow::{Context, anyhow};
+use crate::error::{Error, Result};
 use pg_model::ids::{FileId, FolderId};
 use pg_model::turns::Turns;
 use rusqlite::params;
@@ -84,25 +84,29 @@ impl Drop for WriteHolds {
 }
 
 /// A folder's stored bytes and key, from its path text (as the tests write it) under the catalog's rules.
-pub(crate) fn folder_row(c: &Catalog, path: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    let path = c.rules().parse(path).ok_or_else(|| anyhow!("{path:?} is not a test folder path"))?;
+pub(crate) fn folder_row(c: &Catalog, path: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let path = c.rules().parse(path).ok_or_else(|| Error::Invalid(format!("{path:?} is not a test folder path")))?;
     Ok((c.rules().join(&path), c.rules().path_key(&path), c.rules().folder_key(&path.parts)))
 }
 
 /// Insert the files (scan 1 must exist).
-pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
+pub fn insert(catalog: &Catalog, files: &[File]) -> Result<()> {
     let conn = &catalog.conn;
     for f in files {
         let folder: Vec<u8> =
-            conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder.get()], |r| r.get(0)).with_context(
-                || format!("the folder {} of {}", f.folder.get(), pg_model::name::Name::from_raw(f.name).display()),
-            )?;
+            conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder.get()], |r| r.get(0)).map_err(|e| {
+                Error::step(
+                    format!("the folder {} of {}", f.folder.get(), pg_model::name::Name::from_raw(f.name).display()),
+                    e,
+                )
+            })?;
         let rules = catalog.rules();
-        let folder_parts = rules.parse_bytes(&folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+        let folder_parts =
+            rules.parse_bytes(&folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
         let name = pg_model::name::Name::from_raw(f.name);
         let order_key = rules.order_key(&rules.folder_key(&folder_parts.parts), &name);
         let ext = pg_model::media::Ext::of_name_bytes(f.name)
-            .ok_or_else(|| anyhow!("{} is not a media file", name.display()))?;
+            .ok_or_else(|| Error::Invalid(format!("{} is not a media file", name.display())))?;
         // A new row's change number, as the scan's writer takes it: one `meta.seq` a file, as the trigger it replaces took.
         let change: i64 =
             conn.query_row("UPDATE meta SET value = value + 1 WHERE key = 'seq' RETURNING value", [], |r| r.get(0))?;
@@ -125,17 +129,17 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
                 change
             ],
         )
-        .with_context(|| format!("insert {}", name.display()))?;
+        .map_err(|e| Error::step(format!("insert {}", name.display()), e))?;
     }
     Ok(())
 }
 
 /// A file's size and mtime as a scan that found it changed records them: the state the thumbnail and failure keys name,
 /// so a file rewritten on disk is seen as changed only once this has run (the `files_pending_changed` trigger fires as it would).
-pub fn set_state(catalog: &Catalog, id: FileId, size: i64, mtime: i64) -> anyhow::Result<()> {
+pub fn set_state(catalog: &Catalog, id: FileId, size: i64, mtime: i64) -> Result<()> {
     catalog
         .conn
         .execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![id.get(), size, mtime])
-        .with_context(|| format!("set the state of file {}", id.get()))?;
+        .map_err(|e| Error::step(format!("set the state of file {}", id.get()), e))?;
     Ok(())
 }

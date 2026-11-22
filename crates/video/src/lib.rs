@@ -4,6 +4,7 @@
 //! "Upright" is as players show it: the stream's display matrix (a phone's rotation tag) applied, then the
 //! catalog rotation. Near-duplicate detection doesn't cover videos yet: no pixel hash or PDQ.
 
+mod error;
 mod ffi;
 mod unopened;
 
@@ -14,7 +15,7 @@ use std::ffi::c_int;
 use std::path::Path;
 use std::sync::Once;
 
-use anyhow::{Context, Result, bail};
+pub use error::{Error, Result};
 
 use ffi::{
     AV_LOG_FATAL, AVColorRange_AVCOL_RANGE_JPEG, AVColorRange_AVCOL_RANGE_MPEG, AVColorRange_AVCOL_RANGE_UNSPECIFIED,
@@ -65,7 +66,7 @@ pub struct Probe {
 fn open(path: &Path) -> Result<Input> {
     init();
     // The file is read through a handle of its own (ffi.rs): its name is whatever the system holds, however long.
-    Input::open(path).with_context(|| format!("opening {}", path.display()))
+    Input::open(path)
 }
 
 /// The orientation (EXIF 1–8) that shows the stream as its display matrix asks. The matrix maps stored to shown
@@ -112,16 +113,16 @@ fn ticks_ms(ticks: i64, time_base: AVRational) -> f64 {
 
 pub fn probe(path: &Path) -> Result<Probe> {
     let input = open(path)?;
-    let stream = input.best_video().context("no video stream")?;
+    let stream = input.best_video().ok_or_else(|| Error::stream("no video stream"))?;
     // A stream nothing can decode is an error here, as it is when a frame is asked for. Its size and aspect ratio are
     // the stream's parameters (what a decoder opened on it would report), so no decoder is opened for them.
     let codec = ffi::codec_name(stream.codec_id());
     if !stream.has_decoder() {
-        bail!("no decoder for {codec}");
+        return Err(Error::stream(format!("no decoder for {codec}")));
     }
     let (w, h) = stream.picture_size();
     if w == 0 || h == 0 {
-        bail!("no picture size");
+        return Err(Error::stream("no picture size"));
     }
     let w = display_width(w, stream.sample_aspect_ratio());
     let orientation = display_orientation(&stream);
@@ -188,7 +189,7 @@ pub fn frame_into(
     spare: &mut Vec<u8>,
 ) -> Result<()> {
     let mut input = open(path)?;
-    let stream = input.best_video().context("no video stream")?;
+    let stream = input.best_video().ok_or_else(|| Error::stream("no video stream"))?;
     let index = stream.index();
     let orientation = display_orientation(&stream).compose(turns);
     let tb = stream.time_base();
@@ -222,7 +223,7 @@ pub fn frame_into(
         decoder.send_eof();
         picker.take(&mut decoder)?;
     }
-    let f = picker.found.or(picker.last).context("no frame decoded")?;
+    let f = picker.found.or(picker.last).ok_or_else(|| Error::stream("no frame decoded"))?;
     to_rgb(f, orientation, min, out)?;
     if orientation != Orientation::UPRIGHT {
         (out.width, out.height) = transform_into(&out.pixels, out.width, out.height, 3, orientation, spare);
@@ -287,7 +288,7 @@ fn to_rgb(mut src: Frame, orientation: Orientation, min: MinSize, out: &mut Rgb)
     let (w, h) = (src.width(), src.height());
     let dw = display_width(w, src.sample_aspect_ratio());
     if dw == 0 || h == 0 {
-        bail!("no picture size");
+        return Err(Error::stream("no picture size"));
     }
     if src.color_space() == AVColorSpace_AVCOL_SPC_UNSPECIFIED {
         src.set_color_space(if h >= 720 { AVColorSpace_AVCOL_SPC_BT709 } else { AVColorSpace_AVCOL_SPC_BT470BG });
@@ -305,7 +306,7 @@ fn to_rgb(mut src: Frame, orientation: Orientation, min: MinSize, out: &mut Rgb)
     let mut scaler = Scaler::new()?;
     let ret = scaler.scale(&src, &mut dst);
     if ret < 0 {
-        bail!("converting the frame to RGB: {}", ffi::error_text(ret));
+        return Err(Error::ffmpeg(format!("converting the frame to RGB: {}", ffi::error_text(ret))));
     }
     let (stride, data) = dst.packed_plane();
     let (row, rows) = (pg_model::num::index(tw) * 3, pg_model::num::index(th));
@@ -313,12 +314,14 @@ fn to_rgb(mut src: Frame, orientation: Orientation, min: MinSize, out: &mut Rgb)
     out.pixels.reserve(row * rows);
     if stride == row {
         // The rows are packed one after another: one copy.
-        out.pixels.extend_from_slice(data.get(..row * rows).context("the RGB frame is smaller than its size")?);
+        let packed = data.get(..row * rows).ok_or_else(|| Error::stream("the RGB frame is smaller than its size"))?;
+        out.pixels.extend_from_slice(packed);
     } else {
         let mut lines = data.chunks(stride.max(1));
         for _ in 0..rows {
             let line = lines.next().and_then(|line| line.get(..row));
-            out.pixels.extend_from_slice(line.context("the RGB frame is smaller than its size")?);
+            let line = line.ok_or_else(|| Error::stream("the RGB frame is smaller than its size"))?;
+            out.pixels.extend_from_slice(line);
         }
     }
     (out.width, out.height) = (pg_model::num::index(tw), rows);

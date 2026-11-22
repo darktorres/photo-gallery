@@ -9,7 +9,7 @@
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;
 
-use anyhow::Result;
+use crate::Result;
 use pg_catalog::Catalog;
 use pg_jobs::panics;
 use pg_jobs::schedule::{self, Step};
@@ -78,7 +78,7 @@ impl Inner {
     /// with the next request.
     fn round_caught(&self, catalog: &mut Option<Catalog>) -> std::result::Result<Step, Fault> {
         match panics::catch(AssertUnwindSafe(|| self.round(catalog))) {
-            Ok(result) => result.map_err(|e| Fault::Failed(tidy(&format!("{e:#}"), ERROR_CAP))),
+            Ok(result) => result.map_err(|e| Fault::Failed(tidy(&pg_model::error::chain(&e), ERROR_CAP))),
             Err(panic) => {
                 // The connection a panicking pass held is not trusted: the next round opens a new one.
                 *catalog = None;

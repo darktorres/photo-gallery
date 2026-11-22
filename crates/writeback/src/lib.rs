@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
 use pg_catalog::queue::{Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_catalog::{Catalog, WriteTarget};
 use pg_edit::rotate::{Outcome, rotate};
@@ -53,11 +52,15 @@ use pg_thumbcache::ThumbCache;
 
 use pg_jobs::events::Change;
 
+mod error;
 #[cfg(any(test, feature = "fault"))]
 pub mod fault;
 mod file;
 
 mod inplace;
+
+pub use error::{Error, Result};
+use error::{copy_started_temp, io_kind};
 
 pub use file::{discard_temps, temp_of};
 use file::{stat, sync, unchanged, write_into};
@@ -137,20 +140,6 @@ struct Original<'a> {
     path: &'a Path,
     native: &'a NativePath,
     shown: &'a str,
-}
-
-/// The context of a failure once the copy into the original may have started (its temp recorded): what the drain
-/// looks for to tell that the original may be part-written.
-#[derive(Debug)]
-struct CopyStarted {
-    /// The temp, as the user sees its path.
-    temp: String,
-}
-
-impl std::fmt::Display for CopyStarted {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "copying {} into the original", self.temp)
-    }
 }
 
 /// The copy of a fresh job into its original, once its temp is recorded: the original, open for the copy; the new
@@ -276,7 +265,8 @@ impl Writer {
     fn spawn(inner: Inner) -> Result<Writer> {
         let inner = Arc::new(inner);
         let job = inner.clone();
-        let service = Service::start("file writer", move |waker| job.run(waker)).context("start the file writer")?;
+        let service = Service::start("file writer", move |waker| job.run(waker))
+            .map_err(|e| Error::io("start the file writer", e))?;
         Ok(Writer { inner, service })
     }
 
@@ -389,7 +379,8 @@ impl Inner {
                 if catalog.writes_attemptable_skipping(&blocked)? {
                     self.tell_dropped(dropped);
                     // Come back when the newest change has settled (or at once for a new one); a stop ends the wait.
-                    if waker.wait(Some(Duration::from_secs(u64::try_from(SETTLE_SECS)?))) == Woke::Quit {
+                    let settle = u64::try_from(SETTLE_SECS).unwrap_or(u64::MAX);
+                    if waker.wait(Some(Duration::from_secs(settle))) == Woke::Quit {
                         return Ok(());
                     }
                     continue;
@@ -460,7 +451,7 @@ impl Inner {
                     s.error_file = None;
                 }),
                 Err(e) => {
-                    let panicked = panics::is_panic(&e);
+                    let panicked = e.is_panic();
                     if panicked {
                         // ExifTool may have been left in the middle of a command: the next job starts a new one.
                         *exiftool = None;
@@ -470,8 +461,8 @@ impl Inner {
                     // can't write) is a failure, counted like any other, and so is a sharing violation (another
                     // program has the file open for writing) and a panic.
                     let offline = !panicked
-                        && e.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                            matches!(io.kind(), std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound)
+                        && io_kind(&e).is_some_and(|kind| {
+                            matches!(kind, std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound)
                                 && !self.folder_present(catalog, job.file_id)
                         });
                     // A copy that may have started, whose original was deleted outside the app since its folder's removal
@@ -479,8 +470,7 @@ impl Inner {
                     // is, the user is told where, and the write goes.
                     let original_gone = !panicked
                         && job.temp.is_some()
-                        && e.downcast_ref::<std::io::Error>()
-                            .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound);
+                        && io_kind(&e).is_some_and(|kind| kind == std::io::ErrorKind::NotFound);
                     if original_gone && catalog.under_marker(job.file_id)? {
                         if let (Some((temp, _)), Some(folder)) = (&job.temp, catalog.file_folder(job.file_id)?) {
                             self.notices.post(Notice::FolderRemovalUnfinished { folder, temp: temp.clone() });
@@ -557,7 +547,7 @@ impl Inner {
             let original = Original { path: &path, native: &native, shown: &shown };
             return self
                 .finish_copy(catalog, job, (temp, *carried), &original)
-                .with_context(|| CopyStarted { temp: rules.display(temp) });
+                .map_err(|e| Error::copy_started(rules.display(temp), e));
         }
 
         // A rating for a format that can't hold one (known from the analysis) is done: the catalog keeps it.
@@ -569,7 +559,7 @@ impl Inner {
         // The original's bytes are read only where they are used: a turn rewrites them, and a format the analysis
         // didn't give is sniffed from them. A rating's new content is ExifTool's, made from the file on disk.
         let bytes = if known.is_none() || job.kind() == WriteKind::Rotation {
-            std::fs::read(&path).with_context(|| format!("reading {shown}"))?
+            std::fs::read(&path).map_err(|e| Error::io(format!("reading {shown}"), e))?
         } else {
             Vec::new()
         };
@@ -581,7 +571,7 @@ impl Inner {
             }
             Some(f) => f,
             None if job.kind() == WriteKind::Rating => return Ok(catalog.write_done(job, WriteEffect::Nothing)?),
-            None => bail!("{shown}: unknown image format"),
+            None => return Err(Error::invalid(format!("{shown}: unknown image format"))),
         };
         let temp_rule = temp_of(&path_rule, job.kind());
         let temp = disk_path(rules, &temp_rule);
@@ -595,16 +585,16 @@ impl Inner {
             Write::Rating(rating) => {
                 let tool = ExifTool::running(exiftool, self.exiftool.as_os_str())?;
                 tool.write_rating(&path, &temp, rating.get())?;
-                let written = std::fs::read(&temp).with_context(|| format!("reading {shown_temp}"))?;
+                let written = std::fs::read(&temp).map_err(|e| Error::io(format!("reading {shown_temp}"), e))?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
                     let _ = std::fs::remove_file(&temp);
-                    bail!("{shown}: the rating didn't read back after writing it");
+                    return Err(Error::invalid(format!("{shown}: the rating didn't read back after writing it")));
                 }
                 (written, false)
             }
             Write::Rotation(turns) => {
                 let write_temp = |new: Vec<u8>| -> Result<Vec<u8>> {
-                    std::fs::write(&temp, &new).with_context(|| format!("writing {shown_temp}"))?;
+                    std::fs::write(&temp, &new).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
                     Ok(new)
                 };
                 let new = match rotate(&bytes, format, turns)? {
@@ -616,8 +606,11 @@ impl Inner {
                             // the catalog.
                             let tool = ExifTool::running(exiftool, self.exiftool.as_os_str())?;
                             let written = match tool.write_orientation(&path, &temp, o.get()) {
-                                Ok(()) => Some(std::fs::read(&temp)?)
-                                    .filter(|written| pg_metadata::orientation(written, format) == o),
+                                Ok(()) => Some(
+                                    std::fs::read(&temp)
+                                        .map_err(|e| Error::io(format!("reading {}", rules.display(&temp_rule)), e))?,
+                                )
+                                .filter(|written| pg_metadata::orientation(written, format) == o),
                                 Err(_) => None,
                             };
                             match written {
@@ -639,7 +632,7 @@ impl Inner {
         // Step 2: the original, open for the copy and as it was read, with the temp durable. Until it is recorded, a
         // failure leaves the original untouched: the temp goes, and the next attempt starts from the file.
         #[cfg(any(test, feature = "fault"))]
-        fault::before_copy(self.fault, &self.fault_fired, job.file_id, &path)?;
+        fault::before_copy(self.fault, &self.fault_fired, job.file_id, &path).map_err(|e| Error::io("copying", e))?;
         let file = match Self::open_for_copy(&native, &temp, &shown, &shown_temp, before) {
             Ok(file) => file,
             Err(e) => {
@@ -670,7 +663,7 @@ impl Inner {
         let copy = CopyInto { file, data: &data, before, new_hash };
         let after = self
             .copy_and_done(catalog, job, &path, copy)
-            .with_context(|| CopyStarted { temp: rules.display(&temp_rule) })?;
+            .map_err(|e| Error::copy_started(rules.display(&temp_rule), e))?;
         // The write is recorded: the temp is a leftover now, and one that can't be removed is cleared by the next
         // write of the file.
         let _ = std::fs::remove_file(&temp);
@@ -678,7 +671,7 @@ impl Inner {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
-                let lag = pg_model::notice::ThumbnailLag { file: job.file_id, error: format!("{e:#}") };
+                let lag = pg_model::notice::ThumbnailLag { file: job.file_id, error: pg_model::error::chain(&e) };
                 self.update_status(|s| s.thumbnail_error = Some(lag));
             }
         }
@@ -698,9 +691,11 @@ impl Inner {
         shown_temp: &str,
         before: (u64, i64),
     ) -> Result<File> {
-        let file = pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
-        unchanged(shown, before, pg_platform::file::stat_of(&file)?)?;
-        sync(temp).with_context(|| format!("writing {shown_temp}"))?;
+        let file = pg_platform::file::open_for_copy(native)
+            .map_err(|e| Error::io(format!("opening {shown} for writing"), e))?;
+        let now = pg_platform::file::stat_of(&file).map_err(|e| Error::io(format!("reading {shown}"), e))?;
+        unchanged(shown, before, now)?;
+        sync(temp).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
         Ok(file)
     }
 
@@ -709,7 +704,7 @@ impl Inner {
     /// (size, mtime) after the copy.
     fn copy_and_done(&self, catalog: &Catalog, job: &Job, path: &Path, copy: CopyInto<'_>) -> Result<(u64, i64)> {
         #[cfg(any(test, feature = "fault"))]
-        fault::in_copy(self.fault, job.file_id)?;
+        fault::in_copy(self.fault, job.file_id).map_err(|e| Error::io("copying", e))?;
         write_into(copy.file, copy.data)?;
         let after = stat(path)?;
         let rewrite = Rewrite { before: Some(copy.before), after, metadata_only: copy.new_hash };
@@ -729,22 +724,22 @@ impl Inner {
         original: &Original<'_>,
     ) -> Result<()> {
         #[cfg(any(test, feature = "fault"))]
-        fault::in_copy(self.fault, job.file_id)?;
+        fault::in_copy(self.fault, job.file_id).map_err(|e| Error::io("copying", e))?;
         let Original { path, native, shown } = *original;
         let rules = catalog.rules();
         let written = Job { write: carried, ..job.clone() };
         let temp_path = disk_path(rules, temp);
         match std::fs::read(&temp_path) {
             Ok(data) => {
-                let file =
-                    pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
+                let file = pg_platform::file::open_for_copy(native)
+                    .map_err(|e| Error::io(format!("opening {shown} for writing"), e))?;
                 write_into(file, &data)?;
             }
             // A recorded temp is deleted only once the write is recorded, so a missing one was deleted after its copy
             // by an earlier build (which deleted it before recording the write), or by another program (which can't
             // be told apart). The original is taken as holding it; the stat below fails if the drive is gone.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(Error::io(format!("reading {}", rules.display(temp)), e)),
         }
         let after = stat(path)?;
         let rewrite = Rewrite { before: None, after, metadata_only: None };
@@ -778,11 +773,8 @@ impl Inner {
 
 /// The temp of a failed job whose copy into the original may have started (as the user sees its path): the job's
 /// recorded temp, or the one recorded in the attempt that failed. `None` when the original wasn't touched.
-fn copy_temp(catalog: &Catalog, job: &Job, error: &anyhow::Error) -> Option<String> {
-    error
-        .downcast_ref::<CopyStarted>()
-        .map(|started| started.temp.clone())
-        .or_else(|| job.temp.as_ref().map(|(temp, _)| catalog.rules().display(temp)))
+fn copy_temp(catalog: &Catalog, job: &Job, error: &pg_jobs::failure::Failed) -> Option<String> {
+    copy_started_temp(error).or_else(|| job.temp.as_ref().map(|(temp, _)| catalog.rules().display(temp)))
 }
 
 /// The job's file as the user sees its path, or its id when the catalog can't say.
@@ -899,8 +891,8 @@ mod tests {
     #[test]
     fn a_failed_copy_is_known_from_its_context() {
         let io = std::io::Error::other("disk full");
-        let e = Err::<(), _>(io).with_context(|| CopyStarted { temp: "t".into() }).unwrap_err();
-        assert_eq!(e.downcast_ref::<CopyStarted>().map(|c| c.temp.as_str()), Some("t"));
-        assert!(e.downcast_ref::<std::io::Error>().is_some(), "the offline rule still sees the I/O error");
+        let e = Error::copy_started("t", io);
+        assert_eq!(copy_started_temp(&e), Some("t".into()));
+        assert_eq!(io_kind(&e), Some(std::io::ErrorKind::Other), "the offline rule still sees the I/O error");
     }
 }

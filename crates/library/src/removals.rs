@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use crate::{Error, Result};
 use pg_catalog::{Catalog, Driven};
 use pg_model::ids::FileId;
 use pg_thumbcache::ThumbCache;
@@ -38,7 +38,7 @@ pub fn finish(
     // maintenance does, and gives the rest back).
     thumbs.shrink_all()?;
     match forget_failed {
-        Some(e) => Err(e),
+        Some(e) => Err(Error::Cache(e)),
         None => Ok(driven),
     }
 }

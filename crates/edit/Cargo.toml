@@ -15,8 +15,8 @@ pg-codec = { path = "../codec" }
 pg-container = { path = "../container" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
-anyhow.workspace = true
 image-webp.workspace = true
+thiserror.workspace = true
 png.workspace = true
 turbojpeg.workspace = true
 weezl.workspace = true

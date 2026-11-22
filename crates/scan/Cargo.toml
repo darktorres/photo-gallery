@@ -20,7 +20,7 @@ pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
-anyhow.workspace = true
+thiserror.workspace = true
 
 # The catalog's test fixture (a second connection's writes, the write lock's holds), and run folders for the catalogs
 # on disk that a second connection reaches.

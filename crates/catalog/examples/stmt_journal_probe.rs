@@ -15,13 +15,46 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail, ensure};
 use pg_catalog::{Catalog, Versions};
 use pg_model::media::Ext;
 use pg_model::name::Name;
 use pg_platform::native::PATH_RULES;
 use rusqlite::types::ToSql;
 use rusqlite::{Connection, Statement, ffi, params};
+
+/// The probe's result: any error, its words kept as text (a probe has no caller that matches on its errors).
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The words of a failure: `words: error` for a failed call, the words alone for a missing value.
+trait Context<T> {
+    fn context(self, words: &str) -> Result<T>;
+}
+
+impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
+    fn context(self, words: &str) -> Result<T> {
+        self.map_err(|e| format!("{words}: {e}").into())
+    }
+}
+
+impl<T> Context<T> for Option<T> {
+    fn context(self, words: &str) -> Result<T> {
+        self.ok_or_else(|| words.into())
+    }
+}
+
+macro_rules! bail {
+    ($($arg:tt)*) => {
+        return Err(format!($($arg)*).into())
+    };
+}
+
+macro_rules! ensure {
+    ($cond:expr, $($arg:tt)*) => {
+        if !($cond) {
+            bail!($($arg)*);
+        }
+    };
+}
 
 const FOLDERS: usize = 80;
 const PER_FOLDER: usize = 50;

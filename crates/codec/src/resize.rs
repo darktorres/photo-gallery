@@ -2,7 +2,7 @@
 //! viewer's pixels, PDQ's and ThumbHash's input. The kernel runs on the sRGB bytes as they are, with no conversion to
 //! linear light. The resize is part of the model: PDQ and ThumbHash take the bytes it returns.
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
 use fast_image_resize::images::{TypedImage, TypedImageRef};
 use fast_image_resize::pixels::U8x3;
 use fast_image_resize::{ResizeAlg, ResizeOptions};
@@ -99,18 +99,21 @@ impl Resizer {
     fn run(&mut self, img: &Rgb, width: usize, height: usize, options: &ResizeOptions, out: &mut Rgb) -> Result<()> {
         let (src_w, src_h) = (pixels_u32(img.width)?, pixels_u32(img.height)?);
         let (dst_w, dst_h) = (pixels_u32(width)?, pixels_u32(height)?);
-        let n_src = img.width.checked_mul(img.height).context("image size overflows")?;
-        let src_bytes = img.pixels.get(..n_src.checked_mul(3).context("image size overflows")?);
-        let src_bytes = src_bytes.context("image pixels shorter than its size")?;
-        let n_dst = width.checked_mul(height).context("output size overflows")?;
+        let overflows = || Error::invalid("image size overflows");
+        let n_src = img.width.checked_mul(img.height).ok_or_else(overflows)?;
+        let src_len = n_src.checked_mul(3).ok_or_else(overflows)?;
+        let src_bytes =
+            img.pixels.get(..src_len).ok_or_else(|| Error::invalid("image pixels shorter than its size"))?;
+        let n_dst = width.checked_mul(height).ok_or_else(|| Error::invalid("output size overflows"))?;
+        let dst_len = n_dst.checked_mul(3).ok_or_else(|| Error::invalid("output size overflows"))?;
         // Every output byte is written by the resize: a grown buffer only zeroes what it grew by.
-        out.pixels.resize(n_dst.checked_mul(3).context("output size overflows")?, 0);
+        out.pixels.resize(dst_len, 0);
         let src = TypedImageRef::<U8x3>::from_buffer(src_w, src_h, src_bytes)
-            .context("image pixels shorter than its size")?;
+            .map_err(|e| Error::resize("image pixels shorter than its size", e))?;
         {
-            let mut dst =
-                TypedImage::<U8x3>::from_buffer(dst_w, dst_h, &mut out.pixels).context("resize target buffer")?;
-            self.inner.resize_typed(&src, &mut dst, options).context("resizing")?;
+            let mut dst = TypedImage::<U8x3>::from_buffer(dst_w, dst_h, &mut out.pixels)
+                .map_err(|e| Error::resize("resize target buffer", e))?;
+            self.inner.resize_typed(&src, &mut dst, options).map_err(|e| Error::resize("resizing", e))?;
         }
         (out.width, out.height) = (width, height);
         Ok(())
@@ -119,7 +122,7 @@ impl Resizer {
 
 /// A side in pixels as `fast_image_resize` takes it.
 fn pixels_u32(side: usize) -> Result<u32> {
-    u32::try_from(side).context("image side over u32")
+    u32::try_from(side).map_err(|e| Error::resize("image side over u32", e))
 }
 
 #[cfg(test)]

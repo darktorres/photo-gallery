@@ -11,8 +11,8 @@ workspace = true
 # The ExifTool driver: a `-stay_open` process for the writes that need its tags. The process is the platform's to
 # start (no console window, ends with the driver).
 [dependencies]
-anyhow.workspace = true
 pg-platform = { path = "../platform" }
+thiserror.workspace = true
 
 [dev-dependencies]
 pg-metadata = { path = "../metadata" }

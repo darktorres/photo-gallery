@@ -30,10 +30,43 @@ use std::io::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail, ensure};
 use pg_import::pairs::CACHE_KIB;
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, OpenFlags};
+
+/// The probe's result: any error, its words kept as text (a probe has no caller that matches on its errors).
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The words of a failure: `words: error` for a failed call, the words alone for a missing value.
+trait Context<T> {
+    fn context(self, words: &str) -> Result<T>;
+}
+
+impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
+    fn context(self, words: &str) -> Result<T> {
+        self.map_err(|e| format!("{words}: {e}").into())
+    }
+}
+
+impl<T> Context<T> for Option<T> {
+    fn context(self, words: &str) -> Result<T> {
+        self.ok_or_else(|| words.into())
+    }
+}
+
+macro_rules! bail {
+    ($($arg:tt)*) => {
+        return Err(format!($($arg)*).into())
+    };
+}
+
+macro_rules! ensure {
+    ($cond:expr, $($arg:tt)*) => {
+        if !($cond) {
+            bail!($($arg)*);
+        }
+    };
+}
 
 /// The load's one statement before the pairing plan's second round, step 8 (`work.rs` at `459c8e0`): each analysis
 /// joined to its file and its owed row.

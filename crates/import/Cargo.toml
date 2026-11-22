@@ -18,7 +18,7 @@ pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-perf = { path = "../perf" }
 pg-platform = { path = "../platform" }
-anyhow.workspace = true
+thiserror.workspace = true
 
 # The pairing probes (`examples/pairs_*_probe.rs`) read and write the catalog's pairing tables directly.
 [dev-dependencies]

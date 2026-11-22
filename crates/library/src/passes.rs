@@ -5,8 +5,8 @@
 
 use std::sync::PoisonError;
 
-use anyhow::Result;
 use pg_catalog::Catalog;
+use pg_jobs::failure::Failed;
 use pg_jobs::schedule::{Pass, Step};
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, tidy};
@@ -14,6 +14,7 @@ use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
 use pg_scan::ScanError;
 
+use crate::Error;
 use crate::inner::Inner;
 use crate::scans;
 use crate::shared::Shared;
@@ -37,6 +38,11 @@ pub(crate) fn count(n: usize) -> u64 {
 /// An error's text as a notice holds it (`pg_model::notice::error_text`).
 pub(crate) use pg_model::notice::error_text;
 
+/// An error's text as a notice holds it, with the causes under it (`pg_model::error::chain`).
+pub(crate) fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    error_text(&pg_model::error::chain(error))
+}
+
 /// Originals were cut in place: their thumbnails are forgotten (they show the uncut pixels), and the import that follows
 /// analyzes them again. The app is told the files changed.
 pub(crate) fn cut_done(shared: &Shared, cut: &[FileId]) {
@@ -44,7 +50,7 @@ pub(crate) fn cut_done(shared: &Shared, cut: &[FileId]) {
         return;
     }
     for (_, e) in scans::forget_replaced(&shared.thumbs, cut) {
-        shared.notices.post(Notice::CutFailed { error: error_text(&e) });
+        shared.notices.post(Notice::CutFailed { error: error_chain(&e) });
     }
     shared.imported();
 }
@@ -53,10 +59,10 @@ pub(crate) fn cut_done(shared: &Shared, cut: &[FileId]) {
 pub(crate) struct Scans;
 
 impl Pass<Cx<'_>> for Scans {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let shared = &cx.inner.shared;
         let rules = cx.catalog.rules();
-        let library: Vec<RulePath> = cx.catalog.roots()?.into_iter().map(|r| r.path).collect();
+        let library: Vec<RulePath> = cx.catalog.roots().map_err(Error::from)?.into_iter().map(|r| r.path).collect();
         loop {
             let Some(path) = cx.inner.scans().pop_front() else {
                 return Ok(Step::Done);
@@ -80,7 +86,7 @@ impl Pass<Cx<'_>> for Scans {
                     // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
                     // Both come after the catalog's commit, which the scan made.
                     for (_, e) in scans::forget_replaced(&shared.thumbs, &s.pairing.replaced_ids) {
-                        cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
+                        cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_chain(&e) });
                     }
                     for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
                         cx.inner.notify(Notice::ScanFailed {
@@ -117,7 +123,7 @@ impl Pass<Cx<'_>> for Scans {
                 // Nothing failed, and the folder isn't asked for again.
                 Err(ScanError::Removed { .. }) => {}
                 Err(ScanError::Failed(e)) => {
-                    cx.inner.notify(Notice::ScanFailed { root: path, error: error_text(&e) });
+                    cx.inner.notify(Notice::ScanFailed { root: path, error: error_chain(&e) });
                     // Its batches before the error are in.
                     cx.inner.scanned();
                 }
@@ -131,7 +137,7 @@ impl Pass<Cx<'_>> for Scans {
 pub(crate) struct Import;
 
 impl Pass<Cx<'_>> for Import {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let volumes = cx.inner.volume_set();
         let s = pg_import::import_while(
             cx.catalog,
@@ -153,7 +159,7 @@ impl Pass<Cx<'_>> for Import {
 pub(crate) struct Hashes;
 
 impl Pass<Cx<'_>> for Hashes {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let features = cx.inner.shared.features.clone();
         if !features.get().duplicates {
             return Ok(Step::Done);
@@ -184,7 +190,7 @@ impl Pass<Cx<'_>> for Hashes {
 pub(crate) struct Pairing;
 
 impl Pass<Cx<'_>> for Pairing {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         if !cx.inner.shared.features.get().duplicates {
             return Ok(Step::Done);
         }
@@ -197,7 +203,7 @@ impl Pass<Cx<'_>> for Pairing {
                 Ok(s) => s,
                 Err(e) => {
                     gate.abandon();
-                    return Err(e);
+                    return Err(e.into());
                 }
             };
             // The duplicates the views list change with the pairs stored.
@@ -219,7 +225,7 @@ impl Pass<Cx<'_>> for Pairing {
 pub(crate) struct Borders;
 
 impl Pass<Cx<'_>> for Borders {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let features = cx.inner.shared.features.clone();
         if !features.get().borders {
             // Nothing is looked for, so nothing is unreadable: a notice from an earlier pass is no longer true.
@@ -250,7 +256,7 @@ impl Pass<Cx<'_>> for Borders {
 pub(crate) struct Thumbs;
 
 impl Pass<Cx<'_>> for Thumbs {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         // No height yet: the grid has not said which thumbnails it wants, so there is nothing to make.
         let Some(height) = cx.inner.shared.heights.get() else {
             return Ok(Step::Done);
@@ -279,7 +285,7 @@ impl Pass<Cx<'_>> for Thumbs {
             Ok(s) => s,
             // A pass that fails is said, and the round goes on to the duplicates and the borders, which are after it.
             Err(e) => {
-                cx.inner.notify(Notice::CacheNotStored { error: error_text(&e) });
+                cx.inner.notify(Notice::CacheNotStored { error: error_chain(&e) });
                 return Ok(Step::Done);
             }
         };
@@ -301,7 +307,7 @@ impl Pass<Cx<'_>> for Thumbs {
 pub(crate) struct Placeholders;
 
 impl Pass<Cx<'_>> for Placeholders {
-    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
+    fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         if cx.inner.shared.thumbs.suspended() {
             return Ok(Step::Done);
         }

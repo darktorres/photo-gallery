@@ -20,7 +20,7 @@ use pg_thumbcache::{Effect, ThumbCache};
 use crate::catalogs::Catalogs;
 use crate::config::Config;
 use crate::edit::Edit;
-use crate::error::{Error, Result, failed};
+use crate::error::{Error, Result};
 use crate::images::Images;
 use crate::inbox::Inbox;
 use crate::library::LibraryService;
@@ -81,14 +81,14 @@ impl App {
         let shown = config.layout.catalog_dir();
         config.layout.ensure_catalog_dir(false).map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => Error::FolderMissing(shown.to_path_buf()),
-            _ => failed(format!("{}: {e}", shown.display())),
+            _ => Error::Failed(format!("{}: {e}", shown.display())),
         })?;
         // A caution, not a refusal: the catalog opens on a network drive or in a sync folder, but its files are at risk there.
         if let Some(caution) = pg_platform::dir::folder_caution(shown, pg_platform::env::process) {
             pg_log::warn("catalog", &caution_text(shown, caution));
         }
         // The catalog folder as SQLite opens it (an alias in the home for a folder it can't name).
-        let layout = config.layout.for_sqlite().map_err(|e| failed(format!("{}: {e}", shown.display())))?;
+        let layout = config.layout.for_sqlite().map_err(|e| Error::Failed(format!("{}: {e}", shown.display())))?;
         let catalog_path = layout.catalog_path();
         let keeper = pg_library::open_catalog(&layout)?;
         let catalog_id = keeper.catalog_id()?;
@@ -246,7 +246,7 @@ fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox
                 }
             }
         })
-        .map_err(|e| failed(format!("can't start the thumbnail event forwarder: {e}")))
+        .map_err(|e| Error::Failed(format!("can't start the thumbnail event forwarder: {e}")))
 }
 
 #[cfg(test)]

@@ -13,10 +13,9 @@
 //!
 //! [`cut`] is the cut of an original (`pg_crop::cut`), exact on every format: its docs say how each re-encode is made.
 
-use anyhow::{Context, Result, bail, ensure};
-
 use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
 use crate::rewrite::{self, op::Op};
+use crate::{Error, Result};
 use pg_model::{format::Format, num};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -32,7 +31,9 @@ pub struct Cropped {
 /// Crop `cut` (left, top, right, bottom, stored pixels) off a still image of stored size `width` × `height`.
 pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]) -> Result<Cropped> {
     let [l, t, r, b] = cut;
-    ensure!(l + r < width && t + b < height, "the cut {cut:?} leaves nothing of {width}×{height}");
+    if !(l + r < width && t + b < height) {
+        return Err(Error::invalid(format!("the cut {cut:?} leaves nothing of {width}×{height}")));
+    }
     let exact = |l: u32, t: u32| {
         Op::Crop([num::index(l), num::index(t), num::index(width - l - r), num::index(height - t - b)])
     };
@@ -40,23 +41,28 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
     match format {
         Format::Jpeg => {
             let (mw, mh) = rewrite::jpeg::mcu(bytes)?;
-            let (l, t) = (l.next_multiple_of(u32::try_from(mw)?), t.next_multiple_of(u32::try_from(mh)?));
-            ensure!(l + r < width && t + b < height, "the cut leaves nothing once on the JPEG's {mw}×{mh} grid");
+            let grid = |n: u32, step: usize| u32::try_from(step).map(|s| n.next_multiple_of(s)).map_err(Error::bare);
+            let (l, t) = (grid(l, mw)?, grid(t, mh)?);
+            if !(l + r < width && t + b < height) {
+                return Err(Error::invalid(format!("the cut leaves nothing once on the JPEG's {mw}×{mh} grid")));
+            }
             let out = rewrite::jpeg::rewrite(bytes, exact(l, t))?;
-            let header = turbojpeg::read_header(&out)?;
+            let header = turbojpeg::read_header(&out).map_err(Error::bare)?;
             let want = (num::index(width - l - r), num::index(height - t - b));
-            ensure!((header.width, header.height) == want, "the crop came out {}×{}", header.width, header.height);
+            if (header.width, header.height) != want {
+                return Err(Error::invalid(format!("the crop came out {}×{}", header.width, header.height)));
+            }
             Ok(Cropped { bytes: out, cut: [l, t, r, b], metadata: true })
         }
-        Format::Png if png_animated(bytes) => bail!("an animated PNG isn't cropped"),
+        Format::Png if png_animated(bytes) => Err(Error::invalid("an animated PNG isn't cropped")),
         Format::Png => kept(rewrite::png::rewrite(bytes, exact(l, t))?),
         Format::Webp => match webp_kind(bytes) {
-            WebpKind::Animated => bail!("an animated WebP isn't cropped"),
+            WebpKind::Animated => Err(Error::invalid("an animated WebP isn't cropped")),
             WebpKind::Lossless | WebpKind::Lossy => kept(rewrite::webp::rewrite(bytes, exact(l, t))?),
         },
         Format::Gif => match rewrite::gif::rewrite(bytes, exact(l, t))? {
             Some(out) => kept(out),
-            None => bail!("an animated GIF isn't cropped"),
+            None => Err(Error::invalid("an animated GIF isn't cropped")),
         },
         Format::Bmp => match rewrite::bmp::rewrite(bytes, exact(l, t))? {
             Some(out) => kept(out),
@@ -73,12 +79,14 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
 /// is cut as [`crop`] cuts it, so the copies and the cuts of those are the same bytes.
 pub fn cut(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]) -> Result<Cropped> {
     let [l, t, r, b] = cut;
-    ensure!(l + r < width && t + b < height, "the cut {cut:?} leaves nothing of {width}×{height}");
+    if !(l + r < width && t + b < height) {
+        return Err(Error::invalid(format!("the cut {cut:?} leaves nothing of {width}×{height}")));
+    }
     let rect = [l, t, width - l - r, height - t - b];
     match format {
         Format::Jpeg => {
             let quality = pg_codec::encode::jpeg_quality(bytes)
-                .context("the JPEG has no luminance table to read its quality from")?;
+                .ok_or_else(|| Error::invalid("the JPEG has no luminance table to read its quality from"))?;
             let bytes = pg_codec::encode::jpeg_cropped(bytes, rect, quality)?;
             Ok(Cropped { bytes, cut, metadata: false })
         }

@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use pg_catalog::Catalog;
+use pg_jobs::failure::Failed;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::drive::{Drive, DriveKey, Drives, SystemDrives, same_drive, unplugged};
 use pg_platform::native::PATH_RULES;
@@ -119,7 +120,7 @@ pub(crate) fn drive_label<'a>(
 
 /// The lanes a command runs over a catalog: [`groups`] of its roots, or, when it has no roots, one lane over every volume
 /// (what a command with no folders has always run). `serial` is the escape hatch (one lane).
-pub fn command_groups(catalog: &Catalog, serial: bool) -> anyhow::Result<Vec<Group>> {
+pub fn command_groups(catalog: &Catalog, serial: bool) -> crate::Result<Vec<Group>> {
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
     let groups = groups(catalog.rules(), &roots, serial);
     if groups.is_empty() {
@@ -131,12 +132,12 @@ pub fn command_groups(catalog: &Catalog, serial: bool) -> anyhow::Result<Vec<Gro
 /// Runs `pass` once per group, each on a connection of its own (opened at `catalog_path`) and a child of `ctl`
 /// (`Control::lane`), one thread per group, so the drives are worked at once. The results are in the groups' order. A lane
 /// that panics fails the run. The run's cores are shared among the lanes, as the job shares them (`Control::share_cpu`).
-pub fn run_each<T: Send>(
+pub fn run_each<T: Send, E: Into<Failed> + Send>(
     catalog_path: &std::path::Path,
     groups: &[Group],
     ctl: &pg_jobs::control::Control,
-    pass: impl Fn(&mut Catalog, &Group, &pg_jobs::control::Control) -> anyhow::Result<T> + Sync,
-) -> anyhow::Result<Vec<T>> {
+    pass: impl Fn(&mut Catalog, &Group, &pg_jobs::control::Control) -> std::result::Result<T, E> + Sync,
+) -> std::result::Result<Vec<T>, Failed> {
     ctl.share_cpu(pg_jobs::pipeline::cpus());
     let lanes: Vec<(&Group, std::sync::Arc<pg_jobs::control::Control>)> =
         groups.iter().map(|group| (group, ctl.lane())).collect();
@@ -145,19 +146,20 @@ pub fn run_each<T: Send>(
         let handles: Vec<_> = lanes
             .iter()
             .map(|(group, lane)| {
-                scope.spawn(move || -> anyhow::Result<T> {
-                    let mut catalog = Catalog::open(catalog_path, PATH_RULES)?;
-                    pass(&mut catalog, group, lane)
+                scope.spawn(move || -> std::result::Result<T, Failed> {
+                    let mut catalog =
+                        Catalog::open(catalog_path, PATH_RULES).map_err(|e| Failed::from(crate::Error::from(e)))?;
+                    pass(&mut catalog, group, lane).map_err(Into::into)
                 })
             })
             .collect();
         handles
             .into_iter()
             .map(|handle| {
-                // The panic's own message, as a `Panicked` (`pg_jobs::panics::is_panic` recognises it).
+                // The panic's own message, as a panic failure (`Failed::is_panic` recognises it).
                 handle.join().unwrap_or_else(|payload| {
                     let message = pg_jobs::panics::message(&*payload).to_string();
-                    Err(anyhow::Error::new(pg_jobs::panics::Panicked(message)))
+                    Err(Failed::panic(message))
                 })
             })
             .collect()

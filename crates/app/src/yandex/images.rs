@@ -237,7 +237,7 @@ pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: RowHeight) -> 
     // The row's height in pixels, as the maker takes it.
     let px = pg_model::num::index(height.get());
     makers
-        .with_maker(|maker| Ok(maker.make(bytes, px, Turns::NONE).map_err(|_| "the picture does not decode")))
+        .with_maker(|maker| maker.make(bytes, px, Turns::NONE).map_err(|_| "the picture does not decode"))
         .map_err(|_| "no maker")?
 }
 

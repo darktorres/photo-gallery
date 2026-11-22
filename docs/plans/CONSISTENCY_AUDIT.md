@@ -2723,7 +2723,7 @@ Qt objects are reached by string name across the boundary: screenshot.cpp reads 
 
 ### A-017 [medium] Shortcut policy location and QML controller logic conflict — CONFIRMED
 
-**Disposition: Deferred.** The 117 controller functions in QML need Rust facades, each checked by a Qt run.
+**Disposition: Fixed.** The shortcut policy is the controller's: `GlobalShortcuts.qml` has no functions, and Main passes each shortcut's code on through `Shell.globalAction`, which decides the panel. The QML's controller logic moved to the Rust objects that own its state, under the facade criterion in `REFACTOR_LEDGER.md` F-48 (decided: no per-component facades; each decision goes to the owning object). The function count went from 118 (`ec85b503`) to 98; what remains is forwarding or presentation, listed in `docs/plans/QML_FUNCTION_PLACEMENT.md`.
 
 GlobalShortcuts.qml:4 and Main.qml say what a shortcut does is the controller's, and the controller decides. `REFACTOR_LEDGER.md:116` (F-45) records 106 functions of controller logic still in QML, with Main 25, Viewer 17, InboxPanel 15 and FilterBar 11. The stated policy and the code disagree, and the ledger records it as open.
 

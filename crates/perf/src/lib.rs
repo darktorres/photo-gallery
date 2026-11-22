@@ -358,6 +358,7 @@ pub struct Tally {
 }
 
 impl Tally {
+    /// A tally reported under `name` in the perf log, with nothing recorded yet.
     pub const fn new(name: &'static str) -> Tally {
         Tally {
             name,

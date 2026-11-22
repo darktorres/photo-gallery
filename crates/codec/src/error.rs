@@ -7,21 +7,27 @@ pub enum Error {
     /// A decoder's step failed on the bytes (or on the header's sizes).
     #[error("{step}")]
     Decode {
+        /// The decoder's step that failed, in words.
         step: String,
+        /// The decoder's own error.
         #[source]
         source: Source,
     },
     /// An encoder's step failed.
     #[error("{step}")]
     Encode {
+        /// The encoder's step that failed, in words.
         step: String,
+        /// The encoder's own error.
         #[source]
         source: Source,
     },
     /// The resizer's step failed.
     #[error("{step}")]
     Resize {
+        /// The resizer's step that failed, in words.
         step: String,
+        /// The resizer's own error.
         #[source]
         source: Source,
     },

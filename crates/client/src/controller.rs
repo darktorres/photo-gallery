@@ -37,11 +37,17 @@ pub const GAP: f64 = 4.0;
 /// run, and the controller saves only what the user changes afterwards.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Start {
+    /// The grid's listing: the folder, the query and the sort.
     pub listing: Listing,
+    /// The grid's row height for this run.
     pub row: RowHeight,
+    /// The row height saved for the next start.
     pub saved_row: RowHeight,
+    /// Whether the filter bar is open.
     pub filters_open: bool,
+    /// Whether the borders are shown.
     pub show_borders: bool,
+    /// Whether developer mode is on.
     pub dev_mode: bool,
     /// The session's last file, selected in the first list (the prefs'). `None` when none was remembered.
     pub last_file: Option<FileId>,
@@ -77,12 +83,15 @@ impl Start {
 pub enum Event {
     /// The folder tree was loaded (at the start, and after each scan).
     TreeLoaded {
+        /// Whether the listed folder is in the tree.
         folder_known: bool,
     },
     /// The list was shown with `count` rows. `generation` is the [`Command::OpenList`] whose list it is (the one the
     /// model applied last); `None` when no list was applied yet, and in a recording made before it was reported.
     ListShown {
+        /// How many rows the list has.
         count: usize,
+        /// The list's generation, as the command named it.
         #[serde(default)]
         generation: Option<u64>,
     },
@@ -107,19 +116,25 @@ pub enum Event {
     Listing(listing::Event),
     /// A rating, a quarter turn, or a border mark, asked for by the user (the viewer's or the grid's keys).
     Rate {
+        /// The item rated.
         item: usize,
         /// Zero stars takes the rating away.
         rating: Rating,
     },
+    /// A quarter turn of an item, asked for by the user.
     Turn {
+        /// The item turned.
         item: usize,
         /// Quarter turns clockwise (a counterclockwise turn is three).
         turns: Turns,
     },
+    /// Toggles an item's border mark, asked for by the user.
     ToggleBorderMark(usize),
     /// An item's border mark is set (the viewer's own state, as the window reports it).
     SetBorderMark {
+        /// The item whose mark is set.
         item: usize,
+        /// Whether it is marked.
         marked: bool,
     },
     /// The folder the window spelled (its canonical name): the listing's folder is replaced, nothing is listed, and the
@@ -128,7 +143,9 @@ pub enum Event {
     /// Show the file `file` (an inbox entry's Reveal): its folder, `folder`, is listed with nothing filtered, and the file
     /// is selected once the list is shown ([`Command::Reveal`]).
     Reveal {
+        /// The file to show.
         file: FileId,
+        /// Its folder, as the window spells it.
         folder: Merged,
     },
     /// The list is read again, the selection kept (the files changed on disk).
@@ -151,22 +168,49 @@ pub enum Command {
     /// The start is over: the tree and the first list are in.
     Started,
     /// Move the selection to the neighbour `dx` columns and `dy` rows away (the grid's layout resolves it).
-    Step { dx: i32, dy: i32 },
+    Step {
+        /// Columns away.
+        dx: i32,
+        /// Rows away.
+        dy: i32,
+    },
     /// Show the viewer at this item.
     ShowViewer(usize),
     /// List the files of this listing (model: the grid model executes it). keep: the selection is kept, else the list
     /// shows from the top. `generation` names the list: each `OpenList` has a newer one than any before (one counter, the
     /// controller's), the grid shows only the newest it asked for, and the window reports it back when the list is
     /// shown (`Event::ListShown`).
-    OpenList { listing: Listing, keep: bool, generation: u64 },
+    OpenList {
+        /// The listing to show.
+        listing: Listing,
+        /// Whether the selection is kept.
+        keep: bool,
+        /// The list's generation, the newest one asked for.
+        generation: u64,
+    },
     /// Set the rating of an item (model).
-    Rate { item: usize, rating: Rating },
+    Rate {
+        /// The item to rate.
+        item: usize,
+        /// The rating to set.
+        rating: Rating,
+    },
     /// Turn an item by quarter turns (model).
-    Turn { item: usize, turns: Turns },
+    Turn {
+        /// The item to turn.
+        item: usize,
+        /// The quarter turns.
+        turns: Turns,
+    },
     /// Toggle an item's border mark (model).
     ToggleBorderMark(usize),
     /// Set an item's border mark (model).
-    SetBorderMark { item: usize, marked: bool },
+    SetBorderMark {
+        /// The item whose mark is set.
+        item: usize,
+        /// Whether it is marked.
+        marked: bool,
+    },
     /// Read again the rows of the files turned in place (model).
     RefreshTurned,
     /// Remember the listing for the next start.
@@ -175,7 +219,12 @@ pub enum Command {
     SaveLastFile,
     /// Lay the grid out again at this width and row height (presentation: the view keeps its place). Only once a width is
     /// known: a layout with no width is not asked for.
-    Relayout { width: GridWidth, row_height: RowHeight },
+    Relayout {
+        /// The width the grid is laid out at.
+        width: GridWidth,
+        /// The row height the grid is laid out at.
+        row_height: RowHeight,
+    },
     /// A panel changed.
     Panel(panels::Change),
     /// Open this modal panel (a global shortcut).

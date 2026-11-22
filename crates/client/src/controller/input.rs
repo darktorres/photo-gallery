@@ -14,7 +14,10 @@ pub enum Event {
     /// The current item changed (`None`: no item is current).
     CurrentChanged(Option<usize>),
     /// A list of `count` items is shown.
-    ListShown { count: usize },
+    ListShown {
+        /// How many items are shown.
+        count: usize,
+    },
 }
 
 /// What the desktop does for a key.
@@ -23,7 +26,12 @@ pub enum Command {
     /// Select this item and scroll it into view.
     Select(usize),
     /// Select the neighbour of the current item `dx` columns and `dy` rows away: the model's layout resolves it.
-    Step { dx: i32, dy: i32 },
+    Step {
+        /// Columns away.
+        dx: i32,
+        /// Rows away.
+        dy: i32,
+    },
     /// A model action on the current item (rate, turn, mark its border): the desktop carries out `GridKey` for it.
     Act(GridKey),
     /// Show the viewer at this item.

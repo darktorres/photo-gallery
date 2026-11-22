@@ -10,6 +10,7 @@ use pg_model::write::{Write, WriteKind};
 /// A queued write, as the writer takes it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Job {
+    /// The file the write is for.
     pub file_id: FileId,
     /// The rating, or the quarter turns still to write.
     pub write: Write,
@@ -32,8 +33,11 @@ impl Job {
 /// did, so the analysis is redone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rewrite {
+    /// The file's size and mtime before the rewrite, if it was known.
     pub before: Option<(u64, i64)>,
+    /// The file's size and mtime after the rewrite.
     pub after: (u64, i64),
+    /// The file's hash when only its metadata changed.
     pub metadata_only: Option<pg_model::analysis::FileHash>,
 }
 
@@ -42,9 +46,19 @@ pub struct Rewrite {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriteEffect {
     /// The rating is in the file, which was rewritten to hold it (0 stars: it holds none).
-    FileRating { rewrite: Rewrite, rating: Rating },
+    FileRating {
+        /// The rewrite that holds the rating.
+        rewrite: Rewrite,
+        /// The rating the file now holds.
+        rating: Rating,
+    },
     /// The turns are in the file, which was rewritten to show them: the analysis is turned back to match.
-    TurnedBack { rewrite: Rewrite, turns: Turns },
+    TurnedBack {
+        /// The rewrite that holds the turns.
+        rewrite: Rewrite,
+        /// The turns the file now shows.
+        turns: Turns,
+    },
     /// The file can't hold the turns: the catalog keeps them (`files.rotation`).
     KeptInCatalog(Turns),
     /// Nothing to record: the write is done, and the catalog already says so.

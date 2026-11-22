@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 
+/// The results the user has picked, and the anchor a Shift-click range starts from.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Picks {
     picked: Vec<bool>,
@@ -23,14 +24,17 @@ impl Picks {
         self.anchor = None;
     }
 
+    /// How many results the list has.
     pub fn len(&self) -> usize {
         self.picked.len()
     }
 
+    /// Whether the list has no results.
     pub fn is_empty(&self) -> bool {
         self.picked.is_empty()
     }
 
+    /// Whether result `i` is picked.
     pub fn is_picked(&self, i: usize) -> bool {
         self.picked.get(i).copied().unwrap_or(false)
     }

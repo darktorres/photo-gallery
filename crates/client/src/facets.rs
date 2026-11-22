@@ -15,8 +15,11 @@ pub const ALL: [ListFacet; 6] =
 /// bar shows them (most files first, then any chosen one the folder doesn't have, at 0, so it can be unchosen).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Counts {
+    /// The counts of each file type.
     pub types: Vec<(MediaType, i64)>,
+    /// The counts of each border value.
     pub borders: Vec<(BorderFacet, i64)>,
+    /// The counts of each extension.
     pub exts: Vec<(String, i64)>,
 }
 

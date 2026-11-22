@@ -13,9 +13,13 @@ use pg_model::size::ThumbHeight;
 /// The image providers, each registered under its name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provider {
+    /// The thumbnails of the library.
     Thumb,
+    /// The ThumbHash placeholders.
     Thumbhash,
+    /// The full images.
     Full,
+    /// Yandex's results.
     Yandex,
 }
 
@@ -43,13 +47,31 @@ impl Provider {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImageRequest {
     /// The thumbnail `height` px high (within the thumbnail cache's heights, `pg_model::size::ThumbHeight`).
-    Thumb { key: ImageKey, height: ThumbHeight },
+    Thumb {
+        /// The image asked for.
+        key: ImageKey,
+        /// The height asked for.
+        height: ThumbHeight,
+    },
     /// The ThumbHash placeholder.
-    Thumbhash { key: ImageKey },
+    Thumbhash {
+        /// The image asked for.
+        key: ImageKey,
+    },
     /// The full image, in `view`.
-    Full { key: ImageKey, view: View },
+    Full {
+        /// The image asked for.
+        key: ImageKey,
+        /// The view of the image.
+        view: View,
+    },
     /// A Yandex result's picture (`pg_app::yandex::Hit::id`): its grid picture, or the file as its host gave it.
-    Yandex { id: u64, original: bool },
+    Yandex {
+        /// The result's id.
+        id: u64,
+        /// Whether the file as its host gave it is asked for.
+        original: bool,
+    },
 }
 
 impl ImageRequest {

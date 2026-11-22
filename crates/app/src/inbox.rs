@@ -147,7 +147,9 @@ const BUSY_WARN: u32 = 50;
 /// What the inbox lists now: its entries, newest first, and how many are unread.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct InboxListing {
+    /// The entries listed, in order.
     pub entries: Vec<Entry>,
+    /// How many of them are unread.
     pub unread: u64,
 }
 

@@ -15,6 +15,7 @@ pub enum Step {
 
 /// One pass of a job, over the job's context `C`.
 pub trait Pass<C> {
+    /// Runs the pass over `cx`, and says whether it is done or was preempted (and must run again).
     fn run(&mut self, cx: &mut C) -> Result<Step, Failed>;
 }
 

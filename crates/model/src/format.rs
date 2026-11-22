@@ -3,16 +3,24 @@
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
 #[strum(serialize_all = "snake_case")]
+/// An image's format, as the sniffer and the catalog name it.
 pub enum Format {
+    /// JPEG.
     Jpeg,
+    /// PNG.
     Png,
+    /// GIF.
     Gif,
+    /// WebP.
     Webp,
+    /// BMP.
     Bmp,
+    /// TIFF.
     Tiff,
 }
 
 impl Format {
+    /// The format of the bytes, from their first bytes, if it is one this build knows.
     pub fn sniff(bytes: &[u8]) -> Option<Format> {
         Some(match bytes {
             [0xFF, 0xD8, 0xFF, ..] => Format::Jpeg,
@@ -43,6 +51,7 @@ impl Format {
         }
     }
 
+    /// The name the catalog stores the format under.
     pub fn key(self) -> &'static str {
         self.into()
     }

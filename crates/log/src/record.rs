@@ -18,16 +18,20 @@ pub struct Record {
     pub t_ms: Option<u64>,
     /// When, as the local time it was written at (`2026-10-30 17:04:16`): what the log view shows.
     pub local: String,
+    /// How serious the record is.
     pub level: Level,
     /// What the record is about: `session`, `library`, `video`, `panic`, ... (free text, a word).
     pub target: String,
+    /// The text of the record.
     #[serde(rename = "msg")]
     pub message: String,
+    /// The record's detail, if it has one (a notice's details, a list of files).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// The process that wrote it, and when that process began (its session): with `seq`, a record's identity.
     #[serde(default)]
     pub pid: u32,
+    /// The session the record was written in: the time its process began.
     #[serde(default)]
     pub session: u64,
     /// The record's number in its session, from 0.

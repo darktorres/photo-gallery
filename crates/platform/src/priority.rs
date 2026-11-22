@@ -6,8 +6,11 @@
 /// keeps its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Priority {
+    /// The system's normal priority.
     Normal,
+    /// Below normal: the work yields to the interactive app.
     BelowNormal,
+    /// The lowest: the work runs only when nothing else wants the processor.
     Idle,
 }
 

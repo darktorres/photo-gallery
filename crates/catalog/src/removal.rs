@@ -50,15 +50,20 @@ pub enum Begun {
 /// was stopped before the end (the removal goes on at the next drive).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Driven {
+    /// The files the removal deleted.
     pub files: u64,
+    /// The files it left for a later try (a write is pending on them).
     pub deferred: u64,
+    /// Whether the removal stopped before it finished.
     pub stopped: bool,
 }
 
 /// A removal that is not finished: its folder, and the files kept for an unfinished write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Marker {
+    /// The folder being removed.
     pub path: RulePath,
+    /// The files deferred so far.
     pub deferred: u64,
 }
 
@@ -66,7 +71,9 @@ pub struct Marker {
 /// The temps are the only copies of the edits they held; the caller unlinks them and says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Discarded {
+    /// The rows discarded.
     pub rows: u64,
+    /// The temp files the discarded writes had, as their paths.
     pub temps: Vec<Vec<u8>>,
 }
 

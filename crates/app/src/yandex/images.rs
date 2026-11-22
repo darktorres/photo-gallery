@@ -22,6 +22,7 @@ const FETCHERS: usize = 4;
 
 /// Fetches a result's file from the host it is on.
 pub trait Fetch: Send + Sync {
+    /// Fetches the file at `url`.
     fn fetch(&self, url: &str) -> Result<Download, SourceError>;
 }
 
@@ -39,8 +40,11 @@ pub type Check = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>, &'static str> + Send + Syn
 /// its grid picture (a JPEG as high as the panel's rows, which the grid shows).
 #[derive(Debug)]
 pub struct Fetched {
+    /// The downloaded file.
     pub file: Download,
+    /// Its format.
     pub format: Format,
+    /// The picture made for the grid.
     pub grid: Vec<u8>,
 }
 

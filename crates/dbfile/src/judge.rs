@@ -62,6 +62,7 @@ pub struct Expected {
 }
 
 impl Expected {
+    /// The expected layout: how to make it in a new file, and the seeded rows the layout starts with.
     pub const fn new(
         make_layout: fn(&Connection) -> rusqlite::Result<()>,
         seeds: &'static [(&'static str, &'static str)],
@@ -96,7 +97,10 @@ pub enum Found {
     /// Another layout, with the owner's application id or none (an earlier build that set none): the first difference.
     Differs(Difference),
     /// A database another program marked as its own.
-    Foreign { application_id: i64 },
+    Foreign {
+        /// The application id the other program set.
+        application_id: i64,
+    },
     /// Not a database, or a damaged one.
     Damaged(Damage),
 }

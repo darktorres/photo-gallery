@@ -4,7 +4,21 @@
 //! systems the target's `main` only prints where to run them, so `cargo clippy --all-targets` still builds it.
 
 #[cfg(target_os = "linux")]
-include!("ir/linux.rs");
+#[expect(
+    unreachable_pub,
+    reason = "gungraun's `library_benchmark` makes a `pub mod` for each benchmark; the harness is not a library, so none is reachable"
+)]
+mod benches {
+    include!("ir/linux.rs");
+}
+
+#[cfg(target_os = "linux")]
+use benches::*;
+#[cfg(target_os = "linux")]
+use gungraun::prelude::*;
+
+#[cfg(target_os = "linux")]
+main!(library_benchmark_groups = per_file, viewer, catalog, scan, removal, pairing);
 
 #[cfg(not(target_os = "linux"))]
 #[expect(clippy::print_stderr, reason = "the stub tells the user where the benches run")]

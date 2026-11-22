@@ -21,7 +21,9 @@ pub struct LedgerAck {
 /// A ledger row as its state names it: its serial, and when it was first recorded (Unix seconds).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LedgerRow {
+    /// The row's serial: its place in the ledger, which only grows.
     pub serial: i64,
+    /// When the row was first seen (Unix seconds).
     pub first_seen: i64,
 }
 
@@ -41,6 +43,7 @@ pub struct LedgerState {
     pub unread: bool,
     /// The newest row, whose serial a mark or a dismissal covers up to, and the oldest.
     pub newest: Option<LedgerRow>,
+    /// The oldest row.
     pub oldest: Option<LedgerRow>,
 }
 
@@ -61,8 +64,11 @@ impl LedgerState {
 /// what the user last saw, and after the dismissal. A kept notice's counts are its repeats (`total`), with nothing new.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Counts {
+    /// The rows in all.
     pub total: u64,
+    /// The rows not yet read.
     pub new: u64,
+    /// The rows since the ledger was last dismissed.
     pub since_dismissed: u64,
 }
 
@@ -71,10 +77,13 @@ pub struct Counts {
 pub struct FailedFolder {
     /// The library folder that holds it.
     pub root: RootId,
+    /// The library folder's path.
     pub root_path: RulePath,
     /// The folder, exact.
     pub path: RulePath,
+    /// Why the folder failed.
     pub failure: FolderFailure,
+    /// The error, as text.
     pub error: String,
     /// When a walk first found it (Unix seconds).
     pub first_seen: i64,

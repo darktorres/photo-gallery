@@ -70,6 +70,8 @@ zune-jpeg = "0.5"
 # A `pub` item is one another crate can name; one only this crate uses is `pub(crate)` or narrower, so the public
 # surface is what the compiler sees.
 unreachable_pub = "warn"
+# Every public item and field is documented. `just lint` runs clippy with `-D warnings`, so a missing doc fails it (AD-004).
+missing_docs = "warn"
 # Unsafe code is denied everywhere: a crate with none `forbid`s it at its root, and an unsafe item says why with
 # `#[expect(unsafe_code, reason = "...")]` where it is declared (CU-005).
 unsafe_code = "deny"

@@ -58,6 +58,7 @@ pub const ROOT_CHECK: RootCheck = if cfg!(windows) {
 pub enum DriveType {
     /// A fixed local disk, the only kind the scanner takes.
     Fixed,
+    /// A removable drive, such as a memory card or a USB stick.
     Removable,
     /// A network drive.
     Remote,
@@ -68,6 +69,7 @@ pub enum DriveType {
 /// The facts the Windows checks read, one call each, behind a trait so the decision is tested with fakes. `Handle` is a
 /// folder opened without following a link.
 pub trait RootFacts {
+    /// An open folder, as [`RootFacts::open`] gives it.
     type Handle;
     /// The volume root of `path`, with its separator (`GetVolumePathNameW`).
     fn volume_root(&self, path: &[Unit]) -> io::Result<Vec<Unit>>;
@@ -75,6 +77,7 @@ pub trait RootFacts {
     fn drive_type(&self, volume_root: &[Unit]) -> DriveType;
     /// `path` opened for its attributes, without following a link (`FILE_FLAG_OPEN_REPARSE_POINT`).
     fn open(&self, path: &[Unit]) -> io::Result<Self::Handle>;
+    /// Whether the handle's folder is a reparse point (a link, or a mount).
     fn is_reparse_point(&self, handle: &Self::Handle) -> io::Result<bool>;
     /// The path the handle really names, in the verbatim form (`GetFinalPathNameByHandleW`).
     fn final_path(&self, handle: &Self::Handle) -> io::Result<Vec<Unit>>;
@@ -316,9 +319,13 @@ fn until_nul(units: &[Unit]) -> Vec<Unit> {
 /// A file system the Linux checks refuse, by kind (`fs_kind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FsKind {
+    /// A network file system (NFS).
     Nfs,
+    /// A file share (SMB, CIFS).
     Smb,
+    /// FAT.
     Fat,
+    /// exFAT.
     ExFat,
     /// A pseudo file system, by its name: the kernel's own entries, not files.
     Pseudo(&'static str),
@@ -449,6 +456,7 @@ mod windows {
     }
 
     impl Lister {
+        /// A lister with a buffer of its own.
         pub fn new() -> Lister {
             Lister { wide: NativePath::default(), buf: vec![0; 8192] }
         }
@@ -575,6 +583,7 @@ mod unix {
     }
 
     impl Lister {
+        /// A lister that has seen no volumes yet.
         pub fn new() -> Lister {
             Lister::default()
         }
@@ -622,6 +631,7 @@ mod unix {
             id
         }
 
+        /// Opens the folder at `path`, a folder's name as units, and reads its volume's identity.
         pub fn open(&mut self, path: &[Unit]) -> io::Result<Dir> {
             let path = PathBuf::from(OsStr::from_bytes(path));
             let meta = std::fs::metadata(&path)?;

@@ -1,6 +1,7 @@
 //! PDQ's model types (tier 1): the 256-bit hash, its quality, and the thresholds the catalog and the grouping use.
 //! The hasher that makes them is pg-analysis's `pdq` module.
 
+/// The size of a PDQ hash, in bytes.
 pub const HASH_BYTES: usize = 32;
 /// The orientations a picture's PDQ is kept in: the image as is and its three mirrors (`pg_analysis::pdq`'s variants
 /// 0..4). The other four dihedral variants are their transposes ([`Hash::transpose`]), bit for bit, so they are not
@@ -33,11 +34,13 @@ pub const GROUP_DISTANCE: u32 = group_distance!();
 pub struct Hash(pub [u8; HASH_BYTES]);
 
 impl Hash {
+    /// The number of bits the two hashes differ in.
     pub fn distance(&self, other: &Hash) -> u32 {
         let (a, b) = (self.words(), other.words());
         a.iter().zip(&b).map(|(x, y)| (x ^ y).count_ones()).sum()
     }
 
+    /// The hash as four 64-bit words, least significant byte first.
     pub fn words(&self) -> [u64; 4] {
         let mut words = [0; 4];
         for (word, bytes) in words.iter_mut().zip(self.0.as_chunks::<8>().0) {
@@ -101,6 +104,7 @@ pub fn transpose_rows(mut a: [u16; 16]) -> [u16; 16] {
 /// A picture's PDQ: its hash in each kept orientation ([`ORIENTATIONS`]; the first is the image as is), and the quality.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Pdq {
+    /// The hashes of the image and its three mirrors ([`ORIENTATIONS`]).
     pub orientations: [Hash; ORIENTATIONS],
     /// 0–100, Meta's gradient-based quality metric.
     pub quality: u8,

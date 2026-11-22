@@ -17,8 +17,11 @@ use crate::rating::Rating;
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
 #[strum(serialize_all = "snake_case")]
 pub enum Shape {
+    /// Wider than it is tall.
     Landscape,
+    /// Taller than it is wide.
     Portrait,
+    /// As wide as it is tall.
     Square,
 }
 
@@ -28,6 +31,7 @@ impl Shape {
         self.into()
     }
 
+    /// The shape the name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Shape> {
         key.parse().ok()
     }
@@ -54,6 +58,7 @@ impl Status {
         self.into()
     }
 
+    /// The status the name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Status> {
         key.parse().ok()
     }
@@ -67,10 +72,15 @@ impl Status {
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter, strum::EnumCount)]
 #[strum(serialize_all = "snake_case")]
 pub enum BorderFacet {
+    /// No border found.
     None,
+    /// A black border.
     Black,
+    /// A white border.
     White,
+    /// A border of a colour.
     Color,
+    /// A blurred border.
     Blur,
 }
 
@@ -80,6 +90,7 @@ impl BorderFacet {
         self.into()
     }
 
+    /// The border facet the name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<BorderFacet> {
         key.parse().ok()
     }
@@ -90,7 +101,9 @@ impl BorderFacet {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum RatingFilter {
+    /// Not rated.
     Unrated,
+    /// A number of stars, from 1 to 5.
     Stars(Rating),
 }
 
@@ -126,7 +139,9 @@ pub enum SortKey {
     Name,
     /// The file's extension (its type), in lower case: `jpg` before `png`; files without one last.
     Extension,
+    /// The file's size in bytes.
     Size,
+    /// When the file was last modified.
     Modified,
     /// When it was taken; files that don't say sort by their modified time (as local wall-clock time).
     Taken,
@@ -134,6 +149,7 @@ pub enum SortKey {
     Created,
     /// The stars it has; unrated files last.
     Rating,
+    /// The number of megapixels.
     Megapixels,
     /// Upright width in pixels.
     Width,
@@ -142,6 +158,7 @@ pub enum SortKey {
     /// Width over height: the widest first, the tallest last.
     #[serde(rename = "aspect_ratio")]
     AspectRatio,
+    /// The length of a video.
     Duration,
     /// Frames in the file: animated images and videos with the most first.
     Frames,
@@ -155,6 +172,7 @@ impl SortKey {
         self.into()
     }
 
+    /// The sort key the name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<SortKey> {
         key.parse().ok()
     }
@@ -164,7 +182,9 @@ impl SortKey {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Sort {
+    /// What to sort by.
     pub key: SortKey,
+    /// Whether it runs down, from the largest or last to the smallest or first.
     #[serde(default)]
     pub descending: bool,
 }
@@ -180,11 +200,14 @@ impl Default for Sort {
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Debug)]
 #[serde(default)]
 pub struct Range {
+    /// The lower end, or `None` when it is open.
     pub min: Option<f64>,
+    /// The upper end, or `None` when it is open.
     pub max: Option<f64>,
 }
 
 impl Range {
+    /// Whether both ends are open.
     pub fn is_empty(&self) -> bool {
         self.min.is_none() && self.max.is_none()
     }
@@ -198,11 +221,13 @@ pub struct DateRange {
     /// Days in JSON are `YYYY-MM-DD`; a stored date that doesn't parse doesn't filter, as before.
     #[serde(deserialize_with = "lenient_day")]
     pub from: Option<Day>,
+    /// The last day, or `None` when it is open.
     #[serde(deserialize_with = "lenient_day")]
     pub to: Option<Day>,
 }
 
 impl DateRange {
+    /// Whether both ends are open.
     pub fn is_empty(&self) -> bool {
         self.from.is_none() && self.to.is_none()
     }
@@ -218,17 +243,22 @@ fn lenient_day<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Day>, D::Error
 #[serde(default)]
 pub struct Query {
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// The media types the query shows.
     pub types: Vec<MediaType>,
     /// Lower-case extensions without the dot.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub exts: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// The ratings the query shows.
     pub ratings: Vec<RatingFilter>,
     #[serde(skip_serializing_if = "Range::is_empty")]
+    /// The size in megabytes.
     pub size_mb: Range,
     #[serde(skip_serializing_if = "Range::is_empty")]
+    /// The size in megapixels.
     pub megapixels: Range,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// The shapes the query shows.
     pub shapes: Vec<Shape>,
     /// When it was taken (`analysis.taken`, wall-clock time).
     #[serde(skip_serializing_if = "DateRange::is_empty")]
@@ -244,8 +274,10 @@ pub struct Query {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duplicates: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// The import statuses the query shows.
     pub status: Vec<Status>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// The border facets the query shows.
     pub borders: Vec<BorderFacet>,
     /// The review: Some(true), files whose borders the user marked as not a border; Some(false), files with borders
     /// found and not marked.
@@ -260,22 +292,34 @@ pub struct Query {
 /// the client keeps the bar's order, `pg_client::facets::ALL`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ListFacet {
+    /// The media types.
     Types,
+    /// The extensions.
     Exts,
+    /// The ratings.
     Ratings,
+    /// The shapes.
     Shapes,
+    /// The import statuses.
     Status,
+    /// The border facets.
     Borders,
 }
 
 /// A value a list facet chooses.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Choice {
+    /// A media type.
     Type(MediaType),
+    /// An extension.
     Ext(String),
+    /// A rating.
     Rating(RatingFilter),
+    /// A shape.
     Shape(Shape),
+    /// An import status.
     Status(Status),
+    /// A border facet.
     Border(BorderFacet),
 }
 
@@ -296,29 +340,38 @@ impl Choice {
 /// A range facet of the query: its numbers, as the filter bar edits them.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RangeFacet {
+    /// The size in megabytes.
     SizeMb,
+    /// The size in megapixels.
     Megapixels,
+    /// The length in seconds.
     DurationS,
 }
 
 /// A day facet of the query.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DateFacet {
+    /// When it was taken.
     Taken,
+    /// When it was last modified.
     Modified,
 }
 
 /// The end of a numeric range.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum End {
+    /// The lower end.
     Min,
+    /// The upper end.
     Max,
 }
 
 /// The end of a day range.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DayEnd {
+    /// The first day.
     From,
+    /// The last day.
     To,
 }
 

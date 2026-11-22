@@ -4,8 +4,11 @@
 /// An upright RGB image.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Rgb {
+    /// The width, in pixels.
     pub width: usize,
+    /// The height, in pixels.
     pub height: usize,
+    /// The pixels, three bytes each, row after row.
     pub pixels: Vec<u8>,
 }
 

@@ -9,10 +9,22 @@ pub enum EntryId {
     /// state's data changes). Ids are reused, so the pair is what names the row: a mark or a dismissal for a row since
     /// gone finds none. A mark names the revision it was made for, so one sent for a revision never lands on the next
     /// and swallows its news.
-    Row { id: i64, uid: i64, rev: i64 },
+    Row {
+        /// The row's id in the inbox.
+        id: i64,
+        /// The row's unique id, which a stale mark can't match.
+        uid: i64,
+        /// The row's revision when the mark was made.
+        rev: i64,
+    },
     /// A ledger, as listed: up to its newest row (`ledger::Summary::newest`). A mark or a dismissal covers the rows
     /// listed, and leaves the later ones new.
-    Ledger { kind: LedgerKind, seen: i64 },
+    Ledger {
+        /// The ledger the rows are in.
+        kind: LedgerKind,
+        /// The newest row the ledger listed.
+        seen: i64,
+    },
 }
 
 impl EntryId {

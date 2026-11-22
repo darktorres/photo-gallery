@@ -194,8 +194,11 @@ fn bounds(c: usize, w: usize) -> [u32; 2] {
 /// A pair of pictures by their index (`a < b`), and the least distance over their orientations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pair {
+    /// The index of the lower picture.
     pub a: u32,
+    /// The index of the higher picture.
     pub b: u32,
+    /// The least distance over their orientations.
     pub distance: u32,
 }
 
@@ -394,6 +397,7 @@ impl std::ops::AddAssign for JoinTimes {
 pub struct Joined {
     /// By `(a, b)`, `a < b`, the least distance of each.
     pub pairs: Vec<Pair>,
+    /// Where the join's time went, stage by stage.
     pub times: JoinTimes,
 }
 

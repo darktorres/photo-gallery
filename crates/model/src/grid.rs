@@ -14,14 +14,17 @@ use crate::turns::Turns;
 /// 10.6 MB and quick to build.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Entry {
+    /// The file's id in the catalog.
     pub id: FileId,
     /// With `turns`, what makes an image URL current.
     pub mtime: i64,
     /// As analyzed, without `pending_turns`; 0 until the file is imported.
     pub width: u32,
+    /// As analyzed, the height, as `width` is.
     pub height: u32,
     /// Videos, once imported; `Entry::NO_DURATION` otherwise.
     pub duration_ms: u32,
+    /// The file's extension, which also says its kind.
     pub ext: Ext,
     /// Catalog turns (quarter turns clockwise).
     pub turns: Turns,
@@ -35,6 +38,7 @@ pub struct Entry {
     pub orientation: Orientation,
     /// Borders found: stored pixels cut from the left, top, right and bottom (`analysis.cut_*`), all 0 for none.
     pub cut: [u32; 4],
+    /// Whether the file's borders were looked for, and what came of it.
     pub borders: Borders,
 }
 
@@ -45,19 +49,24 @@ const _: () = assert!(size_of::<Entry>() == 56, "Entry's size, in its doc");
 pub enum Borders {
     /// Not looked for: not imported yet, a video, an animated or a tiny image.
     Unknown,
+    /// Looked for, and none found.
     None,
+    /// Looked for, and found.
     Found,
     /// Found, and marked as not a border (the review).
     Marked,
 }
 
 impl Entry {
+    /// The duration of a file that has none: a still image, or a video not yet imported.
     pub const NO_DURATION: u32 = u32::MAX;
 
+    /// The file's kind: an image or a video.
     pub fn kind(&self) -> Kind {
         self.ext.kind()
     }
 
+    /// The media type, which tells an animated image apart from a still one.
     pub fn media_type(&self) -> MediaType {
         match self.kind() {
             Kind::Video => MediaType::Video,
@@ -66,6 +75,7 @@ impl Entry {
         }
     }
 
+    /// The length of the video, if it has one.
     pub fn duration_ms(&self) -> Option<u32> {
         (self.duration_ms != Entry::NO_DURATION).then_some(self.duration_ms)
     }

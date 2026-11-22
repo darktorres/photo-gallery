@@ -52,7 +52,9 @@ impl Source for Client {
 /// What a search gets from its front end: the source of its calls (Yandex's search, which runs on the search's thread),
 /// and the fetcher of the results' files (shared by the threads that fetch them).
 pub struct Connection {
+    /// The source of the results: live, or a recording.
     pub source: Box<dyn Source + Send>,
+    /// The fetcher of the results' files, shared by the threads that fetch them.
     pub fetch: Arc<dyn Fetch>,
 }
 
@@ -61,8 +63,10 @@ pub struct Connection {
 /// a search sends the photo to Yandex.
 #[derive(Clone, Debug, Default)]
 pub enum YandexSource {
+    /// Yandex, live.
     #[default]
     Live,
+    /// A recording replayed from the file.
     Replay(PathBuf),
 }
 
@@ -167,6 +171,7 @@ pub struct Hit {
     pub url: String,
     /// Its size as Yandex gives it, in pixels; 0 when it gives none.
     pub width: u32,
+    /// Its height, as Yandex gives it, in pixels; 0 when it gives none.
     pub height: u32,
     /// What follows the photo's name in the saved file's name, inside the brackets: `yandex 1920x1080`.
     pub suffix: String,
@@ -175,7 +180,9 @@ pub struct Hit {
 /// What a finished search found: the other sizes, then the similar images.
 #[derive(Debug)]
 pub struct Found {
+    /// The other sizes of the image, as Yandex lists them.
     pub other: Vec<Hit>,
+    /// The similar images found.
     pub similar: Vec<Hit>,
 }
 

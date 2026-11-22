@@ -13,7 +13,9 @@ use serde::de::DeserializeOwned;
 /// are in use. The file is kept, not overwritten by the next save: its content can be copied back by hand.
 #[derive(Clone, Debug)]
 pub struct Unreadable {
+    /// The error, as text.
     pub error: String,
+    /// Where the file was kept, or why it couldn't be.
     pub kept: Result<PathBuf, String>,
 }
 

@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 /// The item the dialog chose: its file-system path in the system's units (`SIGDN_FILESYSPATH`).
 pub trait ShellItem {
+    /// The item's file-system path, in the system's units.
     fn file_system_path(&self) -> io::Result<Vec<u16>>;
 }
 

@@ -84,9 +84,13 @@ pub enum Reader {
 /// One registered variable: its name, what it holds, who reads it, and what it does, in a sentence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Spec {
+    /// The variable's name.
     pub name: &'static str,
+    /// What the value holds: a path, a flag, a number.
     pub kind: Kind,
+    /// Who reads the variable.
     pub reader: Reader,
+    /// What it does, in a sentence.
     pub doc: &'static str,
 }
 

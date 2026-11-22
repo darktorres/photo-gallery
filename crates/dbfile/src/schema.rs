@@ -30,11 +30,26 @@ struct Object {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Difference {
     /// The expected schema has it and the file doesn't.
-    Missing { kind: String, name: String },
+    Missing {
+        /// What it is: a table, an index, a view or a trigger.
+        kind: String,
+        /// Its name.
+        name: String,
+    },
     /// The file has it and the expected schema doesn't.
-    Unexpected { kind: String, name: String },
+    Unexpected {
+        /// What it is: a table, an index, a view or a trigger.
+        kind: String,
+        /// Its name.
+        name: String,
+    },
     /// Both have it, with a different definition (or different keys).
-    Changed { kind: String, name: String },
+    Changed {
+        /// What it is: a table, an index, a view or a trigger.
+        kind: String,
+        /// Its name.
+        name: String,
+    },
 }
 
 impl fmt::Display for Difference {

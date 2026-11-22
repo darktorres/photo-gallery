@@ -1,10 +1,13 @@
 //! The app's errors. A caller that branches gets a variant; the rest carry the text of what failed, causes included
 //! (the image, file and cache layers report their own typed errors, whose text is taken here with its causes).
 
+/// The app's errors: a variant for each case a caller branches on, and the text of anything else.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// The catalog failed (see `pg_catalog::Error`).
     #[error(transparent)]
     Catalog(#[from] pg_catalog::Error),
+    /// The file is not in the catalog.
     #[error("unknown file {}", .0.get())]
     UnknownFile(pg_model::ids::FileId),
     /// A write of the app's into the file was still in progress when the wait for it ended.
@@ -19,7 +22,12 @@ pub enum Error {
     /// A folder not added to the library, because the scanner refuses it (`LibraryService::add_folder`): the folder, and
     /// why. The front end words it (the notice `FolderRefused`); this text names the reason by its code.
     #[error("{} can't be added: {reason}", pg_platform::native::PATH_RULES.display(folder))]
-    FolderRefused { folder: pg_model::rules::Path, reason: pg_model::refusal::RefusedReason },
+    FolderRefused {
+        /// The folder that was refused.
+        folder: pg_model::rules::Path,
+        /// Why the scanner refuses it.
+        reason: pg_model::refusal::RefusedReason,
+    },
     /// A folder not added because its path can't be opened, or isn't one. The front end words it (the client's
     /// `Message::PathUnreadable` and `Message::NotAPath`).
     #[error(transparent)]
@@ -33,6 +41,7 @@ pub enum Error {
     Failed(String),
 }
 
+/// The app's result: its error by default.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl Error {

@@ -16,7 +16,9 @@ const FRAME_BUDGET: usize = 128 << 20;
 /// Where the frames go. `present` may be called from the player's thread; `close` once, after the last `present`,
 /// when the player stops.
 pub trait Sink: Send + Sync + 'static {
+    /// A frame of `width` by `height` pixels, as RGBA bytes, to show.
     fn present(&self, width: u32, height: u32, rgba: &[u8]);
+    /// The player has stopped: nothing more is presented.
     fn close(&self) {}
 }
 
@@ -49,6 +51,7 @@ impl<S: Sink> Player<S> {
         Player { control, sink, thread }
     }
 
+    /// Pauses or resumes the playback.
     pub fn set_paused(&self, paused: bool) {
         let (lock, wake) = &*self.control;
         lock.lock().unwrap_or_else(PoisonError::into_inner).paused = paused;

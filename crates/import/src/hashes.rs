@@ -14,6 +14,7 @@ use pg_model::progress::Phase;
 
 const BATCH: usize = pg_catalog::WRITE_BATCH;
 
+/// What the hashes pass did over its files: the counts its report states.
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
     /// The files looked at, read or not.

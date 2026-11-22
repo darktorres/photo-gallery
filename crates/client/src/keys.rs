@@ -6,19 +6,29 @@ use serde::{Deserialize, Serialize};
 /// A key the front end can act on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
+    /// The left arrow.
     Left,
+    /// The right arrow.
     Right,
+    /// The up arrow.
     Up,
+    /// The down arrow.
     Down,
+    /// Home.
     Home,
+    /// End.
     End,
     /// Return and Enter.
     Enter,
+    /// Escape.
     Escape,
+    /// Backspace.
     Backspace,
+    /// Space.
     Space,
     /// `+` and `=`.
     Plus,
+    /// `-`.
     Minus,
     /// `0` to `9`.
     Digit(u8),
@@ -26,9 +36,12 @@ pub enum Key {
     Letter(char),
 }
 
+/// The modifier keys held with a key.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mods {
+    /// Whether Ctrl is held.
     pub ctrl: bool,
+    /// Whether Shift is held.
     pub shift: bool,
 }
 
@@ -37,14 +50,19 @@ pub struct Mods {
 pub enum GridKey {
     /// Ctrl +/−: the rows grow or shrink.
     Resize {
+        /// Whether the rows grow (`+`) or shrink (`-`).
         grow: bool,
     },
     /// The arrows: the selection moves by one cell.
     Step {
+        /// Columns away.
         dx: i32,
+        /// Rows away.
         dy: i32,
     },
+    /// Home: the first item.
     First,
+    /// End: the last item.
     Last,
     /// Enter or Space on the selected item: view it.
     Open,
@@ -52,6 +70,7 @@ pub enum GridKey {
     Rate(u8),
     /// R (back) or Shift+R (forward) on the selected item.
     Turn {
+        /// Whether the turn is forward (Shift) or back.
         forward: bool,
     },
     /// F: show or hide the filters.
@@ -65,31 +84,42 @@ pub enum GridKey {
 /// What the viewer shows, for its key map and its hint line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shown {
+    /// Whether the shown item has borders.
     pub has_borders: bool,
+    /// Whether it is a still image.
     pub still: bool,
+    /// Whether it is a video.
     pub video: bool,
 }
 
 /// A viewer action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Viewer {
+    /// Escape: close the viewer.
     Close,
     /// Left and Backspace back, Right and Space on.
     Step {
+        /// Whether the step is forward.
         forward: bool,
     },
     /// 0–5 rate the shown item; Up rates 4 and Down rates 1.
     Rate(u8),
+    /// R (back) or Shift+R (forward) on the shown item.
     Turn {
+        /// Whether the turn is forward.
         forward: bool,
     },
     /// Z: the real size mode, which opens images at 1:1.
     RealSize,
+    /// `+`: zoom in.
     ZoomIn,
+    /// `-`: zoom out.
     ZoomOut,
     /// L: the 10× loupe.
     Loupe,
+    /// B: show or hide the borders.
     Borders,
+    /// N: mark or unmark the shown item as not a border.
     MarkBorder,
     /// H: hide the overlays.
     Hide,
@@ -173,9 +203,11 @@ impl Global {
 /// A key in the Yandex panels: the background closes; the preview also steps to a neighbour and picks the shown result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Panel {
+    /// Escape: close the panel.
     Close,
     /// Left and right step through the results.
     Step {
+        /// Whether the step is forward.
         forward: bool,
     },
     /// Space picks the shown result.
@@ -196,35 +228,60 @@ pub fn panel(key: Key) -> Option<Panel> {
 /// The kind of item the viewer shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Media {
+    /// A still image.
     Still,
+    /// An animated image.
     Animated,
+    /// A video.
     Video,
 }
 
 /// A label of a key hint line. Its words are the entry `id` of `locales/en/ui.ftl`; `text::hint` joins them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hint {
+    /// Select an item.
     Select,
+    /// View an item.
     View,
+    /// Rate an item.
     Rate,
+    /// Turn an item.
     Turn,
+    /// Move with the arrows.
     Arrows,
+    /// Show or hide the filters.
     Filters,
+    /// Show or hide the borders.
     Borders,
+    /// Mark an item as not a border.
     NotBorder,
+    /// Grow or shrink the rows.
     Resize,
+    /// Step to the neighbour.
     Step,
+    /// Play or pause.
     Play,
+    /// Mute the sound.
     Mute,
+    /// Rate 4 (Up).
     Up4,
+    /// Rate 1 (Down).
     Down1,
+    /// Turn back.
     TurnBack,
+    /// Turn on (forward).
     TurnOn,
+    /// Zoom with the wheel.
     WheelZoom,
+    /// Show at 1:1.
     OneToOne,
+    /// The real size.
     RealSize,
+    /// The loupe.
     Loupe,
+    /// Hide the overlays.
     Hide,
+    /// Close.
     Close,
 }
 

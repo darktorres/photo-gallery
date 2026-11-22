@@ -160,9 +160,13 @@ impl Rgba {
 /// An image as RGBA rows premultiplied by alpha, 4 bytes a pixel: what the viewer shows. `opaque` says every alpha is
 /// 255 (an image with no transparency), so a front end may take the fourth byte as padding.
 pub struct Rgba {
+    /// The width, in pixels.
     pub width: usize,
+    /// The height, in pixels.
     pub height: usize,
+    /// The rows, 4 bytes a pixel, row after row.
     pub pixels: Vec<u8>,
+    /// Whether every alpha is 255 (no transparency).
     pub opaque: bool,
 }
 

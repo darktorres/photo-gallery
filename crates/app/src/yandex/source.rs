@@ -8,6 +8,7 @@ use pg_yandex::{OtherSize, Similar, Upload, YandexError};
 /// Why a call of a search or a save failed: the client's error, or one of the app's own cases.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum SourceError {
+    /// Yandex failed (see `YandexError`).
     #[error(transparent)]
     Yandex(#[from] YandexError),
     /// A result file that is not an image this app decodes (the reason is what failed).
@@ -32,7 +33,10 @@ impl From<SourceError> for RequestError {
 /// Where a search or a save gets its Yandex calls: the real client, or a recorded session that stands in for it.
 /// Each search and each save makes its own, on its thread.
 pub trait Source {
+    /// Uploads `image`, and says what Yandex made of it.
     fn upload(&mut self, image: &[u8]) -> Result<Upload, SourceError>;
+    /// The other sizes Yandex has for an upload.
     fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, SourceError>;
+    /// The similar images for an upload, up to `max_pages` pages.
     fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, SourceError>;
 }

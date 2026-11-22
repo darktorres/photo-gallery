@@ -27,9 +27,11 @@ fn bytes_at<const N: usize>(bytes: &[u8], at: usize) -> Option<[u8; N]> {
 
 /// A JPEG marker segment before the image data.
 pub struct Segment<'a> {
+    /// The marker's code: the byte after the `0xFF`.
     pub marker: u8,
     /// Offset of the payload (after the length) in the file.
     pub start: usize,
+    /// The payload, after the length.
     pub data: &'a [u8],
 }
 
@@ -42,6 +44,7 @@ pub struct JpegSegments<'a> {
     damaged: bool,
 }
 
+/// The marker segments of a JPEG's bytes, up to the start of the scan (see [`JpegSegments`]).
 pub fn jpeg_segments(bytes: &[u8]) -> JpegSegments<'_> {
     JpegSegments { bytes, i: 2, damaged: false }
 }
@@ -217,7 +220,9 @@ pub struct ExtendedChunk {
     pub guid: Range<usize>,
     /// Its packet's length, as this chunk says.
     pub full: usize,
+    /// Where the packet's first byte is in the file.
     pub offset: usize,
+    /// The packet's bytes, as a range of the file.
     pub data: Range<usize>,
     /// The order it was found in.
     pub seq: usize,
@@ -237,12 +242,15 @@ pub fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<ExtendedCh
     }
 }
 
+/// A chunk of a PNG or RIFF file, as a walk found it: its kind, where it is, and its payload.
 pub struct Chunk<'a> {
+    /// The four-byte kind (`IDAT`, `VP8X`, and so on).
     pub kind: [u8; 4],
     /// Offset of the chunk's first byte (its length field) in the file.
     pub at: usize,
     /// Total size in the file, header and padding or CRC included.
     pub len: usize,
+    /// The payload, without the header and the padding.
     pub data: &'a [u8],
 }
 
@@ -765,6 +773,8 @@ pub struct PngAnimation {
 }
 
 impl PngAnimation {
+    /// Takes in the next chunk of the file: `IDAT` marks where the image data begins, and an `acTL` before it sets the
+    /// frame count.
     pub fn see(&mut self, chunk: &Chunk) {
         match &chunk.kind {
             b"IDAT" => self.image_data = true,
@@ -795,6 +805,7 @@ pub struct WebpAnimation {
 }
 
 impl WebpAnimation {
+    /// Takes in the next chunk: `VP8X`'s animation flag makes the file animated, and each `ANMF` chunk is one frame.
     pub fn see(&mut self, chunk: &Chunk) {
         match &chunk.kind {
             b"VP8X" => self.animated |= chunk.data.first().is_some_and(|f| f & 0x02 != 0),
@@ -833,10 +844,20 @@ pub fn webp_exif(c: &Chunk) -> std::ops::Range<usize> {
 /// GIF blocks, as the structure walk sees them.
 pub enum GifBlock {
     /// An extension: label and the byte range of the whole block (introducer to terminator).
-    Extension { label: u8, range: std::ops::Range<usize> },
+    Extension {
+        /// The extension's label byte.
+        label: u8,
+        /// The byte range of the whole block.
+        range: std::ops::Range<usize>,
+    },
     /// An image: the byte range of its descriptor (from 0x2C), local color table, LZW code size and data, and the
     /// descriptor read.
-    Image { range: std::ops::Range<usize>, image: GifImage },
+    Image {
+        /// The byte range of the image's descriptor and data.
+        range: std::ops::Range<usize>,
+        /// The descriptor, as the walk read it.
+        image: GifImage,
+    },
 }
 
 /// A GIF image's descriptor, as the walk read it.
@@ -844,8 +865,11 @@ pub enum GifBlock {
 pub struct GifImage {
     /// Its place on the logical screen.
     pub left: u16,
+    /// Its top edge on the logical screen.
     pub top: u16,
+    /// Its width, in pixels.
     pub width: u16,
+    /// Its height, in pixels.
     pub height: u16,
     /// The packed byte: the local color table's flag and size, and the interlace flag.
     pub packed: u8,
@@ -925,6 +949,7 @@ pub fn gif_blocks(bytes: &[u8]) -> GifBlocks<'_> {
     }
 }
 
+/// The blocks of a GIF, walked from its header: each call of `next` gives the next block, up to the trailer.
 pub struct GifBlocks<'a> {
     bytes: &'a [u8],
     /// The next block's offset.

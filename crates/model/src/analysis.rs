@@ -35,11 +35,13 @@ pub struct Analysis {
     pub orientation: Orientation,
     /// Upright full-size dimensions.
     pub width: u32,
+    /// Upright full-size height, as `width` is.
     pub height: u32,
     /// Frames in the file (more than one: animated); an image's analysis is of the first.
     pub frames: u32,
     /// When the file says it was taken, if it does.
     pub taken: Option<Taken>,
+    /// What kind of file it is, and its facts.
     pub media: Media,
 }
 
@@ -48,7 +50,9 @@ pub struct Analysis {
 /// of this computer's zone, and kept as the instant too, so the wall clock can be computed again for another zone.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Taken {
+    /// The camera's wall-clock time, in seconds.
     Wall(i64),
+    /// A UTC instant, in seconds.
     Utc(i64),
 }
 
@@ -66,7 +70,9 @@ impl Taken {
 /// The facts of a file's kind.
 #[derive(Clone)]
 pub enum Media {
+    /// A still image's facts.
     Image(ImageFacts),
+    /// A video's facts.
     Video(VideoFacts),
 }
 
@@ -74,6 +80,7 @@ pub enum Media {
 /// ([`ImageHashes`]), not the import's.
 #[derive(Clone)]
 pub struct ImageFacts {
+    /// The image's format.
     pub format: Format,
     /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
     pub file_rating: Option<crate::rating::Rating>,
@@ -85,6 +92,7 @@ pub struct ImageFacts {
 pub struct ImageHashes {
     /// BLAKE3 of the file bytes (tier 0a).
     pub file: FileHash,
+    /// The pixels' hashes (tiers 0b and 1).
     pub pixels: PixelHashes,
 }
 
@@ -93,6 +101,7 @@ pub struct ImageHashes {
 pub struct PixelHashes {
     /// XXH3-128 of the upright decoded pixels (tier 0b), see `pg_analysis::analyze::pixel_hash`.
     pub pixel_hash: [u8; 16],
+    /// The PDQ perceptual hash of the pixels (tier 1), which finds near-duplicates.
     pub pdq: pdq::Pdq,
 }
 
@@ -101,8 +110,11 @@ pub struct PixelHashes {
 /// catalog stores as NULL.
 #[derive(Clone)]
 pub struct VideoFacts {
+    /// The video codec's short name.
     pub codec: &'static str,
+    /// The length, in milliseconds.
     pub duration_ms: u32,
+    /// The time of the frame the thumbnails come from, in milliseconds.
     pub poster_ms: u32,
 }
 
@@ -115,6 +127,7 @@ impl Analysis {
         }
     }
 
+    /// The image's facts, if the file is an image.
     pub fn image(&self) -> Option<&ImageFacts> {
         match &self.media {
             Media::Image(image) => Some(image),
@@ -122,6 +135,7 @@ impl Analysis {
         }
     }
 
+    /// The video's facts, if the file is a video.
     pub fn video(&self) -> Option<&VideoFacts> {
         match &self.media {
             Media::Video(video) => Some(video),

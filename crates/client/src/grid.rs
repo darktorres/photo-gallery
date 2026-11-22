@@ -43,6 +43,7 @@ pub enum Shape {
 /// A row that changed in place, in the new rows' numbering, and which of its roles the view is told.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Update {
+    /// The rows the update covers.
     pub rows: Range<usize>,
     /// Its span (its first item and count) changed.
     pub span: bool,
@@ -103,10 +104,13 @@ pub enum Arrival {
 /// Where the selection goes once a list is shown (`Grid::selection_after`): the item current and the anchor, if any.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Selection {
+    /// The current item, if one is selected.
     pub current: Option<usize>,
+    /// The item the selection's range starts from.
     pub anchor: Option<usize>,
 }
 
+/// The grid's items and their layout: which rows they fall in, and which are visible.
 #[derive(Default)]
 pub struct Grid {
     entries: Vec<Entry>,

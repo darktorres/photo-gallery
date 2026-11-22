@@ -24,12 +24,14 @@ pub static JPEG_FALLBACKS: AtomicU64 = AtomicU64::new(0);
 /// What a decode found, besides its pixels.
 #[derive(Clone, Copy, Debug)]
 pub struct Info {
+    /// The format the file is in.
     pub format: Format,
     /// Orientation (1–8) that shows the image upright: the EXIF one, combined with the catalog rotation. Applied by
     /// [`Decoder::decode_into`], not by [`Decoder::decode_stored_into`].
     pub orientation: Orientation,
     /// Dimensions of the full-size image, as the pixels are: upright after an oriented decode, stored otherwise.
     pub full_width: u32,
+    /// The height of the full-size image, as `full_width` is.
     pub full_height: u32,
     /// The DCT scale denominator used (1, 2, 4 or 8; always 1 for non-JPEG).
     pub scale_denom: u8,
@@ -51,14 +53,19 @@ impl Info {
 /// no pixels read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dims {
+    /// The width, in pixels, as the header states it.
     pub width: u32,
+    /// The height, in pixels, as the header states it.
     pub height: u32,
+    /// The orientation the header states.
     pub orientation: Orientation,
 }
 
 /// An image decoded upright (`pg_render::display::decode`, which reads the file's orientation).
 pub struct Decoded {
+    /// The pixels, upright.
     pub image: Rgb,
+    /// What the decode found out about the file.
     pub info: Info,
 }
 
@@ -96,6 +103,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
+    /// A decoder that uses the default number of threads.
     pub fn new() -> Result<Decoder> {
         Self::with_full_threads(0)
     }

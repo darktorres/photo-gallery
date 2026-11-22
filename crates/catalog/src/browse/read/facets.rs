@@ -26,6 +26,7 @@ pub struct Facets {
     /// Per type (in `MediaType` order) and per extension (most files first): how many files choosing it would show,
     /// given the other facets.
     pub types: Vec<(MediaType, i64)>,
+    /// Per extension, as (extension, count), the same way.
     pub exts: Vec<(String, i64)>,
     /// Per border value (`BorderFacet::iter()`'s order), the same way.
     pub borders: Vec<(BorderFacet, i64)>,

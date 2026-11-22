@@ -12,12 +12,15 @@ pub const ERROR_BYTES: usize = 1024;
 /// A file a pass couldn't make its result of, as the pass read it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failure {
+    /// The file the failure is about.
     pub file_id: FileId,
     /// The file's state when the pass read it: the row is kept only while the catalog still has the file so.
     pub mtime: i64,
+    /// The file's size when the pass read it.
     pub size: u64,
     /// The file's stored turns (`files.turns`) when the pass read it.
     pub turns: Turns,
+    /// The error the pass recorded, as text.
     pub error: String,
     /// Whether the pass tries the file again by itself (a decode error, which a pass tries until the file changes), or
     /// not until it changes or the user retries it (a panic).

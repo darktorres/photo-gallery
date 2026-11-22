@@ -11,6 +11,7 @@
 pub struct FileId(i64);
 
 impl FileId {
+    /// The id the catalog gives a file.
     pub const fn new(id: i64) -> FileId {
         FileId(id)
     }
@@ -34,11 +35,14 @@ impl FileId {
 /// 64-bit volume is moved aside and rebuilt, not converted.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct FileIdentity {
+    /// The volume the file is on.
     pub volume: u64,
+    /// The file's index on its volume (its file reference).
     pub file_index: u64,
 }
 
 impl FileIdentity {
+    /// The identity of a file on a volume.
     pub const fn new(volume: u64, file_index: u64) -> FileIdentity {
         FileIdentity { volume, file_index }
     }
@@ -49,6 +53,7 @@ impl FileIdentity {
 pub struct FolderId(i64);
 
 impl FolderId {
+    /// The id the catalog gives a folder.
     pub const fn new(id: i64) -> FolderId {
         FolderId(id)
     }
@@ -64,6 +69,7 @@ impl FolderId {
 pub struct ScanId(i64);
 
 impl ScanId {
+    /// The id the catalog gives a scan.
     pub const fn new(id: i64) -> ScanId {
         ScanId(id)
     }
@@ -79,6 +85,7 @@ impl ScanId {
 pub struct RootId(i64);
 
 impl RootId {
+    /// The id the catalog gives a library folder.
     pub const fn new(id: i64) -> RootId {
         RootId(id)
     }

@@ -16,7 +16,16 @@ pub enum Phase {
     /// Copying the catalog aside before it is migrated.
     Backup,
     /// Step `step` (0-based) of `steps` of the migration that takes the catalog from `from` to `to`.
-    Migrate { from: i64, to: i64, step: usize, steps: usize },
+    Migrate {
+        /// The schema version the migration starts from.
+        from: i64,
+        /// The schema version it takes the catalog to.
+        to: i64,
+        /// The step, from 0.
+        step: usize,
+        /// How many steps the migration has.
+        steps: usize,
+    },
     /// Carrying the old catalog's rows into a new layout (a rebuild).
     Carry,
     /// Merging the write-ahead log into the file before a copy or a swap.

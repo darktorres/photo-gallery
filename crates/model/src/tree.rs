@@ -25,9 +25,11 @@ pub struct FolderNode {
     first: i64,
     /// One bit per anchor it is on: the anchor's rank in `anchor_names` (see [`bit`]).
     anchors: u64,
+    /// The number of folders above it in the tree.
     pub depth: u32,
     /// Present files directly in this folder, and in it plus everything below.
     pub direct: i64,
+    /// Present files in this folder and everything below it.
     pub total: i64,
 }
 
@@ -260,10 +262,12 @@ impl FolderTree {
         self.rules
     }
 
+    /// The number of folders in the tree.
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    /// Whether the tree has no folders.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -298,6 +302,7 @@ impl FolderTree {
         self.keys.get(num::index(node.key_start)..num::index(node.key_end)).unwrap_or_default()
     }
 
+    /// The folder above folder `n`, or `None` for a root or a folder that isn't in the tree.
     pub fn parent(&self, n: usize) -> Option<usize> {
         let p = self.nodes.get(n)?.parent;
         (p != u32::MAX).then_some(num::index(p))
@@ -308,6 +313,7 @@ impl FolderTree {
         self.nodes.get(n).map_or(self.nodes.len(), |node| num::index(node.end))
     }
 
+    /// Whether folder `n` has folders below it.
     pub fn has_children(&self, n: usize) -> bool {
         self.subtree_end(n) > n + 1
     }

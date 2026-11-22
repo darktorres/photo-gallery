@@ -24,15 +24,20 @@ pub enum Error {
     /// The program couldn't be started (it is missing, or not an executable), with what it is for.
     #[error("starting {program} ({what})")]
     Start {
+        /// The program that was to be run.
         program: String,
+        /// What the program is for, in words.
         what: &'static str,
+        /// Why it couldn't be started.
         #[source]
         source: std::io::Error,
     },
     /// A pipe of the running ExifTool failed (the process has exited, or its pipes broke): the OS's error.
     #[error("{what}")]
     Pipe {
+        /// What the pipe was for, in words.
         what: String,
+        /// The OS's error on the pipe.
         #[source]
         source: std::io::Error,
     },

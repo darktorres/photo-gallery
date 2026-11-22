@@ -25,28 +25,49 @@ pub enum Error {
     /// A run folder of the test binary (see [`run_folder`]).
     #[error("make the run folder {prefix} in {scratch}")]
     RunFolder {
+        /// The run folder's name prefix (the test's own name).
         prefix: String,
+        /// The scratch folder the run folder was to be made in.
         scratch: String,
+        /// The I/O error under the failure.
         #[source]
         source: io::Error,
     },
     /// A folder a test asked for under its run folder (see [`run_folder_with`]).
     #[error("make the folder {}", path.display())]
     Folder {
+        /// The folder that couldn't be made.
         path: PathBuf,
+        /// The I/O error under the failure.
         #[source]
         source: io::Error,
     },
     /// More frames than the GIF's colours hold (see [`gif`]).
     #[error("frame {frame} of {frames}: a test GIF has at most 5 frames")]
-    GifFrame { frame: usize, frames: usize },
+    GifFrame {
+        /// The frame that doesn't fit, from 0.
+        frame: usize,
+        /// How many frames were asked for.
+        frames: usize,
+    },
     /// Pixels that aren't the `w` × `h` picture asked for (`channels` a pixel's: RGB or RGBA).
     #[error("{len} bytes are not {w} × {h} {channels} pixels")]
-    Pixels { len: usize, w: u32, h: u32, channels: &'static str },
+    Pixels {
+        /// How many bytes there were.
+        len: usize,
+        /// The picture's width, in pixels.
+        w: u32,
+        /// The picture's height, in pixels.
+        h: u32,
+        /// The channels of a pixel, in words (RGB or RGBA).
+        channels: &'static str,
+    },
     /// An encoder's step that failed, named by the step.
     #[error("{step}")]
     Encode {
+        /// The encoder's step that failed, in words.
         step: String,
+        /// The error under the step.
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -186,11 +207,17 @@ fn still(w: u32, h: u32, rgb: &[u8], format: image::ImageFormat) -> Result<Vec<u
 /// The encoders a test writes a picture with: the tests name none of the `image` crate's types, so this is theirs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Encoding {
+    /// JPEG.
     Jpeg,
+    /// PNG.
     Png,
+    /// WebP.
     WebP,
+    /// TIFF.
     Tiff,
+    /// GIF.
     Gif,
+    /// BMP.
     Bmp,
 }
 

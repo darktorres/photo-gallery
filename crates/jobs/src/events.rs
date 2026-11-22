@@ -12,14 +12,17 @@ pub struct Watch<T> {
 }
 
 impl<T: Clone> Watch<T> {
+    /// A watch holding `value`.
     pub fn new(value: T) -> Watch<T> {
         Watch { value: Mutex::new(value) }
     }
 
+    /// A copy of the current value.
     pub fn get(&self) -> T {
         self.value.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
+    /// Replaces the value.
     pub fn set(&self, value: T) {
         *self.value.lock().unwrap_or_else(PoisonError::into_inner) = value;
     }
@@ -51,7 +54,9 @@ struct Queue<E> {
 
 /// What a subscriber took: its events, oldest first, and how many were dropped before them.
 pub struct Taken<E> {
+    /// The events, oldest first.
     pub items: Vec<E>,
+    /// How many events were dropped before them, because the subscriber was too slow to take them.
     pub lagged: usize,
 }
 
@@ -61,10 +66,12 @@ pub struct Subscription<E> {
 }
 
 impl<E: Clone> Bus<E> {
+    /// A bus that keeps up to `cap` events for each subscriber (at least one).
     pub fn new(cap: usize) -> Bus<E> {
         Bus { cap: cap.max(1), subscribers: Mutex::new(Vec::new()) }
     }
 
+    /// Subscribes to the bus: the subscriber is given the events published from now on.
     pub fn subscribe(&self) -> Subscription<E> {
         let inbox = Arc::new(Inbox {
             queue: Mutex::new(Queue { items: VecDeque::new(), lagged: 0, closed: false }),
@@ -74,6 +81,7 @@ impl<E: Clone> Bus<E> {
         Subscription { inbox }
     }
 
+    /// Publishes `event` to every subscriber that is still listening; a subscriber that falls behind loses its oldest events.
     pub fn publish(&self, event: E) {
         let mut subscribers = self.subscribers.lock().unwrap_or_else(PoisonError::into_inner);
         subscribers.retain(|s| s.strong_count() > 0);

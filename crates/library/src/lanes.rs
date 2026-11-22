@@ -22,7 +22,12 @@ pub type RootDrive = Option<Drive>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Place {
     /// On a volume (as the catalog stores it), on a drive that could be told.
-    Mounted { volume: u64, drive: Drive },
+    Mounted {
+        /// The volume's number, as the catalog stores it.
+        volume: u64,
+        /// The drive the volume is on, as it could be told.
+        drive: Drive,
+    },
     /// Not there (unplugged, not ready, the path gone): no lane until it is back.
     Unplugged,
     /// Can't be told, or the probe ran past its deadline: fails closed.
@@ -66,8 +71,11 @@ pub fn plan(roots: &[(RulePath, Option<Place>)], serial: bool) -> Vec<Vec<RulePa
 /// lane is the only one, as in the job), and its drive's label for people (`E:`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Group {
+    /// The roots of the group, in the order the library has them.
     pub roots: Vec<RulePath>,
+    /// The volumes the group's files are on.
     pub volumes: pg_catalog::VolumeSet,
+    /// The drive's label for people, as the group shows it.
     pub label: String,
 }
 

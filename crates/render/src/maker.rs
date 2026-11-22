@@ -85,6 +85,7 @@ pub struct Maker {
 pub const VIEWER_THREADS: usize = 6;
 
 impl Maker {
+    /// A maker with a decoder of its own, for the viewer's thread count.
     pub fn new() -> crate::Result<Maker> {
         Ok(Maker {
             decoder: Decoder::with_full_threads(VIEWER_THREADS)?,

@@ -145,9 +145,17 @@ fn without_verbatim(bytes: Vec<u8>) -> Vec<u8> {
 #[derive(Debug)]
 pub enum NormalizeError {
     /// The path can't be opened: gone, out of reach, or not allowed.
-    Unreadable { path: PathBuf, error: io::Error },
+    Unreadable {
+        /// The path that couldn't be read.
+        path: PathBuf,
+        /// The I/O error under the failure.
+        error: io::Error,
+    },
     /// Its real path has no path form under the native rules (a NUL).
-    NotAPath { path: PathBuf },
+    NotAPath {
+        /// The real path, which has no path form.
+        path: PathBuf,
+    },
 }
 
 impl std::fmt::Display for NormalizeError {

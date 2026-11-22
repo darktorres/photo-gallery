@@ -73,11 +73,14 @@ const PNG_HINT: usize = 64 << 10;
 /// is measured on larger files only.
 const PNG_GATHER_FROM: usize = 256 << 10;
 
+/// What the import pass did over the files it had to import: the counts its report states.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ImportStats {
     /// The files the pass had to import.
     pub pending: usize,
+    /// The files imported and stored.
     pub files: usize,
+    /// The files that failed to import, recorded in the import ledger.
     pub failed: usize,
     /// Files changed while they were read (or being rewritten by the app): nothing stored, due again.
     pub changed: usize,

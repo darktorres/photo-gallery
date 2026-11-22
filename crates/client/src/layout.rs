@@ -6,8 +6,11 @@ use std::ops::Range;
 /// One row: items `first..first + count`, all `height` px high.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Row {
+    /// The row's first item.
     pub first: usize,
+    /// How many items the row holds.
     pub count: usize,
+    /// The row's height, in pixels.
     pub height: f64,
 }
 
@@ -56,9 +59,13 @@ fn greedy(aspects: impl Iterator<Item = f64>, width: f64, target_height: f64, sp
 /// Where an item is in a laid-out grid: its left edge and top, and its size, in pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
+    /// The left edge, in pixels.
     pub x: f64,
+    /// The top edge, in pixels.
     pub y: f64,
+    /// The width, in pixels.
     pub width: f64,
+    /// The height, in pixels.
     pub height: f64,
 }
 
@@ -91,9 +98,13 @@ pub fn frames(aspects: &[f64], width: f64, target_height: f64, spacing: f64) -> 
 /// (`aspect(i)` for item `i`, of `len` items). It answers the cursor's questions: an item's row, its span in the row,
 /// and the item a step away.
 pub struct Placement<'a, A> {
+    /// The rows, in order.
     pub rows: &'a [Row],
+    /// The space between items, in pixels.
     pub spacing: f64,
+    /// The number of items.
     pub len: usize,
+    /// The aspect ratios of the items.
     pub aspect: A,
 }
 

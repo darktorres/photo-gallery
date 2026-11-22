@@ -11,20 +11,26 @@ use crate::size::ThumbHeight;
 /// The phase a pass is in, and what it works on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Phase {
+    /// Nothing is running.
     Idle,
+    /// The crop of the borders.
     Crop,
     /// The folder being scanned, under the catalog's rules.
     Scan {
+        /// The folder being scanned.
         root: RulePath,
     },
+    /// The import of the files the scan found.
     Import,
     /// The duplicate hashes the import left out (the Hashes pass, `pg_import::hashes`).
     Hashes,
     /// The tier-1 pairs of the pictures analyzed (the pairing pass, `pg_import::pairs`).
     Pairing,
+    /// Border detection.
     Borders,
     /// The thumbnails made at this height.
     Thumbs {
+        /// The height of the thumbnails being made.
         height: ThumbHeight,
     },
     /// The ThumbHash placeholders the thumbnails left owing (the Placeholders pass, ).
@@ -46,11 +52,15 @@ pub struct Mark {
 /// A pass's progress: its phase, its files done and in all, the failures and bytes so far, and how long it has run.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Progress {
+    /// What is running.
     pub phase: Phase,
+    /// How many items the phase has done.
     pub done: u64,
     /// 0 when unknown (scanning).
     pub total: u64,
+    /// How many items failed.
     pub failed: u64,
+    /// How many bytes the phase has handled.
     pub bytes: u64,
     /// How long the phase had run when this was read, not counting the time it was paused.
     pub elapsed: Duration,

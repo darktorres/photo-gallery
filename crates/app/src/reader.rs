@@ -41,8 +41,11 @@ const GRID_CACHE_KIB: u32 = 256 * 1024;
 /// What a request is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
+    /// The grid's list of files.
     Grid,
+    /// The folder tree.
     Tree,
+    /// The facets' counts.
     Facets,
     /// An expanded ledger entry's list ([`Session::failed_files`]).
     FailedFiles,
@@ -66,6 +69,7 @@ pub enum FailedItems {
 }
 
 impl FailedItems {
+    /// How many failed items there are.
     pub fn len(&self) -> usize {
         match self {
             FailedItems::Files(files) => files.len(),
@@ -73,6 +77,7 @@ impl FailedItems {
         }
     }
 
+    /// Whether there are none.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -81,8 +86,11 @@ impl FailedItems {
 /// A ledger entry's detail: what it lists (at most the limit asked for) and its counts over all its rows, read together.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failed {
+    /// The ledger the failures are in.
     pub kind: LedgerKind,
+    /// The failed items.
     pub items: FailedItems,
+    /// How many failed, and how many of them are new.
     pub counts: Counts,
 }
 

@@ -25,14 +25,18 @@ pub enum Error {
     /// A file-system step failed: its words, and the I/O error under them.
     #[error("{what}")]
     Io {
+        /// The step, in words.
         what: String,
+        /// The I/O error under the step.
         #[source]
         source: std::io::Error,
     },
     /// A failure after the copy into the original may have started: the temp it was made in, as the user sees its path.
     #[error("copying {temp} into the original")]
     CopyStarted {
+        /// The temp the copy was made from, as the user sees its path.
         temp: String,
+        /// The error that ended the copy.
         #[source]
         source: Source,
     },

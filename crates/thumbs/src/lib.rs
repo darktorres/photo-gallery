@@ -47,7 +47,9 @@ pub enum Error {
     /// A file couldn't be read: its words, and the I/O error under them.
     #[error("{what}")]
     Read {
+        /// The file, in words.
         what: String,
+        /// The I/O error under the read.
         #[source]
         source: std::io::Error,
     },
@@ -83,11 +85,13 @@ pub(crate) const BATCH: usize = 200;
 /// The failures found are written to the ledger at least this often, so the inbox follows a long pass.
 const LEDGER_EVERY: Duration = Duration::from_secs(2);
 
+/// What a thumbnail pass did: the counts its report states, the failures it kept, and whether the cache held.
 pub struct ThumbStats {
     /// The files that needed a thumbnail at the height when the pass began.
     pub needed: usize,
     /// The thumbnail cache's size (bytes) when the pass began.
     pub cache_bytes: u64,
+    /// The thumbnails made by the pass.
     pub made: usize,
     /// The files whose thumbnail couldn't be made, for whatever reason ([`ThumbStats::unreadable`] among them).
     pub failed: usize,
@@ -98,6 +102,7 @@ pub struct ThumbStats {
     pub failures: Vec<FileFailure>,
     /// Files changed while they were read (or being rewritten by the app): not kept, tried again.
     pub changed: usize,
+    /// Whether the cache had no room for the next thumbnail.
     pub cache_full: bool,
     /// The cache was turned off during the pass (`ThumbCache::set_suspended`): a batch it was asked to store was not
     /// stored, so the pass ended there. Not a full cache.

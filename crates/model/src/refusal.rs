@@ -11,7 +11,12 @@ pub enum RefusedReason {
     NetworkPath,
     /// A fact the check needs couldn't be read, so the folder is refused (the checks fail closed): which fact, and the
     /// system's error.
-    Unreadable { fact: Fact, error: String },
+    Unreadable {
+        /// The fact that could not be read.
+        fact: Fact,
+        /// The system's error, as text.
+        error: String,
+    },
     /// The folder's drive, or the drive it really is on, is a network drive.
     NetworkDrive,
     /// The folder's drive is removable.
@@ -25,7 +30,10 @@ pub enum RefusedReason {
     /// Where the folder really is, is on another volume than its path.
     RealOnOtherVolume,
     /// The file system is not NTFS (FAT32 and exFAT have no file IDs that stay put): its name.
-    NotNtfs { file_system: String },
+    NotNtfs {
+        /// The file system's name.
+        file_system: String,
+    },
     /// An NFS mount (Linux): its inode numbers come from the server.
     Nfs,
     /// An SMB or CIFS share (Linux).
@@ -35,7 +43,10 @@ pub enum RefusedReason {
     /// exFAT (Linux): the kernel makes its file numbers up at each mount.
     ExFat,
     /// One of the kernel's pseudo file systems, which hold no photos (Linux): its name (`proc`, `sysfs`, ...).
-    Pseudo { file_system: String },
+    Pseudo {
+        /// The pseudo file system's name.
+        file_system: String,
+    },
     /// A system whose identities the scanner doesn't check (neither Windows nor Linux).
     UnsupportedSystem,
 }

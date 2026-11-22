@@ -18,8 +18,10 @@ use crate::rewrite::{self, op::Op};
 use crate::{Error, Result};
 use pg_model::{format::Format, num};
 
+/// A cut of a file: its bytes, and what was cut from each side.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Cropped {
+    /// The file's bytes, cut, in the file's own format.
     pub bytes: Vec<u8>,
     /// What was cut from the left, top, right and bottom (stored pixels): the cut asked for, but for JPEG's left
     /// and top, moved inward to the MCU grid.

@@ -22,7 +22,12 @@ pub enum ReplaceError {
     /// Before the copy into the original started: the original is as it was, and the temp is gone.
     Untouched(Error),
     /// The copy may have started: the original may be part-written. `temp` holds the whole new content, and is kept.
-    Incomplete { temp: PathBuf, error: Error },
+    Incomplete {
+        /// The temp that holds the whole new content.
+        temp: PathBuf,
+        /// The error that ended the copy.
+        error: Error,
+    },
 }
 
 /// Replace the original at `path` (its disk path) with `bytes`, made from the original as it was when its (size, mtime)

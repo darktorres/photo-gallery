@@ -28,7 +28,9 @@ pub enum Visible {
 /// removes (closing).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Toggle {
+    /// Whether the folder is expanded (`true`) or collapsed.
     pub expand: bool,
+    /// The rows of the tree the toggle covers.
     pub rows: Range<usize>,
 }
 

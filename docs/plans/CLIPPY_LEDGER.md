@@ -11,7 +11,7 @@ Baseline recorded 2026-11-05 at commit `c988b9c`.
   `indexing_slicing` too, and the Phase 4 lints (`cast_lossless`, `cast_possible_truncation`, `cast_sign_loss`,
   `cast_possible_wrap`, `cast_precision_loss`, `as_conversions`) too.
 - Each crate opts in with `[lints] workspace = true`. The vendored crates in `vendor/` are outside the workspace.
-- `[workspace.lints.rust]` sets `unreachable_pub` at warn (Phase 12, `e1477ee`) and `unsafe_code` at deny (Phase 8 of the consistency program). The crates without unsafe code say `#![forbid(unsafe_code)]` at their root; an unsafe item carries `#[expect(unsafe_code, reason)]`. `UnsafePolicy` in `tools/test_ci_files.py` checks both.
+- `[workspace.lints.rust]` sets `unreachable_pub` at warn (Phase 12, `e1477ee`), `missing_docs` at warn (Phase 9 of the consistency program: every public item and field has a doc comment) and `unsafe_code` at deny (Phase 8 of the consistency program). The crates without unsafe code say `#![forbid(unsafe_code)]` at their root; an unsafe item carries `#[expect(unsafe_code, reason)]`. `UnsafePolicy` in `tools/test_ci_files.py` checks both.
 - `clippy.toml` bans `std::collections::HashMap`, `HashSet` and `RandomState`.
 - `just lint` runs `cargo clippy --workspace --all-targets -- -D warnings`, so a lint at `warn` fails the gate.
 
@@ -326,7 +326,7 @@ here only with a decision recorded in the Work column.
 | `absolute_paths` | none | 763 | Requires `use` for every path; excluded | not planned |
 | `default_numeric_fallback` | none | 487 | Requires annotated literal types; excluded | not planned |
 | `single_call_fn` | none | 368 | Flags helper functions with one caller; those helpers name steps; excluded | not planned |
-| `missing_docs` | none | 764 | Documentation debt on the public surface; excluded | not planned |
+| `missing_docs` | warn (workspace) | 764 | Every public item and field documented; `just lint` makes it fatal (AD-004) | done (Phase 9) |
 | `missing_docs_in_private_items` | none | 812 | Documentation debt on private items; excluded | not planned |
 | `missing_inline_in_public_items` | none | 797 | Asks for `#[inline]` on public functions; excluded | not planned |
 | `std_instead_of_core` | none | 167 | Prefers `core` paths; excluded | not planned |

@@ -15,7 +15,9 @@ use crate::pixels::{Rgb, release_over};
 /// How a JPEG keeps the colour: at half resolution each way (4:2:0, a thumbnail's), or at full resolution (4:4:4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Chroma {
+    /// Half resolution each way (4:2:0).
     Half,
+    /// Full resolution (4:4:4).
     Full,
 }
 

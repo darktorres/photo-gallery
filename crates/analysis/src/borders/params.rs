@@ -3,6 +3,7 @@
 /// Bump when anything here changes what is detected; detections of an older version are redone.
 pub const BORDERS_VERSION: i64 = pg_model::versions::BORDERS_VERSION;
 
+/// The thresholds the border detector judges a line by.
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
     /// Max per-channel distance from the line colour that still counts as border.

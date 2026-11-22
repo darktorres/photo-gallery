@@ -117,7 +117,9 @@ impl Running {
 /// A progress report, or the end of a phase (with the progress it ended with).
 #[derive(Clone, Debug)]
 pub enum Event {
+    /// A progress report while the phase runs.
     Progress(Progress),
+    /// The end of the phase, with the progress it ended with.
     Finished(Progress),
 }
 
@@ -138,7 +140,9 @@ impl LaneId {
 /// An event of one lane ([`Control::subscribe_all`]).
 #[derive(Clone, Debug)]
 pub struct Tagged {
+    /// The lane the event is from.
     pub lane: LaneId,
+    /// The event itself.
     pub event: Event,
 }
 

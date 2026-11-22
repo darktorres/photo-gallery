@@ -14,7 +14,10 @@ const STEP: f64 = 1.15;
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// One Ctrl +/− step: grow, or shrink.
-    Resize { grow: bool },
+    Resize {
+        /// Whether the rows grow (`true`) or shrink.
+        grow: bool,
+    },
     /// The row height multiplied by `factor` (a pinch or a wheel step).
     Factor(Factor),
     /// The row height chosen (the size box, the session's saved height).

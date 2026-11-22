@@ -80,6 +80,7 @@ pub struct Entry {
     pub counts: Option<Counts>,
     /// When it was first posted, and last (Unix seconds).
     pub created: i64,
+    /// When it was last changed (Unix seconds).
     pub updated: i64,
     /// Whether the user has read it.
     pub read: bool,

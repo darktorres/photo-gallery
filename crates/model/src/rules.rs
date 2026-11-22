@@ -25,7 +25,9 @@ pub enum PathRules {
 /// that names a folder keeps it exact (`notice::Notice`).
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Path {
+    /// What the path starts from: a drive, a share, or nothing.
     pub anchor: Name,
+    /// The path's parts after the anchor, in order.
     pub parts: Vec<Name>,
 }
 

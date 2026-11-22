@@ -13,13 +13,21 @@ use serde::{Deserialize, Serialize};
 /// its own by `SetViewerOpen`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PanelKind {
+    /// The inbox panel.
     Inbox,
+    /// The log panel.
     Log,
+    /// The library panel.
     Library,
+    /// The dialog that saves a view.
     SaveViewDialog,
+    /// The views menu.
     ViewsMenu,
+    /// The folder picker.
     FolderPicker,
+    /// The Yandex panel.
     Yandex,
+    /// The Yandex preview panel.
     YandexPreview,
 }
 
@@ -50,6 +58,7 @@ pub enum Event {
     ToggleFilters,
     /// The user toggled the borders: the controller saves the choice (`Command::SaveShowBorders`).
     ToggleBorders,
+    /// The viewer opened or closed.
     SetViewerOpen(bool),
     /// Dev mode on or off, set by the global shortcut (the start's state is `Start`). The shortcut's own command saves it
     /// (`Command::SaveDevMode`); this event alone saves nothing.
@@ -63,9 +72,13 @@ pub enum Event {
 /// A panel's flag that changed, with its new value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Change {
+    /// The filter bar opened or closed.
     FiltersOpen(bool),
+    /// The borders are shown or hidden.
     ShowBorders(bool),
+    /// The viewer is open or closed.
     ViewerOpen(bool),
+    /// Developer mode is on or off.
     DevMode(bool),
 }
 

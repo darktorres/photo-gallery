@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 pub enum Event {
     /// The folder tree was loaded (at the start, and after each scan). `folder_known`: the listed folder is in the
     /// tree (collapsed or not); `""` (all folders) always is.
-    TreeLoaded { folder_known: bool },
+    TreeLoaded {
+        /// Whether the listed folder is in the tree.
+        folder_known: bool,
+    },
     /// The list was shown with rows (the grid has a width). Whether the session's last file is in it is the model's to
     /// say: the gate asks for its selection (`RestoreSelection`) and the model selects it if it is there.
     ListShown,

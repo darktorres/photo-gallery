@@ -12,6 +12,7 @@ fn root_text(root: &RulePath) -> String {
     pg_platform::native::PATH_RULES.display(root)
 }
 
+/// What the catalog couldn't do: a conflict with another scan, a file's state, or a failure of a step under it.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A statement stopped before it finished: the reader gave up on it (its cancel flag was set).
@@ -24,54 +25,101 @@ pub enum Error {
     /// lease (`Catalog::begin_scan`), `holder` says whose. Nothing was written. It can be tried again once that walk ends,
     /// or its lease expires (`SCAN_LEASE_SECS` without a heartbeat).
     #[error("a scan of {} is running ({holder})", root_text(.root))]
-    ScanBusy { root: RulePath, holder: String },
+    ScanBusy {
+        /// The folder the other walk holds.
+        root: RulePath,
+        /// Who holds the other walk.
+        holder: String,
+    },
     /// A walk of `root` lost its lease: it had no heartbeat for `SCAN_LEASE_SECS` (the walk was held up), so it expired,
     /// and another walk of an overlapping folder may have begun. The write that found it gone wrote nothing: the walk
     /// can no longer tell that it is alone.
     #[error("the lease of the scan of {root} was lost (it expired while the walk was held up)")]
-    LeaseLost { root: String },
+    LeaseLost {
+        /// The folder whose scan lost its lease.
+        root: String,
+    },
     /// The folder `root` was removed from the library while a walk of it ran: the removal took its lease
     /// (`Catalog::remove_root`), and the walk's write that found it gone wrote nothing, so nothing of the folder is
     /// written again after its removal.
     #[error("{} was removed from the library while it was scanned", root_text(.root))]
-    RootRemoved { root: RulePath },
+    RootRemoved {
+        /// The library folder that was removed.
+        root: RulePath,
+    },
     /// A library folder overlapping `path` is being removed (its marker is there, `Catalog::begin_removal`): it can't be
     /// added until the removal is finished (or discarded), since its files are still going.
     #[error("{path} is still being removed from the library: try again when it is gone")]
-    RemovalPending { path: String },
+    RemovalPending {
+        /// The folder still being removed, as its path text.
+        path: String,
+    },
     /// A file the catalog holds no row for (`id`): nothing was done to it.
     #[error("file {id} isn't in the catalog")]
-    NotInCatalog { id: i64 },
+    NotInCatalog {
+        /// The file's id.
+        id: i64,
+    },
     /// A file a write of the app is changing (its temp is being written): its cut is not recorded yet.
     #[error("file {id} is being written: its cut is not recorded")]
-    BeingWritten { id: i64 },
+    BeingWritten {
+        /// The file's id.
+        id: i64,
+    },
     /// A file whose recorded cut is another build's: the catalog's borders are kept by a build that differs from this one.
     #[error("file {id}: its cut is not recorded, the catalog's borders are another build's")]
-    OtherBuildsBorders { id: i64 },
+    OtherBuildsBorders {
+        /// The file's id.
+        id: i64,
+    },
     /// The catalog at `path` is held by another process or program, so `what` (preparing it, changing it) cannot go on.
     #[error("catalog {path}: {what}")]
-    Held { path: String, what: &'static str },
+    Held {
+        /// The catalog's path.
+        path: String,
+        /// What was being done, in words.
+        what: &'static str,
+    },
     /// A migration of the catalog at `path` needs `needed` MB free on its drive (a copy aside and the migration's log), and
     /// `free` MB are.
     #[error(
         "catalog {path}: bringing it to this build's version needs {needed} MB free on its drive (a copy aside and the \
          migration's log), and {free} MB are: free some space and start again"
     )]
-    MigrationRoom { path: String, needed: u64, free: u64 },
+    MigrationRoom {
+        /// The catalog's path.
+        path: String,
+        /// The room the migration needs, in MB.
+        needed: u64,
+        /// The room free on the disk, in MB.
+        free: u64,
+    },
     /// A library folder whose removal was under way is a library folder again: the removal is not discarded.
     #[error("{path} is a library folder again: its removal is not discarded")]
-    RootAgain { path: String },
+    RootAgain {
+        /// The library folder's path.
+        path: String,
+    },
     /// A migration that drops tables is refused while foreign keys are on: it is refused, and the catalog is unchanged.
     #[error("foreign keys are on for a migration that drops tables: it is refused, and the catalog is unchanged")]
     ForeignKeysOn,
     /// A stored value that does not read as this build's; `what` says which (a folder's path, a queued temp path).
     #[error("{what}")]
-    Stored { what: &'static str },
+    Stored {
+        /// Which stored value, in words (a folder's path, a queued temp path).
+        what: &'static str,
+    },
     /// A catalog file that `prepare` refuses, and why (`reason`). Nothing was written to it. The front ends word it by
     /// `reason` (`Error::refusal`); this text is the CLI's.
     #[error("{}", .reason.message(.path))]
-    Refused { path: String, reason: Box<Refusal> },
+    Refused {
+        /// The folder's path.
+        path: String,
+        /// Why the folder is refused.
+        reason: Box<Refusal>,
+    },
     #[error(transparent)]
+    /// The file system failed (the I/O error is the text).
     Io(#[from] std::io::Error),
     /// A SQLite call or statement that failed (not an interrupt, which is [`Error::Interrupted`]). Its SQLite error is the
     /// source, so [`Error::is_busy`] can find the busy code under any step.
@@ -81,7 +129,9 @@ pub enum Error {
     /// under them.
     #[error("{what}")]
     Step {
+        /// The step, in words.
         what: String,
+        /// The error under the step.
         #[source]
         source: Source,
     },
@@ -99,15 +149,41 @@ pub(crate) type Source = Box<dyn std::error::Error + Send + Sync + 'static>;
 pub enum Refusal {
     /// A schema after this build's: made by another build. `written_by` is the build that last changed the file, when
     /// the file says (`meta.written_by`, empty when it is not known).
-    NewerSchema { found: i64, current: i64, written_by: Option<String> },
+    NewerSchema {
+        /// The schema version the file has.
+        found: i64,
+        /// The version this build expects.
+        current: i64,
+        /// The build that last changed the file, when the file says.
+        written_by: Option<String>,
+    },
     /// A schema of an earlier version than this build's, which [`crate::Catalog::open`] does not bring forward (`prepare` does).
-    OlderSchema { found: i64, current: i64 },
+    OlderSchema {
+        /// The schema version the file has.
+        found: i64,
+        /// The version this build expects.
+        current: i64,
+    },
     /// An integer mark of the file (`mark`, a `meta` key) above this build's: a later build made or changed the file,
     /// whatever its schema. Refused like a newer schema, so no mark is set back. `written_by` as for `NewerSchema`.
-    NewerMark { mark: &'static str, found: i64, current: i64, written_by: Option<String> },
+    NewerMark {
+        /// The mark, a `meta` key.
+        mark: &'static str,
+        /// The value the file has.
+        found: i64,
+        /// The value this build expects.
+        current: i64,
+        /// The build that last changed the file, when the file says.
+        written_by: Option<String>,
+    },
     /// A schema that differs from this build's, of a catalog that may not be rebuilt (a released one). `why` is the
     /// difference.
-    Drift { found: i64, why: String },
+    Drift {
+        /// The schema version the file has.
+        found: i64,
+        /// The difference from this build's schema.
+        why: String,
+    },
     /// A schema that differs, of a catalog without the `key_version` mark its rows' keys are known by.
     PredatesKeyVersion,
     /// Another program or connection has the catalog open, so it can't be changed.
@@ -121,7 +197,12 @@ pub enum Refusal {
     /// The catalog stores its paths under other rules than this build's: its names and paths don't read as this build's.
     /// It is a valid catalog of another platform, so it is not moved aside. `detail` is how its rules differ (or that
     /// they were not recorded), `wanted` names this build's rules.
-    PathRules { detail: String, wanted: &'static str },
+    PathRules {
+        /// How the file's rules differ, or that they were not recorded.
+        detail: String,
+        /// This build's rules, by name.
+        wanted: &'static str,
+    },
 }
 
 impl Refusal {

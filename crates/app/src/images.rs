@@ -80,8 +80,11 @@ pub struct Thumbnail {
 /// Where the cache keeps a thumbnail made on a miss ([`Images::keep`]).
 #[derive(Clone, Copy, Debug)]
 pub struct Keep {
+    /// The file the thumbnail is of.
     pub file_id: FileId,
+    /// The height it is for.
     pub height: ThumbHeight,
+    /// What it was made from.
     pub source: thumbs::Source,
 }
 

@@ -10,7 +10,9 @@ pub enum Error {
     /// A step of opening, reading or writing the cache failed, with the words of the step and the error under them.
     #[error("{what}")]
     Step {
+        /// The step, in words.
         what: String,
+        /// The error under the step.
         #[source]
         source: Inner,
     },

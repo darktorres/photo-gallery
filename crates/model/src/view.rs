@@ -30,7 +30,9 @@ impl Default for Listing {
 /// A saved view (a rating app's bookmarks): a listing with a name.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct SavedView {
+    /// The name the user gave the view.
     pub name: String,
+    /// What the view lists: its query and its sort.
     #[serde(flatten)]
     pub listing: Listing,
 }

@@ -339,7 +339,9 @@ fn mark_new_seen(last_id: &mut Statement<'_>, insert_seen: &mut Statement<'_>) -
 /// The duplicate hashes the Hashes pass makes for a file the import stored without them (`hashes_owed`): an image's
 /// hashes, or a video's file hash (its only duplicate hash).
 pub enum OwedHashes {
+    /// An image's hashes.
     Image(ImageHashes),
+    /// A video's file hash, its only duplicate hash.
     Video(FileHash),
 }
 

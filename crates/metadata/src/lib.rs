@@ -52,6 +52,7 @@ pub struct Meta {
 }
 
 impl Meta {
+    /// The metadata of a file's bytes, read in its `format`. `scratch` is the buffer the walk reuses from file to file.
     pub fn read(bytes: &[u8], format: Format, scratch: &mut MetaScratch) -> Meta {
         let container = Container::walk(bytes, format, scratch);
         let exif = container

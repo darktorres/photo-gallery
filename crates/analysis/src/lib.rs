@@ -24,14 +24,18 @@ pub enum Error {
     /// A file that couldn't be read: its path, and the I/O error under it.
     #[error("reading {}", path.display())]
     Read {
+        /// The file that couldn't be read.
         path: std::path::PathBuf,
+        /// The I/O error under the read.
         #[source]
         source: std::io::Error,
     },
     /// A side of a picture over `u32::MAX`, which the hash and the detection take as 4 bytes.
     #[error("{what}")]
     Size {
+        /// The side that is too large, in words.
         what: &'static str,
+        /// The conversion's error.
         #[source]
         source: std::num::TryFromIntError,
     },

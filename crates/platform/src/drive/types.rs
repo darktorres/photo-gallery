@@ -31,7 +31,9 @@ pub enum DriveKey {
 /// The drive a path is on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Drive {
+    /// The drive's identity, as the platform keys it.
     pub key: DriveKey,
+    /// The kind of drive (fixed, removable, network, and so on).
     pub kind: Kind,
     /// For people: `E:` on Windows (the volume's GUID path when it has no letter), the disk's name on Linux.
     pub label: String,

@@ -29,8 +29,11 @@ use crate::failure::{Class, Failed};
 use crate::governor::Budget;
 use crate::panics;
 
+/// How a pipeline runs: how many threads read and how many process, and how much is in flight at once.
 pub struct Options {
+    /// The threads that read the files.
     pub readers: usize,
+    /// The threads that process the files.
     pub workers: usize,
     /// The files in flight at most: being read, read and waiting for a worker, or being processed. A file a worker
     /// opens itself (a video) counts only while it waits. [`Options::slots`] by default.
@@ -94,14 +97,22 @@ pub enum Read {
     File,
     /// Not by the pipeline: `process` gets no bytes and opens the file itself (a video, which is streamed, not
     /// loaded). `bytes` is what it counts as read (the file's size, or 0 for a part of it).
-    Streamed { bytes: u64 },
+    Streamed {
+        /// The bytes the file counts as read in the pass's progress.
+        bytes: u64,
+    },
     /// What `gather` makes of the file, read by it (it seeks where it needs to, and returns the bytes `process` gets: a
     /// JPEG's header, a PNG's chunks without its image data). `hint` is how many bytes it is expected to need: the
     /// admission a file takes before `gather` runs. A file no longer than `hint` is read whole, and so is one `gather`
     /// gives nothing for (`None`, or a panic); that whole read is one file at a time, after the pass's other reads in
     /// flight have their buffers (the budget is for the gathers; a whole file is one past it, as an oversize file is).
     /// An error of `gather` is the file's read error.
-    Gather { hint: usize, gather: fn(&mut std::fs::File) -> std::io::Result<Option<Vec<u8>>> },
+    Gather {
+        /// How many bytes `gather` is expected to need.
+        hint: usize,
+        /// Reads the bytes `process` gets from the file, seeking where it needs to.
+        gather: fn(&mut std::fs::File) -> std::io::Result<Option<Vec<u8>>>,
+    },
 }
 
 /// What a worker sends back: an item's result with the bytes it counts as read, or the error of a setup that failed
@@ -400,7 +411,9 @@ where
 /// since the last write (so what a slow pass finds is not held back for long).
 #[derive(Clone, Copy, Debug)]
 pub struct Batch {
+    /// The most items a batch holds.
     pub size: usize,
+    /// The longest a batch waits before it is written, if the pass sets a wait.
     pub every: Option<Duration>,
 }
 

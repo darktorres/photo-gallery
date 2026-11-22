@@ -44,7 +44,9 @@ const RETRY_EVERY: Duration = Duration::from_millis(50);
 /// that sets no patience keeps the timeout alone.
 #[derive(Clone)]
 pub struct Patience {
+    /// Set when the wait should stop.
     pub stop: Arc<AtomicBool>,
+    /// The time the wait ends at.
     pub until: Instant,
 }
 

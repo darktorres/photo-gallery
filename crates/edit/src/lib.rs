@@ -26,7 +26,9 @@ pub enum Error {
     /// A step of a codec or a container that failed, with the step's words and the error under them.
     #[error("{step}")]
     Step {
+        /// The step that failed, in words.
         step: String,
+        /// The error under the step.
         #[source]
         source: Source,
     },

@@ -177,8 +177,11 @@ pub fn badge(media: MediaType, duration_ms: Option<u32>, ext: &str) -> String {
 /// The borders of a file that a crop would cut: whether the user marked them not a border, the cut in stored pixels
 /// (left, top, right, bottom), and the classes of the accepted sides.
 pub struct FoundBorders<'a> {
+    /// Whether the borders are marked.
     pub marked: bool,
+    /// The cut, as (left, top, right, bottom) in pixels.
     pub cut: [u32; 4],
+    /// The classes of the accepted sides.
     pub classes: &'a [Class],
 }
 

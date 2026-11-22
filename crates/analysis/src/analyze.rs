@@ -59,6 +59,7 @@ pub struct Analyzer {
 pub const KEEP_BYTES: usize = 32_000_000 * 3;
 
 impl Analyzer {
+    /// An analyzer with its own decoder and resizer, for one worker's files.
     pub fn new() -> Result<Analyzer> {
         Ok(Analyzer {
             decoder: Decoder::new()?,
@@ -164,6 +165,7 @@ pub struct FileBorders {
     /// The stored size, upright (what `analysis.width/height` hold): the borders pass checks the header's dimensions
     /// against it.
     pub width: u32,
+    /// The stored height, upright, as `width` is.
     pub height: u32,
     /// `None`: not looked for (animated, tiny).
     pub borders: Option<Detection>,

@@ -59,7 +59,9 @@ impl VolumeSet {
 /// A file the Placeholders pass makes a placeholder for: its work item, and the time of a video's poster frame (0
 /// where its analysis has none; an image's, unused).
 pub struct PlaceholderWork {
+    /// The file's work item.
     pub item: WorkItem,
+    /// The time of its poster frame, for a video (0 for an image).
     pub poster_ms: i64,
 }
 
@@ -130,7 +132,9 @@ pub const SCAN_LEASE_SECS: i64 = 60;
 /// A folder a walk did not list, and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Skip {
+    /// The folder that was skipped.
     pub path: RulePath,
+    /// Why it was skipped.
     pub reason: SkipReason,
 }
 
@@ -190,6 +194,7 @@ pub(crate) const FOLDER_FAILED: &str =
 /// A library folder: the user added it, and a rescan walks it again.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Root {
+    /// The root's id in the catalog.
     pub id: RootId,
     /// Absolute, with no trailing separator.
     pub path: RulePath,
@@ -267,8 +272,11 @@ pub(crate) fn format_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Option<Format
 /// before the import, or when it failed), and its kind.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WriteTarget {
+    /// The file's path.
     pub path: RulePath,
+    /// Its format, if the catalog knows it.
     pub format: Option<Format>,
+    /// Its kind: an image or a video.
     pub kind: Kind,
 }
 
@@ -293,8 +301,11 @@ pub(crate) fn key_version_text() -> String {
 /// to `Catalog::prepare`: the catalog doesn't depend on the analysis or the renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Versions {
+    /// The import's version.
     pub import: i64,
+    /// The borders' version.
     pub borders: i64,
+    /// The thumbnails' version.
     pub thumbs: i64,
     /// `pg_model::pdq::PAIRING_VERSION`: the pairs the pairing pass makes.
     pub pairing: i64,
@@ -331,11 +342,15 @@ pub(crate) fn folder_path(
 
 /// A file as the scanner saw it.
 pub struct ScannedFile<'a> {
+    /// The file's identity on its volume.
     pub identity: FileIdentity,
+    /// Its name.
     pub name: &'a Name,
     /// Its last extension (`Ext::of_name`), which also says its kind.
     pub ext: Ext,
+    /// Its size, in bytes.
     pub size: u64,
+    /// Its modification time (Unix seconds).
     pub mtime: i64,
     /// Its creation time (FILETIME ticks), where the listing gives one.
     pub created: Option<i64>,
@@ -350,7 +365,9 @@ pub struct ScannedFile<'a> {
 /// A file's row as a walk read it when it listed the file's folder: its size and mtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Prior {
+    /// The size the catalog has for the file.
     pub size: u64,
+    /// The modification time the catalog has for the file.
     pub mtime: i64,
 }
 
@@ -410,20 +427,26 @@ impl FolderRows {
 
 /// A folder's row, with its part of its files' order key (`PathRules::folder_key`).
 pub struct Folder {
+    /// The folder's id in the catalog.
     pub id: FolderId,
+    /// The folder's key, which orders its files.
     pub key: Vec<u8>,
 }
 
 /// A file the import (or the borders pass) still has to analyze.
 #[derive(Clone, Copy, Debug)]
 pub struct WorkItem {
+    /// The file's id.
     pub id: FileId,
     /// In its list.
     pub path: FilePath,
+    /// The size the work was listed with.
     pub size: u64,
+    /// The modification time the work was listed with.
     pub mtime: i64,
     /// Catalog rotation (`files.turns`), applied when decoding.
     pub turns: Turns,
+    /// The file's kind: an image or a video.
     pub kind: Kind,
 }
 
@@ -439,7 +462,9 @@ impl WorkItem {
 /// A file as a pass listed it: what the pass read must still be the file's for it to be kept (`Catalog::is_current`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Listed {
+    /// The size the file was listed with.
     pub size: u64,
+    /// The modification time the file was listed with.
     pub mtime: i64,
     /// The catalog's rotation, which the pass applied.
     pub turns: Turns,
@@ -451,10 +476,13 @@ pub struct CropSource {
     pub path: PathRef,
     /// The file as analyzed.
     pub size: u64,
+    /// The modification time the analysis read.
     pub mtime: i64,
+    /// The format the analysis found.
     pub format: Format,
     /// The stored size.
     pub width: u32,
+    /// The stored height, as `width` is.
     pub height: u32,
     /// Left, top, right, bottom, stored pixels.
     pub cut: [u32; 4],
@@ -520,6 +548,7 @@ pub(crate) struct Hit {
 /// `ids[i]`, owes its pairs when `owed[i]`, and has the stored hashes `hashes[i]` and quality `quality[i]`. The join takes
 /// the columns as they are.
 pub struct PairingWork {
+    /// The files to pair, in order.
     pub ids: Vec<FileId>,
     /// Its pairs are owed (a `pairs_owed` row) and the pass can make them (its file is present and not pending, as
     /// `Catalog::owed_pairs` counts): the pass pairs it with the pictures before and after it. An owed picture whose
@@ -546,7 +575,9 @@ pub struct PairingWork {
 /// marks are the load's needs no guard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PairingMarks {
+    /// The pairing version the catalog was last paired with.
     pub version: i64,
+    /// The epoch of the pairs, which changes when they are recomputed.
     pub epoch: i64,
 }
 

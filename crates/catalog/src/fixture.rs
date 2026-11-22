@@ -24,9 +24,13 @@ pub struct File {
     pub kind: &'static str,
     /// The file's size in bytes.
     pub size: i64,
+    /// The file's modification time (Unix seconds).
     pub mtime: i64,
+    /// The file's identity on its volume (its file reference).
     pub file_ref: i64,
+    /// Whether the file is marked missing.
     pub missing: bool,
+    /// The file's quarter turns in the catalog.
     pub turns: Turns,
 }
 
@@ -47,6 +51,7 @@ impl File {
 pub struct LedgerWritesFail(());
 
 impl LedgerWritesFail {
+    /// Makes the ledger's writes fail until the fault is dropped.
     pub fn start() -> LedgerWritesFail {
         crate::writers::LEDGER_FAULT.store(true, std::sync::atomic::Ordering::SeqCst);
         LedgerWritesFail(())

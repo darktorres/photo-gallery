@@ -92,13 +92,16 @@ pub mod synthetic;
 /// The folder listing a scan reads with: the platform's [`Lister`], or a fake in the tests. A listing runs on the walk's
 /// thread, and on the worker threads that list folders ahead of it, each with a lister of its own ([`Listing::fresh`]).
 pub trait Listing: Send {
+    /// An open folder, as [`Listing::open`] gives it.
     type Dir;
+    /// Opens the folder at `path` for listing.
     fn open(&mut self, path: &[Unit]) -> io::Result<Self::Dir>;
     /// The device the folder is on, as its entries number theirs (`Entry::device`): none where every folder is on one
     /// volume (Windows).
     fn device(&self, dir: &Self::Dir) -> Option<u64>;
     /// The volume the folder is on: the root's. A folder below it has its volume from its entry (`volume_of_device`).
     fn volume(&mut self, dir: &Self::Dir) -> io::Result<u64>;
+    /// Passes each entry of the open folder to `each`, in the order the system lists them.
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()>;
     /// The identity of device `device`, from `probe`, a path on it. Kept, so that a second device with the same identity
     /// is told apart. The walk calls it on its own thread, in the order it lists the folders: the identities are the
@@ -272,7 +275,9 @@ fn open_folder<L: Listing>(lister: &mut L, rules: PathRules, path: &RulePath) ->
 /// caller to act on after the scan's commit (the thumbnails and the temp files of the replaced files).
 #[derive(Debug, Default)]
 pub struct ScanStats {
+    /// The folders walked.
     pub folders: u64,
+    /// The files seen in the walk.
     pub files: u64,
     /// Files new, moved, renamed, rewritten or back from missing.
     pub changed: u64,
@@ -304,7 +309,9 @@ pub struct ScanStats {
 /// A folder under a scanned root that the scan didn't walk into, because its file system is refused: the folder, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefusedMount {
+    /// The folder under the scanned root that is not walked into.
     pub mount: RulePath,
+    /// Why its file system is refused.
     pub reason: RefusedReason,
 }
 
@@ -322,7 +329,9 @@ pub enum Error {
     /// A step of the scan that failed, with the words of the step and the error under them.
     #[error("{what}")]
     Step {
+        /// The step, in words.
         what: String,
+        /// The error under the step.
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -355,19 +364,24 @@ impl Error {
 /// scan failed (its batches before the error are in).
 #[derive(Debug)]
 pub enum ScanError {
+    /// The folder is refused: its file system, or where it is, keeps the scan out (the reason says which).
     Refused(RefusedReason),
     /// Another walk of `root` (a folder that overlaps the one asked for) is running; `holder` says whose
     /// (`pg_catalog::Error::ScanBusy`). The root is kept as its path, so it is shown and compared as the catalog holds it.
     Busy {
+        /// The folder the other walk holds, as the catalog holds its path.
         root: RulePath,
+        /// Who holds the other walk, as the catalog records it.
         holder: String,
     },
     /// The library folder that holds `root` was removed while the walk ran, in this process or another
     /// (`pg_catalog::Error::RootRemoved`): the removal took the walk's lease, and the walk's next write found it gone
     /// and wrote nothing. Its batches before the removal are in, and are marked missing with the folder's other files.
     Removed {
+        /// The folder that was removed, as the catalog holds its path.
         root: String,
     },
+    /// The scan failed for another reason (see [`Error`]).
     Failed(Error),
 }
 

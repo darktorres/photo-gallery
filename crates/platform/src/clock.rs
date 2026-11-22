@@ -4,12 +4,19 @@
 
 /// A date and time.
 pub struct LocalTime {
+    /// The year.
     pub year: u16,
+    /// The month, from 1 to 12.
     pub month: u16,
+    /// The day of the month, from 1.
     pub day: u16,
+    /// The hour, from 0 to 23.
     pub hour: u16,
+    /// The minute, from 0 to 59.
     pub minute: u16,
+    /// The second, from 0 to 59.
     pub second: u16,
+    /// The millisecond, from 0 to 999.
     pub millisecond: u16,
 }
 

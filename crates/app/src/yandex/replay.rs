@@ -70,6 +70,7 @@ pub struct Replay {
 }
 
 impl Replay {
+    /// A replay of `recording`, from its start.
     pub fn new(recording: Arc<Recording>) -> Replay {
         Replay { recording }
     }

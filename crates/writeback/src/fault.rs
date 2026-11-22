@@ -14,7 +14,12 @@ pub enum Fault {
     PanicInDrain,
     /// Once, in a job of `file`: another program saves the file as `with`, after the writer read it and before it
     /// opens it for the copy.
-    SaveBeforeCopy { file: FileId, with: &'static [u8] },
+    SaveBeforeCopy {
+        /// The file whose save is replaced.
+        file: FileId,
+        /// The bytes the other program saves the file with.
+        with: &'static [u8],
+    },
     /// Once, in a job of `file`: the job's row leaves the queue after the writer read it and opened the original for
     /// the copy, before the temp is recorded (a change that cancels the write does that, as a rating set back to what
     /// the file holds does).

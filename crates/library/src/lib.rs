@@ -42,7 +42,9 @@ pub enum Error {
     /// A step of the library failed: its words, and the error under them.
     #[error("{what}")]
     Step {
+        /// The step, in words.
         what: String,
+        /// The error under the step.
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },

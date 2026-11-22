@@ -1,3 +1,5 @@
+//! The gallery's build script: on Windows it embeds the program's icon in the executable's resources.
+
 fn main() -> std::io::Result<()> {
     // The icon of gallery.exe, which Explorer and the taskbar show (made by tools/make_icon.py). The resource compiler
     // is part of the Windows SDK. The target's OS, not this script's host, decides: the script's cfg is the host's.

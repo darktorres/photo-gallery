@@ -17,8 +17,11 @@ pub const KEY_ALGO_VERSION: i64 = crate::versions::KEY_ALGO_VERSION;
 /// valid sequence (a Unix name).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Unit {
+    /// A scalar value.
     Char(char),
+    /// An unpaired surrogate.
     Surrogate(u16),
+    /// A byte of a name that is not valid text.
     Byte(u8),
 }
 

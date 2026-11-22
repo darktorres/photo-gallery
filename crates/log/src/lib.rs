@@ -78,6 +78,7 @@ pub use record::{DETAIL_CAP, MESSAGE_CAP, Record, parse};
 
 /// The most records, and bytes of their texts, kept in memory.
 pub const RING_RECORDS: usize = 5000;
+/// The most bytes of record texts kept in memory.
 pub const RING_BYTES: usize = 4 * 1024 * 1024;
 
 /// The process's log.
@@ -89,14 +90,17 @@ pub fn init(path: PathBuf, about: &str) {
     LOG.init(path, about);
 }
 
+/// Records an information line under `target`.
 pub fn info(target: &str, message: &str) {
     LOG.log(Level::Info, target, message, None);
 }
 
+/// Records a warning under `target`.
 pub fn warn(target: &str, message: &str) {
     LOG.log(Level::Warning, target, message, None);
 }
 
+/// Records an error under `target`.
 pub fn error(target: &str, message: &str) {
     LOG.log(Level::Error, target, message, None);
 }

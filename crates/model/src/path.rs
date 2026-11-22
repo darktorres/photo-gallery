@@ -51,6 +51,7 @@ pub struct FilePath {
 /// A pass's work: its items, each holding its path as a [`FilePath`]. Each folder's path is held once, read the
 /// first time one of its files is added ([`WorkList::file`]).
 pub struct WorkList<T> {
+    /// The list's items, in the order they were added.
     pub items: Vec<T>,
     folders: PathArena,
     /// Each folder id's path in `folders`, once read. A map, so its size is what the list holds, not the largest id.
@@ -100,10 +101,12 @@ impl<T> WorkList<T> {
         [folder, &[sep][..], name].concat()
     }
 
+    /// How many files the list holds.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Whether the list holds no files.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

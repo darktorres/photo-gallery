@@ -17,6 +17,7 @@ pub struct Features {
 }
 
 impl Features {
+    /// The features on as the app starts: borders and duplicates, with a lane per physical drive.
     pub const ALL: Features = Features { borders: true, duplicates: true, serial_drives: false };
 }
 

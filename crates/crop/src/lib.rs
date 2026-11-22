@@ -47,7 +47,9 @@ pub enum Error {
     /// A file-system step failed: its words, and the I/O error under them.
     #[error("{what}")]
     Io {
+        /// The step, in words.
         what: String,
+        /// The I/O error under the step.
         #[source]
         source: std::io::Error,
     },
@@ -77,10 +79,13 @@ fn io(what: impl Into<String>, source: std::io::Error) -> Error {
     Error::Io { what: what.into(), source }
 }
 
+/// What a save or a cut did: the counts its report states, the failures it kept, and what a stop left to do.
 pub struct Stats {
+    /// The copies saved.
     pub saved: usize,
     /// Nothing to crop now (no borders, marked, changed since), or not in the library any more.
     pub skipped: usize,
+    /// The files that failed, the first of them kept in `failures`.
     pub failed: usize,
     /// The first failures, each with its file, up to `FAILURES_KEPT`; `failed` counts them all. A panic on a file is a
     /// failure of that file (`Cause::Panicked`), which is not queued again.
@@ -235,16 +240,19 @@ enum Written {
 /// and what a stop left to do (queue it again).
 #[derive(Default)]
 pub struct CutStats {
+    /// The originals cut and saved.
     pub saved: usize,
     /// Nothing to cut now (no borders, marked, changed since), or not in the catalog any more.
     pub skipped: usize,
     /// A format that is not cut in place. Every still format is cut now, so this stays 0; it is kept for the report.
     pub unsupported: usize,
+    /// The files that failed, the first of them kept in `failures`.
     pub failed: usize,
     /// The first failures, each with its file, up to `FAILURES_KEPT`; `failed` counts them all.
     pub failures: Vec<FileFailure>,
     /// The files whose originals were rewritten.
     pub cut: Vec<FileId>,
+    /// What a stop left to do (queue it again).
     pub remaining: Vec<FileId>,
 }
 

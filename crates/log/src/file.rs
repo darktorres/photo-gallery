@@ -45,6 +45,7 @@ impl LogFile {
         LogFile { path, cap, rename: Box::new(rename) }
     }
 
+    /// The file's path.
     pub fn path(&self) -> &Path {
         &self.path
     }

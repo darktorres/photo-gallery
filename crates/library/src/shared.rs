@@ -38,6 +38,7 @@ struct FeatureState {
 }
 
 impl FeatureCell {
+    /// A cell holding `features`, with no waiter yet.
     pub fn new(features: Features) -> FeatureCell {
         FeatureCell(Arc::new(Mutex::new(FeatureState { features, wake: None })))
     }
@@ -127,7 +128,9 @@ pub struct Generation {
 pub struct LaneProgress {
     /// The lane's number: its identity for `Runner::set_lane_paused` (numbers are not reused).
     pub number: usize,
+    /// The lane's drive label, as the status bar shows it.
     pub label: String,
+    /// The lane's progress in its current phase.
     pub progress: Progress,
     /// The time since this lane last had a phase running: `Some(ZERO)` while one runs, `None` before its first.
     pub since_work: Option<Duration>,

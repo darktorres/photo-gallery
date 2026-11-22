@@ -9,7 +9,9 @@ use std::path::Path;
 /// What the hold stops this process from doing to the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
+    /// Reading is stopped.
     Read,
+    /// Writing is stopped.
     Write,
 }
 

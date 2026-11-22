@@ -111,13 +111,16 @@ pub use state::{Counts, FailedFolder, LedgerAck, LedgerRow, LedgerState};
 /// A ledger as the inbox shows it: one entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Summary {
+    /// The ledger the rows are in.
     pub kind: LedgerKind,
     /// The newest row's serial: what the user sees of the entry when it is listed ([`Catalog::mark_ledger_read`],
     /// [`Catalog::dismiss_ledger`]).
     pub newest: i64,
     /// When the oldest and the newest rows were first recorded (Unix seconds).
     pub created: i64,
+    /// When the newest row was last changed (Unix seconds).
     pub updated: i64,
+    /// Whether the rows have been read.
     pub read: bool,
     /// Read only while the inbox is viewed (`viewing`): `None` otherwise, and nothing renders a count then.
     pub counts: Option<Counts>,

@@ -55,6 +55,7 @@ impl From<Error> for Failed {
     }
 }
 
+/// What a borders pass did over its files: the counts its report states.
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
     /// The files looked at, read or not.

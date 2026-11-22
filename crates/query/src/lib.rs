@@ -195,14 +195,19 @@ const MARKED: &str = concat!("(", cut!(), " AND m.file_id IS NOT NULL)");
 /// would show, given the other facets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Counted {
+    /// The file types (formats) facet.
     Types,
+    /// The file extensions facet.
     Exts,
+    /// The borders facet: whether a file has borders, and what kind.
     Borders,
 }
 
 /// A WHERE condition and the values it binds, in order.
 pub struct Condition {
+    /// The SQL text of the condition, with `?` placeholders for its values.
     pub sql: String,
+    /// The values the placeholders bind, in order.
     pub params: Vec<Value>,
 }
 

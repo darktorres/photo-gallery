@@ -43,6 +43,7 @@ impl WriteKind {
         }
     }
 
+    /// The kind the catalog's name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<WriteKind> {
         match key {
             write_rating!() => Some(WriteKind::Rating),
@@ -88,11 +89,14 @@ impl TryFrom<String> for WriteKind {
 /// back through [`Write::from_stored`], so a value out of its kind's range is refused where it is read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Write {
+    /// A rating, written into the file.
     Rating(Rating),
+    /// A rotation, as quarter turns clockwise.
     Rotation(Turns),
 }
 
 impl Write {
+    /// The kind of write this is.
     pub fn kind(self) -> WriteKind {
         match self {
             Write::Rating(_) => WriteKind::Rating,

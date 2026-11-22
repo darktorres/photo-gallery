@@ -9,29 +9,38 @@ use pg_model::path::{FilePath, WorkList};
 use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
 
+/// The format name of a JPEG thumbnail, as the cache stores it.
 pub const FORMAT_JPEG: &str = "jpeg";
 
 /// What a thumbnail was made from: the file's mtime and its catalog turns (`files.turns`). A thumbnail is
 /// current while both still match the file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Source {
+    /// The file's modification time, as the catalog stores it.
     pub mtime: i64,
+    /// The file's quarter turns in the catalog.
     pub turns: Turns,
 }
 
+/// A thumbnail to store: the file, the height it is for, what it was made from, and its bytes.
 pub struct Thumb {
+    /// The file the thumbnail is of.
     pub file_id: FileId,
     /// The requested grid height (the image may be smaller).
     pub height: ThumbHeight,
+    /// What the thumbnail was made from.
     pub source: Source,
+    /// The thumbnail's bytes, as the cache stores them.
     pub data: Vec<u8>,
 }
 
 /// A file the background task still has to thumbnail at the current height.
 pub struct ThumbWork {
+    /// The file's id in the catalog.
     pub id: FileId,
     /// In its list.
     pub path: FilePath,
+    /// What the file's thumbnail would be made from.
     pub source: Source,
     /// The file's size when the work was listed: a thumbnail is kept only if the file still has it.
     pub size: u64,
@@ -43,15 +52,20 @@ pub struct ThumbWork {
 
 /// The files a pass at `height` has to thumbnail, and what they were read against (`ThumbCache::checked`).
 pub struct Pending {
+    /// The files to thumbnail, in their list order.
     pub work: WorkList<ThumbWork>,
+    /// Where the list was read.
     pub snapshot: Snapshot,
 }
 
 /// Where a pass's work list was read: the catalog's change sequence and the height's evictions at that moment.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Snapshot {
+    /// The height the list is for.
     pub height: ThumbHeight,
+    /// The catalog's change sequence when the list was read.
     pub seq: i64,
+    /// The height's eviction count when the list was read.
     pub evictions: i64,
     /// Only the files changed since the last complete pass were read (`false`: every file).
     pub since_checked: bool,
@@ -65,24 +79,45 @@ pub struct Snapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
     /// The totals were off when the cache was opened, and were fixed: what they were, and what the entries hold.
-    TotalsFixed { kept: (i64, i64), actual: (i64, i64) },
+    TotalsFixed {
+        /// The totals the file recorded, as (bytes, count).
+        kept: (i64, i64),
+        /// The totals the entries hold, as (bytes, count).
+        actual: (i64, i64),
+    },
     /// The times entries were shown could not be written; they stay queued for the next try.
-    TouchesNotWritten { error: String },
+    TouchesNotWritten {
+        /// The error that stopped the write, as text.
+        error: String,
+    },
     /// The times entries were shown were written, the first time after [`Event::TouchesNotWritten`].
     TouchesWritten,
     /// An on-demand thumbnail could not be stored (it was shown anyway).
-    NotStored { error: String },
+    NotStored {
+        /// The error that stopped the store, as text.
+        error: String,
+    },
     /// A thumbnail was stored, the first time after [`Event::NotStored`].
     Stored,
     /// The WAL could not be merged when the writer closed.
-    WalNotMerged { error: String },
+    WalNotMerged {
+        /// The error that stopped the merge, as text.
+        error: String,
+    },
     /// The cache file was started over when it was opened, for `reason`: because this build can't use it (made for
     /// another catalog, or by another build), or because it was damaged or not a database. `path` is where the old
     /// file is now for a damaged one, which is moved aside (`thumbs.sqlite.bad`), and the cache file itself, made
     /// anew, for one this build can't use, which is deleted. `detail` is the technical account (the first difference,
     /// SQLite's error), for a log: the words a person reads come from `reason` and `path`. Its thumbnails are made
     /// again; the cap it had is kept, except a damaged file's, which can't be read (the cap given, or the default).
-    StartedOver { reason: StartOverReason, path: PathBuf, detail: String },
+    StartedOver {
+        /// Why the file was started over.
+        reason: StartOverReason,
+        /// Where the old file is now.
+        path: PathBuf,
+        /// The technical account of the cause, for a log.
+        detail: String,
+    },
 }
 
 /// What an [`Event`] does to the user's notices ([`Event::effect`]).
@@ -126,8 +161,11 @@ impl Event {
 /// What a cache holds (bytes, entries) and may hold (`cap`, bytes).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Usage {
+    /// The bytes the cache holds.
     pub bytes: i64,
+    /// The entries it holds.
     pub count: i64,
+    /// The most bytes it may hold.
     pub cap: i64,
 }
 

@@ -4085,13 +4085,13 @@ The analyze scale rule is held in two places: jpeg-decoders src/lib.rs:54 docume
 
 ### AD-004 [medium] Public types, traits and consts without an item doc where neighbours have one — CONFIRMED
 
-**Disposition: Deferred.** The missing_docs lint is not enabled; the named types have docs.
+**Disposition: Fixed.** `missing_docs` is enabled for the workspace (`Cargo.toml` `[workspace.lints.rust]`, Phase 9), and `just lint` runs clippy with `-D warnings`, so a public type, trait or const without a doc fails the gate. The named types have docs, and the whole workspace compiles with no missing-doc warning. The lint covers what is reachable from outside a crate.
 
 Public types without an item doc include Pool (app pool.rs:7), Inbox (inbox.rs:372), JsonStore (store.rs:21), Catalog (catalog core.rs:37), Control (jobs control.rs:202) and Runner (library runner.rs:30), while neighbouring items in the same files carry docs.
 
 ### AD-005 [medium] Public functions and methods without docs where neighbours have them — CONFIRMED
 
-**Disposition: Deferred.** The named functions have docs; the lint is not enabled.
+**Disposition: Fixed.** The same workspace `missing_docs` lint covers public functions and methods (Phase 9). The named functions have docs, and the whole workspace compiles with no missing-doc warning.
 
 Public functions beside documented ones are undocumented in many files: `set_paused` in app library.rs:230, new in pool.rs:13, details in catalog browse read details.rs:12, `finish_scan` in roots.rs:145, and `clear_stop` in jobs control.rs:349. The gap is spread through the crates.
 
@@ -4115,7 +4115,7 @@ Public functions beside documented ones are undocumented in many files: `set_pau
 
 ### AD-009 [low] Public fields and variants with missing docs while siblings have them — CONFIRMED
 
-**Disposition: Deferred.** The named fields have docs; the lint is not enabled.
+**Disposition: Fixed.** The same workspace `missing_docs` lint covers public fields and variants (Phase 9). The named fields and variants have docs, including the model's and client's undocumented ones, and the whole workspace compiles with no missing-doc warning.
 
 Fields are undocumented beside documented ones: catalog fixture.rs:15 (File), inbox.rs:72-73 (Entry), inbox.rs:92-96 (Mark), ledger.rs:143 (FailedFile), model details.rs:13 (Details.size), model view.rs:15-16 (Listing), and the others listed. The gap is common across the model and catalog.
 

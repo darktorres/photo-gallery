@@ -76,6 +76,7 @@ const IDLE_CHECK: Duration = Duration::from_secs(30);
 /// What the app shows about the queue.
 #[derive(Clone, Default)]
 pub struct WriteStatus {
+    /// The writes queued, and not yet done.
     pub queued: u64,
     /// The latest failure, until the next success (or until the write it names is dropped), which the app words.
     pub error: Option<WriteError>,
@@ -97,7 +98,14 @@ pub enum WriteError {
     /// The copy into the original failed up to the cap after it may have started: the original (`file`, as the user
     /// sees its path) may be incomplete, and the whole new content is in `temp`. Both are kept; the copy is tried
     /// again after the next change to the file, and at the next start.
-    CopyIncomplete { file: String, temp: String, cause: Cause },
+    CopyIncomplete {
+        /// The file, as the user sees its path.
+        file: String,
+        /// The temp that holds the whole new content.
+        temp: String,
+        /// What ended the copy.
+        cause: Cause,
+    },
 }
 
 /// The English words, for the command line and the queue's `error` column; the app words it through `pg_client::text`.
@@ -284,6 +292,7 @@ impl Writer {
         self.service.is_running()
     }
 
+    /// The queue's status, as the app shows it.
     pub fn status(&self) -> WriteStatus {
         self.inner.status.get()
     }

@@ -35,14 +35,17 @@ impl<T> Results<T> {
         &self.items
     }
 
+    /// The result at `i`, if there is one.
     pub fn get(&self, i: usize) -> Option<&T> {
         self.items.get(i)
     }
 
+    /// How many results there are.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Whether there are no results.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

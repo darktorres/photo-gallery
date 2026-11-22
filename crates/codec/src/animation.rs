@@ -15,9 +15,13 @@ use pg_model::format::Format;
 
 /// A whole frame, RGBA (not premultiplied), shown for `delay_ms`.
 pub struct Frame {
+    /// The frame's width, in pixels.
     pub width: u32,
+    /// The frame's height, in pixels.
     pub height: u32,
+    /// The pixels, RGBA and not premultiplied, row after row.
     pub rgba: Vec<u8>,
+    /// How long the frame is shown, in milliseconds.
     pub delay_ms: u32,
 }
 

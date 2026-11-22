@@ -25,9 +25,12 @@ macro_rules! kind_video {
     };
 }
 
+/// The kind of a file: an image or a video.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumIter)]
 pub enum Kind {
+    /// A still or animated image.
     Image,
+    /// A video.
     Video,
 }
 
@@ -40,6 +43,7 @@ impl Kind {
         }
     }
 
+    /// The kind the catalog's name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Kind> {
         match key {
             kind_image!() => Some(Kind::Image),
@@ -56,8 +60,11 @@ impl Kind {
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
 #[strum(serialize_all = "snake_case")]
 pub enum MediaType {
+    /// A still image.
     Image,
+    /// An animated image.
     Animated,
+    /// A video.
     Video,
 }
 
@@ -67,6 +74,7 @@ impl MediaType {
         self.into()
     }
 
+    /// The media type the name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<MediaType> {
         key.parse().ok()
     }
@@ -93,11 +101,13 @@ impl Ext {
         u8::try_from(position).ok().map(Ext)
     }
 
+    /// The extension's name, without the dot.
     pub fn key(self) -> &'static str {
         // Every `Ext` is a position in the two lists, so the name is always found.
         IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS).nth(usize::from(self.0)).copied().unwrap_or_default()
     }
 
+    /// The kind of file the extension is for.
     pub fn kind(self) -> Kind {
         if usize::from(self.0) < IMAGE_EXTENSIONS.len() { Kind::Image } else { Kind::Video }
     }

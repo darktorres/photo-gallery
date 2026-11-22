@@ -42,7 +42,9 @@ pub fn key_of(choice: &Choice) -> String {
 /// A field the bar edits the bounds of: a range facet's numbers, or a day facet's days.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Field {
+    /// A range facet's end.
     Range(RangeFacet),
+    /// A date facet's end.
     Day(DateFacet),
 }
 
@@ -65,7 +67,9 @@ impl Field {
 /// One end of a bound: `Low` is a range's `min` or a day range's `from`, `High` its `max` or `to`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Edge {
+    /// The lower end.
     Low,
+    /// The upper end.
     High,
 }
 

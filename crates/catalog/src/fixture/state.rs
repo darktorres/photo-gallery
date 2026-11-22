@@ -257,8 +257,11 @@ pub fn writes_queued(c: &Catalog, id: FileId) -> Result<i64> {
 /// The state of the file's write row in the queue: the tries so far, the temp file a finishing copy left, and the
 /// last error.
 pub struct WriteRow {
+    /// The tries so far.
     pub attempts: i64,
+    /// The temp file a finishing copy left, if any.
     pub temp: Option<pg_model::rules::Path>,
+    /// The last error, as text, if any.
     pub error: Option<String>,
 }
 

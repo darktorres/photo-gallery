@@ -25,6 +25,7 @@ impl Default for Fetcher {
 }
 
 impl Fetcher {
+    /// A fetcher with an HTTP agent of its own.
     pub fn new() -> Self {
         Self { agent: agent() }
     }

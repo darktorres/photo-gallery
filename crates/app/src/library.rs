@@ -71,9 +71,11 @@ struct WriterSlot {
 
 /// The job's rows now: the crop thread, and each lane (`LaneProgress`, in the lanes' order).
 pub struct LaneLines {
+    /// The crop thread's progress.
     pub crop: Progress,
     /// The time since the crop last had work (`LaneProgress::since_work`).
     pub crop_since_work: Option<Duration>,
+    /// Each lane's progress, in the lanes' order.
     pub lanes: Vec<LaneProgress>,
 }
 
@@ -81,13 +83,16 @@ pub struct LaneLines {
 pub struct LibraryActivity {
     /// The library's one progress: the crop's when it works, else the first lane that works (`lane_lines` has each row's).
     pub progress: Progress,
+    /// Whether the whole run is paused.
     pub paused: bool,
+    /// The queue of writes into the files, as the app shows it.
     pub writes: WriteStatus,
     /// Files turned by the writer so far (their images and sizes changed).
     pub turned: u64,
     /// The writer died too often (a panic outside its jobs, at every start) and is no longer started: the changes stay
     /// queued in the catalog, and are written when the app starts again.
     pub writer_stopped: bool,
+    /// The generation of the library's state, which changes when its contents do.
     pub generation: Generation,
     /// Rounds of the job so far (for measuring).
     pub rounds: u64,
@@ -233,6 +238,7 @@ impl Library {
         self.runner.set_paused(paused);
     }
 
+    /// Whether the library's run is paused.
     pub fn is_paused(&self) -> bool {
         self.runner.is_paused()
     }

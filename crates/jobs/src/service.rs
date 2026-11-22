@@ -71,6 +71,7 @@ impl Waker<'_> {
     }
 }
 
+/// A thread that runs a body, woken by its waker and stopped when the service is stopped or dropped.
 pub struct Service {
     shared: Arc<Shared>,
     thread: Mutex<Option<JoinHandle<()>>>,

@@ -17,8 +17,11 @@ use pg_model::notice::{KeyBuf, Notice, Trigger};
 /// What a [`RecordingSink`] was told, in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Call {
+    /// A notice posted.
     Post(Notice),
+    /// The notices under a key replaced by these.
     Replace(KeyBuf, Vec<Notice>),
+    /// A trigger resolved.
     Resolve(Trigger),
 }
 
@@ -30,6 +33,7 @@ pub struct RecordingSink {
 }
 
 impl RecordingSink {
+    /// A recording sink, shared the way the jobs take it.
     pub fn new() -> Arc<RecordingSink> {
         Arc::new(RecordingSink::default())
     }

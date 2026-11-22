@@ -15,10 +15,16 @@ pub enum AddError {
     /// The scanner refuses the folder (`pg_scan::check_folder`): it would stay in the library with a notice on every
     /// scan.
     #[error("{} can't be added: {reason}", pg_platform::native::PATH_RULES.display(folder))]
-    Refused { folder: RulePath, reason: RefusedReason },
+    Refused {
+        /// The folder that was refused.
+        folder: RulePath,
+        /// Why the scanner refuses it.
+        reason: RefusedReason,
+    },
     /// The path can't be opened, or isn't one.
     #[error(transparent)]
     Path(#[from] NormalizeError),
+    /// The catalog failed (see `pg_catalog::Error`).
     #[error(transparent)]
     Catalog(#[from] pg_catalog::Error),
 }
@@ -39,7 +45,9 @@ pub fn add_folder(catalog: &Catalog, path: &Path) -> Result<(RulePath, bool), Ad
 /// finish did.
 #[derive(Debug)]
 pub struct Finished {
+    /// The removed folder, as the catalog's path text.
     pub folder: String,
+    /// What the finish did: the files and folders it removed.
     pub driven: Driven,
 }
 
@@ -47,8 +55,11 @@ pub struct Finished {
 /// it (when one was pending).
 #[derive(Debug)]
 pub struct Added {
+    /// The folder, as the catalog has it.
     pub root: RulePath,
+    /// Whether the folder was not in the library before.
     pub new: bool,
+    /// The removal that was finished first, if one was pending.
     pub finished: Option<Finished>,
 }
 
@@ -57,7 +68,12 @@ pub struct Added {
 #[derive(Debug)]
 pub enum AddFinishError {
     /// The add itself failed, as [`add_folder`] says.
-    Add { error: AddError, finished: Option<Box<Finished>> },
+    Add {
+        /// Why the add failed.
+        error: AddError,
+        /// The removal that was finished before the add, if one was pending.
+        finished: Option<Box<Finished>>,
+    },
     /// The finish failed.
     Finish(crate::Error),
     /// The removal is still pending after its finish: files are kept for an unfinished write. Nothing was added.

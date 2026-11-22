@@ -49,10 +49,13 @@ fn init() {
 
 /// What a video is, as far as the catalog cares.
 #[derive(Debug, PartialEq)]
+/// What a video's first video stream says about it, for the import.
 pub struct Probe {
     /// Upright display size (display matrix applied, square pixels).
     pub width: u32,
+    /// The upright height, as `width` is.
     pub height: u32,
+    /// The duration, in milliseconds.
     pub duration_ms: i64,
     /// The video codec's short name (`h264`, `hevc`, `vp9`, `av1`…).
     pub codec: &'static str,
@@ -112,6 +115,7 @@ fn ticks_ms(ticks: i64, time_base: AVRational) -> f64 {
     pg_model::num::signed(ticks) * f64::from(time_base.num) * 1000.0 / f64::from(time_base.den.max(1))
 }
 
+/// The size, duration and codec of the video at `path`, read from its first video stream.
 pub fn probe(path: &Path) -> Result<Probe> {
     let input = open(path)?;
     let stream = input.best_video().ok_or_else(|| Error::stream("no video stream"))?;

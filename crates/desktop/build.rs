@@ -1,3 +1,6 @@
+//! The desktop app's build script: it compiles the QML and the cxx-qt bridges into the Qt module, and names the mascot
+//! resources so a change to them reruns the build.
+
 use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 
 /// A failure is an error (cargo prints it and the build stops).

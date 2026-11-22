@@ -144,10 +144,12 @@ impl Runner {
         self.lanes.all().iter().all(|lane| !lane.inner.is_active())
     }
 
+    /// Pauses or resumes the whole run (every lane).
     pub fn set_paused(&self, paused: bool) {
         self.lanes.root.set_paused(paused);
     }
 
+    /// Whether the whole run is paused.
     pub fn is_paused(&self) -> bool {
         self.lanes.root.is_paused()
     }
@@ -180,6 +182,7 @@ impl Runner {
             .unwrap_or_else(|| self.lanes.root.snapshot())
     }
 
+    /// The generation of the library's state: it changes when the library's contents do.
     pub fn generation(&self) -> Generation {
         self.lanes.shared.generation()
     }

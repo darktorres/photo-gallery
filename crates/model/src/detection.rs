@@ -13,11 +13,16 @@ macro_rules! min_side {
 pub const MIN_SIDE: usize = min_side!();
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+/// The side of a picture a border is on.
 #[strum(serialize_all = "snake_case")]
 pub enum Edge {
+    /// The top edge.
     Top,
+    /// The bottom edge.
     Bottom,
+    /// The left edge.
     Left,
+    /// The right edge.
     Right,
 }
 
@@ -27,10 +32,12 @@ impl Edge {
         self.into()
     }
 
+    /// The edge the catalog's name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Edge> {
         key.parse().ok()
     }
 
+    /// The edge across the picture from this one.
     pub fn opposite(self) -> Edge {
         match self {
             Edge::Top => Edge::Bottom,
@@ -42,9 +49,12 @@ impl Edge {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+/// How a border is drawn: a solid line, or a blur.
 #[strum(serialize_all = "snake_case")]
 pub enum Kind {
+    /// A solid line of one colour.
     Solid,
+    /// A blurred bar.
     Blur,
 }
 
@@ -54,6 +64,7 @@ impl Kind {
         self.into()
     }
 
+    /// The kind the catalog's name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Kind> {
         key.parse().ok()
     }
@@ -63,9 +74,13 @@ impl Kind {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
 #[strum(serialize_all = "snake_case")]
 pub enum Class {
+    /// A black border.
     Black,
+    /// A white border.
     White,
+    /// A border of a colour.
     Color,
+    /// A blurred border.
     Blur,
 }
 
@@ -75,6 +90,7 @@ impl Class {
         self.into()
     }
 
+    /// The class the catalog's name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Class> {
         key.parse().ok()
     }
@@ -98,6 +114,7 @@ pub enum Reason {
     TooDeep,
     /// Too thin a run to measure the seam.
     NoSeam,
+    /// The seam between the border and the content is not a straight edge.
     SeamNotStraight,
     /// A smooth sky above a horizon, a plain wall beside a door frame: padding tools centre the content.
     UnpairedBlur,
@@ -113,6 +130,7 @@ impl Reason {
         self.into()
     }
 
+    /// The reason the catalog's name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Reason> {
         key.parse().ok()
     }
@@ -123,7 +141,9 @@ impl Reason {
 pub struct Side {
     /// The peeling round it was found in (0 first; nested borders come later).
     pub pass: u8,
+    /// The edge of the picture the border is on.
     pub edge: Edge,
+    /// Whether the border is a solid line or a blur.
     pub kind: Kind,
     /// The content starts this many pixels from the edge (of what was left by earlier rounds).
     pub depth: u32,
@@ -133,16 +153,19 @@ pub struct Side {
     pub straight: f64,
     /// Solid and measured: median pixel deviation from the border colour, and how far the line colour wanders.
     pub dev: Option<f64>,
+    /// How far the line colour wanders along the edge (the measured solid borders only).
     pub drift: Option<f64>,
     /// `None`: accepted.
     pub rejected: Option<Reason>,
 }
 
 impl Side {
+    /// Whether the side is accepted as a border (it has no reason to reject it).
     pub fn accepted(&self) -> bool {
         self.rejected.is_none()
     }
 
+    /// The side's class for the filters: its kind and its colour.
     pub fn class(&self) -> Class {
         Class::of(self.kind, self.color.unwrap_or([128; 3]))
     }
@@ -162,7 +185,9 @@ impl Side {
 /// What `borders::detect` (pg-analysis) found in an image of `width` × `height` (stored pixels).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Detection {
+    /// The width of the image, in stored pixels.
     pub width: u32,
+    /// The height of the image, in stored pixels.
     pub height: u32,
     /// The content box: left, top, right, bottom (right and bottom exclusive). The whole image when nothing was
     /// accepted.
@@ -184,6 +209,7 @@ impl Detection {
         Detection { width, height, content: [0, 0, width, height], sides: Sides::new() }
     }
 
+    /// Whether any side was accepted as a border.
     pub fn found(&self) -> bool {
         self.sides.iter().any(Side::accepted)
     }

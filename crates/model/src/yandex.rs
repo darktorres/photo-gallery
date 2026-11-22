@@ -53,17 +53,24 @@ pub enum UnexpectedReason {
 /// Where a search or a save is, while it runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
+    /// The search has begun.
     Starting,
+    /// The photo is being uploaded.
     Uploading,
+    /// The other sizes are being found.
     OtherSizes,
+    /// The similar images are being found.
     Similar,
     /// A save is about to write `files` files.
     Saving {
+        /// How many files the save will write.
         files: usize,
     },
     /// The `n`th of `of` files (counted from 1) is being downloaded.
     SavingFile {
+        /// Which file this is, counted from 1.
         n: usize,
+        /// How many files the save has.
         of: usize,
     },
 }
@@ -72,7 +79,12 @@ pub enum Phase {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SimilarNote {
     /// The list stopped after its first page: `shown` items were read before `error`.
-    Stopped { shown: usize, error: RequestError },
+    Stopped {
+        /// How many items were read before the error.
+        shown: usize,
+        /// The error that stopped the list.
+        error: RequestError,
+    },
     /// The similar images could not be read.
     Failed(RequestError),
 }
@@ -96,19 +108,35 @@ pub enum SaveFailure {
     /// The client could not be made, so nothing was downloaded.
     Client(RequestError),
     /// A file could not be downloaded.
-    Download { url: String, error: RequestError },
+    Download {
+        /// The file's address.
+        url: String,
+        /// Why the download failed.
+        error: RequestError,
+    },
     /// A downloaded file could not be written to `path` (as the user sees it). `error` is the error's text, not the error:
     /// an `io::Error` is neither `Clone` nor `Eq`, and this type derives both.
-    Write { url: String, path: String, error: String },
+    Write {
+        /// The file's address.
+        url: String,
+        /// Where the file was to be written, as the user sees it.
+        path: String,
+        /// The write's error, as text.
+        error: String,
+    },
 }
 
 /// What a save did: into which folder (as the user sees it), how many files were written and how many failed, and the
 /// first failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Saved {
+    /// The folder the files went to, as the user sees it.
     pub folder: String,
+    /// How many files were written.
     pub written: usize,
+    /// How many files failed.
     pub failed: usize,
+    /// The first failure, if any failed.
     pub first_error: Option<SaveFailure>,
 }
 

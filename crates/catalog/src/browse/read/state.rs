@@ -46,6 +46,7 @@ impl Catalog {
             .optional()?)
     }
 
+    /// What a file's thumbnail is read against, if the catalog holds the file.
     pub fn file_source(&self, file_id: FileId) -> Result<Option<FileSource>> {
         let conn = &self.conn;
         let row = conn
@@ -78,6 +79,7 @@ impl Catalog {
         })
     }
 
+    /// The file's placeholder, if it has one.
     pub fn placeholder(&self, file_id: FileId) -> Result<Option<Placeholder>> {
         let conn = &self.conn;
         Ok(conn

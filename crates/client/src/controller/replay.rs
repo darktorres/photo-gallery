@@ -18,9 +18,21 @@ pub const REPLAY_FORMAT_VERSION: i64 = pg_model::versions::REPLAY_FORMAT_VERSION
 pub enum Record {
     /// The controller's start: the format it is written in, and the start it was made from. The window's scale comes as
     /// the first size event, as it does live.
-    Init { format: i64, start: Start },
+    Init {
+        /// The format the recording is written in.
+        format: i64,
+        /// The start the recording was made from.
+        start: Start,
+    },
     /// An event, applied at `now_ms`, and the commands it gave.
-    Update { now_ms: u64, event: Event, commands: Vec<Command> },
+    Update {
+        /// The time the event was applied at, in milliseconds.
+        now_ms: u64,
+        /// The event applied.
+        event: Event,
+        /// The commands the event gave.
+        commands: Vec<Command>,
+    },
 }
 
 /// A record for the controller's start, as `Controller::new` takes it.

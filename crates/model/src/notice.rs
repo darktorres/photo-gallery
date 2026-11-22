@@ -102,8 +102,11 @@ use crate::write::WriteKind;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Level {
+    /// Nothing to act on.
     Info,
+    /// Worth the user's attention.
     Warning,
+    /// Something failed.
     Error,
 }
 
@@ -132,19 +135,33 @@ impl Level {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Source {
+    /// The library scanner.
     Scan,
+    /// The import.
     Import,
+    /// Border detection.
     Borders,
+    /// Thumbnail making.
     Thumbs,
+    /// Cropping.
     Crop,
+    /// Writing edits back into the files.
     Writeback,
+    /// The preferences.
     Prefs,
+    /// The catalog.
     Catalog,
+    /// The thumbnail cache.
     Cache,
+    /// The library's folders.
     Folders,
+    /// The library as a whole.
     Library,
+    /// Edits made by the user.
     Edit,
+    /// The update check.
     Update,
+    /// The app itself.
     App,
 }
 
@@ -215,6 +232,7 @@ pub enum ScanNote {
 }
 
 impl ScanNote {
+    /// Every note, in the inbox's order.
     pub const ALL: [ScanNote; 7] = [
         ScanNote::Duplicates,
         ScanNote::SkippedReparse,
@@ -284,6 +302,7 @@ pub enum StartOverReason {
 }
 
 impl StartOverReason {
+    /// Every reason, in the inbox's order.
     pub const ALL: [StartOverReason; 4] = [
         StartOverReason::Damaged,
         StartOverReason::NotADatabase,
@@ -307,24 +326,36 @@ impl StartOverReason {
 #[serde(tag = "carried", rename_all = "kebab-case")]
 pub enum Carried {
     /// The old catalog's rows, copied as they were: its files and its library folders.
-    Rows { files: u64, folders: u64 },
+    Rows {
+        /// How many files were copied.
+        files: u64,
+        /// How many library folders were copied.
+        folders: u64,
+    },
     /// No rows were copied (the old catalog was not one this build can read, or the copy failed), and why. The new catalog
     /// is empty; the next scan fills it.
-    Nothing { reason: String },
+    Nothing {
+        /// Why no rows were copied.
+        reason: String,
+    },
 }
 
 /// A thumbnail that couldn't follow a rewrite of its file (the cache busy or closing): the file, and the cache's error
 /// as its detail text. The thumbnail is made again, and the write is done all the same.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ThumbnailLag {
+    /// The file whose thumbnail lagged.
     pub file: crate::ids::FileId,
+    /// The cache's error, as text.
     pub error: String,
 }
 
 /// A file a pass or the writer failed on: its path, and why (the error's text, or a caught panic's message).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileFailure {
+    /// The file that failed.
     pub path: RulePath,
+    /// Why it failed, as text.
     pub error: String,
     /// The pass panicked on the file (caught): `error` is the panic's message.
     #[serde(default)]
@@ -350,14 +381,19 @@ fn failures_or_one<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Vec<FileFa
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EditOp {
+    /// A rating.
     Rate,
+    /// A rotation.
     Rotate,
+    /// A border mark.
     MarkBorder,
 }
 
 impl EditOp {
+    /// Every edit operation, in the inbox's order.
     pub const ALL: [EditOp; 3] = [EditOp::Rate, EditOp::Rotate, EditOp::MarkBorder];
 
+    /// The operation's code, as the words select on it.
     pub fn key(self) -> &'static str {
         match self {
             EditOp::Rate => "rate",
@@ -371,14 +407,19 @@ impl EditOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ViewOp {
+    /// Listing the saved views.
     List,
+    /// Saving a view.
     Save,
+    /// Deleting a view.
     Delete,
 }
 
 impl ViewOp {
+    /// Every view operation, in the inbox's order.
     pub const ALL: [ViewOp; 3] = [ViewOp::List, ViewOp::Save, ViewOp::Delete];
 
+    /// The operation's code, as the words select on it.
     pub fn key(self) -> &'static str {
         match self {
             ViewOp::List => "list",
@@ -393,14 +434,19 @@ impl ViewOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FilePass {
+    /// The thumbnail pass.
     Thumbs,
+    /// The border detection pass.
     Borders,
+    /// The import pass.
     Import,
 }
 
 impl FilePass {
+    /// Every pass, in the inbox's order.
     pub const ALL: [FilePass; 3] = [FilePass::Thumbs, FilePass::Borders, FilePass::Import];
 
+    /// The pass's code, as the catalog stores it.
     pub fn key(self) -> &'static str {
         match self {
             FilePass::Thumbs => "thumbs",
@@ -415,7 +461,9 @@ impl FilePass {
 /// (`ledger_ack.kind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LedgerKind {
+    /// A pass's failed files.
     File(FilePass),
+    /// The folders the scans couldn't read.
     ScanFolders,
 }
 
@@ -456,7 +504,9 @@ impl LedgerKind {
 /// ones before.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LedgerCounts {
+    /// The failures since the user last saw the entry.
     pub new: u64,
+    /// The failures before those.
     pub earlier: u64,
 }
 
@@ -469,37 +519,50 @@ pub enum Notice {
     // codes are retired ([`Notice::RETIRED`]).
     /// A scan that failed. Its batches before the error are in.
     ScanFailed {
+        /// The library folder being scanned.
         root: RulePath,
+        /// Why the scan failed.
         error: String,
     },
     /// What a scan of a folder counted that the user may want to know, `count` of them. A condition of the folder is
     /// kept; what one walk did is an event ([`ScanNote::lifecycle`]).
     ScanNote {
+        /// The library folder the note is about.
         root: RulePath,
+        /// Which note it is.
         note: ScanNote,
+        /// How many of the note the scan counted.
         count: u64,
     },
 
     // The job.
     /// A round of the job that failed.
     RoundFailed {
+        /// Why the round failed.
         error: String,
     },
     /// A round that panicked (caught): the job went on with the next request.
     RoundPanicked {
+        /// The caught panic's message.
         message: String,
     },
     /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
     CacheFull {
+        /// The thumbnail height whose thumbnails weren't made.
         height: ThumbHeight,
+        /// How many thumbnails were made at that height before the cache filled.
         made: u64,
     },
     /// A crop job that ran to the end of its request: the folder its copies went to, and how it went. `failures` are the
     /// first few that failed, each with its file (`failed` counts them all).
     Cropped {
+        /// The folder the copies were saved to.
         folder: String,
+        /// How many files were copied and cut.
         saved: u64,
+        /// How many files were left alone.
         skipped: u64,
+        /// How many files failed.
         failed: u64,
         /// A row an older build wrote holds one failure as `first_error` (or null): that reads as the list of one.
         #[serde(default, alias = "first_error", deserialize_with = "failures_or_one")]
@@ -507,19 +570,26 @@ pub enum Notice {
     },
     /// A crop job that failed before it could save anything.
     CropFailed {
+        /// Why the crop failed before it saved anything.
         error: String,
     },
     /// The borders cut off the originals (`pg_crop::cut`): what became of each file. The first failures are kept with
     /// their files, as the copies' notice keeps them.
     BordersCut {
+        /// How many originals were cut.
         saved: u64,
+        /// How many were skipped.
         skipped: u64,
+        /// How many were of a format that can't be cut.
         unsupported: u64,
+        /// How many failed.
         failed: u64,
+        /// The first failures, each with its file.
         failures: Vec<FileFailure>,
     },
     /// A cut that failed before it could change anything.
     CutFailed {
+        /// Why the cut failed before it changed anything.
         error: String,
     },
 
@@ -527,66 +597,91 @@ pub enum Notice {
     /// The catalog didn't match this build's schema, so it was moved aside (to `kept`) and a new one made, which took the
     /// old rows or none (`carried`). `why` is the first difference, as the schema check words it.
     CatalogRebuilt {
+        /// Where the old catalog was moved aside to.
         kept: String,
+        /// The first difference the schema check found.
         why: String,
+        /// What the new catalog took from the old one.
         carried: Carried,
     },
     /// The catalog's last connection couldn't be closed at the end (logged only: the inbox has closed by then).
     CatalogNotClosed {
+        /// Why the connection wouldn't close.
         error: String,
     },
     /// The preferences file didn't parse: the defaults are in use, and the file was kept aside as `kept`, or couldn't be
     /// (`keep_error`).
     PrefsUnreadable {
+        /// The preferences file.
         path: String,
+        /// Why it didn't parse.
         error: String,
+        /// Where it was kept aside, if it was.
         kept: Option<String>,
+        /// Why it couldn't be kept aside, if it wasn't.
         keep_error: Option<String>,
     },
     /// The preferences changed in memory but couldn't be saved; the change holds until the app closes.
     PrefsNotSaved {
+        /// The preferences file.
         path: String,
+        /// Why the save failed.
         error: String,
     },
 
     // The thumbnail cache.
     /// The cache's totals were off when it was opened, and were fixed: what they were, and what the entries hold.
     CacheTotalsFixed {
+        /// The bytes the totals said before the fix.
         kept_bytes: i64,
+        /// The entries the totals said before the fix.
         kept_count: i64,
+        /// The bytes the entries hold.
         bytes: i64,
+        /// The entries the cache holds.
         count: i64,
     },
     /// The times entries were shown couldn't be written; they stay queued for the next try.
     CacheTouchesNotWritten {
+        /// Why the touches couldn't be written.
         error: String,
     },
     /// An on-demand thumbnail couldn't be stored (it was shown anyway).
     CacheNotStored {
+        /// Why the thumbnail couldn't be stored.
         error: String,
     },
     /// The cache's WAL couldn't be merged when its writer closed.
     CacheWalNotMerged {
+        /// Why the WAL couldn't be merged.
         error: String,
     },
     /// The cache's file was started over when it was opened. `path` is where the old file is (a damaged one is moved
     /// aside) or the new file (one this build can't use is deleted); `detail` is the technical account, for the log.
     CacheStartedOver {
+        /// Why the cache was started over.
         reason: StartOverReason,
+        /// Where the old or new file is.
         path: String,
+        /// The technical account, for the log.
         detail: String,
     },
     /// The cache couldn't be opened: thumbnails are made each time they are shown, and none is kept.
     CacheDisabled {
+        /// Why the cache couldn't be opened.
         error: String,
     },
 
     // The write-back.
     /// The writer's latest write failed: why, and for a copy that may be incomplete, the file and its temporary copy.
     WriteFailed {
+        /// Why the write failed.
         error: String,
+        /// Whether the writer panicked.
         panicked: bool,
+        /// The file being written, if it may be incomplete.
         file: Option<String>,
+        /// Its temporary copy, if it has one.
         temp: Option<String>,
     },
     /// The writer stopped: nothing more is written into the files until the app starts again.
@@ -594,119 +689,154 @@ pub enum Notice {
     /// Queued writes were dropped (their files went), `count` of them, the last of them a `write`: an event (a lost edit
     /// is a fact, not a condition), posted by the writer.
     WriteDropped {
+        /// The kind of the last dropped write.
         write: WriteKind,
+        /// How many writes were dropped.
         count: u64,
     },
 
     // The library's folders.
     /// A folder added that the library already had: it is rescanned.
     FolderAlreadyAdded {
+        /// The folder the library already had.
         folder: RulePath,
     },
     /// A folder the scanner refuses, so it wasn't added.
     FolderRefused {
+        /// The folder that was refused.
         folder: RulePath,
+        /// Why the scanner refused it.
         reason: RefusedReason,
     },
+    /// A folder couldn't be added to the library.
     FolderNotAdded {
+        /// Why it couldn't be added.
         error: String,
     },
+    /// A folder couldn't be removed from the library.
     FolderNotRemoved {
+        /// Why the removal failed.
         error: String,
     },
     /// A copy of a file in a folder being removed from the library is kept: the write was under way when the file was
     /// deleted outside the app, so its temp (the only whole copy of the edit) stays at `temp`, and the write goes.
     /// Keyless, as an event: the folder is not in the library, so the notice is not one of its folders.
     FolderRemovalUnfinished {
+        /// The folder being removed.
         folder: RulePath,
+        /// The temporary copy kept for the edit.
         temp: RulePath,
     },
+    /// A rescan of a folder failed.
     RescanFailed {
+        /// Why the rescan failed.
         error: String,
     },
     /// The background work (the job and the writer) couldn't start.
     LibraryUnavailable {
+        /// Why the background work couldn't start.
         error: String,
     },
     /// The window's thread for the library's changes couldn't start: the changes the background work makes won't show
     /// until the app is started again.
     ChangesUnseen {
+        /// Why the window's thread couldn't start.
         error: String,
     },
     /// The catalog's list of the library's folders couldn't be read.
     FoldersUnreadable {
+        /// Why the folders couldn't be read.
         error: String,
     },
     /// A folder couldn't be picked (the system's dialog failed).
     PickerFailed {
+        /// Why the dialog failed.
         error: String,
     },
 
     // The window's reads and edits.
     /// The list of files couldn't be read.
     ListingFailed {
+        /// Why the listing failed.
         error: String,
     },
     /// A file's row (its details) couldn't be read.
     RowReadFailed {
+        /// Why the row couldn't be read.
         error: String,
     },
     /// A file's row couldn't be read again after it changed.
     ReloadFailed {
+        /// Why the row couldn't be read again.
         error: String,
     },
     /// The filter bar's counts couldn't be read.
     FacetsFailed {
+        /// Why the counts couldn't be read.
         error: String,
     },
     /// The folder tree couldn't be read.
     TreeFailed {
+        /// Why the tree couldn't be read.
         error: String,
     },
     /// The saved views couldn't be listed, saved or deleted.
     ViewsFailed {
+        /// Which change to the saved views failed.
         op: ViewOp,
+        /// Why it failed.
         error: String,
     },
     /// The session (where the window was) couldn't be saved.
     SessionNotSaved {
+        /// Why the session couldn't be saved.
         error: String,
     },
     /// The saved session (where the window was) couldn't be read: the window starts from the default listing, and the
     /// stored text stays as it is until the next save replaces it.
     SessionNotRead {
+        /// Why the saved session couldn't be read.
         error: String,
     },
     /// A rating, a turn or a border mark couldn't be saved.
     EditFailed {
+        /// Which edit failed.
         op: EditOp,
+        /// Why it failed.
         error: String,
     },
 
     // The failure ledger (built when the inbox is read).
     /// Files whose thumbnail couldn't be made.
     ThumbsFailed {
+        /// The failure counts, when they could be read.
         counts: Option<LedgerCounts>,
     },
     /// Files whose borders couldn't be looked for.
     BordersFailed {
+        /// The failure counts, when they could be read.
         counts: Option<LedgerCounts>,
     },
     /// Files that couldn't be imported (their analysis failed).
     ImportFailed {
+        /// The failure counts, when they could be read.
         counts: Option<LedgerCounts>,
     },
     /// Folders the scans couldn't read, or refuse (a mount under a library folder, or the library folder itself): the
     /// catalog's per-folder ledger.
     ScanFoldersFailed {
+        /// The failure counts, when they could be read.
         counts: Option<LedgerCounts>,
     },
     /// Files a pass couldn't read (an offline drive, a file in use), `count` of them: retried by the next pass. `drives`
     /// names the drives those files are on, as the job's lanes know them (`E:`), when the job has more than one; empty
     /// otherwise, and not stored (a notice kept before drives were named reads as it did).
     UnreadableFiles {
+        /// The pass whose files couldn't be read.
         pass: FilePass,
+        /// How many files couldn't be read.
         count: u64,
+        /// The drives those files are on, when the job has more than one.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         drives: Vec<String>,
     },
@@ -714,23 +844,27 @@ pub enum Notice {
     /// files are tried again by the next pass. Thumbnails only: the borders and the import write their ledger rows in
     /// the transaction of their own work, so a failure there fails the batch instead.
     LedgerNotWritten {
+        /// Why the failure ledger couldn't be written.
         error: String,
     },
 
     // The inbox itself, and the app.
     /// Notices that couldn't be kept (the inbox's queue was full, or its writes failed), `count` of them.
     NoticesLost {
+        /// How many notices were lost.
         count: u64,
     },
     /// A file a notice named is no longer in the library (shown when it is revealed).
     FileNoLongerInLibrary,
     /// A newer version of the app is out (reserved: nothing checks yet).
     UpdateAvailable {
+        /// The version that is out.
         version: String,
     },
     /// A stored notice of a kind this build doesn't know, by its code. Made only by the decoder; never written.
     #[serde(skip)]
     Unknown {
+        /// The code the notice was stored under.
         code: String,
     },
 }
@@ -798,9 +932,13 @@ pub enum Op {
     LedgerWrite(FilePass),
     /// The window's reads.
     Listing,
+    /// The window's row reads.
     RowRead,
+    /// The window's reloads of a row.
     Reload,
+    /// The filter bar's counts.
     Facets,
+    /// The folder tree.
     Tree,
     /// The window's save of its session.
     Session,
@@ -885,8 +1023,11 @@ pub struct ResolverRow {
 /// folder (a complete walk of a library folder replaces its notes).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Key<'a> {
+    /// The notice's code ([`Notice::code`]).
     pub code: &'static str,
+    /// The folder the key names, if it names one.
     pub root: Option<&'a RulePath>,
+    /// The part of the folder the key names, if it names one.
     pub part: Option<Part>,
 }
 
@@ -905,12 +1046,16 @@ impl<'a> Key<'a> {
 /// A [`Key`] that owns its folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyBuf {
+    /// The notice's code ([`Notice::code`]).
     pub code: &'static str,
+    /// The folder the key names, if it names one.
     pub root: Option<RulePath>,
+    /// The part of the folder the key names, if it names one.
     pub part: Option<Part>,
 }
 
 impl KeyBuf {
+    /// The key, borrowing its folder.
     pub fn key(&self) -> Key<'_> {
         Key { code: self.code, root: self.root.as_ref(), part: self.part }
     }

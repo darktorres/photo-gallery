@@ -11,7 +11,9 @@ pub enum Error {
     /// The file couldn't be opened, or its size read: an I/O failure (an offline drive, a file in use, a file gone).
     #[error("opening {}", path.display())]
     Open {
+        /// The file that couldn't be opened.
         path: PathBuf,
+        /// Why it couldn't be opened.
         #[source]
         source: Unopened,
     },

@@ -14,14 +14,21 @@ const ONE_TO_ONE: f64 = 0.9999;
 /// A part of the image, as fractions of it (x, y, w, h) and its size in device pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Region {
+    /// The left edge, as a fraction of the image's width.
     pub x: f64,
+    /// The top edge, as a fraction of the image's height.
     pub y: f64,
+    /// The width, as a fraction of the image's width.
     pub w: f64,
+    /// The height, as a fraction of the image's height.
     pub h: f64,
+    /// The width, in device pixels.
     pub px_w: u32,
+    /// The height, in device pixels.
     pub px_h: u32,
 }
 
+/// The view of an image in the window: its zoom and its place, and whether it is still.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
     fw: f64,
@@ -31,8 +38,11 @@ pub struct View {
     width: f64,
     height: f64,
     dpr: f64,
+    /// The zoom: the image's size on the screen over its size in pixels.
     pub zoom: f64,
+    /// The horizontal offset of the view, in logical pixels.
     pub ox: f64,
+    /// The vertical offset of the view, in logical pixels.
     pub oy: f64,
     /// At the fit zoom (it follows window resizes): above 1 for an image smaller than the window, which is enlarged.
     pub fitted: bool,
@@ -66,6 +76,7 @@ fn round_px(v: f64) -> u32 {
 }
 
 impl View {
+    /// A view with nothing set yet.
     pub fn new() -> Self {
         Self::default()
     }
@@ -90,6 +101,7 @@ impl View {
         self.fw * self.zoom / self.dpr
     }
 
+    /// The height of the image on the screen, in logical pixels.
     pub fn dh(&self) -> f64 {
         self.fh * self.zoom / self.dpr
     }

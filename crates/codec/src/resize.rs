@@ -20,6 +20,7 @@ pub struct Resizer {
 }
 
 impl Resizer {
+    /// A resizer with no buffers yet; it allocates them as the first resize needs them.
     pub fn new() -> Resizer {
         Resizer::default()
     }
@@ -91,6 +92,7 @@ impl Resizer {
         self.run(img, width.max(1), height.max(1), &options, out)
     }
 
+    /// Resizes `img` to `width` by `height` into `out`, with the MKS 2021 convolution kernel.
     pub fn resize(&mut self, img: &Rgb, width: usize, height: usize, out: &mut Rgb) -> Result<()> {
         let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(mks2021()));
         self.run(img, width, height, &options, out)

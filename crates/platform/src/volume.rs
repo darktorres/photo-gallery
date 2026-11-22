@@ -9,6 +9,7 @@ use std::path::Path;
 /// A volume's size and the space this process may still write to it, in bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Space {
+    /// The volume's size, in bytes.
     pub total: u64,
     /// What the caller may write (a quota, and on Linux the blocks reserved for root, are left out).
     pub free: u64,

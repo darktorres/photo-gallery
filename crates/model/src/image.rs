@@ -12,6 +12,7 @@ use crate::turns::Turns;
 pub struct Version {
     /// The file's modification time and the quarter turns it was stored with (the thumbnail cache's source).
     pub mtime: i64,
+    /// The quarter turns clockwise the file was stored with.
     pub turns: Turns,
     /// The quarter turns clockwise asked for and not yet written then (`pending_turns`, as `FileState` and the grid name them).
     pub pending_turns: Turns,
@@ -30,7 +31,9 @@ impl Version {
 /// A file's image key. Without a version (or with one that doesn't read) it names the file's current image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageKey {
+    /// The file the image is of.
     pub file: FileId,
+    /// The version of the file the image is of, if the key names one.
     pub version: Option<Version>,
 }
 

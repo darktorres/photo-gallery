@@ -30,6 +30,7 @@ const CACHED_HEIGHT: u32 = 256;
 /// as the placeholder's definition is (`pg_render::maker::PLACEHOLDER_DECODE_SIDE`).
 const CACHED_MIN_SIDE: u32 = 200;
 
+/// What a placeholder pass did: the counts its report states.
 #[derive(Clone, Copy, Debug)]
 pub struct PlaceholderStats {
     /// The files that owed a placeholder when the pass began.

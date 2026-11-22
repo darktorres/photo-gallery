@@ -8,6 +8,7 @@ use pg_library::layout::Layout;
 
 use crate::yandex::YandexSource;
 
+/// The app's settings as the app starts with them: the layout of its data folders and the choices the user has made.
 #[derive(Clone, Debug)]
 pub struct Config {
     /// The data folders and the files in them (`PG_HOME`, or the default): the catalog folder, the preferences

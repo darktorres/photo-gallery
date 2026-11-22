@@ -1,8 +1,8 @@
-//! The read side: the pending query (the files a pass still has to thumbnail) and this thread's read connections,
-//! which serve lookups without waiting for the writer.
+//! The read side: the pending query (the files a pass still has to thumbnail) and the cache file's read connections
+//! ([`ReaderPool`]), which serve lookups without waiting for the writer.
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 
 use anyhow::Result;
 use pg_model::ids::FileId;
@@ -211,25 +211,119 @@ pub(crate) fn pending_sql(since_checked: bool, volumes: &[i64]) -> String {
     )
 }
 
-thread_local! {
-    /// This thread's read connections, one per cache file.
-    pub(crate) static READERS: RefCell<Vec<(PathBuf, Connection)>> = const { RefCell::new(Vec::new()) };
+/// The read connections of one cache file, shared by every reader of the cache (on any thread): the idle ones, and how many
+/// readers hold one now. A read takes an idle connection (or opens one), runs, and gives it back. An idle connection holds
+/// no transaction, so the writer's checkpoint is never held up by one.
+pub(crate) struct ReaderPool {
+    path: PathBuf,
+    state: Mutex<PoolState>,
+    /// Signalled when a reader gives its connection back, for [`ReaderPool::shut`].
+    returned: Condvar,
 }
 
-pub(crate) fn with_reader<R>(path: &Path, f: impl FnOnce(&Connection) -> Result<R>) -> Result<R> {
-    READERS.with(|readers| {
-        let mut readers = readers.borrow_mut();
-        if let Some((_, conn)) = readers.iter().find(|(p, _)| p == path) {
-            return f(conn);
+#[derive(Default)]
+struct PoolState {
+    idle: Vec<Connection>,
+    /// The readers holding a connection now.
+    out: usize,
+    /// Set by [`ReaderPool::shut`]: no connection is kept after it. A read then opens its own, closed when it returns.
+    closed: bool,
+}
+
+impl ReaderPool {
+    pub(crate) fn new(path: &Path) -> ReaderPool {
+        ReaderPool { path: path.to_path_buf(), state: Mutex::new(PoolState::default()), returned: Condvar::new() }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, PoolState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Runs `f` on a read connection of the cache file.
+    pub(crate) fn with<R>(&self, f: impl FnOnce(&Connection) -> Result<R>) -> Result<R> {
+        let checkout = self.checkout()?;
+        f(checkout.connection())
+    }
+
+    fn checkout(&self) -> Result<Checkout<'_>> {
+        let (idle, pooled) = {
+            let mut state = self.lock();
+            if state.closed {
+                (None, false)
+            } else {
+                state.out += 1;
+                (state.idle.pop(), true)
+            }
+        };
+        let mut checkout = Checkout { pool: self, conn: idle, pooled };
+        if checkout.conn.is_none() {
+            // A failure here still counts the reader out: the checkout is dropped with the error.
+            checkout.conn = Some(open_reader(&self.path)?);
         }
-        let conn = Connection::open(path)?;
-        conn.busy_timeout(BUSY_TIMEOUT)?;
-        conn.execute_batch(CONNECTION_PRAGMAS)?;
-        conn.execute_batch("PRAGMA query_only = ON;")?;
-        let result = f(&conn);
-        readers.push((path.to_path_buf(), conn));
-        result
-    })
+        Ok(checkout)
+    }
+
+    /// Stops keeping connections, and waits until the readers holding one have given it back. `ThumbCache::close` calls
+    /// it first, so no read is mid-way when the writer stops; [`ReaderPool::drain`] comes after the writer.
+    pub(crate) fn shut(&self) {
+        let mut state = self.lock();
+        state.closed = true;
+        let _state = self.returned.wait_while(state, |s| s.out > 0).unwrap_or_else(PoisonError::into_inner);
+    }
+
+    /// Closes the idle connections: the last connection to the file to close merges its WAL and deletes its index.
+    pub(crate) fn drain(&self) {
+        let idle = std::mem::take(&mut self.lock().idle);
+        drop(idle);
+    }
+}
+
+/// A read connection checked out of a [`ReaderPool`]. It is given back when dropped, which is also when a read that
+/// panicked lets go of it: the pool counts the reader out either way.
+struct Checkout<'a> {
+    pool: &'a ReaderPool,
+    conn: Option<Connection>,
+    /// Whether the reader is counted out: it took its connection from a pool that was open.
+    pooled: bool,
+}
+
+impl Checkout<'_> {
+    fn connection(&self) -> &Connection {
+        match &self.conn {
+            Some(conn) => conn,
+            None => unreachable!("a checkout holds its connection until it is dropped"),
+        }
+    }
+}
+
+impl Drop for Checkout<'_> {
+    fn drop(&mut self) {
+        let mut state = self.pool.lock();
+        if self.pooled {
+            state.out -= 1;
+        }
+        let conn = self.conn.take();
+        let back = match conn {
+            Some(conn) if self.pooled && !state.closed => {
+                state.idle.push(conn);
+                None
+            }
+            other => other,
+        };
+        drop(state);
+        self.pool.returned.notify_all();
+        // Dropped outside the lock: closing the last connection to a file merges its WAL.
+        drop(back);
+    }
+}
+
+/// A read connection to the cache file at `path`: busy-timed, with the connection's pragmas, and read-only.
+fn open_reader(path: &Path) -> Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    conn.execute_batch(CONNECTION_PRAGMAS)?;
+    conn.execute_batch("PRAGMA query_only = ON;")?;
+    Ok(conn)
 }
 
 #[cfg(test)]

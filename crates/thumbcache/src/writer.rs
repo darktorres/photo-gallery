@@ -16,6 +16,7 @@ use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use crate::config::TOUCH_FLUSH;
 use crate::maintenance::shrink;
+use crate::reader::ReaderPool;
 use crate::types::{Event, FORMAT_JPEG, Snapshot, Thumb};
 
 /// Eviction frees this much more than it must (1% of the cap, at most this), so a full cache doesn't evict on
@@ -32,6 +33,8 @@ const EVICT_SLICE: i64 = if cfg!(test) { 1000 } else { 256 << 20 };
 
 pub(crate) struct Store {
     pub(crate) path: PathBuf,
+    /// The cache file's read connections, shared by every reader (`ReaderPool`).
+    pub(crate) readers: ReaderPool,
     pub(crate) inbox: Arc<Inbox>,
     pub(crate) writer: Service,
     /// The shared hold on the file (`pg_dbfile::Live`), for as long as the cache is open.

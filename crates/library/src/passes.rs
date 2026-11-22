@@ -43,7 +43,7 @@ pub(crate) fn cut_done(shared: &Shared, cut: &[FileId]) {
     if cut.is_empty() {
         return;
     }
-    for (_, e) in scans::forget_replaced(shared.thumbs, cut) {
+    for (_, e) in scans::forget_replaced(&shared.thumbs, cut) {
         shared.notices.post(Notice::CutFailed { error: error_text(&e) });
     }
     shared.imported();
@@ -79,7 +79,7 @@ impl Pass<Cx<'_>> for Scans {
                     }
                     // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
                     // Both come after the catalog's commit, which the scan made.
-                    for (_, e) in scans::forget_replaced(shared.thumbs, &s.pairing.replaced_ids) {
+                    for (_, e) in scans::forget_replaced(&shared.thumbs, &s.pairing.replaced_ids) {
                         cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
                     }
                     for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
@@ -266,7 +266,7 @@ impl Pass<Cx<'_>> for Thumbs {
         let heights = cx.inner.shared.heights.clone();
         let opts = cx.inner.options(Priority::Idle);
         let volumes = cx.inner.volume_set();
-        let thumbs = cx.inner.shared.thumbs;
+        let thumbs = &cx.inner.shared.thumbs;
         let s = match pg_thumbs::run_while(
             thumbs,
             &cx.inner.shared.catalog_path,
@@ -307,7 +307,7 @@ impl Pass<Cx<'_>> for Placeholders {
         }
         // Its failures (the files that don't decode) are the Thumbs ledger's rows, which the pass writes in its batches.
         let volumes = cx.inner.volume_set();
-        let thumbs = cx.inner.shared.thumbs;
+        let thumbs = &cx.inner.shared.thumbs;
         pg_thumbs::placeholders::run_while(
             cx.catalog,
             thumbs,

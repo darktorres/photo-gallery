@@ -90,16 +90,17 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
     Ok((dir, files, catalog_path, c))
 }
 
-/// The thumbnail cache a writer retags, leaked as the app's is, and the check that it reported nothing.
-fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(&'static ThumbCache, Quiet<pg_thumbcache::Event>)> {
+/// The thumbnail cache a writer retags, shared with the writer as the app shares its own, and the check that it reported
+/// nothing.
+fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(Arc<ThumbCache>, Quiet<pg_thumbcache::Event>)> {
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::open(
+    let thumbs = Arc::new(ThumbCache::open(
         &dir.join("thumbs.sqlite"),
         &c.catalog_id()?,
         pg_thumbcache::Cap::from_bytes(1 << 30),
         pg_model::versions::THUMBS_VERSION,
         events,
-    )?));
+    )?);
     Ok((thumbs, quiet))
 }
 
@@ -159,7 +160,7 @@ fn ratings_and_turns_reach_the_files() {
     assert_eq!(before.len(), files.len());
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+    let thumbs = Arc::new(
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
@@ -168,8 +169,9 @@ fn ratings_and_turns_reach_the_files() {
             events,
         )
         .unwrap(),
-    ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    );
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
@@ -298,7 +300,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+    let thumbs = Arc::new(
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
@@ -307,12 +309,13 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
             events,
         )
         .unwrap(),
-    ));
+    );
     // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
     let sixty_four = pg_model::size::ThumbHeight::new(64).expect("a height in range");
-    let made = pg_thumbs::run(thumbs, &catalog_path, sixty_four, &opts, &ctl).unwrap();
+    let made = pg_thumbs::run(&thumbs, &catalog_path, sixty_four, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     c.set_rating(FileId::new(jpeg_id), Rating::new(4), true).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
@@ -372,7 +375,8 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     };
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     // The queue's row, and then the status, which the writer sets after it.
@@ -403,7 +407,8 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     // The file is free, and the writer starts again: it tries the copy again, and finishes it.
     drop(held);
     drop(writer);
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     pg_testkit::wait_until(
         Duration::from_secs(60),
@@ -437,7 +442,8 @@ fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
     c.set_rating(id, Rating::new(5), true).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
@@ -474,7 +480,8 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
     };
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = |kind: &str| state::write_row_of(&c, id, kind).unwrap().attempts;
     pg_testkit::wait_until(
@@ -508,7 +515,8 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     };
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     pg_testkit::wait_until(Duration::from_secs(60), || format!("{} attempts", attempts()), || attempts() >= 1);
@@ -555,7 +563,8 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     c.set_rating(id, Rating::new(4), true).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
@@ -618,7 +627,8 @@ fn a_finishing_copy_whose_temp_is_gone_completes() {
     assert!(!on_disk(&c, &temp).exists());
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     pg_testkit::wait_until(
         Duration::from_secs(60),
@@ -654,7 +664,8 @@ fn a_read_only_original_is_counted_up_to_the_cap() {
     c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     let cap = pg_catalog::queue::MAX_ATTEMPTS;
@@ -700,7 +711,8 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     }
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let left = || state::writes_queued(&c, bmp).unwrap() + state::writes_queued(&c, jpg).unwrap();
     pg_testkit::wait_until(Duration::from_secs(60), || format!("{} still queued", left()), || left() == 0);
@@ -804,7 +816,8 @@ fn a_copy_that_may_have_started_is_kept_while_its_file_is_missing() {
     state::mark_missing(&c, id).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     // The status is set after the job's failure is recorded in the queue.
     pg_testkit::wait_until(
@@ -932,7 +945,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+    let thumbs = Arc::new(
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
@@ -941,8 +954,9 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
             events,
         )
         .unwrap(),
-    ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    );
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
 
     let start = Instant::now();
@@ -964,7 +978,8 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
 fn rapid_turns_of_one_file_are_all_made_once() {
     let (dir, files, catalog_path, c) = imported("rapid-turns").unwrap();
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     let (path, _) = &files[1];
     let name = Path::new(path).file_name().unwrap().to_string_lossy().into_owned();
     let id = state::file_id(&c, &name).unwrap();
@@ -1019,7 +1034,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     }
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+    let thumbs = Arc::new(
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
@@ -1028,7 +1043,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
             events,
         )
         .unwrap(),
-    ));
+    );
     let writer = Writer::start_with_fault(
         catalog_path.clone(),
         thumbs,
@@ -1075,7 +1090,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     c.queue_rotation(state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
 
     let (events, quiet) = Quiet::bus();
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+    let thumbs = Arc::new(
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
@@ -1084,7 +1099,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
             events,
         )
         .unwrap(),
-    ));
+    );
     let writer = Writer::start_with_fault(
         catalog_path.clone(),
         thumbs,
@@ -1117,7 +1132,7 @@ fn an_add_over_a_pending_removal_finishes_it_and_adds_the_folder() {
     let mut finishes = 0;
     let added = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
         finishes += 1;
-        pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true)
+        pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true)
     })
     .unwrap();
     assert_eq!(finishes, 1, "the removal was finished once");
@@ -1146,7 +1161,7 @@ fn an_add_over_a_removal_kept_for_a_write_adds_nothing() {
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
     let refused = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
-        pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true)
+        pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true)
     });
     match refused {
         Err(pg_library::folders::AddFinishError::StillPending(finished)) => {
@@ -1176,11 +1191,12 @@ fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
-    let driven = pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true).unwrap();
+    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!(driven.deferred, 1, "the file with a change is kept");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
 
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     // Long enough for the writer to look at the change once (its folder is not there, so it waits).
     std::thread::sleep(Duration::from_secs(3));
@@ -1209,11 +1225,12 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
-    let kept = pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true).unwrap();
+    let kept = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!(kept.deferred, 1, "the file with a change waits for the writer");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
 
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     pg_testkit::wait_until(
         Duration::from_secs(60),
@@ -1223,7 +1240,7 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
     assert!(!on_disk(&c, &temp).exists(), "the writer finished the copy and took its temp");
     drop(writer);
 
-    let done = pg_library::removals::finish(&c, thumbs, &catalog_path, &mut |_| true).unwrap();
+    let done = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!((done.files, done.deferred), (1, 0));
     assert!(c.removal_markers().unwrap().is_empty());
     assert_eq!(c.status().unwrap().files, 0, "the removed folder's files are gone");
@@ -1245,7 +1262,8 @@ fn a_waiting_copy_does_not_hold_back_the_other_writes() {
     state::mark_missing(&c, b).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     pg_testkit::wait_until(
         Duration::from_secs(60),

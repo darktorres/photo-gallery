@@ -40,7 +40,7 @@ impl Runner {
     /// pass changes the failure ledger (`Control::ledger_changed`). An error if the job's threads can't be started.
     pub fn start(
         catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         heights: HeightCell,
         features: FeatureCell,
         changes: Arc<Bus<Change>>,
@@ -52,7 +52,7 @@ impl Runner {
     /// [`Runner::start`] with the drives the library's roots are on asked of `drives` (the system's, or a test's).
     pub fn start_with_drives(
         catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         heights: HeightCell,
         features: FeatureCell,
         changes: Arc<Bus<Change>>,
@@ -293,7 +293,7 @@ mod tests {
         let (dir, catalog_path, _root) = library("runner-off", &["a.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         inner.shared.features.set(Features { borders: false, duplicates: false, serial_drives: false });
         let due = pg_catalog::fixture::state::borders_due(&Catalog::open(&catalog_path, PATH_RULES).unwrap(), "a.png")
             .unwrap();
@@ -317,7 +317,7 @@ mod tests {
         let (dir, catalog_path, _root) = library_sized("runner-order", &["a.png"], 300);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         let ended = inner.ctl.subscribe();
         inner.round(&mut None).unwrap();
         assert_eq!(finished_order(ended.take().items), ["thumbs", "placeholders", "hashes", "pairs", "borders"]);
@@ -350,7 +350,7 @@ mod tests {
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         pg_thumbs::fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         let ended = inner.ctl.subscribe();
         inner.round(&mut None).unwrap();
         let posted = sink.posted();
@@ -363,17 +363,17 @@ mod tests {
 
     /// The thumbnail cache beside the catalog, holding at most `cap` bytes (`None`: the default), leaked as the job's
     /// is, with the watch on its events.
-    fn thumbs(dir: &Path, catalog_path: &Path, cap: Option<i64>) -> (&'static ThumbCache, Quiet<pg_thumbcache::Event>) {
+    fn thumbs(dir: &Path, catalog_path: &Path, cap: Option<i64>) -> (Arc<ThumbCache>, Quiet<pg_thumbcache::Event>) {
         let id = Catalog::open(catalog_path, PATH_RULES).unwrap().catalog_id().unwrap();
         let (events, quiet) = Quiet::bus();
         let cap = cap.and_then(pg_thumbcache::Cap::from_bytes);
         let cache =
             ThumbCache::open(&dir.join("thumbs.sqlite"), &id, cap, pg_model::versions::THUMBS_VERSION, events).unwrap();
-        (Box::leak(Box::new(cache)), quiet)
+        (Arc::new(cache), quiet)
     }
 
     /// The job's state without its thread: the test runs its passes one by one.
-    fn job(catalog_path: &Path, thumbs: &'static ThumbCache, sink: Arc<RecordingSink>) -> Inner {
+    fn job(catalog_path: &Path, thumbs: Arc<ThumbCache>, sink: Arc<RecordingSink>) -> Inner {
         let shared = Shared::new(
             catalog_path.to_path_buf(),
             thumbs,
@@ -399,7 +399,7 @@ mod tests {
         let (dir, catalog_path, root) = library("runner-offline", &["a.png", "b.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         std::fs::remove_file(dir.join("images").join("b.png")).unwrap();
         run(&mut Thumbs, &inner);
         assert_eq!(sink.posted(), [Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 1, drives: Vec::new() }]);
@@ -421,7 +421,7 @@ mod tests {
         let (dir, catalog_path, root) = library("runner-full", &["a.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, Some(1));
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         run(&mut Thumbs, &inner);
         assert_eq!(
             sink.posted(),
@@ -482,7 +482,7 @@ mod tests {
         }
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         let sub = pg_platform::names::normalize_path(&images.join("sub")).unwrap();
         inner.scans().extend([root.clone(), sub]);
         assert_eq!(run(&mut Scans, &inner), Step::Done);
@@ -496,7 +496,7 @@ mod tests {
         let (dir, catalog_path, root) = library("runner-busy", &["a.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         let mut holder = Catalog::open(&catalog_path, PATH_RULES).unwrap();
         let lease = holder.begin_scan(&root).unwrap();
         inner.scans().push_back(root.clone());
@@ -517,7 +517,7 @@ mod tests {
         let (dir, catalog_path, root) = library("runner-refused", &["a.png"]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         std::fs::remove_dir_all(dir.join("images")).unwrap();
         inner.scans().push_back(root.clone());
         assert_eq!(run(&mut Scans, &inner), Step::Done);
@@ -537,7 +537,7 @@ mod tests {
         let (dir, catalog_path, _root) = library("runner-ledger", &[]);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
-        let inner = job(&catalog_path, cache, sink.clone());
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
         inner.ledger_written(LedgerOutcome::Untouched);
         assert!(sink.take().is_empty());
         inner.ledger_written(LedgerOutcome::Failed("disk full".into()));

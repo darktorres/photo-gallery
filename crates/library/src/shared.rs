@@ -139,7 +139,7 @@ pub struct LaneProgress {
 /// the lanes' notices, the pairing gate, and the job's counts (what the app reads to refresh its views).
 pub(crate) struct Shared {
     pub(crate) catalog_path: PathBuf,
-    pub(crate) thumbs: &'static ThumbCache,
+    pub(crate) thumbs: Arc<ThumbCache>,
     pub(crate) heights: HeightCell,
     pub(crate) features: FeatureCell,
     pub(crate) notices: Arc<dyn NoticeSink>,
@@ -154,7 +154,7 @@ pub(crate) struct Shared {
 impl Shared {
     pub(crate) fn new(
         catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         heights: HeightCell,
         features: FeatureCell,
         notices: Arc<dyn NoticeSink>,

@@ -76,7 +76,7 @@ fn start(dir: &Path, catalog_path: &Path, drives: Fake, features: Features) -> (
     heights.set(ThumbHeight::new(64).unwrap());
     let runner = Runner::start_with_drives(
         catalog_path.to_path_buf(),
-        Box::leak(Box::new(cache)),
+        Arc::new(cache),
         heights,
         FeatureCell::new(features),
         Arc::new(Bus::new(64)),

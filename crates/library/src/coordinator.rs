@@ -838,7 +838,7 @@ impl Lanes {
         let total = catalog.removal_files().unwrap_or(0);
         let _phase = self.removal_ctl.begin(Phase::Removing, total);
         let mut done = 0u64;
-        let finished = removals::finish(catalog, self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
+        let finished = removals::finish(catalog, &self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
             done = done.saturating_add(u64::try_from(files).unwrap_or(u64::MAX));
             self.removal_ctl.set_done(done);
             self.removal_ctl.checkpoint()

@@ -36,8 +36,9 @@ pub struct App {
     inbox: Arc<Inbox>,
     /// The thread that posts the thumbnail cache's events; it ends when the cache closes, and is joined at shutdown.
     forwarder: Mutex<Option<JoinHandle<()>>>,
-    /// The thumbnail cache, leaked to a `'static` reference so the library's threads can borrow it. Closed at shutdown.
-    thumbs: &'static ThumbCache,
+    /// The thumbnail cache, shared with the library's threads and closed at shutdown (`shutdown` closes it, and the
+    /// last clone to go closes it too).
+    thumbs: Arc<ThumbCache>,
     catalogs: Arc<Catalogs>,
     prefs: Arc<PrefStore>,
     images: Images,
@@ -104,15 +105,16 @@ impl App {
                 inbox.post(Notice::CacheDisabled { error: tidy(&format!("{e:#}"), ERROR_CAP) });
                 ThumbCache::disabled()
             });
-        let thumbs: &'static ThumbCache = Box::leak(Box::new(thumbs));
+        let thumbs = Arc::new(thumbs);
         let prefs = Arc::new(PrefStore::open(config.layout.prefs().to_path_buf(), inbox.clone()));
         thumbs.set_suspended(!prefs.get().thumb_cache);
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let features = prefs.get().features();
-        let library = Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs, inbox.clone(), features));
+        let library =
+            Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs.clone(), inbox.clone(), features));
         let yandex = Yandex::new(&config.yandex, prefs.clone(), makers.clone());
-        let images = Images::new(catalogs.clone(), makers, thumbs, inbox.clone());
+        let images = Images::new(catalogs.clone(), makers, thumbs.clone(), inbox.clone());
         Ok(App {
             inbox,
             forwarder: Mutex::new(Some(forwarder)),
@@ -150,7 +152,7 @@ impl App {
 
     /// The thumbnail cache (the Library panel's setting turns it off and on).
     pub fn thumbs(&self) -> &ThumbCache {
-        self.thumbs
+        &self.thumbs
     }
 
     /// The catalog reads: the reader's session (the grid, the folder tree, the counts), and a file's details and entry.

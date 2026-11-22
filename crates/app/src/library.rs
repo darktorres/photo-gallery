@@ -47,7 +47,7 @@ pub struct Library {
     writer: Mutex<WriterSlot>,
     /// What a restart needs to start the writer again.
     catalog_path: PathBuf,
-    thumbs: &'static ThumbCache,
+    thumbs: Arc<ThumbCache>,
     changes: Arc<Bus<Change>>,
     /// Where the job's and the writer's notices go (the inbox): the writer posts its failures there, and the library its
     /// stop ([`Library::tend`]).
@@ -100,16 +100,18 @@ impl Library {
     /// after, is kept (the inbox writes in the order posted).
     pub(crate) fn start(
         catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         heights: HeightCell,
         features: FeatureCell,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Library> {
         notices.resolve(Trigger::Status);
         let changes = Arc::new(Bus::new(256));
-        let runner = Runner::start(catalog_path.clone(), thumbs, heights, features, changes.clone(), notices.clone())
-            .map_err(failed)?;
-        let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone(), notices.clone()).map_err(failed)?;
+        let runner =
+            Runner::start(catalog_path.clone(), thumbs.clone(), heights, features, changes.clone(), notices.clone())
+                .map_err(failed)?;
+        let writer =
+            Writer::start(catalog_path.clone(), thumbs.clone(), changes.clone(), notices.clone()).map_err(failed)?;
         let slot = WriterSlot {
             writer,
             restarts: 0,
@@ -156,7 +158,7 @@ impl Library {
         slot.retry_at = None;
         slot.restarts += 1;
         if let Ok(writer) =
-            Writer::start(self.catalog_path.clone(), self.thumbs, self.changes.clone(), self.notices.clone())
+            Writer::start(self.catalog_path.clone(), self.thumbs.clone(), self.changes.clone(), self.notices.clone())
         {
             // The old writer's thread has ended, so dropping it doesn't wait.
             slot.writer = writer;
@@ -268,7 +270,7 @@ impl Library {
 pub struct LibraryService {
     catalog_path: PathBuf,
     catalogs: Arc<Catalogs>,
-    thumbs: &'static ThumbCache,
+    thumbs: Arc<ThumbCache>,
     /// Where the job's notices go.
     inbox: Arc<dyn NoticeSink>,
     /// The thumbnail height the grid asks for. Held from the start, so it may be set before the job starts.
@@ -284,7 +286,7 @@ impl LibraryService {
     pub(crate) fn new(
         catalog_path: PathBuf,
         catalogs: Arc<Catalogs>,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         inbox: Arc<dyn NoticeSink>,
         features: Features,
     ) -> LibraryService {
@@ -318,7 +320,7 @@ impl LibraryService {
         }
         let library = Library::start(
             self.catalog_path.clone(),
-            self.thumbs,
+            self.thumbs.clone(),
             self.heights.clone(),
             self.features.clone(),
             self.inbox.clone(),
@@ -395,7 +397,7 @@ impl LibraryService {
                 }
                 None => {
                     self.catalogs.with_catalog(|c| {
-                        pg_library::removals::finish(c, self.thumbs, &self.catalog_path, &mut |_| true)
+                        pg_library::removals::finish(c, &self.thumbs, &self.catalog_path, &mut |_| true)
                             .map_err(pg_catalog::Error::Other)
                     })?;
                 }
@@ -484,7 +486,7 @@ mod tests {
 
     fn library(name: &str) -> (Library, Arc<Recording>, PathBuf) {
         let (dir, layout) = crate::test_support::catalog_home(name);
-        let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::disabled()));
+        let thumbs = Arc::new(ThumbCache::disabled());
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();
         heights.set(ThumbHeight::new(100).expect("a height in range"));
@@ -586,7 +588,7 @@ mod tests {
 
         // The next run, on the same catalog.
         let layout = pg_library::layout::Layout::in_home(&dir);
-        let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::disabled()));
+        let thumbs = Arc::new(ThumbCache::disabled());
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();
         heights.set(ThumbHeight::new(100).expect("a height in range"));

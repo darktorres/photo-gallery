@@ -166,7 +166,7 @@ struct Inner {
     catalog_path: PathBuf,
     /// The ExifTool program the writes start: read once, when the writer starts.
     exiftool: pg_exiftool::Program,
-    thumbs: &'static ThumbCache,
+    thumbs: Arc<ThumbCache>,
     status: Watch<WriteStatus>,
     /// Files turned so far: their pixels changed, so the app reloads them and the job re-analyzes them.
     turned: Watch<u64>,
@@ -229,7 +229,7 @@ impl Writer {
     /// `notices`. An error if the thread can't be spawned.
     pub fn start(
         catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         changes: Arc<Bus<Change>>,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Writer> {
@@ -254,7 +254,7 @@ impl Writer {
     #[cfg(any(test, feature = "fault"))]
     pub fn start_with_fault(
         catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         changes: Arc<Bus<Change>>,
         fault: fault::Fault,
         notices: Arc<dyn NoticeSink>,
@@ -816,7 +816,7 @@ mod tests {
         let inner = Inner {
             catalog_path: dir.join("catalog.sqlite"),
             exiftool: pg_exiftool::Program::from_env(),
-            thumbs: Box::leak(Box::new(cache)),
+            thumbs: Arc::new(cache),
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
             turned_files: Mutex::new(Vec::new()),

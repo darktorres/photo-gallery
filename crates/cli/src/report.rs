@@ -14,8 +14,7 @@ use pg_model::notice::{KeyBuf, Notice, Trigger};
 use pg_model::progress::Progress;
 use pg_thumbcache::Effect;
 
-/// A whole pass's seconds, one decimal: the one rule for seconds on the command line (`lib.rs` uses it too). The parts
-/// of a second are whole milliseconds (`millis`).
+/// A whole pass's seconds, one decimal: the one rule for seconds on the command line (`lib.rs` uses it too).
 pub(crate) fn secs(seconds: f64) -> String {
     format!("{seconds:.1}")
 }

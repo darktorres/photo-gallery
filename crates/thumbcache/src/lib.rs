@@ -51,7 +51,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::config::TOUCH_AGE;
 use crate::maintenance::unix_now;
-use crate::reader::{READERS, with_reader};
+use crate::reader::ReaderPool;
 use crate::schema::{BUSY_TIMEOUT, Writing, hold_shared, open_writer};
 use crate::writer::{Inbox, Op, Store, write_loop};
 
@@ -110,7 +110,7 @@ impl ThumbCache {
         let writer = Service::start("thumbnail cache", move |waker| write_loop(conn, &body, &events, waker))
             .context("start the thumbnail cache writer")?;
         Ok(ThumbCache {
-            store: Some(Store { path: path.to_path_buf(), inbox, writer, _live: live }),
+            store: Some(Store { path: path.to_path_buf(), readers: ReaderPool::new(path), inbox, writer, _live: live }),
             suspended: AtomicBool::new(false),
         })
     }
@@ -162,7 +162,7 @@ impl ThumbCache {
             return Ok(None);
         }
         let Some(store) = &self.store else { return Ok(None) };
-        let found = with_reader(&store.path, |conn| {
+        let found = store.readers.with(|conn| {
             Ok(conn
                 .prepare_cached(
                     "SELECT e.id, e.height, e.last_used, (SELECT jpeg FROM data WHERE id = e.id) FROM entries e
@@ -289,15 +289,15 @@ impl ThumbCache {
     /// The cap, as the file has it now (another process may have changed it).
     pub fn cap(&self) -> Result<i64> {
         let Some(store) = &self.store else { return Ok(0) };
-        with_reader(&store.path, |conn| Ok(conn.query_row("SELECT cap FROM limits", [], |r| r.get(0))?))
+        store.readers.with(|conn| Ok(conn.query_row("SELECT cap FROM limits", [], |r| r.get(0))?))
     }
 
     /// Bytes and entries in the cache.
     pub fn totals(&self) -> Result<(i64, i64)> {
         let Some(store) = &self.store else { return Ok((0, 0)) };
-        with_reader(&store.path, |conn| {
-            Ok(conn.query_row("SELECT bytes, count FROM totals", [], |r| Ok((r.get(0)?, r.get(1)?)))?)
-        })
+        store
+            .readers
+            .with(|conn| Ok(conn.query_row("SELECT bytes, count FROM totals", [], |r| Ok((r.get(0)?, r.get(1)?)))?))
     }
 
     /// Analyzed files without a current thumbnail at `height`, in on-disk order like the import: those changed
@@ -368,14 +368,16 @@ impl ThumbCache {
     }
 
     /// Write what is waiting and stop the writer; later writes are dropped and reads keep working. Idempotent.
-    /// The calling thread's read connections close too: the last connection to a file to close merges its WAL, and
-    /// a read after this one opens a new connection.
+    /// The read connections close too, on any thread: a read in progress finishes first, then the writer stops (so its
+    /// checkpoint does not race a read), then the idle connections close, and the last one to close merges the WAL. A
+    /// read after this one opens a connection of its own, which closes when it returns.
     pub fn close(&self) {
         if let Some(store) = &self.store {
+            store.readers.shut();
             store.inbox.close();
             store.writer.stop();
+            store.readers.drain();
         }
-        READERS.with(|readers| readers.borrow_mut().clear());
     }
 }
 
@@ -418,8 +420,25 @@ mod tests {
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = "scratch_thumbcache";
 
-    /// Closing the cache leaves no WAL or index file: the writer merges the WAL, and this thread's reader (opened by
-    /// the read before) closes with it, so the last connection deletes the files. A reader left open keeps them.
+    /// A read on another thread (which has ended by the time the cache closes) leaves its connection in the cache, not
+    /// in that thread: closing the cache here merges the WAL and leaves no file. (The thread-local readers this replaced
+    /// kept the connection in the thread that read, so it stayed open until that thread ended, and the WAL with it.)
+    #[test]
+    fn a_read_on_another_thread_closes_with_the_cache() {
+        let dir = run_folder(SCRATCH, "close-wal-thread").unwrap();
+        let cache = open(&dir, 1 << 20);
+        cache.put(thumb(3, 100, 5, 30));
+        cache.flush();
+        let read = std::thread::scope(|s| s.spawn(|| cache.totals()).join().unwrap());
+        assert_eq!(read.unwrap(), (30, 1));
+        cache.close();
+        assert!(!dir.join("thumbs.sqlite-wal").exists(), "the WAL is left");
+        assert!(!dir.join("thumbs.sqlite-shm").exists(), "the index is left");
+        assert_eq!(totals_and_sum(&dir).0, (30, 1));
+    }
+
+    /// Closing the cache leaves no WAL or index file: the writer merges the WAL, and the cache's read connection closes
+    /// with it, so the last connection deletes the files. A reader in progress keeps them until it returns.
     #[test]
     fn close_merges_the_wal_and_leaves_no_files() {
         let dir = run_folder(SCRATCH, "close-wal").unwrap();

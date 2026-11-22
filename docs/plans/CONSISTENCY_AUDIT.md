@@ -2813,7 +2813,7 @@ The static Qt build is wired through patch files that edit crate sources: tools/
 
 ### A-032 [low] Writeback holds a leaked static thumbnail cache — CONFIRMED
 
-**Disposition: Deferred.** `Arc<ThumbCache>` ownership is an owner decision and is not applied.
+**Disposition: Fixed.** The thumbnail cache is an `Arc<ThumbCache>`, shared by the writeback, the library, the app, the CLI and their tests; nothing is leaked. The read connections that were kept in each reading thread's thread-local are a per-cache pool (`thumbcache::reader::ReaderPool`), so a connection outlives its thread and closes with the cache. `ThumbCache::close` finishes the reads in progress, stops the writer, then closes the idle connections, and the app's shutdown calls it first. The CLI's `write` command closes its cache before it joins its event printer (`write_pending`), with a test that runs it under a timeout.
 
 writeback lib.rs:165-167 holds thumbs as a leaked static reference, and the test at :812 creates it with Box::leak. The production code and the test use the same pattern, so the leak is in the design and in the tests.
 

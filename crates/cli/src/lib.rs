@@ -622,19 +622,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             }
         }
         Command::Write => {
-            // Only retagged here (never filled): the cap stays as it is.
-            // The cache is leaked, so its events print until the process ends.
-            let (events, _printer) = thumb_events();
-            let cache: &'static ThumbCache =
-                Box::leak(Box::new(pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?));
-            let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)), Arc::new(PrintingSink))?;
-            writer.wake();
-            wait_for_writes(&writer, &catalog)?;
-            if let Some(e) = writer.status().thumbnail_error {
-                eprintln!("{}", line(&Line::ThumbnailsError { file: e.file.get().to_string(), error: e.error }));
-            }
-            drop(writer);
-            cache.close();
+            write_pending(&layout, &catalog, &catalog_path)?;
             let s = catalog.status()?;
             say(&Line::WriteDone {
                 left: s.queued_writes.to_string(),
@@ -683,6 +671,31 @@ fn scan_root(
             other => return other,
         }
     }
+}
+
+/// `gallery write`'s work: the queued writes go out, and the cache that tells their thumbnails closes before this
+/// returns. Only retagged here (never filled): the cap stays as it is. The cache's events print on stderr until it closes.
+///
+/// The order matters: the writer stops first, then the cache closes (its writer stops, and the bus its events go to goes
+/// with it), and only then is the printer joined, which ends when that bus has no events left. Joining the printer
+/// before the cache closed would wait on a bus the cache still holds.
+fn write_pending(layout: &pg_library::layout::Layout, catalog: &Catalog, catalog_path: &Path) -> Result<()> {
+    let (events, printer) = thumb_events();
+    let cache = Arc::new(pg_library::open_thumbs(layout, &catalog.catalog_id()?, None, events)?);
+    let writer =
+        Writer::start(catalog_path.to_path_buf(), cache.clone(), Arc::new(Bus::new(16)), Arc::new(PrintingSink))?;
+    writer.wake();
+    let waited = wait_for_writes(&writer, catalog);
+    if waited.is_ok()
+        && let Some(e) = writer.status().thumbnail_error
+    {
+        eprintln!("{}", line(&Line::ThumbnailsError { file: e.file.get().to_string(), error: e.error }));
+    }
+    drop(writer);
+    cache.close();
+    drop(cache);
+    join_printer(printer);
+    waited
 }
 
 /// `gallery write`'s wait: until nothing writable is left (failures past their retries stay queued and are reported).
@@ -1014,7 +1027,7 @@ mod tests {
         pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
         let (events, quiet) = pg_jobs_testkit::Quiet::bus();
-        let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        let thumbs = Arc::new(
             ThumbCache::open(
                 &dir.join("thumbs.sqlite"),
                 &catalog.catalog_id().unwrap(),
@@ -1023,7 +1036,7 @@ mod tests {
                 events,
             )
             .unwrap(),
-        ));
+        );
         drop(catalog);
         let sink: Arc<dyn pg_jobs::NoticeSink> = pg_jobs_testkit::RecordingSink::new();
         let writer =
@@ -1043,5 +1056,29 @@ mod tests {
         let error = waited.unwrap_err();
         assert!(error.contains("writing into the files has stopped with 1 changes still to write"), "{error}");
         quiet.check();
+    }
+
+    /// The `write` command's work ends, with its cache closed: the WAL is merged and no file is left beside the cache.
+    /// It runs on a thread, with a timeout, so a join that waited on a bus the cache still held would fail the test
+    /// instead of hanging it.
+    #[test]
+    fn the_write_command_closes_its_cache_and_returns() {
+        let dir = pg_testkit::run_folder_with("scratch_cli", "write-closes", &["catalog"]).unwrap();
+        let layout = pg_library::layout::Layout::in_home(&dir);
+        let catalog_path = layout.catalog_path();
+        // The cache's files are beside the catalog (`Layout::thumbs_path`).
+        let folder = layout.catalog_dir().to_path_buf();
+        let catalog = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let done = write_pending(&layout, &catalog, &catalog_path).map_err(|e| format!("{e:#}"));
+            let _ = tx.send(done);
+        });
+        let done = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("the write command kept running after its cache was closed");
+        assert_eq!(done, Ok(()));
+        assert!(!folder.join("thumbs.sqlite-wal").exists(), "the WAL is left beside the cache");
+        assert!(!folder.join("thumbs.sqlite-shm").exists(), "the index is left beside the cache");
     }
 }

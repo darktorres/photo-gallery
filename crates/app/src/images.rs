@@ -103,8 +103,8 @@ pub(crate) struct Decoded {
 pub struct Images {
     catalogs: Arc<Catalogs>,
     makers: Arc<Makers>,
-    /// The thumbnail cache, leaked to a `'static` reference so the library's threads can borrow it. Closed at shutdown.
-    thumbs: &'static ThumbCache,
+    /// The thumbnail cache, shared with the library's threads (the app closes it at shutdown).
+    thumbs: Arc<ThumbCache>,
     /// The full-size decodes last made (`Images::full_image`), most recent first.
     last_decodes: Mutex<VecDeque<Decoded>>,
     /// Where a thumbnail that doesn't decode is recorded (the thumbnails' failure ledger), and one made leaves it.
@@ -118,7 +118,7 @@ impl Images {
     pub(crate) fn new(
         catalogs: Arc<Catalogs>,
         makers: Arc<Makers>,
-        thumbs: &'static ThumbCache,
+        thumbs: Arc<ThumbCache>,
         inbox: Arc<Inbox>,
     ) -> Images {
         Images {

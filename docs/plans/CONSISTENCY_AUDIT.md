@@ -921,7 +921,10 @@ const BATCH: usize = 200 is at thumbs lib.rs:31 and placeholders.rs:28, with no 
 
 ### D-061 [low] Drive-or-share test written three times — CONFIRMED
 
-**Disposition: Deferred.** The owner's default (native.rs form_of for verbatim volume GUIDs) is not applied; it changes what the shell is given and needs a Windows test.
+**Disposition: Deferred.** Two decisions were made for the mount-point work, and one step remains open.
+
+- Decided: the owner's default (`native.rs` `form_of` accepting verbatim volume GUIDs) is not applied; `form_of` stays as it is. It is the disk form, and a volume GUID path already has the verbatim prefix, so it is returned unchanged and opens correctly. Checked with `std::fs::metadata` and `read_dir` on a volume GUID path. Applying the default would change nothing for disk access, and the shell would then be handed a path it refuses.
+- The shell side is the dialog's start folder: `shell_path` turns a volume GUID path into `Volume{…}\…`, which the shell refuses. The planned `shell_form` (step 5 of the plan) refuses it, or maps it to the volume's mount path. That step needs a Windows check of the dialog, which the owner runs.
 
 Three drive-or-share predicates: platform dirs.rs:48 `is_absolute_for`, native.rs:215 `form_of`, and picker.rs:19 `has_drive_or_share`, each testing for a drive or UNC prefix in a slightly different way.
 

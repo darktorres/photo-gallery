@@ -2916,7 +2916,8 @@ mod tests {
     #[test]
     fn dump_join() {
         use std::io::Write;
-        let Some(dump_path) = std::env::var_os("PG_JOIN_DUMP").filter(|_| std::env::var_os("PG_JOIN_OUT").is_some()) else {
+        let Some(dump_path) = std::env::var_os("PG_JOIN_DUMP").filter(|_| std::env::var_os("PG_JOIN_OUT").is_some())
+        else {
             eprintln!("skipped: needs a catalog dump: PG_JOIN_DUMP and PG_JOIN_OUT (see the test's doc comment)");
             return;
         };

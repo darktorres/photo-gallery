@@ -255,9 +255,9 @@ class Consumers(unittest.TestCase):
 
 
 class StaticFfmpegLibraries(unittest.TestCase):
-    """The FFmpeg libraries the static build links (build_static_ffmpeg.py's link check) are the ones the two Qt patches
-    name: pg-video.patch opens them, app-build.patch lists them. The patches' lists are literals, so each is read from its
-    text; a change to one list that the others miss fails here."""
+    """The FFmpeg libraries the static build links (build_static_ffmpeg.py's link check) are the ones the two build scripts
+    name: crates/video/build.rs opens them, crates/desktop/build.rs lists them. The lists are literals, so each is read
+    from its text; a change to one list that the other misses fails here."""
 
     @staticmethod
     def quoted(text: str) -> list[str]:
@@ -271,14 +271,14 @@ class StaticFfmpegLibraries(unittest.TestCase):
             link.group(1)
         )  # the literal names; SYSTEM_LIBS (*SYSTEM_LIBS) are not FFmpeg's and are not quoted here
         self.assertEqual(len(expected), 5)
-        app = (REPO / "tools" / "static-qt" / "app-build.patch").read_text(encoding="utf-8")
+        app = (REPO / "crates" / "desktop" / "build.rs").read_text(encoding="utf-8")
         app_list = re.search(r"STATIC_FFMPEG_LIBS: &\[&str\] = &\[([^\]]*)\]", app)
-        assert app_list is not None, "app-build.patch has no STATIC_FFMPEG_LIBS list"
-        self.assertEqual(self.quoted(app_list.group(1)), expected, "app-build.patch STATIC_FFMPEG_LIBS")
-        video = (REPO / "tools" / "static-qt" / "pg-video.patch").read_text(encoding="utf-8")
+        assert app_list is not None, "crates/desktop/build.rs has no STATIC_FFMPEG_LIBS list"
+        self.assertEqual(self.quoted(app_list.group(1)), expected, "crates/desktop/build.rs STATIC_FFMPEG_LIBS")
+        video = (REPO / "crates" / "video" / "build.rs").read_text(encoding="utf-8")
         video_list = re.search(r"for lib in \[([^\]]*)\]", video)
-        assert video_list is not None, "pg-video.patch has no `for lib in [...]` loop"
-        self.assertEqual(self.quoted(video_list.group(1)), expected, "pg-video.patch the library loop")
+        assert video_list is not None, "crates/video/build.rs has no `for lib in [...]` loop"
+        self.assertEqual(self.quoted(video_list.group(1)), expected, "crates/video/build.rs the library loop")
 
 
 ENV_REGISTRY = REPO / "crates" / "platform" / "src" / "env.rs"

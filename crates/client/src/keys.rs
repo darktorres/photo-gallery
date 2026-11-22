@@ -465,6 +465,9 @@ mod tests {
             viewer_hint(Media::Video, STILL),
             [Step, Play, Mute, Rate, UpFour, DownOne, TurnBack, TurnOn, Hide, Close]
         );
-        assert_eq!(viewer_hint(Media::Animated, STILL), [Step, Play, Rate, UpFour, DownOne, TurnBack, TurnOn, Hide, Close]);
+        assert_eq!(
+            viewer_hint(Media::Animated, STILL),
+            [Step, Play, Rate, UpFour, DownOne, TurnBack, TurnOn, Hide, Close]
+        );
     }
 }

@@ -79,6 +79,19 @@ fn main() -> Result<(), String> {
     }
     generate_bindings(&headers.include)?;
 
+    // The static build (PG_FFMPEG_STATIC, the static FFmpeg's lib folder): FFmpeg is linked
+    // in, so there are no DLLs to copy or load. ffi/load.rs then points its functions at the linked ones (cfg pg_ffmpeg_static).
+    println!("cargo:rerun-if-env-changed=PG_FFMPEG_STATIC");
+    println!("cargo:rustc-check-cfg=cfg(pg_ffmpeg_static)");
+    if let Some(lib_dir) = std::env::var_os("PG_FFMPEG_STATIC") {
+        if !windows {
+            return Err("PG_FFMPEG_STATIC is for the Windows static build only".into());
+        }
+        println!("cargo:rustc-cfg=pg_ffmpeg_static");
+        link_static(Path::new(&lib_dir));
+        return Ok(());
+    }
+
     if windows {
         let prefix = headers.prefix.ok_or("the Windows build has no FFmpeg prefix with its DLLs")?;
         let bin = prefix.join("bin");
@@ -146,6 +159,18 @@ fn pkg_config_includes() -> Result<Vec<PathBuf>, String> {
         return Err(format!("pkg-config gives no include folder for FFmpeg: {hint}"));
     }
     Ok(include)
+}
+
+/// The static FFmpeg's libraries (MSVC, built by tools/build_static_ffmpeg.py) from `lib_dir`, linked into pg-video.
+/// Its link needs these Windows libraries: FFmpeg's .pc files don't list them.
+fn link_static(lib_dir: &Path) {
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    for lib in ["avcodec", "avformat", "avutil", "swresample", "swscale"] {
+        println!("cargo:rustc-link-lib=static={lib}");
+    }
+    for lib in ["user32", "bcrypt"] {
+        println!("cargo:rustc-link-lib={lib}");
+    }
 }
 
 /// `OUT_DIR/ffmpeg.rs`: the types and constants from the headers, found in the include folders.

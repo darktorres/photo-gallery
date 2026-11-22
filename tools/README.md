@@ -59,7 +59,6 @@ tests (`just test-eval`).
 ## Folders and files
 
 - `static-ffmpeg/static-check.c`: the link check that `build_static_ffmpeg.py` compiles against the static libraries.
-- `static-qt/*.patch`: the static build's edits to the crate sources (`app-build.patch` to `crates/desktop`, `pg-video.patch` to `crates/video`; the diffs name those paths), not to Qt's sources. `build_static_qt.py` has no patch step, so apply them from the repo root with `git apply` before it runs.
 - `lint/`: the lint tools at their pins: `requirements.txt` (ruff, with hashes) and `package.json` with its lockfile
   (markdownlint-cli). `just lint-tools-setup` installs from them.
 - `shots/`: the screenshot fixture and its reference recordings (`reference/<sha10>/`), and the inputs kept outside

@@ -2805,7 +2805,7 @@ keep.ps1:38-40 deletes from `pdq_pairs` where the rows are in `pairs_owed`. Both
 
 ### A-031 [low] Static Qt wiring lives in patch files that edit crate sources — CONFIRMED
 
-**Disposition: Deferred.** Moving the static Qt wiring into the sources needs a Windows static Qt and FFmpeg build first.
+**Disposition: Fixed.** The two patch files are gone. Their hunks are in the sources, behind `PG_QT_STATIC` (`crates/desktop/build.rs`, `crates/desktop/src/gui_app.rs`, `crates/desktop/cpp/static_qt.cpp`) and `PG_FFMPEG_STATIC` (`crates/video/build.rs`, `crates/video/src/ffi/load.rs`), default off. The video hunk no longer matched `load.rs`, so it was reconciled with the current error type. The static configuration checks on Windows; the static link is not run (no static Qt or FFmpeg build here).
 
 The static Qt build is wired through patch files that edit crate sources: tools/static-qt/app-build.patch:19-21 adds QuickControls2, QuickLayouts and Svg to desktop build.rs under `PG_QT_STATIC`, and pg-video.patch:63-65 adds a cfg-gated use of `pg_platform`. The crate sources differ from what the patches assume if they change.
 

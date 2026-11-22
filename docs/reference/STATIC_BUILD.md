@@ -10,7 +10,7 @@ Status as of 2026-11-14. Build order: libjpeg-turbo, then FFmpeg, then Qt, then 
 | libjpeg-turbo (JPEG 8.0 API) | `tools/build_jpeg_turbo.py` | Built and checked 2026-11-09 (by hand). The Python recipe ran from an empty folder on 2026-11-13 and wrote its manifest. |
 | FFmpeg 9.0 (static) | `tools/build_static_ffmpeg.py` | The Python recipe ran from an empty folder on 2026-11-13: every check passes. Earlier, the PowerShell recipe (runs 1, 7 and 8). |
 | Qt 6.12.0 (static) | `tools/build_static_qt.py` | Configure verified 2026-11-13: Schannel, system libjpeg, WebP and FFmpeg are all on. Its build and install steps are not run by the recipe yet (see Qt). |
-| App on static Qt | `tools/static-qt/*.patch` | Rebased onto `main` on 2026-11-13. The shared build checks. The static configuration compiles. The static link is not run yet (see Open items). |
+| App on static Qt | `crates/desktop/build.rs` and `crates/video/build.rs` (env-gated) | Moved from the two patch files into the sources. The shared build checks. The static configuration (`PG_QT_STATIC`, `PG_FFMPEG_STATIC`) checks, including the C++ registration file. The static link is not run yet (see Open items). |
 
 ## Pins
 
@@ -181,21 +181,19 @@ any code that asks Qt what it can play would get nothing.
 
 ## App build against the static Qt
 
-Two patches hold the source changes, so that the normal build does not carry them:
+The static build is in the sources, behind environment variables, so the normal build does not take it:
 
-- `tools/static-qt/app-build.patch`: `crates/desktop/build.rs`, `crates/desktop/src/gui_app.rs`, and the new
-  `crates/desktop/cpp/static_qt.cpp`.
-- `tools/static-qt/pg-video.patch`: `crates/video/build.rs` and `crates/video/src/ffi/load.rs`. With `PG_FFMPEG_STATIC`
-  set, the build links the FFmpeg archives and skips the DLL copy, and the loader's function table points at the linked
-  functions.
+- `PG_QT_STATIC` (with `PG_QT_DIR`, the static Qt's prefix, and `PG_FFMPEG_STATIC`, the static FFmpeg's lib folder):
+  `crates/desktop/build.rs` adds the Qt modules and the plugin libraries, and compiles `crates/desktop/cpp/static_qt.cpp`,
+  which registers the static plugins. `crates/desktop/src/gui_app.rs` keeps that registration linked.
+- `PG_FFMPEG_STATIC` alone (Windows): `crates/video/build.rs` links the FFmpeg archives and skips the DLL copy, and
+  `crates/video/src/ffi/load.rs` points the loader's function table at the linked functions.
 
-To apply them, from the repository root:
+Both are read at build time, so set them in the environment of the build (not in `.env`, which the normal build loads
+too).
 
-    git apply tools/static-qt/app-build.patch
-    git apply tools/static-qt/pg-video.patch
-
-To undo them, apply each with `-R` in reverse order, or run `git checkout -- crates/desktop crates/video` when nothing
-else in those folders is changed.
+The patch files that held these changes are gone: the sources are the one copy, so there is nothing to apply and nothing
+to undo.
 
 The patches were rebased onto `main` on 2026-11-13 (commit `0364a4d`, formatting in `4bf619a`). Their old base had moved
 in three places: `ffi.rs` split into `ffi/load.rs` (the loader), `gui_app::new` became `pub(crate)`, and pg-video's

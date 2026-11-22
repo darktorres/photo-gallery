@@ -2,6 +2,8 @@
 //! cache's cap), and for the room a catalog's migration needs before it starts. `GetDiskFreeSpaceExW` on Windows,
 //! `statvfs` on Linux (the Linux checks), and `None` elsewhere, where the caller keeps its fixed default or goes ahead.
 
+#![expect(unsafe_code, reason = "FFI: the Windows volume space call, and libc's statvfs on Unix")]
+
 use std::path::Path;
 
 /// A volume's size and the space this process may still write to it, in bytes.

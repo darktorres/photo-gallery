@@ -1210,6 +1210,7 @@ fn suffix(xc: u32, codes: &[u32], lo: usize, hi: usize, from: &mut usize) -> usi
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[expect(unsafe_code, reason = "AVX2 intrinsics, run only where `Kernel` found the CPU has AVX2")]
 fn suffix_avx2(xc: u32, codes: &[u32], lo: usize, hi: usize, from: &mut usize) -> usize {
     use std::arch::x86_64::{
         __m256i, _mm256_castsi256_ps, _mm256_cmpgt_epi32, _mm256_loadu_si256, _mm256_movemask_ps, _mm256_set1_epi32,
@@ -1429,6 +1430,7 @@ fn scan_scalar<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, ou
 /// The CPU supports POPCNT. `best_kernel` chooses this kernel only after detecting it.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "popcnt")]
+#[expect(unsafe_code, reason = "POPCNT intrinsics, run only where `Kernel` found the CPU has POPCNT")]
 unsafe fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
     scan_scalar::<W>(st, buckets, out);
 }
@@ -1444,6 +1446,7 @@ unsafe fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usi
 /// The CPU supports AVX2 and POPCNT. `best_kernel` chooses this kernel only after detecting both.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,popcnt")]
+#[expect(unsafe_code, reason = "AVX2 intrinsics, run only where `Kernel` found the CPU has AVX2")]
 unsafe fn scan_avx2<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
     use std::arch::x86_64::{
         __m256i, _mm256_add_epi8, _mm256_and_si256, _mm256_castsi256_ps, _mm256_cmpgt_epi32, _mm256_loadu_si256,
@@ -2044,6 +2047,7 @@ fn scan(kernel: Kernel, st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut
 }
 
 /// Dispatches one block to the kernel at `W` head words.
+#[expect(unsafe_code, reason = "calls the AVX2 and POPCNT kernels, each chosen only where the CPU has it")]
 fn scan_width<const W: usize>(kernel: Kernel, st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
     match kernel {
         Kernel::Scalar => scan_scalar::<W>(st, buckets, out),
@@ -2545,6 +2549,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(unsafe_code, reason = "AVX2 intrinsics, run only where the test finds the CPU has AVX2")]
     fn the_vector_suffix_starts_where_the_walk_does() {
         #[cfg(target_arch = "x86_64")]
         if std::arch::is_x86_feature_detected!("avx2") {

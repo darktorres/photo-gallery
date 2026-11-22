@@ -1,5 +1,7 @@
 //! Files as the library opens them, and their times.
 
+#![expect(unsafe_code, reason = "FFI: the Windows file handle calls, and libc's posix_fadvise on Unix")]
+
 use std::fs::{File, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};

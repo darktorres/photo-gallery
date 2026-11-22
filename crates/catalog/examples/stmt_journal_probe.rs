@@ -229,6 +229,7 @@ fn variants() -> Vec<Variant> {
     all
 }
 
+#[expect(unsafe_code, reason = "the SQLite C API's own configuration call, made before SQLite starts")]
 fn main() -> Result<()> {
     if std::env::var("PG_PROBE_MEMSTAT").is_ok_and(|v| v == "0") {
         // SAFETY: called before any connection opens or SQLite initializes (the first statement of main), with the
@@ -251,6 +252,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[expect(unsafe_code, reason = "the SQLite C API, called through the probe's own FFI declarations")]
 fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> {
     std::mem::drop(Catalog::prepare(path, Versions::current(), PATH_RULES)?);
     let conn = Connection::open(path)?;
@@ -551,6 +553,7 @@ fn hex(bytes: &[u8]) -> String {
 
 /// The connection's lookaside counters since the last call (each read resets it): hits, misses because the
 /// allocation was larger than a slot, misses because every slot was taken, and the most slots in use.
+#[expect(unsafe_code, reason = "the SQLite C API, called through the probe's own FFI declarations")]
 fn lookaside(conn: &Connection) -> Result<[i32; 4]> {
     let ops = [
         ffi::SQLITE_DBSTATUS_LOOKASIDE_HIT,

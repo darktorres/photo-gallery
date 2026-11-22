@@ -5,6 +5,11 @@
 //! from the folder's exact UTF-16 units; it points at the folder on any local NTFS volume. SQLite's own files (the
 //! journal, the `-wal`) are then made in the folder, through the junction. Nothing is made outside the alias folder.
 
+#![cfg_attr(
+    windows,
+    expect(unsafe_code, reason = "FFI: the Windows directory and handle calls behind the SQLite folder")
+)]
+
 use std::io;
 use std::path::{Path, PathBuf};
 

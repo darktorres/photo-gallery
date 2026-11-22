@@ -9,57 +9,11 @@
 //! Otherwise a stage costs a call. The tree and the list are marked each time one is shown; the first of each is the
 //! start's. The library does not print: what a stage does is the app's.
 
-use std::sync::OnceLock;
+mod sink;
+mod stages;
 
-/// What a stage does: given its name and the milliseconds since the process was created.
-static SINK: OnceLock<fn(&str, f64)> = OnceLock::new();
-
-/// Set what each stage does. The first sink set stays: the app sets it once, before the first stage.
-pub fn set_sink(sink: fn(&str, f64)) {
-    let _ = SINK.set(sink);
-}
-
-/// Each body names its stage, so no two are identical and the linker can't fold them into one function.
-macro_rules! stages {
-    ($($(#[$doc:meta])* $name:ident),* $(,)?) => {
-        $(
-            $(#[$doc])*
-            #[unsafe(no_mangle)]
-            #[inline(never)]
-            pub extern "C" fn $name() {
-                reached(stringify!($name));
-            }
-        )*
-    };
-}
-
-stages! {
-    /// `main` runs (the DLLs are loaded).
-    pg_stage_main,
-    /// The catalog and the thumbnail cache are open.
-    pg_stage_init_done,
-    /// The QML engine starts loading the window.
-    pg_stage_qml_load,
-    /// It has (the window is up, not yet painted).
-    pg_stage_qml_loaded,
-    /// The first frame is on screen.
-    pg_stage_first_frame,
-    /// A folder tree is shown.
-    pg_stage_tree_shown,
-    /// A grid list is shown.
-    pg_stage_list_shown,
-    /// The start is done.
-    pg_stage_ready,
-    /// The library's background job finished a round (on its thread; the first is the start's import check and
-    /// thumbnail pass).
-    pg_stage_round_done,
-}
-
-fn reached(stage: &str) {
-    if let Some(sink) = SINK.get() {
-        sink(stage, pg_platform::clock::process_age_ms());
-    }
-}
+pub use sink::set_sink;
+pub use stages::*;
 
 #[cfg(test)]
 mod tests {

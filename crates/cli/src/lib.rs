@@ -1,6 +1,7 @@
 //! The command line of `gallery.exe` (`gallery scan`, `gallery import`, …): the app's passes without the window,
 //! for scripts, profiling and checking results. Progress goes to stderr.
 
+#![forbid(unsafe_code)]
 // The command line's output is its product: its reports go to stdout, its progress and errors to stderr.
 #![expect(
     clippy::print_stdout,

@@ -11,6 +11,7 @@ use crate::deadline_bridge::ffi;
 
 /// The shell's QObject, which the timer is a child of. The pointer lives as long as the shell, and only the shell's methods
 /// (on the GUI thread) use it.
+#[expect(unsafe_code, reason = "FFI: the shell's QObject pointer, which the timer is a child of")]
 pub(crate) fn owner<S: Upcast<QObject>>(shell: Pin<&mut S>) -> *mut QObject {
     let mut base: Pin<&mut QObject> = shell.upcast_pin();
     // SAFETY: the pinned base is not moved out of; the pointer is only handed to the C++ timer, which the shell owns.
@@ -25,12 +26,14 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 /// Fire the shell's timer in `ms` milliseconds, replacing any pending arm.
+#[expect(unsafe_code, reason = "FFI: arms a Qt timer on the owner QObject, from the GUI thread")]
 pub(crate) fn arm(owner: *mut QObject, ms: u64) {
     // SAFETY: `owner` is the shell's QObject (see `owner`), alive while the shell's methods run.
     unsafe { ffi::deadline_arm(owner, i64::try_from(ms).unwrap_or(i64::MAX)) }
 }
 
 /// Cancel the shell's pending arm, if any.
+#[expect(unsafe_code, reason = "FFI: disarms the Qt timer of the owner QObject, from the GUI thread")]
 pub(crate) fn disarm(owner: *mut QObject) {
     // SAFETY: as for `arm`.
     unsafe { ffi::deadline_disarm(owner) }

@@ -9,6 +9,8 @@
 //! a test takes its image from here unless it needs one of those. The video fixture is the clip the tests share
 //! (`VIDEO_SAMPLE`), kept in the video crate's tests folder and read here.
 
+#![forbid(unsafe_code)]
+
 use std::fmt::Display;
 use std::io;
 use std::path::{Path, PathBuf};

@@ -3,69 +3,90 @@
 
 mod alert;
 mod animation;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod animation_bridge;
 mod app;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod app_icon;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod clipboard;
 mod command_line;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod command_line_bridge;
 mod controller;
 mod deadline;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod deadline_bridge;
 mod facet_choices;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod facet_choices_bridge;
 mod failed_files;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod failed_files_bridge;
 mod filters;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod filters_bridge;
 mod folders;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod folders_bridge;
 mod frame_sink;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod frame_sink_bridge;
 mod gallery;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod gallery_bridge;
 mod gpu_device;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod gpu_device_bridge;
 mod gui_app;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod gui_app_bridge;
 mod keymap;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod keymap_bridge;
 mod lane_model;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod lane_model_bridge;
 mod ledgers;
 mod library;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod library_bridge;
 mod list_diff;
 #[cfg(debug_assertions)]
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod live_reload;
 mod log_model;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod log_model_bridge;
 mod notices;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod notices_bridge;
 mod panic_log;
 mod picker;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod picker_bridge;
 mod providers;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod providers_bridge;
 mod pump;
@@ -73,29 +94,38 @@ mod pump;
 mod qml_text;
 mod rows;
 mod screenshot;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod screenshot_bridge;
 mod settings;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 mod settings_bridge;
 mod shell;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod shell_bridge;
 mod trace;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 mod trace_bridge;
 mod video_player;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod video_player_bridge;
 mod video_source;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod video_source_bridge;
 mod viewport;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod viewport_bridge;
 mod words;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod words_bridge;
 mod worker;
 mod yandex;
+#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod yandex_bridge;
 
@@ -109,6 +139,7 @@ use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 /// application's exit status (`QGuiApplication::exec`'s: 0, or 1 when a `--screenshot` run found no window to save;
 /// 1 when the application couldn't be made), for the process to exit with.
 #[must_use]
+#[expect(unsafe_code, reason = "FFI: the Qt application and QML engine calls that open the window, through cxx-qt")]
 pub fn run(args: &[OsString]) -> i32 {
     // Qt uses PipeWire for audio when its library is installed, and crashes when PipeWire cannot start (pg_platform::audio).
     // Then the app asks Qt for PulseAudio instead. Qt reads the variable when it makes the audio devices, so it is set here,

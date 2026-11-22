@@ -20,6 +20,8 @@
 //! (`write-failed`, kept until the next success or until the write it names is dropped; [`write_failed_notice`]), and
 //! the writes it dropped because their files went (`write-dropped`, an event).
 
+#![forbid(unsafe_code)]
+
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;
 use std::fs::File;

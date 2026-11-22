@@ -2,6 +2,7 @@
 //! in the background; with a command (`gallery scan`, `gallery import`, … see `pg_cli`) it runs that pass on
 //! the command line instead. Without the `desktop` feature only the commands run.
 
+#![forbid(unsafe_code)]
 // A GUI program: no console window when started from Explorer. The command line attaches to its caller's console.
 #![windows_subsystem = "windows"]
 // The command line's error, and the notice of a build without the window, are printed to stderr.

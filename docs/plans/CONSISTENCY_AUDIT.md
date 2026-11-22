@@ -3931,9 +3931,7 @@ The read-then-write pattern is real: inbox.rs:142 checks before `write_transacti
 
 ### CU-005 [medium] `CLIPPY_LEDGER` unsafe-lint policy is not implemented; `NOTIFICATIONS_DESIGN` says no forbid exists — CONFIRMED
 
-**Disposition: Deferred.** The unsafe policy (forbid or deny, per-item expect) is not applied; it needs a clippy listing of the unsafe items.
-
-`CLIPPY_LEDGER.md:153` sets the `unsafe_code` policy (forbid where there is no unsafe, deny with per-item expect elsewhere). Cargo.toml has no `unsafe_code` lint and no crate has `forbid(unsafe_code`). The plan is not implemented. `NOTIFICATIONS_DESIGN.md:363` states no forbid exists, which matches the code.
+**Disposition: Fixed.** The policy is applied. `[workspace.lints.rust]` denies `unsafe_code`. The 30 crate roots without unsafe code say `#![forbid(unsafe_code)]`, and the five crates that hold unsafe (`dedup`, `desktop`, `platform`, `trace`, `video`) say `#[expect(unsafe_code, reason)]` on each unsafe item, or on a module whose unsafe is one FFI layer (`platform`'s system-call modules, `video`'s `ffi`). The cxx-qt bridge modules carry their expect on their declarations in `desktop/src/lib.rs`, and the two examples (the SQLite C API in `catalog`, the Windows file index in `container`) carry theirs on the function that holds the call. `UnsafePolicy` in `tools/test_ci_files.py` fails if a crate root forbids it wrongly or omits it. `CLIPPY_LEDGER.md` records the row as done, and `NOTIFICATIONS_DESIGN.md` now describes the policy.
 
 ### CU-006 [medium] Three docs give three unsafe-site totals with different units — CONFIRMED
 

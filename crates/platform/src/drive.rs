@@ -11,6 +11,8 @@
 //! [`DriveKey::Opaque`], and a disk whose kind can't be told is [`Kind::Unknown`]. The caller treats an unknown kind as
 //! a spinning disk, the slower assumption.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows volume and handle calls"))]
+
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;

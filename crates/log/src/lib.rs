@@ -58,6 +58,8 @@
 //!
 //! A panic is recorded by the panic hook (`pg_log::panic`), even when it came while the log was being written.
 
+#![forbid(unsafe_code)]
+
 mod file;
 mod record;
 

@@ -11,6 +11,8 @@
 //! and the JSON file they are kept in (`store`, a public module), bounded pools of connections and makers (`pool`, a
 //! public module), and the error type ([`Error`]).
 
+#![forbid(unsafe_code)]
+
 mod app;
 mod catalogs;
 mod config;

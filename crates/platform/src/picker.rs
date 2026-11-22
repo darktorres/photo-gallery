@@ -8,6 +8,8 @@
 //! across the call. The dialog's steps are behind [`FolderDialog`] and [`ShellItem`], so `pick_with` is tested with a
 //! fake dialog; the Windows implementation is only the calls to the system.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows COM file dialog calls"))]
+
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};

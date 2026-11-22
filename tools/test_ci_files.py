@@ -406,5 +406,35 @@ class AnyhowAllowlist(unittest.TestCase):
         self.assertFalse(depends_on_anyhow({"dependencies": {"thiserror": "2"}}))
 
 
+# The crates whose code holds unsafe: each unsafe item says why with `#[expect(unsafe_code, reason)]`, and every other
+# crate root forbids it (CU-005). `desktop` is the cxx-qt bridge crate, `platform` the system-call wrappers.
+UNSAFE_CRATES = {"dedup", "desktop", "platform", "trace", "video"}
+FORBID = "#![forbid(unsafe_code)]"
+
+
+class UnsafePolicy(unittest.TestCase):
+    def roots(self):
+        found = {}
+        for directory in sorted((REPO / "crates").glob("*/")):
+            for name in ("src/lib.rs", "src/main.rs"):
+                root = directory / name
+                if root.exists():
+                    found[directory.name] = root.read_text(encoding="utf-8")
+                    break
+        return found
+
+    def test_every_crate_without_unsafe_forbids_it(self):
+        missing = {name for name, text in self.roots().items() if name not in UNSAFE_CRATES and FORBID not in text}
+        self.assertEqual(missing, set(), "these crate roots must say #![forbid(unsafe_code)] (CU-005)")
+
+    def test_the_unsafe_crates_do_not_forbid_it(self):
+        forbidding = {name for name, text in self.roots().items() if name in UNSAFE_CRATES and FORBID in text}
+        self.assertEqual(forbidding, set(), "these crates hold unsafe code, so they cannot forbid it")
+
+    def test_the_workspace_denies_unsafe_code(self):
+        manifest = tomllib.loads((REPO / "Cargo.toml").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["workspace"]["lints"]["rust"].get("unsafe_code"), "deny")
+
+
 if __name__ == "__main__":
     unittest.main()

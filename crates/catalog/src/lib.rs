@@ -12,6 +12,8 @@
 //! A module the docs call a leaf (below `core`) is one whose types `Catalog`'s methods take or return. The compiler
 //! graph puts an inherent method in its type's module, so a type named in those signatures has to sit below `core` too.
 
+#![forbid(unsafe_code)]
+
 // The SQL macros are declared first: `macro_rules!` is textually scoped, so every module declared after
 // this one can use them.
 #[macro_use]

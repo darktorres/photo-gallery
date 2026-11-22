@@ -42,6 +42,10 @@ impl qobject::AnimationPlayer {
 
     /// # Safety
     /// `sink` is a live `QVideoSink` (from QML: `videoOut.videoSink`), or null.
+    #[expect(
+        unsafe_code,
+        reason = "FFI: the video sink pointer the Qt media player hands over, kept alive by the caller"
+    )]
     pub(crate) unsafe fn set_sink(mut self: Pin<&mut Self>, sink: *mut qobject::QVideoSink) {
         // SAFETY: the caller passes a live sink or null; the reference made of it is weak (QPointer).
         let sink = (!sink.is_null()).then(|| unsafe { crate::frame_sink_bridge::ffi::new_sink_ref(sink) });

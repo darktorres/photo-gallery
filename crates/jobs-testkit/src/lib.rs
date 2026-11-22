@@ -4,6 +4,8 @@
 //! replaces did. And a notice sink that records what it is told ([`RecordingSink`]), for the tests of the workers that
 //! post through one (the job, the writer).
 
+#![forbid(unsafe_code)]
+
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};

@@ -25,6 +25,8 @@
 //! started over: the next pass looks at every file again. A cache belongs to one catalog (`meta.catalog_id`, the
 //! catalog's): opened for another one (rebuilt, so its file ids mean other files), it starts over.
 
+#![forbid(unsafe_code)]
+
 mod config;
 mod error;
 mod maintenance;

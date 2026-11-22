@@ -5,6 +5,8 @@
 //! - [`cut`]: the original itself, rewritten in place, once the user has confirmed it. It is the only write of an
 //!   original this crate makes, and it refuses to run without that confirmation.
 
+#![forbid(unsafe_code)]
+
 use pg_model::ids::FileId;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};

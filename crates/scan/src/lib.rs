@@ -56,6 +56,8 @@
 //!
 //! So the walk's write lock is held for one batch write's milliseconds, and a paused scan holds nothing.
 
+#![forbid(unsafe_code)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::panic::AssertUnwindSafe;

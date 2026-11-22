@@ -12,6 +12,8 @@
 //! - The outcomes the front ends word: a pass's progress (`progress`), why a folder is refused (`refusal`), the Yandex
 //!   search's and save's (`yandex`), and the notices (`notice`).
 
+#![forbid(unsafe_code)]
+
 pub mod analysis;
 pub mod date;
 pub mod details;

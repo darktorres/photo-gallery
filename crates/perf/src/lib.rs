@@ -14,6 +14,8 @@
 //!
 //! The library writes to no console: the echo is the command line's or the app's, through the sink it opens.
 
+#![forbid(unsafe_code)]
+
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::io;

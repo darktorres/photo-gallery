@@ -9,6 +9,8 @@
 //! EXIF is read in place by a reader of its own: IFD0 and the Exif IFD, only the tags used here, every offset
 //! checked. A broken field elsewhere in the block (a thumbnail's IFD, GPS) doesn't lose the ones read.
 
+#![forbid(unsafe_code)]
+
 mod container;
 mod exif;
 mod orientation;

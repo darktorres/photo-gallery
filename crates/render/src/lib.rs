@@ -4,6 +4,8 @@
 //! [`player`] plays an animation's frames into a [`player::Sink`] at their delays. [`transcode`] re-encodes a photo
 //! as a JPEG for a service that doesn't take its format.
 
+#![forbid(unsafe_code)]
+
 pub mod display;
 pub mod maker;
 pub mod player;

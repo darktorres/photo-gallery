@@ -23,6 +23,7 @@ use crate::gpu_device_bridge::ffi;
 
 // SAFETY: the device is free-threaded; its immediate context is used by one thread at a time (made on the
 // "gpu device" thread, then handed to the GUI thread, which hands it to the render thread).
+#[expect(unsafe_code, reason = "the SAFETY comment above: the device is handed between threads, one user at a time")]
 unsafe impl Send for ffi::GpuDevice {}
 
 /// [`ffi::make_gpu_device`] on its own thread, while the catalog opens and the QML loads: join the handle before

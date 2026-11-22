@@ -5,6 +5,8 @@
 //! - the lock that orders the processes changing a file's layout, and the holds on an open file ([`Lock`], [`Live`]);
 //! - moving a file aside and deleting it, with its sidecars ([`move_aside`], [`remove_database`]).
 
+#![forbid(unsafe_code)]
+
 mod judge;
 mod lock;
 mod remove;

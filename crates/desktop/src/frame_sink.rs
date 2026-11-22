@@ -19,8 +19,10 @@ impl Frames {
 
 // SAFETY: `FrameSink::present` and `close` may be called from any thread: the sink's only shared state is an atomic
 // flag, and a frame runs on the sink's own thread (cpp/frame_sink.cpp).
+#[expect(unsafe_code, reason = "the SAFETY comment below: the sink's methods may run on any thread")]
 unsafe impl Send for Frames {}
 // SAFETY: as above; both methods take `&self`, and the only state they share is that flag.
+#[expect(unsafe_code, reason = "the SAFETY comment above: both methods take `&self`, and share only an atomic flag")]
 unsafe impl Sync for Frames {}
 
 impl Sink for Frames {

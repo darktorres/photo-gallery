@@ -3,6 +3,8 @@
 //! catches, the event primitives it reports with, and where the workers' notices go ([`NoticeSink`]). Nothing here
 //! knows what a pass does to a file.
 
+#![forbid(unsafe_code)]
+
 pub mod control;
 pub mod events;
 pub mod failure;

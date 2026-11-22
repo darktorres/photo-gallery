@@ -1,5 +1,7 @@
 //! The clock: the local time for the log, and how long the process has run for the startup trace.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows clock and cycle counter calls"))]
+
 /// A date and time.
 pub struct LocalTime {
     pub year: u16,

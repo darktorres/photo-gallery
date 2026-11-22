@@ -7,6 +7,8 @@
 //! The passes report what they did as values (their stats, the failures they hit), and print nothing: whoever runs
 //! them decides what to show, and in what words.
 
+#![forbid(unsafe_code)]
+
 mod coordinator;
 pub mod folders;
 mod inner;

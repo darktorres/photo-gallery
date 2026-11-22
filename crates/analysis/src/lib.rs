@@ -2,6 +2,8 @@
 //! container (no decode), and the duplicate hashes, the border detector and the PDQ hasher the later passes use. No
 //! catalog and no file writes here, and no UI.
 
+#![forbid(unsafe_code)]
+
 pub mod analyze;
 pub mod borders;
 pub mod pdq;

@@ -1,5 +1,7 @@
 //! The front end's logic: what the desktop and the web client both need, with no Qt and no platform calls.
 
+#![forbid(unsafe_code)]
+
 pub mod controller;
 pub mod facets;
 pub mod features;

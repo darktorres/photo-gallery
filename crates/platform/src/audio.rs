@@ -3,6 +3,11 @@
 //! client configuration (`client.conf`, which the `pipewire` package ships, not the libraries) is one such case: its
 //! `pw_context_new` returns NULL. The app asks Qt for PulseAudio in that case (crates/desktop/src/lib.rs).
 
+#![cfg_attr(
+    target_os = "linux",
+    expect(unsafe_code, reason = "FFI: the PipeWire calls that ask whether a context can be made, on Linux")
+)]
+
 #[cfg(target_os = "linux")]
 use std::ffi::{c_char, c_int, c_void};
 #[cfg(target_os = "linux")]

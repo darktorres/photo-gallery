@@ -2,6 +2,8 @@
 //! every file after a new detector (`analysis.borders_due`), each decoded at full size. The tools that report on
 //! borders, or take review marks into the catalog, are the command line's (`pg_cli::borders`).
 
+#![forbid(unsafe_code)]
+
 use std::collections::BTreeSet;
 
 use pg_analysis::analyze::{Analyzer, FileBorders};

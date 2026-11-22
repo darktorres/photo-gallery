@@ -14,6 +14,8 @@
 //! The modules are the results and errors (`types`), the answers read (`parse`), the HTTP side every request shares
 //! (`http`), the search (`client`) and the result files (`fetch`); their public items are re-exported here.
 
+#![forbid(unsafe_code)]
+
 mod client;
 mod fetch;
 mod http;

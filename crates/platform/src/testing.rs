@@ -6,6 +6,8 @@
 //! `flock`ed), so no other open takes it while the holder lives. A lock whose holder has ended is a file nothing holds:
 //! the next cleanup takes it, and removes the folder with it.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows short path call the test helpers use"))]
+
 pub mod held;
 mod lock;
 mod seam;

@@ -3,6 +3,8 @@
 //! where its format has no lossless way (a crop of TIFF or BMP, through `pg_codec::encode`), and then the metadata is
 //! not carried over.
 
+#![forbid(unsafe_code)]
+
 pub mod crop;
 mod rewrite;
 pub mod rotate;

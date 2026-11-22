@@ -5,6 +5,8 @@
 //! ([`PngAnimation`], [`WebpAnimation`]), applied chunk by chunk as a walk goes. The writing half is here too: a PNG
 //! chunk and its CRC, a RIFF file and its VP8X canvas, GIF sub-blocks. Model-shaped: no decoding, no XMP parsing.
 
+#![forbid(unsafe_code)]
+
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
 

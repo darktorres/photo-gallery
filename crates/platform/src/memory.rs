@@ -1,5 +1,7 @@
 //! The machine's memory: how much physical RAM there is, so a run can bound what its lanes hold together.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows memory status call"))]
+
 /// The physical memory of this machine, in bytes, or `None` when the system does not say.
 pub fn physical_bytes() -> Option<u64> {
     platform::physical_bytes()

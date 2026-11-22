@@ -1,5 +1,7 @@
 //! Thread priorities. The scan and import readers and workers run below normal, or idle, so the app keeps its processor time.
 
+#![expect(unsafe_code, reason = "FFI: the Windows thread priority calls, and libc's setpriority and gettid on Unix")]
+
 /// A thread's priority. Windows schedules by them; on Linux they are nice values, per thread (below); elsewhere a thread
 /// keeps its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

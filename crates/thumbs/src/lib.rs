@@ -3,6 +3,8 @@
 //! priority, as it competes with the user for the disk and the CPU. The cache is shared with the app's on-demand
 //! thumbnails; neither waits for the other but in the cache's writer, one batch at a time.
 
+#![forbid(unsafe_code)]
+
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};

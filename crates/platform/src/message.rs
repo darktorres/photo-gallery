@@ -1,5 +1,7 @@
 //! Message boxes, for the failures the user has to see when there is no console to print to.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows message box call"))]
+
 /// An error message box with `caption` and `text`, from any thread (it runs its own message loop). Elsewhere there
 /// is no window, so nothing is shown: the caller has logged the error.
 #[cfg(windows)]

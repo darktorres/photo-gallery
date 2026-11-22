@@ -8,6 +8,8 @@
 //! say), so a camera file is not read whole for its facts. A PNG is read at its two ends (`pg_container::png_import_bytes`):
 //! the chunks before its image data and those after it, without the image data; so a large PNG is not read whole either.
 
+#![forbid(unsafe_code)]
+
 pub mod hashes;
 pub mod pairs;
 

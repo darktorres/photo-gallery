@@ -7,6 +7,8 @@
 //! signatures are written from the same headers; the calls go through the pointers in [`Api`]. The loader is `load`,
 //! the file an input reads through FFmpeg's I/O is `io`, and the safe wrappers of the C API are here.
 
+#![expect(unsafe_code, reason = "FFI: the calls through the FFmpeg function pointers, and the I/O callbacks")]
+
 // The generated names are FFmpeg's, and its enum values are constants (build.rs). The layout tests are off.
 #[expect(
     non_camel_case_types,

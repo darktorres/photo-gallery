@@ -2,6 +2,8 @@
 //! opened. Windows loads a DLL from a folder the program chose, and from the system's and the search's folders only (never
 //! from PATH); elsewhere the system's own rules find a shared library by its name.
 
+#![expect(unsafe_code, reason = "FFI: loading a dynamic library, which runs its initializers")]
+
 use std::path::{Path, PathBuf};
 
 use libloading::Library;

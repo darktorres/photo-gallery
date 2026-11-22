@@ -6,6 +6,8 @@
 //! The SQL expects the browse query's aliases: `f` the file, `a` its analysis (joined only without an error), `r`
 //! its rating, `m` its border mark (`f.order_key` is the name order).
 
+#![forbid(unsafe_code)]
+
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::{Value, ValueRef};

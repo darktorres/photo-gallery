@@ -2,6 +2,8 @@
 //! this is NTFS's `FileIdBothDirectoryInfo`, which gives each file's identity with the listing: no file is opened, and
 //! no administrator rights are needed. On Unix it is `std::fs::read_dir`, with the identity from the metadata. The
 //! library decides which entries it keeps.
+
+#![expect(unsafe_code, reason = "FFI: the Windows directory and handle calls, and libc's statfs and ioctl on Unix")]
 //!
 //! The facts about the volume a folder is on are here too ([`RootFacts`], [`fs_type`]): the scanner decides from them
 //! which folders it accepts, and why it refuses one (`pg_scan::refusal`).

@@ -1,6 +1,8 @@
 //! Child processes. ExifTool, which writes ratings and orientations, runs without a console window and ends with the process
 //! that started it: `spawn_background` arranges that (a job object on Windows, a parent-death signal on Linux).
 
+#![expect(unsafe_code, reason = "FFI: the Windows job object and process calls, and libc's getpid on Unix")]
+
 use std::io;
 use std::process::{Child, Command};
 

@@ -3,6 +3,8 @@
 //! The one generator every test uses (SplitMix64). It is a leaf with no dependencies: the layered crates take it as a
 //! dev-dependency, and `pg-testkit` re-exports it, so the cases of every test come from the same mixing function.
 
+#![forbid(unsafe_code)]
+
 /// A deterministic generator (SplitMix64): the same seed gives the same sequence on every run.
 pub struct Rng(u64);
 

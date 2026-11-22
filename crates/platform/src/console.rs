@@ -1,6 +1,8 @@
 //! The console of a program that the system starts as a GUI program: the console it was typed in, attached to its standard
 //! streams.
 
+#![cfg_attr(windows, expect(unsafe_code, reason = "FFI: the Windows console and standard handle calls"))]
+
 /// Make stdout and stderr reach the console the command was typed in. A GUI-subsystem program starts without them unless
 /// they were redirected (a pipe or a file, which then stay as they are).
 #[cfg(windows)]

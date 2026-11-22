@@ -8,6 +8,8 @@
 //! such a name runs ExifTool once, with the names as its process arguments (exact on Unix; Windows can't hold such a
 //! name).
 
+#![forbid(unsafe_code)]
+
 use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;

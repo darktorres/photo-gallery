@@ -125,6 +125,7 @@ fn file_index(path: &Path) -> io::Result<u64> {
 
 /// The file's NTFS file index (what the import orders its reads by).
 #[cfg(windows)]
+#[expect(unsafe_code, reason = "FFI: GetFileInformationByHandle, which the Windows file index comes from")]
 fn file_index(path: &Path) -> io::Result<u64> {
     use std::os::windows::io::AsRawHandle;
     #[repr(C)]

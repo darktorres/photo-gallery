@@ -3,6 +3,8 @@
 //! the image decoders and encoders are linked (the bans in deny.toml). No file, catalog or metadata reads: the caller
 //! gives the bytes and the EXIF orientation.
 
+#![forbid(unsafe_code)]
+
 pub mod animation;
 mod codecs;
 pub mod decode;

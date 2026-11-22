@@ -34,6 +34,7 @@ const POSTER_FRACTION: f64 = 0.1;
 /// …but no later than this (a long video's first scene is usually its title).
 const POSTER_MAX_MS: i64 = 10_000;
 
+#[expect(unsafe_code, reason = "FFI: the call that sets FFmpeg's log level, through its function pointer")]
 fn init() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {

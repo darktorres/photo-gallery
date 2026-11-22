@@ -11,7 +11,7 @@ Baseline recorded 2026-11-05 at commit `c988b9c`.
   `indexing_slicing` too, and the Phase 4 lints (`cast_lossless`, `cast_possible_truncation`, `cast_sign_loss`,
   `cast_possible_wrap`, `cast_precision_loss`, `as_conversions`) too.
 - Each crate opts in with `[lints] workspace = true`. The vendored crates in `vendor/` are outside the workspace.
-- `[workspace.lints.rust]` sets `unreachable_pub` at warn (Phase 12, `e1477ee`).
+- `[workspace.lints.rust]` sets `unreachable_pub` at warn (Phase 12, `e1477ee`) and `unsafe_code` at deny (Phase 8 of the consistency program). The crates without unsafe code say `#![forbid(unsafe_code)]` at their root; an unsafe item carries `#[expect(unsafe_code, reason)]`. `UnsafePolicy` in `tools/test_ci_files.py` checks both.
 - `clippy.toml` bans `std::collections::HashMap`, `HashSet` and `RandomState`.
 - `just lint` runs `cargo clippy --workspace --all-targets -- -D warnings`, so a lint at `warn` fails the gate.
 
@@ -152,7 +152,7 @@ rest are in `gallery`, `trace` and `video`. The policy is recorded in the table 
 
 | Lint | Level | Hits | Work | Status |
 |---|---|---|---|---|
-| `unsafe_code` | warn | 472 | Crates with no `unsafe`: `#![forbid(unsafe_code)]`. Crates with `unsafe`: `#![deny(unsafe_code)]`, since `forbid` cannot be overridden by `#[expect]`. Each item that holds `unsafe` gets `#[expect(unsafe_code, reason = "FFI: <call>")]`, one per item, including `desktop`; no crate-level expect | decided: adopt |
+| `unsafe_code` | deny | 472 | Done. The workspace denies it; the 30 crate roots without `unsafe` say `#![forbid(unsafe_code)]`. The five crates with unsafe (`dedup`, `desktop`, `platform`, `trace`, `video`) say `#[expect(unsafe_code, reason)]` on each item, or on the module when all of its unsafe is one FFI layer (`platform`, `video`'s `ffi`). A cxx-qt bridge module carries its expect on its declaration in `desktop/src/lib.rs`. No crate-level expect | done (Phase 8) |
 | `borrow_as_ptr` | warn | 8 | `ptr::from_ref` or `ptr::from_mut` instead of `&x as *const _` | not started |
 | `multiple_unsafe_ops_per_block` | warn | 58 | One operation per `unsafe` block, each with its own `// SAFETY:` line | not started |
 | `cast_ptr_alignment` | warn | 1 | Read unaligned data with `read_unaligned`, or prove the alignment with a comment | not started |

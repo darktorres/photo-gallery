@@ -399,14 +399,12 @@ fn the_tree_is_built_as_before() {
     check_tree(PathRules::Windows, &[]);
 }
 
-/// On a real catalog (read-only, under the path rules it records): skipped unless `PG_TEST_CATALOG` names one, as in
-/// `PG_TEST_CATALOG=… cargo test -p pg-catalog real_tree`.
+/// On a real catalog (read-only, under the path rules it records):
+/// `PG_TEST_CATALOG=… cargo test -p pg-catalog real_tree -- --ignored`.
 #[test]
+#[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
-    let Some(path) = std::env::var_os("PG_TEST_CATALOG") else {
-        pg_testkit::skip("needs PG_TEST_CATALOG, a real catalog (opened read-only)");
-        return;
-    };
+    let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
     let rules = raw::recorded_rules(std::path::Path::new(&path));
     let c = crate::core::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let rows: Vec<(i64, String, i64)> =
@@ -535,14 +533,12 @@ fn folder_keys_are_made_per_character() {
     }
 }
 
-/// On a real catalog's names (read-only, any layout): skipped unless `PG_TEST_CATALOG` names one, as in
-/// `PG_TEST_CATALOG=… cargo test -p pg-catalog real_names`.
+/// On a real catalog's names (read-only, any layout): `PG_TEST_CATALOG=… cargo test -p pg-catalog real_names --
+/// --ignored`.
 #[test]
+#[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_names_sort_and_scope_as_before() {
-    let Some(path) = std::env::var_os("PG_TEST_CATALOG") else {
-        pg_testkit::skip("needs PG_TEST_CATALOG, a real catalog (opened read-only)");
-        return;
-    };
+    let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
     let rules = raw::recorded_rules(std::path::Path::new(&path));
     // The reference order and scopes below are Windows': per-character case folding, drives merged. A POSIX catalog
     // is checked by the rule-generic tests instead.

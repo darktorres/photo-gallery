@@ -1,9 +1,9 @@
 //! A rehearsal of the catalog's upgrade on a copy of a real catalog, and of a folder's removal on that copy. It needs a
-//! catalog, named by `PG_REHEARSAL_CATALOG`: without one, `cargo test` skips it. The original is never opened for writing
-//! (the test copies it first). Run it with:
+//! catalog, named by `PG_REHEARSAL_CATALOG`, and the original is never opened for writing (the test copies it first). Run
+//! it with:
 //!
 //!     $env:PG_REHEARSAL_CATALOG = 'D:\...\catalog.sqlite'
-//!     cargo test -p pg-catalog --test rehearsal --locked -- --nocapture
+//!     cargo test -p pg-catalog --test rehearsal --locked -- --ignored --nocapture
 //!
 //! It prints the sizes and the times it took, and fails when a row is lost, a foreign key breaks, a sequence falls behind
 //! its table's highest id, or the upgrade's copy of the old file isn't kept. A catalog the upgrade can't migrate in place
@@ -86,10 +86,10 @@ fn kept_copies(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
+#[ignore = "a rehearsal: PG_REHEARSAL_CATALOG names a real catalog (see the module's doc)"]
 fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() {
     let Some(source) = std::env::var_os("PG_REHEARSAL_CATALOG") else {
-        pg_testkit::skip("a rehearsal: PG_REHEARSAL_CATALOG names a real catalog (see the module's doc)");
-        return;
+        panic!("PG_REHEARSAL_CATALOG names the catalog to rehearse on");
     };
     let source = PathBuf::from(source);
     let dir = pg_testkit::run_folder("rehearsal", "upgrade").unwrap();

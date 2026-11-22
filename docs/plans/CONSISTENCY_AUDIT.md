@@ -3845,7 +3845,7 @@ Proptest case counts differ: `listing_laws.rs:30` uses 12 cases, container lib.r
 
 ### T-020 [medium] Skip and ignore mechanisms differ across tests — CONFIRMED
 
-**Disposition: No change.** The three skip mechanisms are intended.
+**Disposition: Fixed.** Tool gates and data gates are now two named mechanisms. `pg_testkit::require_tool(name, exe, version_arg)` replaces `missing_tool` and `tool_missing`: it returns whether the tool runs, and a missing tool skips, or fails under `PG_REQUIRE_TOOLS`. The `exiftool_missing` wrappers in the library tests are gone. The data gates (the real-catalog, rehearsal, JPEG-compare and join-dump tests) stay `#[ignore]` with their run instructions, and do not skip at run time: `docker/check.py` fails the Linux step on any `skipped:` line, because the container has everything and a skip checks nothing. `just check-linux` is green with this.
 
 Skip mechanisms differ: exiftool lib.rs:288-290 returns None and `PG_REQUIRE_TOOLS` makes it a failure, `pg_testkit::skip` only prints (testing.rs:83-84), codec decode.rs:434 is #[ignore] behind an env var, dedup join.rs:2900 is #[ignore] with env vars, and writeback.rs:127-128 returns early when ExifTool is absent.
 

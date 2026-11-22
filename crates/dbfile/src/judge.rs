@@ -122,7 +122,12 @@ pub fn judge(
 }
 
 /// [`judge`]'s reads, on an open file.
-pub fn judge_conn(conn: &Connection, seeds: &[(&str, &str)], want: &Schema, owner: i64) -> rusqlite::Result<Found> {
+pub(crate) fn judge_conn(
+    conn: &Connection,
+    seeds: &[(&str, &str)],
+    want: &Schema,
+    owner: i64,
+) -> rusqlite::Result<Found> {
     let found = Schema::read(conn, seeds)?;
     if found.is_empty() {
         return Ok(Found::New);

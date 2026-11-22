@@ -70,18 +70,18 @@ impl From<ReadError> for Error {
 }
 
 /// The error of a lower layer, as its text (`{:#}`: the causes included).
-pub fn failed(e: impl Display) -> Error {
+pub(crate) fn failed(e: impl Display) -> Error {
     Error::Failed(format!("{e:#}"))
 }
 
 /// The original can't be read (offline, gone): [`Error::Original`], with the lower layer's text (`{:#}`: the causes
 /// included). Its `Display` adds "original unavailable: ", so the text given here doesn't say it.
-pub fn original(e: impl Display) -> Error {
+pub(crate) fn original(e: impl Display) -> Error {
     Error::Original(format!("{e:#}"))
 }
 
 /// What a maker's failure is for the app: the original unavailable when it couldn't be read, else it doesn't decode.
-pub fn made_error(e: pg_render::maker::MakeError) -> Error {
+pub(crate) fn made_error(e: pg_render::maker::MakeError) -> Error {
     match e {
         pg_render::maker::MakeError::Unreadable(e) => original(e),
         pg_render::maker::MakeError::Undecodable(e) => Error::Undecodable(format!("{e:#}")),

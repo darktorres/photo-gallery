@@ -944,6 +944,8 @@ mod caution_tests {
     }
 
     // A folder under a sync client's root is named by its client, whatever the case of either and whichever separator.
+    // Drive-letter paths are paths only on Windows: elsewhere `Path` reads `C:\Users\...` as one name, so this runs there.
+    #[cfg(windows)]
     #[test]
     fn a_folder_under_a_sync_root_is_named_by_its_client() {
         let roots = env(&[("OneDrive", r"C:\Users\Ana\OneDrive"), ("USERPROFILE", r"C:\Users\Ana")]);

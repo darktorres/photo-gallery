@@ -4,28 +4,28 @@
 //! threads these services start. Nothing here prints: what the user should hear is a notice posted to the [`Inbox`], and the
 //! front end words it.
 //!
-//! The pieces: [`app`] (the composition root: it opens the services in order and orders their shutdown), [`inbox`] (what
-//! the app tells the user), [`catalogs`] (the catalog connections), [`images`] (thumbnails, placeholders, the viewer's
-//! original), [`reader`] (the catalog reads off the UI thread, and [`Reading`]), [`library`] (the folders, the scan and the
-//! write-back), [`edit`] (ratings and marks), [`views`] (the place the grid shows, the saved views), [`yandex`] (the reverse
-//! image search and saving its results), [`prefs`] (the preferences), [`store`] (the JSON file they are kept in), [`pool`]
-//! (bounded pools of connections and makers), and [`error`].
+//! The pieces: the composition root (it opens the services in order and orders their shutdown), the inbox (what the app
+//! tells the user, [`Inbox`]), the catalog connections, the thumbnails, placeholders and the viewer's original, the catalog
+//! reads off the UI thread ([`Reading`]), the folders, the scan and the write-back, ratings and marks, the place the grid
+//! shows and the saved views, the reverse image search and saving its results (`yandex`, a public module), the preferences
+//! and the JSON file they are kept in (`store`, a public module), bounded pools of connections and makers (`pool`, a
+//! public module), and the error type ([`Error`]).
 
-pub mod app;
-pub mod catalogs;
-pub mod config;
-pub mod edit;
-pub mod error;
-pub mod images;
-pub mod inbox;
-pub mod library;
+mod app;
+mod catalogs;
+mod config;
+mod edit;
+mod error;
+mod images;
+mod inbox;
+mod library;
 mod makers;
 pub mod pool;
-pub mod prefs;
-pub mod reader;
+mod prefs;
+mod reader;
 pub mod reexport;
 pub mod store;
-pub mod views;
+mod views;
 pub mod yandex;
 
 pub use app::App;
@@ -38,7 +38,7 @@ pub use inbox::{Inbox, InboxEvent, InboxListing};
 pub use library::{LaneLines, Library, LibraryActivity, LibraryService};
 pub use prefs::{PrefStore, Prefs};
 pub use reader::{Failed, FailedItems, Kind, Reading, Session};
-pub use views::Views;
+pub use views::{Views, query_from_json, sort_from_json};
 
 /// What the app's test modules share.
 #[cfg(test)]

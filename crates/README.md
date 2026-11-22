@@ -134,7 +134,8 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 ### Ground rules
 
 1. **Symbols, not line numbers.** Name the function or type when you write about code; line numbers drift.
-2. **Re-exports.** A `pub use` at an old path stays only where the item is part of the crate's documented public API, or a documented layer boundary (`pg_app::reexport`, which the desktop uses because it does not depend on `catalog`, `library`, `jobs`, `thumbcache`, `yandex` or `codec`). Every other transitional re-export is removed in the same change as its callers.
+2. **One public path per item.** A module is public API (`pub mod`, with a `//!` doc) or private. An item is reached by exactly one public path: a crate root's `pub use` names a private module (`mod x;` with `pub use x::Item;`), never a `pub mod`, because the `pub mod` is public under its own path and the root would give the item a second one. `tools/boundaries.py` checks it; `PUBLIC_API_EXEMPT` lists the `pub mod`s that are public for their own sake (`fault`). A `pub use` at an old path is removed in the same change as its callers, and a documented layer boundary (`pg_app::reexport`, which the desktop uses because it does not depend on `catalog`, `library`, `jobs`, `thumbcache`, `yandex` or `codec`) keeps its re-exports.
+2a. **Field visibility.** A field is as visible as the type that holds it: a plain data record's fields are `pub` on a public type and `pub(crate)` on a crate-private one (the lint `unreachable_pub` says a `pub` field of a private type is unreachable). A type that holds an invariant keeps its fields private, or `pub(crate)` for the crate's own code, and exposes accessors for anything else.
 3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would be a cycle or need private access. Today: `pg-codec` `fixture`, `pg-catalog` `fixture`, `pg-writeback` `fault`. Everything else (for example `Quiet` in `pg-jobs`) goes in a dev-only crate.
 4. **Large files.** Split when a file holds more than one layer of a dependency graph, not by line count.
 5. **Layer claims are by reading or by script, and neither is proof.** The committed split check is `tools/modgraph/split_check.py`, with its skip set in its docstring. The check that counts is the compiler: the `modgraph` run (`just modgraph`).
@@ -183,7 +184,8 @@ it. `tools/crate-layers.txt` lists each crate's internal dependencies exactly, b
 `tools/boundaries.py` (in `just lint` and CI) fails on an edge the file does not list. It also checks that the
 dependencies including the dev and build ones have no cycle (a crate's tests never depend on a crate that depends on
 it: `pg-platform`'s own tests use its `testing` module directly, so `testkit` sits above `platform`), that a `pub use` names a child module except in
-`app/src/reexport.rs`, and the platform rule above. Module cycles inside a crate are `just modgraph`'s (the compiler's
+`app/src/reexport.rs`, that a crate root's `pub use` never names a `pub mod` (one public path per item), and the platform
+and environment rules above. Module cycles inside a crate are `just modgraph`'s (the compiler's
 module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI runs it on both targets.
 
 - `model` and `container` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone, `dbfile`

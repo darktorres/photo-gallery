@@ -231,10 +231,10 @@ fn read_of(args: &[OsString], dev_env: Parsed) -> Read {
     }
     let start = StartOptions {
         query: typed(&parsed, "query", &mut bad, |t| {
-            pg_app::views::query_from_json(t).map_err(|e| format!("is not a query: {e}"))
+            pg_app::query_from_json(t).map_err(|e| format!("is not a query: {e}"))
         }),
         sort: typed(&parsed, "sort", &mut bad, |t| {
-            pg_app::views::sort_from_json(t).map_err(|e| format!("is not a sort: {e}"))
+            pg_app::sort_from_json(t).map_err(|e| format!("is not a sort: {e}"))
         }),
         apply_view: text_of(&parsed, "apply-view", &mut bad).map(str::to_owned),
         size: typed(&parsed, "size", &mut bad, |t| {

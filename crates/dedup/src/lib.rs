@@ -3,6 +3,6 @@
 //! only: the catalog hands the hashes in and stores the pairs found.
 
 pub mod join;
-pub mod union_find;
+mod union_find;
 
 pub use union_find::UnionFind;

@@ -32,7 +32,8 @@
 //!   resolver clears it (`inbox::clear`), or replaces the whole set of a kind and folder (`Catalog::replace_notices`: a
 //!   complete walk of a library folder posts what it found and clears the rest).
 //! - A notice about a folder no longer in the library is not kept.
-//! - At most 200 entries are listed (`pg_app::inbox::LISTED`), rows and ledgers together, newest first.
+//! - At most 200 entries are listed (the app's listing bound, `LISTED` in its inbox module), rows and ledgers together,
+//!   newest first.
 //!
 //! **Marks address a revision.** A mark or a dismissal names `(id, uid, rev)`, so one sent for revision N never lands on
 //! N+1 and swallows its news; a row since gone is a no-op. An entry's identity for the window (`EntryId::entry()`) leaves

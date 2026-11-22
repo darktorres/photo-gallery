@@ -7,7 +7,10 @@
    a crate that depends on it (the test helpers sit on the crates they test, below the crates whose tests use them).
 3. Re-exports: a `pub use` in production code names a child module of the module it is in (a crate's public API laid
    over its private layout). One that names another crate is allowed only in a boundary file (`REEXPORT_BOUNDARIES`),
-   and one through `crate::` or `super::` (an item kept at an old path) is not allowed.
+   and one through `crate::` or `super::` (an item kept at an old path) is not allowed. One public path per item: a
+   crate root's `pub use` names a private module, never a `pub mod` (that module is public under its own path, so the
+   root would give the same items a second one). `PUBLIC_API_EXEMPT` lists the `pub mod`s that are public for their own
+   sake (fault injection), which the root may re-export from.
 4. Platform code: no `cfg` on `windows`, `unix`, `target_os` or `target_family`, no `std::os::windows` or
    `std::os::unix`, and no OS crate or module (`windows_sys`, `libloading::os`), in production code outside `pg-platform`,
    except the glue in `PLATFORM_GLUE`, which must name the platform's own signatures or types.
@@ -60,7 +63,10 @@ STD_OS = re.compile(r"\bstd::os::(windows|unix)\b")
 # The OS crates and modules that only pg-platform calls: the Win32 bindings, and libloading's per-OS loaders.
 OS_CRATE = re.compile(r"\bwindows_sys\b|\blibloading::os\b")
 PUB_USE = re.compile(r"^\s*pub\s+use\s+([^;]+);", re.MULTILINE)
-CHILD_MOD = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*[;{]", re.MULTILINE)
+# A child module declaration, with its visibility (`pub`, `pub(crate)`, or none) and its name.
+CHILD_MOD = re.compile(r"^\s*(pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*[;{]", re.MULTILINE)
+# The `pub mod`s that are public API for their own sake, so a crate root may re-export from them (none is today).
+PUBLIC_API_EXEMPT = {"fault"}
 # An item compiled only in tests: `#[cfg(test)]`, or `#[cfg(all(test, ...))]`.
 CFG_TEST = re.compile(r"^[ \t]*#\[cfg\((?:test|all\(test\b[^\]]*\))\)\][ \t]*\n", re.MULTILINE)
 
@@ -225,10 +231,33 @@ def crate_of(path):
     return path.relative_to(REPO).parts[1]
 
 
+def check_public_paths(files):
+    """A crate root's `pub use` names a private module (or a `PUBLIC_API_EXEMPT` one): a `pub mod` is public under its own
+    path, and a root re-export would give its items a second one."""
+    failures = []
+    for path, text in files.items():
+        parts = path.relative_to(REPO).parts
+        if len(parts) != 4 or parts[0] != "crates" or parts[2:] != ("src", "lib.rs"):
+            continue
+        public = {name for vis, name in CHILD_MOD.findall(text) if vis.strip() == "pub" and name not in PUBLIC_API_EXEMPT}
+        for m in PUB_USE.finditer(text):
+            body = re.sub(r"\s+", "", m.group(1))
+            first = body.split("::", 1)[0]
+            if first == "self":
+                first = body.split("::")[1] if body.count("::") else ""
+            if first in public:
+                line = text.count("\n", 0, m.start()) + 1
+                failures.append(
+                    f"{rel(path)}:{line}: pub use {body}: `{first}` is a pub mod, reached by its own path; re-export it "
+                    f"only from a private module"
+                )
+    return failures
+
+
 def check_reexports(files):
     failures = []
     for path, text in files.items():
-        children = set(CHILD_MOD.findall(text))
+        children = {name for _, name in CHILD_MOD.findall(text)}
         for m in PUB_USE.finditer(text):
             body = re.sub(r"\s+", "", m.group(1))
             first = body.split("::", 1)[0]
@@ -290,6 +319,7 @@ def main():
         ("crate layers (tools/crate-layers.txt)", check_layers(graph, load_layers())),
         ("dev edges acyclic", [f"cycle: {' -> '.join(c)}" for c in cycles(graph)]),
         ("re-exports", check_reexports(files)),
+        ("one public path per item (crate roots)", check_public_paths(files)),
         ("platform code outside pg-platform", check_platform(files)),
         ("environment reads through pg-platform", check_env(files)),
     ]

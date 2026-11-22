@@ -119,27 +119,27 @@ use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice, Trigger}
 use crate::error::{Result, failed};
 
 /// How many Events wait for the writer before one is counted as lost (a catalog locked for long by another process).
-pub const EVENTS: usize = 1024;
+pub(crate) const EVENTS: usize = 1024;
 
 /// How often the writer looks for what another process changed.
-pub const POLL: Duration = Duration::from_secs(30);
+pub(crate) const POLL: Duration = Duration::from_secs(30);
 
 /// How many entries the inbox lists, newest first.
-pub const LISTED: usize = 200;
+pub(crate) const LISTED: usize = 200;
 
 /// A kept notice posted again within this long is not logged again (an edit failing at every key); a state's new
 /// revision is not toasted again within it either.
-pub const LOG_AGAIN: Duration = Duration::from_secs(60);
+pub(crate) const LOG_AGAIN: Duration = Duration::from_secs(60);
 
 /// How long a write of the inbox's waits for a lock another connection holds before it is tried again: the writer
 /// looks for a stop between tries, so a close is seen within about this long.
-pub const BUSY_TIMEOUT: Duration = Duration::from_millis(100);
+pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// The pause between two tries of a busy write (a close or new work ends it early).
 const RETRY_PAUSE: Duration = Duration::from_millis(50);
 
 /// How long the writer goes on writing what is queued after `Inbox::close`, while the catalog stays busy.
-pub const SHUTDOWN_DRAIN: Duration = Duration::from_secs(5);
+pub(crate) const SHUTDOWN_DRAIN: Duration = Duration::from_secs(5);
 
 /// After this many busy tries in a row of one write (about 7 s) the writer logs that it is waiting.
 const BUSY_WARN: u32 = 50;
@@ -528,7 +528,7 @@ impl Inbox {
         self.push(|w| w.viewing = Some(viewing));
     }
 
-    /// Look for what another process changed now, not at the next [`POLL`] (the window was activated, a pass wrote its
+    /// Look for what another process changed now, not at the next `POLL` (the window was activated, a pass wrote its
     /// ledger). Pokes coalesce.
     pub fn poke(&self) {
         self.push(|w| w.poke = true);

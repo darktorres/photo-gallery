@@ -122,19 +122,9 @@ fn wait_for_queue(c: &Catalog) -> Result<()> {
     }
 }
 
-/// Whether ExifTool is missing. A test that needs it returns when so: `missing_tool` says it was skipped, and fails the
-/// test under `PG_REQUIRE_TOOLS`, so a missing tool never passes silently in CI.
-fn exiftool_missing() -> bool {
-    let missing = pg_testkit::tool_missing("exiftool", "-ver");
-    if missing {
-        pg_testkit::missing_tool("ExifTool");
-    }
-    missing
-}
-
 #[test]
 fn ratings_and_turns_reach_the_files() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
@@ -270,7 +260,7 @@ fn ratings_and_turns_reach_the_files() {
 /// folder holds no other file. Needs ExifTool; skipped without it.
 #[test]
 fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "odd-names", &["images"]).unwrap();
@@ -433,7 +423,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
 /// ExifTool (skipped without it).
 #[test]
 fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let (dir, files, catalog_path, c) = imported("later").unwrap();

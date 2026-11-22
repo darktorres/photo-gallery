@@ -71,8 +71,7 @@ fn place_in(out: &Path, root: &pg_model::rules::Path) -> PathBuf {
 #[test]
 fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The TIFF's metadata is copied with it.
-    if pg_testkit::tool_missing("exiftool", "-ver") {
-        pg_testkit::missing_tool("ExifTool");
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "crop", &["images/sub"]).unwrap();
@@ -190,16 +189,6 @@ fn library_with_borders(dir: &Path) -> (Catalog, Vec<(i64, String)>) {
     (c, found)
 }
 
-/// Whether ExifTool can't be run here. The cuts of the JPEG, the TIFF and the WebP copy their tags with it, so their tests
-/// are skipped without it, as the copies' test is.
-fn exiftool_missing() -> bool {
-    let missing = pg_testkit::tool_missing("exiftool", "-ver");
-    if missing {
-        pg_testkit::missing_tool("ExifTool");
-    }
-    missing
-}
-
 /// Write the ImageDescription `value` into `path`, with ExifTool.
 #[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
 fn tag(path: &Path, value: &str) {
@@ -226,7 +215,7 @@ fn description(path: &Path) -> String {
 /// files, find no border.
 #[test]
 fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut", &["images/sub"]).unwrap();
@@ -299,7 +288,7 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
 /// `remaining`, and no file is both.
 #[test]
 fn a_stop_during_a_cut_records_every_original_it_rewrote() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-stop", &["images/sub"]).unwrap();
@@ -347,7 +336,7 @@ fn a_stop_during_a_cut_records_every_original_it_rewrote() {
 /// is left as it was, and the others are cut.
 #[test]
 fn a_file_removed_before_its_cut_is_not_written() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-removed", &["images/sub"]).unwrap();
@@ -395,7 +384,7 @@ fn an_unconfirmed_cut_writes_nothing() {
 /// the original is replaced, so its tag is still there. Its cut is exact, and it is still a TIFF.
 #[test]
 fn a_tiff_is_cut_and_keeps_its_metadata() {
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-tiff", &["images/sub"]).unwrap();
@@ -437,7 +426,7 @@ fn a_tiff_is_cut_and_keeps_its_metadata() {
 #[test]
 fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() {
     use std::os::windows::fs::OpenOptionsExt;
-    if exiftool_missing() {
+    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-held", &["images/sub"]).unwrap();

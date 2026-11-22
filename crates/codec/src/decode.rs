@@ -448,13 +448,16 @@ mod parallel_tests {
     }
 
     // Every JPEG under `PG_JPEG_COMPARE_DIR`: parajpeg's full decode against libjpeg-turbo's, pixel by pixel, on the
-    // files libjpeg-turbo decodes. Ignored by default, since it reads a folder of photos: `cargo test -p pg-codec --
-    // --ignored compares_real_jpegs`.
+    // files libjpeg-turbo decodes. Skipped unless `PG_JPEG_COMPARE_DIR` names the folder of photos: `cargo test -p
+    // pg-codec compares_real_jpegs`.
     #[test]
-    #[ignore = "reads a folder of real photos: set PG_JPEG_COMPARE_DIR"]
     fn compares_real_jpegs() {
         use std::path::PathBuf;
-        let root = PathBuf::from(std::env::var_os("PG_JPEG_COMPARE_DIR").expect("PG_JPEG_COMPARE_DIR"));
+        let Some(dir) = std::env::var_os("PG_JPEG_COMPARE_DIR") else {
+            pg_testkit::skip("reads a folder of real photos: set PG_JPEG_COMPARE_DIR");
+            return;
+        };
+        let root = PathBuf::from(dir);
         let mut turbo = Decoder::new().unwrap();
         let (mut compared, mut no_header, mut mismatched) = (0usize, 0usize, Vec::new());
         let mut stack = vec![root];

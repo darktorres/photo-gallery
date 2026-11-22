@@ -71,24 +71,22 @@ pub fn odd_name(text: &str) -> std::ffi::OsString {
     }
 }
 
-/// A test needs an external tool that is not installed: the test returns after this call. Without `PG_REQUIRE_TOOLS`
-/// (or with it set to a false value) it prints that it skipped and passes; with it set to a true value (CI sets it) the
-/// test fails, so a missing tool can't pass silently.
+/// Whether the external program `tool` runs here: `exe` starts and `version_arg` (its version flag, such as `-ver` or
+/// `-version`) exits with success. A test that needs the tool returns when this is false, after the call has said so: it
+/// prints that it skipped and passes, or, with `PG_REQUIRE_TOOLS` set to a true value (CI sets it), fails, so a missing
+/// tool can't pass silently.
 #[expect(clippy::print_stderr, reason = "a skipped test says so on stderr, where the test runner prints it")]
-pub fn missing_tool(tool: &str) {
+pub fn require_tool(tool: &str, exe: impl AsRef<OsStr>, version_arg: &str) -> bool {
+    if std::process::Command::new(exe).arg(version_arg).output().is_ok_and(|out| out.status.success()) {
+        return true;
+    }
     let required = crate::env::flag(crate::env::Var::RequireTools);
     if let crate::env::Parsed::Invalid(text) = &required {
         eprintln!("PG_REQUIRE_TOOLS: {text} is not on or off, so the tests skip instead of failing");
     }
     assert!(required != crate::env::Parsed::On, "{tool} not found, and PG_REQUIRE_TOOLS is set");
     eprintln!("{tool} not found: skipped");
-}
-
-/// Whether the external program `exe` is missing here: it does not start, or `version_arg` (its version flag, such as
-/// `-ver` or `-version`) does not exit with success. A test that needs the tool checks this first, and calls
-/// [`missing_tool`] when it returns true.
-pub fn tool_missing(exe: impl AsRef<OsStr>, version_arg: &str) -> bool {
-    !matches!(std::process::Command::new(exe).arg(version_arg).output(), Ok(out) if out.status.success())
+    false
 }
 
 /// A test that can't check what it is for in this environment (the reason says what) returns after this call: it

@@ -70,15 +70,23 @@ pub struct Rgb {
     pub pixels: Vec<u8>,
 }
 
-/// The scale denominator `pg-codec` picks (crates/codec/src/decode.rs), with the analyze minimum from
-/// crates/analysis/src/analyze.rs (DECODE_MIN_LONG / DECODE_MIN_SHORT). Keep `(512, 320)` here and
-/// `eval/common.py` (ANALYSIS_DRAFT_SIDES) in step with those. This crate is its own workspace and cannot depend on
-/// the app's crates, so the copy is deliberate. libjpeg-turbo rounds scaled sizes up.
+/// The analyze minimum on the long side and on the short side, as crates/analysis/src/analyze.rs sets them
+/// (DECODE_MIN_LONG / DECODE_MIN_SHORT). This crate is its own workspace and cannot depend on the app's crates, so the
+/// copy is deliberate; `eval/common.py` (ANALYSIS_DRAFT_SIDES) holds the same pair, and a tools test checks the three.
+const ANALYZE_MIN_LONG: usize = 512;
+const ANALYZE_MIN_SHORT: usize = 320;
+
+/// The scale denominator `pg-codec` picks (crates/codec/src/decode.rs), under the analyze minimum above. libjpeg-turbo
+/// rounds scaled sizes up.
 pub fn denom(mode: Mode, w: usize, h: usize) -> usize {
     match mode {
         Mode::Full => 1,
         Mode::Analyze => {
-            let (min_w, min_h) = if w >= h { (512, 320) } else { (320, 512) };
+            let (min_w, min_h) = if w >= h {
+                (ANALYZE_MIN_LONG, ANALYZE_MIN_SHORT)
+            } else {
+                (ANALYZE_MIN_SHORT, ANALYZE_MIN_LONG)
+            };
             [8, 4, 2].into_iter().find(|&d| w.div_ceil(d) >= min_w && h.div_ceil(d) >= min_h).unwrap_or(1)
         }
     }

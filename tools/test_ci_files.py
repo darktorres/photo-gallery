@@ -436,5 +436,55 @@ class UnsafePolicy(unittest.TestCase):
         self.assertEqual(manifest["workspace"]["lints"]["rust"].get("unsafe_code"), "deny")
 
 
+class AnalysisScaleRule(unittest.TestCase):
+    """The analyze scale rule (the long side and the short side a decode keeps) is written three times: the app's
+    DECODE_MIN_* constants, the eval decoder's copy (its own workspace cannot import the app's crates) and the Python
+    eval's ANALYSIS_DRAFT_SIDES. The three must agree."""
+
+    def test_the_three_copies_agree(self):
+        analyze = (REPO / "crates" / "analysis" / "src" / "analyze.rs").read_text(encoding="utf-8")
+        decoder = (REPO / "eval" / "jpeg-decoders" / "src" / "lib.rs").read_text(encoding="utf-8")
+        common = (REPO / "eval" / "common.py").read_text(encoding="utf-8")
+        app = (
+            int(_const(analyze, "DECODE_MIN_LONG")),
+            int(_const(analyze, "DECODE_MIN_SHORT")),
+        )
+        eval_decoder = (
+            int(_const(decoder, "ANALYZE_MIN_LONG")),
+            int(_const(decoder, "ANALYZE_MIN_SHORT")),
+        )
+        match = re.search(r"^ANALYSIS_DRAFT_SIDES = \((\d+), (\d+)\)$", common, re.MULTILINE)
+        if match is None:
+            self.fail("eval/common.py has no ANALYSIS_DRAFT_SIDES pair")
+        python = (int(match.group(1)), int(match.group(2)))
+        self.assertEqual(eval_decoder, app, "eval/jpeg-decoders disagrees with the app's analyze minimum")
+        self.assertEqual(python, app, "eval/common.py disagrees with the app's analyze minimum")
+
+
+class VerifyCommonIsTorchFree(unittest.TestCase):
+    """The helpers a tool shares with the verifier load no torch: the modules they import from the eval folder do not
+    import torch or kornia either, so a tool that needs only these helpers does not pay for them."""
+
+    def test_no_module_it_imports_names_torch_or_kornia(self):
+        eval_dir = REPO / "eval"
+        for name in ("verify_common.py", "verify_types.py", "common.py"):
+            text = (eval_dir / name).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                stripped = line.strip()
+                for heavy in ("torch", "kornia"):
+                    self.assertFalse(
+                        stripped.startswith((f"import {heavy}", f"from {heavy}")),
+                        f"{name} imports {heavy}: {stripped}",
+                    )
+
+
+def _const(text: str, name: str) -> str:
+    """The value of a `const NAME: usize = N;` declaration in Rust `text`."""
+    match = re.search(rf"^(?:pub )?const {name}: usize = (\d+);", text, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"no const {name}")
+    return match.group(1)
+
+
 if __name__ == "__main__":
     unittest.main()

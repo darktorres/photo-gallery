@@ -121,6 +121,7 @@ mod tests {
         assert_eq!(ids.len(), count, "ui.ftl names an id twice");
         assert!(ids.iter().all(|id| id.starts_with("ui-")), "every ui.ftl id starts with ui-");
         assert!(entries_in_file().iter().all(|id| !id.starts_with("ui-")), "text.ftl has a ui- id");
+        assert!(entries_in_file().iter().all(|id| id.starts_with("msg-")), "every text.ftl id starts with msg-");
     }
 
     #[test]

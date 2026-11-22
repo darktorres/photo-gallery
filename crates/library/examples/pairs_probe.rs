@@ -75,9 +75,10 @@ fn main() -> Result<()> {
     // The pass's CPU cycles over every thread (0 where they are not counted): its work, which other processes on the
     // machine do not inflate the way they do the wall clock.
     let cycles = match (cycles_before, pg_platform::clock::process_cycles()) {
-        (Some(a), Some(b)) => b.saturating_sub(a) / 1_000_000,
+        (Some(a), Some(b)) => b.saturating_sub(a),
         _ => 0,
     };
+    let cycles = pg_model::num::millions(pg_model::num::size(cycles));
     let t = stats.timings;
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
     // What the join ran with: its tuning resolved for the pass's threads, as the join resolves it.
@@ -86,7 +87,7 @@ fn main() -> Result<()> {
         std::io::stdout(),
         "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, slice {}, cache {} KiB, \
          few {}, complete {}, guarded {}) | load {:.0} store {:.0} join {:.0} prepare {:.0} sort {:.0} scan {:.0} \
-         starved {:.0} paused {:.0} write {:.0} commit {:.0} ms | cycles {cycles} M",
+         starved {:.0} paused {:.0} write {:.0} commit {:.0} ms | cycles {cycles}",
         stats.files,
         stats.pairs,
         settings.slice,

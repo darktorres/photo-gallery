@@ -86,7 +86,7 @@ macro_rules! pair {
     };
 }
 
-/// File sizes are in MB as Explorer counts them (MiB).
+/// The bytes in a size-filter megabyte: binary (2^20), as Explorer counts file sizes, so the filter's "MB" is a MiB.
 const MB: f64 = 1_048_576.0;
 
 /// The condition of a type's value.

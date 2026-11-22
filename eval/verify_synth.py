@@ -20,17 +20,8 @@ import numpy as np
 
 from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
-from verify import (
-    Features,
-    PairRunner,
-    Prefetcher,
-    Prepared,
-    add_decision_args,
-    params_from,
-    prepared,
-    work_image,
-    write_outputs,
-)
+from verify import Features, PairRunner, Prepared, prepared
+from verify_common import Prefetcher, add_decision_args, params_from, work_image, write_outputs
 from verify_types import ROTATIONS, Checkpoint
 
 

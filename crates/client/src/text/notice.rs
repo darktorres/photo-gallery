@@ -1,4 +1,4 @@
-//! The values of a notice's entries (`notice-<code>-title`, `-body`): each kind's fields, its paths under the rules they
+//! The values of a notice's entries (`msg-notice-<code>-title`, `-body`): each kind's fields, its paths under the rules they
 //! were stored under, its codes as selectors, and the nested words (a refusal's reason) worded first, by the caller
 //! ([`Nested`]: the words are `message.rs`'s, which calls this).
 //!
@@ -39,23 +39,23 @@ pub(super) struct Nested<'n> {
     pub(super) panicked: &'n dyn Fn(&str) -> String,
 }
 
-/// The id of a source's name, `source-<code>`.
+/// The id of a source's name, `msg-source-<code>`.
 pub(super) fn source_id(source: Source) -> &'static str {
     match source {
-        Source::Scan => "source-scan",
-        Source::Import => "source-import",
-        Source::Borders => "source-borders",
-        Source::Thumbs => "source-thumbs",
-        Source::Crop => "source-crop",
-        Source::Writeback => "source-writeback",
-        Source::Prefs => "source-prefs",
-        Source::Catalog => "source-catalog",
-        Source::Cache => "source-cache",
-        Source::Folders => "source-folders",
-        Source::Library => "source-library",
-        Source::Edit => "source-edit",
-        Source::Update => "source-update",
-        Source::App => "source-app",
+        Source::Scan => "msg-source-scan",
+        Source::Import => "msg-source-import",
+        Source::Borders => "msg-source-borders",
+        Source::Thumbs => "msg-source-thumbs",
+        Source::Crop => "msg-source-crop",
+        Source::Writeback => "msg-source-writeback",
+        Source::Prefs => "msg-source-prefs",
+        Source::Catalog => "msg-source-catalog",
+        Source::Cache => "msg-source-cache",
+        Source::Folders => "msg-source-folders",
+        Source::Library => "msg-source-library",
+        Source::Edit => "msg-source-edit",
+        Source::Update => "msg-source-update",
+        Source::App => "msg-source-app",
     }
 }
 

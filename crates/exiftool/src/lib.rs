@@ -365,7 +365,11 @@ mod tests {
         match ExifTool::start(program) {
             Ok(tool) => Some(tool),
             Err(_) => {
-                pg_testkit::missing_tool("ExifTool");
+                // A program that is there and answers its version flag, but will not start, is a failure, not a skip.
+                assert!(
+                    !pg_testkit::require_tool("ExifTool", program, "-ver"),
+                    "ExifTool at {program:?} answers -ver but did not start"
+                );
                 None
             }
         }

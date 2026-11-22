@@ -33,6 +33,12 @@ pub fn size(x: u64) -> f64 {
     x as f64
 }
 
+/// A count of instructions or cycles, in millions, as the probes show it: whole millions with an `M` label, so the unit
+/// is never implied.
+pub fn millions(count: f64) -> String {
+    format!("{:.0} M", count / 1e6)
+}
+
 /// A signed value, such as a timestamp in milliseconds, as an `f64`.
 #[expect(
     clippy::as_conversions,

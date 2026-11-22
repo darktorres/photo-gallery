@@ -346,19 +346,10 @@ Rectangle {
             Item {
                 id: content
 
-                // The wheel steps through the pictures: a notch (120 units) is one step, up for the previous. A
-                // touchpad's small deltas add up until they make a notch.
-                WheelHandler {
+                // The wheel steps through the pictures: a notch is one step, up for the previous.
+                WheelStepper {
                     id: wheelStep
-                    property real notches: 0
-                    onWheel: ev => {
-                        notches += ev.angleDelta.y / Wheel.notch;
-                        const n = Math.trunc(notches);
-                        if (n !== 0) {
-                            notches -= n;
-                            viewer.step(-n);
-                        }
-                    }
+                    onStepped: steps => viewer.step(steps)
                 }
                 PinchHandler {
                     id: pinch

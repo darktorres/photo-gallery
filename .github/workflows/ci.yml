@@ -47,7 +47,7 @@ env:
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
   CARGO_BUILD_FINGERPRINT: "content"
   CARGO_UNSTABLE_RUSTDOC_DEPINFO: "true"
-  # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::missing_tool).
+  # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::require_tool).
   PG_REQUIRE_TOOLS: "1"
 
 jobs:

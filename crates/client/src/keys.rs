@@ -264,9 +264,9 @@ pub enum Hint {
     /// Mute the sound.
     Mute,
     /// Rate 4 (Up).
-    Up4,
+    UpFour,
     /// Rate 1 (Down).
-    Down1,
+    DownOne,
     /// Turn back.
     TurnBack,
     /// Turn on (forward).
@@ -300,8 +300,8 @@ impl Hint {
         Hint::Step,
         Hint::Play,
         Hint::Mute,
-        Hint::Up4,
-        Hint::Down1,
+        Hint::UpFour,
+        Hint::DownOne,
         Hint::TurnBack,
         Hint::TurnOn,
         Hint::WheelZoom,
@@ -327,8 +327,8 @@ impl Hint {
             Hint::Step => "ui-hint-step",
             Hint::Play => "ui-hint-play",
             Hint::Mute => "ui-hint-mute",
-            Hint::Up4 => "ui-hint-up-4",
-            Hint::Down1 => "ui-hint-down-1",
+            Hint::UpFour => "ui-hint-up-four",
+            Hint::DownOne => "ui-hint-down-one",
             Hint::TurnBack => "ui-hint-turn-back",
             Hint::TurnOn => "ui-hint-turn-on",
             Hint::WheelZoom => "ui-hint-wheel-zoom",
@@ -356,7 +356,7 @@ pub fn viewer_hint(media: Media, shown: Shown) -> Vec<Hint> {
         Media::Animated => parts.push(Play),
         Media::Still => {}
     }
-    parts.extend([Rate, Up4, Down1, TurnBack, TurnOn]);
+    parts.extend([Rate, UpFour, DownOne, TurnBack, TurnOn]);
     if media == Media::Still {
         parts.extend([WheelZoom, OneToOne, RealSize, Loupe, Borders]);
         if shown.has_borders {
@@ -457,14 +457,14 @@ mod tests {
         use Hint::*;
         assert_eq!(
             viewer_hint(Media::Still, STILL),
-            [Step, Rate, Up4, Down1, TurnBack, TurnOn, WheelZoom, OneToOne, RealSize, Loupe, Borders, Hide, Close]
+            [Step, Rate, UpFour, DownOne, TurnBack, TurnOn, WheelZoom, OneToOne, RealSize, Loupe, Borders, Hide, Close]
         );
         let bordered = Shown { has_borders: true, ..STILL };
         assert!(viewer_hint(Media::Still, bordered).windows(2).any(|w| w == [NotBorder, Hide]));
         assert_eq!(
             viewer_hint(Media::Video, STILL),
-            [Step, Play, Mute, Rate, Up4, Down1, TurnBack, TurnOn, Hide, Close]
+            [Step, Play, Mute, Rate, UpFour, DownOne, TurnBack, TurnOn, Hide, Close]
         );
-        assert_eq!(viewer_hint(Media::Animated, STILL), [Step, Play, Rate, Up4, Down1, TurnBack, TurnOn, Hide, Close]);
+        assert_eq!(viewer_hint(Media::Animated, STILL), [Step, Play, Rate, UpFour, DownOne, TurnBack, TurnOn, Hide, Close]);
     }
 }

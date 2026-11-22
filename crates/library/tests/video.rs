@@ -34,7 +34,7 @@ fn ffmpeg() -> Option<PathBuf> {
         let pinned = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.deps/ffmpeg/bin/ffmpeg.exe");
         if pinned.is_file() { pinned } else { PathBuf::from("ffmpeg") }
     });
-    (!pg_testkit::tool_missing(&exe, "-version")).then_some(exe)
+    pg_testkit::require_tool("ffmpeg", &exe, "-version").then_some(exe)
 }
 
 /// The tests' result: any error of the crates they use.
@@ -136,10 +136,7 @@ const GREEN: [u8; 3] = [0, 128, 0];
 
 #[test]
 fn each_pass_gives_the_frames_whole_with_their_delays() {
-    let Some(exe) = ffmpeg() else {
-        pg_testkit::missing_tool("ffmpeg");
-        return;
-    };
+    let Some(exe) = ffmpeg() else { return };
     let dir = clips(&exe).unwrap();
     let media = dir.join("media");
     let pixel = |img: &Rgb, x: usize, y: usize| pixel_at(img, x, y).unwrap();
@@ -256,10 +253,7 @@ fn each_pass_gives_the_frames_whole_with_their_delays() {
 #[cfg(windows)]
 #[test]
 fn a_video_in_a_folder_ending_in_a_dot_is_read_from_that_folder() {
-    let Some(exe) = ffmpeg() else {
-        pg_testkit::missing_tool("ffmpeg");
-        return;
-    };
+    let Some(exe) = ffmpeg() else { return };
     let dir = clips(&exe).unwrap();
     let media = dir.join("media");
     let verbatim = pg_platform::native::verbatim;

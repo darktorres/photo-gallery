@@ -18,12 +18,12 @@
 //! end. Nothing in a notice is English, so it is read in the reader's language, and a stored one is worded again when the
 //! words change. Each kind is one variant with:
 //!
-//! - its **code**, the stored tag and the root of its words' ids (`notice-<code>-title`, `notice-<code>-body`). Codes are
+//! - its **code**, the stored tag and the root of its words' ids (`msg-notice-<code>-title`, `msg-notice-<code>-body`). Codes are
 //!   permanent: a stored row of a code this build doesn't know reads as `Notice::Unknown`, which is never written back.
 //!   The codes come from one table, the `ids!` macro, which also gives the words' ids; `Notice::RETIRED` lists the codes
 //!   of kinds that were removed (`scan-unreadable`, `mount-refused`, `root-refused`, replaced by the folder ledger), which no kind
 //!   may take again and whose rows read as `Unknown`.
-//! - its **level** (info, warning, error) and its **source**, the inbox's category (`source-<code>`).
+//! - its **level** (info, warning, error) and its **source**, the inbox's category (`msg-source-<code>`).
 //! - its **lifecycle** (`Lifecycle`): an *event* is kept each time it is posted; a *transient* is a toast and a log record
 //!   only (feedback on what the user just did); a *state* is kept under its key, replaced by the next post of that key and
 //!   cleared once the problem is gone; a *ledger* entry is built from a failure ledger when the inbox is read.
@@ -53,7 +53,7 @@
 //!    (exhaustive matches: it doesn't compile without them). A state names its resolver there.
 //! 2. A sample in `Notice::samples()`, its line in `notice/golden.jsonl`, and an arm in the test `ordinal`. A state's row
 //!    in `notice/resolver_table.golden`.
-//! 3. Its words: the `notice-<code>-title` and `-body` entries in `client/locales/en/text.ftl`, and its values in
+//! 3. Its words: the `msg-notice-<code>-title` and `-body` entries in `client/locales/en/text.ftl`, and its values in
 //!    `client/src/text/notice.rs` (`args`). The parity test checks the file's entries against the samples' ids.
 //! 4. The call that posts it, from the crate that has the outcome, and the call that clears it, where its resolver is.
 //!
@@ -131,7 +131,7 @@ impl Level {
     }
 }
 
-/// Where a notice comes from: the inbox's category, worded as `source-<code>`.
+/// Where a notice comes from: the inbox's category, worded as `msg-source-<code>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Source {
@@ -184,7 +184,7 @@ impl Source {
         Source::App,
     ];
 
-    /// The source's code, as the words' ids name it (`source-<code>`).
+    /// The source's code, as the words' ids name it (`msg-source-<code>`).
     pub fn key(self) -> &'static str {
         match self {
             Source::Scan => "scan",
@@ -1086,7 +1086,7 @@ pub enum Action {
     OpenInbox,
 }
 
-/// The ids of each kind, from one table: its code (the stored tag), and its words' ids, `notice-<code>-title` and
+/// The ids of each kind, from one table: its code (the stored tag), and its words' ids, `msg-notice-<code>-title` and
 /// `-body`. A test checks the code against the serde tag. The retired codes are the kinds a build stored before they
 /// were removed: never used again, and a row of one reads as [`Notice::Unknown`] (it has no variant to read into).
 macro_rules! ids {
@@ -1108,14 +1108,14 @@ macro_rules! ids {
             /// The id of the kind's title, in the words.
             pub fn title_id(&self) -> &'static str {
                 match self {
-                    $(Notice::$variant { .. } => concat!("notice-", $code, "-title"),)*
+                    $(Notice::$variant { .. } => concat!("msg-notice-", $code, "-title"),)*
                 }
             }
 
             /// The id of the kind's body, in the words.
             pub fn body_id(&self) -> &'static str {
                 match self {
-                    $(Notice::$variant { .. } => concat!("notice-", $code, "-body"),)*
+                    $(Notice::$variant { .. } => concat!("msg-notice-", $code, "-body"),)*
                 }
             }
         }
@@ -1738,8 +1738,8 @@ mod tests {
         let codes: BTreeSet<&str> = samples.iter().map(Notice::code).collect();
         assert_eq!(codes.len(), KINDS);
         for notice in &samples {
-            assert_eq!(notice.title_id(), format!("notice-{}-title", notice.code()));
-            assert_eq!(notice.body_id(), format!("notice-{}-body", notice.code()));
+            assert_eq!(notice.title_id(), format!("msg-notice-{}-title", notice.code()));
+            assert_eq!(notice.body_id(), format!("msg-notice-{}-body", notice.code()));
         }
     }
 

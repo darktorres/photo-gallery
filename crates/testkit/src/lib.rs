@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-pub use pg_platform::testing::{held, missing_tool, odd_name, skip, tool_missing};
+pub use pg_platform::testing::{held, odd_name, require_tool, skip};
 
 /// What a test helper couldn't make: the step that failed, and its cause (the encoder's or the file system's).
 #[derive(Debug, thiserror::Error)]

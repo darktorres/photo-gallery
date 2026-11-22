@@ -132,9 +132,9 @@ fn main() -> Result<()> {
     for variant in &variants {
         let Some(t) = times.get(variant) else { continue };
         let wall = median(t.iter().map(|x| x.0.as_secs_f64() * 1e3).collect());
-        let cycles = median(t.iter().map(|x| pg_model::num::size(x.1) / 1e6).collect());
+        let cycles = pg_model::num::millions(median(t.iter().map(|x| pg_model::num::size(x.1)).collect()));
         let rows = t.first().map_or(0, |x| x.2);
-        writeln!(out, "{variant}: {wall:.1} ms, {cycles:.0} M; {rows} rows")?;
+        writeln!(out, "{variant}: {wall:.1} ms, {cycles}; {rows} rows")?;
     }
     drop(out);
     std::fs::remove_dir_all(&dir)?;

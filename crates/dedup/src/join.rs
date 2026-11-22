@@ -2914,10 +2914,13 @@ mod tests {
     // `id_a id_b distance`. `PG_JOIN_THREADS` sets the workers (default: the processor's). Prints the timing of each
     // kernel on one thread, then of the best kernel on the workers.
     #[test]
-    #[ignore = "needs a catalog dump: PG_JOIN_DUMP and PG_JOIN_OUT (see the test's doc comment)"]
     fn dump_join() {
         use std::io::Write;
-        let dump = std::fs::read(std::env::var("PG_JOIN_DUMP").unwrap()).unwrap();
+        let Some(dump_path) = std::env::var_os("PG_JOIN_DUMP").filter(|_| std::env::var_os("PG_JOIN_OUT").is_some()) else {
+            eprintln!("skipped: needs a catalog dump: PG_JOIN_DUMP and PG_JOIN_OUT (see the test's doc comment)");
+            return;
+        };
+        let dump = std::fs::read(dump_path).unwrap();
         const RECORD: usize = 8 + 1 + 128;
         let (mut ids, mut lib) = (Vec::new(), Library { hashes: Vec::new(), owed: Vec::new() });
         for rec in dump.as_chunks::<RECORD>().0 {

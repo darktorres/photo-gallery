@@ -76,21 +76,21 @@ macro_rules! messages {
         #[derive(Clone, Debug, PartialEq)]
         pub enum Message {
             $( $(#[$meta])* $variant $({ $( $(#[$fmeta])* $field: $ty ),* })?, )*
-            /// A notice's title (its inbox row, its toast), paths under `rules`. Its entry is its kind's (`notice-<code>-title`).
+            /// A notice's title (its inbox row, its toast), paths under `rules`. Its entry is its kind's (`msg-notice-<code>-title`).
             NoticeTitle {
                 /// The notice.
                 notice: Notice,
                 /// The rules the notice's paths are shown under.
                 rules: PathRules,
             },
-            /// A notice's details (`notice-<code>-body`).
+            /// A notice's details (`msg-notice-<code>-body`).
             NoticeBody {
                 /// The notice.
                 notice: Notice,
                 /// The rules the notice's paths are shown under.
                 rules: PathRules,
             },
-            /// An inbox category's name (`source-<code>`).
+            /// An inbox category's name (`msg-source-<code>`).
             SourceLabel {
                 /// The category.
                 source: Source,
@@ -140,53 +140,53 @@ macro_rules! messages {
 
 messages! {
     /// A still image's type, in the filter line and the info line.
-    TypeImage => "type-image",
+    TypeImage => "msg-type-image",
     /// An animated image's type.
-    TypeAnimated => "type-animated",
+    TypeAnimated => "msg-type-animated",
     /// A video's type.
-    TypeVideo => "type-video",
+    TypeVideo => "msg-type-video",
     /// A landscape shape: wider than tall.
-    ShapeLandscape => "shape-landscape",
+    ShapeLandscape => "msg-shape-landscape",
     /// A portrait shape: taller than wide.
-    ShapePortrait => "shape-portrait",
+    ShapePortrait => "msg-shape-portrait",
     /// A square shape.
-    ShapeSquare => "shape-square",
+    ShapeSquare => "msg-shape-square",
     /// A file imported into the catalog.
-    StatusImported => "status-imported",
+    StatusImported => "msg-status-imported",
     /// A file still waiting for its analysis.
-    StatusPending => "status-pending",
+    StatusPending => "msg-status-pending",
     /// A file whose import failed.
-    StatusFailed => "status-failed",
+    StatusFailed => "msg-status-failed",
     /// A file with no border.
-    BorderNone => "border-none",
+    BorderNone => "msg-border-none",
     /// A black border.
-    BorderBlack => "border-black",
+    BorderBlack => "msg-border-black",
     /// A white border.
-    BorderWhite => "border-white",
+    BorderWhite => "msg-border-white",
     /// A border of a colour.
-    BorderColor => "border-color",
+    BorderColor => "msg-border-color",
     /// A blurred border.
-    BorderBlur => "border-blur",
+    BorderBlur => "msg-border-blur",
     /// A file with no extension.
-    ExtNone => "ext-none",
+    ExtNone => "msg-ext-none",
     /// The filter that shows every file.
-    FilterAll => "filter-all",
+    FilterAll => "msg-filter-all",
     /// The filter that shows the unrated files.
-    FilterUnrated => "filter-unrated",
+    FilterUnrated => "msg-filter-unrated",
     /// The filter that shows the files with duplicates.
-    FilterWithDuplicates => "filter-with-duplicates",
+    FilterWithDuplicates => "msg-filter-with-duplicates",
     /// The filter that shows the files without duplicates.
-    FilterWithoutDuplicates => "filter-without-duplicates",
+    FilterWithoutDuplicates => "msg-filter-without-duplicates",
     /// The filter for files taken within a number of days.
     FilterTaken {
         /// The number of days, as text.
         days: String
-    } => "filter-taken",
+    } => "msg-filter-taken",
     /// The filter for files modified within a number of days.
     FilterModified {
         /// The number of days, as text.
         days: String
-    } => "filter-modified",
+    } => "msg-filter-modified",
     /// A span of days, `from` and `to` each a day or empty.
     /// A span of days, `from` and `to` each a day or empty.
     FilterDays {
@@ -194,74 +194,74 @@ messages! {
         from: String,
         /// The last day, or empty.
         to: String
-    } => "filter-days",
+    } => "msg-filter-days",
     /// A range's ends, as Fluent numbers (an open end is empty).
     FilterRangeMb {
         /// The lower end, in MB, or none.
         from: Option<f64>,
         /// The upper end, in MB, or none.
         to: Option<f64>
-    } => "filter-range-mb",
+    } => "msg-filter-range-mb",
     /// A range of megapixels, its ends as for the MB range.
     FilterRangeMp {
         /// The lower end, in megapixels, or none.
         from: Option<f64>,
         /// The upper end, in megapixels, or none.
         to: Option<f64>
-    } => "filter-range-mp",
+    } => "msg-filter-range-mp",
     /// A range of seconds, its ends as for the MB range.
     FilterRangeSeconds {
         /// The lower end, in seconds, or none.
         from: Option<f64>,
         /// The upper end, in seconds, or none.
         to: Option<f64>
-    } => "filter-range-seconds",
+    } => "msg-filter-range-seconds",
     /// Between the values of one facet in the filter line.
-    FilterListSeparator => "filter-list-separator",
+    FilterListSeparator => "msg-filter-list-separator",
     /// Between the filter line's parts.
-    FilterPartSeparator => "filter-part-separator",
+    FilterPartSeparator => "msg-filter-part-separator",
     /// The filter for the borders' values.
     FilterBorders {
         /// The border values, as text.
         values: String
-    } => "filter-borders",
+    } => "msg-filter-borders",
     /// The filter for the files marked as having borders.
-    FilterBordersMarked => "filter-borders-marked",
+    FilterBordersMarked => "msg-filter-borders-marked",
     /// The filter for the files marked as not having borders.
-    FilterBordersNotMarked => "filter-borders-not-marked",
+    FilterBordersNotMarked => "msg-filter-borders-not-marked",
     /// The filter for files whose name matches.
     FilterName {
         /// The name typed, as text.
         name: String
-    } => "filter-name",
+    } => "msg-filter-name",
     /// The badge on a video, with its length.
     BadgeVideo {
         /// The length, as text.
         time: String
-    } => "badge-video",
+    } => "msg-badge-video",
     /// The badge on an animated PNG.
-    BadgeApng => "badge-apng",
+    BadgeApng => "msg-badge-apng",
     /// The info line of a file not imported yet.
-    InfoNotImported => "info-not-imported",
+    InfoNotImported => "msg-info-not-imported",
     /// A file's dimensions.
     InfoDims {
         /// The width, in pixels, as text.
         width: String,
         /// The height, in pixels, as text.
         height: String
-    } => "info-dims",
+    } => "msg-info-dims",
     /// A file's size, in MB.
     InfoSizeMb {
         /// The size, as text.
         size: String
-    } => "info-size-mb",
+    } => "msg-info-size-mb",
     /// A file's size, in KB.
     InfoSizeKb {
         /// The size, as text.
         size: String
-    } => "info-size-kb",
+    } => "msg-info-size-kb",
     /// The info line that says a file is kept.
-    InfoKept => "info-kept",
+    InfoKept => "msg-info-kept",
     /// A file's info line, with its parts.
     InfoLine {
         /// The path, as text.
@@ -274,15 +274,15 @@ messages! {
         kept: String,
         /// Its borders, as text.
         borders: String
-    } => "info-line",
+    } => "msg-info-line",
     /// The class of a border: black.
-    ClassBlack => "class-black",
+    ClassBlack => "msg-class-black",
     /// The class of a border: white.
-    ClassWhite => "class-white",
+    ClassWhite => "msg-class-white",
     /// The class of a border: a colour.
-    ClassColor => "class-color",
+    ClassColor => "msg-class-color",
     /// The class of a border: blurred.
-    ClassBlur => "class-blur",
+    ClassBlur => "msg-class-blur",
     /// The borders found on a file.
     BordersInfo {
         /// The sides with borders, as text.
@@ -297,40 +297,40 @@ messages! {
         bottom: String,
         /// Whether the borders are marked, as text.
         marked: String
-    } => "borders-info",
+    } => "msg-borders-info",
     /// The borders marked by the user.
-    BordersMarked => "borders-marked",
+    BordersMarked => "msg-borders-marked",
     /// A scan pass's line, with its folder.
     PassScan {
         /// The folder, as text.
         root: String
-    } => "pass-scan",
+    } => "msg-pass-scan",
     /// A scan's line: its name (`what`) and the images found so far.
     PassFound {
         /// The scan's name, as text.
         what: String,
         /// The images found so far, as text.
         count: String
-    } => "pass-found",
+    } => "msg-pass-found",
     /// The import pass's name.
-    PassImport => "pass-import",
+    PassImport => "msg-pass-import",
     /// The hashes pass's name.
-    PassHashes => "pass-hashes",
+    PassHashes => "msg-pass-hashes",
     /// The pairing pass's name.
-    PassPairing => "pass-pairing",
+    PassPairing => "msg-pass-pairing",
     /// The borders pass's name.
-    PassBorders => "pass-borders",
+    PassBorders => "msg-pass-borders",
     /// The crop pass's name.
-    PassCrop => "pass-crop",
+    PassCrop => "msg-pass-crop",
     /// The thumbnails pass, at a height.
     PassThumbs {
         /// The height, as text.
         height: String
-    } => "pass-thumbs",
+    } => "msg-pass-thumbs",
     /// The placeholders pass's name.
-    PassPlaceholders => "pass-placeholders",
+    PassPlaceholders => "msg-pass-placeholders",
     /// The removal pass's name.
-    PassRemoving => "pass-removing",
+    PassRemoving => "msg-pass-removing",
     /// A pass's progress, with its totals.
     PassWorking {
         /// The pass's name, as text.
@@ -343,46 +343,46 @@ messages! {
         rate: String,
         /// The time left, as text.
         eta: String
-    } => "pass-working",
+    } => "msg-pass-working",
     /// A pass's failures.
     PassFailed {
         /// How many failed, as text.
         count: String
-    } => "pass-failed",
+    } => "msg-pass-failed",
     /// A time left, in seconds.
     EtaSeconds {
         /// The seconds, as text.
         seconds: String
-    } => "eta-seconds",
+    } => "msg-eta-seconds",
     /// A time left, in minutes.
     EtaMinutes {
         /// The minutes, as text.
         minutes: String
-    } => "eta-minutes",
+    } => "msg-eta-minutes",
     /// A time left, in hours and minutes.
     EtaHours {
         /// The hours, as text.
         hours: String,
         /// The minutes, as text.
         minutes: String
-    } => "eta-hours",
+    } => "msg-eta-hours",
     /// The changes being written into the files.
     WritingChanges {
         /// How many, as a number.
         count: u64
-    } => "writing-changes",
+    } => "msg-writing-changes",
     /// Changes that could not be written, and why.
     ChangesUnwritten {
         /// How many, as a number.
         count: u64,
         /// The error, as text.
         error: String
-    } => "changes-unwritten",
+    } => "msg-changes-unwritten",
     /// The write queue failed.
     WriteQueueFailed {
         /// The error, as text.
         error: String
-    } => "write-queue-failed",
+    } => "msg-write-queue-failed",
     /// Why a folder is refused (`pg_model::refusal::RefusedReason`): its code, which selects the words, with the file
     /// system's name or the system's error where the reason has one.
     RefusedReason {
@@ -392,82 +392,82 @@ messages! {
         file_system: String,
         /// The system's error, where the reason has one.
         error: String
-    } => "refused-reason",
+    } => "msg-refused-reason",
     /// A file's processing panicked, with its message.
     FilePanicked {
         /// The panic's message, as text.
         message: String
-    } => "file-panicked",
+    } => "msg-file-panicked",
     /// The error a job reported on a file, in the system's or the library's own words, as the detail under the failure.
     FailureDetail {
         /// The error, as text.
         error: String
-    } => "failure-detail",
+    } => "msg-failure-detail",
     /// Yandex asked for a captcha.
-    YandexCaptcha => "yandex-captcha",
+    YandexCaptcha => "msg-yandex-captcha",
     /// The photo is not still: it is animated.
-    YandexNotStill => "yandex-not-still",
+    YandexNotStill => "msg-yandex-not-still",
     /// The upload to Yandex is in progress.
-    YandexUploading => "yandex-uploading",
+    YandexUploading => "msg-yandex-uploading",
     /// The other sizes of the photo are being looked up.
-    YandexOtherSizes => "yandex-other-sizes",
+    YandexOtherSizes => "msg-yandex-other-sizes",
     /// The similar images are being looked up.
-    YandexSimilar => "yandex-similar",
+    YandexSimilar => "msg-yandex-similar",
     /// Yandex could not read the photo.
     YandexUnreadablePhoto {
         /// The error, as text.
         error: String
-    } => "yandex-unreadable-photo",
+    } => "msg-yandex-unreadable-photo",
     /// The similar list stopped early.
     YandexSimilarStopped {
         /// How many were shown, as text.
         shown: String,
         /// Why it stopped, as text.
         reason: String
-    } => "yandex-similar-stopped",
+    } => "msg-yandex-similar-stopped",
     /// The similar lookup failed.
     YandexSimilarFailed {
         /// Why, as text.
         reason: String
-    } => "yandex-similar-failed",
+    } => "msg-yandex-similar-failed",
     /// A search that did not start.
     YandexNotStarted {
         /// The error, as text.
         error: String
-    } => "yandex-not-started",
+    } => "msg-yandex-not-started",
     /// The folder dialog couldn't open or give its folder, so nothing was chosen.
     FolderDialogFailed {
         /// The error, as text.
         error: String
-    } => "folder-dialog-failed",
+    } => "msg-folder-dialog-failed",
     /// The save was asked with nothing picked.
-    YandexNothingPicked => "yandex-nothing-picked",
+    YandexNothingPicked => "msg-yandex-nothing-picked",
     /// The save's folder dialog gave no folder, so nothing is saved.
-    YandexNoFolder => "yandex-no-folder",
+    YandexNoFolder => "msg-yandex-no-folder",
     /// The app's own folder dialog can't list a folder.
     FolderUnreadable {
         /// The error, as text.
         error: String
-    } => "folder-unreadable",
+    } => "msg-folder-unreadable",
     /// A path given to add (a folder, a file named on the command line) can't be opened.
     PathUnreadable {
         /// The path, as text.
         path: String,
         /// The error, as text.
         error: String
-    } => "path-unreadable",
+    } => "msg-path-unreadable",
     /// A path given has no path form under the rules (a NUL).
     NotAPath {
         /// The path, as text.
         path: String
-    } => "not-a-path",
+    } => "msg-not-a-path",
     /// A lane's row while the lane is paused by itself and no pass of it runs.
-    LanePaused => "lane-paused",
+    LanePaused => "msg-lane-paused",
     /// A paused lane's row in a pass with no known total: `status` is the pass's line.
     PausedPass {
         /// The pass's line, as text.
         status: String
-    } => "paused-pass",
+    } => "msg-paused-pass",
     /// A paused lane's row in a pass with a known total: its name, and how far it is (no rate or time left).
     LanePausedPass {
         /// The pass's name, as text.
@@ -476,35 +476,35 @@ messages! {
         done: String,
         /// The total, as text.
         total: String
-    } => "lane-paused-pass",
+    } => "msg-lane-paused-pass",
     /// A paused lane's row in a scan: its name and the images found so far.
     LanePausedFound {
         /// The scan's name, as text.
         what: String,
         /// The images found so far, as text.
         count: String
-    } => "lane-paused-found",
+    } => "msg-lane-paused-found",
     /// The Yandex panel's line while a search or a save starts.
-    YandexStarting => "yandex-starting",
+    YandexStarting => "msg-yandex-starting",
     /// A save of `count` results about to start.
     YandexSaving {
         /// How many results, as a number.
         count: usize
-    } => "yandex-saving",
+    } => "msg-yandex-saving",
     /// The `n`th of `of` results being downloaded.
     YandexSavingFile {
         /// The result's number, as text.
         n: String,
         /// The total, as text.
         of: String
-    } => "yandex-saving-file",
+    } => "msg-yandex-saving-file",
     /// A save that wrote all its `count` files into `folder`.
     YandexSaved {
         /// How many files were written.
         count: usize,
         /// The folder they were written to.
         folder: String
-    } => "yandex-saved",
+    } => "msg-yandex-saved",
     /// A save in which some files failed: how many were written, how many failed, and the first failure.
     YandexSavedFailed {
         /// How many were written, as text.
@@ -513,14 +513,14 @@ messages! {
         failed: String,
         /// The first failure, as text.
         error: String
-    } => "yandex-saved-failed",
+    } => "msg-yandex-saved-failed",
     /// A result that couldn't be downloaded.
     YandexDownloadFailed {
         /// The result's address.
         url: String,
         /// The error, as text.
         error: String
-    } => "yandex-download-failed",
+    } => "msg-yandex-download-failed",
     /// A downloaded result that couldn't be written to `path`.
     YandexWriteFailed {
         /// The result's address.
@@ -529,65 +529,65 @@ messages! {
         path: String,
         /// The error, as text.
         error: String
-    } => "yandex-write-failed",
+    } => "msg-yandex-write-failed",
     /// A search or a save stopped by an internal error (a panic), whose details are in `log`.
     YandexPanicked {
         /// Where the details are logged.
         log: String
-    } => "yandex-panicked",
+    } => "msg-yandex-panicked",
     /// The folder list changed, as the panel shows it.
-    FolderListChanged => "folder-list-changed",
+    FolderListChanged => "msg-folder-list-changed",
     /// Yandex answered with an HTTP `status` other than success.
     YandexHttpStatus {
         /// The status, as text.
         status: String
-    } => "yandex-http-status",
+    } => "msg-yandex-http-status",
     /// A connection, TLS or timeout failure of a Yandex request.
     YandexTransport {
         /// The error, as text.
         error: String
-    } => "yandex-transport",
+    } => "msg-yandex-transport",
     /// A Yandex upload answer that is not JSON.
-    YandexUploadNotJson => "yandex-upload-not-json",
+    YandexUploadNotJson => "msg-yandex-upload-not-json",
     /// A Yandex upload answer without the id of the upload.
-    YandexUploadNoCbirId => "yandex-upload-no-cbir-id",
+    YandexUploadNoCbirId => "msg-yandex-upload-no-cbir-id",
     /// A Yandex upload answer without the original's address.
-    YandexUploadNoOriginal => "yandex-upload-no-original",
+    YandexUploadNoOriginal => "msg-yandex-upload-no-original",
     /// A Yandex results page without its state.
-    YandexResultsPageNoState => "yandex-results-page-no-state",
+    YandexResultsPageNoState => "msg-yandex-results-page-no-state",
     /// A Yandex results state that is not JSON.
-    YandexResultsStateNotJson => "yandex-results-state-not-json",
+    YandexResultsStateNotJson => "msg-yandex-results-state-not-json",
     /// A Yandex similar answer that is not JSON.
-    YandexSimilarNotJson => "yandex-similar-not-json",
+    YandexSimilarNotJson => "msg-yandex-similar-not-json",
     /// A Yandex similar answer without results.
-    YandexSimilarNoResults => "yandex-similar-no-results",
+    YandexSimilarNoResults => "msg-yandex-similar-no-results",
     /// The file is not an image.
-    YandexNotAnImage => "yandex-not-an-image",
+    YandexNotAnImage => "msg-yandex-not-an-image",
     /// The image is too large for Yandex.
-    YandexTooLarge => "yandex-too-large",
+    YandexTooLarge => "msg-yandex-too-large",
     /// Yandex found no result.
-    YandexNoResult => "yandex-no-result",
+    YandexNoResult => "msg-yandex-no-result",
     /// There was no search to show.
-    YandexNoSearch => "yandex-no-search",
+    YandexNoSearch => "msg-yandex-no-search",
     /// The search is not on the screen.
-    YandexNoSearchOnScreen => "yandex-no-search-on-screen",
+    YandexNoSearchOnScreen => "msg-yandex-no-search-on-screen",
     /// Yandex was not called: the search did not run.
-    YandexNotCalled => "yandex-not-called",
+    YandexNotCalled => "msg-yandex-not-called",
     /// A recorded Yandex session (the screenshot fixture's) that can't answer, for `error`.
     YandexRecorded {
         /// The error, as text.
         error: String
-    } => "yandex-recorded",
+    } => "msg-yandex-recorded",
     /// A result's file that is not an image this app decodes, for `reason`.
     YandexUndecodable {
         /// Why, as text.
         reason: String
-    } => "yandex-undecodable",
+    } => "msg-yandex-undecodable",
     /// The catalog couldn't be opened at start, for `error`: the app ends after the box.
     CatalogUnopened {
         /// The error, as text.
         error: String
-    } => "catalog-unopened",
+    } => "msg-catalog-unopened",
     /// A catalog a later build made, at `path`: its schema is `found` and this build's is `current`. `built_by` is
     /// " by build X" when the file names the build, and empty when it does not.
     CatalogNewerSchema {
@@ -599,7 +599,7 @@ messages! {
         current: String,
         /// " by build X" when the file names it, else empty.
         built_by: String
-    } => "catalog-newer-schema",
+    } => "msg-catalog-newer-schema",
     /// A catalog a later build marked with an integer mark this build does not know the meaning of, at `path`: `mark` is
     /// the mark's name, `found` its value and `current` the highest this build knows. `built_by` as for the schema.
     CatalogNewerMark {
@@ -613,7 +613,7 @@ messages! {
         current: String,
         /// " by build X" when the file names it, else empty.
         built_by: String
-    } => "catalog-newer-mark",
+    } => "msg-catalog-newer-mark",
     /// A catalog whose schema is older than this build's, at `path`: `found` is its version and `current` this build's.
     /// A released catalog is not migrated, so it is restored from a backup.
     CatalogOlderSchema {
@@ -623,7 +623,7 @@ messages! {
         found: String,
         /// The version this build expects, as text.
         current: String
-    } => "catalog-older-schema",
+    } => "msg-catalog-older-schema",
     /// A catalog of a released version whose schema differs from this build's, at `path` (`found`: its version, `detail`:
     /// the difference).
     CatalogDrift {
@@ -633,12 +633,12 @@ messages! {
         found: String,
         /// The difference from this build's schema, as text.
         detail: String
-    } => "catalog-drift",
+    } => "msg-catalog-drift",
     /// A catalog without the `key_version` mark, whose schema differs from this build's, at `path`.
     CatalogPredatesKeyVersion {
         /// The catalog's path.
         path: String
-    } => "catalog-predates-key-version",
+    } => "msg-catalog-predates-key-version",
     /// A catalog at `path` made under other path rules: `detail` says how (or that they were not recorded), `wanted` names
     /// this build's rules.
     CatalogPathRules {
@@ -648,65 +648,65 @@ messages! {
         detail: String,
         /// This build's rules, by name, as text.
         wanted: String
-    } => "catalog-path-rules",
+    } => "msg-catalog-path-rules",
     /// Another program has the catalog at `path` open, so it can't be changed.
     CatalogInUse {
         /// The catalog's path.
         path: String
-    } => "catalog-in-use",
+    } => "msg-catalog-in-use",
     /// The catalog's path at `path` is too long for the files it keeps beside it (Windows' limit).
     CatalogPathTooLong {
         /// The catalog's path.
         path: String
-    } => "catalog-path-too-long",
+    } => "msg-catalog-path-too-long",
     /// The catalog at `path` needs a change, and can't be written (read-only, or permission denied).
     CatalogReadOnly {
         /// The catalog's path.
         path: String
-    } => "catalog-read-only",
+    } => "msg-catalog-read-only",
     /// The catalog folder at `path` isn't there, and isn't made (most likely its drive isn't connected).
     CatalogFolderMissing {
         /// The folder's path.
         path: String
-    } => "catalog-folder-missing",
+    } => "msg-catalog-folder-missing",
     /// The first line of the box for a panic that ends the app.
-    InternalError => "internal-error",
+    InternalError => "msg-internal-error",
     /// The box's last line when the panic's details were written to `log`.
     DetailsInLog {
         /// Where the details are logged.
         log: String
-    } => "details-in-log",
+    } => "msg-details-in-log",
     /// The box's last line when writing the details to `log` failed, for `error`.
     DetailsNotLogged {
         /// Where the details were to be logged.
         log: String,
         /// The error, as text.
         error: String
-    } => "details-not-logged",
+    } => "msg-details-not-logged",
     /// A notice as one line: its title, then its details.
     NoticeLine {
         /// The notice's title, as text.
         title: String,
         /// The notice's details, as text.
         body: String
-    } => "notice-line",
+    } => "msg-notice-line",
     /// How many of a ledger entry's failures came after the user dismissed it.
     LedgerSinceDismissed {
         /// How many, as a number.
         count: usize
-    } => "ledger-since-dismissed",
+    } => "msg-ledger-since-dismissed",
     /// A ledger's failed file, as Copy puts it: its path and its error.
     FailedFileLine {
         /// The file's path, as text.
         path: String,
         /// The error, as text.
         error: String
-    } => "failed-file-line",
+    } => "msg-failed-file-line",
     /// Why a folder of the scans' ledger failed, by its reason's code.
     FailedFolderReason {
         /// The reason's code, as text.
         reason: String
-    } => "failed-folder-reason",
+    } => "msg-failed-folder-reason",
     /// A folder of the scans' ledger, as Copy puts it: its path, why (`FailedFolderReason`'s words) and the error.
     FailedFolderLine {
         /// The folder's path, as text.
@@ -715,12 +715,12 @@ messages! {
         why: String,
         /// The error, as text.
         error: String
-    } => "failed-folder-line",
+    } => "msg-failed-folder-line",
     /// The line above a library folder's failed folders, in a Copy.
     FailedFolderGroup {
         /// The library folder, as text.
         root: String
-    } => "failed-folder-group",
+    } => "msg-failed-folder-group",
 }
 
 /// The line `message` reads as in the English words.

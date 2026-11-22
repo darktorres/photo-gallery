@@ -31,7 +31,7 @@ pub enum Var {
     Record,
     /// The backtraces the heap profiler keeps untrimmed (the gallery binary).
     DhatUntrimmed,
-    /// Whether a test that needs an external tool fails when it is missing (`pg_testkit::missing_tool`).
+    /// Whether a test that needs an external tool fails when it is missing (`pg_testkit::require_tool`).
     RequireTools,
     /// The scratch folder the tests write under (`pg_platform::testing::base`).
     TestDir,

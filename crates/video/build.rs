@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 /// What Qt Multimedia loads; avdevice and avfilter are used by neither.
 const DLLS: &[&str] = &["avcodec", "avformat", "avutil", "swresample", "swscale"];
 
-/// The C types pg-video uses. Enums come out as constants, so their values are the C ones.
+/// The C types pg-video uses. Enums come out as constants, so their values are the C ones. Bindgen also emits the types
+/// they reach (`AVPacketSideData` is one of those, a field type of two structs, and no source names it).
 const TYPES: &[&str] = &[
     "AVCodec",
     "AVCodecContext",
@@ -25,23 +26,21 @@ const TYPES: &[&str] = &[
     "AVIOContext",
     "AVInputFormat",
     "AVPacket",
-    "AVPacketSideData",
     "AVRational",
     "AVStream",
     "SwsContext",
 ];
 
-/// The constants pg-video uses: no-timestamp, the log level, the enum values, and each library's major version.
-const VARS: &[&str] = &[
-    "AV_LOG_FATAL",
-    "AV_PKT_DATA_DISPLAYMATRIX",
-    "AVMEDIA_TYPE_VIDEO",
-    "AV_PIX_FMT_RGB24",
-    "AVFMT_FLAG_CUSTOM_IO",
-    "AVCOL_SPC_.*",
-    "AVCOL_RANGE_.*",
-    "LIB(AVCODEC|AVFORMAT|AVUTIL|SWRESAMPLE|SWSCALE)_VERSION_MAJOR",
-];
+/// The C constants pg-video uses, by exact name: the defines, and the enum members (bindgen emits those under their
+/// enum's name, as `AVMediaType_AVMEDIA_TYPE_VIDEO`).
+const CONSTS: &[&str] =
+    &["AV_LOG_FATAL", "AV_PKT_DATA_DISPLAYMATRIX", "AVMEDIA_TYPE_VIDEO", "AV_PIX_FMT_RGB24", "AVFMT_FLAG_CUSTOM_IO"];
+
+/// The enum members pg-video uses by prefix: the colour space and range enums.
+const PREFIXES: &[&str] = &["AVCOL_SPC_", "AVCOL_RANGE_"];
+
+/// The libraries whose major version pg-video reads (`crates/video/src/ffi/load.rs`), as `LIB<name>_VERSION_MAJOR`.
+const MAJORS: &[&str] = &["AVCODEC", "AVFORMAT", "AVUTIL", "SWSCALE"];
 
 /// The FFmpeg libraries whose headers and DLLs pg-video uses.
 const LIBRARIES: &[&str] = &["libavcodec", "libavformat", "libavutil", "libswscale", "libswresample"];
@@ -203,11 +202,106 @@ fn generate_bindings(include: &[PathBuf]) -> Result<(), String> {
     for ty in TYPES {
         builder = builder.allowlist_type(ty);
     }
-    for var in VARS {
-        builder = builder.allowlist_var(var);
+    for name in CONSTS {
+        builder = builder.allowlist_var(format!("^{name}$"));
+    }
+    for prefix in PREFIXES {
+        builder = builder.allowlist_var(format!("^{prefix}.*"));
+    }
+    for lib in MAJORS {
+        builder = builder.allowlist_var(format!("^LIB{lib}_VERSION_MAJOR$"));
     }
     let bindings = builder.generate().map_err(|e| format!("generating the FFmpeg bindings: {e}"))?;
-    bindings.write_to_file(out.join("ffmpeg.rs")).map_err(|e| format!("writing the FFmpeg bindings: {e}"))
+    // Formatted once here (the bindings' `Display` runs rustfmt), then checked and written as they are.
+    let text = bindings.to_string();
+    let src = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or("CARGO_MANIFEST_DIR is not set")?).join("src");
+    println!("cargo:rerun-if-changed={}", src.display());
+    check_bindings(&text, &src)?;
+    std::fs::write(out.join("ffmpeg.rs"), &text).map_err(|e| format!("writing the FFmpeg bindings: {e}"))
+}
+
+/// Checks the generated bindings against the lists above, and the lists against pg-video's source. Bindgen emits nothing
+/// for a name that matches no symbol, and a name no source uses is dead weight, so either would otherwise pass silently.
+/// The names are read as identifiers, not as substrings: `AVCodec` is a prefix of `AVCodecContext`.
+fn check_bindings(text: &str, src: &Path) -> Result<(), String> {
+    let mut problems = Vec::new();
+    let structs = declared_names(text, "pub struct ");
+    let aliases = declared_names(text, "pub type ");
+    let consts = declared_names(text, "pub const ");
+    let source = source_text(src)?;
+    for ty in TYPES {
+        if !structs.contains(ty) && !aliases.contains(ty) {
+            problems.push(format!("TYPES: {ty} is not declared in the bindings"));
+        }
+        if !occurs(&source, ty, true) {
+            problems.push(format!("TYPES: pg-video's source names no {ty}: remove it"));
+        }
+    }
+    let mut names: Vec<String> = CONSTS.iter().map(|name| name.to_string()).collect();
+    names.extend(MAJORS.iter().map(|lib| format!("LIB{lib}_VERSION_MAJOR")));
+    for name in &names {
+        // A define is declared under its own name, an enum member under its enum's name (`X_<name>`).
+        if !consts.iter().any(|c| c == name || c.ends_with(&format!("_{name}"))) {
+            problems.push(format!("CONSTS: {name} is not declared in the bindings"));
+        }
+        if !occurs(&source, name, true) {
+            problems.push(format!("CONSTS: pg-video's source names no {name}: remove it"));
+        }
+    }
+    for prefix in PREFIXES {
+        if !consts.iter().any(|c| c.starts_with(prefix) || c.contains(&format!("_{prefix}"))) {
+            problems.push(format!("PREFIXES: no constant in the bindings starts with {prefix}"));
+        }
+        if !occurs(&source, prefix, false) {
+            problems.push(format!("PREFIXES: pg-video's source names no {prefix}: remove it"));
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("the FFmpeg bindings do not match build.rs: {}", problems.join("; ")))
+    }
+}
+
+/// The identifiers that follow `keyword` at the start of a line of `text` (`pub struct AVFrame {` gives `AVFrame`).
+fn declared_names<'a>(text: &'a str, keyword: &str) -> Vec<&'a str> {
+    text.lines().filter_map(|line| line.trim_start().strip_prefix(keyword)).map(identifier).collect()
+}
+
+/// The identifier at the start of `text`.
+fn identifier(text: &str) -> &str {
+    let end = text.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(text.len());
+    // `find` returns a character boundary, so `get` is `Some`.
+    text.get(..end).unwrap_or(text)
+}
+
+/// Whether `name` occurs in `text` as an identifier, or as the tail of one after an underscore (the enum member
+/// `AVMediaType_AVMEDIA_TYPE_VIDEO` names `AVMEDIA_TYPE_VIDEO`). With `whole`, it must also end at an identifier's end;
+/// a prefix (`AVCOL_SPC_`) ends where its members' names continue.
+fn occurs(text: &str, name: &str, whole: bool) -> bool {
+    text.match_indices(name).any(|(at, _)| {
+        // Each index is a match's start or end, so it is a character boundary and `get` is `Some`.
+        let before = text.get(..at).and_then(|head| head.chars().next_back());
+        let after = text.get(at + name.len()..).and_then(|tail| tail.chars().next());
+        let starts = !before.is_some_and(|c| c.is_ascii_alphanumeric());
+        let ends = !whole || !after.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+        starts && ends
+    })
+}
+
+/// Every `.rs` file under `dir`, concatenated.
+fn source_text(dir: &Path) -> Result<String, String> {
+    let mut text = String::new();
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))?;
+    for entry in entries {
+        let path = entry.map_err(|e| format!("reading {}: {e}", dir.display()))?.path();
+        if path.is_dir() {
+            text.push_str(&source_text(&path)?);
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            text.push_str(&std::fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?);
+        }
+    }
+    Ok(text)
 }
 
 /// The folders as one list, for a message.

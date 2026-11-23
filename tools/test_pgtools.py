@@ -60,5 +60,23 @@ class LoadEnvFile(unittest.TestCase):
         self.assertNotIn("TEST_PG_KEY", os.environ)
 
 
+class FunctionBody(unittest.TestCase):
+    SOURCE = "fn before() {\n    1\n}\n\npub fn process(name: &str) -> u8 {\n    let x = 2;\n    x\n}\n\nfn after() {}\n"
+
+    def test_the_body_runs_from_the_header_to_the_closing_brace(self):
+        self.assertEqual(
+            pgtools.function_body(self.SOURCE, "pub fn process("),
+            "pub fn process(name: &str) -> u8 {\n    let x = 2;\n    x",
+        )
+
+    def test_a_drifted_header_raises(self):
+        with self.assertRaises(ValueError):
+            pgtools.function_body(self.SOURCE, "pub(crate) fn process(")
+
+    def test_a_body_without_a_closing_brace_raises(self):
+        with self.assertRaises(ValueError):
+            pgtools.function_body("pub fn process() {\n    1\n", "pub fn process(")
+
+
 if __name__ == "__main__":
     unittest.main()

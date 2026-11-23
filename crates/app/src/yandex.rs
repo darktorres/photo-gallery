@@ -645,7 +645,7 @@ mod tests {
 
     #[test]
     fn a_still_image_is_sent_as_it_is() {
-        let png = pg_testkit::png_rgb(2, 2, &[10; 12]).unwrap();
+        let png = pg_codec::fixtures::png_rgb(2, 2, &[10; 12]).unwrap();
         assert_eq!(photo_bytes(png.as_slice()).unwrap(), png);
     }
 
@@ -661,7 +661,7 @@ mod tests {
     #[test]
     fn a_tiff_is_sent_as_a_jpeg_of_its_size() {
         let rgb: Vec<u8> = (0..6 * 4).flat_map(|_| [30u8, 120, 220]).collect();
-        let tiff = pg_testkit::tiff_rgb(6, 4, &rgb).unwrap();
+        let tiff = pg_codec::fixtures::tiff_rgb(6, 4, &rgb).unwrap();
         let sent = photo_bytes(tiff.as_slice()).unwrap();
         assert_eq!(Format::sniff(&sent), Some(Format::Jpeg));
         let mut decoder = pg_codec::decode::Decoder::new().unwrap();

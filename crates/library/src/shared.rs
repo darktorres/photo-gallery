@@ -6,12 +6,11 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
 
 use pg_jobs::NoticeSink;
-use pg_jobs::events::{Bus, Change};
+use pg_jobs::events::Bus;
 use pg_model::features::Features;
-use pg_model::progress::Progress;
+use pg_model::job::Change;
 use pg_model::size::ThumbHeight;
 use pg_thumbcache::ThumbCache;
 
@@ -120,22 +119,6 @@ pub struct Generation {
     pub scans: u64,
     /// Import passes that analyzed something (sizes and placeholders changed).
     pub imports: u64,
-}
-
-/// What one lane of the job is doing: its drive's label for people (`E:`, empty when the drive can't be told), and its
-/// progress.
-#[derive(Clone, Debug, PartialEq)]
-pub struct LaneProgress {
-    /// The lane's number: its identity for `Runner::set_lane_paused` (numbers are not reused).
-    pub number: usize,
-    /// The lane's drive label, as the status bar shows it.
-    pub label: String,
-    /// The lane's progress in its current phase.
-    pub progress: Progress,
-    /// The time since this lane last had a phase running: `Some(ZERO)` while one runs, `None` before its first.
-    pub since_work: Option<Duration>,
-    /// Whether this lane is paused itself (not the run's global pause).
-    pub paused: bool,
 }
 
 /// What the lanes share: the catalog's path, the thumbnail cache, the cells, the notices and the change bus, the tally of

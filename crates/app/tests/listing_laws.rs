@@ -20,9 +20,8 @@ fn folder() -> impl Strategy<Value = Merged> {
 }
 
 /// A fresh folder for one case, so every case starts with no catalog: a run folder of its own.
-#[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
-fn fresh_dir() -> std::path::PathBuf {
-    pg_testkit::run_folder("scratch_app", "case").unwrap()
+fn fresh_dir() -> pg_testkit::Result<std::path::PathBuf> {
+    pg_testkit::run_folder("scratch_app", "case")
 }
 
 proptest! {
@@ -37,7 +36,7 @@ proptest! {
         name in "[a-zA-Z ]{0,8}",
         exts in prop::collection::vec("[a-z]{1,4}", 0..3),
     ) {
-        let dir = fresh_dir();
+        let dir = fresh_dir()?;
         let app = App::open(Config::in_home(&dir))
         .unwrap();
         let mut read = Vec::new();

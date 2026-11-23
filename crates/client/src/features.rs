@@ -35,6 +35,8 @@ pub fn without_borders(mut listing: Listing) -> Listing {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use pg_model::query::{Sort, SortKey};
     use pg_model::view::Listing;
 

@@ -220,7 +220,7 @@ mod tests {
     fn a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home() {
         let home = pg_testkit::run_folder("scratch_library", "layout").unwrap();
         // "cat" with an unpaired surrogate.
-        let odd = pg_testkit::odd_name("cat");
+        let odd = pg_platform::testing::odd_name("cat");
         let layout =
             Layout::resolve(|name| (name == "PG_HOME").then(|| home.clone().into_os_string()), Some(home.join(&odd)))
                 .unwrap();

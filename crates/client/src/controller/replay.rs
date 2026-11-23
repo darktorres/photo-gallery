@@ -4,6 +4,11 @@
 //! each `Update`'s event at its time, and checks that the commands are the recorded ones. Time is an input, so nothing
 //! here reads a clock.
 
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 use super::{Command, Controller, Event, Start};
@@ -21,8 +26,9 @@ pub enum Record {
     Init {
         /// The format the recording is written in.
         format: i64,
-        /// The start the recording was made from.
-        start: Start,
+        /// The start the recording was made from (boxed: it is much larger than the update's fields, and every record
+        /// is as large as its largest variant).
+        start: Box<Start>,
     },
     /// An event, applied at `now_ms`, and the commands it gave.
     Update {
@@ -37,7 +43,7 @@ pub enum Record {
 
 /// A record for the controller's start, as `Controller::new` takes it.
 pub fn init(controller: &Controller) -> Record {
-    Record::Init { format: REPLAY_FORMAT_VERSION, start: controller.initial().clone() }
+    Record::Init { format: REPLAY_FORMAT_VERSION, start: Box::new(controller.initial().clone()) }
 }
 
 /// The records of a recording's text, one per line. A recording of another format is refused by its version, before its
@@ -70,7 +76,7 @@ pub fn parse(text: &str) -> Result<Vec<Record>, String> {
 }
 
 /// The refusal of a recording made by another format, at `line` (the line of its Init).
-fn format_refused(line: usize, format: impl std::fmt::Display) -> String {
+fn format_refused(line: usize, format: impl core::fmt::Display) -> String {
     format!("line {line}: recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}")
 }
 
@@ -85,7 +91,7 @@ pub fn replay(records: &[Record]) -> Result<usize, String> {
     if *format != REPLAY_FORMAT_VERSION {
         return Err(format_refused(1, format));
     }
-    let mut controller = Controller::new(start.clone());
+    let mut controller = Controller::new((**start).clone());
     for (n, record) in rest.iter().enumerate() {
         // `rest` starts at the second record, which is the second line of the recording: its line is `n + 2`.
         let Record::Update { now_ms, event, commands } = record else {

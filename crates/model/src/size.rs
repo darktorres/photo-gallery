@@ -1,10 +1,10 @@
 //! The grid's size values. Each type is valid by construction: a constructor refuses what is out of its range,
 //! and serde refuses it on read too, so a recording or a stored value can't hold a zero scale or a 5000-pixel thumbnail.
 //! A float that is NaN or infinite is never a size, so every constructor refuses it.
+use core::ops::RangeInclusive;
 use serde::{Deserialize, Serialize};
-use std::ops::RangeInclusive;
 
-use crate::num::f64_to_u32;
+use crate::num::{f64_to_u32, round_half_away};
 
 /// The row heights the grid takes (pixels).
 pub const ROW_HEIGHT: RangeInclusive<u32> = 60..=800;
@@ -25,13 +25,13 @@ impl RowHeight {
     pub const DEFAULT: RowHeight = RowHeight(220);
 
     /// The row height `px`, or `None` if it is outside [`ROW_HEIGHT`].
-    pub fn new(px: u32) -> Option<RowHeight> {
-        ROW_HEIGHT.contains(&px).then_some(RowHeight(px))
+    pub const fn new(px: u32) -> Option<RowHeight> {
+        if px >= *ROW_HEIGHT.start() && px <= *ROW_HEIGHT.end() { Some(RowHeight(px)) } else { None }
     }
 
     /// A finite height rounded to the nearest pixel and clamped into [`ROW_HEIGHT`]; `None` for NaN or an infinity.
     pub fn from_finite(px: f64) -> Option<RowHeight> {
-        px.is_finite().then(|| RowHeight(f64_to_u32(px.round()).clamp(RowHeight::MIN.0, RowHeight::MAX.0)))
+        px.is_finite().then(|| RowHeight(f64_to_u32(round_half_away(px)).clamp(RowHeight::MIN.0, RowHeight::MAX.0)))
     }
 
     /// The height in pixels.
@@ -47,15 +47,15 @@ pub enum RowHeightError {
     OutOfRange(u32),
 }
 
-impl std::fmt::Display for RowHeightError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for RowHeightError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::OutOfRange(px) => write!(f, "row height {px} is outside {ROW_HEIGHT:?}"),
         }
     }
 }
 
-impl std::error::Error for RowHeightError {}
+impl core::error::Error for RowHeightError {}
 
 impl TryFrom<u32> for RowHeight {
     type Error = RowHeightError;
@@ -64,8 +64,8 @@ impl TryFrom<u32> for RowHeight {
     }
 }
 
-impl std::fmt::Display for RowHeight {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for RowHeight {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -93,7 +93,7 @@ impl ThumbHeight {
     /// The thumbnail height for a row height at a scale: the product rounded to a pixel, saturated into [`THUMB_HEIGHT`].
     pub fn for_row(row: RowHeight, scale: Scale) -> ThumbHeight {
         let px = f64::from(row.0) * scale.0;
-        ThumbHeight(f64_to_u32(px.round()).clamp(*THUMB_HEIGHT.start(), *THUMB_HEIGHT.end()))
+        ThumbHeight(f64_to_u32(round_half_away(px)).clamp(*THUMB_HEIGHT.start(), *THUMB_HEIGHT.end()))
     }
 
     /// The height in pixels.
@@ -109,15 +109,15 @@ pub enum ThumbHeightError {
     OutOfRange(u32),
 }
 
-impl std::fmt::Display for ThumbHeightError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ThumbHeightError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::OutOfRange(px) => write!(f, "thumbnail height {px} is outside {THUMB_HEIGHT:?}"),
         }
     }
 }
 
-impl std::error::Error for ThumbHeightError {}
+impl core::error::Error for ThumbHeightError {}
 
 impl TryFrom<u32> for ThumbHeight {
     type Error = ThumbHeightError;
@@ -126,8 +126,8 @@ impl TryFrom<u32> for ThumbHeight {
     }
 }
 
-impl std::fmt::Display for ThumbHeight {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ThumbHeight {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -145,18 +145,18 @@ pub enum PositiveError {
     NotPositive(f64),
 }
 
-impl std::fmt::Display for PositiveError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for PositiveError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotPositive(v) => write!(f, "{v} is not a positive finite number"),
         }
     }
 }
 
-impl std::error::Error for PositiveError {}
+impl core::error::Error for PositiveError {}
 
 /// A positive finite number: the scale, a factor, or a width. Each wrapper below adds its own name.
-fn positive(v: f64) -> Result<f64, PositiveError> {
+const fn positive(v: f64) -> Result<f64, PositiveError> {
     if v.is_finite() && v > 0.0 { Ok(v) } else { Err(PositiveError::NotPositive(v)) }
 }
 
@@ -167,8 +167,8 @@ pub struct Scale(f64);
 
 impl Scale {
     /// The scale `v`, or `None` if it is not positive and finite.
-    pub fn new(v: f64) -> Option<Scale> {
-        positive(v).ok().map(Scale)
+    pub const fn new(v: f64) -> Option<Scale> {
+        if positive(v).is_ok() { Some(Scale(v)) } else { None }
     }
 
     /// The scale as a number.

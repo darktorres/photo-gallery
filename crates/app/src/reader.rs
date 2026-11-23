@@ -21,11 +21,12 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
-use pg_catalog::browse::read::facets::Facets;
-use pg_catalog::ledger::{Counts, FailedFile, FailedFolder};
 use pg_model::details::Details;
+use pg_model::facets::Facets;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
+use pg_model::inbox::InboxCounts as Counts;
+use pg_model::ledger::{FailedFile, FailedFolder};
 use pg_model::notice::LedgerKind;
 use pg_model::query::{Query, Sort};
 use pg_model::rules::{Merged, Path as RulePath};

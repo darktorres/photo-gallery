@@ -1,7 +1,8 @@
 //! The text of an error and its causes, as one line: what a job reports, and what a log or a notice shows. Here, not in
 //! the platform crate, so the codecs (which sit below the platform) can word their errors the same way.
 
-use std::error::Error;
+use alloc::string::{String, ToString};
+use core::error::Error;
 
 /// `error`'s text with its causes after it, separated by `": "`, as an anyhow chain prints with `{:#}`. A cause whose text
 /// the text already holds is left out, so an error that forwards its source (`#[error(transparent)]`) is not said twice.
@@ -22,8 +23,8 @@ pub fn chain(error: &(dyn Error + 'static)) -> String {
 #[cfg(test)]
 mod tests {
     use super::chain;
-    use std::error::Error;
-    use std::fmt;
+    use core::error::Error;
+    use core::fmt;
 
     #[derive(Debug)]
     struct Outer(Inner);

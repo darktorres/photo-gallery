@@ -2,7 +2,7 @@
 
 use cxx::UniquePtr;
 
-use crate::video_player_bridge::ffi::VideoPlayer;
+use crate::bridges::video_player_bridge::ffi::VideoPlayer;
 
 /// The player's device.
 #[expect(

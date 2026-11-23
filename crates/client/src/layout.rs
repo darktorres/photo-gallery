@@ -1,7 +1,9 @@
 //! Justified grid layout: rows of images at their aspect ratio, each row scaled to fill the width.
 //! Computed in Rust for any row height, so the grid can change size at runtime; the UI only positions delegates.
 
-use std::ops::Range;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ops::Range;
 
 /// One row: items `first..first + count`, all `height` px high.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -384,7 +386,7 @@ mod tests {
         let mut fresh = Vec::new();
         justify_into(&mut fresh, aspects.iter().copied(), width, 200.0, spacing);
         assert_eq!(fresh, rows);
-        justify_into(&mut fresh, std::iter::empty(), width, 200.0, spacing);
+        justify_into(&mut fresh, core::iter::empty(), width, 200.0, spacing);
         assert!(fresh.is_empty());
     }
 

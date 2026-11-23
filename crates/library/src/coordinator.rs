@@ -20,13 +20,14 @@ use std::time::{Duration, Instant};
 use crate::{Error, Result};
 use pg_catalog::{Catalog, VolumeSet};
 use pg_jobs::control::{Control, Hold};
-use pg_jobs::events::Change;
 use pg_jobs::governor::Governor;
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
+use pg_model::job::Change;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
+use pg_model::progress::LaneProgress;
 use pg_model::progress::{Phase, Progress};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::drive::Drives;
@@ -37,7 +38,7 @@ use crate::inner::Inner;
 use crate::lanes::{self, Place, probe_place};
 use crate::passes::{count, cut_done, error_text, file_failure};
 use crate::removals;
-use crate::shared::{LaneProgress, Shared};
+use crate::shared::Shared;
 
 /// How long a root's probe may run before its root is taken as unknown: the lanes collapse to one until it answers.
 const PROBE_DEADLINE: Duration = Duration::from_secs(5);

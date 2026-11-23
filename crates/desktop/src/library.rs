@@ -7,7 +7,7 @@
 
 pub(crate) mod state;
 
-use crate::library_bridge::qobject;
+use crate::bridges::library_bridge::qobject;
 
 use core::pin::Pin;
 use std::sync::Mutex;
@@ -16,11 +16,13 @@ use std::path::Path;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use pg_app::reexport::{Begun, Cause, Change, WriteError};
-use pg_client::text::{self, Message};
+use pg_model::job::{Cause, Change};
 use pg_model::notice::Notice;
 use pg_model::progress::Phase;
+use pg_model::removal::Begun;
 use pg_model::size::ThumbHeight;
+use pg_model::write::WriteError;
+use pg_wording::Message;
 
 use crate::app;
 use crate::picker;
@@ -65,8 +67,8 @@ impl Changes {
 /// Why a job failed on a file: the error's text, or the words for a panic the job caught on it.
 fn cause_text(cause: &Cause) -> String {
     match cause {
-        Cause::Error(error) => text::render(&Message::FailureDetail { error: error.clone() }),
-        Cause::Panicked(message) => text::render(&Message::FilePanicked { message: message.clone() }),
+        Cause::Error(error) => pg_wording::render(&Message::FailureDetail { error: error.clone() }),
+        Cause::Panicked(message) => pg_wording::render(&Message::FilePanicked { message: message.clone() }),
     }
 }
 
@@ -75,9 +77,9 @@ fn path_words(e: &pg_platform::names::NormalizeError) -> String {
     use pg_platform::names::{NormalizeError, shown};
     match e {
         NormalizeError::Unreadable { path, error } => {
-            text::render(&Message::PathUnreadable { path: shown(path), error: error.to_string() })
+            pg_wording::render(&Message::PathUnreadable { path: shown(path), error: error.to_string() })
         }
-        NormalizeError::NotAPath { path } => text::render(&Message::NotAPath { path: shown(path) }),
+        NormalizeError::NotAPath { path } => pg_wording::render(&Message::NotAPath { path: shown(path) }),
     }
 }
 
@@ -236,7 +238,7 @@ impl qobject::Library {
         let error = s.error.as_ref().map(|e| match e {
             WriteError::Failed(cause) | WriteError::CopyIncomplete { cause, .. } => cause_text(cause),
         });
-        let writes = text::write_status(s.queued, error.as_deref());
+        let writes = pg_wording::write_status(s.queued, error.as_deref());
         if self.writes.to_string() != writes {
             self.as_mut().set_writes(QString::from(&writes));
         }
@@ -289,7 +291,7 @@ impl qobject::Library {
             // The list changed since it was shown: nothing was removed, and the list is read again.
             Ok(Begun::Changed | Begun::NotFound) => {
                 self.as_mut().load_roots();
-                app::post(Notice::FolderNotRemoved { error: text::render(&Message::FolderListChanged) });
+                app::post(Notice::FolderNotRemoved { error: pg_wording::render(&Message::FolderListChanged) });
             }
             Err(e) => app::post(Notice::FolderNotRemoved { error: app::error_text(&e) }),
         }

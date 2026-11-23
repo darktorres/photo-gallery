@@ -1,12 +1,29 @@
 //! How far a running pass is: its phase and its counts, as data the job layer reports (`pg_jobs::control`) and the front
-//! ends word (`pg_client::text::pass_status`). The time is the elapsed time when the
+//! ends word (`pg_wording::pass_status`). The time is the elapsed time when the
 //! progress was read, so nothing here reads a clock.
 
-use std::time::Duration;
+use alloc::string::String;
+use core::time::Duration;
 
 use crate::num;
 use crate::rules::Path as RulePath;
 use crate::size::ThumbHeight;
+
+/// What one lane of the job is doing: its drive's label for people (`E:`, empty when the drive can't be told), and its
+/// progress.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LaneProgress {
+    /// The lane's number: its identity for `Runner::set_lane_paused` (numbers are not reused).
+    pub number: usize,
+    /// The lane's drive label, as the status bar shows it.
+    pub label: String,
+    /// The lane's progress in its current phase.
+    pub progress: Progress,
+    /// The time since this lane last had a phase running: `Some(ZERO)` while one runs, `None` before its first.
+    pub since_work: Option<Duration>,
+    /// Whether this lane is paused itself (not the run's global pause).
+    pub paused: bool,
+}
 
 /// The phase a pass is in, and what it works on.
 #[derive(Clone, Debug, PartialEq, Eq)]

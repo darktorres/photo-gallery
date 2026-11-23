@@ -1463,10 +1463,12 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "pg-analysis"
 version = "0.1.0-dev"
 dependencies = [
+ "blake3",
  "pg-codec",
  "pg-metadata",
  "pg-model",
  "pg-testkit",
+ "pg-testrng",
  "pg-video",
  "thiserror 2.0.21",
  "xxhash-rust",
@@ -1504,13 +1506,16 @@ dependencies = [
  "pg-analysis",
  "pg-catalog",
  "pg-codec",
+ "pg-container",
  "pg-dbfile",
  "pg-dedup",
  "pg-jobs",
  "pg-model",
+ "pg-platform",
  "pg-render",
  "pg-scan",
  "pg-testkit",
+ "pg-testrng",
  "pg-thumbcache",
 ]
 
@@ -1540,6 +1545,7 @@ dependencies = [
  "pg-query",
  "pg-render",
  "pg-testkit",
+ "pg-testrng",
  "rusqlite",
  "serde_json",
  "strum",
@@ -1556,7 +1562,6 @@ dependencies = [
  "pg-analysis",
  "pg-borders",
  "pg-catalog",
- "pg-client",
  "pg-codec",
  "pg-dedup",
  "pg-import",
@@ -1570,6 +1575,7 @@ dependencies = [
  "pg-testkit",
  "pg-thumbcache",
  "pg-thumbs",
+ "pg-wording",
  "pg-writeback",
  "serde_json",
 ]
@@ -1578,12 +1584,10 @@ dependencies = [
 name = "pg-client"
 version = "0.1.0-dev"
 dependencies = [
- "fluent-bundle",
  "pg-model",
  "proptest",
  "serde",
  "serde_json",
- "unic-langid",
 ]
 
 [[package]]
@@ -1599,11 +1603,13 @@ dependencies = [
  "pg-container",
  "pg-model",
  "pg-testkit",
+ "pg-testrng",
  "png",
  "thiserror 2.0.21",
  "tiff",
  "turbojpeg",
  "webp",
+ "weezl 0.2.1",
  "zune-core",
  "zune-jpeg",
 ]
@@ -1613,6 +1619,7 @@ name = "pg-container"
 version = "0.1.0-dev"
 dependencies = [
  "crc32fast",
+ "pg-testkit",
  "pg-testrng",
  "proptest",
 ]
@@ -1647,6 +1654,7 @@ name = "pg-dedup"
 version = "0.1.0-dev"
 dependencies = [
  "pg-model",
+ "pg-testkit",
  "pg-testrng",
  "thiserror 2.0.21",
 ]
@@ -1669,6 +1677,7 @@ dependencies = [
  "pg-render",
  "pg-testkit",
  "pg-trace",
+ "pg-wording",
  "serde_json",
 ]
 
@@ -1676,23 +1685,20 @@ dependencies = [
 name = "pg-edit"
 version = "0.1.0-dev"
 dependencies = [
- "image-webp",
  "pg-codec",
  "pg-container",
  "pg-metadata",
  "pg-model",
  "pg-render",
  "pg-testkit",
- "png",
  "thiserror 2.0.21",
- "turbojpeg",
- "weezl 0.2.1",
 ]
 
 [[package]]
 name = "pg-exiftool"
 version = "0.1.0-dev"
 dependencies = [
+ "pg-codec",
  "pg-metadata",
  "pg-model",
  "pg-platform",
@@ -1706,9 +1712,9 @@ version = "0.1.0-dev"
 dependencies = [
  "dhat",
  "pg-cli",
- "pg-client",
  "pg-desktop",
  "pg-platform",
+ "pg-wording",
  "winres",
 ]
 
@@ -1789,9 +1795,10 @@ name = "pg-metadata"
 version = "0.1.0-dev"
 dependencies = [
  "miniz_oxide 0.9.1",
+ "pg-codec",
  "pg-container",
  "pg-model",
- "pg-testkit",
+ "pg-testrng",
  "quick-xml",
 ]
 
@@ -1874,10 +1881,7 @@ dependencies = [
 name = "pg-testkit"
 version = "0.1.0-dev"
 dependencies = [
- "image",
  "pg-platform",
- "pg-testrng",
- "png",
  "thiserror 2.0.21",
 ]
 
@@ -1898,6 +1902,7 @@ dependencies = [
  "pg-platform",
  "pg-query",
  "pg-testkit",
+ "pg-testrng",
  "rusqlite",
  "thiserror 2.0.21",
 ]
@@ -1908,6 +1913,7 @@ version = "0.1.0-dev"
 dependencies = [
  "pg-analysis",
  "pg-catalog",
+ "pg-codec",
  "pg-import",
  "pg-jobs",
  "pg-jobs-testkit",
@@ -1939,6 +1945,16 @@ dependencies = [
  "pg-platform",
  "pg-testkit",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pg-wording"
+version = "0.1.0-dev"
+dependencies = [
+ "fluent-bundle",
+ "pg-client",
+ "pg-model",
+ "unic-langid",
 ]
 
 [[package]]

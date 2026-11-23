@@ -222,27 +222,64 @@ class WorkflowPins(unittest.TestCase):
                 self.assertLess(text.find("actions/setup-python"), pins, job)
 
 
+def crate_clippy_names(root):
+    """The crates under `root` that have a clippy.toml of their own (the root's file is the one above them)."""
+    return sorted(path.parent.name for path in (root / "crates").glob("*/clippy.toml"))
+
+
+def repeat_problems(root, own):
+    """What a crate's clippy.toml lacks of the root's settings that apply to every crate, as messages (none when it has all)."""
+    keys = (
+        "allow-panic-in-tests",
+        "allow-print-in-tests",
+        "allow-unwrap-in-tests",
+        "allow-expect-in-tests",
+        "allow-indexing-slicing-in-tests",
+    )
+    problems = [f"{key} is not the root's" for key in keys if own.get(key) != root.get(key)]
+    own_types = {entry["path"] for entry in own["disallowed-types"]}
+    problems.extend(
+        f"the root's hash-collection ban {entry['path']} is missing"
+        for entry in root["disallowed-types"]
+        if entry["path"] not in own_types
+    )
+    own_methods = {entry["path"] for entry in own["disallowed-methods"]}
+    # A path under pg_platform names an item of a crate that the crate does not load: clippy ignores it there.
+    problems.extend(
+        f"the root's disallowed method {entry['path']} is missing"
+        for entry in root["disallowed-methods"]
+        if not entry["path"].startswith("pg_platform::") and entry["path"] not in own_methods
+    )
+    return problems
+
+
 class ClippyFiles(unittest.TestCase):
-    def test_the_crates_repeat_the_root_test_allowances_and_bans(self):
-        # Clippy reads a crate's own clippy.toml instead of the root's, and has no include, so the model and client files
-        # repeat the root's settings that apply everywhere. This keeps the repeats in step with the root.
+    def test_the_only_crate_clippy_file_repeats_the_root_settings(self):
+        # Clippy reads a crate's own clippy.toml instead of the root's, and has no include, so a crate with one must repeat
+        # the root's settings that apply everywhere. The model and the client are `no_std` and need no file; the wording
+        # crate is std-based and keeps one. Any other crate-level file would drop the root's allowances and bans without a
+        # sign, so the set is exact.
+        self.assertEqual(crate_clippy_names(REPO), ["wording"])
         root = tomllib.loads((REPO / "clippy.toml").read_text(encoding="utf-8"))
-        root_types = {entry["path"] for entry in root["disallowed-types"]}
-        for crate in ("model", "client"):
+        for crate in crate_clippy_names(REPO):
             with self.subTest(crate=crate):
                 own = tomllib.loads((REPO / "crates" / crate / "clippy.toml").read_text(encoding="utf-8"))
-                for key in (
-                    "allow-panic-in-tests",
-                    "allow-print-in-tests",
-                    "allow-unwrap-in-tests",
-                    "allow-expect-in-tests",
-                    "allow-indexing-slicing-in-tests",
-                ):
-                    self.assertEqual(own.get(key), root.get(key), key)
-                own_types = {entry["path"] for entry in own["disallowed-types"]}
-                self.assertLessEqual(root_types, own_types, "every root hash-collection ban is in the crate's list")
-                own_methods = {entry["path"] for entry in own["disallowed-methods"]}
-                self.assertIn("std::env::temp_dir", own_methods, "the root temp_dir ban is in the crate's list")
+                self.assertEqual(repeat_problems(root, own), [])
+
+    def test_a_second_crate_clippy_file_is_seen(self):
+        # The guard on the set above: a synthetic tree with one more crate-level file names it.
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("wording", "extra"):
+                (Path(tmp) / "crates" / name).mkdir(parents=True)
+                (Path(tmp) / "crates" / name / "clippy.toml").write_text("", encoding="utf-8")
+            self.assertEqual(crate_clippy_names(Path(tmp)), ["extra", "wording"])
+
+    def test_a_repeat_that_drops_a_root_ban_is_reported(self):
+        # The guard on the repeats above: a crate file without the root's temp_dir ban is a problem.
+        root = tomllib.loads((REPO / "clippy.toml").read_text(encoding="utf-8"))
+        own = tomllib.loads((REPO / "crates" / "wording" / "clippy.toml").read_text(encoding="utf-8"))
+        own["disallowed-methods"] = [e for e in own["disallowed-methods"] if e["path"] != "std::env::temp_dir"]
+        self.assertTrue(repeat_problems(root, own))
 
 
 class Consumers(unittest.TestCase):
@@ -252,7 +289,10 @@ class Consumers(unittest.TestCase):
 
     def test_the_static_qt_source_is_the_pinned_version(self):
         text = (REPO / "tools" / "build_static_qt.py").read_text(encoding="utf-8")
-        self.assertEqual(re.search(r'^QT_VERSION = "([^"]+)"', text, re.MULTILINE).group(1), PINNED["qt_version"])
+        match = re.search(r'^QT_VERSION = "([^"]+)"', text, re.MULTILINE)
+        if match is None:
+            self.fail("build_static_qt.py has no QT_VERSION line")
+        self.assertEqual(match.group(1), PINNED["qt_version"])
 
     def test_the_qml_host_and_the_env_example_name_the_pinned_kit(self):
         minor = ".".join(PINNED["qt_version"].split(".")[:2])
@@ -295,6 +335,11 @@ ENV_SOURCES = {".rs", ".cpp", ".h", ".hpp"}
 PG_NAME = re.compile(r"\bPG_[A-Z][A-Z0-9_]*\b")
 REGISTERED_SPEC = re.compile(r'Spec \{\s*name: "(PG_[A-Z0-9_]+)",\s*kind: Kind::\w+,\s*reader: Reader::(\w+),')
 DOCUMENTED = re.compile(r"^#?\s*(PG_[A-Z][A-Z0-9_]*)=", re.MULTILINE)
+# The test inputs of the Rust sources are constants of pg-testkit's inputs module: `pub const CONST: &str = "PG_NAME";`.
+INPUTS = REPO / "crates" / "testkit" / "src" / "inputs.rs"
+INPUT_CONST = re.compile(r'^pub const (\w+): &str = "(PG_[A-Z0-9_]+)";', re.MULTILINE)
+INPUT_USE = re.compile(r"\binputs::(\w+)")
+INPUT_CONSTANTS = dict(INPUT_CONST.findall(INPUTS.read_text(encoding="utf-8")))  # {CONSTANT: "PG_NAME"}
 
 
 def _family(reason, *names):
@@ -302,24 +347,13 @@ def _family(reason, *names):
     return dict.fromkeys(names, reason)
 
 
-# The names the sources use that are not the app's variables, each exact and with its reason. A name is registered in
-# crates/platform/src/env.rs (VARS), documented in .env.example, or one of these: a new `PG_PROBE_X` fails until it is
-# listed here, and a listed name that no source uses any more fails the rot test below.
+# The names the sources use that are not the app's variables and that no Rust constant can carry, each exact and with its
+# reason. A name is registered in crates/platform/src/env.rs (VARS), documented in .env.example, a constant of
+# crates/testkit/src/inputs.rs (INPUT_CONSTANTS, read from that file), or one of these. The last group is what cannot be a
+# constant: pg-platform's own names (pg-testkit depends on pg-platform, so pg-platform cannot use pg-testkit's module) and
+# a name that C++ or Python reads. A new unlisted name fails until it is listed here or defined in inputs.rs, and a listed
+# name that no source uses any more fails the rot test below.
 TEST_INPUTS = {
-    **_family(
-        "a child process's handshake keys (the catalog and dbfile holders)",
-        "PG_HOLDER_PATH",
-        "PG_HOLDER_MODE",
-        "PG_HOLDER_READY",
-        "PG_HOLDER_RELEASE",
-    ),
-    **_family(
-        "the thumbnail cache's child-process keys",
-        "PG_THUMB_HOLDER",
-        "PG_THUMB_CATALOG",
-        "PG_THUMB_READY",
-        "PG_THUMB_RELEASE",
-    ),
     **_family(
         "pg-platform's child-process keys, and a stdout marker of its test helper (PG_TESTING_HELD is not a variable)",
         "PG_PLATFORM_TESTING_CHILD_PREFIX",
@@ -327,32 +361,8 @@ TEST_INPUTS = {
         "PG_TESTING_HELD",
     ),
     **_family(
-        "the examples' probe inputs, not the app's",
-        "PG_PROBE_BETWEEN",
-        "PG_PROBE_AGAIN",
-        "PG_PROBE_WRITE",
-        "PG_PROBE_WORKERS",
-        "PG_PROBE_WIDTHS",
-        "PG_PROBE_SLICE",
-        "PG_PROBE_LOAD_PARTS",
-        "PG_PROBE_KEEP_OWED",
-        "PG_PROBE_GUARD",
-        "PG_PROBE_FEW",
-        "PG_PROBE_CACHE_KIB",
-        "PG_PROBE_BLOCK",
-        "PG_PROBE_MEMSTAT",
-    ),
-    **_family("the join test's dump inputs", "PG_JOIN_THREADS", "PG_JOIN_OUT", "PG_JOIN_DUMP"),
-    **_family("a benchmark's output label", "PG_LABEL"),
-    **_family(
         "a harness input, not a setting: the QML test's resource folder, read also by tools/qmltest.py and main.cpp",
         "PG_QML_RESOURCES",
-    ),
-    **_family(
-        "the input a test or a rehearsal reads",
-        "PG_TEST_CATALOG",
-        "PG_REHEARSAL_CATALOG",
-        "PG_JPEG_COMPARE_DIR",
     ),
 }
 
@@ -369,6 +379,16 @@ def env_sources():
     return found
 
 
+def constant_uses():
+    """The constants of the inputs module that a source names (`inputs::NAME`) outside that module."""
+    used = set()
+    for path in sorted((REPO / "crates").rglob("*.rs")):
+        if path == INPUTS or not path.is_file():
+            continue
+        used.update(INPUT_USE.findall(path.read_text(encoding="utf-8")))
+    return used
+
+
 class EnvironmentRegistry(unittest.TestCase):
     def setUp(self):
         self.registry = dict(REGISTERED_SPEC.findall(ENV_REGISTRY.read_text(encoding="utf-8")))
@@ -383,16 +403,27 @@ class EnvironmentRegistry(unittest.TestCase):
         for name, files in env_sources().items():
             if name in self.registry or name in self.documented:
                 continue
-            if name in TEST_INPUTS:
+            if name in TEST_INPUTS or name in INPUT_CONSTANTS.values():
                 continue
             unknown[name] = sorted(set(files))
-        self.assertEqual(unknown, {}, "add to VARS in crates/platform/src/env.rs, or to .env.example, or to TEST_INPUTS")
+        self.assertEqual(
+            unknown,
+            {},
+            "add to VARS in crates/platform/src/env.rs, or to .env.example, or define it in crates/testkit/src/inputs.rs, "
+            "or to TEST_INPUTS",
+        )
 
     def test_every_test_input_is_still_used_by_a_source(self):
         # An exact list rots the way a pattern cannot: a name whose last use is gone must leave the list.
         sources = env_sources()
         unused = sorted(name for name in TEST_INPUTS if name not in sources)
         self.assertEqual(unused, [], "these TEST_INPUTS names no source uses any more: remove them")
+
+    def test_every_input_constant_is_still_used_outside_its_module(self):
+        # The constants are the same kind of list: a constant whose last use is gone must leave inputs.rs.
+        used = constant_uses()
+        unused = sorted(const for const in INPUT_CONSTANTS if const not in used)
+        self.assertEqual(unused, [], "these inputs.rs constants no source uses any more: remove them")
 
     def test_every_name_a_build_script_uses_is_registered_for_the_build(self):
         # boundaries.py exempts a build script from the environment rule by its path, so the names it uses are checked

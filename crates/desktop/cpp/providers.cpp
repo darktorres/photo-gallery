@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "pg-desktop/src/providers_bridge.cxx.h"
+#include "pg-desktop/src/bridges/providers_bridge.cxx.h"
 
 namespace pg {
 namespace {

@@ -17,8 +17,8 @@ test = false
 
 [dependencies]
 pg-cli = { path = "../cli" }
-pg-client = { path = "../client" }
 pg-platform = { path = "../platform" }
+pg-wording = { path = "../wording" }
 # The app window. Without it `gallery` runs only its commands, and builds without Qt.
 pg-desktop = { path = "../desktop", optional = true }
 # The heap profiler: a patched dhat-rs that takes whole backtraces quickly

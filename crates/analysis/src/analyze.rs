@@ -35,7 +35,9 @@ const PDQ_SIDE: usize = 512;
 
 /// The content hash of a file streamed from `path`, for a video (not read whole): `FileHash::of` its bytes.
 fn file_hash_of(path: &Path) -> io::Result<FileHash> {
-    FileHash::of_reader(File::open(path)?)
+    let mut hasher = blake3::Hasher::new();
+    hasher.update_reader(File::open(path)?)?;
+    Ok(FileHash(*hasher.finalize().as_bytes()))
 }
 
 /// A worker's buffers for one file's decode, scaled copies and hashes, kept from file to file (a file larger than
@@ -239,7 +241,7 @@ mod tests {
     // import stores none.
     #[test]
     fn the_hashes_are_made_from_the_same_decode_each_time() {
-        let bytes = pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap();
+        let bytes = pg_codec::fixtures::png_rgb(8, 8, &[128; 192]).unwrap();
         let mut analyzer = Analyzer::new().unwrap();
         let turns = pg_model::turns::Turns::NONE;
         let first = analyzer.hash_image(&bytes, turns).unwrap();

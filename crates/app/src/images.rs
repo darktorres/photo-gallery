@@ -470,7 +470,7 @@ mod tests {
         }
         assert_eq!(ledger_until(&app, 1), [FileId::new(1)]);
         assert_eq!(app.images().recent.lock().unwrap().len(), 1, "asked twice, sent once");
-        let png = pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap();
+        let png = pg_codec::fixtures::png_rgb(8, 8, &[128; 192]).unwrap();
         std::fs::write(&file, &png).unwrap();
         // The scan that sees the new bytes records their size and mtime. Until then the failure holds for the old state.
         app.catalogs()

@@ -4,6 +4,9 @@
 //!
 //! Every value is one of `pg_model::size`'s types, so a bad value is refused where it is made (the shell), and nothing
 //! here holds a made-up size: a scale that hasn't arrived is `None`, and no thumbnail height is named until it has.
+use alloc::vec;
+use alloc::vec::Vec;
+
 use pg_model::size::{Factor, RowHeight, Scale, ThumbHeight};
 use serde::{Deserialize, Serialize};
 

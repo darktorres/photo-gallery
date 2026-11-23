@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::fixtures::Encoding;
 use pg_codec::fixtures::orient;
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
@@ -22,12 +23,12 @@ use pg_model::ids::FileId;
 use pg_model::notice::{Notice, Trigger};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
+use pg_model::write::WriteError;
 use pg_model::write::WriteKind;
-use pg_testkit::Encoding;
-use pg_testkit::held::{Access, hold};
+use pg_platform::testing::held::{Access, hold};
 use pg_thumbcache::ThumbCache;
+use pg_writeback::Writer;
 use pg_writeback::fault::Fault;
-use pg_writeback::{WriteError, Writer};
 
 /// The tests' result: any error of the crates they use.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -36,7 +37,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// differ from each other.
 fn pattern(w: u32, h: u32, encoding: Encoding) -> Result<Vec<u8>> {
     let rgb = pg_testkit::rgb_pattern(usize::try_from(w)?, usize::try_from(h)?);
-    pg_testkit::encode(w, h, &rgb, encoding).map_err(Into::into)
+    pg_codec::fixtures::encode(w, h, &rgb, encoding).map_err(Into::into)
 }
 
 /// One file per format, sized so the JPEG transform is perfect (multiples of 16).
@@ -99,7 +100,7 @@ fn thumbs(dir: &Path, c: &Catalog) -> Result<(Arc<ThumbCache>, Quiet<pg_thumbcac
     let thumbs = Arc::new(ThumbCache::open(
         &dir.join("thumbs.sqlite"),
         &c.catalog_id()?,
-        pg_thumbcache::Cap::from_bytes(1 << 30),
+        pg_model::cache::ThumbCap::from_bytes(1 << 30),
         pg_model::versions::THUMBS_VERSION,
         events,
     )?);
@@ -124,7 +125,7 @@ fn wait_for_queue(c: &Catalog) -> Result<()> {
 
 #[test]
 fn ratings_and_turns_reach_the_files() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
@@ -156,7 +157,7 @@ fn ratings_and_turns_reach_the_files() {
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -260,7 +261,7 @@ fn ratings_and_turns_reach_the_files() {
 /// folder holds no other file. Needs ExifTool; skipped without it.
 #[test]
 fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "odd-names", &["images"]).unwrap();
@@ -296,7 +297,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -362,7 +363,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     // Held against writes: the copy into the original can't open it. Where the permissions don't stop this process
     // (root), there is nothing to test.
     let Some(held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
-        pg_testkit::skip("the permissions don't stop this process from writing (root)");
+        pg_platform::testing::skip("the permissions don't stop this process from writing (root)");
         return;
     };
 
@@ -423,7 +424,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
 /// ExifTool (skipped without it).
 #[test]
 fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let (dir, files, catalog_path, c) = imported("later").unwrap();
@@ -467,7 +468,7 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
     state::queue_finished_copy(&c, id, "rating", 3, &rating_temp).unwrap();
     c.queue_rotation(id, Turns::new(1)).unwrap();
     let Some(held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
-        pg_testkit::skip("the permissions don't stop this process from writing (root)");
+        pg_platform::testing::skip("the permissions don't stop this process from writing (root)");
         return;
     };
 
@@ -502,7 +503,7 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Rotation);
     c.queue_rotation(id, Turns::new(1)).unwrap();
     let Some(held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
-        pg_testkit::skip("the permissions don't stop this process from writing (root)");
+        pg_platform::testing::skip("the permissions don't stop this process from writing (root)");
         return;
     };
 
@@ -650,7 +651,7 @@ fn a_read_only_original_is_counted_up_to_the_cap() {
     std::fs::set_permissions(path, read_only).unwrap();
     if std::fs::OpenOptions::new().write(true).open(path).is_ok() {
         std::fs::set_permissions(path, before).unwrap();
-        pg_testkit::skip("the permissions don't stop this process from writing (root)");
+        pg_platform::testing::skip("the permissions don't stop this process from writing (root)");
         return;
     }
     c.queue_rotation(id, Turns::new(1)).unwrap();
@@ -941,7 +942,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -1030,7 +1031,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -1086,7 +1087,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
         ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -1120,7 +1121,7 @@ fn an_add_over_a_pending_removal_finishes_it_and_adds_the_folder() {
     let images = dir.join("images");
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
     let mut finishes = 0;
     let added = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
         finishes += 1;
@@ -1151,7 +1152,7 @@ fn an_add_over_a_removal_kept_for_a_write_adds_nothing() {
     let images = dir.join("images");
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
     let refused = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
         pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true)
     });
@@ -1182,7 +1183,7 @@ fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
 
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
     let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!(driven.deferred, 1, "the file with a change is kept");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
@@ -1216,7 +1217,7 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
 
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_catalog::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
     let kept = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!(kept.deferred, 1, "the file with a change waits for the writer");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");

@@ -140,7 +140,7 @@ fn remove_database(path: &Path) -> Result<()> {
 
 /// The tables a rebuild carries over from the old catalog, in the order their foreign keys need (a table comes after the
 /// tables it references). Every table of the current schema (the baseline's and the migrations') is here or in
-/// [`TRANSIENT`]: none is derived, since a recomputed table would need a version mark to say when it is stale, and one
+/// `TRANSIENT` (a test constant): none is derived, since a recomputed table would need a version mark to say when it is stale, and one
 /// is added only with the change that needs it.
 pub(crate) const CARRIED: &[&str] = &[
     "meta",
@@ -172,7 +172,8 @@ pub(crate) const CARRIED: &[&str] = &[
 
 /// The tables whose rows hold only while the processes that wrote them run: a rebuilt catalog starts without them. The
 /// scan leases (no walk runs across a rebuild, which needs the catalog to itself).
-#[cfg_attr(not(test), expect(dead_code, reason = "a rebuild copies none of them; the test of `CARRIED` reads it"))]
+/// (Only the test of `CARRIED` reads it: a rebuild copies none of these, so outside the tests the list has no reader.)
+#[cfg(test)]
 pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 
 /// Copies the rows of the catalog at `old` into `conn`, a new catalog made from the schema: each table of [`CARRIED`],

@@ -3,137 +3,64 @@
 
 mod alert;
 mod animation;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod animation_bridge;
 mod app;
+// The cxx-qt and cxx bridges, one module: cxx-qt-build takes one directory per QML module (src/bridges/). Its generated
+// code writes `unsafe` and `pub` on every item; the bridges are not reachable from the crate root.
 #[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod app_icon;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod clipboard;
+#[expect(
+    unreachable_pub,
+    reason = "cxx and cxx-qt write `pub` on every item they generate; the bridges are not reachable from the crate root"
+)]
+mod bridges;
 mod command_line;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-mod command_line_bridge;
 mod controller;
 mod deadline;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod deadline_bridge;
 mod facet_choices;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod facet_choices_bridge;
 mod failed_files;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod failed_files_bridge;
 mod filters;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod filters_bridge;
 mod folders;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod folders_bridge;
 mod frame_sink;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod frame_sink_bridge;
 mod gallery;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod gallery_bridge;
 mod gpu_device;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod gpu_device_bridge;
 mod gui_app;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod gui_app_bridge;
 mod keymap;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod keymap_bridge;
 mod lane_model;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod lane_model_bridge;
 mod ledgers;
 mod library;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod library_bridge;
 mod list_diff;
-#[cfg(debug_assertions)]
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod live_reload;
 mod log_model;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod log_model_bridge;
 mod notices;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod notices_bridge;
 mod panic_log;
 mod picker;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod picker_bridge;
 mod providers;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod providers_bridge;
 mod pump;
 #[cfg(test)]
 mod qml_text;
 mod rows;
 mod screenshot;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod screenshot_bridge;
 mod settings;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-mod settings_bridge;
 mod shell;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod shell_bridge;
 mod test_hooks;
 mod trace;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-mod trace_bridge;
 mod video_player;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod video_player_bridge;
 mod video_source;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod video_source_bridge;
 mod viewport;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod viewport_bridge;
 mod words;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod words_bridge;
 mod worker;
 mod yandex;
-#[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
-#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
-mod yandex_bridge;
 
 use std::ffi::OsString;
 use std::io::Write;
 
 use cxx_qt::casting::Upcast;
 use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
+
+// The bridges the window's own code names (app_icon, gpu_device, providers, live_reload) come in here by their new path.
+// command_line_bridge, gui_app_bridge and screenshot_bridge are still named by their old paths in command_line.rs,
+// gui_app.rs and screenshot.rs: this import keeps those paths until those files move to `bridges::`.
+#[cfg(debug_assertions)]
+use bridges::live_reload;
+use bridges::{app_icon, command_line_bridge, gpu_device_bridge, gui_app_bridge, providers_bridge, screenshot_bridge};
 
 /// Opens the app with the program's arguments (the program's name first). Returns when its window closes, with the
 /// application's exit status (`QGuiApplication::exec`'s: 0, or 1 when a `--screenshot` run found no window to save;
@@ -159,7 +86,7 @@ pub fn run(args: &[OsString]) -> i32 {
         return refuse_screenshot(command_line::bad_options());
     }
     // `--locale=pseudo` shows every line in the pseudo-locale (the screenshot matrix's pseudo-locale scenario).
-    pg_client::text::set_pseudo(command_line::hooks().pseudo);
+    pg_wording::set_pseudo(command_line::hooks().pseudo);
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
@@ -187,7 +114,7 @@ pub fn run(args: &[OsString]) -> i32 {
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap = pg_platform::env::read(pg_platform::env::Var::ThumbCapGib).and_then(|text| {
         let text = text.to_string_lossy().into_owned();
-        let cap = pg_app::reexport::ThumbCap::parse_gib(&text);
+        let cap = pg_model::cache::ThumbCap::parse_gib(&text);
         if cap.is_none() {
             pg_log::warn(
                 "config",
@@ -203,8 +130,8 @@ pub fn run(args: &[OsString]) -> i32 {
         let message = e
             .downcast_ref::<pg_app::Error>()
             .and_then(catalog_refusal_message)
-            .unwrap_or_else(|| pg_client::text::Message::CatalogUnopened { error: format!("{e:#}") });
-        return fatal(&pg_client::text::render(&message));
+            .unwrap_or_else(|| pg_wording::Message::CatalogUnopened { error: format!("{e:#}") });
+        return fatal(&pg_wording::render(&message));
     }
     // The writes the window makes off its thread (`worker`); without the thread they are made where they are asked for.
     if let Err(e) = worker::start() {
@@ -281,9 +208,9 @@ fn refusal(bad: &[command_line::BadOption], out: &mut impl Write) -> i32 {
 
 /// The box's message for a catalog file that was refused: worded by its kind, and the file is left as it was. `None` for
 /// any other failure to open the catalog, which keeps its own text.
-fn catalog_refusal_message(e: &pg_app::Error) -> Option<pg_client::text::Message> {
-    use pg_app::reexport::CatalogRefusal;
-    use pg_client::text::Message;
+fn catalog_refusal_message(e: &pg_app::Error) -> Option<pg_wording::Message> {
+    use pg_model::refusal::CatalogRefusal;
+    use pg_wording::Message;
     if let pg_app::Error::FolderMissing(folder) = e {
         return Some(Message::CatalogFolderMissing { path: folder.display().to_string() });
     }

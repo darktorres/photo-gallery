@@ -7,6 +7,10 @@
 //!   part of the image on screen while zoomed between fit and 1:1, `x`…`h` as fractions of the upright image)
 //! - `image://yandex/<result id>` (its grid picture), or `…/original` (its file as the host gave it)
 
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+
 use pg_model::image::{ImageKey, View};
 use pg_model::size::ThumbHeight;
 

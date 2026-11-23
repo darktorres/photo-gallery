@@ -37,7 +37,7 @@ pub(crate) fn check_rules(conn: &Connection, path: &Path, rules: PathRules) -> R
         None => Ok(()),
         Some(detail) => Err(Error::Refused {
             path: path.display().to_string(),
-            reason: Box::new(crate::error::Refusal::PathRules { detail, wanted: rules_name(rules) }),
+            reason: Box::new(pg_model::refusal::CatalogRefusal::PathRules { detail, wanted: rules_name(rules) }),
         }),
     }
 }
@@ -58,7 +58,7 @@ pub(crate) fn take_lock(path: &Path) -> Result<pg_dbfile::Lock> {
 /// The refusal of a catalog that can't be written (its folder or file is read-only, or permission is denied). Nothing has
 /// been changed.
 pub(crate) fn refuse_read_only(path: &Path) -> Error {
-    Error::Refused { path: path.display().to_string(), reason: Box::new(crate::error::Refusal::ReadOnly) }
+    Error::Refused { path: path.display().to_string(), reason: Box::new(pg_model::refusal::CatalogRefusal::ReadOnly) }
 }
 
 /// The exclusive hold on the catalog file (`pg_dbfile::Live`), when no other process or connection holds it. It doesn't
@@ -69,7 +69,7 @@ pub(crate) fn try_exclusive(path: &Path) -> Result<Option<pg_dbfile::Live>> {
 
 /// The refusal of a change to a catalog that another program or connection has open. Nothing has been moved.
 pub(crate) fn in_use(path: &Path) -> Error {
-    Error::Refused { path: path.display().to_string(), reason: Box::new(crate::error::Refusal::InUse) }
+    Error::Refused { path: path.display().to_string(), reason: Box::new(pg_model::refusal::CatalogRefusal::InUse) }
 }
 
 /// The shared hold a catalog keeps while it is open (`pg_dbfile::Live`). It waits a bounded time for a change in progress
@@ -615,7 +615,7 @@ mod key_version_tests {
     /// mark stays the later build's.
     #[test]
     fn a_newer_import_mark_is_refused_and_the_catalog_is_left_as_it_was() {
-        use crate::error::Refusal;
+        use pg_model::refusal::CatalogRefusal as Refusal;
         use pg_model::versions::IMPORT_VERSION;
         let dir = pg_testkit::run_folder("scratch_catalog", "newer-import").unwrap();
         let path = dir.join("catalog.sqlite");
@@ -1163,10 +1163,10 @@ mod tests {
         drop(Catalog::prepare(&path, versions(), PathRules::Windows).unwrap());
         // Another build's rules: its paths would read as other paths. The catalog is valid, so it is refused, not moved.
         let e = Catalog::open(&path, PathRules::Posix).err().expect("refused");
-        assert!(matches!(e.refusal(), Some((_, crate::error::Refusal::PathRules { .. }))), "{e:?}");
+        assert!(matches!(e.refusal(), Some((_, pg_model::refusal::CatalogRefusal::PathRules { .. }))), "{e:?}");
         assert!(e.to_string().contains("on the platform that made it"), "{e}");
         let again = Catalog::prepare(&path, versions(), PathRules::Posix).err().expect("refused");
-        assert!(matches!(again.refusal(), Some((_, crate::error::Refusal::PathRules { .. }))), "{again:?}");
+        assert!(matches!(again.refusal(), Some((_, pg_model::refusal::CatalogRefusal::PathRules { .. }))), "{again:?}");
         assert!(!dir.join("catalog.sqlite.replaced").exists());
         // Its rules row gone is not this build's schema: it is moved aside, and the new catalog is made.
         raw::on_disk(&path).execute("DELETE FROM meta WHERE key = 'path_rules'", []).unwrap();

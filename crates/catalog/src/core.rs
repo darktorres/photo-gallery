@@ -17,7 +17,7 @@ use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::classify::{Action, Facts, LONGEST_NAME_SUFFIX, RELEASED, classify};
-use crate::error::{Error, Refusal, Result};
+use crate::error::{Error, Result};
 use crate::lease::HeldLease;
 use crate::lifecycle::{
     check_rules, ensure_room_to_migrate, in_use, mark_unheld_missing, meta_text, newer_mark, refuse_read_only,
@@ -33,6 +33,7 @@ use crate::schema::{
 use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions, key_version_text};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
+use pg_model::refusal::CatalogRefusal as Refusal;
 
 /// An open catalog: its connection, the path rules its paths are stored under, and the hold on the file while it is open.
 pub struct Catalog {

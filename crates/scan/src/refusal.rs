@@ -1,6 +1,6 @@
 //! Which folders the scanner takes: the policy for Windows and for Linux, decided
 //! from the facts the platform reads (`pg_platform::dir`), with the reason as data (`pg_model::refusal`),
-//! which `pg_client::text` words. A check that can't read a fact refuses: the checks fail closed.
+//! which `pg_wording` words. A check that can't read a fact refuses: the checks fail closed.
 
 use std::io;
 

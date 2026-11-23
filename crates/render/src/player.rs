@@ -165,7 +165,7 @@ mod tests {
     fn loops_the_frames_and_closes_the_sink_once_dropped() {
         let dir = pg_testkit::run_folder("scratch_render", "player").unwrap();
         let file = dir.join("loop.gif");
-        std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
+        std::fs::write(&file, pg_codec::fixtures::gif(3).unwrap()).unwrap();
 
         let sink = Arc::new(Record::default());
         let player = Player::start(file.clone(), sink.clone(), false);
@@ -213,7 +213,7 @@ mod tests {
         };
         let dir = pg_testkit::run_folder("scratch_render", "player-odd").unwrap();
         let file = dir.join(name);
-        std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
+        std::fs::write(&file, pg_codec::fixtures::gif(3).unwrap()).unwrap();
 
         let sink = Arc::new(Record::default());
         let player = Player::start(file.clone(), sink.clone(), false);

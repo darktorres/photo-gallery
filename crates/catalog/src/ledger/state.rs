@@ -1,10 +1,6 @@
 //! What the inbox reads of a ledger: its acknowledgement, its cheap state, its counts and the folders of the scans'
-//! ledger. A leaf below `core` (the rule is in the crate's docs). Uses only `types`.
-
-use pg_model::ids::RootId;
-use pg_model::rules::Path as RulePath;
-
-use crate::types::FolderFailure;
+//! ledger. A leaf below `core` (the rule is in the crate's docs). Its counts and folders are the model's
+//! (`pg_model::inbox::InboxCounts`, `pg_model::ledger::FailedFolder`).
 
 /// What the user saw of a ledger's entry (`ledger_ack`), by serial: the newest row shown when they last read it, and
 /// when they dismissed it, up to which row. A ledger never acknowledged reads as the default: nothing seen.
@@ -58,35 +54,4 @@ impl LedgerState {
         let unread = shown && (!ack.read || new);
         LedgerState { live, new, since_dismissed, shown, unread, newest, oldest }
     }
-}
-
-/// A ledger's counts, read only while the inbox is viewed (`count(*)` over its live rows): how many, how many came after
-/// what the user last saw, and after the dismissal. A kept notice's counts are its repeats (`total`), with nothing new.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Counts {
-    /// The rows in all.
-    pub total: u64,
-    /// The rows not yet read.
-    pub new: u64,
-    /// The rows since the ledger was last dismissed.
-    pub since_dismissed: u64,
-}
-
-/// A folder of the scans' ledger, as the inbox's expanded entry lists it (`Catalog::failed_folders`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FailedFolder {
-    /// The library folder that holds it.
-    pub root: RootId,
-    /// The library folder's path.
-    pub root_path: RulePath,
-    /// The folder, exact.
-    pub path: RulePath,
-    /// Why the folder failed.
-    pub failure: FolderFailure,
-    /// The error, as text.
-    pub error: String,
-    /// When a walk first found it (Unix seconds).
-    pub first_seen: i64,
-    /// Whether it came after what the user last saw of the entry.
-    pub new: bool,
 }

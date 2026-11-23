@@ -1,5 +1,5 @@
 //! The window's inbox (InboxPanel.qml, the bell and the toast): what `pg_app::Inbox` lists, newest first, worded by
-//! `pg_client::text`. `start` subscribes to the inbox; a thread hands what it publishes to the Qt thread in passes, one
+//! `pg_wording`. `start` subscribes to the inbox; a thread hands what it publishes to the Qt thread in passes, one
 //! queued at a time, as the library's changes are (`library.rs`): the latest listing, and the toasts that came with it.
 //!
 //! A new listing is applied as the changes from the rows shown (`list_diff`, keyed by each entry's identity,
@@ -83,7 +83,7 @@
 
 pub(crate) mod state;
 
-use crate::notices_bridge::qobject;
+use crate::bridges::notices_bridge::qobject;
 use crate::rows::qt_int;
 
 use core::pin::Pin;
@@ -95,11 +95,11 @@ use crate::pump::{Pending, lock};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
-use pg_app::reexport::{InboxEntry, InboxEntryId};
 use pg_app::{FailedItems, InboxEvent, InboxListing};
-use pg_client::text::{self, Message};
+use pg_model::inbox::{InboxEntry, InboxEntryId};
 use pg_model::notice::{Action, LedgerKind, Notice};
 use pg_model::rules::PathRules;
+use pg_wording::Message;
 
 use crate::app;
 use crate::ledgers::{kind_code, kind_of};
@@ -185,14 +185,14 @@ fn passes_of(entries: &[InboxEntry]) -> i32 {
 /// What Copy puts on the clipboard: the notice on one line, then for a ledger what its read gave, one a line: its files,
 /// or its folders under the library folder that holds them.
 fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) -> String {
-    let mut words = text::notice_line(notice, rules);
+    let mut words = pg_wording::notice_line(notice, rules);
     match items {
         None => {}
         Some(FailedItems::Files(files)) => {
             for file in files {
                 words.push('\n');
                 let path = rules.display(&file.path);
-                words.push_str(&text::render(&Message::FailedFileLine { path, error: file.error.clone() }));
+                words.push_str(&pg_wording::render(&Message::FailedFileLine { path, error: file.error.clone() }));
             }
         }
         Some(FailedItems::Folders(folders)) => {
@@ -202,12 +202,12 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
                     root = Some(folder.root);
                     words.push('\n');
                     let root = rules.display(&folder.root_path);
-                    words.push_str(&text::render(&Message::FailedFolderGroup { root }));
+                    words.push_str(&pg_wording::render(&Message::FailedFolderGroup { root }));
                 }
                 words.push_str("\n  ");
-                words.push_str(&text::render(&Message::FailedFolderLine {
+                words.push_str(&pg_wording::render(&Message::FailedFolderLine {
                     path: rules.display(&folder.path),
-                    why: text::render(&Message::FailedFolderReason { reason: folder.failure.key().to_string() }),
+                    why: pg_wording::render(&Message::FailedFolderReason { reason: folder.failure.key().to_string() }),
                     error: folder.error.clone(),
                 }));
             }
@@ -231,14 +231,16 @@ impl qobject::Notices {
         let rules = pg_platform::native::PATH_RULES;
         let notice = &entry.notice;
         match role {
-            ROLE_TITLE => {
-                QVariant::from(&QString::from(&text::render(&Message::NoticeTitle { notice: notice.clone(), rules })))
-            }
-            ROLE_BODY => {
-                QVariant::from(&QString::from(&text::render(&Message::NoticeBody { notice: notice.clone(), rules })))
-            }
+            ROLE_TITLE => QVariant::from(&QString::from(&pg_wording::render(&Message::NoticeTitle {
+                notice: notice.clone(),
+                rules,
+            }))),
+            ROLE_BODY => QVariant::from(&QString::from(&pg_wording::render(&Message::NoticeBody {
+                notice: notice.clone(),
+                rules,
+            }))),
             ROLE_SOURCE => {
-                QVariant::from(&QString::from(&text::render(&Message::SourceLabel { source: notice.source() })))
+                QVariant::from(&QString::from(&pg_wording::render(&Message::SourceLabel { source: notice.source() })))
             }
             ROLE_LEVEL => QVariant::from(&notice.level().code()),
             // Unix seconds, as a number QML makes a `Date` of.
@@ -258,7 +260,7 @@ impl qobject::Notices {
                     // Nothing says none: a ledger entry with no failure since its dismissal has no line.
                     (InboxEntryId::Ledger { .. }, Some(counts)) if counts.since_dismissed > 0 => {
                         let count = usize::try_from(counts.since_dismissed).unwrap_or(usize::MAX);
-                        text::render(&Message::LedgerSinceDismissed { count })
+                        pg_wording::render(&Message::LedgerSinceDismissed { count })
                     }
                     _ => String::new(),
                 };
@@ -345,8 +347,10 @@ impl qobject::Notices {
             self.as_mut().show(&listing);
         }
         if let Some(notice) = toasts.last() {
-            let words =
-                text::render(&Message::NoticeTitle { notice: notice.clone(), rules: pg_platform::native::PATH_RULES });
+            let words = pg_wording::render(&Message::NoticeTitle {
+                notice: notice.clone(),
+                rules: pg_platform::native::PATH_RULES,
+            });
             self.as_mut().set_toast_shown(QString::from(&words), notice.level().code());
         }
     }
@@ -556,7 +560,7 @@ impl qobject::Notices {
                 };
                 (
                     qt_int(at),
-                    QString::from(&text::render(&Message::NoticeBody { notice: notice.clone(), rules })),
+                    QString::from(&pg_wording::render(&Message::NoticeBody { notice: notice.clone(), rules })),
                     kind_code(ledger_kind(entry.id)),
                     serial,
                     notice.actions().contains(&Action::Retry),
@@ -602,7 +606,7 @@ impl qobject::Notices {
         let rules = pg_platform::native::PATH_RULES;
         let notice = entry.notice.clone();
         let Some(kind) = ledger_kind(entry.id) else {
-            crate::clipboard::ffi::copy_text(&QString::from(&copy_words(&notice, rules, None)));
+            crate::bridges::clipboard::ffi::copy_text(&QString::from(&copy_words(&notice, rules, None)));
             return;
         };
         let notices = self.qt_thread();
@@ -616,7 +620,7 @@ impl qobject::Notices {
             };
             let words = copy_words(&notice, rules, items.as_ref());
             // On the Qt thread, which the clipboard is; fails only when the window is gone.
-            let _ = notices.queue(move |_| crate::clipboard::ffi::copy_text(&QString::from(&words)));
+            let _ = notices.queue(move |_| crate::bridges::clipboard::ffi::copy_text(&QString::from(&words)));
         });
     }
 
@@ -661,8 +665,8 @@ impl qobject::Notices {
 
 #[cfg(test)]
 mod tests {
-    use pg_app::reexport::{FailedFile, FailedFolder, FolderFailure};
     use pg_model::ids::{FileId, RootId};
+    use pg_model::ledger::{FailedFile, FailedFolder, FolderFailure};
     use pg_model::notice::{FilePass, LedgerCounts};
 
     use super::*;
@@ -743,7 +747,7 @@ mod tests {
         };
         let words = copy_words(&notice, rules, Some(&FailedItems::Files(vec![file])));
         let mut lines = words.lines();
-        assert_eq!(lines.next(), Some(text::notice_line(&notice, rules).as_str()));
+        assert_eq!(lines.next(), Some(pg_wording::notice_line(&notice, rules).as_str()));
         let shown = format!("{}: not a JPEG", rules.display(&p(r"D:\p\a.jpg")));
         assert_eq!(lines.next(), Some(shown.as_str()));
         assert_eq!(lines.next(), None);
@@ -772,6 +776,6 @@ mod tests {
             ]
         );
         // A kept notice, or a ledger whose read failed: the notice alone.
-        assert_eq!(copy_words(&notice, rules, None), text::notice_line(&notice, rules));
+        assert_eq!(copy_words(&notice, rules, None), pg_wording::notice_line(&notice, rules));
     }
 }

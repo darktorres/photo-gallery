@@ -15,15 +15,15 @@ pub enum RatingError {
     TooManyStars(u8),
 }
 
-impl std::fmt::Display for RatingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for RatingError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::TooManyStars(stars) => write!(f, "{stars} stars: a rating has at most {}", Rating::MAX),
         }
     }
 }
 
-impl std::error::Error for RatingError {}
+impl core::error::Error for RatingError {}
 
 impl TryFrom<u8> for Rating {
     type Error = RatingError;

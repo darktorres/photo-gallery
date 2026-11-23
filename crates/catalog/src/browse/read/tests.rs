@@ -1,4 +1,3 @@
-use super::facets::Facets;
 use super::grid::{FILE_JOINS, grid_sql};
 use super::tree::FOLDER_COUNTS;
 use crate::browse::fixtures::{
@@ -7,6 +6,7 @@ use crate::browse::fixtures::{
 use crate::fixture;
 use crate::fixture::raw;
 use crate::queue;
+use pg_model::facets::Facets;
 use pg_query::condition;
 use rusqlite::types::Value;
 
@@ -27,7 +27,7 @@ use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
-use pg_testkit::Rng;
+use pg_testrng::Rng;
 use rusqlite::params_from_iter;
 
 /// A folder given as its Windows path text, merged: the spelling the Windows-only tests use.
@@ -404,7 +404,7 @@ fn the_tree_is_built_as_before() {
 #[test]
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
-    let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
+    let path = std::env::var_os(pg_testkit::inputs::TEST_CATALOG).expect(pg_testkit::inputs::TEST_CATALOG);
     let rules = raw::recorded_rules(std::path::Path::new(&path));
     let c = crate::core::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let rows: Vec<(i64, String, i64)> =
@@ -538,7 +538,7 @@ fn folder_keys_are_made_per_character() {
 #[test]
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_names_sort_and_scope_as_before() {
-    let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
+    let path = std::env::var_os(pg_testkit::inputs::TEST_CATALOG).expect(pg_testkit::inputs::TEST_CATALOG);
     let rules = raw::recorded_rules(std::path::Path::new(&path));
     // The reference order and scopes below are Windows': per-character case folding, drives merged. A POSIX catalog
     // is checked by the rule-generic tests instead.

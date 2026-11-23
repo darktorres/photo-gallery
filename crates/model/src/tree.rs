@@ -2,6 +2,9 @@
 //! lookups the tree panel makes of it. Built from the folders' paths (`TreeBuilder`); the catalog reads the rows. The
 //! paths are typed ([`crate::rules::Path`]): a folder's parts and its key come from the rules the tree is built under.
 
+use alloc::format;
+use alloc::vec::Vec;
+
 use crate::name::Name;
 use crate::num;
 use crate::rules::{Merged, Path, PathRules};
@@ -321,7 +324,7 @@ impl FolderTree {
     /// Its children (`None`: the top-level folders), in order.
     pub fn children(&self, n: Option<usize>) -> impl Iterator<Item = usize> + '_ {
         let (mut next, end) = n.map_or((0, self.nodes.len()), |n| (n + 1, self.subtree_end(n)));
-        std::iter::from_fn(move || {
+        core::iter::from_fn(move || {
             let child = (next < end).then_some(next)?;
             next = self.subtree_end(child);
             Some(child)
@@ -370,16 +373,19 @@ impl FolderTree {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TreeFull;
 
-impl std::fmt::Display for TreeFull {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TreeFull {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("the folder tree's strings are past the u32 offsets that address them")
     }
 }
 
-impl std::error::Error for TreeFull {}
+impl core::error::Error for TreeFull {}
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+    use alloc::vec;
+
     use super::*;
 
     /// The strings and the nodes are made at the size they are reserved at: a tree built from rows whose paths are

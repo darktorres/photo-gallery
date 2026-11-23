@@ -1,6 +1,9 @@
 //! What kind of media a file is, judged by its name: which files the scanner records, and what the type filter
 //! starts from. Whether an image is animated is only known after the import (`analysis.frames`).
 
+use alloc::format;
+use alloc::string::String;
+
 use serde::{Deserialize, Serialize};
 
 /// Extensions recorded as images (decoded by `decode`).
@@ -133,7 +136,7 @@ impl Ext {
                 .position(|e| e.as_bytes().eq_ignore_ascii_case(ext))
                 .and_then(Ext::at);
         }
-        Ext::matching(std::str::from_utf8(ext).ok()?.chars())
+        Ext::matching(core::str::from_utf8(ext).ok()?.chars())
     }
 
     /// The extension whose name is `ext` in lower case, without making it: lowercased character by character, as

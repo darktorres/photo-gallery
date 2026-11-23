@@ -3,6 +3,9 @@
 //! so it is a command the desktop resolves; the first and the last item are known from the count, so they are resolved
 //! here. Facts about the list come in as events. Nothing here calls Qt.
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 use crate::keys::GridKey;
 use serde::{Deserialize, Serialize};
 

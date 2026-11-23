@@ -11,9 +11,10 @@
 use std::path::{Path, PathBuf};
 
 use pg_analysis::analyze::IMPORT_VERSION;
-use pg_catalog::browse::read::facets::Facets;
+use pg_model::facets::Facets;
 use pg_catalog::ledger::Summary;
-use pg_catalog::{Begun, Catalog, Driven, Versions, WorkItem};
+use pg_catalog::{Catalog, Driven, Versions, WorkItem};
+use pg_model::removal::Begun;
 use pg_jobs::control::Control;
 use pg_model::grid::Entry;
 use pg_model::path::WorkList;

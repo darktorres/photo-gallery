@@ -1,7 +1,7 @@
 //! The state of the `Filters` QObject: the bridge's backing struct, which the filter bar's properties are kept in.
 
 use cxx_qt_lib::QString;
-use pg_app::reexport::Facets;
+use pg_model::facets::Facets;
 
 #[expect(
     unreachable_pub,

@@ -8,23 +8,19 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The lossless edits: a rotation or a crop that rewrites a file's bytes. The pixel encoders are the codec's; the
-# container's and the metadata's parsers read the file, and the tests take their fixtures from pg-testkit.
+# The lossless edits: a rotation or a crop that rewrites a file's bytes. The rewrites and the pixel encoders are the
+# codec's (`pg_codec::rewrite`); the metadata's parser reads the file.
 [dependencies]
 pg-codec = { path = "../codec" }
-pg-container = { path = "../container" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
-image-webp.workspace = true
 thiserror.workspace = true
-png.workspace = true
-turbojpeg.workspace = true
-weezl.workspace = true
 
 [dev-dependencies]
-# The codec's test helpers that take its types (`fixtures::tiff_rgb8`, `webp_lossy_rgb`, `orient`); the other images
-# come from pg-testkit.
+# The tests' image files and the codec's helpers (`fixtures::png_rgb`, `tiff_rgb8`, `orient`, ...) come from the codec.
 pg-codec = { path = "../codec", features = ["fixture"] }
+# The tests read a file's chunks with the container's parser (`pg_container::png_chunk`, `gif_blocks`).
+pg-container = { path = "../container" }
 # The tests decode a file the way the viewer shows it (`pg_render::display`).
 pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }

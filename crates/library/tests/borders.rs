@@ -1,5 +1,5 @@
 //! The borders pass on real files: a file that can't be read stays due for the next pass, so it is looked at again once
-//! it can be read. Another program holds the file (pg_testkit::held): on Windows it is open without sharing, on Unix it
+//! it can be read. Another program holds the file (pg_platform::testing::held): on Windows it is open without sharing, on Unix it
 //! has no read permission, and the hold lets go before the next pass. A file that doesn't decode is recorded in the
 //! failure ledger, and leaves it once its borders are found, in the transaction that stores the borders: a batch that
 //! can't be written stores neither.
@@ -12,34 +12,34 @@ use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::notice::FilePass;
-use pg_testkit::held::{Access, hold};
+use pg_platform::testing::held::{Access, hold};
 
 use pg_testkit::ONE_PASS;
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// The bytes of a 96 × 80 gradient PNG: the pictures these tests scan.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn gradient_png() -> Vec<u8> {
-    pg_testkit::encode(96, 80, &pg_testkit::gradient_rgb(96, 80), pg_testkit::Encoding::Png).unwrap()
+fn gradient_png() -> pg_codec::Result<Vec<u8>> {
+    pg_codec::fixtures::encode(96, 80, &pg_testkit::gradient_rgb(96, 80), pg_codec::fixtures::Encoding::Png)
 }
 
 /// A run folder with `images/a.png` (96x80, a gradient), scanned and imported into a catalog beside it: the image's path,
 /// its bytes, and the catalog.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn imported(prefix: &str) -> (std::path::PathBuf, Vec<u8>, Catalog) {
-    let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
+fn imported(prefix: &str) -> Result<(std::path::PathBuf, Vec<u8>, Catalog)> {
+    let dir = pg_testkit::run_folder("scratch_library", prefix)?;
     let images = dir.join("images");
-    std::fs::create_dir_all(&images).unwrap();
+    std::fs::create_dir_all(&images)?;
     let a = images.join("a.png");
-    std::fs::write(&a, gradient_png()).unwrap();
-    let good = std::fs::read(&a).unwrap();
-    let mut c =
-        Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+    std::fs::write(&a, gradient_png()?)?;
+    let good = std::fs::read(&a)?;
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
-    let root = pg_platform::names::normalize_path(&images).unwrap();
-    c.add_root(&root).unwrap();
-    pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
-    (a, good, c)
+    let root = pg_platform::names::normalize_path(&images)?;
+    c.add_root(&root)?;
+    pg_scan::scan(&mut c, &root, &ctl)?;
+    pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl)?;
+    Ok((a, good, c))
 }
 
 fn opts() -> Options {
@@ -47,28 +47,28 @@ fn opts() -> Options {
 }
 
 /// `a` rewritten in place with `bytes`, keeping its time: at the same size, the catalog has the file as it was.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn rewrite(a: &Path, bytes: &[u8]) {
-    let mtime = std::fs::metadata(a).unwrap().modified().unwrap();
-    std::fs::write(a, bytes).unwrap();
-    std::fs::File::options().write(true).open(a).unwrap().set_modified(mtime).unwrap();
+fn rewrite(a: &Path, bytes: &[u8]) -> Result<()> {
+    let mtime = std::fs::metadata(a)?.modified()?;
+    std::fs::write(a, bytes)?;
+    std::fs::File::options().write(true).open(a)?.set_modified(mtime)?;
+    Ok(())
 }
 
 /// `a` damaged in place after the import, at the same size and time (as a disk error would leave it): the detector
 /// can't decode it.
-fn damage(a: &Path, len: usize) {
-    rewrite(a, &vec![0; len]);
+fn damage(a: &Path, len: usize) -> Result<()> {
+    rewrite(a, &vec![0; len])
 }
 
 #[test]
-fn an_unreadable_file_stays_due_for_the_next_pass() {
+fn an_unreadable_file_stays_due_for_the_next_pass() -> Result<()> {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
     let dir = pg_testkit::run_folder("scratch_library", "borders").unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     // A channel wraps past 255.
     for name in ["a.png", "b.png"] {
-        std::fs::write(images.join(name), gradient_png()).unwrap();
+        std::fs::write(images.join(name), gradient_png()?).unwrap();
     }
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -83,8 +83,8 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     // a.png is held: the pass can't read it. Where the permissions don't stop this process (root), there is nothing to
     // test.
     let Some(lock) = hold(&images.join("a.png"), Access::Read).unwrap() else {
-        pg_testkit::skip("the permissions don't stop this process from reading (root)");
-        return;
+        pg_platform::testing::skip("the permissions don't stop this process from reading (root)");
+        return Ok(());
     };
     let stats = pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // Both looked at; the unreadable one stored nothing and is counted in `failed`, but records no failure of the file's.
@@ -101,18 +101,19 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
 
     drop(c);
     let _ = std::fs::remove_dir_all(Path::new(&images));
+    Ok(())
 }
 
 /// A file that doesn't decode is stored as having none, so the pass doesn't look at it again until it changes, and the
 /// ledger has it; once its borders are found (here, looked for again as an analysis made again asks) it leaves it.
 #[test]
-fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
+fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() -> Result<()> {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
     let dir = pg_testkit::run_folder("scratch_library", "borders-ledger").unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
     let a = images.join("a.png");
-    std::fs::write(&a, gradient_png()).unwrap();
+    std::fs::write(&a, gradient_png()?).unwrap();
     let good = std::fs::read(&a).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -142,14 +143,15 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
     drop(c);
     let _ = std::fs::remove_dir_all(Path::new(&dir));
+    Ok(())
 }
 
 /// A detector that panics on a file records the file, as one that doesn't decode does: it isn't looked at again until
 /// it changes, and the pass goes on.
 #[test]
-fn a_detector_panic_records_the_file() {
+fn a_detector_panic_records_the_file() -> Result<()> {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-    let (_a, _good, mut c) = imported("borders-panic");
+    let (_a, _good, mut c) = imported("borders-panic")?;
     let id = state::file_id(&c, "a.png").unwrap();
     pg_borders::fault::panic_on(Some(id));
     let stats = pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new());
@@ -160,15 +162,16 @@ fn a_detector_panic_records_the_file() {
     assert_eq!((failed.file_id, failed.retry), (id, false));
     assert!(failed.error.contains("a fault"), "{}", failed.error);
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 0, "not looked at again");
+    Ok(())
 }
 
 /// A file that fails again keeps its row as it was (its serial, so it is not news again): the failure path never
 /// clears its own row.
 #[test]
-fn a_file_that_fails_again_keeps_its_row() {
+fn a_file_that_fails_again_keeps_its_row() -> Result<()> {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-    let (a, good, mut c) = imported("borders-again");
-    damage(&a, good.len());
+    let (a, good, mut c) = imported("borders-again")?;
+    damage(&a, good.len())?;
     pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new()).unwrap();
     let entries = c.ledger_entries(false).unwrap();
     assert_eq!(entries.len(), 1, "the borders' entry");
@@ -177,44 +180,47 @@ fn a_file_that_fails_again_keeps_its_row() {
     assert_eq!((stats.files, stats.failed), (1, 1));
     assert_eq!(c.recorded_failures(FilePass::Borders).unwrap().len(), 1);
     assert_eq!(c.ledger_entries(false).unwrap(), entries, "the row and its serial are as they were");
+    Ok(())
 }
 
 /// A batch that can't be written (here, its ledger write fails) stores nothing, neither the borders nor the ledger's
 /// rows: its files stay due, and the pass fails.
 #[test]
-fn a_batch_that_cant_be_written_stores_nothing_and_leaves_its_files_due() {
+fn a_batch_that_cant_be_written_stores_nothing_and_leaves_its_files_due() -> Result<()> {
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-    let (a, good, mut c) = imported("borders-locked");
-    damage(&a, good.len());
+    let (a, good, mut c) = imported("borders-locked")?;
+    damage(&a, good.len())?;
     let failing = pg_catalog::fixture::LedgerWritesFail::start();
     let found = pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &Control::new());
     drop(failing);
     assert!(found.is_err(), "the batch couldn't be written");
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 1, "the file stays due");
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty(), "nor is its failure recorded");
+    Ok(())
 }
 
 /// The ledger's changes the pass makes are announced (`Control::ledger_changed`): a recorded failure, and a row that
 /// goes when its borders are found.
 #[test]
-fn the_ledgers_changes_are_announced() {
+fn the_ledgers_changes_are_announced() -> Result<()> {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
-    let (a, good, mut c) = imported("borders-announced");
+    let (a, good, mut c) = imported("borders-announced")?;
     let ctl = Control::new();
     let announced = Arc::new(AtomicUsize::new(0));
     let counted = announced.clone();
     ctl.on_ledger_change(move || {
         counted.fetch_add(1, Ordering::SeqCst);
     });
-    damage(&a, good.len());
+    damage(&a, good.len())?;
     pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(announced.load(Ordering::SeqCst), 1);
-    rewrite(&a, &good);
+    rewrite(&a, &good)?;
     state::make_borders_due(&c, "a.png").unwrap();
     pg_borders::find(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(announced.load(Ordering::SeqCst), 2);
     assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
+    Ok(())
 }

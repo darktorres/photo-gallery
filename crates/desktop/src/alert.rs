@@ -3,5 +3,5 @@
 
 /// Shows `message` in an error box titled with the app's name.
 pub(crate) fn error_box(message: &str) {
-    pg_platform::message::error_box(&pg_client::text::ui("ui-app-name", 0.0, "", ""), message);
+    pg_platform::message::error_box(&pg_wording::ui("ui-app-name", 0.0, "", ""), message);
 }

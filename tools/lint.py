@@ -24,6 +24,9 @@ STEPS = [
     ["cargo", "check", "-p", "pg-model", "-p", "pg-client", "--locked", "--target", "wasm32-unknown-unknown"],
     # The workspaces outside the root (fuzz and eval/*-decoders have their own lockfiles): their lock must not be stale.
     ["cargo", "metadata", "--locked", "--manifest-path", "fuzz/Cargo.toml", "--format-version", "1"],
+    # The fuzz targets ship as test code (the CI's fuzz-smoke job runs them), so they get the root's format and lint gates.
+    ["cargo", "fmt", "--manifest-path", "fuzz/Cargo.toml", "--check"],
+    ["cargo", "clippy", "--manifest-path", "fuzz/Cargo.toml", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "metadata", "--locked", "--manifest-path", "eval/jpeg-decoders/Cargo.toml", "--format-version", "1"],
     ["cargo", "metadata", "--locked", "--manifest-path", "eval/png-decoders/Cargo.toml", "--format-version", "1"],
     ["cargo", "doc", "--workspace", "--no-deps", "--document-private-items", "--locked", "--timings"],

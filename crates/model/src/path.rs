@@ -3,7 +3,8 @@
 //! only holds the bytes a pass reads and the paths it hands out. The wide form a file is opened by is the platform's
 //! (`PathRules::to_wide`), built from a work list's folder and name.
 
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 /// Paths kept end to end in one buffer of bytes, each named by its range ([`PathRef`]). It grows by doubling, so a
 /// list of n paths makes about log₂ n allocations. Bytes, not text: a path is stored as the OS has it (`Name` bytes
@@ -120,6 +121,8 @@ impl<T> Default for WorkList<T> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+
     use super::*;
 
     #[test]

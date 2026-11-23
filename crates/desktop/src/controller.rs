@@ -187,7 +187,7 @@ pub(crate) fn set_counts(counts: Counts) {
 /// The filter bar's query was edited: the listing takes it at once; the list is shown after the controller's pause
 /// (`Event::QueryEdited`, reported by the shell).
 pub(crate) fn query_changed(query: pg_model::query::Query) {
-    let _ = update(Event::Listing(pg_client::controller::listing::Event::QueryChanged(query)));
+    let _ = update(Event::Listing(Box::new(pg_client::controller::listing::Event::QueryChanged(query))));
 }
 
 #[cfg(test)]

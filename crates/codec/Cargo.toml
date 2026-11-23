@@ -10,8 +10,11 @@ workspace = true
 
 # The pixels in and out: the image decoders and encoders are linked here, and deny.toml names the other crates allowed
 # to depend on them (`image`, `turbojpeg` and `png` are listed with their wrappers there). No file or
-# catalog access; the caller gives the bytes.
+# catalog access; the caller gives the bytes. The lossless rewrites of a file's bytes (`rewrite`) are here too: they read
+# the container's chunks (`pg-container`, which also makes a PNG chunk with its CRC) and write the IDAT and VP8L data
+# with the same encoders.
 [dependencies]
+pg-container = { path = "../container" }
 pg-model = { path = "../model" }
 fast_image_resize.workspace = true
 gif.workspace = true
@@ -22,15 +25,17 @@ png.workspace = true
 thiserror.workspace = true
 tiff.workspace = true
 turbojpeg.workspace = true
+weezl.workspace = true
 webp.workspace = true
 zune-core.workspace = true
 zune-jpeg.workspace = true
 
 [features]
-# The test fixtures for the crates that test their files (`fixture`, as pg-catalog's feature of that name is).
+# The test fixtures for the crates that test their files (`fixture`, as pg-catalog's feature of that name is): the image
+# files a test writes, and the codec's own helpers.
 fixture = []
 
 [dev-dependencies]
-pg-container = { path = "../container" } # a PNG chunk with its CRC, for the decode tests
 miniz_oxide.workspace = true
 pg-testkit = { path = "../testkit" }
+pg-testrng = { path = "../testrng" }

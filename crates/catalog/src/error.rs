@@ -5,11 +5,61 @@
 //! another connection past the busy timeout. Every other failure is one of the sources the catalog reads or writes
 //! through (SQLite, a stored value, a file), or a [`Error::Step`]: the step that failed, with the error under it.
 
+use pg_model::refusal::CatalogRefusal;
 use pg_model::rules::Path as RulePath;
 
 /// A library folder's path as the errors show it, under this platform's path rules.
 fn root_text(root: &RulePath) -> String {
     pg_platform::native::PATH_RULES.display(root)
+}
+
+/// The text of a refusal of `prepare` for the catalog at `path`: the words are the catalog's own (the front ends word a
+/// refusal from its typed value, `Error::refusal`, and this text is the command line's).
+fn refusal_message(refusal: &CatalogRefusal, path: &str) -> String {
+    match refusal {
+        CatalogRefusal::NewerSchema { found, current, written_by } => {
+            let by =
+                written_by.as_deref().filter(|b| !b.is_empty()).map(|b| format!(" by build {b}")).unwrap_or_default();
+            format!(
+                "catalog {path}: schema version {found}, which this build doesn't know (it has {current}): made by \
+                 another build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)"
+            )
+        }
+        CatalogRefusal::OlderSchema { found, current } => {
+            format!("catalog {path}: schema version {found}, not this build's {current}")
+        }
+        CatalogRefusal::NewerMark { mark, found, current, written_by } => {
+            let by =
+                written_by.as_deref().filter(|b| !b.is_empty()).map(|b| format!(" by build {b}")).unwrap_or_default();
+            format!(
+                "catalog {path}: its {mark} is {found}, a later build's (this build's is {current}): made by another \
+                 build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)"
+            )
+        }
+        CatalogRefusal::Drift { found, why } => format!(
+            "catalog {path}: its schema (version {found}) differs from this build's ({why}), and a released catalog is \
+             not rebuilt: restore a backup by hand (rename it over catalog.sqlite)"
+        ),
+        CatalogRefusal::PredatesKeyVersion => format!(
+            "catalog {path}: its schema differs from this build's and it predates key_version: restore a .pre-v*.bak or \
+             start fresh"
+        ),
+        CatalogRefusal::InUse => format!(
+            "catalog {path}: another program or connection has it open, so it can't be changed until it is closed"
+        ),
+        CatalogRefusal::ReadOnly => format!(
+            "catalog {path}: it needs a change, and it can't be written (it, or its folder, is read-only or permission is \
+             denied): make it writable, or open a copy of it"
+        ),
+        CatalogRefusal::PathTooLong => format!(
+            "catalog {path}: the path is too long for the files the catalog keeps beside it (Windows' limit is 259 \
+             characters): use a shorter folder, such as one set by PG_HOME or --catalog-dir"
+        ),
+        CatalogRefusal::PathRules { detail, wanted } => format!(
+            "catalog {path}: {detail}, this build uses the {wanted} path rules: open it on the platform that made it, or \
+             move it aside and scan again"
+        ),
+    }
 }
 
 /// What the catalog couldn't do: a conflict with another scan, a file's state, or a failure of a step under it.
@@ -111,12 +161,12 @@ pub enum Error {
     },
     /// A catalog file that `prepare` refuses, and why (`reason`). Nothing was written to it. The front ends word it by
     /// `reason` (`Error::refusal`); this text is the CLI's.
-    #[error("{}", .reason.message(.path))]
+    #[error("{}", refusal_message(.reason, .path))]
     Refused {
         /// The folder's path.
         path: String,
         /// Why the folder is refused.
-        reason: Box<Refusal>,
+        reason: Box<CatalogRefusal>,
     },
     #[error(transparent)]
     /// The file system failed (the I/O error is the text).
@@ -143,123 +193,6 @@ pub enum Error {
 
 /// The error under a [`Error::Step`]: any error of the catalog's dependencies, boxed.
 pub(crate) type Source = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-/// Why `prepare` refuses a catalog file. Typed, so a front end words it itself (`Error::refusal`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Refusal {
-    /// A schema after this build's: made by another build. `written_by` is the build that last changed the file, when
-    /// the file says (`meta.written_by`, empty when it is not known).
-    NewerSchema {
-        /// The schema version the file has.
-        found: i64,
-        /// The version this build expects.
-        current: i64,
-        /// The build that last changed the file, when the file says.
-        written_by: Option<String>,
-    },
-    /// A schema of an earlier version than this build's, which [`crate::Catalog::open`] does not bring forward (`prepare` does).
-    OlderSchema {
-        /// The schema version the file has.
-        found: i64,
-        /// The version this build expects.
-        current: i64,
-    },
-    /// An integer mark of the file (`mark`, a `meta` key) above this build's: a later build made or changed the file,
-    /// whatever its schema. Refused like a newer schema, so no mark is set back. `written_by` as for `NewerSchema`.
-    NewerMark {
-        /// The mark, a `meta` key.
-        mark: &'static str,
-        /// The value the file has.
-        found: i64,
-        /// The value this build expects.
-        current: i64,
-        /// The build that last changed the file, when the file says.
-        written_by: Option<String>,
-    },
-    /// A schema that differs from this build's, of a catalog that may not be rebuilt (a released one). `why` is the
-    /// difference.
-    Drift {
-        /// The schema version the file has.
-        found: i64,
-        /// The difference from this build's schema.
-        why: String,
-    },
-    /// A schema that differs, of a catalog without the `key_version` mark its rows' keys are known by.
-    PredatesKeyVersion,
-    /// Another program or connection has the catalog open, so it can't be changed.
-    InUse,
-    /// The path is too long for the files the catalog makes beside it to open (Windows' limit, which SQLite's own path
-    /// handling does not lift). Nothing was made.
-    PathTooLong,
-    /// The catalog needs a change, and it, or its folder, can't be written (read-only, or permission is denied). Nothing was
-    /// changed.
-    ReadOnly,
-    /// The catalog stores its paths under other rules than this build's: its names and paths don't read as this build's.
-    /// It is a valid catalog of another platform, so it is not moved aside. `detail` is how its rules differ (or that
-    /// they were not recorded), `wanted` names this build's rules.
-    PathRules {
-        /// How the file's rules differ, or that they were not recorded.
-        detail: String,
-        /// This build's rules, by name.
-        wanted: &'static str,
-    },
-}
-
-impl Refusal {
-    /// The text of this refusal for the catalog at `path`.
-    pub fn message(&self, path: &str) -> String {
-        match self {
-            Refusal::NewerSchema { found, current, written_by } => {
-                let by = written_by
-                    .as_deref()
-                    .filter(|b| !b.is_empty())
-                    .map(|b| format!(" by build {b}"))
-                    .unwrap_or_default();
-                format!(
-                    "catalog {path}: schema version {found}, which this build doesn't know (it has {current}): made by \
-                     another build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)"
-                )
-            }
-            Refusal::OlderSchema { found, current } => {
-                format!("catalog {path}: schema version {found}, not this build's {current}")
-            }
-            Refusal::NewerMark { mark, found, current, written_by } => {
-                let by = written_by
-                    .as_deref()
-                    .filter(|b| !b.is_empty())
-                    .map(|b| format!(" by build {b}"))
-                    .unwrap_or_default();
-                format!(
-                    "catalog {path}: its {mark} is {found}, a later build's (this build's is {current}): made by another \
-                     build{by}. Open it with that build, or restore a backup by hand (rename it over catalog.sqlite)"
-                )
-            }
-            Refusal::Drift { found, why } => format!(
-                "catalog {path}: its schema (version {found}) differs from this build's ({why}), and a released catalog is \
-                 not rebuilt: restore a backup by hand (rename it over catalog.sqlite)"
-            ),
-            Refusal::PredatesKeyVersion => format!(
-                "catalog {path}: its schema differs from this build's and it predates key_version: restore a .pre-v*.bak or \
-                 start fresh"
-            ),
-            Refusal::InUse => format!(
-                "catalog {path}: another program or connection has it open, so it can't be changed until it is closed"
-            ),
-            Refusal::ReadOnly => format!(
-                "catalog {path}: it needs a change, and it can't be written (it, or its folder, is read-only or permission is \
-                 denied): make it writable, or open a copy of it"
-            ),
-            Refusal::PathTooLong => format!(
-                "catalog {path}: the path is too long for the files the catalog keeps beside it (Windows' limit is 259 \
-                 characters): use a shorter folder, such as one set by PG_HOME or --catalog-dir"
-            ),
-            Refusal::PathRules { detail, wanted } => format!(
-                "catalog {path}: {detail}, this build uses the {wanted} path rules: open it on the platform that made it, or \
-                 move it aside and scan again"
-            ),
-        }
-    }
-}
 
 /// The catalog's result. `E` defaults to [`Error`], so the functions are written `Result<T>`.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -311,7 +244,7 @@ impl Error {
     }
 
     /// The catalog file's path and why `prepare` refused it, when this is a refusal.
-    pub fn refusal(&self) -> Option<(&str, &Refusal)> {
+    pub fn refusal(&self) -> Option<(&str, &CatalogRefusal)> {
         match self {
             Error::Refused { path, reason } => Some((path, reason.as_ref())),
             _ => None,

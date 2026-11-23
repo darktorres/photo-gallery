@@ -2,6 +2,9 @@
 //! each change it reports; this says what follows, as commands, with no Qt. Every change that is applied opens a list
 //! and remembers the session, except a sort choice that isn't one (it changes nothing).
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 use pg_model::query::{Query, Status};
 use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};

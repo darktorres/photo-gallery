@@ -107,7 +107,7 @@ impl Entry {
     pub fn shown_cut(&self) -> Option<[u32; 4]> {
         let [x, y, w, h] = self.content()?;
         let (sw, sh) = self.shown_size();
-        let px = |f: f64, side: u32| crate::num::f64_to_u32((f * f64::from(side)).round());
+        let px = |f: f64, side: u32| crate::num::f64_to_u32(crate::num::round_half_away(f * f64::from(side)));
         Some([px(x, sw), px(y, sh), px(1.0 - x - w, sw), px(1.0 - y - h, sh)])
     }
 

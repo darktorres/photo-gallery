@@ -4,6 +4,9 @@
 //! kept here are the stored ones. Text typed into a filter is read by the client (`pg_client::input`), which gives this
 //! module values.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::date::Day;
@@ -509,8 +512,10 @@ impl Query {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloc::vec;
     use strum::IntoEnumIterator;
+
+    use super::*;
 
     fn stars(n: u8) -> RatingFilter {
         RatingFilter::Stars(Rating::new(n).unwrap())

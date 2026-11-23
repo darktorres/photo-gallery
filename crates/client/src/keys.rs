@@ -1,6 +1,9 @@
 //! The key map: what a key does in the grid and in the viewer, as actions the front end carries out, and the hint lines
 //! shown with them. The keys are the front end's own (`Key`), not a toolkit's codes: the desktop turns its codes into
 //! these. Each hint line is made from the same labels as the map's documentation, so they are written once.
+use alloc::vec;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 /// A key the front end can act on.
@@ -236,7 +239,7 @@ pub enum Media {
     Video,
 }
 
-/// A label of a key hint line. Its words are the entry `id` of `locales/en/ui.ftl`; `text::hint` joins them.
+/// A label of a key hint line. Its words are the entry `id` of `locales/en/ui.ftl`; `pg_wording::hint` joins them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hint {
     /// Select an item.
@@ -439,7 +442,7 @@ mod tests {
 
     #[test]
     fn each_global_shortcut_has_its_own_sequence_with_ctrl_and_shift() {
-        let sequences: std::collections::BTreeSet<&str> = Global::ALL.iter().map(|g| g.sequence()).collect();
+        let sequences: alloc::collections::BTreeSet<&str> = Global::ALL.iter().map(|g| g.sequence()).collect();
         assert_eq!(sequences.len(), Global::ALL.len());
         assert!(sequences.iter().all(|s| s.starts_with("Ctrl+Shift+")));
     }

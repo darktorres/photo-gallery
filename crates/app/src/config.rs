@@ -15,7 +15,7 @@ pub struct Config {
     /// (`gallery.json`), the log (`gallery.log`), SQLite's aliases.
     pub layout: Layout,
     /// The thumbnail cache's cap; `None` keeps the cap the cache has.
-    pub thumb_cap: Option<pg_thumbcache::Cap>,
+    pub thumb_cap: Option<pg_model::cache::ThumbCap>,
     /// Where the Yandex search gets its calls: Yandex, unless the front end was given a recorded session.
     pub yandex: YandexSource,
 }

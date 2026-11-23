@@ -13,7 +13,7 @@
 pub(crate) mod state;
 use state::ShellRust;
 
-use crate::shell_bridge::qobject;
+use crate::bridges::shell_bridge::qobject;
 
 use core::pin::Pin;
 
@@ -360,20 +360,20 @@ impl qobject::Shell {
     }
 
     pub(crate) fn open_folder_row(self: Pin<&mut Self>, row: i32) {
-        self.dispatch(Event::Listing(row_event(folders::row_kind(row))));
+        self.dispatch(Event::Listing(Box::new(row_event(folders::row_kind(row)))));
     }
 
     pub(crate) fn set_recursive(self: Pin<&mut Self>, on: bool) {
-        self.dispatch(Event::Listing(ListingEvent::Recursive(on)));
+        self.dispatch(Event::Listing(Box::new(ListingEvent::Recursive(on))));
     }
 
     pub(crate) fn toggle_descending(self: Pin<&mut Self>) {
-        self.dispatch(Event::Listing(ListingEvent::DescendingToggled));
+        self.dispatch(Event::Listing(Box::new(ListingEvent::DescendingToggled)));
     }
 
     pub(crate) fn sort_by(self: Pin<&mut Self>, index: i32) {
         if let Some(index) = crate::rows::row_of(index) {
-            self.dispatch(Event::Listing(ListingEvent::SortChoice(index)));
+            self.dispatch(Event::Listing(Box::new(ListingEvent::SortChoice(index))));
         }
     }
 
@@ -429,18 +429,18 @@ impl qobject::Shell {
         let Some(folder) = crate::rows::row_of(row).and_then(crate::failed_files::shown_folder) else { return };
         let rules = pg_platform::native::PATH_RULES;
         let shown = rules.split_file_name(&folder).map_or(folder, |(parent, _)| parent);
-        self.as_mut().dispatch(Event::Listing(ListingEvent::Reveal(rules.merge(&shown))));
+        self.as_mut().dispatch(Event::Listing(Box::new(ListingEvent::Reveal(rules.merge(&shown)))));
         self.later(|shell| shell.reveal_shown());
     }
 
     /// List the files the import failed on, in every folder (an inbox entry's "Show the failed files").
     pub(crate) fn show_failed_imports(self: Pin<&mut Self>) {
-        self.dispatch(Event::Listing(ListingEvent::FailedImports));
+        self.dispatch(Event::Listing(Box::new(ListingEvent::FailedImports)));
     }
 
     /// Border detection was turned off: the listing is rid of what it gives (its border facets, the sort by border depth).
     pub(crate) fn borders_turned_off(self: Pin<&mut Self>) {
-        self.dispatch(Event::Listing(ListingEvent::BordersTurnedOff));
+        self.dispatch(Event::Listing(Box::new(ListingEvent::BordersTurnedOff)));
     }
 
     pub(crate) fn apply_view(mut self: Pin<&mut Self>, name: &QString) -> bool {
@@ -452,7 +452,7 @@ impl qobject::Shell {
             self.as_mut().options_refused();
             return false;
         }
-        self.dispatch(Event::Listing(ListingEvent::ViewApplied(v)));
+        self.dispatch(Event::Listing(Box::new(ListingEvent::ViewApplied(v))));
         true
     }
 

@@ -25,7 +25,7 @@ fn jpeg(seed: u32) -> Result<Vec<u8>> {
             })
         })
         .collect();
-    pg_testkit::encode(320, 240, &rgb, pg_testkit::Encoding::Jpeg).map_err(Into::into)
+    pg_codec::fixtures::encode(320, 240, &rgb, pg_codec::fixtures::Encoding::Jpeg).map_err(Into::into)
 }
 
 /// Every file under `dir`, recursively.

@@ -82,7 +82,7 @@ fn for_viewer_png() -> (Vec<u8>, Decoder) {
     let image = or_stop(pg_render::display::decode(&mut decoder, &read_sample(), MinSize::Full, Turns::NONE), "decode");
     let width = or_stop(u32::try_from(image.image.width), "the width");
     let height = or_stop(u32::try_from(image.image.height), "the height");
-    (or_stop(pg_testkit::png_rgb(width, height, &image.image.pixels), "the PNG"), decoder)
+    (or_stop(pg_codec::fixtures::png_rgb(width, height, &image.image.pixels), "the PNG"), decoder)
 }
 
 /// The image fitted into the window, as the viewer shows it.

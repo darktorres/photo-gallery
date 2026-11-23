@@ -99,7 +99,7 @@
 //! The job posts through `pg_jobs::NoticeSink` (`post`, `replace`, `clear`, `poke`), which the inbox implements; it lives in
 //! `pg-jobs` so that the job (`pg_library::runner`) and the writer (`pg_writeback`) both post through it. Tests use
 //! `pg_jobs_testkit::RecordingSink`. The command line passes a printing sink and prints the same words
-//! (`pg_client::text::notice_line`) for the notices it has. A rebuilt catalog's notice is `Rebuilt::notice`.
+//! (`pg_wording::notice_line`) for the notices it has. A rebuilt catalog's notice is `Rebuilt::notice`.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -109,11 +109,12 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pg_catalog::Catalog;
-use pg_catalog::inbox::{Entry, EntryId, Mark};
+use pg_catalog::inbox::Mark;
 use pg_catalog::ledger::Failure;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::ids::FileId;
+use pg_model::inbox::{InboxEntry as Entry, InboxEntryId as EntryId};
 use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice, Trigger};
 
 use crate::error::{Error, Result};

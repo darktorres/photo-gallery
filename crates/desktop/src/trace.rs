@@ -4,7 +4,7 @@
 
 pub(crate) mod state;
 
-use crate::trace_bridge::qobject;
+use crate::bridges::trace_bridge::qobject;
 
 use pg_trace::{pg_stage_first_frame, pg_stage_ready};
 

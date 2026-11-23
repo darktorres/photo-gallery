@@ -531,7 +531,7 @@ mod tests {
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -569,7 +569,8 @@ mod tests {
     fn pictures(prefix: &str, names: &[&str]) -> (std::path::PathBuf, std::path::PathBuf, Catalog) {
         let dir = pg_testkit::run_folder_with("scratch_thumbs", prefix, &["images"]).unwrap();
         for name in names {
-            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+            std::fs::write(dir.join("images").join(name), pg_codec::fixtures::png_rgb(8, 8, &[128; 192]).unwrap())
+                .unwrap();
         }
         let catalog_path = dir.join("catalog.sqlite");
         let c =
@@ -590,7 +591,7 @@ mod tests {
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(cap),
+            pg_model::cache::ThumbCap::from_bytes(cap),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -775,7 +776,7 @@ mod tests {
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -790,7 +791,7 @@ mod tests {
         assert_eq!((second.needed, second.failed), (1, 1));
         assert_eq!(c.ledger_entries(false).unwrap(), summary);
         // Mended in place, and the user's Retry: it is made, and leaves the ledger.
-        std::fs::write(&a, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        std::fs::write(&a, pg_codec::fixtures::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         std::fs::File::options().write(true).open(&a).unwrap().set_modified(mtime).unwrap();
         c.retry_failures(FilePass::Thumbs).unwrap();
         let third = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
@@ -825,7 +826,7 @@ mod tests {
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             &c.catalog_id().unwrap(),
-            pg_thumbcache::Cap::from_bytes(1 << 30),
+            pg_model::cache::ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             events,
         )

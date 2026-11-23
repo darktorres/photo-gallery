@@ -36,23 +36,21 @@ use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Watch};
-use pg_jobs::failure::Cause;
 use pg_jobs::panics;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::analysis::FileHash;
 use pg_model::format::Format;
+use pg_model::job::{Cause, Change};
 use pg_model::media::Kind;
 use pg_model::notice::{ERROR_CAP, Notice, Trigger, tidy};
 use pg_model::rules::Path as RulePath;
 
-use pg_model::write::{Write, WriteKind};
+use pg_model::write::{Write, WriteError, WriteKind};
 use pg_platform::names::disk_path;
 use pg_platform::names::set_path;
 use pg_platform::native::NativePath;
 use pg_thumbcache::ThumbCache;
-
-use pg_jobs::events::Change;
 
 mod error;
 #[cfg(any(test, feature = "fault"))]
@@ -90,35 +88,14 @@ pub struct WriteStatus {
     pub thumbnail_error: Option<pg_model::notice::ThumbnailLag>,
 }
 
-/// Why a write failed, for the app to word.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum WriteError {
-    /// A job's failure (an error, or a panic on it), or the queue's.
-    Failed(Cause),
-    /// The copy into the original failed up to the cap after it may have started: the original (`file`, as the user
-    /// sees its path) may be incomplete, and the whole new content is in `temp`. Both are kept; the copy is tried
-    /// again after the next change to the file, and at the next start.
-    CopyIncomplete {
-        /// The file, as the user sees its path.
-        file: String,
-        /// The temp that holds the whole new content.
-        temp: String,
-        /// What ended the copy.
-        cause: Cause,
-    },
-}
-
-/// The English words, for the command line and the queue's `error` column; the app words it through `pg_client::text`.
-impl std::fmt::Display for WriteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WriteError::Failed(cause) => write!(f, "{cause}"),
-            WriteError::CopyIncomplete { file, temp, cause } => write!(
-                f,
-                "{file} may be incomplete: copying its change into it failed ({cause}); the whole new content is in \
-                 {temp}"
-            ),
-        }
+/// The English words of a write error, for the command line and the queue's `error` column; the app words it through
+/// `pg_wording`. (`WriteError` itself holds the facts, in the model.)
+pub fn write_error_words(error: &WriteError) -> String {
+    match error {
+        WriteError::Failed(cause) => cause.to_string(),
+        WriteError::CopyIncomplete { file, temp, cause } => format!(
+            "{file} may be incomplete: copying its change into it failed ({cause}); the whole new content is in {temp}"
+        ),
     }
 }
 
@@ -495,7 +472,7 @@ impl Inner {
                         });
                         continue;
                     }
-                    let cause = Cause::of(&e);
+                    let cause = Cause::from(&e);
                     let at_cap = !offline && job.attempts.saturating_add(1) >= MAX_ATTEMPTS;
                     // At the cap, a copy that may have started says so: the original may be incomplete, and its temp
                     // (kept, with its record) holds the whole new content.
@@ -505,7 +482,7 @@ impl Inner {
                         }
                         _ => WriteError::Failed(cause),
                     };
-                    catalog.write_failed(&job, &error.to_string(), offline)?;
+                    catalog.write_failed(&job, &write_error_words(&error), offline)?;
                     self.update_status(|s| {
                         s.error = Some(error);
                         s.error_file = Some(job.file_id);
@@ -811,7 +788,7 @@ mod tests {
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
             "a catalog",
-            pg_thumbcache::Cap::from_bytes(1 << 20),
+            pg_model::cache::ThumbCap::from_bytes(1 << 20),
             pg_model::versions::THUMBS_VERSION,
             events,
         )
@@ -893,7 +870,7 @@ mod tests {
             temp: r"D:\p\.a.jpg.rating.pg-write".into(),
             cause: Cause::Error("disk full".into()),
         };
-        let text = error.to_string();
+        let text = write_error_words(&error);
         assert!(text.starts_with(r"D:\p\a.jpg may be incomplete: copying its change into it failed"), "{text}");
         assert!(text.contains("(disk full)"), "{text}");
         assert!(text.ends_with(r"the whole new content is in D:\p\.a.jpg.rating.pg-write"), "{text}");

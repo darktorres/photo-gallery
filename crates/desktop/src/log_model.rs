@@ -33,7 +33,7 @@
 
 pub(crate) mod state;
 
-use crate::log_model_bridge::qobject;
+use crate::bridges::log_model_bridge::qobject;
 
 use core::pin::Pin;
 use std::sync::{Arc, Mutex};

@@ -2,7 +2,8 @@
 //! refusals first: a catalog this build cannot open is refused before anything is written, and a released catalog's
 //! drift is never rebuilt (the carry-rebuild is for development only, while nothing is released).
 
-use crate::error::Refusal;
+use pg_model::refusal::CatalogRefusal as Refusal;
+
 use crate::lifecycle::NewerMark;
 
 /// The catalog schema versions that have been released. Empty until the first release: every version is then the
@@ -233,8 +234,8 @@ mod tests {
 #[cfg(test)]
 mod prepare_tests {
     use crate::Catalog;
-    use crate::error::Refusal;
     use crate::test_support::versions;
+    use pg_model::refusal::CatalogRefusal as Refusal;
     use pg_model::rules::PathRules;
     use pg_testkit::run_folder;
     use rusqlite::Connection;

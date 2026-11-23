@@ -128,26 +128,6 @@ impl<E> Subscription<E> {
     }
 }
 
-/// What the library's background job or its writer changed, for an owner that reads the new state on its own thread
-/// instead of polling. An event says only that something changed: the state is read from the job's and the writer's
-/// getters. (The library's passes publish these; the enum lives here so the writer and the job share it without the
-/// writer depending on the job.)
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Change {
-    /// The pass's progress, or the pause.
-    Progress,
-    /// A folder scan changed the catalog (`Runner::generation`).
-    Scanned,
-    /// An import or border pass analyzed something (`Runner::generation`).
-    Imported,
-    /// A round ended (`Runner::rounds`).
-    Round,
-    /// The writer's queue or its latest failure (`Writer::status`).
-    Writes,
-    /// A file was turned (`Writer::turned`).
-    Turned,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

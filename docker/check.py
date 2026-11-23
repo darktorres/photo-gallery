@@ -4,7 +4,8 @@ are tools/lint.py's (the same list `just lint` runs); the tests run here. Each s
 Run it through the launcher, from the repository root: `just check-linux` (tools/linux.py check), which builds the image
 and mounts the working tree here.
 
-A test that can't check what it is for returns early and passes, after it prints `skipped: <reason>` (pg_testkit::skip) or
+A test that can't check what it is for returns early and passes, after it prints `skipped: <reason>`
+(`pg_platform::testing::skip`) or
 `<tool> not found: skipped` (missing_tool). The container runs as `pg`, so none of the permission-based tests should skip:
 any skip fails this step, since such a test checked nothing.
 """

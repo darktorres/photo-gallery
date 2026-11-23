@@ -4,6 +4,8 @@
 //! text typed for a bound is empty (an open end), or a number, or a calendar day for the day fields. The query itself
 //! is `pg_model::query`; nothing here reads the catalog.
 
+use alloc::string::{String, ToString};
+
 use pg_model::date::Day;
 use pg_model::media::MediaType;
 use pg_model::query::{

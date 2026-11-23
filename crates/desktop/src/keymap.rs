@@ -8,12 +8,11 @@
 
 pub(crate) mod state;
 
-use crate::keymap_bridge::qobject;
+use crate::bridges::keymap_bridge::qobject;
 
 use cxx_qt_lib::QString;
 use pg_client::controller::panels::PanelKind;
 use pg_client::keys::{self, Global, GridKey, Key, Media, Mods, Panel, Shown, Viewer};
-use pg_client::text;
 
 // Qt's key codes (`Qt::Key`) and modifier flags (`Qt::KeyboardModifier`): the values of Qt's stable ABI.
 const KEY_ESCAPE: i32 = 0x0100_0000;
@@ -65,7 +64,7 @@ fn mods_of(modifiers: i32) -> Mods {
 /// The media a `GalleryModel.MediaKind` value is (QML passes the enum's value as an int): the bridge's enum read by its
 /// values, so a reordering of it changes nothing here. An unknown value is a still.
 fn media_of(kind: i32) -> Media {
-    use crate::gallery_bridge::qobject::MediaKind;
+    use crate::bridges::gallery_bridge::qobject::MediaKind;
     match kind {
         k if k == MediaKind::Animated.repr => Media::Animated,
         k if k == MediaKind::Video.repr => Media::Video,
@@ -151,7 +150,7 @@ impl qobject::KeyMap {
     }
 
     pub(crate) fn grid_hint(&self) -> QString {
-        QString::from(&text::hint(&keys::grid_hint()))
+        QString::from(&pg_wording::hint(&keys::grid_hint()))
     }
 
     pub(crate) fn panel_action(&self, key: i32) -> i32 {
@@ -159,7 +158,7 @@ impl qobject::KeyMap {
     }
 
     pub(crate) fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
-        QString::from(&text::hint(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders))))
+        QString::from(&pg_wording::hint(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders))))
     }
 
     pub(crate) fn global_sequence(&self, code: i32) -> QString {
@@ -172,11 +171,10 @@ mod tests {
     use super::*;
 
     /// The names of the enum `name` in a QML file, in order: `enum <name> { A, B, … }`.
-    #[expect(clippy::string_slice, reason = "find results and an ASCII pattern's length are char boundaries")]
     fn qml_enum(source: &str, name: &str) -> Vec<String> {
         let head = format!("enum {name} {{");
-        let rest = &source[source.find(&head).expect("the enum is in the file") + head.len()..];
-        let body = &rest[..rest.find('}').expect("the enum closes")];
+        let (_, rest) = source.split_once(&head).expect("the enum is in the file");
+        let (body, _) = rest.split_once('}').expect("the enum closes");
         body.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect()
     }
 
@@ -248,7 +246,7 @@ mod tests {
 
     #[test]
     fn a_media_kind_value_is_its_media() {
-        use crate::gallery_bridge::qobject::MediaKind;
+        use crate::bridges::gallery_bridge::qobject::MediaKind;
         assert_eq!(media_of(MediaKind::Image.repr), Media::Still);
         assert_eq!(media_of(MediaKind::Animated.repr), Media::Animated);
         assert_eq!(media_of(MediaKind::Video.repr), Media::Video);

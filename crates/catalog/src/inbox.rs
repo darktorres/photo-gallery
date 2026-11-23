@@ -48,18 +48,16 @@
 
 use rusqlite::{Connection, params};
 
+use pg_model::inbox::{InboxCounts as Counts, InboxEntry as Entry, InboxEntryId as EntryId};
 use pg_model::notice::{Key, Level, Lifecycle, Notice, Part, Trigger, resolves};
 use pg_model::rules::PathRules;
 
 use crate::convert::progress_count;
 use crate::core::Catalog;
 use crate::error::{Error, Result};
-use crate::ledger::{Counts, dismiss_ledger_on, ledger_entries_on, mark_ledger_read_on};
+use crate::ledger::{dismiss_ledger_on, ledger_entries_on, mark_ledger_read_on};
 use crate::transaction::write_transaction;
 use crate::types::covering_root;
-
-mod id;
-pub use id::EntryId;
 
 /// The most Events the inbox keeps (`notices_uid`): past it, each insert deletes the oldest, read ones first. States
 /// are bounded by their keys.
@@ -67,29 +65,6 @@ pub const KEPT_EVENTS: i64 = kept_events!();
 
 /// How long a dismissed state is kept (seconds, an SQL-bound `i64`): a same-data repost of it stays dismissed meanwhile.
 pub const DISMISSED_FOR_SECS: i64 = 30 * 24 * 60 * 60;
-
-/// An entry as the inbox lists it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entry {
-    /// The entry's id: a row's or a ledger's (see [`EntryId`]).
-    pub id: EntryId,
-    /// What the entry says, as the notice this build makes of its kind.
-    pub notice: Notice,
-    /// A row's: how many times it was posted (a state's repeats, in `total`). A ledger's: read only while the inbox is
-    /// viewed, `None` otherwise (nothing renders a count then).
-    pub counts: Option<Counts>,
-    /// When it was first posted, and last (Unix seconds).
-    pub created: i64,
-    /// When it was last changed (Unix seconds).
-    pub updated: i64,
-    /// Whether the user has read it.
-    pub read: bool,
-    /// Why a stored row of a kind this build knows couldn't be read (it then reads as [`Notice::Unknown`]): a bad
-    /// payload, which the inbox logs. `None` for a row read, and for a retired or unknown kind (expected).
-    pub decode_error: Option<String>,
-    /// A ledger's acknowledgement mark as listed ([`crate::ledger::Summary::seen_to`]); `None` for a row.
-    pub seen_to: Option<i64>,
-}
 
 /// What tells one listing of the inbox from the next ([`Catalog::inbox_marks`]): a row that is new, posted again (its
 /// count, or its revision in its id), or newly read; a ledger by the newest row in its id.

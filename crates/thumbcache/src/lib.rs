@@ -42,12 +42,14 @@ pub mod fault;
 
 pub use error::{Error, Result};
 
-pub use config::{CACHE_VERSION, Cap, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
+pub use config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
 pub use maintenance::Drift;
 pub use reader::pending_in;
 pub use types::{Effect, Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
 
 use std::path::Path;
+
+use pg_model::cache::ThumbCap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
@@ -102,12 +104,12 @@ impl ThumbCache {
     pub fn open(
         path: &Path,
         catalog_id: &str,
-        cap: Option<Cap>,
+        cap: Option<ThumbCap>,
         thumbs_version: i64,
         events: Arc<Bus<Event>>,
     ) -> Result<ThumbCache> {
         let Writing { conn, started_over, drift, live } =
-            open_writer(path, catalog_id, cap.map(Cap::bytes), thumbs_version)?;
+            open_writer(path, catalog_id, cap.map(ThumbCap::bytes), thumbs_version)?;
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
@@ -413,16 +415,6 @@ mod tests {
     use pg_model::ids::FolderId;
     use pg_model::notice::StartOverReason;
 
-    #[test]
-    fn a_cap_is_refused_when_it_would_be_no_cache() {
-        assert_eq!(Cap::from_gib(2.0).map(Cap::bytes), Some(2 * 1_073_741_824));
-        assert_eq!(Cap::from_gib(0.5).map(Cap::bytes), Some(536_870_912));
-        for gib in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e-12, 1e12] {
-            assert_eq!(Cap::from_gib(gib), None, "{gib} is refused");
-        }
-        assert_eq!(Cap::from_bytes(-1), None);
-        assert_eq!(Cap::from_bytes(0), None);
-    }
     use pg_jobs_testkit::Quiet;
     use pg_testkit::run_folder;
 
@@ -489,7 +481,7 @@ mod tests {
 
     fn open_quiet(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Opened {
         let (events, watch) = Quiet::bus();
-        let cap = cap_bytes.map(|bytes| Cap::from_bytes(bytes).expect("a cap"));
+        let cap = cap_bytes.map(|bytes| ThumbCap::from_bytes(bytes).expect("a cap"));
         let cache =
             ThumbCache::open(&cache_path(dir), catalog_id, cap, pg_model::versions::THUMBS_VERSION, events).unwrap();
         Opened { cache, _events: watch }
@@ -504,7 +496,7 @@ mod tests {
     ) -> (ThumbCache, StartOverReason, PathBuf, String) {
         let bus = Arc::new(Bus::new(8));
         let events = bus.subscribe();
-        let cap = cap_bytes.map(|bytes| Cap::from_bytes(bytes).expect("a cap"));
+        let cap = cap_bytes.map(|bytes| ThumbCap::from_bytes(bytes).expect("a cap"));
         let cache =
             ThumbCache::open(&cache_path(dir), catalog_id, cap, pg_model::versions::THUMBS_VERSION, bus).unwrap();
         let mut taken = events.take().items.into_iter();
@@ -761,7 +753,7 @@ mod tests {
         let open = ThumbCache::open(
             &cache_path(dir),
             CATALOG_ID,
-            Cap::from_bytes(1 << 30),
+            ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             bus,
         );
@@ -1070,7 +1062,7 @@ mod tests {
         let dir = run_folder(SCRATCH, "sequence").unwrap();
         let cache = open(&dir, 5_000);
         // A fixed pseudo-random walk over puts (new and replacing), on-demand puts, evictions and retags.
-        let mut rng = pg_testkit::Rng::new(0x9E37_79B9_7F4A_7C15);
+        let mut rng = pg_testrng::Rng::new(0x9E37_79B9_7F4A_7C15);
         let mut next = |n: u64| rng.next_u64() % n;
         for _ in 0..600 {
             let (file, height, size) = (
@@ -1133,7 +1125,7 @@ mod tests {
         let cache = ThumbCache::open(
             &cache_path(&dir),
             CATALOG_ID,
-            Cap::from_bytes(1 << 30),
+            ThumbCap::from_bytes(1 << 30),
             pg_model::versions::THUMBS_VERSION,
             bus,
         )
@@ -1154,7 +1146,7 @@ mod tests {
             ThumbCache::open(
                 &cache_path(&dir),
                 CATALOG_ID,
-                Cap::from_bytes(1 << 30),
+                ThumbCap::from_bytes(1 << 30),
                 pg_model::versions::THUMBS_VERSION,
                 bus,
             )

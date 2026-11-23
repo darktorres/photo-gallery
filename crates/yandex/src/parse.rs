@@ -47,38 +47,34 @@ pub fn read_similar_pages(
 }
 
 /// The results page's `ImagesApp-*` element carries its state as an HTML-escaped `data-state` attribute.
-#[expect(clippy::string_slice, reason = "every index is a find result or the end of an ASCII pattern: a char boundary")]
 fn extract_data_state(html: &str) -> Option<&str> {
     let marker = html.find("id=\"ImagesApp-")?;
-    let tag_start = html[..marker].rfind("<div")?;
-    let tag_end = tag_start + html[tag_start..].find('>')?;
-    let tag = &html[tag_start..tag_end];
+    let tag_start = html.get(..marker)?.rfind("<div")?;
+    let from_tag = html.get(tag_start..)?;
+    let tag = from_tag.get(..from_tag.find('>')?)?;
     let attr = tag.find("data-state=\"")? + "data-state=\"".len();
-    let end = tag[attr..].find('"')?;
-    Some(&tag[attr..attr + end])
+    let end = tag.get(attr..)?.find('"')?;
+    tag.get(attr..attr + end)
 }
 
 /// Decodes the HTML entities that appear in the state attribute. One pass, so `&amp;quot;` stays `&quot;`.
-#[expect(
-    clippy::string_slice,
-    reason = "every index is a find result, or one past an ASCII '&' or ';': a char boundary"
-)]
 fn decode_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(i) = rest.find('&') {
-        out.push_str(&rest[..i]);
-        let tail = &rest[i..];
+        // Every index here is a find result or one past an ASCII '&' or ';', so `split_at` and `get` are exact.
+        let (head, tail) = rest.split_at(i);
+        out.push_str(head);
         let decoded =
-            tail.find(';').filter(|&end| end <= 10).and_then(|end| decode_entity(&tail[1..end]).map(|c| (c, end)));
+            tail.find(';').filter(|&end| end <= 10).and_then(|end| decode_entity(tail.get(1..end)?).map(|c| (c, end)));
         match decoded {
             Some((c, end)) => {
                 out.push(c);
-                rest = &tail[end + 1..];
+                rest = tail.get(end + 1..).unwrap_or_default();
             }
             None => {
                 out.push('&');
-                rest = &tail[1..];
+                rest = tail.get(1..).unwrap_or_default();
             }
         }
     }

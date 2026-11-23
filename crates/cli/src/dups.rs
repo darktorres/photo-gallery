@@ -2,12 +2,13 @@
 //! they form together), and printed. Grouping here is plain connected components, enough to inspect tiers 0–1. The real
 //! grouping is multicut over verified tier-2 edges.
 
+use crate::out::stdout_line;
 use anyhow::{Result, anyhow};
 use pg_catalog::Catalog;
 use pg_catalog::dups::Identity;
-use pg_client::text::cli::{Line, Tier, line};
 use pg_dedup::UnionFind;
 use pg_model::ids::FileId;
+use pg_wording::cli::{Line, Tier, line};
 
 /// The PDQ distance that joins two files into a group by default.
 pub(crate) const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;
@@ -37,30 +38,27 @@ pub(crate) fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Res
             Identity::File => Tier::File,
             Identity::Pixels => Tier::Pixels,
         };
-        println!("{}", line(&Line::DupsIdentical { tier, groups: groups.to_string(), files: files.to_string() }));
+        stdout_line(line(&Line::DupsIdentical { tier, groups: groups.to_string(), files: files.to_string() }))?;
     }
-    println!("{}", line(&Line::DupsPdq));
+    stdout_line(line(&Line::DupsPdq))?;
     for (lo, hi, pairs) in &found.pdq_bands {
         let band = Line::DupsBand { lo: format!("{lo:>2}"), hi: format!("{hi:<2}"), pairs: pairs.to_string() };
-        println!("  {}", line(&band));
+        stdout_line(format!("  {}", line(&band)))?;
     }
     let files: usize = found.groups.iter().map(Vec::len).sum();
-    println!(
-        "{}",
-        line(&Line::DupsGroups {
-            distance: group_distance.to_string(),
-            groups: found.groups.len().to_string(),
-            files: files.to_string(),
-            largest: format!("{:?}", found.groups.iter().take(5).map(Vec::len).collect::<Vec<_>>()),
-        })
-    );
+    stdout_line(line(&Line::DupsGroups {
+        distance: group_distance.to_string(),
+        groups: found.groups.len().to_string(),
+        files: files.to_string(),
+        largest: format!("{:?}", found.groups.iter().take(5).map(Vec::len).collect::<Vec<_>>()),
+    }))?;
     for g in found.groups.iter().take(show) {
-        println!("\n{}", line(&Line::DupsGroup { count: g.len().to_string() }));
+        stdout_line(format!("\n{}", line(&Line::DupsGroup { count: g.len().to_string() })))?;
         for id in g.iter().take(20) {
             let path = catalog
                 .file_path(*id)?
                 .ok_or_else(|| anyhow!(line(&Line::FileNotInCatalog { id: id.get().to_string() })))?;
-            println!("  {}", catalog.rules().display(&path));
+            stdout_line(format!("  {}", catalog.rules().display(&path)))?;
         }
     }
     Ok(())

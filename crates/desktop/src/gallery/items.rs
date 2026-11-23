@@ -6,13 +6,13 @@ use std::io::Write;
 use cxx_qt_lib::{QRectF, QString, QStringList};
 use pg_client::image::ImageRequest;
 use pg_client::layout;
-use pg_client::text::{self, FoundBorders};
 use pg_model::detection::{Class, Edge};
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version};
 use pg_model::media::MediaType;
 use pg_model::size::ThumbHeight;
+use pg_wording::FoundBorders;
 
 use super::qobject;
 
@@ -114,7 +114,7 @@ impl qobject::GalleryModel {
     /// format of an animated image (`GIF`, `APNG`, `WEBP`), or nothing.
     pub(super) fn badge(&self, item: i32) -> QString {
         let Some(e) = self.entry(item) else { return QString::default() };
-        QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.key()))
+        QString::from(&pg_wording::badge(e.media_type(), e.duration_ms(), e.ext.key()))
     }
 
     /// What is left of the image without its borders, as fractions of the image as shown (pending turns included);
@@ -190,7 +190,7 @@ impl qobject::GalleryModel {
             };
             let kept = e.rating.is_some() && !d.rating_in_file;
             let path = pg_platform::native::PATH_RULES.display(&d.path);
-            QString::from(&text::info(&path, e.shown_size(), d.size, kept, borders))
+            QString::from(&pg_wording::info(&path, e.shown_size(), d.size, kept, borders))
         })
         .unwrap_or_default()
     }

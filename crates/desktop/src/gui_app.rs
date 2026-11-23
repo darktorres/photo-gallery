@@ -50,7 +50,7 @@ mod tests {
     // A raw byte in an argument reaches Qt's argv as it is, the program's name first.
     #[test]
     fn a_raw_byte_argument_reaches_qts_argv_as_it_is() {
-        let mut odd = pg_testkit::odd_name("--screenshot=/a/");
+        let mut odd = pg_platform::testing::odd_name("--screenshot=/a/");
         odd.push(".png");
         let args = [OsString::from("gallery"), odd];
         assert_eq!(argv_bytes(&args), b"gallery\0--screenshot=/a/\xFF.png\0");

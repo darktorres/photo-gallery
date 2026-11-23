@@ -1,8 +1,6 @@
 //! What the import computes from one file, as data: the record the catalog stores and the grid reads. Producing it
 //! is the job of pg-analysis's `analyze` module. This module is the shape of the result, with no decoding and no I/O.
 
-use std::io::{self, Read};
-
 use crate::format::Format;
 use crate::orientation::Orientation;
 use crate::pdq;
@@ -16,13 +14,6 @@ impl FileHash {
     /// The hash of `bytes`, loaded.
     pub fn of(bytes: &[u8]) -> FileHash {
         FileHash(*blake3::hash(bytes).as_bytes())
-    }
-
-    /// The hash of what `reader` gives, streamed (a video, not read whole): the same as [`FileHash::of`] its bytes.
-    pub fn of_reader(reader: impl Read) -> io::Result<FileHash> {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update_reader(reader)?;
-        Ok(FileHash(*hasher.finalize().as_bytes()))
     }
 }
 

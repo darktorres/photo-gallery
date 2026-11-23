@@ -7,7 +7,7 @@ use std::pin::Pin;
 use cxx_qt::QObject;
 use cxx_qt::casting::Upcast;
 
-use crate::deadline_bridge::ffi;
+use crate::bridges::deadline_bridge::ffi;
 
 /// The shell's QObject, which the timer is a child of. The pointer lives as long as the shell, and only the shell's methods
 /// (on the GUI thread) use it.
@@ -48,7 +48,7 @@ mod tests {
     fn the_names_the_cpp_side_reaches_by_string_exist() {
         let deadline = include_str!("../cpp/deadline.cpp");
         let screenshot = include_str!("../cpp/screenshot.cpp");
-        let shell_bridge = include_str!("shell_bridge.rs");
+        let shell_bridge = include_str!("bridges/shell_bridge.rs");
         let main = include_str!("../qml/Main.qml");
         assert!(deadline.contains("\"timeout\""));
         assert!(shell_bridge.contains("fn timeout(self: Pin<&mut Shell>);"));

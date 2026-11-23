@@ -19,25 +19,28 @@ fn spawn_holder(db: &Path, mode: &str, ready: &Path, release: &Path) -> std::io:
     Command::new(std::env::current_exe()?)
         .args(["--exact", "holder"])
         .stdout(Stdio::null())
-        .env("PG_HOLDER_PATH", db)
-        .env("PG_HOLDER_MODE", mode)
-        .env("PG_HOLDER_READY", ready)
-        .env("PG_HOLDER_RELEASE", release)
+        .env(pg_testkit::inputs::HOLDER_PATH, db)
+        .env(pg_testkit::inputs::HOLDER_MODE, mode)
+        .env(pg_testkit::inputs::HOLDER_READY, ready)
+        .env(pg_testkit::inputs::HOLDER_RELEASE, release)
         .spawn()
 }
 
 /// Run only by `spawn_holder`: without `PG_HOLDER_PATH` it does nothing.
 #[test]
 fn holder() {
-    let Some(db) = std::env::var_os("PG_HOLDER_PATH") else { return };
-    let hold = if std::env::var("PG_HOLDER_MODE").unwrap() == "shared" {
+    let Some(db) = std::env::var_os(pg_testkit::inputs::HOLDER_PATH) else { return };
+    let hold = if std::env::var(pg_testkit::inputs::HOLDER_MODE).unwrap() == "shared" {
         Live::shared(Path::new(&db)).unwrap()
     } else {
         Live::exclusive(Path::new(&db)).unwrap()
     };
     let _hold = hold.expect("the holder gets its hold");
-    std::fs::write(std::env::var_os("PG_HOLDER_READY").unwrap(), b"").unwrap();
-    pg_testkit::wait_for_path(Path::new(&std::env::var_os("PG_HOLDER_RELEASE").unwrap()), Duration::from_secs(60));
+    std::fs::write(std::env::var_os(pg_testkit::inputs::HOLDER_READY).unwrap(), b"").unwrap();
+    pg_testkit::wait_for_path(
+        Path::new(&std::env::var_os(pg_testkit::inputs::HOLDER_RELEASE).unwrap()),
+        Duration::from_secs(60),
+    );
 }
 
 /// A shared hold in another process keeps the exclusive hold out, and shares with other shared holds.

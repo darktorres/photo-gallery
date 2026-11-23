@@ -231,7 +231,7 @@ mod tests {
     use super::*;
     use crate::test_support::png_chunk;
     use pg_container::JPEG_XMP_EXTENSION;
-    use pg_testkit::Rng;
+    use pg_testrng::Rng;
 
     // Extended packets are reassembled as the map of maps did it (the first chunk's length, the last chunk at an
     // offset, contiguous from 0, by GUID): random chunk lists of up to 3 packets, chunks shuffled, repeated with other

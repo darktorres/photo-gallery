@@ -24,6 +24,9 @@ use pg_platform::drive::{Drive, DriveKey, Drives, Kind};
 use pg_platform::native::PATH_RULES;
 use pg_thumbcache::ThumbCache;
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// How long a test waits for the job to show what it should, and for its threads to end.
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -50,30 +53,32 @@ fn disk(number: u64) -> DriveKey {
 
 /// A run folder with two library folders `a` and `b` (empty: a root's place is all these tests need), its catalog with both
 /// added as roots. The folders of the drives are the run folder's children.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn two_folders(prefix: &str) -> (PathBuf, PathBuf, RulePath, RulePath) {
-    let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
-    std::fs::create_dir_all(dir.join("a")).unwrap();
-    std::fs::create_dir_all(dir.join("b")).unwrap();
+fn two_folders(prefix: &str) -> Result<(PathBuf, PathBuf, RulePath, RulePath)> {
+    let dir = pg_testkit::run_folder("scratch_library", prefix)?;
+    std::fs::create_dir_all(dir.join("a"))?;
+    std::fs::create_dir_all(dir.join("b"))?;
     let catalog_path = dir.join("catalog.sqlite");
-    let c = Catalog::prepare(&catalog_path, pg_library::versions(), PATH_RULES).unwrap();
-    let a = pg_platform::names::normalize_path(&dir.join("a")).unwrap();
-    let b = pg_platform::names::normalize_path(&dir.join("b")).unwrap();
-    assert!(c.add_root(&a).unwrap());
-    assert!(c.add_root(&b).unwrap());
-    (dir.clone(), catalog_path, a, b)
+    let c = Catalog::prepare(&catalog_path, pg_library::versions(), PATH_RULES)?;
+    let a = pg_platform::names::normalize_path(&dir.join("a"))?;
+    let b = pg_platform::names::normalize_path(&dir.join("b"))?;
+    assert!(c.add_root(&a)?);
+    assert!(c.add_root(&b)?);
+    Ok((dir.clone(), catalog_path, a, b))
 }
 
 /// A runner over `catalog_path`, whose drives are asked of `drives`. The thumbnail cache's events are kept by the caller,
 /// so the cache's sender lives as long as the runner does.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn start(dir: &Path, catalog_path: &Path, drives: Fake, features: Features) -> (Runner, Quiet<pg_thumbcache::Event>) {
-    let id = Catalog::open(catalog_path, PATH_RULES).unwrap().catalog_id().unwrap();
+fn start(
+    dir: &Path,
+    catalog_path: &Path,
+    drives: Fake,
+    features: Features,
+) -> Result<(Runner, Quiet<pg_thumbcache::Event>)> {
+    let id = Catalog::open(catalog_path, PATH_RULES)?.catalog_id()?;
     let (events, quiet) = Quiet::bus();
-    let cache =
-        ThumbCache::open(&dir.join("thumbs.sqlite"), &id, None, pg_model::versions::THUMBS_VERSION, events).unwrap();
+    let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &id, None, pg_model::versions::THUMBS_VERSION, events)?;
     let heights = HeightCell::default();
-    heights.set(ThumbHeight::new(64).unwrap());
+    heights.set(ThumbHeight::new(64).ok_or("64 is not a thumbnail height")?);
     let runner = Runner::start_with_drives(
         catalog_path.to_path_buf(),
         Arc::new(cache),
@@ -82,66 +87,69 @@ fn start(dir: &Path, catalog_path: &Path, drives: Fake, features: Features) -> (
         Arc::new(Bus::new(64)),
         RecordingSink::new(),
         Arc::new(drives),
-    )
-    .unwrap();
-    (runner, quiet)
+    )?;
+    Ok((runner, quiet))
 }
 
 /// The folders on two drives make two lanes, one for each drive.
 #[test]
-fn two_drives_make_two_lanes() {
-    let (dir, catalog_path, a, b) = two_folders("two-drives");
+fn two_drives_make_two_lanes() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("two-drives")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// Two folders on one drive share one lane: they are one spindle's work, in order.
 #[test]
-fn folders_on_one_drive_share_a_lane() {
-    let (dir, catalog_path, a, b) = two_folders("one-drive");
+fn folders_on_one_drive_share_a_lane() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("one-drive")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(1))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "one lane", || runner.lanes() == 1);
     // A lane that is made stays: it is not a second one for a later request.
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(runner.lanes(), 1);
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// A folder whose drive can't be told collapses every folder into one lane: fail closed, as one drive did before lanes.
 #[test]
-fn a_drive_that_cannot_be_told_collapses_the_lanes() {
-    let (dir, catalog_path, a, b) = two_folders("unknown");
+fn a_drive_that_cannot_be_told_collapses_the_lanes() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("unknown")?;
     // Only `a` is known: `b`'s drive is an error.
     let drives = Fake(vec![("a", disk(1))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "one lane for both", || runner.lanes() == 1);
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// The escape hatch: with serial drives on, folders on two drives still make one lane.
 #[test]
-fn serial_drives_make_one_lane_even_on_two_drives() {
-    let (dir, catalog_path, a, b) = two_folders("serial");
+fn serial_drives_make_one_lane_even_on_two_drives() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("serial")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
     let serial = Features { serial_drives: true, ..Features::ALL };
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, serial);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, serial)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "one lane", || runner.lanes() == 1);
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// A drive with no root left retires its lane: removing its folder from the library leaves the other lane.
 #[test]
-fn removing_a_drives_last_folder_retires_its_lane() {
-    let (dir, catalog_path, a, b) = two_folders("retire");
+fn removing_a_drives_last_folder_retires_its_lane() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("retire")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a.clone(), b.clone()]);
     pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
     let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
@@ -150,28 +158,30 @@ fn removing_a_drives_last_folder_retires_its_lane() {
     runner.wake();
     pg_testkit::wait_until(WAIT, || "the lane of the removed folder to retire", || runner.lanes() == 1);
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// A stop ends every lane and the coordinator inside the wait, with no round left running.
 #[test]
-fn a_stop_ends_every_lane_within_the_wait() {
-    let (dir, catalog_path, a, b) = two_folders("stop");
+fn a_stop_ends_every_lane_within_the_wait() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("stop")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
     let began = Instant::now();
     assert!(runner.stop(WAIT), "every thread ends");
     assert!(began.elapsed() < WAIT);
     assert!(runner.idle(), "no lane is in a round after the stop");
+    Ok(())
 }
 
 /// Each lane reports its drive's label with its progress: two drives, two labelled lanes, in the order of their roots.
 #[test]
-fn each_lane_reports_its_drive_label() {
-    let (dir, catalog_path, a, b) = two_folders("labels");
+fn each_lane_reports_its_drive_label() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("labels")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
     pg_testkit::wait_until(
@@ -185,16 +195,17 @@ fn each_lane_reports_its_drive_label() {
     let lanes = runner.lane_progress();
     assert_ne!(lanes[0].label, lanes[1].label, "one drive's label is not another's");
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// A lane's time since work agrees with its phase in the same read: a lane whose phase runs reports no time since work
 /// (`Some(ZERO)`), and once a lane has had work its time since work is known. Waits for that, not for a phase to be seen:
 /// a short phase can end between two reads.
 #[test]
-fn a_lane_reports_its_time_since_work_with_its_phase() {
-    let (dir, catalog_path, a, b) = two_folders("since-work");
+fn a_lane_reports_its_time_since_work_with_its_phase() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("since-work")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
     pg_testkit::wait_until(
@@ -208,15 +219,16 @@ fn a_lane_reports_its_time_since_work_with_its_phase() {
         }
     }
     assert!(runner.stop(WAIT));
+    Ok(())
 }
 
 /// A pause of one lane (L7) leaves the other lanes running: only the paused lane reports itself paused, the run's global
 /// pause is not set, and a number that no lane has is refused.
 #[test]
-fn a_per_lane_pause_pauses_only_its_lane() {
-    let (dir, catalog_path, a, b) = two_folders("lane-pause");
+fn a_per_lane_pause_pauses_only_its_lane() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("lane-pause")?;
     let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
     runner.scan(vec![a, b]);
     pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
     let first = runner.lane_progress()[0].number;
@@ -236,4 +248,5 @@ fn a_per_lane_pause_pauses_only_its_lane() {
     assert!(!runner.set_lane_paused(first.wrapping_add(1_000), true), "no such lane");
     assert!(runner.set_lane_paused(first, false));
     assert!(runner.stop(WAIT));
+    Ok(())
 }

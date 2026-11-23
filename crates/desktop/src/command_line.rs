@@ -502,12 +502,12 @@ mod tests {
     #[test]
     fn a_value_that_is_not_unicode_has_no_text_and_is_bad_for_a_typed_option() {
         let mut raw = OsString::from("--query=");
-        raw.push(pg_testkit::odd_name("a"));
+        raw.push(pg_platform::testing::odd_name("a"));
         let parsed = parse(&[OsString::from("program"), raw, OsString::from("--sort=name")]);
         assert_eq!(pairs(&parsed), [("query", None), ("sort", Some("name"))]);
-        assert_eq!(parsed[0].exact, pg_testkit::odd_name("a"));
+        assert_eq!(parsed[0].exact, pg_platform::testing::odd_name("a"));
         let mut query = OsString::from("--query=");
-        query.push(pg_testkit::odd_name("a"));
+        query.push(pg_platform::testing::odd_name("a"));
         let read = read_of(&[OsString::from("program"), query], Parsed::Unset);
         assert_eq!(bad_names(&read), ["--query"]);
     }
@@ -517,7 +517,7 @@ mod tests {
     #[test]
     fn a_name_that_is_not_unicode_is_no_option() {
         let mut raw = OsString::from("--");
-        raw.push(pg_testkit::odd_name("view"));
+        raw.push(pg_platform::testing::odd_name("view"));
         raw.push("=3");
         assert!(parse(&[OsString::from("program"), raw]).is_empty());
     }
@@ -525,7 +525,7 @@ mod tests {
     // A path option keeps its exact units: a lone surrogate on Windows, a raw byte on Unix.
     #[test]
     fn a_path_argument_keeps_its_exact_bytes() {
-        let mut value = pg_testkit::odd_name("a");
+        let mut value = pg_platform::testing::odd_name("a");
         value.push(".jpg");
         let mut raw = OsString::from("--find-similar=");
         raw.push(&value);

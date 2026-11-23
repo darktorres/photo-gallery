@@ -5,7 +5,7 @@
 
 pub(crate) mod state;
 
-use crate::settings_bridge::qobject;
+use crate::bridges::settings_bridge::qobject;
 
 use core::pin::Pin;
 

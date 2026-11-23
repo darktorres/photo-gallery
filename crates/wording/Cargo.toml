@@ -1,0 +1,18 @@
+[package]
+name = "pg-wording"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The words the front ends show: each typed line is a Fluent entry of the `locales/` files, compiled in. std-based
+# (`fluent-bundle` needs std), so it keeps a clippy.toml of its own for the platform-free ban list; the logic it words is
+# `pg-client`, which is `no_std`.
+[dependencies]
+pg-client = { path = "../client" }
+pg-model = { path = "../model" }
+fluent-bundle.workspace = true
+unic-langid.workspace = true

@@ -25,7 +25,6 @@ mod makers;
 pub mod pool;
 mod prefs;
 mod reader;
-pub mod reexport;
 pub mod store;
 mod views;
 pub mod yandex;
@@ -41,6 +40,12 @@ pub use library::{LaneLines, Library, LibraryActivity, LibraryService};
 pub use prefs::{PrefStore, Prefs};
 pub use reader::{Failed, FailedItems, Kind, Reading, Session};
 pub use views::{Views, query_from_json, sort_from_json};
+
+/// Whether the job on this thread caught a panic: the front end's one panic check (`pg_jobs::panics::caught`), which the
+/// app makes available so that the front end need not depend on the job crate.
+pub fn panic_caught() -> bool {
+    pg_jobs::panics::caught()
+}
 
 /// What the app's test modules share.
 #[cfg(test)]

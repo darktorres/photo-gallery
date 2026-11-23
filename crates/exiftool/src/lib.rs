@@ -367,7 +367,7 @@ mod tests {
             Err(_) => {
                 // A program that is there and answers its version flag, but will not start, is a failure, not a skip.
                 assert!(
-                    !pg_testkit::require_tool("ExifTool", program, "-ver"),
+                    !pg_platform::testing::require_tool("ExifTool", program, "-ver"),
                     "ExifTool at {program:?} answers -ver but did not start"
                 );
                 None
@@ -477,7 +477,7 @@ mod tests {
         let program = OsString::from("exiftool");
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "names").unwrap();
-        let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
+        let source = pg_codec::fixtures::png_rgb(2, 2, &[0; 12]).unwrap();
         for (i, name) in names().iter().enumerate() {
             let path = dir.join(file_name(name));
             std::fs::write(&path, &source).unwrap();
@@ -500,7 +500,7 @@ mod tests {
         let program = OsString::from("exiftool");
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "refused").unwrap();
-        let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
+        let source = pg_codec::fixtures::png_rgb(2, 2, &[0; 12]).unwrap();
         for name in [&b"trail.png "[..], &b"endcr.png\r"[..], &b"trailtab.png\t"[..]] {
             let path = dir.join(file_name(name));
             std::fs::write(&path, &source).unwrap();
@@ -523,7 +523,7 @@ mod tests {
         let program = OsString::from("exiftool");
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "orientation-tags").unwrap();
-        let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
+        let source = pg_codec::fixtures::png_rgb(2, 2, &[0; 12]).unwrap();
         // A plain file with rating 4: the source of the tags.
         let input = dir.join("rated-in.png");
         std::fs::write(&input, &source).unwrap();

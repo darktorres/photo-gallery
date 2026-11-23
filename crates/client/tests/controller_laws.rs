@@ -2,11 +2,6 @@
 //! so it holds however the sub-machines are combined: the start gate's order, the one pause per debounce, the size's
 //! clamps and thumbnails, the grid's actions without a current item, and the events' serde round trip (the recordings).
 
-#![expect(
-    clippy::expect_used,
-    reason = "fixtures: the row heights and scales the helpers build are constants inside their ranges"
-)]
-
 use pg_client::controller::listing as listing_event;
 use pg_client::controller::size;
 use pg_client::controller::{Command, Controller, Event, Start};
@@ -20,19 +15,20 @@ use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
 use proptest::prelude::*;
 
-fn row(px: u32) -> RowHeight {
-    RowHeight::new(px).expect("a row height in range")
-}
+/// The row height the fixtures use: a shown row of 200 and a saved one of 200.
+const ROW_200: RowHeight = RowHeight::new(200).expect("a row height in range");
+/// The scale a window reports first.
+const SCALE_1: Scale = Scale::new(1.0).expect("a positive scale");
 
 /// A controller that shows `row` 200 and has saved 200, with no scale yet.
 fn controller(listing: Listing) -> Controller {
-    Controller::new(Start::new(listing, row(200), row(200)))
+    Controller::new(Start::new(listing, ROW_200, ROW_200))
 }
 
 /// A controller at scale 1 (the window's scale arrives as the first size event, as the desktop sends it).
 fn scaled(listing: Listing) -> Controller {
     let mut c = controller(listing);
-    c.update(0, Event::Size(size::Event::Scale(Scale::new(1.0).expect("a positive scale"))));
+    c.update(0, Event::Size(size::Event::Scale(SCALE_1)));
     c
 }
 
@@ -48,9 +44,9 @@ fn listing(text: &str) -> Listing {
 fn size_event() -> impl Strategy<Value = size::Event> {
     prop_oneof![
         any::<bool>().prop_map(|grow| size::Event::Resize { grow }),
-        (0.1f64..4.0).prop_map(|f| size::Event::Factor(Factor::new(f).expect("a positive factor"))),
-        (-100.0f64..2000.0).prop_map(|h| size::Event::Chosen(RowHeight::from_finite(h).expect("a finite height"))),
-        (0.5f64..3.0).prop_map(|s| size::Event::Scale(Scale::new(s).expect("a positive scale"))),
+        (0.1f64..4.0).prop_filter_map("a positive factor", Factor::new).prop_map(size::Event::Factor),
+        (-100.0f64..2000.0).prop_filter_map("a finite height", RowHeight::from_finite).prop_map(size::Event::Chosen),
+        (0.5f64..3.0).prop_filter_map("a positive scale", Scale::new).prop_map(size::Event::Scale),
     ]
 }
 
@@ -210,10 +206,10 @@ proptest! {
             Event::CurrentChanged(index.then_some(item)),
             Event::Key(GridKey::Step { dx: -1, dy: 2 }),
             Event::SetBorderMark { item, marked: index },
-            Event::Listing(listing_event::Event::OpenFolder(odd.clone())),
-            Event::Listing(listing_event::Event::OpenAll),
-            Event::Listing(listing_event::Event::OpenRoots),
-            Event::Listing(listing_event::Event::ViewApplied(view)),
+            Event::Listing(Box::new(listing_event::Event::OpenFolder(odd.clone()))),
+            Event::Listing(Box::new(listing_event::Event::OpenAll)),
+            Event::Listing(Box::new(listing_event::Event::OpenRoots)),
+            Event::Listing(Box::new(listing_event::Event::ViewApplied(view))),
             Event::FolderSpelled(odd),
         ];
         for event in events {
@@ -257,7 +253,7 @@ fn nothing_is_saved_before_the_start_is_over() {
 /// The session's last file is selected in the first list shown: the gate asks, and the model selects it if it is there.
 #[test]
 fn the_last_file_is_restored_in_the_first_list_shown() {
-    let start = Start { last_file: Some(FileId::new(5)), ..Start::new(listing(""), row(200), row(200)) };
+    let start = Start { last_file: Some(FileId::new(5)), ..Start::new(listing(""), ROW_200, ROW_200) };
     let mut c = Controller::new(start);
     let out = c.update(0, Event::ListShown { count: 10, generation: None });
     assert!(out.contains(&Command::RestoreSelection(FileId::new(5))), "{out:?}");
@@ -267,7 +263,7 @@ fn the_last_file_is_restored_in_the_first_list_shown() {
 /// from then on. Without an applied view the start saves nothing.
 #[test]
 fn an_applied_view_is_remembered_once_the_start_is_over() {
-    let applied = Start { apply_view: true, ..Start::new(listing(""), row(200), row(200)) };
+    let applied = Start { apply_view: true, ..Start::new(listing(""), ROW_200, ROW_200) };
     let mut c = Controller::new(applied);
     let mut out = c.update(0, Event::TreeLoaded { folder_known: true });
     out.extend(c.update(0, Event::ListShown { count: 10, generation: None }));
@@ -297,7 +293,7 @@ fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
 fn a_pending_query_is_saved_at_the_close_without_a_list() {
     let mut c = started(listing(""));
     let query = Query { name: "beach".into(), ..Query::default() };
-    c.update(0, Event::Listing(listing_event::Event::QueryChanged(query.clone())));
+    c.update(0, Event::Listing(Box::new(listing_event::Event::QueryChanged(query.clone()))));
     c.update(0, Event::QueryEdited);
     let flushed = c.update(100, Event::Flush);
     assert_eq!(saves_and_lists(&flushed).0, 1, "{flushed:?}");
@@ -314,7 +310,10 @@ fn a_pending_query_is_saved_at_the_close_without_a_list() {
 fn a_pending_query_and_session_save_make_one_save_at_the_close() {
     let mut c = started(listing(""));
     c.update(1, Event::CurrentChanged(Some(3)));
-    c.update(2, Event::Listing(listing_event::Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));
+    c.update(
+        2,
+        Event::Listing(Box::new(listing_event::Event::QueryChanged(Query { name: "x".into(), ..Query::default() }))),
+    );
     c.update(2, Event::QueryEdited);
     let flushed = c.update(3, Event::Flush);
     assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
@@ -356,10 +355,10 @@ fn selection_and_similar_search_are_handed_on_to_the_window() {
 fn a_listing_of_failures_closes_the_inbox_and_an_open_viewer_only() {
     use pg_client::controller::panels::{Event as PanelEvent, PanelKind};
     let mut c = started(listing(""));
-    let closed = c.update(1, Event::Listing(listing_event::Event::FailedImports));
+    let closed = c.update(1, Event::Listing(Box::new(listing_event::Event::FailedImports)));
     assert!(closed.contains(&Command::ClosePanel(PanelKind::Inbox)), "{closed:?}");
     assert!(!closed.contains(&Command::CloseViewer), "{closed:?}");
     c.update(2, Event::Panel(PanelEvent::SetViewerOpen(true)));
-    let with_viewer = c.update(3, Event::Listing(listing_event::Event::FailedImports));
+    let with_viewer = c.update(3, Event::Listing(Box::new(listing_event::Event::FailedImports)));
     assert!(with_viewer.contains(&Command::CloseViewer), "{with_viewer:?}");
 }

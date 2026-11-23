@@ -188,9 +188,9 @@ pub(super) fn rgb16(v: u16) -> u8 {
 }
 
 /// A float RGB sample into 8 bits (`FromPrimitive<f32> for u8`, `normalize_float`): clamped to [0, 1], NaN to 1.
-#[expect(clippy::neg_cmp_op_on_partial_ord, reason = "NaN must take the first branch, which v < 1.0 alone would not")]
 fn rgb_f32(v: f32) -> u8 {
-    let clamped = if !(v < 1.0) { 1.0 } else { v.max(0.0) };
+    // NaN maps to 1, as `!(v < 1.0)` made it: NaN compares false to everything, so the test names both cases.
+    let clamped = if v.is_nan() || v >= 1.0 { 1.0 } else { v.max(0.0) };
     f32_to_u8((clamped * f32::from(u8::MAX)).round())
 }
 
@@ -271,7 +271,7 @@ mod tests {
             let edge = (f32::from(k) + 0.5) / 255.0;
             floats.extend([edge.next_down(), edge, edge.next_up()]);
         }
-        let mut rng = pg_testkit::Rng::new(0x2545_F491_4F6C_DD1D);
+        let mut rng = pg_testrng::Rng::new(0x2545_F491_4F6C_DD1D);
         floats.extend((0..1_000_000).map(|_| {
             // A 24-bit value, as its high 16 and low 8 bits: each is exact in an f32, and so is their sum.
             let sample = rng.next_u64() >> 40;

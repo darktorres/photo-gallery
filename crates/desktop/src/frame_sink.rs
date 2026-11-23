@@ -5,7 +5,7 @@
 use cxx::UniquePtr;
 use pg_render::player::Sink;
 
-use crate::frame_sink_bridge::ffi;
+use crate::bridges::frame_sink_bridge::ffi;
 
 /// One animation's frame sink, used from its thread.
 pub(crate) struct Frames(UniquePtr<ffi::FrameSink>);

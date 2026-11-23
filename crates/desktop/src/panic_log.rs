@@ -18,17 +18,14 @@ pub(crate) fn install(log_path: PathBuf) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_hook(info);
-        let caught = pg_app::reexport::panic_caught();
+        let caught = pg_app::panic_caught();
         let thread = std::thread::current();
         let message = format!("thread '{}': {info}", thread.name().unwrap_or("unnamed"));
         let written = pg_log::panic(&message, &Backtrace::force_capture().to_string());
         if !caught {
             let log_error = written.err().map(|e| e.to_string());
-            let shown = pg_client::text::internal_error(
-                &info.to_string(),
-                &log_path.display().to_string(),
-                log_error.as_deref(),
-            );
+            let shown =
+                pg_wording::internal_error(&info.to_string(), &log_path.display().to_string(), log_error.as_deref());
             alert::error_box(&shown);
         }
     }));

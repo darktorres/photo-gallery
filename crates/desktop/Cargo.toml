@@ -16,14 +16,15 @@ workspace = true
 doctest = false
 
 [dependencies]
-# Not here: catalog, library, jobs, thumbcache, yandex and codec. The window reaches them through `pg-app` alone (its
-# typed methods and `pg_app::reexport`), so `cargo deny` and machete see the boundary.
+# Not here: catalog, library, jobs, thumbcache, yandex and codec. The window reaches them through `pg-app`'s typed
+# methods, and takes the plain data they hand out from `pg-model`, so `cargo deny` and machete see the boundary.
 pg-client = { path = "../client" }
 pg-log = { path = "../log" }
 pg-perf = { path = "../perf" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }
+pg-wording = { path = "../wording" }
 pg-app = { path = "../app" }
 pg-render = { path = "../render" }
 anyhow.workspace = true
@@ -34,8 +35,9 @@ cxx-qt-lib.features = ["qt_gui", "qt_qml"]
 serde_json.workspace = true
 
 [dev-dependencies]
-# The tests' names that are no UTF-8 (`odd_name`).
+# The tests' names that are no UTF-8 (`odd_name`), and the test folders (`run_folder`).
 pg-testkit = { path = "../testkit" }
+pg-platform = { path = "../platform", features = ["testing"] }
 
 [build-dependencies]
 cxx-qt-build.workspace = true

@@ -152,34 +152,6 @@ pub enum SkipReason {
     Reparse,
 }
 
-/// A folder of the folder ledger (`folder_failures`): why the walk couldn't take it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FolderFailure {
-    /// It couldn't be opened or listed (`SkipReason::Unreadable`).
-    Unreadable,
-    /// A mount under the walked folder that the walk refuses (`SkipReason::RefusedMount`).
-    MountRefused,
-    /// The walked folder itself was refused, before the walk began (`Catalog::folder_refused`).
-    Refused,
-}
-
-impl FolderFailure {
-    /// The stored `folder_failures.reason`.
-    pub fn key(self) -> &'static str {
-        match self {
-            FolderFailure::Unreadable => "unreadable",
-            FolderFailure::MountRefused => "mount-refused",
-            FolderFailure::Refused => "refused",
-        }
-    }
-
-    /// The failure of a stored reason; `None` for one this build doesn't know.
-    pub fn from_key(key: &str) -> Option<FolderFailure> {
-        let all = [FolderFailure::Unreadable, FolderFailure::MountRefused, FolderFailure::Refused];
-        all.into_iter().find(|f| f.key() == key)
-    }
-}
-
 /// The folder ledger's write (`ScanWriter::folder_failed`, `Catalog::folder_refused`): `?1` the covering library
 /// folder's id, `?2` its stored path (checked with the id, so a removed folder writes nothing and a reused id never
 /// binds a row to the wrong folder), `?3` the folder's stored path, `?4` its `path_key` (the row's identity: one row per

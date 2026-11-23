@@ -82,7 +82,7 @@ pub fn open_catalog(layout: &layout::Layout) -> pg_catalog::Result<pg_catalog::C
 pub fn open_thumbs(
     layout: &layout::Layout,
     catalog_id: &str,
-    cap: Option<pg_thumbcache::Cap>,
+    cap: Option<pg_model::cache::ThumbCap>,
     events: std::sync::Arc<pg_jobs::events::Bus<pg_thumbcache::Event>>,
 ) -> Result<pg_thumbcache::ThumbCache> {
     pg_thumbcache::ThumbCache::open(&layout.thumbs_path(), catalog_id, cap, pg_model::versions::THUMBS_VERSION, events)

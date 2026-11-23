@@ -1,4 +1,4 @@
-// The system clipboard (src/clipboard.rs): what the inbox's "Copy" puts there.
+// The system clipboard (src/bridges/clipboard.rs): what the inbox's "Copy" puts there.
 #pragma once
 
 #include <QtCore/QString>

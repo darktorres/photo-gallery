@@ -7,7 +7,7 @@
 
 pub(crate) mod state;
 
-use crate::failed_files_bridge::qobject;
+use crate::bridges::failed_files_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::RefCell;
@@ -15,7 +15,6 @@ use std::cell::RefCell;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_app::{Failed, FailedItems};
-use pg_client::text;
 use pg_model::rules::Path as RulePath;
 
 use crate::rows::qt_int;
@@ -91,8 +90,8 @@ impl qobject::FailedFiles {
             (Shown::File(_), ROLE_ROOT | ROLE_REASON) => QVariant::from(&QString::default()),
             (Shown::Folder(folder), ROLE_ROOT) => QVariant::from(&QString::from(&rules.display(&folder.root_path))),
             (Shown::Folder(folder), ROLE_REASON) => {
-                let reason = text::Message::FailedFolderReason { reason: folder.failure.key().to_string() };
-                QVariant::from(&QString::from(&text::render(&reason)))
+                let reason = pg_wording::Message::FailedFolderReason { reason: folder.failure.key().to_string() };
+                QVariant::from(&QString::from(&pg_wording::render(&reason)))
             }
             (row, ROLE_IS_FOLDER) => QVariant::from(&matches!(row, Shown::Folder(_))),
             _ => QVariant::default(),

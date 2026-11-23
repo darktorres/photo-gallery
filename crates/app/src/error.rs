@@ -46,7 +46,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl Error {
     /// The catalog file's path and why it was refused, when the catalog failed that way (`pg_catalog::Error::refusal`).
-    pub fn catalog_refusal(&self) -> Option<(&str, &pg_catalog::Refusal)> {
+    pub fn catalog_refusal(&self) -> Option<(&str, &pg_model::refusal::CatalogRefusal)> {
         match self {
             Error::Catalog(e) => e.refusal(),
             _ => None,

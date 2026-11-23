@@ -3,7 +3,7 @@
 use image::{ColorType, ImageResult, Limits};
 
 /// The most bytes one decoded image may take: `ImageReader`'s default `max_alloc` (512 MiB). The one cap for every
-/// decoded buffer, the decoders' here and the lossless rewrites' (`pg_edit`), so a damaged header that declares a
+/// decoded buffer, the decoders' here and the lossless rewrites' (`rewrite`), so a damaged header that declares a
 /// huge image is an error before anything that size is allocated, never an allocation failure (which aborts).
 pub fn max_decode_bytes() -> u64 {
     Limits::default().max_alloc.unwrap_or(u64::MAX)

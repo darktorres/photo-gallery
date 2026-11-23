@@ -7,7 +7,7 @@
 pub(crate) mod state;
 use state::{Listing, PickerRust, Purpose};
 
-use crate::picker_bridge::qobject;
+use crate::bridges::picker_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::RefCell;
@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList};
-use pg_client::text::{self, Message};
 use pg_model::notice::Notice;
+use pg_wording::Message;
 
 /// The folder chosen and not yet taken, with its purpose.
 type Chosen = (Purpose, PathBuf);
@@ -92,7 +92,8 @@ impl qobject::FolderPicker {
                         &format!("{purpose:?}: {call}: {e:#} (start folder {start:?}, owner window {owner:?})"),
                     );
                     crate::app::post(Notice::PickerFailed { error: crate::app::error_text(&e) });
-                    let message = QString::from(&text::render(&Message::FolderDialogFailed { error: e.to_string() }));
+                    let message =
+                        QString::from(&pg_wording::render(&Message::FolderDialogFailed { error: e.to_string() }));
                     self.as_mut().failed(purpose.code(), message);
                 }
             }
@@ -161,7 +162,7 @@ impl qobject::FolderPicker {
         crate::app::post(Notice::PickerFailed {
             error: crate::app::error_text(&format!("{}: {error}", folder.display())),
         });
-        let message = QString::from(&text::render(&Message::FolderUnreadable { error: error.to_string() }));
+        let message = QString::from(&pg_wording::render(&Message::FolderUnreadable { error: error.to_string() }));
         self.failed(purpose.code(), message);
     }
 

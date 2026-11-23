@@ -1,4 +1,4 @@
-// The window icon of every window: the title bar and the taskbar (src/app_icon.rs).
+// The window icon of every window: the title bar and the taskbar (src/bridges/app_icon.rs).
 #pragma once
 
 namespace pg {

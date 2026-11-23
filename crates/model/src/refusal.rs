@@ -1,6 +1,70 @@
-//! Why the scanner refuses a folder: as data, which `pg-scan` decides from the
-//! platform's facts and `pg_client::text` words. Nothing here is English, so a
-//! refusal is shown in the reader's language, whichever one the scan ran in.
+//! Why a refusal happens, as data: the scanner refuses a folder (`RefusedReason`, which `pg-scan` decides from the
+//! platform's facts), and the catalog refuses a file (`CatalogRefusal`, which `prepare` decides from the file). The
+//! words are `pg_wording`'s and the catalog's own, so nothing here is English: a refusal is shown in the reader's
+//! language, whichever one the program ran in.
+
+use alloc::string::String;
+
+/// Why `prepare` refuses a catalog file. Typed, so a front end words it itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CatalogRefusal {
+    /// A schema after this build's: made by another build. `written_by` is the build that last changed the file, when
+    /// the file says (`meta.written_by`, empty when it is not known).
+    NewerSchema {
+        /// The schema version the file has.
+        found: i64,
+        /// The version this build expects.
+        current: i64,
+        /// The build that last changed the file, when the file says.
+        written_by: Option<String>,
+    },
+    /// A schema of an earlier version than this build's, which `Catalog::open` does not bring forward (`prepare` does).
+    OlderSchema {
+        /// The schema version the file has.
+        found: i64,
+        /// The version this build expects.
+        current: i64,
+    },
+    /// An integer mark of the file (`mark`, a `meta` key) above this build's: a later build made or changed the file,
+    /// whatever its schema. Refused like a newer schema, so no mark is set back. `written_by` as for `NewerSchema`.
+    NewerMark {
+        /// The mark, a `meta` key.
+        mark: &'static str,
+        /// The value the file has.
+        found: i64,
+        /// The value this build expects.
+        current: i64,
+        /// The build that last changed the file, when the file says.
+        written_by: Option<String>,
+    },
+    /// A schema that differs from this build's, of a catalog that may not be rebuilt (a released one). `why` is the
+    /// difference.
+    Drift {
+        /// The schema version the file has.
+        found: i64,
+        /// The difference from this build's schema.
+        why: String,
+    },
+    /// A schema that differs, of a catalog without the `key_version` mark its rows' keys are known by.
+    PredatesKeyVersion,
+    /// Another program or connection has the catalog open, so it can't be changed.
+    InUse,
+    /// The path is too long for the files the catalog makes beside it to open (Windows' limit, which SQLite's own path
+    /// handling does not lift). Nothing was made.
+    PathTooLong,
+    /// The catalog needs a change, and it, or its folder, can't be written (read-only, or permission is denied). Nothing
+    /// was changed.
+    ReadOnly,
+    /// The catalog stores its paths under other rules than this build's: its names and paths don't read as this build's.
+    /// It is a valid catalog of another platform, so it is not moved aside. `detail` is how its rules differ (or that
+    /// they were not recorded), `wanted` names this build's rules.
+    PathRules {
+        /// How the file's rules differ, or that they were not recorded.
+        detail: String,
+        /// This build's rules, by name.
+        wanted: &'static str,
+    },
+}
 
 /// Why a folder can't be scanned for its identities, or walked into under a scanned root. A notice stores it as
 /// `{"reason": "<variant>", ...its fields}` (kebab-case); the words select on [`RefusedReason::key`].
@@ -95,8 +159,8 @@ impl RefusedReason {
 }
 
 /// Logs and errors name the reason by its code; its words are the client's.
-impl std::fmt::Display for RefusedReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for RefusedReason {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             RefusedReason::Unreadable { error, .. } => write!(f, "{} ({error})", self.key()),
             RefusedReason::NotNtfs { file_system } | RefusedReason::Pseudo { file_system } => {

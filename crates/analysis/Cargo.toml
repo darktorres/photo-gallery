@@ -15,8 +15,13 @@ pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-video = { path = "../video" }
+# The content hash of a video, streamed from its file (`file_hash_of`): the streaming reader is blake3's std feature.
+blake3.workspace = true
 thiserror.workspace = true
 xxhash-rust.workspace = true
 
 [dev-dependencies]
+# The image files the tests write (`pg_codec::fixtures`).
+pg-codec = { path = "../codec", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
+pg-testrng = { path = "../testrng" }

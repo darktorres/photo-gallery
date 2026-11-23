@@ -6,8 +6,10 @@
 //! and does the Qt part (the insert and remove signals); the rows it inserts or removes come from here, before the
 //! change, so the signals say what changed.
 
-use std::cell::RefCell;
-use std::ops::Range;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cell::RefCell;
+use core::ops::Range;
 
 use pg_model::rules::{Merged, PathRules};
 use pg_model::tree::FolderTree;
@@ -174,7 +176,7 @@ impl Tree {
 
     /// The visible rows from the expansion: "All", "Drive roots" when there are files in them, then the tree.
     fn show_all(&mut self) {
-        let mut visible = std::mem::take(&mut self.visible);
+        let mut visible = core::mem::take(&mut self.visible);
         visible.clear();
         visible.push(Visible::All);
         if self.tree.root_files() > 0 {
@@ -210,6 +212,8 @@ impl Tree {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::{String, ToString};
+
     use super::*;
     use pg_model::tree::TreeBuilder;
 

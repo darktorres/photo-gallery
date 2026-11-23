@@ -1,0 +1,31 @@
+# clippy reads this file instead of the root clippy.toml (it has no include), so the root's settings that apply to every
+# crate are repeated here: the test allowances and the hash-collection bans. tools/test_ci_files.py keeps the repeats in
+# step with the root file, and fails if a second crate-level clippy.toml appears.
+#
+# This is the one crate-level file in the workspace, and it is here for a reason the model and the client do not share:
+# `fluent-bundle` needs std, so this crate cannot be `no_std`. It must still stay platform-free (it builds for wasm32
+# with the client), so the ban list below is the only guard against a clock, a thread, a file or a temp folder in it.
+allow-panic-in-tests = true
+allow-print-in-tests = true
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# The words stay free of platform code, so the web client can share them: no clock, no threads, no files. The
+# controller takes time as an input (`now_ms`). The wasm32 check proves the client builds; these rules stop a host-only
+# call from creeping in unnoticed.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "randomly seeded; use BTreeMap (or a fixed-seed hasher)" },
+    { path = "std::collections::HashSet", reason = "randomly seeded; use BTreeSet (or a fixed-seed hasher)" },
+    { path = "std::hash::RandomState", reason = "randomly seeded" },
+    { path = "std::time::Instant", reason = "no clock in the words: time is an input (now_ms)" },
+    { path = "std::time::SystemTime", reason = "no clock in the words: time is an input (now_ms)" },
+]
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "no threads in the words" },
+    { path = "std::fs::read", reason = "no files in the words" },
+    { path = "std::fs::read_to_string", reason = "no files in the words" },
+    { path = "std::fs::write", reason = "no files in the words" },
+    { path = "std::fs::read_dir", reason = "no files in the words" },
+    { path = "std::env::temp_dir", reason = "test scratch goes through pg_testkit::run_folder, which owns its folders" },
+]

@@ -17,15 +17,17 @@ use std::time::Duration;
 use crate::Result;
 use pg_jobs::NoticeSink;
 use pg_jobs::control::Control;
-use pg_jobs::events::{Bus, Change};
+use pg_jobs::events::Bus;
 use pg_model::ids::FileId;
+use pg_model::job::Change;
 use pg_model::progress::{Phase, Progress};
 use pg_model::rules::Path as RulePath;
 use pg_platform::drive::{Drives, SystemDrives};
 use pg_thumbcache::ThumbCache;
 
 use crate::coordinator::Lanes;
-use crate::shared::{FeatureCell, Generation, HeightCell, LaneProgress, Shared};
+use crate::shared::{FeatureCell, Generation, HeightCell, Shared};
+use pg_model::progress::LaneProgress;
 
 /// The background job the module comment describes. It holds the lanes, one per drive the library's folders are on.
 pub struct Runner {
@@ -270,7 +272,8 @@ mod tests {
         let pixels: Vec<u8> =
             (0..side * side * 3).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap()).collect();
         for name in names {
-            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(side, side, &pixels).unwrap()).unwrap();
+            std::fs::write(dir.join("images").join(name), pg_codec::fixtures::png_rgb(side, side, &pixels).unwrap())
+                .unwrap();
         }
         let catalog_path = dir.join("catalog.sqlite");
         let mut c = Catalog::prepare(&catalog_path, crate::versions(), PATH_RULES).unwrap();
@@ -369,7 +372,7 @@ mod tests {
     fn thumbs(dir: &Path, catalog_path: &Path, cap: Option<i64>) -> (Arc<ThumbCache>, Quiet<pg_thumbcache::Event>) {
         let id = Catalog::open(catalog_path, PATH_RULES).unwrap().catalog_id().unwrap();
         let (events, quiet) = Quiet::bus();
-        let cap = cap.and_then(pg_thumbcache::Cap::from_bytes);
+        let cap = cap.and_then(pg_model::cache::ThumbCap::from_bytes);
         let cache =
             ThumbCache::open(&dir.join("thumbs.sqlite"), &id, cap, pg_model::versions::THUMBS_VERSION, events).unwrap();
         (Arc::new(cache), quiet)
@@ -480,7 +483,7 @@ mod tests {
         let images = dir.join("images");
         std::fs::create_dir_all(images.join("sub")).unwrap();
         if std::fs::hard_link(images.join("a.png"), images.join("sub").join("b.png")).is_err() {
-            pg_testkit::skip("this file system makes no hard links");
+            pg_platform::testing::skip("this file system makes no hard links");
             return;
         }
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
@@ -529,7 +532,7 @@ mod tests {
         let failed = c.failed_folders(10).unwrap();
         assert_eq!(
             failed.iter().map(|f| (&f.path, f.failure)).collect::<Vec<_>>(),
-            [(&root, pg_catalog::FolderFailure::Refused)]
+            [(&root, pg_model::ledger::FolderFailure::Refused)]
         );
     }
 

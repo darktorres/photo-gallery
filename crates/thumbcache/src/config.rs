@@ -1,6 +1,6 @@
-//! The cache's size limit and its constants: the cap a new cache gets and the cap as a value ([`Cap`]), the cache's path,
-//! the timing constants of the writer and of the daily check, and the cache's layout version. A leaf: the schema
-//! and the writer read these.
+//! The cache's size limit and its constants: the cap a new cache gets (the cap as a value is `pg_model::cache::ThumbCap`),
+//! the cache's path, the timing constants of the writer and of the daily check, and the cache's layout version. A leaf:
+//! the schema and the writer read these.
 
 use std::path::Path;
 use std::time::Duration;
@@ -30,39 +30,6 @@ pub fn default_cap_bytes(dir: &Path) -> i64 {
         .map_or(MAX_DEFAULT_CAP_BYTES, |share| share.clamp(MIN_DEFAULT_CAP_BYTES, MAX_DEFAULT_CAP_BYTES))
 }
 
-/// A cache's size limit, in bytes: above zero and under `i64::MAX`, so no cap evicts every thumbnail or saturates. The
-/// front ends read the number (the command line's `--cap-gib`, the app's `PG_THUMB_CAP_GIB`) and word their own errors.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Cap(i64);
-
-/// The largest cap, in bytes: under `i64::MAX` (about 9.22e18).
-const MAX_CAP_BYTES: f64 = 9.0e18;
-
-impl Cap {
-    /// `gib` GiB (2^30 bytes) as a cap, the fraction of a byte dropped; `None` for zero, negative, NaN, infinite and
-    /// absurd sizes.
-    pub fn from_gib(gib: f64) -> Option<Cap> {
-        let bytes = gib * 1_073_741_824.0;
-        (1.0..MAX_CAP_BYTES).contains(&bytes).then(|| Cap(pg_model::num::f64_to_i64(bytes)))
-    }
-
-    /// The cap a number of GiB written as text names: the `--cap-gib` flag and the `PG_THUMB_CAP_GIB` variable both read
-    /// it this way (see [`Cap::from_gib`]). Surrounding spaces are ignored.
-    pub fn parse_gib(text: &str) -> Option<Cap> {
-        text.trim().parse::<f64>().ok().and_then(Cap::from_gib)
-    }
-
-    /// `bytes` as a cap; `None` unless it is above zero.
-    pub const fn from_bytes(bytes: i64) -> Option<Cap> {
-        if bytes > 0 { Some(Cap(bytes)) } else { None }
-    }
-
-    /// The cap in bytes, as the cache stores it.
-    pub const fn bytes(self) -> i64 {
-        self.0
-    }
-}
-
 /// A hit not touched for this long is touched again: least recently used to the hour, which is what eviction
 /// needs, without a write for every thumbnail shown.
 pub(crate) const TOUCH_AGE: Duration = Duration::from_secs(60 * 60);
@@ -73,19 +40,3 @@ pub(crate) const TOUCH_FLUSH: Duration = Duration::from_secs(60);
 
 /// How often `open` checks the totals against the entries, which is a scan of them: at most once in this interval.
 pub(crate) const HEAL_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-
-#[cfg(test)]
-mod tests {
-    use super::Cap;
-
-    // The flag and the variable read a cap the same way: a positive number of GiB, spaces ignored, anything else is no
-    // cap (so the caller keeps the cache's own).
-    #[test]
-    fn a_cap_is_a_positive_number_of_gib_as_text() {
-        assert_eq!(Cap::parse_gib(" 2 "), Cap::from_gib(2.0));
-        assert_eq!(Cap::parse_gib("1.5"), Cap::from_gib(1.5));
-        for other in ["", "0", "-1", "x", "NaN", "1e300"] {
-            assert_eq!(Cap::parse_gib(other), None, "{other:?}");
-        }
-    }
-}

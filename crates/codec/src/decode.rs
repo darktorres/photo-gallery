@@ -450,7 +450,9 @@ mod parallel_tests {
     #[ignore = "reads a folder of real photos: set PG_JPEG_COMPARE_DIR"]
     fn compares_real_jpegs() {
         use std::path::PathBuf;
-        let root = PathBuf::from(std::env::var_os("PG_JPEG_COMPARE_DIR").expect("PG_JPEG_COMPARE_DIR"));
+        let root = PathBuf::from(
+            std::env::var_os(pg_testkit::inputs::JPEG_COMPARE_DIR).expect(pg_testkit::inputs::JPEG_COMPARE_DIR),
+        );
         let mut turbo = Decoder::new().unwrap();
         let (mut compared, mut no_header, mut mismatched) = (0usize, 0usize, Vec::new());
         let mut stack = vec![root];

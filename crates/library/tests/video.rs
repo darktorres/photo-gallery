@@ -34,7 +34,7 @@ fn ffmpeg() -> Option<PathBuf> {
         let pinned = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.deps/ffmpeg/bin/ffmpeg.exe");
         if pinned.is_file() { pinned } else { PathBuf::from("ffmpeg") }
     });
-    pg_testkit::require_tool("ffmpeg", &exe, "-version").then_some(exe)
+    pg_platform::testing::require_tool("ffmpeg", &exe, "-version").then_some(exe)
 }
 
 /// The tests' result: any error of the crates they use.
@@ -238,7 +238,7 @@ fn each_pass_gives_the_frames_whole_with_their_delays() {
     let cache = ThumbCache::open(
         &dir.join("thumbs.sqlite"),
         &catalog.catalog_id().unwrap(),
-        pg_thumbcache::Cap::from_bytes(1 << 30),
+        pg_model::cache::ThumbCap::from_bytes(1 << 30),
         pg_model::versions::THUMBS_VERSION,
         events,
     )

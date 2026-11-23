@@ -5,7 +5,7 @@
 pub(crate) mod state;
 use state::ViewportRust;
 
-use crate::viewport_bridge::qobject;
+use crate::bridges::viewport_bridge::qobject;
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;

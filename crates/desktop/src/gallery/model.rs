@@ -6,7 +6,6 @@ use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QStringList, QVariant};
 use pg_client::grid::{Arrival, Changed, Plan, Shape};
-use pg_client::text;
 use pg_model::details::Details;
 use pg_model::detection::Edge;
 use pg_model::grid::Entry;
@@ -288,11 +287,11 @@ impl qobject::GalleryModel {
         let selection = if self.current >= 0 {
             let rating = self.rating(self.current);
             let symbol = if rating > 0 {
-                text::rating_symbol(u8::try_from(rating.clamp(0, 5)).unwrap_or(0)).to_string()
+                pg_wording::rating_symbol(u8::try_from(rating.clamp(0, 5)).unwrap_or(0)).to_string()
             } else {
                 String::new()
             };
-            text::ui(text::SELECTION_LINE, 0.0, &String::from(&self.info(self.current)), &symbol)
+            pg_wording::ui(pg_wording::SELECTION_LINE, 0.0, &String::from(&self.info(self.current)), &symbol)
         } else {
             String::new()
         };

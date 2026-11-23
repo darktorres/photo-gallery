@@ -17,4 +17,6 @@ miniz_oxide.workspace = true
 quick-xml.workspace = true
 
 [dev-dependencies]
-pg-testkit = { path = "../testkit" }
+# The APNG and GIF the tests read (`pg_codec::fixtures`).
+pg-codec = { path = "../codec", features = ["fixture"] }
+pg-testrng = { path = "../testrng" }

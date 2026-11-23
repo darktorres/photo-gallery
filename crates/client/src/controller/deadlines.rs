@@ -3,6 +3,8 @@
 //! on a monotonic `now_ms` the host passes in (no clock is read here, so the tests run in virtual time). Arming a timer
 //! that is already armed moves its deadline (the pause starts again). The host runs one timer, set to `next_deadline`,
 //! and calls `handle_timeout` when it fires; a late or early call fires only the deadlines that are due.
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 /// A pause the window waits out.
@@ -62,7 +64,7 @@ impl Deadlines {
 
     /// Every armed pause, at once, in the order they were due (the shutdown flush: pending saves are never lost).
     pub fn drain(&mut self) -> Vec<Timer> {
-        let mut all = std::mem::take(&mut self.due);
+        let mut all = core::mem::take(&mut self.due);
         all.sort_by_key(|(_, at)| *at);
         all.into_iter().map(|(timer, _)| timer).collect()
     }

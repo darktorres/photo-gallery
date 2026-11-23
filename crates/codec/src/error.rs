@@ -35,6 +35,14 @@ pub enum Error {
     /// with no error under it: the text says which.
     #[error("{0}")]
     Invalid(String),
+    /// A JPEG transform that would have to cut through a partial block: the file is left as it is. The lossless
+    /// rewrite's caller takes it as "tag it", not as a failure (`pg_edit::rotate`).
+    #[error("not a perfect transform: {0}")]
+    Imperfect(String),
+    /// Nothing of a still GIF's image is left once the edit is taken: there is nothing to rewrite (the caller takes it
+    /// as the catalog's, as it takes an animation).
+    #[error("nothing of the GIF's image is left")]
+    NothingLeft,
 }
 
 /// The codecs' result.

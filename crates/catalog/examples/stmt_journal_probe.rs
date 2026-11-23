@@ -231,7 +231,7 @@ fn variants() -> Vec<Variant> {
 
 #[expect(unsafe_code, reason = "the SQLite C API's own configuration call, made before SQLite starts")]
 fn main() -> Result<()> {
-    if std::env::var("PG_PROBE_MEMSTAT").is_ok_and(|v| v == "0") {
+    if std::env::var(pg_testkit::inputs::PROBE_MEMSTAT).is_ok_and(|v| v == "0") {
         // SAFETY: called before any connection opens or SQLite initializes (the first statement of main), with the
         // option's one int argument.
         let rc = unsafe { ffi::sqlite3_config(ffi::SQLITE_CONFIG_MEMSTATUS, 0) };

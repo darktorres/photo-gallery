@@ -69,25 +69,27 @@ mod tests {
     }
 
     /// The nice value a new thread has after it sets `priority`. Each thread has its own, so each test gets one.
-    #[expect(clippy::unwrap_used, reason = "a test helper: a panicked thread fails the test")]
-    fn nice_after(priority: Priority) -> i32 {
-        std::thread::spawn(move || {
+    fn nice_after(priority: Priority) -> Result<i32, Box<dyn std::error::Error>> {
+        let nice = std::thread::spawn(move || {
             set_current_thread(priority);
             nice_of_current_thread()
         })
         .join()
-        .unwrap()
+        .map_err(|_| "a thread that set its priority panicked")?;
+        Ok(nice)
     }
 
     #[test]
-    fn idle_and_below_normal_are_nice_values() {
-        assert_eq!(nice_after(Priority::Idle), 19);
-        assert_eq!(nice_after(Priority::BelowNormal), 5);
+    fn idle_and_below_normal_are_nice_values() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(nice_after(Priority::Idle)?, 19);
+        assert_eq!(nice_after(Priority::BelowNormal)?, 5);
+        Ok(())
     }
 
     #[test]
-    fn normal_leaves_the_thread_as_it_was() {
+    fn normal_leaves_the_thread_as_it_was() -> Result<(), Box<dyn std::error::Error>> {
         let before = std::thread::spawn(nice_of_current_thread).join().unwrap();
-        assert_eq!(nice_after(Priority::Normal), before);
+        assert_eq!(nice_after(Priority::Normal)?, before);
+        Ok(())
     }
 }

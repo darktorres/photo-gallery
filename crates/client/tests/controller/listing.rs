@@ -1,24 +1,20 @@
 //! The listing's policy by traces: each change, applied to a listing, gives the listing it must and the commands.
 
-#![expect(
-    clippy::expect_used,
-    reason = "fixtures: the row heights and scales the helpers build are constants inside their ranges"
-)]
-
 use pg_client::controller::listing::{Command, Event, update};
 use pg_client::controller::{Command as Do, Controller, Event as Report, Start};
 use pg_model::ids::FileId;
 use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey, Status};
 use pg_model::rules::Merged;
+use pg_model::size::RowHeight;
 use pg_model::view::{Listing, SavedView};
 
 const OPEN: [Command; 2] = [Command::OpenList, Command::SaveSession];
+const ROW_200: RowHeight = RowHeight::new(200).expect("a row height in range");
 
 /// A controller at the start's row height (200) and the prefs' saved one (the same).
 fn controller(listing: Listing) -> Controller {
-    let row = pg_model::size::RowHeight::new(200).expect("a row height in range");
-    Controller::new(Start::new(listing, row, row))
+    Controller::new(Start::new(listing, ROW_200, ROW_200))
 }
 
 /// A folder given as its path text, one part per `\`-separated component.
@@ -169,10 +165,10 @@ fn every_open_list_has_a_newer_generation() {
     let mut c = controller(start());
     let mut generations = Vec::new();
     generations.extend(generation_of(&c.update(0, Report::Reload)));
-    generations.extend(generation_of(&c.update(0, Report::Listing(Event::OpenFolder(folder("beta"))))));
+    generations.extend(generation_of(&c.update(0, Report::Listing(Box::new(Event::OpenFolder(folder("beta")))))));
     let view = SavedView { name: "v".into(), listing: start() };
     generations.extend(generation_of(&c.apply_view(view)));
-    c.update(0, Report::Listing(Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));
+    c.update(0, Report::Listing(Box::new(Event::QueryChanged(Query { name: "x".into(), ..Query::default() }))));
     c.update(0, Report::QueryEdited);
     let at = c.next_deadline().expect("the query's pause");
     generations.extend(generation_of(&c.update(at, Report::Timeout)));
@@ -201,7 +197,7 @@ fn a_reveal_waits_for_its_own_list() {
 fn navigating_away_drops_a_reveal() {
     let mut c = controller(start());
     let own = generation_of(&c.update(0, Report::Reveal { file: FileId::new(7), folder: folder("beta") })).unwrap();
-    let away = generation_of(&c.update(0, Report::Listing(Event::OpenFolder(folder("gamma"))))).unwrap();
+    let away = generation_of(&c.update(0, Report::Listing(Box::new(Event::OpenFolder(folder("gamma")))))).unwrap();
     assert!(away > own);
     let out = shown(&mut c, away);
     assert!(!out.iter().any(|d| matches!(d, Do::Reveal(_))), "{out:?}");

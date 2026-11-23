@@ -10,7 +10,7 @@
 
 pub(crate) mod state;
 
-use crate::folders_bridge::qobject;
+use crate::bridges::folders_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::RefCell;
@@ -142,7 +142,7 @@ impl qobject::FolderModel {
                 ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),
                 ROLE_EXPANDED => QVariant::from(&tree.is_expanded(n)),
                 ROLE_TOTAL => QVariant::from(&node.total),
-                ROLE_DRIVES => QVariant::from(&QString::from(&pg_client::text::anchors(folders.anchors(n)))),
+                ROLE_DRIVES => QVariant::from(&QString::from(&pg_wording::anchors(folders.anchors(n)))),
                 ROLE_MERGED => QVariant::from(&folders.multi_anchor(n)),
                 _ => QVariant::default(),
             }

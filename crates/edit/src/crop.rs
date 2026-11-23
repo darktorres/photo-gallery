@@ -4,8 +4,8 @@
 //!
 //! - JPEG: losslessly, in the DCT domain. A lossless crop starts on the MCU grid (8 or 16 px), so the left and top
 //!   cuts move inward to it, cutting up to 15 px more there (as `jpegtran -crop`); the right and bottom are exact.
-//! - PNG, BMP, still GIF, WebP: exact, re-encoded losslessly with every other chunk kept (`rewrite`). A lossy WebP
-//!   comes out lossless: larger, with no generation loss.
+//! - PNG, BMP, still GIF, WebP: exact, re-encoded losslessly with every other chunk kept (`pg_codec::rewrite`). A
+//!   lossy WebP comes out lossless: larger, with no generation loss.
 //! - TIFF and compressed BMP: exact, re-encoded without their metadata; [`Cropped::metadata`] is false, and the
 //!   caller copies it over (ExifTool). An 8- or 16-bit CMYK or RGB TIFF keeps its samples and its kind (classic or
 //!   BigTIFF; `pg_codec::encode::cropped`). Not kept for other TIFFs, which go through `image`: they come out
@@ -13,9 +13,9 @@
 //!
 //! [`cut`] is the cut of an original (`pg_crop::cut`), exact on every format: its docs say how each re-encode is made.
 
-use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
-use crate::rewrite::{self, op::Op};
 use crate::{Error, Result};
+use pg_codec::rewrite::chunk::{WebpKind, png_animated, webp_kind};
+use pg_codec::rewrite::{self, op::Op};
 use pg_model::{format::Format, num};
 
 /// A cut of a file: its bytes, and what was cut from each side.
@@ -43,16 +43,18 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
     match format {
         Format::Jpeg => {
             let (mw, mh) = rewrite::jpeg::mcu(bytes)?;
-            let grid = |n: u32, step: usize| u32::try_from(step).map(|s| n.next_multiple_of(s)).map_err(Error::bare);
+            let grid = |n: u32, step: usize| {
+                u32::try_from(step).map(|s| n.next_multiple_of(s)).map_err(|e| Error::invalid(e.to_string()))
+            };
             let (l, t) = (grid(l, mw)?, grid(t, mh)?);
             if !(l + r < width && t + b < height) {
                 return Err(Error::invalid(format!("the cut leaves nothing once on the JPEG's {mw}×{mh} grid")));
             }
             let out = rewrite::jpeg::rewrite(bytes, exact(l, t))?;
-            let header = turbojpeg::read_header(&out).map_err(Error::bare)?;
+            let got = rewrite::jpeg::size(&out)?;
             let want = (num::index(width - l - r), num::index(height - t - b));
-            if (header.width, header.height) != want {
-                return Err(Error::invalid(format!("the crop came out {}×{}", header.width, header.height)));
+            if got != want {
+                return Err(Error::invalid(format!("the crop came out {}×{}", got.0, got.1)));
             }
             Ok(Cropped { bytes: out, cut: [l, t, r, b], metadata: true })
         }
@@ -110,6 +112,8 @@ fn reencoded(bytes: &[u8], format: Format, x: u32, y: u32, w: u32, h: u32, cut: 
 mod tests {
     use super::*;
     use crate::testing::stored;
+    use pg_codec::encode::Chroma;
+    use pg_codec::fixtures;
 
     /// Photo-like content: blocks of hashed colours with fine noise (as the library's cut tests have). A lossy encode
     /// has detail to lose in it; a smooth gradient is one a lossless encode keeps smaller.
@@ -142,18 +146,15 @@ mod tests {
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let rgb = pg_testkit::rgb_pattern(w, h);
         let cut = [3, 5, 7, 2];
+        let exif: &[u8] = b"II*\0\x08\0\0\0\0\0\0\0\0\0";
         let mut files = vec![
-            pg_testkit::png_rgb(sw, sh, &rgb).unwrap(),
-            pg_testkit::bmp_rgb(sw, sh, &rgb).unwrap(),
-            pg_testkit::tiff_rgb(sw, sh, &rgb).unwrap(),
+            fixtures::png_rgb(sw, sh, &rgb).unwrap(),
+            fixtures::bmp_rgb(sw, sh, &rgb).unwrap(),
+            fixtures::tiff_rgb(sw, sh, &rgb).unwrap(),
+            fixtures::webp_lossless_rgb(sw, sh, &rgb, Some(exif)).unwrap(),
         ];
-        let mut webp = Vec::new();
-        let mut e = image_webp::WebPEncoder::new(&mut webp);
-        e.set_exif_metadata(b"II*\0\x08\0\0\0\0\0\0\0\0\0".to_vec());
-        e.encode(&rgb, sw, sh, image_webp::ColorType::Rgb8).unwrap();
-        files.push(webp);
         // BigTIFF, which `image` doesn't write: the tiff crate's encoder does.
-        files.push(pg_codec::fixtures::tiff_rgb8(sw, sh, &rgb, true).unwrap());
+        files.push(fixtures::tiff_rgb8(sw, sh, &rgb, true).unwrap());
         for file in files {
             let format = Format::sniff(&file).unwrap();
             let out = crop(&file, format, sw, sh, cut).unwrap();
@@ -173,7 +174,7 @@ mod tests {
     fn gif_crops_the_frame_and_the_screen() {
         let (w, h) = (19, 11);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
-        let file = pg_testkit::gif_rgb(sw, sh, &pg_testkit::rgb_pattern(w, h)).unwrap();
+        let file = fixtures::gif_rgb(sw, sh, &pg_testkit::rgb_pattern(w, h)).unwrap();
         let (_, _, before) = stored(&file);
         let cut = [2, 1, 4, 3];
         let out = crop(&file, Format::Gif, sw, sh, cut).unwrap();
@@ -187,17 +188,7 @@ mod tests {
         let (w, h) = (100, 70);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let pixels = pg_testkit::rgb_pattern(w, h);
-        let mut c = turbojpeg::Compressor::new().unwrap();
-        c.set_quality(95).unwrap();
-        c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
-        let image = turbojpeg::Image {
-            pixels: &pixels[..],
-            width: w,
-            pitch: w * 3,
-            height: h,
-            format: turbojpeg::PixelFormat::RGB,
-        };
-        let file = c.compress_to_vec(image).unwrap();
+        let file = fixtures::jpeg_rgb(w, h, &pixels, 95, Chroma::Half).unwrap();
         // 16×16 MCUs: left 5 → 16, top 16 stays; right and bottom exact.
         let out = crop(&file, Format::Jpeg, sw, sh, [5, 16, 3, 9]).unwrap();
         assert_eq!(out.cut, [16, 16, 3, 9]);
@@ -220,18 +211,9 @@ mod tests {
         let (w, h) = (100, 70);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let pixels = photo(w, h);
-        for (quality, subsamp) in [(95, turbojpeg::Subsamp::Sub2x2), (60, turbojpeg::Subsamp::None)] {
-            let mut c = turbojpeg::Compressor::new().unwrap();
-            c.set_quality(quality).unwrap();
-            c.set_subsamp(subsamp).unwrap();
-            let image = turbojpeg::Image {
-                pixels: &pixels[..],
-                width: w,
-                pitch: w * 3,
-                height: h,
-                format: turbojpeg::PixelFormat::RGB,
-            };
-            let file = c.compress_to_vec(image).unwrap();
+        // Each quality with its chroma, and the MCU that chroma makes (the subsampling the source keeps).
+        for (quality, chroma, mcu) in [(95, Chroma::Half, (16, 16)), (60, Chroma::Full, (8, 8))] {
+            let file = fixtures::jpeg_rgb(w, h, &pixels, quality, chroma).unwrap();
             // Left 5, top 16, right 3, bottom 9: the DCT crop would move the left and top to 16.
             let borders = [5, 16, 3, 9];
             let out = cut(&file, Format::Jpeg, sw, sh, borders).unwrap();
@@ -239,9 +221,8 @@ mod tests {
             assert!(!out.metadata, "re-encoded: the caller copies the metadata");
             let (cw, ch, after) = stored(&out.bytes);
             assert_eq!((cw, ch), (w - 8, h - 25));
-            let header = turbojpeg::read_header(&out.bytes).unwrap();
-            assert_eq!(header.subsamp, subsamp, "the source's subsampling");
-            assert_eq!(pg_codec::encode::jpeg_quality(&out.bytes), Some(u8::try_from(quality).unwrap()));
+            assert_eq!(pg_codec::rewrite::jpeg::mcu(&out.bytes).unwrap(), mcu, "the source's subsampling");
+            assert_eq!(pg_codec::encode::jpeg_quality(&out.bytes), Some(quality));
             let (_, _, before) = stored(&file);
             let want = cut_out(&before, w, borders.map(num::index), h);
             // The same crop one pixel further in is a worse match: the cut is where the borders are.
@@ -271,10 +252,8 @@ mod tests {
         assert!(pg_container::webp_chunks(&out.bytes).any(|c| &c.kind == b"VP8 "), "the cut is lossy");
         let (cw, ch) = (w - 10, h - 7);
         let rgb = cut_out(&pixels, w, borders.map(num::index), h);
-        let mut lossless = Vec::new();
-        image_webp::WebPEncoder::new(&mut lossless)
-            .encode(&rgb, u32::try_from(cw).unwrap(), u32::try_from(ch).unwrap(), image_webp::ColorType::Rgb8)
-            .unwrap();
+        let lossless =
+            fixtures::webp_lossless_rgb(u32::try_from(cw).unwrap(), u32::try_from(ch).unwrap(), &rgb, None).unwrap();
         let (dw, dh, got) = stored(&out.bytes);
         assert_eq!((dw, dh), (cw, ch));
         let (_, _, before) = stored(&file);
@@ -292,12 +271,11 @@ mod tests {
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let rgb = pg_testkit::rgb_pattern(w, h);
         let borders = [3, 5, 7, 2];
-        let mut webp = Vec::new();
-        image_webp::WebPEncoder::new(&mut webp).encode(&rgb, sw, sh, image_webp::ColorType::Rgb8).unwrap();
+        let webp = fixtures::webp_lossless_rgb(sw, sh, &rgb, None).unwrap();
         for (format, file) in [
-            (Format::Png, pg_testkit::png_rgb(sw, sh, &rgb).unwrap()),
-            (Format::Bmp, pg_testkit::bmp_rgb(sw, sh, &rgb).unwrap()),
-            (Format::Tiff, pg_testkit::tiff_rgb(sw, sh, &rgb).unwrap()),
+            (Format::Png, fixtures::png_rgb(sw, sh, &rgb).unwrap()),
+            (Format::Bmp, fixtures::bmp_rgb(sw, sh, &rgb).unwrap()),
+            (Format::Tiff, fixtures::tiff_rgb(sw, sh, &rgb).unwrap()),
             (Format::Webp, webp),
         ] {
             let cut_bytes = cut(&file, format, sw, sh, borders).unwrap();

@@ -29,3 +29,5 @@ pg-import = { path = "../import" }
 pg-scan = { path = "../scan" }
 pg-testkit = { path = "../testkit" }
 pg-jobs-testkit = { path = "../jobs-testkit" }
+# The image files the tests write (`pg_codec::fixtures`).
+pg-codec = { path = "../codec", features = ["fixture"] }

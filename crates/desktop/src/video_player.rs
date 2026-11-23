@@ -7,7 +7,7 @@ use core::pin::Pin;
 use std::ffi::OsStr;
 use std::path::Path;
 
-use crate::video_player_bridge::ffi;
+use crate::bridges::video_player_bridge::ffi;
 
 /// Plays the file at `path` (the catalog's `disk_path` of it): opened here, and handed to the player open. A file that
 /// can't be opened is logged, and the player reports it as its error.

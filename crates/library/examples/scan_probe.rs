@@ -22,7 +22,7 @@ use pg_platform::native::PATH_RULES;
 
 fn main() -> Result<()> {
     let folder = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: scan_probe <library folder>")?);
-    let again = std::env::var_os("PG_PROBE_AGAIN").is_some();
+    let again = std::env::var_os(pg_testkit::inputs::PROBE_AGAIN).is_some();
     let dir = pg_testkit::run_folder("scratch_library", "scan-probe")?;
     run(&folder, &dir.join("catalog.sqlite"), again)
 }
@@ -35,7 +35,7 @@ fn run(folder: &Path, catalog_path: &Path, again: bool) -> Result<()> {
         pg_scan::scan(&mut catalog, &root, &ctl)?;
         // A command run between the two walks (`PG_PROBE_BETWEEN`, split on spaces): emptying the file cache there
         // makes the timed rescan a cold one.
-        if let Some(command) = std::env::var_os("PG_PROBE_BETWEEN") {
+        if let Some(command) = std::env::var_os(pg_testkit::inputs::PROBE_BETWEEN) {
             let command = command.to_string_lossy().into_owned();
             let mut parts = command.split_whitespace();
             let program = parts.next().ok_or("PG_PROBE_BETWEEN is empty")?;

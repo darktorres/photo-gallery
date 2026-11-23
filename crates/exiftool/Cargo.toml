@@ -17,4 +17,8 @@ thiserror.workspace = true
 [dev-dependencies]
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
+# The image files the tests write (`pg_codec::fixtures`).
+pg-codec = { path = "../codec", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
+# The helpers that testkit used to re-export (`pg_platform::testing`).
+pg-platform = { path = "../platform", features = ["testing"] }

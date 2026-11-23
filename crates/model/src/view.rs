@@ -1,6 +1,8 @@
 //! Where the grid looks: the listing the session was left at (the folder shown, with or without its subfolders, the sort
 //! and the filter bar's query), and the saved views (a listing with a name). The listing is remembered for the next start.
 
+use alloc::string::String;
+
 use serde::{Deserialize, Serialize};
 
 use crate::query::{Query, Sort};

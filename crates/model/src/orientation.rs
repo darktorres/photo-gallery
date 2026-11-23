@@ -7,7 +7,7 @@
 //! of the stored picture: a pixel index, or a fraction of the picture's size. The decoder's transform
 //! (`decode::transform_into`) gathers the same mapping, and the decoder's tests check the two against each other.
 
-use std::ops::Sub;
+use core::ops::Sub;
 
 use crate::turns::Turns;
 
@@ -145,6 +145,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::*;
 
     fn o(tag: u8) -> Orientation {

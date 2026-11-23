@@ -16,7 +16,7 @@ const PICTURES: usize = 20_000;
 const FEW_EVERY: usize = 200;
 
 /// A random hash drawn from `draws`, so every run measures the same library.
-fn random_hash(draws: &mut pg_testkit::Rng) -> Hash {
+fn random_hash(draws: &mut pg_testrng::Rng) -> Hash {
     let mut bytes = [0u8; 32];
     for chunk in bytes.chunks_mut(8) {
         chunk.copy_from_slice(&draws.next_u64().to_le_bytes());
@@ -27,7 +27,7 @@ fn random_hash(draws: &mut pg_testkit::Rng) -> Hash {
 /// The library: a third of the pictures random, the others copies of an earlier one with up to 47 bits flipped in each
 /// orientation, so some are pairs within the radius and some just outside it (the tests' corpus, at this size).
 fn library() -> Vec<[Hash; ORIENTATIONS]> {
-    let mut draws = pg_testkit::Rng::new(0x9E37_79B9_7F4A_7C15);
+    let mut draws = pg_testrng::Rng::new(0x9E37_79B9_7F4A_7C15);
     let mut hashes: Vec<[Hash; ORIENTATIONS]> = Vec::with_capacity(PICTURES);
     for _ in 0..PICTURES {
         let original = if hashes.is_empty() || draws.below(3) == 0 { None } else { hashes.get(draws.below(hashes.len())) };

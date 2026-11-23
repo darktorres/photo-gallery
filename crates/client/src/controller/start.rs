@@ -5,6 +5,8 @@
 //!
 //! The listed folder is the view's, which is the saved one unless a saved view was applied: nothing here restores a
 //! folder, so a view's folder is never replaced by the session's (the `--apply-view` fix).
+use alloc::vec::Vec;
+
 use pg_model::ids::FileId;
 use serde::{Deserialize, Serialize};
 

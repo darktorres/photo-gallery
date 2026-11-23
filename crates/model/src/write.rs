@@ -2,6 +2,9 @@
 //! their keys (`rating`, `rotation`: [`write_rating!`](crate::write_rating!), [`write_rotation!`](crate::write_rotation!)), and a
 //! notice (`notice::Notice::WriteDropped`) by the same keys. A write's value is [`Write`].
 
+use alloc::string::String;
+
+use crate::job::Cause;
 use crate::rating::Rating;
 use crate::turns::Turns;
 
@@ -66,15 +69,15 @@ pub enum WriteKindError {
     NotAKind(String),
 }
 
-impl std::fmt::Display for WriteKindError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for WriteKindError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotAKind(key) => write!(f, "not a write's kind: {key}"),
         }
     }
 }
 
-impl std::error::Error for WriteKindError {}
+impl core::error::Error for WriteKindError {}
 
 impl TryFrom<String> for WriteKind {
     type Error = WriteKindError;
@@ -124,8 +127,28 @@ impl Write {
     }
 }
 
+/// Why a write failed, for the app to word (the command line and the queue's `error` column word it in `pg-writeback`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WriteError {
+    /// A job's failure (an error, or a panic on it), or the queue's.
+    Failed(Cause),
+    /// The copy into the original failed up to the cap after it may have started: the original (`file`, as the user
+    /// sees its path) may be incomplete, and the whole new content is in `temp`. Both are kept; the copy is tried again
+    /// after the next change to the file, and at the next start.
+    CopyIncomplete {
+        /// The file, as the user sees its path.
+        file: String,
+        /// The temp that holds the whole new content.
+        temp: String,
+        /// What ended the copy.
+        cause: Cause,
+    },
+}
+
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+
     use super::*;
 
     #[test]

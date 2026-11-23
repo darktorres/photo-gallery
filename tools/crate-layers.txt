@@ -12,11 +12,13 @@ testrng:
 
 # On the model alone.
 client: model
-codec: model
+# The words the front ends show: the client's text, in Fluent, on the client's logic and the model.
+wording: client model
+codec: container model
 dedup: model
 metadata: container model
 platform: model
-testkit: platform testrng
+testkit: platform
 query: model
 yandex: model
 
@@ -25,7 +27,7 @@ dbfile: platform
 log: model platform
 perf: log model platform
 catalog: dbfile log model perf platform query
-edit: codec container metadata model
+edit: codec metadata model
 exiftool: platform
 jobs: model perf platform
 trace: platform
@@ -37,7 +39,7 @@ render: codec metadata model perf platform video
 # The passes, each its own crate.
 scan: catalog jobs model perf platform
 thumbcache: dbfile jobs model platform query
-bench: analysis catalog codec dedup dbfile jobs model render scan thumbcache
+bench: analysis catalog codec container dedup dbfile jobs model platform render scan thumbcache
 borders: analysis catalog jobs model perf platform
 import: analysis catalog container dedup jobs model perf platform
 thumbs: catalog jobs model perf platform render thumbcache
@@ -47,6 +49,6 @@ crop: catalog edit exiftool jobs model perf platform writeback
 # The runner, the application layer, the front ends and the one program.
 library: analysis borders catalog crop import jobs model perf platform render scan thumbcache thumbs writeback
 app: catalog jobs library log model platform query render thumbcache writeback yandex
-cli: analysis borders catalog client codec dedup import jobs library model perf platform scan thumbcache thumbs writeback
-desktop: app client log model perf platform render trace
-gallery: cli client desktop platform
+cli: analysis borders catalog codec dedup import jobs library model perf platform scan thumbcache thumbs wording writeback
+desktop: app client log model perf platform render trace wording
+gallery: cli desktop platform wording

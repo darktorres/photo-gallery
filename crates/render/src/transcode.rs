@@ -29,7 +29,7 @@ mod tests {
     fn a_tiff_becomes_a_jpeg_of_its_size_and_colour() {
         let (w, h) = (16u32, 8u32);
         let rgb: Vec<u8> = (0..w * h).flat_map(|_| [200u8, 100, 50]).collect();
-        let tiff = pg_testkit::tiff_rgb(w, h, &rgb).unwrap();
+        let tiff = pg_codec::fixtures::tiff_rgb(w, h, &rgb).unwrap();
         let jpeg = to_jpeg(&tiff).unwrap();
         assert_eq!(Format::sniff(&jpeg), Some(Format::Jpeg));
         let decoded = display::decode(&mut Decoder::new().unwrap(), &jpeg, MinSize::Full, Turns::NONE).unwrap();

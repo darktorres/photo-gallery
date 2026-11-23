@@ -2,7 +2,7 @@
 //! the toast).
 
 use cxx_qt_lib::QString;
-use pg_app::reexport::InboxEntry;
+use pg_model::inbox::InboxEntry;
 
 #[expect(
     unreachable_pub,

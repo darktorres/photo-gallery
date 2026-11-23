@@ -96,17 +96,19 @@ use pg_model::ids::{FileId, RootId};
 use pg_model::notice::{FilePass, LedgerCounts, LedgerKind, Notice};
 use pg_model::rules::Path as RulePath;
 
+use pg_model::inbox::InboxCounts as Counts;
+use pg_model::ledger::{FailedFile, FailedFolder, FolderFailure};
+
 use crate::core::Catalog;
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
-use crate::types::FolderFailure;
 use crate::writers::{clear_failures_on, failures_held, record_failures_on};
 
 pub(crate) mod failure;
 use failure::relist_failures;
 mod state;
 pub use failure::{ERROR_BYTES, Failure};
-pub use state::{Counts, FailedFolder, LedgerAck, LedgerRow, LedgerState};
+pub use state::{LedgerAck, LedgerRow, LedgerState};
 
 /// A ledger as the inbox shows it: one entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,24 +140,6 @@ impl Summary {
             .map(|c| LedgerCounts { new: c.new, earlier: c.total - c.new });
         self.kind.notice(counts)
     }
-}
-
-/// A failed file, as the inbox's expanded entry lists it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FailedFile {
-    /// The failed file's id.
-    pub file_id: FileId,
-    /// The file's path, exact.
-    pub path: RulePath,
-    /// The error the pass recorded for the file.
-    pub error: String,
-    /// The pass tries it again by itself; else not until it changes, or the user retries it (the import's: by
-    /// `gallery import --retry`).
-    pub retry: bool,
-    /// When it was first recorded (Unix seconds).
-    pub first_seen: i64,
-    /// Whether it came after what the user last saw of the entry.
-    pub new: bool,
 }
 
 impl Catalog {

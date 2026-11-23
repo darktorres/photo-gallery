@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn the_photos_stem_is_kept_exactly_and_only_the_suffix_is_cleaned() {
-        let stem = pg_testkit::odd_name("IMG_");
+        let stem = pg_platform::testing::odd_name("IMG_");
         let mut expected = stem.clone();
         expected.push(" (a_b_c)");
         assert_eq!(saved_stem(&stem, "a/b:c"), expected);

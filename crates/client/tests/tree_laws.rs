@@ -14,11 +14,12 @@ fn folders() -> impl Strategy<Value = Vec<String>> {
 }
 
 /// The folder a path names, merged (its drive dropped), under Windows rules.
-#[expect(clippy::panic, reason = "a test helper: a path it cannot parse is a bug in the test")]
-fn merged(path: &str) -> Merged {
+fn merged(path: &str) -> std::io::Result<Merged> {
     let rules = PathRules::Windows;
-    let Some(parsed) = rules.parse(path) else { panic!("not a Windows path: {path}") };
-    rules.merge(&parsed)
+    let Some(parsed) = rules.parse(path) else {
+        return Err(std::io::Error::other(format!("not a Windows path: {path}")));
+    };
+    Ok(rules.merge(&parsed))
 }
 
 proptest! {
@@ -32,13 +33,13 @@ proptest! {
         let mut tree = Tree::new(rules);
         tree.replace(builder.build());
         for path in &paths {
-            let folder = merged(path);
+            let folder = merged(path)?;
             let shown = rules.display_merged(&folder);
             let revealed = tree.reveal(&folder, recursive);
             prop_assert!(revealed.is_some(), "{} is not revealed", shown);
             prop_assert_eq!(revealed, tree.row_of(&folder, recursive), "{}", shown);
         }
-        prop_assert_eq!(tree.row_of(&merged("D:\\zz\\zz"), recursive), None);
+        prop_assert_eq!(tree.row_of(&merged("D:\\zz\\zz")?, recursive), None);
     }
 
     /// Files directly in the drive roots: the folders' rows are below a "Drive roots" row (row 1) exactly when there
@@ -78,7 +79,7 @@ proptest! {
         }
         let first_folder = 1 + usize::from(has_row);
         for path in &paths {
-            let row = tree.reveal(&merged(path), recursive);
+            let row = tree.reveal(&merged(path)?, recursive);
             prop_assert!(row.is_some_and(|r| r >= first_folder), "{}", path);
         }
     }

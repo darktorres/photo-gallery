@@ -6,7 +6,7 @@
 pub(crate) mod state;
 use crate::frame_sink::Frames;
 
-use crate::animation_bridge::qobject;
+use crate::bridges::animation_bridge::qobject;
 
 use core::pin::Pin;
 use std::sync::Arc;
@@ -48,7 +48,7 @@ impl qobject::AnimationPlayer {
     )]
     pub(crate) unsafe fn set_sink(mut self: Pin<&mut Self>, sink: *mut qobject::QVideoSink) {
         // SAFETY: the caller passes a live sink or null; the reference made of it is weak (QPointer).
-        let sink = (!sink.is_null()).then(|| unsafe { crate::frame_sink_bridge::ffi::new_sink_ref(sink) });
+        let sink = (!sink.is_null()).then(|| unsafe { crate::bridges::frame_sink_bridge::ffi::new_sink_ref(sink) });
         self.as_mut().rust_mut().sink = sink;
         self.restart();
     }

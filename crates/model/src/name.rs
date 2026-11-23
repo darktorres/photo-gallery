@@ -7,8 +7,11 @@
 //! Only display (a lossy `&str` for the UI and messages) and user-typed text cross to `&str`; the exact form goes
 //! to the OS through the platform's native buffer.
 
-use std::borrow::Cow;
-use std::fmt;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 /// The key algorithm's version (`pg_model::versions::KEY_ALGO_VERSION`): the folder and order keys this module makes.
 pub const KEY_ALGO_VERSION: i64 = crate::versions::KEY_ALGO_VERSION;
@@ -173,7 +176,7 @@ impl Name {
 /// comes out as one [`Unit::Byte`], so decoding never fails and never skips a byte.
 fn units(bytes: &[u8]) -> impl Iterator<Item = Unit> + '_ {
     let mut i = 0;
-    std::iter::from_fn(move || {
+    core::iter::from_fn(move || {
         let lead = *bytes.get(i)?;
         let len = match lead {
             0x00..=0x7F => 1,
@@ -184,7 +187,7 @@ fn units(bytes: &[u8]) -> impl Iterator<Item = Unit> + '_ {
         };
         let seq = if len > 0 { bytes.get(i..i + len) } else { None };
         if let Some(seq) = seq {
-            if let Ok(s) = std::str::from_utf8(seq) {
+            if let Ok(s) = core::str::from_utf8(seq) {
                 i += len;
                 return s.chars().next().map(Unit::Char);
             }
@@ -242,7 +245,7 @@ impl fmt::Display for Name {
 impl serde::Serialize for Name {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        match std::str::from_utf8(&self.0) {
+        match core::str::from_utf8(&self.0) {
             Ok(s) => serializer.serialize_str(s),
             Err(_) => {
                 let mut st = serializer.serialize_struct("Name", 1)?;
@@ -285,11 +288,13 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(2) || !text.is_ascii() {
         return None;
     }
-    text.as_bytes().chunks(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()).collect()
+    text.as_bytes().chunks(2).map(|pair| u8::from_str_radix(core::str::from_utf8(pair).ok()?, 16).ok()).collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
 
     #[test]

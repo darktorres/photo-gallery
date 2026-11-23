@@ -66,10 +66,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_catalog::pair::{Coverage, Pairing};
-use pg_catalog::{
-    Catalog, FolderFailure, FolderRowReader, FolderRows, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason,
-};
+use pg_catalog::{Catalog, FolderRowReader, FolderRows, Prior, Recorded, ScanLease, ScannedFile, Skip, SkipReason};
 use pg_model::ids::FileIdentity;
+use pg_model::ledger::FolderFailure;
 use pg_model::media::Ext;
 use pg_model::name::Name;
 use pg_model::rules::{Path as RulePath, PathRules};

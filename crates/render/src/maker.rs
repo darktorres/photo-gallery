@@ -326,7 +326,7 @@ mod tests {
         let alpha = |i: usize| (i * 13).to_le_bytes()[0];
         let rgba: Vec<u8> =
             rgb.as_chunks::<3>().0.iter().enumerate().flat_map(|(i, p)| [p[0], p[1], p[2], alpha(i)]).collect();
-        pg_testkit::png_rgba(u32::try_from(w).unwrap(), u32::try_from(h).unwrap(), &rgba).unwrap()
+        pg_codec::fixtures::png_rgba(u32::try_from(w).unwrap(), u32::try_from(h).unwrap(), &rgba).unwrap()
     }
 
     fn summary(r: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {

@@ -3,8 +3,8 @@
 //!
 //! - JPEG: in the DCT domain (libjpeg-turbo's lossless transform, perfect transforms only: one that would have
 //!   to drop or smear partial edge blocks is refused).
-//! - PNG, BMP, still GIF, lossless WebP: decoded, turned, re-encoded losslessly (`rewrite`). Only the pixel data
-//!   and the size fields change; every other chunk or block (ICC profile, EXIF, XMP, text, comments) is copied as
+//! - PNG, BMP, still GIF, lossless WebP: decoded, turned, re-encoded losslessly (`pg_codec::rewrite`). Only the pixel
+//!   data and the size fields change; every other chunk or block (ICC profile, EXIF, XMP, text, comments) is copied as
 //!   it was.
 //!
 //! Otherwise the EXIF Orientation tag carries the turn (TIFF, lossy or animated WebP, animated PNG, and a JPEG
@@ -18,8 +18,8 @@
 use crate::{Error, Result};
 use pg_model::turns::Turns;
 
-use crate::rewrite::chunk::{WebpKind, png_animated, webp_kind};
-use crate::rewrite::{self, op::Op};
+use pg_codec::rewrite::chunk::{WebpKind, png_animated, webp_kind};
+use pg_codec::rewrite::{self, op::Op};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
 
@@ -58,8 +58,8 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
         Format::Jpeg => match rewrite::jpeg::rewrite(bytes, Op::Orient(total)) {
             Ok(out) => rewritten(out)?,
             // Not a perfect transform at this size, or a damaged file: the tag carries the turn.
-            Err(Error::Imperfect(_)) => tag(),
-            Err(e) => return Err(e),
+            Err(pg_codec::Error::Imperfect(_)) => tag(),
+            Err(e) => return Err(e.into()),
         },
         Format::Png if png_animated(bytes) => tag(),
         Format::Png => rewritten(rewrite::png::rewrite(bytes, Op::Orient(total))?)?,
@@ -71,8 +71,8 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
             Ok(Some(out)) => Outcome::Rewritten(out),
             Ok(None) => Outcome::Catalog,
             // A still GIF with nothing on its screen: no pixels to turn, and no tag a GIF can carry.
-            Err(Error::NothingLeft) => Outcome::Catalog,
-            Err(e) => return Err(e),
+            Err(pg_codec::Error::NothingLeft) => Outcome::Catalog,
+            Err(e) => return Err(e.into()),
         },
         Format::Bmp => match rewrite::bmp::rewrite(bytes, Op::Orient(total))? {
             Some(out) => Outcome::Rewritten(out),
@@ -84,10 +84,9 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rewrite::chunk::png_chunk;
-    use crate::rewrite::raster::pack;
     use crate::testing::shown;
-    use pg_codec::fixtures::orient;
+    use pg_codec::encode::Chroma;
+    use pg_codec::fixtures::{self, orient};
     use pg_container::{GifBlock, gif_blocks};
 
     /// Expected: the original as shown, turned clockwise `turns` times.
@@ -125,7 +124,7 @@ mod tests {
             }
             Format::Png => {
                 let mut out = file[..33].to_vec(); // signature and IHDR
-                out.extend(png_chunk(b"eXIf", &exif_tiff(o)).unwrap());
+                out.extend(pg_container::png_chunk(b"eXIf", &exif_tiff(o)).unwrap());
                 out.extend_from_slice(&file[33..]);
                 out
             }
@@ -164,27 +163,14 @@ mod tests {
         let (w, h) = (13, 7);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let rgb = pg_testkit::rgb_pattern(w, h);
-        for (color, depth, data) in [
-            (png::ColorType::Rgb, png::BitDepth::Eight, rgb.clone()),
-            (png::ColorType::Rgb, png::BitDepth::Sixteen, rgb.iter().flat_map(|&v| [v, v ^ 0x5A]).collect()),
-            (
-                png::ColorType::Rgba,
-                png::BitDepth::Eight,
-                rgb.chunks(3).flat_map(|p| [p[0], p[1], p[2], p[0] ^ p[2]]).collect(),
-            ),
-            (png::ColorType::Grayscale, png::BitDepth::Two, {
-                // 2-bit gray: packed four to a byte, rows padded.
-                let values: Vec<u8> = (0..w * h).map(|i| u8::try_from(i % 4).unwrap()).collect();
-                pack(&values, (w * 2).div_ceil(8), w, h, 2).unwrap()
-            }),
+        // (channels, bits per sample, the samples): the 2-bit gray has one sample to a byte, which the fixture packs.
+        for (channels, bits, data) in [
+            (3, 8, rgb.clone()),
+            (3, 16, rgb.iter().flat_map(|&v| [v, v ^ 0x5A]).collect()),
+            (4, 8, rgb.chunks(3).flat_map(|p| [p[0], p[1], p[2], p[0] ^ p[2]]).collect()),
+            (1, 2, (0..w * h).map(|i| u8::try_from(i % 4).unwrap()).collect()),
         ] {
-            let mut file = Vec::new();
-            let mut e = png::Encoder::new(&mut file, sw, sh);
-            e.set_color(color);
-            e.set_depth(depth);
-            let mut writer = e.write_header().unwrap();
-            writer.write_image_data(&data).unwrap();
-            writer.finish().unwrap();
+            let file = fixtures::png_layout(sw, sh, channels, bits, &data).unwrap();
             check_exact(&all_orientations(&file, Format::Png), Format::Png);
         }
     }
@@ -195,7 +181,7 @@ mod tests {
     fn a_still_gif_with_nothing_on_its_screen_is_catalogued() {
         let (w, h) = (4, 3);
         let rgb = pg_testkit::rgb_pattern(w, h);
-        let mut file = pg_testkit::gif_rgb(4, 3, &rgb).unwrap();
+        let mut file = fixtures::gif_rgb(4, 3, &rgb).unwrap();
         // The frame's left edge moved past the 4-pixel screen.
         let d = gif_blocks(&file)
             .find_map(|b| match b {
@@ -215,20 +201,15 @@ mod tests {
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let rgb = pg_testkit::rgb_pattern(w, h);
         // No EXIF in these formats: no starting orientation but 1.
-        for file in [pg_testkit::bmp_rgb(sw, sh, &rgb).unwrap(), pg_testkit::gif_rgb(sw, sh, &rgb).unwrap()] {
+        for file in [fixtures::bmp_rgb(sw, sh, &rgb).unwrap(), fixtures::gif_rgb(sw, sh, &rgb).unwrap()] {
             let format = Format::sniff(&file).unwrap();
             check_exact(&[file], format);
         }
         // Lossless WebP, plain and with an EXIF chunk carrying each orientation (VP8X form).
         let mut variants = Vec::new();
         for o in 0..=8 {
-            let mut webp = Vec::new();
-            let mut e = image_webp::WebPEncoder::new(&mut webp);
-            if o > 0 {
-                e.set_exif_metadata(exif_tiff(Orientation::new(o).unwrap()));
-            }
-            e.encode(&rgb, sw, sh, image_webp::ColorType::Rgb8).unwrap();
-            variants.push(webp);
+            let exif = (o > 0).then(|| exif_tiff(Orientation::new(o).unwrap()));
+            variants.push(fixtures::webp_lossless_rgb(sw, sh, &rgb, exif.as_deref()).unwrap());
         }
         check_exact(&variants, Format::Webp);
     }
@@ -236,18 +217,8 @@ mod tests {
     #[test]
     fn jpeg_perfect_or_tag() {
         let jpeg = |w: usize, h: usize| {
-            let mut c = turbojpeg::Compressor::new().unwrap();
-            c.set_quality(95).unwrap();
-            c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
             let pixels = pg_testkit::rgb_pattern(w, h);
-            c.compress_to_vec(turbojpeg::Image {
-                pixels: &pixels[..],
-                width: w,
-                pitch: w * 3,
-                height: h,
-                format: turbojpeg::PixelFormat::RGB,
-            })
-            .unwrap()
+            fixtures::jpeg_rgb(w, h, &pixels, 95, Chroma::Half).unwrap()
         };
         // MCU-aligned: the pixels turn. Decoding the turned coefficients matches turning the decoded image up
         // to the decoder's chroma rounding.
@@ -276,7 +247,7 @@ mod tests {
         );
         assert!(matches!(
             rewrite::jpeg::rewrite(&good[..scan], Op::Orient(Orientation::new(6).unwrap())),
-            Err(Error::Imperfect(_))
+            Err(pg_codec::Error::Imperfect(_))
         ));
     }
 
@@ -284,20 +255,9 @@ mod tests {
     // patcher resets the tag the reader took, so the turned pixels are not turned again by it.
     #[test]
     fn jpeg_byte_and_long_orientations_turn_once() {
-        let mut c = turbojpeg::Compressor::new().unwrap();
-        c.set_quality(95).unwrap();
-        c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
         let (w, h) = (64, 32);
         let pixels = pg_testkit::rgb_pattern(w, h);
-        let plain = c
-            .compress_to_vec(turbojpeg::Image {
-                pixels: &pixels[..],
-                width: w,
-                pitch: w * 3,
-                height: h,
-                format: turbojpeg::PixelFormat::RGB,
-            })
-            .unwrap();
+        let plain = fixtures::jpeg_rgb(w, h, &pixels, 95, Chroma::Half).unwrap();
         // A little-endian EXIF block with one orientation entry: (type, count, value field, data after the IFD).
         let entry = |kind: u16, count: u32, field: [u8; 4], data: &[u8]| {
             let mut t = b"II*\0\x08\0\0\0".to_vec();

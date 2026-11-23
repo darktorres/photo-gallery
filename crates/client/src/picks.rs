@@ -1,7 +1,9 @@
 //! The picks of a result list: which results are picked to be saved, and the anchor a Shift-click range starts from.
 //! Indices are the list's items. A pick outside the list does nothing.
 
-use std::ops::Range;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ops::Range;
 
 /// The results the user has picked, and the anchor a Shift-click range starts from.
 #[derive(Clone, Debug, Default, PartialEq)]

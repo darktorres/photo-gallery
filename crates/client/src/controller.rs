@@ -5,6 +5,10 @@
 //! (tests/replay.rs). The desktop keeps the one controller on the GUI thread and carries the commands out (desktop
 //! `controller.rs`, `shell.rs`).
 
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
+
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
 use pg_model::rules::Merged;
@@ -73,12 +77,8 @@ impl Start {
 }
 
 /// What the desktop reports.
-// The listing's events carry a whole saved view, which is larger than the rest; they are rare (a user's choice), so the
-// size of the enum's largest variant costs nothing that matters.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "the listing's events are rare, and their saved view is the large variant"
-)]
+// The listing's events carry a whole saved view, which is larger than the rest, so they are boxed: each event is the size
+// of its largest variant, and the listing's are rare (a user's choice). A box serialises as its contents.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// The folder tree was loaded (at the start, and after each scan).
@@ -119,7 +119,7 @@ pub enum Event {
     /// A size request: the grid's row height stepped, scaled or chosen, or the screen's scale changed.
     Size(size::Event),
     /// Where the grid looks changed by the user: the folder, the recursion, the sort, the query, a saved view.
-    Listing(listing::Event),
+    Listing(Box<listing::Event>),
     /// A rating, a quarter turn, or a border mark, asked for by the user (the viewer's or the grid's keys).
     Rate {
         /// The item rated.
@@ -377,8 +377,8 @@ impl Controller {
             Event::Global(global) => self.global(global),
             Event::Size(event) => self.size(now_ms, event),
             Event::Listing(event) => {
-                let shows_failures = matches!(event, listing::Event::FailedImports);
-                let out = self.listing_event(event);
+                let shows_failures = matches!(*event, listing::Event::FailedImports);
+                let out = self.listing_event(*event);
                 if shows_failures { self.closed_for_listing(out) } else { out }
             }
             Event::Select(item) => vec![Command::Select(item)],

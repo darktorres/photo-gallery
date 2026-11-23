@@ -20,7 +20,7 @@ mod nav;
 mod roles;
 pub(crate) mod state;
 
-use crate::gallery_bridge::qobject;
+use crate::bridges::gallery_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::{Cell, RefCell};

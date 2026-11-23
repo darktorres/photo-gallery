@@ -1,36 +1,35 @@
-//! The words QML shows that it can't make itself, from `pg_client::text`: the rating symbols, the timecodes, and the
+//! The words QML shows that it can't make itself, from `pg_wording`: the rating symbols, the timecodes, and the
 //! front end's own literals (the labels and tooltips, by their `ui.ftl` id). One object per component that needs them,
 //! made inside it (as the other facades are).
 
 pub(crate) mod state;
 
-use crate::words_bridge::qobject;
+use crate::bridges::words_bridge::qobject;
 
 use cxx_qt_lib::QString;
-use pg_client::text;
 
 impl qobject::Words {
     pub(crate) fn rating_symbol(&self, rating: i32) -> QString {
         let rating = u8::try_from(rating.clamp(0, 5)).unwrap_or(0);
-        QString::from(&text::rating_symbol(rating).to_string())
+        QString::from(&pg_wording::rating_symbol(rating).to_string())
     }
 
     pub(crate) fn timecode(&self, seconds: i32) -> QString {
-        QString::from(&text::timecode(u64::try_from(seconds).unwrap_or(0)))
+        QString::from(&pg_wording::timecode(u64::try_from(seconds).unwrap_or(0)))
     }
 
     pub(crate) fn count(&self, n: i32) -> QString {
-        QString::from(&text::group_digits(u64::try_from(n).unwrap_or(0)))
+        QString::from(&pg_wording::group_digits(u64::try_from(n).unwrap_or(0)))
     }
 
     pub(crate) fn text(&self, id: &QString) -> QString {
-        QString::from(&text::ui(&String::from(id), 0.0, "", ""))
+        QString::from(&pg_wording::ui(&String::from(id), 0.0, "", ""))
     }
 
     /// The entry `id` with its values: `count` is the number its plural selector reads (`$count ->`), and an entry with no
     /// selector takes 0 there, since the count is then not read. `value` fills `$text`, `second` fills `$other`.
     pub(crate) fn phrase(&self, id: &QString, count: f64, value: &QString, second: &QString) -> QString {
-        QString::from(&text::ui(&String::from(id), count, &String::from(value), &String::from(second)))
+        QString::from(&pg_wording::ui(&String::from(id), count, &String::from(value), &String::from(second)))
     }
 }
 
@@ -41,7 +40,6 @@ mod tests {
     use std::path::Path;
 
     /// The ids the QML asks the facade for: the first argument of each `words.text(` and `words.phrase(` call.
-    #[expect(clippy::string_slice, reason = "a match position plus an ASCII call's length is a char boundary")]
     fn ids_in_qml() -> BTreeSet<String> {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("qml");
         let mut ids = BTreeSet::new();
@@ -53,7 +51,8 @@ mod tests {
             let source = fs::read_to_string(&path).expect("a readable QML file");
             for call in ["words.text(\"", "words.phrase(\""] {
                 for (at, _) in source.match_indices(call) {
-                    let rest = &source[at + call.len()..];
+                    // A match's end is a character boundary, so `get` is `Some`.
+                    let rest = source.get(at + call.len()..).unwrap_or_default();
                     let id = rest.split('"').next().unwrap_or_default();
                     ids.insert(id.to_string());
                 }
@@ -64,14 +63,14 @@ mod tests {
 
     /// The entries of `ui.ftl`: the lines that start an entry (not a comment, a continuation or a variant).
     fn entries() -> BTreeSet<String> {
-        include_str!("../../client/locales/en/ui.ftl")
+        include_str!("../../wording/locales/en/ui.ftl")
             .lines()
             .filter(|line| !line.starts_with(' ') && !line.starts_with('#'))
             .filter_map(|line| line.split_once(" =").map(|(id, _)| id.to_string()))
             .collect()
     }
 
-    /// The QML stub cannot read `text::RATING_SYMBOLS`, so its literal list is read here and must equal the Rust list:
+    /// The QML stub cannot read `pg_wording::RATING_SYMBOLS`, so its literal list is read here and must equal the Rust list:
     /// a change to one without the other fails this test rather than drifting.
     #[test]
     fn the_stub_rating_symbols_are_the_rust_ones() {
@@ -82,17 +81,17 @@ mod tests {
             .find(|line| line.contains("readonly property var symbols:"))
             .expect("the stub's symbols list");
         let stub: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
-        assert_eq!(stub, pg_client::text::RATING_SYMBOLS);
+        assert_eq!(stub, pg_wording::RATING_SYMBOLS);
     }
 
     /// Every id the QML asks for is an entry of `ui.ftl`, and every entry is asked for by some QML. The key hint labels,
-    /// their separator and the selection line are worded by Rust (`text::hint`, the status bar), which hands the front
+    /// their separator and the selection line are worded by Rust (`pg_wording::hint`, the status bar), which hands the front
     /// end their text, so their ids count as asked for too.
     #[test]
     fn the_qml_words_and_the_ui_entries_are_the_same_set() {
         let mut used = ids_in_qml();
         used.extend(pg_client::keys::Hint::ALL.iter().map(|hint| hint.id().to_string()));
-        used.extend([pg_client::text::HINT_SEPARATOR, pg_client::text::SELECTION_LINE].map(str::to_string));
+        used.extend([pg_wording::HINT_SEPARATOR, pg_wording::SELECTION_LINE].map(str::to_string));
         let known = entries();
         assert!(!used.is_empty(), "no words.text or words.phrase call found: is the QML folder right?");
         let missing: Vec<&String> = used.difference(&known).collect();

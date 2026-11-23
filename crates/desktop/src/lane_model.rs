@@ -13,7 +13,7 @@ pub(crate) mod state;
 // The row types live with the model's state (which the bridge names): the module doesn't need this one back.
 pub(crate) use state::{LaneRow, RowKey};
 
-use crate::lane_model_bridge::qobject;
+use crate::bridges::lane_model_bridge::qobject;
 
 use core::pin::Pin;
 use std::time::Duration;
@@ -22,9 +22,8 @@ use crate::rows::qt_int;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::LaneLines;
-use pg_app::reexport::LaneProgress;
-use pg_client::text;
 use pg_model::notice::{FilePass, LedgerKind};
+use pg_model::progress::LaneProgress;
 use pg_model::progress::{Mark, Phase, Progress};
 use pg_model::rules::PathRules;
 use pg_model::size::ThumbHeight;
@@ -73,14 +72,15 @@ fn failed_pass_of(phase: &Phase) -> i32 {
 /// One row from a progress: its status is the pass's line, or the paused wording while the lane is paused itself.
 fn row_of(key: RowKey, label: String, progress: &Progress, paused: bool, rules: PathRules) -> LaneRow {
     let known = progress.known_fraction();
-    let status = if paused { text::lane_paused_status(progress, rules) } else { text::pass_status(progress, rules) };
+    let status =
+        if paused { pg_wording::lane_paused_status(progress, rules) } else { pg_wording::pass_status(progress, rules) };
     LaneRow {
         key,
         number: number_of(key),
         pausable: matches!(key, RowKey::Lane(_)),
         label,
         status,
-        failed: text::pass_failed(progress),
+        failed: pg_wording::pass_failed(progress),
         failed_pass: failed_pass_of(&progress.phase),
         paused,
         working: progress.phase != Phase::Idle,
@@ -412,9 +412,9 @@ mod tests {
         let running = lines(None, vec![lane(1, working(1, 4), Some(Duration::ZERO), false)]);
         let rows = rows_of(&running, RULES);
         assert!(!rows[0].status.contains("1:"), "the drive's label is the row's own");
-        assert_eq!(rows[0].status, text::pass_status(&working(1, 4), RULES));
+        assert_eq!(rows[0].status, pg_wording::pass_status(&working(1, 4), RULES));
         let paused = lines(None, vec![lane(1, working(1, 4), Some(Duration::ZERO), true)]);
-        assert_eq!(rows_of(&paused, RULES)[0].status, text::lane_paused_status(&working(1, 4), RULES));
+        assert_eq!(rows_of(&paused, RULES)[0].status, pg_wording::lane_paused_status(&working(1, 4), RULES));
     }
 
     #[test]
@@ -480,7 +480,7 @@ mod tests {
     fn a_row_carries_its_passes_failed_count_and_the_ledger_it_is_listed_under() {
         let import = Progress { phase: Phase::Import, done: 1, total: 4, failed: 3, ..Progress::idle() };
         let rows = rows_of(&lines(None, vec![lane(1, import.clone(), Some(Duration::ZERO), false)]), RULES);
-        assert_eq!(rows[0].failed, text::pass_failed(&import));
+        assert_eq!(rows[0].failed, pg_wording::pass_failed(&import));
         assert!(!rows[0].failed.is_empty());
         assert_eq!(rows[0].failed_pass, kind_code(Some(LedgerKind::File(FilePass::Import))));
         let crop = Progress { phase: Phase::Crop, done: 1, total: 4, failed: 2, ..Progress::idle() };

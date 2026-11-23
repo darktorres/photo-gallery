@@ -69,7 +69,7 @@ macro_rules! ensure {
 /// import it, since the catalog's dev graph cannot name pg-import. There is no default: a probe that guesses the value
 /// measures a different pass, so the variable must name the one the measurement used.
 fn cache_kib() -> Result<u32> {
-    std::env::var("PG_PROBE_CACHE_KIB")
+    std::env::var(pg_testkit::inputs::PROBE_CACHE_KIB)
         .context("PG_PROBE_CACHE_KIB is unset: set it to the pairing pass's cache in KiB (pg-import's CACHE_KIB)")?
         .parse()
         .context("PG_PROBE_CACHE_KIB is not a number of KiB")
@@ -78,7 +78,7 @@ fn cache_kib() -> Result<u32> {
 /// The owed pictures per write transaction, from `PG_PROBE_WRITE` (the pass's `WRITE`, pg-import); no default, as with
 /// `cache_kib`.
 fn write_batch() -> Result<usize> {
-    std::env::var("PG_PROBE_WRITE")
+    std::env::var(pg_testkit::inputs::PROBE_WRITE)
         .context(
             "PG_PROBE_WRITE is unset: set it to the pairing pass's pictures per write transaction (pg-import's WRITE)",
         )?

@@ -24,9 +24,10 @@ use crate::error::{Error, Result};
 use crate::ledger::failure::{Failure, tidy};
 use crate::types::PairingWork;
 use crate::types::{
-    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, FolderFailure, Hit, Recorded,
-    SET_FILE_RATING, SET_RATING, ScannedFile, Subtree, WorkItem, covering_root, under_params,
+    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, Hit, Recorded, SET_FILE_RATING, SET_RATING,
+    ScannedFile, Subtree, WorkItem, covering_root, under_params,
 };
+use pg_model::ledger::FolderFailure;
 
 // The passes' writes: one writer per transaction. The statements are cached on the connection (`prepare_cached`; the
 // connection's cache is sized to hold them all, `core::register`), so a writer made for each batch reuses them rather
@@ -869,18 +870,13 @@ fn injected_ledger_fault() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(any(test, feature = "fixture")))]
-#[expect(clippy::unnecessary_wraps, reason = "the fixture's build can fail here")]
-fn injected_ledger_fault() -> Result<()> {
-    Ok(())
-}
-
 /// Record `failures` of `pass` (the thumbnails' or the borders'), found at `now`, on `conn`: one row per file, kept
 /// only while the catalog has the file as the pass read it (one changed or gone since is not recorded). A failure
 /// recorded already is updated only if its error or its retry changed, and keeps its serial. One statement for them
 /// all. Whether a row changed (`changes()`): a failure that holds writes nothing.
 pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[Failure], now: i64) -> Result<bool> {
     written_by_its_pass(pass)?;
+    #[cfg(any(test, feature = "fixture"))]
     injected_ledger_fault()?;
     if failures.is_empty() {
         return Ok(false);
@@ -909,6 +905,7 @@ pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[
 /// row went.
 pub(crate) fn clear_failures_on(conn: &Connection, pass: FilePass, files: &[FileId]) -> Result<bool> {
     written_by_its_pass(pass)?;
+    #[cfg(any(test, feature = "fixture"))]
     injected_ledger_fault()?;
     if files.is_empty() {
         return Ok(false);
@@ -1880,7 +1877,7 @@ mod tests {
         the_hashes_stored_later_move_the_pairing_epoch_posix
     );
 
-    use pg_testkit::Rng;
+    use pg_testrng::Rng;
 
     /// `PairsWriter`'s writes before the set-based guard, as the oracle: each pair and each done one statement, guarded
     /// by the stored hashes of its analyses alone.

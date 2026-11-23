@@ -25,6 +25,7 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use pg_model::ids::{FileId, RootId};
+use pg_model::removal::Begun;
 use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::convert::progress_count;
@@ -32,19 +33,6 @@ use crate::core::Catalog;
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
 use crate::types::{WRITE_BATCH, roots_on};
-
-/// What [`Catalog::begin_removal`] found.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Begun {
-    /// The folder left the library and its marker is made: the removal runs from here.
-    Started(RulePath),
-    /// A removal of this folder is already under way: the marker is there, and the folder is not in the library.
-    Pending(RulePath),
-    /// No library folder has that id.
-    NotFound,
-    /// The id names a library folder, but not the one the caller showed: the list changed since. Nothing was changed.
-    Changed,
-}
 
 /// What a drive of the removals did: the files deleted, the files kept for an unfinished write, and whether the drive
 /// was stopped before the end (the removal goes on at the next drive).

@@ -32,6 +32,45 @@ pub fn folders_in(dir: &std::path::Path) -> io::Result<Vec<std::path::PathBuf>> 
     Ok(folders)
 }
 
+/// The identity of each file in `paths`, in their order: the file ID its folder's listing gives it (NTFS's
+/// `FileIdBothDirectoryInfo`, the identity the import orders its reads by; the inode on Unix). Each folder is listed
+/// once for the paths in it. An error when a path names no file its folder lists, or a folder can't be read.
+pub fn file_ids(paths: &[std::path::PathBuf]) -> io::Result<Vec<u64>> {
+    // Ordered maps (not hashed): a clippy-banned hash map is randomly seeded, and these keys are ordered anyway.
+    let mut listed: std::collections::BTreeMap<&std::path::Path, std::collections::BTreeMap<std::ffi::OsString, u64>> =
+        std::collections::BTreeMap::new();
+    let mut ids = Vec::with_capacity(paths.len());
+    for path in paths {
+        let folder = match path.parent() {
+            Some(folder) if !folder.as_os_str().is_empty() => folder,
+            _ => std::path::Path::new("."),
+        };
+        let folder_ids = match listed.entry(folder) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(file_ids_in(folder)?),
+        };
+        let name = path.file_name().ok_or_else(|| io::Error::other(format!("{} names no file", path.display())))?;
+        let id = folder_ids.get(name).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, format!("{} is not a file in its folder", path.display()))
+        })?;
+        ids.push(*id);
+    }
+    Ok(ids)
+}
+
+/// The files directly in `folder`, by name, each with its file ID (see [`file_ids`]); its folders are not among them.
+fn file_ids_in(folder: &std::path::Path) -> io::Result<std::collections::BTreeMap<std::ffi::OsString, u64>> {
+    let mut lister = Lister::new();
+    let dir = lister.open(&crate::names::units_of(&crate::names::canonical_of(folder)))?;
+    let mut ids = std::collections::BTreeMap::new();
+    lister.each(&dir, |e| {
+        if !e.folder {
+            ids.insert(crate::names::os_name(&crate::names::name_from_native(e.name)), e.file_id);
+        }
+    })?;
+    Ok(ids)
+}
+
 /// Which checks a folder of this system takes before it is scanned for its identities: the facts there are to decide
 /// from. Stated here, as [`crate::native::PATH_RULES`] is, so the scanner's policy names no platform.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

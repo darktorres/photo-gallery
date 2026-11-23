@@ -87,35 +87,35 @@ fn main() -> Result<(), String> {
     .qt_module("Quick")
     .qt_module("Multimedia")
     .files([
-        "src/animation_bridge.rs",
-        "src/frame_sink_bridge.rs",
-        "src/app_icon.rs",
-        "src/clipboard.rs",
-        "src/command_line_bridge.rs",
-        "src/deadline_bridge.rs",
-        "src/facet_choices_bridge.rs",
-        "src/filters_bridge.rs",
-        "src/folders_bridge.rs",
-        "src/gallery_bridge.rs",
-        "src/gpu_device_bridge.rs",
-        "src/gui_app_bridge.rs",
-        "src/picker_bridge.rs",
-        "src/failed_files_bridge.rs",
-        "src/library_bridge.rs",
-        "src/log_model_bridge.rs",
-        "src/notices_bridge.rs",
-        "src/providers_bridge.rs",
-        "src/screenshot_bridge.rs",
-        "src/settings_bridge.rs",
-        "src/shell_bridge.rs",
-        "src/trace_bridge.rs",
-        "src/keymap_bridge.rs",
-        "src/lane_model_bridge.rs",
-        "src/video_source_bridge.rs",
-        "src/video_player_bridge.rs",
-        "src/viewport_bridge.rs",
-        "src/words_bridge.rs",
-        "src/yandex_bridge.rs",
+        "src/bridges/animation_bridge.rs",
+        "src/bridges/frame_sink_bridge.rs",
+        "src/bridges/app_icon.rs",
+        "src/bridges/clipboard.rs",
+        "src/bridges/command_line_bridge.rs",
+        "src/bridges/deadline_bridge.rs",
+        "src/bridges/facet_choices_bridge.rs",
+        "src/bridges/filters_bridge.rs",
+        "src/bridges/folders_bridge.rs",
+        "src/bridges/gallery_bridge.rs",
+        "src/bridges/gpu_device_bridge.rs",
+        "src/bridges/gui_app_bridge.rs",
+        "src/bridges/picker_bridge.rs",
+        "src/bridges/failed_files_bridge.rs",
+        "src/bridges/library_bridge.rs",
+        "src/bridges/log_model_bridge.rs",
+        "src/bridges/notices_bridge.rs",
+        "src/bridges/providers_bridge.rs",
+        "src/bridges/screenshot_bridge.rs",
+        "src/bridges/settings_bridge.rs",
+        "src/bridges/shell_bridge.rs",
+        "src/bridges/trace_bridge.rs",
+        "src/bridges/keymap_bridge.rs",
+        "src/bridges/lane_model_bridge.rs",
+        "src/bridges/video_source_bridge.rs",
+        "src/bridges/video_player_bridge.rs",
+        "src/bridges/viewport_bridge.rs",
+        "src/bridges/words_bridge.rs",
+        "src/bridges/yandex_bridge.rs",
     ])
     .cpp_file("cpp/app_icon.cpp")
     .cpp_file("cpp/clipboard.cpp")
@@ -129,9 +129,9 @@ fn main() -> Result<(), String> {
     .cpp_file("cpp/video_source.cpp")
     // The window icon, set in app_icon.cpp (drawn by tools/make_icon.py), and the mascots Mascot.qml picks from.
     .qrc_resources(resources);
-    // Debug builds read the QML from the source folder and reload it when it changes (src/live_reload.rs).
+    // Debug builds read the QML from the source folder and reload it when it changes (src/bridges/live_reload.rs).
     if std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
-        builder = builder.file("src/live_reload.rs").cpp_file("cpp/live_reload.cpp");
+        builder = builder.file("src/bridges/live_reload.rs").cpp_file("cpp/live_reload.cpp");
     }
     // A static Qt (PG_QT_STATIC set): the modules the QML uses, the plugins' registration
     // (cpp/static_qt.cpp), and the libraries of the static link. Only that build sets the variable: the shared build is

@@ -1,4 +1,4 @@
-// Debug builds: QML edits show in the running app without a rebuild (src/live_reload.rs).
+// Debug builds: QML edits show in the running app without a rebuild (src/bridges/live_reload.rs).
 #pragma once
 
 #include <QtCore/QString>

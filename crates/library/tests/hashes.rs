@@ -10,26 +10,26 @@ use pg_jobs::pipeline::Options;
 use pg_model::notice::FilePass;
 use pg_platform::priority::Priority;
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// A run folder with `images/a.png` and `images/b.png` (the same textured picture) and `images/c.png` (another one),
 /// scanned into a catalog beside them, not imported: the catalog, the run's control, and the folder.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn scanned(prefix: &str) -> (Catalog, Control, PathBuf) {
-    let dir = pg_testkit::run_folder("scratch_library", prefix).unwrap();
+fn scanned(prefix: &str) -> Result<(Catalog, Control, PathBuf)> {
+    let dir = pg_testkit::run_folder("scratch_library", prefix)?;
     let images = dir.join("images");
-    std::fs::create_dir_all(&images).unwrap();
-    let png = pg_testkit::Encoding::Png;
-    let same = pg_testkit::encode(96, 80, &pg_testkit::textured_rgb(96, 80), png).unwrap();
-    std::fs::write(images.join("a.png"), &same).unwrap();
-    std::fs::write(images.join("b.png"), &same).unwrap();
-    std::fs::write(images.join("c.png"), pg_testkit::encode(96, 80, &pg_testkit::other_rgb(96, 80), png).unwrap())
-        .unwrap();
-    let mut c =
-        Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+    std::fs::create_dir_all(&images)?;
+    let png = pg_codec::fixtures::Encoding::Png;
+    let same = pg_codec::fixtures::encode(96, 80, &pg_testkit::textured_rgb(96, 80), png)?;
+    std::fs::write(images.join("a.png"), &same)?;
+    std::fs::write(images.join("b.png"), &same)?;
+    std::fs::write(images.join("c.png"), pg_codec::fixtures::encode(96, 80, &pg_testkit::other_rgb(96, 80), png)?)?;
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
-    let root = pg_platform::names::normalize_path(&images).unwrap();
-    c.add_root(&root).unwrap();
-    pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    (c, ctl, dir)
+    let root = pg_platform::names::normalize_path(&images)?;
+    c.add_root(&root)?;
+    pg_scan::scan(&mut c, &root, &ctl)?;
+    Ok((c, ctl, dir))
 }
 
 fn opts() -> Options {
@@ -37,13 +37,13 @@ fn opts() -> Options {
 }
 
 #[test]
-fn the_hashes_pass_makes_what_an_import_with_them_would_have() {
-    let (mut with, ctl, _with_dir) = scanned("with");
+fn the_hashes_pass_makes_what_an_import_with_them_would_have() -> Result<()> {
+    let (mut with, ctl, _with_dir) = scanned("with")?;
     pg_import::import(&mut with, &opts(), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     pg_import::hashes::hash(&mut with, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     pg_import::pairs::pair(&mut with, &opts(), &ctl).unwrap();
 
-    let (mut without, ctl, _without_dir) = scanned("without");
+    let (mut without, ctl, _without_dir) = scanned("without")?;
     pg_import::import_while(&mut without, &opts(), false, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     assert_eq!(without.owed_hashes().unwrap(), 3, "every picture owes its hashes");
     assert!(state::stored_hashes(&without).unwrap().iter().all(|(_, file, pixel)| file.is_none() && pixel.is_none()));
@@ -59,13 +59,14 @@ fn the_hashes_pass_makes_what_an_import_with_them_would_have() {
     let pairs = state::pairs(&with).unwrap();
     assert!(!pairs.is_empty(), "the same picture twice is a pair");
     assert_eq!(state::pairs(&without).unwrap(), pairs);
+    Ok(())
 }
 
 /// A file the hashes can't be read from stays owed, and is said (`unreadable`), not recorded in the failures; a file that
 /// is read but isn't a picture becomes an import failure at once, and its owed row goes with it.
 #[test]
-fn an_unreadable_file_stays_owed_and_an_undecodable_one_fails_at_once() {
-    let (mut c, ctl, dir) = scanned("failures");
+fn an_unreadable_file_stays_owed_and_an_undecodable_one_fails_at_once() -> Result<()> {
+    let (mut c, ctl, dir) = scanned("failures")?;
     pg_import::import_while(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
     // a.png is gone from the disk (the catalog does not know yet): it can't be read, so it stays owed.
     std::fs::remove_file(dir.join("images").join("a.png")).unwrap();
@@ -77,4 +78,5 @@ fn an_unreadable_file_stays_owed_and_an_undecodable_one_fails_at_once() {
     assert_eq!(c.owed_hashes().unwrap(), 1, "only the unreadable file is owed");
     let failures = c.failed_files(FilePass::Import, 10).unwrap();
     assert_eq!(failures.len(), 1, "the undecodable file is an import failure; the unreadable one is in no ledger");
+    Ok(())
 }

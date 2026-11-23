@@ -3,12 +3,12 @@
 
 pub(crate) mod state;
 
+use crate::bridges::video_player_bridge::ffi::VideoPlayer;
 use crate::rows::file_id_of;
 use crate::video_player;
-use crate::video_player_bridge::ffi::VideoPlayer;
 use state::VideoSourceRust;
 
-use crate::video_source_bridge::qobject;
+use crate::bridges::video_source_bridge::qobject;
 
 use core::pin::Pin;
 
@@ -21,11 +21,11 @@ fn player_of(rust: &mut VideoSourceRust) -> Option<Pin<&mut VideoPlayer>> {
 
 impl qobject::VideoSource {
     /// # Safety
-    /// As `video_player_bridge::ffi::new_video_player`: `player` is a live `QMediaPlayer` or null.
+    /// As `bridges::video_player_bridge::ffi::new_video_player`: `player` is a live `QMediaPlayer` or null.
     #[expect(unsafe_code, reason = "FFI: attaches the Qt media player the caller keeps alive")]
     pub(crate) unsafe fn attach(mut self: Pin<&mut Self>, player: *mut qobject::QMediaPlayer) {
         // SAFETY: the caller's contract; the C++ side keeps only a weak reference to the player.
-        let player = unsafe { crate::video_player_bridge::ffi::new_video_player(player) };
+        let player = unsafe { crate::bridges::video_player_bridge::ffi::new_video_player(player) };
         self.as_mut().rust_mut().get_mut().player = player;
     }
 

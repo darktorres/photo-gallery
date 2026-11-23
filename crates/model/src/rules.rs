@@ -7,6 +7,9 @@
 //! [`PathRules`] is a closed enum, not a trait: two rule sets, both testable on every host, passed as a value.
 //! Only [`PathRules::parse`] turns user text into a path; actions go by ids, not by path strings.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::name::Name;
 
 /// The rules a path follows: how it is written, and how its names compare.
@@ -398,6 +401,8 @@ fn trim_seps(bytes: &[u8], sep: u8) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
 
     fn names(parts: &[&str]) -> Vec<Name> {
@@ -581,6 +586,9 @@ mod tests {
 
 #[cfg(test)]
 mod byte_tests {
+    use alloc::format;
+    use alloc::vec;
+
     use super::*;
 
     #[test]

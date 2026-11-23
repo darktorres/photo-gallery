@@ -5,13 +5,13 @@
 //! `frameX`, `frameY`, `frameWidth` and `frameHeight` roles) places it in the panel's justified layout: the panel sets
 //! `layoutWidth` and the gallery's `gap`; each group's block is `otherHeight` or `similarHeight` high.
 //! The preview shows one result (`previewItem`): its URL, size and pick are properties, set whenever the item or its
-//! pick changes. The words the panel shows are `pg_client::text`'s (and the QML's own), from the outcomes the app
+//! pick changes. The words the panel shows are `pg_wording`'s (and the QML's own), from the outcomes the app
 //! returns as data (`pg_model::yandex`).
 
 pub(crate) mod state;
 use state::YandexSearchRust;
 
-use crate::yandex_bridge::qobject;
+use crate::bridges::yandex_bridge::qobject;
 
 use std::path::Path;
 use std::pin::Pin;
@@ -23,14 +23,14 @@ use pg_app::yandex::Hit;
 use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::results::Results;
-use pg_client::text::{self, Message, render};
 use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, YandexStatus};
+use pg_wording::{Message, render};
 
 /// A status line's text. A panic's line names the log's file as it is on disk: the log is open before the window is made.
 fn status_text(status: &YandexStatus) -> String {
     let log = pg_log::path().map(|p| p.display().to_string()).unwrap_or_default();
-    text::yandex_status(status, &log)
+    pg_wording::yandex_status(status, &log)
 }
 
 const ROLE_THUMB: i32 = 256;
@@ -141,7 +141,7 @@ impl qobject::YandexSearch {
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
         self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from(&text::yandex_phase(Phase::Starting)));
+        self.as_mut().set_status(QString::from(&pg_wording::yandex_phase(Phase::Starting)));
         self.as_mut().show(Results::default());
     }
 

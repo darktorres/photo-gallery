@@ -7,6 +7,9 @@
 //! `PanelClosed`), and this only mirrors them, for the global keys' rule (`Controller`'s `Global`). The mirror is an
 //! ordered set: a kind is in it at most once, so it holds at most [`PanelKind::ALL`]'s length by construction, whatever
 //! the QML reports twice or never.
+use alloc::vec;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 /// A modal panel: one that takes the keys while it is open (a dialog, a menu, an overlay; not the viewer, whose keys are

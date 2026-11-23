@@ -5,13 +5,11 @@
 #![forbid(unsafe_code)]
 // A GUI program: no console window when started from Explorer. The command line attaches to its caller's console.
 #![windows_subsystem = "windows"]
-// The command line's error, and the notice of a build without the window, are printed to stderr.
-#![expect(clippy::print_stderr, reason = "the command line's error and the notice of a build without a window")]
 
 use std::ffi::OsString;
 use std::process::ExitCode;
 
-use pg_client::text::cli::{Line, line};
+use pg_wording::cli::{Line, line};
 
 // The heap profiler's build. It sees Rust's allocations only: Qt's and FFmpeg's go
 // to the C runtime's heap.
@@ -31,7 +29,8 @@ fn main() -> ExitCode {
     if pg_cli::wants_cli(args.get(1..).unwrap_or_default()) {
         pg_platform::console::attach_to_parent();
         if let Err(e) = pg_cli::main(args) {
-            eprintln!("{}", line(&Line::Error { error: format!("{e:#}") }));
+            // The exit status is the failure whether or not the message reaches the console.
+            let _ = pg_cli::stderr_line(line(&Line::Error { error: format!("{e:#}") }));
             return ExitCode::FAILURE;
         }
         return ExitCode::SUCCESS;
@@ -50,6 +49,7 @@ fn open_window(args: &[OsString]) -> ExitCode {
 #[cfg(not(feature = "desktop"))]
 fn open_window(_args: &[OsString]) -> ExitCode {
     pg_platform::console::attach_to_parent();
-    eprintln!("{}", pg_cli::no_window_line());
+    // The exit status is the failure whether or not the message reaches the console.
+    let _ = pg_cli::stderr_line(pg_cli::no_window_line());
     ExitCode::FAILURE
 }

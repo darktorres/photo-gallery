@@ -1,7 +1,7 @@
 //! The state of the `FailedFiles` QObject: the bridge's backing struct (what the expanded ledger entry lists).
 
 use cxx_qt_lib::QString;
-use pg_app::reexport::{FailedFile, FailedFolder};
+use pg_model::ledger::{FailedFile, FailedFolder};
 use pg_model::notice::LedgerKind;
 
 /// One row of the list: a pass's failed file, or a folder the scans couldn't take.

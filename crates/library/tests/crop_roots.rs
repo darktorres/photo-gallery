@@ -49,8 +49,11 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
         let mut img = letterboxed();
         let at = (120 * 320 + 160) * 3;
         img[at..at + 3].copy_from_slice(&pixel);
-        std::fs::write(folder.join("a.png"), pg_testkit::encode(320, 240, &img, pg_testkit::Encoding::Png).unwrap())
-            .unwrap();
+        std::fs::write(
+            folder.join("a.png"),
+            pg_codec::fixtures::encode(320, 240, &img, pg_codec::fixtures::Encoding::Png).unwrap(),
+        )
+        .unwrap();
         let root = pg_platform::names::normalize_path(&folder).unwrap();
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();

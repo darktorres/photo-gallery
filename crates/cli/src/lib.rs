@@ -2,28 +2,26 @@
 //! for scripts, profiling and checking results. Progress goes to stderr.
 
 #![forbid(unsafe_code)]
-// The command line's output is its product: its reports go to stdout, its progress and errors to stderr.
-#![expect(
-    clippy::print_stdout,
-    clippy::print_stderr,
-    reason = "the command line's reports and progress are its output"
-)]
 
 mod args;
 mod borders;
 mod dups;
+mod out;
 mod report;
 
-use pg_client::text::cli::{Line, line};
-use pg_client::text::{self, Message};
+pub use out::{stderr_line, stdout_line};
+
 use pg_library::folders::{AddError, AddFinishError, Finished};
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::names::{NormalizeError, shown};
 use pg_scan::ScanStats;
+use pg_wording::Message;
+use pg_wording::cli::{Line, line};
 use serde_json::json;
 use std::ffi::OsString;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -66,11 +64,11 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     let cli = Cli::parse_from(args);
     // The table of a perf log: no catalog, and no log of its own.
     if let Command::Perf { file } = &cli.command {
-        print!("{}", pg_perf::summarize(file)?);
+        say_table(&pg_perf::summarize(file)?)?;
         return Ok(());
     }
     // `PG_PERF_LOG`, read before anything else runs, so the whole command is in the log. The command is the root span.
-    let perf_file = open_perf_log(&cli);
+    let perf_file = open_perf_log(&cli)?;
     let name = command_name(&cli.command);
     let outcome = {
         let _root = pg_perf::span(name);
@@ -79,11 +77,11 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     if let Some(file) = perf_file {
         let dropped = pg_perf::dropped();
         if dropped > 0 {
-            eprintln!("perf log: {dropped} record(s) could not be written to {}", file.display());
+            stderr_line(format!("perf log: {dropped} record(s) could not be written to {}", file.display()))?;
         }
         match pg_perf::summarize_session(&file, pg_perf::session_id()) {
-            Ok(table) => print!("{table}"),
-            Err(e) => eprintln!("perf log: can't read {}: {e}", file.display()),
+            Ok(table) => say_table(&table)?,
+            Err(e) => stderr_line(format!("perf log: can't read {}: {e}", file.display()))?,
         }
     }
     outcome
@@ -109,8 +107,10 @@ fn command_name(command: &Command) -> &'static str {
 /// Opens the perf log `PG_PERF_LOG` names, for this run. `-` echoes each top-level step to stderr as it ends; any other
 /// value is a file to append to, whose table is printed when the run ends. Unset (or a file that can't be opened, which
 /// is said), nothing is recorded. Returns the file, when there is one to summarize.
-fn open_perf_log(cli: &Cli) -> Option<std::path::PathBuf> {
-    let target = pg_platform::env::read(pg_platform::env::Var::PerfLog)?;
+fn open_perf_log(cli: &Cli) -> io::Result<Option<std::path::PathBuf>> {
+    let Some(target) = pg_platform::env::read(pg_platform::env::Var::PerfLog) else {
+        return Ok(None);
+    };
     let meta = json!({
         "program": pg_perf::PROGRAM,
         "version": env!("CARGO_PKG_VERSION"),
@@ -119,17 +119,21 @@ fn open_perf_log(cli: &Cli) -> Option<std::path::PathBuf> {
         "catalog_dir": cli.layout().ok().map(|l| l.catalog_dir().display().to_string()),
     });
     if target.to_str() == Some("-") {
-        if let Err(e) = pg_perf::open_echo(|line| eprintln!("{line}"), meta) {
-            eprintln!("perf log: {e}");
+        // The echo prints from the perf log's own writes: a failed print there must not stop the command's records.
+        let echo = |line: &str| {
+            let _ = stderr_line(line);
+        };
+        if let Err(e) = pg_perf::open_echo(echo, meta) {
+            stderr_line(format!("perf log: {e}"))?;
         }
-        return None;
+        return Ok(None);
     }
     let path = std::path::PathBuf::from(target);
     match pg_perf::open(&path, meta) {
-        Ok(()) => Some(path),
+        Ok(()) => Ok(Some(path)),
         Err(e) => {
-            eprintln!("perf log: can't open {}: {e}; not recording", path.display());
-            None
+            stderr_line(format!("perf log: can't open {}: {e}; not recording", path.display()))?;
+            Ok(None)
         }
     }
 }
@@ -160,23 +164,30 @@ fn normalized(path: &Path) -> Result<RulePath> {
 fn path_words(e: &NormalizeError) -> String {
     match e {
         NormalizeError::Unreadable { path, error } => {
-            text::render(&Message::PathUnreadable { path: shown(path), error: error.to_string() })
+            pg_wording::render(&Message::PathUnreadable { path: shown(path), error: error.to_string() })
         }
-        NormalizeError::NotAPath { path } => text::render(&Message::NotAPath { path: shown(path) }),
+        NormalizeError::NotAPath { path } => pg_wording::render(&Message::NotAPath { path: shown(path) }),
     }
 }
 
-/// Print a line of the command line's own.
-fn say(l: &Line) {
-    println!("{}", line(l));
+/// Print a line of the command line's own, on stdout.
+fn say(l: &Line) -> io::Result<()> {
+    stdout_line(line(l))
+}
+
+/// Print a table on stdout, line by line. `lines` drops each line's newline and `stdout_line` writes it back, so the
+/// output is the table's text as `print!` wrote it.
+fn say_table(table: &str) -> io::Result<()> {
+    table.lines().try_for_each(stdout_line)
 }
 
 /// What finishing a removal over a folder deleted, and what it kept for an unfinished write.
-fn say_finished(finished: &Finished) {
-    say(&Line::Removed { root: finished.folder.clone(), deleted: finished.driven.files.to_string() });
+fn say_finished(finished: &Finished) -> io::Result<()> {
+    say(&Line::Removed { root: finished.folder.clone(), deleted: finished.driven.files.to_string() })?;
     if finished.driven.deferred > 0 {
-        say(&Line::RemovalKept { root: finished.folder.clone(), deferred: finished.driven.deferred.to_string() });
+        say(&Line::RemovalKept { root: finished.folder.clone(), deferred: finished.driven.deferred.to_string() })?;
     }
+    Ok(())
 }
 
 /// Seconds as the command line shows them: one decimal.
@@ -196,7 +207,7 @@ fn hash_and_report(
             failed: s.failed.to_string(),
             unreadable: s.unreadable.to_string(),
             seconds: secs(start.elapsed().as_secs_f64()),
-        });
+        })?;
     }
     Ok(())
 }
@@ -220,7 +231,7 @@ fn pair_and_report(
         files: s.files.to_string(),
         pairs: s.pairs.to_string(),
         seconds: secs(start.elapsed().as_secs_f64()),
-    });
+    })?;
     // The parts are fractions of a second: whole milliseconds.
     let (t, part) = (s.timings, millis);
     say(&Line::PairTimings {
@@ -233,9 +244,9 @@ fn pair_and_report(
         paused: part(t.joins.paused),
         write: part(t.write),
         commit: part(t.commit),
-    });
+    })?;
     if s.legacy > 0 {
-        say(&Line::PairsLegacy { count: s.legacy.to_string() });
+        say(&Line::PairsLegacy { count: s.legacy.to_string() })?;
     }
     Ok(())
 }
@@ -270,11 +281,11 @@ fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -
     });
     let notices = pg_library::scans::scan_notices(root, s);
     let mut lines: Vec<String> =
-        std::iter::once(summary).chain(notices.all().map(|n| text::notice_line(n, rules))).collect();
+        std::iter::once(summary).chain(notices.all().map(|n| pg_wording::notice_line(n, rules))).collect();
     for refused in &s.refused_mount_list {
         lines.push(line(&Line::RefusedMount {
             mount: rules.display(&refused.mount),
-            reason: text::refused_reason(&refused.reason),
+            reason: pg_wording::refused_reason(&refused.reason),
         }));
     }
     let listed = u64::try_from(s.refused_mount_list.len()).unwrap_or(u64::MAX);
@@ -294,7 +305,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     let open = pg_perf::span("cmd.open");
     let mut catalog = pg_library::open_catalog(&layout)?;
     drop(open);
-    report_rebuilt(&catalog);
+    report_rebuilt(&catalog)?;
     let rules = catalog.rules();
     let start = Instant::now();
 
@@ -318,29 +329,32 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     match pg_library::folders::add_folder_finishing(&catalog, &root, &mut finish) {
                         Ok(added_folder) => {
                             if let Some(finished) = &added_folder.finished {
-                                say_finished(finished);
+                                say_finished(finished)?;
                             }
                             if !added_folder.new {
                                 let notice = Notice::FolderAlreadyAdded { folder: added_folder.root.clone() };
-                                println!("{}", text::render(&Message::NoticeTitle { notice, rules }));
+                                stdout_line(pg_wording::render(&Message::NoticeTitle { notice, rules }))?;
                             }
                             added.push(added_folder.root);
                         }
                         Err(AddFinishError::Add { error, finished }) => {
                             if let Some(finished) = &finished {
-                                say_finished(finished);
+                                say_finished(finished)?;
                             }
                             match error {
                                 // A refused folder is not added; the other folders still are.
                                 AddError::Refused { folder, reason } => {
-                                    println!("{}", text::notice_line(&Notice::FolderRefused { folder, reason }, rules));
+                                    stdout_line(pg_wording::notice_line(
+                                        &Notice::FolderRefused { folder, reason },
+                                        rules,
+                                    ))?;
                                 }
                                 AddError::Path(e) => bail!(path_words(&e)),
                                 AddError::Catalog(e) => return Err(e.into()),
                             }
                         }
                         Err(AddFinishError::StillPending(finished)) => {
-                            say_finished(&finished);
+                            say_finished(&finished)?;
                             return Err(pg_catalog::Error::RemovalPending { path: finished.folder }.into());
                         }
                         Err(AddFinishError::Finish(e)) => return Err(e.into()),
@@ -371,10 +385,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     // A refused folder is reported and the others are still scanned (its refusal is in the catalog's
                     // folder ledger, until a walk of it can run); any other error stops the command.
                     Err(pg_scan::ScanError::Refused(reason)) => {
-                        println!(
-                            "{}",
-                            text::notice_line(&Notice::FolderRefused { folder: root.clone(), reason }, rules)
-                        );
+                        stdout_line(pg_wording::notice_line(
+                            &Notice::FolderRefused { folder: root.clone(), reason },
+                            rules,
+                        ))?;
                         continue;
                     }
                     // Another process walks a folder that overlaps this one: said, and the command fails (`--wait`
@@ -390,25 +404,29 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 };
                 let mut report = scan_report(&root, &s, rules, start.elapsed().as_secs_f64()).into_iter();
                 if let Some(summary) = report.next() {
-                    println!("{summary}");
+                    stdout_line(summary)?;
                 }
-                print_failures(Kept::Skipped, &s.failures);
+                print_failures(Kept::Skipped, &s.failures)?;
                 // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
                 // The cache is opened only then.
                 if !s.pairing.replaced_ids.is_empty() {
                     let (events, printer) = thumb_events();
                     let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                     for (_, e) in pg_library::scans::forget_replaced(&cache, &s.pairing.replaced_ids) {
-                        say(&Line::ThumbNotForgotten { root: name.clone(), error: format!("{e:#}") });
+                        say(&Line::ThumbNotForgotten { root: name.clone(), error: format!("{e:#}") })?;
                     }
                     drop(cache);
                     join_printer(printer);
                 }
                 for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
-                    say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() });
+                    say(&Line::TempNotDeleted {
+                        root: name.clone(),
+                        temp: rules.display(&temp),
+                        error: e.to_string(),
+                    })?;
                 }
                 for notice in report {
-                    println!("{notice}");
+                    stdout_line(notice)?;
                 }
             }
         }
@@ -416,7 +434,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
                 Err(_) => pg_platform::names::real_path_lenient(&root)
-                    .map_err(|_| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
+                    .map_err(|_| anyhow!(pg_wording::render(&Message::NotAPath { path: shown(&root) })))?,
             };
             let name = rules.display(&root);
             let Some(discarded) = catalog.discard_removal(&root)? else {
@@ -425,7 +443,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // The temps as the catalog stored them (`PathRules::join`): a stored path that no longer parses is none of ours.
             let temps: Vec<_> = discarded.temps.iter().filter_map(|bytes| rules.parse_bytes(bytes)).collect();
             for (temp, e) in pg_writeback::discard_temps(rules, &temps) {
-                say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() });
+                say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() })?;
             }
             // The discarded files' thumbnails: the sweep drops every entry whose file the catalog no longer has.
             let (events, printer) = thumb_events();
@@ -434,7 +452,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             drop(cache);
             join_printer(printer);
             swept?;
-            say(&Line::Removed { root: name, deleted: discarded.rows.to_string() });
+            say(&Line::Removed { root: name, deleted: discarded.rows.to_string() })?;
         }
         Command::Remove { root, discard_pending: false } => {
             // A folder deleted from disk can't be normalized, and it is the one to remove: its real part is resolved and the
@@ -442,31 +460,31 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
                 Err(_) => pg_platform::names::real_path_lenient(&root)
-                    .map_err(|_| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
+                    .map_err(|_| anyhow!(pg_wording::render(&Message::NotAPath { path: shown(&root) })))?,
             };
             let name = rules.display(&root);
             // A removal begun by an earlier run (its marker left, the folder already out of the list) is finished here.
             let begun = match catalog.root_id(&root)? {
                 Some(id) => catalog.begin_removal(id, &root)?,
                 None if catalog.removal_markers()?.iter().any(|m| rules.same(&m.path, &root)) => {
-                    pg_catalog::Begun::Pending(root.clone())
+                    pg_model::removal::Begun::Pending(root.clone())
                 }
                 None => bail!(line(&Line::NotInLibrary { root: name })),
             };
             match begun {
-                pg_catalog::Begun::Started(_) | pg_catalog::Begun::Pending(_) => {
+                pg_model::removal::Begun::Started(_) | pg_model::removal::Begun::Pending(_) => {
                     let (events, printer) = thumb_events();
                     let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                     let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
                     drop(cache);
                     join_printer(printer);
                     let driven = driven?;
-                    say(&Line::Removed { root: name.clone(), deleted: driven.files.to_string() });
+                    say(&Line::Removed { root: name.clone(), deleted: driven.files.to_string() })?;
                     if driven.deferred > 0 {
-                        say(&Line::RemovalKept { root: name, deferred: driven.deferred.to_string() });
+                        say(&Line::RemovalKept { root: name, deferred: driven.deferred.to_string() })?;
                     }
                 }
-                pg_catalog::Begun::NotFound | pg_catalog::Begun::Changed => {
+                pg_model::removal::Begun::NotFound | pg_model::removal::Begun::Changed => {
                     bail!(line(&Line::NotInLibrary { root: name }))
                 }
             }
@@ -474,7 +492,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Import { pipeline, retry_errors, again, no_pair, no_dups, serial } => {
             if !again.is_empty() {
                 let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
-                say(&Line::MarkedAgain { count: marked.to_string() });
+                say(&Line::MarkedAgain { count: marked.to_string() })?;
             }
             let opts = pipeline.options(Priority::Normal);
             // One lane per drive: each imports its volumes at once. The duplicates below are the whole library's.
@@ -483,14 +501,14 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 pg_import::import_while(catalog, &opts, retry_errors, &group.volumes, &|| true, lane)
             })?;
             for (group, s) in groups.iter().zip(&imports) {
-                lane_heading(group, groups.len());
-                say(&Line::ImportPending { pending: s.pending.to_string() });
+                lane_heading(group, groups.len())?;
+                say(&Line::ImportPending { pending: s.pending.to_string() })?;
                 say(&Line::ImportDone {
                     files: s.files.to_string(),
                     failed: s.failed.to_string(),
                     changed: changed_while_read(s.changed),
                     seconds: secs(start.elapsed().as_secs_f64()),
-                });
+                })?;
             }
             // The duplicates are the hashes and the pairs: none with `--no-dups`, no pairs with `--no-pair`.
             if !no_dups {
@@ -503,7 +521,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Pair { pipeline, again } => {
             if again {
                 let count = catalog.pairs_again()?;
-                say(&Line::PairsAgain { count: count.to_string() });
+                say(&Line::PairsAgain { count: count.to_string() })?;
             }
             pair_and_report(&mut catalog, &pipeline.options(Priority::Normal), ctl, start, true)?;
         }
@@ -529,13 +547,13 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             )?;
             cache.flush();
             for (group, (s, placed)) in groups.iter().zip(&runs) {
-                lane_heading(group, groups.len());
+                lane_heading(group, groups.len())?;
                 say(&Line::ThumbsNeeded {
                     needed: s.needed.to_string(),
                     height: height.to_string(),
                     held: gibibytes(pg_model::num::size(s.cache_bytes)),
-                });
-                print_failures(Kept::Failed, &s.failures);
+                })?;
+                print_failures(Kept::Failed, &s.failures)?;
                 say(&Line::ThumbsDone {
                     made: s.made.to_string(),
                     height: height.to_string(),
@@ -545,17 +563,17 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     used: gibibytes(pg_model::num::signed(cache.totals()?.0)),
                     cap: gibibytes(pg_model::num::signed(cache.cap()?)),
                     seconds: secs(start.elapsed().as_secs_f64()),
-                });
+                })?;
                 let ledger_error = match &s.ledger {
                     pg_thumbs::LedgerOutcome::Failed(error) => Some(error.clone()),
                     pg_thumbs::LedgerOutcome::Untouched | pg_thumbs::LedgerOutcome::Written => None,
                 };
-                report_pass(FilePass::Thumbs, s.unreadable, lane_drives(group), ledger_error);
+                report_pass(FilePass::Thumbs, s.unreadable, lane_drives(group), ledger_error)?;
                 say(&Line::PlaceholdersDone {
                     made: placed.made.to_string(),
                     failed: placed.failed.to_string(),
                     seconds: secs(start.elapsed().as_secs_f64()),
-                });
+                })?;
             }
             drop(cache);
             join_printer(printer);
@@ -563,7 +581,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Borders { import_review, pipeline, .. } => {
             if let Some(review) = import_review {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
-                say(&Line::ReviewImported { marked: marked.to_string(), unknown: unknown.to_string() });
+                say(&Line::ReviewImported { marked: marked.to_string(), unknown: unknown.to_string() })?;
             } else {
                 let s = pg_borders::find(
                     &mut catalog,
@@ -576,21 +594,21 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     failed: s.failed.to_string(),
                     stored: s.stored.to_string(),
                     seconds: secs(start.elapsed().as_secs_f64()),
-                });
+                })?;
                 // The borders' ledger is written with the borders, in their batch: a failure to write it failed the pass.
-                report_pass(FilePass::Borders, s.unreadable, Vec::new(), None);
+                report_pass(FilePass::Borders, s.unreadable, Vec::new(), None)?;
             }
         }
         Command::Status => {
-            say(&Line::StatusHome { folder: shown(layout.home()) });
+            say(&Line::StatusHome { folder: shown(layout.home()) })?;
             for root in catalog.roots()? {
-                say(&Line::StatusLibrary { folder: rules.display(&root.path) });
+                say(&Line::StatusLibrary { folder: rules.display(&root.path) })?;
             }
             // A removal not finished is only reported here: a read command changes nothing. Running `remove` on the
             // folder, or the app (its removal job, after its first start), finishes it.
             for marker in catalog.removal_markers()? {
                 let folder = rules.display(&marker.path);
-                say(&Line::StatusRemoving { folder, deferred: marker.deferred.to_string() });
+                say(&Line::StatusRemoving { folder, deferred: marker.deferred.to_string() })?;
             }
             let s = catalog.status()?;
             say(&Line::StatusFiles {
@@ -600,31 +618,31 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 failed: s.failed.to_string(),
                 pending: s.pending.to_string(),
                 pairs: s.pdq_pairs.to_string(),
-            });
+            })?;
             let unhashed = catalog.owed_hashes()?;
             if unhashed > 0 {
-                say(&Line::HashesOwed { count: unhashed.to_string() });
+                say(&Line::HashesOwed { count: unhashed.to_string() })?;
             }
             let owed = catalog.owed_pairs()?;
             if owed > 0 {
-                say(&Line::PairsOwed { count: owed.to_string() });
+                say(&Line::PairsOwed { count: owed.to_string() })?;
             }
             let placeholders = catalog.owed_placeholders()?;
             if placeholders > 0 {
-                say(&Line::PlaceholdersOwed { count: placeholders.to_string() });
+                say(&Line::PlaceholdersOwed { count: placeholders.to_string() })?;
             }
-            say(&Line::StatusWrites { queued: s.queued_writes.to_string(), failing: s.failed_writes.to_string() });
+            say(&Line::StatusWrites { queued: s.queued_writes.to_string(), failing: s.failed_writes.to_string() })?;
             match ThumbCache::read_usage(&layout.thumbs_path())? {
                 Some(u) => say(&Line::StatusCache {
                     count: u.count.to_string(),
                     used: gibibytes(pg_model::num::signed(u.bytes)),
                     cap: gibibytes(pg_model::num::signed(u.cap)),
-                }),
-                None => say(&Line::StatusNoCache),
+                })?,
+                None => say(&Line::StatusNoCache)?,
             }
             // The write errors are the writer's own text, listed under the counts.
             for e in catalog.recent_write_errors(5)? {
-                println!("  {e}");
+                stdout_line(format!("  {e}"))?;
             }
         }
         Command::Write => {
@@ -635,7 +653,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 failing: s.failed_writes.to_string(),
                 pending: s.pending.to_string(),
                 seconds: secs(start.elapsed().as_secs_f64()),
-            });
+            })?;
         }
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
         // `main` reads the perf log itself, before any command runs.
@@ -652,10 +670,11 @@ fn lane_drives(group: &Group) -> Vec<String> {
     if group.label.is_empty() { Vec::new() } else { vec![group.label.clone()] }
 }
 
-fn lane_heading(group: &Group, lanes: usize) {
+fn lane_heading(group: &Group, lanes: usize) -> io::Result<()> {
     if lanes > 1 {
-        println!("{}:", group.label);
+        stdout_line(format!("{}:", group.label))?;
     }
+    Ok(())
 }
 
 fn scan_root(
@@ -669,7 +688,9 @@ fn scan_root(
         match pg_scan::scan(catalog, root, ctl) {
             Err(busy @ pg_scan::ScanError::Busy { .. }) if wait && !ctl.stop_requested() => {
                 if !said {
-                    eprintln!("{busy}: waiting for it to end");
+                    // This returns the scan's own error, which an io error can't be, so a failed print here is not
+                    // reported: the wait goes on either way.
+                    let _ = stderr_line(format!("{busy}: waiting for it to end"));
                     said = true;
                 }
                 std::thread::sleep(std::time::Duration::from_secs(1));
@@ -692,16 +713,19 @@ fn write_pending(layout: &pg_library::layout::Layout, catalog: &Catalog, catalog
         Writer::start(catalog_path.to_path_buf(), cache.clone(), Arc::new(Bus::new(16)), Arc::new(PrintingSink))?;
     writer.wake();
     let waited = wait_for_writes(&writer, catalog);
+    // Its print's result is kept until the cache is closed and the printer joined: an early return would skip both.
+    let mut printed: io::Result<()> = Ok(());
     if waited.is_ok()
         && let Some(e) = writer.status().thumbnail_error
     {
-        eprintln!("{}", line(&Line::ThumbnailsError { file: e.file.get().to_string(), error: e.error }));
+        printed = stderr_line(line(&Line::ThumbnailsError { file: e.file.get().to_string(), error: e.error }));
     }
     drop(writer);
     cache.close();
     drop(cache);
     join_printer(printer);
-    waited
+    waited?;
+    Ok(printed?)
 }
 
 /// `gallery write`'s wait: until nothing writable is left (failures past their retries stay queued and are reported).
@@ -717,7 +741,7 @@ fn wait_for_writes(writer: &Writer, catalog: &Catalog) -> Result<()> {
         if !writer.is_running() {
             let left = left.to_string();
             bail!(line(&match writer.status().error {
-                Some(error) => Line::WriterStoppedFailing { left, error: error.to_string() },
+                Some(error) => Line::WriterStoppedFailing { left, error: pg_writeback::write_error_words(&error) },
                 None => Line::WriterStopped { left },
             }));
         }
@@ -749,7 +773,7 @@ fn files_named(catalog: &Catalog, paths: &[PathBuf]) -> Result<Vec<FileId>> {
 fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline: &PipelineArgs) -> Result<()> {
     if stdin {
         let n = borders::serve(std::io::stdin().lock(), std::io::stdout().lock())?;
-        eprintln!("{}", line(&Line::BordersServed { count: n.to_string() }));
+        stderr_line(line(&Line::BordersServed { count: n.to_string() }))?;
         return Ok(());
     }
     let csv = csv.with_context(|| line(&Line::CsvMissing))?;
@@ -762,7 +786,7 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
         errors: s.errors.to_string(),
         seconds: secs(s.seconds),
         rate: format!("{:.0}", pg_model::num::count(s.files) / s.seconds.max(1e-3)),
-    });
+    })?;
     Ok(())
 }
 #[cfg(test)]
@@ -805,7 +829,7 @@ mod tests {
         };
         stats.pairing.rebound = 1;
         let lines = scan_report(&root, &stats, rules, 1.25);
-        let note = |note, count| text::notice_line(&Notice::ScanNote { root: root.clone(), note, count }, rules);
+        let note = |note, count| pg_wording::notice_line(&Notice::ScanNote { root: root.clone(), note, count }, rules);
         assert_eq!(lines.len(), 4, "{lines:?}");
         assert!(lines[0].starts_with("/photos: 3 files in 0 folders"), "{lines:?}");
         assert_eq!(lines[1..3], [note(ScanNote::Duplicates, 2), note(ScanNote::Rebound, 1)]);
@@ -824,7 +848,7 @@ mod tests {
     fn a_refused_folder_between_two_others_does_not_stop_the_scan() {
         let dir = pg_testkit::run_folder_with("scratch_cli", "cli-refused", &["a", "b", "c", "catalog"]).unwrap();
         let png = |folder: &str, name: &str| {
-            std::fs::write(dir.join(folder).join(name), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+            std::fs::write(dir.join(folder).join(name), pg_codec::fixtures::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
         };
         for folder in ["a", "b", "c"] {
             png(folder, "1.png");
@@ -853,7 +877,7 @@ mod tests {
         let refused = catalog.failed_folders(10).unwrap();
         assert_eq!(
             refused.iter().map(|f| (&f.path, f.failure)).collect::<Vec<_>>(),
-            [(&b, pg_catalog::FolderFailure::Refused)]
+            [(&b, pg_model::ledger::FolderFailure::Refused)]
         );
     }
 
@@ -865,7 +889,8 @@ mod tests {
         let dir = pg_testkit::run_folder_with("scratch_cli", "cli-serial", &["a", "b", "serial", "lanes"]).unwrap();
         for folder in ["a", "b"] {
             for name in ["1.png", "2.png"] {
-                std::fs::write(dir.join(folder).join(name), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+                std::fs::write(dir.join(folder).join(name), pg_codec::fixtures::png_rgb(4, 4, &[0; 48]).unwrap())
+                    .unwrap();
             }
         }
         let folders: Vec<String> = ["a", "b"].iter().map(|f| dir.join(f).to_string_lossy().into_owned()).collect();
@@ -905,7 +930,8 @@ mod tests {
 
         let dir = pg_testkit::run_folder_with("scratch_cli", "cli-remove", &["a", "b", "catalog"]).unwrap();
         for folder in ["a", "b"] {
-            std::fs::write(dir.join(folder).join("1.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+            std::fs::write(dir.join(folder).join("1.png"), pg_codec::fixtures::png_rgb(4, 4, &[0; 48]).unwrap())
+                .unwrap();
         }
         let catalog_dir = dir.join("catalog").to_string_lossy().into_owned();
         let gallery = |args: &[&str]| {
@@ -960,10 +986,10 @@ mod tests {
     fn readd_over_a_removal_typed_as(spelling: impl Fn(&Path) -> Option<PathBuf>) {
         let dir = pg_testkit::run_folder_with("scratch_cli", "cli-readd", &["a", "catalog"]).unwrap();
         let Some(typed) = spelling(&dir.join("a")) else {
-            pg_testkit::skip("this volume gives the folder no other spelling: short names are off");
+            pg_platform::testing::skip("this volume gives the folder no other spelling: short names are off");
             return;
         };
-        std::fs::write(dir.join("a").join("1.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+        std::fs::write(dir.join("a").join("1.png"), pg_codec::fixtures::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
         let catalog_dir = dir.join("catalog").to_string_lossy().into_owned();
         let gallery = |args: &[&str]| {
             let mut words = vec!["gallery", "--catalog-dir", catalog_dir.as_str()];
@@ -978,7 +1004,7 @@ mod tests {
         let layout = gallery(&["scan"]).layout().unwrap();
         let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
         let id = catalog.root_id(&root_a).unwrap().unwrap();
-        assert!(matches!(catalog.begin_removal(id, &root_a).unwrap(), pg_catalog::Begun::Started(_)));
+        assert!(matches!(catalog.begin_removal(id, &root_a).unwrap(), pg_model::removal::Begun::Started(_)));
         assert_eq!(catalog.removal_markers().unwrap().len(), 1);
         drop(catalog);
 
@@ -1024,7 +1050,7 @@ mod tests {
         use pg_writeback::fault::Fault;
 
         let dir = pg_testkit::run_folder_with("scratch_cli", "cli-write", &["images"]).unwrap();
-        std::fs::write(dir.join("images").join("a.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+        std::fs::write(dir.join("images").join("a.png"), pg_codec::fixtures::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
         let catalog_path = dir.join("catalog.sqlite");
         let mut catalog =
             Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -1037,7 +1063,7 @@ mod tests {
             ThumbCache::open(
                 &dir.join("thumbs.sqlite"),
                 &catalog.catalog_id().unwrap(),
-                pg_thumbcache::Cap::from_bytes(1 << 30),
+                pg_model::cache::ThumbCap::from_bytes(1 << 30),
                 pg_library::versions().thumbs,
                 events,
             )

@@ -40,14 +40,15 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   its sidecars.
 - `metadata` (`pg-metadata`): ratings, dates, orientation and frame counts as the files hold them (XMP parsed as XML;
   the only XML parser).
-- `codec` (`pg-codec`): every format's decoder and encoder (libjpeg-turbo, PNG, GIF, WebP, TIFF, BMP), the resizer and
-  the animation frames. The one place the image codecs are linked (`deny.toml`).
+- `codec` (`pg-codec`): every format's decoder and encoder (libjpeg-turbo, PNG, GIF, WebP, TIFF, BMP), the resizer, the
+  animation frames, and the lossless rewrites of a file's own bytes (`rewrite`: the turns and crops `pg-edit` makes). The
+  one place the image codecs are linked (`deny.toml`); its `fixture` feature holds the image files the tests write.
 - `video` (`pg-video`): videos through FFmpeg: the probe, the poster frame, the file hash. Its build script finds the
   FFmpeg build and copies its DLLs.
 - `exiftool` (`pg-exiftool`): ExifTool kept running (`-stay_open`), for writing ratings and orientation and copying
   metadata, and which program it is (`program`: `PG_EXIFTOOL`, else `exiftool` on `PATH`).
-- `edit` (`pg-edit`): the lossless edits of a file in its own bytes: the turns and the crops (`rotate.rs`, `crop.rs`,
-  `rewrite.rs`).
+- `edit` (`pg-edit`): the lossless edits of a file in its own bytes: the turns and the crops (`rotate.rs`, `crop.rs`).
+  The pixel rewrites they make are `pg-codec`'s (`rewrite`).
 - `analysis` (`pg-analysis`): the import's analysis of a file, from its header and container alone (format, dimensions,
   orientation, frames, dates, rating; a video's probe), so no pixel is decoded. It also makes the duplicate hashes (BLAKE3,
   XXH3, PDQ) when the Hashes pass asks, and holds the border detector (`BORDERS_VERSION`).
@@ -99,17 +100,19 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
   picks, input (the filter bar's typed values), keys and the folder tree; the filter bar's facets and counts
   (`facets`), the grid's row height (`controller::size`) and the Yandex panel's result list (`results`); the
-  `image://` scheme (`image`: every provider's URL, built and read). Its `text` words everything the user reads, the
-  notices and the search's outcomes included: each line is a `Message`, one table of variants and their entries,
-  worded by `render`.
+  `image://` scheme (`image`: every provider's URL, built and read). It is `no_std`; the words it shows are `wording`'s.
+- `wording` (`pg-wording`): the words everything the user reads, the notices and the search's outcomes included: each
+  line is a `Message`, one table of variants and their entries, worded by `render` from the Fluent entries of
+  `wording/locales/en/`. It is std-based (`fluent-bundle` needs std), so it keeps the workspace's one crate-level
+  `clippy.toml`; it depends on `client` and `model`.
 - `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through
   `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
   `app.inbox()` (what the user is told, kept in the catalog), `catalogs()`, `prefs()`, `images()`, `reading()` (what
   the window shows, read off the UI thread), `views()` (the place the grid shows, saved views), `edit()` (ratings and
   marks), `library()` (the folders, the scan, the write-back) and `yandex()` (the reverse image search and its saves;
   `Config::yandex` says whether a recorded session that `--yandex-fixture` names answers in Yandex's place); `App`
-  orders their shutdown. Beside them: the preferences file (`gallery.json`), and the re-exports the front end names
-  (`reexport.rs`). What the user should hear is a notice posted to its inbox, which logs it.
+  orders their shutdown. Beside them: the preferences file (`gallery.json`). What the user should hear is a notice posted
+  to its inbox, which logs it.
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
@@ -121,8 +124,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   the program runs commands only, and builds without Qt.
 - `testkit` (`pg-testkit`): helpers for the crates' tests: the scratch folders (`run_folder`, under `PG_TEST_DIR`, else
   the temp folder, each owned by a lock from the moment it has its name; the protocol is in `pg-platform`'s `testing`
-  module), the file generators, `odd_name` and `held`. Its one internal dependency is `pg-platform`, with the `testing`
-  feature, so the test folders' platform code stays in `pg-platform`.
+  module), and the raw RGB pictures the image files are written from. A test names `odd_name`, `held`, `skip` and
+  `require_tool` in `pg_platform::testing` (its dev-dependency has the feature), and the generator in `pg-testrng`. Its one
+  internal dependency is `pg-platform`, with the `testing` feature, so the test folders' platform code stays in
+  `pg-platform`; the image files themselves are `pg-codec`'s `fixtures`.
 - `jobs-testkit` (`pg-jobs-testkit`): the job layer's test helper, `Quiet` (a bus that fails its test when anything
   published on it was not taken). A dev-dependency only.
 - `bench` (`pg-bench`): the callgrind benches (`benches/ir.rs`), built on Linux only.
@@ -139,7 +144,7 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would be a cycle or need private access. Today: `pg-codec` `fixture`, `pg-catalog` `fixture`, `pg-writeback` `fault`. Everything else (for example `Quiet` in `pg-jobs`) goes in a dev-only crate.
 4. **Large files.** Split when a file holds more than one layer of a dependency graph, not by line count.
 5. **Layer claims are by reading or by script, and neither is proof.** The committed split check is `tools/modgraph/split_check.py`, with its skip set in its docstring. The check that counts is the compiler: the `modgraph` run (`just modgraph`).
-6. **Platform rule.** No `cfg(windows)`, `cfg(unix)` or `std::os::{windows,unix}` in production code outside `pg-platform`, except cxx-qt and FFI glue that must declare per-platform signatures. Each such exception is stated where it is declared.
+6. **Platform rule.** No `cfg(windows)`, `cfg(unix)` or `std::os::{windows,unix}` in production code outside `pg-platform`, except cxx-qt and FFI glue that must declare per-platform signatures. Each such exception is stated where it is declared. No `extern "system"` or `extern "C"` block outside `pg-platform`, `trace`, `video` and `desktop` (the crates that bind a native library; `FOREIGN_CRATES` in `tools/boundaries.py`).
 7. **Ordering.** A split is done in one sitting on the current HEAD, its measurement re-run first, and committed before anyone else's change to that file lands. The gate runs on a clean tree. No branches.
 8. **Invariants.** A condition the code relies on is guarded in one of three forms, and only these: an `assert!` with a message that names the invariant (in production too, when a wrong value would corrupt data); `unreachable!` in a match arm the types leave impossible, with the reason in its message; and `expect` only under `#[expect(clippy::expect_used, reason = "…")]` on the function. A bare `assert!` or `expect` with no message or reason is not used.
 
@@ -184,21 +189,20 @@ The internal dependencies (normal ones, from `cargo metadata`) only point up the
 it. `tools/crate-layers.txt` lists each crate's internal dependencies exactly, bottom layer first, and
 `tools/boundaries.py` (in `just lint` and CI) fails on an edge the file does not list. It also checks that the
 dependencies including the dev and build ones have no cycle (a crate's tests never depend on a crate that depends on
-it: `pg-platform`'s own tests use its `testing` module directly, so `testkit` sits above `platform`), that a `pub use` names a child module except in
-`app/src/reexport.rs`, that a crate root's `pub use` never names a `pub mod` (one public path per item), and the platform
+it: `pg-platform`'s own tests use its `testing` module directly, so `testkit` sits above `platform`), that a `pub use` names a child module, that a crate root's `pub use` never names a `pub mod` (one public path per item), and the platform
 and environment rules above. Module cycles inside a crate are `just modgraph`'s (the compiler's
 module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI runs it on both targets.
 
 - `model` and `container` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone, `dbfile`
-  on `platform` alone, and `log` on `model` and `platform`.
+  on `platform` alone, and `log` on `model` and `platform`. `wording` depends on `client` and `model`.
 - `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
-  `client`, `log`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
-  `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods and
-  `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on
+  `client`, `log`, `model`, `platform`, `render`, `trace` and `wording`; it does not depend on `catalog`, `library`, `jobs`,
+  `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods, and through
+  `pg-model` for the plain data they hand out (the moved types live there), and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on
   `cli` and `desktop` (the latter behind its `desktop` feature).
 - External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
   `catalog`, `query`, `dbfile`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
-  `codec` (plus the test fixtures and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
+  `codec` (the test fixtures included, and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
 
 ## Where the old paths went
 
@@ -215,7 +219,8 @@ refactor. The dated logs in `docs/` keep the old paths; the table is for reading
 | `core/src/pdq_index.rs` | gone: the all-pairs join is `dedup/src/join.rs`, run by the pairing pass (`import/src/pairs.rs`) |
 | `core/src/decode.rs`, `codecs.rs`, `pixels.rs`, `resize.rs`, `animation.rs` | `codec/src/` (the same names); the animation player is `render/src/player.rs` |
 | `core/src/maker.rs`, `display.rs` | `render/src/` (the same names) |
-| `core/src/rotate.rs`, `crop.rs`, `rewrite.rs` | `edit/src/` (the same names) |
+| `core/src/rotate.rs`, `crop.rs` | `edit/src/` (the same names) |
+| `core/src/rewrite.rs` | `codec/src/rewrite.rs` (with its modules in `codec/src/rewrite/`) |
 | `core/src/container.rs` | `container/src/lib.rs` |
 | `core/src/metadata.rs` | `metadata/src/lib.rs` |
 | `core/src/video.rs` | `video/src/lib.rs` |

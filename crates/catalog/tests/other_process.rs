@@ -16,19 +16,19 @@ fn spawn_holder(path: &Path, mode: &str, ready: &Path, release: &Path) -> std::i
     Command::new(std::env::current_exe()?)
         .args(["--exact", "holder"])
         .stdout(Stdio::null())
-        .env("PG_HOLDER_PATH", path)
-        .env("PG_HOLDER_MODE", mode)
-        .env("PG_HOLDER_READY", ready)
-        .env("PG_HOLDER_RELEASE", release)
+        .env(pg_testkit::inputs::HOLDER_PATH, path)
+        .env(pg_testkit::inputs::HOLDER_MODE, mode)
+        .env(pg_testkit::inputs::HOLDER_READY, ready)
+        .env(pg_testkit::inputs::HOLDER_RELEASE, release)
         .spawn()
 }
 
 /// Run only by `spawn_holder`: without `PG_HOLDER_PATH` it does nothing.
 #[test]
 fn holder() {
-    let Some(path) = std::env::var_os("PG_HOLDER_PATH") else { return };
+    let Some(path) = std::env::var_os(pg_testkit::inputs::HOLDER_PATH) else { return };
     let path = Path::new(&path);
-    let mode = std::env::var("PG_HOLDER_MODE").unwrap();
+    let mode = std::env::var(pg_testkit::inputs::HOLDER_MODE).unwrap();
     let _hold: Box<dyn std::any::Any> = if mode == "exclusive" {
         Box::new(pg_dbfile::Live::exclusive(path).unwrap().expect("the holder gets the rebuild's hold"))
     } else {
@@ -38,8 +38,11 @@ fn holder() {
         }
         Box::new(c)
     };
-    std::fs::write(std::env::var_os("PG_HOLDER_READY").unwrap(), b"").unwrap();
-    pg_testkit::wait_for_path(Path::new(&std::env::var_os("PG_HOLDER_RELEASE").unwrap()), Duration::from_secs(60));
+    std::fs::write(std::env::var_os(pg_testkit::inputs::HOLDER_READY).unwrap(), b"").unwrap();
+    pg_testkit::wait_for_path(
+        Path::new(&std::env::var_os(pg_testkit::inputs::HOLDER_RELEASE).unwrap()),
+        Duration::from_secs(60),
+    );
 }
 
 #[test]

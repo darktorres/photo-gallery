@@ -3,6 +3,9 @@
 //! the metadata's, `pg_metadata`'s `exif`). The times are wall-clock: a zone in the text is dropped, as the camera's clock showed it. A calendar day
 //! ([`Day`]) is the same count of days, for a query's date bounds.
 
+use alloc::format;
+use alloc::string::String;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// `YYYY-MM-DD`, optionally followed by `THH:MM[:SS[.fff]]` and a zone (ignored: the wall-clock time is kept).
@@ -79,8 +82,8 @@ impl Day {
     }
 }
 
-impl std::fmt::Display for Day {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Day {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let (y, m, d) = civil(self.0);
         write!(f, "{y:04}-{m:02}-{d:02}")
     }
@@ -126,6 +129,8 @@ pub fn civil(days: i64) -> (i64, i64, i64) {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use super::*;
 
     #[test]

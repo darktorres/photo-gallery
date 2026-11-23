@@ -67,12 +67,12 @@ impl Default for View {
 
 /// `v` rounded to six places: a region's URL names it, so a pixel of panning doesn't make a new one.
 fn six_places(v: f64) -> f64 {
-    (v * 1e6).round() / 1e6
+    pg_model::num::round_half_away(v * 1e6) / 1e6
 }
 
 /// `v` rounded to a whole number of device pixels; the conversion saturates at `u32`'s range (NaN and negatives give 0).
 fn round_px(v: f64) -> u32 {
-    pg_model::num::f64_to_u32(v.round())
+    pg_model::num::f64_to_u32(pg_model::num::round_half_away(v))
 }
 
 impl View {

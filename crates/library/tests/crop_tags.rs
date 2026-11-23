@@ -10,10 +10,12 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::path::PathArena;
 
+/// The tests' result: any error of the crates they use.
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// The letterboxed picture (320 × 240, black bars 40 deep, as `crop.rs`'s) written as a TIFF.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn letterboxed_tiff() -> Vec<u8> {
-    pg_testkit::encode(320, 240, &pg_testkit::letterboxed_rgb(320, 240, 40), pg_testkit::Encoding::Tiff).unwrap()
+fn letterboxed_tiff() -> pg_codec::Result<Vec<u8>> {
+    pg_codec::fixtures::encode(320, 240, &pg_testkit::letterboxed_rgb(320, 240, 40), pg_codec::fixtures::Encoding::Tiff)
 }
 
 /// Every file under `dir`, at any depth.
@@ -32,10 +34,10 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
+fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() -> Result<()> {
     let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags", &["images"]).unwrap();
     // A TIFF: the copy has no metadata of its own, so the crop copies the tags with ExifTool.
-    std::fs::write(dir.join("images").join("d.tif"), letterboxed_tiff()).unwrap();
+    std::fs::write(dir.join("images").join("d.tif"), letterboxed_tiff()?).unwrap();
 
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -55,16 +57,17 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     assert_eq!((stats.saved, stats.failed), (0, 1), "the copy's tags could not be written: a failure");
     let left = files_under(&out);
     assert!(left.is_empty(), "no untagged copy and no temporary is left: {left:?}");
+    Ok(())
 }
 
 /// A TIFF cut whose tags can't be copied (ExifTool can't run) fails, and the original is as it was: the bytes, no
 /// temporary beside it, and the catalog still has its borders to cut.
 #[test]
-fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
+fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() -> Result<()> {
     let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags-cut", &["images"]).unwrap();
     let images = dir.join("images");
     let path = images.join("d.tif");
-    std::fs::write(&path, letterboxed_tiff()).unwrap();
+    std::fs::write(&path, letterboxed_tiff()?).unwrap();
 
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
@@ -87,4 +90,5 @@ fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() {
         c.crop_source(id, &mut PathArena::default()).unwrap().is_some(),
         "the catalog still has the borders to cut"
     );
+    Ok(())
 }

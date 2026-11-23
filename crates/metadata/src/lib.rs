@@ -111,9 +111,9 @@ mod tests {
     use crate::tiff::{
         EXIF_TAG_ORIENTATION, TIFF_ASCII, TIFF_BYTE, TIFF_IFD8, TIFF_LONG, TIFF_LONG8, TIFF_SHORT, TIFF_UNDEFINED, Tiff,
     };
+    use pg_codec::fixtures::{apng, gif};
     use pg_container::{JPEG_XMP_EXTENSION, gif_header_len};
     use pg_model::date::wall_clock_seconds;
-    use pg_testkit::{apng, gif};
 
     fn meta_of(bytes: &[u8], format: Format) -> Meta {
         Meta::read(bytes, format, &mut MetaScratch::default())

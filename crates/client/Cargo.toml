@@ -8,14 +8,13 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The front end's logic, Qt-free and WASM-safe: the desktop wraps it, and the web client shares it. It takes
-# the grid and its layout, the filter bar's input, the picks, the folder tree and the controller.
+# The front end's logic, Qt-free, platform-free and `no_std`: the desktop wraps it, and the web client shares it. It takes
+# the grid and its layout, the filter bar's input, the picks, the folder tree and the controller. Its words are
+# `pg-wording`'s, a std crate above this one.
 [dependencies]
 pg-model = { path = "../model" }
 serde.workspace = true
 serde_json.workspace = true
-fluent-bundle.workspace = true
-unic-langid.workspace = true
 
 # The laws of the layout (layout.rs's tests) and of the clamp (tests/laws.rs), generated.
 [dev-dependencies]

@@ -143,7 +143,7 @@ fn main() -> io::Result<()> {
     let read = READ_BYTES.load(Relaxed);
     println!(
         "{strategy:6} t{threads:<2} {:24} {:6.0} files/s {secs:6.2} s  read {:6.0} MB ({:4.0} MB/s) in {:7} calls; read whole {}, failed {}",
-        std::env::var("PG_LABEL").unwrap_or_default(),
+        std::env::var(pg_testkit::inputs::LABEL).unwrap_or_default(),
         n / secs,
         mb(read),
         mb(read) / secs,

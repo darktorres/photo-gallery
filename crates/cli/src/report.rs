@@ -1,18 +1,19 @@
 //! What the command line prints besides its reports: the progress lines, the thumbnail cache's events, a
 //! rebuilt catalog, and a pass's failures (its kept list, its unreadable files, its ledger's errors).
 
+use std::io;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+use crate::out::stderr_line;
 use pg_catalog::Catalog;
-use pg_client::text;
-use pg_client::text::cli::{Line, line};
 use pg_jobs::NoticeSink;
 use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
 use pg_model::notice::{KeyBuf, Notice, Trigger};
 use pg_model::progress::Progress;
 use pg_thumbcache::Effect;
+use pg_wording::cli::{Line, line};
 
 /// A whole pass's seconds, one decimal: the one rule for seconds on the command line (`lib.rs` uses it too).
 pub(crate) fn secs(seconds: f64) -> String {
@@ -22,7 +23,8 @@ pub(crate) fn secs(seconds: f64) -> String {
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
 /// cache that holds the bus is dropped: joining it then means the last one is out. A cache that is leaked (`gallery
 /// write`, for the writer's `'static` borrow) never drops, so its thread runs until the process ends and is not joined.
-/// When the thread cannot start, the command runs without the lines, and says so.
+/// When the thread cannot start, the command runs without the lines, and says so. A line the thread cannot write is
+/// dropped, not reported: the thread has no caller to return the error to, and the cache's events must still be taken.
 pub(crate) fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, Option<JoinHandle<()>>) {
     let bus = Arc::new(Bus::new(64));
     let events = bus.subscribe();
@@ -31,13 +33,13 @@ pub(crate) fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, Option<JoinHand
         .spawn(move || {
             while let Some(event) = events.recv() {
                 if let Some(text) = thumb_event_text(&event) {
-                    eprintln!("{text}");
+                    let _ = stderr_line(text);
                 }
             }
         })
         .ok();
     if printer.is_none() {
-        eprintln!("the thumbnail cache's events are not printed: a thread could not be started");
+        let _ = stderr_line("the thumbnail cache's events are not printed: a thread could not be started");
     }
     (bus, printer)
 }
@@ -47,9 +49,9 @@ pub(crate) fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, Option<JoinHand
 /// here: the command line keeps none.
 fn thumb_event_text(event: &pg_thumbcache::Event) -> Option<String> {
     let Some(Effect::Post(notice)) = event.effect() else { return None };
-    let line = text::notice_line(&notice, pg_platform::native::PATH_RULES);
+    let line = pg_wording::notice_line(&notice, pg_platform::native::PATH_RULES);
     Some(match notice {
-        Notice::CacheStartedOver { detail, .. } => text::cli::line(&Line::WithDetail { line, detail }),
+        Notice::CacheStartedOver { detail, .. } => pg_wording::cli::line(&Line::WithDetail { line, detail }),
         _ => line,
     })
 }
@@ -60,7 +62,8 @@ pub(crate) struct PrintingSink;
 
 impl NoticeSink for PrintingSink {
     fn post(&self, notice: Notice) {
-        eprintln!("{}", text::notice_line(&notice, pg_platform::native::PATH_RULES));
+        // The sink's post returns nothing to its writer, so a failed print is dropped (as the events' are).
+        let _ = stderr_line(pg_wording::notice_line(&notice, pg_platform::native::PATH_RULES));
     }
 
     fn replace(&self, _scope: KeyBuf, _notices: Vec<Notice>) {}
@@ -72,10 +75,11 @@ impl NoticeSink for PrintingSink {
 
 /// Says on stderr that the catalog was rebuilt, why, where the old file went, and what was carried over into the new one
 /// (or why nothing was, which says to scan the library again).
-pub(crate) fn report_rebuilt(catalog: &Catalog) {
+pub(crate) fn report_rebuilt(catalog: &Catalog) -> io::Result<()> {
     if let Some(r) = catalog.rebuilt() {
-        eprintln!("{}", text::notice_line(&r.notice(), catalog.rules()));
+        stderr_line(pg_wording::notice_line(&r.notice(), catalog.rules()))?;
     }
+    Ok(())
 }
 /// Files left for the next pass because they changed while they were read, when there are any (else empty).
 pub(crate) fn changed_while_read(n: usize) -> String {
@@ -93,13 +97,16 @@ pub(crate) fn with_progress<T>(f: impl FnOnce(&Control) -> T) -> T {
         .spawn(move || {
             while let Some(event) = events.recv() {
                 match event {
-                    Event::Progress(p) | Event::Finished(p) => eprintln!("{}", progress_line(&p)),
+                    // The thread has no caller to return a failed print to: the line is dropped, and the work goes on.
+                    Event::Progress(p) | Event::Finished(p) => {
+                        let _ = stderr_line(progress_line(&p));
+                    }
                 }
             }
         })
         .ok();
     if printer.is_none() {
-        eprintln!("the progress is not printed: a thread could not be started");
+        let _ = stderr_line("the progress is not printed: a thread could not be started");
     }
     let out = f(&ctl);
     drop(ctl);
@@ -122,7 +129,7 @@ fn progress_line(p: &Progress) -> String {
     let elapsed = p.elapsed.as_secs_f64().max(1e-3);
     // The pass by the client's words, a scanned folder under this machine's rules (the command's catalogs are made
     // under them).
-    let label = text::pass_name(&p.phase, pg_platform::native::PATH_RULES);
+    let label = pg_wording::pass_name(&p.phase, pg_platform::native::PATH_RULES);
     let words = if p.total == 0 {
         line(&Line::ProgressCount {
             pass: label,
@@ -154,15 +161,16 @@ pub(crate) fn report_pass(
     unreadable: usize,
     drives: Vec<String>,
     ledger_error: Option<String>,
-) {
+) -> io::Result<()> {
     let rules = pg_platform::native::PATH_RULES;
     if unreadable > 0 {
         let count = u64::try_from(unreadable).unwrap_or(u64::MAX);
-        eprintln!("{}", text::notice_line(&Notice::UnreadableFiles { pass, count, drives }, rules));
+        stderr_line(pg_wording::notice_line(&Notice::UnreadableFiles { pass, count, drives }, rules))?;
     }
     if let Some(error) = ledger_error {
-        eprintln!("{}", text::notice_line(&Notice::LedgerNotWritten { error }, rules));
+        stderr_line(pg_wording::notice_line(&Notice::LedgerNotWritten { error }, rules))?;
     }
+    Ok(())
 }
 
 /// What a pass's kept failures were: files a scan skipped, or files a pass failed on.
@@ -173,13 +181,14 @@ pub(crate) enum Kept {
 }
 
 /// The first failures a pass kept, one per line on stderr.
-pub(crate) fn print_failures(kept: Kept, failures: &[pg_model::notice::FileFailure]) {
+pub(crate) fn print_failures(kept: Kept, failures: &[pg_model::notice::FileFailure]) -> io::Result<()> {
     for f in failures {
         let (path, error) = (pg_platform::native::PATH_RULES.display(&f.path), f.error.clone());
         let words = match kept {
             Kept::Skipped => Line::Skipped { path, error },
             Kept::Failed => Line::Failed { path, error },
         };
-        eprintln!("{}", line(&words));
+        stderr_line(line(&words))?;
     }
+    Ok(())
 }

@@ -14,7 +14,7 @@
 //! bytes where they are: a cached one in the thread's buffer (`JPEG`), kept for the next one; one made on a miss in
 //! its own, which then moves to the cache's writer. Neither is copied.
 
-use crate::providers_bridge::ffi;
+use crate::bridges::providers_bridge::ffi;
 
 use std::cell::RefCell;
 

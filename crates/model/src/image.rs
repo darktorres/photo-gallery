@@ -2,7 +2,7 @@
 //! its text is `<file id>` or `<file id>@<mtime>.<rotation>.<turns>`. A view is how the full image is asked for. The
 //! URLs that carry them are the front end's (`pg_client::image`).
 
-use std::fmt;
+use core::fmt;
 
 use crate::ids::FileId;
 use crate::turns::Turns;

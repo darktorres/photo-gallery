@@ -7,6 +7,7 @@
 
 use std::error::Error;
 
+use pg_model::job::Cause;
 use pg_model::name::Name;
 use pg_model::notice::FileFailure;
 use pg_model::rules::{Path, PathRules};
@@ -37,7 +38,7 @@ pub struct Failed {
 }
 
 /// A panic that a job caught (`panics::guard`): the message it carried. Its text is that message alone; the words that say
-/// it was a panic are the app's (`pg_client::text`), which tells it apart from other errors by its type.
+/// it was a panic are the app's (`pg_wording`), which tells it apart from other errors by its type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Panicked(pub String);
 
@@ -146,7 +147,7 @@ pub fn keep_failure(kept: &mut Vec<FileFailure>, path: Path, error: impl std::fm
 
 /// The failure of the file at `path` on `failed`: a caught panic's message, or the error's text.
 pub fn file_failure(path: Path, failed: &Failed) -> FileFailure {
-    let (error, panicked) = match Cause::of(failed) {
+    let (error, panicked) = match Cause::from(failed) {
         Cause::Error(text) => (text, false),
         Cause::Panicked(message) => (message, true),
     };
@@ -160,32 +161,14 @@ pub fn stored_path(rules: PathRules, bytes: &[u8]) -> Path {
     rules.parse_bytes(bytes).unwrap_or_else(|| Path { anchor: Name::from_raw(&[]), parts: vec![Name::from_raw(bytes)] })
 }
 
-/// Why a job failed on a file, for the app to word: an error, or a panic the job caught on it
-/// ([`crate::panics::guard`]). The job holds no words; the app says which it was.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Cause {
-    /// The error's text, its causes after it.
-    Error(String),
-    /// The message of the panic.
-    Panicked(String),
-}
-
-impl Cause {
-    /// The cause of `failed`: a panic if it is one, else its text.
-    pub fn of(failed: &Failed) -> Cause {
+/// The cause of a job's failure, for the app to word: a panic if the failure is one ([`crate::panics::guard`]), else its
+/// text. The cause is the model's (`pg_model::job::Cause`); this crate builds it from a failure.
+impl From<&Failed> for Cause {
+    fn from(failed: &Failed) -> Cause {
         if failed.is_panic() {
             Cause::Panicked(failed.text().to_string())
         } else {
             Cause::Error(failed.text().to_string())
-        }
-    }
-}
-
-/// The text alone, without saying which it is (a log line, the command line).
-impl std::fmt::Display for Cause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Cause::Error(text) | Cause::Panicked(text) => f.write_str(text),
         }
     }
 }
@@ -208,7 +191,7 @@ mod tests {
         let failed = Failed::panic("the file fails".into());
         assert_eq!((failed.class(), failed.text()), (Class::Panic, "the file fails"));
         assert!(failed.is_panic());
-        assert_eq!(Cause::of(&failed), Cause::Panicked("the file fails".into()));
+        assert_eq!(Cause::from(&failed), Cause::Panicked("the file fails".into()));
         let source = failed.source().expect("a panic's source");
         assert_eq!(source.to_string(), "the file fails");
     }
@@ -216,7 +199,7 @@ mod tests {
     #[test]
     fn a_failure_of_any_class_is_said_by_its_text() {
         let failed = Failed::new(Class::Data, ReadFailed::from(std::io::Error::other("cut short")));
-        assert_eq!(Cause::of(&failed), Cause::Error(failed.text().to_string()));
+        assert_eq!(Cause::from(&failed), Cause::Error(failed.text().to_string()));
         assert_eq!(failed.class(), Class::Data);
     }
 }

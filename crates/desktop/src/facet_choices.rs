@@ -8,7 +8,7 @@
 pub(crate) mod state;
 use state::Row;
 
-use crate::facet_choices_bridge::qobject::{self, ChoiceFacet};
+use crate::bridges::facet_choices_bridge::qobject::{self, ChoiceFacet};
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -16,7 +16,6 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_client::facets::{Counts, choices};
 use pg_client::input::key_of;
-use pg_client::text;
 use pg_model::query::{ListFacet, Query};
 
 use crate::controller;
@@ -53,7 +52,7 @@ fn rows(facet: ListFacet, query: &Query, counts: &Counts) -> Vec<Row> {
         .into_iter()
         .map(|(choice, shown)| Row {
             chosen: query.has(&choice),
-            label: text::choice_label(&choice),
+            label: pg_wording::choice_label(&choice),
             count: count(shown.unwrap_or(0)),
             key: key_of(&choice),
         })

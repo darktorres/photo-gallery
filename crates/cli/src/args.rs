@@ -133,7 +133,7 @@ pub(crate) enum Command {
         /// Set the cache's size limit in GiB (2^30 bytes), kept in the cache: the app keeps to it too. Without it, the
         /// limit stays as it is (a new cache's default: a twentieth of its volume, at most 50 GiB).
         #[arg(long = "cap-gib", value_parser = cap_gib)]
-        cap: Option<pg_thumbcache::Cap>,
+        cap: Option<pg_model::cache::ThumbCap>,
         #[command(flatten)]
         pipeline: PipelineArgs,
         /// Run at normal CPU priority instead of idle.
@@ -193,7 +193,7 @@ fn thumb_height(text: &str) -> Result<ThumbHeight, String> {
 }
 
 /// `--cap-gib`: a number of GiB above zero, as the thumbnail cache's cap.
-fn cap_gib(text: &str) -> Result<pg_thumbcache::Cap, String> {
-    pg_thumbcache::Cap::parse_gib(text)
+fn cap_gib(text: &str) -> Result<pg_model::cache::ThumbCap, String> {
+    pg_model::cache::ThumbCap::parse_gib(text)
         .ok_or_else(|| format!("{text} isn't a number of GiB above zero, a size a cache can have"))
 }

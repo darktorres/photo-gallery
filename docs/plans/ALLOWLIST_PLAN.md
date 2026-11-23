@@ -663,7 +663,7 @@ Inherent impls cannot stay behind once a type moves (orphan rule); one step per 
      pg_model::cache::ThumbCap`, since `use super::*` no longer brings it in).
 4. **`Refusal::message`** (`catalog/src/error.rs:127`, about 50 lines of English, one caller: the thiserror attribute at
    `error.rs:72`) **stays in catalog** as a private function on `&Refusal`, because `pg-model` states "Nothing here is
-   English" (`crates/model/src/refusal.rs:1-3`) and `pg_client::text` words outcomes. After the move `error.rs:72` becomes
+   English" (`crates/model/src/refusal.rs:1-3`) and `pg_wording` (K.11's new crate) words outcomes. After the move `error.rs:72` becomes
    `#[error("{}", refusal_message(.reason, .path))]` (thiserror accepts this); rename `catalog_refusal()`
    (`app/src/error.rs:40`) and the `Refusal` uses in `classify.rs`, `core.rs`, `lifecycle.rs`, `lib.rs`.
 5. **`Cause`.** `Cause::of(&Failed)` becomes `impl From<&Failed> for Cause` in `pg-jobs` (`&Local` counts as local, so it is
@@ -1613,7 +1613,7 @@ impl From<&Failed> for Cause {
 
 // writeback/src/lib.rs: replaces `impl Display for WriteError`
 /// The English words for a write error, for the command line and the queue's `error` column; the app words it through
-/// `pg_client::text`.
+/// `pg_wording`.
 pub fn write_error_words(error: &WriteError) -> String {
     match error {
         WriteError::Failed(cause) => cause.to_string(),

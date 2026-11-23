@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::fixtures::Encoding;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::format::Format;
@@ -19,7 +20,6 @@ use pg_model::ids::FileId;
 use pg_model::path::PathArena;
 use pg_model::query::{Query, Sort};
 use pg_model::turns::Turns;
-use pg_testkit::Encoding;
 
 /// The tests' result: any error of the crates they use.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -40,7 +40,7 @@ fn make_files(dir: &Path) -> Result<Vec<String>> {
         ("d.tif", Encoding::Tiff),
         ("sub/e.bmp", Encoding::Bmp),
     ] {
-        let bytes = pg_testkit::encode(W, H, &img, encoding)?;
+        let bytes = pg_codec::fixtures::encode(W, H, &img, encoding)?;
         let path = dir.join("images").join(name);
         std::fs::write(&path, &bytes)?;
         out.push(path.to_string_lossy().into_owned());
@@ -71,7 +71,7 @@ fn place_in(out: &Path, root: &pg_model::rules::Path) -> PathBuf {
 #[test]
 fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The TIFF's metadata is copied with it.
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "crop", &["images/sub"]).unwrap();
@@ -174,38 +174,34 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
 
 /// The files of `make_files`' library folder, scanned, imported and looked at for borders: the catalog, and the files'
 /// ids and names as the catalog has them.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn library_with_borders(dir: &Path) -> (Catalog, Vec<(i64, String)>) {
-    let mut c =
-        Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+fn library_with_borders(dir: &Path) -> Result<(Catalog, Vec<(i64, String)>)> {
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
-    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
-    c.add_root(&root).unwrap();
-    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images"))?;
+    c.add_root(&root)?;
+    pg_scan::scan(&mut c, &root, &ctl)?;
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
-    pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
-    let found = ids(&c).unwrap();
-    (c, found)
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl)?;
+    pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
+    let found = ids(&c)?;
+    Ok((c, found))
 }
 
 /// Write the ImageDescription `value` into `path`, with ExifTool.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn tag(path: &Path, value: &str) {
+fn tag(path: &Path, value: &str) -> Result<()> {
     let out = std::process::Command::new("exiftool")
         .arg("-overwrite_original")
         .arg(format!("-ImageDescription={value}"))
         .arg(path)
-        .output()
-        .unwrap();
+        .output()?;
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    Ok(())
 }
 
 /// The ImageDescription ExifTool reads from `path`.
-#[expect(clippy::unwrap_used, reason = "a test's setup: its failure is the test's")]
-fn description(path: &Path) -> String {
-    let out = std::process::Command::new("exiftool").args(["-s3", "-ImageDescription"]).arg(path).output().unwrap();
-    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+fn description(path: &Path) -> Result<String> {
+    let out = std::process::Command::new("exiftool").args(["-s3", "-ImageDescription"]).arg(path).output()?;
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
 /// Cut off the originals once confirmed: each one is replaced by its cut (the same file, in its place), TIFF included,
@@ -214,15 +210,15 @@ fn description(path: &Path) -> String {
 /// file and no replacement (the file kept its identity); and the next import and border pass, which look at the cut
 /// files, find no border.
 #[test]
-fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
-        return;
+fn cut_originals_lose_their_borders_and_are_replaced_in_place() -> Result<()> {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+        return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    tag(&dir.join("images").join("a.jpg"), "pg cut test");
-    tag(&dir.join("images").join("d.tif"), "pg cut test");
-    let (mut c, found) = library_with_borders(&dir);
+    tag(&dir.join("images").join("a.jpg"), "pg cut test")?;
+    tag(&dir.join("images").join("d.tif"), "pg cut test")?;
+    let (mut c, found) = library_with_borders(&dir)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
@@ -253,8 +249,8 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
         assert_eq!(cut_top, top, "{name}: the cut is exact");
         assert_eq!(Format::sniff(&bytes), Format::sniff(&originals[i]), "{name}: the format stays");
     }
-    assert_eq!(description(&dir.join("images").join("a.jpg")), "pg cut test", "the JPEG keeps its tag");
-    assert_eq!(description(&dir.join("images").join("d.tif")), "pg cut test", "the TIFF keeps its tag");
+    assert_eq!(description(&dir.join("images").join("a.jpg"))?, "pg cut test", "the JPEG keeps its tag");
+    assert_eq!(description(&dir.join("images").join("d.tif"))?, "pg cut test", "the TIFF keeps its tag");
 
     // Stored as none, with no mark: nothing to cut, no sides, and no review mark (the grid's borders are None).
     let all_entries = |c: &Catalog, q: Query| -> Vec<pg_model::grid::Entry> {
@@ -281,19 +277,20 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() {
         assert!(c.border_sides(FileId::new(*id)).unwrap().is_empty(), "{name}: a border found in the cut");
         assert!(c.crop_source(FileId::new(*id), &mut PathArena::default()).unwrap().is_none(), "{name}: cut again");
     }
+    Ok(())
 }
 
 /// A stop asked while the first original is about to be written (in `present`, which the pass asks before each one) ends
 /// the pass with every original it rewrote recorded as cut: the in-flight writes are not lost, the files not started are
 /// `remaining`, and no file is both.
 #[test]
-fn a_stop_during_a_cut_records_every_original_it_rewrote() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
-        return;
+fn a_stop_during_a_cut_records_every_original_it_rewrote() -> Result<()> {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+        return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-stop", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    let (c, found) = library_with_borders(&dir);
+    let (c, found) = library_with_borders(&dir)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
@@ -330,18 +327,19 @@ fn a_stop_during_a_cut_records_every_original_it_rewrote() {
         all.len(),
         "every file is accounted for"
     );
+    Ok(())
 }
 
 /// A file a folder's removal takes away while the pass runs is not written: the pass counts it as skipped, its original
 /// is left as it was, and the others are cut.
 #[test]
-fn a_file_removed_before_its_cut_is_not_written() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
-        return;
+fn a_file_removed_before_its_cut_is_not_written() -> Result<()> {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+        return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-removed", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    let (c, found) = library_with_borders(&dir);
+    let (c, found) = library_with_borders(&dir)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
@@ -355,14 +353,15 @@ fn a_file_removed_before_its_cut_is_not_written() {
         let unchanged = std::fs::read(path).unwrap() == *original;
         assert_eq!(unchanged, name == gone_name, "{name}: the removed file is left as it was, the others are cut");
     }
+    Ok(())
 }
 
 /// Refused without the user's confirmation: nothing is written, and the catalog still has the borders to cut.
 #[test]
-fn an_unconfirmed_cut_writes_nothing() {
+fn an_unconfirmed_cut_writes_nothing() -> Result<()> {
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-unconfirmed", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    let (c, found) = library_with_borders(&dir);
+    let (c, found) = library_with_borders(&dir)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
@@ -378,19 +377,20 @@ fn an_unconfirmed_cut_writes_nothing() {
     let a = found.iter().find(|(_, n)| n == "a.jpg").unwrap().0;
     assert!(c.crop_source(FileId::new(a), &mut PathArena::default()).unwrap().is_some());
     assert!(!dir.join("images").join(".a.jpg.cut.pg-write").exists());
+    Ok(())
 }
 
 /// A TIFF is cut in place like the others: re-encoded losslessly without its metadata, which ExifTool copies over before
 /// the original is replaced, so its tag is still there. Its cut is exact, and it is still a TIFF.
 #[test]
-fn a_tiff_is_cut_and_keeps_its_metadata() {
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
-        return;
+fn a_tiff_is_cut_and_keeps_its_metadata() -> Result<()> {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+        return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-tiff", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    tag(Path::new(&files[3]), "pg tiff tag");
-    let (c, found) = library_with_borders(&dir);
+    tag(Path::new(&files[3]), "pg tiff tag")?;
+    let (c, found) = library_with_borders(&dir)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let tiff = found.iter().find(|(_, n)| n == "d.tif").unwrap().0;
@@ -409,7 +409,7 @@ fn a_tiff_is_cut_and_keeps_its_metadata() {
         (W, top),
         "exact"
     );
-    assert_eq!(description(Path::new(&files[3])), "pg tiff tag", "the metadata is copied over");
+    assert_eq!(description(Path::new(&files[3]))?, "pg tiff tag", "the metadata is copied over");
     assert!(
         std::fs::read_dir(dir.join("images"))
             .unwrap()
@@ -417,6 +417,7 @@ fn a_tiff_is_cut_and_keeps_its_metadata() {
             .all(|e| !e.file_name().to_string_lossy().contains("cut")),
         "no temporary is left beside the original"
     );
+    Ok(())
 }
 
 /// A failure before the copy into the original leaves the original as it was, and the temp is gone. Another program holds
@@ -424,14 +425,14 @@ fn a_tiff_is_cut_and_keeps_its_metadata() {
 /// cut.
 #[cfg(windows)]
 #[test]
-fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() {
+fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() -> Result<()> {
     use std::os::windows::fs::OpenOptionsExt;
-    if !pg_testkit::require_tool("ExifTool", "exiftool", "-ver") {
-        return;
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+        return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-held", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    let (c, found) = library_with_borders(&dir);
+    let (c, found) = library_with_borders(&dir)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let all: Vec<FileId> = found.iter().map(|(id, _)| FileId::new(*id)).collect();
@@ -447,4 +448,5 @@ fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() {
     assert_eq!(std::fs::read(&files[0]).unwrap(), originals[0], "the held original is intact");
     assert!(!dir.join("images").join(".a.jpg.cut.pg-write").exists(), "the temp is removed");
     assert_ne!(std::fs::read(&files[1]).unwrap(), originals[1], "the rest are cut");
+    Ok(())
 }

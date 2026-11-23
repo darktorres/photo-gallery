@@ -223,8 +223,10 @@ impl Detection {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloc::vec::Vec;
     use strum::IntoEnumIterator;
+
+    use super::*;
 
     /// The names the catalog stores: a change to any of them is a change to the catalog's data.
     #[test]

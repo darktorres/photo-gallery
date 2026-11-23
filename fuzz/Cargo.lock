@@ -364,12 +364,14 @@ dependencies = [
  "image",
  "image-webp",
  "parajpeg",
+ "pg-container",
  "pg-model",
  "png",
  "thiserror 2.0.21",
  "tiff",
  "turbojpeg",
  "webp",
+ "weezl 0.2.1",
  "zune-core",
  "zune-jpeg",
 ]
@@ -385,15 +387,10 @@ dependencies = [
 name = "pg-edit"
 version = "0.1.0-dev"
 dependencies = [
- "image-webp",
  "pg-codec",
- "pg-container",
  "pg-metadata",
  "pg-model",
- "png",
  "thiserror 2.0.21",
- "turbojpeg",
- "weezl 0.2.1",
 ]
 
 [[package]]

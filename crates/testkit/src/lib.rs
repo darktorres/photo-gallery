@@ -1,15 +1,14 @@
 //! Helpers for the crates' tests. Tests write their files under `PG_TEST_DIR` when it is set, and under the temp folder
 //! otherwise, in the folder each test names. Set `PG_TEST_DIR` to keep the files off the system drive.
 //!
-//! The folders and their protocol are in pg-platform (`testing`): this crate re-exports them under the names the tests
-//! use, and adds the image fixtures.
-//!
-//! The image fixtures are the files this crate writes (`png_rgb`, `bmp_rgb`, `tiff_rgb`, `gif`, `apng`). `pg_codec::fixtures`
-//! keeps the codec's own helpers (orientation, lossy WebP, TIFF with a chosen byte order), which take the codec's types;
-//! a test takes its image from here unless it needs one of those. The video fixture is the clip the tests share
-//! (`VIDEO_SAMPLE`), kept in the video crate's tests folder and read here.
+//! The folders and their protocol are in pg-platform (`testing`), and a test names them there (`pg_platform::testing`).
+//! The tests' generator is `pg-testrng`. The image files a test writes are the codec's (`pg_codec::fixtures`: PNG, BMP, GIF, TIFF, APNG, JPEG and
+//! WebP), and this crate keeps the raw RGB pictures they are written from (`rgb_pattern` and the others). The video
+//! fixture is the clip the tests share (`VIDEO_SAMPLE`), kept in the video crate's tests folder and read here.
 
 #![forbid(unsafe_code)]
+
+pub mod inputs;
 
 use std::fmt::Display;
 use std::io;
@@ -17,9 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-pub use pg_platform::testing::{held, odd_name, require_tool, skip};
-
-/// What a test helper couldn't make: the step that failed, and its cause (the encoder's or the file system's).
+/// What a test helper couldn't make: the step that failed, and its cause (the file system's).
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A run folder of the test binary (see [`run_folder`]).
@@ -42,47 +39,10 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    /// More frames than the GIF's colours hold (see [`gif`]).
-    #[error("frame {frame} of {frames}: a test GIF has at most 5 frames")]
-    GifFrame {
-        /// The frame that doesn't fit, from 0.
-        frame: usize,
-        /// How many frames were asked for.
-        frames: usize,
-    },
-    /// Pixels that aren't the `w` × `h` picture asked for (`channels` a pixel's: RGB or RGBA).
-    #[error("{len} bytes are not {w} × {h} {channels} pixels")]
-    Pixels {
-        /// How many bytes there were.
-        len: usize,
-        /// The picture's width, in pixels.
-        w: u32,
-        /// The picture's height, in pixels.
-        h: u32,
-        /// The channels of a pixel, in words (RGB or RGBA).
-        channels: &'static str,
-    },
-    /// An encoder's step that failed, named by the step.
-    #[error("{step}")]
-    Encode {
-        /// The encoder's step that failed, in words.
-        step: String,
-        /// The error under the step.
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync + 'static>,
-    },
 }
 
 /// The result of a test helper.
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// Wraps an encoder's error as the step that failed.
-fn encode_failed<E>(step: impl Into<String>, source: E) -> Error
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
-    Error::Encode { step: step.into(), source: Box::new(source) }
-}
 
 /// The sample clip (tools/make_test_video.py): 64x48, six frames, H.264. The video crate's and the library's tests read
 /// it from here.
@@ -133,9 +93,6 @@ pub fn wait_for_path(path: &Path, within: Duration) {
     wait_until(within, || format!("{} to appear", path.display()), || path.exists());
 }
 
-/// The tests' deterministic generator (`pg-testrng`, the one every test draws its cases from).
-pub use pg_testrng::Rng;
-
 /// The interleaved RGB bytes of a `w` × `h` picture whose channels step across it, so a crop or a turn moves pixels that
 /// differ from each other.
 pub fn rgb_pattern(w: usize, h: usize) -> Vec<u8> {
@@ -146,92 +103,6 @@ pub fn rgb_pattern(w: usize, h: usize) -> Vec<u8> {
             [x * 255 / w, y * 255 / h, (x * 7 + y * 13) % 256].map(|v| u8::try_from(v).unwrap_or(u8::MAX))
         })
         .collect()
-}
-
-/// An animated GIF of `frames` 4 × 4 frames, the first red and each after it brighter. The red level steps by 60, so
-/// at most 5 frames (0 to 240): more is an error.
-pub fn gif(frames: usize) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
-    let mut enc = image::codecs::gif::GifEncoder::new(&mut out);
-    for i in 0..frames {
-        let red =
-            i.checked_mul(60).and_then(|level| u8::try_from(level).ok()).ok_or(Error::GifFrame { frame: i, frames })?;
-        let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([red, 0, 0, 255]));
-        enc.encode_frame(image::Frame::new(img)).map_err(|e| encode_failed(format!("encode GIF frame {i}"), e))?;
-    }
-    drop(enc);
-    Ok(out)
-}
-
-/// `rgba` (`w` × `h` pixels, four bytes each) as a PNG, with its transparency.
-pub fn png_rgba(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>> {
-    let img = image::RgbaImage::from_raw(w, h, rgba.to_vec()).ok_or(Error::Pixels {
-        len: rgba.len(),
-        w,
-        h,
-        channels: "RGBA",
-    })?;
-    let mut file = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut file, image::ImageFormat::Png).map_err(|e| encode_failed("encode the PNG", e))?;
-    Ok(file.into_inner())
-}
-
-/// `rgb` (`w` × `h` pixels, three bytes each) as a BMP.
-pub fn bmp_rgb(w: u32, h: u32, rgb: &[u8]) -> Result<Vec<u8>> {
-    still(w, h, rgb, image::ImageFormat::Bmp)
-}
-
-/// `rgb` as a GIF, one frame.
-pub fn gif_rgb(w: u32, h: u32, rgb: &[u8]) -> Result<Vec<u8>> {
-    still(w, h, rgb, image::ImageFormat::Gif)
-}
-
-/// `rgb` as a PNG.
-pub fn png_rgb(w: u32, h: u32, rgb: &[u8]) -> Result<Vec<u8>> {
-    still(w, h, rgb, image::ImageFormat::Png)
-}
-
-/// `rgb` as a classic TIFF (`image` writes no BigTIFF: the codec's fixtures do).
-pub fn tiff_rgb(w: u32, h: u32, rgb: &[u8]) -> Result<Vec<u8>> {
-    still(w, h, rgb, image::ImageFormat::Tiff)
-}
-
-fn still(w: u32, h: u32, rgb: &[u8], format: image::ImageFormat) -> Result<Vec<u8>> {
-    let img =
-        image::RgbImage::from_raw(w, h, rgb.to_vec()).ok_or(Error::Pixels { len: rgb.len(), w, h, channels: "RGB" })?;
-    let mut file = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut file, format).map_err(|e| encode_failed(format!("encode the {format:?}"), e))?;
-    Ok(file.into_inner())
-}
-
-/// The encoders a test writes a picture with: the tests name none of the `image` crate's types, so this is theirs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Encoding {
-    /// JPEG.
-    Jpeg,
-    /// PNG.
-    Png,
-    /// WebP.
-    WebP,
-    /// TIFF.
-    Tiff,
-    /// GIF.
-    Gif,
-    /// BMP.
-    Bmp,
-}
-
-/// `rgb` (`w` × `h` pixels, three bytes each) written with `encoding`.
-pub fn encode(w: u32, h: u32, rgb: &[u8], encoding: Encoding) -> Result<Vec<u8>> {
-    let format = match encoding {
-        Encoding::Jpeg => image::ImageFormat::Jpeg,
-        Encoding::Png => image::ImageFormat::Png,
-        Encoding::WebP => image::ImageFormat::WebP,
-        Encoding::Tiff => image::ImageFormat::Tiff,
-        Encoding::Gif => image::ImageFormat::Gif,
-        Encoding::Bmp => image::ImageFormat::Bmp,
-    };
-    still(w, h, rgb, format)
 }
 
 /// A channel value: `v` wrapped to a byte (the pictures' steps wrap past 255).
@@ -274,22 +145,6 @@ pub fn letterboxed_rgb(w: u32, h: u32, bar: u32) -> Vec<u8> {
         let c = |shift: u32| u8::try_from(60 + (block >> shift) % 150 + noise).unwrap_or(u8::MAX);
         [c(0), c(8), c(16)]
     })
-}
-
-/// An animated PNG of `frames` 2 × 2 frames of one grey, or a still PNG for one frame.
-pub fn apng(frames: u32) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
-    let mut enc = png::Encoder::new(&mut out, 2, 2);
-    enc.set_color(png::ColorType::Rgb);
-    if frames > 1 {
-        enc.set_animated(frames, 0).map_err(|e| encode_failed("make the PNG animated", e))?;
-    }
-    let mut w = enc.write_header().map_err(|e| encode_failed("write the PNG header", e))?;
-    for _ in 0..frames {
-        w.write_image_data(&[7; 12]).map_err(|e| encode_failed("write a PNG frame", e))?;
-    }
-    w.finish().map_err(|e| encode_failed("finish the PNG", e))?;
-    Ok(out)
 }
 
 #[cfg(test)]

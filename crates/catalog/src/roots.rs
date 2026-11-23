@@ -42,12 +42,14 @@ use crate::convert::{identity_to_sql, progress_count};
 use crate::core::{Catalog, ScanLease};
 use crate::error::{Error, Result};
 use crate::ledger::failure::tidy;
-use crate::removal::{Begun, overlapping_marker};
+use crate::removal::overlapping_marker;
 use crate::transaction::write_transaction;
 use crate::types::{
-    FOLDER_FAILED, FolderFailure, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, Subtree,
-    WRITE_BATCH, covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, under_params,
+    FOLDER_FAILED, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, Subtree, WRITE_BATCH,
+    covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, under_params,
 };
+use pg_model::ledger::FolderFailure;
+use pg_model::removal::Begun;
 
 impl Catalog {
     /// The library folders, by path, with their ids.
@@ -435,10 +437,9 @@ mod tests {
     use crate::ledger::Failure;
     use crate::test_support::{begin, lease, listed, p, rooted, versions};
     use crate::types::rules_name;
-    use crate::{
-        Catalog, Error, FolderFailure, Prior, Recorded, SCAN_LEASE_SECS, ScanLease, ScannedFile, Skip, SkipReason,
-    };
+    use crate::{Catalog, Error, Prior, Recorded, SCAN_LEASE_SECS, ScanLease, ScannedFile, Skip, SkipReason};
     use pg_model::ids::{FileIdentity, ScanId};
+    use pg_model::ledger::FolderFailure;
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::notice::{FilePass, LedgerCounts, LedgerKind, Notice};

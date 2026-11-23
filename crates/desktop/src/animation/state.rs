@@ -4,8 +4,8 @@
 use cxx::UniquePtr;
 use pg_render::player::Player;
 
+use crate::bridges::frame_sink_bridge::ffi::SinkRef;
 use crate::frame_sink::Frames;
-use crate::frame_sink_bridge::ffi::SinkRef;
 
 /// The file played, its sink, and the player playing it into the sink.
 #[expect(

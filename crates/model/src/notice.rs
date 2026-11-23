@@ -1,6 +1,6 @@
 //! What the app tells the user, as data: a [`Notice`] is built
 //! by the crate that has the outcome (the job, the app, the window), stored in the catalog's inbox by its code, recorded
-//! in the log, and worded by `pg_client::text` for each front end. Nothing here is English, so a notice is read in the
+//! in the log, and worded by `pg_wording` for each front end. Nothing here is English, so a notice is read in the
 //! reader's language, whichever one it was posted in; a stored notice is re-worded when the words change.
 //!
 //! Each kind is one variant: its code (permanent, the stored tag and the words' ids), its level, its source (the inbox's
@@ -14,7 +14,7 @@
 //!
 //! ## Notices (`pg_model::notice`)
 //!
-//! A `Notice` is a typed value, built by the crate that has the outcome and worded by `pg_client::text` for each front
+//! A `Notice` is a typed value, built by the crate that has the outcome and worded by `pg_wording` for each front
 //! end. Nothing in a notice is English, so it is read in the reader's language, and a stored one is worded again when the
 //! words change. Each kind is one variant with:
 //!
@@ -53,7 +53,7 @@
 //!    (exhaustive matches: it doesn't compile without them). A state names its resolver there.
 //! 2. A sample in `Notice::samples()`, its line in `notice/golden.jsonl`, and an arm in the test `ordinal`. A state's row
 //!    in `notice/resolver_table.golden`.
-//! 3. Its words: the `msg-notice-<code>-title` and `-body` entries in `client/locales/en/text.ftl`, and its values in
+//! 3. Its words: the `msg-notice-<code>-title` and `-body` entries in `wording/locales/en/text.ftl`, and its values in
 //!    `client/src/text/notice.rs` (`args`). The parity test checks the file's entries against the samples' ids.
 //! 4. The call that posts it, from the crate that has the outcome, and the call that clears it, where its resolver is.
 //!
@@ -89,7 +89,10 @@
 //!   it found.
 //!
 
-use std::sync::OnceLock;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
@@ -1183,7 +1186,7 @@ pub const ERROR_CAP: usize = 2048;
 
 /// An error's text as a notice keeps it: its causes after it (`{:#}`), on one line, capped at [`ERROR_CAP`]. Every notice
 /// that carries an error's text uses this, so the rule is one.
-pub fn error_text(error: &impl std::fmt::Display) -> String {
+pub fn error_text(error: &impl core::fmt::Display) -> String {
     tidy(&format!("{error:#}"), ERROR_CAP)
 }
 
@@ -1455,12 +1458,12 @@ impl Notice {
     /// has it: the resolvers of the notice the table was made from, so a stored row is cleared by the same rule a
     /// posted notice is. Empty for a kind the table doesn't keep.
     pub fn resolvers_of(code: &str, part: Option<&str>) -> Vec<Resolver> {
-        static TABLE: OnceLock<Vec<ResolverRow>> = OnceLock::new();
-        let table = TABLE.get_or_init(Notice::resolver_table);
-        table
-            .iter()
+        // Built per call: this crate is `no_std`, which has no stable `OnceLock`, and a resolve looks up each kept kind
+        // and part once, so rebuilding the small table is cheaper than a cache would be worth.
+        Notice::resolver_table()
+            .into_iter()
             .find(|row| row.code == code && row.part == part)
-            .map(|row| row.resolvers.clone())
+            .map(|row| row.resolvers)
             .unwrap_or_default()
     }
 
@@ -1662,7 +1665,7 @@ fn sample_path(parts: &[&str]) -> RulePath {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use alloc::collections::BTreeSet;
 
     use super::*;
 

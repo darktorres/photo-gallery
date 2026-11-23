@@ -105,7 +105,7 @@ type Run = (Duration, u64, usize);
 /// import it, since the catalog's dev graph cannot name pg-import. There is no default: a probe that guesses the value
 /// measures a different pass, so the variable must name the one the measurement used.
 fn cache_kib() -> Result<u32> {
-    std::env::var("PG_PROBE_CACHE_KIB")
+    std::env::var(pg_testkit::inputs::PROBE_CACHE_KIB)
         .context("PG_PROBE_CACHE_KIB is unset: set it to the pairing pass's cache in KiB (pg-import's CACHE_KIB)")?
         .parse()
         .context("PG_PROBE_CACHE_KIB is not a number of KiB")
@@ -192,7 +192,7 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
             work.ids.len() + usize::try_from(work.legacy).unwrap_or(usize::MAX)
         }
         "split" => {
-            let threads = std::env::var("PG_PROBE_WORKERS")
+            let threads = std::env::var(pg_testkit::inputs::PROBE_WORKERS)
                 .ok()
                 .and_then(|w| w.parse().ok())
                 .or_else(|| std::thread::available_parallelism().ok().map(std::num::NonZero::get))

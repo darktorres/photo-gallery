@@ -47,7 +47,7 @@ env:
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
   CARGO_BUILD_FINGERPRINT: "content"
   CARGO_UNSTABLE_RUSTDOC_DEPINFO: "true"
-  # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::require_tool).
+  # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_platform::testing::require_tool).
   PG_REQUIRE_TOOLS: "1"
 
 jobs:
@@ -207,6 +207,8 @@ jobs:
 
       - name: Screenshot comparison against the newest committed reference
         if: github.event_name == 'pull_request'
+        # The three pseudo-locale scenarios (tools/compare_shots.py, PSEUDO) are run and kept, not compared: they have no
+        # reference, by design, so they are unchecked here. Their screenshots are for a person to look at.
         # A waiver, not a permanent state. "Stable" means 10 consecutive pull-request runs in which this step's own outcome
         # (not the job's conclusion) is success. Count them by hand (step outcomes in each run's log); when the count is met,
         # delete this line so a failed comparison fails the job. Until then a failure here shows green on the job.

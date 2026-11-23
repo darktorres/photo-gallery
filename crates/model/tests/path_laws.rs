@@ -28,16 +28,17 @@ fn component() -> impl Strategy<Value = String> {
 }
 
 /// A Windows path's folder, merged (its anchor dropped), as the typed rules make it.
-#[expect(clippy::panic, reason = "a test helper: a path it cannot parse is a bug in the test")]
-fn merged_of(path: &str) -> Merged {
-    let Some(parsed) = PathRules::Windows.parse(path) else { panic!("not a Windows path: {path}") };
-    PathRules::Windows.merge(&parsed)
+fn merged_of(path: &str) -> std::io::Result<Merged> {
+    let Some(parsed) = PathRules::Windows.parse(path) else {
+        return Err(std::io::Error::other(format!("not a Windows path: {path}")));
+    };
+    Ok(PathRules::Windows.merge(&parsed))
 }
 
 /// The order key of the file `name` in the folder at `folder` (a Windows path), as the catalog stores it.
-fn order_key_in(folder: &str, name: &str) -> Vec<u8> {
-    let folder = merged_of(folder);
-    PathRules::Windows.order_key(&PathRules::Windows.merged_key(&folder), &Name::from(name))
+fn order_key_in(folder: &str, name: &str) -> std::io::Result<Vec<u8>> {
+    let folder = merged_of(folder)?;
+    Ok(PathRules::Windows.order_key(&PathRules::Windows.merged_key(&folder), &Name::from(name)))
 }
 
 proptest! {
@@ -59,7 +60,7 @@ proptest! {
     fn a_folder_key_is_a_prefix_of_its_subfolders(parts in prop::collection::vec(component(), 1..4), sub in component()) {
         let merged = parts.join("\\");
         let below = format!("{merged}\\{sub}");
-        prop_assert!(PathRules::Windows.merged_key(&merged_of(&below)).starts_with(&PathRules::Windows.merged_key(&merged_of(&merged))));
+        prop_assert!(PathRules::Windows.merged_key(&merged_of(&below)?).starts_with(&PathRules::Windows.merged_key(&merged_of(&merged)?)));
     }
 
     // A Posix folder's recursive scope holds every file below it, in a subfolder whose raw name starts with byte 0xFF
@@ -88,7 +89,7 @@ proptest! {
         let path = parts.join("\\");
         let here = format!("D:\\{path}");
         let there = format!("{d}:\\{path}");
-        prop_assert_eq!(PathRules::Windows.display_merged(&merged_of(&here)), path.as_str());
-        prop_assert_eq!(order_key_in(&here, &n), order_key_in(&there, &n));
+        prop_assert_eq!(PathRules::Windows.display_merged(&merged_of(&here)?), path.as_str());
+        prop_assert_eq!(order_key_in(&here, &n)?, order_key_in(&there, &n)?);
     }
 }

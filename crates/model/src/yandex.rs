@@ -1,6 +1,8 @@
 //! The outcomes of a Yandex reverse image search and of the save of its results, as data: `pg-app` builds them,
-//! and the front ends word them (`pg_client::text::yandex_status`). The errors keep what the user reads (a code, a
+//! and the front ends word them (`pg_wording::yandex_status`). The errors keep what the user reads (a code, a
 //! count, the lower layers' text); the paths are as the user sees them.
+
+use alloc::string::String;
 
 /// Why a request to Yandex (or the recorded session standing in for it) failed. `pg_yandex`'s error, as data.
 #[derive(Clone, Debug, PartialEq, Eq)]

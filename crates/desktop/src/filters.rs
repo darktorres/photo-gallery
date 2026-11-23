@@ -7,20 +7,19 @@
 pub(crate) mod state;
 use state::FiltersRust;
 
-use crate::filters_bridge::qobject::{self, ListFacetKind};
+use crate::bridges::filters_bridge::qobject::{self, ListFacetKind};
 
 use core::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use pg_app::reexport::Facets;
 use pg_client::input::parse_number;
 use pg_model::date::Day;
+use pg_model::facets::Facets;
 use pg_model::query::{ListFacet, Query};
 
 use pg_client::facets::Counts;
 use pg_client::input::{Edge, Field, bound_is_valid, choice, tri_index, tri_of_index};
-use pg_client::text;
 
 use crate::controller;
 use crate::facet_choices::count;
@@ -37,7 +36,7 @@ impl Default for FiltersRust {
             border_marked_index: review_index(q.border_marked),
             total: 0,
             matching: 0,
-            description: QString::from(&text::describe(&q)),
+            description: QString::from(&pg_wording::describe(&q)),
             facets: Facets::default(),
             generation: 0,
             bar_open: false,
@@ -69,7 +68,7 @@ impl qobject::Filters {
         self.as_mut().set_name(QString::from(&q.name));
         self.as_mut().set_duplicates_index(duplicates_index(q.duplicates));
         self.as_mut().set_border_marked_index(review_index(q.border_marked));
-        let description = QString::from(&text::describe(&q));
+        let description = QString::from(&pg_wording::describe(&q));
         self.as_mut().set_active(i32::try_from(q.active()).unwrap_or(i32::MAX));
         self.as_mut().set_description(description);
     }

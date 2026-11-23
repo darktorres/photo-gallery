@@ -2,7 +2,10 @@
 //! the counts the bar shows beside them. The desktop's FacetChoices and Filters take a facet as a CXX-Qt enum (the
 //! bridge's `ListFacetKind`, named by QML), which maps to a [`ListFacet`] by name; [`ALL`] is the bar's order, pinned by a
 //! test. Each choice is sent to the bar as a key (`input::key_of`; `input::choice` reads it back) and named by
-//! `text::choice_label`.
+//! `pg_wording::choice_label`.
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use pg_model::media::MediaType;
 use pg_model::query::{BorderFacet, Choice, ListFacet, Query, RatingFilter, Shape, Status};
@@ -66,6 +69,8 @@ pub fn choices(facet: ListFacet, counts: &Counts) -> Vec<(Choice, Option<i64>)> 
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
 
     #[test]

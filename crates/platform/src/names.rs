@@ -182,8 +182,7 @@ impl std::error::Error for NormalizeError {
 pub fn normalize_path(root: &Path) -> Result<RulePath, NormalizeError> {
     let real = real_path(root).map_err(|error| NormalizeError::Unreadable { path: root.to_path_buf(), error })?;
     // Trailing and doubled separators are dropped by the parse.
-    #[expect(clippy::disallowed_methods, reason = "the real path is already the catalog's spelling")]
-    let parsed = rule_path_of(&real);
+    let parsed = typed_path(&real);
     parsed.ok_or(NormalizeError::NotAPath { path: real })
 }
 
@@ -211,7 +210,10 @@ pub fn real_path_lenient(folder: &Path) -> Result<RulePath, NormalizeError> {
 }
 
 /// `path` taken as typed, for the parts of a path that no file system holds yet: nothing of them is there to resolve.
-#[expect(clippy::disallowed_methods, reason = "the parts that do not exist are taken as typed")]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the one call for a path taken as spelled: a real path already in the catalog's case, or the typed parts that do not exist"
+)]
 fn typed_path(path: &Path) -> Option<RulePath> {
     rule_path_of(path)
 }
@@ -384,35 +386,37 @@ mod stored_case_tests {
     use super::*;
 
     /// A fresh folder for one test: a run folder of its own under the test base.
-    #[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
-    fn fresh(test: &str) -> PathBuf {
-        crate::testing::run_folder("scratch_platform", &format!("stored-case-{test}")).unwrap()
+    fn fresh(test: &str) -> io::Result<PathBuf> {
+        crate::testing::run_folder("scratch_platform", &format!("stored-case-{test}"))
     }
 
     #[test]
-    fn a_folder_typed_as_it_is_stored_is_spelled_so() {
-        let base = fresh("plain");
+    fn a_folder_typed_as_it_is_stored_is_spelled_so() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let base = fresh("plain")?;
         std::fs::create_dir_all(base.join("Photos")).unwrap();
         let real = real_path(&base.join("Photos")).unwrap();
         assert_eq!(real.file_name(), Some(std::ffi::OsStr::new("Photos")));
         let _ = std::fs::remove_dir_all(&base);
+        Ok(())
     }
 
     #[test]
-    fn two_names_that_differ_only_in_case_are_told_apart_by_identity() {
+    fn two_names_that_differ_only_in_case_are_told_apart_by_identity()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         // Where the file system keeps both (a case-sensitive one), each typed name is stored under its own spelling.
-        let base = fresh("both");
+        let base = fresh("both")?;
         std::fs::create_dir_all(base.join("Pics")).unwrap();
         // On a case-insensitive file system the second name is the first folder, and the create fails.
         let _ = std::fs::create_dir(base.join("pics"));
         if std::fs::read_dir(&base).unwrap().count() != 2 {
             crate::testing::skip("this test folder's file system is case-insensitive: the two names are one folder");
             let _ = std::fs::remove_dir_all(&base);
-            return;
+            return Ok(());
         }
         assert_eq!(real_path(&base.join("pics")).unwrap().file_name(), Some(std::ffi::OsStr::new("pics")));
         assert_eq!(real_path(&base.join("Pics")).unwrap().file_name(), Some(std::ffi::OsStr::new("Pics")));
         let _ = std::fs::remove_dir_all(&base);
+        Ok(())
     }
 
     /// A folder's entries for `pick_stored`: each name with its (device, inode), and a count of the identity lookups made.

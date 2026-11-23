@@ -1,0 +1,352 @@
+//! The cxx-qt bridge of [`crate::shell`]: the declarations alone, so that the allow the macro's output needs is
+//! on the `bridges` module (`lib.rs`), not on anything written here.
+
+use crate::shell::state::ShellRust;
+
+#[cxx_qt::bridge]
+pub mod qobject {
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
+    }
+
+    extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        /// The folder shown, as its parts joined for display (the title, the top bar): `""` for all folders. Display only:
+        /// the listing is the controller's, and a folder is shown by its row (`openFolderRow`).
+        #[qproperty(QString, folder, READ, NOTIFY, FINAL)]
+        /// With the files of its subfolders (`setRecursive`).
+        #[qproperty(bool, recursive, READ, NOTIFY, FINAL)]
+        /// The kind of the folder's label: 0 all folders, 1 drive roots (the empty folder without subfolders, when the
+        /// drive roots hold files), 2 a folder (its name). The tree's rule (`Tree::shown_as`), for the top bar and the
+        /// save dialog.
+        #[qproperty(i32, folder_kind, cxx_name = "folderKind", READ, NOTIFY, FINAL)]
+        /// Which way the files are ordered (the key is the sort box's, `sortIndex`); `toggleDescending` turns it.
+        #[qproperty(bool, descending, READ, NOTIFY, FINAL)]
+        /// Names of the saved views, sorted.
+        #[qproperty(QStringList, saved_views, cxx_name = "savedViews", READ, WRITE, NOTIFY, FINAL)]
+        /// The filter bar is open (the start's `--filters`, `Shell.toggleFilters`).
+        #[qproperty(bool, filters_open, cxx_name = "filtersOpen", READ, NOTIFY, FINAL)]
+        /// The borders are shown (the start's prefs or `--borders`, `Shell.toggleBorders`).
+        #[qproperty(bool, show_borders, cxx_name = "showBorders", READ, NOTIFY, FINAL)]
+        /// The row height (`Shell.sizeChosen`, `Shell.sizeStepped`, the grid's keys).
+        #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
+        /// The smallest and largest row heights the grid takes (fixed for the run).
+        #[qproperty(i32, min_row_height, cxx_name = "minRowHeight", READ, CONSTANT, FINAL)]
+        #[qproperty(i32, max_row_height, cxx_name = "maxRowHeight", READ, CONSTANT, FINAL)]
+        /// Dev mode is on: the log view's button shows (the start's `--dev`/`PG_DEV`, then Ctrl+Shift+D).
+        #[qproperty(bool, dev_mode, cxx_name = "devMode", READ, NOTIFY, FINAL)]
+        type Shell = super::ShellRust;
+    }
+
+    impl cxx_qt::Threading for Shell {}
+
+    unsafe extern "RustQt" {
+        /// The deadline timer fired (C++ queues this call on the shell's thread, `deadline.cpp`): the pauses that are due run.
+        #[qinvokable]
+        fn timeout(self: Pin<&mut Shell>);
+
+        /// The folder tree was loaded. `folderKnown`: the listed folder is in it (or it is all folders, "").
+        #[qinvokable]
+        #[cxx_name = "treeLoaded"]
+        fn tree_loaded(self: Pin<&mut Shell>, folder_known: bool);
+
+        /// A list of `count` items was shown. Which list it is, the shell reads from the grid model (the one it applied
+        /// last). The session's last file is selected by the controller's start, not reported here.
+        #[qinvokable]
+        #[cxx_name = "listShown"]
+        fn list_shown(self: Pin<&mut Shell>, count: i32);
+
+        /// The list shown was placed in the view (its rows are positioned).
+        #[qinvokable]
+        #[cxx_name = "listPositioned"]
+        fn list_positioned(self: Pin<&mut Shell>);
+
+        /// The start is over: the test hooks run and the background job starts.
+        #[qsignal]
+        fn started(self: Pin<&mut Shell>);
+
+        /// A borders control was used while border detection is off: nothing is done, and the window says why.
+        #[qsignal]
+        #[cxx_name = "bordersRefused"]
+        fn borders_refused(self: Pin<&mut Shell>);
+
+        /// A view or a start option that uses borders was left out while border detection is off, and the window says why.
+        #[qsignal]
+        #[cxx_name = "optionsRefused"]
+        fn options_refused(self: Pin<&mut Shell>);
+
+        /// Border detection was turned off: the listing drops what it gives (its border facets, the sort by border depth).
+        #[qinvokable]
+        #[cxx_name = "bordersTurnedOff"]
+        fn borders_turned_off(self: Pin<&mut Shell>);
+
+        /// The current item changed (-1: none).
+        #[qinvokable]
+        #[cxx_name = "currentChanged"]
+        fn current_changed(self: Pin<&mut Shell>, index: i32);
+
+        /// A grid key was pressed (Qt's key code and modifiers). True when the grid uses it: the controller acts on it
+        /// (`selectRequested`, the model, `viewerRequested`), or changes the size or a panel.
+        #[qinvokable]
+        #[cxx_name = "keyPressed"]
+        fn key_pressed(self: Pin<&mut Shell>, key: i32, modifiers: i32) -> bool;
+
+        /// The item a viewer step from `from` by `d` lands on, clamped to the list (the viewer moves there).
+        #[qinvokable]
+        #[cxx_name = "viewerStep"]
+        fn viewer_step(self: &Shell, from: i32, d: i32) -> i32;
+
+        /// The grid's width changed (in pixels): a relayout is due after a short pause (`relayoutDue`).
+        #[qinvokable]
+        #[cxx_name = "gridResized"]
+        fn grid_resized(self: Pin<&mut Shell>, width: f64);
+
+        /// The filter bar's query was edited: the list is shown after a pause (`openList` by the controller).
+        #[qinvokable]
+        #[cxx_name = "queryEdited"]
+        fn query_edited(self: Pin<&mut Shell>);
+
+        /// The size chosen (the size box, the session's saved height).
+        #[qinvokable]
+        #[cxx_name = "sizeChosen"]
+        fn size_chosen(self: Pin<&mut Shell>, height: f64);
+
+        /// The row height multiplied by `factor` (a pinch, a wheel step).
+        #[qinvokable]
+        #[cxx_name = "sizeStepped"]
+        fn size_stepped(self: Pin<&mut Shell>, factor: f64);
+
+        /// The screen's scale (device pixel ratio).
+        #[qinvokable]
+        #[cxx_name = "setScale"]
+        fn set_scale(self: Pin<&mut Shell>, scale: f64);
+
+        #[qinvokable]
+        #[cxx_name = "toggleFilters"]
+        fn toggle_filters(self: Pin<&mut Shell>);
+
+        #[qinvokable]
+        #[cxx_name = "toggleBorders"]
+        fn toggle_borders(self: Pin<&mut Shell>);
+
+        /// The viewer is open or shut: while it is open, the grid does not take the keys (`keyPressed` is false).
+        #[qinvokable]
+        #[cxx_name = "setViewerOpen"]
+        fn set_viewer_open(self: Pin<&mut Shell>, on: bool);
+
+        /// A window shortcut fired (a `GlobalAction` code, GlobalShortcuts.qml): the controller decides what it does
+        /// (`panelOpenRequested`, `panelCloseRequested`, `devMode`).
+        #[qinvokable]
+        #[cxx_name = "globalAction"]
+        fn global_action(self: Pin<&mut Shell>, code: i32);
+
+        /// A modal panel opened (a `PanelKind.Kind` code): the controller mirrors which are open, for the shortcuts.
+        #[qinvokable]
+        #[cxx_name = "panelOpened"]
+        fn panel_opened(self: Pin<&mut Shell>, kind: i32);
+
+        /// A modal panel closed (a `PanelKind.Kind` code).
+        #[qinvokable]
+        #[cxx_name = "panelClosed"]
+        fn panel_closed(self: Pin<&mut Shell>, kind: i32);
+
+        /// A modal panel was shown (`shown`) or hidden (a `PanelKind.Kind` code): the window reports each one.
+        #[qinvokable]
+        #[cxx_name = "setPanelShown"]
+        fn set_panel_shown(self: Pin<&mut Shell>, kind: i32, shown: bool);
+
+        /// Open this modal panel (a `PanelKind.Kind` code): a shortcut asked for it.
+        #[qsignal]
+        #[cxx_name = "panelOpenRequested"]
+        fn panel_open_requested(self: Pin<&mut Shell>, kind: i32);
+
+        /// Close this modal panel (a `PanelKind.Kind` code).
+        #[qsignal]
+        #[cxx_name = "panelCloseRequested"]
+        fn panel_close_requested(self: Pin<&mut Shell>, kind: i32);
+
+        /// Close the viewer (a listing that shows a reveal or the failed files takes it away).
+        #[qsignal]
+        #[cxx_name = "viewerCloseRequested"]
+        fn viewer_close_requested(self: Pin<&mut Shell>);
+
+        /// Whether a pause is still running (the screenshot waits for none).
+        #[qinvokable]
+        fn pending(self: &Shell) -> bool;
+
+        /// Shutdown: the pending saves run now (the session and the row height are kept).
+        #[qinvokable]
+        fn flush(self: Pin<&mut Shell>);
+
+        /// A rating, asked for on an item (the viewer's keys and buttons).
+        #[qinvokable]
+        fn rate(self: Pin<&mut Shell>, item: i32, rating: i32);
+
+        /// A quarter turn of an item (the viewer's keys and buttons): 1 clockwise, -1 counterclockwise.
+        #[qinvokable]
+        fn turn(self: Pin<&mut Shell>, item: i32, turns: i32);
+
+        /// Toggle an item's border mark (the test hooks and the grid's key).
+        #[qinvokable]
+        #[cxx_name = "toggleBorderMark"]
+        fn toggle_border_mark(self: Pin<&mut Shell>, item: i32);
+
+        /// Set an item's border mark (the viewer's button).
+        #[qinvokable]
+        #[cxx_name = "setBorderMark"]
+        fn set_border_mark(self: Pin<&mut Shell>, item: i32, marked: bool);
+
+        /// Select the item at `index`: the window's test hooks, and the viewer closing on an item.
+        #[qinvokable]
+        fn select(self: Pin<&mut Shell>, index: i32);
+
+        /// The test hooks that come once the first list is shown (`--select`, `--view`, the panels...): the shell runs
+        /// its own, and the window performs the others as `testStep`.
+        #[qinvokable]
+        #[cxx_name = "runTestHooks"]
+        fn run_test_hooks(self: Pin<&mut Shell>);
+
+        /// The test hooks that wait for the library job (`--add-folder`, `--save-crops`), run after it has started.
+        #[qinvokable]
+        #[cxx_name = "runLibraryHooks"]
+        fn run_library_hooks(self: Pin<&mut Shell>);
+
+        /// A test hook the window performs: its kind (TestHooks.Kind), its index, value and text.
+        #[qsignal]
+        #[cxx_name = "testStep"]
+        fn test_step(self: Pin<&mut Shell>, kind: i32, index: i32, value: f64, text: QString);
+
+        /// A rating made in the viewer: the item is rated and the viewer moves on to the next picture.
+        #[qinvokable]
+        #[cxx_name = "rateInViewer"]
+        fn rate_in_viewer(self: Pin<&mut Shell>, item: i32, rating: i32);
+
+        /// The viewer's "find similar" on the catalog file `file_id`: the window opens its panel and searches (`similarRequested`).
+        #[qinvokable]
+        #[cxx_name = "findSimilar"]
+        fn find_similar(self: Pin<&mut Shell>, file_id: f64);
+
+        /// The command line's `--find-similar`: the window opens its panel and searches (`similarCommandLineRequested`).
+        #[qinvokable]
+        #[cxx_name = "findSimilarFromCommandLine"]
+        fn find_similar_from_command_line(self: Pin<&mut Shell>);
+
+        /// A file's similar-search panel is to open on it (the controller asked).
+        #[qsignal]
+        #[cxx_name = "similarRequested"]
+        fn similar_requested(self: Pin<&mut Shell>, file_id: f64);
+
+        /// The command line's photo is to be searched.
+        #[qsignal]
+        #[cxx_name = "similarCommandLineRequested"]
+        fn similar_command_line_requested(self: Pin<&mut Shell>);
+
+        /// Files were turned in place on disk: their rows are read again (nothing is renumbered).
+        #[qinvokable]
+        #[cxx_name = "filesChanged"]
+        fn files_changed(self: Pin<&mut Shell>);
+
+        /// The list is read again (new files, new sizes), the selection kept.
+        #[qinvokable]
+        #[cxx_name = "reloadList"]
+        fn reload_list(self: Pin<&mut Shell>);
+
+        /// The library was scanned: the folder tree and the open folder's files are read again, in that order.
+        #[qinvokable]
+        #[cxx_name = "reloadAll"]
+        fn reload_all(self: Pin<&mut Shell>);
+
+        /// The folder tree is to be read again: the window's folder model reloads (before the list does).
+        #[qsignal]
+        #[cxx_name = "foldersReloadRequested"]
+        fn folders_reload_requested(self: Pin<&mut Shell>);
+
+        /// Scroll this item into view: it is the selection already (the model set it).
+        #[qsignal]
+        #[cxx_name = "selectRequested"]
+        fn select_requested(self: Pin<&mut Shell>, index: i32);
+
+        /// Show the viewer at this item.
+        #[qsignal]
+        #[cxx_name = "viewerRequested"]
+        fn viewer_requested(self: Pin<&mut Shell>, index: i32);
+
+        /// The grid's width or row height settled: lay the grid out again.
+        #[qsignal]
+        #[cxx_name = "relayoutDue"]
+        fn relayout_due(self: Pin<&mut Shell>);
+
+        /// A list was asked for (the folder, subfolders, sort, query or saved view changed, or the files were read
+        /// again): the facets and the sort box follow it.
+        #[qsignal]
+        #[cxx_name = "listingChanged"]
+        fn listing_changed(self: Pin<&mut Shell>);
+
+        /// Show the folder of a tree row, with the current subfolders, sort and query. Row 0 (and a row the tree
+        /// doesn't have) is all folders, with their subfolders; the "Drive roots" row is the drive roots' own files,
+        /// without.
+        #[qinvokable]
+        #[cxx_name = "openFolderRow"]
+        fn open_folder_row(self: Pin<&mut Shell>, row: i32);
+
+        #[qinvokable]
+        #[cxx_name = "setRecursive"]
+        fn set_recursive(self: Pin<&mut Shell>, on: bool);
+
+        #[qinvokable]
+        #[cxx_name = "toggleDescending"]
+        fn toggle_descending(self: Pin<&mut Shell>);
+
+        /// Save (or replace) the listing under a name: its folder, subfolders, sort and query.
+        #[qinvokable]
+        #[cxx_name = "saveView"]
+        fn save_view(self: Pin<&mut Shell>, name: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "deleteView"]
+        fn delete_view(self: Pin<&mut Shell>, name: &QString);
+
+        /// Show a saved view: its folder, subfolders, sort and query replace the listing's. `false` if there is no view
+        /// by that name. The filter bar then reloads the query (`FilterBar.reloadQuery`).
+        #[qinvokable]
+        #[cxx_name = "applyView"]
+        fn apply_view(self: Pin<&mut Shell>, name: &QString) -> bool;
+
+        /// Show a file in its folder with nothing filtered, and select it once its list is shown (an inbox entry's
+        /// Reveal). Its folder is read off the window's thread: once it is, the folder is listed and `revealShown` is
+        /// emitted; when the library no longer has the file, a toast says so instead.
+        #[qinvokable]
+        fn reveal(self: Pin<&mut Shell>, file_id: f64);
+
+        /// Show the folder above the scans' failed folder at `row` of the expanded inbox entry (`FailedFiles`), with
+        /// nothing filtered; then `revealShown`.
+        #[qinvokable]
+        #[cxx_name = "revealFolder"]
+        fn reveal_folder(self: Pin<&mut Shell>, row: i32);
+
+        /// A Reveal's folder is listed: the inbox and the viewer close, the filter bar reloads the query, and the tree
+        /// shows the folder (`FolderModel.revealListing`).
+        #[qsignal]
+        #[cxx_name = "revealShown"]
+        fn reveal_shown(self: Pin<&mut Shell>);
+
+        /// List the files the import failed on, in every folder. The filter bar then reloads the query.
+        #[qinvokable]
+        #[cxx_name = "showFailedImports"]
+        fn show_failed_imports(self: Pin<&mut Shell>);
+
+        /// Order by the sort box's choice `index` (`pg_client::sort`): its key, and its way.
+        #[qinvokable]
+        #[cxx_name = "sortBy"]
+        fn sort_by(self: Pin<&mut Shell>, index: i32);
+
+        /// The sort box's index for the key the files are ordered by.
+        #[qinvokable]
+        #[cxx_name = "sortIndex"]
+        fn sort_index(self: &Shell) -> i32;
+    }
+}

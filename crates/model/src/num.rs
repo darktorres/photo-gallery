@@ -4,6 +4,9 @@
 //! to a narrower range of its own domain, never to the target type's. Each helper is the one `as` for its conversion,
 //! and the expect on it states why that conversion is exact or safe, so the call sites carry no expect.
 
+use alloc::format;
+use alloc::string::String;
+
 // `usize` holds every `u32`, so `index` never saturates.
 const _: () = assert!(usize::BITS >= 32);
 
@@ -132,4 +135,22 @@ pub fn f64_to_i32(x: f64) -> i32 {
 )]
 pub fn f64_to_i64(x: f64) -> i64 {
     x as i64
+}
+
+/// `x` rounded to a whole number, halves away from zero, as `f64::round` does. `round` is not in `core` on a stable
+/// toolchain, and this crate is `no_std`. It is exact for every float: from 2^52 up a float is already whole, and below
+/// it the truncation to `i64` is exact, so the fraction left over is too. NaN and the infinities come back as they are.
+pub fn round_half_away(x: f64) -> f64 {
+    const WHOLE: f64 = 4_503_599_627_370_496.0; // 2^52
+    if x.is_nan() || x.abs() >= WHOLE {
+        return x;
+    }
+    let truncated = signed(f64_to_i64(x));
+    let rounded = match x - truncated {
+        fraction if fraction >= 0.5 => truncated + 1.0,
+        fraction if fraction <= -0.5 => truncated - 1.0,
+        _ => truncated,
+    };
+    // A zero keeps the sign of `x`, as `f64::round` does: `round(-0.4)` is `-0.0`.
+    if rounded == 0.0 { 0.0_f64.copysign(x) } else { rounded }
 }

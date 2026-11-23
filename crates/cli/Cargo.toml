@@ -12,7 +12,6 @@ workspace = true
 pg-analysis = { path = "../analysis" }
 pg-borders = { path = "../borders" }
 pg-catalog = { path = "../catalog" }
-pg-client = { path = "../client" }
 pg-codec = { path = "../codec" }
 pg-dedup = { path = "../dedup" }
 pg-import = { path = "../import" }
@@ -24,6 +23,7 @@ pg-platform = { path = "../platform" }
 pg-scan = { path = "../scan" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-thumbs = { path = "../thumbs" }
+pg-wording = { path = "../wording" }
 pg-writeback = { path = "../writeback" }
 anyhow.workspace = true
 clap.workspace = true
@@ -32,7 +32,11 @@ serde_json.workspace = true
 [dev-dependencies]
 # The catalog's test fixture (files as the scanner inserts them).
 pg-catalog = { path = "../catalog", features = ["fixture"] }
+# The image files the tests write (`pg_codec::fixtures`).
+pg-codec = { path = "../codec", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
+# The helper that testkit used to re-export (`pg_platform::testing::skip`).
+pg-platform = { path = "../platform", features = ["testing"] }
 pg-jobs-testkit = { path = "../jobs-testkit" }
 # The writer's faults, for the test that `gallery write` returns when the writer ends.
 pg-writeback = { path = "../writeback", features = ["fault"] }

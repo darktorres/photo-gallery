@@ -1,7 +1,8 @@
 //! A result list in two groups, with its picks: the Yandex panel's (the other sizes, then the similar images). The
 //! picks follow their results: when results are taken off ([`Results::drop_where`]), the ones left keep their picks.
 
-use std::ops::Range;
+use alloc::vec::Vec;
+use core::ops::Range;
 
 use crate::picks::Picks;
 
@@ -106,7 +107,7 @@ impl<T> Results<T> {
     /// Take off the results `dead` says: the others keep their order, their groups and their picks. False when none was
     /// taken off (nothing changed).
     pub fn drop_where(&mut self, mut dead: impl FnMut(&T) -> bool) -> bool {
-        let items = std::mem::take(&mut self.items);
+        let items = core::mem::take(&mut self.items);
         let before = items.len();
         let mut kept = Vec::with_capacity(before);
         let mut picked = Vec::with_capacity(before);
@@ -138,6 +139,8 @@ impl<T> Results<T> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
 
     /// The picks follow their results when a dead one is taken off: the picked results stay picked, in order.

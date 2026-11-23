@@ -16,18 +16,18 @@ fn spawn_holder(dir: &Path, catalog_id: &str, ready: &Path, release: &Path) -> s
     Command::new(std::env::current_exe()?)
         .args(["--exact", "holder"])
         .stdout(Stdio::null())
-        .env("PG_THUMB_HOLDER", dir)
-        .env("PG_THUMB_CATALOG", catalog_id)
-        .env("PG_THUMB_READY", ready)
-        .env("PG_THUMB_RELEASE", release)
+        .env(pg_testkit::inputs::THUMB_HOLDER, dir)
+        .env(pg_testkit::inputs::THUMB_CATALOG, catalog_id)
+        .env(pg_testkit::inputs::THUMB_READY, ready)
+        .env(pg_testkit::inputs::THUMB_RELEASE, release)
         .spawn()
 }
 
 /// Run only by `spawn_holder`: without `PG_THUMB_HOLDER` it does nothing.
 #[test]
 fn holder() {
-    let Some(dir) = std::env::var_os("PG_THUMB_HOLDER") else { return };
-    let catalog = std::env::var("PG_THUMB_CATALOG").unwrap();
+    let Some(dir) = std::env::var_os(pg_testkit::inputs::THUMB_HOLDER) else { return };
+    let catalog = std::env::var(pg_testkit::inputs::THUMB_CATALOG).unwrap();
     let _cache = ThumbCache::open(
         &Path::new(&dir).join("thumbs.sqlite"),
         &catalog,
@@ -36,8 +36,11 @@ fn holder() {
         Arc::new(Bus::new(1)),
     )
     .expect("the holder opens it");
-    std::fs::write(std::env::var_os("PG_THUMB_READY").unwrap(), b"").unwrap();
-    pg_testkit::wait_for_path(Path::new(&std::env::var_os("PG_THUMB_RELEASE").unwrap()), Duration::from_secs(60));
+    std::fs::write(std::env::var_os(pg_testkit::inputs::THUMB_READY).unwrap(), b"").unwrap();
+    pg_testkit::wait_for_path(
+        Path::new(&std::env::var_os(pg_testkit::inputs::THUMB_RELEASE).unwrap()),
+        Duration::from_secs(60),
+    );
 }
 
 #[test]

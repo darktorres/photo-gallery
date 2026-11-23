@@ -19,7 +19,7 @@
 //! knows (CUDA, QSV, Vulkan…), 1.4 s on the GUI thread when the first player is made. A value
 //! set by the user is kept.
 
-use crate::gpu_device_bridge::ffi;
+use crate::bridges::gpu_device_bridge::ffi;
 
 // SAFETY: the device is free-threaded; its immediate context is used by one thread at a time (made on the
 // "gpu device" thread, then handed to the GUI thread, which hands it to the render thread).

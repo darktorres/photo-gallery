@@ -1,7 +1,7 @@
 //! A deterministic generator for the tests' random cases: one seed draws the same cases on every run.
 //!
 //! The one generator every test uses (SplitMix64). It is a leaf with no dependencies: the layered crates take it as a
-//! dev-dependency, and `pg-testkit` re-exports it, so the cases of every test come from the same mixing function.
+//! dev-dependency, so the cases of every test come from the same mixing function.
 
 #![forbid(unsafe_code)]
 

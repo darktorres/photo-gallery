@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn the_image_and_its_settle_log_are_written_at_the_exact_path() {
         let dir = Scratch::new("exact");
-        let path = dir.0.join(pg_testkit::odd_name("shot"));
+        let path = dir.0.join(pg_platform::testing::odd_name("shot"));
         write_taken(&path, b"\x89PNG", true, "settled after 5 ms").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"\x89PNG");
         assert_eq!(std::fs::read_to_string(log_of(&path)).unwrap(), "settled after 5 ms\n");
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn a_window_that_cant_be_encoded_leaves_its_log_and_no_image() {
         let dir = Scratch::new("unencoded");
-        let path = dir.0.join(pg_testkit::odd_name("shot"));
+        let path = dir.0.join(pg_platform::testing::odd_name("shot"));
         let err = write_taken(&path, &[], true, "timed out after 10000 ms").unwrap_err();
         assert_eq!(err.to_string(), "the window can't be encoded as a PNG");
         assert!(!path.exists());

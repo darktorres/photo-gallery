@@ -82,8 +82,10 @@ pub fn rating_in_file_possible(kind: crate::media::Kind, format: Option<Format>)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloc::vec::Vec;
     use strum::IntoEnumIterator;
+
+    use super::*;
 
     #[test]
     fn sniffs_classic_tiff_and_bigtiff() {

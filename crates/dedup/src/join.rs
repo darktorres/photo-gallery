@@ -127,12 +127,14 @@ const fn tail(n: u32, t: u32) -> f64 {
 /// costs one per lane; the candidates that pass the head test without being pairs are the unrelated ones within the
 /// bound ([`tail`] of the head's bits, at the bound of the probes that flip a bit, 16 of the 17), each a full test
 /// ([`FULL_TEST_COST`]). The pairs within the radius pass at every width, so they do not choose it.
-#[expect(clippy::indexing_slicing, reason = "built at compile time, `c` below the array's 16")]
 const fn widths() -> [usize; CHUNKS] {
     let mut out = [1; CHUNKS];
-    // Each count in the types it is used as, kept side by side (a const fn has no conversions between them).
-    let (mut c, mut cu) = (0usize, 0u32);
-    while c < CHUNKS {
+    // Each stage's slot is taken from the front of what is left: a const fn has no `get` or iterators, but a slice
+    // pattern visits every slot in turn, with no index to bound.
+    let mut rest: &mut [usize] = &mut out;
+    // The stage's count, in the type it is used as (a const fn has no conversions between the two).
+    let mut cu = 0u32;
+    while let [slot, after @ ..] = rest {
         let (mut best, mut best_cost) = (1, f64::MAX);
         let (mut w, mut wu, mut wf) = (1usize, 1u32, 1.0f64);
         while w <= MAX_HEAD_WORDS {
@@ -142,8 +144,9 @@ const fn widths() -> [usize; CHUNKS] {
             }
             (w, wu, wf) = (w + 1, wu + 1, wf + 1.0);
         }
-        out[c] = best;
-        (c, cu) = (c + 1, cu + 1);
+        *slot = best;
+        rest = after;
+        cu += 1;
     }
     out
 }
@@ -1431,11 +1434,11 @@ fn scan_scalar<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, ou
 }
 
 /// # Safety
-/// The CPU supports POPCNT. `best_kernel` chooses this kernel only after detecting it.
+/// The CPU supports POPCNT. `best_kernel` chooses this kernel only after detecting it, which is why a call is `unsafe`
+/// (a `target_feature` function): the body is the safe scalar scan, compiled with the feature.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "popcnt")]
-#[expect(unsafe_code, reason = "POPCNT intrinsics, run only where `Kernel` found the CPU has POPCNT")]
-unsafe fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
+fn scan_popcnt<const W: usize>(st: &Stage<'_, '_, '_>, buckets: Range<usize>, out: &mut Vec<Pair>) {
     scan_scalar::<W>(st, buckets, out);
 }
 
@@ -2917,7 +2920,7 @@ mod tests {
     #[ignore = "needs a catalog dump: PG_JOIN_DUMP and PG_JOIN_OUT (see the test's doc comment)"]
     fn dump_join() {
         use std::io::Write;
-        let dump = std::fs::read(std::env::var("PG_JOIN_DUMP").unwrap()).unwrap();
+        let dump = std::fs::read(std::env::var(pg_testkit::inputs::JOIN_DUMP).unwrap()).unwrap();
         const RECORD: usize = 8 + 1 + 128;
         let (mut ids, mut lib) = (Vec::new(), Library { hashes: Vec::new(), owed: Vec::new() });
         for rec in dump.as_chunks::<RECORD>().0 {
@@ -2927,7 +2930,7 @@ mod tests {
         }
         let n = lib.hashes.len();
         eprintln!("pictures {n}, owed {}", lib.owed.iter().filter(|&&o| o).count());
-        let threads: usize = std::env::var("PG_JOIN_THREADS")
+        let threads: usize = std::env::var(pg_testkit::inputs::JOIN_THREADS)
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |p| p.get()));
@@ -2939,7 +2942,9 @@ mod tests {
         let t = std::time::Instant::now();
         let pairs = run(best_kernel(), &lib, 0..n, threads);
         eprintln!("{:?} {threads} threads: {:?}, {} pairs", best_kernel(), t.elapsed(), pairs.len());
-        let mut out = std::io::BufWriter::new(std::fs::File::create(std::env::var("PG_JOIN_OUT").unwrap()).unwrap());
+        let mut out = std::io::BufWriter::new(
+            std::fs::File::create(std::env::var(pg_testkit::inputs::JOIN_OUT).unwrap()).unwrap(),
+        );
         for p in &pairs {
             let (a, b) = (ids[index(p.a)], ids[index(p.b)]);
             writeln!(out, "{a} {b} {}", p.distance).unwrap();

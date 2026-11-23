@@ -6,13 +6,16 @@
 2. Dev edges: the graph of every internal edge (normal, dev and build) has no cycle. A crate's tests may not depend on
    a crate that depends on it (the test helpers sit on the crates they test, below the crates whose tests use them).
 3. Re-exports: a `pub use` in production code names a child module of the module it is in (a crate's public API laid
-   over its private layout). One that names another crate is allowed only in a boundary file (`REEXPORT_BOUNDARIES`),
-   and one through `crate::` or `super::` (an item kept at an old path) is not allowed. One public path per item: a
+   over its private layout). One that names another crate is not allowed anywhere (a crate reaches another's items
+   through its own path, and the consumer names them from there), and one through `crate::` or `super::` (an item kept
+   at an old path) is not allowed. One public path per item: a
    crate root's `pub use` names a private module, never a `pub mod` (that module is public under its own path, so the
    root would give the same items a second one).
 4. Platform code: no `cfg` on `windows`, `unix`, `target_os` or `target_family`, no `std::os::windows` or
    `std::os::unix`, and no OS crate or module (`windows_sys`, `libloading::os`), in production code outside `pg-platform`,
-   except the glue in `PLATFORM_GLUE`, which must name the platform's own signatures or types.
+   except the glue in `PLATFORM_GLUE`, which must name the platform's own signatures or types. And no foreign-function
+   block (`extern "system" { ... }`, `extern "C" { ... }`) outside the crates in `FOREIGN_CRATES`: pg-platform, and the
+   ones that bind a native library (trace, video, desktop).
 
 5. Environment: production code reads no variable through `std::env` (`var`, `var_os`, `vars`, `set_var` and their
    kin). A variable is read through pg-platform's `env` module (`read`, `value`, `flag`, `process`), which makes an
@@ -40,13 +43,6 @@ from pgtools import function_body
 REPO = Path(__file__).resolve().parents[1]
 LAYERS = REPO / "tools" / "crate-layers.txt"
 
-# The files that re-export other crates' items, each a documented layer boundary.
-REEXPORT_BOUNDARIES = {
-    # The front end depends on `pg-app` alone, and names the lower crates' types through it.
-    "crates/app/src/reexport.rs",
-    # pg-testkit re-exports pg-platform's test folders under the names the tests use.
-    "crates/testkit/src/lib.rs",
-}
 # Production code outside pg-platform that may name a platform, with the reason (ground rule 6).
 PLATFORM_GLUE: dict[str, str] = {}
 
@@ -66,6 +62,12 @@ CFG = re.compile(r"\bcfg(?:_attr)?!?\s*\(")
 STD_OS = re.compile(r"\bstd::os::(windows|unix)\b")
 # The OS crates and modules that only pg-platform calls: the Win32 bindings, and libloading's per-OS loaders.
 OS_CRATE = re.compile(r"\bwindows_sys\b|\blibloading::os\b")
+# A foreign-function block: the OS's calls, declared by hand (`unsafe extern "system" { ... }`). `extern "C++"` and
+# `extern "RustQt"` are cxx-qt's bridges, which the desktop front end holds, and are not matched.
+FOREIGN_BLOCK = re.compile(r'\bextern\s+"(?:system|C)"\s*\{')
+# The crates that may declare foreign-function blocks: pg-platform, and the crates that bind a native library
+# themselves (trace, video) or hold the Qt front end's C shims (desktop).
+FOREIGN_CRATES = {"platform", "trace", "video", "desktop"}
 PUB_USE = re.compile(r"^\s*pub\s+use\s+([^;]+);", re.MULTILINE)
 # A child module declaration, with its visibility (`pub`, `pub(crate)`, or none) and its name.
 CHILD_MOD = re.compile(r"^\s*(pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*[;{]", re.MULTILINE)
@@ -269,8 +271,8 @@ def check_reexports(files):
             where = f"{rel(path)}:{line}: pub use {body}"
             if first in ("crate", "super"):
                 failures.append(f"{where}: an item re-exported from elsewhere in the crate (name it where it is)")
-            elif first not in children and rel(path) not in REEXPORT_BOUNDARIES:
-                failures.append(f"{where}: another crate's item, outside the boundary files")
+            elif first not in children:
+                failures.append(f"{where}: another crate's item (a crate re-exports only its own modules)")
     return failures
 
 
@@ -324,6 +326,8 @@ def check_platform(files):
         hits = [m.start() for m in CFG.finditer(text) if PLATFORM_WORD.search(cfg_args(text, m.end()))]
         hits += [m.start() for m in STD_OS.finditer(text)]
         hits += [m.start() for m in OS_CRATE.finditer(text)]
+        if crate_of(path) not in FOREIGN_CRATES:
+            hits += [m.start() for m in FOREIGN_BLOCK.finditer(text)]
         for pos in sorted(hits):
             line = text.count("\n", 0, pos) + 1
             code = text.splitlines()[line - 1].strip()

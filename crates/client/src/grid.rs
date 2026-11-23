@@ -5,8 +5,10 @@
 //! The list session (which list is current, which waits for the viewer, which files were edited while it loaded)
 //! is here too; where a file has to be read again, the caller gives the read as a closure.
 
-use std::collections::BTreeMap;
-use std::ops::Range;
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ops::Range;
 
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
@@ -208,7 +210,7 @@ impl Grid {
     /// The new rows for a change. Nothing is changed: the rows are made against the current ones, and `commit` puts
     /// them in.
     pub fn plan(&mut self, changed: Changed) -> Plan {
-        let mut rows = std::mem::take(&mut self.spare_rows);
+        let mut rows = core::mem::take(&mut self.spare_rows);
         let size = (self.width, self.row_height, self.spacing);
         if self.width > 0.0 && self.row_height > 0.0 {
             let (width, height, spacing) = size;
@@ -241,7 +243,7 @@ impl Grid {
     /// an insert or remove has none beyond its own.
     pub fn commit(&mut self, plan: Plan) -> Vec<Update> {
         let Plan { rows, change: _, updates, reset, size } = plan;
-        self.spare_rows = std::mem::replace(&mut self.rows, rows);
+        self.spare_rows = core::mem::replace(&mut self.rows, rows);
         self.laid = size;
         if reset {
             return Vec::new();
@@ -311,7 +313,7 @@ impl Grid {
             self.held = Some((generation, entries));
             return Arrival::Held;
         }
-        for id in std::mem::take(&mut self.edited) {
+        for id in core::mem::take(&mut self.edited) {
             if let Some(slot) = entries.iter_mut().find(|e| e.id == id)
                 && let Some(fresh) = reload(id)
             {
@@ -342,7 +344,7 @@ impl Grid {
             .map(|(i, e)| (e.id, i))
             .collect();
         self.revision += 1;
-        std::mem::replace(&mut self.entries, entries)
+        core::mem::replace(&mut self.entries, entries)
     }
 
     /// How many of the items are bordered (found and not marked): what cropping them would cut.
@@ -394,7 +396,7 @@ impl Grid {
 
     /// Whether turns were written while the list loaded, and resets that.
     pub fn take_turned(&mut self) -> bool {
-        std::mem::take(&mut self.turned)
+        core::mem::take(&mut self.turned)
     }
 
     /// The files whose turns still wait to be written (their rotation is queued, not yet written), to be read again

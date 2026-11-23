@@ -116,9 +116,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
-  flat folder), the image providers and the GPU device. The only crate that links Qt. Each cxx-qt bridge is a module
-  of its own (`src/<x>_bridge.rs`, beside the `<x>.rs` that implements it), so the one allow its generated code needs
-  (`unreachable_pub`) covers nothing written by hand.
+  flat folder), the image providers and the GPU device. The only crate that links Qt. Each cxx-qt bridge is a file in
+  `src/bridges/` (cxx-qt needs one directory for a QML module's Rust sources), declared by `src/bridges.rs`, so the two
+  allows its generated code needs (`unsafe_code`, `unreachable_pub`) cover that one module and nothing written by hand.
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
   command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
   the program runs commands only, and builds without Qt.
@@ -236,7 +236,7 @@ refactor. The dated logs in `docs/` keep the old paths; the table is for reading
 | `ingest/tests/*` | `library/tests/*` |
 | `desktop/src/loader.rs` | `app/src/reader.rs` (the catalog reads off the UI thread) |
 | `desktop/src/state.rs` | `app/src/images.rs` (the image work behind the providers) |
-| `desktop/src/yandex.rs`, `library.rs`, `animation.rs` | `desktop/src/` (the Qt bridges), with the logic in `app/src/yandex.rs`, `app/src/library.rs` and `render/src/player.rs` |
+| `desktop/src/yandex.rs`, `library.rs`, `animation.rs` | `desktop/src/bridges/` (the Qt bridges), with the logic in `app/src/yandex.rs`, `app/src/library.rs` and `render/src/player.rs` |
 | `desktop/src/*` (the rest), `gallery/src/main.rs`, `testkit`, `bench` | the same paths |
 
 ## Build

@@ -1647,7 +1647,9 @@ sites of `FolderFailure::key`/`from_key` (`ledger.rs:307`, `roots.rs:246`, `writ
 - Phase K keeps: the `unsafe_code` expects (66, 67 once Phase C adds `env.rs`'s; minus the K.10 sites that go; FFI and OS
   calls), `as_conversions` and the casts in `num.rs`, the owners of banned calls, the log fallback's printing,
   `platform/src/process.rs`'s `exit`, fault-injection panics, the generated-code expects if K.7's single module does not
-  build, and the three `indexing_slicing` sites `pdq.rs:78`, `join.rs:1017` and `join.rs:1070`.
+  build, and the three `indexing_slicing` sites `pdq.rs:78`, `join.rs:1017` and `join.rs:1070`. Also the `unwrap_used`
+  expect of `catalog/src/fixture/raw.rs` (outside test builds only, under the `fixture` feature: its 38 helpers are the
+  statements the catalog's fixture makes, and a failing statement is the caller's failure, not a result to return).
 
 ## Decisions (settled: the most proper option, churn not a concern)
 

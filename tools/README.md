@@ -28,6 +28,7 @@ shape. The other tools end with `sys.exit(message)`, which exits 1.
 | `fuzz_smoke.py` | Each fuzz target (`fuzz/`) for a short time | Linux (container) | `just fuzz-smoke` through `linux.py` |
 | `perf-compare.py` | The instruction-count comparison (a baseline against a run, at a tolerance or per-bench budgets) | both | `perf_check.py`, `scan_timing.py`; by hand |
 | `fork-updates.py` | Checks the forks under github.com/darktorres against the newest release of each crate upstream | both | `.github/workflows/fork-updates.yml`; by hand |
+| `merge_measure.py` | Measures the merge layout rules of `docs/plans/MERGE_PLAN.md` §4 on images: cuts each into a grid, optionally re-encodes the pieces as JPEG, and counts the layouts found as correct, wrong or refused. The rules and the tests are standard library; the command line reads the images with Pillow (`pip install pillow`) | both | `python tools/merge_measure.py IMAGE ... [--grid 2x2] [--jpeg 90] [--max-side 1600] [--reject 1.3]`; `test_merge_measure.py` runs in `just test-tools` |
 | `make_icon.py` | Makes the app icon from mascot 03, as a multi-size Windows icon | both | by hand, after changing the mascot |
 | `make_test_video.py` | The video reader's test input (`crates/video/tests/sample.mp4`), made with the FFmpeg on PATH | both | by hand |
 | `ci/github_files.py` | Writes `GITHUB_ENV` and `GITHUB_PATH` for the steps after it (the content keys, the FFmpeg `bin`) | CI | `.github/workflows/ci.yml` |

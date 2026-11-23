@@ -123,6 +123,8 @@ A stack groups files so the gallery shows one representative and hides the rest.
   from the library leaves its members visible.
 - **Ratings and marks** belong to each file. A merged root starts with none. Write-back goes to the root only.
 - **Later kinds** (bursts, duplicates) may keep one member visible. That is a per-kind rule, designed when needed.
+- **Upscale** is the next kind, planned in [UPSCALE_PLAN.md](UPSCALE_PLAN.md). Its upscaled file is the root, and
+  upscaling a merged picture re-roots the merge stack instead of nesting one. That re-root is not yet in §8 above.
 
 ## 9. Evidence
 

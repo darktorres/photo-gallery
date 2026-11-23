@@ -7,6 +7,10 @@ use pg_model::orientation::Orientation;
 
 use super::buffers::reserved;
 
+/// Where a frame lands after an operation: its new place (left, top), the part of it kept (left, top, width, height, in
+/// the frame) and the new screen size (width, height).
+pub(super) type Placed = ((usize, usize), [usize; 4], (usize, usize));
+
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
@@ -58,13 +62,7 @@ impl Op {
     /// A turn keeps the part of the frame on the screen: a frame may stick out past it (real GIFs have them), and
     /// the app's decoder places it into the screen as far as the screen goes, so that part is the picture the user
     /// turned. A frame with no pixels, or wholly off the screen, keeps nothing.
-    #[expect(clippy::type_complexity, reason = "the placement and the kept part are returned together")]
-    pub(super) fn frame(
-        self,
-        [left, top, w, h]: [usize; 4],
-        sw: usize,
-        sh: usize,
-    ) -> Option<((usize, usize), [usize; 4], (usize, usize))> {
+    pub(super) fn frame(self, [left, top, w, h]: [usize; 4], sw: usize, sh: usize) -> Option<Placed> {
         match self {
             Op::Orient(o) => {
                 // The part on the screen: x0..x1, y0..y1. Empty (a 0-size frame, or one past the screen's edge)

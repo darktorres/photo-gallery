@@ -8,8 +8,6 @@
 //! the rows, the reveal of the listed folder and the spelling of a row's folder are read here and never passed as text:
 //! QML names a row by its number, and the folders go by value.
 
-pub(crate) mod state;
-
 use crate::bridges::folders_bridge::qobject;
 
 use core::pin::Pin;

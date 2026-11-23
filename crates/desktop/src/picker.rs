@@ -3,9 +3,7 @@
 //! (`FolderPickerDialog.qml`, over the folders listed here). Either way the chosen folder is kept here, exact, and the
 //! screen only learns that one was chosen for a purpose (`done`): the action that purpose names takes it (`take`). So
 //! the path never crosses to QML as text.
-
-pub(crate) mod state;
-use state::{Listing, PickerRust, Purpose};
+use crate::bridges::picker_state::{Listing, PickerRust, Purpose};
 
 use crate::bridges::picker_bridge::qobject;
 

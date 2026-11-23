@@ -9,9 +9,7 @@
 //! Re-entrance: a signal is emitted within the call that caused it, and so is a qproperty's notify. A QML handler of one
 //! of these signals or notifies must not call the shell back synchronously; the signals that do call it are emitted
 //! later (`later`), once the call has returned.
-
-pub(crate) mod state;
-use state::ShellRust;
+use crate::bridges::shell_state::ShellRust;
 
 use crate::bridges::shell_bridge::qobject;
 

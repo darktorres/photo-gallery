@@ -122,8 +122,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
         List::FolderFlat => (r"PhotoGallery\synthetic\library\folder-00", false, Query::default(), name),
     };
     // The layout's folders are literals: a path that does not parse is a bug in the bench.
-    #[expect(clippy::panic, reason = "a folder literal that does not parse is a bug in the bench")]
-    let Some(parsed) = RULES.parse(folder) else { panic!("a folder path of the layout: {folder}") };
+    let parsed = or_stop(RULES.parse(folder).ok_or("the path does not parse"), format!("a folder of the layout: {folder}"));
     let folder = RULES.merge(&parsed);
     let entries = or_stop(catalog.list_grid(&folder, recursive, &query, sort), "the grid's list");
     (catalog, black_box(entries))
@@ -158,10 +157,10 @@ fn pending_import(catalog: Catalog) -> (Catalog, WorkList<WorkItem>) {
 #[bench::at_height(setup = copy_data)]
 fn pending_thumbs(run: PathBuf) -> Pending {
     // The bench's height is a literal: one the thumbnail cache does not hold is a bug in the bench.
-    #[expect(clippy::panic, reason = "a height literal outside the cache's range is a bug in the bench")]
-    let Some(height) = ThumbHeight::new(THUMB_HEIGHT) else {
-        panic!("the bench's height {THUMB_HEIGHT} is out of range")
-    };
+    let height = or_stop(
+        ThumbHeight::new(THUMB_HEIGHT).ok_or("out of the cache's range"),
+        format!("the bench's height {THUMB_HEIGHT}"),
+    );
     black_box(or_stop(
         thumbs::pending_in(&run.join("thumbs.sqlite"), &run.join("catalog.sqlite"), height),
         "the thumbnail pass's check",
@@ -176,8 +175,7 @@ const IMPORT_BATCH: usize = pg_catalog::WRITE_BATCH;
 fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analysis) {
     let catalog = open_layout(BENCH_LARGE_LAYOUT);
     let roots = or_stop(catalog.roots(), "the library folders");
-    #[expect(clippy::panic, reason = "a layout with no library folder is a bug in the bench data")]
-    let Some(root) = roots.first() else { panic!("the {BENCH_LARGE_LAYOUT} catalog has no library folder") };
+    let root = or_stop(roots.first().ok_or("no library folder"), format!("the {BENCH_LARGE_LAYOUT} catalog"));
     let mut ids = or_stop(catalog.files_under(&root.path), "the library's files");
     ids.truncate(IMPORT_BATCH);
     or_stop(catalog.mark_pending(&ids), "the files made due");
@@ -237,9 +235,7 @@ const SCAN_FILES: usize = 100;
 const SCAN_UNREADABLE: usize = 4;
 
 fn scan_root() -> RulePath {
-    #[expect(clippy::panic, reason = "a folder literal that does not parse is a bug in the bench")]
-    let Some(root) = RULES.parse(r"D:\bench\library") else { panic!("the synthetic library's folder") };
-    root
+    or_stop(RULES.parse(r"D:\bench\library").ok_or("the path does not parse"), "the synthetic library's folder")
 }
 
 fn synthetic_tree(root: &RulePath) -> SyntheticTree {
@@ -276,8 +272,8 @@ fn for_removal() -> (Catalog, RulePath) {
     let root = scan_root();
     or_stop(catalog.add_root(&root), "the library folder");
     or_stop(pg_scan::scan_with(&mut catalog, &root, &Control::new(), &mut synthetic_tree(&root)), "the walk");
-    #[expect(clippy::panic, reason = "a folder the walk just added has an id: its absence is a bug in the bench")]
-    let Some(id) = or_stop(catalog.root_id(&root), "the library folder's id") else { panic!("the library folder") };
+    let added = or_stop(catalog.root_id(&root), "the library folder's id");
+    let id = or_stop(added.ok_or("the walk did not add it"), "the library folder");
     let begun = or_stop(catalog.begin_removal(id, &root), "the removal's start");
     assert!(matches!(begun, Begun::Started(_)), "the removal did not start");
     (catalog, root)

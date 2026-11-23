@@ -31,8 +31,6 @@
 //! detail below. Escape or Close dismisses it, and Tab stays in it. `--log-view=<file>` shows that file's records instead,
 //! read with the `pg_log` reader and subscribed to nothing (the `log` screenshot); the app's own logging is unchanged.
 
-pub(crate) mod state;
-
 use crate::bridges::log_model_bridge::qobject;
 
 use core::pin::Pin;

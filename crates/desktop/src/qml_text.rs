@@ -90,10 +90,6 @@ fn text_value(own: &str) -> Option<String> {
 }
 
 #[test]
-#[expect(
-    clippy::string_slice,
-    reason = "the indices are from match_indices and find over ASCII patterns: char boundaries"
-)]
 fn every_label_that_shows_a_value_is_plain_text() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("qml");
     let mut unmarked = Vec::new();
@@ -106,8 +102,11 @@ fn every_label_that_shows_a_value_is_plain_text() {
         for kind in ["Label", "Text", "TextArea"] {
             for (at, _) in src.match_indices(kind) {
                 let word_start = at == 0 || !src.as_bytes()[at - 1].is_ascii_alphanumeric();
-                let rest = &src[at + kind.len()..];
-                let Some(open) = rest.find(|c: char| !c.is_whitespace()).filter(|i| rest[*i..].starts_with('{')) else {
+                let rest = src.get(at + kind.len()..).expect("a keyword's end is a char boundary");
+                let Some(open) = rest
+                    .find(|c: char| !c.is_whitespace())
+                    .filter(|i| rest.get(*i..).is_some_and(|s| s.starts_with('{')))
+                else {
                     continue;
                 };
                 if !word_start {
@@ -115,12 +114,12 @@ fn every_label_that_shows_a_value_is_plain_text() {
                 }
                 let open = at + kind.len() + open;
                 let end = block_end(src.as_bytes(), open);
-                let own = own_text(&src[open + 1..end]);
+                let own = own_text(src.get(open + 1..end).expect("braces are ASCII: a char boundary"));
                 if let Some(value) = text_value(&own)
                     && !is_fixed(&value)
                     && !own.contains("textFormat:")
                 {
-                    let line = src[..at].matches('\n').count() + 1;
+                    let line = src.get(..at).expect("a keyword's start is a char boundary").matches('\n').count() + 1;
                     unmarked.push(format!("{}:{line}: {value}", path.file_name().unwrap().to_string_lossy()));
                 }
             }

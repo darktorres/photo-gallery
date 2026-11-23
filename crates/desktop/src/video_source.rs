@@ -1,12 +1,10 @@
 //! The video player's source (`VideoSource`): the file a video plays from, handed to Qt's player as a device. The file
 //! is the catalog's `disk_path` of it, which `video_player` opens and hands over open. Only the GUI thread touches it.
 
-pub(crate) mod state;
-
 use crate::bridges::video_player_bridge::ffi::VideoPlayer;
+use crate::bridges::video_source_state::VideoSourceRust;
 use crate::rows::file_id_of;
 use crate::video_player;
-use state::VideoSourceRust;
 
 use crate::bridges::video_source_bridge::qobject;
 

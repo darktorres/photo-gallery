@@ -18,18 +18,16 @@ mod items;
 mod model;
 mod nav;
 mod roles;
-pub(crate) mod state;
-
 use crate::bridges::gallery_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 
+use crate::bridges::gallery_state::DetailsDelivery;
 use cxx_qt::{CxxQtThread, CxxQtType, Threading};
 use pg_model::details::Details;
 use pg_model::ids::FileId;
-use state::DetailsDelivery;
 
 thread_local! {
     /// The model's thread handle, kept at `register`. Only the GUI thread touches it.

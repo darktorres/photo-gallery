@@ -6,8 +6,6 @@
 //! their sequences from here) and the modal panels' kinds (`Kind` in PanelKind.qml). The map and the hint lines are
 //! pg-client's.
 
-pub(crate) mod state;
-
 use crate::bridges::keymap_bridge::qobject;
 
 use cxx_qt_lib::QString;

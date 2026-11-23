@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::failed_files`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::failed_files::state::FailedFilesRust;
+use crate::bridges::failed_files_state::FailedFilesRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::animation`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::animation::state::AnimationPlayerRust;
+use crate::bridges::animation_state::AnimationPlayerRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

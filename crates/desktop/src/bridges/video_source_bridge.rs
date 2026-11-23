@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::video_source`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::video_source::state::VideoSourceRust;
+use crate::bridges::video_source_state::VideoSourceRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

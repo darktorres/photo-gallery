@@ -2,8 +2,6 @@
 //! front end's own literals (the labels and tooltips, by their `ui.ftl` id). One object per component that needs them,
 //! made inside it (as the other facades are).
 
-pub(crate) mod state;
-
 use crate::bridges::words_bridge::qobject;
 
 use cxx_qt_lib::QString;

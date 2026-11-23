@@ -58,8 +58,8 @@
 //! | `controller.rs` `Core` (3) | `record`, warning | `PG_RECORD` couldn't be written | log |
 //! | `pg_app` `yandex::Yandex::new` (from `--yandex-fixture`) | `yandex`, info | A recording answers the searches | log |
 //! | `pg_app` `App::stop` | `yandex`, warning | A search, a save or a fetch still ran at the stop | log |
-//! | `gallery/state.rs` `read_details` | `gallery`, warning | A file's row couldn't be read | `RowReadFailed` |
-//! | `gallery/state.rs` `fresh_entry` | `gallery`, warning | A file's row couldn't be read again | `ReloadFailed` |
+//! | `bridges/gallery_state.rs` `read_details` | `gallery`, warning | A file's row couldn't be read | `RowReadFailed` |
+//! | `bridges/gallery_state.rs` `fresh_entry` | `gallery`, warning | A file's row couldn't be read again | `ReloadFailed` |
 //! | `gallery/model.rs` `open_listing` | `gallery`, warning | The list couldn't be read | `ListingFailed` |
 //! | `gallery/edits.rs` `rotate`, `set_rating`, `set_border_marked` | `edit`, warning | An edit couldn't be saved | `EditFailed` |
 //! | `filters.rs` `count_facets` | `filters`, warning | The filter bar's counts couldn't be read | `FacetsFailed` |
@@ -80,8 +80,6 @@
 //!
 //! The writer's failures (`write-failed`, `write-stopped`) and a dropped edit (`write-dropped`, an event: a lost edit is a
 //! fact, not a condition) are posted by `pg_writeback` and `pg_app::Library`; the window's `refresh_writes` only shows the writer's status.
-
-pub(crate) mod state;
 
 use crate::bridges::notices_bridge::qobject;
 use crate::rows::qt_int;

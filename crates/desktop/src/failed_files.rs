@@ -5,8 +5,6 @@
 //! delivered, and shows the read's error when it fails. The listing has only the entries; the counts of the one shown
 //! come with its read.
 
-pub(crate) mod state;
-
 use crate::bridges::failed_files_bridge::qobject;
 
 use core::pin::Pin;
@@ -17,9 +15,9 @@ use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QStri
 use pg_app::{Failed, FailedItems};
 use pg_model::rules::Path as RulePath;
 
+use crate::bridges::failed_files_state::Shown;
 use crate::rows::qt_int;
 use crate::{app, ledgers};
-use state::Shown;
 
 /// The most rows an entry lists.
 const SHOWN: usize = 200;

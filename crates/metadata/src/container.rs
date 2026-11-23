@@ -12,25 +12,11 @@ use pg_container::{
 };
 use pg_model::format::Format;
 
-use crate::xmp::{MetaScratch, NS_XMP, Packet};
+use crate::xmp::{MetaScratch, Packet};
 
 /// The XMP namespace as the NUL-terminated bytes a JPEG's APP1 packet begins with: the one URI (`NS_XMP`), with its NUL.
-pub(crate) const JPEG_XMP: &[u8] = &nul_terminated::<{ NS_XMP.len() + 1 }>(NS_XMP);
-
-#[expect(
-    clippy::indexing_slicing,
-    reason = "a const fn cannot use iterators; both indexes are below the lengths the loop checks, and N is the text's length plus one"
-)]
-const fn nul_terminated<const N: usize>(text: &str) -> [u8; N] {
-    let text = text.as_bytes();
-    let mut out = [0u8; N];
-    let mut i = 0;
-    while i < text.len() {
-        out[i] = text[i];
-        i += 1;
-    }
-    out
-}
+/// A test holds the literal equal to `NS_XMP` with its NUL.
+pub(crate) const JPEG_XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
 
 /// Where a file's container keeps the metadata the import reads, found in one walk of it. Its XMP packets, main one
 /// first, are in [`MetaScratch::packets`]: in the file, but for a reassembled extended JPEG packet and a compressed
@@ -230,8 +216,16 @@ fn gif_xmp(bytes: &[u8], range: Range<usize>) -> Option<&[u8]> {
 mod tests {
     use super::*;
     use crate::test_support::png_chunk;
+    use crate::xmp::NS_XMP;
     use pg_container::JPEG_XMP_EXTENSION;
     use pg_testrng::Rng;
+
+    #[test]
+    fn jpeg_xmp_is_the_namespace_with_its_nul() {
+        let mut want = NS_XMP.as_bytes().to_vec();
+        want.push(0);
+        assert_eq!(JPEG_XMP, want.as_slice());
+    }
 
     // Extended packets are reassembled as the map of maps did it (the first chunk's length, the last chunk at an
     // offset, contiguous from 0, by GUID): random chunk lists of up to 3 packets, chunks shuffled, repeated with other

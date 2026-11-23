@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::folders`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::folders::state::FolderRust;
+use crate::bridges::folders_state::FolderRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

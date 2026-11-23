@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::lane_model`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::lane_model::state::LaneRust;
+use crate::bridges::lane_model_state::LaneRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

@@ -6,10 +6,6 @@ use pg_client::layout::Frame;
 use pg_client::results::Results;
 
 #[derive(Default)]
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct YandexSearchRust {
     pub(crate) busy: bool,
     pub(crate) status: QString,
@@ -33,9 +29,9 @@ pub struct YandexSearchRust {
     pub(crate) other_height: f64,
     pub(crate) similar_height: f64,
     /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
-    pub(super) pump: bool,
+    pub(crate) pump: bool,
     /// The other sizes, then the similar images, as the latest search found them, and their picks.
-    pub(super) results: Results<Hit>,
+    pub(crate) results: Results<Hit>,
     /// Each result's frame in the panel's layout (`relayout`), by its index in `results`.
-    pub(super) frames: Vec<Frame>,
+    pub(crate) frames: Vec<Frame>,
 }

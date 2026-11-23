@@ -3,8 +3,6 @@
 //! changes and saves it. These properties hold no copy: each reads the preferences as they are and writes through them.
 //! Nothing goes to the registry or `%LOCALAPPDATA%`, and nothing of ours is kept on C:.
 
-pub(crate) mod state;
-
 use crate::bridges::settings_bridge::qobject;
 
 use core::pin::Pin;

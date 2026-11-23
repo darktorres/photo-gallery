@@ -4,12 +4,13 @@
 mod alert;
 mod animation;
 mod app;
-// The cxx-qt and cxx bridges, one module: cxx-qt-build takes one directory per QML module (src/bridges/). Its generated
-// code writes `unsafe` and `pub` on every item; the bridges are not reachable from the crate root.
+// The cxx-qt and cxx bridges and the state they hold, one module: cxx-qt-build takes one directory per QML module
+// (src/bridges/). Its generated code writes `unsafe` and `pub` on every item, and the state structs are `pub` because
+// that code names them (E0446); none of it is reachable from the crate root.
 #[expect(unsafe_code, reason = "cxx-qt generates the unsafe FFI glue of each bridge")]
 #[expect(
     unreachable_pub,
-    reason = "cxx and cxx-qt write `pub` on every item they generate; the bridges are not reachable from the crate root"
+    reason = "cxx and cxx-qt write `pub` on the items they generate, and the state structs they name are `pub` (E0446)"
 )]
 mod bridges;
 mod command_line;

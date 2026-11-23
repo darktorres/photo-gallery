@@ -3,22 +3,18 @@
 use cxx_qt_lib::QString;
 use std::collections::VecDeque;
 
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct LogRust {
     pub(crate) ready: bool,
     /// The records shown, oldest first: at most `pg_log::RING_RECORDS`.
-    pub(super) rows: VecDeque<pg_log::Record>,
+    pub(crate) rows: VecDeque<pg_log::Record>,
     /// The number (the `seq` role) of the first row: how many rows were trimmed from the front since the records were
     /// read. Row `i` is number `first + i`.
-    pub(super) first: u64,
+    pub(crate) first: u64,
     /// `start` ran: the feed is followed.
-    pub(super) started: bool,
+    pub(crate) started: bool,
     /// The selected row's number (`seq`), `None` when no row is selected. The selection follows its number as the rows
     /// before it are trimmed, and is cleared when the view is read again.
-    pub(super) selected: Option<u64>,
+    pub(crate) selected: Option<u64>,
     /// The selection as the panel reads it: its row (-1 for none), its number (-1 for none), and its text (the message,
     /// with the detail below it when there is one).
     pub(crate) selected_row: i32,

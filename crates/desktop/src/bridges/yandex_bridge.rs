@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::yandex`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::yandex::state::YandexSearchRust;
+use crate::bridges::yandex_state::YandexSearchRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

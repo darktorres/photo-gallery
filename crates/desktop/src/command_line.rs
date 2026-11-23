@@ -8,8 +8,6 @@
 //! object's typed properties (`command_line_bridge.rs`). The path options (`--screenshot`, `--log-view`, …) are read
 //! exactly as the system gave them ([`path`]), since a path need not be text.
 
-pub(crate) mod state;
-
 use crate::command_line_bridge::qobject;
 
 use std::ffi::OsString;

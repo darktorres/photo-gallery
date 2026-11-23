@@ -5,8 +5,6 @@
 //! in meanwhile, each kind once. The Qt thread reads the new state and updates the properties and emits `scanned`,
 //! `imported` and `filesChanged`. QML doesn't poll.
 
-pub(crate) mod state;
-
 use crate::bridges::library_bridge::qobject;
 
 use core::pin::Pin;
@@ -25,8 +23,8 @@ use pg_model::write::WriteError;
 use pg_wording::Message;
 
 use crate::app;
+use crate::bridges::picker_state::Purpose;
 use crate::picker;
-use crate::picker::state::Purpose;
 use crate::pump::Pending;
 
 /// The library, once `start` has started it: what the change pump, the folder operations and the lane rows read.

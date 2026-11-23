@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::log_model`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::log_model::state::LogRust;
+use crate::bridges::log_model_state::LogRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

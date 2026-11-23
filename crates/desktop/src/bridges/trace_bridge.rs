@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::trace`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::trace::state::StagesRust;
+use crate::bridges::trace_state::StagesRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

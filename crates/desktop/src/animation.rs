@@ -2,8 +2,6 @@
 //! videos (same fit and turns) while looping as they should (the animation decoder's own notes say why not Qt's player). The
 //! loop itself is `pg_render::player`'s; this file is the Qt side: the source and the sink. The sink's FFI and the
 //! thread-safety of its calls are `frame_sink`'s.
-
-pub(crate) mod state;
 use crate::frame_sink::Frames;
 
 use crate::bridges::animation_bridge::qobject;

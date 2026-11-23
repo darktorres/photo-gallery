@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::settings`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::settings::state::SettingsRust;
+use crate::bridges::settings_state::SettingsRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

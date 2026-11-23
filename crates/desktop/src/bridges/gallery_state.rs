@@ -18,10 +18,6 @@ use pg_model::notice::{Notice, Op};
 pub(crate) type DetailsDelivery = Arc<dyn Fn(u64, FileId, Option<Details>) + Send + Sync>;
 
 /// The model's properties, the list and the details read last.
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct GalleryRust {
     pub(crate) count: i32,
     pub(crate) revision: i32,
@@ -41,7 +37,7 @@ pub struct GalleryRust {
     pub(crate) viewed_full_width: i32,
     pub(crate) viewed_full_height: i32,
     /// `viewedKind`'s value, as the domain's type: the bridge's `MediaKind` is read from it (`read_viewed_kind`).
-    pub(super) viewed_kind: MediaType,
+    pub(crate) viewed_kind: MediaType,
     pub(crate) viewed_player_turns: i32,
     pub(crate) viewed_file_id: i64,
     pub(crate) viewed_full_url: QString,
@@ -56,18 +52,18 @@ pub struct GalleryRust {
     pub(crate) viewed_rejected_right: f64,
     pub(crate) viewed_border_marked: bool,
     /// The list, its rows and the list session (`pg_client::grid`).
-    pub(super) grid: Grid,
+    pub(crate) grid: Grid,
     /// The details read last, of at most two files (the selection's and the viewer's), newest first, each as the
     /// catalog had it (`None`: the file is gone). Read off the window's thread (`read_details`). Emptied whenever a
     /// list is shown or a file changes.
-    pub(super) details: Vec<(FileId, Option<Details>)>,
+    pub(crate) details: Vec<(FileId, Option<Details>)>,
     /// Counts the emptyings of `details`: a read asked for before the last one is dropped when it comes in.
-    pub(super) details_generation: u64,
+    pub(crate) details_generation: u64,
     /// Where a details read's answer goes; set when the model is made. A read asked before it is set is not carried out.
     pub(crate) details_delivery: Option<DetailsDelivery>,
     /// The border marks written off the window's thread and not yet shown, per file: the marks the writes still to be
     /// made set, in the order they were asked for (`set_border_marked`).
-    pub(super) mark_writes: BTreeMap<FileId, VecDeque<bool>>,
+    pub(crate) mark_writes: BTreeMap<FileId, VecDeque<bool>>,
 }
 
 impl Default for GalleryRust {
@@ -111,24 +107,24 @@ impl Default for GalleryRust {
 
 impl GalleryRust {
     /// The entry of an item as QML numbers it (`None` for -1, or past the list).
-    pub(super) fn entry(&self, item: i32) -> Option<&Entry> {
+    pub(crate) fn entry(&self, item: i32) -> Option<&Entry> {
         crate::rows::row_of(item).and_then(|i| self.grid.item(i))
     }
 
     /// The file of an item as QML numbers it (`None` for -1, or past the list).
-    pub(super) fn file_at(&self, item: i32) -> Option<FileId> {
+    pub(crate) fn file_at(&self, item: i32) -> Option<FileId> {
         self.entry(item).map(|e| e.id)
     }
 
     /// The file the window shows: the viewer's while it is open, else the selection's (`None` for neither).
-    pub(super) fn shown_file(&self) -> Option<FileId> {
+    pub(crate) fn shown_file(&self) -> Option<FileId> {
         self.file_at(if self.viewing >= 0 { self.viewing } else { self.current })
     }
 
     /// `f` of an item's entry and details; `None` without the item, when its file is gone from the catalog, or while
     /// its details are being read: a read is asked for on a miss, and the model shows the details once they come in
     /// (`details_read`).
-    pub(super) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
+    pub(crate) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
         let e = self.entry(item)?;
         match self.details.iter().find(|(id, _)| *id == e.id) {
             Some((_, Some(details))) => Some(f(e, details)),
@@ -159,24 +155,24 @@ impl GalleryRust {
     }
 
     /// A file changed, or a list is shown: what was read of it may be stale.
-    pub(super) fn forget_details(&mut self) {
+    pub(crate) fn forget_details(&mut self) {
         self.details.clear();
         self.details_generation += 1;
     }
 
     /// The mark an item's borders will have once the border marks asked for are written: the last one asked for, else
     /// the mark its borders have now (`borders`).
-    pub(super) fn mark_target(&self, file: FileId, borders: Borders) -> bool {
+    pub(crate) fn mark_target(&self, file: FileId, borders: Borders) -> bool {
         self.mark_writes.get(&file).and_then(|queue| queue.back().copied()).unwrap_or(borders == Borders::Marked)
     }
 
     /// A border mark is asked for: its write is queued (`mark_target` then reads it).
-    pub(super) fn queue_mark(&mut self, file: FileId, marked: bool) {
+    pub(crate) fn queue_mark(&mut self, file: FileId, marked: bool) {
         self.mark_writes.entry(file).or_default().push_back(marked);
     }
 
     /// A queued border mark's write is done, written or not: the first one asked for of the file is no longer waiting.
-    pub(super) fn mark_done(&mut self, file: FileId) {
+    pub(crate) fn mark_done(&mut self, file: FileId) {
         let empty = match self.mark_writes.get_mut(&file) {
             Some(queue) => {
                 queue.pop_front();
@@ -191,7 +187,7 @@ impl GalleryRust {
 }
 
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the inbox says why).
-pub(super) fn fresh_entry(id: FileId) -> Option<Entry> {
+pub(crate) fn fresh_entry(id: FileId) -> Option<Entry> {
     crate::app::observe(Op::Reload, crate::app::get().reading().entry(id), |e| Notice::ReloadFailed {
         error: crate::app::error_text(&format!("{e:#}")),
     })

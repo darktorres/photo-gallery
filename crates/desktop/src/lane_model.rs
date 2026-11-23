@@ -8,10 +8,8 @@
 //!
 //! With `--lane-rows=<file>` (the screenshots' fixed lanes) the rows come from the file, through the same `rows_of`, and
 //! the library is not asked.
-
-pub(crate) mod state;
 // The row types live with the model's state (which the bridge names): the module doesn't need this one back.
-pub(crate) use state::{LaneRow, RowKey};
+pub(crate) use crate::bridges::lane_model_state::{LaneRow, RowKey};
 
 use crate::bridges::lane_model_bridge::qobject;
 

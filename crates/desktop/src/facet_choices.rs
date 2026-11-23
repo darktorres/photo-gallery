@@ -4,9 +4,7 @@
 //! QML names), which `pg_client::facets::choices` turns into the rows. The query and the counts are both read from
 //! `controller.rs` (the counts as `Filters` last set them): `refresh` rebuilds the rows, and the filter bar calls it when
 //! the query or the counts change.
-
-pub(crate) mod state;
-use state::Row;
+use crate::bridges::facet_choices_state::Row;
 
 use crate::bridges::facet_choices_bridge::qobject::{self, ChoiceFacet};
 

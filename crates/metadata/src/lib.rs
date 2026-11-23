@@ -74,11 +74,7 @@ impl Meta {
             };
             let Some(packet) = packet else { continue };
             let found = xmp_properties(packet, XMP_WANTED, xml, values);
-            #[expect(
-                clippy::string_slice,
-                reason = "each range is a whole string pushed into `values`: a char boundary"
-            )]
-            let [rating, ms, original, created, create] = found.map(|v| v.map(|r| &values[r]));
+            let [rating, ms, original, created, create] = found.map(|v| v.and_then(|r| values.get(r)));
             let number = |v: Option<&str>| v.and_then(|v| v.parse::<f64>().ok());
             xmp_rating = xmp_rating.or_else(|| number(rating).and_then(xmp_value));
             microsoft = microsoft.or_else(|| number(ms).map(percent));

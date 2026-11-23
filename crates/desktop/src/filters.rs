@@ -3,9 +3,7 @@
 //! (`browse::read::facets`). The query is the listing's (`controller.rs`): this object edits it and shows its properties,
 //! and the list facets' rows are `FacetChoices` (facet_choices.rs), which read the query and the counts directly. FilterBar.qml
 //! makes one and is the only QML that calls into it.
-
-pub(crate) mod state;
-use state::FiltersRust;
+use crate::bridges::filters_state::FiltersRust;
 
 use crate::bridges::filters_bridge::qobject::{self, ListFacetKind};
 

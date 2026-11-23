@@ -3,10 +3,6 @@
 use cxx_qt_lib::QString;
 use pg_model::facets::Facets;
 
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct FiltersRust {
     pub(crate) active: i32,
     pub(crate) name: QString,
@@ -15,9 +11,9 @@ pub struct FiltersRust {
     pub(crate) total: i32,
     pub(crate) matching: i32,
     pub(crate) description: QString,
-    pub(super) facets: Facets,
+    pub(crate) facets: Facets,
     /// The latest counts asked for; older ones arriving are dropped.
-    pub(super) generation: u64,
+    pub(crate) generation: u64,
     /// The filter bar is open (the window reports it): the counts are kept while it is.
     pub(crate) bar_open: bool,
 }

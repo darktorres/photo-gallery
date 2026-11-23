@@ -18,7 +18,7 @@ use super::roles::{
     ROLE_CONTENT_Y, ROLE_COUNT, ROLE_FIRST, ROLE_HEIGHT, ROLE_IDS, ROLE_IMAGE_ASPECTS, ROLE_NAMES, ROLE_RATINGS,
     ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS, row_change_roles,
 };
-use super::state::fresh_entry;
+use crate::bridges::gallery_state::fresh_entry;
 use crate::rows::qt_int;
 
 impl qobject::GalleryModel {

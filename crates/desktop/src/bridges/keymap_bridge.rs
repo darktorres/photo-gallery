@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::keymap`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::keymap::state::KeyMapRust;
+use crate::bridges::keymap_state::KeyMapRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

@@ -7,9 +7,7 @@
 //! The preview shows one result (`previewItem`): its URL, size and pick are properties, set whenever the item or its
 //! pick changes. The words the panel shows are `pg_wording`'s (and the QML's own), from the outcomes the app
 //! returns as data (`pg_model::yandex`).
-
-pub(crate) mod state;
-use state::YandexSearchRust;
+use crate::bridges::yandex_state::YandexSearchRust;
 
 use crate::bridges::yandex_bridge::qobject;
 
@@ -453,7 +451,7 @@ impl qobject::YandexSearch {
     }
 
     pub(crate) fn download_picked(mut self: Pin<&mut Self>) {
-        let Some(folder) = crate::picker::take(crate::picker::state::Purpose::YandexSave) else {
+        let Some(folder) = crate::picker::take(crate::bridges::picker_state::Purpose::YandexSave) else {
             self.as_mut().set_status(QString::from(&render(&Message::YandexNoFolder)));
             return;
         };

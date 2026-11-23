@@ -3,7 +3,7 @@
 //! TestHooks.qml still reads, each typed as its option is (the "not given" values are documented on the reader). The
 //! other hooks are run in Rust (`test_hooks`).
 
-use crate::command_line::state::CommandLineRust;
+use crate::bridges::command_line_state::CommandLineRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

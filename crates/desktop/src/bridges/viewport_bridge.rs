@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::viewport`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::viewport::state::ViewportRust;
+use crate::bridges::viewport_state::ViewportRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

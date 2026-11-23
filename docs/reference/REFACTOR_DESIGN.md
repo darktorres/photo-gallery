@@ -56,7 +56,7 @@ The decisions from the old file, each with its status.
 - `Tree::{find, reveal}`: `crates/client/src/tree.rs`. (`row_of_path` does not exist.)
 - `pg_app::store::JsonStore<T>`: `crates/app/src/store.rs`.
 - `pg_app::yandex::{Source, replay}`: the Yandex source seam and the offline replay, `crates/app/src/yandex/`.
-- `pg_client::viewport`: `crates/client/src/viewport.rs`. (The desktop's `ViewportRust` is `crates/desktop/src/viewport/state.rs`.)
+- `pg_client::viewport`: `crates/client/src/viewport.rs`. (The desktop's `ViewportRust` is `crates/desktop/src/bridges/viewport_state.rs`.)
 - `pg_testkit`: `crates/testkit/src/lib.rs`.
 - `PG_CATALOG_DIR` and `PG_PREFS`: `crates/app/src/config.rs`, `crates/cli/src/args.rs`.
 - `catalog::rebuild`: `crates/catalog/src/rebuild.rs` (`pub(crate)`; there is no CLI command).

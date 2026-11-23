@@ -18,7 +18,7 @@ pub(crate) enum Purpose {
 }
 
 impl Purpose {
-    pub(super) fn code(self) -> i32 {
+    pub(crate) fn code(self) -> i32 {
         match self {
             Purpose::AddFolder => 0,
             Purpose::SaveCrops => 1,
@@ -26,28 +26,24 @@ impl Purpose {
         }
     }
 
-    pub(super) fn from_code(code: i32) -> Option<Purpose> {
+    pub(crate) fn from_code(code: i32) -> Option<Purpose> {
         [Purpose::AddFolder, Purpose::SaveCrops, Purpose::YandexSave].into_iter().find(|p| p.code() == code)
     }
 }
 
 /// The app's dialog: the purpose, the folder it is in, and the folders in it, in order.
-pub(super) struct Listing {
-    pub(super) purpose: Purpose,
-    pub(super) here: PathBuf,
-    pub(super) folders: Vec<PathBuf>,
+pub(crate) struct Listing {
+    pub(crate) purpose: Purpose,
+    pub(crate) here: PathBuf,
+    pub(crate) folders: Vec<PathBuf>,
 }
 
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct PickerRust {
     pub(crate) native: bool,
     pub(crate) names: QStringList,
     pub(crate) here: QString,
     /// The app's dialog while it is open: this picker's own (each `FolderPicker` lists apart).
-    pub(super) listing: Option<Listing>,
+    pub(crate) listing: Option<Listing>,
 }
 
 #[cfg(test)]

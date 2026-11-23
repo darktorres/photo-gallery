@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::shell`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::shell::state::ShellRust;
+use crate::bridges::shell_state::ShellRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

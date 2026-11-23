@@ -4,10 +4,6 @@
 use cxx_qt_lib::QString;
 use pg_model::inbox::InboxEntry;
 
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct NoticesRust {
     pub(crate) unread: i32,
     pub(crate) passes: i32,
@@ -15,13 +11,13 @@ pub struct NoticesRust {
     pub(crate) toast_level: i32,
     /// The entries shown, newest first, as the inbox last listed them (less those dismissed since), with the marks made
     /// here since.
-    pub(super) rows: Vec<InboxEntry>,
+    pub(crate) rows: Vec<InboxEntry>,
     /// `start` ran: the inbox is followed.
-    pub(super) started: bool,
+    pub(crate) started: bool,
     /// The inbox panel is open: the inbox reads the ledgers' counts (`Inbox::set_viewing`).
-    pub(super) viewing: bool,
+    pub(crate) viewing: bool,
     /// The panel is open and the window active: what is shown is read by the user, so it is marked read as it is shown.
-    pub(super) marking: bool,
+    pub(crate) marking: bool,
     /// The selected entry's key (its `key` role), empty when no entry is selected. The selection is held by key, so it
     /// follows its entry as the rows move.
     pub(crate) selected_key: QString,
@@ -36,7 +32,7 @@ pub struct NoticesRust {
     pub(crate) selected_can_retry: bool,
     pub(crate) selected_can_show_files: bool,
     /// The (key, serial) of the failed-file list last asked for, so it is asked once per entry and failure.
-    pub(super) requested: (QString, f64),
+    pub(crate) requested: (QString, f64),
 }
 
 impl Default for NoticesRust {

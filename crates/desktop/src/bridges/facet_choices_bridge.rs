@@ -1,7 +1,7 @@
 //! The cxx-qt bridge of [`crate::facet_choices`]: the declarations alone, so that the allow the macro's output needs is
 //! on the `bridges` module (`lib.rs`), not on anything written here.
 
-use crate::facet_choices::state::FacetChoicesRust;
+use crate::bridges::facet_choices_state::FacetChoicesRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {

@@ -1,9 +1,7 @@
 //! The viewer's view of the image it shows (`pg_client::viewport`): fitted to the window or zoomed, panned, and the
 //! region rendered for a zoomed view. QML keeps the gestures, the keys and the signals; the numbers, the clamping and
 //! the image URLs are here. Each change is pushed back as the properties the QML binds to.
-
-pub(crate) mod state;
-use state::ViewportRust;
+use crate::bridges::viewport_state::ViewportRust;
 
 use crate::bridges::viewport_bridge::qobject;
 

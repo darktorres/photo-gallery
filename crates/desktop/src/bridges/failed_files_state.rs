@@ -11,18 +11,14 @@ pub(crate) enum Shown {
 }
 
 #[derive(Default)]
-#[expect(
-    unreachable_pub,
-    reason = "the bridge's generated code names it in a public interface (E0446), so it is `pub`"
-)]
 pub struct FailedFilesRust {
     pub(crate) total: i32,
     pub(crate) loading: bool,
     pub(crate) error: QString,
     /// The ledger shown (`show`), `None` for none.
-    pub(super) kind: Option<LedgerKind>,
+    pub(crate) kind: Option<LedgerKind>,
     /// The rows shown, newest first (a pass's files) or by library folder (the scans' folders).
-    pub(super) rows: Vec<Shown>,
+    pub(crate) rows: Vec<Shown>,
     /// The number of the last `show`: a delivery for an earlier one is dropped.
-    pub(super) asked: u64,
+    pub(crate) asked: u64,
 }

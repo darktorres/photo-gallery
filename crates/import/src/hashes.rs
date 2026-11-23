@@ -53,7 +53,7 @@ pub fn hash(
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Hashes, u64::try_from(items.len()).unwrap_or(u64::MAX));
     let (state, result) = pipeline::batched(
-        items,
+        pipeline::Pass { items, opts, ctl },
         |item, wide| {
             if item.kind == Kind::Video {
                 // A video is read by FFmpeg, from its path, and streamed for its hash: its size is counted as read.
@@ -63,8 +63,6 @@ pub fn hash(
             pg_platform::names::set_file(wide, folder, name);
             Read::File
         },
-        opts,
-        ctl,
         || Analyzer::new().map_err(Error::Analysis),
         |analyzer, i, bytes| {
             let item = items.get(i).ok_or(Error::Invalid("no file to hash at this index"))?;

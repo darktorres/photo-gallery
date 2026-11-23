@@ -78,13 +78,11 @@ pub(crate) fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Contro
     // The phase ends when this is dropped: after the pass, or on its error.
     let phase = ctl.begin(Phase::Borders, u64::try_from(files.len()).unwrap_or(u64::MAX));
     pipeline::run(
-        &files,
+        pipeline::Pass { items: &files, opts, ctl },
         |file, wide| {
             set_os_str(wide, file.as_os_str());
             Read::File
         },
-        opts,
-        ctl,
         || Analyzer::new().map_err(|e| Failed::other(pg_model::error::chain(&e))),
         |analyzer, _, bytes| {
             analyzer.borders(bytes, Turns::NONE).map_err(|e| Failed::other(pg_model::error::chain(&e)))

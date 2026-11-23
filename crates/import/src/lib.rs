@@ -133,7 +133,7 @@ pub fn import_while(
     let _phase = ctl.begin(Phase::Import, u64::try_from(items.len()).unwrap_or(u64::MAX));
 
     let (state, result) = pipeline::batched(
-        items,
+        pipeline::Pass { items, opts, ctl },
         |item, wide| {
             if item.kind == Kind::Video {
                 // A video is read by FFmpeg, from its path: its size is counted as read.
@@ -150,8 +150,6 @@ pub fn import_while(
             }
             Read::File
         },
-        opts,
-        ctl,
         || Analyzer::new().map_err(Error::Analysis),
         |analyzer, i, bytes| {
             let item = items.get(i).ok_or(Error::Invalid("no file to import at this index"))?;

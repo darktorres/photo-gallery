@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use pg_analysis::analyze::{self, Analyzer};
 use pg_analysis::pdq;
-use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::decode::{Decoder, MinSize, Request};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
@@ -41,7 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let meta = Meta::read(b, format, &mut meta_scratch);
         t[1] += s.elapsed();
         let s = Instant::now();
-        dec.decode_into(b, format, meta.orientation, MinSize::Sides(512, 320), Turns::NONE, &mut image, &mut spare)?;
+        let request = Request { format, exif: meta.orientation, min: MinSize::Sides(512, 320), turns: Turns::NONE };
+        dec.decode_into(b, request, &mut image, &mut spare)?;
         t[2] += s.elapsed();
         let s = Instant::now();
         analyze::pixel_hash(&image)?;

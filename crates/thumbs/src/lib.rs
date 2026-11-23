@@ -408,7 +408,7 @@ pub fn run_while(
     };
 
     let (writing, ran) = pipeline::batched(
-        items,
+        pipeline::Pass { items, opts, ctl },
         |item, wide| {
             // A video's poster frame is read by FFmpeg, from its path: a part of the file, not counted as read.
             if item.poster_ms.is_some() {
@@ -418,8 +418,6 @@ pub fn run_while(
             pg_platform::names::set_file(wide, folder, name);
             Read::File
         },
-        opts,
-        ctl,
         || Maker::new().map_err(Error::Render),
         |maker, i, bytes| {
             let item = items.get(i).ok_or(Error::Invalid("a thumbnail to make for no work item"))?;

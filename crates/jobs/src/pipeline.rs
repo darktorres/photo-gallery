@@ -193,6 +193,16 @@ impl Timing {
     }
 }
 
+/// What a per-file pass runs over and under: its items, its options and its control. [`run`] and [`batched`] take one.
+pub struct Pass<'a, T> {
+    /// What the pass runs over: item `i` is read, processed and sunk by its index.
+    pub items: &'a [T],
+    /// The pass's readers, workers, buffers and priority.
+    pub opts: &'a Options,
+    /// The pass's pause, stop and progress.
+    pub ctl: &'a Control,
+}
+
 /// Read each item's file, run `process(state, i, bytes)` (with per-worker state from `init`), and call
 /// `sink(i, result, bytes read)` in completion order. `sink` returning false ends the pass at once. A stop request on
 /// `ctl` ends the reading, and the pass ends once the results of the items in flight are sunk: the items not yet started
@@ -206,10 +216,8 @@ impl Timing {
 /// fails the pass, as does a pass that ends with items sent to the workers and no result for them. An error of `init`,
 /// `process` or `sink` converts into a [`Failed`] where it is returned.
 pub fn run<T, S, R, I, P>(
-    items: &[T],
+    pass: Pass<'_, T>,
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
-    opts: &Options,
-    ctl: &Control,
     init: impl Fn() -> Result<S, I> + Sync,
     process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
     sink: impl FnMut(usize, Result<R, Failed>, usize) -> Result<bool, Failed>,
@@ -220,21 +228,19 @@ where
     I: Into<Failed>,
     P: Into<Failed>,
 {
+    let Pass { items, opts, ctl } = pass;
     let timing = Timing::default();
     let started = Instant::now();
     let paused_before = ctl.paused_total();
-    let result = run_timed(items, read, opts, ctl, init, process, sink, &timing);
+    let result = run_timed(Pass { items, opts, ctl }, read, init, process, sink, &timing);
     timing.report(items.len(), started.elapsed(), ctl.paused_total().saturating_sub(paused_before), opts, false);
     result
 }
 
 /// [`run`], keeping each stage's time in `timing`.
-#[expect(clippy::too_many_arguments, reason = "run's parts, and the timing its stages keep")]
 fn run_timed<T, S, R, I, P>(
-    items: &[T],
+    pass: Pass<'_, T>,
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
-    opts: &Options,
-    ctl: &Control,
     init: impl Fn() -> Result<S, I> + Sync,
     process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
     mut sink: impl FnMut(usize, Result<R, Failed>, usize) -> Result<bool, Failed>,
@@ -246,6 +252,7 @@ where
     I: Into<Failed>,
     P: Into<Failed>,
 {
+    let Pass { items, opts, ctl } = pass;
     let next = AtomicUsize::new(0);
     // The items the readers handed to the workers, to check that each came back with a result. The counters and the
     // stop flag here are SeqCst: each is set by one thread and read by another (or after the scope joins), so the
@@ -431,15 +438,9 @@ pub struct Batch {
 /// results counted are written. An error or a panic of `flush` ends the pass, which loses what is queued and kept; so
 /// does an error of the pass itself. The writer's state comes back in any case, with the pass's result: a caller that
 /// has more to write (a ledger) writes it from the state.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the pass's parts: its items, how each is read, the options, the control, the worker's state, the batches, the writer's state and its flush"
-)]
 pub fn batched<T, S, R, W, I, P>(
-    items: &[T],
+    pass: Pass<'_, T>,
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
-    opts: &Options,
-    ctl: &Control,
     init: impl Fn() -> Result<S, I> + Sync,
     process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
     batch: Batch,
@@ -453,6 +454,7 @@ where
     I: Into<Failed>,
     P: Into<Failed>,
 {
+    let Pass { items, opts, ctl } = pass;
     let size = batch.size.max(1);
     // A rendezvous: the sink hands a batch over only to a writer that is waiting for one. The vectors the writer is done
     // with come back on the other channel, to be kept again.
@@ -501,10 +503,8 @@ where
         let mut kept: Vec<(usize, Result<R, Failed>)> = Vec::with_capacity(size);
         let mut since = Instant::now();
         let ran = run_timed(
-            items,
+            Pass { items, opts, ctl },
             read,
-            opts,
-            ctl,
             init,
             process,
             |i, result, len| -> Result<bool, Failed> {
@@ -1042,13 +1042,11 @@ mod tests {
         };
         let mut seen = vec![false; paths.len()];
         run(
-            &paths,
+            Pass { items: &paths, opts: &opts, ctl: &Control::new() },
             |p, wide| {
                 wide.set(&[&units(p)]);
                 Read::File
             },
-            &opts,
-            &Control::new(),
             || Ok::<(), Failed>(()),
             |_, i, bytes| {
                 std::thread::sleep(std::time::Duration::from_micros(200));
@@ -1104,14 +1102,12 @@ mod tests {
         let inits = AtomicUsize::new(0);
         let mut results = vec![None; items.len()];
         run(
-            &items,
+            Pass { items: &items, opts: &opts, ctl: &Control::new() },
             |(i, p), wide| {
                 assert!(!(in_read && *i == 3), "item 3 can't be read");
                 wide.set(&[&units(p)]);
                 Read::File
             },
-            &opts,
-            &Control::new(),
             || {
                 inits.fetch_add(1, Ordering::SeqCst);
                 Ok::<(), Failed>(())
@@ -1148,13 +1144,11 @@ mod tests {
         let ran = Mutex::new(Vec::new());
         let sunk = Mutex::new(Vec::new());
         run(
-            &items,
+            Pass { items: &items, opts: &opts, ctl: &ctl },
             |(_, p), wide| {
                 wide.set(&[&units(p)]);
                 Read::File
             },
-            &opts,
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| {
                 ran.lock().unwrap().push(i);
@@ -1195,13 +1189,11 @@ mod tests {
         };
         let calls = AtomicUsize::new(0);
         run(
-            &items,
+            Pass { items: &items, opts: &opts, ctl: &Control::new() },
             |(_, p), wide| {
                 wide.set(&[&units(p)]);
                 Read::File
             },
-            &opts,
-            &Control::new(),
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i),
             |_, _, _| {
@@ -1248,13 +1240,11 @@ mod tests {
                 priority: Priority::Normal,
             };
             let outcome = run(
-                &items,
+                Pass { items: &items, opts: &opts, ctl: &Control::new() },
                 |(_, p), wide| {
                     wide.set(&[&units(p)]);
                     Read::File
                 },
-                &opts,
-                &Control::new(),
                 || -> Result<(), Failed> { panic!("no state") },
                 |_, _, _| Ok::<(), Failed>(()),
                 |_, _, _| Ok(true),
@@ -1282,13 +1272,11 @@ mod tests {
             };
             let ctl = Control::new();
             let outcome = run(
-                &items,
+                Pass { items: &items, opts: &opts, ctl: &ctl },
                 |(_, p), wide| {
                     wide.set(&[&units(p)]);
                     Read::File
                 },
-                &opts,
-                &ctl,
                 || Ok::<(), Failed>(()),
                 |_, _, _| Ok::<(), Failed>(()),
                 |_, _, _| {
@@ -1352,7 +1340,7 @@ mod tests {
         };
         let mut lengths = vec![0; items.len()];
         run(
-            &items,
+            Pass { items: &items, opts: &opts, ctl: &Control::new() },
             |(_, p), wide| {
                 wide.set(&[&units(p)]);
                 Read::Gather {
@@ -1365,8 +1353,6 @@ mod tests {
                     },
                 }
             },
-            &opts,
-            &Control::new(),
             || Ok::<(), Failed>(()),
             |_, _, bytes| Ok::<usize, Failed>(bytes.len()),
             |i, out, _| {
@@ -1523,10 +1509,8 @@ mod batched_tests {
         let items: Vec<usize> = (0..1000).collect();
         let ctl = Control::new();
         let (written, result) = batched(
-            &items,
+            Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
-            &options(),
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i * 2),
             Batch { size: 100, every: None },
@@ -1549,10 +1533,8 @@ mod batched_tests {
         let items: Vec<usize> = (0..400).collect();
         let ctl = Control::new();
         let (_, result) = batched(
-            &items,
+            Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
-            &options(),
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
@@ -1580,10 +1562,8 @@ mod batched_tests {
         let ctl = Control::new();
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let (_, result) = batched(
-            &items,
+            Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
-            &options(),
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
@@ -1604,10 +1584,8 @@ mod batched_tests {
         let items: Vec<usize> = (0..1000).collect();
         let ctl = Control::new();
         let (written, result) = batched(
-            &items,
+            Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
-            &options(),
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
@@ -1630,10 +1608,8 @@ mod batched_tests {
         let items: Vec<usize> = (0..300).collect();
         let ctl = Control::new();
         let (_, result) = batched(
-            &items,
+            Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
-            &options(),
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 100, every: None },
@@ -1653,10 +1629,8 @@ mod batched_tests {
         let items: Vec<usize> = (0..2000).collect();
         let ctl = Control::new();
         let (largest, result) = batched(
-            &items,
+            Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
-            &options(),
-            &ctl,
             || Ok::<(), Failed>(()),
             |_, i, _| Ok::<_, Failed>(i),
             Batch { size: 50, every: None },

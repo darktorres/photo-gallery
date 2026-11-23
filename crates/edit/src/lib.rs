@@ -70,7 +70,7 @@ impl Error {
 /// display decode; and as it is stored, which is what a lossless crop cuts (the codec's own decode).
 #[cfg(test)]
 pub(crate) mod testing {
-    use pg_codec::decode::{Decoder, MinSize};
+    use pg_codec::decode::{Decoder, MinSize, Request};
     use pg_codec::pixels::Rgb;
     use pg_model::format::Format;
     use pg_model::turns::Turns;
@@ -89,7 +89,7 @@ pub(crate) mod testing {
         let exif = pg_metadata::orientation(bytes, format);
         Decoder::new()
             .unwrap()
-            .decode_stored_into(bytes, format, exif, MinSize::Full, Turns::NONE, &mut image)
+            .decode_stored_into(bytes, Request { format, exif, min: MinSize::Full, turns: Turns::NONE }, &mut image)
             .unwrap();
         (image.width, image.height, image.pixels)
     }

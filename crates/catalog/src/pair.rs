@@ -588,6 +588,15 @@ mod tests {
         crate::test_support::begin(c, &p(rules, r"D:\x"))
     }
 
+    /// The facts of one scanned file: its volume and file identity, its name, its size and its creation time.
+    struct Found<'a> {
+        volume: u64,
+        file: u64,
+        name: &'a str,
+        size: u64,
+        created: Option<i64>,
+    }
+
     /// The scanner finding a file in D:\x with this identity, name, size and creation time (mtime 100).
     fn found(
         c: &mut Catalog,
@@ -598,30 +607,21 @@ mod tests {
         size: u64,
         created: Option<i64>,
     ) -> Recorded {
-        found_in(c, scan, r"D:\x", volume, file, name, size, created)
+        found_in(c, scan, r"D:\x", Found { volume, file, name, size, created })
     }
 
     /// [`found`], in the folder `folder` of the root D:\x.
-    #[expect(clippy::too_many_arguments, reason = "a test helper: the facts of one scanned file")]
-    fn found_in(
-        c: &mut Catalog,
-        scan: ScanId,
-        folder: &str,
-        volume: u64,
-        file: u64,
-        name: &str,
-        size: u64,
-        created: Option<i64>,
-    ) -> Recorded {
+    fn found_in(c: &mut Catalog, scan: ScanId, folder: &str, what: Found<'_>) -> Recorded {
         let rules = c.rules();
-        let identity = FileIdentity::new(volume, file);
+        let identity = FileIdentity::new(what.volume, what.file);
         let prior = crate::test_support::listed(c, &p(rules, folder), &[identity]).remove(0);
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
         let folder = writer.folder(&p(rules, folder)).unwrap();
-        let ext = Ext::of_name(name).unwrap();
-        let name = Name::from(name);
-        let file = ScannedFile { identity, name: &name, ext, size, mtime: 100, created, prior };
+        let ext = Ext::of_name(what.name).unwrap();
+        let name = Name::from(what.name);
+        let file =
+            ScannedFile { identity, name: &name, ext, size: what.size, mtime: 100, created: what.created, prior };
         let recorded = writer.record_file(&folder, &file).unwrap();
         drop(writer);
         tx.commit().unwrap();
@@ -886,11 +886,16 @@ mod tests {
         let mut c = catalog(rules);
         // old.jpg in sub, a known file; new.jpg in sub, found by a scan that was stopped (still unpaired).
         let first = begin(&mut c);
-        found_in(&mut c, first, r"D:\x\sub", 1, 7, "old.jpg", 10, Some(5));
+        found_in(&mut c, first, r"D:\x\sub", Found { volume: 1, file: 7, name: "old.jpg", size: 10, created: Some(5) });
         pair(&mut c, first, true);
         let (old, _, _) = row(&c, "old.jpg");
         let stopped = begin(&mut c);
-        found_in(&mut c, stopped, r"D:\x\sub\deeper", 1, 8, "new.jpg", 10, Some(5));
+        found_in(
+            &mut c,
+            stopped,
+            r"D:\x\sub\deeper",
+            Found { volume: 1, file: 8, name: "new.jpg", size: 10, created: Some(5) },
+        );
         pair(&mut c, stopped, false);
         assert!(row(&c, "new.jpg").2);
 
@@ -908,7 +913,12 @@ mod tests {
         // Read again: the fresh row the scan sees there is cleared.
         let fourth = begin(&mut c);
         found(&mut c, fourth, 2, 7, "moved.jpg", 10, Some(5));
-        found_in(&mut c, fourth, r"D:\x\sub\deeper", 1, 8, "new.jpg", 10, Some(5));
+        found_in(
+            &mut c,
+            fourth,
+            r"D:\x\sub\deeper",
+            Found { volume: 1, file: 8, name: "new.jpg", size: 10, created: Some(5) },
+        );
         pair(&mut c, fourth, true);
         assert!(!row(&c, "new.jpg").2);
     }

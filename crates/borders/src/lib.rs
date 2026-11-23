@@ -168,14 +168,12 @@ pub fn find_while(
         Ok(())
     };
     let (state, result) = pipeline::batched(
-        items,
+        pipeline::Pass { items, opts, ctl },
         |item, wide| {
             let [folder, name] = work.parts(item.path);
             pg_platform::names::set_file(wide, folder, name);
             Read::File
         },
-        opts,
-        ctl,
         || Analyzer::new().map_err(Error::Analysis),
         |analyzer, i, bytes| {
             let item = items.get(i).ok_or(Error::Invalid("an item outside the pass"))?;

@@ -174,13 +174,11 @@ pub fn save_with(
     let mut done = vec![false; jobs.len()];
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
-        &jobs,
+        pipeline::Pass { items: &jobs, opts, ctl },
         |job, native| {
             set_path(native, paths.get(job.source.path));
             Read::File
         },
-        opts,
-        ctl,
         || Ok::<(), Error>(()),
         |_, i, bytes| {
             let job = jobs.get(i).ok_or_else(|| Error::Invalid("an item outside the pass".into()))?;
@@ -331,13 +329,11 @@ pub fn cut_with(
     let phase = ctl.begin(Phase::Crop, u64::try_from(jobs.len()).unwrap_or(u64::MAX));
     let mut done = vec![false; jobs.len()];
     pipeline::run(
-        &jobs,
+        pipeline::Pass { items: &jobs, opts, ctl },
         |job, native| {
             set_path(native, paths.get(job.source.path));
             Read::File
         },
-        opts,
-        ctl,
         || Ok::<CutWorker, Error>(CutWorker { exiftool: None, program: program.to_os_string() }),
         |worker: &mut CutWorker, i, bytes| {
             let job = jobs.get(i).ok_or_else(|| Error::Invalid("an item outside the pass".into()))?;

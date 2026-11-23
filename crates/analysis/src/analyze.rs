@@ -10,7 +10,7 @@ use std::path::Path;
 
 use crate::borders::{self, Detector};
 use crate::pdq;
-use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::decode::{Decoder, MinSize, Request};
 use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
@@ -120,7 +120,7 @@ impl Analyzer {
         let meta = Meta::read(bytes, format, &mut self.meta);
         let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
         let (image, spare) = (&mut self.image, &mut self.spare);
-        self.decoder.decode_into(bytes, format, meta.orientation, min, turns, image, spare)?;
+        self.decoder.decode_into(bytes, Request { format, exif: meta.orientation, min, turns }, image, spare)?;
         image_hashes(FileHash::of(bytes), &self.image, &mut self.resizer, &mut self.pdq_in, &mut self.hasher)
     }
 
@@ -135,8 +135,8 @@ impl Analyzer {
     fn find_borders(&mut self, bytes: &[u8], turns: Turns) -> Result<FileBorders> {
         let format = Format::sniff(bytes).ok_or(Error::Invalid("unknown image format"))?;
         let meta = Meta::read(bytes, format, &mut self.meta);
-        let info =
-            self.decoder.decode_stored_into(bytes, format, meta.orientation, MinSize::Full, turns, &mut self.image)?;
+        let request = Request { format, exif: meta.orientation, min: MinSize::Full, turns };
+        let info = self.decoder.decode_stored_into(bytes, request, &mut self.image)?;
         let frames = meta.frames;
         // The stored size, upright as `analysis.width/height` are (the crop's cut is of the stored pixels).
         let (width, height) = if info.orientation.swaps_axes() {

@@ -94,7 +94,7 @@ pub fn run_while(
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Placeholders, u64::try_from(items.len()).unwrap_or(u64::MAX));
     let (state, result) = pipeline::batched(
-        items,
+        pipeline::Pass { items, opts, ctl },
         |pw, wide| {
             let item = &pw.item;
             // A video's frame is read by FFmpeg from its path, and a file whose thumbnail is cached is not read at all.
@@ -105,8 +105,6 @@ pub fn run_while(
             pg_platform::names::set_file(wide, folder, name);
             Read::File
         },
-        opts,
-        ctl,
         || -> Result<Worker> { Ok(Worker { maker: Maker::new()?, jpeg: Vec::new() }) },
         |worker, i, bytes| -> Result<(ThumbHash, bool)> {
             let pw = items.get(i).ok_or(Error::Invalid("a placeholder to make for no file"))?;

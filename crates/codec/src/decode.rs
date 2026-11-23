@@ -102,6 +102,20 @@ pub struct Decoder {
     codecs: Codecs,
 }
 
+/// What a decode is asked for: the file's format (`Format::sniff`), its EXIF orientation (`pg_metadata::orientation`, 1
+/// without one), the least size the pixels may be decoded to ([`MinSize`]) and the catalog's quarter turns.
+#[derive(Clone, Copy, Debug)]
+pub struct Request {
+    /// The file's format (`Format::sniff`).
+    pub format: Format,
+    /// The file's EXIF orientation (1 without one).
+    pub exif: Orientation,
+    /// The least size the pixels may be decoded to.
+    pub min: MinSize,
+    /// The catalog's quarter turns, composed with `exif`.
+    pub turns: Turns,
+}
+
 impl Decoder {
     /// A decoder that uses the default number of threads.
     pub fn new() -> Result<Decoder> {
@@ -124,36 +138,19 @@ impl Decoder {
         self.codecs.trim(bytes);
     }
 
-    /// Decode into a worker's buffers, which keep their capacity from file to file: the pixels go into
-    /// `out`, and are oriented through `spare` (swapped with `out`'s). `format` is the file's (`Format::sniff`),
-    /// `exif` its EXIF orientation (`pg_metadata::orientation`, 1 without one).
-    #[expect(clippy::too_many_arguments, reason = "the worker's buffers are passed one by one, so they keep capacity")]
-    pub fn decode_into(
-        &mut self,
-        bytes: &[u8],
-        format: Format,
-        exif: Orientation,
-        min: MinSize,
-        turns: Turns,
-        out: &mut Rgb,
-        spare: &mut Vec<u8>,
-    ) -> Result<Info> {
-        let info = self.decode_stored_into(bytes, format, exif, min, turns, out)?;
+    /// Decode into a worker's buffers, which keep their capacity from file to file: the pixels go into `out`, and are
+    /// oriented through `spare` (swapped with `out`'s). The `request` says what to decode, as [`Request`].
+    pub fn decode_into(&mut self, bytes: &[u8], request: Request, out: &mut Rgb, spare: &mut Vec<u8>) -> Result<Info> {
+        let info = self.decode_stored_into(bytes, request, out)?;
         orient_in_place(out, info.orientation, spare);
         Ok(info.upright())
     }
 
     /// [`Decoder::decode_into`] without the orientation: the pixels as stored, which is what a lossless crop of the
-    /// file cuts (borders). `min` still means the upright size; `turns` is used for that and for `orientation`.
-    pub fn decode_stored_into(
-        &mut self,
-        bytes: &[u8],
-        format: Format,
-        exif: Orientation,
-        min: MinSize,
-        turns: Turns,
-        out: &mut Rgb,
-    ) -> Result<Info> {
+    /// file cuts (borders). `request.min` still means the upright size; `request.turns` is used for that and for
+    /// `orientation`.
+    pub fn decode_stored_into(&mut self, bytes: &[u8], request: Request, out: &mut Rgb) -> Result<Info> {
+        let Request { format, exif, min, turns } = request;
         let orientation = exif.compose(turns);
         let quarter_turn = orientation.swaps_axes();
         let (jpeg, refused) = match format {
@@ -383,10 +380,7 @@ mod parallel_tests {
         let mut out = Rgb::default();
         decoder.decode_into(
             bytes,
-            Format::Jpeg,
-            Orientation::UPRIGHT,
-            MinSize::Full,
-            Turns::NONE,
+            Request { format: Format::Jpeg, exif: Orientation::UPRIGHT, min: MinSize::Full, turns: Turns::NONE },
             &mut out,
             &mut Vec::new(),
         )?;
@@ -436,10 +430,12 @@ mod parallel_tests {
             .unwrap()
             .decode_into(
                 &jpeg,
-                Format::Jpeg,
-                Orientation::UPRIGHT,
-                MinSize::Upright(100, 100),
-                Turns::NONE,
+                Request {
+                    format: Format::Jpeg,
+                    exif: Orientation::UPRIGHT,
+                    min: MinSize::Upright(100, 100),
+                    turns: Turns::NONE,
+                },
                 &mut out,
                 &mut Vec::new(),
             )
@@ -510,10 +506,7 @@ mod tests {
             .unwrap()
             .decode_into(
                 file.get_ref(),
-                Format::Png,
-                Orientation::UPRIGHT,
-                MinSize::Full,
-                Turns::NONE,
+                Request { format: Format::Png, exif: Orientation::UPRIGHT, min: MinSize::Full, turns: Turns::NONE },
                 &mut decoded,
                 &mut Vec::new(),
             )

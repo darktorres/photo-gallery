@@ -558,6 +558,36 @@ const POLL: Duration = Duration::from_millis(100);
 /// The workers that list folders ahead of the walk, on a catalog that is a file (`walk_paced`).
 const WORKERS: usize = 4;
 
+/// When the walk's lease was last renewed, and how long it may go without one (`Pacing::renew_every`).
+struct Renewal {
+    at: Instant,
+    every: Duration,
+}
+
+impl Renewal {
+    fn new(every: Duration) -> Renewal {
+        Renewal { at: Instant::now(), every }
+    }
+
+    /// The lease has gone `every` without a renewal.
+    fn due(&self) -> bool {
+        self.at.elapsed() >= self.every
+    }
+
+    /// The lease was just renewed (a batch's write renews it too).
+    fn renewed(&mut self) {
+        self.at = Instant::now();
+    }
+}
+
+/// Where a walk starts: the root folder's path, its open handle, its device and its volume.
+struct Start<'a, D> {
+    path: &'a RulePath,
+    dir: D,
+    device: Option<u64>,
+    volume: u64,
+}
+
 /// The walk's pacing: its batch size, how often its lease is renewed, and how many workers list ahead of it.
 #[derive(Clone, Copy)]
 struct Pacing {
@@ -683,14 +713,7 @@ enum Taken {
 /// The listing of folder `key` as a worker makes it, waited for; or `Inline`, when no worker has taken it. While the walk
 /// waits, the lease is renewed each `renew_every` in which the listing moved, so a listing that hangs lets the lease
 /// expire, as the walk's own listing would (`list_here`).
-fn take(
-    pool: &Pool,
-    key: &Key,
-    ctl: &Control,
-    lease: &ScanLease<'_>,
-    renewed: &mut Instant,
-    renew_every: Duration,
-) -> Result<Taken> {
+fn take(pool: &Pool, key: &Key, ctl: &Control, lease: &ScanLease<'_>, renewal: &mut Renewal) -> Result<Taken> {
     let mut st = pool.lock();
     let mut renewed_at: Option<u64> = None;
     let mut checked = Instant::now();
@@ -708,11 +731,11 @@ fn take(
         if ctl.stop_requested() {
             return Ok(Taken::Stopped);
         }
-        if checked.elapsed() >= renew_every {
+        if checked.elapsed() >= renewal.every {
             if renewed_at != Some(progress) {
                 drop(st);
                 renew(lease)?;
-                *renewed = Instant::now();
+                renewal.renewed();
                 st = pool.lock();
                 renewed_at = Some(progress);
             }
@@ -789,11 +812,9 @@ fn publish(pool: &Pool, outcome: &mut Outcome) {
 
 /// The walk lists folder `job` itself, because no worker has taken it: renewing the lease as its entries come, and
 /// publishing the folders below it. A lease that can't be renewed is the error.
-#[expect(clippy::too_many_arguments, reason = "the walk's own state, passed beside the folder to list")]
 fn list_here<L: Listing>(
     lease: &ScanLease<'_>,
-    renewed: &mut Instant,
-    renew_every: Duration,
+    renewal: &mut Renewal,
     lister: &mut L,
     rules: PathRules,
     pool: &Pool,
@@ -803,9 +824,9 @@ fn list_here<L: Listing>(
     let mut lost = None;
     let mut outcome = {
         let mut beat = || {
-            if lost.is_none() && renewed.elapsed() >= renew_every {
+            if lost.is_none() && renewal.due() {
                 match renew(lease) {
-                    Ok(()) => *renewed = Instant::now(),
+                    Ok(()) => renewal.renewed(),
                     Err(e) => lost = Some(e),
                 }
             }
@@ -908,13 +929,17 @@ fn walk_paced<L: Listing>(
     drop(setup);
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
-    let walked =
-        walk_leased(&mut lease, root, ctl, lister, root_dir, root_device, root_volume, pacing).map_err(
-            |e| match removed(&e) {
-                Some(root) => ScanError::Removed { root },
-                None => ScanError::Failed(e),
-            },
-        );
+    let walked = walk_leased(
+        &mut lease,
+        Start { path: root, dir: root_dir, device: root_device, volume: root_volume },
+        ctl,
+        lister,
+        pacing,
+    )
+    .map_err(|e| match removed(&e) {
+        Some(root) => ScanError::Removed { root },
+        None => ScanError::Failed(e),
+    });
     if let Ok(stats) = &walked {
         pass.items(stats.files);
         pass.field("changed", stats.changed);
@@ -969,17 +994,14 @@ fn removed(e: &Error) -> Option<String> {
 /// whatever the workers do. The lease is renewed at each checkpoint, while this thread lists a folder (each record, once
 /// `renew_every` has passed), while it waits for a worker's listing (once that listing has moved), and with each batch.
 /// A walk that can't renew it has lost it, and ends with the error.
-#[expect(clippy::too_many_arguments, reason = "the walk's state comes from the caller: its root, listing and pacing")]
 fn walk_leased<L: Listing>(
     lease: &mut ScanLease<'_>,
-    root: &RulePath,
+    start: Start<'_, L::Dir>,
     ctl: &Control,
     lister: &mut L,
-    root_dir: L::Dir,
-    root_device: Option<u64>,
-    root_volume: u64,
     pacing: Pacing,
 ) -> Result<ScanStats> {
+    let Start { path: root, dir: root_dir, device: root_device, volume: root_volume } = start;
     let rules = lease.rules();
     let scan_id = lease.id();
     let file = lease.file().map(str::to_owned);
@@ -1001,7 +1023,7 @@ fn walk_leased<L: Listing>(
         let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
         let mut batch = Batch::default();
         // When the lease was last renewed (a batch's write renews it too).
-        let mut renewed = Instant::now();
+        let mut renewal = Renewal::new(pacing.renew_every);
         let mut complete = true;
         let mut spawned = 0usize;
         // The phase ends when this is dropped, however the walk leaves.
@@ -1033,7 +1055,7 @@ fn walk_leased<L: Listing>(
             // still runs, on what was seen (tier 1 only: it needs no whole tree).
             let go = {
                 let _step = CHECKPOINT.timer();
-                checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewed, pacing.renew_every, &pool)?
+                checkpoint(lease, root, ctl, &mut batch, &mut stats, &mut renewal, &pool)?
             };
             if !go {
                 complete = false;
@@ -1043,13 +1065,13 @@ fn walk_leased<L: Listing>(
             let outcome = if pooled {
                 let taken = {
                     let _wait = WAIT_LISTING.timer();
-                    take(&pool, &job.key, ctl, lease, &mut renewed, pacing.renew_every)?
+                    take(&pool, &job.key, ctl, lease, &mut renewal)?
                 };
                 match taken {
                     Taken::Listed(outcome) => outcome,
                     Taken::Inline => {
                         let _listing = LIST_HERE.timer();
-                        list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, None)?
+                        list_here(lease, &mut renewal, lister, rules, &pool, &job, None)?
                     }
                     Taken::Stopped => {
                         complete = false;
@@ -1058,7 +1080,7 @@ fn walk_leased<L: Listing>(
                 }
             } else {
                 let _listing = LIST_HERE.timer();
-                list_here(lease, &mut renewed, pacing.renew_every, lister, rules, &pool, &job, dir)?
+                list_here(lease, &mut renewal, lister, rules, &pool, &job, dir)?
             };
             let listed = match outcome {
                 Outcome::Listed(listed) => listed,
@@ -1209,7 +1231,7 @@ fn walk_leased<L: Listing>(
             }
             if batch.entries >= pacing.batch {
                 write_batch(lease, root, &mut batch, &mut stats, ctl)?;
-                renewed = Instant::now();
+                renewal.renewed();
             }
             ctl.set_done(stats.files);
             if spawned < pacing.workers
@@ -1266,24 +1288,22 @@ fn unreadable(stats: &mut ScanStats, skipped: &mut Vec<Skip>, batch: &mut Batch,
 /// writes the batch built so far, and a pause renews the lease while it lasts (so does a walk held up anywhere, every
 /// `renew_every`, [`RENEW_EVERY`] in production). A resumed walk wakes the workers, which wait on a pause too. False for a
 /// stop.
-#[expect(clippy::too_many_arguments, reason = "the walk's state, as the walk passes it")]
 fn checkpoint(
     lease: &mut ScanLease<'_>,
     root: &RulePath,
     ctl: &Control,
     batch: &mut Batch,
     stats: &mut ScanStats,
-    renewed: &mut Instant,
-    renew_every: Duration,
+    renewal: &mut Renewal,
     pool: &Pool,
 ) -> Result<bool> {
-    if renewed.elapsed() >= renew_every {
+    if renewal.due() {
         renew(lease)?;
-        *renewed = Instant::now();
+        renewal.renewed();
     }
     if ctl.is_paused() || ctl.stop_requested() {
         write_batch(lease, root, batch, stats, ctl)?;
-        *renewed = Instant::now();
+        renewal.renewed();
     }
     loop {
         match ctl.checkpoint_within(RENEW_EVERY) {
@@ -1296,7 +1316,7 @@ fn checkpoint(
                 // A pause set after the look above: what is built is written now, not held over the pause.
                 write_batch(lease, root, batch, stats, ctl)?;
                 renew(lease)?;
-                *renewed = Instant::now();
+                renewal.renewed();
             }
         }
     }

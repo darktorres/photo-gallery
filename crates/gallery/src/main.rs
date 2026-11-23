@@ -20,8 +20,8 @@ use pg_client::text::cli::{Line, line};
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 fn main() -> ExitCode {
-    // Dropping it writes dhat-heap.json, so it lives until `main` returns: runs that end in `process::exit` (an
-    // error, `fatal`) write none. Backtraces are cut to 10 frames unless PG_DHAT_UNTRIMMED is set.
+    // Dropping it writes dhat-heap.json, so it lives until `main` returns, and every run returns from `main` (an error
+    // is a status, not an exit). Backtraces are cut to 10 frames unless PG_DHAT_UNTRIMMED is set.
     #[cfg(feature = "dhat-heap")]
     let _profiler = {
         let frames = pg_platform::env::read(pg_platform::env::Var::DhatUntrimmed).is_none().then_some(10);
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
         pg_platform::console::attach_to_parent();
         if let Err(e) = pg_cli::main(args) {
             eprintln!("{}", line(&Line::Error { error: format!("{e:#}") }));
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
         return ExitCode::SUCCESS;
     }

@@ -3,6 +3,7 @@ not a read failure, each crate is fetched once), and the report. No network: the
 
 import email.message
 import importlib.util
+import os
 import tempfile
 import unittest
 import urllib.error
@@ -48,6 +49,21 @@ class ForkedCrates(unittest.TestCase):
 
 
 class Collect(unittest.TestCase):
+    def test_a_relative_lock_path_is_named_from_the_repository_root(self):
+        # `--lock fuzz/Cargo.lock` is relative to the working directory; it must still be named as the repository has it.
+        with tempfile.TemporaryDirectory() as folder:
+            lock = Path(folder) / "fuzz" / "Cargo.lock"
+            lock.parent.mkdir(parents=True)
+            lock.write_text(lock_text(("fast_image_resize", "6.2.0", FORK)), encoding="utf-8")
+            here = Path.cwd()
+            try:
+                os.chdir(folder)
+                with mock.patch.object(fork_updates, "ROOT", Path(folder).resolve()):
+                    rows = fork_updates.collect([Path("fuzz/Cargo.lock")])
+            finally:
+                os.chdir(here)
+            self.assertEqual(rows[0][3], ["fuzz/Cargo.lock"])
+
     def test_a_crate_in_two_lock_files_is_one_row_naming_both(self):
         with tempfile.TemporaryDirectory() as folder:
             root_lock = Path(folder) / "root" / "Cargo.lock"

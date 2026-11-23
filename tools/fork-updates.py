@@ -60,7 +60,7 @@ def collect(lock_paths: list[Path]) -> list[tuple[str, str, str, list[str]]]:
     repository's root. A crate locked at two versions is two rows."""
     found: dict[tuple[str, str, str], list[str]] = {}
     for lock_path in lock_paths:
-        name = lock_path.relative_to(ROOT).as_posix()
+        name = lock_path.resolve().relative_to(ROOT).as_posix()
         for crate, locked, repository in forked_crates(lock_path):
             found.setdefault((crate, locked, repository), []).append(name)
     return [(crate, locked, repository, locks) for (crate, locked, repository), locks in sorted(found.items())]

@@ -1,5 +1,6 @@
-"""The checks of `boundaries.py` that take a file's text: the one-public-path rule (`check_public_paths`), the
-environment reads (`check_env`) and the foreign-function blocks of the platform rule (`check_platform`)."""
+"""The checks of `boundaries.py` that take a file's text: the one-public-path rule (`check_public_paths`), the re-export
+rule (`check_reexports`), the environment reads (`check_env`) and the foreign-function blocks of the platform rule
+(`check_platform`)."""
 
 import unittest
 
@@ -11,6 +12,22 @@ LIB = REPO / "crates" / "demo" / "src" / "lib.rs"
 
 def failures(text):
     return boundaries.check_public_paths({LIB: text})
+
+
+def reexport_failures(text, path=LIB):
+    return boundaries.check_reexports({path: text})
+
+
+class CrossCrateReexports(unittest.TestCase):
+    def test_a_pub_use_of_another_crate_is_not_allowed(self):
+        self.assertEqual(len(reexport_failures("pub use pg_model::ids::FileId;\n")), 1)
+
+    def test_a_pub_use_of_another_crate_is_not_allowed_in_any_file(self):
+        other = REPO / "crates" / "demo" / "src" / "other.rs"
+        self.assertEqual(len(reexport_failures("pub use pg_model::ids::FileId;\n", other)), 1)
+
+    def test_a_pub_use_of_a_child_module_is_fine(self):
+        self.assertEqual(reexport_failures("pub mod a;\npub use a::X;\n"), [])
 
 
 class PublicPaths(unittest.TestCase):

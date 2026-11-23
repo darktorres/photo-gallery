@@ -35,7 +35,7 @@ pg-catalog = { path = "../catalog", features = ["fixture"] }
 # The image files the tests write (`pg_codec::fixtures`).
 pg-codec = { path = "../codec", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
-# The helper that testkit used to re-export (`pg_platform::testing::skip`).
+# The test helper `pg_platform::testing::skip`, which a test names directly.
 pg-platform = { path = "../platform", features = ["testing"] }
 pg-jobs-testkit = { path = "../jobs-testkit" }
 # The writer's faults, for the test that `gallery write` returns when the writer ends.

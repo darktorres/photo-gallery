@@ -31,7 +31,7 @@ pg-catalog = { path = "../catalog", features = ["fixture"] }
 # A test decodes the JPEG the Yandex search sends, and the image files the tests write (`pg_codec::fixtures`).
 pg-codec = { path = "../codec", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
-# The helpers that testkit used to re-export (`pg_platform::testing`).
+# The test helpers of `pg_platform::testing`, which a test names directly.
 pg-platform = { path = "../platform", features = ["testing"] }
 proptest.workspace = true
 # `SortKey::iter`, so the listing laws cover every sort key.

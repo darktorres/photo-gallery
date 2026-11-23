@@ -63,7 +63,14 @@ Pinterest sample, identical decoded pixels. The pin is `28b8b86`, the fork's hea
 commit message's (the app's gallery thumbnails, one worker, 300 Pinterest JPEGs), not a run of the in-repo
 `pg-codec` decode.
 
-Measurement: not yet measured against current upstream (the `pg-codec` decode run on Windows has not been done).
+Measurement (2026-11-23, Windows, release): `cargo run --release -p pg-codec --example jpeg_hash_decode_bench --
+<Pinterest folder> 300 5`. The sample is the first 300 JPEGs of the folder in depth-first, name order (38,963,672 bytes), each
+decoded at the hashing size (`MinSize::Sides(512, 320)`) through `Decoder::decode_into`; the figure is the mean per decode
+over 5 timed rounds after one warm-up round. The fork (this pin), three runs alternated with the upstream arm: 2.84, 2.76,
+2.76 ms. Upstream `turbojpeg-sys` 1.2.0 from crates.io (the same tree with the fork's pin line removed): 5.32, 5.26,
+5.37 ms. On this sample the fork decodes in about half the time. This harness's figures are not the commit's 4.30 ms: the
+selection and the harness differ. One earlier fork run, made straight after a build, read 6.09 ms; the three repeats above
+did not reproduce it, and it is not part of the record. Outcome: the pinned fork stays, with this gain.
 
 A third commit, `945d853`, drops the content-hash rerun trigger that the earlier vendored copy had
 (`TURBOJPEG_SYS_INPUTS_HASH`): the rerun lines in `build.rs` are upstream's again, since the git rev pins the crate.

@@ -4,8 +4,7 @@ Status as of 2026-11-23. This document covers the work that remains. Finished wo
 
 ## Scope
 
-Four pieces remain: the rusqlite feature flags, the fork measurements and any fork retirements, the per-site lint expects
-in the bench, codec and desktop crates, and the port of `fast_image_resize` that the repo now pins.
+One piece remains: the per-site lint expects in the bench, codec and desktop crates. No fork retirement is pending.
 
 ## Ground rules
 
@@ -22,37 +21,7 @@ in the bench, codec and desktop crates, and the port of `fast_image_resize` that
   any change to `deny.toml` or the dependency graph.
 - Line numbers in this document are a snapshot. Find a site by its quoted text, and re-read the file first.
 
-## 1. rusqlite feature flags
-
-The two flags in `Cargo.toml:44` (`photo-gallery-defaults`) wait on the statement-cache fix upstream. Nothing can be done
-until that fix ships.
-
-- When it ships: move the two flags to `.cargo/config.toml`, and drop the `photo-gallery-defaults` feature.
-- Done when: `Cargo.toml` no longer names `photo-gallery-defaults`, and `cargo check` passes on the workspace.
-
-## 2. Fork measurements and retirements
-
-The turbojpeg and allocation measurements are done. These are not yet taken:
-
-- rusqlite's cache fix and flags, dhat-rs, parajpeg and cxx-qt;
-- the GIF, TIFF, zune-jpeg and thumbhash paths, which need samples that exercise them;
-- Linux `just perf`.
-
-Retirement is not decided for any fork yet. A fork retires only after its measurement and a decision from the user.
-
-Decisions that govern this work:
-
-1. Forks stay forks: the repo's recorded decision. Nothing is vendored in-repo. `parajpeg` keeps its pinned fork, the mutex
-   fix included.
-2. Each fork change is measured, then kept in its pinned fork with the gain written in `vendor/README.md`, or dropped.
-   No upstream pull requests: the user declined them.
-
-Rejected: vendoring `parajpeg` in-repo to empty `allow-git`. It contradicts the repo's recorded move from in-repo copies to
-forks; its upstream C++ is unchanged and our commits sit on top, which is what a fork is for.
-
-Done when: each fork in the pinned set has a recorded measurement and either a retirement or a decision to keep it.
-
-## 3. Lint expects
+## 1. Lint expects
 
 Each expect below is an `#[expect]` for a clippy lint the code should not need. Fix the code, or keep the expect with a
 reason that is still true.
@@ -74,12 +43,3 @@ creates API; the second is E0446.
 
 Done when: `grep -rn "clippy::panic\|string_slice\|indexing_slicing\|type_complexity\|unreachable_pub" crates` finds only
 the expects that are kept, each with its reason.
-
-## 4. Fork port follow-ups
-
-The `fast_image_resize` pin moved to the 6.2.0 port (`6a8ec301`). Two checks remain:
-
-- `just check-linux` after the pin move.
-- The NEON and WebAssembly backends of the 6.2.0 port are not compiled anywhere.
-
-Done when: `just check-linux` passes, and both backends have been compiled or are recorded as not applicable.

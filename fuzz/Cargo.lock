@@ -137,8 +137,8 @@ dependencies = [
 
 [[package]]
 name = "fast_image_resize"
-version = "6.1.0"
-source = "git+https://github.com/darktorres/fast_image_resize?rev=0ea7089165e3c991693f45bcddbf82bbcf9c4e7b#0ea7089165e3c991693f45bcddbf82bbcf9c4e7b"
+version = "6.2.0"
+source = "git+https://github.com/darktorres/fast_image_resize?rev=32516f40454e1b227e24d7834cba5ca51076b921#32516f40454e1b227e24d7834cba5ca51076b921"
 dependencies = [
  "cfg-if",
  "document-features",

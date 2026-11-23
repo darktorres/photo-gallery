@@ -133,9 +133,11 @@ run. To measure, run the thumbnail pass over a sample.
 
 ## fast_image_resize
 
-Fork of `fast_image_resize` 6.1.0 (MIT OR Apache-2.0), pinned by rev in the root `Cargo.toml` and
-`fuzz/Cargo.toml`. The local changes, marked `photo-gallery`, are in how the
-convolution holds its coefficients; the arithmetic, and so every resized pixel, is upstream's:
+Fork of `fast_image_resize` 6.2.0 (MIT OR Apache-2.0), pinned by rev in the root `Cargo.toml` and
+`fuzz/Cargo.toml`. The fork's branch is `photo-gallery-6.2.0`, and its commit is the change ported by hand onto upstream's
+6.2.0 tag (not a rebase of the old fork: its whole-tree commit, `0ea7089`, is still on the fork's `main`, and is what the
+6.1.0 measurements below were taken with). The local changes, marked `photo-gallery`, are in how the convolution holds its
+coefficients; the arithmetic, and so every resized pixel, is upstream's:
 
 - `Resizer` keeps the last coefficients of each axis (`AxisCoefficients` in `src/resizer.rs`), with what they were
   computed for: the source size, crop, output size, filter and kernel mode. A resize that matches on an axis reuses
@@ -148,21 +150,25 @@ convolution holds its coefficients; the arithmetic, and so every resized pixel, 
 - The chunks a convolution reads (`Chunks`, `Chunk`) are views over those buffers. `get_chunks` no longer collects a
   `Vec`. The second pass of a two-pass resize reads its bounds through a `shift`, where upstream rewrote them.
 - The `Convolution` trait borrows the coefficients mutably instead of taking them by value. The SIMD backends changed
-  only in the types they pass chunks by. The NEON (aarch64) and WebAssembly backends compile (`cargo check --target
-  aarch64-pc-windows-msvc`, `wasm32-unknown-unknown`) but don't run here.
+  only in the types they pass chunks by. The x86 paths (native, SSE4.1, AVX2) are tested here. The NEON (aarch64) and
+  WebAssembly backends are changed the same way but not compiled here: their checks are still to do.
 
-Checked, once, against the registry's 6.1.0 with a throwaway harness: 18,000 resizes (6,000 random cases on each of
+Checked, once, for the old fork (against the registry's 6.1.0) with a throwaway harness: 18,000 resizes (6,000 random cases on each of
 the native, SSE4.1 and AVX2 paths) over every pixel type, filter and algorithm, with random sizes up to 900 px, crops
 and alpha. One `Resizer` was reused throughout, a third of the cases repeating the last sizes, so the kept coefficients
 were hit, missed and shared across pixel types and pass orders. Every output was identical byte for byte, with
 debug assertions on. With the shift's reset removed, the harness failed at case 58. The crate's own tests give the
 same results as the registry copy's, including the same 14 checksum mismatches, which upstream's copy also has
-on this machine. Their images aren't in the published crate (`data/` in the repository at tag `v6.1.0`). A test in
-`src/resizer.rs` keeps the reuse case.
+on this machine. Their images aren't in the published crate (`data/` in the repository at tag `v6.1.0`).
 
-To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml` and `fuzz/Cargo.toml`.
+For the 6.2.0 port: the crate's own tests pass (13 unit and 36 integration tests, including the reference checksums), and
+`tests/coefficient_reuse.rs` checks that repeated, changed, cropped and shifted resizes give a fresh resizer's pixels. The
+harness above was not run on 6.2.0.
 
-Measurement (2026-11-23, dhat, the group run described here): the fork's coefficient reuse makes 20 allocations (16.6 MB)
+To update: port the change by hand onto the new release's tag (on the fork's branch), then change the `rev` in the root
+`Cargo.toml` and `fuzz/Cargo.toml`.
+
+Measurement (2026-11-23, dhat, the group run described here): the old fork's coefficient reuse makes 20 allocations (16.6 MB)
 where upstream makes 334,121 (99.6 MB), over the 393-file import. The fork's kept buffers also raise the live peak: 538.3 MB
 (2,795 blocks) with the fork against 525.4 MB (2,093 blocks) with upstream, the one place this group costs memory.
 The group run: `gallery scan` and `gallery import --workers 1` over a 393-file sample (the first 200 JPEG, 142 PNG and 51 WebP
@@ -171,6 +177,11 @@ tree (`scratchpad/upstream-alloc` at the commit before the measurement): every a
 codec and metadata call sites on upstream's API, fresh decoders per image, metadata read rather than skipped. Totals: 715.6
 MB in 14,657 blocks with the forks, 1,023.2 MB in 367,669 blocks without; the total at exit is the same (497,856 bytes in
 1,476 blocks). Per crate, the attribution is by the first frame of each program point that names the crate.
+
+Measurement of the 6.2.0 port (2026-11-23, the same group run and sample, the fork's branch commit `32516f4`): with the
+port, `fast_image_resize` makes 20 allocations, as the old fork does. The total is 716.3 MB in 14,598 blocks (the old fork:
+715.6 MB in 14,657); the live peak is 537.9 MB in 1,680 blocks (the old fork: 538.3 MB in 2,795). The comparison tree is
+pinned to 6.1.0, so its 334,121 allocations above are the 6.1.0 figure.
 
 ## quick-xml
 

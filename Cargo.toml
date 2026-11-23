@@ -145,7 +145,7 @@ incremental = true
 # reuses its buffers; png, fdeflate, image-webp, gif and zune-jpeg whose decoders keep their buffers and tables; tiff
 # and zune-core that read small values without allocating.
 [patch.crates-io]
-fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", rev = "0ea7089165e3c991693f45bcddbf82bbcf9c4e7b" }
+fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", rev = "32516f40454e1b227e24d7834cba5ca51076b921" }
 fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }
 gif = { git = "https://github.com/darktorres/image-gif", rev = "c79564c1cdf86e674b281f232aeffd706c325623" }
 image-webp = { git = "https://github.com/darktorres/image-webp", rev = "1e9023c914f8f0793544a34b2c02525ff183863e" }

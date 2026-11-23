@@ -15,8 +15,8 @@ concern; correctness and the intended layering are.
 In scope: `PUBLIC_API_EXEMPT`, `ENV_READERS`, `REEXPORT_BOUNDARIES` (`tools/boundaries.py`); `advisories.ignore`, `bans`
 wrappers, `sources.allow-git`, `licenses.allow` (`deny.toml`); `SYSTEM_DLL` (`tools/build_static_ffmpeg.py`); bindgen
 `TYPES`/`VARS` (`crates/video/build.rs`); the `testkit` re-exports; the tooling users of `rusqlite`; the per-site
-`#[expect]` exceptions; and the tooling and CI exceptions of Phase L (Python lint ignores and `noqa` comments, the
-test-input list, one CI waiver). Out of scope because empty: `tools/modgraph-allow.txt`, `PLATFORM_GLUE`,
+`#[expect]` exceptions; and the tooling and CI exceptions (Python lint ignores and `noqa` comments, the test-input list,
+one CI waiver). Out of scope because empty: `tools/modgraph-allow.txt`, `PLATFORM_GLUE`,
 `check_feature_coverage.ALLOWED`.
 
 End state: an empty `REEXPORT_BOUNDARIES`, no `PUBLIC_API_EXEMPT`, `ENV_READERS` reduced to the registry reader's two
@@ -24,8 +24,7 @@ functions, an exact-name `SYSTEM_DLL` policy that fails the build, a bindgen all
 ignores, no `rusqlite` or codec wrapper for a crate that touches another crate's database or codecs, an `allow-git` that
 lists only forks carrying changes upstream has not taken, the owed lint refactors done (including the front ends' printing,
 the desktop's `exit` and the `unsafe_code` sites that need not exist), single-use licenses as per-crate exceptions, every
-Rust workspace under the same deny, clippy and fmt gates, and the tooling and CI exceptions of Phase L tightened or
-justified.
+Rust workspace under the same deny, clippy and fmt gates, and the tooling and CI exceptions tightened or justified.
 
 ## Ground rules
 
@@ -52,7 +51,7 @@ justified.
 
 ## Status and open work
 
-Phases A to F, H to J, L, and K's lint groups K.1, K.2, K.5, K.8 to K.11 are complete and committed (the phases are in
+Phases A to F, H to J, and K's lint groups K.1, K.2, K.5, K.8 to K.11 are complete and committed (the phases are in
 `284d0505`, `8e96dbd4`, `1849f297`, `5d0b6765`, `b3eb0c31`, `e1c2b046` and the commits after them). Their sections were
 removed from this plan; the history has them. Phase G is partly done (G0, the turbojpeg measurement, and the allocation
 measurement). What remains:
@@ -62,6 +61,8 @@ measurement). What remains:
 - **G2, the rest of the measurements (skipped at your request):** rusqlite's cache fix and flags, dhat-rs, parajpeg,
   cxx-qt; the GIF, TIFF, zune-jpeg and thumbhash paths need samples that exercise them; Linux `just perf`.
 - **G3, fork retirements:** none yet. Each needs its measurement and your decision.
+- **L.9, MD060:** the table-style rule stays disabled (`.markdownlint.jsonc`). Enabling it, and pinning a style, is
+  undecided. The rest of the tooling and CI work is done.
 - **K.3, benches:** six `clippy::panic` expectations remain: five in `crates/bench/benches/ir/catalog.rs` and one in
   `crates/bench/benches/ir/linux.rs`. Return `Result` from the bench helpers instead.
 - **K.4, strings and indexing:** `crates/desktop/src/qml_text.rs:94` and `crates/metadata/src/lib.rs:78` still have
@@ -74,132 +75,6 @@ measurement). What remains:
   console output). Keep it with its reason, or confirm.
 - **Fork port follow-ups:** `just check-linux` after the `fast_image_resize` pin move; NEON and WebAssembly backends of the
   port are not compiled anywhere.
-
-## Phase L: tooling and CI exceptions
-
-**Depends on:** L.1 and L.7 with Phase C; L.2 after the `missing_docs` pass (it renames constants in dirty crates); L.3,
-L.4 and L.5 nothing. A second search of the tools, Python
-config and CI found these.
-
-1. **`tools/test_ci_files.py:292` `TEST_INPUTS`** (9 regex entries): `PG_*` names exempt from the environment registry, the
-   sibling of `ENV_READERS`. `crates/platform/src/env.rs:93` states the design: a test's or probe's own input is
-   deliberately NOT in `VARS` (which is compiled into production and would need a new `Reader` variant) and is listed here
-   with its reason, so the list is legitimate by design; what can be tightened is its precision. Every family is built from
-   fixed literals: `PG_HOLDER_{PATH,MODE,READY,RELEASE}` (`catalog/tests/other_process.rs`, `dbfile/tests/live.rs`),
-   `PG_THUMB_{HOLDER,CATALOG,READY,RELEASE}`, two `PG_PLATFORM_*` names plus `PG_TESTING_HELD` (a stdout marker, not an
-   environment variable: `testing/tests.rs:260,280`), 13 `PG_PROBE_*` (`library/examples/{pairs,scan}_probe.rs`,
-   `catalog/examples/stmt_journal_probe.rs`, `import/examples/pairs_load_probe.rs`), `PG_JOIN_*` (3), `PG_LABEL`,
-   `PG_QML_RESOURCES` (also read by `tools/qmltest.py` and `main.cpp`), and the catalog/rehearsal/JPEG-compare entry (3).
-   - Replace the `\w+` wildcards with exact names, 32 in all (a long list: the price of precision), and add a test that
-     every listed name still occurs in the sources, since an exact list rots the way the `PG_FFMPEG` entry did (a new
-     unregistered `PG_PROBE_X` then fails until listed with a reason).
-   - Delete the shadowed `PG_FFMPEG` entry (the name occurs in the sources, but `.env.example:76` documents it and the
-     test checks `documented` first, so the entry never applies).
-   - Keep `PG_QML_RESOURCES` in `TEST_INPUTS`: it appears only in `crates/desktop/tests/qml_host/main.cpp` and
-     `tools/qmltest.py`, a harness input, not a setting.
-2. **`tools/test_versions.py:22` `NOT_REGISTERED`** (3 entries: `BASELINE_VERSION`, `FOREIGN_USER_VERSION`,
-   `EARLIER_OUTPUT_VERSION`): rename all three so the version-constant pattern does not match, which empties the list.
-   - Privacy would not help: the `CONST` regex makes `pub` optional, and `test_the_scan_finds_a_version_constant_and_skips_the_
-     rest` asserts that `pub(crate) const BASELINE_VERSION` matches. It does match indented constants.
-   - Renames: `FOREIGN_USER_VERSION` (`thumbcache/src/lib.rs:770,789`) and `EARLIER_OUTPUT_VERSION` (`:826`) in thumbcache,
-     `BASELINE_VERSION` (about 25 uses in `catalog/src/schema.rs`) in catalog, e.g. `BASELINE_SCHEMA`. The new names must
-     not contain `VERSION` at all (the regex matches any `\w*VERSION\w*`, so `FOREIGN_USER_VERSION_OLD` would still match):
-     e.g. `FOREIGN_USER_STAMP`, `EARLIER_OUTPUT_STAMP`.
-   - Follow the mentions in `docs/reference/PROFILING.md:510,622,990`, `docs/reference/NOTIFICATIONS_DESIGN.md:267,362` and
-     the fixture at `tools/test_versions.py:54`.
-3. **`ruff.toml:34` `ignore`** (10 global suppressions: E741, PLW2901, RUF001, N812, TRY003, PLC0415, S101, S311, S603,
-   S607) and `extend-exclude = ["docs/research"]`.
-   - Only `N812` and `RUF001` are eval-only: move them to `per-file-ignores` for `eval/**` (`N812` hits `eval/accel.py:265`,
-     `eval/bench_decode.py:73`, `eval/models.py`, `eval/verify.py` x2, `eval/jpeg-decoders/nvjpeg.py`; `RUF001` eval 3,
-     tools 0).
-   - The others occur in `tools/` too: `S101` at `tools/test_ci_files.py:269,276,280` and `docker/check.py:51` (plus 8 in
-     `eval/`); `S311` in `tools/profiling/pairing/grow_catalog.py:114` and
-     `tools/profiling/synthetic_library.py:70,101,130,141`; `PLC0415` in `tools/check_feature_coverage.py:125`,
-     `tools/ci/github_files.py:53`, `tools/compare_shots.py:464`, `tools/profiling/callgraph/{build,symbolize}.py` and
-     `tools/test_check_feature_coverage.py:111`; `PLW2901` (tools 3, eval 6). Fix those sites (or fix the three `PLW2901`
-     loop-variable reassignments), or scope a per-file ignore to exactly those files; a per-file ignore for `S101` must name
-     `docker/check.py` too.
-   - `S603`, `S607` and `TRY003` are used in `tools/` and stay. `E741` occurs only in `tools/modgraph` (`dupes.py` 4,
-     `edges.py` 1), so the `ruff.toml` comment's reason ("crop sides") is stale: reword it, or rename the five variables
-     and drop the ignore. `PLW2901` also occurs in `eval/` (6: `bench_decode` 3, `common` 2, `models` 1), beside tools' 3.
-   - `extend-exclude = ["docs/research"]` stays: it holds four verbatim upstream `.py` files; say so in the comment.
-4. **Python `# noqa` / `# type: ignore`** (43 sites in 24 files, almost all under `eval/`; 6 in `tools/`): the Python
-   counterpart of Phase K. Audit them the same way (read each, fix or keep with a reason). The `# type: ignore[operator]`
-   at `eval/jpeg-decoders/linux.py:145` has no type checker behind it (no mypy or pyright config exists): delete it, or
-   add a checker. Breakdown: 17 `BLE001`, 12 `E402`
-   (from `sys.path` inserts), 5 `E731`, 4 `S310`, plus singles.
-5. **`.github/workflows/ci.yml:210` `continue-on-error: true`** on the screenshot comparison ("informational until it is
-   stable"): a waiver whose exit criterion (`ci.yml:16`, "becomes required once it is stable") leaves "stable" undefined.
-   The step is gated `if: github.event_name == 'pull_request'` (`ci.yml:209`), so it never runs on `main`, and
-   `continue-on-error: true` makes a failed step report its job green. Define "stable" as 10 consecutive pull-request runs in
-   which the step's own outcome (not the job's conclusion) is success, write that next to the `continue-on-error` line,
-   and make the step required when it is met (nothing enforces this automatically: the check is a manual look at each
-   run's step outcomes).
-6. **Note, no action:** `#[ignore = "..."]` tests (7, each with a stated reason; six need an external dataset or variable) are
-   not a list to refactor, but their `PG_*` inputs are the `TEST_INPUTS` entries in item 1.
-7. **`tools/perf_check.py:38-40`**: `PG_BENCH_SKIP_CATALOG` switches on `--skip pg-bench/ir/catalog/` and is registered
-   nowhere (neither `VARS`, `.env.example` nor `TEST_INPUTS`, because the registry scan reads only `crates/`); it is also
-   forwarded into the container by `tools/linux.py:324`. Document it where the other switches are, or remove it. Also fix
-   `crates/platform/src/env.rs:207` and `.env.example:121`, which say `PG_BENCH_DATA` is "set by `just bench`", a recipe that
-   does not exist (the Justfile has `perf` and `linux-bench`): it is set by `tools/profiling/bench.py:76`
-   (`PG_BENCH_SKIP_CATALOG` is already documented in the `perf_check.py` docstring, lines 5-7).
-
-8. **Crate lists in `tools/test_ci_files.py`.**
-   - `ANYHOW_PERMANENT = {"cli", "desktop", "gallery"}` (`:371`, enforced at `:396,407`) is the gate that remains once
-     `tools/anyhow-allow.txt` is empty. `crates/gallery/Cargo.toml` has no `anyhow` dependency (and `crates/gallery/src`
-     has no mention of it; `git log -S anyhow -- crates/gallery/Cargo.toml` finds no commit, so it never had one), so that
-     entry is stale. Why no test caught it: `test_the_permanent_crates_are_crates` (`:405-407`) checks only that each
-     permanent name is a directory under `crates/` (`present` is the set of manifests, not of `anyhow` users), and
-     `test_every_listed_crate_still_depends_on_anyhow` (`:401`) covers only `anyhow-allow.txt`, not `ANYHOW_PERMANENT`.
-     So the stale-entry check exists for one list and not for the other. Fix both: drop `gallery`, and make the third test
-     assert `ANYHOW_PERMANENT <= crates_depending()` (so a permanent crate that stops using `anyhow` fails it), with a
-     guard test on a synthetic case. Also fix the comments that say `gallery` keeps `anyhow` (`test_ci_files.py:369`,
-     and the header of `tools/anyhow-allow.txt`, "cli, desktop and gallery keep anyhow for good"). `cli` (4 files) and
-     `desktop` (3 files) do use it in code. Write a reason beside the set for `cli` and `desktop` (the current one, "their errors are reported,
-     not matched", is thin: `desktop` already matches a typed error with `downcast_ref::<pg_app::Error>()` near
-     `desktop/src/lib.rs:203`), or retire them too if their `anyhow` can be replaced by the typed errors.
-   - `UNSAFE_CRATES = {"dedup", "desktop", "platform", "trace", "video"}` (`:419`) is the rule CU-005 and is self-checking
-     through its guard tests: it stays (add it to "stays"). `catalog` and `container` hold `unsafe_code` expects only in
-     examples, which K.10 removes or keeps; their `lib.rs` still `forbid`s unsafe.
-9. **`.markdownlint.jsonc`** disables `MD013` and `MD060`, and `README.md:3` has `markdownlint-disable-next-line MD033`.
-   - `MD033`: replace the inline disable with `"MD033": {"allowed_elements": ["p", "img"]}` in the config
-     (`markdownlint-cli` 0.50.0 is installed).
-   - `MD060` (table style; options `style` = `aligned`/`any`/`compact`/`tight`, default `any`, and `aligned_delimiter`,
-     read in the installed `markdownlint` docs): the repo's tables use `|---|---|` delimiter rows with padded cells
-     (`docs/reference/HEAP_PROFILE.md:27`, `JPEG_DECODERS.md:48`), which is neither `compact` (`| --- | --- |`) nor
-     `tight` (no padding anywhere), so enabling the rule means reformatting those tables (a table formatter is already
-     installed globally on this machine: `markdown-table-formatter`, `markdown-table-prettify`; pick one and pin it).
-     `MD013`: keep it disabled (the prose wraps near 100 columns and tables are long), or set
-     `{"tables": false, "code_blocks": false, "line_length": 130}`.
-10. **Three Rust workspaces outside every gate.** `fuzz/`, `eval/jpeg-decoders` and `eval/png-decoders` each have their own
-    `Cargo.lock` with the same forks and crates.io dependencies, but `tools/lint.py` runs only `cargo metadata --locked`
-    on them (lines 26-28), and `just deny`, clippy, `cargo fmt` and machete do not cover them (`Justfile:84` formats the
-    root workspace only). An advisory in `fuzz/Cargo.lock` is invisible. Add `cargo deny --manifest-path <each>/Cargo.toml
-    check` to `just deny`, and clippy and `fmt --check` for `fuzz/` (it runs in CI as `fuzz-smoke`, so it is shipped test
-    code); the eval ones get deny only. Phase G regenerates these locks, so do it with G.
-11. **Screenshot scenarios outside the gate.** `tools/compare_shots.py` `PSEUDO` (3 scenarios) are "run on the working
-    tree only ... not compared", next to the `continue-on-error` of item 5. Record references for them (the pseudo-locale
-    is deterministic) or state in item 5 that they are unchecked by design. `tools/shots/lanes.txt` and `INPUT_FILES` are
-    inputs, not exemptions.
-12. **`TEST_INPUTS` alternative (item 1).** The rejection of `VARS` rows (compiled into production) does not rule out a
-    test-only module: `pg_testkit::inputs` with `pub const HOLDER_PATH: &str = "PG_HOLDER_PATH"` and the rest, so a name
-    is defined once, used through a constant (a typo is a compile error), and `test_ci_files.py` parses that one file; the
-    Python list and its rot test go away. It needs the child-process helpers and probe examples to read names through the
-    constants (`testkit` is already a dev-dependency of all of them). Measured: the name families in item 1 occur 81
-    times in `crates/` (27 distinct names; code, docs and comments together), so the edit is mechanical and moderate. A
-    name read by C++ or Python (`PG_QML_RESOURCES`) cannot use a Rust constant and stays in the list. Take it for the
-    Rust-only names.
-
-Not allowlists, checked: `deny.toml` has no `[bans] skip` or `allow-registry` (it has no `licenses.exceptions` today
-either; Phase B step 6 may add some);
-`[licenses.private] ignore = true` is the stated policy for the workspace's own crates; `tools/modgraph/split_check.py`
-`SKIP` is a heuristic stoplist; `.markdownlintignore` holds only build output directories.
-
-**Done when:** `just test-tools` (`unittest discover` over `tools/test_*.py`) after the `TEST_INPUTS` and `NOT_REGISTERED`
-changes; `cargo test -p pg-catalog -p pg-thumbcache --no-run` for the renamed constants; `ruff check .` and `just test-eval`
-(ruff also covers `eval/`, `docker/check.py` and `.claude/hooks/`) after the `per-file-ignores` change; the CI run itself
-for the `continue-on-error` change; for L.4, each of the 43 sites is fixed or carries a reason; for L.7,
-`grep -n "just bench" crates .env.example` finds nothing and `PG_BENCH_SKIP_CATALOG` is documented or gone.
 
 ---
 
@@ -537,9 +412,10 @@ sites of `FolderFailure::key`/`from_key` (`ledger.rs:307`, `roots.rs:246`, `writ
 - bindgen `TYPES`/`VARS`: the mechanism that bounds generated FFI; kept, with Phase F's check.
 - Single-owner bans (`ureq`, `quick-xml`, `cxx-qt`, `cxx-qt-lib`, `gif`, `webp`, `tiff`, `zune-*`): real owners.
 - `deny.toml` `allow-git`: a source policy naming the pinned forks that stay (Phase G).
-- Phase L leaves in place: the `ruff.toml` suppressions `S603`, `S607`, `TRY003` (and `E741`, unless its five variables
-  are renamed), `TEST_INPUTS` as an exact-name
-  reasoned list, and `modgraph/split_check.py` `SKIP`.
+- The tooling and CI exceptions that stay: the `ruff.toml` global suppressions `S603`, `S607` and `TRY003` (used in
+  `tools/`), the per-file ignores (`eval/**` and the tools' imports inside functions), the four-name `TEST_INPUTS` list in
+  `tools/test_ci_files.py` (the other test inputs are constants in `crates/testkit/src/inputs.rs`), and
+  `modgraph/split_check.py` `SKIP`.
 - `UNSAFE_CRATES` (`tools/test_ci_files.py`): the CU-005 rule, self-checking through its guard tests.
 - Phase K keeps: the `unsafe_code` expects (66, 67 once Phase C adds `env.rs`'s; minus the K.10 sites that go; FFI and OS
   calls), `as_conversions` and the casts in `num.rs`, the owners of banned calls, the log fallback's printing,

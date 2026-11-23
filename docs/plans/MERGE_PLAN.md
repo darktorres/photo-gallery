@@ -13,6 +13,7 @@ originals. The originals are never changed. Stacking is built for merges first a
 ## 2. Scope
 
 In:
+
 - Two or more pieces in one run, sitting **edge to edge** (no overlap, no gap, no scaling), in a row, a column, or a
   grid. A ragged last row or column is allowed.
 - Input: whatever the decoder reads (JPEG, PNG, WebP, GIF first frame, TIFF, BMP), decoded upright.
@@ -20,6 +21,7 @@ In:
 - Gallery multi-select, the merge action with its preview, and the stack badge and open view.
 
 Out:
+
 - Overlapping pieces, panorama blending, exposure matching, rotation or skew, pieces of different scales.
 - A JPEG output or a lossless JPEG join.
 - Changing originals, their ratings, or their marks.
@@ -174,6 +176,7 @@ they refuse most UI grids and about a quarter of photo grids. Refusal is the hon
 ## 12. Risks, and what is still open
 
 Risks:
+
 - **Wrong layouts that pass every check.** The adjacency rule and the rectangle check reduce this; they do not remove
   it. The preview is the final guard.
 - **Refusal rate.** Expect many refusals, especially on UI and graphic content.
@@ -183,6 +186,7 @@ Risks:
   Not measured in the window.
 
 Not verified:
+
 - Merge speed on real sizes, and the peak memory of the real build.
 - The duplicate pass on the merged picture and its pieces.
 - The adjacency rule on content beyond the 80 images measured.

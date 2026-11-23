@@ -1,15 +1,13 @@
 # `cargo deny check` (just lint): advisories, licenses, duplicate versions and where crates come from.
 
 [graph]
-all-features = false
+# Optional dependencies count too (specta in pg-model, dhat and pg-desktop in gallery): the advisory, license and ban
+# checks see every feature the workspace can build.
+all-features = true
 
 [advisories]
 version = 2
 yanked = "deny"
-ignore = [
-    # Test-only: pdqhash 0.1.1 (the latest), the reference PDQ pg-analysis's tests compare against, pulls in image 0.23.
-    { id = "RUSTSEC-2025-0056", reason = "adler, unmaintained; dev-dependency only, via pdqhash 0.1.1 (latest)" },
-]
 
 [licenses]
 version = 2
@@ -20,11 +18,7 @@ allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-3-Clause",
-    "BSL-1.0",
     "CC0-1.0",
-    # webpki-root-certs, the CA bundle that ureq's native-tls feature pulls in (the Yandex client). Its license covers
-    # the certificate data, not code.
-    "CDLA-Permissive-2.0",
     # libloading, pg-video's run-time loader of FFmpeg (and bindgen's, in its build script).
     "ISC",
     "MIT",
@@ -34,12 +28,31 @@ allow = [
     "Zlib",
 ]
 
+# A license that exactly one crate uses is a per-crate exception, so a new crate under it is a decision, not a default.
+# webpki-root-certs, the CA bundle that ureq's native-tls feature pulls in (the Yandex client). Its license covers the
+# certificate data, not code.
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+# xxhash-rust, the xxh3 hash pg-analysis uses (crates/analysis/src/analyze.rs).
+[[licenses.exceptions]]
+crate = "xxhash-rust"
+allow = ["BSL-1.0"]
+# Inflector, the case conversion of specta's derive (pg-model's optional `specta` feature, reached now that the graph
+# includes every feature).
+[[licenses.exceptions]]
+crate = "Inflector"
+allow = ["BSD-2-Clause"]
+
 # Our own crates are `publish = false` and carry no license field.
 [licenses.private]
 ignore = true
 
 [bans]
-# Reported, not fatal: most come from pdqhash's old image 0.23 (test-only) and cxx-qt's build tools.
+# Reported, not fatal. The duplicates left are build tools and mixed-version dependencies (cxx-qt-gen, codespan-reporting,
+# libloading 0.8/0.9, syn 2/3, thiserror 1/2, miniz_oxide 0.8/0.9, unicode-width, weezl 0.1/0.2). They stay `warn` on
+# purpose: a `deny` with a `[[bans.skip]]` per duplicate is the end state, but it is adopted after the forks are retired,
+# since retiring a fork changes which duplicates exist (ALLOWLIST_PLAN.md, Phase B step 6).
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
@@ -51,8 +64,8 @@ deny = [
     # miniz_oxide and crc32fast aren't banned: png, tiff and flate2 depend on them too.
     { crate = "quick-xml", wrappers = ["pg-metadata"] },
     # The image decoders and encoders are pg-codec's, and the test fixtures' (pg-testkit). `image` is the door to the
-    # rest, so its parents are these crates. pg-library's tests write image fixtures (a dev-dependency).
-    { crate = "image", wrappers = ["pg-codec", "pg-testkit", "pg-library", "pdqhash"] },
+    # rest, so its parents are these crates.
+    { crate = "image", wrappers = ["pg-codec", "pg-testkit"] },
     { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit"] },
     { crate = "png", wrappers = ["pg-codec", "pg-testkit", "pg-edit", "image"] },
     { crate = "gif", wrappers = ["pg-codec", "image"] },
@@ -63,8 +76,6 @@ deny = [
     { crate = "tiff", wrappers = ["pg-codec", "image"] },
     { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff"] },
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
-    # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
-    { crate = "pdqhash", wrappers = ["pg-analysis"] },
     # SQLite is pg-catalog's and the thumbnail cache's, pg-dbfile's (the shared schema check), and pg-bench's (the catalog
     # benches), and pg-thumbs's fault module (the `fault` feature), which refuses the thumbnail cache's stores in its own
     # database (a trigger), and pg-import's pairing probes (its dev-dependency, `examples/pairs_*_probe.rs`), which read and

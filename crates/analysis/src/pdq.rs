@@ -1,8 +1,9 @@
 //! PDQ, Meta's 256-bit perceptual hash (tier 1), with the 8 dihedral variants (rotations and mirrors).
 //!
-//! A port of Meta's reference `pdqhashing.cpp`, following the arithmetic of the `pdqhash` crate, which is
-//! bit-exact with Meta's Java hasher (tested against it in `tests`). That crate has no dihedral variants, which
-//! the query side needs: mirrors and 90° rotations are only found with the 8-variant query.
+//! A port of Meta's reference `pdqhashing.cpp`. On the smooth images of the recorded vectors (in `tests`) its hash
+//! bits agree with that reference; that is not a claim about every input, nor about the DCT matrix, which is computed
+//! here. The reference hashes one orientation only, and the query side needs the rotations and mirrors too: they are
+//! only found with the 8-variant query.
 //!
 //! The input is the image already fitted into 512 px (see `analyze`), as Meta's hasher recommends and as the evaluation
 //! in `eval/pdq.py` did.
@@ -289,9 +290,11 @@ fn to_bits(dct: &[f32; DCT_OUT * DCT_OUT]) -> Hash {
 mod tests {
     use super::*;
 
+    /// A deterministic smooth texture for the properties that compare a hash with itself (the dihedral and kept-variant
+    /// tests): the recorded vectors use `smooth_image`, whose bytes do not depend on the platform's libm.
     fn test_image(w: usize, h: usize) -> Vec<u8> {
-        // Deterministic smooth texture with structure at several scales (a sharp sawtooth would alias on PDQ's
-        // 64×64 sampling grid, which isn't mirror-symmetric, and move mirrored hashes by ~30 bits).
+        // Structure at several scales (a sharp sawtooth would alias on PDQ's 64×64 sampling grid, which isn't
+        // mirror-symmetric, and move mirrored hashes by ~30 bits).
         let mut v = Vec::with_capacity(w * h * 3);
         for y in 0..h {
             for x in 0..w {
@@ -309,11 +312,25 @@ mod tests {
         pg_model::num::f64_to_u8(f64::from(x))
     }
 
-    fn reference(rgb: &[u8], w: usize, h: usize) -> ([u8; 32], f32) {
-        let img =
-            pdqhash::image::RgbImage::from_raw(u32::try_from(w).unwrap(), u32::try_from(h).unwrap(), rgb.to_vec())
-                .unwrap();
-        pdqhash::generate_pdq_full_size(&pdqhash::image::DynamicImage::ImageRgb8(img))
+    /// A smooth test image in integer arithmetic only: three triangle waves of long period, one per channel. Smooth at
+    /// every scale PDQ samples (a sharp sawtooth would alias on its 64×64 grid, which isn't mirror-symmetric, and move
+    /// mirrored hashes by ~30 bits), and the same bytes on every platform (no `sin` or `cos`, whose last bit depends on
+    /// the platform's libm).
+    fn smooth_image(w: usize, h: usize) -> Vec<u8> {
+        // A triangle wave of `period` steps, scaled to 0..=255.
+        fn wave(v: usize, period: usize) -> u8 {
+            let p = v % period;
+            u8::try_from(p.min(period - p) * 255 / (period / 2)).unwrap()
+        }
+        let mut out = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                out.push(wave(x + 2 * y, 512));
+                out.push(wave(2 * x + y + 100, 700));
+                out.push(wave(x + 3 * y + 37, 900));
+            }
+        }
+        out
     }
 
     /// `dct16` as it was before the column pass went across every column at once: `box_1d` one column at a time.
@@ -361,13 +378,130 @@ mod tests {
         }
     }
 
+    /// The hashes of Meta's reference (`pdqhashing.cpp`, read through the `pdqhash` crate when these were recorded, and
+    /// no longer a dependency), of `smooth_image` at each size. The hash bits agree with the reference on these images;
+    /// the dihedral and noise tests cover the rest. Every vector is bit-exact: no tolerance.
+    const REFERENCE_VECTORS: &[(usize, usize, [u8; 32])] = &[
+        (
+            512,
+            384,
+            [
+                252, 232, 41, 220, 163, 200, 126, 158, 225, 232, 126, 248, 245, 232, 42, 152, 64, 182, 126, 230, 192,
+                188, 144, 84, 20, 252, 213, 172, 171, 41, 1, 3,
+            ],
+        ),
+        (
+            300,
+            512,
+            [
+                61, 172, 18, 218, 63, 172, 115, 250, 221, 82, 80, 134, 197, 137, 12, 222, 213, 168, 239, 30, 194, 76,
+                77, 94, 250, 244, 95, 100, 85, 84, 0, 1,
+            ],
+        ),
+        (
+            64,
+            64,
+            [
+                162, 186, 200, 80, 130, 10, 168, 242, 130, 165, 221, 95, 215, 247, 136, 0, 149, 85, 63, 175, 109, 117,
+                169, 5, 83, 59, 168, 109, 115, 248, 169, 82,
+            ],
+        ),
+        (
+            97,
+            211,
+            [
+                157, 59, 33, 210, 74, 7, 82, 236, 198, 41, 61, 224, 171, 23, 186, 244, 162, 157, 124, 33, 85, 207, 85,
+                88, 1, 85, 174, 173, 170, 171, 170, 170,
+            ],
+        ),
+        (
+            128,
+            96,
+            [
+                173, 153, 154, 102, 100, 185, 139, 102, 38, 153, 145, 110, 42, 217, 139, 166, 38, 89, 139, 182, 174,
+                201, 107, 54, 218, 201, 116, 162, 85, 41, 38, 202,
+            ],
+        ),
+        (
+            256,
+            256,
+            [
+                68, 94, 255, 149, 4, 38, 212, 111, 12, 172, 223, 225, 68, 76, 220, 91, 172, 134, 10, 237, 252, 130, 33,
+                71, 187, 214, 33, 143, 85, 94, 85, 84,
+            ],
+        ),
+        (
+            200,
+            150,
+            [
+                252, 38, 233, 212, 171, 22, 234, 116, 138, 198, 253, 144, 1, 38, 253, 104, 77, 10, 249, 90, 207, 182,
+                24, 38, 243, 172, 6, 48, 242, 231, 138, 140,
+            ],
+        ),
+        (
+            33,
+            17,
+            [
+                40, 29, 6, 78, 103, 96, 16, 76, 217, 233, 250, 207, 255, 227, 176, 12, 168, 168, 250, 94, 138, 34, 112,
+                95, 200, 170, 147, 190, 182, 99, 156, 198,
+            ],
+        ),
+        (
+            640,
+            480,
+            [
+                143, 50, 218, 252, 239, 128, 251, 252, 255, 128, 85, 60, 168, 112, 211, 44, 234, 112, 2, 252, 73, 80,
+                83, 252, 86, 248, 172, 11, 85, 82, 8, 7,
+            ],
+        ),
+        (
+            1024,
+            768,
+            [
+                170, 132, 5, 122, 253, 108, 77, 90, 253, 108, 69, 82, 171, 236, 221, 82, 175, 236, 253, 82, 85, 100, 0,
+                13, 85, 99, 85, 74, 0, 31, 170, 181,
+            ],
+        ),
+        (
+            100,
+            100,
+            [
+                42, 93, 212, 162, 41, 89, 218, 182, 117, 73, 170, 150, 165, 41, 82, 86, 165, 173, 106, 210, 85, 173,
+                169, 90, 90, 165, 85, 106, 85, 85, 170, 170,
+            ],
+        ),
+        (
+            160,
+            120,
+            [
+                233, 115, 2, 2, 84, 251, 81, 136, 202, 119, 42, 200, 78, 51, 113, 104, 78, 91, 123, 244, 202, 47, 155,
+                216, 54, 83, 132, 220, 177, 147, 174, 166,
+            ],
+        ),
+        (
+            512,
+            512,
+            [
+                234, 186, 57, 236, 254, 250, 125, 200, 234, 152, 32, 188, 100, 66, 56, 188, 106, 162, 193, 188, 158,
+                122, 85, 252, 149, 168, 170, 41, 157, 169, 0, 3,
+            ],
+        ),
+        (
+            77,
+            300,
+            [
+                255, 9, 128, 123, 234, 209, 170, 159, 117, 124, 85, 65, 64, 27, 255, 241, 170, 167, 170, 172, 85, 80,
+                85, 87, 213, 84, 64, 1, 170, 170, 170, 170,
+            ],
+        ),
+    ];
+
     #[test]
-    fn matches_reference_crate() {
-        for (w, h) in [(512, 384), (300, 512), (64, 64), (97, 211)] {
-            let rgb = test_image(w, h);
-            let (ours, _) = Hasher::default().hash_rgb(&rgb, w, h);
-            let (theirs, _) = reference(&rgb, w, h);
-            assert_eq!(ours.0, theirs, "{w}x{h}");
+    fn matches_reference_vectors() {
+        for (w, h, expected) in REFERENCE_VECTORS {
+            let rgb = smooth_image(*w, *h);
+            let (ours, _) = Hasher::default().hash_rgb(&rgb, *w, *h);
+            assert_eq!(ours.0, *expected, "{w}x{h}");
         }
     }
 

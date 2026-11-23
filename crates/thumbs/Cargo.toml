@@ -9,10 +9,6 @@ publish.workspace = true
 workspace = true
 
 # The thumbnail pass: makes the cached thumbnails of the analyzed files. Depends on the render and the thumbnail cache, not on the analysis or the writes.
-[features]
-# The tests of the crates above ask the cache to refuse its stores (`fault`).
-fault = []
-
 [dependencies]
 pg-catalog = { path = "../catalog" }
 pg-jobs = { path = "../jobs" }
@@ -22,10 +18,10 @@ pg-platform = { path = "../platform" }
 pg-render = { path = "../render" }
 pg-thumbcache = { path = "../thumbcache" }
 thiserror.workspace = true
-# The fault module's trigger on the cache's file (`fault`, and the tests).
-rusqlite.workspace = true
 
 [dev-dependencies]
+# The cache's refusal of its stores, for the tests that a store's error ends the pass with its failure written (`fault`).
+pg-thumbcache = { path = "../thumbcache", features = ["fault"] }
 # The catalog's test fixture (files as the scanner inserts them).
 pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-analysis = { path = "../analysis" }

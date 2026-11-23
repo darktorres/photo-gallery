@@ -351,7 +351,7 @@ mod tests {
     fn a_thumbnail_cache_error_is_said_and_the_round_goes_on() {
         let (dir, catalog_path, _root) = library_sized("runner-cache-error", &["a.png"], 300);
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
-        pg_thumbs::fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
+        pg_thumbcache::fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache.clone(), sink.clone());
         let ended = inner.ctl.subscribe();

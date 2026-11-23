@@ -1,6 +1,6 @@
-//! Where the tests of the crates above ask the thumbnail cache to refuse its stores (the `fault` feature): the cache's
-//! file gets a trigger that aborts every thumbnail write, as a full disk or a locked file would, so the pass gets the
-//! store's error back.
+//! Where the tests of the crates that fill the cache ask it to refuse its stores (the `fault` feature): the cache's file
+//! gets a trigger that aborts every thumbnail write, as a full disk or a locked file would, so the pass gets the store's
+//! error back.
 
 use std::path::Path;
 

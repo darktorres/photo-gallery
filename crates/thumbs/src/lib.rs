@@ -24,8 +24,6 @@ use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
 
-#[cfg(any(test, feature = "fault"))]
-pub mod fault;
 pub mod placeholders;
 
 /// What a thumbnail or placeholder pass couldn't do: the catalog or the cache failed, a file couldn't be read (its
@@ -694,12 +692,12 @@ mod tests {
         let a = state::file_id(&c, "a.png").unwrap();
         *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(a);
         // The cache's data table refuses every thumbnail: the store's error comes back to the pass.
-        fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
+        pg_thumbcache::fault::refuse_stores(&dir.join("thumbs.sqlite")).unwrap();
         let opts = Options::new(Priority::Normal);
         let err = run(&cache, &catalog_path, h(64), &opts, &Control::new())
             .err()
             .expect("the pass returns the store's error");
-        fault::allow_stores(&dir.join("thumbs.sqlite")).unwrap();
+        pg_thumbcache::fault::allow_stores(&dir.join("thumbs.sqlite")).unwrap();
         assert!(format!("{err:#}").contains("the cache refuses the thumbnail"), "{err:#}");
         // The failure was written before the error was returned, and it is the one that panicked.
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure recorded") };

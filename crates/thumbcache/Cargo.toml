@@ -13,6 +13,10 @@ workspace = true
 # library's. The reads of the catalog are views only (`thumb_sources`, `thumb_clock`, `thumb_high_water`,
 # `thumb_file_ids`, `thumb_volumes`, `thumb_failures`, defined in the catalog's `baseline.sql`): it never names a catalog
 # table. It has no dependency on `pg-catalog`; the tests make catalogs with its fixture.
+[features]
+# The tests of the crates that fill the cache ask it to refuse its stores (`fault`): the module that writes the trigger.
+fault = []
+
 [dependencies]
 thiserror.workspace = true
 pg-jobs = { path = "../jobs" }

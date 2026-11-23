@@ -35,6 +35,11 @@ mod schema;
 mod types;
 mod writer;
 
+/// Where the tests of the crates that fill the cache ask it to refuse its stores (the `fault` feature): the cache's
+/// file gets a trigger that aborts every thumbnail write, as a full disk or a locked file would.
+#[cfg(feature = "fault")]
+pub mod fault;
+
 pub use error::{Error, Result};
 
 pub use config::{CACHE_VERSION, Cap, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
@@ -769,17 +774,14 @@ mod tests {
         let dir = run_folder(SCRATCH, "newer-layout").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, None));
         // A layout version a later build wrote (this build's is 1): a foreign value, named as a fixture.
-        const FOREIGN_USER_VERSION: i64 = 7;
+        const FOREIGN_USER_STAMP: i64 = 7;
         Connection::open(cache_path(&dir))
             .unwrap()
-            .execute_batch(&format!("PRAGMA user_version = {FOREIGN_USER_VERSION};"))
+            .execute_batch(&format!("PRAGMA user_version = {FOREIGN_USER_STAMP};"))
             .unwrap();
         let why = refused(&dir);
         assert!(why.contains("made by a later build"), "{why}");
-        assert_eq!(
-            pg_dbfile::user_version(&Connection::open(cache_path(&dir)).unwrap()).unwrap(),
-            FOREIGN_USER_VERSION
-        );
+        assert_eq!(pg_dbfile::user_version(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), FOREIGN_USER_STAMP);
     }
 
     /// A cache of an earlier layout starts over, with its totals reset and its cap kept.
@@ -788,13 +790,13 @@ mod tests {
         let dir = run_folder(SCRATCH, "layout").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
         // A layout version an earlier build wrote: a foreign value, named as a fixture.
-        const FOREIGN_USER_VERSION: i64 = 0;
+        const FOREIGN_USER_STAMP: i64 = 0;
         Connection::open(cache_path(&dir))
             .unwrap()
-            .execute_batch(&format!("PRAGMA user_version = {FOREIGN_USER_VERSION};"))
+            .execute_batch(&format!("PRAGMA user_version = {FOREIGN_USER_STAMP};"))
             .unwrap();
         let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
-        assert!(why.contains(&format!("layout version {FOREIGN_USER_VERSION}")), "{why}");
+        assert!(why.contains(&format!("layout version {FOREIGN_USER_STAMP}")), "{why}");
         assert_eq!(
             (reason, cache.totals().unwrap(), cache.cap().unwrap()),
             (StartOverReason::OtherBuild, (0, 0), 12345)
@@ -822,12 +824,12 @@ mod tests {
         drop(open_quiet(&dir, CATALOG_ID, Some(12345)));
         Connection::open(cache_path(&dir))
             .unwrap()
-            .execute("UPDATE meta SET value = ?1 WHERE key = 'thumb_output_version'", [EARLIER_OUTPUT_VERSION])
+            .execute("UPDATE meta SET value = ?1 WHERE key = 'thumb_output_version'", [EARLIER_OUTPUT_STAMP])
             .unwrap();
         // An output version an earlier build wrote: a foreign value, named as a fixture.
-        const EARLIER_OUTPUT_VERSION: i64 = 0;
+        const EARLIER_OUTPUT_STAMP: i64 = 0;
         let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
-        assert!(why.contains(&format!("thumbnail output version {EARLIER_OUTPUT_VERSION}")), "{why}");
+        assert!(why.contains(&format!("thumbnail output version {EARLIER_OUTPUT_STAMP}")), "{why}");
         assert_eq!(
             (reason, cache.totals().unwrap(), cache.cap().unwrap()),
             (StartOverReason::OtherBuild, (0, 0), 12345)

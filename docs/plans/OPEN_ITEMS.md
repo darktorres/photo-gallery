@@ -168,3 +168,11 @@ Found while reading the background job's round (`crates/library/src/runner.rs`).
   button, using the Windows taskbar progress indicator (`ITaskbarList3::SetProgressValue` / `SetProgressState`). Nothing in
   the code sets it yet (rechecked 2026-11-18): `crates/desktop/cpp/app_icon.cpp` only sets the window icon. Open decisions: which job progress to
   show (the background job's round as a whole, or the current pass), and the states to show (paused, error, indeterminate).
+
+## UI: remember the window's size and position (added 2026-11-22)
+
+- **Window size and position are not kept between launches.** **Open, not started.** The app does not save the main
+  window's size, position or maximized state, and does not restore them at start (checked 2026-11-22: the only geometry
+  match in `crates/` is Qt's `--qwindowgeometry` option in `crates/desktop/src/command_line.rs`). Open decisions: where
+  to store the values (the app's settings, or the catalog), how to handle a saved position that is off screen after a
+  monitor change, and whether the state is per monitor setup or global.

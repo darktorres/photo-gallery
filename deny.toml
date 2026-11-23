@@ -43,11 +43,6 @@ allow = ["BSL-1.0"]
 [[licenses.exceptions]]
 crate = "Inflector"
 allow = ["BSD-2-Clause"]
-# libfuzzer-sys, the fuzz harness's driver (the fuzz workspace only, `fuzz/Cargo.toml`): its code is the LLVM libFuzzer
-# runtime, under the University of Illinois/NCSA license (an OSI-approved permissive license).
-[[licenses.exceptions]]
-crate = "libfuzzer-sys"
-allow = ["NCSA"]
 
 # Our own crates are `publish = false` and carry no license field.
 [licenses.private]

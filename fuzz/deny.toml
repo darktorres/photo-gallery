@@ -1,0 +1,84 @@
+# `cargo deny --config fuzz/deny.toml --manifest-path fuzz/Cargo.toml check` (`just deny`). The root deny.toml's policy,
+# narrowed to what the fuzz workspace's own graph reaches: its banned crates and wrappers, its git sources, its one license
+# exception. The license allow-list is the root's, and this graph reaches only some of it, so the unused entries are
+# allowed here rather than reported. Keep the rest in step with the root file.
+
+# `cargo deny check`: advisories, licenses, duplicate versions and where crates come from.
+
+[graph]
+# Optional dependencies count too: the checks see every feature the workspace can build.
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# What the dependencies use today; a new license is a decision, not an accident.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    # libloading, pg-video's run-time loader of FFmpeg (and bindgen's, in its build script).
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+unused-allowed-license = "allow"
+
+# libfuzzer-sys, the fuzz harness's driver: its code is the LLVM libFuzzer runtime, under the University of
+# Illinois/NCSA license (an OSI-approved permissive license).
+[[licenses.exceptions]]
+crate = "libfuzzer-sys"
+allow = ["NCSA"]
+
+# Our own crates are `publish = false` and carry no license field.
+[licenses.private]
+ignore = true
+
+[bans]
+# Reported, not fatal: the duplicates are build tools and mixed-version dependencies (ALLOWLIST_PLAN.md, Phase B step 6).
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # The file metadata (pg-metadata) is the only XML parser.
+    { crate = "quick-xml", wrappers = ["pg-metadata"] },
+    # The image decoders and encoders are pg-codec's. `image` is the door to the rest, so its parents are these crates.
+    { crate = "image", wrappers = ["pg-codec"] },
+    { crate = "turbojpeg", wrappers = ["pg-codec"] },
+    { crate = "png", wrappers = ["pg-codec", "image"] },
+    { crate = "gif", wrappers = ["pg-codec", "image"] },
+    { crate = "image-webp", wrappers = ["pg-codec", "image"] },
+    # libwebp, the lossy WebP encoder and decoder: pg-codec's alone.
+    { crate = "webp", wrappers = ["pg-codec"] },
+    { crate = "libwebp-sys", wrappers = ["webp"] },
+    { crate = "tiff", wrappers = ["pg-codec", "image"] },
+    { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff"] },
+    { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+unused-allowed-source = "allow"
+# The forks this graph reaches, pinned by rev. Each fork is ours, carrying the upstream's code.
+allow-git = [
+    "https://github.com/darktorres/fast_image_resize",
+    "https://github.com/darktorres/fdeflate",
+    "https://github.com/darktorres/image-gif",
+    "https://github.com/darktorres/image-webp",
+    "https://github.com/darktorres/image-png",
+    "https://github.com/darktorres/quick-xml",
+    "https://github.com/darktorres/parajpeg",
+    "https://github.com/darktorres/rust-turbojpeg",
+    "https://github.com/darktorres/image-tiff",
+    "https://github.com/darktorres/zune-image",
+]

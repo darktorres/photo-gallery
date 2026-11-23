@@ -1,0 +1,68 @@
+# `cargo deny --config eval/jpeg-decoders/deny.toml --manifest-path eval/jpeg-decoders/Cargo.toml check` (`just deny`). The
+# root deny.toml's policy, narrowed to what this harness's own graph reaches: the decoders it compares, its git source, and
+# the FFmpeg bindings' license exceptions. The license allow-list is the root's, and this graph reaches only some of it, so
+# the unused entries are allowed here rather than reported. Keep the rest in step with the root file.
+
+# `cargo deny check`: advisories, licenses, duplicate versions and where crates come from.
+
+[graph]
+# Optional dependencies count too: the checks see every feature the workspace can build.
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# What the dependencies use today; a new license is a decision, not an accident.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    # libloading, pg-video's run-time loader of FFmpeg (and bindgen's, in its build script).
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+unused-allowed-license = "allow"
+
+# ffmpeg-next and ffmpeg-sys-next, the FFmpeg bindings this harness compares decoders against. Their license is WTFPL, an
+# unrestricted permissive license; the crates are never in the shipped graph.
+[[licenses.exceptions]]
+crate = "ffmpeg-next"
+allow = ["WTFPL"]
+[[licenses.exceptions]]
+crate = "ffmpeg-sys-next"
+allow = ["WTFPL"]
+
+# Our own crates are `publish = false` and carry no license field.
+[licenses.private]
+ignore = true
+
+[bans]
+# Reported, not fatal: the duplicates are build tools and mixed-version dependencies (ALLOWLIST_PLAN.md, Phase B step 6).
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # The decoders this harness compares name them directly (the app's policy bans them everywhere else).
+    { crate = "turbojpeg", wrappers = ["jpeg-decoders"] },
+    { crate = "zune-jpeg", wrappers = ["jpeg-decoders"] },
+    { crate = "zune-core", wrappers = ["zune-jpeg", "jpeg-decoders"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+unused-allowed-source = "allow"
+# The fork this harness reaches, pinned by rev.
+allow-git = [
+    "https://github.com/darktorres/rust-turbojpeg",
+]

@@ -127,7 +127,9 @@ test in `src/lib.rs` keeps the RGB and reuse cases.
 
 To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): not exercised by it. The import does not
+compute thumbhash placeholders; they are made in the thumbnail pass (`crates/render/src/maker.rs`), which this sample did not
+run. To measure, run the thumbnail pass over a sample.
 
 ## fast_image_resize
 
@@ -160,7 +162,15 @@ on this machine. Their images aren't in the published crate (`data/` in the repo
 
 To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml` and `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described here): the fork's coefficient reuse makes 20 allocations (16.6 MB)
+where upstream makes 334,121 (99.6 MB), over the 393-file import. The fork's kept buffers also raise the live peak: 538.3 MB
+(2,795 blocks) with the fork against 525.4 MB (2,093 blocks) with upstream, the one place this group costs memory.
+The group run: `gallery scan` and `gallery import --workers 1` over a 393-file sample (the first 200 JPEG, 142 PNG and 51 WebP
+of the Pinterest folder, in full-path order), built with `--profile dhat --features dhat-heap`. Upstream is the comparison
+tree (`scratchpad/upstream-alloc` at the commit before the measurement): every allocation-reuse fork's pin removed, the
+codec and metadata call sites on upstream's API, fresh decoders per image, metadata read rather than skipped. Totals: 715.6
+MB in 14,657 blocks with the forks, 1,023.2 MB in 367,669 blocks without; the total at exit is the same (497,856 bytes in
+1,476 blocks). Per crate, the attribution is by the first frame of each program point that names the crate.
 
 ## quick-xml
 
@@ -183,7 +193,8 @@ upstream reports. Its tests run in a checkout of the fork: `cargo test`.
 
 To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml` and `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): 34 allocations (7 KB) with the fork,
+1,154 (121 KB) with upstream's `from_str`.
 
 ## png
 
@@ -224,7 +235,9 @@ not re-measured here, decode rates about 1.8 times as fast on an 8-bit RGB file 
 To update: rebase the fork's commits onto the new release, then change the `rev` in the root `Cargo.toml`,
 `fuzz/Cargo.toml` and `eval/png-decoders/Cargo.toml`.
 
-Measurement: not yet measured against current upstream, including the tRNS change.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): 546 allocations (53.2 MB) with the fork,
+1,138 (108.8 MB) with upstream's PNG decoder over the 142 PNG files. This includes the tRNS change, which the comparison
+tree removes with the rest of the fork: it is not measured apart from the scratch reuse.
 
 ## fdeflate
 
@@ -240,7 +253,8 @@ They run in a checkout of the fork: `cargo test`.
 To update: rebase the fork's change onto the new release, then change the `rev` in the root `Cargo.toml`,
 `fuzz/Cargo.toml` and `eval/png-decoders/Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): 315 allocations (2.8 MB) with the fork,
+1,943 (5.5 MB) with upstream's `Decompressor` (the PNG decoder's inflater; the fork's `reset` is the change measured).
 
 ## image-webp
 
@@ -278,7 +292,8 @@ on every run; its asserts are unchanged. Its tests run in a checkout of the fork
 
 To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml` and `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): 219 allocations (20.5 MB) with the fork,
+15,841 (184.0 MB) with upstream's decoder over the 51 WebP files.
 
 ## gif
 
@@ -321,7 +336,8 @@ every run; they were never asserted. Its tests run in a checkout of the fork: `c
 
 To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml` and `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): not exercised by it. The sample has no
+GIF files. To measure, add GIFs to a sample and rerun the group comparison.
 
 ## tiff
 
@@ -377,7 +393,8 @@ test fails. Its tests run in a checkout of the fork: `cargo test --no-fail-fast`
 
 To update: rebase the fork's changes onto the new release, then change the `rev` in the root `Cargo.toml` and `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream.
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): not exercised by it. The sample has no
+TIFF files. To measure, add TIFFs to a sample and rerun the group comparison.
 
 ## zune-core
 
@@ -402,7 +419,7 @@ run in a checkout of the fork: `cargo test`, and again with `--features std`.
 To update: rebase the fork's commit onto the new zune-image release, then change the `rev` of `zune-core` and
 `zune-jpeg` (they share one rev) in the root `Cargo.toml` and `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream (see `zune-jpeg`).
+Measurement (2026-11-23, dhat): see `zune-jpeg`.
 
 ## zune-jpeg
 
@@ -448,7 +465,10 @@ To update: rebase the fork's commit onto the new zune-image release, keeping `ru
 `tests/photo_gallery`, then change the `rev` of `zune-core` and `zune-jpeg` in the root `Cargo.toml` and
 `fuzz/Cargo.toml`.
 
-Measurement: not yet measured against current upstream (the allocation changes and the metadata skip).
+Measurement (2026-11-23, dhat, the group run described in `## fast_image_resize`): not exercised by it. libjpeg-turbo
+decodes every JPEG of the sample; zune-jpeg runs only for the JPEGs libjpeg-turbo rejects (`crates/codec/src/codecs/jpeg.rs`),
+and none did. The metadata skip is not measured by this run either: the comparison tree reads the metadata. To measure
+both, add JPEGs that libjpeg-turbo rejects (CMYK) to a sample and rerun the group comparison.
 
 ## dhat
 

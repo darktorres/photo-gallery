@@ -43,7 +43,7 @@ Real-ESRGAN releases; their licence line must be read on the release page before
 LICENSE covers the code. Not verified here.
 
 The workspace policy is `deny.toml`, whose allow list holds the mainstream permissive licences
-([ALLOWLIST_PLAN.md](ALLOWLIST_PLAN.md) §"licenses"). An AGPL crate would need a separate decision there, and it does
+(the licence list in `deny.toml`). An AGPL crate would need a separate decision there, and it does
 not get one by default.
 
 ## 4. Runtime

@@ -47,7 +47,7 @@ allow = ["WTFPL"]
 ignore = true
 
 [bans]
-# Reported, not fatal: the duplicates are build tools and mixed-version dependencies (ALLOWLIST_PLAN.md, Phase B step 6).
+# Reported, not fatal: the duplicates are build tools and mixed-version dependencies.
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true

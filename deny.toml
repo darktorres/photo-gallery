@@ -52,7 +52,7 @@ ignore = true
 # Reported, not fatal. The duplicates left are build tools and mixed-version dependencies (cxx-qt-gen, codespan-reporting,
 # libloading 0.8/0.9, syn 2/3, thiserror 1/2, miniz_oxide 0.8/0.9, unicode-width, weezl 0.1/0.2). They stay `warn` on
 # purpose: a `deny` with a `[[bans.skip]]` per duplicate is the end state, but it is adopted after the forks are retired,
-# since retiring a fork changes which duplicates exist (ALLOWLIST_PLAN.md, Phase B step 6).
+# since retiring a fork changes which duplicates exist.
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true

@@ -144,7 +144,7 @@ fn to_f32(x: f64) -> f32 {
 }
 
 /// One pass of the box filter along a row or column (`stride` 1 or the row length), shrinking the window at
-/// both ends. Same operation order as the reference, so results are bit-exact.
+/// both ends. The operation order follows the reference's.
 fn box_1d(input: &[f32], start: usize, output: &mut [f32], len: usize, stride: usize, window: usize) {
     let half = (window + 2) / 2;
     let phase1 = half - 1;

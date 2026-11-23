@@ -143,13 +143,14 @@ lint: _qt _lint-tools && lint-qml
 
 # The dependencies' advisories, licences and sources (cargo-deny). Not in `lint`: it fetches the advisory database from
 # GitHub, so a network failure is not a lint failure. CI runs it as its own step, which retries the fetch.
-# The workspaces outside the root have their own lockfiles, so each is checked against the same policy (deny.toml): the
-# comment is here, not in the recipe, because cmd (the Windows shell) would run a `#` line as a command.
+# The workspaces outside the root have their own lockfiles, so each is checked against the same policy: deny.toml, and for
+# the eval workspaces eval/deny.toml (the root's policy plus the decoder harnesses' entries). The comment is here, not in
+# the recipe, because cmd (the Windows shell) would run a `#` line as a command.
 deny: _lint-tools
     cargo deny check
     cargo deny --config deny.toml --manifest-path fuzz/Cargo.toml check
-    cargo deny --config deny.toml --manifest-path eval/jpeg-decoders/Cargo.toml check
-    cargo deny --config deny.toml --manifest-path eval/png-decoders/Cargo.toml check
+    cargo deny --config eval/deny.toml --manifest-path eval/jpeg-decoders/Cargo.toml check
+    cargo deny --config eval/deny.toml --manifest-path eval/png-decoders/Cargo.toml check
 
 # The module-cycle check: the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the

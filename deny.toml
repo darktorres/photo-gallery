@@ -48,14 +48,6 @@ allow = ["BSD-2-Clause"]
 [[licenses.exceptions]]
 crate = "libfuzzer-sys"
 allow = ["NCSA"]
-# ffmpeg-next and ffmpeg-sys-next, the FFmpeg bindings of the eval harness (eval/jpeg-decoders, which compares decoders
-# against FFmpeg). Their license is WTFPL, an unrestricted permissive license; the crates are never in the shipped graph.
-[[licenses.exceptions]]
-crate = "ffmpeg-next"
-allow = ["WTFPL"]
-[[licenses.exceptions]]
-crate = "ffmpeg-sys-next"
-allow = ["WTFPL"]
 
 # Our own crates are `publish = false` and carry no license field.
 [licenses.private]
@@ -79,18 +71,16 @@ deny = [
     # The image decoders and encoders are pg-codec's, its test fixtures (the `fixture` feature) included. `image` is the
     # door to the rest, so its parents are these crates.
     { crate = "image", wrappers = ["pg-codec"] },
-    { crate = "turbojpeg", wrappers = ["pg-codec", "jpeg-decoders"] },
-    { crate = "png", wrappers = ["pg-codec", "image", "png-decoders"] },
+    { crate = "turbojpeg", wrappers = ["pg-codec"] },
+    { crate = "png", wrappers = ["pg-codec", "image"] },
     { crate = "gif", wrappers = ["pg-codec", "image"] },
     { crate = "image-webp", wrappers = ["pg-codec", "image"] },
     # libwebp, the lossy WebP encoder and decoder: pg-codec's alone.
     { crate = "webp", wrappers = ["pg-codec"] },
     { crate = "libwebp-sys", wrappers = ["webp"] },
     { crate = "tiff", wrappers = ["pg-codec", "image"] },
-    # The decoders are compared in eval/jpeg-decoders and eval/png-decoders (workspaces that are not shipped), which name
-    # them directly.
-    { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff", "jpeg-decoders"] },
-    { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg", "jpeg-decoders", "zune-png", "png-decoders"] },
+    { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff"] },
+    { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
     # SQLite is the owners' alone: pg-catalog's, pg-dbfile's (the shared file lifecycle, and the copies a bench opens in
     # WAL), pg-thumbcache's (its own file and its test-only fault trigger), and pg-query's (it registers the SQL
     # functions on a connection). Other crates reach a database through these.

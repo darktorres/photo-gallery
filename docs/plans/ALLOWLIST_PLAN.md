@@ -476,8 +476,8 @@ a temporary bogus `TYPES` entry makes the build fail, then is removed.
 ## Phase G: forks (`sources.allow-git`, 14 entries)
 
 **Depends on:** Phase 7 for anything touching `Cargo.toml`/locks. **Touches:** `vendor/README.md`, `Cargo.toml`, `fuzz/`,
-`eval/`, `tools/{fork-updates.py,build_jpeg_turbo.py}`, later `.cargo/config.toml`, docs. **External actions** (upstream PRs)
-are opened only after the user confirms each one.
+`eval/`, `tools/{fork-updates.py,build_jpeg_turbo.py}`, later `.cargo/config.toml`, docs. **External actions:** none. No
+upstream pull requests are opened for any fork (the user declined them).
 
 **Policy.** The header of `vendor/README.md` says the crates are built from forks pinned by `rev` and that nothing is copied
 into that directory any more. This plan does not reverse that. A pinned fork is a legitimate, reviewable source, so
@@ -542,24 +542,21 @@ measures Windows wall time. Name the instrument per fork:
   - `eval/jpeg-decoders` is the Linux/container harness (`vips`, `ffmpeg-next`) and its `win_build.py` builds libjpeg-turbo
     with its own Release (`/O2`) CMake build, so it cannot show the fork's `/Od` regression; `crates/bench` is Linux-only
     gungraun/Valgrind.
-Outcome per fork: upstream the change and drop the fork once released, drop the change if the gain is gone, or stay a pinned
-fork with the measured gain written in `vendor/README.md`.
+Outcome per fork: drop the fork's change if the measured gain is gone, or keep the pinned fork with the measured gain written
+in `vendor/README.md`.
 
 | Fork | vs upstream (ahead / behind) | Local change | Planned outcome |
 |---|---|---|---|
-| fdeflate | 1 / 0 | `Decompressor::reset` | upstream PR, then drop |
-| image-png | 2 / 0 | scratch decode, tRNS compare expansion (commit "Expand tRNS with fixed-size pixel and key compares": a speed change, not a bug fix; `vendor/README.md` does not describe it) | PR the tRNS compare expansion; scratch is a G2 decision |
-| rusqlite | 2 / 2 | statement-cache key bug, and the `photo-gallery-defaults` feature (SQLite compile flags, G1) | PR the cache fix; the defaults feature has no upstream path, so the fork stays unless the flags measure as worthless (then G1's `.cargo/config.toml` route) |
-| rust-turbojpeg | 3 / 0 | `WITH_CRT_DLL`, MSVC optimisation flags, and a third commit (`945d853`) that drops the content-hash rerun trigger | upstream PR; keep until merged (decode 7.48 to 4.30 ms per README) |
-| cxx-qt | 2 / 6 | `content_key_env`, QML fixes | upstream PRs |
-| dhat-rs | 1 / 0 | backtraces before the lock | upstream PR |
-| parajpeg | 2 / 0 | our Rust crate and shim over unchanged C++, mutex for an upstream hang | PR the mutex fix (and the wrapper if the author wants it); otherwise stays a fork |
+| fdeflate | 1 / 0 | `Decompressor::reset` | keep the pinned fork while its measured gain holds; drop the change if not |
+| image-png | 2 / 0 | scratch decode, tRNS compare expansion (commit "Expand tRNS with fixed-size pixel and key compares": a speed change, not a bug fix; `vendor/README.md` does not describe it) | keep the pinned fork if the tRNS compare expansion measures as a gain; scratch is a G2 decision |
+| rusqlite | 2 / 2 | statement-cache key bug, and the `photo-gallery-defaults` feature (SQLite compile flags, G1) | keep the pinned fork (the cache fix and the defaults feature); if the flags measure as worthless, G1's `.cargo/config.toml` route |
+| rust-turbojpeg | 3 / 0 | `WITH_CRT_DLL`, MSVC optimisation flags, and a third commit (`945d853`) that drops the content-hash rerun trigger | keep the pinned fork while G2 confirms the decode gain (7.48 to 4.30 ms per README) |
+| cxx-qt | 2 / 6 | `content_key_env`, QML fixes | keep the pinned fork |
+| dhat-rs | 1 / 0 | backtraces before the lock | keep the pinned fork |
+| parajpeg | 2 / 0 | our Rust crate and shim over unchanged C++, mutex for an upstream hang | keep the pinned fork, the mutex fix included |
 | thumbhash, image-tiff | 1 / 0 | allocation only | measure; likely drop |
-| image-gif, image-webp, quick-xml, fast_image_resize | 1/0, 1/1, 1/8, 1/8 | allocation reuse | measure; upstream PR, stay a pinned fork, or drop |
-| zune-image (zune-jpeg, zune-core) | 1/42 | allocation reuse (`Scratch`), plus `JpegDecoder::set_skip_metadata` (reads the EXIF, XMP, ICC, IPTC and MPF segments only when asked) and a `rustfmt.toml` that turns formatting off (`vendor/README.md`, `## zune-jpeg`) | measure; `set_skip_metadata` is a feature, so PR it or keep the fork; 42 commits behind: rebase first |
-
-**Upstream PRs to open (each only after the user confirms it):** rusqlite statement-cache key, fdeflate `reset`, png tRNS,
-`turbojpeg-sys` flags, cxx-qt (`content_key_env` and the QML fixes), dhat, the `parajpeg` mutex.
+| image-gif, image-webp, quick-xml, fast_image_resize | 1/0, 1/1, 1/8, 1/8 | allocation reuse | measure; keep the pinned fork if the gain holds, or drop |
+| zune-image (zune-jpeg, zune-core) | 1/42 | allocation reuse (`Scratch`), plus `JpegDecoder::set_skip_metadata` (reads the EXIF, XMP, ICC, IPTC and MPF segments only when asked) and a `rustfmt.toml` that turns formatting off (`vendor/README.md`, `## zune-jpeg`) | measure; `set_skip_metadata` is a feature the fork keeps while it is used; 42 commits behind: rebase first if it stays |
 
 **Done when:** before any fork change, that fork's measurement (above) is recorded in `vendor/README.md`.
 
@@ -1655,11 +1652,10 @@ sites of `FolderFailure::key`/`from_key` (`ledger.rs:307`, `roots.rs:246`, `writ
 
 1. Phase E: the DLL check **fails** the step. Unknown DLLs are either added to `REDISTRIBUTED` with a reason or are a real
    problem; any legitimate OS DLL the first real build flags is added deliberately.
-2. Phase G: forks stay forks (the repo's recorded decision); nothing is vendored in-repo. `parajpeg` keeps its pinned fork;
-   the mutex fix is sent upstream.
-3. Phase G: open upstream PRs for every generic fix (rusqlite cache, fdeflate reset, png tRNS, turbojpeg flags, cxx-qt, dhat,
-   parajpeg mutex). Each allocation-only fork is upstreamed, dropped, or kept with a measured gain. Each PR is
-   outward-facing, so it is opened only after the user confirms that PR.
+2. Phase G: forks stay forks (the repo's recorded decision); nothing is vendored in-repo. `parajpeg` keeps its pinned fork,
+   the mutex fix included.
+3. Phase G: each fork change is measured, then kept in its pinned fork with the gain written in `vendor/README.md`, or
+   dropped. No upstream pull requests: the user declined them.
 4. Phase H runs before Phase I; the app entry leaves `REEXPORT_BOUNDARIES` for good.
 
 ## Rejected approaches (and why), so they are not re-proposed
